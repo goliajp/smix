@@ -1,0 +1,25 @@
+name: deploy
+
+# simx project website: simx.golia.jp
+#
+# Build artifact lives in web/dist/ — produced locally by:
+#     cd web && bun install && bun run build
+# Then trigger deploy from the simx repo root:
+#     devops deploy simx
+#
+# The web/ sub-project is a Vite SPA (React + GDS); served as static
+# files on t01 by Caddy, HTTPS via ACME.
+
+jobs:
+  web:
+    runs-on: t01
+    steps:
+      - uses: upload
+        with:
+          src: ./web/dist/
+          dest: /var/lib/simx-web/
+      - uses: caddy
+        with:
+          domains: [simx.golia.jp]
+          root: /var/lib/simx-web
+          spa: true
