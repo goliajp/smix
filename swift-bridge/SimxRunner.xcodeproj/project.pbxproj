@@ -1,0 +1,429 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A48BB5761F3BD8B37257579 /* SimxRunnerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5098033446204D0BC26C9DFA /* SimxRunnerCore */; };
+		54BD1D76F99A4914377FC115 /* SimxRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B51555C8772785DC311D7F7 /* SimxRunnerUITests.swift */; };
+		E12CE3F093DE9B47171199C0 /* SimxRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6277A78B46941CE226DD9D1A /* SimxRunnerApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D8436699EBB0596EAEAB4178 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 76482FE18EEA35300BBF6C90 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DA322C9233955C34E06C3F0D;
+			remoteInfo = SimxRunner;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		20C1751315C5D5B99FEBBEB0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		5B51555C8772785DC311D7F7 /* SimxRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimxRunnerUITests.swift; sourceTree = "<group>"; };
+		6277A78B46941CE226DD9D1A /* SimxRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimxRunnerApp.swift; sourceTree = "<group>"; };
+		7D5D007E15852F0275C3337F /* SimxRunner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SimxRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8087BEC65919E70633C9EE05 /* swift-bridge */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "swift-bridge"; path = .; sourceTree = SOURCE_ROOT; };
+		CB16F16E7CFB8DDD98AF3E9D /* SimxRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SimxRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F9B3D003D2D69A86610E9F32 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0181A7CFD241D88A4EF51F33 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A48BB5761F3BD8B37257579 /* SimxRunnerCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		79F96C236D45FD24F0910BEB /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7D5D007E15852F0275C3337F /* SimxRunner.app */,
+				CB16F16E7CFB8DDD98AF3E9D /* SimxRunnerUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		7F6EA535E52F43E6EC5DDD0C /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				8087BEC65919E70633C9EE05 /* swift-bridge */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		B5EACE579AA941F6ECA226D9 /* SimxRunner */ = {
+			isa = PBXGroup;
+			children = (
+				F9B3D003D2D69A86610E9F32 /* Info.plist */,
+				6277A78B46941CE226DD9D1A /* SimxRunnerApp.swift */,
+			);
+			path = SimxRunner;
+			sourceTree = "<group>";
+		};
+		D791481AE7B15378E695CC0C /* SimxRunnerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				20C1751315C5D5B99FEBBEB0 /* Info.plist */,
+				5B51555C8772785DC311D7F7 /* SimxRunnerUITests.swift */,
+			);
+			path = SimxRunnerUITests;
+			sourceTree = "<group>";
+		};
+		FB4520DA48C6079225F53339 = {
+			isa = PBXGroup;
+			children = (
+				7F6EA535E52F43E6EC5DDD0C /* Packages */,
+				B5EACE579AA941F6ECA226D9 /* SimxRunner */,
+				D791481AE7B15378E695CC0C /* SimxRunnerUITests */,
+				79F96C236D45FD24F0910BEB /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		98DF9D9639736F676D0AB634 /* SimxRunnerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A3DB6A56F4CAD59A256DCB5D /* Build configuration list for PBXNativeTarget "SimxRunnerUITests" */;
+			buildPhases = (
+				99CFF52E85D5E88943B0E26B /* Sources */,
+				0181A7CFD241D88A4EF51F33 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8E5C50A397DC7156EBB912EC /* PBXTargetDependency */,
+			);
+			name = SimxRunnerUITests;
+			packageProductDependencies = (
+				5098033446204D0BC26C9DFA /* SimxRunnerCore */,
+			);
+			productName = SimxRunnerUITests;
+			productReference = CB16F16E7CFB8DDD98AF3E9D /* SimxRunnerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		DA322C9233955C34E06C3F0D /* SimxRunner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AE98153025FB02C4C0DEECCA /* Build configuration list for PBXNativeTarget "SimxRunner" */;
+			buildPhases = (
+				77BB08ED20B087B6AD861392 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SimxRunner;
+			packageProductDependencies = (
+			);
+			productName = SimxRunner;
+			productReference = 7D5D007E15852F0275C3337F /* SimxRunner.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		76482FE18EEA35300BBF6C90 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					98DF9D9639736F676D0AB634 = {
+						TestTargetID = DA322C9233955C34E06C3F0D;
+					};
+				};
+			};
+			buildConfigurationList = 37908BAAD86DA63BE5437F74 /* Build configuration list for PBXProject "SimxRunner" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = FB4520DA48C6079225F53339;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4E4B2C585ADC5B67718BD608 /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 79F96C236D45FD24F0910BEB /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DA322C9233955C34E06C3F0D /* SimxRunner */,
+				98DF9D9639736F676D0AB634 /* SimxRunnerUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		77BB08ED20B087B6AD861392 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E12CE3F093DE9B47171199C0 /* SimxRunnerApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99CFF52E85D5E88943B0E26B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				54BD1D76F99A4914377FC115 /* SimxRunnerUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		8E5C50A397DC7156EBB912EC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DA322C9233955C34E06C3F0D /* SimxRunner */;
+			targetProxy = D8436699EBB0596EAEAB4178 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0230968A2930C3679892701D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = SimxRunnerUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.simx.SimxRunnerUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SimxRunner;
+			};
+			name = Release;
+		};
+		4CEE55B53546F72546E84594 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		90AF2AB751CF3F86EF9E25E9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = SimxRunnerUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.simx.SimxRunnerUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SimxRunner;
+			};
+			name = Debug;
+		};
+		A05FB78998675ABDB0A99609 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = SimxRunner/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.simx.SimxRunner;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D6413F38FA7341FCCA958E93 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = SimxRunner/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.simx.SimxRunner;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EEB3FABDAB8C6EBA5DFD5F14 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		37908BAAD86DA63BE5437F74 /* Build configuration list for PBXProject "SimxRunner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4CEE55B53546F72546E84594 /* Debug */,
+				EEB3FABDAB8C6EBA5DFD5F14 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A3DB6A56F4CAD59A256DCB5D /* Build configuration list for PBXNativeTarget "SimxRunnerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				90AF2AB751CF3F86EF9E25E9 /* Debug */,
+				0230968A2930C3679892701D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AE98153025FB02C4C0DEECCA /* Build configuration list for PBXNativeTarget "SimxRunner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D6413F38FA7341FCCA958E93 /* Debug */,
+				A05FB78998675ABDB0A99609 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4E4B2C585ADC5B67718BD608 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5098033446204D0BC26C9DFA /* SimxRunnerCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SimxRunnerCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 76482FE18EEA35300BBF6C90 /* Project object */;
+}

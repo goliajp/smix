@@ -1,0 +1,50 @@
+name: SimxRunner
+options:
+  bundleIdPrefix: dev.simx
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: en
+
+packages:
+  SimxRunnerCore:
+    path: .
+
+targets:
+  SimxRunner:
+    type: application
+    platform: iOS
+    sources:
+      - path: SimxRunner
+    info:
+      path: SimxRunner/Info.plist
+      properties:
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.simx.SimxRunner
+
+  SimxRunnerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: SimxRunnerUITests
+    info:
+      path: SimxRunnerUITests/Info.plist
+    dependencies:
+      - target: SimxRunner
+      - package: SimxRunnerCore
+        product: SimxRunnerCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.simx.SimxRunnerUITests
+        TEST_TARGET_NAME: SimxRunner
+
+schemes:
+  SimxRunner:
+    build:
+      targets:
+        SimxRunner: all
+        SimxRunnerUITests: [test]
+    test:
+      targets:
+        - SimxRunnerUITests

@@ -1,0 +1,62 @@
+# v0.7 C3 — multi-runtime matrix CI gate (GitHub Actions macos-15).
+# Matrix runtime: iOS-17-5 / iOS-18-4 / iOS-26-4. The 5 gates below
+# (install --frozen-lockfile / typecheck / vitest 578 / swift test >=102 /
+# c1-mcp-smoke stdio JSON-RPC) are sim-agnostic and pass on macos-15
+# irrespective of the matrix runtime label.
+#
+# iOS 26.4: hard-required (continue-on-error: false).
+# iOS 17.5 / 18.4: soft fan-out (continue-on-error: true) — the 5-arg
+# `IndigoHIDMessageForMouseNSEvent` ABI path that those runtimes need is
+# documented in swift-bridge/.../ChannelDispatcher.swift as "scheduled
+# for v0.7" but is not yet implemented; the matrix branches act as
+# placeholders so the v0.7+ HID work can flip them to hard-required
+# without touching ci.yml shape.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: test (macos-15 / ${{ matrix.runtime }})
+    runs-on: macos-15
+    timeout-minutes: 30
+    continue-on-error: ${{ matrix.runtime != 'iOS-26-4' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [iOS-17-5, iOS-18-4, iOS-26-4]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ^1.3.0
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Vitest (TS unit tests, expect 578 passed)
+        run: bun x vitest run
+
+      - name: Swift test (SimxRunnerCore, expect >=102 passed)
+        run: swift test
+        working-directory: swift-bridge
+
+      - name: C1 MCP stdio smoke (expect all_ok=ok)
+        run: |
+          set -euo pipefail
+          OUT="$(bash scripts/simx-c1-mcp-smoke.sh)"
+          echo "$OUT"
+          echo "$OUT" | jq -e '.all_ok == "ok"' > /dev/null

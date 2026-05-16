@@ -1,0 +1,46 @@
+{
+  "name": "simx",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AI-native iOS Simulator automation for TDD and E2E testing",
+  "bin": {
+    "simx": "./dist/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/sdk/index.d.ts",
+      "import": "./dist/sdk/index.js"
+    },
+    "./test": {
+      "types": "./dist/sdk/test.d.ts",
+      "import": "./dist/sdk/test.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.examples.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "bun --watch src/cli/index.ts",
+    "example": "bun examples/login.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "packageManager": "bun@1.1.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "citty": "^0.2.2",
+    "zod": "^3.25.0"
+  }
+}

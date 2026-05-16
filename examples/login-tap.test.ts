@@ -1,0 +1,30 @@
+/**
+ * v0.3 selector resolver showcase: id / role+name / text + RegExp +
+ * `inside` modifier, all driving the real Settings UI on the dev sim.
+ *
+ * Trimmed-down from _v03-pending/login.test.ts: the v0.7+ HID-keyboard
+ * `fill` steps are still in the pending file as the SuccessCriteria
+ * [1] reference target. When v0.7+ keyboard lands we'll merge them.
+ *
+ * Run (runner auto-launches com.apple.Preferences):
+ *   bun src/cli/index.ts run examples/login-tap.test.ts
+ */
+import { test, expect } from '../src/sdk/index.js'
+
+test('settings: navigate via 4-base + modifier selectors', async ({ app }) => {
+  // 1) base text selector — plain string match (path A: runner /tap).
+  await app.tap({ text: 'General' })
+
+  // 2) text + RegExp on the General sub-page.
+  await expect(app.element({ text: /About/ })).toBeVisible()
+
+  // 3) waitFor on a role+name selector (auto-poll).
+  await app.waitFor({ role: 'cell', name: 'About' })
+
+  // 4) id selector → resolveSelector → host-hid coord tap (path B).
+  await app.tap({ id: 'About' })
+
+  // 5) text + `inside` modifier — disambiguates by container role.
+  await expect(app.element({ text: /Version/, inside: { role: 'cell' } }))
+    .toBeVisible()
+})

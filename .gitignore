@@ -1,0 +1,16 @@
+node_modules
+dist
+.DS_Store
+*.log
+.env
+.env.local
+*.tsbuildinfo
+coverage
+.vitest
+.simx/
+# Swift / Xcode build products (user committed xcodeproj per release decision)
+swift-bridge/.build/
+**/xcuserdata/
+*.xcuserstate
+# JetBrains
+.idea/

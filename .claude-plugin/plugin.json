@@ -1,0 +1,15 @@
+{
+  "name": "simx",
+  "description": "AI-native iOS Simulator automation MCP server (27 tools: lifecycle/observe/interaction/compound/system/vlm)",
+  "version": "0.7.0",
+  "author": { "name": "simx contributors" },
+  "homepage": "https://github.com/goliajp/simx",
+  "repository": "https://github.com/goliajp/simx",
+  "license": "MIT",
+  "mcpServers": {
+    "simx": {
+      "command": "bun",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/src/cli/index.ts", "mcp"]
+    }
+  }
+}
