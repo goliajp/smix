@@ -1,0 +1,712 @@
+---
+title: MCP tools reference
+---
+
+# MCP tools reference
+
+simx exposes **27 MCP tools** to Claude Code. This page is generated at build time from `src/mcp/tools.ts` — the source of truth.
+
+## Ping
+
+### ping
+
+Health check tool. Returns "pong". Used to verify the MCP transport is alive.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+## Lifecycle
+
+### simulator_list
+
+List all iOS simulators known to simctl, including udid, name, state, isAvailable, runtimeIdentifier, deviceTypeIdentifier.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+### simulator_boot
+
+Boot an iOS simulator by udid or name. Blocks until ready (simctl bootstatus -b). No-op if already booted.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "timeoutMs": {
+      "type": "number"
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+### simulator_shutdown
+
+Shutdown an iOS simulator by udid.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "udid"
+  ],
+  "additionalProperties": false
+}
+```
+
+### app_launch
+
+Launch an app on the given simulator by bundle id. Returns the launched pid. Optional launchArguments are passed to simctl launch.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "bundleId": {
+      "type": "string"
+    },
+    "launchArguments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "udid",
+    "bundleId"
+  ],
+  "additionalProperties": false
+}
+```
+
+### app_terminate
+
+Terminate a running app on the given simulator by bundle id.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "bundleId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "udid",
+    "bundleId"
+  ],
+  "additionalProperties": false
+}
+```
+
+### app_install
+
+Install an .app bundle path onto the given simulator.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "appPath": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "udid",
+    "appPath"
+  ],
+  "additionalProperties": false
+}
+```
+
+### app_uninstall
+
+Uninstall an app from the given simulator by bundle id.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "bundleId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "udid",
+    "bundleId"
+  ],
+  "additionalProperties": false
+}
+```
+
+## Observe
+
+### screen_describe
+
+Describe the current screen: returns ScreenDescription \{ screenshot (base64 PNG), elements (top N visible+enabled summaries in DFS pre-order), frontApp, summary, capturedAt \}. Optional `limit` truncates elements client-side (driver returns up to 50).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "udid"
+  ],
+  "additionalProperties": false
+}
+```
+
+### screen_screenshot
+
+Capture a PNG screenshot of the simulator screen. Returns \{ base64, byteLength \}. base64 may be ~470KB for iPhone-class 1290×2796 frames.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "udid"
+  ],
+  "additionalProperties": false
+}
+```
+
+### screen_hierarchy
+
+Return the full accessibility tree (A11yNode \{ rawType, role?, identifier?, label?, value?, text?, bounds, enabled, selected, hasFocus, visible, children: A11yNode[] \}) of the frontmost app. Requires a running SimxRunner XCUITest server bound to the runner port.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "udid"
+  ],
+  "additionalProperties": false
+}
+```
+
+### element_inspect
+
+Resolve a single element by Selector and return its A11yNode (or \{ node: null \} when no match). Selector supports 4 base forms (text|id|label|role+name; strings only — RegExp deferred to v0.7+) and 8 modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last; modifiers nest the same shape recursively).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "selector": {
+      "type": "object",
+      "description": "Selector: one base form (text|id|label|role+name; strings only) plus optional modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last). Modifiers nest the same shape recursively."
+    }
+  },
+  "required": [
+    "udid",
+    "selector"
+  ],
+  "additionalProperties": false
+}
+```
+
+## Interaction
+
+### tap
+
+Single-tap the first element matching the Selector. Returns \{ok:true, screen:ScreenDescription\} after a fresh describe by default. Set returnSummary:false to skip the post-action describe (useful for batched fill→fill→tap chains). The tap fails (isError) if the selector resolves to zero elements.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "selector": {
+      "type": "object",
+      "description": "Selector: one base form (text|id|label|role+name; strings only) plus optional modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last). Modifiers nest the same shape recursively."
+    },
+    "returnSummary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "udid",
+    "selector"
+  ],
+  "additionalProperties": false
+}
+```
+
+### double_tap
+
+Double-tap the first element matching the Selector. Returns \{ok:true, screen\} by default.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "selector": {
+      "type": "object",
+      "description": "Selector: one base form (text|id|label|role+name; strings only) plus optional modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last). Modifiers nest the same shape recursively."
+    },
+    "returnSummary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "udid",
+    "selector"
+  ],
+  "additionalProperties": false
+}
+```
+
+### long_press
+
+Long-press the first element matching the Selector. Optional durationMs controls hold time (driver default applies when omitted).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "selector": {
+      "type": "object",
+      "description": "Selector: one base form (text|id|label|role+name; strings only) plus optional modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last). Modifiers nest the same shape recursively."
+    },
+    "durationMs": {
+      "type": "number"
+    },
+    "returnSummary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "udid",
+    "selector"
+  ],
+  "additionalProperties": false
+}
+```
+
+### fill
+
+Type text into the first text field matching the Selector. The wire field `value` maps to driver.fill(selector, text); empty strings are allowed (passed through unchanged).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "selector": {
+      "type": "object",
+      "description": "Selector: one base form (text|id|label|role+name; strings only) plus optional modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last). Modifiers nest the same shape recursively."
+    },
+    "value": {
+      "type": "string"
+    },
+    "returnSummary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "udid",
+    "selector",
+    "value"
+  ],
+  "additionalProperties": false
+}
+```
+
+### swipe
+
+Swipe in a cardinal direction. Optional `from` Selector picks the starting element (otherwise the driver picks a sensible centre). distance/duration are deferred to v0.7+ (driver interface limits us to direction + optional from selector).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "direction": {
+      "type": "string",
+      "enum": [
+        "up",
+        "down",
+        "left",
+        "right"
+      ]
+    },
+    "from": {
+      "type": "object",
+      "description": "Selector: one base form (text|id|label|role+name; strings only) plus optional modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last). Modifiers nest the same shape recursively."
+    },
+    "returnSummary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "udid",
+    "direction"
+  ],
+  "additionalProperties": false
+}
+```
+
+### scroll_to
+
+Scroll the nearest scroll container until the element matching the Selector becomes visible. The element must exist somewhere in the a11y tree.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "selector": {
+      "type": "object",
+      "description": "Selector: one base form (text|id|label|role+name; strings only) plus optional modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last). Modifiers nest the same shape recursively."
+    },
+    "returnSummary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "udid",
+    "selector"
+  ],
+  "additionalProperties": false
+}
+```
+
+### key_press
+
+Press one of the 9 hardware/keyboard keys: return | delete | tab | space | escape | arrowUp | arrowDown | arrowLeft | arrowRight (string-only enum; "enter" is not a valid value — use "return"). Driver routes this to the appropriate XCUITest / HID call depending on focus.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string",
+      "enum": [
+        "return",
+        "delete",
+        "tab",
+        "space",
+        "escape",
+        "arrowUp",
+        "arrowDown",
+        "arrowLeft",
+        "arrowRight"
+      ]
+    },
+    "returnSummary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "udid",
+    "key"
+  ],
+  "additionalProperties": false
+}
+```
+
+## Compound
+
+### find_and_tap
+
+Wait for an element matching the Selector to exist (driver.waitFor with optional timeoutMs), then tap it, then return \{ok:true, screen:ScreenDescription\} (set returnSummary:false to skip the post-action describe). isError if waitFor times out before tap.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "selector": {
+      "type": "object",
+      "description": "Selector: one base form (text|id|label|role+name; strings only) plus optional modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last). Modifiers nest the same shape recursively."
+    },
+    "timeoutMs": {
+      "type": "number"
+    },
+    "returnSummary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "udid",
+    "selector"
+  ],
+  "additionalProperties": false
+}
+```
+
+### wait_for
+
+Wait for an element matching the Selector to exist. Returns \{node: A11yNode\}. isError if waitFor times out. Does not capture a screen (use find_and_tap if you need both).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "selector": {
+      "type": "object",
+      "description": "Selector: one base form (text|id|label|role+name; strings only) plus optional modifiers (near|below|above|leftOf|rightOf|inside|nth|first|last). Modifiers nest the same shape recursively."
+    },
+    "timeoutMs": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "udid",
+    "selector"
+  ],
+  "additionalProperties": false
+}
+```
+
+### flow_run
+
+Run a serialized sequence of MCP tool calls. Each step is \{action: \<tool name\>, args: \<tool arguments\>\}. The top-level udid is injected into each step args if step.args.udid is missing. Default bailOnError=true stops at first failure. Returns \{passed, failed, stepsExecuted, lastError?, lastResult?\}. flow_run cannot dispatch flow_run.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "args": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "bailOnError": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "udid",
+    "steps"
+  ],
+  "additionalProperties": false
+}
+```
+
+## System
+
+### open_url
+
+Open a URL (http(s) or custom scheme) on the simulator. Wraps simctl openurl. Returns \{ok:true\}.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "udid",
+    "url"
+  ],
+  "additionalProperties": false
+}
+```
+
+### pasteboard_set
+
+Set the simulator pasteboard text (wraps simctl pbcopy). Empty strings are allowed. Returns \{ok:true\}.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "value": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "udid",
+    "value"
+  ],
+  "additionalProperties": false
+}
+```
+
+### pasteboard_get
+
+Read the simulator pasteboard text (wraps simctl pbpaste). Returns \{value:\<string\>\}.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "udid"
+  ],
+  "additionalProperties": false
+}
+```
+
+### permissions_grant
+
+Grant a single iOS permission to an app bundle: one of camera | photos | location | locationAlways | notifications | microphone | contacts | calendar | reminders | bluetooth | motion | faceId (12 literal enum; mirrors Driver Permission type). Grant multiple permissions by calling repeatedly or via flow_run. bundleId is required (MCP surface is stateless and does not honour driver-internal lastLaunchedBundleId fallback). Returns \{ok:true\}.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "bundleId": {
+      "type": "string"
+    },
+    "permission": {
+      "type": "string",
+      "enum": [
+        "camera",
+        "photos",
+        "location",
+        "locationAlways",
+        "notifications",
+        "microphone",
+        "contacts",
+        "calendar",
+        "reminders",
+        "bluetooth",
+        "motion",
+        "faceId"
+      ]
+    }
+  },
+  "required": [
+    "udid",
+    "bundleId",
+    "permission"
+  ],
+  "additionalProperties": false
+}
+```
+
+## VLM
+
+### explain_screen
+
+Use a vision-capable LLM (local `claude` CLI subprocess) to describe what is on the simulator screen. Captures a fresh screenshot, writes it to a temp PNG, then spawns `claude -p \<prompt-with-path\> --tools Read --output-format text` so claude can read the image. Returns \{description, raw_output\}. Default question asks for visible UI elements; pass `question` to ask something specific. Default timeoutMs=30000. isError when claude is not installed, exits non-zero, or times out.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "udid": {
+      "type": "string"
+    },
+    "question": {
+      "type": "string"
+    },
+    "timeoutMs": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "udid"
+  ],
+  "additionalProperties": false
+}
+```

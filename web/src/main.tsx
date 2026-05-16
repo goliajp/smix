@@ -3,10 +3,9 @@ import './index.css'
 import { loadPersistedTheme, resolveThemeCssVars } from '@goliapkg/gds/systems'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
+import { createBrowserRouter, RouterProvider } from 'react-router'
 
-import { AppLayout } from './app'
-import { HomeView } from './views/home'
+import { appRoutes } from './views/docs/routes'
 
 // pre-render theme to avoid FOUC
 const saved = loadPersistedTheme()
@@ -23,16 +22,7 @@ if (saved) {
   root.dataset.theme = mode
 }
 
-const router = createBrowserRouter([
-  {
-    children: [
-      { element: <HomeView />, index: true },
-      { element: <Navigate replace to="/" />, path: '*' },
-    ],
-    element: <AppLayout />,
-    path: '/',
-  },
-])
+const router = createBrowserRouter(appRoutes)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

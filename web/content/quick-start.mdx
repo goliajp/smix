@@ -1,0 +1,55 @@
+---
+title: Quick start
+---
+
+# Quick start
+
+simx is designed for the opposite of Maestro/Appium/Detox: **most simx tests will be written by an AI**, so every API choice is graded on "does an AI write correct code on the first try given only the function signature."
+
+Concretely: the DSL shape mirrors **Playwright** (overwhelming training-data majority), selectors are **semantic only** (text / id / label / role+name — no xpath, no coordinates), errors are **AI-readable fix prompts** (paste a failure back to a coding agent and it self-corrects), and the MCP server is **first-class** with `screen_describe` as the agent's eyes.
+
+## Install
+
+**Claude Code plugin** (recommended for end users):
+
+```bash
+claude --plugin-dir /absolute/path/to/simx
+# then inside the claude session:
+#   /mcp
+# to enumerate the 27 simx tools
+```
+
+Full flow: [Plugin install](/docs/plugin-install).
+
+**Local dev** (clone + bun):
+
+```bash
+git clone https://github.com/goliajp/simx && cd simx
+bun install
+bun run typecheck
+bun x vitest run                  # 593 vitest tests
+bash scripts/v1-acceptance.sh     # 7 Success Criteria, single-line JSON
+```
+
+**npm registry** (placeholder, v1.0+): publishing to npm and the Claude Code marketplace lands post-release.
+
+## Example
+
+```typescript
+import { test, expect } from 'simx/test'
+
+test('login flow', async ({ app }) => {
+  await app.launch('com.example.app', { fresh: true })
+
+  await app.tap({ text: 'Sign in' })
+  await app.fill({ id: 'emailField' }, 'user@example.com')
+  await app.fill({ id: 'passwordField' }, 'secret')
+  await app.tap({ role: 'button', name: 'Continue' })
+
+  await expect(app.element({ text: /Welcome/ })).toBeVisible()
+})
+```
+
+Want to write tests immediately? Read the [Authoring guide](/docs/authoring) — it's the system-prompt-ready reference for AI agents.
+
+> Full README: [github.com/goliajp/simx](https://github.com/goliajp/simx)

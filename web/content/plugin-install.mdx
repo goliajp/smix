@@ -1,0 +1,71 @@
+---
+title: Plugin install
+---
+
+# simx Claude Code plugin — install & verify
+
+> v1.0 release form: `.claude-plugin/plugin.json` + embedded `mcpServers.simx`.
+> Local dev flow is v1.0 release-ready; Marketplace publish is on the v1.0+ roadmap.
+
+## 1. Prerequisites
+
+1. macOS ≥ 15 (matches CI `runs-on: macos-15`)
+2. Xcode ≥ 26.0 + iOS 26.x runtime (`xcodebuild -version`, `xcrun simctl list runtimes -j`)
+3. `bun --version` ≥ 1.1.0 (`package.json.engines.bun`)
+4. `claude` CLI installed and logged in (`claude -p ping` returns non-empty text; same check as `simx doctor`)
+
+Environment self-check:
+
+```bash
+bun src/cli/index.ts doctor --json | jq '.compatibility.status'
+# expected: "supported"
+```
+
+## 2. Local dev install
+
+Pass the repo path as the plugin root to the `claude` CLI:
+
+```bash
+claude --plugin-dir /absolute/path/to/simx
+```
+
+Then:
+
+- `claude` reads `.claude-plugin/plugin.json`
+- The embedded `mcpServers.simx` entry registers as an MCP server
+- `${CLAUDE_PLUGIN_ROOT}` is expanded by the plugin loader to the absolute path you passed
+
+> Restart the `claude` session after editing the plugin (the loader does not hot-reload the manifest).
+
+## 3. Verification
+
+Four checks in order:
+
+1. Inside the `claude` interactive session, type `/mcp`:
+   - You should see the `simx` server with status `connected`
+   - You should see **27 tools** (v0.6 C6 baseline: `ping` + 7 lifecycle + 4 observe + 7 interaction + 3 compound + 4 system + 1 VLM `explain_screen`)
+   - This step is interactive — eyeball it
+2. The local MCP server starts on demand:
+   ```bash
+   bun src/cli/index.ts mcp < /dev/null
+   # expected: exits 0 immediately; stderr contains [simx-mcp] startup log
+   ```
+3. Structural contract gate passes:
+   ```bash
+   bash scripts/simx-c5-plugin-validate.sh | jq -e '.all_ok == "ok"'
+   # expected: all 11 fields "ok"; exit 0
+   ```
+4. All 6 doctor checks return `supported`:
+   ```bash
+   bun src/cli/index.ts doctor --json | jq -e '.compatibility.status == "supported"'
+   ```
+
+## 4. Marketplace publish (v1.0+)
+
+Placeholder — this path lands as part of the v1.0 marketplace push:
+
+- Submit the manifest to the Claude Code plugin marketplace
+- `/plugin install simx` inside a session installs in one step
+- The `homepage` / `repository` fields in `.claude-plugin/plugin.json` currently point at `https://github.com/goliajp/simx` — the canonical repo
+
+> Source of truth: [docs/plugin-install.md on GitHub](https://github.com/goliajp/simx/blob/develop/docs/plugin-install.md)
