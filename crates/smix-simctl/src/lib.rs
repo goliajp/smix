@@ -786,11 +786,22 @@ impl SimctlClient {
         Ok(())
     }
 
-    /// `xcrun simctl io <udid> screenshot <tmpfile>` → raw PNG bytes.
+    /// `xcrun simctl io <udid> screenshot <tmpfile>` → raw PNG bytes,
+    /// with a byte-level sRGB metadata splice if the produced PNG lacks
+    /// an `sRGB` chunk.
     ///
     /// Goes through a temp file: current Xcode's `screenshot -` does not
     /// treat `-` as stdout — it writes a literal file named `-` in cwd
     /// and emits nothing on stdout (observed on Xcode/iOS 26.5).
+    ///
+    /// **Pixel-preservation invariant**: the returned bytes are
+    /// byte-identical to whatever `simctl io screenshot` wrote to disk
+    /// EXCEPT for one narrow case — if the PNG does not carry an
+    /// `sRGB` ancillary chunk (observed on iOS 26.5 sub-builds
+    /// mid-2026), a 13-byte `sRGB` chunk is spliced in immediately
+    /// before the first `IDAT`. Pixel data (IDAT bytes) is never
+    /// decoded or modified. See [`ensure_srgb_chunk`] for the exact
+    /// splice operation.
     pub async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, SimctlError> {
         let tmp =
             std::env::temp_dir().join(format!("smix-screenshot-{udid}-{}.png", std::process::id()));
@@ -810,7 +821,7 @@ impl SimctlClient {
                 detail: format!("screenshot file too short: {} bytes", bytes.len()),
             });
         }
-        Ok(bytes)
+        Ok(ensure_srgb_chunk(bytes))
     }
 
     /// `xcrun simctl create <name> <device-type-id> <runtime-id>` → udid.
@@ -829,6 +840,110 @@ impl SimctlClient {
         simctl_run(&["delete", udid]).await?;
         Ok(())
     }
+}
+
+// -------------------- PNG sRGB chunk normalization (v1.0.2) --------------------
+//
+// iOS 26.5 sub-builds (mid-2026) started omitting the `sRGB` ancillary
+// chunk from `simctl io screenshot` output. macOS Preview.app and other
+// viewers that fall back to Display P3 when no ICC profile is embedded
+// then over-saturate the image (red gets pushed, text anti-alias picks
+// up yellow fringing).
+//
+// This does NOT affect pixel-comparison (dhash decodes IDAT to RGBA and
+// ignores ancillary chunks), but does affect any downstream tool that
+// renders the PNG for human review. The normalizer runs on the raw byte
+// stream — walks chunks, and if no `sRGB` chunk is seen before the first
+// `IDAT`, splices in a synthesized 13-byte `sRGB` chunk (length=1,
+// type="sRGB", data=[0 = perceptual intent], CRC over type+data).
+//
+// Pixel-preservation invariant: IDAT bytes are never decoded. Every
+// existing chunk is copied verbatim. Only 13 bytes of new metadata are
+// inserted.
+
+const PNG_MAGIC: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+
+/// Ensure the PNG carries an `sRGB` ancillary chunk. Called on the raw
+/// bytes returned by `xcrun simctl io <udid> screenshot`. If the PNG
+/// already has an `sRGB` chunk, returns the input unchanged; otherwise
+/// splices in a 13-byte `sRGB` chunk (rendering intent = 0, perceptual)
+/// immediately before the first `IDAT`. Returns the input unchanged on
+/// any structural anomaly (missing magic, malformed chunk) so a
+/// corrupted PNG is passed through untouched for the caller to diagnose.
+pub fn ensure_srgb_chunk(bytes: Vec<u8>) -> Vec<u8> {
+    if bytes.len() < 8 || &bytes[..8] != PNG_MAGIC {
+        return bytes;
+    }
+    let Some((idat_offset, has_srgb)) = scan_png_chunks(&bytes) else {
+        return bytes;
+    };
+    if has_srgb {
+        return bytes;
+    }
+    // Splice the synthesized sRGB chunk right before the first IDAT.
+    let mut out = Vec::with_capacity(bytes.len() + 13);
+    out.extend_from_slice(&bytes[..idat_offset]);
+    out.extend_from_slice(&synthesized_srgb_chunk());
+    out.extend_from_slice(&bytes[idat_offset..]);
+    out
+}
+
+/// Walk PNG chunks starting after the 8-byte magic. Returns
+/// `(offset_of_first_IDAT, has_srgb_chunk_before_it)` when the walk
+/// reaches an IDAT chunk. Returns `None` if the walk hits EOF or a
+/// malformed chunk without seeing an IDAT.
+fn scan_png_chunks(bytes: &[u8]) -> Option<(usize, bool)> {
+    let mut i: usize = 8;
+    let mut has_srgb = false;
+    while i + 8 <= bytes.len() {
+        let length =
+            u32::from_be_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]) as usize;
+        let ctype = &bytes[i + 4..i + 8];
+        if ctype == b"IDAT" {
+            return Some((i, has_srgb));
+        }
+        if ctype == b"sRGB" {
+            has_srgb = true;
+        }
+        // 4 (length) + 4 (type) + length (data) + 4 (crc)
+        let end = i.checked_add(12)?.checked_add(length)?;
+        if end > bytes.len() {
+            return None;
+        }
+        i = end;
+    }
+    None
+}
+
+/// Build the 13-byte `sRGB` chunk with rendering intent = 0 (perceptual).
+/// Format: `[len:4][type:4][data:1][crc:4]` = 13 bytes total.
+fn synthesized_srgb_chunk() -> [u8; 13] {
+    // The CRC is computed over `type || data`.
+    let mut crc_input = [0u8; 5];
+    crc_input[0..4].copy_from_slice(b"sRGB");
+    crc_input[4] = 0; // perceptual
+    let crc = crc32_ieee(&crc_input);
+    let mut chunk = [0u8; 13];
+    chunk[0..4].copy_from_slice(&1u32.to_be_bytes()); // length = 1 (data byte)
+    chunk[4..8].copy_from_slice(b"sRGB");
+    chunk[8] = 0;
+    chunk[9..13].copy_from_slice(&crc.to_be_bytes());
+    chunk
+}
+
+/// Table-less CRC-32 IEEE 802.3 (polynomial 0xEDB88320) as used by
+/// PNG. Small enough for this crate's single call site — avoids
+/// pulling in a `crc32fast` dependency.
+fn crc32_ieee(bytes: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for &b in bytes {
+        crc ^= u32::from(b);
+        for _ in 0..8 {
+            let mask = 0u32.wrapping_sub(crc & 1);
+            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+        }
+    }
+    !crc
 }
 
 #[cfg(test)]
@@ -869,5 +984,108 @@ mod tests {
     #[test]
     fn compose_child_env_empty_input_is_empty_output() {
         assert!(compose_child_env(&[]).is_empty());
+    }
+
+    // -- sRGB chunk normalization ---------------------------------------
+
+    /// Build a minimal PNG: 1×1 8-bit RGBA, one IDAT (zlib-empty-safe),
+    /// with or without an sRGB chunk. Returns synthetic bytes suitable
+    /// for exercising the chunk-walking logic; no rendering intent.
+    fn synth_png(with_srgb: bool) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(super::PNG_MAGIC);
+        // IHDR: 1x1, bit_depth=8, color_type=6 (RGBA), rest=0
+        let ihdr_data: [u8; 13] = [
+            0, 0, 0, 1, // width = 1
+            0, 0, 0, 1, // height = 1
+            8, // bit depth
+            6, // color type = RGBA
+            0, 0, 0,
+        ];
+        emit_chunk(&mut out, b"IHDR", &ihdr_data);
+        if with_srgb {
+            emit_chunk(&mut out, b"sRGB", &[0]);
+        }
+        // Placeholder IDAT — content doesn't matter for chunk-walking tests
+        emit_chunk(&mut out, b"IDAT", &[0x78, 0x01, 0x00, 0x00]);
+        emit_chunk(&mut out, b"IEND", &[]);
+        out
+    }
+
+    fn emit_chunk(out: &mut Vec<u8>, ctype: &[u8; 4], data: &[u8]) {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        out.extend_from_slice(ctype);
+        out.extend_from_slice(data);
+        let mut crc_in = Vec::with_capacity(4 + data.len());
+        crc_in.extend_from_slice(ctype);
+        crc_in.extend_from_slice(data);
+        out.extend_from_slice(&super::crc32_ieee(&crc_in).to_be_bytes());
+    }
+
+    #[test]
+    fn ensure_srgb_passthrough_when_chunk_present() {
+        let png = synth_png(true);
+        let original_len = png.len();
+        let out = super::ensure_srgb_chunk(png.clone());
+        assert_eq!(out.len(), original_len);
+        assert_eq!(out, png);
+    }
+
+    #[test]
+    fn ensure_srgb_inserts_chunk_when_absent() {
+        let png = synth_png(false);
+        let original_len = png.len();
+        let out = super::ensure_srgb_chunk(png);
+        assert_eq!(out.len(), original_len + 13);
+        // First 8 bytes = PNG magic
+        assert_eq!(&out[..8], super::PNG_MAGIC);
+        // Search for the injected sRGB chunk
+        let mut found = false;
+        for w in out.windows(4) {
+            if w == b"sRGB" {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "sRGB chunk should have been spliced in");
+    }
+
+    #[test]
+    fn ensure_srgb_preserves_idat_bytes_verbatim() {
+        // Any pixel corruption at the IDAT level would break the
+        // pixel-preservation invariant. Extract IDAT payload from
+        // input and output, assert byte-identical.
+        let png = synth_png(false);
+        let out = super::ensure_srgb_chunk(png.clone());
+        assert_eq!(extract_idat_data(&png), extract_idat_data(&out));
+    }
+
+    fn extract_idat_data(bytes: &[u8]) -> Vec<u8> {
+        let mut i = 8;
+        while i + 8 <= bytes.len() {
+            let length =
+                u32::from_be_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]) as usize;
+            let ctype = &bytes[i + 4..i + 8];
+            if ctype == b"IDAT" {
+                return bytes[i + 8..i + 8 + length].to_vec();
+            }
+            i += 12 + length;
+        }
+        vec![]
+    }
+
+    #[test]
+    fn ensure_srgb_passthrough_on_bad_magic() {
+        // Corrupted / non-PNG input must not be modified.
+        let bytes = vec![0u8; 32];
+        let out = super::ensure_srgb_chunk(bytes.clone());
+        assert_eq!(out, bytes);
+    }
+
+    #[test]
+    fn crc32_matches_known_iend() {
+        // The empty-data IEND CRC is a well-known constant.
+        // CRC over "IEND" alone: 0xAE_42_60_82.
+        assert_eq!(super::crc32_ieee(b"IEND"), 0xAE42_6082);
     }
 }

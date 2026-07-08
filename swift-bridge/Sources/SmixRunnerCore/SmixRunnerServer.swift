@@ -93,29 +93,37 @@ public struct RequestContext: Sendable {
   /// the operation. Auto-recovers from cases where XCUITest's implicit
   /// "app under test" resolution latched onto a stale foreground.
   public let activate: Bool
+  /// v1.0.2 — the client's session id when it opened one via
+  /// `POST /session/open`. When present, `resolveApp()` looks up the
+  /// session's cached `XCUIApplication` and skips per-request
+  /// `.activate()` regardless of `activate`. Absent → legacy path
+  /// (per-request rebind, now rate-limited to at most one activation
+  /// per 5 s per bundle-id).
+  public let sessionId: String?
 
-  public init(bundleId: String? = nil, activate: Bool = false) {
+  public init(bundleId: String? = nil, activate: Bool = false, sessionId: String? = nil) {
     self.bundleId = bundleId
     self.activate = activate
+    self.sessionId = sessionId
   }
 
   public static let `default` = RequestContext()
 
   /// Parse from FlyingFox request headers. Recognized keys are
-  /// case-insensitive; `App-Bundle-Id` and `App-Activate` are the
-  /// canonical forms.
+  /// case-insensitive; `App-Bundle-Id`, `App-Activate`, and
+  /// `Session-Id` are the canonical forms.
   public static func from(headers: HTTPHeaders) -> RequestContext {
-    // FlyingFox HTTPHeader hashes case-insensitively per Header protocol.
-    // Look up by constructing HTTPHeader(rawValue:) — FlyingFox handles
-    // the case-insensitive match internally.
     let bundle = headers[HTTPHeader("App-Bundle-Id")]?
       .trimmingCharacters(in: .whitespaces)
     let activateStr = headers[HTTPHeader("App-Activate")]?
       .trimmingCharacters(in: .whitespaces)
     let activate = activateStr?.lowercased() == "true" || activateStr == "1"
+    let session = headers[HTTPHeader("Session-Id")]?
+      .trimmingCharacters(in: .whitespaces)
     return RequestContext(
       bundleId: bundle?.isEmpty == false ? bundle : nil,
-      activate: activate
+      activate: activate,
+      sessionId: session?.isEmpty == false ? session : nil
     )
   }
 }
