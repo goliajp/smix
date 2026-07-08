@@ -1,0 +1,36 @@
+[package]
+name = "smix-simctl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-simctl — xcrun simctl child_process wrapper (outer crate)."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-simctl"
+readme = "README.md"
+keywords = ["xcrun", "simctl", "ios", "simulator", "macos"]
+categories = ["development-tools::testing", "command-line-utilities"]
+
+[lints]
+workspace = true
+
+[dependencies]
+smix-error = { path = "../smix-error", version = "1.0.0" }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["process", "macros", "rt-multi-thread", "io-util"] }
+thiserror.workspace = true
+# libc::kill(pid, SIGINT) for record_video_stop — `xcrun simctl io
+# recordVideo` needs SIGINT to flush the mp4 trailer; SIGKILL loses it.
+libc.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+criterion.workspace = true
+tempfile.workspace = true
+
+[[bench]]
+name = "perf_gate"
+harness = false

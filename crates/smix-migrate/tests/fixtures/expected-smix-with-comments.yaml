@@ -1,0 +1,19 @@
+# Copyright (c) 2026 GOLIA K.K. All rights reserved.
+# Licensed under Apache-2.0 OR MIT.
+# Audit trail — this flow verifies the qa-passcode entry sequence.
+
+appId: com.example.app
+---
+# Enter QA mode by tapping the qa-bubble → chip → confirming.
+- tap: qa-bubble-toggle
+
+# Reason: cell-wrapper is what's a11y-visible; TextInput sits offscreen.
+- fill: 123456
+
+# Verify Dashboard visible before proceeding.
+- expect:
+    visible: Dashboard
+    timeoutMs: 5000
+
+# Cleanup: stop the app between test cases to avoid state pollution.
+- terminate

@@ -1,0 +1,13 @@
+appId: com.test.parity
+---
+- launchApp:
+    appId: com.target.app
+    clearState: true
+    permissions:
+      camera: allow
+      location: deny
+      notifications: unset
+    arguments:
+      - "-SmixSelftest"
+      - "1"
+    stopApp: true

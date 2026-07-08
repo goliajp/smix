@@ -1,0 +1,5 @@
+appId: com.test.clear
+---
+- launchApp:
+    appId: com.test.clear
+    clearState: true

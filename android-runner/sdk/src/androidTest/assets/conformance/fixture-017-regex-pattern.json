@@ -1,0 +1,29 @@
+{
+  "id": "fixture-017-regex-pattern",
+  "description": "Text selector with regex Pattern (object form) matches via case-insensitive regex",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "staticText",
+        "role": "staticText",
+        "identifier": "msg-greeting",
+        "label": "Welcome back, ALICE!",
+        "text": "Welcome back, ALICE!",
+        "bounds": {"x": 50, "y": 100, "w": 293, "h": 24},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"text": {"regex": "alice", "flags": "i"}},
+  "expected": ["msg-greeting"]
+}

@@ -1,0 +1,408 @@
+#![doc = include_str!("../README.md")]
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
+//! smix-runner-wire — pure wire types for the SmixRunnerCore HTTP IPC.
+//!
+//! Stone, zero project coupling beyond the smix-screen / smix-selector
+//! upstream types it embeds (those are themselves stones).
+//!
+//! Pairs with [`smix-runner-client`](https://docs.rs/smix-runner-client)
+//! which provides the reqwest+tokio HTTP client; this crate is just the
+//! types so a consumer can:
+//!
+//! - Drive their own HTTP client (sync or async, custom transport)
+//! - Hand-roll a server side serving the same wire contract
+//! - Pin the wire-shape contract independently of the client implementation
+//!
+//! # Route surface
+//!
+//! 18 wire endpoints (see the `smix-runner-client` crate for the
+//! corresponding method names):
+//!
+//! - `GET /health` — bare 200/non-200
+//! - `GET /tree?include=…` → [`smix_screen::A11yNode`]
+//! - `GET /system-popups?include=…` → `Vec<`[`SystemPopup`]`>`
+//! - `POST /system-popup-action` `{popupId, buttonId}` → [`SystemPopupActionResponse`]
+//! - `POST /tap` → [`TapResult`]
+//! - `POST /tap-at-norm-coord` `{nx, ny}` → 200/`{ok}`
+//! - `POST /find` `{selector}` → `{exists}` or `{ok}`
+//! - `POST /fill` `{selector, text}` → [`RunnerKeyboardResult`]
+//! - `POST /clear` `{selector}` → [`RunnerKeyboardResult`]
+//! - `POST /press-key` `{key}` → [`RunnerKeyboardResult`]
+//! - `POST /scroll` `{selector, direction}` → `{matched, swipes}`
+//! - `POST /swipe-once` `{direction}` → `{ok}`
+//! - `POST /foreground` `{bundleId}` → `{ok}`
+//! - `POST /hide-keyboard` → `{ok}`
+//! - `POST /back` → `{ok}`
+//! - `POST /record/start` → `{ok}`
+//! - `GET /record/poll` → `{events: [`[`RecordedEvent`]`]}`
+//! - `POST /record/stop` → `{events: [`[`RecordedEvent`]`]}`
+
+#![doc(html_root_url = "https://docs.smix.dev/smix-runner-wire")]
+
+use serde::{Deserialize, Serialize};
+use smix_selector::Selector;
+use thiserror::Error;
+
+// -------------------- Errors --------------------------------------------
+
+/// Transport-level failure variants exposed by the HTTP client. The
+/// concrete `reqwest::Error` source lives in `smix-runner-client`; the
+/// wire stone exposes only the discriminator + endpoint context so
+/// non-HTTP transports can reuse the variants.
+#[derive(Debug, Error)]
+pub enum RunnerTransportErrorKind {
+    /// Network / transport-layer fetch error (timeout, DNS, TLS, etc.).
+    #[error("runner {endpoint} fetch failed")]
+    FetchFailed {
+        /// Endpoint path that failed (e.g. `"/tap"`).
+        endpoint: String,
+    },
+    /// Runner returned non-2xx HTTP status.
+    #[error("runner {endpoint} returned status {status}: {body}")]
+    NonSuccessStatus {
+        /// Endpoint path that returned the error.
+        endpoint: String,
+        /// HTTP status code.
+        status: u16,
+        /// Raw response body (may be truncated).
+        body: String,
+    },
+    /// Runner returned a body that wasn't valid JSON.
+    #[error("runner {endpoint} returned non-JSON body")]
+    NonJsonBody {
+        /// Endpoint path that returned a non-JSON body.
+        endpoint: String,
+    },
+    /// Runner returned valid JSON but it didn't match the expected schema.
+    #[error("runner {endpoint} returned malformed body: {detail}")]
+    MalformedBody {
+        /// Endpoint path that returned the malformed body.
+        endpoint: String,
+        /// Schema-mismatch detail (serde error message).
+        detail: String,
+    },
+    /// Runner is unreachable (refused / closed / not listening).
+    #[error("runner {endpoint} unreachable: {message}")]
+    Unreachable {
+        /// Endpoint path attempted.
+        endpoint: String,
+        /// Reason (e.g. "connection refused").
+        message: String,
+    },
+}
+
+// -------------------- Common wire types ---------------------------------
+
+/// `include` scope query param shared by `/tree` / `/tap` / `/fill` /
+/// `/clear` / `/find` / `/scroll` / `/system-popups`. URL-only.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunnerIncludeOpts {
+    /// Optional include scope (e.g. system-popups → `AllWindows`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<IncludeScope>,
+}
+
+/// `include` scope literal — currently only `all-windows` (system popups
+/// pierce the app frame).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IncludeScope {
+    /// Include all windows (system popups, alerts) above the app frame.
+    AllWindows,
+}
+
+impl IncludeScope {
+    /// kebab-case wire string used in the query parameter value.
+    pub fn query_value(self) -> &'static str {
+        match self {
+            IncludeScope::AllWindows => "all-windows",
+        }
+    }
+}
+
+// -------------------- /tap wire shape -----------------------------------
+
+/// `POST /tap` mode discriminator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TapMode {
+    /// Runner returns only the matched frame; host normalizes + injects
+    /// via `/tap-at-norm-coord` (v1.6 c5 default).
+    Resolve,
+    /// Runner resolves AND taps (legacy v1.1 path A, host-HID-based).
+    ResolveAndTap,
+    /// Runner resolves selector then synthesizes the touch event via the
+    /// XCTRunnerDaemonSession daemonProxy (v4.0 c3 swift G8 fix —
+    /// bypasses the XCUIElement gesture recognizer chain so RN
+    /// Pressable `RCTTouchHandler` UIGestureRecognizer receives the
+    /// touch and fires the JS-thread `onPress` callback reliably).
+    DaemonProxySynthesize,
+}
+
+/// `POST /tap` per-stage timing in milliseconds.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TapStages {
+    /// Time spent resolving the selector against the a11y tree.
+    #[serde(rename = "resolveMs", default)]
+    pub resolve_ms: f64,
+    /// Time spent dispatching the tap event itself.
+    #[serde(rename = "tapCallMs", default)]
+    pub tap_call_ms: f64,
+    /// End-to-end wall-clock for the whole tap call.
+    #[serde(rename = "totalMs", default)]
+    pub total_ms: f64,
+    /// Time spent waiting for the element to exist (implicit wait).
+    #[serde(rename = "waitExistenceMs", default)]
+    pub wait_existence_ms: f64,
+    /// Time spent reading the matched element's frame.
+    #[serde(rename = "frameReadMs", default)]
+    pub frame_read_ms: f64,
+}
+
+/// `POST /tap` response body.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TapResult {
+    /// Per-stage timing breakdown.
+    #[serde(default)]
+    pub stages: Option<TapStages>,
+    /// Matched element's geometric frame, when resolve succeeded.
+    #[serde(default)]
+    pub frame: Option<smix_screen::Rect>,
+    /// Application window frame (for normalizing the matched frame).
+    #[serde(rename = "appFrame", default)]
+    pub app_frame: Option<smix_screen::Rect>,
+}
+
+/// `POST /tap` request body.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TapRequest {
+    /// Selector picking the tap target.
+    pub selector: Selector,
+    /// Resolve-only vs resolve-and-tap discriminator.
+    pub mode: TapMode,
+}
+
+/// `POST /tap-at-norm-coord` request body.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TapAtNormCoordRequest {
+    /// Normalized x coordinate in `(0, 1)` (app-frame relative).
+    pub nx: f64,
+    /// Normalized y coordinate in `(0, 1)` (app-frame relative).
+    pub ny: f64,
+}
+
+// -------------------- /fill /clear /press-key wire shape ----------------
+
+/// Per-stage timing returned by `/fill` / `/clear` / `/press-key`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyboardStages {
+    /// Selector resolve time.
+    #[serde(rename = "resolveMs", default)]
+    pub resolve_ms: f64,
+    /// Time waiting for keyboard appearance after the focus tap.
+    #[serde(rename = "keyboardWaitMs", default)]
+    pub keyboard_wait_ms: f64,
+    /// Time spent typing the characters.
+    #[serde(rename = "typingMs", default)]
+    pub typing_ms: f64,
+    /// End-to-end wall-clock for the whole keyboard operation.
+    #[serde(rename = "totalMs", default)]
+    pub total_ms: f64,
+}
+
+/// `POST /fill` / `POST /clear` / `POST /press-key` response body.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunnerKeyboardResult {
+    /// Tree snapshot after the keyboard operation completed (optional).
+    #[serde(default)]
+    pub tree: Option<smix_screen::A11yNode>,
+    /// Per-stage timing breakdown (optional).
+    #[serde(default)]
+    pub stages: Option<KeyboardStages>,
+}
+
+// -------------------- /find wire shape -----------------------------------
+
+/// `POST /find` request body.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindRequest {
+    /// Selector to look up.
+    pub selector: Selector,
+}
+
+/// `POST /find` response body.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindResponse {
+    /// Whether the selector matched any element.
+    #[serde(default)]
+    pub exists: bool,
+    /// Whether the resolve subsystem itself succeeded.
+    #[serde(default)]
+    pub ok: bool,
+}
+
+// -------------------- /scroll wire shape --------------------------------
+
+/// Reduced selector shape used by `/scroll` (text-or-id only; complex
+/// selectors are host-side-resolved before reaching the runner).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RunnerScrollSelector {
+    /// Match by text content.
+    Text {
+        /// Text to match against.
+        text: String,
+    },
+    /// Match by accessibility identifier.
+    Id {
+        /// Identifier to match against.
+        id: String,
+    },
+}
+
+/// `POST /scroll` response body.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrollResponse {
+    /// Whether the selector matched after scrolling (None when unknown).
+    #[serde(default)]
+    pub matched: Option<bool>,
+    /// Number of swipe iterations performed.
+    #[serde(default)]
+    pub swipes: Option<u32>,
+}
+
+// -------------------- /system-popups wire shape -------------------------
+
+/// One system-popup discovered on the screen (alert / sheet / banner).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemPopup {
+    /// Stable identifier for matching across polls.
+    pub id: String,
+    /// Discriminator (e.g. `"alert"` / `"sheet"` / `"banner"`).
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Originator (e.g. bundle id, system framework name).
+    pub source: String,
+    /// Popup title text.
+    #[serde(default)]
+    pub title: String,
+    /// Popup body text.
+    #[serde(default)]
+    pub body: String,
+    /// Buttons available on the popup.
+    #[serde(default)]
+    pub buttons: Vec<SystemPopupButton>,
+}
+
+/// One button on a [`SystemPopup`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemPopupButton {
+    /// Stable identifier for the button.
+    pub id: String,
+    /// Visible button label.
+    pub label: String,
+    /// Semantic role (`"cancel"` / `"destructive"` / `"default"`).
+    pub role: String,
+    /// Whether tapping this button performs a destructive action.
+    #[serde(default)]
+    pub dangerous: bool,
+    /// Optional outcome hint (e.g. `"grants location permission"`).
+    #[serde(rename = "outcomeHint", default)]
+    pub outcome_hint: Option<String>,
+}
+
+/// `POST /system-popup-action` request body (v4.2 c2 — G9 act side).
+///
+/// `popupId` and `buttonId` round-trip from a prior `GET /system-popups`
+/// enumerate (`Popup.id` / `PopupButton.id` fields). The runner walks the
+/// same scan order on the act path, so callers do not need to maintain an
+/// out-of-band id map.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemPopupActionRequest {
+    /// Popup id from a prior `Popup.id` enumerate.
+    pub popup_id: String,
+    /// Button id from a prior `PopupButton.id` enumerate.
+    pub button_id: String,
+}
+
+/// `POST /system-popup-action` response body.
+///
+/// `ok=true` ⇒ the runner found the popup + button and dispatched a
+/// daemonProxy touch; `ok=false` ⇒ neither side matched (either popup id
+/// missed, button id missed, or synthesize raised inside the runner).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemPopupActionResponse {
+    /// Whether the popup-button match + tap dispatch succeeded.
+    #[serde(default)]
+    pub ok: bool,
+    /// Wire-layer error discriminator ("not_found" / "bad_request" / etc.)
+    /// emitted by the runner on the non-2xx path. Absent on success.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// `GET /system-popups` response body.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemPopupsResponse {
+    /// All popups currently on screen (empty when none).
+    #[serde(default)]
+    pub popups: Vec<SystemPopup>,
+}
+
+// -------------------- /record/* wire shape ------------------------------
+
+/// One recorder event captured by `/record/start` → `/record/poll` flow.
+///
+/// v5.1 c3 S2 校正:swift `EventRecorder` 端实际 emit 的是 `rawCode` field
+/// (kAXNotification raw int — 1018 = focus change / 1028 = HID / 4002 = userTesting / ...),
+/// 不是 `code`。c2 capstone 初版 jq 用 `.code` 查 events.json 全返 null,
+/// 误判 "0 个 1018",修正后真实有 3 × 1018。SDK 端 deserialize 之前同样
+/// silent → `code` 字段永远 0。本 struct 字段名按 swift 真实 schema 对齐
+/// (`raw_code` + serde camelCase → `rawCode`),并加 `extra` flatten 兜底
+/// 把 swift 在 RecordedEvent 顶层平铺的 enrich 字段(`kind` / `frame` /
+/// `payloadDescription` / `elementType` / 等)宽松接收。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordedEvent {
+    /// Numeric event-type discriminator(swift `RecordedEvent.rawCode`)。
+    /// 典型值:1018 (kAXFirstResponderChangedNotification) / 1028
+    /// (kAXHIDEventReceivedNotification) / 4002 (kAXUserTestingNotification)
+    /// / 1006 (kAXAlertNotification) / 1021 (kAXPidStatusChangedNotification)。
+    #[serde(default)]
+    pub raw_code: i32,
+    /// Capture-time timestamp in milliseconds.
+    #[serde(default)]
+    pub timestamp_ms: f64,
+    /// Free-form per-event 顶层 enrich 字段(swift 端平铺 `kind` / `frame` /
+    /// `payloadDescription` / `elementType` / `appBundleId` / `payloadClassName`
+    /// 等)。reconcile 只读 `raw_code` + `timestamp_ms`,不依赖此字段;
+    /// 上层 SDK 想看明细时按需取(类型 = `serde_json::Map`)。
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// `GET /record/poll` / `POST /record/stop` response body.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordEventsResponse {
+    /// Events captured since the last poll (chronological).
+    #[serde(default)]
+    pub events: Vec<RecordedEvent>,
+}

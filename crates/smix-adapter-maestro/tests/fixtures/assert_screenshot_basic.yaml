@@ -1,0 +1,3 @@
+appId: com.test.parity
+---
+- assertScreenshot: "assert_screenshot_baseline.png"

@@ -1,0 +1,2386 @@
+//! Runtime adapter mapping [`Step`] → smix-sdk [`App`] calls.
+//!
+//! The parser produces a [`Flow`] of typed [`Step`]s. This module's
+//! [`Adapter::run`] walks the step list and dispatches each to an
+//! [`AppLike`] surface — which has a blanket impl for [`smix_sdk::App`]
+//! so production code uses the real driver, while unit tests substitute
+//! a mock that captures the call sequence.
+//!
+//! # Graceful runtime behaviors
+//!
+//! - `Step::Swipe` → dispatched via `App::swipe_at_coord`.
+//! - `Step::LaunchApp { clear_state | clear_keychain: true }` →
+//!   `App::launch_fresh` orchestration. The
+//!   `SMIX_APP_PATH_<NORMALIZED_BUNDLE>` env var (e.g.
+//!   `com.example.app` → `SMIX_APP_PATH_COM_EXAMPLE_APP`) supplies
+//!   the app bundle path for the wipe (Maestro `clearState` semantic
+//!   is `uninstall + install`). Missing env → graceful fallback to
+//!   the non-clear path (`terminate + launch`) with a warning.
+//! - `Step::TapOn { optional: true }` swallowing `ElementNotFound` →
+//!   reported as `Skipped { reason }`.
+//! - `RunFlow` / `RunFlowConditional` inner
+//!   `ParseError::UnsupportedCommand` → warn + skip the entire subflow
+//!   with graceful op semantics. Other `ParseError` variants propagate
+//!   as [`RunError::Parse`].
+//!
+//! # AppLike object-safety
+//!
+//! The trait uses `#[async_trait::async_trait]` for object-safety
+//! ergonomics. A blanket impl forwards every method to the
+//! corresponding [`smix_sdk::App`] method 1:1.
+
+use crate::{Flow, ParseError, RepeatMode, Step, parse_flow_file};
+
+/// v5.2 c4 — safety valve for `repeat.while: <expr>` loops. Bounds
+/// expression-driven repeat to avoid runaway when output store is
+/// effectively static (c4 内 output 只读). Hitting this cap surfaces an
+/// explicit DriverError naming the condition expression.
+const MAX_REPEAT_ITERATIONS: u32 = 1000;
+use async_trait::async_trait;
+use smix_sdk::{
+    App, ExpectationFailure, FailureCode, FailureInit, KeyName, LaunchAppOptions, Pattern,
+    PermissionAction, Selector, SimctlPermission, SwipeDirection,
+};
+
+/// v5.3 c5 — SwiftUI modal dismiss id classifier. Returns true when the
+/// accessibility id encodes a v2 fixture modal dismiss button (sheet / alert
+/// / confirmationDialog / fullScreenCover). adapter `Step::TapOn` routes
+/// matching selectors through [`App::tap_xcui`] for capability parity with
+/// the SDK self-path (see `scenario.rs::seg_v2_modal_*_basic`). The match is
+/// prefix + suffix conjunction — the prefix filters to the V2 modal area and
+/// the suffix excludes triggers (`-open-...-btn`) and unrelated elements.
+fn is_swiftui_modal_dismiss_id(id: &str) -> bool {
+    const PREFIXES: &[&str] = &[
+        "v2-modal-sheet-",
+        "v2-modal-alert-",
+        "v2-modal-action-",
+        "v2-modal-fullscreen-",
+    ];
+    const SUFFIXES: &[&str] = &[
+        "-dismiss-btn",
+        "-ok-btn",
+        "-cancel-btn",
+        "-a-btn", // confirmationDialog Choice A
+    ];
+    PREFIXES.iter().any(|p| id.starts_with(p)) && SUFFIXES.iter().any(|s| id.ends_with(s))
+}
+
+/// v5.10 c3 — SwiftUI tab-bar id classifier. Returns true when the
+/// accessibility id matches the V2 fixture tab-bar button namespace
+/// (`v2-tab-<area>`, set in `V2RootScreen.swift::tabBar`). adapter
+/// `Step::TapOn` routes matching selectors through [`App::tap_xcui`]
+/// (swift `/tap-by-id` → XCUIElement.tap with implicit
+/// scrollToVisible) so the tab can be tapped even when the tab bar
+/// wraps into a ScrollView. maestro CLI's `tapOn id:` is static (no
+/// auto-scroll) — this routing makes smix adapter strictly ≥ maestro
+/// on the tab-navigation path ([[smix-must-be-superset-of-maestro]]).
+/// R2 guard: scoped to the SwiftUI tab namespace only — RN Pressable
+/// (where XCUIElement.tap does NOT fire onPress per v4.0 c3 G8) is
+/// not in the v2 fixture namespace.
+fn is_swiftui_navigation_or_tab_id(id: &str) -> bool {
+    id.starts_with("v2-tab-")
+}
+
+#[cfg(test)]
+mod modal_dismiss_id_tests {
+    use super::{is_swiftui_modal_dismiss_id, is_swiftui_navigation_or_tab_id};
+
+    #[test]
+    fn matches_v2_modal_dismiss_ids() {
+        assert!(is_swiftui_modal_dismiss_id("v2-modal-sheet-dismiss-btn"));
+        assert!(is_swiftui_modal_dismiss_id("v2-modal-alert-ok-btn"));
+        assert!(is_swiftui_modal_dismiss_id("v2-modal-action-a-btn"));
+        assert!(is_swiftui_modal_dismiss_id(
+            "v2-modal-fullscreen-dismiss-btn"
+        ));
+    }
+
+    #[test]
+    fn rejects_non_modal_dismiss_ids() {
+        assert!(!is_swiftui_modal_dismiss_id("v2-form-submit-btn"));
+        assert!(!is_swiftui_modal_dismiss_id("v2-modal-open-sheet-btn"));
+        assert!(!is_swiftui_modal_dismiss_id("v2-modal-sheet-other-label"));
+        assert!(!is_swiftui_modal_dismiss_id("some-random-id"));
+    }
+
+    #[test]
+    fn matches_v2_tab_ids() {
+        assert!(is_swiftui_navigation_or_tab_id("v2-tab-home"));
+        assert!(is_swiftui_navigation_or_tab_id("v2-tab-deeplink"));
+        assert!(is_swiftui_navigation_or_tab_id("v2-tab-modal"));
+        assert!(is_swiftui_navigation_or_tab_id("v2-tab-share"));
+    }
+
+    #[test]
+    fn rejects_non_tab_ids() {
+        assert!(!is_swiftui_navigation_or_tab_id("v2-form-submit-btn"));
+        assert!(!is_swiftui_navigation_or_tab_id(
+            "v2-modal-sheet-dismiss-btn"
+        ));
+        assert!(!is_swiftui_navigation_or_tab_id("v2-jump-btn"));
+        assert!(!is_swiftui_navigation_or_tab_id("v2-list-row-0"));
+        assert!(!is_swiftui_navigation_or_tab_id("tab-home"));
+    }
+}
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// Look up `SMIX_APP_PATH_<NORMALIZED_BUNDLE>` for the clear-state
+/// wipe wire. Normalization: `.` → `_`, ASCII uppercase. Example:
+/// `com.example.app` → `SMIX_APP_PATH_COM_EXAMPLE_APP`. Returns `None`
+/// when the env var is unset or empty, signalling graceful fallback to
+/// the non-clear path in
+/// [`App::launch_fresh`](smix_sdk::App::launch_fresh).
+fn launch_fresh_app_path_from_env(bundle_id: &str) -> Option<String> {
+    let normalized = bundle_id.replace('.', "_").to_ascii_uppercase();
+    let key = format!("SMIX_APP_PATH_{normalized}");
+    std::env::var(&key).ok().filter(|s| !s.is_empty())
+}
+
+// ----------------------------------------------------------------------
+// AppLike trait + blanket impl for smix_sdk::App
+// ----------------------------------------------------------------------
+
+/// Subset of [`smix_sdk::App`] needed by [`Adapter::run`]. The blanket
+/// impl below forwards 1:1 to the real `App`; mock impls in tests
+/// substitute capturing recorders for unit isolation.
+#[async_trait]
+pub trait AppLike: Send + Sync {
+    /// Tap an element matched by selector. Mirrors [`App::tap`].
+    async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
+    /// v5.3 c5 — route tap via SDK [`App::tap_xcui`] (swift `/tap-by-id` →
+    /// XCUIElement-anchored coord.tap). adapter `Step::TapOn` calls this when
+    /// the selector is `Selector::Id` and the id matches the SwiftUI modal
+    /// dismiss whitelist (see `is_swiftui_modal_dismiss_id`) — keeps
+    /// capability parity with the SDK self-path (`seg_v2_modal_*_basic`).
+    async fn tap_xcui(&self, id: &str) -> Result<(), ExpectationFailure>;
+    /// Tap at normalized coordinates. Mirrors [`App::tap_at_coord`].
+    async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
+    /// v5.19 c1 — Apple Vision OCR find. Mirrors [`App::find_by_text_ocr`].
+    /// Returns the matching text observation's bounding box (UIKit
+    /// normalized) or `None`. L5 sense layer per a11y-i18n master plan.
+    async fn find_by_text_ocr(
+        &self,
+        text: &str,
+        locales: &[String],
+    ) -> Result<Option<smix_sdk::OcrFrame>, ExpectationFailure>;
+
+    /// v5.20 c1 — find a selector's centroid as viewport-normalized
+    /// `(nx, ny)`. Mirrors [`App::find_norm_coord`]. L6 sense layer
+    /// per a11y-i18n master plan §1.
+    async fn find_norm_coord(
+        &self,
+        selector: &Selector,
+    ) -> Result<Option<(f64, f64)>, ExpectationFailure>;
+
+    /// v5.21 c1b — eval JS via fixture-side WKWebView bridge.
+    async fn webview_eval(&self, js: &str) -> Result<serde_json::Value, ExpectationFailure>;
+    /// Type text into the matched field. Mirrors [`App::fill`].
+    async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure>;
+    /// Press a hardware / IME key. Mirrors [`App::press_key`].
+    async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure>;
+    /// Scroll until selector is visible. Mirrors [`App::scroll`].
+    async fn scroll(
+        &self,
+        selector: &Selector,
+        direction: SwipeDirection,
+    ) -> Result<(), ExpectationFailure>;
+    /// Wait for selector to become visible within `timeout`. Mirrors
+    /// [`App::wait_for`] but discards the matched node.
+    async fn wait_for(
+        &self,
+        selector: &Selector,
+        timeout: Duration,
+    ) -> Result<(), ExpectationFailure>;
+    /// Wait until selector is NOT visible within `timeout`. Mirrors
+    /// [`App::wait_for_not_visible`] — v5.2 c2.
+    async fn wait_for_not_visible(
+        &self,
+        selector: &Selector,
+        timeout: Duration,
+    ) -> Result<(), ExpectationFailure>;
+    /// Assert selector is currently visible. Mirrors [`App::assert_visible`].
+    async fn assert_visible(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
+    /// Boolean visibility probe. Mirrors [`App::find`].
+    async fn find(&self, selector: &Selector) -> Result<bool, ExpectationFailure>;
+    /// Launch the app by bundle id. Mirrors [`App::launch`].
+    async fn launch(&self, bundle_id: &str) -> Result<(), ExpectationFailure>;
+    /// Terminate the app by bundle id. Mirrors [`App::terminate`].
+    async fn terminate(&self, bundle_id: &str) -> Result<(), ExpectationFailure>;
+    /// Atomic fresh launch with state/keychain wipe. Mirrors
+    /// [`App::launch_fresh`](smix_sdk::App::launch_fresh). Returns the
+    /// warnings the planner emitted (e.g. graceful fallback when
+    /// `app_path` is `None` but `clear_state=true`).
+    /// v5.2 c2 — `launch_arguments` 是 process-level argv; 空 `&[]` 与
+    /// v5.1 行为等价.
+    async fn launch_fresh(
+        &self,
+        bundle_id: &str,
+        clear_state: bool,
+        clear_keychain: bool,
+        app_path: Option<&str>,
+        launch_arguments: &[String],
+    ) -> Result<Vec<String>, ExpectationFailure>;
+    /// Open a URL / deep link. Mirrors [`App::open_url`].
+    async fn open_url(&self, url: &str) -> Result<(), ExpectationFailure>;
+    /// v5.7 c1 — enumerate any system-level (SpringBoard / share-sheet)
+    /// alert currently on screen. Mirrors [`App::system_popups`]. Used by
+    /// the adapter to auto-dismiss the iOS 17+ "Open in `<App>`?" alert that
+    /// follows `openLink` against a custom URL scheme.
+    async fn system_popups(&self) -> Result<Vec<smix_sdk::SystemPopup>, ExpectationFailure>;
+    /// v5.7 c1 — invoke a button on a popup surfaced by [`Self::system_popups`].
+    /// Mirrors [`App::system_popup_action`].
+    async fn system_popup_action(
+        &self,
+        popup_id: &str,
+        button_id: &str,
+    ) -> Result<bool, ExpectationFailure>;
+    /// v5.2 c2 — bring an already-installed bundle to foreground without
+    /// restart. Mirrors [`App::foreground`]. Used by `Step::LaunchApp`
+    /// `stopApp=false` arm.
+    async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure>;
+    /// v5.2 c2 — typed `launchApp` 三子参 dispatch entry. Mirrors
+    /// [`App::launch_app_with_options`].
+    async fn launch_app_with_options(
+        &self,
+        opts: &LaunchAppOptions,
+    ) -> Result<Vec<String>, ExpectationFailure>;
+    /// Swipe between two normalized coordinates. Mirrors
+    /// [`App::swipe_at_coord`] — v5.2 c1 escape hatch.
+    async fn swipe_at_coord(
+        &self,
+        from: (f64, f64),
+        to: (f64, f64),
+    ) -> Result<(), ExpectationFailure>;
+    /// Viewport scroll one swipe in the given direction. Mirrors
+    /// [`App::scroll_screen`] — v5.2 c1.
+    async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure>;
+    /// Assert selector is NOT visible. Mirrors [`App::assert_not_visible`]
+    /// — v5.2 c1.
+    async fn assert_not_visible(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
+    /// Dismiss the on-screen keyboard. Mirrors [`App::hide_keyboard`]
+    /// — v5.2 c1 adapter wire.
+    async fn hide_keyboard(&self) -> Result<(), ExpectationFailure>;
+    /// Capture a screenshot. Mirrors [`App::screenshot`] — v5.2 c1.
+    async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure>;
+    /// v5.2 c3 — write a literal to device pasteboard.
+    /// Mirrors [`App::set_clipboard`].
+    async fn set_clipboard(&self, text: &str) -> Result<(), ExpectationFailure>;
+    /// v5.6 c5 — read the device pasteboard. Mirrors [`App::get_clipboard`].
+    /// Used by `runFlow.as: <name>` to capture the subflow's pasteboard
+    /// state (canonical "what the subflow's `copyTextFrom` left behind")
+    /// into the parent flow's outputs map.
+    async fn get_clipboard(&self) -> Result<String, ExpectationFailure>;
+    /// v5.2 c3 — paste into focused field. `None` reads clipboard first.
+    /// Mirrors [`App::paste_text`].
+    async fn paste_text(&self, text: Option<&str>) -> Result<(), ExpectationFailure>;
+    /// v5.2 c3 — copy matched element's text content to device pasteboard.
+    /// Mirrors [`App::copy_text_from`].
+    async fn copy_text_from(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
+    /// v5.2 c3 — double-tap an element. Mirrors [`App::double_tap`].
+    async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
+    /// v5.2 c3 — long-press for `duration`. Mirrors [`App::long_press`].
+    async fn long_press(
+        &self,
+        selector: &Selector,
+        duration: Duration,
+    ) -> Result<(), ExpectationFailure>;
+    /// v5.2 c5 — set sim location. Mirrors [`App::set_location`].
+    async fn set_location(&self, latitude: f64, longitude: f64) -> Result<(), ExpectationFailure>;
+    /// v5.2 c5 — interpolate sim location. Mirrors [`App::travel`].
+    async fn travel(
+        &self,
+        points: &[(f64, f64)],
+        speed_mps: Option<f64>,
+    ) -> Result<(), ExpectationFailure>;
+    /// v5.2 c5 — batch permission setter. Mirrors [`App::set_permissions`].
+    async fn set_permissions(
+        &self,
+        bundle_id: &str,
+        permissions: &[(SimctlPermission, PermissionAction)],
+    ) -> Result<(), ExpectationFailure>;
+    /// v5.2 c5 — add media to sim library. Mirrors [`App::add_media`].
+    async fn add_media(&self, paths: &[String]) -> Result<(), ExpectationFailure>;
+    /// v5.2 c5 — rotate sim via swift XCUIDevice. Mirrors [`App::set_orientation`].
+    async fn set_orientation(
+        &self,
+        orientation: smix_sdk::MaestroOrientation,
+    ) -> Result<(), ExpectationFailure>;
+    /// v5.2 c5 — start sim display recording. Mirrors [`App::start_recording`].
+    async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure>;
+    /// v5.2 c5 — stop active recording. Mirrors [`App::stop_recording`].
+    async fn stop_recording(&self) -> Result<(), ExpectationFailure>;
+    /// v5.2 c6 — visual regression assertion. Mirrors
+    /// [`App::assert_screenshot`]. Outcome distinguishes auto-record
+    /// (first run) from diff-matched (steady state).
+    async fn assert_screenshot(
+        &self,
+        baseline_path: &std::path::Path,
+        max_hamming: u32,
+    ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure>;
+}
+
+#[async_trait]
+impl AppLike for App {
+    async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
+        App::tap(self, selector).await
+    }
+    async fn tap_xcui(&self, id: &str) -> Result<(), ExpectationFailure> {
+        App::tap_xcui(self, id).await
+    }
+    async fn find_by_text_ocr(
+        &self,
+        text: &str,
+        locales: &[String],
+    ) -> Result<Option<smix_sdk::OcrFrame>, ExpectationFailure> {
+        App::find_by_text_ocr(self, text, locales).await
+    }
+    async fn find_norm_coord(
+        &self,
+        selector: &Selector,
+    ) -> Result<Option<(f64, f64)>, ExpectationFailure> {
+        App::find_norm_coord(self, selector).await
+    }
+    async fn webview_eval(&self, js: &str) -> Result<serde_json::Value, ExpectationFailure> {
+        App::webview_eval(self, js).await
+    }
+
+    async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
+        App::tap_at_coord(self, nx, ny).await
+    }
+    async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
+        App::fill(self, selector, text).await
+    }
+    async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {
+        App::press_key(self, key).await
+    }
+    async fn scroll(
+        &self,
+        selector: &Selector,
+        direction: SwipeDirection,
+    ) -> Result<(), ExpectationFailure> {
+        App::scroll(self, selector, direction).await
+    }
+    async fn wait_for(
+        &self,
+        selector: &Selector,
+        timeout: Duration,
+    ) -> Result<(), ExpectationFailure> {
+        App::wait_for(self, selector, timeout).await.map(|_| ())
+    }
+    async fn wait_for_not_visible(
+        &self,
+        selector: &Selector,
+        timeout: Duration,
+    ) -> Result<(), ExpectationFailure> {
+        App::wait_for_not_visible(self, selector, timeout).await
+    }
+    async fn assert_visible(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
+        App::assert_visible(self, selector).await
+    }
+    async fn find(&self, selector: &Selector) -> Result<bool, ExpectationFailure> {
+        App::find(self, selector).await
+    }
+    async fn launch(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
+        App::launch(self, bundle_id).await
+    }
+    async fn terminate(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
+        App::terminate(self, bundle_id).await
+    }
+    async fn launch_fresh(
+        &self,
+        bundle_id: &str,
+        clear_state: bool,
+        clear_keychain: bool,
+        app_path: Option<&str>,
+        launch_arguments: &[String],
+    ) -> Result<Vec<String>, ExpectationFailure> {
+        App::launch_fresh(
+            self,
+            bundle_id,
+            clear_state,
+            clear_keychain,
+            app_path,
+            launch_arguments,
+        )
+        .await
+    }
+    async fn open_url(&self, url: &str) -> Result<(), ExpectationFailure> {
+        App::open_url(self, url).await
+    }
+    async fn system_popups(&self) -> Result<Vec<smix_sdk::SystemPopup>, ExpectationFailure> {
+        App::system_popups(self).await
+    }
+    async fn system_popup_action(
+        &self,
+        popup_id: &str,
+        button_id: &str,
+    ) -> Result<bool, ExpectationFailure> {
+        App::system_popup_action(self, popup_id, button_id).await
+    }
+    async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
+        App::foreground(self, bundle_id).await
+    }
+    async fn launch_app_with_options(
+        &self,
+        opts: &LaunchAppOptions,
+    ) -> Result<Vec<String>, ExpectationFailure> {
+        App::launch_app_with_options(self, opts).await
+    }
+    async fn swipe_at_coord(
+        &self,
+        from: (f64, f64),
+        to: (f64, f64),
+    ) -> Result<(), ExpectationFailure> {
+        App::swipe_at_coord(self, from, to).await
+    }
+    async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
+        App::scroll_screen(self, direction).await
+    }
+    async fn assert_not_visible(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
+        App::assert_not_visible(self, selector).await
+    }
+    async fn hide_keyboard(&self) -> Result<(), ExpectationFailure> {
+        App::hide_keyboard(self).await
+    }
+    async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure> {
+        App::screenshot(self).await
+    }
+    async fn set_clipboard(&self, text: &str) -> Result<(), ExpectationFailure> {
+        App::set_clipboard(self, text).await
+    }
+    async fn get_clipboard(&self) -> Result<String, ExpectationFailure> {
+        App::get_clipboard(self).await
+    }
+    async fn paste_text(&self, text: Option<&str>) -> Result<(), ExpectationFailure> {
+        App::paste_text(self, text).await
+    }
+    async fn copy_text_from(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
+        App::copy_text_from(self, selector).await
+    }
+    async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
+        App::double_tap(self, selector).await
+    }
+    async fn long_press(
+        &self,
+        selector: &Selector,
+        duration: Duration,
+    ) -> Result<(), ExpectationFailure> {
+        App::long_press(self, selector, duration).await
+    }
+    async fn set_location(&self, latitude: f64, longitude: f64) -> Result<(), ExpectationFailure> {
+        App::set_location(self, latitude, longitude).await
+    }
+    async fn travel(
+        &self,
+        points: &[(f64, f64)],
+        speed_mps: Option<f64>,
+    ) -> Result<(), ExpectationFailure> {
+        App::travel(self, points, speed_mps).await
+    }
+    async fn set_permissions(
+        &self,
+        bundle_id: &str,
+        permissions: &[(SimctlPermission, PermissionAction)],
+    ) -> Result<(), ExpectationFailure> {
+        App::set_permissions(self, bundle_id, permissions).await
+    }
+    async fn add_media(&self, paths: &[String]) -> Result<(), ExpectationFailure> {
+        App::add_media(self, paths).await
+    }
+    async fn set_orientation(
+        &self,
+        orientation: smix_sdk::MaestroOrientation,
+    ) -> Result<(), ExpectationFailure> {
+        App::set_orientation(self, orientation).await
+    }
+    async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure> {
+        App::start_recording(self, path).await
+    }
+    async fn stop_recording(&self) -> Result<(), ExpectationFailure> {
+        App::stop_recording(self).await
+    }
+    async fn assert_screenshot(
+        &self,
+        baseline_path: &std::path::Path,
+        max_hamming: u32,
+    ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure> {
+        App::assert_screenshot(self, baseline_path, max_hamming).await
+    }
+}
+
+// ----------------------------------------------------------------------
+// Report types
+// ----------------------------------------------------------------------
+
+/// Outcome of a single [`Step`] dispatch.
+#[derive(Debug)]
+pub enum RunStepReport {
+    /// Step executed normally.
+    Ok,
+    /// Step was deliberately skipped (graceful warn path).
+    Skipped {
+        /// Human-readable explanation surfaced to logs / warnings.
+        reason: String,
+    },
+    /// Step was a `runFlow` / `runFlowConditional` whose inner flow was
+    /// expanded and run. The nested report holds the inner step outcomes.
+    ExpandedSubflow {
+        /// Absolute path of the subflow that was expanded.
+        path: PathBuf,
+        /// Inner report (boxed to keep enum variant size bounded).
+        inner: Box<RunReport>,
+    },
+}
+
+/// Aggregate report for one [`Adapter::run`] invocation.
+#[derive(Debug, Default)]
+pub struct RunReport {
+    /// Per-step outcome in execution order.
+    pub steps: Vec<RunStepReport>,
+    /// Free-form warning messages (graceful skips, G10 clear_state warns,
+    /// unsupported inner-subflow command warns).
+    pub warnings: Vec<String>,
+}
+
+/// Runtime dispatch errors.
+// ExpectationFailure is a deliberately rich AI-readable error (≈280 B
+// for visibleElements + suggestions + deviceLog). Boxing the Sdk variant
+// would buy lint compliance at the cost of an extra allocation per
+// graceful path; matches the workspace-level rationale for
+// `result_large_err = "allow"` in `Cargo.toml`.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, thiserror::Error)]
+pub enum RunError {
+    /// An underlying smix-sdk call failed (and was not graceful-swallowed).
+    #[error("sdk: {0}")]
+    Sdk(#[from] ExpectationFailure),
+    /// A subflow yaml failed to parse (non-graceful variants).
+    #[error("parse: {0}")]
+    Parse(#[from] ParseError),
+    /// `pressKey` got an unknown key name.
+    #[error("unknown key: {0}")]
+    UnknownKey(String),
+    /// `scrollUntilVisible` got an unknown direction.
+    #[error("unknown direction: {0}")]
+    UnknownDirection(String),
+    /// `runFlow` recursion re-entered an in-progress file.
+    #[error("runFlow cycle at {0}")]
+    RunFlowCycle(PathBuf),
+    /// I/O failure resolving a subflow path.
+    #[error("io: {0}")]
+    Io(String),
+}
+
+/// Internal enum for `write_step_debug` describing the terminal
+/// outcome of one step. Success outcome carries the `RunStepReport` so
+/// debug JSON can distinguish `Ok` vs `Skipped` vs `ExpandedSubflow`;
+/// failure carries the `RunError`.
+enum StepOutcome<'a> {
+    Ok(&'a RunStepReport),
+    Failed(&'a RunError),
+}
+
+/// Verb name for filename slugification. Kept separate from
+/// `entry::summarize_step` (which is human-readable) so the file name
+/// only carries the verb noun. Falls back to `step` on any variant we
+/// have not listed — safe against future Step additions.
+fn summarize_step_verb(step: &Step) -> String {
+    match step {
+        Step::LaunchApp { .. } => "launchApp",
+        Step::StopApp => "stopApp",
+        Step::KillApp { .. } => "killApp",
+        Step::TapOn { .. } => "tapOn",
+        Step::TapAtPoint { .. } => "tapAtPoint",
+        Step::DoubleTapOn { .. } => "doubleTapOn",
+        Step::LongPressOn { .. } => "longPressOn",
+        Step::InputText(_) => "inputText",
+        Step::EraseText(_) => "eraseText",
+        Step::ClearState { .. } => "clearState",
+        Step::ClearKeychain => "clearKeychain",
+        Step::HideKeyboard => "hideKeyboard",
+        Step::PressKey(_) => "pressKey",
+        Step::Scroll => "scroll",
+        Step::ScrollUntilVisible { .. } => "scrollUntilVisible",
+        Step::Swipe { .. } => "swipe",
+        Step::AssertVisible { .. } => "assertVisible",
+        Step::AssertNotVisible { .. } => "assertNotVisible",
+        Step::AssertTrue { .. } => "assertTrue",
+        Step::AssertScreenshot { .. } => "assertScreenshot",
+        Step::ExpectSignal { .. } => "expectSignal",
+        Step::ExpectSignals { .. } => "expectSignals",
+        Step::ExpectLogClean => "expectLogClean",
+        Step::Fixture { .. } => "fixture",
+        Step::WaitForAnimationToEnd => "waitForAnimationToEnd",
+        Step::ExtendedWaitUntil { .. } => "extendedWaitUntil",
+        Step::TakeScreenshot { .. } => "takeScreenshot",
+        Step::OpenLink(_) => "openLink",
+        Step::CopyTextFrom { .. } => "copyTextFrom",
+        Step::PasteText { .. } => "pasteText",
+        Step::SetClipboard(_) => "setClipboard",
+        Step::Travel { .. } => "travel",
+        Step::SetLocation { .. } => "setLocation",
+        Step::SetPermissions { .. } => "setPermissions",
+        Step::SetOrientation { .. } => "setOrientation",
+        Step::AddMedia { .. } => "addMedia",
+        Step::StartRecording { .. } => "startRecording",
+        Step::StopRecording => "stopRecording",
+        Step::WebViewEval { .. } => "webViewEval",
+        Step::Repeat { .. } => "repeat",
+        Step::Retry { .. } => "retry",
+        Step::RunFlow(_) => "runFlow",
+        Step::RunFlowInline { .. } => "runFlowInline",
+        Step::RunFlowConditional { .. } => "runFlowConditional",
+        Step::RunScript { .. } => "runScript",
+        Step::EvalScript { .. } => "evalScript",
+    }
+    .to_string()
+}
+
+/// `RunError` → short kind tag for debug JSON.
+fn failure_kind(err: &RunError) -> String {
+    match err {
+        RunError::Sdk(f) => format!("{:?}", f.code),
+        RunError::Parse(_) => "Parse".into(),
+        RunError::UnknownKey(_) => "UnknownKey".into(),
+        RunError::UnknownDirection(_) => "UnknownDirection".into(),
+        RunError::RunFlowCycle(_) => "RunFlowCycle".into(),
+        RunError::Io(_) => "Io".into(),
+    }
+}
+
+// ----------------------------------------------------------------------
+// Adapter — dispatch state
+// ----------------------------------------------------------------------
+
+/// Stateful step dispatcher. Holds a borrow of the [`AppLike`] surface
+/// plus the current base directory for resolving relative `runFlow`
+/// paths. `last_bundle` is updated by [`Step::LaunchApp`] and consumed
+/// by [`Step::StopApp`].
+pub struct Adapter<'a, A: AppLike + ?Sized> {
+    app: &'a A,
+    base_dir: PathBuf,
+    last_bundle: Option<String>,
+    run_stack: Vec<PathBuf>,
+    /// v5.2 c4 — yaml flow-level `output` store, used by expression
+    /// engine (`${output.x}` template + `assertTrue` evaluation).
+    /// c4 内 read-only + 默认空 map; `as: name` 写入留 v5.3+.
+    output: std::collections::BTreeMap<String, crate::ExprValue>,
+    /// Env store used by the expression engine for bare `${NAME}`
+    /// lookup. Populated from CLI `--env KEY=VAL` (repeatable) + the
+    /// inherited process env as fallback. Enables yaml with
+    /// `${E2E_EMAIL}` / `${IMAP_PASSWORD}` interpolation.
+    env: std::collections::BTreeMap<String, String>,
+    /// Per-step debug artifact directory. When Some, `run_steps`
+    /// writes `<dir>/step-<N>-<verb>.json` after every step (both
+    /// success and skipped) and, when a step fails,
+    /// `<dir>/step-<N>-fail.png` (screenshot) + a failure record in
+    /// the same json.
+    debug_output: Option<PathBuf>,
+    /// Step index counter, monotonic per top-level `run()` call. Kept
+    /// in Adapter (not thread-local, not a param) so recursive
+    /// `run_steps_inner` from `repeat` / `retry` / `runFlow`-inline
+    /// shares the same counter (inner-block steps still get unique
+    /// file names).
+    step_index: usize,
+    /// v5.18 c1 — last `-AppleLanguages` value seen in a `launchApp.arguments`
+    /// step (e.g. "en" / "ja" / "es"). Used by [`Selector::LocalizedText`]
+    /// desugar to pick the right per-locale text. Defaults to "en" when no
+    /// launchApp arg has been parsed yet (or arg lacked `-AppleLanguages`).
+    /// per a11y-i18n master plan §1 L4.
+    last_locale: String,
+    /// v0.3.0 Phase A — attached metro/expo log tail. When Some, the
+    /// runtime dispatches [`Step::ExpectSignal`] / [`Step::ExpectSignals`]
+    /// / [`Step::ExpectLogClean`] via [`smix_metro_log::MetroLogTail`].
+    /// None → those verbs fail immediately with an actionable hint to
+    /// configure `.smix/config.json` `metroLog` section.
+    metro_tail: Option<smix_metro_log::MetroLogTail>,
+    /// v0.3.0 Phase A — step-end `ms_since_start` cursors. Populated at
+    /// the end of each step execution; the [`SignalWindow::SinceStep`]
+    /// yaml field maps to `Window::SinceMs(step_ms_cursors[n])`. Vec
+    /// index N holds ms at end of step N (1-indexed to match run report
+    /// step numbering).
+    step_ms_cursors: Vec<u64>,
+    /// v0.3.0 Phase B — attached fixture registry. When Some, the
+    /// runtime dispatches [`Step::Fixture`] by looking up the yaml
+    /// `id:` in this registry. None → the verb fails with an
+    /// actionable hint to configure `.smix/config.json`.
+    fixture_registry: Option<smix_fixture::FixtureRegistry>,
+    /// v1.0 Phase C3 — when true, `write_step_debug`'s fail-PNG output
+    /// stays raw (no annotation overlay). Opt-out via `smix run
+    /// --no-fail-annotate`. Default false = annotate.
+    no_fail_annotate: bool,
+}
+
+impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
+    /// Construct a dispatcher bound to `app` and `base_dir`.
+    pub fn new(app: &'a A, base_dir: PathBuf) -> Self {
+        Self {
+            app,
+            base_dir,
+            last_bundle: None,
+            run_stack: Vec::new(),
+            output: std::collections::BTreeMap::new(),
+            env: std::collections::BTreeMap::new(),
+            debug_output: None,
+            step_index: 0,
+            last_locale: "en".to_string(),
+            metro_tail: None,
+            step_ms_cursors: vec![0],
+            fixture_registry: None,
+            no_fail_annotate: false,
+        }
+    }
+
+    /// v1.0 Phase C3 — opt-out for auto-annotate on --debug-output
+    /// fail-PNG. Consumer sets via `smix run --no-fail-annotate`.
+    #[must_use]
+    pub fn with_no_fail_annotate(mut self, no_annotate: bool) -> Self {
+        self.no_fail_annotate = no_annotate;
+        self
+    }
+
+    /// v0.3.0 Phase A — attach a [`smix_metro_log::MetroLogTail`] for
+    /// signal-await verbs. Idempotent: subsequent calls replace the
+    /// tail (subscriber lifecycle is caller's responsibility).
+    #[must_use]
+    pub fn with_metro_tail(mut self, tail: smix_metro_log::MetroLogTail) -> Self {
+        self.metro_tail = Some(tail);
+        self
+    }
+
+    /// v0.3.0 Phase B — attach a fixture registry for the
+    /// [`Step::Fixture`] verb.
+    #[must_use]
+    pub fn with_fixture_registry(mut self, reg: smix_fixture::FixtureRegistry) -> Self {
+        self.fixture_registry = Some(reg);
+        self
+    }
+
+    /// Seed the env store used by `${NAME}` env lookup. Builder-style.
+    /// The preferred entry point is `run_flow` in `entry.rs`, which
+    /// wires `FlowArgs.env_vars` through.
+    pub fn with_env(mut self, env: std::collections::BTreeMap<String, String>) -> Self {
+        self.env = env;
+        self
+    }
+
+    /// Enable per-step debug artifacts under `dir`. `run_steps` will
+    /// write `<dir>/step-<N>-<verb>.json` + (on fail)
+    /// `<dir>/step-<N>-fail.png`. Builder-style. `dir` is created if it
+    /// doesn't exist on first write.
+    pub fn with_debug_output(mut self, dir: PathBuf) -> Self {
+        self.debug_output = Some(dir);
+        self
+    }
+
+    /// v5.18 c1 — extract `(xx)` from `-AppleLanguages "(xx)"` pattern in a
+    /// `launchApp.arguments` array. Returns Some("xx") on match; None when
+    /// arg pair missing or shape mismatches. Used by [`Adapter::run_step`]
+    /// to update `last_locale` for [`Selector::LocalizedText`] desugar.
+    fn extract_apple_languages(args: &[String]) -> Option<String> {
+        let mut iter = args.iter();
+        while let Some(a) = iter.next() {
+            if a == "-AppleLanguages"
+                && let Some(v) = iter.next()
+            {
+                // v has shape "(en)" / "(ja)" / etc; strip parens
+                let trimmed = v
+                    .trim()
+                    .trim_start_matches('(')
+                    .trim_end_matches(')')
+                    .trim();
+                if !trimmed.is_empty() {
+                    // BCP-47 codes can be "en" / "en-US"; we use just
+                    // the language subtag for table lookup.
+                    let lang = trimmed.split(&['-', '_'][..]).next().unwrap_or(trimmed);
+                    return Some(lang.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// v5.2 c4 — seed the yaml flow-level `output` store. Builder-style;
+    /// useful for tests that exercise `${output.x}` expansion / assertTrue.
+    pub fn with_output(
+        mut self,
+        output: std::collections::BTreeMap<String, crate::ExprValue>,
+    ) -> Self {
+        self.output = output;
+        self
+    }
+
+    /// v5.2 c4 — expand `${expr}` placeholders inside `src`. Non-`${...}`
+    /// segments preserved verbatim. Engine errors surface as
+    /// `RunError::Sdk(DriverError)` (AI-readable hint).
+    fn expand_template(&self, src: &str) -> Result<String, RunError> {
+        let mut out = String::new();
+        let bytes = src.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if i + 1 < bytes.len() && bytes[i] == b'$' && bytes[i + 1] == b'{' {
+                let mut j = i + 2;
+                let mut depth = 1usize;
+                while j < bytes.len() && depth > 0 {
+                    if bytes[j] == b'{' {
+                        depth += 1;
+                    } else if bytes[j] == b'}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+                if j >= bytes.len() || depth != 0 {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message: format!("unterminated ${{...}} in template: {src}"),
+                        ..Default::default()
+                    })));
+                }
+                let inner = std::str::from_utf8(&bytes[i + 2..j]).unwrap_or("");
+                let ctx = crate::ExprContext {
+                    output: self.output.clone(),
+                    env: self.env.clone(),
+                };
+                let value = crate::expr_eval(inner, &ctx).map_err(|e| {
+                    RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message: format!("expression error in template `${{{inner}}}`: {e}"),
+                        suggestions: vec![format!("{e}")],
+                        ..Default::default()
+                    }))
+                })?;
+                out.push_str(&value.to_template_string());
+                i = j + 1;
+            } else {
+                out.push(bytes[i] as char);
+                i += 1;
+            }
+        }
+        Ok(out)
+    }
+
+    /// v5.2 c4 — eval a raw expression (no `${}` wrapping). Used by
+    /// `assertTrue`. Errors → DriverError.
+    fn eval_expr_or_driver(&self, src: &str) -> Result<crate::ExprValue, RunError> {
+        let trimmed = src.trim();
+        // tolerate `${...}` 包裹: assertTrue: "${expr}" → strip wrapping.
+        let inner = if trimmed.starts_with("${") && trimmed.ends_with('}') {
+            &trimmed[2..trimmed.len() - 1]
+        } else {
+            trimmed
+        };
+        let ctx = crate::ExprContext {
+            output: self.output.clone(),
+            env: self.env.clone(),
+        };
+        crate::expr_eval(inner, &ctx).map_err(|e| {
+            RunError::Sdk(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("expression error in `{src}`: {e}"),
+                suggestions: vec![format!("{e}")],
+                ..Default::default()
+            }))
+        })
+    }
+
+    /// Walk the flow and dispatch each step. Returns the aggregate
+    /// report. Per-variant graceful behaviors are documented at the
+    /// module level.
+    pub async fn run(&mut self, flow: &Flow) -> Result<RunReport, RunError> {
+        // Seed last_bundle so a bare `stopApp` at the top of a flow can
+        // target the declared appId. Subsequent launchApp overrides it.
+        if self.last_bundle.is_none() && !flow.app_id.is_empty() {
+            self.last_bundle = Some(flow.app_id.clone());
+        }
+        self.run_steps(&flow.steps).await
+    }
+
+    async fn run_steps(&mut self, steps: &[Step]) -> Result<RunReport, RunError> {
+        let mut report = RunReport::default();
+        for step in steps {
+            self.step_index += 1;
+            let idx = self.step_index;
+            let step_summary = summarize_step_verb(step);
+            let outcome_result = self.run_step(step, &mut report.warnings).await;
+            match &outcome_result {
+                Ok(outcome) => {
+                    self.write_step_debug(idx, &step_summary, StepOutcome::Ok(outcome))
+                        .await;
+                }
+                Err(e) => {
+                    self.write_step_debug(idx, &step_summary, StepOutcome::Failed(e))
+                        .await;
+                }
+            }
+            let outcome = outcome_result?;
+            report.steps.push(outcome);
+        }
+        Ok(report)
+    }
+
+    /// Write `<debug_output>/step-<N>-<verb>.json` with the step
+    /// outcome. On failure additionally emits `step-<N>-fail.png` via
+    /// `App::screenshot`. Best-effort: any I/O or screenshot error is
+    /// logged to stderr but does not affect the run result.
+    async fn write_step_debug(&self, idx: usize, step_summary: &str, outcome: StepOutcome<'_>) {
+        let Some(dir) = &self.debug_output else {
+            return;
+        };
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            eprintln!("WARN: debug-output mkdir {dir:?} failed: {e}");
+            return;
+        }
+        // Verb slug from "tapOn (optional)" → "tapon", or empty → "step".
+        let verb_slug: String = step_summary
+            .split_whitespace()
+            .next()
+            .unwrap_or("step")
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+            .map(|c| c.to_ascii_lowercase())
+            .collect();
+        let base = dir.join(format!("step-{idx}-{verb_slug}"));
+        let mut record = serde_json::json!({
+            "index": idx,
+            "summary": step_summary,
+        });
+        match &outcome {
+            StepOutcome::Ok(rep) => {
+                record["outcome"] = match rep {
+                    RunStepReport::Ok => serde_json::json!("ok"),
+                    RunStepReport::Skipped { reason } => {
+                        serde_json::json!({ "skipped": reason })
+                    }
+                    RunStepReport::ExpandedSubflow { path, .. } => {
+                        serde_json::json!({ "expandedSubflow": path.display().to_string() })
+                    }
+                };
+            }
+            StepOutcome::Failed(err) => {
+                let mut fail = serde_json::json!({
+                    "kind": failure_kind(err),
+                    "message": err.to_string(),
+                });
+                let png_path = base.with_extension("fail.png");
+                match self.app.screenshot().await {
+                    Ok(mut bytes) => {
+                        // v1.0 Phase C3 — auto-annotate the fail
+                        // screenshot with a corner banner + red circle
+                        // approx-centered (viewport 50%, 50%) to
+                        // visually mark the fail without needing
+                        // selector→pixel resolution (which requires
+                        // Phase E authoring tier). --no-fail-annotate
+                        // in FlowArgs disables. Best-effort: annotation
+                        // failure = ship raw bytes.
+                        if !self.no_fail_annotate {
+                            let annotations = vec![
+                                crate::AnnotationSpec::Circle {
+                                    at: crate::AnnotationPos::Normalized { nx: 0.5, ny: 0.5 },
+                                    color: "red".into(),
+                                    radius: 60,
+                                    stroke: 6,
+                                },
+                                crate::AnnotationSpec::Text {
+                                    at: crate::AnnotationPos::Pixel { x: 20, y: 40 },
+                                    content: format!("step {}: FAIL", idx),
+                                    color: "red".into(),
+                                    size: 28.0,
+                                },
+                                crate::AnnotationSpec::Text {
+                                    at: crate::AnnotationPos::Pixel { x: 20, y: 76 },
+                                    content: step_summary.to_string(),
+                                    color: "yellow".into(),
+                                    size: 18.0,
+                                },
+                            ];
+                            match crate::annotate_bridge::render_yaml_annotations(
+                                &bytes,
+                                &annotations,
+                            ) {
+                                Ok((annotated, _warns)) => {
+                                    bytes = annotated;
+                                    fail["annotated"] = serde_json::json!(true);
+                                }
+                                Err(e) => {
+                                    fail["annotateError"] = serde_json::json!(format!("{e}"));
+                                }
+                            }
+                        }
+                        let mut warns: Vec<String> = Vec::new();
+                        match crate::output::write_yaml_output_lenient(
+                            &png_path, &bytes, &mut warns,
+                        ) {
+                            Some(written) => {
+                                fail["screenshotPath"] =
+                                    serde_json::json!(written.display().to_string());
+                            }
+                            None => {
+                                for w in warns {
+                                    eprintln!("WARN: {w}");
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        fail["screenshotError"] = serde_json::json!(format!("{e}"));
+                    }
+                }
+                record["outcome"] = serde_json::json!({ "failed": fail });
+            }
+        }
+        let json_path = base.with_extension("json");
+        let mut warns: Vec<String> = Vec::new();
+        if crate::output::write_yaml_output_lenient(
+            &json_path,
+            &serde_json::to_vec_pretty(&record).unwrap_or_default(),
+            &mut warns,
+        )
+        .is_none()
+        {
+            for w in warns {
+                eprintln!("WARN: {w}");
+            }
+        }
+    }
+
+    /// v5.7 c1 — poll the smix runner for any SpringBoard / share-sheet
+    /// alert currently on screen and tap the first non-cancel button. iOS
+    /// 17+ raises an "Open in <App>?" alert after `simctl openurl` against
+    /// a registered custom scheme; without dismissing it every subsequent
+    /// step races a popup overlay the host-resolver does not see. Best-
+    /// effort: silently no-ops when no popup surfaces inside the 3s budget.
+    async fn dismiss_open_link_popup(&mut self) -> Result<(), ExpectationFailure> {
+        for _ in 0..6 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let popups = self.app.system_popups().await?;
+            let Some(popup) = popups.into_iter().next() else {
+                continue;
+            };
+            let Some(button) = popup
+                .buttons
+                .iter()
+                .find(|b| b.role != "cancel" && !b.dangerous)
+                .or_else(|| popup.buttons.first())
+            else {
+                return Ok(());
+            };
+            let _ = self.app.system_popup_action(&popup.id, &button.id).await?;
+            return Ok(());
+        }
+        Ok(())
+    }
+
+    /// v5.2 c4 — recursive body runner for `repeat` / `retry`. Re-uses
+    /// the caller's `warnings` collector + does not push outer-level
+    /// `RunStepReport`. Box-pinned at call sites (async-trait Send
+    /// recursion bound).
+    async fn run_steps_inner(
+        &mut self,
+        steps: &[Step],
+        warnings: &mut Vec<String>,
+    ) -> Result<(), RunError> {
+        for step in steps {
+            let _ = self.run_step(step, warnings).await?;
+        }
+        Ok(())
+    }
+
+    async fn run_step(
+        &mut self,
+        step: &Step,
+        warnings: &mut Vec<String>,
+    ) -> Result<RunStepReport, RunError> {
+        match step {
+            Step::TapOn { selector, optional } => self.run_tap(selector, *optional).await,
+            Step::TapAtPoint { nx, ny } => {
+                self.app.tap_at_coord(*nx, *ny).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::WaitForAnimationToEnd => {
+                // No smix-sdk idle API; fixed sleep is the maestro-1:1 stub.
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                Ok(RunStepReport::Ok)
+            }
+            Step::WebViewEval { js, assert_eq } => {
+                let result = self.app.webview_eval(js).await?;
+                if let Some(expected) = assert_eq
+                    && &result != expected
+                {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::AssertionFailed),
+                        message: format!(
+                            "webview_eval assert_eq mismatch: got {result}, expected {expected}"
+                        ),
+                        hint: Some(format!(
+                            "Eval'd `{}` returned {result}, not the expected value",
+                            if js.len() > 80 { &js[..80] } else { js }
+                        )),
+                        ..Default::default()
+                    })));
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::ExtendedWaitUntil {
+                selector,
+                timeout_ms,
+                expect_visible,
+            } => {
+                // v5.18 c1 — desugar LocalizedText by current locale.
+                let desugared = self.desugar_localized_text(selector);
+                let timeout = Duration::from_millis(*timeout_ms);
+                if *expect_visible {
+                    self.app.wait_for(&desugared, timeout).await?;
+                } else {
+                    self.app.wait_for_not_visible(&desugared, timeout).await?;
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::AssertVisible { selector } => {
+                // v5.18 c1 — desugar LocalizedText by current locale.
+                let desugared = self.desugar_localized_text(selector);
+                self.app.assert_visible(&desugared).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::InputText(s) => {
+                let expanded = self.expand_template(s)?;
+                self.app.fill(&smix_sdk::focused(), &expanded).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::PressKey(s) => {
+                let key = parse_key_name(s)?;
+                // v5.2 c2 — iOS Simulator hardware-button restrictions:
+                //   XCUIDevice.Button.volumeUp / .volumeDown 在 iOS sim
+                //   Apple 明示 unavailable; lock 在公开 enum 中根本未暴露
+                //   且 simctl 无 lock verb。同 maestro 自身在 iOS sim 上的限
+                //   制 — 不静默 noop, 显式 Skipped + warning, 让上层 aware.
+                if matches!(key, KeyName::Lock | KeyName::VolumeUp | KeyName::VolumeDown) {
+                    let reason = format!(
+                        "pressKey {key}: unavailable in iOS Simulator (Apple XCUIDevice.Button restriction); maestro 同源限制"
+                    );
+                    warnings.push(reason.clone());
+                    return Ok(RunStepReport::Skipped { reason });
+                }
+                self.app.press_key(key).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::EraseText(n) => {
+                for _ in 0..*n {
+                    self.app.press_key(KeyName::Delete).await?;
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::ScrollUntilVisible {
+                selector,
+                direction,
+            } => {
+                let dir = parse_swipe_direction(direction)?;
+                self.app.scroll(selector, dir).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::Swipe { from, to } => {
+                // v5.2 c1 — §9 #3 lift: swipe_at_coord now in SDK escape hatch.
+                self.app.swipe_at_coord(*from, *to).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::Scroll => {
+                self.app.scroll_screen(SwipeDirection::Down).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::HideKeyboard => {
+                self.app.hide_keyboard().await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::AssertNotVisible { selector } => {
+                // v5.3 c3 — match maestro CLI implicit retry semantics: wait up
+                // to 5s for the element to disappear. SwiftUI sheet/alert/
+                // confirmation-dialog dismiss animations take 200-700ms, and
+                // a bare one-shot assert_not_visible races them.
+                self.app
+                    .wait_for_not_visible(selector, Duration::from_secs(5))
+                    .await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::KillApp { app_id } => {
+                self.app.terminate(app_id).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::ClearState { app_id } => {
+                let app_path = launch_fresh_app_path_from_env(app_id);
+                let extra = self
+                    .app
+                    .launch_fresh(app_id, true, false, app_path.as_deref(), &[])
+                    .await?;
+                warnings.extend(extra);
+                self.last_bundle = Some(app_id.clone());
+                Ok(RunStepReport::Ok)
+            }
+            Step::ClearKeychain => match self.last_bundle.clone() {
+                Some(b) => {
+                    let app_path = launch_fresh_app_path_from_env(&b);
+                    let extra = self
+                        .app
+                        .launch_fresh(&b, false, true, app_path.as_deref(), &[])
+                        .await?;
+                    warnings.extend(extra);
+                    Ok(RunStepReport::Ok)
+                }
+                None => {
+                    let reason = "clearKeychain with no last_bundle and empty flow appId; skipped"
+                        .to_string();
+                    warnings.push(reason.clone());
+                    Ok(RunStepReport::Skipped { reason })
+                }
+            },
+            Step::TakeScreenshot { path, annotations } => {
+                let mut bytes = self.app.screenshot().await?;
+                // v1.0 Phase C2 — compose annotations onto the PNG
+                // BEFORE writing. Empty annotations = plain screenshot
+                // (byte-compat v0.3.x). Selector-relative positions
+                // are documented as unsupported in yaml verb (v1.0):
+                // caller uses `{x, y}` or `{nx, ny}` shapes. Selector
+                // shape logs a warning and skips.
+                if !annotations.is_empty() {
+                    match crate::annotate_bridge::render_yaml_annotations(&bytes, annotations) {
+                        Ok((annotated, extra_warns)) => {
+                            bytes = annotated;
+                            warnings.extend(extra_warns);
+                        }
+                        Err(e) => {
+                            warnings.push(format!(
+                                "takeScreenshot annotate: {e}; falling back to unannotated screenshot"
+                            ));
+                        }
+                    }
+                }
+                if let Some(p) = path {
+                    let yaml_path = std::path::Path::new(p);
+                    let written = crate::output::write_yaml_output(
+                        yaml_path,
+                        &bytes,
+                        crate::output::OutputIntent::LoadBearing,
+                    )
+                    .map_err(|e| {
+                        RunError::Io(format!(
+                            "takeScreenshot write {p:?}: {e}; {} bytes captured but not persisted",
+                            bytes.len()
+                        ))
+                    })?;
+                    if written != yaml_path {
+                        warnings.push(format!(
+                            "takeScreenshot: yaml path {p:?} had no image extension; auto-appended → {written:?}"
+                        ));
+                    }
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::SetClipboard(text) => {
+                let expanded = self.expand_template(text)?;
+                self.app.set_clipboard(&expanded).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::PasteText { text } => {
+                let expanded = match text {
+                    Some(t) => Some(self.expand_template(t)?),
+                    None => None,
+                };
+                self.app.paste_text(expanded.as_deref()).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::CopyTextFrom { selector } => {
+                self.app.copy_text_from(selector).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::DoubleTapOn { selector } => {
+                self.app.double_tap(selector).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::LongPressOn {
+                selector,
+                duration_ms,
+            } => {
+                self.app
+                    .long_press(selector, Duration::from_millis(*duration_ms))
+                    .await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::AssertTrue { expr } => {
+                let value = self.eval_expr_or_driver(expr)?;
+                if !value.is_truthy() {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::AssertionFailed),
+                        message: format!(
+                            "assertTrue: expression evaluated to {value:?}, expected truthy — source: {expr}"
+                        ),
+                        suggestions: vec![
+                            "Verify `output.*` referenced in the expression".to_string(),
+                            "v5.2 yaml expression engine supports == != && || ! () output.x .contains()"
+                                .to_string(),
+                        ],
+                        ..Default::default()
+                    })));
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::Repeat { mode, commands } => {
+                match mode {
+                    RepeatMode::Times(n) => {
+                        for _ in 0..*n {
+                            Box::pin(self.run_steps_inner(commands, warnings)).await?;
+                        }
+                    }
+                    RepeatMode::While { condition_expr } => {
+                        let mut iter = 0u32;
+                        loop {
+                            let cond = self.eval_expr_or_driver(condition_expr)?;
+                            if !cond.is_truthy() {
+                                break;
+                            }
+                            Box::pin(self.run_steps_inner(commands, warnings)).await?;
+                            iter += 1;
+                            if iter >= MAX_REPEAT_ITERATIONS {
+                                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                                    code: Some(FailureCode::DriverError),
+                                    message: format!(
+                                        "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — condition `{condition_expr}` never became falsy; output store is read-only in v5.2 (condition must depend on something else that changes)"
+                                    ),
+                                    suggestions: vec![
+                                        "Convert to `repeat: { times: N }` with a known bound"
+                                            .to_string(),
+                                    ],
+                                    ..Default::default()
+                                })));
+                            }
+                        }
+                    }
+                    RepeatMode::WhileVisible { selector } => {
+                        let mut iter = 0u32;
+                        loop {
+                            // v5.5 c5 — visible iff find returns Ok(true).
+                            // `find` 是 AppLike 同源签名 (driver `find` route,
+                            // 返回 bool, 不抛 ElementNotFound), exactly what
+                            // 我们需要的 truthy 检测.
+                            let visible = self.app.find(selector).await.unwrap_or(false);
+                            if !visible {
+                                break;
+                            }
+                            Box::pin(self.run_steps_inner(commands, warnings)).await?;
+                            iter += 1;
+                            if iter >= MAX_REPEAT_ITERATIONS {
+                                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                                    code: Some(FailureCode::DriverError),
+                                    message: format!(
+                                        "repeat.while.visible: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — selector `{}` stayed visible; expected the loop body to hide / dismiss it eventually",
+                                        smix_sdk::describe_selector(selector)
+                                    ),
+                                    suggestions: vec![
+                                        "Convert to `repeat: { times: N }` with a known bound, or ensure the body dismisses the watched element".to_string(),
+                                    ],
+                                    ..Default::default()
+                                })));
+                            }
+                        }
+                    }
+                    RepeatMode::WhileNotVisible { selector } => {
+                        let mut iter = 0u32;
+                        loop {
+                            // v5.6 c5 — loop continues while element is NOT
+                            // visible; exits once it appears. Mirrors the
+                            // `WhileVisible` arm but inverts the truthy test.
+                            let visible = self.app.find(selector).await.unwrap_or(false);
+                            if visible {
+                                break;
+                            }
+                            Box::pin(self.run_steps_inner(commands, warnings)).await?;
+                            iter += 1;
+                            if iter >= MAX_REPEAT_ITERATIONS {
+                                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                                    code: Some(FailureCode::DriverError),
+                                    message: format!(
+                                        "repeat.while.notVisible: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — selector `{}` never became visible; expected the loop body to make it appear eventually",
+                                        smix_sdk::describe_selector(selector)
+                                    ),
+                                    suggestions: vec![
+                                        "Convert to `repeat: { times: N }` with a known bound, or ensure the body triggers the watched element to appear".to_string(),
+                                    ],
+                                    ..Default::default()
+                                })));
+                            }
+                        }
+                    }
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::Retry {
+                max_retries,
+                commands,
+            } => {
+                let mut last_err: Option<RunError> = None;
+                for _ in 0..=*max_retries {
+                    match Box::pin(self.run_steps_inner(commands, warnings)).await {
+                        Ok(()) => return Ok(RunStepReport::Ok),
+                        Err(e) => last_err = Some(e),
+                    }
+                }
+                Err(last_err.expect("at least one attempt"))
+            }
+            Step::RunScript { source } => {
+                Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!(
+                        "runScript: complete JS runtime not supported in v5.2 — left for v6+ (maestro GraalJS path). Move scripting logic out of yaml or use assertTrue + minimal expression engine (== != && || ! () output.x .contains()). source snippet: {:?}",
+                        source.chars().take(80).collect::<String>()
+                    ),
+                    suggestions: vec![
+                        "Replace inline JS with assertTrue + minimal expression engine".to_string(),
+                        "Or wait for v6+ when full JS runtime ships".to_string(),
+                    ],
+                    ..Default::default()
+                })))
+            }
+            Step::EvalScript { source } => {
+                Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!(
+                        "evalScript: complete JS runtime not supported in v5.2 — left for v6+. For boolean expressions, use `assertTrue: \"<expr>\"` with the minimal engine subset. source snippet: {:?}",
+                        source.chars().take(80).collect::<String>()
+                    ),
+                    suggestions: vec![
+                        "Use assertTrue + minimal expression engine for boolean checks".to_string(),
+                    ],
+                    ..Default::default()
+                })))
+            }
+            Step::SetLocation {
+                latitude,
+                longitude,
+            } => {
+                self.app.set_location(*latitude, *longitude).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::Travel { points, speed_mps } => {
+                self.app.travel(points, *speed_mps).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::SetPermissions {
+                app_id,
+                permissions,
+            } => {
+                let bundle = match app_id.as_deref() {
+                    Some(b) => b.to_string(),
+                    None => self.last_bundle.clone().ok_or_else(|| {
+                        RunError::Sdk(ExpectationFailure::new(FailureInit {
+                            code: Some(FailureCode::DriverError),
+                            message:
+                                "setPermissions: no app launched in this flow — call `launchApp` first, or use `launchApp.permissions` instead"
+                                    .into(),
+                            suggestions: vec![
+                                "Add a `- launchApp: <bundleId>` step before this `setPermissions`".to_string(),
+                                "Or move permission setup into `launchApp.permissions`".to_string(),
+                            ],
+                            ..Default::default()
+                        }))
+                    })?,
+                };
+                let sdk_perms = permissions
+                    .iter()
+                    .map(|(name, action)| {
+                        let perm = parse_simctl_permission(name).map_err(RunError::Parse)?;
+                        Ok::<_, RunError>((perm, action.to_sdk()))
+                    })
+                    .collect::<Result<Vec<_>, RunError>>()?;
+                self.app.set_permissions(&bundle, &sdk_perms).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::AddMedia { paths } => {
+                self.app.add_media(paths).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::SetOrientation { orientation } => {
+                self.app.set_orientation(*orientation).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::StartRecording { path } => {
+                self.app.start_recording(path).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::StopRecording => {
+                self.app.stop_recording().await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::AssertScreenshot {
+                path,
+                max_hamming,
+                mask,
+            } => {
+                let abs = self.base_dir.join(path);
+                let cap = max_hamming.unwrap_or(5);
+                if !mask.is_empty() {
+                    // Surface-only: parser carried the regions, runtime
+                    // skips them. Visible-in-RunReport warning is the §13
+                    // explicit-not-silent contract.
+                    warnings.push(format!(
+                        "assertScreenshot.mask: {} region(s) accepted but ignored (region-exclusion is an R2-tier algorithm deferred to v6+ when SSIM/pHash replaces dhash); full-frame dhash dispatched with max_hamming={}",
+                        mask.len(),
+                        cap
+                    ));
+                }
+                let outcome = self.app.assert_screenshot(&abs, cap).await?;
+                if let smix_sdk::AssertScreenshotOutcome::Recorded { path } = outcome {
+                    warnings.push(format!(
+                        "assertScreenshot: auto-recorded baseline at {} (first run; subsequent runs will diff against it)",
+                        path.display()
+                    ));
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::ExpectSignal {
+                regex,
+                level,
+                timeout_ms,
+                window,
+            } => {
+                self.run_expect_signal(regex, level.as_deref(), *timeout_ms, *window)
+                    .await
+            }
+            Step::ExpectSignals {
+                signals,
+                order,
+                timeout_ms,
+                window,
+            } => {
+                self.run_expect_signals(signals, *order, *timeout_ms, *window)
+                    .await
+            }
+            Step::ExpectLogClean => self.run_expect_log_clean(warnings).await,
+            Step::Fixture { id, timeout_ms } => self.run_fixture(id, *timeout_ms).await,
+            Step::LaunchApp {
+                app_id,
+                clear_state,
+                clear_keychain,
+                permissions,
+                arguments,
+                stop_app,
+            } => {
+                // v5.18 c1 — update last_locale from `-AppleLanguages "(xx)"`
+                // pair in arguments, for Selector::LocalizedText desugar.
+                // Applies on both stopApp=true (kill+launch) and stopApp=false
+                // foreground; in foreground path arguments are ignored by
+                // launch (warned below), but we still update locale state
+                // because the yaml author's intent was "pin locale" — keep
+                // state consistent with what they declared.
+                if let Some(lang) = Self::extract_apple_languages(arguments) {
+                    self.last_locale = lang;
+                }
+                if !*stop_app {
+                    // v5.2 c2 — maestro `stopApp: false` = foreground resume.
+                    // permissions / arguments / clear flags 在此 path 无意义
+                    // (foreground 不重启) — 若 yaml 给了, 显式 warn (不静默).
+                    if !permissions.is_empty()
+                        || !arguments.is_empty()
+                        || *clear_state
+                        || *clear_keychain
+                    {
+                        warnings.push(format!(
+                            "launchApp.stopApp=false ignores permissions/arguments/clearState/clearKeychain (foreground path); bundle={app_id}"
+                        ));
+                    }
+                    self.app.foreground(app_id).await?;
+                    self.last_bundle = Some(app_id.clone());
+                    Ok(RunStepReport::Ok)
+                } else {
+                    // v5.2 c2 — maestro `stopApp: true` (default) = kill+launch
+                    // with optional wipe + args + permissions.
+                    let app_path = launch_fresh_app_path_from_env(app_id);
+                    let sdk_perms = permissions
+                        .iter()
+                        .map(|(name, action)| {
+                            let perm = parse_simctl_permission(name).map_err(RunError::Parse)?;
+                            Ok::<_, RunError>((perm, action.to_sdk()))
+                        })
+                        .collect::<Result<Vec<(SimctlPermission, PermissionAction)>, RunError>>()?;
+                    let opts = LaunchAppOptions {
+                        bundle_id: app_id.clone(),
+                        clear_state: *clear_state,
+                        clear_keychain: *clear_keychain,
+                        arguments: arguments.clone(),
+                        permissions: sdk_perms,
+                        app_path,
+                    };
+                    let extra = self.app.launch_app_with_options(&opts).await?;
+                    warnings.extend(extra);
+                    self.last_bundle = Some(app_id.clone());
+                    Ok(RunStepReport::Ok)
+                }
+            }
+            Step::OpenLink(url) => {
+                self.app.open_url(url).await?;
+                // v5.7 c1 — iOS 17+ raises a SpringBoard "Open in <App>?"
+                // confirmation alert when an external URL (here: simctl
+                // openurl) is routed to a registered custom scheme. Host
+                // maestro CLI's openLink swallows the popup via the XCUITest
+                // SpringBoard handle; smix adapter mirrors that by polling
+                // system_popups (a11y tree-via-runner sees the alert even
+                // though the host-resolver tree does not) and tapping the
+                // first non-cancel button. Without this, every subsequent
+                // step blocked behind a popup overlay would race-fail.
+                let _ = self.dismiss_open_link_popup().await;
+                Ok(RunStepReport::Ok)
+            }
+            Step::StopApp => {
+                match self.last_bundle.clone() {
+                    Some(b) => {
+                        // graceful: terminate failure is non-fatal (app may already be dead).
+                        let _ = self.app.terminate(&b).await;
+                        Ok(RunStepReport::Ok)
+                    }
+                    None => {
+                        let reason =
+                            "stopApp with no last_bundle and empty flow appId; skipped".to_string();
+                        warnings.push(reason.clone());
+                        Ok(RunStepReport::Skipped { reason })
+                    }
+                }
+            }
+            Step::RunFlow(rel) => self.expand_subflow(rel, warnings).await,
+            Step::RunFlowInline {
+                when_visible,
+                steps,
+            } => {
+                // v6.8 c1 — inline-commands form. Same visibility gate
+                // as RunFlowConditional, but body is the literal step
+                // list (no child file lookup). Mirrors maestro yaml
+                // `runFlow: { when: { visible }, commands: [...] }`.
+                //
+                // `find` for the visibility predicate treats any
+                // driver error as "not visible" — the predicate is a
+                // *skip decision*, not an assertion. Ambiguity →
+                // conservative skip. Otherwise a transient runner-side
+                // ELEMENT_NOT_FOUND leaks a spurious `error:` stderr
+                // line even when the flow correctly proceeds with
+                // exit 0.
+                let visible = match when_visible {
+                    None => true,
+                    Some(sel) => self.app.find(sel).await.unwrap_or(false),
+                };
+                if visible {
+                    Box::pin(self.run_steps_inner(steps, warnings)).await?;
+                    Ok(RunStepReport::Ok)
+                } else {
+                    let reason = format!(
+                        "runFlow when.visible=false; skipped inline body ({} step{})",
+                        steps.len(),
+                        if steps.len() == 1 { "" } else { "s" }
+                    );
+                    Ok(RunStepReport::Skipped { reason })
+                }
+            }
+            Step::RunFlowConditional {
+                file,
+                when_visible,
+                as_name,
+            } => {
+                // Same conservative-skip
+                // handling as RunFlowInline above. `find` for a
+                // visibility predicate is a skip decision, not an
+                // assertion; treat driver errors as "not visible".
+                let visible = match when_visible {
+                    None => true,
+                    Some(sel) => self.app.find(sel).await.unwrap_or(false),
+                };
+                if visible {
+                    let result = self.expand_subflow(file, warnings).await?;
+                    // v5.6 c5 — `as: <name>` outputs alias capture. After the
+                    // subflow runs (which conventionally ends with a
+                    // copyTextFrom that wrote to the device pasteboard), read
+                    // the clipboard and write it into the parent's outputs
+                    // map under the alias. Mirrors maestro `runFlow.as: name`
+                    // capture: caller can then reference ${output.name}.
+                    if let Some(name) = as_name {
+                        match self.app.get_clipboard().await {
+                            Ok(captured) => {
+                                self.output
+                                    .insert(name.clone(), crate::ExprValue::String(captured));
+                            }
+                            Err(e) => {
+                                warnings.push(format!(
+                                    "runFlow.as=`{name}`: clipboard read failed ({}); output[{name}] left unset",
+                                    e.message
+                                ));
+                            }
+                        }
+                    }
+                    Ok(result)
+                } else {
+                    let reason = format!("runFlow when.visible=false; skipped subflow {file}");
+                    Ok(RunStepReport::Skipped { reason })
+                }
+            }
+        }
+    }
+
+    /// v0.3.0 Phase B B4 — dispatch [`Step::Fixture`].
+    ///
+    /// Sequence:
+    ///   1. Look up `id` in the attached fixture registry
+    ///   2. Tap the qa-bubble toggle (a11y id `qa-bubble-toggle`)
+    ///   3. Tap the chip by `testID`
+    ///   4. Await the chip's declared signal via metro tail
+    ///   5. Tap the qa-bubble toggle again to close the overlay
+    ///
+    /// Missing registry → DriverError with actionable hint.
+    async fn run_fixture(
+        &mut self,
+        id: &str,
+        timeout_override: Option<u64>,
+    ) -> Result<RunStepReport, RunError> {
+        let registry = self.fixture_registry.as_ref().ok_or_else(|| {
+            RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                code: Some(smix_sdk::FailureCode::DriverError),
+                message: format!("fixture `{id}` used but no fixture registry attached"),
+                hint: Some(
+                    "set `.smix/config.json` `fixturesRegistry` to the JSON registry path".into(),
+                ),
+                ..Default::default()
+            }))
+        })?;
+        let decl = registry.require(id).map_err(|e| {
+            RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                code: Some(smix_sdk::FailureCode::DriverError),
+                message: format!("{e}"),
+                ..Default::default()
+            }))
+        })?;
+        let tail = self.metro_tail.as_ref().ok_or_else(|| {
+            RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                code: Some(smix_sdk::FailureCode::DriverError),
+                message: format!(
+                    "fixture `{id}` requires metro tail to await its signal — configure `.smix/config.json` `metroLog` or pass `--metro-log-url`"
+                ),
+                ..Default::default()
+            }))
+        })?;
+
+        let toggle_selector = smix_selector::Selector::Id {
+            id: "qa-bubble-toggle".into(),
+            modifiers: smix_selector::Modifiers::default(),
+        };
+        let chip_selector = smix_selector::Selector::Id {
+            id: decl.test_id.clone(),
+            modifiers: smix_selector::Modifiers::default(),
+        };
+
+        // 2. open overlay
+        self.app.tap(&toggle_selector).await?;
+        // 3. tap chip
+        self.app.tap(&chip_selector).await?;
+        // 4. await signal
+        let matcher = smix_metro_log::SignalMatcher::new(
+            &decl.signal.regex,
+            decl.signal
+                .level
+                .as_deref()
+                .map(smix_metro_log::LogLevel::parse),
+        )
+        .map_err(|e| {
+            RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                code: Some(smix_sdk::FailureCode::Timeout),
+                message: format!("fixture `{id}` signal regex compile: {e}"),
+                ..Default::default()
+            }))
+        })?;
+        let timeout_ms = timeout_override.unwrap_or(decl.timeout_ms);
+        let outcome = tail
+            .await_signal(
+                &matcher,
+                std::time::Duration::from_millis(timeout_ms),
+                smix_metro_log::Window::SinceRun,
+            )
+            .await;
+        // 5. always close overlay, regardless of outcome
+        let _ = self.app.tap(&toggle_selector).await;
+        outcome.map_err(|e| {
+            RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                code: Some(smix_sdk::FailureCode::Timeout),
+                message: format!("fixture `{id}` timed out: {e}"),
+                hint: Some(format!(
+                    "chip {} tapped but expected signal /{}/ not observed within {timeout_ms}ms",
+                    decl.test_id, decl.signal.regex
+                )),
+                ..Default::default()
+            }))
+        })?;
+        Ok(RunStepReport::Ok)
+    }
+
+    /// v0.3.0 Phase A A5 — dispatch [`Step::ExpectSignal`] against the
+    /// attached metro tail.
+    async fn run_expect_signal(
+        &mut self,
+        regex: &str,
+        level: Option<&str>,
+        timeout_ms: u64,
+        window: crate::SignalWindow,
+    ) -> Result<RunStepReport, RunError> {
+        let tail = self.metro_tail.as_ref().ok_or_else(|| RunError::Sdk(
+            smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                code: Some(smix_sdk::FailureCode::DriverError),
+                message: "expect.signal used but no metro log tail attached — add `metroLog` block to .smix/config.json or pass `--metro-log-url`".into(),
+                ..Default::default()
+            })
+        ))?;
+        let matcher =
+            smix_metro_log::SignalMatcher::new(regex, level.map(smix_metro_log::LogLevel::parse))
+                .map_err(|e| {
+                RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                    code: Some(smix_sdk::FailureCode::Timeout),
+                    message: format!("expect.signal: regex compile: {e}"),
+                    ..Default::default()
+                }))
+            })?;
+        let ml_window = self.signal_window_to_ml(window);
+        match tail
+            .await_signal(
+                &matcher,
+                std::time::Duration::from_millis(timeout_ms),
+                ml_window,
+            )
+            .await
+        {
+            Ok(_) => Ok(RunStepReport::Ok),
+            Err(e) => Err(RunError::Sdk(smix_sdk::ExpectationFailure::new(
+                smix_sdk::FailureInit {
+                    code: Some(smix_sdk::FailureCode::Timeout),
+                    message: format!("expect.signal timeout: {e}"),
+                    hint: Some(format!(
+                        "no metro log line matched /{regex}/ within {timeout_ms}ms (window={window:?}); check the app is emitting the expected signal"
+                    )),
+                    ..Default::default()
+                },
+            ))),
+        }
+    }
+
+    async fn run_expect_signals(
+        &mut self,
+        signals: &[crate::SignalMatch],
+        order: crate::SignalOrderKind,
+        timeout_ms: u64,
+        window: crate::SignalWindow,
+    ) -> Result<RunStepReport, RunError> {
+        let tail = self.metro_tail.as_ref().ok_or_else(|| {
+            RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                code: Some(smix_sdk::FailureCode::DriverError),
+                message: "expect.signals used but no metro log tail attached".into(),
+                ..Default::default()
+            }))
+        })?;
+        let matchers: Result<Vec<_>, _> = signals
+            .iter()
+            .map(|s| {
+                smix_metro_log::SignalMatcher::new(
+                    &s.regex,
+                    s.level.as_deref().map(smix_metro_log::LogLevel::parse),
+                )
+            })
+            .collect();
+        let matchers = matchers.map_err(|e| {
+            RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                code: Some(smix_sdk::FailureCode::Timeout),
+                message: format!("expect.signals: regex compile: {e}"),
+                ..Default::default()
+            }))
+        })?;
+        let ml_order = match order {
+            crate::SignalOrderKind::Any => smix_metro_log::SignalOrder::Any,
+            crate::SignalOrderKind::Strict => smix_metro_log::SignalOrder::Strict,
+        };
+        let ml_window = self.signal_window_to_ml(window);
+        match tail
+            .await_signals(
+                &matchers,
+                ml_order,
+                std::time::Duration::from_millis(timeout_ms),
+                ml_window,
+            )
+            .await
+        {
+            Ok(_) => Ok(RunStepReport::Ok),
+            Err(e) => Err(RunError::Sdk(smix_sdk::ExpectationFailure::new(
+                smix_sdk::FailureInit {
+                    code: Some(smix_sdk::FailureCode::Timeout),
+                    message: format!("expect.signals failed: {e}"),
+                    ..Default::default()
+                },
+            ))),
+        }
+    }
+
+    async fn run_expect_log_clean(
+        &mut self,
+        warnings: &mut Vec<String>,
+    ) -> Result<RunStepReport, RunError> {
+        let tail = self.metro_tail.as_ref().ok_or_else(|| {
+            RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
+                code: Some(smix_sdk::FailureCode::DriverError),
+                message: "expect.logClean used but no metro log tail attached".into(),
+                ..Default::default()
+            }))
+        })?;
+        let violations = tail.assert_clean();
+        if violations.is_empty() {
+            Ok(RunStepReport::Ok)
+        } else {
+            for v in &violations {
+                warnings.push(format!("log-hygiene: [{:?}] {}", v.level, v.message));
+            }
+            Err(RunError::Sdk(smix_sdk::ExpectationFailure::new(
+                smix_sdk::FailureInit {
+                    code: Some(smix_sdk::FailureCode::Timeout),
+                    message: format!(
+                        "expect.logClean failed: {} non-allowlisted log entr{}",
+                        violations.len(),
+                        if violations.len() == 1 { "y" } else { "ies" }
+                    ),
+                    ..Default::default()
+                },
+            )))
+        }
+    }
+
+    fn signal_window_to_ml(&self, window: crate::SignalWindow) -> smix_metro_log::Window {
+        match window {
+            crate::SignalWindow::SinceRun => smix_metro_log::Window::SinceRun,
+            crate::SignalWindow::SinceStep { since_step } => {
+                let ms = self.step_ms_cursors.get(since_step).copied().unwrap_or(0);
+                smix_metro_log::Window::SinceMs(ms)
+            }
+            crate::SignalWindow::LastMs { last_ms } => smix_metro_log::Window::LastMs(last_ms),
+        }
+    }
+
+    /// v5.18 c1 — desugar `Selector::LocalizedText` → `Selector::Text` using
+    /// the adapter's `last_locale` state (updated by the last `launchApp`
+    /// step's `-AppleLanguages` argument). Returns the picked text via
+    /// `Cow::Owned(Selector::Text { ... })` when input is LocalizedText;
+    /// borrows the original selector otherwise. Per debug/decomposition-
+    /// before-attack: this is a deterministic transform with no fallback
+    /// silent dropping — empty table is rejected at parse time, missing
+    /// locale falls back to "en", missing "en" falls back to first table
+    /// entry by BTreeMap iteration order (alphabetic, deterministic).
+    fn desugar_localized_text<'sel>(
+        &self,
+        selector: &'sel Selector,
+    ) -> std::borrow::Cow<'sel, Selector> {
+        use std::borrow::Cow;
+        if let Selector::LocalizedText {
+            localized_text,
+            modifiers,
+        } = selector
+        {
+            let text = localized_text
+                .get(&self.last_locale)
+                .or_else(|| localized_text.get("en"))
+                .or_else(|| localized_text.values().next())
+                .cloned()
+                .unwrap_or_default();
+            return Cow::Owned(Selector::Text {
+                text: Pattern::Text(text),
+                modifiers: modifiers.clone(),
+            });
+        }
+        Cow::Borrowed(selector)
+    }
+
+    async fn run_tap(
+        &mut self,
+        selector: &Selector,
+        optional: bool,
+    ) -> Result<RunStepReport, RunError> {
+        // v5.20 c2 — Fallback chain. 顺序 try 每 sub-selector, 第一个 hit
+        // 即 tap. Miss 记 per-layer trace for AI-readable suggestion. 全
+        // miss → ElementNotFound 含 chain-trace hint.
+        if let Selector::Fallback { fallback } = selector {
+            let mut trace: Vec<String> = Vec::with_capacity(fallback.len());
+            for (i, sub) in fallback.iter().enumerate() {
+                let layer = format!("L{}", i + 1);
+                // Recursively dispatch sub-selector through run_tap. Each
+                // sub-selector handles its own miss; we treat
+                // ElementNotFound as "this layer missed, try next" but
+                // propagate other errors immediately.
+                let sub_result = Box::pin(self.run_tap(sub, true /* optional */)).await;
+                match sub_result {
+                    Ok(RunStepReport::Ok) => {
+                        return Ok(RunStepReport::Ok);
+                    }
+                    Ok(RunStepReport::Skipped { reason }) => {
+                        trace.push(format!(
+                            "{layer} {} MISS: {}",
+                            smix_sdk::describe_selector(sub),
+                            reason
+                        ));
+                    }
+                    Err(e) => return Err(e),
+                    _ => {
+                        trace.push(format!(
+                            "{layer} {} unexpected report",
+                            smix_sdk::describe_selector(sub)
+                        ));
+                    }
+                }
+            }
+            if optional {
+                return Ok(RunStepReport::Skipped {
+                    reason: format!(
+                        "optional tapOn fallback chain: all {} layers missed; trace=[{}]",
+                        fallback.len(),
+                        trace.join("; ")
+                    ),
+                });
+            }
+            return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::ElementNotFound),
+                message: format!("tapOn fallback chain: all {} layers missed", fallback.len()),
+                selector: Some(selector.clone()),
+                hint: Some(format!(
+                    "Per-layer trace (AI-readable): [{}]. \
+                     Suggested fixes: 1) push upstream lib to set \
+                     accessibilityIdentifier (L1 hit, fastest+stable); \
+                     2) if multi-locale, add localized_text table (L4); \
+                     3) if visible text varies, use ocrText (L5). \
+                     Avoid L7 absolute coord as default.",
+                    trace.join("; ")
+                )),
+                ..Default::default()
+            })));
+        }
+        // v5.20 c2 — Point 是 L7 last-resort direct coord. Adapter dispatch
+        // 直接 tap_at_coord (IOHID synthesize, 同 Step::TapAtPoint).
+        if let Selector::Point { nx, ny } = selector {
+            self.app.tap_at_coord(*nx, *ny).await?;
+            return Ok(RunStepReport::Ok);
+        }
+        // v5.20 c1 — AnchorRelative 是 escape hatch family L6, adapter
+        // dispatch 直接 — find anchor norm coord → add (dx, dy) shift →
+        // tap_at_norm_coord (IOHID synthesize). 不经 resolver 因 target
+        // 本无 a11y form 只有 anchor 有.
+        if let Selector::AnchorRelative { anchor, dx, dy } = selector {
+            return match self.app.find_norm_coord(anchor).await? {
+                Some((anchor_nx, anchor_ny)) => {
+                    let nx = (anchor_nx + dx).clamp(0.0, 1.0);
+                    let ny = (anchor_ny + dy).clamp(0.0, 1.0);
+                    self.app.tap_at_coord(nx, ny).await?;
+                    Ok(RunStepReport::Ok)
+                }
+                None => {
+                    if optional {
+                        Ok(RunStepReport::Skipped {
+                            reason: format!(
+                                "optional tapOn anchored: anchor not found ({})",
+                                smix_sdk::describe_selector(anchor)
+                            ),
+                        })
+                    } else {
+                        Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                            code: Some(FailureCode::ElementNotFound),
+                            message: format!(
+                                "tapOn anchored: anchor not found ({})",
+                                smix_sdk::describe_selector(anchor)
+                            ),
+                            selector: Some(selector.clone()),
+                            hint: Some(
+                                "L6 anchored coord requires the anchor sub-selector to \
+                                 resolve to exactly one node; check anchor selector"
+                                    .into(),
+                            ),
+                            ..Default::default()
+                        })))
+                    }
+                }
+            };
+        }
+        // v5.19 c1 — OcrText 是 sense layer L5, adapter dispatch 直接走
+        // App::find_by_text_ocr → tap_at_norm_coord (IOHID synthesize 同
+        // /tap-at-norm-coord path), 不经 resolver 也不 desugar 成
+        // Selector::Text (OCR 找的元素可能不在 a11y tree). 空 locales 默
+        // adapter last_locale.
+        if let Selector::OcrText {
+            ocr_text, locales, ..
+        } = selector
+        {
+            let effective_locales: Vec<String> = if locales.is_empty() {
+                vec![self.last_locale.clone()]
+            } else {
+                locales.clone()
+            };
+            return match self
+                .app
+                .find_by_text_ocr(ocr_text, &effective_locales)
+                .await?
+            {
+                Some(frame) => {
+                    self.app.tap_at_coord(frame.mid_x(), frame.mid_y()).await?;
+                    Ok(RunStepReport::Ok)
+                }
+                None => {
+                    if optional {
+                        Ok(RunStepReport::Skipped {
+                            reason: format!(
+                                "optional tapOn ocrText: OCR found no match for \"{ocr_text}\" (locales={effective_locales:?})"
+                            ),
+                        })
+                    } else {
+                        Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                            code: Some(FailureCode::ElementNotFound),
+                            message: format!(
+                                "tapOn ocrText: OCR found no match for \"{ocr_text}\""
+                            ),
+                            selector: Some(selector.clone()),
+                            hint: Some(
+                                "Apple Vision OCR returned 0 matching observations; check \
+                                 spelling / recognition language / surface contrast"
+                                    .into(),
+                            ),
+                            ..Default::default()
+                        })))
+                    }
+                }
+            };
+        }
+        // v5.18 c1 — desugar LocalizedText → Text by last_locale before all
+        // routing below.
+        let desugared = self.desugar_localized_text(selector);
+        let selector: &Selector = &desugared;
+        // v5.3 c5 — capability-gap closure: SwiftUI modal dismiss ids route via
+        // App::tap_xcui (swift /tap-by-id → XCUIElement-anchored coord.tap) to
+        // match the SDK self-path c4 seg_v2_modal_*_basic. Behavior is still
+        // gated by the v5.x-backlog-c4 (c) root cause (SwiftUI .sheet/.alert/
+        // .confirmationDialog/.fullScreenCover binding doesn't fire from
+        // XCUIElement.tap() in iOS 17+); this branch addresses capability
+        // parity (adapter side mustn't quietly downgrade SDK capability),
+        // not the root cause. Only Id-form selectors with default modifiers
+        // route through tap_xcui — Text/Label/Role and Id-with-modifiers
+        // selectors keep the default tap path (v3.20-v5.2 behavior unchanged).
+        if let Selector::Id { id, modifiers } = selector
+            && modifiers == &smix_sdk::Modifiers::default()
+            && is_swiftui_modal_dismiss_id(id)
+        {
+            return match self.app.tap_xcui(id).await {
+                Ok(()) => Ok(RunStepReport::Ok),
+                Err(e) if optional && e.code == FailureCode::ElementNotFound => {
+                    Ok(RunStepReport::Skipped {
+                        reason: format!(
+                            "optional tapOn (modal-dismiss tap_xcui): element not found ({}); skipped",
+                            smix_sdk::describe_selector(selector)
+                        ),
+                    })
+                }
+                Err(e) => Err(RunError::Sdk(e)),
+            };
+        }
+        // v5.10 c3 — capability-gap closure (auto-scroll on tab tap):
+        // SwiftUI tab-bar ids (`v2-tab-*`) route via App::tap_xcui so the
+        // tap survives a future fixture where the bar wraps into a
+        // ScrollView. maestro CLI `tapOn id:` is static — this routing
+        // makes smix adapter strictly ≥ maestro on the tab-navigation
+        // path ([[smix-must-be-superset-of-maestro]]). R2 guard: scoped
+        // to the SwiftUI tab namespace; RN Pressable (where tap_xcui
+        // does not fire onPress, v4.0 c3 G8) is not in the v2 fixture
+        // id space, so widening here doesn't risk that regression.
+        if let Selector::Id { id, modifiers } = selector
+            && modifiers == &smix_sdk::Modifiers::default()
+            && is_swiftui_navigation_or_tab_id(id)
+        {
+            return match self.app.tap_xcui(id).await {
+                Ok(()) => Ok(RunStepReport::Ok),
+                Err(e) if optional && e.code == FailureCode::ElementNotFound => {
+                    Ok(RunStepReport::Skipped {
+                        reason: format!(
+                            "optional tapOn (nav-tab tap_xcui): element not found ({}); skipped",
+                            smix_sdk::describe_selector(selector)
+                        ),
+                    })
+                }
+                Err(e) => Err(RunError::Sdk(e)),
+            };
+        }
+        let result = self.app.tap(selector).await;
+        match result {
+            Ok(()) => Ok(RunStepReport::Ok),
+            Err(e) if optional && e.code == FailureCode::ElementNotFound => {
+                Ok(RunStepReport::Skipped {
+                    reason: format!(
+                        "optional tapOn: element not found ({}); skipped",
+                        smix_sdk::describe_selector(selector)
+                    ),
+                })
+            }
+            Err(e) => Err(RunError::Sdk(e)),
+        }
+    }
+
+    async fn expand_subflow(
+        &mut self,
+        rel: &str,
+        warnings: &mut Vec<String>,
+    ) -> Result<RunStepReport, RunError> {
+        // v0.3.0 Phase C — `std/<name>.yaml` prefix resolves to the
+        // shipped std-subflow catalogue. Priority:
+        //   1. <cwd>/std/<name>.yaml (consumer override)
+        //   2. <SMIX_STD_SUBFLOWS>/<name>.yaml (env override)
+        //   3. ~/.local/share/smix/std/<name>.yaml (install shipped)
+        //   4. <crate>/std/<name>.yaml (source tree, dev)
+        let raw = if let Some(name) = rel.strip_prefix("std/") {
+            resolve_std_subflow(name, &self.base_dir).ok_or_else(|| {
+                RunError::Io(format!(
+                    "std subflow `{name}` not found in cwd/std/, $SMIX_STD_SUBFLOWS, ~/.local/share/smix/std/, or source tree"
+                ))
+            })?
+        } else {
+            self.base_dir.join(rel)
+        };
+        let abs = match raw.canonicalize() {
+            Ok(p) => p,
+            Err(e) => {
+                return Err(RunError::Io(format!("canonicalize {}: {e}", raw.display())));
+            }
+        };
+
+        if self.run_stack.contains(&abs) {
+            return Err(RunError::RunFlowCycle(abs));
+        }
+
+        let parsed = match parse_flow_file(&abs) {
+            Ok(f) => f,
+            Err(ParseError::UnsupportedCommand(cmd)) => {
+                let reason = format!(
+                    "subflow {} contains unsupported command `{}`; skipped (§9 #5)",
+                    abs.display(),
+                    cmd
+                );
+                warnings.push(reason.clone());
+                return Ok(RunStepReport::Skipped { reason });
+            }
+            Err(other) => return Err(RunError::Parse(other)),
+        };
+
+        let new_base = abs
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| self.base_dir.clone());
+        let saved_base = std::mem::replace(&mut self.base_dir, new_base);
+        self.run_stack.push(abs.clone());
+
+        // Box::pin breaks the async recursion cycle (expand_subflow → run_steps
+        // → run_step → expand_subflow) — without it the future type would be
+        // infinitely sized.
+        let result = Box::pin(self.run_steps(&parsed.steps)).await;
+
+        self.run_stack.pop();
+        self.base_dir = saved_base;
+
+        let inner = result?;
+        Ok(RunStepReport::ExpandedSubflow {
+            path: abs,
+            inner: Box::new(inner),
+        })
+    }
+}
+
+// ----------------------------------------------------------------------
+// Helper parsers
+// ----------------------------------------------------------------------
+
+/// v5.2 c2 — maestro yaml `launchApp.permissions.<name>` 字串映射到 typed
+/// [`SimctlPermission`]. **explicit 不猜**: 未知 permission name 显式
+/// [`ParseError::InvalidValue`] 报全集 supported list, 不静默 noop
+/// (§13 + [[priority-quality-perf-over-cost]]).
+fn parse_simctl_permission(name: &str) -> Result<SimctlPermission, ParseError> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "camera" => Ok(SimctlPermission::Camera),
+        "photos" => Ok(SimctlPermission::Photos),
+        "location" => Ok(SimctlPermission::Location),
+        "location-always" | "locationalways" => Ok(SimctlPermission::LocationAlways),
+        "notifications" => Ok(SimctlPermission::Notifications),
+        "microphone" => Ok(SimctlPermission::Microphone),
+        "contacts" => Ok(SimctlPermission::Contacts),
+        "calendar" => Ok(SimctlPermission::Calendar),
+        "reminders" => Ok(SimctlPermission::Reminders),
+        "media" | "media-library" => Ok(SimctlPermission::Media),
+        "motion" => Ok(SimctlPermission::Motion),
+        "homekit" => Ok(SimctlPermission::HomeKit),
+        "health" => Ok(SimctlPermission::Health),
+        "bluetooth" => Ok(SimctlPermission::Bluetooth),
+        "faceid" => Ok(SimctlPermission::Faceid),
+        other => Err(ParseError::InvalidValue {
+            field: format!("launchApp.permissions.{other}"),
+            reason: format!(
+                "unknown permission name '{other}' — supported: camera, photos, \
+                 location, location-always, notifications, microphone, contacts, \
+                 calendar, reminders, media (media-library), motion, homekit, \
+                 health, bluetooth, faceid"
+            ),
+        }),
+    }
+}
+
+fn parse_key_name(s: &str) -> Result<KeyName, RunError> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "enter" | "return" => Ok(KeyName::Return),
+        "delete" | "backspace" | "back" => Ok(KeyName::Delete),
+        "tab" => Ok(KeyName::Tab),
+        "space" => Ok(KeyName::Space),
+        "escape" | "esc" => Ok(KeyName::Escape),
+        "arrowup" | "up" => Ok(KeyName::ArrowUp),
+        "arrowdown" | "down" => Ok(KeyName::ArrowDown),
+        "arrowleft" | "left" => Ok(KeyName::ArrowLeft),
+        "arrowright" | "right" => Ok(KeyName::ArrowRight),
+        // v5.2 c2 — iOS 硬件按键(maestro yaml 全键覆盖,iOS sim 适用):
+        // home / lock 走 XCUIDevice.shared.perform(.homeButton/.lockButton);
+        // volume up / volume down 走 XCUIDevice.Button.volumeUp/volumeDown。
+        // to_ascii_lowercase() 不影响空格,maestro 文档 `pressKey: volume up`
+        // 是真实格式 — 单独 arm 覆盖空格 / 下划线 / 连写三种。
+        "home" => Ok(KeyName::Home),
+        "lock" => Ok(KeyName::Lock),
+        "volumeup" | "volume up" | "volume_up" => Ok(KeyName::VolumeUp),
+        "volumedown" | "volume down" | "volume_down" => Ok(KeyName::VolumeDown),
+        _ => Err(RunError::UnknownKey(s.to_string())),
+    }
+}
+
+fn parse_swipe_direction(s: &str) -> Result<SwipeDirection, RunError> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "up" => Ok(SwipeDirection::Up),
+        "down" => Ok(SwipeDirection::Down),
+        "left" => Ok(SwipeDirection::Left),
+        "right" => Ok(SwipeDirection::Right),
+        _ => Err(RunError::UnknownDirection(s.to_string())),
+    }
+}
+
+/// v0.3.0 Phase C C2 — resolve `std/<name>.yaml` against the shipped
+/// subflow catalogue. Priority:
+///   1. `<base_dir>/std/<name>.yaml` (consumer override, wins)
+///   2. `$SMIX_STD_SUBFLOWS/<name>.yaml`
+///   3. `~/.local/share/smix/std/<name>.yaml` (install-local.sh target)
+///   4. `<crate>/std/<name>.yaml` (source-tree default, for dev)
+fn resolve_std_subflow(name: &str, base_dir: &Path) -> Option<PathBuf> {
+    let file = name;
+    let candidates = [
+        base_dir.join("std").join(file),
+        std::env::var_os("SMIX_STD_SUBFLOWS")
+            .map(|p| PathBuf::from(p).join(file))
+            .unwrap_or_default(),
+        dirs::home_dir()
+            .map(|h| h.join(".local/share/smix/std").join(file))
+            .unwrap_or_default(),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|p| p.join("smix-cli/std").join(file))
+            .unwrap_or_default(),
+    ];
+    candidates.into_iter().find(|c| c.exists())
+}

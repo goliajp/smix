@@ -1,0 +1,150 @@
+---
+title: Authoring guide for AI agents
+---
+
+# Authoring guide for AI agents
+
+> The section below is written to be pasted directly into a system prompt
+> for an AI coding agent writing smix tests.
+
+## Selectors — what to use
+
+Always prefer, in this order:
+
+1. `{ role: 'button', name: 'Sign in' }` — most robust, AI-friendly
+2. `{ id: 'loginButton' }` — when the app sets `accessibilityIdentifier`
+3. `{ text: 'Sign in' }` or `{ text: /Sign in/i }` — visible text
+4. `{ label: 'Login submission' }` — `accessibilityLabel`
+
+Disambiguate with modifiers, not by index:
+
+- `{ text: 'Skip', near: { text: 'Onboarding' } }`
+- `{ role: 'button', name: 'Save', inside: { role: 'alert' } }`
+- `{ role: 'cell', name: /Headphones/, below: { text: 'Recommended' } }`
+
+Use `nth` / `first` / `last` **only as a last resort** when the UI has
+genuinely identical siblings.
+
+## Selectors — what NOT to use
+
+- ❌ XPath — not supported on purpose. If you want to write XPath, you
+  haven't found the right semantic anchor yet.
+- ❌ Coordinates — never write `tap({ x: 100, y: 200 })`. Not part of the
+  surface.
+- ❌ CSS selectors — wrong platform.
+- ❌ Chained query strings — selectors are objects, not strings.
+
+## Actions
+
+```typescript
+app.launch(bundleId, { fresh?, args?, env? })
+app.terminate(bundleId)
+app.background() / app.foreground(bundleId)
+
+app.tap(selector, { via? })          // via: 'host-hid' (default) | 'runner'
+app.doubleTap(selector)
+app.longPress(selector, { durationMs })
+app.fill(selector, text)             // typeText APPENDS (call clear first to replace)
+app.clear(selector)
+app.swipe('up' | 'down' | 'left' | 'right', { from? })
+app.scroll(selector, 'up' | 'down')
+app.scrollTo(selector)               // scroll element into view
+
+app.pressKey('return' | 'delete' | 'space' | 'tab' | 'escape' | 'arrow*')
+app.hideKeyboard()
+
+app.waitFor(selector, { timeoutMs })   // never use raw sleep
+app.screenshot()
+app.describe()                          // full ScreenDescription
+
+app.element(selector)                   // -> ElementHandle for expect()
+
+app.pasteboard.set(text)
+app.pasteboard.get()
+app.permissions.grant('camera' | 'photos' | 'notifications' | ...)
+app.system.openUrl(url)                 // deep link
+app.system.setAppearance('light' | 'dark')
+app.system.setLocale('en_US')
+app.system.setNetwork('online' | 'offline' | 'slow-3g')
+```
+
+## Assertions
+
+```typescript
+expect(app.element(sel)).toBeVisible({ timeout? })
+expect(app.element(sel)).toBeHidden({ timeout? })
+expect(app.element(sel)).toHaveText('exact' | /regex/)
+expect(app.element(sel)).toBeEnabled()
+expect(app.element(sel)).toHaveCount(n)
+expect(await app.describe()).toMatchSnapshot('name')
+```
+
+All matchers auto-poll until success or timeout (default 5s). You do
+**not** need to write retry loops.
+
+## Perf model — what you're actually paying for
+
+A given step's wall-clock is roughly:
+
+- **tap** — `host-hid` default: runner returns frame (~64 ms on iOS 26 sim
+  after v1.2.4 IOHID sleep reduction) + sidecar tap. No synchronous
+  animation wait. Cached tree is reused inside the tap dispatch (v1.2.3).
+- **fill** / **clear** / **pressKey** — XCTest daemon `_XCT_sendString`
+  (~290 ms per call, dominated by Apple's per-event IOHIDEvent
+  processing). `typingFrequency=200` (v1.2.4 experiment, verified safe).
+- **expect** — first poll usually hits the post-action `/tree` prefetch
+  promise (~0 ms wait on warm path). On miss, 50 ms sleep + retry; cache
+  TTL 250 ms.
+
+Hot-spot reduction so far (v1.1 → v1.2.4, same 30-step bench): **8806 →
+7268 ms / iter, –17%**. Most of the remaining time is in Apple's daemon
++ iOS sim sync (not addressable without breaking the iOS-friendly
+invariants).
+
+### Two tap paths
+
+When you write `app.tap({ text: 'General' })` you go through **Path A**
+— `host-hid` default; runner resolves the element via XCUITest and
+returns a frame, SDK injects at coord via the persistent sidecar.
+
+When the selector isn't a plain `{ text }` (e.g. `{ role:
+'searchField' }`, anything with modifiers), you go through **Path B**
+— SDK fetches `/tree`, resolves the selector locally, injects via
+sidecar. Path B costs one cached tree fetch (~0 ms warm, ~130 ms cold).
+
+Use whatever selector reads cleanest; the dispatch is automatic.
+
+## Things to never do
+
+- **Never call `setTimeout` or write a sleep helper.** If you need to
+  wait for something, use `app.waitFor(selector)` or pass `{ timeout }`
+  to an `expect` matcher.
+- **Never query elements by reading `app.describe()` and filtering.**
+  That bypasses the matcher engine and gives no auto-poll. Just write
+  the selector and let `expect` resolve it.
+- **Never invent action names.** The surface above is exhaustive. If
+  something seems missing (e.g. "pinch"), it isn't built yet — write
+  the test as if it existed and surface the gap.
+- **Never write end-of-test cleanup that depends on screen state.**
+  Use `app.terminate(bundleId)` if needed; don't try to "navigate back
+  to home" through taps.
+
+## When a test fails
+
+`ExpectationFailure` is structured for you to read directly:
+
+```
+FAIL [ELEMENT_NOT_FOUND]: Expected element to be visible.
+  selector: { text: "Sgin in" }
+  suggestions:
+    - Did you mean "Sign in"? (similarity 0.86)
+  visible elements (top 10):
+    - button name="Sign in" id="signInButton"
+    - button name="Register"
+    - link name="Forgot password?"
+```
+
+Update the selector based on the suggestions / visible elements list.
+Do not try/catch around assertions to swallow failures.
+
+> Source of truth: [README §Authoring on GitHub](https://github.com/goliajp/smix#authoring-guide-for-ai-agents)

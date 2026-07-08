@@ -1,0 +1,4 @@
+appId: com.test.parity
+---
+- doubleTapOn:
+    id: "card-1"

@@ -1,0 +1,14 @@
+# smix std subflow: wipe app state.
+#
+# Usage:
+#   - runFlow: std/wipe-app-state.yaml
+#
+# Effect: clears app data + keychain in one line. Idempotent — safe
+# to include at the start of any test flow to ensure a clean slate
+# without polluting the yaml with lifecycle boilerplate.
+#
+# Prerequisite: the invoking flow's `appId` header names the target
+# app. This subflow inherits it.
+---
+- clearState
+- clearKeychain

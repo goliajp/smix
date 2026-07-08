@@ -1,0 +1,40 @@
+{
+  "id": "fixture-018-role-with-name",
+  "description": "Role + name pattern picks the button whose accessible name matches the pattern",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-cancel",
+        "label": "Cancel",
+        "bounds": {"x": 50, "y": 600, "w": 80, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-submit",
+        "label": "Submit Order",
+        "bounds": {"x": 200, "y": 600, "w": 120, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"role": "button", "name": "Submit Order"},
+  "expected": ["btn-submit"]
+}

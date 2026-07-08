@@ -1,0 +1,56 @@
+name: SmixRunner
+options:
+  bundleIdPrefix: dev.smix
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: en
+
+packages:
+  SmixRunnerCore:
+    path: .
+
+targets:
+  SmixRunner:
+    type: application
+    platform: iOS
+    sources:
+      - path: SmixRunner
+    info:
+      path: SmixRunner/Info.plist
+      properties:
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.smix.SmixRunner
+
+  SmixRunnerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: SmixRunnerUITests
+    info:
+      path: SmixRunnerUITests/Info.plist
+      properties:
+        # v1.5 c5i-g — Apple a11y server modal subtree access (maestro runner
+        # xcodeproj 同款). 跟 v1.6 c2 ObjC swizzle `snapshotKeyHonorModalViews=NO`
+        # 是双保险 (Info.plist hint + 运行时 overlay).
+        UIApplicationSupportsIndirectInputEvents: true
+    dependencies:
+      - target: SmixRunner
+      - package: SmixRunnerCore
+        product: SmixRunnerCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.smix.SmixRunnerUITests
+        TEST_TARGET_NAME: SmixRunner
+        SWIFT_OBJC_BRIDGING_HEADER: SmixRunnerUITests/SmixRunnerUITests-Bridging-Header.h
+
+schemes:
+  SmixRunner:
+    build:
+      targets:
+        SmixRunner: all
+        SmixRunnerUITests: [test]
+    test:
+      targets:
+        - SmixRunnerUITests

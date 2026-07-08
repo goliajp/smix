@@ -1,0 +1,5 @@
+appId: com.test.parity
+---
+- runScript: |
+    const x = 1 + 2;
+    output.result = x;

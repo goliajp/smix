@@ -1,0 +1,20 @@
+# smix std subflow: wait for metro to serve bundle.
+#
+# Usage:
+#   - runFlow: std/wait-metro-bundle.yaml
+#
+# Effect: waits until the metro dev server has finished bundling and
+# the app is interactive. Uses the app-side "bootstrap: all systems go"
+# log signal via metro-log signal await.
+#
+# Prerequisites:
+#   1. Metro log source configured (--metro-log-url or
+#      .smix/config.json metroLog block)
+#   2. App emits the "bootstrap: all systems go" signal when ready
+#      (React Native / Expo default logs a similar readiness marker;
+#      override the regex below for your app's specific signal)
+---
+- expect:
+    signal:
+      regex: "bootstrap.*all systems go|Running.*application"
+      timeoutMs: 30000

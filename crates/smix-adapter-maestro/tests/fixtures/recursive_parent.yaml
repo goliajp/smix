@@ -1,0 +1,4 @@
+appId: com.test.recursive
+---
+- runFlow: go_to_alerts.yaml
+- tapOn: "after"

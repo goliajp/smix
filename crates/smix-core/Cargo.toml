@@ -1,0 +1,28 @@
+[package]
+name = "smix-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix core — sense + decide + act primitives (stone)."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-core"
+readme = "README.md"
+keywords = ["ios", "simulator", "automation"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# No dependencies at this stage. Add serde etc. as needed via
+# workspace.dependencies (kept intentionally minimal).
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "perf_gate"
+harness = false

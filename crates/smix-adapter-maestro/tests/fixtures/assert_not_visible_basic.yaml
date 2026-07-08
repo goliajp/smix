@@ -1,0 +1,4 @@
+appId: com.test.parity
+---
+- assertNotVisible:
+    text: "Never shown"

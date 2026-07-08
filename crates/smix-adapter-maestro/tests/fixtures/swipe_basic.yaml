@@ -1,0 +1,5 @@
+appId: com.test.parity
+---
+- swipe:
+    from: "10%,20%"
+    to: "10%,80%"

@@ -1,0 +1,16 @@
+# smix std subflow: exit QA mode.
+#
+# Usage:
+#   - runFlow: std/quit-qa-mode.yaml
+#
+# Effect: closes the QA overlay by tapping the qa-bubble-toggle
+# (analog to opening it via `- fixture: <id>`). Idempotent when
+# combined with a visibility gate.
+---
+- runFlow:
+    when:
+      visible:
+        id: qa-bubble-toggle
+    commands:
+      - tapOn:
+          id: qa-bubble-toggle

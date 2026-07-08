@@ -1,0 +1,6 @@
+appId: com.test.parity
+---
+- addMedia: "/tmp/photo.png"
+- addMedia:
+    - "/tmp/a.png"
+    - "/tmp/b.mp4"

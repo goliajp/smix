@@ -1,0 +1,13 @@
+{
+  "name": "@smix/rn-demo-app",
+  "version": "0.1.0-pre.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "bun login-flow.ts",
+    "demo:tsx": "npx tsx login-flow.ts"
+  },
+  "dependencies": {
+    "@smix/rn": "file:../.."
+  }
+}

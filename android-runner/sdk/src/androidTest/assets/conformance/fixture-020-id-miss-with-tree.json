@@ -1,0 +1,28 @@
+{
+  "id": "fixture-020-id-miss-with-tree",
+  "description": "Tree has nodes but the id selector misses — returns [] (paired with .notFound throw in SDK)",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-other",
+        "label": "Other",
+        "bounds": {"x": 100, "y": 400, "w": 100, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"id": "btn-missing"},
+  "expected": []
+}

@@ -1,0 +1,24 @@
+[package]
+name = "smix-annotate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-annotate — screenshot annotation library. Composes circle / arrow / text / box / line primitives over PNG bytes with named color palette and 3-preset PNG compression. Powers `smix annotate` / `smix screenshot --annotate` CLI + `takeScreenshot: {annotate: [...]}` yaml verb + `--debug-output` fail-step auto-annotate."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-annotate"
+readme = "README.md"
+keywords = ["annotate", "screenshot", "image", "smix", "testing"]
+categories = ["multimedia::images", "development-tools"]
+
+[lints]
+workspace = true
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+imageproc = { version = "0.25", default-features = false }
+ab_glyph = "0.2"
+oxipng = { version = "9", default-features = false, features = ["zopfli"] }
+thiserror.workspace = true

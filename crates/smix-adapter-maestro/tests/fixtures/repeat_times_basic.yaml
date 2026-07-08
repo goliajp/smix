@@ -1,0 +1,7 @@
+appId: com.test.parity
+---
+- repeat:
+    times: 3
+    commands:
+      - tapOn:
+          id: "next-button"

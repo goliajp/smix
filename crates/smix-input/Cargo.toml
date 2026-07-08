@@ -1,0 +1,32 @@
+[package]
+name = "smix-input"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-input — KeyName + SwipeDirection driver-level input primitive enums (stone)."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-input"
+readme = "README.md"
+keywords = ["input", "ios", "keyboard", "gesture"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "input"
+harness = false
+
+[[bench]]
+name = "perf_gate"
+harness = false

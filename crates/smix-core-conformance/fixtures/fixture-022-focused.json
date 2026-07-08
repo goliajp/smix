@@ -1,0 +1,29 @@
+{
+  "id": "fixture-022-focused",
+  "description": "Focused selector — picks the currently-focused element (singleton runtime property)",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+    "children": [
+      {
+        "rawType": "textField", "role": "textField",
+        "identifier": "input-email",
+        "label": "Email",
+        "bounds": {"x": 50, "y": 200, "w": 293, "h": 40},
+        "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "textField", "role": "textField",
+        "identifier": "input-password",
+        "label": "Password",
+        "bounds": {"x": 50, "y": 260, "w": 293, "h": 40},
+        "enabled": true, "selected": false, "hasFocus": true, "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"focused": true},
+  "expected": ["input-password"]
+}

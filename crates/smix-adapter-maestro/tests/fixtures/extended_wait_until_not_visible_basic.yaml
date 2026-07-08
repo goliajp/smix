@@ -1,0 +1,6 @@
+appId: com.test.parity
+---
+- extendedWaitUntil:
+    notVisible:
+      text: Loading
+    timeout: 5000

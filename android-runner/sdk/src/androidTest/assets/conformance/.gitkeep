@@ -1,0 +1,6 @@
+# Conformance fixtures are synced from crates/smix-core-conformance/fixtures/
+# via scripts/sdk/sync-conformance-fixtures-to-android-assets.sh
+#
+# Run that script before each `:sdk:connectedDebugAndroidTest --tests
+# dev.smix.sdk.ConformanceHarnessTest` invocation. Do NOT manually edit
+# fixtures here — they're auto-overwritten by the sync.

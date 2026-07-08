@@ -1,0 +1,5 @@
+appId: com.test.parity
+---
+- assertTrue: "true"
+- assertTrue: "true && !false"
+- assertTrue: "\"a\" == \"a\""

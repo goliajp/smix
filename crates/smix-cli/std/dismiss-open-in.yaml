@@ -1,0 +1,14 @@
+# smix std subflow — dismiss the iOS 26 SpringBoard "Open in <app>?"
+# dialog when it appears. Idempotent: if the dialog isn't visible, this
+# subflow is a no-op (thanks to `when.visible`).
+#
+# Consume as:
+#   - runFlow: std/dismiss-open-in.yaml
+appId: com.apple.springboard
+---
+- runFlow:
+    when:
+      visible:
+        text: "Open in"
+    commands:
+      - tapOn: Cancel

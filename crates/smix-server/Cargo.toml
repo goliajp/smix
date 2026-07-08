@@ -1,0 +1,51 @@
+[package]
+name = "smix-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-server — smix's general-purpose httpapi server. Fixed httpapi stack (axum/sqlx-postgres/redis-valkey). First feature module `mod stream`: serves per-sim live HLS (tower-http ServeDir) + REST sim registry."
+homepage.workspace = true
+readme = "README.md"
+keywords = ["ios", "simulator", "http", "stream", "hls"]
+categories = ["development-tools::testing"]
+
+[lib]
+name = "smix_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "smix-server"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+tower-http.workspace = true
+sqlx.workspace = true
+redis.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+dotenvy.workspace = true
+thiserror.workspace = true
+libc.workspace = true
+tokio = { workspace = true, features = ["full"] }
+
+[dev-dependencies]
+tower.workspace = true
+tempfile.workspace = true
+http-body-util = "0.1"
+criterion.workspace = true
+
+[[bench]]
+name = "perf_gate"
+harness = false

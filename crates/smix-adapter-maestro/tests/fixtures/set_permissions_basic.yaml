@@ -1,0 +1,8 @@
+appId: com.test.parity
+---
+- launchApp:
+    appId: com.target.app
+- setPermissions:
+    camera: allow
+    location: deny
+    notifications: unset

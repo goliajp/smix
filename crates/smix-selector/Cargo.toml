@@ -1,0 +1,40 @@
+[package]
+name = "smix-selector"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-selector — Selector enum (5 base form + AnchorBox) + Modifiers + match_text (stone)."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-selector"
+readme = "README.md"
+keywords = ["selector", "query", "ios", "automation", "pattern"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+regex.workspace = true
+smix-screen = { path = "../smix-screen", version = "1.0.0" }
+
+[dev-dependencies]
+serde_json.workspace = true
+criterion.workspace = true
+dhat.workspace = true
+proptest.workspace = true
+
+[[bench]]
+name = "matchtext"
+harness = false
+
+[[bench]]
+name = "perf_gate"
+harness = false
+
+[[example]]
+name = "dhat_profile"
+path = "examples/dhat_profile.rs"

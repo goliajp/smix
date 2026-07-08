@@ -1,0 +1,52 @@
+{
+  "id": "fixture-008-spatial-leftOf",
+  "description": "Element to the left of 'Save' — spatial leftOf filter picks smaller x centroid",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-left",
+        "label": "Cancel",
+        "bounds": {"x": 50, "y": 600, "w": 80, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-right-no-match",
+        "label": "Cancel",
+        "bounds": {"x": 300, "y": 600, "w": 80, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-save",
+        "label": "Save",
+        "bounds": {"x": 200, "y": 600, "w": 80, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"label": "Cancel", "leftOf": {"label": "Save"}},
+  "expected": ["btn-left"]
+}

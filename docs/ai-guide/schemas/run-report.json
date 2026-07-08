@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/goliajp/smix/blob/develop/docs/ai-guide/schemas/run-report.json",
+  "title": "smix run report",
+  "description": "Payload emitted by `smix run --format json` on stdout at exit + payload written to `--debug-output <dir>/run-summary.json`. Consumers should `JSON.parse` the entire stdout body (single top-level object).",
+  "type": "object",
+  "required": ["flow", "runOutcome"],
+  "additionalProperties": true,
+  "properties": {
+    "flow": {
+      "type": "string",
+      "description": "Path to the top-level yaml passed to `smix run`. Verbatim from CLI; may be absolute or relative."
+    },
+    "runOutcome": {
+      "type": "string",
+      "enum": ["success", "failure"],
+      "description": "Terminal outcome. `success` = every step returned Ok or Skipped and the flow reached its final step. `failure` = a step returned an error or the run bailed on parse/io/cycle. Non-fatal WARNs during the run do not change this."
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Warning lines the run emitted (also on stderr). Common causes: graceful skip of unsupported subflow verbs, G10 clearState warns, missing runFlow files fallback."
+    },
+    "error": {
+      "type": "string",
+      "description": "Present when runOutcome=failure and the failure did NOT surface as an SDK ExpectationFailure (parse/io/cycle/etc.). Contains the stringified RunError."
+    },
+    "failure": {
+      "type": "object",
+      "description": "Present when runOutcome=failure AND the failure was an SDK ExpectationFailure — the AI-readable case. Wire shape mirrors the internal `smix-error::ExpectationFailure`.",
+      "required": ["code", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "FailureCode variant name, debug-formatted. Stable across smix versions. Common values: `ElementNotFound`, `Timeout`, `DriverError`, `NotImplemented`, `RunnerError`.",
+          "examples": ["ElementNotFound", "Timeout", "DriverError"]
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable failure summary (mirrors the top line of the stderr `to_prompt` block)."
+        },
+        "selector": {
+          "type": ["string", "null"],
+          "description": "Debug-formatted `Selector` variant when the failure was selector-scoped. `null` for non-selector failures (parse errors, driver errors, etc.)."
+        },
+        "suggestions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ranked list of hint strings. Present for ElementNotFound (near-match testIDs by edit distance) and for expression errors (parser hints)."
+        },
+        "visibleCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of visible A11yNode entries captured at failure. The full array is not inline in the JSON (would balloon typical response); it goes to `--debug-output/step-<N>-<verb>.json`'s a11y snapshot."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "flow": "tests/fixtures/simple.yaml",
+      "runOutcome": "success",
+      "warnings": []
+    },
+    {
+      "flow": ".devtools/smix/flows/_perf/golden-path.yaml",
+      "runOutcome": "failure",
+      "failure": {
+        "code": "ElementNotFound",
+        "message": "element not found: { id: input-email }",
+        "selector": "Id(\"input-email\")",
+        "suggestions": ["did you mean input-email-field?"],
+        "visibleCount": 12
+      }
+    }
+  ]
+}

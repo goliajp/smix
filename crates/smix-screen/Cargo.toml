@@ -1,0 +1,38 @@
+[package]
+name = "smix-screen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-screen — A11yNode + Rect + Bounds + Role types + visibility primitives (stone)."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-screen"
+readme = "README.md"
+keywords = ["ios", "accessibility", "a11y", "rect", "visibility"]
+categories = ["development-tools::testing", "graphics"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+criterion.workspace = true
+dhat.workspace = true
+proptest.workspace = true
+
+[[bench]]
+name = "visibility"
+harness = false
+
+[[bench]]
+name = "perf_gate"
+harness = false
+
+[[example]]
+name = "dhat_profile"
+path = "examples/dhat_profile.rs"

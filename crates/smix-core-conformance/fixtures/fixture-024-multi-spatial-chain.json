@@ -1,0 +1,53 @@
+{
+  "id": "fixture-024-multi-spatial-chain",
+  "description": "Multiple spatial modifiers chained — below 'Address' AND rightOf 'icon' picks intersection of both filters",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+    "children": [
+      {
+        "rawType": "staticText", "role": "staticText",
+        "identifier": "label-address",
+        "label": "Address", "text": "Address",
+        "bounds": {"x": 50, "y": 200, "w": 100, "h": 24},
+        "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "image", "role": "image",
+        "identifier": "icon-edit",
+        "label": "icon",
+        "bounds": {"x": 50, "y": 300, "w": 30, "h": 30},
+        "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button", "role": "button",
+        "identifier": "btn-target",
+        "label": "Edit",
+        "bounds": {"x": 200, "y": 300, "w": 80, "h": 40},
+        "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button", "role": "button",
+        "identifier": "btn-above-only",
+        "label": "Edit",
+        "bounds": {"x": 200, "y": 100, "w": 80, "h": 40},
+        "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button", "role": "button",
+        "identifier": "btn-left-only",
+        "label": "Edit",
+        "bounds": {"x": 0, "y": 300, "w": 30, "h": 40},
+        "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"label": "Edit", "below": {"text": "Address"}, "rightOf": {"label": "icon"}},
+  "expected": ["btn-target"]
+}

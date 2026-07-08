@@ -1,0 +1,36 @@
+appId: com.example.app
+---
+- runFlow: ../../subflows/launch-warm.yaml
+- runFlow: ../../subflows/ensure-login.yaml
+- runFlow: ../../subflows/go-to-alerts.yaml
+
+# switch to counting tab
+- tapOn: "Counting"
+- waitForAnimationToEnd
+
+# wait for counting list or empty state
+- extendedWaitUntil:
+    visible:
+      text: "No counting configurations|Area Counting|Line Crossing|Crowd"
+    timeout: 30000
+
+# tap first counting item (use type label as tap target)
+- tapOn:
+    text: "Area Counting|Line Crossing|Crowd Estimate"
+    index: 0
+    optional: true
+- waitForAnimationToEnd
+
+# verify chart page with time toggles or stayed on list
+- extendedWaitUntil:
+    visible:
+      text: "Day|Week|Month|No counting configurations|Area Counting"
+    timeout: 30000
+
+# try switching time ranges (optional — only if on detail page)
+- tapOn:
+    text: "Week"
+    optional: true
+- tapOn:
+    text: "Month"
+    optional: true

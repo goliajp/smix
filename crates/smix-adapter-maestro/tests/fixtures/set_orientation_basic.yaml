@@ -1,0 +1,4 @@
+appId: com.test.parity
+---
+- setOrientation: landscapeLeft
+- setOrientation: portrait

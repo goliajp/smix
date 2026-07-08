@@ -1,0 +1,9 @@
+appId: com.test.parity
+---
+# while: "false" 直接 falsy 不进 loop; corpus_full 只验 parser+runtime
+# 走通,seeded output 测试在 mock_run_repeat_while_with_output.
+- repeat:
+    while: "false"
+    commands:
+      - tapOn:
+          id: "would-not-run"
