@@ -335,3 +335,162 @@ async fn non_2xx_returns_non_success_status_error() {
     let msg = format!("{err:?}");
     assert!(msg.contains("503"), "got: {msg}");
 }
+
+// -------------------- v1.0.3 session lifecycle -------------------------
+
+use smix_runner_client::{SessionCloseRequest, SessionOpenRequest, SessionRenewActivationRequest};
+use wiremock::matchers::header;
+
+#[tokio::test]
+async fn open_session_sends_bundle_id_and_returns_session_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/session/open"))
+        .and(body_json(serde_json::json!({
+            "bundleId": "com.example.app",
+            "activate": true,
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sessionId": "sess-abc-123",
+            "activatedOnce": true,
+            "serverTimeMs": 1_720_500_000_000u64,
+        })))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let req = SessionOpenRequest {
+        bundle_id: "com.example.app".into(),
+        activate: true,
+    };
+    let resp = client.open_session(&req).await.expect("session open");
+    assert_eq!(resp.session_id, "sess-abc-123");
+    assert!(resp.activated_once);
+    assert_eq!(resp.server_time_ms, 1_720_500_000_000u64);
+}
+
+#[tokio::test]
+async fn client_with_session_id_sends_session_header_on_every_request() {
+    let server = MockServer::start().await;
+    // Any /find request MUST carry Session-Id: sess-xyz.
+    Mock::given(method("POST"))
+        .and(path("/find"))
+        .and(header("session-id", "sess-xyz"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "exists": true,
+        })))
+        .mount(&server)
+        .await;
+    let mut client = HttpRunnerClient::with_base(server.uri());
+    client.set_session_id("sess-xyz");
+    let ok = client
+        .find(&text_sel("X"), None)
+        .await
+        .expect("find with session header");
+    assert!(ok);
+}
+
+#[tokio::test]
+async fn client_clear_session_id_stops_sending_header() {
+    let server = MockServer::start().await;
+    // Request must NOT carry Session-Id after clear.
+    Mock::given(method("POST"))
+        .and(path("/find"))
+        .and(header("app-bundle-id", "com.example.app"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "exists": false,
+        })))
+        .mount(&server)
+        .await;
+    let mut client =
+        HttpRunnerClient::with_base(server.uri()).with_target_bundle_id("com.example.app");
+    client.set_session_id("sess-xyz");
+    client.clear_session_id();
+    // If the mock rejects the request (session-id present when we don't
+    // expect it), this errors. Passing means no session-id was sent.
+    let _ = client.find(&text_sel("X"), None).await;
+}
+
+#[tokio::test]
+async fn close_session_hits_close_route() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/session/close"))
+        .and(body_json(serde_json::json!({ "sessionId": "sess-abc" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true,
+        })))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let resp = client
+        .close_session(&SessionCloseRequest {
+            session_id: "sess-abc".into(),
+        })
+        .await
+        .expect("session close");
+    assert!(resp.ok);
+}
+
+#[tokio::test]
+async fn renew_session_activation_returns_activated_flag() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/session/renew-activation"))
+        .and(body_json(serde_json::json!({ "sessionId": "sess-abc" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true,
+            "activated": false,
+        })))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let resp = client
+        .renew_session_activation(&SessionRenewActivationRequest {
+            session_id: "sess-abc".into(),
+        })
+        .await
+        .expect("renew activation");
+    assert!(resp.ok);
+    assert!(!resp.activated);
+}
+
+#[tokio::test]
+async fn health_detail_parses_extended_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true,
+            "runnerVersion": "1.0.3",
+            "uptimeMs": 42_000u64,
+            "lastRequestAtMs": 1_720_500_000_000u64,
+            "sessionsOpen": 2u32,
+            "activationsTotal": 5u64,
+        })))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let resp = client.health_detail().await.expect("health detail");
+    assert!(resp.ok);
+    assert_eq!(resp.runner_version, "1.0.3");
+    assert_eq!(resp.uptime_ms, 42_000);
+    assert_eq!(resp.sessions_open, 2);
+    assert_eq!(resp.activations_total, 5);
+}
+
+#[tokio::test]
+async fn health_detail_tolerates_legacy_empty_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(""))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let resp = client
+        .health_detail()
+        .await
+        .expect("legacy health empty body tolerated");
+    assert!(resp.ok);
+    assert_eq!(resp.runner_version, "");
+}

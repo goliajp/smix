@@ -74,3 +74,9 @@ export {
   type A11yRole,
   type Rect,
 } from './A11yNode.js'
+
+// v1.0.3 — session lifecycle. Wraps runner-side `/session/*` routes.
+export {
+  Session,
+  type SessionOpenOptions,
+} from './Session.js'

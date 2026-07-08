@@ -406,6 +406,61 @@ public actor SmixRunnerServer {
     }
   }
 
+  /// v1.0.3 — outcome of a session-open request from the UITest handler's
+  /// perspective. The runner's session table is owned by the UITest target
+  /// (where XCUIApplication instances live); this DTO shape lets Core
+  /// serialize the response without pulling XCUIApplication into the
+  /// Package library.
+  public struct SessionOpenOutcome: Sendable {
+    public let sessionId: String
+    public let activatedOnce: Bool
+    public init(sessionId: String, activatedOnce: Bool) {
+      self.sessionId = sessionId
+      self.activatedOnce = activatedOnce
+    }
+  }
+
+  /// v1.0.3 — outcome of a session-close request. `ok` is always true for
+  /// known sessions; unknown sessions also return true (idempotent close).
+  public struct SessionCloseOutcome: Sendable {
+    public let ok: Bool
+    public init(ok: Bool) {
+      self.ok = ok
+    }
+  }
+
+  /// v1.0.3 — outcome of a renew-activation request. `notFound = true`
+  /// when the session id does not exist in the table; otherwise `ok` +
+  /// `activated` (was `.activate()` actually called, or rate-limited).
+  public struct SessionRenewOutcome: Sendable {
+    public let notFound: Bool
+    public let ok: Bool
+    public let activated: Bool
+    public init(notFound: Bool, ok: Bool, activated: Bool) {
+      self.notFound = notFound
+      self.ok = ok
+      self.activated = activated
+    }
+  }
+
+  /// v1.0.3 — session lifecycle handlers. Triple bundled (vs three
+  /// independent typealiases) because they share the session-table state
+  /// in the UITest target.
+  public struct SessionHandlers: Sendable {
+    public let open: @Sendable (SessionRoute.OpenRequest) async -> SessionOpenOutcome
+    public let close: @Sendable (SessionRoute.CloseRequest) async -> SessionCloseOutcome
+    public let renew: @Sendable (SessionRoute.RenewRequest) async -> SessionRenewOutcome
+    public init(
+      open: @escaping @Sendable (SessionRoute.OpenRequest) async -> SessionOpenOutcome,
+      close: @escaping @Sendable (SessionRoute.CloseRequest) async -> SessionCloseOutcome,
+      renew: @escaping @Sendable (SessionRoute.RenewRequest) async -> SessionRenewOutcome
+    ) {
+      self.open = open
+      self.close = close
+      self.renew = renew
+    }
+  }
+
   public init() {}
 
   // v1.2 C1 — single point of HTTPServer construction. v1.2 invariant #3 requires
@@ -489,6 +544,76 @@ public actor SmixRunnerServer {
     }
   }
 
+  /// v1.0.3 — register `/session/open`, `/session/close`,
+  /// `/session/renew-activation`. Session-lifecycle handlers are the
+  /// systemic fix for the activation storm: consumers open once, run
+  /// their entire flow against the cached binding, and close on exit.
+  /// The per-request `App-Activate: true` path stays as legacy
+  /// (rate-limited) for consumers that haven't migrated.
+  public static func registerSessionRoutes(
+    server: HTTPServer,
+    handlers: SessionHandlers
+  ) async {
+    await server.appendRoute("POST /session/open") { request in
+      let body: Data
+      do { body = try await request.bodyData }
+      catch { return SessionRoute.badRequest(reason: "failed to read body: \(error)") }
+      let req: SessionRoute.OpenRequest
+      do { req = try SessionRoute.decodeOpen(body) }
+      catch {
+        return SessionRoute.badRequest(reason: "\(error)")
+      }
+      return await Self.guardedResponse(
+        fallback: SessionRoute.badRequest(reason: "handler crashed")
+      ) {
+        let outcome = await handlers.open(req)
+        let now = UInt64(Date().timeIntervalSince1970 * 1000)
+        return SessionRoute.openResponse(
+          SessionRoute.OpenResponse(
+            sessionId: outcome.sessionId,
+            activatedOnce: outcome.activatedOnce,
+            serverTimeMs: now
+          )
+        )
+      }
+    }
+    await server.appendRoute("POST /session/close") { request in
+      let body: Data
+      do { body = try await request.bodyData }
+      catch { return SessionRoute.badRequest(reason: "failed to read body: \(error)") }
+      let req: SessionRoute.CloseRequest
+      do { req = try SessionRoute.decodeClose(body) }
+      catch {
+        return SessionRoute.badRequest(reason: "\(error)")
+      }
+      return await Self.guardedResponse(
+        fallback: SessionRoute.closeResponse(ok: false)
+      ) {
+        let outcome = await handlers.close(req)
+        return SessionRoute.closeResponse(ok: outcome.ok)
+      }
+    }
+    await server.appendRoute("POST /session/renew-activation") { request in
+      let body: Data
+      do { body = try await request.bodyData }
+      catch { return SessionRoute.badRequest(reason: "failed to read body: \(error)") }
+      let req: SessionRoute.RenewRequest
+      do { req = try SessionRoute.decodeRenew(body) }
+      catch {
+        return SessionRoute.badRequest(reason: "\(error)")
+      }
+      return await Self.guardedResponse(
+        fallback: SessionRoute.renewResponse(ok: false, activated: false)
+      ) {
+        let outcome = await handlers.renew(req)
+        if outcome.notFound {
+          return SessionRoute.notFound(reason: "unknown session id")
+        }
+        return SessionRoute.renewResponse(ok: outcome.ok, activated: outcome.activated)
+      }
+    }
+  }
+
   // v7.9 c1 — register the 3 /select/resolve* endpoints. Public static
   // so tests can boot a stub server + register without going through
   // full runForever signature. Each route decodes the shared
@@ -561,7 +686,8 @@ public actor SmixRunnerServer {
     longPressHandler: LongPressHandler? = nil,
     setOrientationHandler: SetOrientationHandler? = nil,
     recordHandlers: RecordHandlers? = nil,
-    selectResolveHandler: SelectResolveHandler? = nil
+    selectResolveHandler: SelectResolveHandler? = nil,
+    sessionHandlers: SessionHandlers? = nil
   ) async throws {
     let server = Self.makeServer(port: port)
     let shutdownSignal = ShutdownSignal()
@@ -572,6 +698,11 @@ public actor SmixRunnerServer {
     // v7.9 c1 — register /select/resolve* routes when handler provided.
     if let selectResolveHandler {
       await Self.registerSelectResolveRoutes(server: server, handler: selectResolveHandler)
+    }
+
+    // v1.0.3 — register /session/* routes when handlers provided.
+    if let sessionHandlers {
+      await Self.registerSessionRoutes(server: server, handlers: sessionHandlers)
     }
     // v1.4 C3 — graceful teardown. The handler MUST NOT `await server.stop()`
     // inline: stop() re-enters the same HTTPServer actor that server.run() is

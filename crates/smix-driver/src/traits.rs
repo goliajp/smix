@@ -69,6 +69,14 @@ pub trait Driver: Send + Sync {
     /// header. Default no-op.
     fn set_force_key_events(&mut self, _force: bool) {}
 
+    /// v1.0.3 — attach a `Session-Id` header to every subsequent
+    /// request. Set to `Some(id)` after `POST /session/open`; set to
+    /// `None` to revert to the legacy per-request rebind path (which
+    /// is rate-limited to at most one `.activate()` per 5 s per
+    /// bundle-id as of v1.0.2). Default no-op — only impls backed by
+    /// an HTTP runner override.
+    fn set_session_id(&mut self, _id: Option<String>) {}
+
     // === Sense (9) ============================================================
 
     /// Fetch full a11y tree (`GET /tree`).

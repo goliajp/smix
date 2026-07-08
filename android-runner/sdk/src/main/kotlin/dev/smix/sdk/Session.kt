@@ -1,0 +1,110 @@
+// v1.0.3 — Session lifecycle guard for Kotlin SDK.
+//
+// A Session is opened against a running smix-runner (via
+// HttpSmixSimRuntime) and drives POST /session/open|close|
+// renew-activation. While open, the runtime carries `Session-Id` on
+// every request so the runner short-circuits per-request activation
+// and reuses the cached UiAutomator binding.
+//
+// Consumer flow:
+//
+//   val runtime = HttpSmixSimRuntime(
+//     baseUrl = "http://127.0.0.1:28080",
+//     bundleId = "com.example.app",
+//   )
+//   val session = Session.open(runtime, activate = true)
+//   try {
+//     val app = Smix.launchApp(AppTarget.BundleId("com.example.app"), runtime)
+//     app.tap(Selector.Id("btn-login"))
+//   } finally {
+//     session.close()
+//   }
+
+package dev.smix.sdk
+
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+
+/**
+ * Runner-side session guard.
+ *
+ * A Session corresponds to a single POST /session/open on the runner.
+ * While it is open, the associated [HttpSmixSimRuntime] carries the
+ * `Session-Id` header on every request, and the runner reuses the
+ * session's cached binding — no per-request `.activate()` equivalents.
+ */
+class Session private constructor(
+    val sessionId: String,
+    val activatedOnce: Boolean,
+    val serverTimeMs: Long,
+    private val runtime: HttpSmixSimRuntime,
+) {
+    // Non-atomic close guard is fine: duplicate POST /session/close is
+    // idempotent on the runner side.
+    private var closed = false
+
+    /**
+     * Ask the runner to re-issue `.activate()` on the session's cached
+     * binding. Subject to a 2s per-session rate limit; when rate-
+     * limited, returns false (no-op, session still healthy).
+     */
+    suspend fun renewActivation(): Boolean {
+        check(!closed) { "session already closed" }
+        val body = JsonObject(mapOf("sessionId" to JsonPrimitive(sessionId)))
+        val obj = runtime.postJsonObject("/session/renew-activation", body)
+        return obj["activated"]?.jsonPrimitive?.booleanOrNull ?: false
+    }
+
+    /**
+     * Release the session — sends POST /session/close (idempotent),
+     * clears the `Session-Id` header from the runtime. Subsequent
+     * runtime requests fall through to the legacy per-request rebind
+     * path (rate-limited to 1 activate / 5s / bundle-id as of v1.0.2).
+     */
+    suspend fun close() {
+        if (closed) {
+            return
+        }
+        closed = true
+        try {
+            val body = JsonObject(mapOf("sessionId" to JsonPrimitive(sessionId)))
+            runtime.postVoid("/session/close", body)
+        } finally {
+            // Clear the client-side header regardless of runner outcome.
+            runtime.setSessionId(null)
+        }
+    }
+
+    companion object {
+        /**
+         * Open a session against the runtime's runner. When
+         * [activate] is true, the runner calls `.activate()` on the
+         * target once at open time; when false, the runner opens a
+         * passive binding suitable when the caller has already ensured
+         * foreground state.
+         *
+         * The returned [sessionId] is stashed on the [runtime]; every
+         * subsequent request from that runtime carries the
+         * `Session-Id` header.
+         */
+        suspend fun open(
+            runtime: HttpSmixSimRuntime,
+            activate: Boolean = false,
+        ): Session {
+            val body = JsonObject(mapOf(
+                "bundleId" to JsonPrimitive(runtime.bundleId),
+                "activate" to JsonPrimitive(activate),
+            ))
+            val obj = runtime.postJsonObject("/session/open", body)
+            val sid = obj["sessionId"]?.jsonPrimitive?.content
+                ?: error("smix runner /session/open: missing sessionId field")
+            val activatedOnce = obj["activatedOnce"]?.jsonPrimitive?.booleanOrNull ?: false
+            val serverTimeMs = obj["serverTimeMs"]?.jsonPrimitive?.longOrNull ?: 0L
+            runtime.setSessionId(sid)
+            return Session(sid, activatedOnce, serverTimeMs, runtime)
+        }
+    }
+}

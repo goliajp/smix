@@ -50,6 +50,17 @@ impl Driver for IosDriver {
         }
     }
 
+    /// v1.0.3 — iOS impl: attach / clear the `Session-Id` header on
+    /// every subsequent request. When set, the runner short-circuits
+    /// per-request activation and reuses the session-cached
+    /// XCUIApplication binding.
+    fn set_session_id(&mut self, id: Option<String>) {
+        match id {
+            Some(sid) => self.runner_mut().set_session_id(sid),
+            None => self.runner_mut().clear_session_id(),
+        }
+    }
+
     // === Sense ===
 
     async fn tree(&self, include: Option<IncludeScope>) -> Result<A11yNode, ExpectationFailure> {
