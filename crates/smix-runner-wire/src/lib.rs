@@ -406,3 +406,134 @@ pub struct RecordEventsResponse {
     #[serde(default)]
     pub events: Vec<RecordedEvent>,
 }
+
+// -------------------- /session/* wire shape (v1.0.2) --------------------
+//
+// Session lifecycle addresses the "activation storm" root cause: pre-v1.0.2
+// runners re-bind + `.activate()` an `XCUIApplication` on every request
+// whose `App-Activate: true` header is set. Long-running gates (visual /
+// perf regression) accumulate thousands of activate calls, exhausting
+// XCTest process arbitration on iOS 26.5+ and crashing `test_runForever()`
+// mid-run. Sessions replace that with a one-shot lifecycle: open once,
+// runner caches the binding + activates at most on transition or via
+// explicit renew, close when the client is done.
+//
+// Wire compat: absent `Session-Id: <id>` header on any request falls
+// through to the legacy per-request `resolveApp()` path, now itself
+// rate-limited to at most one `.activate()` per 5 s per bundle-id (which
+// is enough to keep the recovery-from-drift semantic of the original
+// design without producing the storm).
+
+/// `POST /session/open` request body.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionOpenRequest {
+    /// Bundle id (iOS) / package name (Android) the session is bound to.
+    /// Empty string means "use the runner's boot-time default", which is
+    /// almost always `com.apple.Preferences` — usable for testing but
+    /// probably not what the client wants.
+    #[serde(default)]
+    pub bundle_id: String,
+    /// If true, the runner calls `.activate()` once as part of the open,
+    /// synchronously, before returning. Idiomatic for gates that want
+    /// the target app foregrounded before the first `/tap` fires.
+    #[serde(default)]
+    pub activate: bool,
+}
+
+/// `POST /session/open` response body.
+///
+/// The returned `session_id` becomes the value of the `Session-Id`
+/// request header on every subsequent request that should share this
+/// session's cached app binding.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionOpenResponse {
+    /// Opaque token; treat as a stable string identifier. UUID today.
+    pub session_id: String,
+    /// Whether the runner issued an initial `.activate()` on open.
+    /// Mirrors the request's `activate` field unless the runner
+    /// rate-limited it (e.g. same bundle-id was activated within the
+    /// last 5 s from a prior session).
+    #[serde(default)]
+    pub activated_once: bool,
+    /// Server-side epoch millis at open. Consumers pair this with
+    /// downstream `sessionUptimeMs` sidecar fields to reconstruct
+    /// session timelines.
+    #[serde(default)]
+    pub server_time_ms: u64,
+}
+
+/// `POST /session/close` request body.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCloseRequest {
+    /// Session to close. Absent / unknown / already-closed sessions
+    /// return 200 with `ok=true` — idempotent.
+    pub session_id: String,
+}
+
+/// `POST /session/close` response body.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCloseResponse {
+    /// True unless the runner failed to remove the session cache entry.
+    /// Not a "session was known" flag — closing an unknown session is
+    /// idempotent success.
+    pub ok: bool,
+}
+
+/// `POST /session/renew-activation` request body.
+///
+/// Client-side escape hatch when the client detects target-app drift
+/// (e.g. `/tree` returned `snapshot_unavailable`, or a foreground steal
+/// by SpringBoard). The runner re-issues `.activate()` on the cached
+/// binding subject to the same 5 s / bundle-id rate limit.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRenewActivationRequest {
+    /// Session to renew. Unknown session → 404.
+    pub session_id: String,
+}
+
+/// `POST /session/renew-activation` response body.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRenewActivationResponse {
+    /// True on success (session known + not-rate-limited).
+    pub ok: bool,
+    /// Whether the runner actually issued `.activate()` this call, or
+    /// suppressed it because the previous activation was within the
+    /// rate-limit window. `ok=true, activated=false` is a valid outcome
+    /// meaning "session is fresh enough, no-op".
+    #[serde(default)]
+    pub activated: bool,
+}
+
+/// Extended `GET /health` response body (v1.0.2 additive).
+///
+/// Prior to v1.0.2 the endpoint returned a bare 200 with no body.
+/// Consumers that ignore the body get identical behavior; consumers
+/// that parse the JSON gain liveness observability.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthResponse {
+    /// Runner alive.
+    pub ok: bool,
+    /// Runner semver (matches the smix-cli that shipped it).
+    #[serde(default)]
+    pub runner_version: String,
+    /// Runner uptime in milliseconds.
+    #[serde(default)]
+    pub uptime_ms: u64,
+    /// Epoch millis of the runner's most recent processed request
+    /// (any route). 0 if the runner has served no requests yet.
+    #[serde(default)]
+    pub last_request_at_ms: u64,
+    /// Currently-open session count.
+    #[serde(default)]
+    pub sessions_open: u32,
+    /// Total `.activate()` calls issued since runner boot.
+    #[serde(default)]
+    pub activations_total: u64,
+}

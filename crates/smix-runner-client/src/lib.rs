@@ -79,6 +79,102 @@ pub enum RunnerTransportError {
         target: Option<String>,
         reason: Option<String>,
     },
+    /// Client-side rolling-window observation: consecutive requests
+    /// have been failing (5xx, unreachable, non-JSON). The runner is
+    /// still responding to the transport, but its answers are unsound
+    /// — surfacing this instead of silently returning stale bodies is
+    /// the whole point of [`HttpRunnerClient::with_liveness_window`].
+    #[error(
+        "runner degraded: {non_success_recent}/{window} recent requests failed \
+         (last_endpoint={last_endpoint}, last_error={last_error})"
+    )]
+    RunnerDegraded {
+        window: usize,
+        non_success_recent: usize,
+        last_endpoint: String,
+        last_error: String,
+    },
+    /// Client-side observation of a hard runner death. Triggered when a
+    /// `is_connect()` error fires AND a `/health` probe times out or
+    /// returns a non-2xx within 1 s. Distinct from
+    /// [`RunnerTransportError::Unreachable`] which fires on the initial
+    /// reachability probe; `RunnerDied` fires mid-session after
+    /// `ensure_reachable` had already succeeded.
+    #[error("runner died mid-session: last_seen_ms={last_seen_ms}, last_error={last_error}")]
+    RunnerDied {
+        last_seen_ms: u64,
+        last_error: String,
+    },
+}
+
+/// Client-side rolling window tracking the last N request outcomes.
+/// Used by `with_liveness_window` to distinguish "runner is alive and
+/// healthily returning some errors" from "runner has silently drifted
+/// into a degraded state". See [`RunnerTransportError::RunnerDegraded`]
+/// and [`RunnerTransportError::RunnerDied`].
+#[derive(Debug, Clone)]
+pub(crate) struct LivenessState {
+    window: usize,
+    /// True = success, false = non-success. Front = oldest.
+    outcomes: std::collections::VecDeque<bool>,
+    last_endpoint: String,
+    last_error: String,
+    /// Milliseconds since UNIX epoch of the last successful request.
+    last_seen_ms: u64,
+    /// True once we've fired a RunnerDied. Prevents re-firing until a
+    /// fresh success clears it.
+    died: bool,
+}
+
+impl LivenessState {
+    fn with_window(window: usize) -> Self {
+        Self {
+            window: window.max(2),
+            outcomes: std::collections::VecDeque::with_capacity(window.max(2)),
+            last_endpoint: String::new(),
+            last_error: String::new(),
+            last_seen_ms: 0,
+            died: false,
+        }
+    }
+
+    fn record(&mut self, endpoint: &str, success: bool, error: &str) {
+        while self.outcomes.len() >= self.window {
+            self.outcomes.pop_front();
+        }
+        self.outcomes.push_back(success);
+        self.last_endpoint = endpoint.to_string();
+        if success {
+            self.last_error.clear();
+            self.last_seen_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            self.died = false;
+        } else {
+            self.last_error = error.to_string();
+        }
+    }
+
+    /// If the last `window` outcomes have a majority-non-success shape,
+    /// return the degraded error variant. Caller wraps into the outer
+    /// [`RunnerTransportError`].
+    fn degraded(&self) -> Option<RunnerTransportError> {
+        if self.outcomes.len() < self.window {
+            return None;
+        }
+        let bad = self.outcomes.iter().filter(|ok| !**ok).count();
+        if bad * 2 > self.window {
+            Some(RunnerTransportError::RunnerDegraded {
+                window: self.window,
+                non_success_recent: bad,
+                last_endpoint: self.last_endpoint.clone(),
+                last_error: self.last_error.clone(),
+            })
+        } else {
+            None
+        }
+    }
 }
 
 /// Per-request context carried across the wire via the
@@ -229,6 +325,15 @@ pub struct HttpRunnerClient {
     /// Sent as `Input-Dispatch-Mode` header on every request.
     /// `None` = no header sent (runner uses default).
     input_dispatch_mode: Option<InputDispatchMode>,
+    /// Sent as `Session-Id` header on every request. Set by
+    /// `Session::wrap` after `open_session()`. When present, the
+    /// runner short-circuits its per-request `resolveApp()` and reuses
+    /// the session's cached `XCUIApplication` binding — this is what
+    /// eliminates the activation storm on long-running gates.
+    session_id: Option<String>,
+    /// Rolling-window state for liveness observability. `None` when
+    /// disabled (default). See [`Self::with_liveness_window`].
+    liveness: Arc<std::sync::Mutex<Option<LivenessState>>>,
 }
 
 /// Input dispatch mode for the `Input-Dispatch-Mode` header.
@@ -274,6 +379,8 @@ impl HttpRunnerClient {
             target_bundle_id: None,
             auto_activate: false,
             input_dispatch_mode: None,
+            session_id: None,
+            liveness: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -341,9 +448,55 @@ impl HttpRunnerClient {
         self.auto_activate
     }
 
+    /// Attach a session id sent as the `Session-Id` header on every
+    /// subsequent request. When the runner sees this header it looks up
+    /// the session's cached `XCUIApplication` and skips the per-request
+    /// `.activate()`, eliminating the activation storm on long-running
+    /// gates. Typically not called directly — use `open_session()` +
+    /// a session wrapper instead.
+    pub fn set_session_id<S: Into<String>>(&mut self, id: S) {
+        self.session_id = Some(id.into());
+    }
+
+    /// Clear a previously-set session id, reverting to legacy per-request
+    /// `resolveApp()` (now itself rate-limited to at most one `.activate()`
+    /// per 5 s per bundle-id).
+    pub fn clear_session_id(&mut self) {
+        self.session_id = None;
+    }
+
+    /// The session id in force for outgoing requests, or `None` if the
+    /// legacy per-request rebind path is in use.
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    /// Enable liveness observability. The client tracks the last `window`
+    /// request outcomes; if a majority are non-success (5xx, unreachable,
+    /// connection-refused), subsequent calls surface
+    /// [`RunnerTransportError::RunnerDegraded`] instead of returning
+    /// silent stale data. On any `is_connect()` failure the client also
+    /// probes `/health`; if that fails within 1 s the next call surfaces
+    /// [`RunnerTransportError::RunnerDied`].
+    ///
+    /// Idempotent; safe to call more than once (last window size wins).
+    /// Default is disabled (behavior identical to v1.0.1).
+    #[must_use]
+    pub fn with_liveness_window(self, window: usize) -> Self {
+        {
+            let mut guard = self
+                .liveness
+                .lock()
+                .expect("liveness mutex must not be poisoned");
+            *guard = Some(LivenessState::with_window(window));
+        }
+        self
+    }
+
     /// Apply per-request context headers to a reqwest builder.
     /// Every method that constructs a request calls this so the
-    /// `App-Bundle-Id` / `App-Activate` headers are sent uniformly.
+    /// `App-Bundle-Id` / `App-Activate` / `Session-Id` /
+    /// `Input-Dispatch-Mode` headers are sent uniformly.
     fn apply_context(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         let mut b = builder;
         if let Some(bundle) = &self.target_bundle_id {
@@ -354,6 +507,9 @@ impl HttpRunnerClient {
         }
         if let Some(mode) = self.input_dispatch_mode {
             b = b.header("Input-Dispatch-Mode", mode.header_value());
+        }
+        if let Some(sid) = &self.session_id {
+            b = b.header("Session-Id", sid);
         }
         b
     }
@@ -390,14 +546,33 @@ impl HttpRunnerClient {
     where
         F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     {
+        // Preflight: if liveness is enabled and previously observed the
+        // runner died, short-circuit until the caller resets it (via a
+        // successful direct `/health`).
+        if let Some(err) = self.preflight_liveness() {
+            return Err(err);
+        }
         let mut attempts_left = TRANSPORT_MAX_ATTEMPTS;
         loop {
             attempts_left -= 1;
             match builder_fn(&self.client).send().await {
-                Ok(res) => return Ok(res),
+                Ok(res) => {
+                    // Record but don't classify yet — status-level handling
+                    // happens in the json_* helpers so the "5xx but recovered
+                    // via retry" case is still counted as success.
+                    return Ok(res);
+                }
                 Err(e) => {
                     let retryable = e.is_connect() || e.is_request();
                     if !retryable || attempts_left == 0 {
+                        let is_connect = e.is_connect();
+                        let err_str = format!("{e}");
+                        self.record_outcome(endpoint, false, &err_str);
+                        if is_connect
+                            && let Some(died) = self.probe_death(endpoint, &err_str).await
+                        {
+                            return Err(died);
+                        }
                         return Err(RunnerTransportError::FetchFailed {
                             endpoint: endpoint.to_string(),
                             source: e,
@@ -407,6 +582,70 @@ impl HttpRunnerClient {
                 }
             }
         }
+    }
+
+    fn record_outcome(&self, endpoint: &str, success: bool, err: &str) {
+        let mut guard = self
+            .liveness
+            .lock()
+            .expect("liveness mutex must not be poisoned");
+        if let Some(state) = guard.as_mut() {
+            state.record(endpoint, success, err);
+        }
+    }
+
+    fn preflight_liveness(&self) -> Option<RunnerTransportError> {
+        let guard = self
+            .liveness
+            .lock()
+            .expect("liveness mutex must not be poisoned");
+        if let Some(state) = guard.as_ref() {
+            if state.died {
+                return Some(RunnerTransportError::RunnerDied {
+                    last_seen_ms: state.last_seen_ms,
+                    last_error: state.last_error.clone(),
+                });
+            }
+            return state.degraded();
+        }
+        None
+    }
+
+    async fn probe_death(&self, endpoint: &str, err_str: &str) -> Option<RunnerTransportError> {
+        // Snapshot `last_seen_ms` before probing so the caller can
+        // report "last successful contact at X".
+        let last_seen_ms = {
+            let guard = self
+                .liveness
+                .lock()
+                .expect("liveness mutex must not be poisoned");
+            guard.as_ref().map(|s| s.last_seen_ms).unwrap_or(0)
+        };
+        let url = format!("{}/health", self.base);
+        let alive = tokio::time::timeout(Duration::from_millis(1000), self.client.get(&url).send())
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+        if alive {
+            return None;
+        }
+        {
+            let mut guard = self
+                .liveness
+                .lock()
+                .expect("liveness mutex must not be poisoned");
+            if let Some(state) = guard.as_mut() {
+                state.died = true;
+                state.last_endpoint = endpoint.to_string();
+                state.last_error = err_str.to_string();
+            }
+        }
+        Some(RunnerTransportError::RunnerDied {
+            last_seen_ms,
+            last_error: err_str.to_string(),
+        })
     }
 
     async fn json_get<T: for<'de> Deserialize<'de>>(
@@ -421,14 +660,24 @@ impl HttpRunnerClient {
         let status = res.status();
         if !status.is_success() {
             let body = res.text().await.unwrap_or_default();
-            return Err(classify_error_body(endpoint, status.as_u16(), &body));
+            let err = classify_error_body(endpoint, status.as_u16(), &body);
+            self.record_outcome(endpoint, false, &err.to_string());
+            return Err(err);
         }
-        res.json::<T>()
-            .await
-            .map_err(|source| RunnerTransportError::NonJsonBody {
-                endpoint: endpoint.to_string(),
-                source,
-            })
+        match res.json::<T>().await {
+            Ok(v) => {
+                self.record_outcome(endpoint, true, "");
+                Ok(v)
+            }
+            Err(source) => {
+                let err = RunnerTransportError::NonJsonBody {
+                    endpoint: endpoint.to_string(),
+                    source,
+                };
+                self.record_outcome(endpoint, false, &err.to_string());
+                Err(err)
+            }
+        }
     }
 
     async fn json_post<B: Serialize, T: for<'de> Deserialize<'de>>(
@@ -444,14 +693,24 @@ impl HttpRunnerClient {
         let status = res.status();
         if !status.is_success() {
             let body = res.text().await.unwrap_or_default();
-            return Err(classify_error_body(endpoint, status.as_u16(), &body));
+            let err = classify_error_body(endpoint, status.as_u16(), &body);
+            self.record_outcome(endpoint, false, &err.to_string());
+            return Err(err);
         }
-        res.json::<T>()
-            .await
-            .map_err(|source| RunnerTransportError::NonJsonBody {
-                endpoint: endpoint.to_string(),
-                source,
-            })
+        match res.json::<T>().await {
+            Ok(v) => {
+                self.record_outcome(endpoint, true, "");
+                Ok(v)
+            }
+            Err(source) => {
+                let err = RunnerTransportError::NonJsonBody {
+                    endpoint: endpoint.to_string(),
+                    source,
+                };
+                self.record_outcome(endpoint, false, &err.to_string());
+                Err(err)
+            }
+        }
     }
 
     // ---- public methods (mirrors TS RunnerClient surface) ----
@@ -480,6 +739,76 @@ impl HttpRunnerClient {
             endpoint: "/health".into(),
             message: format!("SmixRunner not reachable at {}", self.base),
         })
+    }
+
+    /// `GET /health` extended — parses the v1.0.2+ JSON body carrying
+    /// uptime / activation counters / open-session count. On pre-v1.0.2
+    /// runners returning a bare 200 with no body, returns a default
+    /// [`smix_runner_wire::HealthResponse`] with only `ok = true` set.
+    pub async fn health_detail(
+        &self,
+    ) -> Result<smix_runner_wire::HealthResponse, RunnerTransportError> {
+        let url = self.url("/health", None);
+        let res = self.client.get(&url).send().await.map_err(|source| {
+            RunnerTransportError::FetchFailed {
+                endpoint: "/health".into(),
+                source,
+            }
+        })?;
+        let status = res.status();
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            return Err(RunnerTransportError::NonSuccessStatus {
+                endpoint: "/health".into(),
+                status: status.as_u16(),
+                body,
+            });
+        }
+        // Legacy runners (< v1.0.2) return an empty body; treat parse
+        // failure as {ok: true} to keep the "health passed" invariant.
+        let text = res.text().await.unwrap_or_default();
+        if text.trim().is_empty() {
+            return Ok(smix_runner_wire::HealthResponse {
+                ok: true,
+                ..Default::default()
+            });
+        }
+        Ok(
+            serde_json::from_str(&text).unwrap_or(smix_runner_wire::HealthResponse {
+                ok: true,
+                ..Default::default()
+            }),
+        )
+    }
+
+    /// `POST /session/open` — reserve a runner-side XCUIApplication
+    /// binding and (optionally) activate it once. The returned session
+    /// id becomes the `Session-Id` header on subsequent requests via
+    /// [`Self::set_session_id`] or a session wrapper.
+    pub async fn open_session(
+        &self,
+        req: &smix_runner_wire::SessionOpenRequest,
+    ) -> Result<smix_runner_wire::SessionOpenResponse, RunnerTransportError> {
+        self.json_post("/session/open", req, None).await
+    }
+
+    /// `POST /session/close` — release a previously-opened session.
+    /// Idempotent; closing an unknown session returns `ok = true`.
+    pub async fn close_session(
+        &self,
+        req: &smix_runner_wire::SessionCloseRequest,
+    ) -> Result<smix_runner_wire::SessionCloseResponse, RunnerTransportError> {
+        self.json_post("/session/close", req, None).await
+    }
+
+    /// `POST /session/renew-activation` — re-issue `.activate()` on the
+    /// session's cached binding, subject to the runner-side per-session
+    /// 5 s rate limit. Escape hatch for consumers that detect drift.
+    pub async fn renew_session_activation(
+        &self,
+        req: &smix_runner_wire::SessionRenewActivationRequest,
+    ) -> Result<smix_runner_wire::SessionRenewActivationResponse, RunnerTransportError> {
+        self.json_post("/session/renew-activation", req, None).await
     }
 
     /// `GET /tree?include=` — full a11y tree dump.

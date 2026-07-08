@@ -757,21 +757,50 @@ final class SmixRunnerUITests: XCTestCase {
     // The resolver is `async` because `.activate()` is main-actor
     // isolated on iOS 26+ SDKs; calling it off-main raises
     // `NSInternalInconsistencyException`.
+    //
+    // v1.0.2 — per-bundle-id activation rate limit. Prior to v1.0.2
+    // every request with `App-Activate: true` triggered an
+    // `.activate()` call. Long-running gates (visual / perf
+    // regression, ~340 s of continuous requests) accumulated ~1000+
+    // activate calls, exhausting XCTest process arbitration on
+    // iOS 26.5+ and crashing `test_runForever()` mid-run. The
+    // rate-limit records the last activate timestamp per bundle-id
+    // and skips redundant activations within a 5 s window. Recovery
+    // semantics preserved: after 5 s of silence a subsequent
+    // `App-Activate: true` re-issues the call, so a foreground steal
+    // by SpringBoard is auto-recovered within the same window.
+    var lastActivatedAt: [String: Date] = [:]
+    let lastActivatedAtLock = NSLock()
+    let activationCooldown: TimeInterval = 5.0
+    let maybeActivate: @Sendable (String, XCUIApplication) async -> Bool = { bundleKey, target in
+      let now = Date()
+      let shouldActivate: Bool = {
+        lastActivatedAtLock.lock()
+        defer { lastActivatedAtLock.unlock() }
+        if let last = lastActivatedAt[bundleKey], now.timeIntervalSince(last) < activationCooldown {
+          return false
+        }
+        lastActivatedAt[bundleKey] = now
+        return true
+      }()
+      if shouldActivate {
+        await SmixRunnerServer.onMain {
+          target.activate()
+        }
+      }
+      return shouldActivate
+    }
     let resolveApp: @Sendable () async -> XCUIApplication = {
       let ctx = SmixRunnerServer.currentContext
       if let b = ctx.bundleId, b != bundleId {
         let target = XCUIApplication(bundleIdentifier: b)
         if ctx.activate {
-          await SmixRunnerServer.onMain {
-            target.activate()
-          }
+          _ = await maybeActivate(b, target)
         }
         return target
       }
       if ctx.activate {
-        await SmixRunnerServer.onMain {
-          app.activate()
-        }
+        _ = await maybeActivate(bundleId, app)
       }
       return app
     }
