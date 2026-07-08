@@ -1,0 +1,9 @@
+appId: com.example.app
+---
+- repeat:
+    while:
+      notVisible:
+        id: "screen-alerts"
+    commands:
+      - tapOn: "Alerts"
+      - waitForAnimationToEnd

@@ -1,0 +1,6 @@
+appId: com.test.parity
+---
+- longPressOn: "Submit"
+- longPressOn:
+    id: "btn-extra"
+    duration: 1200

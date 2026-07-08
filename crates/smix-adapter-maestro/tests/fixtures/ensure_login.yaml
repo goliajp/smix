@@ -1,0 +1,12 @@
+appId: com.example.app
+---
+# if session expired, re-login
+- runFlow:
+    when:
+      visible: "Log in"
+    file: ../subflows/login.yaml
+# wait for home screen
+- extendedWaitUntil:
+    visible:
+      id: "btn-open-menu"
+    timeout: 30000

@@ -1,0 +1,62 @@
+{
+  "id": "fixture-026-deep-ancestor",
+  "description": "Ancestor modifier traverses N levels — button inside ScrollView > Table > Cell > VStack chain matches via ancestor: role=ScrollView",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+    "children": [
+      {
+        "rawType": "scrollView", "role": "scrollView",
+        "identifier": "scroll-deep",
+        "label": "scroll-deep",
+        "bounds": {"x": 0, "y": 100, "w": 393, "h": 600},
+        "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+        "children": [
+          {
+            "rawType": "table", "role": "table",
+            "identifier": "table-l1",
+            "bounds": {"x": 0, "y": 100, "w": 393, "h": 600},
+            "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+            "children": [
+              {
+                "rawType": "cell", "role": "cell",
+                "identifier": "cell-l2",
+                "bounds": {"x": 0, "y": 200, "w": 393, "h": 100},
+                "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+                "children": [
+                  {
+                    "rawType": "other",
+                    "identifier": "vstack-l3",
+                    "bounds": {"x": 0, "y": 220, "w": 393, "h": 80},
+                    "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+                    "children": [
+                      {
+                        "rawType": "button", "role": "button",
+                        "identifier": "btn-deep-ancestor-target",
+                        "label": "Edit",
+                        "bounds": {"x": 300, "y": 240, "w": 60, "h": 40},
+                        "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "rawType": "button", "role": "button",
+        "identifier": "btn-not-in-scroll",
+        "label": "Edit",
+        "bounds": {"x": 300, "y": 800, "w": 60, "h": 40},
+        "enabled": true, "selected": false, "hasFocus": false, "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"label": "Edit", "ancestor": {"role": "scrollView"}},
+  "expected": ["btn-deep-ancestor-target"]
+}

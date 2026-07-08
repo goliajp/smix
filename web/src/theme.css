@@ -1,0 +1,418 @@
+/* smix web — editorial theme. Warm cream background + Inter body + IBM
+ * Plex Mono chrome (nav, metadata, code) + warm-red accent. Light mode
+ * is the canonical reference; dark mode inverts to a warm-tinted dark.
+ *
+ * Layout convention: top horizontal nav (no left sidebar on home);
+ * ALL CAPS small-mono section labels with red dots; tables/cards have
+ * minimal warm-tan rules; prose is sans (Inter) for reading comfort
+ * while metadata + headings ALL-CAPS stay mono for technical signal.
+ */
+
+/* Fonts loaded via <link> tags in index.html (Inter + IBM Plex Mono). */
+
+:root {
+  /* Type stack — Inter for body, IBM Plex Mono for chrome / code. */
+  --font-display: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+
+  /* Type scale — comfortable for reading. */
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 22px;
+  --text-xl: 30px;
+  --text-2xl: 44px;
+  --text-3xl: 64px;
+  --text-4xl: 88px;
+
+  --leading-tight: 1.1;
+  --leading-snug: 1.3;
+  --leading-normal: 1.55;
+  --leading-loose: 1.75;
+
+  --letter-tight: -0.02em;
+  --letter-normal: 0;
+  --letter-wide: 0.04em;
+  --letter-wider: 0.16em;
+
+  /* Spacing. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --space-10: 128px;
+
+  --radius: 0;
+  --radius-sm: 2px;
+
+  /* LIGHT (default) — warm cream sand. */
+  --bg: #f4ecdd;
+  --bg-elev: #faf3e3;
+  --bg-inset: #ecdfc4;
+  --fg: #1f1b16;
+  --fg-muted: #8a7a60;
+  --fg-dim: #b39a73;
+  --border: #d9c8ab;
+  --border-strong: #b39a73;
+  --rule: #1f1b16;
+  --accent: #c73e1d;
+  --accent-soft: rgba(199, 62, 29, 0.08);
+  --accent-fg: #ffffff;
+  --warn: #a86c00;
+  --bad: #b1311f;
+
+  --selection-bg: #c73e1d;
+  --selection-fg: #ffffff;
+}
+
+[data-theme='dark'] {
+  /* Dark — warm-tinted, not pure black. Same accent. */
+  --bg: #1b1815;
+  --bg-elev: #25211d;
+  --bg-inset: #15120f;
+  --fg: #f0e7d4;
+  --fg-muted: #a09480;
+  --fg-dim: #6e6450;
+  --border: #3a3429;
+  --border-strong: #5a4f3d;
+  --rule: #f0e7d4;
+  --accent: #e85a3a;
+  --accent-soft: rgba(232, 90, 58, 0.12);
+  --accent-fg: #1b1815;
+  --warn: #d9a55c;
+  --bad: #e85a3a;
+
+  --selection-bg: #e85a3a;
+  --selection-fg: #1b1815;
+}
+
+::selection {
+  background-color: var(--selection-bg);
+  color: var(--selection-fg);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background-color: var(--bg);
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--fg);
+  background-color: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings:
+    'cv11' 1,
+    'ss01' 1,
+    'liga' 1;
+}
+
+*:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button,
+a {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* ---------- utility helpers ---------- */
+
+.rule {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+  width: 100%;
+}
+
+.rule-strong {
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  margin: 0;
+  width: 100%;
+}
+
+/* Editorial ALL-CAPS small mono section label with red dot prefix */
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-wider);
+  color: var(--accent);
+}
+
+.label-muted {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-wider);
+  color: var(--fg-muted);
+}
+
+/* Inline mono chip — used for tag pills, status markers. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--letter-wide);
+  text-transform: uppercase;
+  border: 1px solid var(--border-strong);
+  background-color: var(--bg-elev);
+}
+
+.chip-accent {
+  border-color: var(--accent);
+  color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
+/* ---------- links ---------- */
+
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+  transition:
+    color 100ms linear,
+    text-decoration-color 100ms linear;
+}
+
+a:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+.no-underline {
+  text-decoration: none;
+}
+
+/* ---------- code (mono everywhere) ---------- */
+
+pre {
+  border: 1px solid var(--border);
+  padding: var(--space-4);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  background-color: var(--bg-elev);
+}
+
+/* shiki dual-theme bridge — rehypeShiki is configured with
+ * `defaultColor:false` so it emits both --shiki-light and --shiki-dark
+ * for every span. We swap which one wins based on our data-theme
+ * attribute (NOT prefers-color-scheme — the toggle in the header is
+ * the source of truth). */
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+}
+[data-theme='dark'] .shiki,
+[data-theme='dark'] .shiki span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+}
+/* The <pre> wrapper border/padding is ours; force shiki bg to inherit
+ * the surrounding pre's background so its tinted bg doesn't clash with
+ * the cream/dark elev palette. */
+pre.shiki {
+  background-color: var(--bg-elev);
+}
+[data-theme='dark'] pre.shiki {
+  background-color: var(--bg-inset);
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+:not(pre) > code {
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  background-color: var(--bg-elev);
+  font-size: 0.88em;
+}
+
+/* ---------- prose (MDX-rendered docs) ---------- */
+
+.prose {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-loose);
+  max-width: 70ch;
+  color: var(--fg);
+}
+
+.prose h1 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-2xl);
+  letter-spacing: var(--letter-tight);
+  line-height: var(--leading-tight);
+  margin-block-start: 0;
+  margin-block-end: var(--space-3);
+}
+
+.prose h2 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  letter-spacing: var(--letter-tight);
+  margin-block-start: var(--space-8);
+  margin-block-end: var(--space-3);
+  padding-block-start: var(--space-5);
+  border-block-start: 1px solid var(--border);
+}
+
+.prose h3 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-md);
+  margin-block-start: var(--space-6);
+  margin-block-end: var(--space-2);
+}
+
+.prose h4 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-wider);
+  color: var(--fg-muted);
+  margin-block-start: var(--space-5);
+  margin-block-end: var(--space-2);
+}
+
+.prose p {
+  margin-block: var(--space-4);
+}
+
+.prose ul,
+.prose ol {
+  padding-inline-start: var(--space-6);
+  margin-block: var(--space-4);
+}
+
+.prose li {
+  margin-block: var(--space-2);
+}
+
+.prose ul > li::marker {
+  color: var(--accent);
+}
+
+.prose pre {
+  margin-block: var(--space-5);
+}
+
+.prose blockquote {
+  margin: var(--space-5) 0;
+  padding: var(--space-3) var(--space-5);
+  border-left: 2px solid var(--accent);
+  background-color: var(--accent-soft);
+  color: var(--fg);
+  font-style: italic;
+}
+
+.prose blockquote p {
+  margin: 0;
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-block: var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.prose th,
+.prose td {
+  border: 1px solid var(--border);
+  padding: var(--space-3) var(--space-3);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background-color: var(--bg-inset);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--letter-wide);
+  font-size: var(--text-xs);
+}
+
+.prose a {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+.prose strong {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.prose em {
+  font-style: italic;
+}
+
+.prose hr {
+  border: 0;
+  border-block-start: 1px solid var(--rule);
+  margin-block: var(--space-7);
+}
+
+/* Heading anchors */
+.prose h2 > a,
+.prose h3 > a,
+.prose h4 > a {
+  text-decoration: none;
+  color: var(--fg-dim);
+  margin-inline-start: var(--space-2);
+  opacity: 0;
+  transition: opacity 120ms linear;
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+}
+
+.prose h2:hover > a,
+.prose h3:hover > a,
+.prose h4:hover > a {
+  opacity: 1;
+}
+
+.prose h2 > a::before,
+.prose h3 > a::before,
+.prose h4 > a::before {
+  content: '#';
+}

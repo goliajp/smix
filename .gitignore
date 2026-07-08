@@ -1,0 +1,43 @@
+.claude/
+.DS_Store
+
+# Non-public draft docs and internal patch notes.
+docs/ai-guide/patches/
+
+.env
+.env.local
+.idea/
+.scratch/
+.smix/
+.smix/runner/
+.smix/trace/
+.vitest
+*.log
+*.tsbuildinfo
+*.xcuserstate
+**/xcuserdata/
+# dhat heap profile output (manually-generated via examples/dhat_profile.rs)
+# JetBrains
+# Session / scratch artifacts (never commit)
+# Swift / Xcode build products (user committed xcodeproj per release decision)
+# Build artifact ignores
+android-runner/.gradle/
+android-runner/.kotlin/
+android-runner/app/.cxx/
+android-runner/app/build/
+android-runner/build/
+android-runner/local.properties
+coverage
+dhat-heap.json
+dist
+examples/_scratch/
+node_modules
+swift-bridge/.build/
+swift-bridge/build/
+target/
+# Root SwiftPM build artifacts
+.build/
+.swiftpm/
+docs/ai-guide/insight-*.md
+docs/ai-guide/gol-611-*.md
+docs/ai-guide/patches/

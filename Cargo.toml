@@ -1,0 +1,111 @@
+# smix — Rust workspace.
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "1.0.1"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/goliajp/smix"
+homepage = "https://github.com/goliajp/smix"
+authors = ["Golia <doracawl@golia.jp>"]
+
+[workspace.dependencies]
+# Serde is shared across the core crates for wire (de)serialization
+# and accessibility-tree JSON parsing.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# `regex` powers `smix-selector` text pattern matching (including the
+# automatic case-insensitive `/i` flag inject at the SDK surface).
+# Pulled in only by SDK-facing crates; the smallest core crates avoid
+# it to keep their binary footprint low.
+regex = "1"
+
+# Outer-crate deps used by `smix-runner-client` and other higher-level
+# crates. The core "stone" crates deliberately do not depend on these.
+async-trait = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "process"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+thiserror = "2"
+tracing = "0.1"
+
+# CLI (`clap` derive) — used by `smix-cli` only.
+clap = { version = "4", features = ["derive"] }
+
+# MCP server SDK. `schemars` generates JSON-Schema for MCP tool
+# parameter structs.
+rmcp = { version = "1.7", features = ["server", "macros", "transport-io", "schemars"] }
+schemars = "1"
+base64 = "0.22"
+
+# `serde_norway` is a maintained fork of `serde_yml`; used by
+# `smix-recorder` for maestro YAML emit. Replaces `serde_yml` after
+# RUSTSEC-2025-0068 and upstream archival.
+serde_norway = "0.9"
+
+# HTTP-API stack used by the optional `smix-server` cement crate. The
+# core crates do not pull these in.
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "chrono", "uuid"] }
+redis = { version = "0.29", features = ["tokio-comp", "connection-manager"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+anyhow = "1"
+dotenvy = "0.15"
+# Needed by the capture pipeline in `smix-server` for `libc::kill`
+# (raw SIGINT to finalize `simctl recordVideo`; SIGTERM discards
+# output) and `libc::mkfifo`.
+libc = "0.2"
+
+# dev-only: criterion for benchmarks and perf-gate tests.
+criterion = { version = "0.7", default-features = false, features = ["plotters", "cargo_bench_support"] }
+
+# dev-only: dhat for manually-runnable heap profiles.
+dhat = "0.3"
+
+# dev-only: property-based testing.
+proptest = "1"
+
+# dev-only: `tempfile` for test isolation (report files, tmpdir
+# scratch). Preferred over `std::env::temp_dir` for RAII cleanup and
+# collision immunity.
+tempfile = "3"
+
+[workspace.lints.rust]
+# Zero-warning gate across the workspace.
+warnings = "deny"
+
+[workspace.lints.clippy]
+# clippy::all deny. Per-instance exceptions must be inline
+# `#[allow(...)]` with a justification comment; broad
+# `#![allow(...)]` module-level opt-outs are not permitted.
+all = { level = "deny", priority = -1 }
+# `ExpectationFailure` is a rich AI-readable error carrying visible
+# elements, suggestions, and device-log context — the size is a
+# deliberate design choice, not bloat.
+result_large_err = "allow"
+
+[profile.release]
+# `lto = false` is deliberate. Empirical criterion benchmarks
+# (`smix-selector` match + selector-resolver) show plain-text paths
+# 8–10% faster without LTO, regex paths within noise, and the
+# end-to-end path is I/O-bound on the simulator so LTO differences
+# are imperceptible. Dropping LTO buys substantial compile-time
+# speedup and reduces cross-crate build-lock contention.
+lto = false
+codegen-units = 1
+strip = "symbols"
+opt-level = 3
+
+[profile.bench]
+lto = false
+codegen-units = 1
+opt-level = 3
+debug = true  # criterion needs symbols for stack introspection

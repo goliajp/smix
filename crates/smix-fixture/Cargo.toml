@@ -1,0 +1,25 @@
+[package]
+name = "smix-fixture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-fixture — fixture chip registry loader for the `- fixture: <id>` yaml verb. Loads JSON declaring `{ testID, signal, timeoutMs }` per fixture id; used by smix-adapter-maestro runtime to open the QA overlay, tap the chip, and await the declared log signal."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-fixture"
+readme = "README.md"
+keywords = ["fixture", "qa", "smix", "yaml"]
+categories = ["development-tools"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

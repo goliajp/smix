@@ -1,0 +1,19 @@
+[package]
+name = "smix-verbs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-verbs — canonical verb table (maestro ↔ smix mapping) shared by smix-adapter-maestro parser and smix-migrate codemod. Single source of truth for the supported yaml verbs. Reviewer invariant: any new verb must land in VERB_TABLE first; both parser and codemod pick it up automatically."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-verbs"
+readme = "README.md"
+keywords = ["verb", "yaml", "maestro", "smix", "codemod"]
+categories = ["development-tools", "data-structures"]
+
+[lints]
+workspace = true
+
+[dependencies]

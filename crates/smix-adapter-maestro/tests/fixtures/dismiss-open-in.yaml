@@ -1,0 +1,14 @@
+# Exercises the Maestro YamlRunFlow inline `commands:` form. The filename
+# is kept verbatim so sibling parent fixtures can reference it as
+# `runFlow: dismiss-open-in.yaml`.
+
+appId: com.example.app
+---
+# iOS 26+ SpringBoard "Open in 'App'?" handoff dismiss helper. Idempotent
+# (no-op when dialog absent).
+- runFlow:
+    when:
+      visible: 'Open in'
+    commands:
+      - tapOn: 'Open'
+      - waitForAnimationToEnd

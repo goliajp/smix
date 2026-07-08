@@ -1,0 +1,22 @@
+/* v1.2.4 web — entry stylesheet. tailwind 4 + brutalist theme.
+ * gds dropped; theme.css owns all design tokens. */
+@import 'tailwindcss';
+@import './theme.css';
+
+@theme {
+  --color-bg: var(--bg);
+  --color-bg-elev: var(--bg-elev);
+  --color-bg-inset: var(--bg-inset);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-dim: var(--fg-dim);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+}

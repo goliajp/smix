@@ -1,0 +1,182 @@
+//! v3.28 c2 — perf_gate real bench swap from v3.21 c1 placeholder.
+//!
+//! v3.24 c2 deferred this swap explicitly: "smix-selector-resolver real
+//! perf bench deferred — selector match is the inner loop of the
+//! resolver pipeline, so optimizing match_text first is the right
+//! ordering. Resolver bench will follow when the CompiledPattern cache
+//! wires through" (PERFORMANCE.md §4 v3.24 c2 segment). The condition
+//! has been met since v3.1 c4 — `ResolverContext` holds `compiled:
+//! HashMap<*const Pattern, CompiledPattern>` (`lib.rs:98`), populated
+//! once per `resolve_selector` call by `cache_pattern` / `compile_anchor`
+//! (lib.rs:114 / lib.rs:176), and the hot DFS calls
+//! `match_text_compiled(node, cp)` per candidate (lib.rs:373 / 395).
+//!
+//! Cases mirror the selector-side `perf_gate.rs` v3.26 c1 layout (plain
+//! hit / regex hit / miss) but bench the **full resolver pipeline**:
+//! `resolve_selector` builds the `ResolverContext` (cache prepass over
+//! the selector tree), runs `dfs_collect` over the a11y tree
+//! (15 node), applies visibility / modal / ancestor / spatial /
+//! tappable / index filters, returns the first survivor. The numbers
+//! tier above selector-side `match_text_compiled` (~5 ns) because the
+//! resolver adds cache build, DFS frame overhead, visibility filter,
+//! tappable filter, and index pick on top. Expected tier: ns ~ low µs
+//! for a 15-node tree.
+//!
+//! Run: `cargo bench --bench perf_gate -p smix-selector-resolver`
+//!
+//! # v3.31 c1 — ctx-reused path
+//!
+//! Mirrors the 3 baseline cases with `resolve_selector_compiled` after
+//! building a single `ResolverContext` outside the `b.iter` loop. This
+//! is the production retry-loop pattern (driver `wait_for` / `scroll`).
+//! The plain hit case sees a marginal speedup (HashMap lookup already
+//! ~ns); the regex hit case sees the big win (regex compile lifted out
+//! of the hot loop). Validates the cross-call cache optimization landed
+//! in v3.31 c1.
+
+use criterion::{Criterion, criterion_group, criterion_main};
+use smix_screen::{A11yNode, Rect};
+use smix_selector::{Modifiers, Pattern, Selector};
+use smix_selector_resolver::{ResolverContext, resolve_selector, resolve_selector_compiled};
+use std::hint::black_box;
+
+fn mk_leaf(label: &str, y: f64) -> A11yNode {
+    A11yNode {
+        raw_type: "other".into(),
+        role: None,
+        identifier: None,
+        label: Some(label.into()),
+        title: None,
+        placeholder_value: None,
+        value: None,
+        text: None,
+        bounds: Rect {
+            x: 20.0,
+            y,
+            w: 100.0,
+            h: 25.0,
+        },
+        enabled: true,
+        selected: false,
+        has_focus: false,
+        visible: true,
+        children: vec![],
+    }
+}
+
+fn mk_app(children: Vec<A11yNode>) -> A11yNode {
+    A11yNode {
+        raw_type: "application".into(),
+        role: None,
+        identifier: None,
+        label: None,
+        title: None,
+        placeholder_value: None,
+        value: None,
+        text: None,
+        bounds: Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 390.0,
+            h: 844.0,
+        },
+        enabled: true,
+        selected: false,
+        has_focus: false,
+        visible: true,
+        children,
+    }
+}
+
+// 15-node tree: 1 app root + 14 labelled leaves; "Target" is the hit
+// node sitting near the middle of the DFS pre-order (forces partial
+// walk before the match, neither degenerate first-frame nor full-walk
+// rejection).
+fn build_tree() -> A11yNode {
+    let mut leaves: Vec<A11yNode> = (0..14)
+        .map(|i| {
+            let label = if i == 7 {
+                "Target".to_string()
+            } else {
+                format!("leaf-{}", i)
+            };
+            mk_leaf(&label, 50.0 + (i as f64) * 30.0)
+        })
+        .collect();
+    leaves.shrink_to_fit();
+    mk_app(leaves)
+}
+
+fn perf_gate(c: &mut Criterion) {
+    let tree = build_tree();
+
+    let sel_plain_hit = Selector::Text {
+        text: Pattern::text("Target"),
+        modifiers: Modifiers::default(),
+    };
+    let sel_regex_hit = Selector::Text {
+        text: Pattern::regex("^Target$"),
+        modifiers: Modifiers::default(),
+    };
+    let sel_miss = Selector::Text {
+        text: Pattern::text("NotInTree"),
+        modifiers: Modifiers::default(),
+    };
+
+    c.bench_function("resolve_selector plain hit (15-node tree)", |b| {
+        b.iter(|| resolve_selector(black_box(&tree), black_box(&sel_plain_hit)));
+    });
+    c.bench_function("resolve_selector regex hit (15-node tree)", |b| {
+        b.iter(|| resolve_selector(black_box(&tree), black_box(&sel_regex_hit)));
+    });
+    c.bench_function("resolve_selector miss (15-node tree, full DFS)", |b| {
+        b.iter(|| resolve_selector(black_box(&tree), black_box(&sel_miss)));
+    });
+
+    // v3.31 c1 — ctx-reused variants. Build context once outside
+    // `b.iter` so the regex compile prepass is paid at setup, not per
+    // iteration — production pattern in `smix-driver::wait_for` /
+    // `scroll`.
+    let ctx_plain = ResolverContext::new(&sel_plain_hit).expect("plain compiles");
+    let ctx_regex = ResolverContext::new(&sel_regex_hit).expect("regex compiles");
+    let ctx_miss = ResolverContext::new(&sel_miss).expect("miss plain compiles");
+    c.bench_function(
+        "resolve_selector_compiled plain hit (15-node tree, ctx-reused)",
+        |b| {
+            b.iter(|| {
+                resolve_selector_compiled(
+                    black_box(&tree),
+                    black_box(&sel_plain_hit),
+                    black_box(&ctx_plain),
+                )
+            });
+        },
+    );
+    c.bench_function(
+        "resolve_selector_compiled regex hit (15-node tree, ctx-reused)",
+        |b| {
+            b.iter(|| {
+                resolve_selector_compiled(
+                    black_box(&tree),
+                    black_box(&sel_regex_hit),
+                    black_box(&ctx_regex),
+                )
+            });
+        },
+    );
+    c.bench_function(
+        "resolve_selector_compiled miss (15-node tree, ctx-reused, full DFS)",
+        |b| {
+            b.iter(|| {
+                resolve_selector_compiled(
+                    black_box(&tree),
+                    black_box(&sel_miss),
+                    black_box(&ctx_miss),
+                )
+            });
+        },
+    );
+}
+
+criterion_group!(benches, perf_gate);
+criterion_main!(benches);

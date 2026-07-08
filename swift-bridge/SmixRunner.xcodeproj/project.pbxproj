@@ -1,0 +1,459 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0C80F867AACF331D9AA67558 /* SmixRunnerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 62641A65907E912ED2C1A626 /* SmixRunnerCore */; };
+		1CB5D5E731634D61D9EE489A /* EventSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72197983C53848D29C050471 /* EventSynthesizer.swift */; };
+		53169F0AFCECEB57F00B6D2F /* SmixA11ySwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */; };
+		5C28A1EFB4FFACB2067D1EFB /* SmixExceptionTrampoline.m in Sources */ = {isa = PBXBuildFile; fileRef = BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */; };
+		7744A4808C0F9E0E2608C8A6 /* SmixQuiescenceSwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */; };
+		7D800097302AA44BD0C96BB9 /* SmixRunnerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */; };
+		D0B65170676A011C0A27F1C4 /* EventRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */; };
+		FB2971E3FCA8356DD639970C /* SmixRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		6AD72E30753300D9D2A405CF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C192D7F383DDD953513E5139 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 50210BD2BF6F192B893BD29E;
+			remoteInfo = SmixRunner;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		036B2D309EEDEAEE780CFED8 /* SmixExceptionTrampoline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmixExceptionTrampoline.h; sourceTree = "<group>"; };
+		29E63C356CE3614778CA640B /* SmixA11ySwizzle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmixA11ySwizzle.h; sourceTree = "<group>"; };
+		43066DF5775A7FCC7E12F5A5 /* SmixRunnerUITests-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "SmixRunnerUITests-Bridging-Header.h"; sourceTree = "<group>"; };
+		6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmixRunnerUITests.swift; sourceTree = "<group>"; };
+		72197983C53848D29C050471 /* EventSynthesizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventSynthesizer.swift; sourceTree = "<group>"; };
+		77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmixA11ySwizzle.m; sourceTree = "<group>"; };
+		7F26B532CF67150468A83990 /* SmixRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmixRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmixQuiescenceSwizzle.m; sourceTree = "<group>"; };
+		95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventRecorder.swift; sourceTree = "<group>"; };
+		A8073835BE52181B5208E49B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B75B6B5792291DC048C4BECC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmixExceptionTrampoline.m; sourceTree = "<group>"; };
+		C216AAC0D648FE4B6D4EC9EC /* swift-bridge */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "swift-bridge"; path = .; sourceTree = SOURCE_ROOT; };
+		CBE545DCBDBD7B19B5102374 /* SmixQuiescenceSwizzle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmixQuiescenceSwizzle.h; sourceTree = "<group>"; };
+		CF15C4D428CB8B2B34F9A061 /* SmixRunner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SmixRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmixRunnerApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		75BEA4DC780C764D053CA1AB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0C80F867AACF331D9AA67558 /* SmixRunnerCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4DCD36BA67A219A3AB6FF123 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				CF15C4D428CB8B2B34F9A061 /* SmixRunner.app */,
+				7F26B532CF67150468A83990 /* SmixRunnerUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6C5F0B1EE6695324C276790F /* SmixRunner */ = {
+			isa = PBXGroup;
+			children = (
+				A8073835BE52181B5208E49B /* Info.plist */,
+				E91F97A8EE7187D90CC587D0 /* SmixRunnerApp.swift */,
+			);
+			path = SmixRunner;
+			sourceTree = "<group>";
+		};
+		C1EA560D211A073596EBEE99 /* SmixRunnerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				95B18B39899D4D11DED0F5E0 /* EventRecorder.swift */,
+				72197983C53848D29C050471 /* EventSynthesizer.swift */,
+				B75B6B5792291DC048C4BECC /* Info.plist */,
+				29E63C356CE3614778CA640B /* SmixA11ySwizzle.h */,
+				77E941BAAFA086830E4BCA33 /* SmixA11ySwizzle.m */,
+				036B2D309EEDEAEE780CFED8 /* SmixExceptionTrampoline.h */,
+				BCD3DBB82831D19910E77B87 /* SmixExceptionTrampoline.m */,
+				CBE545DCBDBD7B19B5102374 /* SmixQuiescenceSwizzle.h */,
+				94825BA36EF4900D803BEB6C /* SmixQuiescenceSwizzle.m */,
+				43066DF5775A7FCC7E12F5A5 /* SmixRunnerUITests-Bridging-Header.h */,
+				6D7F1BC6C2D760366FE5F543 /* SmixRunnerUITests.swift */,
+			);
+			path = SmixRunnerUITests;
+			sourceTree = "<group>";
+		};
+		CFACD55C4F5AB175E87D81AC = {
+			isa = PBXGroup;
+			children = (
+				FDE5BA08FA69D635CDA6168B /* Packages */,
+				6C5F0B1EE6695324C276790F /* SmixRunner */,
+				C1EA560D211A073596EBEE99 /* SmixRunnerUITests */,
+				4DCD36BA67A219A3AB6FF123 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		FDE5BA08FA69D635CDA6168B /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				C216AAC0D648FE4B6D4EC9EC /* swift-bridge */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		50210BD2BF6F192B893BD29E /* SmixRunner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A0EC1D22DD00FAF3E666ACAB /* Build configuration list for PBXNativeTarget "SmixRunner" */;
+			buildPhases = (
+				DBBE457AD4C0874BFC14CC16 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SmixRunner;
+			packageProductDependencies = (
+			);
+			productName = SmixRunner;
+			productReference = CF15C4D428CB8B2B34F9A061 /* SmixRunner.app */;
+			productType = "com.apple.product-type.application";
+		};
+		74C0C18B5BFC24A12DDF5FD8 /* SmixRunnerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 308AD5616797315A758D01C4 /* Build configuration list for PBXNativeTarget "SmixRunnerUITests" */;
+			buildPhases = (
+				481E6E764D72884959B30767 /* Sources */,
+				75BEA4DC780C764D053CA1AB /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B5FF0F12CF67A35BA51B8770 /* PBXTargetDependency */,
+			);
+			name = SmixRunnerUITests;
+			packageProductDependencies = (
+				62641A65907E912ED2C1A626 /* SmixRunnerCore */,
+			);
+			productName = SmixRunnerUITests;
+			productReference = 7F26B532CF67150468A83990 /* SmixRunnerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C192D7F383DDD953513E5139 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					74C0C18B5BFC24A12DDF5FD8 = {
+						TestTargetID = 50210BD2BF6F192B893BD29E;
+					};
+				};
+			};
+			buildConfigurationList = 46AF7E003C18F6BDF64D9FC1 /* Build configuration list for PBXProject "SmixRunner" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = CFACD55C4F5AB175E87D81AC;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B27FFE97BECC6432A4D4E65A /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4DCD36BA67A219A3AB6FF123 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				50210BD2BF6F192B893BD29E /* SmixRunner */,
+				74C0C18B5BFC24A12DDF5FD8 /* SmixRunnerUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		481E6E764D72884959B30767 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D0B65170676A011C0A27F1C4 /* EventRecorder.swift in Sources */,
+				1CB5D5E731634D61D9EE489A /* EventSynthesizer.swift in Sources */,
+				53169F0AFCECEB57F00B6D2F /* SmixA11ySwizzle.m in Sources */,
+				5C28A1EFB4FFACB2067D1EFB /* SmixExceptionTrampoline.m in Sources */,
+				7744A4808C0F9E0E2608C8A6 /* SmixQuiescenceSwizzle.m in Sources */,
+				7D800097302AA44BD0C96BB9 /* SmixRunnerUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DBBE457AD4C0874BFC14CC16 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB2971E3FCA8356DD639970C /* SmixRunnerApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B5FF0F12CF67A35BA51B8770 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 50210BD2BF6F192B893BD29E /* SmixRunner */;
+			targetProxy = 6AD72E30753300D9D2A405CF /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		508019CA06FC9E616E0368CA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		6C13AFAC08B7163E67E3A597 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		9DB69DE5EC2402002B133745 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = SmixRunner/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunner;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A0D569903EB49A0DDD8F5F0E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = SmixRunnerUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunnerUITests;
+				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = "SmixRunnerUITests/SmixRunnerUITests-Bridging-Header.h";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SmixRunner;
+			};
+			name = Debug;
+		};
+		D29886CD779BCF721FBB680B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = SmixRunnerUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunnerUITests;
+				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = "SmixRunnerUITests/SmixRunnerUITests-Bridging-Header.h";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SmixRunner;
+			};
+			name = Release;
+		};
+		E690D832F7B777EB194B95CC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = SmixRunner/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.smix.SmixRunner;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		308AD5616797315A758D01C4 /* Build configuration list for PBXNativeTarget "SmixRunnerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A0D569903EB49A0DDD8F5F0E /* Debug */,
+				D29886CD779BCF721FBB680B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		46AF7E003C18F6BDF64D9FC1 /* Build configuration list for PBXProject "SmixRunner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6C13AFAC08B7163E67E3A597 /* Debug */,
+				508019CA06FC9E616E0368CA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A0EC1D22DD00FAF3E666ACAB /* Build configuration list for PBXNativeTarget "SmixRunner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E690D832F7B777EB194B95CC /* Debug */,
+				9DB69DE5EC2402002B133745 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B27FFE97BECC6432A4D4E65A /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		62641A65907E912ED2C1A626 /* SmixRunnerCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SmixRunnerCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C192D7F383DDD953513E5139 /* Project object */;
+}

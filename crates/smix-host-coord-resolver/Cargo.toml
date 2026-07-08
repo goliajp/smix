@@ -1,0 +1,35 @@
+[package]
+name = "smix-host-coord-resolver"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "smix-host-coord-resolver — pure pipeline: A11yNode tree + Selector → normalized (nx, ny) tap coordinate (stone). The host-side resolve step decoupled from any specific injector (HID / Apple native event / etc.) — any iOS-automation project can adopt it."
+documentation = "https://docs.rs/smix-host-coord-resolver"
+readme = "README.md"
+keywords = ["ios", "selector", "resolver", "centroid", "tap"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+smix-screen = { path = "../smix-screen", version = "1.0.0" }
+smix-selector = { path = "../smix-selector", version = "1.0.0" }
+smix-selector-resolver = { path = "../smix-selector-resolver", version = "1.0.0" }
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+proptest.workspace = true
+
+[[bench]]
+name = "host_coord"
+harness = false
+
+[[bench]]
+name = "perf_gate"
+harness = false

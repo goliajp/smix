@@ -1,0 +1,38 @@
+[package]
+name = "smix-selector-resolver"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-selector-resolver — DFS pre-order + visibility filter + spatial filter (near/below/above/leftOf/rightOf/inside) + index pick (nth/first/last) + anchor-only base form short-circuit (stone, hot path)."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-selector-resolver"
+readme = "README.md"
+keywords = ["selector", "resolver", "dfs", "ios", "spatial"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+smix-screen = { path = "../smix-screen", version = "1.0.0" }
+smix-selector = { path = "../smix-selector", version = "1.0.0" }
+
+[dev-dependencies]
+serde_json.workspace = true
+criterion.workspace = true
+dhat.workspace = true
+
+[[bench]]
+name = "resolver"
+harness = false
+
+[[bench]]
+name = "perf_gate"
+harness = false
+
+[[example]]
+name = "dhat_profile"
+path = "examples/dhat_profile.rs"

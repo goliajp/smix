@@ -1,0 +1,63 @@
+# cargo-deny configuration for smix.
+# See https://embarkstudios.github.io/cargo-deny/
+#
+# Policy: permissive licenses only; latest-stable transitively; crates.io
+# is the only allowed registry; advisory-db gate.
+
+[graph]
+all-features = false
+no-default-features = false
+
+[advisories]
+# RustSec advisory-db gate. Document any ignore here with reason plus a
+# review trigger describing when to revisit (next dep bump, upstream
+# fix, etc.).
+ignore = [
+    # `paste` — unmaintained proc-macro, transitively via
+    # oxipng / imageproc / ab_glyph. No known security impact.
+    # Review trigger: upstream oxipng / imageproc release without paste.
+    { id = "RUSTSEC-2024-0436", reason = "paste unmaintained via oxipng/imageproc transitive; no security impact" },
+    # `ttf-parser` — declared unmaintained; ab_glyph 0.2 transitive.
+    # Upstream has a replacement (`skrifa`) pending ab_glyph migration.
+    # Review trigger: bump ab_glyph to 0.3+ once landed.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained via ab_glyph transitive; no security impact" },
+]
+
+[licenses]
+# OSI/FSF-approved permissive licenses accepted across the workspace.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
+]
+confidence-threshold = 0.8
+
+# Per-crate license exceptions. Each exception MUST have: (a) `name`
+# (optionally `version`), (b) `allow` listing the otherwise-forbidden
+# license(s), and (c) a comment naming the legal or scope
+# justification (dev-only, dual-licensed, vendored-and-modified, etc.).
+exceptions = []
+
+[bans]
+# Multiple versions of the same crate warn only.
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+# Only crates.io. Git deps and alternate registries must be explicitly
+# allow-listed.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

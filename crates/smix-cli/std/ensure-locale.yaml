@@ -1,0 +1,18 @@
+# smix std subflow — verify the currently-running sim locale matches
+# the `.smix/sims.json` `locale` field. If the sim is booted in the
+# wrong locale (common when a shared sim was last used by a different
+# team member's flow), this raises an assertion so the flow fails fast
+# rather than silently seeing wrong-language SpringBoard / app text.
+#
+# Consume as:
+#   - runFlow: std/ensure-locale.yaml
+#
+# This subflow is a **contract check**, not a mutator: it does NOT
+# switch locale. Use `smix sim locale <device> --set <bcp47>` to enforce
+# a locale at boot time (or set the `locale` field in sims.json for
+# permanent enforcement).
+appId: com.apple.Preferences
+---
+- launchApp:
+    appId: com.apple.Preferences
+- assertTrue: "${output.currentLocale} == '${env.SMIX_EXPECTED_LOCALE}'"

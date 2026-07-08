@@ -1,0 +1,20 @@
+appId: com.example.app
+---
+- launchApp:
+    clearState: false
+    permissions:
+      camera: allow
+- tapOn: Sign In
+- inputText: alice@example.com
+- extendedWaitUntil:
+    visible: Dashboard
+    timeout: 5000
+- retry:
+    max: 3
+    commands:
+    - tapOn:
+        text: Retry
+- scroll
+- stopApp: com.example.app
+- eraseText: 5
+- back

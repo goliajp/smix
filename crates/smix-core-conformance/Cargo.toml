@@ -1,0 +1,27 @@
+[package]
+name = "smix-core-conformance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-core-conformance — cross-SDK conformance test harness. Fixture-based byte-identical validation across Rust core / Swift SDK / Kotlin SDK / Expo RN bridge for selector resolver + sense/act semantics."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-core-conformance"
+readme = "README.md"
+keywords = ["conformance", "ffi", "smix", "cross-platform", "testing"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+smix-ffi = { path = "../smix-ffi", version = "1.0.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[[bin]]
+name = "fixture-runner"
+path = "src/bin/fixture_runner.rs"

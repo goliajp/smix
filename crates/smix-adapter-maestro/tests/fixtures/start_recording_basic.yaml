@@ -1,0 +1,4 @@
+appId: com.test.parity
+---
+- startRecording: "/tmp/smix-test.mp4"
+- stopRecording

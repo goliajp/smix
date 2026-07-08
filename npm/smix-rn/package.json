@@ -1,0 +1,44 @@
+{
+  "name": "@goliapkg/smix",
+  "version": "1.0.1",
+  "description": "Playwright-shape iOS Simulator / Android emulator UI automation SDK for React Native + Expo + Detox-compatible TypeScript test runners.",
+  "type": "module",
+  "license": "Apache-2.0 OR MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "homepage": "https://github.com/goliajp/smix",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/goliajp/smix.git",
+    "directory": "npm/smix-rn"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

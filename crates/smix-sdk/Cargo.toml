@@ -1,0 +1,47 @@
+[package]
+name = "smix-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-sdk — user-facing public surface for the smix Rust library. App + ergonomic selector helpers + matchers. Wraps SimctlDriver + SimctlClient + HttpRunnerClient."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-sdk"
+readme = "README.md"
+keywords = ["ios", "simulator", "automation", "sdk", "ai"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+smix-screen = { path = "../smix-screen", version = "1.0.0" }
+smix-selector = { path = "../smix-selector", version = "1.0.0" }
+smix-input = { path = "../smix-input", version = "1.0.0" }
+smix-error = { path = "../smix-error", version = "1.0.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "1.0.0" }
+smix-driver = { path = "../smix-driver", version = "1.0.0" }
+smix-simctl = { path = "../smix-simctl", version = "1.0.0" }
+smix-adb = { path = "../smix-adb", version = "1.0.0" }
+tokio = { workspace = true, features = ["time", "macros"] }
+chrono = { workspace = true }
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+# assertScreenshot dhash 64-bit perceptual hash (decode-only).
+# Pure Rust, MIT/Apache, no `image` full-crate bloat (`image` is ~3MB).
+png = "0.17"
+
+[dev-dependencies]
+wiremock = "0.6"
+serde_json.workspace = true
+serde_norway.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "1.0.0" }
+criterion.workspace = true
+
+[[bench]]
+name = "perf_gate"
+harness = false

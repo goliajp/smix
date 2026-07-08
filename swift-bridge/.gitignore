@@ -1,0 +1,14 @@
+# SwiftPM build artifacts
+.build/
+.swiftpm/
+
+# v8 ship dry-rehearsal artifacts (built locally by scripts/sdk/build-xcframework.sh
+# + ditto packaging; produced fresh each ship-rehearsal; NOT committed because
+# they're regeneratable + large).
+SmixCoreFFI.xcframework.zip
+SmixCoreFFI.xcframework.zip.sha256
+
+# XCFramework binary artifacts (rebuilt by build-xcframework.sh).
+# NOT gitignored — committed for downstream consumer + cross-binary harness
+# without rebuild. The .a + .h + module.modulemap stay in repo.
+# (XCFramework dir itself stays; only the packaged zip is gitignored.)

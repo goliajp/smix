@@ -1,0 +1,53 @@
+{
+  "id": "fixture-012-spatial-ancestor",
+  "description": "Element with given selector in its ancestor chain (structural, not spatial) — ancestor modifier resolves descent",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "scrollView",
+        "role": "scrollView",
+        "identifier": "scroll-container",
+        "label": "main-scroll",
+        "bounds": {"x": 0, "y": 100, "w": 393, "h": 600},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": [
+          {
+            "rawType": "button",
+            "role": "button",
+            "identifier": "btn-in-scroll",
+            "label": "Item",
+            "bounds": {"x": 100, "y": 300, "w": 100, "h": 40},
+            "enabled": true,
+            "selected": false,
+            "hasFocus": false,
+            "visible": true,
+            "children": []
+          }
+        ]
+      },
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-not-in-scroll",
+        "label": "Item",
+        "bounds": {"x": 100, "y": 800, "w": 100, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"label": "Item", "ancestor": {"role": "scrollView"}},
+  "expected": ["btn-in-scroll"]
+}

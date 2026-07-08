@@ -1,0 +1,52 @@
+[package]
+name = "smix-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-ffi — UniFFI v0.29+ scaffolding crate. Wraps smix-selector-resolver + smix-screen stone API for cross-language consumption (Swift Package / Kotlin .aar / Expo RN). C-ABI via uniffi-bindgen. iOS sim + macOS + Android targets via cargo build per-triple + xcodebuild -create-xcframework (iOS) / cargo-ndk (Android)."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-ffi"
+readme = "README.md"
+keywords = ["ffi", "uniffi", "ios", "android", "smix"]
+categories = ["development-tools::testing", "external-ffi-bindings"]
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "smix-bindgen-swift"
+path = "src/bin/smix-bindgen-swift.rs"
+required-features = ["bindgen-cli"]
+
+[[bin]]
+name = "smix-bindgen"
+path = "src/bin/smix-bindgen.rs"
+required-features = ["bindgen-cli"]
+
+[features]
+default = []
+# Local-only feature: pulls UniFFI's full CLI (clap + camino + uniffi_bindgen).
+# Used by `smix-bindgen-swift` bin to generate Swift bindings from
+# libsmix_ffi.dylib without requiring a separate `cargo install
+# uniffi-bindgen-swift`. Not enabled by default — keeps prod build
+# slim. Invoke: cargo run -p smix-ffi --features bindgen-cli --bin
+# smix-bindgen-swift -- <library_path> <out_dir> --xcframework --module-name SmixCoreFFI
+bindgen-cli = ["uniffi/cli"]
+
+[dependencies]
+smix-screen = { path = "../smix-screen", version = "1.0.0" }
+smix-selector = { path = "../smix-selector", version = "1.0.0" }
+smix-selector-resolver = { path = "../smix-selector-resolver", version = "1.0.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uniffi = { version = "0.29", features = [] }
+
+[build-dependencies]
+uniffi = { version = "0.29", features = ["build"] }

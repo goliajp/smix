@@ -1,0 +1,49 @@
+[package]
+name = "smix-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix — AI-native iOS Simulator automation CLI."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-cli"
+readme = "README.md"
+keywords = ["ios", "simulator", "cli", "automation"]
+categories = ["development-tools::testing", "command-line-utilities"]
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "smix"
+path = "src/main.rs"
+
+[dependencies]
+smix-error = { path = "../smix-error", version = "1.0.0" }
+smix-simctl = { path = "../smix-simctl", version = "1.0.0" }
+smix-sdk = { path = "../smix-sdk", version = "1.0.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "1.0.0" }
+smix-runner-wire = { path = "../smix-runner-wire", version = "1.0.0" }
+smix-driver = { path = "../smix-driver", version = "1.0.0" }
+smix-adapter-maestro = { path = "../smix-adapter-maestro", version = "1.0.0" }
+smix-migrate = { path = "../smix-migrate", version = "1.0.0" }
+smix-annotate = { path = "../smix-annotate", version = "1.0.0" }
+smix-input = { path = "../smix-input", version = "1.0.0" }
+serde_norway.workspace = true
+smix-selector = { path = "../smix-selector", version = "1.0.0" }
+smix-screen = { path = "../smix-screen", version = "1.0.0" }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+clap = { workspace = true, features = ["env"] }
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "perf_gate"
+harness = false

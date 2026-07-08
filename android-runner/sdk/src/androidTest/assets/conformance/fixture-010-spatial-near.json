@@ -1,0 +1,53 @@
+{
+  "id": "fixture-010-spatial-near",
+  "description": "Element geometrically near anchor — default 100pt threshold filters out far candidates",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "staticText",
+        "role": "staticText",
+        "identifier": "label-anchor",
+        "label": "anchor-label",
+        "text": "anchor-label",
+        "bounds": {"x": 100, "y": 400, "w": 80, "h": 24},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-near-target",
+        "label": "ButtonNearby",
+        "bounds": {"x": 100, "y": 440, "w": 80, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-far-no-match",
+        "label": "ButtonNearby",
+        "bounds": {"x": 100, "y": 700, "w": 80, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"label": "ButtonNearby", "near": {"text": "anchor-label"}},
+  "expected": ["btn-near-target"]
+}

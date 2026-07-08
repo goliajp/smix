@@ -1,0 +1,29 @@
+{
+  "id": "fixture-003-text-hit",
+  "description": "Text selector matches by label / text content — returns [identifier]",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "staticText",
+        "role": "staticText",
+        "identifier": "welcome-msg",
+        "label": "Welcome back",
+        "text": "Welcome back",
+        "bounds": {"x": 50, "y": 100, "w": 293, "h": 24},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"text": "Welcome back"},
+  "expected": ["welcome-msg"]
+}

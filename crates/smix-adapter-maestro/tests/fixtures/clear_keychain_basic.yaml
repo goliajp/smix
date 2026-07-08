@@ -1,0 +1,5 @@
+appId: com.test.parity
+---
+- launchApp:
+    appId: com.target.app
+- clearKeychain

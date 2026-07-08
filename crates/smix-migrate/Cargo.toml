@@ -1,0 +1,24 @@
+[package]
+name = "smix-migrate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-migrate — static codemod translating maestro-flavored YAML flows to smix canonical form (verb rename table + argument normalization). Consumed by the `smix migrate` CLI subcommand; also usable as a library for batch migration."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-migrate"
+readme = "README.md"
+keywords = ["maestro", "yaml", "codemod", "migration", "smix"]
+categories = ["development-tools", "parser-implementations"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_norway.workspace = true
+smix-verbs = { path = "../smix-verbs", version = "1.0.0" }
+thiserror.workspace = true
+

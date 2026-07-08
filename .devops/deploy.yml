@@ -1,0 +1,25 @@
+name: deploy
+
+# smix project website: smix.golia.jp
+#
+# Build artifact lives in web/dist/ — produced locally by:
+#     cd web && bun install && bun run build
+# Then trigger deploy from the smix repo root:
+#     devops deploy smix
+#
+# The web/ sub-project is a Vite SPA (React + GDS); served as static
+# files on t01 by Caddy, HTTPS via ACME.
+
+jobs:
+  web:
+    runs-on: t01
+    steps:
+      - uses: upload
+        with:
+          src: ./web/dist/
+          dest: /var/lib/smix-web/
+      - uses: caddy
+        with:
+          domains: [smix.golia.jp]
+          root: /var/lib/smix-web
+          spa: true

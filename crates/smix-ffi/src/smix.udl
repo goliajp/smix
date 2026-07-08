@@ -1,0 +1,47 @@
+// smix-ffi — v7.0 c2 MVP UDL. Single function `resolve_selector` per
+// spike #1 fixture #1 (empty tree + id selector → []).
+//
+// v7.0 c3+ 起按 D6 (Playwright-shape SDK surface mirror Rust smix-sdk)
+// 扩 ~10 runner async fn: tap / fill / press_key / swipe / screenshot /
+// tree / system_popups / open_url / launch_fresh / find.
+//
+// Cancellation gap workaround (per spike #4): 每 async endpoint 同时
+// export sibling `cancel_{op}(handle)` — c3 起加。c2 MVP 仅 sync
+// resolve_selector,不涉 async,cancellation N/A。
+
+namespace smix {
+    // Resolve a Selector (JSON wire form) against an A11yNode tree
+    // (JSON wire form). Returns the matched node ids as JSON strings
+    // (or [] when no match).
+    //
+    // tree_json: serialized A11yNode tree (smix-screen JSON form)
+    // selector_json: serialized Selector (smix-selector JSON form,
+    //   { "kind": "id" | "text" | "label" | "role" | "modified", ... })
+    // Returns Vec<String> = sequence<string> of matched node ids
+    //   (length 0 when no match)
+    [Throws=FfiError]
+    sequence<string> resolve_selector(string tree_json, string selector_json);
+
+    // v7.6 c1 — count + labels resolvers for Locator.toHaveCount /
+    // toHaveLabel. Both skip index modifier (per Playwright "find all"
+    // semantics — first/last/nth incompatible with "match every").
+    //
+    // resolve_selector_count: returns match count as u32.
+    // resolve_selector_labels: returns Vec<String> of each match's
+    //   `.label` field (empty string when label is None).
+    [Throws=FfiError]
+    u32 resolve_selector_count(string tree_json, string selector_json);
+
+    [Throws=FfiError]
+    sequence<string> resolve_selector_labels(string tree_json, string selector_json);
+};
+
+// MVP error type — c2 only handles parse failure. c3+ 起扩 mirror
+// smix-error ExpectationFailure 全 FailureCode (NotFound / Ambiguous /
+// NotInteractable / Timeout / WrongState) + visible_elements +
+// suggestions (per design §9 #11 AI-readable contract).
+[Error]
+enum FfiError {
+    "InvalidTreeJson",
+    "InvalidSelectorJson",
+};

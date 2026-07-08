@@ -1,0 +1,37 @@
+[package]
+name = "smix-recorder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "smix-recorder — host-side recorder (RecordSession + RecordingApp + Rust/maestro yaml generators + claude CLI cleanup)."
+documentation = "https://docs.rs/smix-recorder"
+readme = "README.md"
+keywords = ["ios", "simulator", "recorder", "test", "automation"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+smix-input = { path = "../smix-input", version = "1.0.0" }
+smix-selector = { path = "../smix-selector", version = "1.0.0" }
+smix-recorder-ir = { path = "../smix-recorder-ir", version = "1.0.0" }
+smix-error = { path = "../smix-error", version = "1.0.0" }
+smix-sdk = { path = "../smix-sdk", version = "1.0.0" }
+serde.workspace = true
+serde_json.workspace = true
+serde_norway.workspace = true
+tokio = { workspace = true, features = ["macros", "process", "io-util"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+criterion.workspace = true
+
+[[bench]]
+name = "perf_gate"
+harness = false

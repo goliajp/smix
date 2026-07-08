@@ -1,0 +1,52 @@
+{
+  "id": "fixture-009-spatial-rightOf",
+  "description": "Element to the right of 'Cancel' — spatial rightOf filter picks larger x centroid",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-left-no-match",
+        "label": "Save",
+        "bounds": {"x": 50, "y": 600, "w": 80, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-cancel",
+        "label": "Cancel",
+        "bounds": {"x": 150, "y": 600, "w": 80, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-right",
+        "label": "Save",
+        "bounds": {"x": 300, "y": 600, "w": 80, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"label": "Save", "rightOf": {"label": "Cancel"}},
+  "expected": ["btn-right"]
+}

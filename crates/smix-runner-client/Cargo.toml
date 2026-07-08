@@ -1,0 +1,40 @@
+[package]
+name = "smix-runner-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-runner-client — HTTP IPC client to swift-bridge/SmixRunnerCore."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-runner-client"
+readme = "README.md"
+keywords = ["ios", "simulator", "http", "automation"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+smix-screen = { path = "../smix-screen", version = "1.0.0" }
+smix-selector = { path = "../smix-selector", version = "1.0.0" }
+smix-input = { path = "../smix-input", version = "1.0.0" }
+smix-error = { path = "../smix-error", version = "1.0.0" }
+smix-runner-wire = { path = "../smix-runner-wire", version = "1.0.0" }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+reqwest.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+# wiremock — mock HTTP server for wire-level integration tests.
+wiremock = "0.6"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+criterion.workspace = true
+
+[[bench]]
+name = "perf_gate"
+harness = false

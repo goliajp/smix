@@ -1,0 +1,10 @@
+appId: com.example.app
+---
+- stopApp
+# launch via deep link — passes metro URL as launch argument
+- openLink: "exp+example-app://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+# wait for actual app content — either landing page or home screen device tab
+- extendedWaitUntil:
+    visible: "Log in|Device"
+    timeout: 45000
+- waitForAnimationToEnd

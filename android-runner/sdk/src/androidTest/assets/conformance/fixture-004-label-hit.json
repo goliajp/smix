@@ -1,0 +1,28 @@
+{
+  "id": "fixture-004-label-hit",
+  "description": "Label selector matches by accessibility label — returns [identifier]",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-settings",
+        "label": "Settings",
+        "bounds": {"x": 300, "y": 50, "w": 60, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"label": "Settings"},
+  "expected": ["btn-settings"]
+}

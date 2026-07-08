@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- v6.0 c3b — androidTest variant manifest.
+         Permissions needed for UiAutomator2 + HTTP server: INTERNET (open
+         port 28080 inside emulator), and accessibility (handled at install
+         time by adb shell settings put). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- v6.5 c1 — runner proxies /webview-eval to fixture's HTTP shim on
+         localhost:28081. API 28+ blocks cleartext HTTP by default; allow
+         it explicitly for the loopback proxy hop. -->
+    <application android:usesCleartextTraffic="true" />
+</manifest>

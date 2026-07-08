@@ -1,0 +1,195 @@
+// v7.4 c1 — Kotlin SDK MVP shape JVM unit tests.
+//
+// Mirror swift-bridge/Tests/SmixSDKTests/MvpApiShapeTests.swift (v7.1 c1).
+// Verifies:
+//   - Selector 4 base case constructible
+//   - Modifier 9 case constructible
+//   - A11yRole 28 case exposed
+//   - A11yNode roundtrip + camelCase wire keys
+//   - FailureCode 6 case
+//   - ExpectationFailure errorJson() AI-readable contract
+//   - Smix.launchApp / App.tap / Locator.toBeVisible stubs throw NotImplemented
+
+package dev.smix.sdk
+
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import org.junit.Assert.*
+import org.junit.Test
+
+class MvpApiShapeTest {
+
+    // MARK: - Selector cases
+
+    @Test
+    fun selectorBaseCasesExhaustive() {
+        // v7.4 c4 expanded: Text/Role.name now take Pattern (not String).
+        val cases: List<Selector> = listOf(
+            Selector.Id("btn-login"),
+            Selector.Text(Pattern.Literal("Sign In")),
+            Selector.Label("Settings"),
+            Selector.Role("button"),
+            Selector.Role("button", name = Pattern.Literal("Submit")),
+        )
+        assertEquals(5, cases.size)
+    }
+
+    @Test
+    fun selectorIdSerializesAsExpectedShape() {
+        val sel = Selector.Id("btn-login")
+        val json = Json.encodeToString(SelectorSerializer, sel)
+        assertTrue(json.contains("\"id\":\"btn-login\""))
+    }
+
+    // MARK: - Modifier cases
+
+    @Test
+    fun modifierCasesExhaustive() {
+        val cases: List<Modifier> = listOf(
+            Modifier.First,
+            Modifier.Last,
+            Modifier.Nth(0),
+            Modifier.Above(Selector.Id("anchor")),
+            Modifier.Below(Selector.Id("anchor")),
+            Modifier.LeftOf(Selector.Id("anchor")),
+            Modifier.RightOf(Selector.Id("anchor")),
+            Modifier.Near(Selector.Id("anchor"), thresholdPts = 50.0),
+            Modifier.Inside(Selector.Id("anchor")),
+        )
+        assertEquals("v7.4 c1 MVP exposes 9 modifier cases", 9, cases.size)
+    }
+
+    // MARK: - Role cases
+
+    @Test
+    fun a11yRoleCasesAllExposed() {
+        // Snapshot of v7.4 c1 mirror of Rust smix-screen Role enum.
+        val expected = setOf(
+            "BUTTON", "LINK", "TEXT_FIELD", "SECURE_TEXT_FIELD", "SEARCH_FIELD",
+            "SWITCH", "TOGGLE", "CHECK_BOX", "RADIO", "IMAGE", "STATIC_TEXT",
+            "TAB", "TAB_BAR", "NAVIGATION_BAR", "CELL", "ALERT", "DIALOG",
+            "SLIDER", "PROGRESS_BAR", "PICKER", "MENU", "MENU_ITEM",
+            "SCROLL_VIEW", "SEGMENTED_CONTROL", "TABLE", "COLLECTION_VIEW",
+            "WEB_VIEW", "KEYBOARD",
+        )
+        val actual = A11yRole.entries.map { it.name }.toSet()
+        assertEquals(expected, actual)
+        assertEquals(28, A11yRole.entries.size)
+    }
+
+    @Test
+    fun a11yRoleSerializesAsCamelCase() {
+        val json = Json.encodeToString(A11yRole.serializer(), A11yRole.BUTTON)
+        assertEquals("\"button\"", json)
+
+        val jsonScrollView = Json.encodeToString(A11yRole.serializer(), A11yRole.SCROLL_VIEW)
+        assertEquals("\"scrollView\"", jsonScrollView)
+    }
+
+    // MARK: - A11yNode + Rect shape
+
+    @Test
+    fun a11yNodeRoundtripMinimal() {
+        val node = A11yNode(
+            rawType = "other",
+            bounds = Rect(0.0, 0.0, 393.0, 852.0),
+            enabled = true,
+            visible = true,
+        )
+        val encoded = Json.encodeToString(A11yNode.serializer(), node)
+        val decoded = Json.decodeFromString(A11yNode.serializer(), encoded)
+        assertEquals("other", decoded.rawType)
+        assertEquals(393.0, decoded.bounds.w, 0.001)
+    }
+
+    @Test
+    fun a11yNodeUsesCamelCaseKeys() {
+        val node = A11yNode(
+            rawType = "other",
+            bounds = Rect(0.0, 0.0, 1.0, 1.0),
+            hasFocus = true,
+            visible = true,
+        )
+        val json = Json.encodeToString(A11yNode.serializer(), node)
+        assertTrue("rawType camelCase", json.contains("\"rawType\":\"other\""))
+        assertTrue("hasFocus camelCase", json.contains("\"hasFocus\":true"))
+    }
+
+    @Test
+    fun rectCenterComputed() {
+        val r = Rect(100.0, 200.0, 80.0, 40.0)
+        assertEquals(140.0, r.centerX, 0.001)
+        assertEquals(220.0, r.centerY, 0.001)
+    }
+
+    // MARK: - FailureCode
+
+    @Test
+    fun failureCodeCasesAllExposed() {
+        val expected = setOf(
+            "NOT_FOUND", "AMBIGUOUS", "NOT_INTERACTABLE",
+            "TIMEOUT", "WRONG_STATE", "UNKNOWN",
+        )
+        val actual = FailureCode.entries.map { it.name }.toSet()
+        assertEquals(expected, actual)
+        assertEquals(6, FailureCode.entries.size)
+    }
+
+    @Test
+    fun failureCodeSerializesAsCamelCase() {
+        assertEquals("\"notFound\"", Json.encodeToString(FailureCode.serializer(), FailureCode.NOT_FOUND))
+        assertEquals("\"notInteractable\"", Json.encodeToString(FailureCode.serializer(), FailureCode.NOT_INTERACTABLE))
+    }
+
+    // MARK: - ExpectationFailure
+
+    @Test
+    fun expectationFailureErrorJsonHasStableKeys() {
+        val failure = ExpectationFailure(
+            code = FailureCode.NOT_FOUND,
+            message = "no candidates",
+            selectorJson = "{\"id\":\"btn\"}",
+            suggestions = listOf("check id"),
+            timestamp = 1_780_000_000L,
+        )
+        val json = failure.errorJson()
+        // Each key appears exactly once
+        for (key in listOf("code", "message", "selector", "visibleElements", "suggestions", "timestamp")) {
+            val count = json.split("\"$key\":").size - 1
+            assertEquals("key '$key' should appear exactly once in: $json", 1, count)
+        }
+    }
+
+    @Test
+    fun expectationFailureErrorJsonContainsCamelCaseFailureCode() {
+        val failure = ExpectationFailure(
+            code = FailureCode.WRONG_STATE,
+            message = "x",
+        )
+        val json = failure.errorJson()
+        assertTrue("must contain wrongState rawValue", json.contains("\"wrongState\""))
+    }
+
+    // MARK: - Stub surface verification
+
+    // v7.4 c2 update: Smix.launchApp / App.tap NO LONGER throw
+    // NotImplemented — both wired via SmixSimRuntime. See
+    // AppTapMockTest for the c2 replacement tests. The c1-style stub
+    // tests now verify still-stubbed surface (fill / pressKey / etc.).
+
+    // v7.4 c3 update: fill / pressKey / Locator.toBeVisible / toContainText
+    // are now wired (App.fill = tap+sendString; pressKey direct;
+    // toBeVisible/toContainText poll). Stale stub tests replaced with
+    // remaining-stub coverage (swipe / screenshot / tapAtCoord).
+
+    // v7.4 c5 update: swipe / screenshot / tapAtCoord / launchFresh /
+    // systemPopups / openUrl / launchApp(.AppPath) all wired via
+    // SimRuntime extension. See AppActSenseExtMockTest for the c5
+    // replacement tests. The only remaining-stub surface is
+    // Locator.toHaveLabel / toHaveCount (v7.5 c2 — needs match-count
+    // resolver path that hasn't landed in smix-ffi yet for Android).
+
+    // v7.6 c1 update: Locator.toHaveLabel / toHaveCount now wired via
+    // dedicated FFI resolve_selector_count / resolve_selector_labels
+    // helpers. See LocatorToHaveMockTest for replacement tests.
+}

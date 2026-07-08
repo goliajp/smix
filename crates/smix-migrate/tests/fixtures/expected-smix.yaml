@@ -1,0 +1,19 @@
+appId: com.example.app
+---
+- launchApp:
+    permissions:
+      camera: allow
+- tap: Sign In
+- fill: alice@example.com
+- expect:
+    visible: Dashboard
+    timeoutMs: 5000
+- retry:
+    maxRetries: 3
+    commands:
+    - tap:
+        text: Retry
+- scroll
+- terminate: com.example.app
+- clear: 5
+- pressKey

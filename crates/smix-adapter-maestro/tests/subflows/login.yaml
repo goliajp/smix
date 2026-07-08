@@ -1,0 +1,7 @@
+appId: com.example.app
+---
+- tapOn: "Login"
+- extendedWaitUntil:
+    visible:
+      id: "btn-home"
+    timeout: 5000

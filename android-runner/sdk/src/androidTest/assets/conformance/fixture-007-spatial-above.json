@@ -1,0 +1,53 @@
+{
+  "id": "fixture-007-spatial-above",
+  "description": "Button above 'Footer' label — spatial above filter picks candidate with smaller y centroid",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0, "y": 0, "w": 393, "h": 852},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": [
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-above-target",
+        "label": "Submit",
+        "bounds": {"x": 100, "y": 300, "w": 100, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "button",
+        "role": "button",
+        "identifier": "btn-below-target",
+        "label": "Submit",
+        "bounds": {"x": 100, "y": 500, "w": 100, "h": 40},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      },
+      {
+        "rawType": "staticText",
+        "role": "staticText",
+        "identifier": "label-footer",
+        "label": "Footer",
+        "text": "Footer",
+        "bounds": {"x": 100, "y": 400, "w": 100, "h": 24},
+        "enabled": true,
+        "selected": false,
+        "hasFocus": false,
+        "visible": true,
+        "children": []
+      }
+    ]
+  },
+  "selector": {"label": "Submit", "above": {"text": "Footer"}},
+  "expected": ["btn-above-target"]
+}

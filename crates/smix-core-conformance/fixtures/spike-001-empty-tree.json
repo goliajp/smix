@@ -1,0 +1,17 @@
+{
+  "id": "spike-001",
+  "description": "Empty a11y tree with id selector — must return empty Vec (no match)",
+  "tree": {
+    "rawType": "other",
+    "bounds": {"x": 0.0, "y": 0.0, "w": 393.0, "h": 852.0},
+    "enabled": true,
+    "selected": false,
+    "hasFocus": false,
+    "visible": true,
+    "children": []
+  },
+  "selector": {
+    "id": "nope"
+  },
+  "expected": []
+}

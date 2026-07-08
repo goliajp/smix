@@ -1,0 +1,29 @@
+[package]
+name = "smix-metro-log"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-metro-log — metro / expo log tail + ring buffer + await_signal / await_signals / assert_clean (stone). Powers `expect.signal` / `expect.signals` yaml verbs in smix-adapter-maestro and the `--expect-log-clean` CLI flag."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-metro-log"
+readme = "README.md"
+keywords = ["metro", "expo", "log", "signal", "smix"]
+categories = ["development-tools", "asynchronous"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time", "io-util", "fs"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+regex = "1"
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }

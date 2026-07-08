@@ -1,0 +1,7 @@
+appId: com.test.parity
+---
+- retry:
+    maxRetries: 2
+    commands:
+      - tapOn:
+          id: "flaky-button"

@@ -1,0 +1,5 @@
+# Pin Rust toolchain for reproducibility across machines.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

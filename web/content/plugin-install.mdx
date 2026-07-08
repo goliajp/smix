@@ -1,0 +1,86 @@
+---
+title: Plugin install
+---
+
+# smix Claude Code plugin — install & verify
+
+Local dev install is shipping-quality as of `v1.2.4`. Marketplace publish is a release-ops decision (separate from the perf cycle); the dev-install path below is what end users run today.
+
+## 1. Prerequisites
+
+| dep | min version | check |
+| --- | --- | --- |
+| macOS | 15 | matches CI `runs-on: macos-15` |
+| Xcode | 26.0 | `xcodebuild -version` |
+| iOS runtime | 26.x | `xcrun simctl list runtimes -j` |
+| bun | 1.1.0 | `bun --version` |
+| claude CLI | any logged-in | `claude -p ping` returns non-empty |
+
+One-shot environment self-check:
+
+```bash
+bun src/cli/index.ts doctor --json | jq '.compatibility.status'
+# expected: "supported"
+```
+
+The 7 doctor checks include `hostHidReady` (sidecar ping + ReduceMotion preference) which was added in v1.1 C4. As of v1.2 the runner-port bind is also verified IPv4 loopback only.
+
+## 2. Local dev install
+
+Pass the repo path to the `claude` CLI:
+
+```bash
+claude --plugin-dir /absolute/path/to/smix
+```
+
+Then:
+
+- `claude` reads `.claude-plugin/plugin.json`
+- The embedded `mcpServers.smix` entry registers as an MCP server
+- `${CLAUDE_PLUGIN_ROOT}` expands to the absolute path you passed
+
+> Restart the `claude` session after editing the plugin (the loader does not hot-reload the manifest).
+
+## 3. Verification
+
+Four checks in order:
+
+1. Inside the `claude` session, type `/mcp`:
+   - `smix` shows `connected`
+   - **27 tools** total: `ping` + 7 lifecycle + 4 observe + 7 interaction + 3 compound + 4 system + 1 VLM (`explain_screen`)
+2. Local MCP server starts on demand:
+   ```bash
+   bun src/cli/index.ts mcp < /dev/null
+   # exits 0 immediately; stderr contains [smix-mcp] startup log
+   ```
+3. Structural plugin gate:
+   ```bash
+   bash scripts/smix-c5-plugin-validate.sh | jq -e '.all_ok == "ok"'
+   # all 11 fields ok, exit 0
+   ```
+4. All 7 doctor checks `supported`:
+   ```bash
+   bun src/cli/index.ts doctor --json \
+     | jq -e '.compatibility.status == "supported"'
+   ```
+
+## 4. What ships with the plugin
+
+- The `smix` MCP server (27 tools)
+- The `smix run` CLI for executing `.test.ts` files outside Claude Code
+- The XCUITest runner target (`swift-bridge/`) that hosts the in-sim HTTP server
+- The host-HID sidecar binary (`smix-host-hid`, prebuilt by `scripts/c2-dist-build.sh`)
+
+The runner binds **only** `127.0.0.1:22087` (v1.2 invariant #3 — IPv4 loopback). No LAN exposure.
+
+## 5. Marketplace publish (planned)
+
+When marketplace lands, the install path collapses to one line inside a `claude` session:
+
+```
+/plugin install smix
+```
+
+The plugin manifest's `homepage` / `repository` fields already point at the canonical repo at [github.com/goliajp/smix](https://github.com/goliajp/smix).
+
+> Source of truth (matches what gets shipped): [docs/plugin-install.md on GitHub](https://github.com/goliajp/smix/blob/develop/docs/plugin-install.md)
