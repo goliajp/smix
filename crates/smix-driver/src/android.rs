@@ -105,6 +105,16 @@ impl Driver for AndroidDriver {
 
     // No as_ios_driver override — uses default `None` from trait.
 
+    /// v1.0.3 — Android impl: attach / clear the `Session-Id` header
+    /// on every subsequent request. Same wire as iOS; the Kotlin
+    /// runner-side session table is symmetric.
+    fn set_session_id(&mut self, id: Option<String>) {
+        match id {
+            Some(sid) => self.runner.set_session_id(sid),
+            None => self.runner.clear_session_id(),
+        }
+    }
+
     // === Sense ===
 
     async fn tree(&self, include: Option<IncludeScope>) -> Result<A11yNode, ExpectationFailure> {

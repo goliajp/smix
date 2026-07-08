@@ -127,31 +127,77 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
             return ExitCode::from(6);
         }
     };
-    let app = if let Some(u) = args.udid.as_deref() {
-        app.with_udid(u)
-    } else {
-        app
+    let configure = |app: smix_sdk::App| -> smix_sdk::App {
+        let app = if let Some(u) = args.udid.as_deref() {
+            app.with_udid(u)
+        } else {
+            app
+        };
+        // Thread bundle_id + auto_activate through the driver so every
+        // runner request carries `App-Bundle-Id` / `App-Activate` /
+        // `Session-Id` headers.
+        let app = app.with_bundle_id(&args.bundle_id);
+        let app = if args.auto_activate {
+            app.with_auto_activate(true)
+        } else {
+            app
+        };
+        if args.force_key_events {
+            app.with_force_key_events(true)
+        } else {
+            app
+        }
     };
-    // Thread bundle_id + auto_activate through the driver so every
-    // runner request carries `App-Bundle-Id` / `App-Activate` headers.
-    let app = app.with_bundle_id(&args.bundle_id);
-    let app = if args.auto_activate {
-        app.with_auto_activate(true)
-    } else {
-        app
-    };
-    // Force key-event dispatch mode.
-    let app = if args.force_key_events {
-        app.with_force_key_events(true)
-    } else {
-        app
+    let app = configure(app);
+
+    // v1.0.3 — session lifecycle. `smix run` opens a runner-side
+    // session at start-up and closes it on exit. Every request in
+    // between carries `Session-Id`, so the runner short-circuits
+    // per-request `.activate()` — eliminating the activation storm at
+    // the root without any yaml-side change.
+    //
+    // Runners that don't implement `/session/open` (older v1.0.x) will
+    // return non-2xx; on that path we WARN + reconnect + continue with
+    // the legacy per-request rebind (which as of v1.0.2 is itself
+    // rate-limited to 1 activate / 5 s / bundle-id, so still safe).
+    enum AppHolder {
+        Session(smix_sdk::Session),
+        Loose(smix_sdk::App),
+    }
+    impl AppHolder {
+        fn app(&self) -> &smix_sdk::App {
+            match self {
+                AppHolder::Session(s) => s.app(),
+                AppHolder::Loose(a) => a,
+            }
+        }
+    }
+    let holder = match args.platform {
+        FlowPlatform::Ios => match app.open_session(&args.bundle_id, args.auto_activate).await {
+            Ok(s) => AppHolder::Session(s),
+            Err(e) => {
+                eprintln!(
+                    "WARN: /session/open failed ({e}); falling back to legacy \
+                     per-request path (rate-limited to 1 activate / 5 s / bundle-id)"
+                );
+                let fresh = match App::connect_to_runner(args.runner_port).await {
+                    Ok(a) => configure(a),
+                    Err(e2) => {
+                        eprintln!("error: reconnect after session-open fail: {e2}");
+                        return ExitCode::from(6);
+                    }
+                };
+                AppHolder::Loose(fresh)
+            }
+        },
+        FlowPlatform::Android => AppHolder::Loose(app),
     };
 
     // 2. foreground unless --no-launch (iOS only; Android brings app
     // to foreground via launchApp step).
     if !args.no_launch
         && args.platform == FlowPlatform::Ios
-        && let Err(e) = app.foreground(&args.bundle_id).await
+        && let Err(e) = holder.app().foreground(&args.bundle_id).await
     {
         eprintln!("error: foreground({}) failed: {e}", args.bundle_id);
         return ExitCode::from(3);
@@ -219,7 +265,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
     // Wire env + debug_output into the Adapter. Adapter writes per-step
     // JSON + on-fail screenshot into debug_output/; entry.rs adds the
     // aggregate run-summary.json at exit (below).
-    let mut adapter = Adapter::new(&app, base_dir).with_env(env_store);
+    let mut adapter = Adapter::new(holder.app(), base_dir).with_env(env_store);
     if let Some(dir) = args.debug_output.clone() {
         adapter = adapter.with_debug_output(dir);
     }
@@ -276,6 +322,17 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
     };
 
     let result = adapter.run(&flow).await;
+    drop(adapter);
+
+    // v1.0.3 — release the session (best-effort). Errors here are
+    // warnings only: the flow's result is already captured. The
+    // dispatch is a small POST /session/close and the runner's
+    // idempotent contract means "already gone" is not an error.
+    if let AppHolder::Session(session) = holder
+        && let Err(e) = session.close().await
+    {
+        eprintln!("WARN: /session/close failed at exit: {e}");
+    }
 
     // debug-output + json format handling. debug_output writes a
     // summary JSON at exit; format=Json emits the same to stdout.

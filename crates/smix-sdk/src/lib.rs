@@ -366,6 +366,118 @@ pub fn plan_launch_fresh_calls(
 /// Every method is async — no chaining shortcuts, no fluent builder
 /// pattern. One step, one await, one observable side effect (CLAUDE.md
 /// §9 #5).
+/// v1.0.3 — a runner-side session guard. Obtained via
+/// [`App::open_session`]; drop the value or call [`Session::close`] to
+/// release. While a session is open the wrapped `App` sends the
+/// `Session-Id` header on every request, and the runner uses the
+/// session's cached `XCUIApplication` binding — no per-request
+/// activation storm.
+///
+/// The type is deliberately `!Clone` and takes ownership of the
+/// `App`. Consumer flow:
+///
+/// ```ignore
+/// use smix_sdk::App;
+/// # async fn demo() -> Result<(), smix_sdk::ExpectationFailure> {
+/// let mut app = App::connect_to_runner(22087).await?;
+/// let mut session = app.open_session("com.example.app", true).await?;
+/// session.app_mut().tap(&smix_sdk::text("Sign In")).await?;
+/// session.close().await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// If `Session::close` is not called, `Drop` releases the reference
+/// but cannot await the network `POST /session/close` — a background
+/// task is spawned best-effort. Prefer `close()` explicitly.
+pub struct Session {
+    /// `Some` until `close()` moves the App out; `None` afterwards.
+    /// Every accessor asserts `Some` — using a Session after `close`
+    /// panics.
+    app: Option<App>,
+    session_id: String,
+}
+
+impl Session {
+    /// Immutable access to the underlying `App`. Every call goes out
+    /// with the `Session-Id` header. Panics if called after
+    /// [`Session::close`].
+    pub fn app(&self) -> &App {
+        self.app.as_ref().expect("Session used after close()")
+    }
+
+    /// Mutable access to the underlying `App`. Panics if called after
+    /// [`Session::close`].
+    pub fn app_mut(&mut self) -> &mut App {
+        self.app.as_mut().expect("Session used after close()")
+    }
+
+    /// The runner-issued session id. Opaque; useful only for logging.
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    /// Ask the runner to re-issue `.activate()` on the session's
+    /// cached binding. Subject to the runner's per-session 2 s rate
+    /// limit; when rate-limited returns `Ok(false)`. When the runner
+    /// no longer has the session id in its table (evicted / restart)
+    /// returns an error.
+    pub async fn renew_activation(&self) -> Result<bool, ExpectationFailure> {
+        let app = self.app();
+        let runner = app.http_runner_client().ok_or_else(|| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: "session renew_activation: driver has no HTTP runner client".into(),
+                ..Default::default()
+            })
+        })?;
+        let req = smix_runner_client::SessionRenewActivationRequest {
+            session_id: self.session_id.clone(),
+        };
+        runner
+            .renew_session_activation(&req)
+            .await
+            .map(|r| r.activated)
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("session renew_activation: {e}"),
+                    ..Default::default()
+                })
+            })
+    }
+
+    /// Release the session — sends `POST /session/close` and clears
+    /// the `Session-Id` header from the client. Returns the wrapped
+    /// `App` so the caller can keep issuing requests via the legacy
+    /// per-request path.
+    pub async fn close(mut self) -> Result<App, ExpectationFailure> {
+        let mut app = self.app.take().expect("Session::close called twice");
+        // Best-effort: an error here means the runner is gone or the
+        // session id has already been evicted. Neither is fatal; the
+        // client-side header clear is the meaningful action.
+        if let Some(runner) = app.http_runner_client() {
+            let req = smix_runner_client::SessionCloseRequest {
+                session_id: self.session_id.clone(),
+            };
+            let _ = runner.close_session(&req).await;
+        }
+        app.driver.set_session_id(None);
+        Ok(app)
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        // Best-effort clear of the session header. Network
+        // `POST /session/close` is skipped — we can't `await` in Drop;
+        // prefer explicit `close()` when the release contract matters.
+        if let Some(app) = self.app.as_mut() {
+            app.driver.set_session_id(None);
+        }
+    }
+}
+
 pub struct App {
     /// Sense+act trait stored as `Box<dyn>` for cross-platform
     /// dispatch. iOS impl = `IosDriver`; Android impl = `AndroidDriver`.
@@ -407,6 +519,56 @@ impl App {
             udid: None,
             ledger: IssuedLedger::new(),
         }
+    }
+
+    /// v1.0.3 — accessor for the underlying HTTP runner client, used by
+    /// [`Session`] to drive the `/session/*` routes. Returns `None`
+    /// when the driver is not backed by an HTTP runner (e.g. mock
+    /// driver in tests).
+    pub fn http_runner_client(&self) -> Option<&HttpRunnerClient> {
+        self.driver.as_ios_driver().map(|ios| ios.runner())
+    }
+
+    /// v1.0.3 — open a runner-side session bound to `bundle_id`.
+    /// Subsequent requests via the returned [`Session`] send the
+    /// `Session-Id` header and skip per-request activation entirely.
+    ///
+    /// `activate = true` causes the runner to `.activate()` the target
+    /// once as part of the open (idiomatic when the target may not be
+    /// foregrounded yet). `activate = false` opens a passive binding
+    /// suitable when the caller has already ensured foreground state.
+    ///
+    /// This is the recommended surface for long-running gates. See the
+    /// [`Session`] docs for the lifecycle contract.
+    pub async fn open_session(
+        mut self,
+        bundle_id: &str,
+        activate: bool,
+    ) -> Result<Session, ExpectationFailure> {
+        let runner = self.http_runner_client().ok_or_else(|| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: "open_session: driver has no HTTP runner client".into(),
+                ..Default::default()
+            })
+        })?;
+        let req = smix_runner_client::SessionOpenRequest {
+            bundle_id: bundle_id.to_string(),
+            activate,
+        };
+        let resp = runner.open_session(&req).await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("open_session wire: {e}"),
+                ..Default::default()
+            })
+        })?;
+        let sid = resp.session_id.clone();
+        self.driver.set_session_id(Some(sid.clone()));
+        Ok(Session {
+            app: Some(self),
+            session_id: sid,
+        })
     }
 
     /// Convenience: connect to a runner on `127.0.0.1:{port}` and probe

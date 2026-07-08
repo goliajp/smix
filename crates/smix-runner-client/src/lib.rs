@@ -258,8 +258,10 @@ impl OcrFrame {
 // should depend on smix-runner-wire directly.
 
 pub use smix_runner_wire::{
-    FindRequest, FindResponse, IncludeScope, KeyboardStages, RecordEventsResponse, RecordedEvent,
-    RunnerIncludeOpts, RunnerKeyboardResult, RunnerScrollSelector, ScrollResponse, SystemPopup,
+    FindRequest, FindResponse, HealthResponse, IncludeScope, KeyboardStages, RecordEventsResponse,
+    RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult, RunnerScrollSelector, ScrollResponse,
+    SessionCloseRequest, SessionCloseResponse, SessionOpenRequest, SessionOpenResponse,
+    SessionRenewActivationRequest, SessionRenewActivationResponse, SystemPopup,
     SystemPopupActionRequest, SystemPopupActionResponse, SystemPopupButton, SystemPopupsResponse,
     TapAtNormCoordRequest, TapMode, TapRequest, TapResult, TapStages,
 };
@@ -568,8 +570,7 @@ impl HttpRunnerClient {
                         let is_connect = e.is_connect();
                         let err_str = format!("{e}");
                         self.record_outcome(endpoint, false, &err_str);
-                        if is_connect
-                            && let Some(died) = self.probe_death(endpoint, &err_str).await
+                        if is_connect && let Some(died) = self.probe_death(endpoint, &err_str).await
                         {
                             return Err(died);
                         }

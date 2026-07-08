@@ -790,8 +790,42 @@ final class SmixRunnerUITests: XCTestCase {
       }
       return shouldActivate
     }
+    // v1.0.3 — session table. Sessions are opened via `POST /session/open`
+    // and carry a client-supplied opaque id; every subsequent request that
+    // includes the `Session-Id` header short-circuits `resolveApp()` here
+    // to return the session's cached XCUIApplication binding — no
+    // `.activate()` on any per-request path, ever, unless the client
+    // explicitly calls `POST /session/renew-activation`.
+    //
+    // Compared with the legacy path (rate-limited to 1 activate / 5 s /
+    // bundle-id), session-backed clients get:
+    //   * zero incidental activations after the initial open
+    //   * O(1) session cache lookup
+    //   * explicit escape hatch for foreground-drift recovery (renew)
+    //
+    // The table stores each session's bundle id + XCUIApplication +
+    // last-renew timestamp for the 2 s renew rate limit.
+    struct SessionEntry: Sendable {
+      let bundleId: String
+      let app: XCUIApplication
+      var lastActivatedAt: Date
+    }
+    let sessions: NSLock = NSLock()
+    var sessionTable: [String: SessionEntry] = [:]
+    let renewCooldown: TimeInterval = 2.0
     let resolveApp: @Sendable () async -> XCUIApplication = {
       let ctx = SmixRunnerServer.currentContext
+      // Session-Id header path — hit the session table, no activation.
+      if let sid = ctx.sessionId {
+        sessions.lock()
+        let entry = sessionTable[sid]
+        sessions.unlock()
+        if let entry = entry {
+          return entry.app
+        }
+        // Unknown session id → fall through to legacy path with the
+        // provided bundleId (best-effort recovery).
+      }
       if let b = ctx.bundleId, b != bundleId {
         let target = XCUIApplication(bundleIdentifier: b)
         if ctx.activate {
@@ -1946,7 +1980,70 @@ final class SmixRunnerUITests: XCTestCase {
         poll: {
           return EventRecorder.shared.drain()
         }
-      ) : nil
+      ) : nil,
+      sessionHandlers: SmixRunnerServer.SessionHandlers(
+        open: { req in
+          // Bind (or rebind) an XCUIApplication for the requested
+          // bundle. If the client asked for the runner's boot-time
+          // default bundle id, reuse the existing `app` instance so
+          // its cached test-driver state carries over; otherwise
+          // spin up a fresh XCUIApplication.
+          let target: XCUIApplication = (req.bundleId == bundleId)
+            ? app
+            : XCUIApplication(bundleIdentifier: req.bundleId)
+          var activatedOnce = false
+          if req.activate {
+            activatedOnce = await maybeActivate(req.bundleId, target)
+          }
+          let sid = UUID().uuidString
+          let entry = SessionEntry(
+            bundleId: req.bundleId,
+            app: target,
+            lastActivatedAt: Date()
+          )
+          sessions.lock()
+          sessionTable[sid] = entry
+          sessions.unlock()
+          return SmixRunnerServer.SessionOpenOutcome(
+            sessionId: sid,
+            activatedOnce: activatedOnce
+          )
+        },
+        close: { req in
+          sessions.lock()
+          sessionTable.removeValue(forKey: req.sessionId)
+          sessions.unlock()
+          // Idempotent — unknown session id → ok=true anyway.
+          return SmixRunnerServer.SessionCloseOutcome(ok: true)
+        },
+        renew: { req in
+          sessions.lock()
+          let entry = sessionTable[req.sessionId]
+          sessions.unlock()
+          guard var entry = entry else {
+            return SmixRunnerServer.SessionRenewOutcome(
+              notFound: true, ok: false, activated: false
+            )
+          }
+          let now = Date()
+          if now.timeIntervalSince(entry.lastActivatedAt) < renewCooldown {
+            // Rate-limited — session known but no-op.
+            return SmixRunnerServer.SessionRenewOutcome(
+              notFound: false, ok: true, activated: false
+            )
+          }
+          await SmixRunnerServer.onMain {
+            entry.app.activate()
+          }
+          entry.lastActivatedAt = now
+          sessions.lock()
+          sessionTable[req.sessionId] = entry
+          sessions.unlock()
+          return SmixRunnerServer.SessionRenewOutcome(
+            notFound: false, ok: true, activated: true
+          )
+        }
+      )
     )
   }
 }

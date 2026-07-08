@@ -62,6 +62,24 @@ export class HttpSimRuntime implements SmixSimRuntime {
    */
   readonly labelsResolver: LabelsResolver
 
+  /**
+   * v1.0.3 — session id sent as `Session-Id` header on every request
+   * when non-null. Set via {@link setSessionId}; when set, the runner
+   * short-circuits per-request `.activate()` and reuses the cached
+   * XCUIApplication binding. Typically managed by the {@link Session}
+   * class — direct callers rarely need to touch this.
+   */
+  private sessionId: string | null = null
+
+  /**
+   * v1.0.3 — public alias for the wrapped fetch implementation.
+   * Consumed by the {@link Session} class which drives `/session/*`
+   * routes through the same transport.
+   */
+  get fetch(): HttpFetch {
+    return this.fetchImpl
+  }
+
   constructor(
     public readonly baseUrl: string,
     public readonly fetchImpl: HttpFetch = globalThis.fetch as unknown as HttpFetch,
@@ -74,6 +92,15 @@ export class HttpSimRuntime implements SmixSimRuntime {
       const r = await this.post('/select/resolve-labels', { treeJson, selectorJson })
       return (r as { labels: readonly string[] }).labels
     }
+  }
+
+  /**
+   * v1.0.3 — attach / clear the `Session-Id` header on every subsequent
+   * request. Called by {@link Session.open} / {@link Session.close};
+   * consumers who manage sessions manually can call this directly.
+   */
+  setSessionId(id: string | null): void {
+    this.sessionId = id
   }
 
   /**
@@ -155,9 +182,15 @@ export class HttpSimRuntime implements SmixSimRuntime {
 
   private async post(path: string, body: unknown): Promise<unknown> {
     const url = `${this.baseUrl}${path}`
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+    }
+    if (this.sessionId !== null) {
+      headers['session-id'] = this.sessionId
+    }
     const resp = await this.fetchImpl(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     })
     if (!resp.ok) {
