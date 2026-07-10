@@ -684,7 +684,36 @@ final class SmixRunnerUITests: XCTestCase {
         let bundleId = String(desc[range.upperBound..<end.lowerBound])
           .trimmingCharacters(in: .whitespaces)
         if !bundleId.isEmpty && bundleId.contains(".") {
-          Task { await cache.markDead(bundleId: bundleId) }
+          Task {
+            await cache.markDead(bundleId: bundleId)
+            // v1.0.9 §D4 — adaptive re-probe. During the 20 s dead
+            // window, poll XCUIApplication.state every 3 s. On the
+            // first observation of `.runningForeground` (or any
+            // "not notRunning" state), invalidate the cache early
+            // so a slow-bootstrap app doesn't sit blocked for the
+            // full 20 s while it's actually alive again.
+            //
+            // Bounded to 6 iterations (18 s) — matches the cache
+            // window minus one probe interval for slack. If the
+            // app is still `.notRunning` after 6 probes the cache
+            // expires naturally.
+            for _ in 0..<6 {
+              try? await Task.sleep(nanoseconds: 3_000_000_000)
+              // Cache may have been invalidated by /session/open or
+              // /sim/launch during the wait; check before probing.
+              if !(await cache.isSuppressed(bundleId: bundleId)) {
+                return
+              }
+              let target = XCUIApplication(bundleIdentifier: bundleId)
+              let state = await SmixRunnerServer.onMain { target.state }
+              if state != .notRunning && state != .unknown {
+                await cache.markAlive(bundleId: bundleId)
+                FileHandle.standardError.write(
+                  Data("smix-runner: app-alive cache re-probe hit \(bundleId) state=\(state.rawValue); early invalidate\n".utf8))
+                return
+              }
+            }
+          }
         }
       }
       return
