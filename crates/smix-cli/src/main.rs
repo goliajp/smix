@@ -570,6 +570,13 @@ enum RunnerAction {
         /// concurrently without collision.
         #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
         runner_port: Option<u16>,
+        /// v1.0.6 — after `/health` returns 200, spawn a detached
+        /// `smix runner supervise` sidecar and record its pid in
+        /// `.smix/runner/state.json`. `smix runner down` cascades a
+        /// SIGTERM to the sidecar before tearing down xcodebuild.
+        /// Sidecar log at `.smix/runner/supervise-<UDID>.log`.
+        #[arg(long = "supervise", default_value_t = false)]
+        supervise: bool,
     },
     /// Stop the runner (SIGINT-first to avoid the crash-report dialog).
     Down,
@@ -919,6 +926,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     bundle,
                     runner_project,
                     runner_port: port_flag,
+                    supervise,
                 } => {
                     // Port priority chain:
                     //   1. `--runner-port` flag / SMIX_RUNNER_PORT env
@@ -930,13 +938,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // Bare `smix runner up` defaults to record_enabled=false;
                     // the capsule path (`capsule::up`) overrides to true
                     // via TEST_RUNNER_SMIX_RECORD_ENABLED=1.
-                    runner::up(
+                    runner::up_with_options(
                         &root,
                         &udid,
                         port,
                         bundle.as_deref(),
                         false,
                         runner_project.as_deref(),
+                        supervise,
                     )
                     .map_err(CliError::Other)?;
                 }

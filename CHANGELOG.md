@@ -2,7 +2,39 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [1.0.5] — 2026-07-11
+## [1.0.6] — 2026-07-11
+
+Sidecar supervise + symmetric down-cascade + rust 1.97 baseline. Follow-up to v1.0.5 folding the supervisor's spawn-and-teardown into the runner lifecycle so consumers who want automatic `TEST INTERRUPTED` recovery just add `--supervise` to their existing `smix runner up`. RFC `.claude/rfcs/1.0.6-supervise-sidecar-and-runner-down-cascade.md`.
+
+### CLI (Rust)
+
+- **`smix runner up --supervise`** — after `/health` returns 200, spawn a detached `smix runner supervise` process, redirect stdout/stderr to `.smix/runner/supervise-<UDID>.log`, and record its pid in `state.json` under a new `supervisorPid` field. Sidecar runs in its own process group so a ctrl-C on the CLI doesn't tear it down.
+- **`smix runner down` cascades supervisor teardown.** Before the xcodebuild SIGINT, `down` reads `state.json` and if a `supervisorPid` is present + still matches a `smix runner supervise` process, sends SIGTERM (5 s), escalates to SIGKILL if needed. `down` invoked from inside the supervisor itself (re-entrant case, during auto-cycle) skips the self-kill.
+- **`smix runner cycle` preserves the sidecar flag.** If the pre-cycle `state.json` records a supervisor, the post-cycle `up` re-attaches one. Consumers who ran `up --supervise` get supervision back automatically after a cycle.
+
+### Runner state schema (backward-compatible)
+
+- `state.json` gains optional `supervisorPid: u32` field via `#[serde(default)]`. State files written by v1.0.5 or earlier deserialize without change.
+
+### Workspace hygiene
+
+- `rust-version = "1.97"` in the workspace `Cargo.toml`. Baseline bump for the `if let` chain stabilizations + std ergonomics. Consumers on `cargo install` see no change (prebuilt binary); consumers building from source now need rustc 1.97+.
+
+### Documentation
+
+- CHANGELOG format going forward groups entries under `### CLI (Rust)`, `### Runner-side (Swift)`, `### SDK — all four`, `### Documentation`, `### Deferred`. First entry using the new pattern; retroactive edit of v1.0.4/v1.0.5 not required.
+
+### Deferred (v1.0.7+)
+
+- **Opportunistic 1.97 idiom cleanups.** RFC §D3 flagged a handful of nested `if let` sites that collapse under 1.97's chain stabilizations. Not a functional change; queued as a hygiene sweep for a slow release cycle.
+
+### Wire + ABI compatibility
+
+- No wire additions.
+- No SDK ABI additions.
+- CLI additions are opt-in via `--supervise`; the classic path is unchanged.
+
+
 
 Session persistence across XCTest lifecycle, host-side XCTest supervisor daemon, runner idle-close sweep, and the release smoke gate script. RFC `.claude/rfcs/1.0.5-supervisor-and-persistence.md`. Closes the three v1.0.4 deferrals + the "shipped on build-green only" gap.
 
