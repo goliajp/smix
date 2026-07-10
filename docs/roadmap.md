@@ -18,13 +18,13 @@ Wire and ABI stability guarantees in [`docs/ai-guide/wire-format.md`](./ai-guide
 - **v1.0.1 — 2026-07-09** — Parser fix for `expect: { visible: ... }` shorthand; `smix run --check` parse-only gate.
 - **v1.0.2 — 2026-07-09** — Runner activation storm fix; PNG sRGB metadata splice; liveness observability.
 - **v1.0.3 — 2026-07-09** — Session lifecycle across all 4 SDKs; runner idempotent close.
-- **v1.0.4 — 2026-07-11** — Studio-protection release. `smix-sim-health` sense stone + screenshot pacer + `/system-popups` 500ms floor + app-alive cache. `Session::state` + `Session::relaunch_app` across 4 SDKs. `launchApp: clearState: true` rewrite (§F+§H). CLI `runner cycle` + `--gate-signal` + safe-exit cascade. Closed all 9 §A-§I of the 2026-07-10 gate-hardening feedback. RFC `.claude/rfc/1.0.4-sim-health-and-backpressure.md`.
+- **v1.0.4 — 2026-07-11** — Studio-protection release. `smix-sim-health` sense stone + screenshot pacer + `/system-popups` 500ms floor + app-alive cache. `Session::state` + `Session::relaunch_app` across 4 SDKs. `launchApp: clearState: true` rewrite (§F+§H). CLI `runner cycle` + `--gate-signal` + safe-exit cascade. Closed all 9 §A-§I of the 2026-07-10 gate-hardening feedback. RFC `docs/rfcs/1.0.4-sim-health-and-backpressure.md`.
 
 ---
 
 ## Next patch — v1.0.5 (target 2 weeks from v1.0.4)
 
-RFC: [`.claude/rfc/1.0.5-supervisor-and-persistence.md`](../.claude/rfc/1.0.5-supervisor-and-persistence.md)
+RFC: [`docs/rfcs/1.0.5-supervisor-and-persistence.md`](./rfcs/1.0.5-supervisor-and-persistence.md)
 
 - **§E ask 2 — Session persistence across XCTest lifecycle.** Session table persists to `.smix/runner/sessions-<UDID>.json` + reloads on test-host boot. `POST /session/list` + `Session::still_valid()` on all 4 SDKs.
 - **§D6 — Host-side XCTest supervisor daemon.** `smix runner supervise` or `smix runner up --supervise`; auto-cycles on `** TEST INTERRUPTED **` / `SchemeActionResultOperation` log matches.

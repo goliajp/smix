@@ -72,7 +72,7 @@ pub struct SimHealthEvent {
 }
 
 /// Config knobs. Defaults match the values in
-/// `.claude/rfc/1.0.4-sim-health-and-backpressure.md` §D1.
+/// `docs/rfcs/1.0.4-sim-health-and-backpressure.md` §D1.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct SimHealthConfig {
