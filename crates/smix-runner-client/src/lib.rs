@@ -261,11 +261,11 @@ pub use smix_runner_wire::{
     FindRequest, FindResponse, HealthProcessInfo, HealthResponse, HealthTestHostInfo, IncludeScope,
     KeyboardStages, RecordEventsResponse, RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult,
     RunnerScrollSelector, ScrollResponse, SessionCloseAllResponse, SessionCloseRequest,
-    SessionCloseResponse, SessionOpenRequest, SessionOpenResponse, SessionRelaunchAppRequest,
-    SessionRelaunchAppResponse, SessionRenewActivationRequest, SessionRenewActivationResponse,
-    SimHealthWireState, SystemPopup, SystemPopupActionRequest, SystemPopupActionResponse,
-    SystemPopupButton, SystemPopupsResponse, TapAtNormCoordRequest, TapMode, TapRequest, TapResult,
-    TapStages,
+    SessionCloseResponse, SessionListResponse, SessionOpenRequest, SessionOpenResponse,
+    SessionRelaunchAppRequest, SessionRelaunchAppResponse, SessionRenewActivationRequest,
+    SessionRenewActivationResponse, SessionSummary, SimHealthWireState, SystemPopup,
+    SystemPopupActionRequest, SystemPopupActionResponse, SystemPopupButton, SystemPopupsResponse,
+    TapAtNormCoordRequest, TapMode, TapRequest, TapResult, TapStages,
 };
 
 // -------------------- Transport retry constants -------------------------
@@ -944,6 +944,16 @@ impl HttpRunnerClient {
         req: &smix_runner_wire::SessionRelaunchAppRequest,
     ) -> Result<smix_runner_wire::SessionRelaunchAppResponse, RunnerTransportError> {
         self.json_post("/session/relaunch-app", req, None).await
+    }
+
+    /// v1.0.5 §D1 — `POST /session/list` — enumerate every session
+    /// currently known to the runner. Useful for diagnostics + the
+    /// supervisor + SDK `Session::still_valid()` probe after a cycle.
+    pub async fn list_sessions(
+        &self,
+    ) -> Result<smix_runner_wire::SessionListResponse, RunnerTransportError> {
+        self.json_post("/session/list", &serde_json::json!({}), None)
+            .await
     }
 
     /// `GET /tree?include=` — full a11y tree dump.

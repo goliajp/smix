@@ -591,6 +591,14 @@ public actor SmixRunnerServer {
     }
   }
 
+  /// v1.0.5 §D1 — /session/list outcome.
+  public struct SessionListOutcome: Sendable {
+    public let sessions: [SessionRoute.SessionSummary]
+    public init(sessions: [SessionRoute.SessionSummary]) {
+      self.sessions = sessions
+    }
+  }
+
   /// v1.0.3 — session lifecycle handlers. Triple bundled (vs three
   /// independent typealiases) because they share the session-table state
   /// in the UITest target. v1.0.4 extends with close-all + relaunch-app.
@@ -602,18 +610,22 @@ public actor SmixRunnerServer {
     public let closeAll: @Sendable () async -> SessionCloseAllOutcome
     /// v1.0.4 §D14 — invoked by `POST /session/relaunch-app`.
     public let relaunchApp: @Sendable (SessionRoute.RelaunchRequest) async -> SessionRelaunchOutcome
+    /// v1.0.5 §D1 — invoked by `POST /session/list`.
+    public let list: @Sendable () async -> SessionListOutcome
     public init(
       open: @escaping @Sendable (SessionRoute.OpenRequest) async -> SessionOpenOutcome,
       close: @escaping @Sendable (SessionRoute.CloseRequest) async -> SessionCloseOutcome,
       renew: @escaping @Sendable (SessionRoute.RenewRequest) async -> SessionRenewOutcome,
       closeAll: @escaping @Sendable () async -> SessionCloseAllOutcome,
-      relaunchApp: @escaping @Sendable (SessionRoute.RelaunchRequest) async -> SessionRelaunchOutcome
+      relaunchApp: @escaping @Sendable (SessionRoute.RelaunchRequest) async -> SessionRelaunchOutcome,
+      list: @escaping @Sendable () async -> SessionListOutcome
     ) {
       self.open = open
       self.close = close
       self.renew = renew
       self.closeAll = closeAll
       self.relaunchApp = relaunchApp
+      self.list = list
     }
   }
 
@@ -809,6 +821,15 @@ public actor SmixRunnerServer {
       ) {
         let outcome = await handlers.closeAll()
         return SessionRoute.closeAllResponse(closed: outcome.closed)
+      }
+    }
+    // v1.0.5 §D1 — POST /session/list
+    await server.appendRoute("POST /session/list") { _ in
+      return await Self.guardedResponse(
+        fallback: SessionRoute.listResponse([])
+      ) {
+        let outcome = await handlers.list()
+        return SessionRoute.listResponse(outcome.sessions)
       }
     }
     // v1.0.4 §D14 — POST /session/relaunch-app

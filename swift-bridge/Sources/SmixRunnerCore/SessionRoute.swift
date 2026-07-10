@@ -136,6 +136,38 @@ public enum SessionRoute {
     return envelope(.ok, body)
   }
 
+  // -- v1.0.5 §D1 list ---------------------------------------------------
+
+  public struct SessionSummary: Equatable, Sendable {
+    public let sessionId: String
+    public let bundleId: String
+    public let openedAtMs: UInt64
+    public let lastActivatedAtMs: UInt64
+    public init(
+      sessionId: String,
+      bundleId: String,
+      openedAtMs: UInt64,
+      lastActivatedAtMs: UInt64
+    ) {
+      self.sessionId = sessionId
+      self.bundleId = bundleId
+      self.openedAtMs = openedAtMs
+      self.lastActivatedAtMs = lastActivatedAtMs
+    }
+  }
+
+  public static func listResponse(_ sessions: [SessionSummary]) -> HTTPResponse {
+    var s = #"{"sessions":["#
+    for (i, entry) in sessions.enumerated() {
+      if i > 0 { s += "," }
+      let sid = jsonEscape(entry.sessionId)
+      let bid = jsonEscape(entry.bundleId)
+      s += #"{"sessionId":""# + sid + #"","bundleId":""# + bid + #"","openedAtMs":\#(entry.openedAtMs),"lastActivatedAtMs":\#(entry.lastActivatedAtMs)}"#
+    }
+    s += "]}"
+    return envelope(.ok, Data(s.utf8))
+  }
+
   // -- v1.0.4 §D14 relaunch-app ------------------------------------------
 
   public struct RelaunchRequest: Equatable, Sendable {

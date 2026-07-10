@@ -87,6 +87,23 @@ class Session private constructor(
     }
 
     /**
+     * v1.0.5 §D1 — probe `/session/list` and return `true` iff this
+     * session's id is still known to the runner. Consumers wire this
+     * after a state transition to `CYCLING`/`DEAD` to decide whether
+     * to keep the session (persisted across `runner cycle`) or open
+     * a fresh one.
+     */
+    suspend fun stillValid(): Boolean {
+        check(!closed) { "session already closed" }
+        val obj = runtime.postJsonObject("/session/list", JsonObject(emptyMap()))
+        val arr = obj["sessions"] as? kotlinx.serialization.json.JsonArray ?: return false
+        return arr.any { element ->
+            val entry = element as? JsonObject ?: return@any false
+            entry["sessionId"]?.jsonPrimitive?.content == sessionId
+        }
+    }
+
+    /**
      * v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
      * the session's cached UiAutomator binding IN PLACE, preserving
      * this session id. Returns wall-clock milliseconds the cycle took.

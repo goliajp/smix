@@ -827,16 +827,128 @@ final class SmixRunnerUITests: XCTestCase {
       let bundleId: String
       let app: XCUIApplication
       var lastActivatedAt: Date
+      /// v1.0.5 §D3 — last time this session was touched by any
+      /// request (Session-Id header hit in resolveApp). The
+      /// idle-close sweep uses this to reap sessions that haven't
+      /// been used within `sessionIdleTimeoutSec`.
+      var lastAccessedAt: Date
     }
     let sessions: NSLock = NSLock()
     var sessionTable: [String: SessionEntry] = [:]
     let renewCooldown: TimeInterval = 2.0
+
+    // v1.0.5 §D1 — session persistence across XCTest lifecycle.
+    //
+    // The runner runs INSIDE the sim; its writable Documents dir
+    // persists across xcodebuild restarts. Every mutation flushes the
+    // session table to `~/Documents/smix-sessions.json`, and boot
+    // rehydrates whatever was there. `smix runner cycle` (host side)
+    // preserves the file — consumer's `Session-Id` survives the cycle.
+    //
+    // Persisted schema:
+    //   {"schema":1,"sessions":[{"sessionId","bundleId","openedAtMs",
+    //                             "lastActivatedAtMs"}]}
+    //
+    // The XCUIApplication reference is NOT persisted — it's a live
+    // binding to XCTest infrastructure. On boot each session is
+    // rehydrated with a fresh XCUIApplication(bundleIdentifier:) —
+    // NO .activate() call, the client's next request handles that.
+    let sessionsFileURL: URL = {
+      let docs = FileManager.default.urls(for: .documentDirectory,
+                                          in: .userDomainMask)[0]
+      return docs.appendingPathComponent("smix-sessions.json")
+    }()
+    struct PersistedSession: Codable {
+      let sessionId: String
+      let bundleId: String
+      let openedAtMs: UInt64
+      let lastActivatedAtMs: UInt64
+    }
+    struct SessionsFile: Codable {
+      let schema: Int
+      let sessions: [PersistedSession]
+    }
+    // Serialize table → file. Caller holds `sessions` lock or is
+    // otherwise single-writer. Best-effort: write failures log to
+    // stderr and don't affect the running session.
+    let persistSessions: @Sendable () -> Void = {
+      var records: [PersistedSession] = []
+      for (sid, entry) in sessionTable {
+        let openedMs = UInt64(entry.lastActivatedAt.timeIntervalSince1970 * 1000)
+        records.append(PersistedSession(
+          sessionId: sid,
+          bundleId: entry.bundleId,
+          openedAtMs: openedMs,
+          lastActivatedAtMs: openedMs
+        ))
+      }
+      let file = SessionsFile(schema: 1, sessions: records)
+      do {
+        let data = try JSONEncoder().encode(file)
+        // Atomic-rename write via .atomic option (Cocoa spelling of
+        // rename(2)-based crash-safe overwrite).
+        try data.write(to: sessionsFileURL, options: .atomic)
+      } catch {
+        FileHandle.standardError.write(
+          Data("smix-runner: sessions persist failed: \(error)\n".utf8))
+      }
+    }
+    // Rehydrate the table from disk (called once at boot before the
+    // server starts). Returns synchronously; failures start empty.
+    let rehydrateSessions: @Sendable () -> Void = {
+      guard FileManager.default.fileExists(atPath: sessionsFileURL.path) else {
+        return
+      }
+      do {
+        let data = try Data(contentsOf: sessionsFileURL)
+        let file = try JSONDecoder().decode(SessionsFile.self, from: data)
+        guard file.schema == 1 else {
+          FileHandle.standardError.write(
+            Data("smix-runner: sessions schema=\(file.schema) unknown; ignoring\n".utf8))
+          return
+        }
+        let now = Date()
+        for record in file.sessions {
+          let target = (record.bundleId == bundleId)
+            ? app
+            : XCUIApplication(bundleIdentifier: record.bundleId)
+          let entry = SessionEntry(
+            bundleId: record.bundleId,
+            app: target,
+            lastActivatedAt: Date(timeIntervalSince1970: TimeInterval(record.lastActivatedAtMs) / 1000),
+            lastAccessedAt: now
+          )
+          sessionTable[record.sessionId] = entry
+        }
+        FileHandle.standardError.write(
+          Data("smix-runner: rehydrated \(file.sessions.count) session(s) from \(sessionsFileURL.path)\n".utf8))
+      } catch {
+        FileHandle.standardError.write(
+          Data("smix-runner: sessions rehydrate failed: \(error)\n".utf8))
+      }
+    }
+    // v1.0.5 §D1 — rehydrate BEFORE server starts.
+    sessions.lock()
+    rehydrateSessions()
+    sessions.unlock()
+    /// v1.0.5 §D3 — session idle timeout (seconds). Tightened from
+    /// the aspirational 120 s pre-implementation window down to 60 s
+    /// so SIGKILL-orphaned client sessions vanish within a minute.
+    let sessionIdleTimeoutSec: TimeInterval = 60.0
+    /// v1.0.5 §D3 — how often the idle-close sweep runs.
+    let sessionIdleSweepIntervalSec: TimeInterval = 15.0
     let resolveApp: @Sendable () async -> XCUIApplication = {
       let ctx = SmixRunnerServer.currentContext
       // Session-Id header path — hit the session table, no activation.
       if let sid = ctx.sessionId {
         sessions.lock()
-        let entry = sessionTable[sid]
+        var entry = sessionTable[sid]
+        // v1.0.5 §D3 — every hit refreshes the last-access clock so
+        // the sweep only reaps genuinely-idle sessions.
+        if entry != nil {
+          entry!.lastAccessedAt = Date()
+          sessionTable[sid] = entry!
+        }
         sessions.unlock()
         if let entry = entry {
           return entry.app
@@ -891,6 +1003,38 @@ final class SmixRunnerUITests: XCTestCase {
       env: ProcessInfo.processInfo.environment
     )
     let server = SmixRunnerServer()
+
+    // v1.0.5 §D3 — background idle-close sweep. Detached task lives
+    // for the lifetime of the runner. Every `sessionIdleSweepIntervalSec`
+    // seconds it enumerates the session table and closes any entry
+    // whose `lastAccessedAt` is older than `sessionIdleTimeoutSec`.
+    // SIGKILL-orphaned client sessions (client vanished without POST
+    // /session/close) vanish within 60-75 s instead of lingering
+    // until runner restart.
+    Task.detached { @Sendable in
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: UInt64(sessionIdleSweepIntervalSec * 1_000_000_000))
+        let now = Date()
+        sessions.lock()
+        var reaped: [String] = []
+        for (sid, entry) in sessionTable
+          where now.timeIntervalSince(entry.lastAccessedAt) >= sessionIdleTimeoutSec {
+          reaped.append(sid)
+        }
+        for sid in reaped {
+          sessionTable.removeValue(forKey: sid)
+        }
+        if !reaped.isEmpty {
+          persistSessions()
+        }
+        sessions.unlock()
+        if !reaped.isEmpty {
+          FileHandle.standardError.write(
+            Data("smix-runner: idle-close sweep reaped \(reaped.count) session(s) (idle > \(Int(sessionIdleTimeoutSec))s)\n".utf8))
+        }
+      }
+    }
+
     try await server.runForever(
       port: resolvedPort,
       tapHandler: { req, scope in
@@ -2014,13 +2158,16 @@ final class SmixRunnerUITests: XCTestCase {
             activatedOnce = await maybeActivate(req.bundleId, target)
           }
           let sid = UUID().uuidString
+          let now = Date()
           let entry = SessionEntry(
             bundleId: req.bundleId,
             app: target,
-            lastActivatedAt: Date()
+            lastActivatedAt: now,
+            lastAccessedAt: now
           )
           sessions.lock()
           sessionTable[sid] = entry
+          persistSessions()
           sessions.unlock()
           return SmixRunnerServer.SessionOpenOutcome(
             sessionId: sid,
@@ -2030,6 +2177,7 @@ final class SmixRunnerUITests: XCTestCase {
         close: { req in
           sessions.lock()
           sessionTable.removeValue(forKey: req.sessionId)
+          persistSessions()
           sessions.unlock()
           // Idempotent — unknown session id → ok=true anyway.
           return SmixRunnerServer.SessionCloseOutcome(ok: true)
@@ -2068,6 +2216,7 @@ final class SmixRunnerUITests: XCTestCase {
           sessions.lock()
           let count = sessionTable.count
           sessionTable.removeAll()
+          persistSessions()
           sessions.unlock()
           return SmixRunnerServer.SessionCloseAllOutcome(closed: count)
         },
@@ -2092,6 +2241,22 @@ final class SmixRunnerUITests: XCTestCase {
           return SmixRunnerServer.SessionRelaunchOutcome(
             notFound: false, ok: true, wallMs: wallMs
           )
+        },
+        // v1.0.5 §D1 — enumerate every session. Snapshot the table
+        // under lock, then map to summaries outside.
+        list: {
+          sessions.lock()
+          let summaries: [SessionRoute.SessionSummary] = sessionTable.map { (sid, entry) in
+            let ms = UInt64(entry.lastActivatedAt.timeIntervalSince1970 * 1000)
+            return SessionRoute.SessionSummary(
+              sessionId: sid,
+              bundleId: entry.bundleId,
+              openedAtMs: ms,
+              lastActivatedAtMs: ms
+            )
+          }
+          sessions.unlock()
+          return SmixRunnerServer.SessionListOutcome(sessions: summaries)
         }
       ),
       // v1.0.4 §D4 — per-session `/system-popups` 500 ms floor. Hard-

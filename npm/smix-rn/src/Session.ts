@@ -123,6 +123,26 @@ export class Session {
     return () => this.listeners.delete(listener)
   }
 
+  /** v1.0.5 §D1 — probe `/session/list` and return `true` iff this
+   * session's id is still known to the runner. Consumers wire this
+   * after a state transition to `cycling`/`dead` to decide whether
+   * to keep the session or reopen. */
+  async stillValid(): Promise<boolean> {
+    const res = await this.runner.fetch(
+      `${this.runner.baseUrl}/session/list`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      },
+    )
+    if (!res.ok) return false
+    const json = (await res.json()) as {
+      sessions?: Array<{ sessionId?: string }>
+    }
+    return (json.sessions ?? []).some((s) => s.sessionId === this.sessionId)
+  }
+
   /** v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
    * the session's cached `XCUIApplication` in place. Preserves the
    * session id and XCUITest binding. Returns wall-clock ms. */

@@ -145,6 +145,24 @@ public final class Session: @unchecked Sendable {
         return session
     }
 
+    /// v1.0.5 §D1 — probe `/session/list` and return `true` iff this
+    /// session's id is still known to the runner. Consumers wire this
+    /// after a state transition to `cycling`/`dead` to decide whether
+    /// to keep using the session (persisted across `runner cycle`) or
+    /// open a fresh one.
+    public func stillValid() async throws -> Bool {
+        guard let runtime = runtime else { throw SessionError.closed }
+        try assertOpen()
+        struct SessionEntry: Decodable {
+            let sessionId: String
+        }
+        struct Resp: Decodable {
+            let sessions: [SessionEntry]?
+        }
+        let resp: Resp = try await runtime.post("/session/list", [String: String]())
+        return resp.sessions?.contains(where: { $0.sessionId == sessionId }) ?? false
+    }
+
     /// v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
     /// the session's cached `XCUIApplication` in place, preserving the
     /// session id and XCUITest binding. Returns wall-clock milliseconds.

@@ -616,6 +616,33 @@ pub struct SessionRelaunchAppResponse {
     pub wall_ms: u64,
 }
 
+/// v1.0.5 §D1 — one entry in `POST /session/list` response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummary {
+    /// Session id.
+    pub session_id: String,
+    /// Bundle id the session's XCUIApplication is bound to.
+    pub bundle_id: String,
+    /// Epoch millis of open time.
+    #[serde(default)]
+    pub opened_at_ms: u64,
+    /// Epoch millis of last `.activate()` on this session (renew or
+    /// open). Distinct from the runner-internal `lastAccessedAt` used
+    /// by the idle-close sweep.
+    #[serde(default)]
+    pub last_activated_at_ms: u64,
+}
+
+/// `POST /session/list` response body (v1.0.5 §D1).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionListResponse {
+    /// Every session currently known to the runner.
+    #[serde(default)]
+    pub sessions: Vec<SessionSummary>,
+}
+
 /// v1.0.4 §D7 — Session state exposed to SDK consumers via the
 /// `X-Sim-Health` response header on every runner response.
 ///
