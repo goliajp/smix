@@ -562,6 +562,33 @@ impl Session {
         Ok(resp.sessions.iter().any(|s| s.session_id == self.session_id))
     }
 
+    /// v1.0.8 §D1 — clear the session's target app data IN PLACE.
+    /// Runner-side does:
+    ///
+    /// 1. `XCUIApplication.terminate()` on the target (cooperative
+    ///    termination via testmanagerd — does NOT signal
+    ///    `com.apple.ReportCrash`).
+    /// 2. `FileManager` wipe of the app's sandbox subdirectories
+    ///    (`Containers/Data/Application/<uuid>/{Documents, Library,
+    ///    tmp}`) — install receipt untouched.
+    /// 3. `XCUIApplication.launch()` — re-attaches XCUITest binding
+    ///    cleanly.
+    ///
+    /// This replaces the maestro `launchApp: { clearState: true }`
+    /// shape that was ultimately triggering the "Insight quit
+    /// unexpectedly" system dialog on iOS 26.5 sim even after v1.0.4
+    /// §D12's `simctl uninstall + install` removal. The dialog is
+    /// eliminated because the terminate path is cooperative.
+    ///
+    /// Wraps [`App::clear_app_data`] with session-scoped ergonomics.
+    /// The heavy lifting (3-step orchestration + host-side wipe)
+    /// lives on `App::clear_app_data` because the UDID + bundle-id +
+    /// device + runner are all on `App`; this method is a thin
+    /// pass-through consumers can call when they hold a `Session`.
+    pub async fn reset_app_data(&self) -> Result<u64, ExpectationFailure> {
+        self.app().clear_app_data().await
+    }
+
     /// v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
     /// the session's cached `XCUIApplication` in place. Preserves the
     /// session id and XCUITest binding. Consumers wire this after
@@ -877,6 +904,85 @@ impl App {
     }
 
     // ---- lifecycle (simctl-bound, requires UDID) ----------------------
+
+    /// v1.0.8 §D2 — clear the current session's target app data
+    /// IN PLACE via cooperative XCUIApplication.terminate() + host
+    /// SimctlClient sandbox wipe + cooperative XCUIApplication.launch().
+    /// Preserves XCUITest binding and does NOT signal
+    /// `com.apple.ReportCrash` — the fix for the "Insight quit
+    /// unexpectedly" system dialog that both `simctl uninstall + install`
+    /// and v1.0.4's `simctl terminate + simctl spawn rm` still tripped.
+    ///
+    /// Requires a Session-Id set on the driver (auto-populated by
+    /// `smix run` and by `App::open_session`); errors otherwise.
+    /// Requires an iOS driver + UDID (SimctlClient access for the
+    /// host-side wipe). Android is not supported yet — Android's
+    /// UiAutomator lifecycle differs and needs its own charter.
+    pub async fn clear_app_data(&self) -> Result<u64, ExpectationFailure> {
+        let start = std::time::Instant::now();
+        let runner = self.http_runner_client().ok_or_else(|| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: "clear_app_data: driver has no HTTP runner client".into(),
+                ..Default::default()
+            })
+        })?;
+        let session_id = runner
+            .session_id()
+            .ok_or_else(|| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: "clear_app_data: no session id on the client; \
+                              run `smix run` (which auto-opens a session) or \
+                              call `App::open_session` first"
+                        .into(),
+                    ..Default::default()
+                })
+            })?
+            .to_string();
+        let bundle_id = runner
+            .target_bundle_id()
+            .ok_or_else(|| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: "clear_app_data: no target bundle id on the client; \
+                              pass --bundle-id to `smix run`"
+                        .into(),
+                    ..Default::default()
+                })
+            })?
+            .to_string();
+        let udid = self.require_udid()?.to_string();
+        let req = smix_runner_client::SessionAppLifecycleRequest {
+            session_id: session_id.clone(),
+        };
+        // Step 1 — cooperative terminate on runner side.
+        runner.terminate_session_app(&req).await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("clear_app_data terminate: {e}"),
+                ..Default::default()
+            })
+        })?;
+        // Step 2 — host-side sandbox wipe. Safe now — the target app
+        // was cooperatively terminated via testmanagerd; no
+        // ReportCrash signal fired. Uses `simctl spawn <UDID> /bin/rm`
+        // via the SimctlClient inside the driver's DeviceControl impl.
+        self.device
+            .clear_app_sandbox(&udid, &bundle_id)
+            .await
+            .map_err(simctl_to_failure)?;
+        // Step 3 — cooperative launch on runner side. Fresh app
+        // instance sees the cleaned sandbox.
+        runner.launch_session_app(&req).await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("clear_app_data launch: {e}"),
+                ..Default::default()
+            })
+        })?;
+        Ok(start.elapsed().as_millis() as u64)
+    }
 
     pub async fn launch(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
         let udid = self.require_udid()?;

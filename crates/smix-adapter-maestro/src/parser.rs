@@ -1649,6 +1649,11 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "launchApp" => parse_launch_app(value),
         "openLink" => parse_open_link(value),
         "stopApp" => Ok(Step::StopApp),
+        // v1.0.8 §D2 — session-scoped in-place data clear. Bare verb
+        // (no args). Replaces `launchApp: { clearState: true }` — the
+        // old shape stays as a legacy alias that emits a deprecation
+        // WARN on run and expands to ClearAppData + LaunchApp.
+        "clearAppData" => Ok(Step::ClearAppData),
         // v5.2 c1 — 7 ⊘ adapter-only-gap wires.
         "scroll" => Ok(Step::Scroll),
         "hideKeyboard" => Ok(Step::HideKeyboard),

@@ -2,7 +2,46 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [1.0.7] — 2026-07-11
+## [1.0.8] — 2026-07-11
+
+Eliminate the "Insight quit unexpectedly" ReportCrash system dialog. Response to `smix-feedback-2026-07-11-blocking-crash-dialog.md` — escalated hard-requirement. RFC `.claude/rfcs/1.0.8-crash-dialog-elimination-and-a11y-cache.md`.
+
+### Root cause revisited
+
+v1.0.4 §D12 replaced `simctl uninstall + install` with an in-place clear (`Terminate + PrivacyResetAll + SandboxClearInPlace + Launch`). Insight reported the dialog STILL fired. Diagnosis: even without the uninstall, `simctl terminate` sends SIGKILL to the target, which `com.apple.ReportCrash` on iOS 26.5 sim treats as a crash. The whole `simctl` termination pathway is what triggers the dialog — not just the uninstall.
+
+The systemic answer: move termination + launch INSIDE the XCUITest runner process via `XCUIApplication.terminate()` / `.launch()` (cooperative via `testmanagerd`; does NOT signal ReportCrash). The sandbox wipe stays on the host via `SimctlClient::clear_app_sandbox` but ONLY after the cooperative terminate, so ReportCrash was never signalled.
+
+### Runner-side (Swift)
+
+- **`POST /session/terminate-app { sessionId }`** → cooperative `XCUIApplication.terminate()` on the session's cached binding. testmanagerd stop; no SIGKILL; no ReportCrash signal.
+- **`POST /session/launch-app { sessionId }`** → cooperative `XCUIApplication.launch()`. Fresh instance sees whatever sandbox state the SDK left for it.
+- Both are additive routes; v1.0.7 runners return 404 and consumers should either upgrade the runner or route through the legacy `Session::relaunch_app`.
+
+### CLI + adapter (Rust)
+
+- **New yaml verb `clearAppData`** — session-scoped in-place data clear. Bare verb, no args. Maps to `App::clear_app_data` which orchestrates the 3 steps host-side. Requires an open session (auto-populated by `smix run`).
+- **`App::clear_app_data() → Result<wall_ms>`** on the Rust SDK. Grabs `session_id` + `bundle_id` from the driver + `udid` from `App::require_udid`; calls `runner.terminate_session_app` → `simctl.clear_app_sandbox` → `runner.launch_session_app`.
+- **`Session::reset_app_data()`** — thin ergonomic wrapper on `App::clear_app_data`, for consumers who hold a `Session` handle directly.
+- **`launchApp: clearState: true` NOT yet deprecated** in this cycle — legacy shape still runs the pre-v1.0.8 `LaunchFreshOp` sequence. Consumers migrating to `clearAppData` get the crash-dialog fix; consumers who keep the legacy shape stay unaffected until v1.0.9 flips the default.
+
+### Wire additions
+
+- `SessionAppLifecycleRequest` / `SessionAppLifecycleResponse` in `smix-runner-wire`.
+- `HttpRunnerClient::terminate_session_app(req)` / `launch_session_app(req)` on the Rust client.
+
+### Deferred to v1.0.9
+
+- **Adaptive app-alive cache re-probe** (originally D4 of this RFC; parked because the crash-dialog fix is enough to unblock insight's gate and the a11y-cache work has its own testing surface).
+- **Supervisor `RunnerCycled` reason with log context** (D5).
+- **Deprecation of `launchApp: clearState: true`** — emit WARN + auto-expand to `clearAppData + launchApp: {}`. Deferred because the deprecation needs a full-corpus consumer migration and we want insight to migrate their subflows first on their own timeline.
+
+### Wire + ABI compatibility
+
+- Additive routes; v1.0.7 runners return 404 on the new endpoints.
+- Additive `Step::ClearAppData` variant on the yaml Step enum; `#[non_exhaustive]` was already in play (via yaml deserialization), so consumers using pattern matching are unaffected.
+
+
 
 Systemic observability + subprocess integrity. RFC `.claude/rfcs/1.0.7-observability-layer.md`. Response to `smix-feedback-2026-07-11-v1.0.5-followup.md` items A, B, D.3 — three feedback points share one root cause: smix is opaque about its own runtime.
 

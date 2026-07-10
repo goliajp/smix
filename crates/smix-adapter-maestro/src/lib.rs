@@ -438,6 +438,17 @@ pub enum Step {
         #[serde(default = "default_stop_app")]
         stop_app: bool,
     },
+    /// v1.0.8 §D2 — clear the current session's app data IN PLACE
+    /// without launching. Maps to
+    /// [`smix_sdk::Session::reset_app_data`]. Pairs with a subsequent
+    /// `launchApp: {}` when the caller wants a fresh instance.
+    ///
+    /// Replaces `launchApp: { clearState: true }` — the old shape now
+    /// emits a deprecation WARN and internally expands to
+    /// `ClearAppData + LaunchApp`. Consumers who migrate see the
+    /// deprecation notice go away and get the crash-dialog fix
+    /// automatically.
+    ClearAppData,
     /// Open a URL / deep link in the OS handler. Maps to
     /// `simctl openurl` (c3 mapping).
     OpenLink(String),
