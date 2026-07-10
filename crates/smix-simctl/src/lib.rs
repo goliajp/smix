@@ -18,7 +18,7 @@
 pub mod registry;
 /// v1.0.4 — adaptive `xcrun simctl io screenshot` pacer. See
 /// [`screenshot_pacer::ScreenshotPacer`] and
-/// `docs/rfcs/1.0.4-sim-health-and-backpressure.md` §D3.
+/// `.claude/rfcs/1.0.4-sim-health-and-backpressure.md` §D3.
 pub mod screenshot_pacer;
 
 use screenshot_pacer::{ScreenshotPacer, ScreenshotPacerConfig};
@@ -66,7 +66,7 @@ pub enum SimctlError {
     /// wall time exceeded the circuit threshold, or a screenshot
     /// failed. Callers should back off for `retry_after` and try
     /// again. See [`screenshot_pacer::ScreenshotPacer`] and
-    /// `docs/rfcs/1.0.4-sim-health-and-backpressure.md` §D3.
+    /// `.claude/rfcs/1.0.4-sim-health-and-backpressure.md` §D3.
     ///
     /// Since smix 1.0.4.
     #[error("screenshot pacer circuit open; retry after {retry_after:?}")]
