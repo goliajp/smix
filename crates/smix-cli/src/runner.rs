@@ -249,6 +249,43 @@ pub fn up(
     record_enabled: bool,
     runner_project: Option<&Path>,
 ) -> Result<(), String> {
+    // v1.0.4 §A / D8 — refuse to boot without --bundle unless the
+    // caller explicitly opts in via SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1.
+    // Rationale: the runner's built-in default `com.apple.Preferences`
+    // silently latches every `/tree` call to Preferences and every
+    // `takeScreenshot` to the wrong app. Feedback §A: this cost
+    // insight-side "an afternoon chasing 'empty tree' ghosts". Now
+    // explicit-or-error.
+    match bundle {
+        Some(b) => {
+            println!("[runner] target bundle-id: {b}");
+        }
+        None => {
+            let bypass = std::env::var("SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            if !bypass {
+                return Err(
+                    "no --bundle passed; the runner would latch to the \
+                     built-in default (com.apple.Preferences) and every \
+                     subsequent /tree call would report Preferences as the \
+                     app.\n\n\
+                     fix: pass --bundle <your-app-bundle-id>, e.g.\n\
+                       smix runner up <device> --bundle com.example.app\n\n\
+                     to keep the legacy default (v1.0.3 behavior), export\n\
+                       SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1\n\
+                     — but expect empty a11y trees until you re-attach a \
+                     real target."
+                        .to_string(),
+                );
+            }
+            eprintln!(
+                "[runner] warning: no --bundle passed and \
+                 SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1 set; latching to \
+                 default com.apple.Preferences"
+            );
+        }
+    }
     if health_ok(port) {
         match read_state(root) {
             Some(st) if st.udid == udid && st.bundle.as_deref() == bundle => {
@@ -405,6 +442,54 @@ pub fn down(root: &Path, port: u16) -> Result<(), String> {
     }
     println!("runner down: port {port} closed");
     Ok(())
+}
+
+/// v1.0.4 — `smix runner cycle`.
+///
+/// Reads the current runner state, tears the runner down (SIGINT +
+/// wait), and brings it back up on the SAME device + port + bundle. The
+/// per-udid derived-data directory (`.smix/runner/derived-data-<udid>/`)
+/// is preserved by both [`down`] and [`up`], so the second `xcodebuild
+/// test-without-building` boots in ~3 s instead of the ~15 s cold path.
+///
+/// Motivation: feedback §E and D6 — when the XCTest test-host observes
+/// `** TEST INTERRUPTED **`, the safest recovery is to cycle. This
+/// verb exposes cycle to consumers explicitly, and is also invoked
+/// internally by the runner supervisor (S7).
+///
+/// Errors if no state.json exists — cycle only cycles known runners;
+/// use `smix runner up` for a cold start.
+pub fn cycle(
+    root: &Path,
+    port: u16,
+    runner_project: Option<&Path>,
+) -> Result<(), String> {
+    let st = read_state(root).ok_or_else(|| {
+        "no runner state.json — cycle only cycles a known runner; \
+         run `smix runner up <device> [--bundle <id>]` for a cold start"
+            .to_string()
+    })?;
+    let udid = st.udid.clone();
+    let bundle = st.bundle.clone();
+    let cycle_port = st.port;
+    if cycle_port != port {
+        eprintln!(
+            "note: state.json port {cycle_port} differs from --runner-port {port}; \
+             cycling on state.json's {cycle_port}"
+        );
+    }
+    println!(
+        "cycling runner: udid={udid} port={cycle_port} bundle={bundle:?}"
+    );
+    down(root, cycle_port)?;
+    up(
+        root,
+        &udid,
+        cycle_port,
+        bundle.as_deref(),
+        false,
+        runner_project,
+    )
 }
 
 #[cfg(test)]

@@ -109,6 +109,8 @@ async fn main() -> ExitCode {
                 auto_activate: false,
                 metro_log_url: None,
                 await_signal: None,
+                gate_signal: None,
+                gate_signal_timeout_ms: 60_000,
                 expect_log_clean: false,
                 fixture_registry: None,
                 force_key_events: false,

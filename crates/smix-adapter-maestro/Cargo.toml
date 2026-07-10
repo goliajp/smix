@@ -32,7 +32,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["time", "rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["time", "rt-multi-thread", "macros", "signal"] }
 smix-sdk = { path = "../smix-sdk", version = "1.0.0" }
 smix-driver = { path = "../smix-driver", version = "1.0.0" }
 smix-selector = { path = "../smix-selector", version = "1.0.0" }

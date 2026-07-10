@@ -3057,6 +3057,7 @@ dependencies = [
  "smix-runner-wire",
  "smix-screen",
  "smix-selector",
+ "smix-sim-health",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -3160,6 +3161,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "smix-sim-health"
+version = "1.0.3"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "smix-simctl"
 version = "1.0.3"
 dependencies = [
@@ -3168,6 +3176,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smix-error",
+ "smix-sim-health",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

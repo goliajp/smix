@@ -258,12 +258,14 @@ impl OcrFrame {
 // should depend on smix-runner-wire directly.
 
 pub use smix_runner_wire::{
-    FindRequest, FindResponse, HealthResponse, IncludeScope, KeyboardStages, RecordEventsResponse,
-    RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult, RunnerScrollSelector, ScrollResponse,
-    SessionCloseRequest, SessionCloseResponse, SessionOpenRequest, SessionOpenResponse,
-    SessionRenewActivationRequest, SessionRenewActivationResponse, SystemPopup,
-    SystemPopupActionRequest, SystemPopupActionResponse, SystemPopupButton, SystemPopupsResponse,
-    TapAtNormCoordRequest, TapMode, TapRequest, TapResult, TapStages,
+    FindRequest, FindResponse, HealthProcessInfo, HealthResponse, HealthTestHostInfo, IncludeScope,
+    KeyboardStages, RecordEventsResponse, RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult,
+    RunnerScrollSelector, ScrollResponse, SessionCloseAllResponse, SessionCloseRequest,
+    SessionCloseResponse, SessionOpenRequest, SessionOpenResponse, SessionRelaunchAppRequest,
+    SessionRelaunchAppResponse, SessionRenewActivationRequest, SessionRenewActivationResponse,
+    SimHealthWireState, SystemPopup, SystemPopupActionRequest, SystemPopupActionResponse,
+    SystemPopupButton, SystemPopupsResponse, TapAtNormCoordRequest, TapMode, TapRequest, TapResult,
+    TapStages,
 };
 
 // -------------------- Transport retry constants -------------------------
@@ -336,6 +338,16 @@ pub struct HttpRunnerClient {
     /// Rolling-window state for liveness observability. `None` when
     /// disabled (default). See [`Self::with_liveness_window`].
     liveness: Arc<std::sync::Mutex<Option<LivenessState>>>,
+    /// Sim-side health monitor. `None` when disabled (default). See
+    /// [`Self::with_sim_health`]. When present, `/health` outcomes
+    /// feed `SimHealthMonitor::record_health_ok` / `_fail`, so a
+    /// subscriber gets `Degraded` / `Dead` transitions without polling.
+    sim_health: Option<smix_sim_health::SimHealthMonitor>,
+    /// v1.0.4 §D7 — session state atomic shared with the SDK Session.
+    /// Updated on every response by parsing the `X-Sim-Health` header
+    /// (values `healthy` | `degraded` | `cycling` | `dead`). Unknown /
+    /// missing header leaves the state unchanged.
+    session_state: Arc<std::sync::Mutex<Option<Arc<std::sync::atomic::AtomicU8>>>>,
 }
 
 /// Input dispatch mode for the `Input-Dispatch-Mode` header.
@@ -383,6 +395,46 @@ impl HttpRunnerClient {
             input_dispatch_mode: None,
             session_id: None,
             liveness: Arc::new(std::sync::Mutex::new(None)),
+            sim_health: None,
+            session_state: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// v1.0.4 §D7 — attach the SDK Session's state atomic so the
+    /// client updates it on every response by parsing `X-Sim-Health`.
+    /// Called by `App::open_session`. External callers rarely need
+    /// this directly.
+    pub fn attach_session_state(
+        &self,
+        state: Arc<std::sync::atomic::AtomicU8>,
+    ) {
+        let mut guard = self
+            .session_state
+            .lock()
+            .expect("session_state mutex must not be poisoned");
+        *guard = Some(state);
+    }
+
+    fn update_session_state_from_header(&self, header: Option<&str>) {
+        let Some(value) = header else {
+            return;
+        };
+        let Some(state) = smix_runner_wire::SimHealthWireState::from_header(value) else {
+            return;
+        };
+        let byte = match state {
+            smix_runner_wire::SimHealthWireState::Healthy => 0u8,
+            smix_runner_wire::SimHealthWireState::Degraded => 1u8,
+            smix_runner_wire::SimHealthWireState::Cycling => 2u8,
+            smix_runner_wire::SimHealthWireState::Dead => 3u8,
+            _ => return,
+        };
+        let guard = self
+            .session_state
+            .lock()
+            .expect("session_state mutex must not be poisoned");
+        if let Some(atomic) = guard.as_ref() {
+            atomic.store(byte, std::sync::atomic::Ordering::Release);
         }
     }
 
@@ -495,6 +547,37 @@ impl HttpRunnerClient {
         self
     }
 
+    /// Attach a [`smix_sim_health::SimHealthMonitor`] that receives
+    /// `/health` outcome observations. Every `health()`, `health_detail()`
+    /// and internal `probe_death()` call feeds
+    /// `SimHealthMonitor::record_health_ok` / `record_health_fail`, and
+    /// subscribers get a `Degraded` / `Dead` transition without polling.
+    ///
+    /// Additive over `with_liveness_window`; both may be enabled at the
+    /// same time — the liveness window handles per-call transport
+    /// classification, the sim-health monitor aggregates across the
+    /// wider observation surface (screenshot wall time, watched
+    /// processes) fed by other crates.
+    ///
+    /// Since smix 1.0.4.
+    #[must_use]
+    pub fn with_sim_health(mut self, monitor: smix_sim_health::SimHealthMonitor) -> Self {
+        self.sim_health = Some(monitor);
+        self
+    }
+
+    /// Mutable variant of [`Self::with_sim_health`].
+    pub fn set_sim_health(&mut self, monitor: smix_sim_health::SimHealthMonitor) {
+        self.sim_health = Some(monitor);
+    }
+
+    /// Accessor for the attached sim-health monitor, or `None` if the
+    /// caller opted out. Used by driver / SDK layers that need to
+    /// subscribe to state transitions or read the current classification.
+    pub fn sim_health(&self) -> Option<&smix_sim_health::SimHealthMonitor> {
+        self.sim_health.as_ref()
+    }
+
     /// Apply per-request context headers to a reqwest builder.
     /// Every method that constructs a request calls this so the
     /// `App-Bundle-Id` / `App-Activate` / `Session-Id` /
@@ -559,6 +642,15 @@ impl HttpRunnerClient {
             attempts_left -= 1;
             match builder_fn(&self.client).send().await {
                 Ok(res) => {
+                    // v1.0.4 §D7 — parse `X-Sim-Health` response header
+                    // and propagate to the attached Session state atomic
+                    // (if any). Absent header leaves state unchanged.
+                    let sim_health_hdr = res
+                        .headers()
+                        .get("X-Sim-Health")
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.to_string());
+                    self.update_session_state_from_header(sim_health_hdr.as_deref());
                     // Record but don't classify yet — status-level handling
                     // happens in the json_* helpers so the "5xx but recovered
                     // via retry" case is still counted as success.
@@ -719,10 +811,18 @@ impl HttpRunnerClient {
     /// `GET /health` — bare alive probe (no memoization). Returns true on 2xx.
     pub async fn health(&self) -> bool {
         let url = self.url("/health", None);
-        match self.client.get(&url).send().await {
+        let ok = match self.client.get(&url).send().await {
             Ok(res) => res.status().is_success(),
             Err(_) => false,
+        };
+        if let Some(monitor) = &self.sim_health {
+            if ok {
+                monitor.record_health_ok();
+            } else {
+                monitor.record_health_fail();
+            }
         }
+        ok
     }
 
     /// `GET /health` memoized — first call probes; subsequent are no-ops
@@ -751,6 +851,9 @@ impl HttpRunnerClient {
     ) -> Result<smix_runner_wire::HealthResponse, RunnerTransportError> {
         let url = self.url("/health", None);
         let res = self.client.get(&url).send().await.map_err(|source| {
+            if let Some(monitor) = &self.sim_health {
+                monitor.record_health_fail();
+            }
             RunnerTransportError::FetchFailed {
                 endpoint: "/health".into(),
                 source,
@@ -758,12 +861,18 @@ impl HttpRunnerClient {
         })?;
         let status = res.status();
         if !status.is_success() {
+            if let Some(monitor) = &self.sim_health {
+                monitor.record_health_fail();
+            }
             let body = res.text().await.unwrap_or_default();
             return Err(RunnerTransportError::NonSuccessStatus {
                 endpoint: "/health".into(),
                 status: status.as_u16(),
                 body,
             });
+        }
+        if let Some(monitor) = &self.sim_health {
+            monitor.record_health_ok();
         }
         // Legacy runners (< v1.0.2) return an empty body; treat parse
         // failure as {ok: true} to keep the "health passed" invariant.
@@ -810,6 +919,31 @@ impl HttpRunnerClient {
         req: &smix_runner_wire::SessionRenewActivationRequest,
     ) -> Result<smix_runner_wire::SessionRenewActivationResponse, RunnerTransportError> {
         self.json_post("/session/renew-activation", req, None).await
+    }
+
+    /// v1.0.4 §D5 — `POST /session/close-all` — clear every open
+    /// session on the runner. Used by `smix runner cycle` and the
+    /// runner-side supervisor to drop stale bindings after a cycle.
+    /// Idempotent — closing an empty session table returns
+    /// `{ok:true, closed:0}`.
+    pub async fn close_all_sessions(
+        &self,
+    ) -> Result<smix_runner_wire::SessionCloseAllResponse, RunnerTransportError> {
+        // No request body — send an empty JSON object.
+        self.json_post("/session/close-all", &serde_json::json!({}), None)
+            .await
+    }
+
+    /// v1.0.4 §D14 — `POST /session/relaunch-app` — instruct the runner
+    /// to `terminate()` + `launch()` the session's cached
+    /// `XCUIApplication` binding IN PLACE. Preserves session id and
+    /// XCUITest binding; recovers from a downstream app crash without
+    /// cycling the runner.
+    pub async fn relaunch_session_app(
+        &self,
+        req: &smix_runner_wire::SessionRelaunchAppRequest,
+    ) -> Result<smix_runner_wire::SessionRelaunchAppResponse, RunnerTransportError> {
+        self.json_post("/session/relaunch-app", req, None).await
     }
 
     /// `GET /tree?include=` — full a11y tree dump.

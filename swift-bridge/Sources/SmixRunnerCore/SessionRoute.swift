@@ -129,6 +129,33 @@ public enum SessionRoute {
     return envelope(.ok, body)
   }
 
+  // -- v1.0.4 §D5 close-all ----------------------------------------------
+
+  public static func closeAllResponse(closed: Int) -> HTTPResponse {
+    let body = Data(#"{"ok":true,"closed":\#(closed)}"#.utf8)
+    return envelope(.ok, body)
+  }
+
+  // -- v1.0.4 §D14 relaunch-app ------------------------------------------
+
+  public struct RelaunchRequest: Equatable, Sendable {
+    public let sessionId: String
+    public init(sessionId: String) {
+      self.sessionId = sessionId
+    }
+  }
+
+  public static func decodeRelaunch(_ body: Data) throws -> RelaunchRequest {
+    // Same shape / rules as close.
+    let close = try decodeClose(body)
+    return RelaunchRequest(sessionId: close.sessionId)
+  }
+
+  public static func relaunchResponse(ok: Bool, wallMs: UInt64) -> HTTPResponse {
+    let body = Data(#"{"ok":\#(ok),"wallMs":\#(wallMs)}"#.utf8)
+    return envelope(.ok, body)
+  }
+
   // -- shared error responses --------------------------------------------
 
   public static func notFound(reason: String) -> HTTPResponse {

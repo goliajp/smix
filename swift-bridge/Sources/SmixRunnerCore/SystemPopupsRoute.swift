@@ -66,6 +66,24 @@ public enum SystemPopupsRoute {
     )
   }
 
+  /// v1.0.4 §D4 — 429 emitted when the per-session `/system-popups`
+  /// interval floor (500 ms) is not yet elapsed. Callers back off for
+  /// `retryAfterMs` then retry. Body carries the retry hint verbatim
+  /// so consumers without a Retry-After parser still see the number.
+  public static func tooManyRequests(retryAfterMs: Int) -> HTTPResponse {
+    let body = Data(
+      #"{"ok":false,"error":"rate_limited","retryAfterMs":\#(retryAfterMs)}"#.utf8
+    )
+    return HTTPResponse(
+      statusCode: .tooManyRequests,
+      headers: [
+        .contentType: "application/json",
+        HTTPHeader("Retry-After"): "\((retryAfterMs + 999) / 1000)"
+      ],
+      body: body
+    )
+  }
+
   static func serialize(popups: [Popup]) -> Data {
     var s = #"{"ok":true,"popups":["#
     for (i, p) in popups.enumerated() {

@@ -34,6 +34,20 @@
 
 import Foundation
 
+/// v1.0.4 §D7 — sim-health classification observed via the runner's
+/// `X-Sim-Health` response header. Consumers subscribe via
+/// `Session.stateStream` or poll `Session.state`.
+public enum SessionState: String, Sendable {
+    case healthy
+    case degraded
+    case cycling
+    case dead
+
+    static func from(header value: String) -> SessionState? {
+        SessionState(rawValue: value.trimmingCharacters(in: .whitespaces).lowercased())
+    }
+}
+
 /// Runner-side session guard.
 ///
 /// A `Session` corresponds to a single `POST /session/open` on the
@@ -54,6 +68,32 @@ public final class Session: @unchecked Sendable {
     // here — a duplicated `POST /session/close` is idempotent on the
     // runner side, so the worst case of a race is one extra request.
     private var closed = false
+
+    /// v1.0.4 §D7 — current sim-health classification. Updated
+    /// automatically as the runtime parses `X-Sim-Health` headers.
+    /// AsyncStream continuation set at open time; nil on legacy runners.
+    private var currentState: SessionState = .healthy
+    private var stateContinuation: AsyncStream<SessionState>.Continuation?
+
+    /// Current classification. Reads a plain stored value; no atomic —
+    /// v1.0.4 uses coarse polling, not lock-step precision.
+    public var state: SessionState { currentState }
+
+    /// v1.0.4 §D7 — subscribe to state transitions. AsyncStream emits
+    /// every time the runner's `X-Sim-Health` header changes. Buffers
+    /// the most recent value.
+    public lazy var stateStream: AsyncStream<SessionState> = {
+        AsyncStream { continuation in
+            self.stateContinuation = continuation
+            continuation.yield(self.currentState)
+        }
+    }()
+
+    internal func updateState(_ next: SessionState) {
+        if next == currentState { return }
+        currentState = next
+        stateContinuation?.yield(next)
+    }
 
     private init(
         sessionId: String,
@@ -91,12 +131,35 @@ public final class Session: @unchecked Sendable {
             ] as [String: Any]
         )
         runtime.setSessionId(resp.sessionId)
-        return Session(
+        let session = Session(
             sessionId: resp.sessionId,
             activatedOnce: resp.activatedOnce ?? false,
             serverTimeMs: resp.serverTimeMs ?? 0,
             runtime: runtime
         )
+        // v1.0.4 §D7 — install the header parser so every subsequent
+        // response updates this session's state.
+        runtime.setSessionStateSetter { [weak session] next in
+            session?.updateState(next)
+        }
+        return session
+    }
+
+    /// v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
+    /// the session's cached `XCUIApplication` in place, preserving the
+    /// session id and XCUITest binding. Returns wall-clock milliseconds.
+    public func relaunchApp() async throws -> UInt64 {
+        guard let runtime = runtime else { throw SessionError.closed }
+        try assertOpen()
+        struct Resp: Decodable {
+            let ok: Bool?
+            let wallMs: UInt64?
+        }
+        let resp: Resp = try await runtime.post(
+            "/session/relaunch-app",
+            ["sessionId": sessionId]
+        )
+        return resp.wallMs ?? 0
     }
 
     /// Ask the runner to re-issue `.activate()` on the session's

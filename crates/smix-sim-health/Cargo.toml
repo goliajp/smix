@@ -1,0 +1,23 @@
+[package]
+name = "smix-sim-health"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-sim-health — sim-side liveness sense layer (SimRenderServer / xcodebuild / /health rolling window). Business-unaware core crate; consumers feed observations, receive state transitions on a broadcast channel."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-sim-health"
+readme = "README.md"
+keywords = ["ios", "simulator", "health", "sense", "monitoring"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time", "sync"] }

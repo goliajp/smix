@@ -22,6 +22,7 @@ smix-selector = { path = "../smix-selector", version = "1.0.0" }
 smix-input = { path = "../smix-input", version = "1.0.0" }
 smix-error = { path = "../smix-error", version = "1.0.0" }
 smix-runner-wire = { path = "../smix-runner-wire", version = "1.0.0" }
+smix-sim-health = { path = "../smix-sim-health", version = "1.0.3" }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }

@@ -5,6 +5,7 @@
 use crate::{Adapter, AppsConfig, RunError, RunReport, RunStepReport, Step, parse_flow_file};
 use smix_driver::Platform as DriverPlatform;
 use smix_sdk::App;
+use smix_sdk::{ExpectationFailure, FailureCode, FailureInit};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -87,6 +88,17 @@ pub struct FlowArgs {
     /// Append an implicit `expect.signal { regex }` step at the end of
     /// the flow.
     pub await_signal: Option<String>,
+    /// v1.0.4 §B / D9 — prepend an implicit `expect.signal { regex,
+    /// timeoutMs }` step at the START of the flow, before any yaml
+    /// step runs. Blocks until the regex is observed in the metro log
+    /// tail. Symmetric to [`Self::await_signal`] which fires at end
+    /// of flow. Requires `metro_log_url` also set — otherwise the
+    /// gate-signal step errors with an actionable hint.
+    pub gate_signal: Option<String>,
+    /// v1.0.4 §B / D9 — timeout (ms) for [`Self::gate_signal`]. Default
+    /// 60_000. Zero disables the timeout (waits forever — usually not
+    /// what you want in CI).
+    pub gate_signal_timeout_ms: u64,
     /// Append an implicit `expectLogClean` step at the end of the flow.
     pub expect_log_clean: bool,
     /// Path to a JSON fixture registry file. When Some,
@@ -212,6 +224,23 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
         }
     };
 
+    // v1.0.4 §B — prepend gate-signal step at the START of the flow.
+    // Insertion at index 0 so it runs BEFORE any yaml step, matching
+    // the "hold the entire flow until this regex appears" contract.
+    // Timeout defaults to 60s at the FlowArgs layer; here we pass it
+    // through verbatim.
+    if let Some(regex) = &args.gate_signal {
+        flow.steps.insert(
+            0,
+            crate::Step::ExpectSignal {
+                regex: regex.clone(),
+                level: None,
+                timeout_ms: args.gate_signal_timeout_ms,
+                window: crate::SignalWindow::SinceRun,
+            },
+        );
+    }
+
     // Append implicit signal-await / log-clean steps when CLI opted
     // in. These run AFTER the yaml's own steps, acting as post-flow
     // gates.
@@ -321,17 +350,73 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
         None
     };
 
-    let result = adapter.run(&flow).await;
+    // v1.0.4 §D15 / feedback lifecycle-safe-exit — race the flow
+    // execution against SIGINT / SIGTERM. On signal we abandon the
+    // in-flight flow (its next .await point drops out), run the
+    // session-close cascade below, and exit with the POSIX-conventional
+    // 130 (SIGINT) or 143 (SIGTERM). Without this handler, ctrl-C
+    // would drop the tokio runtime and orphan the runner-side session
+    // until its idle-close timer fired.
+    let mut interrupted_by: Option<&'static str> = None;
+    let result = {
+        let flow_task = adapter.run(&flow);
+        tokio::pin!(flow_task);
+        let mut sigterm =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
+        let sigterm_fut = async {
+            if let Some(s) = sigterm.as_mut() {
+                s.recv().await;
+            } else {
+                std::future::pending::<Option<()>>().await;
+            }
+        };
+        tokio::pin!(sigterm_fut);
+        tokio::select! {
+            r = &mut flow_task => r,
+            _ = tokio::signal::ctrl_c() => {
+                interrupted_by = Some("SIGINT");
+                eprintln!("interrupted (SIGINT) — running session-close cascade");
+                Err(crate::RunError::Sdk(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: "smix run interrupted by SIGINT".to_string(),
+                    ..Default::default()
+                })))
+            },
+            _ = &mut sigterm_fut => {
+                interrupted_by = Some("SIGTERM");
+                eprintln!("interrupted (SIGTERM) — running session-close cascade");
+                Err(crate::RunError::Sdk(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: "smix run interrupted by SIGTERM".to_string(),
+                    ..Default::default()
+                })))
+            },
+        }
+    };
+    // v1.0.4 §D11 — snapshot per-step trace records BEFORE dropping
+    // the adapter, so a failed run still surfaces its partial trace
+    // in run-summary.json.
+    let debug_records: Vec<crate::StepDebugRecord> = adapter.debug_records().to_vec();
     drop(adapter);
 
     // v1.0.3 — release the session (best-effort). Errors here are
     // warnings only: the flow's result is already captured. The
     // dispatch is a small POST /session/close and the runner's
     // idempotent contract means "already gone" is not an error.
-    if let AppHolder::Session(session) = holder
-        && let Err(e) = session.close().await
-    {
-        eprintln!("WARN: /session/close failed at exit: {e}");
+    //
+    // v1.0.4 §D15 — best-effort session close under a tight 2 s
+    // timeout even on interrupt paths, so ctrl-C actually terminates
+    // instead of hanging behind a dead runner.
+    if let AppHolder::Session(session) = holder {
+        let close_fut = session.close();
+        match tokio::time::timeout(std::time::Duration::from_secs(2), close_fut).await {
+            Ok(Ok(_app)) => {}
+            Ok(Err(e)) => eprintln!("WARN: /session/close failed at exit: {e}"),
+            Err(_) => eprintln!(
+                "WARN: /session/close timed out after 2s — session may linger \
+                 until the runner's idle-close sweep fires"
+            ),
+        }
     }
 
     // debug-output + json format handling. debug_output writes a
@@ -339,7 +424,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
     // Both work together (debug_output for the on-disk artifact,
     // format=Json for pipe consumption).
     if let Some(dir) = &args.debug_output
-        && let Err(e) = write_debug_output(dir, args.flow.as_path(), &result)
+        && let Err(e) = write_debug_output(dir, args.flow.as_path(), &result, &debug_records)
     {
         eprintln!("WARN: debug-output write failed: {e}");
     }
@@ -367,7 +452,13 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
                 OutputFormat::Junit => emit_junit(&args.flow, Err(&e)),
                 OutputFormat::Human => {}
             }
-            run_error_to_exit(&e)
+            // v1.0.4 §D15 — POSIX-conventional exit codes for signal
+            // interrupts override the RunError-based classification.
+            match interrupted_by {
+                Some("SIGINT") => ExitCode::from(130),
+                Some("SIGTERM") => ExitCode::from(143),
+                _ => run_error_to_exit(&e),
+            }
         }
     }
 }
@@ -443,9 +534,10 @@ fn write_debug_output(
     dir: &Path,
     flow: &Path,
     result: &Result<crate::RunReport, crate::RunError>,
+    debug_records: &[crate::StepDebugRecord],
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
-    let summary = build_summary_json(flow, result.as_ref());
+    let summary = build_summary_json(flow, result.as_ref(), debug_records);
     let path = dir.join("run-summary.json");
     std::fs::write(
         path,
@@ -457,6 +549,7 @@ fn write_debug_output(
 fn build_summary_json(
     flow: &Path,
     result: Result<&crate::RunReport, &crate::RunError>,
+    debug_records: &[crate::StepDebugRecord],
 ) -> serde_json::Value {
     use serde_json::json;
     match result {
@@ -464,17 +557,25 @@ fn build_summary_json(
             "flow": flow.display().to_string(),
             "runOutcome": "success",
             "warnings": report.warnings,
+            // v1.0.4 §D11 — per-step trace for post-mortem. Empty
+            // unless --debug-output was set.
+            "steps": debug_records,
         }),
         Err(e) => json!({
             "flow": flow.display().to_string(),
             "runOutcome": "failure",
             "error": e.to_string(),
+            // v1.0.4 §D11 — partial trace up to the failing step.
+            "steps": debug_records,
         }),
     }
 }
 
 fn emit_json_success(flow: &Path, report: &crate::RunReport) {
-    let payload = build_summary_json(flow, Ok(report));
+    // Stdout emission path: no debug_records available at this call
+    // site (the CLI aggregate that owns them writes them to disk via
+    // write_debug_output). Pass empty slice.
+    let payload = build_summary_json(flow, Ok(report), &[]);
     println!("{}", serde_json::to_string(&payload).unwrap_or_default());
 }
 
@@ -495,7 +596,7 @@ fn emit_json_failure(flow: &Path, err: &crate::RunError) {
             }
         })
     } else {
-        build_summary_json(flow, Err(err))
+        build_summary_json(flow, Err(err), &[])
     };
     println!("{}", serde_json::to_string(&payload).unwrap_or_default());
 }

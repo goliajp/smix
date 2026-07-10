@@ -443,21 +443,49 @@ public actor SmixRunnerServer {
     }
   }
 
+  /// v1.0.4 §D5 — /session/close-all outcome.
+  public struct SessionCloseAllOutcome: Sendable {
+    public let closed: Int
+    public init(closed: Int) {
+      self.closed = closed
+    }
+  }
+
+  /// v1.0.4 §D14 — /session/relaunch-app outcome.
+  public struct SessionRelaunchOutcome: Sendable {
+    public let notFound: Bool
+    public let ok: Bool
+    public let wallMs: UInt64
+    public init(notFound: Bool, ok: Bool, wallMs: UInt64) {
+      self.notFound = notFound
+      self.ok = ok
+      self.wallMs = wallMs
+    }
+  }
+
   /// v1.0.3 — session lifecycle handlers. Triple bundled (vs three
   /// independent typealiases) because they share the session-table state
-  /// in the UITest target.
+  /// in the UITest target. v1.0.4 extends with close-all + relaunch-app.
   public struct SessionHandlers: Sendable {
     public let open: @Sendable (SessionRoute.OpenRequest) async -> SessionOpenOutcome
     public let close: @Sendable (SessionRoute.CloseRequest) async -> SessionCloseOutcome
     public let renew: @Sendable (SessionRoute.RenewRequest) async -> SessionRenewOutcome
+    /// v1.0.4 §D5 — invoked by `POST /session/close-all`.
+    public let closeAll: @Sendable () async -> SessionCloseAllOutcome
+    /// v1.0.4 §D14 — invoked by `POST /session/relaunch-app`.
+    public let relaunchApp: @Sendable (SessionRoute.RelaunchRequest) async -> SessionRelaunchOutcome
     public init(
       open: @escaping @Sendable (SessionRoute.OpenRequest) async -> SessionOpenOutcome,
       close: @escaping @Sendable (SessionRoute.CloseRequest) async -> SessionCloseOutcome,
-      renew: @escaping @Sendable (SessionRoute.RenewRequest) async -> SessionRenewOutcome
+      renew: @escaping @Sendable (SessionRoute.RenewRequest) async -> SessionRenewOutcome,
+      closeAll: @escaping @Sendable () async -> SessionCloseAllOutcome,
+      relaunchApp: @escaping @Sendable (SessionRoute.RelaunchRequest) async -> SessionRelaunchOutcome
     ) {
       self.open = open
       self.close = close
       self.renew = renew
+      self.closeAll = closeAll
+      self.relaunchApp = relaunchApp
     }
   }
 
@@ -610,6 +638,35 @@ public actor SmixRunnerServer {
           return SessionRoute.notFound(reason: "unknown session id")
         }
         return SessionRoute.renewResponse(ok: outcome.ok, activated: outcome.activated)
+      }
+    }
+    // v1.0.4 §D5 — POST /session/close-all
+    await server.appendRoute("POST /session/close-all") { _ in
+      return await Self.guardedResponse(
+        fallback: SessionRoute.closeAllResponse(closed: 0)
+      ) {
+        let outcome = await handlers.closeAll()
+        return SessionRoute.closeAllResponse(closed: outcome.closed)
+      }
+    }
+    // v1.0.4 §D14 — POST /session/relaunch-app
+    await server.appendRoute("POST /session/relaunch-app") { request in
+      let body: Data
+      do { body = try await request.bodyData }
+      catch { return SessionRoute.badRequest(reason: "failed to read body: \(error)") }
+      let req: SessionRoute.RelaunchRequest
+      do { req = try SessionRoute.decodeRelaunch(body) }
+      catch {
+        return SessionRoute.badRequest(reason: "\(error)")
+      }
+      return await Self.guardedResponse(
+        fallback: SessionRoute.relaunchResponse(ok: false, wallMs: 0)
+      ) {
+        let outcome = await handlers.relaunchApp(req)
+        if outcome.notFound {
+          return SessionRoute.notFound(reason: "unknown session id")
+        }
+        return SessionRoute.relaunchResponse(ok: outcome.ok, wallMs: outcome.wallMs)
       }
     }
   }

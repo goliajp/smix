@@ -2042,6 +2042,38 @@ final class SmixRunnerUITests: XCTestCase {
           return SmixRunnerServer.SessionRenewOutcome(
             notFound: false, ok: true, activated: true
           )
+        },
+        // v1.0.4 §D5 — close every open session in the table. Used
+        // by `smix runner cycle` and the supervisor auto-restart.
+        // Idempotent; returns the count that was cleared.
+        closeAll: {
+          sessions.lock()
+          let count = sessionTable.count
+          sessionTable.removeAll()
+          sessions.unlock()
+          return SmixRunnerServer.SessionCloseAllOutcome(closed: count)
+        },
+        // v1.0.4 §D14 — terminate+launch the session's cached app in
+        // place. Preserves session id and XCUITest binding — no
+        // uninstall/install, no cross-session churn.
+        relaunchApp: { req in
+          let start = Date()
+          sessions.lock()
+          let entry = sessionTable[req.sessionId]
+          sessions.unlock()
+          guard let entry = entry else {
+            return SmixRunnerServer.SessionRelaunchOutcome(
+              notFound: true, ok: false, wallMs: 0
+            )
+          }
+          await SmixRunnerServer.onMain {
+            entry.app.terminate()
+            entry.app.launch()
+          }
+          let wallMs = UInt64(Date().timeIntervalSince(start) * 1000)
+          return SmixRunnerServer.SessionRelaunchOutcome(
+            notFound: false, ok: true, wallMs: wallMs
+          )
         }
       )
     )

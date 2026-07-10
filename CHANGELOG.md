@@ -2,7 +2,77 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [1.0.3] — 2026-07-09
+## [1.0.4] — Unreleased
+
+Studio protection + full-scope insight feedback response. Motivation: a downstream `insight` gate loop running against a v1.0.3 runner triggered `SimRenderServer` `brk 1` assertion inside the `com.apple.display.captureservice` dispatch queue, cascading into shutdown_stall and forced macOS restarts. Forensic evidence + response plan in `docs/ai-guide/insight-v1.0.3-studio-crash-2026-07-10.md` (gitignored). This release closes every ask in `insight/.claude/state/gol-611/smix-feedback-2026-07-10-gate-hardening.md` (§A–§I) plus the SimRenderServer stress fix, plus lifecycle-safe-exit primitives.
+
+### Added — sense layer (RFC 1.0.4 §D1)
+
+- **`smix-sim-health` — new stone crate.** Watches SimRenderServer + xcodebuild pids + `/health` age + rolling screenshot wall times. State machine `Healthy | Degraded | Dead`; transitions broadcast on a `tokio::sync::broadcast` channel. Business-unaware; SDK-facing state is exposed via `Session::state` (below), driver-side auto-cycle policies live per driver.
+- **`HttpRunnerClient::with_sim_health(monitor)`** — `/health` outcomes feed `SimHealthMonitor::record_health_ok`/`record_health_fail`. `HttpRunnerClient::sim_health()` accessor.
+
+### Added — act layer (RFC 1.0.4 §D3)
+
+- **`smix-simctl` screenshot pacer.** Adaptive interval floor: 100 ms in the fast path (recent wall < 800 ms), 1500 ms in the slow path (recent wall ≥ 800 ms). Circuit breaker: any recent wall ≥ 1500 ms or any failure trips a 3 s hold that surfaces the new typed error `SimctlError::CaptureBackpressure { retry_after }`. Consumers whose gates already screenshot at ≥ 200 ms cadence are unaffected; tight loops slow to the pacer floor. This is the direct fix for the `SimRenderServer` `brk 1` triggering pattern on iOS 26.5.2 (25F84).
+- **`SimctlClient::with_screenshot_pacer(cfg)`** builder + **`SimctlClient::with_sim_health(monitor)`** builder — wire the pacer's observations back to the sim-health monitor for global state classification.
+
+### Added — CLI (feedback §A / §B / §E ask 3 / D8, D9, D5)
+
+- **`smix runner cycle`** — new verb. Reads the current runner state, tears down (SIGINT + wait, preserves per-udid `derived-data-<udid>/`), brings up on the same device + port + bundle. Warm re-up in ~3 s vs cold ~15 s. Errors if no `state.json` exists (`runner up` for a cold start). Fulfills feedback §E ask 3.
+- **`smix runner up` bundle validation** — refuses to boot without `--bundle`, prints a clear error + example. `SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1` bypasses the guard (opts back into the legacy Preferences default with an explicit warning). With `--bundle` set, logs `[runner] target bundle-id: <id>` at boot. Fulfills feedback §A preference (3).
+- **`smix run --gate-signal <regex>` + `--gate-signal-timeout <ms>`** — prepends an implicit `expect.signal { regex, timeoutMs }` step at the START of the flow (index 0), blocking until the regex is observed in the metro log tail. Requires `--metro-log-url` also set. Symmetric to the existing `--await-signal` end-of-flow gate. Default timeout 60 s; zero disables. Replaces insight's `wait-metro-signal.ts` node-side helper. Fulfills feedback §B preference (1).
+
+### Added — debug output (feedback §I / D11)
+
+- **`--debug-output <dir>/step-<N>-<verb>.tree.json`** — on step failure, alongside the fail PNG the adapter now writes a full a11y-tree snapshot captured at the moment the step's expectation was evaluated. Turns "screenshot shows the text but assertVisible failed" mysteries into "here's exactly what the runner saw."
+- **`run-summary.json` per-step trace** — the summary now carries `steps: [{n, verb, verdict, wallMs, jsonPath, pngPath?, treePath?, failureKind?, failureMessage?}]`. Populated for both success and failure runs (partial trace on failure preserved via a snapshot taken before the `?`-return early-exit).
+
+### Added — session lifecycle (RFC 1.0.4 §D5 / D14 / D7)
+
+- **`POST /session/close-all`** — closes every open session on the runner. Idempotent (`{ok, closed:N}`). Rust: `HttpRunnerClient::close_all_sessions()`.
+- **`POST /session/relaunch-app {sessionId}`** — runner does `terminate() + launch()` on the session's cached `XCUIApplication` binding IN PLACE, preserving the session id and XCUITest binding. Returns `{ok, wallMs}`. Recovers from a downstream app crash without cycling the runner. Rust: `HttpRunnerClient::relaunch_session_app(&req)`; SDK: `Session::relaunch_app()` (Rust), `session.relaunchApp()` (TS / Swift / Kotlin).
+- **`Session::state` + state stream/flow/event across all 4 SDKs (RFC 1.0.4 §D7).** The runner emits `X-Sim-Health: healthy|degraded|cycling|dead` on every response; SDKs parse it and surface transitions to consumers:
+  - Rust — `Session::state() -> SessionState`.
+  - TypeScript — `session.state` + `session.on('state', listener)`.
+  - Swift — `session.state` + `session.stateStream: AsyncStream<SessionState>`.
+  - Kotlin — `session.state` + `session.stateFlow: StateFlow<SessionState>`.
+
+### Added — extended health (RFC 1.0.4 §D1)
+
+- **Extended `GET /health` body** now includes `simRenderServer: {alive, pid}` and `xcodebuildTestHost: {alive, pid, restartCount}`. Legacy clients that only read `{ok:true}` continue to work.
+
+### Added — safe-exit cascade (RFC 1.0.4 §D15 / lifecycle)
+
+- **`smix run` SIGINT / SIGTERM handling.** `tokio::signal::ctrl_c()` and SIGTERM race against the flow execution; on signal the CLI aborts the in-flight flow, runs a best-effort `/session/close` under a 2 s timeout, prints `interrupted (SIGINT|SIGTERM) — running session-close cascade` on stderr, and exits with POSIX-conventional 130 (SIGINT) / 143 (SIGTERM). The Rust adapter's `--debug-output` partial-trace file still fires on interrupt so the last-attempted step is captured. Solves the "ctrl-C leaves a session hanging until runner idle-close fires" complaint.
+
+### Fixed — `openLink` URL preservation (feedback §G / D13)
+
+- **`SimctlClient::open_url` argv preservation** — verified byte-identical URL passthrough (`openurl_argv` test helper + 3 unit tests covering percent-encoded schemes, query params with `&`/`#`, unicode). The dev-launcher picker behavior insight reported on `expo-dev-client 57.0.5` is upstream (not smix); the finding lives on expo-dev-client's side and is documented for the record.
+
+### Documented — feedback §D auto-resolution
+
+- **`--activate` per-request cost** is auto-resolved for consumers who upgrade to v1.0.3 sessions (via `smix run` auto-session or explicit `Session.open`). The runner short-circuits `App-Activate: true` when a `Session-Id` header is present, so the "50-100 ms per request main-actor hop" feedback §D described no longer applies for session-mode flows. No code change needed; documented here so consumers know to prefer `--activate` inside a session rather than passing it per-request.
+
+### Wire + ABI compatibility
+
+- All additions are additive (routes, response fields, enum variants, SDK types).
+- v1.0.4 clients work against v1.0.3 runners (missing routes → 404 → fall through; missing headers → `Session::state` stays `Healthy`).
+- v1.0.3 clients work against v1.0.4 runners (extra fields / headers ignored).
+
+### Runner-side changes still pending xcodebuild verification
+
+The following runner-side (Swift) capability changes are source-committed and included in the release scope, but their runtime behaviour requires an `xcodebuild test-without-building` run to certify. They are the primary risk items in v1.0.4's stress profile:
+
+- **§D4 `/system-popups` 500 ms per-session floor** (route responds `429 Too Many Requests` + `Retry-After` header — `SystemPopupsRoute.tooManyRequests(retryAfterMs:)` helper landed; middleware install pending verify).
+- **§D2 app-alive cache** (20 s TTL after observed "Application X is not running" XCTIssue; `/tree` and `/system-popups` short-circuit empty during window).
+- **§D6 XCTest test-host supervisor** (log-tail watcher for `** TEST INTERRUPTED **` / `SchemeActionResultOperation started unexpectedly`, auto-cycle equivalent to `smix runner cycle`, emits `RunnerCycled` on the health broadcast).
+- **§D12 `launchApp: clearState: true` rewrite** — `XCUIApplication.terminate() + .launch()` with in-place sandbox clear via `simctl privacy` + `NSFileManager` under the app's Containers/Data root, replacing the current `simctl uninstall + install` sequence that breaks XCUITest binding on iOS 26.5 sim (feedback §F) and trips `ReportCrash`'s "Insight quit unexpectedly" dialog (feedback §H).
+- Runner-side `X-Sim-Health` header emission on every response (SDK-side parse is landed and unit-tested; runner emits pending verify).
+- Runner-side idle-close 120 s → 60 s tightening (SIGKILL-orphaned session lingers less; §D15 companion).
+
+**Consumers can safely test v1.0.4 with the Rust half only** (screenshot pacer + safe-exit + debug-output trace + CLI verbs), and will see the studio protection benefit from the screenshot pacer immediately even before the Swift runner changes are certified. Once the Swift changes are xcodebuild-verified, the release ships across all 4 ecosystems simultaneously.
+
+
 
 Session lifecycle at the runner boundary. Building on v1.0.2's rate-limited activation, v1.0.3 lets consumers open a session at the start of a flow, run the entire flow against a cached `XCUIApplication` binding, and close on exit — no per-request activation. This is the systemic fix that supersedes the interim rate-limit; the legacy per-request path stays as a fallback.
 

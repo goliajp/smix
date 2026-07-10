@@ -536,4 +536,132 @@ pub struct HealthResponse {
     /// Total `.activate()` calls issued since runner boot.
     #[serde(default)]
     pub activations_total: u64,
+    /// v1.0.4 — SimRenderServer pid + alive flag observed by the
+    /// runner's sim-health sensor. `alive = false` after
+    /// `com.apple.display.captureservice` internal assertion trips.
+    #[serde(default)]
+    pub sim_render_server: HealthProcessInfo,
+    /// v1.0.4 — xcodebuild test-host pid + alive flag + total restart
+    /// count (S7 auto-restart on `** TEST INTERRUPTED **`).
+    #[serde(default)]
+    pub xcodebuild_test_host: HealthTestHostInfo,
+}
+
+/// v1.0.4 — pid + alive flag for a watched process. Additive to
+/// [`HealthResponse`].
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthProcessInfo {
+    /// True when the runner last observed the process alive.
+    #[serde(default)]
+    pub alive: bool,
+    /// Last-known pid (0 if never observed).
+    #[serde(default)]
+    pub pid: u32,
+}
+
+/// v1.0.4 — xcodebuild test-host health with restart accounting.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthTestHostInfo {
+    /// True when the runner-side supervisor last saw xcodebuild alive.
+    #[serde(default)]
+    pub alive: bool,
+    /// Last-known pid (0 if unrecorded).
+    #[serde(default)]
+    pub pid: u32,
+    /// Number of times the supervisor has restarted the test-host
+    /// (RFC 1.0.4 §D6).
+    #[serde(default)]
+    pub restart_count: u32,
+}
+
+// ---- v1.0.4 D5 / D6 / D7 / D14 additive wire ----------------------------
+
+/// `POST /session/close-all` — v1.0.4 §D5 support for `smix runner
+/// cycle`. Runner-side clears every open session and returns the
+/// count that was cleared.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCloseAllResponse {
+    /// True on success (idempotent — closing an empty session table
+    /// is not an error).
+    pub ok: bool,
+    /// Number of sessions closed.
+    #[serde(default)]
+    pub closed: u32,
+}
+
+/// `POST /session/relaunch-app` request body (v1.0.4 §D14).
+///
+/// Instructs the runner to `terminate()` + `launch()` the session's
+/// cached `XCUIApplication` binding IN PLACE — same test-host process,
+/// same session id, same XCUITest binding. Used to recover from a
+/// downstream app crash without cycling the entire runner.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRelaunchAppRequest {
+    /// Session whose cached binding will be relaunched.
+    pub session_id: String,
+}
+
+/// `POST /session/relaunch-app` response body.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRelaunchAppResponse {
+    /// True on success (session known + relaunch cycle completed).
+    pub ok: bool,
+    /// Wall-clock milliseconds the terminate+launch cycle took.
+    #[serde(default)]
+    pub wall_ms: u64,
+}
+
+/// v1.0.4 §D7 — Session state exposed to SDK consumers via the
+/// `X-Sim-Health` response header on every runner response.
+///
+/// Additive to v1.0.3 sessions — consumers that ignore the header get
+/// v1.0.3 behavior; consumers that read it get `Degraded` / `Dead` /
+/// `Cycling` transitions without polling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum SimHealthWireState {
+    /// All watched signals inside envelope.
+    #[serde(rename = "healthy")]
+    Healthy,
+    /// At least one signal degraded (screenshot p95 slow, /health
+    /// stale, etc.).
+    #[serde(rename = "degraded")]
+    Degraded,
+    /// Runner is mid-cycle (supervisor auto-restart in progress).
+    /// Callers should back off until the next `Healthy` transition.
+    #[serde(rename = "cycling")]
+    Cycling,
+    /// Runner or a watched subprocess (SimRenderServer / xcodebuild)
+    /// is gone. Callers should bail.
+    #[serde(rename = "dead")]
+    Dead,
+}
+
+impl SimHealthWireState {
+    /// Parse a case-insensitive wire string; returns `None` on
+    /// unknown values so unrecognized future states don't panic.
+    pub fn from_header(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "healthy" => Some(Self::Healthy),
+            "degraded" => Some(Self::Degraded),
+            "cycling" => Some(Self::Cycling),
+            "dead" => Some(Self::Dead),
+            _ => None,
+        }
+    }
+
+    /// Header string emitted on the runner side.
+    pub fn as_header(&self) -> &'static str {
+        match self {
+            Self::Healthy => "healthy",
+            Self::Degraded => "degraded",
+            Self::Cycling => "cycling",
+            Self::Dead => "dead",
+        }
+    }
 }
