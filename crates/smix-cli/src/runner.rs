@@ -609,6 +609,30 @@ pub fn cycle(
     )
 }
 
+/// v1.0.9 §D5 — collect ±`context_size` lines surrounding the first
+/// occurrence of `match_line` inside the log file. Best-effort:
+/// returns empty on file-read failure, or on partial matches (log
+/// rotated between trigger + read). Emitted inside the supervisor's
+/// `RunnerCycled` JSON event so consumers get cycle-cascade
+/// classification data without needing a separate `grep` pass.
+fn collect_log_context(
+    log_path: &Path,
+    match_line: &str,
+    context_size: usize,
+) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(log_path) else {
+        return Vec::new();
+    };
+    let trimmed = match_line.trim();
+    let lines: Vec<&str> = text.lines().collect();
+    let Some(idx) = lines.iter().position(|l| l.contains(trimmed)) else {
+        return Vec::new();
+    };
+    let start = idx.saturating_sub(context_size);
+    let end = (idx + context_size + 1).min(lines.len());
+    lines[start..end].iter().map(|l| l.to_string()).collect()
+}
+
 /// v1.0.6 D1 — spawn the supervisor as a detached child process
 /// after `runner up --supervise`. Redirects stdout/stderr to
 /// `.smix/runner/supervise-<UDID>.log`. Uses its own process group so
@@ -763,12 +787,25 @@ pub fn supervise(
             // v1.0.7 §D6 — flush after every JSON event so consumers
             // parsing supervisor stdout see the event immediately even
             // when the outer flow crashes fast right after.
+            //
+            // v1.0.9 §D5 — attach the surrounding ±5 lines of runner
+            // log context so consumers can classify the cycle without
+            // needing a separate grep. Context is best-effort — if
+            // the log file has been rotated between the trigger and
+            // the read we still emit the event with an empty context.
+            let context: Vec<String> = collect_log_context(&log_path, line, 5);
             use std::io::Write;
             let mut out = std::io::stdout().lock();
+            let context_json = context
+                .iter()
+                .map(|l| format!("{:?}", l))
+                .collect::<Vec<_>>()
+                .join(",");
             let _ = writeln!(
                 out,
-                r#"{{"event":"RunnerCycled","reasonMatched":{:?},"atMs":{}}}"#,
+                r#"{{"event":"RunnerCycled","reasonMatched":{:?},"context":[{}],"atMs":{}}}"#,
                 line.trim(),
+                context_json,
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis())

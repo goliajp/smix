@@ -2,7 +2,35 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [1.0.8] — 2026-07-11
+## [1.0.9] — 2026-07-11
+
+App-alive cache adaptive re-probe + supervisor RunnerCycled log context. Closes the two named v1.0.8 deferrals. RFC `.claude/rfcs/1.0.8-crash-dialog-elimination-and-a11y-cache.md` §D4 + §D5.
+
+### Runner-side (Swift)
+
+- **App-alive cache adaptive re-probe (§D4).** When an XCTIssue "Application X is not running" is observed, the cache still marks the bundle dead for 20 s. Now the runner spawns a background `Task` that polls `XCUIApplication.state` every 3 s during the window; on the first observation of a non-`.notRunning` state, calls `markAlive` immediately + emits `smix-runner: app-alive cache re-probe hit <bundle> state=<n>; early invalidate` on stderr. Fixes insight's `pinning-failure.yaml` failure mode where slow-bootstrap apps sat blocked for the full 20 s while they were actually alive again.
+- Bounded to 6 iterations (18 s) — matches the cache window minus one probe interval for slack. If the app is still `.notRunning` after 6 probes the cache expires naturally.
+
+### CLI (Rust)
+
+- **Supervisor `RunnerCycled` event with log context (§D5).** The JSON emitted on every cycle now carries a `context` field with ±5 lines around the matched trigger:
+  ```json
+  {"event":"RunnerCycled","reasonMatched":"** TEST INTERRUPTED **","context":["2026-07-11 …", "…"],"atMs":1720689124321}
+  ```
+  Consumers get cycle-cascade classification data without needing a separate `grep` pass on the runner log. Best-effort — if the log rotated between the match and the read the `context` array comes back empty.
+
+### Wire + ABI compatibility
+
+- No wire changes.
+- No SDK ABI changes.
+- Runner behaviour change is invisible to consumers not observing stderr.
+- Supervisor JSON gains a new optional `context` field; parsers ignoring unknown fields keep working.
+
+### Deferred (still)
+
+- **`launchApp: clearState: true` deprecation + auto-expand** — waiting on insight to migrate `.devtools/qa/sim/subflows/` to `clearAppData`. Once they confirm the batch PR merged, v1.0.10 will emit the WARN + auto-expand.
+
+
 
 Eliminate the "Insight quit unexpectedly" ReportCrash system dialog. Response to `smix-feedback-2026-07-11-blocking-crash-dialog.md` — escalated hard-requirement. RFC `.claude/rfcs/1.0.8-crash-dialog-elimination-and-a11y-cache.md`.
 
