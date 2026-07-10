@@ -199,12 +199,11 @@ impl DeviceControl for IosDeviceControl {
         if guard.is_some() {
             // Caller must stop the existing one first; surface via SimctlError
             // (App layer will translate to ExpectationFailure with hint per §13).
-            return Err(SimctlError::NonZeroExit {
-                subcommand: "io recordVideo".to_string(),
-                code: -1,
-                stderr: "a recording is already in progress (call stop_recording first)"
-                    .to_string(),
-            });
+            return Err(SimctlError::non_zero_exit(
+                "io recordVideo",
+                -1,
+                "a recording is already in progress (call stop_recording first)",
+            ));
         }
         let path_str = output_path.to_string_lossy();
         let handle = self.client.record_video_start(udid, &path_str).await?;
@@ -214,10 +213,12 @@ impl DeviceControl for IosDeviceControl {
 
     async fn stop_recording(&self) -> Result<(), SimctlError> {
         let mut guard = self.recording.lock().await;
-        let handle = guard.take().ok_or_else(|| SimctlError::NonZeroExit {
-            subcommand: "io recordVideo".to_string(),
-            code: -1,
-            stderr: "no recording in progress (call start_recording first)".to_string(),
+        let handle = guard.take().ok_or_else(|| {
+            SimctlError::non_zero_exit(
+                "io recordVideo",
+                -1,
+                "no recording in progress (call start_recording first)",
+            )
         })?;
         self.client.record_video_stop(handle).await
     }

@@ -60,26 +60,26 @@ impl AndroidDeviceControl {
 /// `ExpectationFailure`). Android-specific detail preserved in message.
 fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> SimctlError {
     match e {
-        AdbError::BinaryNotFound => SimctlError::NonZeroExit {
-            subcommand: subcommand.into(),
-            code: -1,
-            stderr: "adb binary not found in PATH; install Android SDK platform-tools".into(),
-        },
-        AdbError::Spawn(io) => SimctlError::NonZeroExit {
-            subcommand: subcommand.into(),
-            code: -1,
-            stderr: format!("adb spawn failed: {io}"),
-        },
+        AdbError::BinaryNotFound => SimctlError::non_zero_exit(
+            subcommand,
+            -1,
+            "adb binary not found in PATH; install Android SDK platform-tools",
+        ),
+        AdbError::Spawn(io) => SimctlError::non_zero_exit(
+            subcommand,
+            -1,
+            format!("adb spawn failed: {io}"),
+        ),
         AdbError::NonZeroExit {
             subcommand: sub,
             code,
             stderr,
             serial,
-        } => SimctlError::NonZeroExit {
-            subcommand: format!("adb {sub} (serial={serial:?})"),
+        } => SimctlError::non_zero_exit(
+            format!("adb {sub} (serial={serial:?})"),
             code,
             stderr,
-        },
+        ),
         AdbError::Malformed {
             subcommand: sub,
             detail,
@@ -189,11 +189,7 @@ impl DeviceControl for AndroidDeviceControl {
         // Android requires FCM credentials + Firebase project setup —
         // deferred. Surface an explicit error so yaml authors know it
         // is not silently no-op.
-        Err(SimctlError::NonZeroExit {
-            subcommand: "send_push".into(),
-            code: -1,
-            stderr: "Android FCM push not implemented (cross-platform yaml `sendPush:` is iOS APNs only)".into(),
-        })
+        Err(SimctlError::non_zero_exit("send_push", -1, "Android FCM push not implemented (cross-platform yaml `sendPush:` is iOS APNs only)"))
     }
 
     async fn screenshot(&self, serial: &str) -> Result<Vec<u8>, SimctlError> {
@@ -209,29 +205,17 @@ impl DeviceControl for AndroidDeviceControl {
         // Android clipboard via `cmd clipboard set-text` (API 29+) or
         // `service call clipboard` (older). v6.x dedicated cycle; skeleton
         // returns error to avoid silent failure.
-        Err(SimctlError::NonZeroExit {
-            subcommand: "pasteboard_set".into(),
-            code: -1,
-            stderr: "Android clipboard set wiring deferred to a future cycle".into(),
-        })
+        Err(SimctlError::non_zero_exit("pasteboard_set", -1, "Android clipboard set wiring deferred to a future cycle"))
     }
 
     async fn pasteboard_get(&self, _serial: &str) -> Result<String, SimctlError> {
-        Err(SimctlError::NonZeroExit {
-            subcommand: "pasteboard_get".into(),
-            code: -1,
-            stderr: "Android clipboard get wiring deferred to a future cycle".into(),
-        })
+        Err(SimctlError::non_zero_exit("pasteboard_get", -1, "Android clipboard get wiring deferred to a future cycle"))
     }
 
     async fn add_media(&self, _serial: &str, _paths: &[String]) -> Result<(), SimctlError> {
         // `adb push <local> /sdcard/Pictures/` then `am broadcast -a
         // android.intent.action.MEDIA_SCANNER_SCAN_FILE`.
-        Err(SimctlError::NonZeroExit {
-            subcommand: "add_media".into(),
-            code: -1,
-            stderr: "Android media library push deferred to a future cycle".into(),
-        })
+        Err(SimctlError::non_zero_exit("add_media", -1, "Android media library push deferred to a future cycle"))
     }
 
     async fn location_set(&self, serial: &str, lat: f64, lon: f64) -> Result<(), SimctlError> {
@@ -255,11 +239,7 @@ impl DeviceControl for AndroidDeviceControl {
     ) -> Result<(), SimctlError> {
         // Multi-waypoint route requires Android emulator GPX/KML upload
         // via emu console `geo gpx`.
-        Err(SimctlError::NonZeroExit {
-            subcommand: "location_start".into(),
-            code: -1,
-            stderr: "Android multi-waypoint route deferred to a future cycle".into(),
-        })
+        Err(SimctlError::non_zero_exit("location_start", -1, "Android multi-waypoint route deferred to a future cycle"))
     }
 
     // === Permissions ===
@@ -305,18 +285,10 @@ impl DeviceControl for AndroidDeviceControl {
     async fn start_recording(&self, _serial: &str, _output_path: &Path) -> Result<(), SimctlError> {
         // `adb shell screenrecord /sdcard/sim.mp4` — runs on device,
         // max 3min default.
-        Err(SimctlError::NonZeroExit {
-            subcommand: "start_recording".into(),
-            code: -1,
-            stderr: "Android screenrecord wiring deferred to a future cycle".into(),
-        })
+        Err(SimctlError::non_zero_exit("start_recording", -1, "Android screenrecord wiring deferred to a future cycle"))
     }
 
     async fn stop_recording(&self) -> Result<(), SimctlError> {
-        Err(SimctlError::NonZeroExit {
-            subcommand: "stop_recording".into(),
-            code: -1,
-            stderr: "Android screenrecord wiring deferred to a future cycle".into(),
-        })
+        Err(SimctlError::non_zero_exit("stop_recording", -1, "Android screenrecord wiring deferred to a future cycle"))
     }
 }

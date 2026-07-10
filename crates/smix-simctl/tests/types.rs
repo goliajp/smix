@@ -47,12 +47,16 @@ fn simctl_error_display_includes_subcommand() {
     use smix_simctl::SimctlError;
     let e = SimctlError::NonZeroExit {
         subcommand: "boot".into(),
+        argv: vec!["boot".into(), "test-udid".into()],
         code: 5,
         stderr: "device not found".into(),
+        wall_ms: 42,
     };
     let s = format!("{e}");
     assert!(s.contains("boot"));
+    assert!(s.contains("test-udid"), "argv should appear in error: {s}");
     assert!(s.contains("5"));
+    assert!(s.contains("42ms"), "wall_ms should appear: {s}");
     assert!(s.contains("device not found"));
 
     let e = SimctlError::Timeout {

@@ -32,19 +32,37 @@ use tokio::time::sleep;
 
 /// Failure variants for any `xcrun simctl` invocation.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum SimctlError {
     /// Failed to spawn the `xcrun` process itself (PATH lookup / fork failure).
     #[error("spawn xcrun simctl failed: {0}")]
     Spawn(#[from] io::Error),
     /// `xcrun simctl <sub>` exited non-zero.
-    #[error("xcrun simctl {subcommand} exited {code}: {stderr}")]
+    ///
+    /// v1.0.7 §D2 — carries the full `argv` and `wall_ms` so the
+    /// `Display` impl surfaces every argument the consumer needs to
+    /// reproduce or file a precise upstream bug. Prior versions
+    /// reported only the subcommand name (e.g., `"spawn"`) without
+    /// telling the caller which binary or paths simctl was asked to
+    /// touch. See `.claude/rfcs/1.0.7-observability-layer.md` §D2.
+    #[error("xcrun simctl {} exited {code} ({wall_ms}ms): {stderr}", .argv.join(" "))]
     NonZeroExit {
         /// Subcommand name (e.g. `"boot"`, `"launch"`).
         subcommand: String,
+        /// Full argv passed to `xcrun simctl` (excludes the `xcrun
+        /// simctl` prefix itself; includes subcommand + all args).
+        ///
+        /// Since smix 1.0.7.
+        argv: Vec<String>,
         /// Exit code from `xcrun simctl`.
         code: i32,
         /// Captured stderr (truncated for log-friendliness).
         stderr: String,
+        /// Wall-clock milliseconds the invocation ran before failing.
+        ///
+        /// Since smix 1.0.7.
+        #[allow(dead_code)]
+        wall_ms: u64,
     },
     /// `xcrun simctl <sub>` exited 0 but stdout didn't match the expected shape.
     #[error("xcrun simctl {subcommand} returned malformed output: {detail}")]
@@ -74,6 +92,28 @@ pub enum SimctlError {
         /// Suggested minimum delay before the next attempt.
         retry_after: Duration,
     },
+}
+
+impl SimctlError {
+    /// v1.0.7 §D2 — synthetic `NonZeroExit` for callers translating
+    /// a foreign subprocess error into `SimctlError` (e.g.
+    /// AndroidDeviceControl adapting adb failures). Fills
+    /// `argv = [subcommand]` + `wall_ms = 0`; when the caller has a
+    /// real argv, prefer the struct literal.
+    pub fn non_zero_exit(
+        subcommand: impl Into<String>,
+        code: i32,
+        stderr: impl Into<String>,
+    ) -> Self {
+        let sub = subcommand.into();
+        Self::NonZeroExit {
+            argv: vec![sub.clone()],
+            subcommand: sub,
+            code,
+            stderr: stderr.into(),
+            wall_ms: 0,
+        }
+    }
 }
 
 /// Handle to an active `xcrun simctl io recordVideo` child process. Pair
@@ -210,6 +250,67 @@ pub struct LaunchResult {
     pub pid: u32,
 }
 
+// -------------------- v1.0.7 §D3 subprocess ring buffer -----------------
+
+/// v1.0.7 §D3 — recorded snapshot of one `xcrun simctl` invocation.
+/// Exposed so callers can dump the ring buffer for post-mortem when
+/// something upstream fails.
+#[derive(Clone, Debug)]
+pub struct SubprocessRecord {
+    /// argv as passed to `xcrun simctl` (excludes the `xcrun simctl`
+    /// prefix; first entry is the subcommand).
+    pub argv: Vec<String>,
+    /// Exit code; `None` when the process failed to spawn or the
+    /// output-capture path failed before recording the exit.
+    pub exit_code: Option<i32>,
+    /// Wall-clock milliseconds.
+    pub wall_ms: u64,
+    /// First 256 bytes of stderr (truncated).
+    pub stderr_head: String,
+    /// Wall-clock timestamp the invocation completed.
+    pub timestamp: std::time::SystemTime,
+}
+
+mod subprocess_ring {
+    use super::SubprocessRecord;
+    use std::collections::VecDeque;
+    use std::sync::{Mutex, OnceLock};
+
+    fn cell() -> &'static Mutex<VecDeque<SubprocessRecord>> {
+        static INSTANCE: OnceLock<Mutex<VecDeque<SubprocessRecord>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| Mutex::new(VecDeque::with_capacity(128)))
+    }
+
+    /// v1.0.7 §D3 — record one invocation. Ring buffer capped at 128
+    /// entries; oldest evicted on push.
+    pub(super) fn record(entry: SubprocessRecord) {
+        let mut g = match cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        if g.len() >= 128 {
+            g.pop_front();
+        }
+        g.push_back(entry);
+    }
+
+    /// Snapshot the current ring buffer. Ordered oldest → newest.
+    pub fn snapshot() -> Vec<SubprocessRecord> {
+        let g = match cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        g.iter().cloned().collect()
+    }
+}
+
+/// v1.0.7 §D3 — snapshot the process-wide ring buffer of recent
+/// `xcrun simctl` invocations. Ordered oldest → newest, capped at 128
+/// entries. Reset on process restart.
+pub fn recent_subprocesses() -> Vec<SubprocessRecord> {
+    subprocess_ring::snapshot()
+}
+
 // -------------------- raw spawn primitive --------------------------------
 
 /// Execute `xcrun simctl <args>` and capture stdout/stderr.
@@ -235,13 +336,32 @@ async fn simctl_capture_env(
     for (k, v) in env {
         cmd.env(k, v);
     }
+    let started = std::time::Instant::now();
     let output = cmd.output().await?;
+    let wall_ms = started.elapsed().as_millis() as u64;
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    // v1.0.7 §D3 — every simctl invocation records to the ring buffer
+    // regardless of exit status.
+    subprocess_ring::record(SubprocessRecord {
+        argv: args.iter().map(|s| s.to_string()).collect(),
+        exit_code: output.status.code(),
+        wall_ms,
+        stderr_head: {
+            let mut s = stderr.clone();
+            if s.len() > 256 {
+                s.truncate(256);
+            }
+            s
+        },
+        timestamp: std::time::SystemTime::now(),
+    });
     if !output.status.success() {
         return Err(SimctlError::NonZeroExit {
             subcommand: args.first().map(|s| s.to_string()).unwrap_or_default(),
+            argv: args.iter().map(|s| s.to_string()).collect(),
             code: output.status.code().unwrap_or(-1),
             stderr,
+            wall_ms,
         });
     }
     Ok((output.stdout, stderr))
@@ -454,7 +574,7 @@ impl SimctlClient {
     /// quoted token.
     pub async fn current_locale(&self, udid: &str) -> Result<Option<String>, SimctlError> {
         let out =
-            match simctl_run(&["spawn", udid, "defaults", "read", "-g", "AppleLanguages"]).await {
+            match simctl_run(&["spawn", udid, "/usr/bin/defaults", "read", "-g", "AppleLanguages"]).await {
                 Ok(s) => s,
                 // `defaults read` returns non-zero when the key is unset; that
                 // is a legitimate "no opinion" state, not an error.
@@ -650,10 +770,17 @@ impl SimctlClient {
         let documents = format!("{container}/Documents");
         let library = format!("{container}/Library");
         let tmp = format!("{container}/tmp");
+        // v1.0.7 §D1 — `xcrun simctl spawn <UDID> <cmd>` uses
+        // `posix_spawn` inside the sim OS; `<cmd>` must be an absolute
+        // path (no PATH resolution). Prior versions passed `"rm"` and
+        // hit `NSPOSIXErrorDomain code 2: No such file or directory`
+        // on iOS 17+ sims. `/bin/rm` is present on every stock sim
+        // image.
+        //
         // Best-effort: any missing subdir is fine (fresh app that never
         // wrote to that path). `rm -rf` treats absent targets as no-ops.
         simctl_run(&[
-            "spawn", udid, "rm", "-rf", &documents, &library, &tmp,
+            "spawn", udid, "/bin/rm", "-rf", &documents, &library, &tmp,
         ])
         .await?;
         Ok(())
@@ -906,8 +1033,10 @@ impl SimctlClient {
         if !status.success() {
             return Err(SimctlError::NonZeroExit {
                 subcommand: "pbcopy".into(),
+                argv: vec!["pbcopy".to_string()],
                 code: status.code().unwrap_or(-1),
                 stderr: String::new(),
+                wall_ms: 0,
             });
         }
         Ok(())
