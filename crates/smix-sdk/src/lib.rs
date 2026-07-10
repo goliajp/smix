@@ -1838,6 +1838,10 @@ fn simctl_to_failure(e: SimctlError) -> ExpectationFailure {
                 retry_after.as_millis()
             )),
         ),
+        // v1.0.7 §D2 — SimctlError is #[non_exhaustive]; a new variant
+        // arriving from a future patch falls through here as a generic
+        // driver error until we augment this map.
+        _ => (FailureCode::DriverError, None),
     };
     ExpectationFailure::new(FailureInit {
         code: Some(code),
