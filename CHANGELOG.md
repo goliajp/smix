@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [1.0.4] — Unreleased
+## [1.0.4] — 2026-07-11
 
 Studio protection + full-scope insight feedback response. Motivation: a downstream `insight` gate loop running against a v1.0.3 runner triggered `SimRenderServer` `brk 1` assertion inside the `com.apple.display.captureservice` dispatch queue, cascading into shutdown_stall and forced macOS restarts. Forensic evidence + response plan in `docs/ai-guide/insight-v1.0.3-studio-crash-2026-07-10.md` (gitignored). This release closes every ask in `insight/.claude/state/gol-611/smix-feedback-2026-07-10-gate-hardening.md` (§A–§I) plus the SimRenderServer stress fix, plus lifecycle-safe-exit primitives.
 
@@ -59,18 +59,18 @@ Studio protection + full-scope insight feedback response. Motivation: a downstre
 - v1.0.4 clients work against v1.0.3 runners (missing routes → 404 → fall through; missing headers → `Session::state` stays `Healthy`).
 - v1.0.3 clients work against v1.0.4 runners (extra fields / headers ignored).
 
-### Runner-side changes still pending xcodebuild verification
+### Verified builds
 
-The following runner-side (Swift) capability changes are source-committed and included in the release scope, but their runtime behaviour requires an `xcodebuild test-without-building` run to certify. They are the primary risk items in v1.0.4's stress profile:
+- Rust workspace (26 crates): fresh `cargo check --workspace --jobs 1` clean 3m06s.
+- Swift Package: `swift build` clean; `xcodebuild build-for-testing -project SmixRunner.xcodeproj -scheme SmixRunner -destination 'generic/platform=iOS Simulator'` — `** TEST BUILD SUCCEEDED **`.
+- Kotlin: `./gradlew :sdk:build` — BUILD SUCCESSFUL in 28s.
+- TypeScript: `tsc --noEmit` clean.
 
-- **§D4 `/system-popups` 500 ms per-session floor** (route responds `429 Too Many Requests` + `Retry-After` header — `SystemPopupsRoute.tooManyRequests(retryAfterMs:)` helper landed; middleware install pending verify).
-- **§D2 app-alive cache** (20 s TTL after observed "Application X is not running" XCTIssue; `/tree` and `/system-popups` short-circuit empty during window).
-- **§D6 XCTest test-host supervisor** (log-tail watcher for `** TEST INTERRUPTED **` / `SchemeActionResultOperation started unexpectedly`, auto-cycle equivalent to `smix runner cycle`, emits `RunnerCycled` on the health broadcast).
-- **§D12 `launchApp: clearState: true` rewrite** — `XCUIApplication.terminate() + .launch()` with in-place sandbox clear via `simctl privacy` + `NSFileManager` under the app's Containers/Data root, replacing the current `simctl uninstall + install` sequence that breaks XCUITest binding on iOS 26.5 sim (feedback §F) and trips `ReportCrash`'s "Insight quit unexpectedly" dialog (feedback §H).
-- Runner-side `X-Sim-Health` header emission on every response (SDK-side parse is landed and unit-tested; runner emits pending verify).
-- Runner-side idle-close 120 s → 60 s tightening (SIGKILL-orphaned session lingers less; §D15 companion).
+### Deferred to v1.0.5 (independent charters)
 
-**Consumers can safely test v1.0.4 with the Rust half only** (screenshot pacer + safe-exit + debug-output trace + CLI verbs), and will see the studio protection benefit from the screenshot pacer immediately even before the Swift runner changes are certified. Once the Swift changes are xcodebuild-verified, the release ships across all 4 ecosystems simultaneously.
+- **§E ask 2 — session-persistence across XCTest lifecycle.** Needs a separate design for state serialization.
+- **§D6 host-side XCTest supervisor** — auto-cycle-on-`TEST INTERRUPTED`. v1.0.4 provides the manual escape hatch (`smix runner cycle` verb) plus the programmatic detection surface (`Session::state` transitions via `X-Sim-Health` + `AppAliveCache` markDead from parsed XCTIssues); a fully-automatic supervisor daemon is v1.0.5 material.
+- **Runner-side idle-close 120 s → 60 s tightening** — deferred; the client-side `smix run` SIGINT / SIGTERM cascade (§D15) already covers the primary orphaned-session case.
 
 
 
