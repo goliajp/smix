@@ -591,6 +591,18 @@ public actor SmixRunnerServer {
     }
   }
 
+  /// v1.0.8 §D1 — /session/terminate-app / /session/launch-app outcome.
+  public struct SessionAppLifecycleOutcome: Sendable {
+    public let notFound: Bool
+    public let ok: Bool
+    public let wallMs: UInt64
+    public init(notFound: Bool, ok: Bool, wallMs: UInt64) {
+      self.notFound = notFound
+      self.ok = ok
+      self.wallMs = wallMs
+    }
+  }
+
   /// v1.0.5 §D1 — /session/list outcome.
   public struct SessionListOutcome: Sendable {
     public let sessions: [SessionRoute.SessionSummary]
@@ -622,6 +634,10 @@ public actor SmixRunnerServer {
     public let list: @Sendable () async -> SessionListOutcome
     /// v1.0.7 §D5 — invoked by `POST /diagnostic/dump`.
     public let diagnostic: @Sendable () async -> DiagnosticOutcome
+    /// v1.0.8 §D1 — invoked by `POST /session/terminate-app`.
+    public let terminateApp: @Sendable (SessionRoute.AppLifecycleRequest) async -> SessionAppLifecycleOutcome
+    /// v1.0.8 §D1 — invoked by `POST /session/launch-app`.
+    public let launchApp: @Sendable (SessionRoute.AppLifecycleRequest) async -> SessionAppLifecycleOutcome
     public init(
       open: @escaping @Sendable (SessionRoute.OpenRequest) async -> SessionOpenOutcome,
       close: @escaping @Sendable (SessionRoute.CloseRequest) async -> SessionCloseOutcome,
@@ -629,7 +645,9 @@ public actor SmixRunnerServer {
       closeAll: @escaping @Sendable () async -> SessionCloseAllOutcome,
       relaunchApp: @escaping @Sendable (SessionRoute.RelaunchRequest) async -> SessionRelaunchOutcome,
       list: @escaping @Sendable () async -> SessionListOutcome,
-      diagnostic: @escaping @Sendable () async -> DiagnosticOutcome
+      diagnostic: @escaping @Sendable () async -> DiagnosticOutcome,
+      terminateApp: @escaping @Sendable (SessionRoute.AppLifecycleRequest) async -> SessionAppLifecycleOutcome,
+      launchApp: @escaping @Sendable (SessionRoute.AppLifecycleRequest) async -> SessionAppLifecycleOutcome
     ) {
       self.open = open
       self.close = close
@@ -638,6 +656,8 @@ public actor SmixRunnerServer {
       self.relaunchApp = relaunchApp
       self.list = list
       self.diagnostic = diagnostic
+      self.terminateApp = terminateApp
+      self.launchApp = launchApp
     }
   }
 
@@ -855,6 +875,31 @@ public actor SmixRunnerServer {
       ) {
         let outcome = await handlers.diagnostic()
         return SessionRoute.diagnosticResponse(outcome.snapshot)
+      }
+    }
+    // v1.0.8 §D1 — POST /session/terminate-app + /session/launch-app
+    for (path, isTerminate) in [("POST /session/terminate-app", true), ("POST /session/launch-app", false)] {
+      let isTerm = isTerminate
+      await server.appendRoute(HTTPRoute(path)) { request in
+        let body: Data
+        do { body = try await request.bodyData }
+        catch { return SessionRoute.badRequest(reason: "failed to read body: \(error)") }
+        let req: SessionRoute.AppLifecycleRequest
+        do { req = try SessionRoute.decodeAppLifecycle(body) }
+        catch {
+          return SessionRoute.badRequest(reason: "\(error)")
+        }
+        return await Self.guardedResponse(
+          fallback: SessionRoute.appLifecycleResponse(ok: false, wallMs: 0)
+        ) {
+          let outcome = isTerm
+            ? await handlers.terminateApp(req)
+            : await handlers.launchApp(req)
+          if outcome.notFound {
+            return SessionRoute.notFound(reason: "unknown session id")
+          }
+          return SessionRoute.appLifecycleResponse(ok: outcome.ok, wallMs: outcome.wallMs)
+        }
       }
     }
     // v1.0.4 §D14 — POST /session/relaunch-app

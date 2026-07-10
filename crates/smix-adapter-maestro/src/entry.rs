@@ -652,6 +652,7 @@ fn summarize_step(step: &Step) -> String {
         Step::LaunchApp { app_id, .. } => format!("launchApp {app_id}"),
         Step::OpenLink(url) => format!("openLink {url}"),
         Step::StopApp => "stopApp".into(),
+        Step::ClearAppData => "clearAppData".into(),
         Step::Scroll => "scroll".into(),
         Step::HideKeyboard => "hideKeyboard".into(),
         Step::AssertNotVisible { .. } => "assertNotVisible".into(),

@@ -2286,6 +2286,52 @@ final class SmixRunnerUITests: XCTestCase {
               uptimeMs: uptimeMs
             )
           )
+        },
+        // v1.0.8 §D1 — cooperative XCUIApplication.terminate() via
+        // testmanagerd. Does NOT signal com.apple.ReportCrash — this
+        // is what makes the "Insight quit unexpectedly" dialog fix
+        // work. `simctl terminate` sends SIGKILL and triggers
+        // ReportCrash; XCUIApplication.terminate() is the graceful
+        // pathway. Paired with `launchApp` below via SDK-side
+        // orchestration + host-side simctl sandbox wipe.
+        terminateApp: { req in
+          let start = Date()
+          sessions.lock()
+          let entry = sessionTable[req.sessionId]
+          sessions.unlock()
+          guard let entry = entry else {
+            return SmixRunnerServer.SessionAppLifecycleOutcome(
+              notFound: true, ok: false, wallMs: 0
+            )
+          }
+          await SmixRunnerServer.onMain {
+            entry.app.terminate()
+          }
+          let wallMs = UInt64(Date().timeIntervalSince(start) * 1000)
+          return SmixRunnerServer.SessionAppLifecycleOutcome(
+            notFound: false, ok: true, wallMs: wallMs
+          )
+        },
+        // v1.0.8 §D1 — cooperative XCUIApplication.launch(). Fresh
+        // app instance sees whatever sandbox state exists when the
+        // SDK's host-side wipe (if any) completes before this call.
+        launchApp: { req in
+          let start = Date()
+          sessions.lock()
+          let entry = sessionTable[req.sessionId]
+          sessions.unlock()
+          guard let entry = entry else {
+            return SmixRunnerServer.SessionAppLifecycleOutcome(
+              notFound: true, ok: false, wallMs: 0
+            )
+          }
+          await SmixRunnerServer.onMain {
+            entry.app.launch()
+          }
+          let wallMs = UInt64(Date().timeIntervalSince(start) * 1000)
+          return SmixRunnerServer.SessionAppLifecycleOutcome(
+            notFound: false, ok: true, wallMs: wallMs
+          )
         }
       ),
       // v1.0.4 §D4 — per-session `/system-popups` 500 ms floor. Hard-

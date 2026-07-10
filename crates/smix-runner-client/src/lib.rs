@@ -260,7 +260,8 @@ impl OcrFrame {
 pub use smix_runner_wire::{
     FindRequest, FindResponse, HealthProcessInfo, HealthResponse, HealthTestHostInfo, IncludeScope,
     KeyboardStages, RecordEventsResponse, RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult,
-    RunnerScrollSelector, ScrollResponse, SessionCloseAllResponse, SessionCloseRequest,
+    RunnerScrollSelector, ScrollResponse, SessionAppLifecycleRequest,
+    SessionAppLifecycleResponse, SessionCloseAllResponse, SessionCloseRequest,
     SessionCloseResponse, SessionListResponse, SessionOpenRequest, SessionOpenResponse,
     SessionRelaunchAppRequest, SessionRelaunchAppResponse, SessionRenewActivationRequest,
     SessionRenewActivationResponse, SessionSummary, SimHealthWireState,
@@ -955,6 +956,31 @@ impl HttpRunnerClient {
     ) -> Result<smix_runner_wire::SessionListResponse, RunnerTransportError> {
         self.json_post("/session/list", &serde_json::json!({}), None)
             .await
+    }
+
+    /// v1.0.8 §D1 — `POST /session/terminate-app` — cooperative
+    /// `XCUIApplication.terminate()` on the session's cached binding
+    /// via testmanagerd (NOT `simctl terminate` SIGKILL). Does not
+    /// signal `com.apple.ReportCrash`. Paired with
+    /// [`Self::launch_session_app`] and a host-side
+    /// `SimctlClient::clear_app_sandbox` invocation to implement the
+    /// `Session::reset_app_data` orchestration that eliminates the
+    /// "Insight quit unexpectedly" system dialog.
+    pub async fn terminate_session_app(
+        &self,
+        req: &smix_runner_wire::SessionAppLifecycleRequest,
+    ) -> Result<smix_runner_wire::SessionAppLifecycleResponse, RunnerTransportError> {
+        self.json_post("/session/terminate-app", req, None).await
+    }
+
+    /// v1.0.8 §D1 — `POST /session/launch-app` — cooperative
+    /// `XCUIApplication.launch()` on the session's cached binding.
+    /// Companion of [`Self::terminate_session_app`].
+    pub async fn launch_session_app(
+        &self,
+        req: &smix_runner_wire::SessionAppLifecycleRequest,
+    ) -> Result<smix_runner_wire::SessionAppLifecycleResponse, RunnerTransportError> {
+        self.json_post("/session/launch-app", req, None).await
     }
 
     /// v1.0.7 §D5 — `POST /diagnostic/dump` — one-shot post-mortem

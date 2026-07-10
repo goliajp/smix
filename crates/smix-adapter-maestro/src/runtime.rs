@@ -263,6 +263,18 @@ pub trait AppLike: Send + Sync {
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure>;
     /// Capture a screenshot. Mirrors [`App::screenshot`] — v5.2 c1.
     async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure>;
+    /// v1.0.8 §D2 — session-scoped in-place data clear. Default
+    /// impl errors — the real path is only meaningful when a session
+    /// is open and the driver is iOS + host has SimctlClient access.
+    /// The `App` impl overrides with the full three-step
+    /// orchestration.
+    async fn clear_app_data(&self) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "AppLike::clear_app_data not implemented on this backend".to_string(),
+            ..Default::default()
+        }))
+    }
     /// v1.0.4 §D11 — snapshot the runner's a11y tree. Mirrors
     /// [`App::tree`]. Used by `write_step_debug` to persist
     /// `step-<N>-fail.tree.json` alongside the fail PNG. Default impl
@@ -461,6 +473,9 @@ impl AppLike for App {
     async fn tree(&self) -> Result<smix_sdk::A11yNode, ExpectationFailure> {
         App::tree(self).await
     }
+    async fn clear_app_data(&self) -> Result<(), ExpectationFailure> {
+        App::clear_app_data(self).await.map(|_wall_ms| ())
+    }
     async fn set_clipboard(&self, text: &str) -> Result<(), ExpectationFailure> {
         App::set_clipboard(self, text).await
     }
@@ -638,6 +653,7 @@ fn summarize_step_verb(step: &Step) -> String {
     match step {
         Step::LaunchApp { .. } => "launchApp",
         Step::StopApp => "stopApp",
+        Step::ClearAppData => "clearAppData",
         Step::KillApp { .. } => "killApp",
         Step::TapOn { .. } => "tapOn",
         Step::TapAtPoint { .. } => "tapAtPoint",
@@ -1349,6 +1365,19 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::KillApp { app_id } => {
                 self.app.terminate(app_id).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::ClearAppData => {
+                // v1.0.8 §D2 — session-scoped in-place data clear.
+                // Orchestrates: runner cooperative terminate + host
+                // sandbox wipe + runner cooperative launch. Preserves
+                // XCUITest binding and does not signal ReportCrash.
+                //
+                // Requires a session to be open (Rust adapter runs
+                // through Session-Id from `smix run` auto-session
+                // path). AppLike's `clear_app_data` on the trait
+                // routes through to the SDK Session::reset_app_data.
+                self.app.clear_app_data().await?;
                 Ok(RunStepReport::Ok)
             }
             Step::ClearState { app_id } => {

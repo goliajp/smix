@@ -222,6 +222,25 @@ public enum SessionRoute {
     return envelope(.ok, body)
   }
 
+  // -- v1.0.8 §D1 terminate-app / launch-app -----------------------------
+
+  public struct AppLifecycleRequest: Equatable, Sendable {
+    public let sessionId: String
+    public init(sessionId: String) {
+      self.sessionId = sessionId
+    }
+  }
+
+  public static func decodeAppLifecycle(_ body: Data) throws -> AppLifecycleRequest {
+    let close = try decodeClose(body)
+    return AppLifecycleRequest(sessionId: close.sessionId)
+  }
+
+  public static func appLifecycleResponse(ok: Bool, wallMs: UInt64) -> HTTPResponse {
+    let body = Data(#"{"ok":\#(ok),"wallMs":\#(wallMs)}"#.utf8)
+    return envelope(.ok, body)
+  }
+
   // -- shared error responses --------------------------------------------
 
   public static func notFound(reason: String) -> HTTPResponse {

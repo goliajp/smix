@@ -616,6 +616,33 @@ pub struct SessionRelaunchAppResponse {
     pub wall_ms: u64,
 }
 
+/// v1.0.8 §D1 — request body shared by `POST /session/terminate-app`
+/// and `POST /session/launch-app`. Both endpoints take just the
+/// session id.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionAppLifecycleRequest {
+    /// Session whose cached `XCUIApplication` binding will be acted on.
+    pub session_id: String,
+}
+
+/// v1.0.8 §D1 — response for `POST /session/terminate-app` and
+/// `POST /session/launch-app`. Runner reports wall time for
+/// observability; the whole point of splitting terminate + launch
+/// from `/session/relaunch-app` is to let the SDK insert a
+/// host-side `SimctlClient::clear_app_sandbox` call between them,
+/// eliminating the "Insight quit unexpectedly" ReportCrash dialog
+/// that even v1.0.4 §D12's in-place `simctl` wipe still tripped.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionAppLifecycleResponse {
+    /// True on success.
+    pub ok: bool,
+    /// Wall-clock milliseconds the terminate or launch took.
+    #[serde(default)]
+    pub wall_ms: u64,
+}
+
 /// v1.0.5 §D1 — one entry in `POST /session/list` response.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
