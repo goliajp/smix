@@ -535,6 +535,33 @@ impl Session {
         )
     }
 
+    /// v1.0.5 §D1 — probe the runner's `/session/list` and return
+    /// `true` iff this session's id is still known. Consumers wire
+    /// this after a `Session::state` transition to `Cycling` or `Dead`
+    /// to decide whether to keep using the session (still valid across
+    /// the cycle thanks to §D1 persistence) or reopen a fresh one.
+    ///
+    /// Runner errors return `Err` — treat as "unknown"; consumers
+    /// typically bail on that path anyway.
+    pub async fn still_valid(&self) -> Result<bool, ExpectationFailure> {
+        let app = self.app();
+        let runner = app.http_runner_client().ok_or_else(|| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: "session still_valid: driver has no HTTP runner client".into(),
+                ..Default::default()
+            })
+        })?;
+        let resp = runner.list_sessions().await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("session still_valid: {e}"),
+                ..Default::default()
+            })
+        })?;
+        Ok(resp.sessions.iter().any(|s| s.session_id == self.session_id))
+    }
+
     /// v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
     /// the session's cached `XCUIApplication` in place. Preserves the
     /// session id and XCUITest binding. Consumers wire this after
