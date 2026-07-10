@@ -379,12 +379,45 @@ pub fn up_with_options(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(300);
-    println!(
-        "runner starting: udid={udid} port={port} pid={pid} (log: {}, timeout {timeout_secs}s)",
-        log.display()
-    );
+    // v1.0.7 §D7 — detect cold vs warm rebuild by inspecting whether
+    // the per-udid derived-data dir is already populated. Cold rebuilds
+    // after a version bump can take 5-10 min (full swift stdlib copy +
+    // linker + code sign). Print an explicit banner so consumers know
+    // to budget the wait and don't spawnSync timeout too aggressively.
+    let derived_dir = root.join(format!(".smix/runner/derived-data-{udid}"));
+    let is_cold = !derived_dir.is_dir()
+        || std::fs::read_dir(&derived_dir)
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(true);
+    if is_cold {
+        println!(
+            "runner starting: udid={udid} port={port} pid={pid} \
+             — COLD REBUILD expected up to 10 minutes (first run after \
+             upgrade compiles the XCUITest bundle for smix {}). \
+             Log: {}. Timeout {timeout_secs}s.",
+            env!("CARGO_PKG_VERSION"),
+            log.display()
+        );
+    } else {
+        println!(
+            "runner starting: udid={udid} port={port} pid={pid} \
+             (warm rebuild ~3 s expected; log {}, timeout {timeout_secs}s)",
+            log.display()
+        );
+    }
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    // v1.0.7 §D7 — heartbeat every 30 s during a cold rebuild so
+    // consumers watching stdout see progress instead of a stall.
+    let started_at = std::time::Instant::now();
+    let mut last_heartbeat = started_at;
     while std::time::Instant::now() < deadline {
+        if is_cold && last_heartbeat.elapsed() >= std::time::Duration::from_secs(30) {
+            let elapsed_s = started_at.elapsed().as_secs();
+            println!("runner up: xcodebuild still working ({elapsed_s}s elapsed)");
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+            last_heartbeat = std::time::Instant::now();
+        }
         if let Ok(Some(status)) = child.try_wait() {
             let _ = std::fs::remove_file(state_path(root));
             return Err(format!(
@@ -727,7 +760,13 @@ pub fn supervise(
                     storm_window
                 ));
             }
-            println!(
+            // v1.0.7 §D6 — flush after every JSON event so consumers
+            // parsing supervisor stdout see the event immediately even
+            // when the outer flow crashes fast right after.
+            use std::io::Write;
+            let mut out = std::io::stdout().lock();
+            let _ = writeln!(
+                out,
                 r#"{{"event":"RunnerCycled","reasonMatched":{:?},"atMs":{}}}"#,
                 line.trim(),
                 std::time::SystemTime::now()
@@ -735,6 +774,7 @@ pub fn supervise(
                     .map(|d| d.as_millis())
                     .unwrap_or(0)
             );
+            let _ = out.flush();
             match cycle(root, port, runner_project) {
                 Ok(()) => {
                     cycle_times.push(now);

@@ -136,6 +136,40 @@ public enum SessionRoute {
     return envelope(.ok, body)
   }
 
+  // -- v1.0.7 §D5 diagnostic dump ----------------------------------------
+
+  public struct DiagnosticSnapshot: Sendable {
+    public let sessions: [SessionSummary]
+    public let simHealth: String
+    public let supervisorPid: UInt32?
+    public let uptimeMs: UInt64
+    public init(
+      sessions: [SessionSummary],
+      simHealth: String,
+      supervisorPid: UInt32?,
+      uptimeMs: UInt64
+    ) {
+      self.sessions = sessions
+      self.simHealth = simHealth
+      self.supervisorPid = supervisorPid
+      self.uptimeMs = uptimeMs
+    }
+  }
+
+  public static func diagnosticResponse(_ snap: DiagnosticSnapshot) -> HTTPResponse {
+    var s = #"{"recentSubprocesses":[],"sessions":["#
+    for (i, entry) in snap.sessions.enumerated() {
+      if i > 0 { s += "," }
+      let sid = jsonEscape(entry.sessionId)
+      let bid = jsonEscape(entry.bundleId)
+      s += #"{"sessionId":""# + sid + #"","bundleId":""# + bid + #"","openedAtMs":\#(entry.openedAtMs),"lastActivatedAtMs":\#(entry.lastActivatedAtMs)}"#
+    }
+    let health = jsonEscape(snap.simHealth)
+    let sup = snap.supervisorPid.map { String($0) } ?? "null"
+    s += #"],"simHealth":""# + health + #"","supervisorPid":\#(sup),"uptimeMs":\#(snap.uptimeMs)}"#
+    return envelope(.ok, Data(s.utf8))
+  }
+
   // -- v1.0.5 §D1 list ---------------------------------------------------
 
   public struct SessionSummary: Equatable, Sendable {

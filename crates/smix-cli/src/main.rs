@@ -97,6 +97,14 @@ struct Cli {
 enum Cmd {
     /// Probe environment health: xcrun simctl availability + sim listing.
     Doctor,
+    /// v1.0.7 — runtime observability commands. `dump` pretty-prints
+    /// the runner's recent subprocess ring buffer + open sessions +
+    /// sim health so a failed flow can be diagnosed without a new
+    /// smix patch.
+    Diagnostic {
+        #[command(subcommand)]
+        action: DiagnosticAction,
+    },
     /// Manage simulators. `<DEVICE>` = explicit UDID, or an alias / deviceName
     /// recorded in .smix/sims.json (env SMIX_SIMS_JSON overrides discovery).
     Sim {
@@ -774,6 +782,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
     let simctl = SimctlClient::new();
     match cli.cmd {
         Cmd::Doctor => cmd_doctor(&simctl).await?,
+        Cmd::Diagnostic { action } => cmd_diagnostic(action).await?,
         Cmd::Sim { action } => match action {
             SimAction::List { json } => cmd_sim_list(&simctl, json).await?,
             SimAction::Resolve { device } => {
@@ -1625,6 +1634,117 @@ async fn cmd_sim_exec(device: &str, verb: &str, args: &[String]) -> Result<ExitC
         .args(&argv)
         .exec();
     Err(CliError::Other(format!("exec xcrun simctl: {err}")))
+}
+
+#[derive(Subcommand, Debug)]
+enum DiagnosticAction {
+    /// v1.0.7 §D4 — pretty-print the runner's runtime observability
+    /// snapshot: recent subprocess argvs + exit codes + timings, open
+    /// sessions, sim-health state, supervisor pid, uptime. Calls
+    /// `POST /diagnostic/dump` on the runner. When the runner is too
+    /// old (v1.0.6 and earlier), falls back to the client-side ring
+    /// buffer only.
+    Dump {
+        /// JSON output instead of the human table.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+}
+
+async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
+    match action {
+        DiagnosticAction::Dump { json } => {
+            let port = runner_port();
+            let client = smix_runner_client::HttpRunnerClient::new(port);
+            let resp = match client.diagnostic_dump().await {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!(
+                        "warning: /diagnostic/dump unreachable ({e}); \
+                         showing client-side ring buffer only"
+                    );
+                    smix_runner_wire::DiagnosticDumpResponse::default()
+                }
+            };
+            let client_side = smix_simctl::recent_subprocesses();
+
+            if json {
+                let payload = serde_json::json!({
+                    "runner": resp,
+                    "clientSubprocesses": client_side.iter().map(|r| serde_json::json!({
+                        "argv": r.argv,
+                        "exitCode": r.exit_code,
+                        "wallMs": r.wall_ms,
+                        "stderrHead": r.stderr_head,
+                        "timestampMs": r.timestamp.duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64).unwrap_or(0),
+                    })).collect::<Vec<_>>(),
+                });
+                println!("{}", serde_json::to_string_pretty(&payload).unwrap_or_default());
+                return Ok(());
+            }
+
+            println!("=== runner runtime snapshot ===");
+            println!("uptime:         {}ms", resp.uptime_ms);
+            println!("sim health:     {}", resp.sim_health);
+            if let Some(pid) = resp.supervisor_pid {
+                println!("supervisor pid: {pid}");
+            } else {
+                println!("supervisor pid: (none)");
+            }
+            println!();
+            println!("=== open sessions ({}) ===", resp.sessions.len());
+            for s in &resp.sessions {
+                println!(
+                    "  {:<38} {:<40} openedAtMs={} lastActivatedAtMs={}",
+                    s.session_id, s.bundle_id, s.opened_at_ms, s.last_activated_at_ms
+                );
+            }
+            println!();
+            println!(
+                "=== runner-side subprocesses (last {} of {}) ===",
+                resp.recent_subprocesses.len().min(20),
+                resp.recent_subprocesses.len(),
+            );
+            for r in resp.recent_subprocesses.iter().rev().take(20) {
+                let code = r.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "-".into());
+                let head = if r.stderr_head.is_empty() {
+                    String::new()
+                } else {
+                    format!(" err={:?}", r.stderr_head)
+                };
+                println!(
+                    "  {:>13}ms  code={:>3}  {}{}",
+                    r.wall_ms,
+                    code,
+                    r.argv.join(" "),
+                    head
+                );
+            }
+            println!();
+            println!(
+                "=== client-side subprocesses (last {} of {}) ===",
+                client_side.len().min(20),
+                client_side.len(),
+            );
+            for r in client_side.iter().rev().take(20) {
+                let code = r.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "-".into());
+                let head = if r.stderr_head.is_empty() {
+                    String::new()
+                } else {
+                    format!(" err={:?}", r.stderr_head)
+                };
+                println!(
+                    "  {:>13}ms  code={:>3}  simctl {}{}",
+                    r.wall_ms,
+                    code,
+                    r.argv.join(" "),
+                    head
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn cmd_doctor(simctl: &SimctlClient) -> Result<(), CliError> {

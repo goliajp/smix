@@ -2,7 +2,41 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [1.0.6] — 2026-07-11
+## [1.0.7] — 2026-07-11
+
+Systemic observability + subprocess integrity. RFC `.claude/rfcs/1.0.7-observability-layer.md`. Response to `smix-feedback-2026-07-11-v1.0.5-followup.md` items A, B, D.3 — three feedback points share one root cause: smix is opaque about its own runtime.
+
+### Subprocess integrity (RFC §D1 + D2)
+
+- **`SimctlClient::clear_app_sandbox` uses `/bin/rm`** (not `"rm"`). `xcrun simctl spawn <UDID> <cmd>` uses `posix_spawn` inside the sim; PATH resolution is NOT run, so a bare command name fails `NSPOSIXErrorDomain code 2: No such file or directory` on iOS 17+ sims. This is the direct root cause of insight's v1.0.5 §B ENOENT failure on `launchApp: clearState: true` mid-flow. `current_locale` + `set_locale` similarly use `/usr/bin/defaults`.
+- **`SimctlError::NonZeroExit` extended with `argv: Vec<String>` + `wall_ms: u64`**. Display impl now surfaces every arg simctl was asked to run — `xcrun simctl spawn <UDID> /bin/rm -rf /Users/.../Documents ... exited 2 (312ms): ...` — instead of just the subcommand name. Consumers reading the error know exactly what smix asked simctl to do.
+- `SimctlError` marked `#[non_exhaustive]`; `SimctlError::non_zero_exit(sub, code, stderr)` helper for callers translating foreign errors.
+
+### Observability surface (RFC §D3 + D4 + D5)
+
+- **Ring buffer of recent `simctl` invocations** (capped 128; oldest evicted). Public accessor `smix_simctl::recent_subprocesses() -> Vec<SubprocessRecord>` — `argv`, `exit_code`, `wall_ms`, `stderr_head` (first 256 bytes), `timestamp`.
+- **`POST /diagnostic/dump`** runner-side route — snapshot of `{ sessions, simHealth, supervisorPid, uptimeMs, recentSubprocesses }`.
+- **`smix diagnostic dump [--json]`** CLI verb — calls `/diagnostic/dump` on the runner, merges with the client-side ring, pretty-prints a runtime post-mortem view. `--json` for CI consumption. Legacy runners (v1.0.6-) return 404; CLI degrades gracefully to client-side ring only.
+- `HttpRunnerClient::diagnostic_dump()` Rust client method.
+
+### Streaming discipline (RFC §D6)
+
+- **`smix runner supervise` flushes stdout after every `RunnerCycled` JSON event**. Fixes insight §D.3 — supervisor events reach the consumer's parser even when the outer flow crashes fast right after a cycle.
+
+### Cold-rebuild progress banner (RFC §D7)
+
+- **`smix runner up` prints an explicit cold vs warm banner**. Detects warm by checking `.smix/runner/derived-data-<UDID>/` presence + populated. Cold path prints `COLD REBUILD expected up to 10 minutes` and emits a `xcodebuild still working (Ns elapsed)` heartbeat every 30 s. Warm path prints `warm rebuild ~3 s expected`. Fixes insight §A (their `spawnSync` timeout=300s tripped during cold recompile after version bump; they bumped to 600 s but had no visible progress signal).
+
+### Related regression fix
+
+- `smix-sdk/tests/launch_fresh_plan.rs` was pre-v1.0.4; asserted `Uninstall+Install` on the default clear_state path. v1.0.4 §D12 flipped the default to in-place (`Terminate + PrivacyResetAll + SandboxClearInPlace + Launch`); tests updated to match shipping behaviour. Force-reinstall path exercised via `plan_launch_fresh_calls_v2(true)`.
+
+### Wire + ABI compatibility
+
+- All wire additions additive. `POST /diagnostic/dump` on runners < v1.0.7 returns 404; CLI degrades gracefully.
+- `SimctlError` is `#[non_exhaustive]`; construction sites updated to fill new fields via `non_zero_exit` helper.
+
+
 
 Sidecar supervise + symmetric down-cascade + rust 1.97 baseline. Follow-up to v1.0.5 folding the supervisor's spawn-and-teardown into the runner lifecycle so consumers who want automatic `TEST INTERRUPTED` recovery just add `--supervise` to their existing `smix runner up`. RFC `.claude/rfcs/1.0.6-supervise-sidecar-and-runner-down-cascade.md`.
 

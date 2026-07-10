@@ -263,7 +263,8 @@ pub use smix_runner_wire::{
     RunnerScrollSelector, ScrollResponse, SessionCloseAllResponse, SessionCloseRequest,
     SessionCloseResponse, SessionListResponse, SessionOpenRequest, SessionOpenResponse,
     SessionRelaunchAppRequest, SessionRelaunchAppResponse, SessionRenewActivationRequest,
-    SessionRenewActivationResponse, SessionSummary, SimHealthWireState, SystemPopup,
+    SessionRenewActivationResponse, SessionSummary, SimHealthWireState,
+    DiagnosticDumpResponse, SubprocessRecord as WireSubprocessRecord, SystemPopup,
     SystemPopupActionRequest, SystemPopupActionResponse, SystemPopupButton, SystemPopupsResponse,
     TapAtNormCoordRequest, TapMode, TapRequest, TapResult, TapStages,
 };
@@ -953,6 +954,21 @@ impl HttpRunnerClient {
         &self,
     ) -> Result<smix_runner_wire::SessionListResponse, RunnerTransportError> {
         self.json_post("/session/list", &serde_json::json!({}), None)
+            .await
+    }
+
+    /// v1.0.7 §D5 — `POST /diagnostic/dump` — one-shot post-mortem
+    /// snapshot of the runner's runtime state. Bundles the recent
+    /// subprocess ring buffer, open sessions, sim-health state,
+    /// supervisor pid, and uptime. `smix diagnostic dump` calls this
+    /// then pretty-prints.
+    ///
+    /// Legacy runners (v1.0.6 and earlier) return 404; consumers can
+    /// gracefully fall back to the client-side ring buffer only.
+    pub async fn diagnostic_dump(
+        &self,
+    ) -> Result<smix_runner_wire::DiagnosticDumpResponse, RunnerTransportError> {
+        self.json_post("/diagnostic/dump", &serde_json::json!({}), None)
             .await
     }
 

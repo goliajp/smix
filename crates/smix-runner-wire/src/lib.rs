@@ -643,6 +643,55 @@ pub struct SessionListResponse {
     pub sessions: Vec<SessionSummary>,
 }
 
+/// v1.0.7 §D3 — one entry in the subprocess ring buffer.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubprocessRecord {
+    /// argv passed to the invoked binary.
+    pub argv: Vec<String>,
+    /// Exit code; `None` when the process failed to spawn.
+    #[serde(default)]
+    pub exit_code: Option<i32>,
+    /// Wall-clock milliseconds.
+    #[serde(default)]
+    pub wall_ms: u64,
+    /// First 256 bytes of stderr.
+    #[serde(default)]
+    pub stderr_head: String,
+    /// Epoch millis when the invocation completed.
+    #[serde(default)]
+    pub timestamp_ms: u64,
+}
+
+/// `POST /diagnostic/dump` response body (v1.0.7 §D5).
+///
+/// Snapshot of the runner's runtime state: recent subprocess
+/// invocations, currently-open sessions, sim health state, supervisor
+/// pid. Consumers dump this after a failed flow to get post-mortem
+/// visibility without needing a new patch for each failure mode.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticDumpResponse {
+    /// Recent `xcrun simctl` invocations recorded by the runner's
+    /// subprocess ring buffer. Ordered oldest → newest, capped at 128.
+    #[serde(default)]
+    pub recent_subprocesses: Vec<SubprocessRecord>,
+    /// Every session currently known to the runner (mirrors
+    /// `/session/list`; embedded here for one-shot dump).
+    #[serde(default)]
+    pub sessions: Vec<SessionSummary>,
+    /// Coarse sim-health classification at dump time.
+    #[serde(default)]
+    pub sim_health: String,
+    /// Pid of the supervisor sidecar, when spawned via
+    /// `smix runner up --supervise` (v1.0.6 §D1).
+    #[serde(default)]
+    pub supervisor_pid: Option<u32>,
+    /// Runner wall-clock uptime in milliseconds.
+    #[serde(default)]
+    pub uptime_ms: u64,
+}
+
 /// v1.0.4 §D7 — Session state exposed to SDK consumers via the
 /// `X-Sim-Health` response header on every runner response.
 ///
