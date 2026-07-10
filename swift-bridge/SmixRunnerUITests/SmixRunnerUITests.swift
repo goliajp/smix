@@ -1002,6 +1002,9 @@ final class SmixRunnerUITests: XCTestCase {
     let resolvedPort = RunnerPortResolver.resolve(
       env: ProcessInfo.processInfo.environment
     )
+    // v1.0.7 §D5 — mark boot time so `/diagnostic/dump` can report
+    // runner uptime.
+    let bootAt: Date = Date()
     let server = SmixRunnerServer()
 
     // v1.0.5 §D3 — background idle-close sweep. Detached task lives
@@ -2257,6 +2260,32 @@ final class SmixRunnerUITests: XCTestCase {
           }
           sessions.unlock()
           return SmixRunnerServer.SessionListOutcome(sessions: summaries)
+        },
+        // v1.0.7 §D5 — diagnostic snapshot. Runner side does not
+        // shell out to `simctl` (that's the CLI process); recent
+        // subprocesses stay empty on this side, and the CLI merges
+        // its own client-side ring on top when it prints.
+        diagnostic: {
+          sessions.lock()
+          let summaries: [SessionRoute.SessionSummary] = sessionTable.map { (sid, entry) in
+            let ms = UInt64(entry.lastActivatedAt.timeIntervalSince1970 * 1000)
+            return SessionRoute.SessionSummary(
+              sessionId: sid,
+              bundleId: entry.bundleId,
+              openedAtMs: ms,
+              lastActivatedAtMs: ms
+            )
+          }
+          sessions.unlock()
+          let uptimeMs = UInt64(Date().timeIntervalSince(bootAt) * 1000)
+          return SmixRunnerServer.DiagnosticOutcome(
+            snapshot: SessionRoute.DiagnosticSnapshot(
+              sessions: summaries,
+              simHealth: "healthy",
+              supervisorPid: nil,
+              uptimeMs: uptimeMs
+            )
+          )
         }
       ),
       // v1.0.4 §D4 — per-session `/system-popups` 500 ms floor. Hard-

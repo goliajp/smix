@@ -599,6 +599,14 @@ public actor SmixRunnerServer {
     }
   }
 
+  /// v1.0.7 §D5 — /diagnostic/dump outcome.
+  public struct DiagnosticOutcome: Sendable {
+    public let snapshot: SessionRoute.DiagnosticSnapshot
+    public init(snapshot: SessionRoute.DiagnosticSnapshot) {
+      self.snapshot = snapshot
+    }
+  }
+
   /// v1.0.3 — session lifecycle handlers. Triple bundled (vs three
   /// independent typealiases) because they share the session-table state
   /// in the UITest target. v1.0.4 extends with close-all + relaunch-app.
@@ -612,13 +620,16 @@ public actor SmixRunnerServer {
     public let relaunchApp: @Sendable (SessionRoute.RelaunchRequest) async -> SessionRelaunchOutcome
     /// v1.0.5 §D1 — invoked by `POST /session/list`.
     public let list: @Sendable () async -> SessionListOutcome
+    /// v1.0.7 §D5 — invoked by `POST /diagnostic/dump`.
+    public let diagnostic: @Sendable () async -> DiagnosticOutcome
     public init(
       open: @escaping @Sendable (SessionRoute.OpenRequest) async -> SessionOpenOutcome,
       close: @escaping @Sendable (SessionRoute.CloseRequest) async -> SessionCloseOutcome,
       renew: @escaping @Sendable (SessionRoute.RenewRequest) async -> SessionRenewOutcome,
       closeAll: @escaping @Sendable () async -> SessionCloseAllOutcome,
       relaunchApp: @escaping @Sendable (SessionRoute.RelaunchRequest) async -> SessionRelaunchOutcome,
-      list: @escaping @Sendable () async -> SessionListOutcome
+      list: @escaping @Sendable () async -> SessionListOutcome,
+      diagnostic: @escaping @Sendable () async -> DiagnosticOutcome
     ) {
       self.open = open
       self.close = close
@@ -626,6 +637,7 @@ public actor SmixRunnerServer {
       self.closeAll = closeAll
       self.relaunchApp = relaunchApp
       self.list = list
+      self.diagnostic = diagnostic
     }
   }
 
@@ -830,6 +842,19 @@ public actor SmixRunnerServer {
       ) {
         let outcome = await handlers.list()
         return SessionRoute.listResponse(outcome.sessions)
+      }
+    }
+    // v1.0.7 §D5 — POST /diagnostic/dump
+    await server.appendRoute("POST /diagnostic/dump") { _ in
+      return await Self.guardedResponse(
+        fallback: SessionRoute.diagnosticResponse(
+          SessionRoute.DiagnosticSnapshot(
+            sessions: [], simHealth: "unknown", supervisorPid: nil, uptimeMs: 0
+          )
+        )
+      ) {
+        let outcome = await handlers.diagnostic()
+        return SessionRoute.diagnosticResponse(outcome.snapshot)
       }
     }
     // v1.0.4 §D14 — POST /session/relaunch-app
