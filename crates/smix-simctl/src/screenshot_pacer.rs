@@ -4,7 +4,7 @@
 // triggers `brk 1` inside `SimRenderServer`'s
 // `com.apple.display.captureservice` dispatch queue on iOS 26.5.2
 // (25F84) with SimRenderServer 1051.55. See
-// `docs/rfcs/1.0.4-sim-health-and-backpressure.md` §D3 and
+// `.claude/rfcs/1.0.4-sim-health-and-backpressure.md` §D3 and
 // `docs/ai-guide/insight-v1.0.3-studio-crash-2026-07-10.md` for the
 // forensic evidence.
 //

@@ -1,4 +1,10 @@
 .claude/
+# .claude/rfcs/ is the tracked exception — process docs (RFCs) belong under
+# .claude/ (not docs/, which is the public-facing surface), but the RFCs
+# themselves are versioned alongside the code so consumers reading the
+# repo can see the design decisions.
+!.claude/rfcs/
+!.claude/rfcs/**
 .DS_Store
 
 # Non-public draft docs and internal patch notes.
