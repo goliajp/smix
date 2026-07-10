@@ -309,10 +309,34 @@ pub fn focused() -> Selector {
 /// so the plan is testable as a pure function (no `SimctlClient` stub
 /// — and a stub wouldn't help much since `SimctlClient` is a ZST).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LaunchFreshOp {
+    /// `simctl terminate` on the target — clean SIGTERM, no crash-report
+    /// daemon interpretation.
     Terminate,
+    /// `simctl uninstall` on the target. As of v1.0.4 §D12 this is
+    /// used only when `SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1` is set;
+    /// the default clear-state path uses [`SandboxClearInPlace`] to
+    /// avoid the iOS 26.5 XCUITest binding loss (feedback §F) and
+    /// ReportCrash "Insight quit unexpectedly" dialog (feedback §H).
     Uninstall,
+    /// `simctl install <path>` — reinstalls the .app bundle. Same
+    /// v1.0.4 §D12 note as [`Uninstall`]: only used on the
+    /// force-reinstall path.
     Install(String),
+    /// `simctl privacy reset all` — wipes granted permissions
+    /// without touching the app's data. Companion to
+    /// [`SandboxClearInPlace`]; both make up the default in-place
+    /// clear-state path.
+    ///
+    /// Since smix 1.0.4.
+    PrivacyResetAll,
+    /// v1.0.4 §D12 — wipe the app's sandbox
+    /// (`Documents/`, `Library/`, `tmp/`) via NSFileManager
+    /// on the running sim, without `simctl uninstall`. Preserves
+    /// the XCUITest binding (fixes feedback §F) and does not trip
+    /// ReportCrash (fixes feedback §H). Argument is the target bundle-id.
+    SandboxClearInPlace(String),
     KeychainReset,
     Launch,
 }
@@ -334,21 +358,68 @@ pub fn plan_launch_fresh_calls(
     clear_keychain: bool,
     app_path: Option<&str>,
 ) -> (Vec<LaunchFreshOp>, Vec<String>) {
+    plan_launch_fresh_calls_v2(clear_state, clear_keychain, app_path, false)
+}
+
+/// v1.0.4 §D12 — extended planner with an explicit `force_reinstall`
+/// switch. When `false` (the new default), `clear_state=true` runs
+/// the in-place sandbox clear + privacy reset instead of
+/// `simctl uninstall + install`. This avoids the iOS 26.5 XCUITest
+/// binding loss (feedback §F) and the ReportCrash "Insight quit
+/// unexpectedly" system dialog (feedback §H) — both of which stem
+/// from the uninstall+install sequence.
+///
+/// When `force_reinstall=true` (opt-in via
+/// `SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1`), the pre-v1.0.4 path is
+/// preserved for cases where a bit-for-bit reinstall is required.
+///
+/// Since smix 1.0.4.
+#[must_use]
+pub fn plan_launch_fresh_calls_v2(
+    clear_state: bool,
+    clear_keychain: bool,
+    app_path: Option<&str>,
+    force_reinstall: bool,
+) -> (Vec<LaunchFreshOp>, Vec<String>) {
+    // Terminate is always first — clean SIGTERM before any wipe.
     let mut ops = vec![LaunchFreshOp::Terminate];
     let mut warnings = Vec::new();
-    match (clear_state, app_path) {
-        (true, Some(path)) => {
-            ops.push(LaunchFreshOp::Uninstall);
-            ops.push(LaunchFreshOp::Install(path.to_string()));
+    if clear_state {
+        if force_reinstall {
+            match app_path {
+                Some(path) => {
+                    ops.push(LaunchFreshOp::Uninstall);
+                    ops.push(LaunchFreshOp::Install(path.to_string()));
+                }
+                None => {
+                    warnings.push(
+                        "launch_fresh: force_reinstall=1 but app_path missing — cannot \
+                         reinstall; falling back to in-place clear"
+                            .to_string(),
+                    );
+                    ops.push(LaunchFreshOp::PrivacyResetAll);
+                    ops.push(LaunchFreshOp::SandboxClearInPlace(String::new()));
+                }
+            }
+        } else {
+            // v1.0.4 default: in-place sandbox clear + privacy reset.
+            // No uninstall/install → XCUITest binding preserved
+            // (feedback §F fix) + no ReportCrash dialog (§H fix).
+            //
+            // The SandboxClearInPlace op receives an empty string
+            // here; the executor fills it in from the target bundle-id
+            // that App::launch_fresh already knows.
+            ops.push(LaunchFreshOp::PrivacyResetAll);
+            ops.push(LaunchFreshOp::SandboxClearInPlace(String::new()));
+            if app_path.is_some() {
+                warnings.push(
+                    "launch_fresh: app_path set but in-place clear used (v1.0.4 default); \
+                     set SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1 to fall back to \
+                     uninstall+install for a bit-for-bit reinstall"
+                        .to_string(),
+                );
+            }
         }
-        (true, None) => {
-            warnings.push(
-                "G10 launch_fresh: app_path missing — graceful fallback to non-clear path \
-                 (terminate + launch); set SMIX_APP_PATH_<BUNDLE_NORMALIZED> to enable wipe"
-                    .to_string(),
-            );
-        }
-        (false, _) => {}
     }
     if clear_keychain {
         ops.push(LaunchFreshOp::KeychainReset);
@@ -830,7 +901,19 @@ impl App {
         launch_arguments: &[String],
     ) -> Result<Vec<String>, ExpectationFailure> {
         let udid = self.require_udid()?;
-        let (ops, warnings) = plan_launch_fresh_calls(clear_state, clear_keychain, app_path);
+        // v1.0.4 §D12 — probe SMIX_LAUNCH_FRESH_FORCE_REINSTALL env
+        // for the pre-v1.0.4 uninstall+install path. Default is the
+        // new in-place clear that preserves XCUITest binding + does
+        // not trip ReportCrash.
+        let force_reinstall = std::env::var("SMIX_LAUNCH_FRESH_FORCE_REINSTALL")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let (ops, warnings) = plan_launch_fresh_calls_v2(
+            clear_state,
+            clear_keychain,
+            app_path,
+            force_reinstall,
+        );
         for op in &ops {
             match op {
                 LaunchFreshOp::Terminate => {
@@ -845,6 +928,20 @@ impl App {
                 LaunchFreshOp::Install(path) => {
                     self.device
                         .install(udid, path)
+                        .await
+                        .map_err(simctl_to_failure)?;
+                }
+                LaunchFreshOp::PrivacyResetAll => {
+                    self.device
+                        .privacy_reset_all(udid, bundle_id)
+                        .await
+                        .map_err(simctl_to_failure)?;
+                }
+                LaunchFreshOp::SandboxClearInPlace(_) => {
+                    // Planner passes empty string; App knows the real
+                    // bundle-id already (function arg).
+                    self.device
+                        .clear_app_sandbox(udid, bundle_id)
                         .await
                         .map_err(simctl_to_failure)?;
                 }

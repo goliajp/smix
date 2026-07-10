@@ -667,8 +667,26 @@ final class SmixRunnerUITests: XCTestCase {
   // genuine setUp/launch failure still fails the test loudly.
   override func record(_ issue: XCTIssue) {
     if HandlerSpanFlag.shared.inSpan {
+      let desc = issue.compactDescription
       FileHandle.standardError.write(
-        Data("smix-runner: swallowed in-handler XCTIssue: \(issue.compactDescription)\n".utf8))
+        Data("smix-runner: swallowed in-handler XCTIssue: \(desc)\n".utf8))
+      // v1.0.4 §D2 — sniff "Application X is not running" issues and
+      // mark the bundle-id in the app-alive cache. Task-local read
+      // works here because record(_:) is called synchronously from
+      // the XCUITest span running under the current request's task
+      // scope. Parse conservatively (bundle-id-shaped substring
+      // between "Application " and " is not running"); anything not
+      // matching is a no-op.
+      if let range = desc.range(of: "Application "),
+         let end = desc.range(of: " is not running"),
+         range.upperBound < end.lowerBound,
+         let cache = SmixRunnerServer.currentAppAliveCache {
+        let bundleId = String(desc[range.upperBound..<end.lowerBound])
+          .trimmingCharacters(in: .whitespaces)
+        if !bundleId.isEmpty && bundleId.contains(".") {
+          Task { await cache.markDead(bundleId: bundleId) }
+        }
+      }
       return
     }
     super.record(issue)
@@ -2075,7 +2093,19 @@ final class SmixRunnerUITests: XCTestCase {
             notFound: false, ok: true, wallMs: wallMs
           )
         }
-      )
+      ),
+      // v1.0.4 §D4 — per-session `/system-popups` 500 ms floor. Hard-
+      // wired at 500 ms because the failure mode is a runaway poll
+      // loop (~1.7 QPS × 6 XCUIQuery); no consumer benefit at faster
+      // than 500 ms cadence and the arbitration cost is decisive.
+      popupPacer: SmixRunnerServer.PopupPacer(floorMs: 500),
+      // v1.0.4 §D2 — 20 s app-alive suppression window after an
+      // observed XCTIssue about the target app. See RFC 1.0.4 §D2.
+      appAliveCache: SmixRunnerServer.AppAliveCache(ttlMs: 20_000),
+      // v1.0.4 §D7 — initially `.healthy`; downgraded by the runner
+      // supervisor as it observes SimRenderServer / xcodebuild
+      // signals or by handlers that catch specific error shapes.
+      simHealthPublisher: SmixRunnerServer.SimHealthPublisher(initial: .healthy)
     )
   }
 }

@@ -99,6 +99,19 @@ impl DeviceControl for IosDeviceControl {
         self.client.keychain_reset(udid).await
     }
 
+    /// v1.0.4 §D12 — reset all privacy grants for the bundle via
+    /// `simctl privacy <udid> reset all <bundle-id>`.
+    async fn privacy_reset_all(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
+        self.client.privacy_reset_all(udid, bundle_id).await
+    }
+
+    /// v1.0.4 §D12 — wipe the app's sandbox (`Documents/`, `Library/`,
+    /// `tmp/`) via `simctl spawn <udid> rm -rf` under the app's
+    /// Containers/Data path. Preserves XCUITest binding.
+    async fn clear_app_sandbox(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
+        self.client.clear_app_sandbox(udid, bundle_id).await
+    }
+
     // === Lifecycle ancillary ===
 
     async fn open_url(&self, udid: &str, url: &str) -> Result<(), SimctlError> {
