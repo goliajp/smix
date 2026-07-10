@@ -492,6 +492,148 @@ pub fn cycle(
     )
 }
 
+/// v1.0.5 §D2 — host-side XCTest supervisor.
+///
+/// Tails the runner log at `.smix/runner/runner-<UDID>.log` and looks
+/// for interrupt patterns (`** TEST INTERRUPTED **`,
+/// `SchemeActionResultOperation started unexpectedly`). On match:
+/// invokes [`cycle`] to tear the runner down and bring it back up on
+/// the same device/port/bundle. Session persistence (§D1) preserves
+/// the consumer's `Session-Id` across the cycle.
+///
+/// Backoff: at most one cycle per 60 s (a spurious hit during boot is
+/// common). If 5 cycles fire inside 10 minutes the supervisor exits
+/// non-zero so a monitoring layer can escalate.
+///
+/// Runs foreground; SIGINT / SIGTERM to the supervisor cleanly shuts
+/// it down. `smix runner down` invoked separately still tears the
+/// runner itself down.
+pub fn supervise(
+    root: &Path,
+    runner_project: Option<&Path>,
+) -> Result<(), String> {
+    let st = read_state(root).ok_or_else(|| {
+        "no runner state.json — supervise attaches to a known runner; \
+         run `smix runner up <device> --bundle <id>` first"
+            .to_string()
+    })?;
+    let log_path = st.log.clone();
+    let port = st.port;
+    println!(
+        "smix runner supervise: attached\n  udid={} port={} log={}",
+        st.udid,
+        st.port,
+        log_path.display()
+    );
+
+    let mut position: u64 = std::fs::metadata(&log_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let mut last_cycle_at: Option<std::time::Instant> = None;
+    let mut cycle_times: Vec<std::time::Instant> = Vec::new();
+    let interrupt_patterns: &[&str] = &[
+        "** TEST INTERRUPTED **",
+        "SchemeActionResultOperation started unexpectedly",
+    ];
+    let cycle_cooldown = std::time::Duration::from_secs(60);
+    let storm_window = std::time::Duration::from_secs(600);
+    let storm_threshold = 5;
+
+    let mut carry = String::new();
+    loop {
+        // Sleep between polls; keeps CPU low.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        let meta = match std::fs::metadata(&log_path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let current_len = meta.len();
+        if current_len < position {
+            // Log rotated — reset to start of file.
+            position = 0;
+            carry.clear();
+        }
+        if current_len == position {
+            continue;
+        }
+        // Read new bytes.
+        use std::io::{Read, Seek, SeekFrom};
+        let mut f = match std::fs::File::open(&log_path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        if f.seek(SeekFrom::Start(position)).is_err() {
+            continue;
+        }
+        let mut buf = String::new();
+        if f.read_to_string(&mut buf).is_err() {
+            // Non-UTF8 chunk — skip and advance.
+            position = current_len;
+            continue;
+        }
+        position = current_len;
+        carry.push_str(&buf);
+        // Match line-by-line so an interrupt marker split across chunks
+        // still fires correctly on the reassembled line.
+        let mut lines: Vec<&str> = carry.lines().collect();
+        // If the last line doesn't end with \n the current position may
+        // land mid-line — keep it as carry for the next iter.
+        let keep_last = !carry.ends_with('\n');
+        let tail = if keep_last { lines.pop().unwrap_or("").to_string() } else { String::new() };
+        for line in &lines {
+            let matched = interrupt_patterns.iter().any(|p| line.contains(p));
+            if !matched {
+                continue;
+            }
+            let now = std::time::Instant::now();
+            if let Some(prev) = last_cycle_at {
+                if now.duration_since(prev) < cycle_cooldown {
+                    eprintln!(
+                        "supervise: interrupt hit within {:?} of last cycle — \
+                         skipping (cooldown)",
+                        cycle_cooldown
+                    );
+                    continue;
+                }
+            }
+            // Storm check: prune expired timestamps, then check count.
+            cycle_times.retain(|t| now.duration_since(*t) < storm_window);
+            if cycle_times.len() >= storm_threshold {
+                return Err(format!(
+                    "supervise: {} cycles inside {:?} — bailing so a monitoring \
+                     layer can escalate",
+                    cycle_times.len(),
+                    storm_window
+                ));
+            }
+            println!(
+                r#"{{"event":"RunnerCycled","reasonMatched":{:?},"atMs":{}}}"#,
+                line.trim(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)
+            );
+            match cycle(root, port, runner_project) {
+                Ok(()) => {
+                    cycle_times.push(now);
+                    last_cycle_at = Some(now);
+                    // After cycle succeeds the log path is truncated
+                    // (up recreates the file). Reset our position.
+                    position = 0;
+                    carry.clear();
+                    break;
+                }
+                Err(e) => {
+                    return Err(format!("supervise: cycle failed: {e}"));
+                }
+            }
+        }
+        carry = tail;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
