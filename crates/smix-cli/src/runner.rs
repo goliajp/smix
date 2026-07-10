@@ -21,6 +21,12 @@ pub struct RunnerState {
     /// runner default, com.apple.Preferences).
     #[serde(default)]
     pub bundle: Option<String>,
+    /// v1.0.6 — pid of the supervisor sidecar spawned when `runner up`
+    /// was invoked with `--supervise`. `None` means no sidecar was
+    /// started. `runner down` cascades a SIGTERM to this pid before
+    /// tearing down xcodebuild.
+    #[serde(default)]
+    pub supervisor_pid: Option<u32>,
 }
 
 /// Env pairs for the xcodebuild process. Xcode forwards `TEST_RUNNER_*`
@@ -249,6 +255,27 @@ pub fn up(
     record_enabled: bool,
     runner_project: Option<&Path>,
 ) -> Result<(), String> {
+    up_with_options(root, udid, port, bundle, record_enabled, runner_project, false)
+}
+
+/// v1.0.6 — extended `up` with the `--supervise` sidecar flag. When
+/// `supervise = true`, after `/health` returns 200 spawn a detached
+/// `smix runner supervise` process, record its pid in state.json, and
+/// return. `runner down` cascades a SIGTERM to that pid before
+/// tearing down xcodebuild.
+///
+/// `up_with_options(_, _, _, _, _, _, false)` is equivalent to the
+/// v1.0.5 `up` — so consumers on the classic path see no behaviour
+/// change.
+pub fn up_with_options(
+    root: &Path,
+    udid: &str,
+    port: u16,
+    bundle: Option<&str>,
+    record_enabled: bool,
+    runner_project: Option<&Path>,
+    supervise: bool,
+) -> Result<(), String> {
     // v1.0.4 §A / D8 — refuse to boot without --bundle unless the
     // caller explicitly opts in via SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1.
     // Rationale: the runner's built-in default `com.apple.Preferences`
@@ -340,6 +367,7 @@ pub fn up(
         port,
         log: log.clone(),
         bundle: bundle.map(str::to_string),
+        supervisor_pid: None,
     };
     std::fs::write(
         state_path(root),
@@ -366,6 +394,32 @@ pub fn up(
         }
         if health_ok(port) {
             println!("runner up: http://localhost:{port}/health = 200");
+            // v1.0.6 D1 — sidecar mode.
+            if supervise {
+                match spawn_supervisor(root, runner_project) {
+                    Ok(sup_pid) => {
+                        // Rewrite state.json with the supervisor pid.
+                        if let Some(mut current) = read_state(root) {
+                            current.supervisor_pid = Some(sup_pid);
+                            let _ = std::fs::write(
+                                state_path(root),
+                                serde_json::to_string_pretty(&current)
+                                    .expect("state serializes"),
+                            );
+                            println!(
+                                "runner supervise: spawned pid={sup_pid} \
+                                 (log: .smix/runner/supervise-{udid}.log)"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "runner supervise: spawn failed: {e} — runner \
+                             is up but no sidecar attached"
+                        );
+                    }
+                }
+            }
             return Ok(());
         }
         std::thread::sleep(std::time::Duration::from_secs(2));
@@ -381,9 +435,33 @@ pub fn up(
 /// Tear the runner down. SIGINT first — xcodebuild cancels the XCUITest
 /// session cleanly via testmanagerd; a hard kill SIGABRTs the runner app
 /// and macOS pops a crash-report dialog that steals user focus.
+///
+/// v1.0.6 D2 — if state.json records a supervisor pid, cascade a
+/// SIGTERM to it BEFORE tearing down xcodebuild. Otherwise the sidecar
+/// would flap into a `TEST INTERRUPTED` trigger the moment we send
+/// SIGINT to xcodebuild and try to re-cycle a runner we just killed.
 pub fn down(root: &Path, port: u16) -> Result<(), String> {
     let mut acted = false;
     if let Some(st) = read_state(root) {
+        // v1.0.6 D2 — supervisor teardown first. Skip when we are
+        // the supervisor calling down() (avoid killing ourselves
+        // mid-cycle — the re-entrant case).
+        if let Some(sup_pid) = st.supervisor_pid
+            && sup_pid != std::process::id()
+            && let Some(cmd) = pid_command(sup_pid)
+            && (cmd.contains("smix") || cmd.contains("supervise"))
+        {
+            println!("stopping supervisor: pid={sup_pid}");
+            signal(sup_pid, "-TERM");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while pid_command(sup_pid).is_some() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            if pid_command(sup_pid).is_some() {
+                eprintln!("supervisor pid {sup_pid} ignored SIGTERM for 5s — SIGKILL");
+                signal(sup_pid, "-9");
+            }
+        }
         match pid_command(st.pid) {
             Some(cmd) if cmd.contains("xcodebuild") => {
                 println!("stopping runner: pid={} udid={}", st.pid, st.udid);
@@ -472,6 +550,11 @@ pub fn cycle(
     let udid = st.udid.clone();
     let bundle = st.bundle.clone();
     let cycle_port = st.port;
+    // v1.0.6 D2 — carry the supervise flag across the cycle so the
+    // sidecar re-attaches to the new xcodebuild after `up` returns.
+    // Otherwise `runner cycle` from inside a supervisor-managed runner
+    // would silently drop supervision.
+    let had_supervisor = st.supervisor_pid.is_some();
     if cycle_port != port {
         eprintln!(
             "note: state.json port {cycle_port} differs from --runner-port {port}; \
@@ -482,14 +565,51 @@ pub fn cycle(
         "cycling runner: udid={udid} port={cycle_port} bundle={bundle:?}"
     );
     down(root, cycle_port)?;
-    up(
+    up_with_options(
         root,
         &udid,
         cycle_port,
         bundle.as_deref(),
         false,
         runner_project,
+        had_supervisor,
     )
+}
+
+/// v1.0.6 D1 — spawn the supervisor as a detached child process
+/// after `runner up --supervise`. Redirects stdout/stderr to
+/// `.smix/runner/supervise-<UDID>.log`. Uses its own process group so
+/// a ctrl-C on the CLI doesn't tear the supervisor down. Returns the
+/// child pid on success.
+fn spawn_supervisor(root: &Path, runner_project: Option<&Path>) -> Result<u32, String> {
+    let st = read_state(root)
+        .ok_or_else(|| "internal: no state.json to attach supervisor to".to_string())?;
+    let udid = st.udid.clone();
+    let runner_dir = root.join(".smix/runner");
+    std::fs::create_dir_all(&runner_dir).map_err(|e| format!("mkdir .smix/runner: {e}"))?;
+    let log = runner_dir.join(format!("supervise-{udid}.log"));
+    let log_file = std::fs::File::create(&log)
+        .map_err(|e| format!("create {}: {e}", log.display()))?;
+    let log_err = log_file
+        .try_clone()
+        .map_err(|e| format!("clone supervise log handle: {e}"))?;
+
+    let self_exe = std::env::current_exe()
+        .map_err(|e| format!("current_exe: {e}"))?;
+    let mut cmd = std::process::Command::new(&self_exe);
+    cmd.arg("runner").arg("supervise");
+    if let Some(p) = runner_project {
+        cmd.arg("--runner-project").arg(p);
+    }
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(log_file)
+        .stderr(log_err);
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    let child = cmd.spawn().map_err(|e| format!("spawn supervise: {e}"))?;
+    Ok(child.id())
 }
 
 /// v1.0.5 §D2 — host-side XCTest supervisor.
@@ -671,6 +791,7 @@ mod tests {
             port: 22087,
             log: PathBuf::from("/tmp/runner.log"),
             bundle: Some("com.example.app".into()),
+            supervisor_pid: None,
         };
         let json = serde_json::to_string(&st).unwrap();
         let back: RunnerState = serde_json::from_str(&json).unwrap();
