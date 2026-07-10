@@ -64,6 +64,118 @@ actor ShutdownSignal {
   }
 }
 
+/// v1.0.4 §D4 — per-session `/system-popups` request pacer.
+///
+/// The XCTest arbitration cost of `/system-popups` is 6 accessibility
+/// query descents (Alert × 2, Sheet × 2, Dialog, Popover) per call.
+/// Insight's 2026-07-10 gate ran the endpoint at ~1.7 QPS across a
+/// 340 s bootstrap flow — 3400+ XCUIQuery executions on top of every
+/// other route, contributing to the arbitration exhaustion that
+/// preceded SimRenderServer's brk 1 trip. This actor enforces a 500 ms
+/// floor per session id (or `"default"` for header-less callers);
+/// too-soon calls return `SystemPopupsRoute.tooManyRequests`.
+///
+/// Business-unaware. The runtime routes-side wraps it around the
+/// `systemPopupsHandler` closure; consumers see a 429 when they exceed
+/// the floor and back off per `Retry-After`.
+public actor PopupPacer {
+  private var lastCallAt: [String: Date] = [:]
+  private let floor: TimeInterval
+
+  public init(floorMs: Int = 500) {
+    self.floor = TimeInterval(floorMs) / 1000.0
+  }
+
+  /// Try to take a slot for `sessionKey`. Returns the elapsed ms
+  /// remaining before the next slot on failure; `nil` on success.
+  public func tryTake(sessionKey: String) -> Int? {
+    let now = Date()
+    if let last = lastCallAt[sessionKey] {
+      let elapsed = now.timeIntervalSince(last)
+      if elapsed < floor {
+        let remainMs = Int(((floor - elapsed) * 1000).rounded(.up))
+        return remainMs
+      }
+    }
+    lastCallAt[sessionKey] = now
+    return nil
+  }
+}
+
+/// v1.0.4 §D2 — per-bundle app-alive cache.
+///
+/// The runner's XCUIElement query layer surfaces "Application X is not
+/// running" via `XCTIssue` when the target app has crashed. Without a
+/// suppression window, the runner keeps firing 6 XCUIQuery descents per
+/// `/system-popups` and full a11y snapshots per `/tree` even though
+/// every one will return the same failure — an arbitration firehose
+/// with no product-side benefit. This actor records the bundle-id →
+/// dead-until timestamp; upstream routes short-circuit during the
+/// window and return empty snapshots without hitting XCUITest.
+///
+/// Invalidation: any subsequent `/sim/launch` or `/session/open` for
+/// the same bundle-id clears the entry (the caller is asking to
+/// re-establish the target).
+public actor AppAliveCache {
+  private var deadUntil: [String: Date] = [:]
+  private let ttl: TimeInterval
+
+  public init(ttlMs: Int = 20_000) {
+    self.ttl = TimeInterval(ttlMs) / 1000.0
+  }
+
+  /// Mark the bundle-id as "known dead" for `ttl` seconds from now.
+  public func markDead(bundleId: String) {
+    deadUntil[bundleId] = Date().addingTimeInterval(ttl)
+  }
+
+  /// Invalidate a previous "dead" mark for the given bundle. Called
+  /// on `/sim/launch` and `/session/open` for the same bundle id.
+  public func markAlive(bundleId: String) {
+    deadUntil.removeValue(forKey: bundleId)
+  }
+
+  /// Returns true when the caller should short-circuit XCUITest for
+  /// this bundle.
+  public func isSuppressed(bundleId: String) -> Bool {
+    if let until = deadUntil[bundleId] {
+      if Date() < until {
+        return true
+      }
+      deadUntil.removeValue(forKey: bundleId)
+    }
+    return false
+  }
+}
+
+/// v1.0.4 §D1 — server-side sim-health state, emitted on every
+/// response via the `X-Sim-Health` header. Consumers on all 4 SDKs
+/// parse the header and surface transitions via `Session.state` /
+/// `session.on('state', ...)` / `session.stateStream` / `stateFlow`.
+public actor SimHealthPublisher {
+  public enum State: String, Sendable {
+    case healthy
+    case degraded
+    case cycling
+    case dead
+  }
+
+  private var state: State = .healthy
+
+  public init(initial: State = .healthy) {
+    self.state = initial
+  }
+
+  /// Cheap snapshot for the header emitter.
+  public func snapshot() -> State {
+    state
+  }
+
+  public func set(_ next: State) {
+    state = next
+  }
+}
+
 /// v0.2.1 — per-request context propagated from HTTP headers into every
 /// handler that operates on the "app under test".
 ///
@@ -139,6 +251,22 @@ public actor SmixRunnerServer {
   /// local scoped-mutation gives every handler read access to the
   /// current-request context without touching closure signatures.
   @TaskLocal public static var currentContext: RequestContext = .default
+
+  /// v1.0.4 §D7 — task-local sim-health publisher. `runForever` sets
+  /// this via `.withValue` before dispatching each request; the
+  /// `guardedResponse` wrapper reads it and attaches the
+  /// `X-Sim-Health` response header on the way out. `nil` when the
+  /// caller opted out (default legacy behavior; SDKs cope).
+  @TaskLocal public static var currentSimHealth: SimHealthPublisher? = nil
+
+  /// v1.0.4 §D2 — task-local app-alive cache. Routes on the
+  /// request-with-target path (`/tree`, `/system-popups`, etc.) read
+  /// this to short-circuit XCUITest when a bundle is known-dead.
+  @TaskLocal public static var currentAppAliveCache: AppAliveCache? = nil
+
+  /// v1.0.4 §D4 — task-local popup pacer for the `/system-popups`
+  /// route middleware.
+  @TaskLocal public static var currentPopupPacer: PopupPacer? = nil
 
   /// v0.3.1 — canonical main-actor hop for XCUITest APIs that require
   /// it (activate / launch / terminate on iOS 26+ SDK). Any new
@@ -536,16 +664,45 @@ public actor SmixRunnerServer {
     fallback: HTTPResponse,
     _ build: () async throws -> HTTPResponse
   ) async -> HTTPResponse {
+    let raw: HTTPResponse
     do {
-      return try await build()
+      raw = try await build()
     } catch {
       // v1.6 c2 — surface caught exception type+reason to stderr so c2 dig
       // can identify modal-overlay side-effects (e.g. snapshot 500 on dashboard
       // after `+load` swizzle). Pre-existing behavior was silent swallow.
       FileHandle.standardError.write(
         Data("smix-runner: guardedResponse caught: \(error)\n".utf8))
-      return fallback
+      raw = fallback
     }
+    // v1.0.4 §D7 — attach X-Sim-Health header to every response the
+    // guard emits. Task-local publisher is set per-request by
+    // runForever's wrapping context; nil publisher means the runner
+    // opted out and consumers keep v1.0.3 header-less behavior.
+    if let publisher = Self.currentSimHealth {
+      let state = await publisher.snapshot()
+      return await withHeader(raw, name: "X-Sim-Health", value: state.rawValue)
+    }
+    return raw
+  }
+
+  /// v1.0.4 §D7 — return a copy of the response with an extra
+  /// header injected. FlyingFox's HTTPResponse is a value type so
+  /// mutating a copy is cheap.
+  public static func withHeader(_ response: HTTPResponse, name: String, value: String) async -> HTTPResponse {
+    var headers = response.headers
+    headers[HTTPHeader(name)] = value
+    let body: Data
+    do {
+      body = try await response.bodyData
+    } catch {
+      body = Data()
+    }
+    return HTTPResponse(
+      statusCode: response.statusCode,
+      headers: headers,
+      body: body
+    )
   }
 
   /// v0.2.1 — wraps [`guardedResponse`] with per-request context
@@ -595,6 +752,11 @@ public actor SmixRunnerServer {
         fallback: SessionRoute.badRequest(reason: "handler crashed")
       ) {
         let outcome = await handlers.open(req)
+        // v1.0.4 §D2 — successful open re-establishes the target for
+        // this bundle; clear any suppression entry.
+        if let cache = Self.currentAppAliveCache {
+          await cache.markAlive(bundleId: req.bundleId)
+        }
         let now = UInt64(Date().timeIntervalSince1970 * 1000)
         return SessionRoute.openResponse(
           SessionRoute.OpenResponse(
@@ -665,6 +827,13 @@ public actor SmixRunnerServer {
         let outcome = await handlers.relaunchApp(req)
         if outcome.notFound {
           return SessionRoute.notFound(reason: "unknown session id")
+        }
+        // v1.0.4 §D2 — successful relaunch clears any suppression
+        // for the target bundle.
+        if outcome.ok,
+           let cache = Self.currentAppAliveCache,
+           let bundleId = Self.currentContext.bundleId {
+          await cache.markAlive(bundleId: bundleId)
         }
         return SessionRoute.relaunchResponse(ok: outcome.ok, wallMs: outcome.wallMs)
       }
@@ -744,7 +913,16 @@ public actor SmixRunnerServer {
     setOrientationHandler: SetOrientationHandler? = nil,
     recordHandlers: RecordHandlers? = nil,
     selectResolveHandler: SelectResolveHandler? = nil,
-    sessionHandlers: SessionHandlers? = nil
+    sessionHandlers: SessionHandlers? = nil,
+    /// v1.0.4 §D4 — per-session `/system-popups` pacer. `nil` opts out
+    /// (legacy unlimited behavior).
+    popupPacer: PopupPacer? = nil,
+    /// v1.0.4 §D2 — app-alive cache. `nil` opts out (no short-circuit
+    /// on XCTIssue "Application not running").
+    appAliveCache: AppAliveCache? = nil,
+    /// v1.0.4 §D7 — publisher for the `X-Sim-Health` response header.
+    /// `nil` opts out (no header emitted).
+    simHealthPublisher: SimHealthPublisher? = nil
   ) async throws {
     let server = Self.makeServer(port: port)
     let shutdownSignal = ShutdownSignal()
@@ -817,6 +995,15 @@ public actor SmixRunnerServer {
       // unavailable() is the route's own error envelope (legacy: a nil
       // snapshot already mapped here, so a thrown snapshot is wire-equivalent).
       return await Self.contextGuardedResponse(request: request,fallback: TreeRoute.unavailable()) {
+        // v1.0.4 §D2 — app-alive suppression short-circuit. When the
+        // target bundle is known-dead (observed XCTIssue in the last
+        // 20 s), return unavailable without running XCUIQuery. This
+        // cuts the /tree firehose that continues after an app crash.
+        if let cache = Self.currentAppAliveCache,
+           let bundleId = Self.currentContext.bundleId,
+           await cache.isSuppressed(bundleId: bundleId) {
+          return TreeRoute.unavailable()
+        }
         guard let snap = await snapshotHandler(request.query["include"]) else {
           return TreeRoute.unavailable()
         }
@@ -939,6 +1126,23 @@ public actor SmixRunnerServer {
         return await Self.contextGuardedResponse(request: request,
           fallback: SystemPopupsRoute.success(popups: [])
         ) {
+          // v1.0.4 §D4 — per-session 500 ms floor. sessionKey defaults
+          // to the RequestContext session id when present; otherwise
+          // "default" (a single bucket for header-less callers).
+          if let pacer = Self.currentPopupPacer {
+            let sessionKey = Self.currentContext.sessionId ?? "default"
+            if let remainMs = await pacer.tryTake(sessionKey: sessionKey) {
+              return SystemPopupsRoute.tooManyRequests(retryAfterMs: remainMs)
+            }
+          }
+          // v1.0.4 §D2 — app-alive suppression short-circuit. When
+          // the bundle is known-dead, return empty popups without
+          // running any XCUIQuery.
+          if let cache = Self.currentAppAliveCache,
+             let bundleId = Self.currentContext.bundleId,
+             await cache.isSuppressed(bundleId: bundleId) {
+            return SystemPopupsRoute.success(popups: [])
+          }
           let popups = await systemPopupsHandler(request.query["include"])
           return SystemPopupsRoute.success(popups: popups)
         }
@@ -1419,28 +1623,36 @@ public actor SmixRunnerServer {
     // and if /shutdown is never called the observer awaits forever so run()
     // is never stopped (byte-identical to before this checkpoint).
     var sawShutdown = false
-    do {
-      try await withThrowingTaskGroup(of: Void.self) { group in
-        group.addTask {
-          try await server.run()
-        }
-        group.addTask {
-          await shutdownSignal.wait()
-          await server.stop(timeout: 0)
-        }
-        do {
-          try await group.next()
-        } catch {
-          sawShutdown = await shutdownSignal.didFire
-          if !sawShutdown {
-            group.cancelAll()
-            throw error
+    // v1.0.4 §D2/D4/D7 — set the runtime-scoped actors as task-locals
+    // so every request handler (spawned as child tasks by FlyingFox)
+    // inherits them via Swift's structured concurrency propagation.
+    // nil values keep v1.0.3 header-less / floor-less behavior.
+    try await Self.$currentSimHealth.withValue(simHealthPublisher) {
+    try await Self.$currentAppAliveCache.withValue(appAliveCache) {
+    try await Self.$currentPopupPacer.withValue(popupPacer) {
+      do {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+          group.addTask {
+            try await server.run()
           }
+          group.addTask {
+            await shutdownSignal.wait()
+            await server.stop(timeout: 0)
+          }
+          do {
+            try await group.next()
+          } catch {
+            sawShutdown = await shutdownSignal.didFire
+            if !sawShutdown {
+              group.cancelAll()
+              throw error
+            }
+          }
+          group.cancelAll()
         }
-        group.cancelAll()
+      } catch {
+        if !sawShutdown { throw error }
       }
-    } catch {
-      if !sawShutdown { throw error }
-    }
+    }}}
   }
 }

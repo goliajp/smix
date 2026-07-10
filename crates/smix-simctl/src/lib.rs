@@ -612,6 +612,53 @@ impl SimctlClient {
         Ok(LaunchResult { pid })
     }
 
+    /// v1.0.4 §D12 — reset every privacy permission granted to
+    /// `bundle_id` on the sim: `xcrun simctl privacy <udid> reset all
+    /// <bundle-id>`. Companion to [`Self::clear_app_sandbox`] on the
+    /// in-place `launchApp: clearState: true` path that replaces
+    /// `simctl uninstall + install` (which triggers iOS 26.5 XCUITest
+    /// binding loss + ReportCrash's "Insight quit unexpectedly" dialog).
+    pub async fn privacy_reset_all(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+    ) -> Result<(), SimctlError> {
+        simctl_run(&["privacy", udid, "reset", "all", bundle_id]).await?;
+        Ok(())
+    }
+
+    /// v1.0.4 §D12 — wipe the app's sandbox on the sim: locate the
+    /// Data container via `simctl get_app_container <udid> <bundle>
+    /// data`, then `simctl spawn <udid> rm -rf <container>/Documents
+    /// <container>/Library <container>/tmp`. The app remains installed
+    /// (no `simctl uninstall`), so the XCUITest binding is preserved
+    /// and macOS `ReportCrash` does not misinterpret a missing
+    /// install-receipt as a crash.
+    pub async fn clear_app_sandbox(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+    ) -> Result<(), SimctlError> {
+        let raw = simctl_run(&["get_app_container", udid, bundle_id, "data"]).await?;
+        let container = raw.trim();
+        if container.is_empty() {
+            return Err(SimctlError::Malformed {
+                subcommand: "clear_app_sandbox".into(),
+                detail: format!("empty Data container path for bundle {bundle_id}"),
+            });
+        }
+        let documents = format!("{container}/Documents");
+        let library = format!("{container}/Library");
+        let tmp = format!("{container}/tmp");
+        // Best-effort: any missing subdir is fine (fresh app that never
+        // wrote to that path). `rm -rf` treats absent targets as no-ops.
+        simctl_run(&[
+            "spawn", udid, "rm", "-rf", &documents, &library, &tmp,
+        ])
+        .await?;
+        Ok(())
+    }
+
     /// `xcrun simctl openurl <udid> <url>` — open a URL on the device.
     ///
     /// **URL bytes are passed to `xcrun simctl` verbatim** — no

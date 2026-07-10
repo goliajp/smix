@@ -160,6 +160,25 @@ pub trait DeviceControl: Send + Sync {
     async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError>;
     async fn keychain_reset(&self, udid: &str) -> Result<(), SimctlError>;
 
+    /// v1.0.4 §D12 — reset all granted privacy permissions for a
+    /// bundle. Companion to `clear_app_sandbox`; together they form
+    /// the in-place `launchApp: clearState: true` replacement that
+    /// avoids `simctl uninstall + install` and its downstream
+    /// XCUITest binding loss (feedback §F) + ReportCrash dialog
+    /// (feedback §H). Default impl no-ops so non-iOS device controls
+    /// (Android) keep compiling; iOS override supplies real behavior.
+    async fn privacy_reset_all(&self, _udid: &str, _bundle_id: &str) -> Result<(), SimctlError> {
+        Ok(())
+    }
+
+    /// v1.0.4 §D12 — wipe an app's `Documents/`, `Library/`, `tmp/`
+    /// directories in the sim's Containers/Data root, without
+    /// uninstalling the app. Preserves the XCUITest binding.
+    /// Default impl no-ops; iOS override does the real wipe.
+    async fn clear_app_sandbox(&self, _udid: &str, _bundle_id: &str) -> Result<(), SimctlError> {
+        Ok(())
+    }
+
     // === Lifecycle ancillary ===
 
     async fn open_url(&self, udid: &str, url: &str) -> Result<(), SimctlError>;
