@@ -31,12 +31,25 @@ interface HttpRunnerLike {
   readonly baseUrl: string
   readonly fetch: HttpFetch
   setSessionId(id: string | null): void
+  /** v1.0.4 §D7 — optional hook so the client can push state
+   * transitions parsed from `X-Sim-Health` headers back to the
+   * Session. Legacy runners omit the header; state stays `healthy`. */
+  attachSessionState?(setter: (state: SessionState) => void): void
 }
 
 export interface SessionOpenOptions {
   /** If true, runner calls `.activate()` on the target once at open time. */
   activate?: boolean
 }
+
+/**
+ * v1.0.4 §D7 — session-scoped sim health classification observed via
+ * the runner's `X-Sim-Health` response header. Consumers subscribe
+ * via {@link Session.on}.
+ */
+export type SessionState = 'healthy' | 'degraded' | 'cycling' | 'dead'
+
+type StateListener = (state: SessionState) => void
 
 /**
  * Runner-side session guard. Use `Session.open()` to acquire, always
@@ -48,6 +61,11 @@ export interface SessionOpenOptions {
  * cached binding.
  */
 export class Session {
+  /** v1.0.4 §D7 — current classification; updated on every response
+   * that carries `X-Sim-Health`. */
+  private _state: SessionState = 'healthy'
+  private readonly listeners = new Set<StateListener>()
+
   private constructor(
     private readonly runner: HttpRunnerLike,
     public readonly sessionId: string,
@@ -79,12 +97,64 @@ export class Session {
       throw new Error(`Session.open ${bundleId}: response missing sessionId`)
     }
     runner.setSessionId(json.sessionId)
-    return new Session(
+    const session = new Session(
       runner,
       json.sessionId,
       json.activatedOnce ?? false,
       json.serverTimeMs ?? 0,
     )
+    // v1.0.4 §D7 — wire the runner's X-Sim-Health parse into this
+    // session's state machine. Legacy runner-clients without the
+    // attachSessionState hook keep working; the session's state stays
+    // 'healthy'.
+    runner.attachSessionState?.((next) => session.updateState(next))
+    return session
+  }
+
+  /** v1.0.4 §D7 — current sim-health classification. */
+  get state(): SessionState {
+    return this._state
+  }
+
+  /** v1.0.4 §D7 — subscribe to state transitions. Returns an
+   * unsubscribe function. */
+  on(_event: 'state', listener: StateListener): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  /** v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
+   * the session's cached `XCUIApplication` in place. Preserves the
+   * session id and XCUITest binding. Returns wall-clock ms. */
+  async relaunchApp(): Promise<number> {
+    const res = await this.runner.fetch(
+      `${this.runner.baseUrl}/session/relaunch-app`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: this.sessionId }),
+      },
+    )
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(
+        `Session.relaunchApp ${this.sessionId}: HTTP ${res.status}: ${body}`,
+      )
+    }
+    const json = (await res.json()) as { ok?: boolean; wallMs?: number }
+    return json.wallMs ?? 0
+  }
+
+  private updateState(next: SessionState) {
+    if (next === this._state) return
+    this._state = next
+    for (const listener of this.listeners) {
+      try {
+        listener(next)
+      } catch {
+        // Consumer callbacks must not break the runner-response path.
+      }
+    }
   }
 
   /**

@@ -27,6 +27,10 @@ public final class HttpSmixSimRuntime: SmixSimRuntime, @unchecked Sendable {
     public let bundleId: String
     private let urlSession: URLSession
     private var sessionId: String?
+    /// v1.0.4 §D7 — setter installed by `Session.open`. Every response
+    /// carrying `X-Sim-Health` invokes this closure with the parsed
+    /// state so the associated `Session` can update its state stream.
+    private var sessionStateSetter: ((SessionState) -> Void)?
 
     public init(
         baseURL: URL,
@@ -49,6 +53,12 @@ public final class HttpSmixSimRuntime: SmixSimRuntime, @unchecked Sendable {
     /// The current session id, or nil when no session is attached.
     public var currentSessionId: String? {
         sessionId
+    }
+
+    /// v1.0.4 §D7 — install a state setter invoked on every response
+    /// that carries `X-Sim-Health`. Called by `Session.open`.
+    public func setSessionStateSetter(_ setter: @escaping (SessionState) -> Void) {
+        self.sessionStateSetter = setter
     }
 
     // MARK: - SmixSimRuntime protocol
@@ -229,6 +239,14 @@ public final class HttpSmixSimRuntime: SmixSimRuntime, @unchecked Sendable {
         let (data, response) = try await urlSession.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw HttpSmixSimRuntimeError.nonHttpResponse(path: path)
+        }
+        // v1.0.4 §D7 — parse X-Sim-Health header + forward to attached
+        // session state setter (if any). Runs BEFORE the status check
+        // so state transitions are visible on error paths too.
+        if let setter = sessionStateSetter,
+           let hdrValue = http.value(forHTTPHeaderField: "X-Sim-Health"),
+           let state = SessionState.from(header: hdrValue) {
+            setter(state)
         }
         guard (200 ..< 300).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""

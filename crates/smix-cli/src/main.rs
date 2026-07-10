@@ -330,6 +330,19 @@ Documentation: docs/AI_GUIDE.md
         /// (default 8000ms).
         #[arg(long = "await-signal")]
         await_signal: Option<String>,
+        /// v1.0.4 §B — prepend an implicit `expect.signal { regex,
+        /// timeoutMs }` step at the START of the flow, blocking until
+        /// the regex is observed in the metro log tail. Symmetric to
+        /// `--await-signal`. Requires `--metro-log-url` also set.
+        /// Consumers whose visual/perf gates prelaunch the app and
+        /// wait for "all systems go" (bootstrap-ready) use this to
+        /// avoid a Node-side waitForMetroLogSignal helper.
+        #[arg(long = "gate-signal")]
+        gate_signal: Option<String>,
+        /// v1.0.4 §B — timeout in ms for `--gate-signal`. Default
+        /// 60000. Zero disables the timeout (waits forever).
+        #[arg(long = "gate-signal-timeout", default_value_t = 60_000)]
+        gate_signal_timeout_ms: u64,
         /// Append an implicit `expectLogClean` step to the end of each
         /// flow. Emits an ExpectationFailure if any non-allowlisted log
         /// entry has been observed during the run (allowlist from
@@ -560,6 +573,16 @@ enum RunnerAction {
     },
     /// Stop the runner (SIGINT-first to avoid the crash-report dialog).
     Down,
+    /// v1.0.4 — Cycle the runner: down + up on the same device/port/
+    /// bundle. Preserves the per-udid derived-data directory so the
+    /// warm re-up finishes in ~3 s. Errors if no runner state.json
+    /// exists — use `runner up` for a cold start. See RFC 1.0.4 D5.
+    Cycle {
+        /// Explicit path to `SmixRunner.xcodeproj`. Same cascade as
+        /// `runner up` — see `resolve_runner_project`.
+        #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
+        runner_project: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -906,6 +929,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     let port = runner_port();
                     runner::down(&root, port).map_err(CliError::Other)?;
                 }
+                RunnerAction::Cycle { runner_project } => {
+                    let port = runner_port();
+                    runner::cycle(&root, port, runner_project.as_deref())
+                        .map_err(CliError::Other)?;
+                }
             }
         }
         Cmd::Down => {
@@ -1037,6 +1065,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             activate,
             fail_fast,
             await_signal,
+            gate_signal,
+            gate_signal_timeout_ms,
             expect_log_clean,
             metro_log_url,
             fixture_registry,
@@ -1124,6 +1154,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     auto_activate: activate,
                     metro_log_url: metro_log_url.clone(),
                     await_signal: await_signal.clone(),
+                    gate_signal: gate_signal.clone(),
+                    gate_signal_timeout_ms,
                     expect_log_clean,
                     fixture_registry: fixture_registry.clone(),
                     force_key_events,

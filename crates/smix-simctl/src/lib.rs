@@ -16,9 +16,15 @@
 #![doc(html_root_url = "https://docs.smix.dev/smix-simctl")]
 
 pub mod registry;
+/// v1.0.4 — adaptive `xcrun simctl io screenshot` pacer. See
+/// [`screenshot_pacer::ScreenshotPacer`] and
+/// `.claude/rfc/1.0.4-sim-health-and-backpressure.md` §D3.
+pub mod screenshot_pacer;
 
+use screenshot_pacer::{ScreenshotPacer, ScreenshotPacerConfig};
 use serde::{Deserialize, Serialize};
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::process::Command;
@@ -55,6 +61,18 @@ pub enum SimctlError {
         subcommand: String,
         /// Deadline that was exceeded (milliseconds).
         ms: u64,
+    },
+    /// The screenshot pacer's circuit is open — a recent screenshot
+    /// wall time exceeded the circuit threshold, or a screenshot
+    /// failed. Callers should back off for `retry_after` and try
+    /// again. See [`screenshot_pacer::ScreenshotPacer`] and
+    /// `.claude/rfc/1.0.4-sim-health-and-backpressure.md` §D3.
+    ///
+    /// Since smix 1.0.4.
+    #[error("screenshot pacer circuit open; retry after {retry_after:?}")]
+    CaptureBackpressure {
+        /// Suggested minimum delay before the next attempt.
+        retry_after: Duration,
     },
 }
 
@@ -279,13 +297,70 @@ pub fn compose_child_env(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 /// Stateless wrapper around xcrun simctl. Methods are free functions
 /// in spirit (no instance state beyond optionally-cached `xcrun` path);
 /// kept as a struct for API ergonomics + future caching.
-#[derive(Debug, Default)]
-pub struct SimctlClient {}
+///
+/// Since v1.0.4, the client also holds a [`ScreenshotPacer`] that
+/// throttles `xcrun simctl io screenshot` under high-frequency
+/// load. Defaults are conservative (100 ms interval floor);
+/// consumers whose flows are already loose are unaffected.
+#[derive(Debug)]
+pub struct SimctlClient {
+    /// Screenshot pacer — enforces the RFC 1.0.4 §D3 interval floor,
+    /// slow-path lift, and circuit breaker. Shared via `Arc<Mutex<_>>`
+    /// so a cloned client (which callers occasionally do) still shares
+    /// pressure accounting.
+    screenshot_pacer: Arc<std::sync::Mutex<ScreenshotPacer>>,
+}
+
+impl Default for SimctlClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SimctlClient {
-    /// Construct a new client (stateless — equivalent to `default()`).
+    /// Construct a new client with default screenshot pacing (100 ms
+    /// interval floor, adaptive slow-path lift to 1500 ms, circuit
+    /// breaker on ≥ 1500 ms walls or failures).
     pub fn new() -> Self {
-        SimctlClient {}
+        SimctlClient {
+            screenshot_pacer: Arc::new(std::sync::Mutex::new(ScreenshotPacer::new(
+                ScreenshotPacerConfig::default(),
+            ))),
+        }
+    }
+
+    /// Override the screenshot pacer with a custom config.
+    ///
+    /// Since smix 1.0.4.
+    #[must_use]
+    pub fn with_screenshot_pacer(self, config: ScreenshotPacerConfig) -> Self {
+        {
+            let mut guard = self
+                .screenshot_pacer
+                .lock()
+                .expect("screenshot pacer mutex must not be poisoned");
+            *guard = ScreenshotPacer::new(config);
+        }
+        self
+    }
+
+    /// Attach a [`smix_sim_health::SimHealthMonitor`] to receive
+    /// screenshot wall-time observations from every `screenshot`
+    /// call. Composes with the pacer — the pacer still enforces its
+    /// interval / circuit locally, and the monitor sees the same
+    /// walls for global state classification.
+    ///
+    /// Since smix 1.0.4.
+    #[must_use]
+    pub fn with_sim_health(self, monitor: smix_sim_health::SimHealthMonitor) -> Self {
+        {
+            let mut guard = self
+                .screenshot_pacer
+                .lock()
+                .expect("screenshot pacer mutex must not be poisoned");
+            guard.set_monitor(monitor);
+        }
+        self
     }
 
     // ---- inventory ------------------------------------------------------
@@ -538,10 +613,33 @@ impl SimctlClient {
     }
 
     /// `xcrun simctl openurl <udid> <url>` — open a URL on the device.
+    ///
+    /// **URL bytes are passed to `xcrun simctl` verbatim** — no
+    /// parsing, no percent-encoding rewrite, no query-string
+    /// stripping. Verified by [`openurl_argv`] (test-visible helper)
+    /// and its unit test asserting query-params like
+    /// `?url=http%3A%2F%2Flocalhost%3A8081` reach the argv byte-for-byte.
+    /// Feedback §G verification — if the target app's URL router
+    /// (e.g. expo-dev-client 57.0.5) shows a picker instead of
+    /// auto-connecting, the URL made it through smix intact and the
+    /// finding lives on the URL-router side.
     pub async fn open_url(&self, udid: &str, url: &str) -> Result<(), SimctlError> {
-        simctl_run(&["openurl", udid, url]).await?;
+        let argv = openurl_argv(udid, url);
+        let refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+        simctl_run(&refs).await?;
         Ok(())
     }
+}
+
+/// v1.0.4 §G — argv construction for `xcrun simctl openurl`. Extracted
+/// as a test-visible helper so the URL-preservation contract is
+/// unit-testable without invoking `xcrun`.
+#[doc(hidden)]
+pub fn openurl_argv(udid: &str, url: &str) -> [String; 3] {
+    ["openurl".to_string(), udid.to_string(), url.to_string()]
+}
+
+impl SimctlClient {
 
     /// `xcrun simctl push <udid> <bundle-id> <apns-json-path>`.
     /// Deliver an APNS payload to a sim-installed app. The payload file is
@@ -803,6 +901,21 @@ impl SimctlClient {
     /// decoded or modified. See [`ensure_srgb_chunk`] for the exact
     /// splice operation.
     pub async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, SimctlError> {
+        // v1.0.4 — pace + circuit-check before invoking simctl.
+        let wait = {
+            let mut pacer = self
+                .screenshot_pacer
+                .lock()
+                .expect("screenshot pacer mutex must not be poisoned");
+            pacer
+                .compute_wait()
+                .map_err(|retry_after| SimctlError::CaptureBackpressure { retry_after })?
+        };
+        if !wait.is_zero() {
+            sleep(wait).await;
+        }
+
+        let call_start = std::time::Instant::now();
         let tmp =
             std::env::temp_dir().join(format!("smix-screenshot-{udid}-{}.png", std::process::id()));
         let tmp_str = tmp.display().to_string();
@@ -814,6 +927,17 @@ impl SimctlClient {
             })
         });
         let _ = std::fs::remove_file(&tmp);
+
+        let wall = call_start.elapsed();
+        let failed = bytes.is_err();
+        {
+            let mut pacer = self
+                .screenshot_pacer
+                .lock()
+                .expect("screenshot pacer mutex must not be poisoned");
+            pacer.record(wall, failed);
+        }
+
         let bytes = bytes?;
         if bytes.len() < 8 {
             return Err(SimctlError::Malformed {
@@ -984,6 +1108,40 @@ mod tests {
     #[test]
     fn compose_child_env_empty_input_is_empty_output() {
         assert!(compose_child_env(&[]).is_empty());
+    }
+
+    // -- v1.0.4 §G openurl URL preservation -----------------------------
+
+    #[test]
+    fn openurl_argv_preserves_url_verbatim() {
+        let udid = "12345678-1234-5678-1234-567812345678";
+        let url = "exp+focus-ai-app://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081";
+        let argv = super::openurl_argv(udid, url);
+        assert_eq!(argv[0], "openurl");
+        assert_eq!(argv[1], udid);
+        // Byte-identical URL — no percent-decoding, no query-strip.
+        assert_eq!(argv[2], url);
+        assert!(argv[2].contains("?url="));
+        assert!(argv[2].contains("%3A"));
+        assert!(argv[2].contains("%2F"));
+    }
+
+    #[test]
+    fn openurl_argv_preserves_ampersand_and_hash() {
+        let udid = "12345678-1234-5678-1234-567812345678";
+        let url = "insight://dev-mutate?action=env&value=staging#anchor";
+        let argv = super::openurl_argv(udid, url);
+        assert_eq!(argv[2], url);
+        assert!(argv[2].contains('&'));
+        assert!(argv[2].contains('#'));
+    }
+
+    #[test]
+    fn openurl_argv_preserves_unicode() {
+        let udid = "12345678-1234-5678-1234-567812345678";
+        let url = "insight://route?name=%E7%94%B0%E4%B8%AD";
+        let argv = super::openurl_argv(udid, url);
+        assert_eq!(argv[2], url);
     }
 
     // -- sRGB chunk normalization ---------------------------------------

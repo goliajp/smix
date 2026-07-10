@@ -263,6 +263,18 @@ pub trait AppLike: Send + Sync {
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure>;
     /// Capture a screenshot. Mirrors [`App::screenshot`] — v5.2 c1.
     async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure>;
+    /// v1.0.4 §D11 — snapshot the runner's a11y tree. Mirrors
+    /// [`App::tree`]. Used by `write_step_debug` to persist
+    /// `step-<N>-fail.tree.json` alongside the fail PNG. Default impl
+    /// returns an `ExpectationFailure` so mocks that don't need this
+    /// call keep compiling without changes.
+    async fn tree(&self) -> Result<smix_sdk::A11yNode, ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "AppLike::tree not implemented on this backend".to_string(),
+            ..Default::default()
+        }))
+    }
     /// v5.2 c3 — write a literal to device pasteboard.
     /// Mirrors [`App::set_clipboard`].
     async fn set_clipboard(&self, text: &str) -> Result<(), ExpectationFailure>;
@@ -446,6 +458,9 @@ impl AppLike for App {
     async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure> {
         App::screenshot(self).await
     }
+    async fn tree(&self) -> Result<smix_sdk::A11yNode, ExpectationFailure> {
+        App::tree(self).await
+    }
     async fn set_clipboard(&self, text: &str) -> Result<(), ExpectationFailure> {
         App::set_clipboard(self, text).await
     }
@@ -531,6 +546,40 @@ pub enum RunStepReport {
         /// Inner report (boxed to keep enum variant size bounded).
         inner: Box<RunReport>,
     },
+}
+
+/// v1.0.4 — per-step trace record populated when `--debug-output` is
+/// set. Feeds an enriched `run-summary.json` and separately-written
+/// `step-<N>-<verb>.tree.json` on failure. See RFC 1.0.4 §D11.
+#[derive(Debug, Clone, serde::Serialize)]
+#[non_exhaustive]
+pub struct StepDebugRecord {
+    /// 1-based step index inside the flow.
+    pub n: usize,
+    /// Verb slug (e.g. `"tapon"`, `"assertvisible"`).
+    pub verb: String,
+    /// Human-readable summary of the step (e.g. `"tapOn Sign In"`).
+    pub summary: String,
+    /// Terminal verdict — `"ok"` | `"skipped"` | `"expanded-subflow"` | `"failed"`.
+    pub verdict: String,
+    /// Wall-clock milliseconds the step took (dispatch + I/O + wait).
+    pub wall_ms: u64,
+    /// Relative path (under the debug-output dir) of the per-step
+    /// outcome JSON. Always present.
+    pub json_path: PathBuf,
+    /// Relative path of the fail-annotated PNG. Present on failure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub png_path: Option<PathBuf>,
+    /// Relative path of the a11y tree JSON snapshot. Present on
+    /// failure (§I ask).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tree_path: Option<PathBuf>,
+    /// On failure: kind slug from `failure_kind(err)`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<String>,
+    /// On failure: `err.to_string()` for grep-friendly display.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_message: Option<String>,
 }
 
 /// Aggregate report for one [`Adapter::run`] invocation.
@@ -677,6 +726,11 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// `<dir>/step-<N>-fail.png` (screenshot) + a failure record in
     /// the same json.
     debug_output: Option<PathBuf>,
+    /// v1.0.4 §D11 — accumulator for [`StepDebugRecord`] entries as
+    /// steps execute. Populated only when `debug_output` is set.
+    /// Kept on the adapter (not on `RunReport`) so a failed run still
+    /// exposes the partial trace via [`Adapter::debug_records`].
+    debug_records: Vec<StepDebugRecord>,
     /// Step index counter, monotonic per top-level `run()` call. Kept
     /// in Adapter (not thread-local, not a param) so recursive
     /// `run_steps_inner` from `repeat` / `retry` / `runFlow`-inline
@@ -723,6 +777,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             output: std::collections::BTreeMap::new(),
             env: std::collections::BTreeMap::new(),
             debug_output: None,
+            debug_records: Vec::new(),
             step_index: 0,
             last_locale: "en".to_string(),
             metro_tail: None,
@@ -730,6 +785,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             fixture_registry: None,
             no_fail_annotate: false,
         }
+    }
+
+    /// v1.0.4 §D11 — accumulated per-step trace records populated when
+    /// `--debug-output` is set. Available after `run()` returns
+    /// regardless of Ok/Err, so a failed run's partial trace is still
+    /// consumable by the CLI summary writer.
+    pub fn debug_records(&self) -> &[StepDebugRecord] {
+        &self.debug_records
     }
 
     /// v1.0 Phase C3 — opt-out for auto-annotate on --debug-output
@@ -905,16 +968,31 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             self.step_index += 1;
             let idx = self.step_index;
             let step_summary = summarize_step_verb(step);
+            let step_start = std::time::Instant::now();
             let outcome_result = self.run_step(step, &mut report.warnings).await;
-            match &outcome_result {
+            let wall_ms = step_start.elapsed().as_millis() as u64;
+            let debug_record = match &outcome_result {
                 Ok(outcome) => {
-                    self.write_step_debug(idx, &step_summary, StepOutcome::Ok(outcome))
-                        .await;
+                    self.write_step_debug(
+                        idx,
+                        &step_summary,
+                        StepOutcome::Ok(outcome),
+                        wall_ms,
+                    )
+                    .await
                 }
                 Err(e) => {
-                    self.write_step_debug(idx, &step_summary, StepOutcome::Failed(e))
-                        .await;
+                    self.write_step_debug(
+                        idx,
+                        &step_summary,
+                        StepOutcome::Failed(e),
+                        wall_ms,
+                    )
+                    .await
                 }
+            };
+            if let Some(rec) = debug_record {
+                self.debug_records.push(rec);
             }
             let outcome = outcome_result?;
             report.steps.push(outcome);
@@ -924,15 +1002,24 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
 
     /// Write `<debug_output>/step-<N>-<verb>.json` with the step
     /// outcome. On failure additionally emits `step-<N>-fail.png` via
-    /// `App::screenshot`. Best-effort: any I/O or screenshot error is
-    /// logged to stderr but does not affect the run result.
-    async fn write_step_debug(&self, idx: usize, step_summary: &str, outcome: StepOutcome<'_>) {
-        let Some(dir) = &self.debug_output else {
-            return;
-        };
+    /// `App::screenshot` AND `step-<N>-fail.tree.json` via `App::tree`
+    /// (v1.0.4 §D11). Best-effort: any I/O, screenshot, or tree error
+    /// is logged to stderr but does not affect the run result.
+    ///
+    /// Returns a [`StepDebugRecord`] with the paths + timing +
+    /// verdict for aggregation into `run-summary.json`. Returns `None`
+    /// when `--debug-output` is not set.
+    async fn write_step_debug(
+        &self,
+        idx: usize,
+        step_summary: &str,
+        outcome: StepOutcome<'_>,
+        wall_ms: u64,
+    ) -> Option<StepDebugRecord> {
+        let dir = self.debug_output.as_ref()?;
         if let Err(e) = std::fs::create_dir_all(dir) {
             eprintln!("WARN: debug-output mkdir {dir:?} failed: {e}");
-            return;
+            return None;
         }
         // Verb slug from "tapOn (optional)" → "tapon", or empty → "step".
         let verb_slug: String = step_summary
@@ -947,23 +1034,36 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         let mut record = serde_json::json!({
             "index": idx,
             "summary": step_summary,
+            "wallMs": wall_ms,
         });
-        match &outcome {
+        let mut png_path_rec: Option<PathBuf> = None;
+        let mut tree_path_rec: Option<PathBuf> = None;
+        let mut failure_kind_rec: Option<String> = None;
+        let mut failure_message_rec: Option<String> = None;
+        let verdict = match &outcome {
             StepOutcome::Ok(rep) => {
-                record["outcome"] = match rep {
-                    RunStepReport::Ok => serde_json::json!("ok"),
-                    RunStepReport::Skipped { reason } => {
-                        serde_json::json!({ "skipped": reason })
-                    }
-                    RunStepReport::ExpandedSubflow { path, .. } => {
-                        serde_json::json!({ "expandedSubflow": path.display().to_string() })
-                    }
+                let (verdict_str, outcome_val) = match rep {
+                    RunStepReport::Ok => ("ok", serde_json::json!("ok")),
+                    RunStepReport::Skipped { reason } => (
+                        "skipped",
+                        serde_json::json!({ "skipped": reason }),
+                    ),
+                    RunStepReport::ExpandedSubflow { path, .. } => (
+                        "expanded-subflow",
+                        serde_json::json!({ "expandedSubflow": path.display().to_string() }),
+                    ),
                 };
+                record["outcome"] = outcome_val;
+                verdict_str.to_string()
             }
             StepOutcome::Failed(err) => {
+                let kind = failure_kind(err);
+                let message = err.to_string();
+                failure_kind_rec = Some(kind.clone());
+                failure_message_rec = Some(message.clone());
                 let mut fail = serde_json::json!({
-                    "kind": failure_kind(err),
-                    "message": err.to_string(),
+                    "kind": kind,
+                    "message": message,
                 });
                 let png_path = base.with_extension("fail.png");
                 match self.app.screenshot().await {
@@ -1017,6 +1117,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                             Some(written) => {
                                 fail["screenshotPath"] =
                                     serde_json::json!(written.display().to_string());
+                                png_path_rec = Some(written);
                             }
                             None => {
                                 for w in warns {
@@ -1029,22 +1130,64 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         fail["screenshotError"] = serde_json::json!(format!("{e}"));
                     }
                 }
+                // v1.0.4 §D11 — snapshot a11y tree alongside the fail
+                // PNG so post-mortem analysis can see what the runner
+                // saw, not just what the sim rendered. Best-effort;
+                // any tree() error is recorded but does not affect
+                // the run result.
+                let tree_path = base.with_extension("fail.tree.json");
+                match self.app.tree().await {
+                    Ok(tree) => {
+                        let tree_bytes = serde_json::to_vec_pretty(&tree).unwrap_or_default();
+                        let mut warns: Vec<String> = Vec::new();
+                        match crate::output::write_yaml_output_lenient(
+                            &tree_path, &tree_bytes, &mut warns,
+                        ) {
+                            Some(written) => {
+                                fail["treePath"] =
+                                    serde_json::json!(written.display().to_string());
+                                tree_path_rec = Some(written);
+                            }
+                            None => {
+                                for w in warns {
+                                    eprintln!("WARN: {w}");
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        fail["treeError"] = serde_json::json!(format!("{e}"));
+                    }
+                }
                 record["outcome"] = serde_json::json!({ "failed": fail });
+                "failed".to_string()
             }
-        }
+        };
         let json_path = base.with_extension("json");
         let mut warns: Vec<String> = Vec::new();
-        if crate::output::write_yaml_output_lenient(
+        let json_written = crate::output::write_yaml_output_lenient(
             &json_path,
             &serde_json::to_vec_pretty(&record).unwrap_or_default(),
             &mut warns,
-        )
-        .is_none()
-        {
+        );
+        if json_written.is_none() {
             for w in warns {
                 eprintln!("WARN: {w}");
             }
         }
+        let final_json_path = json_written.unwrap_or(json_path);
+        Some(StepDebugRecord {
+            n: idx,
+            verb: verb_slug,
+            summary: step_summary.to_string(),
+            verdict,
+            wall_ms,
+            json_path: final_json_path,
+            png_path: png_path_rec,
+            tree_path: tree_path_rec,
+            failure_kind: failure_kind_rec,
+            failure_message: failure_message_rec,
+        })
     }
 
     /// v5.7 c1 — poll the smix runner for any SpringBoard / share-sheet

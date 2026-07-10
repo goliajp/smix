@@ -367,6 +367,36 @@ pub fn plan_launch_fresh_calls(
 /// pattern. One step, one await, one observable side effect (CLAUDE.md
 /// §9 #5).
 /// v1.0.3 — a runner-side session guard. Obtained via
+/// v1.0.4 §D7 — Session state exposed to consumers via
+/// [`Session::state`]. Additive over v1.0.3; the runner's
+/// `X-Sim-Health` response header drives transitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SessionState {
+    /// All observed signals inside envelope.
+    Healthy = 0,
+    /// At least one signal degraded (screenshot slow, /health stale).
+    Degraded = 1,
+    /// Runner is mid-cycle (supervisor auto-restart in progress).
+    Cycling = 2,
+    /// Runner or a watched subprocess (SimRenderServer / xcodebuild)
+    /// is gone.
+    Dead = 3,
+}
+
+impl SessionState {
+    /// Round-trip from the AtomicU8 storage; unknown wire values map
+    /// to `Healthy` (optimistic) so a new future state doesn't crash.
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Degraded,
+            2 => Self::Cycling,
+            3 => Self::Dead,
+            _ => Self::Healthy,
+        }
+    }
+}
+
 /// [`App::open_session`]; drop the value or call [`Session::close`] to
 /// release. While a session is open the wrapped `App` sends the
 /// `Session-Id` header on every request, and the runner uses the
@@ -396,6 +426,12 @@ pub struct Session {
     /// panics.
     app: Option<App>,
     session_id: String,
+    /// v1.0.4 §D7 — sim-health state observed via `X-Sim-Health`
+    /// response header on the last runner response. Updated
+    /// automatically by [`HttpRunnerClient`] when the header is
+    /// present; defaults to `Healthy` at open time. Consumers read
+    /// via [`Session::state`].
+    state: std::sync::Arc<std::sync::atomic::AtomicU8>,
 }
 
 impl Session {
@@ -415,6 +451,51 @@ impl Session {
     /// The runner-issued session id. Opaque; useful only for logging.
     pub fn session_id(&self) -> &str {
         &self.session_id
+    }
+
+    /// v1.0.4 §D7 — current sim-health classification observed via
+    /// the `X-Sim-Health` response header on the most recent runner
+    /// request. `Healthy` at open time (optimistic — the open call
+    /// itself succeeded); transitions to `Degraded` / `Cycling` / `Dead`
+    /// as the runner emits them.
+    pub fn state(&self) -> SessionState {
+        SessionState::from_u8(
+            self.state.load(std::sync::atomic::Ordering::Acquire),
+        )
+    }
+
+    /// v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
+    /// the session's cached `XCUIApplication` in place. Preserves the
+    /// session id and XCUITest binding. Consumers wire this after
+    /// observing an app crash (via [`Self::state`] transitioning to
+    /// `Degraded`/`Dead` with the runner itself Healthy) to auto-
+    /// recover without cycling the runner.
+    ///
+    /// Returns the wall-clock milliseconds the terminate + launch
+    /// cycle took, as reported by the runner.
+    pub async fn relaunch_app(&self) -> Result<u64, ExpectationFailure> {
+        let app = self.app();
+        let runner = app.http_runner_client().ok_or_else(|| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: "session relaunch_app: driver has no HTTP runner client".into(),
+                ..Default::default()
+            })
+        })?;
+        let req = smix_runner_client::SessionRelaunchAppRequest {
+            session_id: self.session_id.clone(),
+        };
+        runner
+            .relaunch_session_app(&req)
+            .await
+            .map(|r| r.wall_ms)
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("session relaunch_app: {e}"),
+                    ..Default::default()
+                })
+            })
     }
 
     /// Ask the runner to re-issue `.activate()` on the session's
@@ -565,9 +646,19 @@ impl App {
         })?;
         let sid = resp.session_id.clone();
         self.driver.set_session_id(Some(sid.clone()));
+        // v1.0.4 §D7 — hook the state atomic into the client so future
+        // X-Sim-Health header transitions are visible to consumers via
+        // Session::state(). Optimistic Healthy at open time.
+        let state = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(
+            SessionState::Healthy as u8,
+        ));
+        if let Some(runner) = self.http_runner_client() {
+            runner.attach_session_state(state.clone());
+        }
         Ok(Session {
             app: Some(self),
             session_id: sid,
+            state,
         })
     }
 
@@ -1615,6 +1706,13 @@ fn simctl_to_failure(e: SimctlError) -> ExpectationFailure {
         SimctlError::Timeout { ms, .. } => (
             FailureCode::Timeout,
             Some(format!("subprocess timeout after {ms}ms")),
+        ),
+        SimctlError::CaptureBackpressure { retry_after } => (
+            FailureCode::DriverError,
+            Some(format!(
+                "screenshot pacer circuit open — SimRenderServer under load; retry after {}ms",
+                retry_after.as_millis()
+            )),
         ),
     };
     ExpectationFailure::new(FailureInit {

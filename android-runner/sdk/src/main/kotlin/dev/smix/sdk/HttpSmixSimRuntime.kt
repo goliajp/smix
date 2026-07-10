@@ -46,6 +46,15 @@ class HttpSmixSimRuntime(
 
     private val sessionIdRef = AtomicReference<String?>(null)
 
+    /** v1.0.4 §D7 — setter installed by [Session.open] to receive
+     *  `X-Sim-Health` header transitions from every response. */
+    private val sessionStateSetterRef = AtomicReference<((SessionState) -> Unit)?>(null)
+
+    /** v1.0.4 §D7 — called by [Session.open]. */
+    fun attachSessionStateSetter(setter: (SessionState) -> Unit) {
+        sessionStateSetterRef.set(setter)
+    }
+
     /** JSON codec — lenient so pre-v1.0.3 runners without new fields still decode. */
     val json = Json {
         ignoreUnknownKeys = true
@@ -184,6 +193,15 @@ class HttpSmixSimRuntime(
             val payload = json.encodeToString(JsonElement.serializer(), body).toByteArray()
             conn.outputStream.use { it.write(payload) }
             val status = conn.responseCode
+            // v1.0.4 §D7 — parse X-Sim-Health response header and
+            // forward to the attached session state setter (if any).
+            val simHealthHeader = conn.getHeaderField("X-Sim-Health")
+            if (simHealthHeader != null) {
+                val parsed = SessionState.fromHeader(simHealthHeader)
+                if (parsed != null) {
+                    sessionStateSetterRef.get()?.invoke(parsed)
+                }
+            }
             val stream = if (status in 200..299) conn.inputStream else conn.errorStream
             val bytes = stream?.readBytes() ?: ByteArray(0)
             if (status !in 200..299) {

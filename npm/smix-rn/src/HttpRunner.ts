@@ -46,7 +46,14 @@ import type { LabelsResolver, SelectorResolver } from './SelectorResolver.js'
 export type HttpFetch = (
   input: string,
   init: { method: 'POST'; headers: Record<string, string>; body: string },
-) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string> }>
+) => Promise<{
+  ok: boolean
+  status: number
+  json(): Promise<unknown>
+  text(): Promise<string>
+  /** v1.0.4 §D7 — optional; used to parse `X-Sim-Health` response header. */
+  headers?: { get(name: string): string | null }
+}>
 
 /**
  * SmixSimRuntime + SelectorResolver wrapper around the smix-runner HTTP
@@ -70,6 +77,14 @@ export class HttpSimRuntime implements SmixSimRuntime {
    * class — direct callers rarely need to touch this.
    */
   private sessionId: string | null = null
+
+  /**
+   * v1.0.4 §D7 — setter installed by {@link Session.open} so this
+   * client can push `X-Sim-Health` header transitions back to the
+   * session's state machine. `null` when no session is open (legacy
+   * per-request path).
+   */
+  private sessionStateSetter: ((state: SessionState) => void) | null = null
 
   /**
    * v1.0.3 — public alias for the wrapped fetch implementation.
@@ -101,6 +116,15 @@ export class HttpSimRuntime implements SmixSimRuntime {
    */
   setSessionId(id: string | null): void {
     this.sessionId = id
+  }
+
+  /**
+   * v1.0.4 §D7 — register a callback the client invokes on every
+   * response that carries `X-Sim-Health`. Session.open() wires this
+   * so consumers can subscribe via `session.on('state', ...)`.
+   */
+  attachSessionState(setter: (state: SessionState) => void): void {
+    this.sessionStateSetter = setter
   }
 
   /**
@@ -193,6 +217,21 @@ export class HttpSimRuntime implements SmixSimRuntime {
       headers,
       body: JSON.stringify(body),
     })
+    // v1.0.4 §D7 — parse X-Sim-Health header and forward to the
+    // attached session state setter (if any). Runs BEFORE the
+    // ok-check so state transitions are visible on error paths too.
+    const simHealthHeader = resp.headers?.get?.('x-sim-health')
+    if (simHealthHeader && this.sessionStateSetter) {
+      const normalized = simHealthHeader.trim().toLowerCase()
+      if (
+        normalized === 'healthy' ||
+        normalized === 'degraded' ||
+        normalized === 'cycling' ||
+        normalized === 'dead'
+      ) {
+        this.sessionStateSetter(normalized as SessionState)
+      }
+    }
     if (!resp.ok) {
       const text = await resp.text()
       throw new Error(`smix-runner ${path} → HTTP ${resp.status}: ${text}`)
@@ -205,6 +244,9 @@ export class HttpSimRuntime implements SmixSimRuntime {
     }
   }
 }
+
+/** v1.0.4 §D7 — re-export from Session.ts so this file's use compiles. */
+export type SessionState = 'healthy' | 'degraded' | 'cycling' | 'dead'
 
 function base64ToBytes(b64: string): Uint8Array {
   if (typeof globalThis.atob === 'function') {

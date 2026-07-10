@@ -271,7 +271,7 @@ pub(crate) use expr::{Context as ExprContext, parse_and_eval as expr_eval};
 pub use expr::Value as ExprValue;
 
 pub use parser::{parse_flow_file, parse_flow_yaml, text_to_pattern, visible_to_selector};
-pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport};
+pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebugRecord};
 
 /// A maestro YAML command. Each variant corresponds to one or more
 /// `smix-sdk` action calls (the mapping is the c3 job — for now the

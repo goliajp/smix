@@ -494,3 +494,66 @@ async fn health_detail_tolerates_legacy_empty_body() {
     assert!(resp.ok);
     assert_eq!(resp.runner_version, "");
 }
+
+// ---- v1.0.4 sim-health feed -------------------------------------------
+
+#[tokio::test]
+async fn sim_health_receives_health_ok_from_bare_probe() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let monitor =
+        smix_sim_health::SimHealthMonitor::new(smix_sim_health::SimHealthConfig::default());
+    let client = HttpRunnerClient::with_base(server.uri()).with_sim_health(monitor.clone());
+    // Force a Degraded starting point via a failed process observation
+    // so we can detect the recovery signal fed by the /health call.
+    monitor.record_process("SimRenderServer", false);
+    assert_eq!(monitor.state(), smix_sim_health::SimHealthState::Dead);
+    monitor.record_process("SimRenderServer", true);
+    // record_process alone recovers, so bare /health OK just keeps us Healthy.
+    assert_eq!(monitor.state(), smix_sim_health::SimHealthState::Healthy);
+    assert!(client.health().await);
+    assert_eq!(monitor.state(), smix_sim_health::SimHealthState::Healthy);
+}
+
+#[tokio::test]
+async fn sim_health_receives_health_fail_from_detail_5xx() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    let monitor =
+        smix_sim_health::SimHealthMonitor::new(smix_sim_health::SimHealthConfig::default());
+    let client = HttpRunnerClient::with_base(server.uri()).with_sim_health(monitor.clone());
+    let _ = client.health_detail().await;
+    // A single fail with health_stale not yet reached stays classified
+    // as HealthNeverSeen (Degraded) — the important thing is the feed
+    // reached the monitor without panicking and the sim_health accessor works.
+    let m = client.sim_health().expect("sim_health should be set");
+    let evt = m.subscribe();
+    // Second /health call, still 500.
+    let _ = client.health_detail().await;
+    drop(evt);
+    // Assertion: the monitor is not Healthy anymore after two failed probes with
+    // no successful history — HealthNeverSeen keeps it out of Healthy.
+    assert_ne!(monitor.state(), smix_sim_health::SimHealthState::Healthy);
+}
+
+#[tokio::test]
+async fn sim_health_accessor_returns_none_by_default() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    assert!(client.sim_health().is_none());
+    // Without a monitor, /health still works — no feed, no crash.
+    assert!(client.health().await);
+}

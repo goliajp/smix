@@ -108,6 +108,88 @@ try {
 
 The Kotlin `HttpSmixSimRuntime` uses `java.net.HttpURLConnection` — no additional HTTP-library dependency. Thread-safe on the session-id field via `AtomicReference`.
 
+## v1.0.4 — Session state + relaunch-app
+
+Since v1.0.4, sessions expose a `state` classification driven by the runner's `X-Sim-Health` response header, and a `relaunch_app()` primitive for in-place app-crash recovery.
+
+### State
+
+`SessionState` values:
+
+- `healthy` — all watched signals inside envelope
+- `degraded` — screenshot slow-path, `/health` age between stale and dead thresholds, or `/system-popups` throttled
+- `cycling` — runner supervisor is mid auto-restart; wait for `healthy` before retrying failed calls
+- `dead` — SimRenderServer or xcodebuild is gone; bail out
+
+Consumers subscribe:
+
+```rust
+// Rust
+match session.state() {
+    SessionState::Healthy => { /* proceed */ }
+    SessionState::Degraded => { /* pause the gate loop */ }
+    SessionState::Cycling => { /* wait for healthy */ }
+    SessionState::Dead => { /* abort */ }
+}
+```
+
+```ts
+// TypeScript
+session.on('state', (state) => {
+  if (state === 'degraded') pauseGate()
+  if (state === 'dead') abortGate()
+  if (state === 'cycling') waitFor('healthy')
+})
+```
+
+```swift
+// Swift
+for await state in session.stateStream {
+    switch state {
+    case .healthy: break
+    case .degraded: pauseGate()
+    case .cycling: await waitForHealthy(session)
+    case .dead: throw GateError.runnerDead
+    }
+}
+```
+
+```kotlin
+// Kotlin
+session.stateFlow.collect { state ->
+    when (state) {
+        SessionState.HEALTHY -> {}
+        SessionState.DEGRADED -> pauseGate()
+        SessionState.CYCLING -> waitForHealthy(session)
+        SessionState.DEAD -> throw GateException("runner dead")
+    }
+}
+```
+
+### Relaunch app
+
+When the target app crashes but the runner is still healthy, `relaunch_app()` does an in-place `terminate() + launch()` on the session's cached binding — session id + XCUITest binding preserved, no runner cycle needed.
+
+```rust
+// Rust
+let wall_ms = session.relaunch_app().await?;
+```
+
+```ts
+// TypeScript
+const wallMs = await session.relaunchApp()
+```
+
+```swift
+// Swift
+let wallMs = try await session.relaunchApp()
+```
+
+```kotlin
+// Kotlin
+val wallMs = session.relaunchApp()
+```
+
 ## CLI
 
 `smix run` opens a session automatically. No new flags — the session is just there under the hood:

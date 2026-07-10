@@ -22,11 +22,36 @@
 
 package dev.smix.sdk
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+
+/**
+ * v1.0.4 §D7 — session-scoped sim health classification observed via
+ * the runner's `X-Sim-Health` response header. Consumers subscribe via
+ * [Session.stateFlow].
+ */
+enum class SessionState {
+    HEALTHY,
+    DEGRADED,
+    CYCLING,
+    DEAD;
+
+    companion object {
+        fun fromHeader(value: String): SessionState? = when (value.trim().lowercase()) {
+            "healthy" -> HEALTHY
+            "degraded" -> DEGRADED
+            "cycling" -> CYCLING
+            "dead" -> DEAD
+            else -> null
+        }
+    }
+}
 
 /**
  * Runner-side session guard.
@@ -45,6 +70,33 @@ class Session private constructor(
     // Non-atomic close guard is fine: duplicate POST /session/close is
     // idempotent on the runner side.
     private var closed = false
+
+    private val _stateFlow = MutableStateFlow(SessionState.HEALTHY)
+
+    /**
+     * v1.0.4 §D7 — current sim-health classification. Updated
+     * automatically as the runtime parses `X-Sim-Health` headers.
+     */
+    val stateFlow: StateFlow<SessionState> get() = _stateFlow.asStateFlow()
+
+    /** v1.0.4 §D7 — current state snapshot. */
+    val state: SessionState get() = _stateFlow.value
+
+    internal fun updateState(next: SessionState) {
+        _stateFlow.value = next
+    }
+
+    /**
+     * v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
+     * the session's cached UiAutomator binding IN PLACE, preserving
+     * this session id. Returns wall-clock milliseconds the cycle took.
+     */
+    suspend fun relaunchApp(): Long {
+        check(!closed) { "session already closed" }
+        val body = JsonObject(mapOf("sessionId" to JsonPrimitive(sessionId)))
+        val obj = runtime.postJsonObject("/session/relaunch-app", body)
+        return obj["wallMs"]?.jsonPrimitive?.longOrNull ?: 0L
+    }
 
     /**
      * Ask the runner to re-issue `.activate()` on the session's cached
@@ -104,7 +156,11 @@ class Session private constructor(
             val activatedOnce = obj["activatedOnce"]?.jsonPrimitive?.booleanOrNull ?: false
             val serverTimeMs = obj["serverTimeMs"]?.jsonPrimitive?.longOrNull ?: 0L
             runtime.setSessionId(sid)
-            return Session(sid, activatedOnce, serverTimeMs, runtime)
+            val session = Session(sid, activatedOnce, serverTimeMs, runtime)
+            // v1.0.4 §D7 — wire the runtime's X-Sim-Health parse into
+            // this session's state machine.
+            runtime.attachSessionStateSetter { next -> session.updateState(next) }
+            return session
         }
     }
 }
