@@ -2098,14 +2098,14 @@ final class SmixRunnerUITests: XCTestCase {
       // wired at 500 ms because the failure mode is a runaway poll
       // loop (~1.7 QPS × 6 XCUIQuery); no consumer benefit at faster
       // than 500 ms cadence and the arbitration cost is decisive.
-      popupPacer: SmixRunnerServer.PopupPacer(floorMs: 500),
+      popupPacer: PopupPacer(floorMs: 500),
       // v1.0.4 §D2 — 20 s app-alive suppression window after an
       // observed XCTIssue about the target app. See RFC 1.0.4 §D2.
-      appAliveCache: SmixRunnerServer.AppAliveCache(ttlMs: 20_000),
+      appAliveCache: AppAliveCache(ttlMs: 20_000),
       // v1.0.4 §D7 — initially `.healthy`; downgraded by the runner
       // supervisor as it observes SimRenderServer / xcodebuild
       // signals or by handlers that catch specific error shapes.
-      simHealthPublisher: SmixRunnerServer.SimHealthPublisher(initial: .healthy)
+      simHealthPublisher: SimHealthPublisher(initial: .healthy)
     )
   }
 }
