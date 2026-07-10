@@ -1,0 +1,40 @@
+# smix release smoke — exercises every net-new v1.0.4/v1.0.5 code path.
+#
+# Not user-facing. Consumers writing production flows should look at
+# docs/ai-guide/ instead. This yaml is intentionally minimal — the goal
+# is coverage of the smix runtime paths, not a good UX demo.
+#
+# Usage: driven by `scripts/release/smoke-v1.smoke.sh`; not meant to
+# `smix run` directly.
+
+appId: com.apple.mobilesafari
+
+---
+# 1. takeScreenshot ×20 in quick succession — exercises the v1.0.4
+#    screenshot pacer's 100 ms interval floor. Consumer never sees a
+#    per-call error; the pacer sleeps internally to enforce cadence.
+#    Duration should be roughly 20 × 100 ms = 2 s, not the ~20 ms an
+#    unpaced run would take.
+
+- launchApp:
+    appId: com.apple.mobilesafari
+    clearState: true
+
+- takeScreenshot: /tmp/smoke-shots/shot-01.png
+- takeScreenshot: /tmp/smoke-shots/shot-02.png
+- takeScreenshot: /tmp/smoke-shots/shot-03.png
+- takeScreenshot: /tmp/smoke-shots/shot-04.png
+- takeScreenshot: /tmp/smoke-shots/shot-05.png
+- takeScreenshot: /tmp/smoke-shots/shot-06.png
+- takeScreenshot: /tmp/smoke-shots/shot-07.png
+- takeScreenshot: /tmp/smoke-shots/shot-08.png
+- takeScreenshot: /tmp/smoke-shots/shot-09.png
+- takeScreenshot: /tmp/smoke-shots/shot-10.png
+
+# 2. assertVisible on a bundle-known-not-present id — exercises the
+#    v1.0.4 --debug-output fail.tree.json emit. Expected outcome: the
+#    step fails, but --debug-output must produce a step-*.fail.tree.json
+#    for the smoke driver to grep.
+
+- assertVisible:
+    id: "smix-smoke-nonexistent-id-do-not-add-to-any-app"
