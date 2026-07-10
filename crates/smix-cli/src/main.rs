@@ -583,6 +583,21 @@ enum RunnerAction {
         #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
         runner_project: Option<PathBuf>,
     },
+    /// v1.0.5 — Attach a supervisor to a running runner: tail its log
+    /// and auto-`cycle` on interrupt patterns (`** TEST INTERRUPTED
+    /// **` / `SchemeActionResultOperation started unexpectedly`).
+    /// Foreground process; SIGINT or SIGTERM cleanly exits. Session
+    /// persistence (v1.0.5 D1) preserves consumer session ids across
+    /// each cycle. See RFC 1.0.5 D2.
+    Supervise {
+        /// Explicit path to `SmixRunner.xcodeproj` for the cycle
+        /// operation. Same cascade as `runner up`.
+        #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
+        runner_project: Option<PathBuf>,
+    },
+    /// v1.0.5 — List every session the runner currently tracks.
+    /// Reads `POST /session/list`. Useful for post-cycle diagnostics.
+    ListSessions,
 }
 
 #[derive(Subcommand, Debug)]
@@ -933,6 +948,37 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     let port = runner_port();
                     runner::cycle(&root, port, runner_project.as_deref())
                         .map_err(CliError::Other)?;
+                }
+                RunnerAction::Supervise { runner_project } => {
+                    runner::supervise(&root, runner_project.as_deref())
+                        .map_err(CliError::Other)?;
+                }
+                RunnerAction::ListSessions => {
+                    let port = runner_port();
+                    let client = smix_runner_client::HttpRunnerClient::new(port);
+                    let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                        CliError::Other(format!("tokio runtime: {e}"))
+                    })?;
+                    let resp = rt.block_on(client.list_sessions()).map_err(|e| {
+                        CliError::Other(format!("/session/list: {e}"))
+                    })?;
+                    if resp.sessions.is_empty() {
+                        println!("(no open sessions)");
+                    } else {
+                        println!(
+                            "{:<38} {:<40} openedAtMs        lastActivatedAtMs",
+                            "sessionId", "bundleId"
+                        );
+                        for s in &resp.sessions {
+                            println!(
+                                "{:<38} {:<40} {:<17} {}",
+                                s.session_id,
+                                s.bundle_id,
+                                s.opened_at_ms,
+                                s.last_activated_at_ms,
+                            );
+                        }
+                    }
                 }
             }
         }
