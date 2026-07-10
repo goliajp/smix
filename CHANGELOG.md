@@ -2,7 +2,36 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [1.0.4] — 2026-07-11
+## [1.0.5] — 2026-07-11
+
+Session persistence across XCTest lifecycle, host-side XCTest supervisor daemon, runner idle-close sweep, and the release smoke gate script. RFC `.claude/rfcs/1.0.5-supervisor-and-persistence.md`. Closes the three v1.0.4 deferrals + the "shipped on build-green only" gap.
+
+### Added — session persistence (RFC §D1)
+
+- **`POST /session/list`** → `{sessions: [{sessionId, bundleId, openedAtMs, lastActivatedAtMs}]}`. Rust: `HttpRunnerClient::list_sessions()`. CLI: `smix runner list-sessions` (pretty-printed table).
+- **`Session::still_valid()` on all 4 SDKs** — probes `/session/list` and returns `true` iff the runner still knows this session id. Consumers wire it after a `Session::state` transition to `Cycling` or `Dead` to decide whether to keep using the session (§D1 preserves them across cycles) or reopen.
+- **Runner-side persistence** — session table serializes to `~/Documents/smix-sessions.json` inside the sim on every mutation via `Data.write(.atomic)` (atomic-rename write). Boot rehydrates whatever's there, rebuilding each `XCUIApplication(bundleIdentifier:)` fresh (no `.activate()` call — the client's next request drives that). `smix runner cycle` preserves the file, so consumer `Session-Id` survives the cycle transparently.
+
+### Added — supervisor daemon (RFC §D2)
+
+- **`smix runner supervise [--runner-project <path>]`** — foreground process that tails `.smix/runner/runner-<UDID>.log`, matches interrupt patterns (`** TEST INTERRUPTED **`, `SchemeActionResultOperation started unexpectedly`), and auto-invokes `runner::cycle()` on hit. Backoff: 60 s per-cycle cooldown. Circuit breaker: 5 cycles in 10 minutes → exit non-zero so a monitoring layer can escalate. Emits `{"event":"RunnerCycled","reasonMatched":"...","atMs":N}` JSON on stdout per cycle. Fulfills feedback §E ask 1.
+
+### Added — idle-close sweep (RFC §D3)
+
+- **Runner-side session idle-close** — `SessionEntry` gains `lastAccessedAt`; `resolveApp()` refreshes it on every `Session-Id` hit. Detached `Task.detached` in `test_runForever` reaps sessions whose `lastAccessedAt` is older than 60 s every 15 s. Half-orphaned client sessions (SIGKILL wipes client without close) vanish within 60-75 s instead of accumulating until runner restart. Emits a stderr line on non-zero reap for operator visibility.
+
+### Added — release smoke gate + ship script (RFC §D4)
+
+- **`scripts/release/smoke-v1.smoke.sh` + `.smoke.yaml`** — real-sim gate exercising every net-new v1.0.4/v1.0.5 code path: pacer floor (`takeScreenshot × 10`), `--debug-output` `fail.tree.json` emit on a deliberate `assertVisible` fail, `runner cycle` + `/session/list` persistence, supervisor 5 s alive check. Requires jq + a booted sim.
+- **`scripts/release/ship.sh <version> [--i-know-what-im-doing]`** — DAG-ordered 4-ecosystem publisher, refuses to run unless the smoke gate has passed in the last hour. Bypass flag is an audit-visible knob, not a silent default.
+
+### Wire + ABI compatibility
+
+- All additions are additive (routes, response fields, CLI verbs).
+- v1.0.5 clients work against v1.0.4 runners (missing `/session/list` → 404; SDK `Session::still_valid()` propagates the error and consumers treat as invalid).
+- v1.0.4 clients keep working against v1.0.5 runners.
+
+
 
 Studio protection + full-scope insight feedback response. Motivation: a downstream `insight` gate loop running against a v1.0.3 runner triggered `SimRenderServer` `brk 1` assertion inside the `com.apple.display.captureservice` dispatch queue, cascading into shutdown_stall and forced macOS restarts. Forensic evidence + response plan in `docs/ai-guide/insight-v1.0.3-studio-crash-2026-07-10.md` (gitignored). This release closes every ask in `insight/.claude/state/gol-611/smix-feedback-2026-07-10-gate-hardening.md` (§A–§I) plus the SimRenderServer stress fix, plus lifecycle-safe-exit primitives.
 
