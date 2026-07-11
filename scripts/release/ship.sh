@@ -60,7 +60,7 @@ NPM_VERSION="$(cd "$ROOT/npm/smix-rn" && node -p 'require("./package.json").vers
 
 log "publish crates.io DAG at $VERSION"
 CRATES=(
-  smix-sim-health
+  smix-sim-health smix-runner-sources
   smix-screen smix-selector smix-input smix-error
   smix-verbs smix-metro-log smix-adb
   smix-runner-wire smix-selector-resolver smix-fixture
@@ -72,14 +72,36 @@ CRATES=(
 )
 for c in "${CRATES[@]}"; do
   log "cargo publish -p $c"
-  ( cd "$ROOT" && cargo publish -p "$c" ) || fail "cargo publish $c"
-  sleep 5
+  # v1.0.4+ pattern from prior ship cycles: crates.io rate-limits at
+  # ~1-2 publishes per 90s window under aggressive sequential publish.
+  # Retry-with-backoff on 429/already-in-progress until success.
+  attempt=0
+  until ( cd "$ROOT" && cargo publish -p "$c" ) 2>&1 | tee /tmp/pub-$c.log | grep -qE "Published|already exists|already uploaded"; do
+    attempt=$((attempt+1))
+    if grep -qE "429|rate limit|too many requests" /tmp/pub-$c.log; then
+      log "  rate-limited ($attempt), sleeping 90s"
+      sleep 90
+    elif [[ $attempt -gt 5 ]]; then
+      fail "cargo publish $c — exhausted retries; check /tmp/pub-$c.log"
+    else
+      log "  attempt $attempt failed, retry after 30s"
+      sleep 30
+    fi
+  done
+  sleep 8
 done
 
 # --- publish npm ------------------------------------------------------
 
 log "npm publish @goliapkg/smix@$VERSION"
-( cd "$ROOT/npm/smix-rn" && npm publish --access public ) || fail "npm publish"
+# v0.1.0 SDK ship cycle finding: `npm publish` crashes on nvm 26.5.0
+# node ("Cannot find module npm.js"), `bun publish` works. Prefer bun.
+if command -v bun >/dev/null 2>&1; then
+  ( cd "$ROOT/npm/smix-rn" && bun run build && bun publish --access public ) \
+    || fail "bun publish"
+else
+  ( cd "$ROOT/npm/smix-rn" && npm publish --access public ) || fail "npm publish"
+fi
 
 # --- publish Maven Central -------------------------------------------
 
