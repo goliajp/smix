@@ -88,6 +88,44 @@ fn extract_with_force_backs_up_existing_contents() {
 }
 
 #[test]
+fn extract_carries_over_xcframework_from_backup() {
+    // Regression: the xcframework is a 13 MB binary that is
+    // intentionally excluded from the shipped tarball (fetched or
+    // built separately). But on auto-sync, a consumer who already
+    // had a working xcframework in the pre-extract tree must not
+    // lose it — otherwise the very next `smix runner up` fails at
+    // Swift Package Graph resolve time with `binary target ... does
+    // not contain a binary artifact`. Caught on real-sim during
+    // v1.0.10 §D8 validation.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let dst = dir.path().join("runner");
+    fs::create_dir_all(&dst).expect("mkdir");
+    fs::write(dst.join("stale.txt"), b"stale").expect("seed source file");
+    let xcf = dst.join("SmixCoreFFI.xcframework");
+    fs::create_dir_all(xcf.join("ios-arm64-simulator")).expect("mkdir xcf");
+    fs::write(xcf.join("Info.plist"), b"<?xml version=\"1.0\"?>").expect("seed xcf");
+    fs::write(
+        xcf.join("ios-arm64-simulator/marker.bin"),
+        b"binary-artifact-marker",
+    )
+    .expect("seed xcf leaf");
+
+    let report = smix_runner_sources::extract_to(&dst, true).expect("extract");
+    assert!(report.carried_xcframework_from.is_some(), "must carry xcframework");
+    let carried = dst.join("SmixCoreFFI.xcframework");
+    assert!(carried.exists(), "xcframework directory must be in new tree");
+    assert!(carried.join("Info.plist").exists(), "xcframework Info.plist must survive");
+    let leaf = carried.join("ios-arm64-simulator/marker.bin");
+    assert!(leaf.exists(), "xcframework leaf file must survive: {}", leaf.display());
+    assert_eq!(
+        fs::read(&leaf).unwrap(),
+        b"binary-artifact-marker",
+        "carried xcframework must be byte-identical"
+    );
+    assert!(dst.join("Package.swift").exists(), "fresh tarball contents must still land");
+}
+
+#[test]
 fn extract_excludes_xcframework_binary() {
     // The xcframework is 13MB; if the exclude regressed, the tarball
     // bloats and consumers pay download cost.
