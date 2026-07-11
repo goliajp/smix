@@ -2,6 +2,107 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.14] — 2026-07-11
+
+**resetAppData verb (URL-scheme JS-wipe) + external metro log tail (`--metro-log <path>`) + verb-selection guide.** Response to `smix-feedback-2026-07-11-post-native-fix.md` + insight Q&A in `smix-feedback-2026-07-11-v1.0.12-answers.md`. RFC `.claude/rfcs/1.0.14-cluster-a-b-c-plus-retry.md`; verb-selection guide at `.claude/rfcs/verb-selection-guide.md`.
+
+Version jump 1.0.11 → 1.0.14 (no interim v1.0.12 or v1.0.13 published) per user directive `以 1.0.14 为目标 autorun，中途不 ship`.
+
+### Cluster A — `resetAppData` verb (URL-scheme JS-wipe)
+
+Fixes the "dev-fixture ceremony cost" problem in insight's `smix-feedback-2026-07-11-post-native-fix.md` §1. Every prior `clearAppData` wiped the app's container INCLUDING expo-dev-client's persisted metro URL + Metro bundle cache + dev-tools state — replaying a 15-30 s dev-client cold-boot ceremony every launch.
+
+New verb: `resetAppData` fires an app-owned URL scheme on the host (`simctl openurl <UDID> <url>`), optionally waits for a completion signal on the external metro log tail, then returns. No container tear. Consumer app decides scope (typically `mmkv.clearAll()` + `console.log('[dev] reset-complete token=<uuid>')`).
+
+yaml shapes:
+
+```yaml
+# short form
+- resetAppData: 'insight://dev-mutate?action=reset'
+
+# map form
+- resetAppData:
+    via: url-scheme            # only 'url-scheme' today; extensible
+    url: 'insight://dev-mutate?action=reset'
+    waitFor:
+      logLinePattern: '\[insight-dev\] reset-complete token='
+      # OR: sleepMs: 500 (best-effort fallback when --metro-log unset)
+    timeoutMs: 5000
+```
+
+- `Step::ResetAppData { url, wait_for, timeout_ms }` in `smix-adapter-maestro`; parser accepts short-form + map-form.
+- `smix_sdk::ResetAppDataWaitFor` enum (`LogLinePattern(String)` / `Sleep(u64)`) shared between adapter Step and SDK.
+- Runtime dispatch fires `simctl openurl` via `App::open_url`, then either sleeps or awaits a `smix_metro_log::MetroLogTail::await_signal` match — the tail is provided by `smix run --metro-log <path>`.
+- `smix-simctl::increment_reset_app_data_total()` + `increment_reset_app_data_timed_out()` counters, persisted to `~/.local/share/smix/reset-app-data-counters.json` so `smix diagnostic dump` (later, separate process) surfaces the counts.
+
+Wire counter fields in `SessionLifecycleCounters`: `reset_app_data_total`, `reset_app_data_timed_out`. CLI-side populated (host-side dispatch, no runner HTTP round-trip for the reset itself).
+
+### Cluster B — external metro log tail (`--metro-log <path>` on `smix diagnostic dump`)
+
+Fixes insight's "log gate skipped — metro was already running externally" problem in `smix-feedback-2026-07-11-post-native-fix.md` §2 + §5. Consumers who spawn metro externally (`nohup bun dev > /tmp/metro.log`) couldn't see JS-side log signal when a flow stalled.
+
+- New CLI flags on `smix diagnostic dump`:
+  - `--metro-log <path>` — tail the last N lines from this file at dump time.
+  - `--metro-log-tail-lines <N>` — default 200 per insight Q6.
+- New `tail_lines(path, n)` helper — seeks from EOF in 8 KB chunks, splits on `\n`, handles UTF-8 split across chunk boundaries, files smaller than one chunk, files with no trailing newline. 6 unit tests locked.
+- New wire field `DiagnosticDumpResponse.metro_log_tail: Vec<String>` — CLI-side populated at dump time (not runner). Backward-compat additive.
+- CLI display gains a `=== metro log tail (last N of file) ===` section when populated.
+- Also lands `smix diagnostic dump` sections for `resetAppData` counters + `interactive` counters (v1.0.15 will populate the latter).
+
+For runtime tail during `smix run` (used by v1.0.14's `resetAppData waitFor: { logLinePattern }` and pre-existing `expect.signal` verbs), the existing `smix-metro-log FileTailSubscriber` + `MetroLogTail` continue to serve — no new subscriber design required.
+
+### Cluster D — verb-selection guide + shipping-doc format
+
+Insight `smix-feedback-2026-07-11-v1.0.12-answers.md` Q10 ask.
+
+- `.claude/rfcs/verb-selection-guide.md` — decision tree + comparison matrix for `clearAppData` vs `resetAppData` vs `clearState + clearKeychain`. Migration crib from pre-v1.0.14 yaml to the split baseline + fast-path pattern.
+- v1.0.14 shipping doc (this release's) gains: 3-line TL;DR at top; `[see prior-doc §X]` cross-doc back-links.
+
+### Forward-compat wire scaffolding (Cluster C + §6 land in v1.0.15)
+
+Wire types added in v1.0.14, Swift/impl side deferred to v1.0.15 so consumers get a coherent Cluster C release rather than a half-populated one:
+
+- `SessionLifecycleCounters.launch_app_reached_interactive` + `launch_app_timed_out_before_interactive` (Cluster C D3 counters; Swift-side polling not yet wired — always 0).
+- `FlowAttemptRecord` + `FlowAttempt` types + `DiagnosticDumpResponse.recent_flows: Vec<FlowAttemptRecord>` (§6 retry attribution; --retry N mechanism not yet wired — always empty).
+- All `#[serde(default)]` — a v1.0.14 consumer ignoring the fields sees zero behaviour change; v1.0.15 populates the same fields without a wire migration.
+
+### Wire compatibility
+
+- New request/response fields carry `#[serde(default)]` everywhere.
+- `Step::ResetAppData` is a new parser entry — pre-v1.0.14 yaml unaffected.
+- `SessionLifecycleCounters` gains 4 fields (2 Cluster A populated, 2 Cluster C scaffolded).
+- `DiagnosticDumpResponse` gains 2 fields (`metroLogTail` populated CLI-side, `recentFlows` scaffolded).
+- No route path changes; no HTTP method changes; no runner-side behaviour change (all v1.0.14 work is on the CLI + host side).
+
+### Ship gate observations (real-sim, `sim-insight` iOS 26.5)
+
+```
+$ smix --version                                                              # → smix 1.0.14
+$ smix runner install --force                                                 # → extracted 303 files at v1.0.14
+$ cat ~/.local/share/smix/runner/.smix-runner-version                         # → 1.0.14
+$ smix runner up FFC57DAE-4B26-4B0C-9FAD-4F5735C0C2B1 --bundle com.apple.Preferences
+runner up: http://localhost:22087/health = 200 (runner v1.0.14)
+$ curl -s http://127.0.0.1:22087/health | jq .runnerVersion                   # → "1.0.14"
+
+# --metro-log tail render
+$ echo -e "line-1\nline-2\nline-3\nline-4\nline-5" > /tmp/test-metro.log
+$ smix diagnostic dump --metro-log /tmp/test-metro.log --metro-log-tail-lines 3
+=== metro log tail (last 3 of file) ===
+  line-3
+  line-4
+  line-5
+
+# New counter sections render
+$ smix diagnostic dump | head
+  resetAppData: total=0 timedOut=0  # timedOut>0 → URL scheme fired but reset-complete log-line never arrived
+  interactive: reachedInteractive=0 timedOutBeforeInteractive=0  # timedOut>0 → process foreground but a11y tree unusable
+```
+
+680 workspace cargo tests + 3 new clearAppData parser tests + 3 new resetAppData parser tests + 6 new `tail_lines` unit tests + 1 new reset-app-data-counters roundtrip test green.
+
+Insight-side canary (post-publish, per Q9): ship on Preferences smoke as historical, insight runs bootstrap batch same-day. Docker testbed image (§C.4 offer) still pending on their side; when it lands we wire `scripts/release/corpus-gate.sh` and no v1.0.15+ ships without it.
+
+
 ## [1.0.11] — 2026-07-11
 
 **launchApp launchArgs/launchEnv + wait-for-foreground + always-emit aliveCache + terminate-outcome counters.** Response to `smix-feedback-2026-07-11-v1.0.10-observations.md`. RFC `.claude/rfcs/1.0.11-launch-lifecycle-and-observability-under-load.md`; the standalone a11y-cache invariant note lives at `.claude/rfcs/appalive-cache-invariant.md`.

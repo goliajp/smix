@@ -1122,3 +1122,67 @@ fn parse_clear_app_data_accepts_short_args_and_env_aliases() {
         other => panic!("expected ClearAppData, got: {other:?}"),
     }
 }
+
+// v1.0.14 Cluster A — resetAppData parser shape locks.
+
+#[test]
+fn parse_reset_app_data_short_form_url_string() {
+    let yaml = "appId: com.test.app\n---\n- resetAppData: 'insight://dev-mutate?action=reset'\n";
+    let flow = parse_flow_yaml(yaml).expect("parse short-form resetAppData");
+    match &flow.steps[0] {
+        Step::ResetAppData { url, wait_for, timeout_ms } => {
+            assert_eq!(url, "insight://dev-mutate?action=reset");
+            assert!(wait_for.is_none());
+            assert_eq!(*timeout_ms, 5000);
+        }
+        other => panic!("expected ResetAppData, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_reset_app_data_map_form_with_log_line_pattern() {
+    use smix_sdk::ResetAppDataWaitFor;
+    let yaml = r#"appId: com.test.app
+---
+- resetAppData:
+    via: url-scheme
+    url: 'insight://dev-mutate?action=reset'
+    waitFor:
+      logLinePattern: '\[insight-dev\] reset-complete token='
+    timeoutMs: 7000
+"#;
+    let flow = parse_flow_yaml(yaml).expect("parse map-form resetAppData");
+    match &flow.steps[0] {
+        Step::ResetAppData { url, wait_for, timeout_ms } => {
+            assert_eq!(url, "insight://dev-mutate?action=reset");
+            assert_eq!(*timeout_ms, 7000);
+            match wait_for {
+                Some(ResetAppDataWaitFor::LogLinePattern(p)) => {
+                    assert_eq!(p, r"\[insight-dev\] reset-complete token=");
+                }
+                other => panic!("expected LogLinePattern, got: {other:?}"),
+            }
+        }
+        other => panic!("expected ResetAppData, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_reset_app_data_map_form_with_sleep_fallback() {
+    use smix_sdk::ResetAppDataWaitFor;
+    let yaml = r#"appId: com.test.app
+---
+- resetAppData:
+    url: 'insight://dev-mutate?action=reset'
+    waitFor:
+      sleepMs: 500
+"#;
+    let flow = parse_flow_yaml(yaml).expect("parse resetAppData with sleep waitFor");
+    match &flow.steps[0] {
+        Step::ResetAppData { wait_for, .. } => match wait_for {
+            Some(ResetAppDataWaitFor::Sleep(ms)) => assert_eq!(*ms, 500),
+            other => panic!("expected Sleep(500), got {other:?}"),
+        },
+        other => panic!("expected ResetAppData, got {other:?}"),
+    }
+}

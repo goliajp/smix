@@ -18,7 +18,7 @@ mod script;
 use clap::{Parser, Subcommand};
 use smix_simctl::registry::{self, RegistryError, SimRegistry};
 use smix_simctl::{Appearance, LaunchResult, SimctlClient, SimctlError};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(Parser, Debug)]
@@ -806,8 +806,13 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
     {
-        let path = dir.join("smix/subprocess-ring.json");
-        smix_simctl::set_subprocess_ring_persist_path(path);
+        let subprocess_ring_path = dir.join("smix/subprocess-ring.json");
+        smix_simctl::set_subprocess_ring_persist_path(subprocess_ring_path);
+        // v1.0.14 Cluster A — resetAppData counter persistence so
+        // `smix diagnostic dump` (later, separate process) sees the
+        // count from any prior `smix run` invocations.
+        let reset_counters_path = dir.join("smix/reset-app-data-counters.json");
+        smix_simctl::set_reset_app_data_counters_persist_path(reset_counters_path);
     }
 
     let simctl = SimctlClient::new();
@@ -1738,15 +1743,76 @@ enum DiagnosticAction {
         /// JSON output instead of the human table.
         #[arg(long, default_value_t = false)]
         json: bool,
+        /// v1.0.14 Cluster B — path to an external metro log file. If
+        /// set, the dump tails the last N lines of this file (see
+        /// `--metro-log-tail-lines`) into a `metro log tail` section
+        /// (and into `runner.metroLogTail` on the JSON payload).
+        /// Complements insight's `nohup bun dev > /tmp/metro.log`
+        /// pattern where smix's own log-gate would otherwise skip
+        /// because metro was already running externally.
+        #[arg(long = "metro-log")]
+        metro_log: Option<PathBuf>,
+        /// v1.0.14 Cluster B — number of trailing lines to read from
+        /// `--metro-log`. Default 200 per insight Q6. Ignored when
+        /// `--metro-log` is unset.
+        #[arg(long = "metro-log-tail-lines", default_value_t = 200)]
+        metro_log_tail_lines: usize,
     },
+}
+
+/// v1.0.14 Cluster B — read the last `n` lines from `path`. Seeks
+/// from EOF backward in 8 KB chunks, splitting on `\n`, until it has
+/// gathered `n` lines or reached BOF. Handles the "file smaller than
+/// one chunk" and "file has no trailing newline" cases. Returns
+/// oldest → newest ordered lines with newlines stripped.
+///
+/// Not tokio — this is called from a sync context (dump command is
+/// sync-shaped inside an async fn) and the operation is one-shot at
+/// dump time. For streaming tail during a run, use
+/// `smix_metro_log::subscriber::FileTailSubscriber` which handles the
+/// growing-file case.
+fn tail_lines(path: &Path, n: usize) -> std::io::Result<Vec<String>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path)?;
+    let end = f.seek(SeekFrom::End(0))?;
+    if end == 0 || n == 0 {
+        return Ok(Vec::new());
+    }
+    let chunk_size: u64 = 8192;
+    let mut pos = end;
+    let mut buf: Vec<u8> = Vec::new();
+    let mut line_count = 0usize;
+    // Read backward until we have n+1 newlines (so we can drop the
+    // partial line at the start) or we hit BOF.
+    while pos > 0 && line_count <= n {
+        let read_from = pos.saturating_sub(chunk_size);
+        let read_len = (pos - read_from) as usize;
+        pos = read_from;
+        f.seek(SeekFrom::Start(read_from))?;
+        let mut chunk = vec![0u8; read_len];
+        f.read_exact(&mut chunk)?;
+        chunk.append(&mut buf);
+        buf = chunk;
+        line_count = buf.iter().filter(|&&b| b == b'\n').count();
+    }
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+    if lines.len() > n {
+        lines = lines.split_off(lines.len() - n);
+    }
+    Ok(lines)
 }
 
 async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
     match action {
-        DiagnosticAction::Dump { json } => {
+        DiagnosticAction::Dump {
+            json,
+            metro_log,
+            metro_log_tail_lines,
+        } => {
             let port = runner_port();
             let client = smix_runner_client::HttpRunnerClient::new(port);
-            let resp = match client.diagnostic_dump().await {
+            let mut resp = match client.diagnostic_dump().await {
                 Ok(r) => r,
                 Err(e) => {
                     eprintln!(
@@ -1756,6 +1822,36 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                     smix_runner_wire::DiagnosticDumpResponse::default()
                 }
             };
+            // v1.0.14 Cluster B — CLI-side metro log tail. Read at
+            // dump time from the file path (not from the runner) so
+            // it works even when the runner never saw the log tail
+            // and doesn't require the runner to have been booted
+            // with a subscriber. See smix-metro-log FileTailSubscriber
+            // for the runtime path used by `smix run`'s
+            // `expect.signal` / `expect.signals` verbs.
+            if let Some(ref path) = metro_log {
+                match tail_lines(path, metro_log_tail_lines) {
+                    Ok(lines) => resp.metro_log_tail = lines,
+                    Err(e) => {
+                        eprintln!(
+                            "warning: --metro-log {} unreadable ({e}); \
+                             metro log tail will be empty in dump",
+                            path.display()
+                        );
+                    }
+                }
+            }
+            // v1.0.14 Cluster A — overlay CLI-side resetAppData
+            // counters onto the wire response before display. The
+            // runner never sees resetAppData dispatches (they're
+            // host-side simctl-openurl calls), so the wire counters
+            // for these fields arrive as 0; we merge from the
+            // CLI-persisted store.
+            let reset_counters = smix_simctl::reset_app_data_counters_snapshot();
+            resp.session_counters.reset_app_data_total =
+                reset_counters.reset_app_data_total;
+            resp.session_counters.reset_app_data_timed_out =
+                reset_counters.reset_app_data_timed_out;
             let client_side = smix_simctl::recent_subprocesses();
 
             if json {
@@ -1833,7 +1929,59 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 sc.launch_app_reached_foreground,
                 sc.launch_app_timed_out_before_foreground,
             );
+            // v1.0.14 Cluster A + C — resetAppData + interactive fingerprint.
+            println!(
+                "  resetAppData: total={} timedOut={}  # timedOut>0 → URL scheme fired but reset-complete log-line never arrived",
+                sc.reset_app_data_total,
+                sc.reset_app_data_timed_out,
+            );
+            println!(
+                "  interactive: reachedInteractive={} timedOutBeforeInteractive={}  # timedOut>0 → process foreground but a11y tree unusable (splash / dev-launcher / sparse annotation)",
+                sc.launch_app_reached_interactive,
+                sc.launch_app_timed_out_before_interactive,
+            );
             println!();
+            // v1.0.14 Cluster B — external metro log tail. Only printed
+            // when the user passed `--metro-log <path>` to this dump
+            // command; the runner doesn't buffer for us.
+            if !resp.metro_log_tail.is_empty() {
+                println!(
+                    "=== metro log tail (last {} of file) ===",
+                    resp.metro_log_tail.len()
+                );
+                for line in &resp.metro_log_tail {
+                    println!("  {}", line);
+                }
+                println!();
+            }
+            // v1.0.14 §6 — retry-attribution roll-up.
+            if !resp.recent_flows.is_empty() {
+                println!("=== recent flows (retry attribution) ===");
+                for flow in &resp.recent_flows {
+                    println!("  flow: {}", flow.flow_name);
+                    for attempt in &flow.attempts {
+                        let err = attempt
+                            .error_class
+                            .as_deref()
+                            .map(|c| format!(" errorClass={c}"))
+                            .unwrap_or_default();
+                        let ips = attempt
+                            .ips_generated
+                            .as_deref()
+                            .map(|p| format!(" ipsGenerated={p}"))
+                            .unwrap_or_default();
+                        println!(
+                            "    attempt #{} status={} wallMs={}{}{}",
+                            attempt.attempt_index,
+                            attempt.status,
+                            attempt.wall_ms,
+                            err,
+                            ips,
+                        );
+                    }
+                }
+                println!();
+            }
             println!(
                 "=== runner-side subprocesses (last {} of {}) ===",
                 resp.recent_subprocesses.len().min(20),
@@ -1979,6 +2127,77 @@ mod tests {
     use super::*;
 
     const UDID: &str = "5D087114-ECB3-443C-8DDB-40EEF9CFB90C";
+
+    // v1.0.14 Cluster B — tail_lines behavior lock-ins. Small chunk
+    // reads deliberately (not just 1 huge chunk) so the "read
+    // backward in 8 KB chunks" logic is exercised for files smaller,
+    // equal, and larger than one chunk.
+
+    #[test]
+    fn tail_lines_returns_last_n_when_file_larger_than_chunk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.log");
+        let content = (0..5000)
+            .map(|i| format!("line-{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&path, format!("{content}\n")).unwrap();
+        let tail = tail_lines(&path, 3).unwrap();
+        assert_eq!(tail, vec!["line-4997", "line-4998", "line-4999"]);
+    }
+
+    #[test]
+    fn tail_lines_returns_all_when_file_smaller_than_n() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("small.log");
+        std::fs::write(&path, "one\ntwo\nthree\n").unwrap();
+        let tail = tail_lines(&path, 10).unwrap();
+        assert_eq!(tail, vec!["one", "two", "three"]);
+    }
+
+    #[test]
+    fn tail_lines_handles_no_trailing_newline() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("noeol.log");
+        std::fs::write(&path, "alpha\nbeta").unwrap();
+        let tail = tail_lines(&path, 5).unwrap();
+        assert_eq!(tail, vec!["alpha", "beta"]);
+    }
+
+    #[test]
+    fn tail_lines_returns_empty_for_zero_n() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("any.log");
+        std::fs::write(&path, "content\n").unwrap();
+        assert!(tail_lines(&path, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tail_lines_returns_empty_for_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.log");
+        std::fs::write(&path, b"").unwrap();
+        assert!(tail_lines(&path, 100).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tail_lines_survives_utf8_split_across_chunk_boundary() {
+        // Craft a file where a multibyte utf-8 sequence straddles our
+        // 8192-byte chunk boundary. Uses "😀" (4 bytes) placed at
+        // offsets that land on the boundary. String::from_utf8_lossy
+        // must produce a valid string even if one chunk has partial
+        // bytes.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("utf8.log");
+        // 8189 bytes of ASCII + one 😀 (4 bytes) so the 😀 starts at
+        // offset 8189 = the first chunk read covers bytes 0..8192,
+        // which cuts the emoji in half.
+        let prefix = "a".repeat(8189);
+        let content = format!("{prefix}😀\ntail-line\n");
+        std::fs::write(&path, content).unwrap();
+        let tail = tail_lines(&path, 1).unwrap();
+        assert_eq!(tail, vec!["tail-line"]);
+    }
 
     #[test]
     fn exec_parses_hyphen_args_verbatim() {
