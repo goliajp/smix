@@ -850,6 +850,32 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
+// v1.0.18 D2 — accept bare `- waitForAnimationToEnd` (400 ms default)
+// or numeric `- waitForAnimationToEnd: 500` (integer = ms sleep).
+// SmixQuiescenceSwizzle.m no-ops XCTest's idle-wait for performance,
+// so this verb is a FIXED sleep in smix, not an XCTest quiescence
+// wait. Insight round-4 clarification: the swizzle only touches
+// XCTest's internal idle wait; this verb never went through it in
+// the first place. maestro-compat default preserved.
+fn parse_wait_for_animation_to_end(v: &Value) -> Result<Step, ParseError> {
+    match v {
+        Value::Null => Ok(Step::WaitForAnimationToEnd { duration_ms: 400 }),
+        Value::Number(_) => {
+            let ms = v.as_u64().ok_or_else(|| ParseError::InvalidValue {
+                field: "waitForAnimationToEnd".into(),
+                reason: format!("expected u64 milliseconds, got {v:?}"),
+            })?;
+            Ok(Step::WaitForAnimationToEnd { duration_ms: ms })
+        }
+        other => Err(ParseError::InvalidValue {
+            field: "waitForAnimationToEnd".into(),
+            reason: format!(
+                "expected null (bare form → 400 ms default) or integer ms, got {other:?}"
+            ),
+        }),
+    }
+}
+
 fn parse_open_link(v: &Value) -> Result<Step, ParseError> {
     let s = v.as_str().ok_or_else(|| ParseError::InvalidValue {
         field: "openLink".into(),
@@ -1772,7 +1798,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
     let key = normalize_verb_name(key);
     match key {
         "tapOn" => parse_tap_on(value),
-        "waitForAnimationToEnd" => Ok(Step::WaitForAnimationToEnd),
+        "waitForAnimationToEnd" => parse_wait_for_animation_to_end(value),
         "extendedWaitUntil" => parse_extended_wait_until(value),
         "assertVisible" => parse_assert_visible(value),
         "inputText" => parse_input_text(value),

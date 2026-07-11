@@ -327,8 +327,28 @@ pub enum Step {
         /// eval and discard.
         assert_eq: Option<serde_json::Value>,
     },
-    /// Wait for animations to settle. Maps to a fixed `sleep` + `wait_for_idle` call.
-    WaitForAnimationToEnd,
+    /// Wait for animations to settle. **NOT** an XCTest idle-wait —
+    /// `SmixQuiescenceSwizzle.m` no-ops XCTest's idle wait for
+    /// performance (RN long-running animations would otherwise stall
+    /// every operation). This verb is a **fixed sleep** in the smix
+    /// implementation, 400 ms by default.
+    ///
+    /// v1.0.18 — accepts a numeric override:
+    /// - `- waitForAnimationToEnd` — 400 ms sleep (default, unchanged)
+    /// - `- waitForAnimationToEnd: 500` — 500 ms sleep (integer = ms)
+    ///
+    /// Use the numeric form when your animation is longer than 400 ms.
+    /// Insight round-4 confusion: consumers assumed the swizzle no-op'd
+    /// this verb; the truth is it never went through XCTest idle-wait
+    /// in the first place. The default value is preserved for maestro
+    /// yaml compat.
+    WaitForAnimationToEnd {
+        /// Sleep duration in milliseconds. Bare yaml form
+        /// (`- waitForAnimationToEnd`) parses to 400 ms (maestro-compat
+        /// default); numeric form (`- waitForAnimationToEnd: 500`)
+        /// overrides.
+        duration_ms: u64,
+    },
     /// Extended wait until a selector matches the expected visibility.
     /// `expect_visible=true` waits for visible (maestro yaml `visible:` arm);
     /// `expect_visible=false` waits for not visible (maestro yaml

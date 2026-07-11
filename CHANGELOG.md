@@ -2,6 +2,48 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.18] — 2026-07-12
+
+**Two QoL asks from insight round-4** (`smix-feedback-2026-07-12-v1.0.17-results.md`) landed. Their v1.0.17 batch results:
+- v1.0.17 crash fix confirmed working (0 test_runForever failures, 0 "Failed to get matching snapshot" entries)
+- `launchAppReachedInteractive: 6/6` — every launch reached probeable tree
+- `.ips` growth 36→36 — native crash triple stays fully closed
+- Remaining 3/3 flow failures **not a smix bug** — RN Fabric a11y-exposure lag during animation (post-tapOn transitions); insight-side timeouts + testIDs + `waitForAnimationToEnd` are the knobs
+
+### D1 — per-session `interactiveNamedIds` in `session/list` + `/diagnostic/dump`
+
+Previously only surfaced on `/session/launch-app` response body. Insight round-4 §"Smix ask" bullet 1: the counter alone doesn't tell "probe fired on dev-bubble" from "probe fired on splash-screen artifacts."
+
+Wire additions (all `#[serde(default)]`, backward-compat):
+- Swift `SessionRoute.SessionSummary.interactiveNamedIds: [String]` (default empty).
+- Swift `SessionEntry.lastInteractiveNamedIds: [String]` on the session table — updated on every `launchApp` completion.
+- `session/list` + `/diagnostic/dump` JSON both now include `sessions[n].interactiveNamedIds`.
+
+### D2 — `waitForAnimationToEnd` numeric override + doc
+
+Insight round-4 §"Smix ask" bullet 2: they weren't sure if `waitForAnimationToEnd` was a no-op under `SmixQuiescenceSwizzle.m`. Reality: it never went through XCTest idle-wait in the first place — it's always been a fixed 400 ms `tokio::time::sleep`. Undocumented.
+
+Fix:
+- yaml accepts `- waitForAnimationToEnd: 500` (integer = ms sleep). Bare form still parses to 400 ms default (maestro-compat).
+- `Step::WaitForAnimationToEnd { duration_ms: u64 }` — struct variant.
+- Runtime dispatch sleeps the requested milliseconds.
+- Docstring on the variant explicitly names that it's a fixed sleep, NOT XCTest quiescence.
+
+2 new parser tests locked (`bare_default_400ms`, `numeric_override`).
+
+### Wire compatibility
+
+- `SessionSummary.interactiveNamedIds` is `#[serde(default)]` — pre-v1.0.18 consumers ignoring the field see zero behaviour change.
+- `Step::WaitForAnimationToEnd` variant became `{ duration_ms }` — consumers of the yaml wire (yaml → Step conversion, not `Step` construction in user code) unaffected. Test fixtures using struct literal `Step::WaitForAnimationToEnd` updated.
+- No runner-side HTTP surface changes.
+
+### Ship gate (real-sim, `sim-insight` iOS 26.5 Preferences)
+
+- Baseline: `POST /session/launch-app` still returns `reachedInteractive:true` + 8 sample ax-ids as v1.0.17.
+- **D1 verified**: after launch, `session/list` and `/diagnostic/dump` both surface `sessions[0].interactiveNamedIds: ["Settings","AdditionalDimmingOverlay","com.apple.settings.primaryAppleAccount",…8]`. Same 8-name sample as the launch-app response.
+
+682 workspace cargo tests (+2 new parser tests for D2) + all pre-existing green. No wire regressions.
+
 ## [1.0.17] — 2026-07-12
 
 **Hotfix: v1.0.16 introduced a hard-crash mode in the interactive polling loop.** Insight round-3 investigation in `smix-feedback-2026-07-12-v1.0.16-runner-crash.md` diagnosed: `descendants(matching:).element(boundBy: i)` is XCTest-lazy — the element resolves at access time against the CURRENT tree. When the tree shrunk mid-iteration (their `stopApp + openLink dev-launcher` between test phases), XCTest raised an unrecoverable assertion "No matches found for Element at index N" that killed `test_runForever` and the runner process, taking subsequent flows down with it.

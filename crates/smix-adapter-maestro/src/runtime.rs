@@ -697,7 +697,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::ExpectSignals { .. } => "expectSignals",
         Step::ExpectLogClean => "expectLogClean",
         Step::Fixture { .. } => "fixture",
-        Step::WaitForAnimationToEnd => "waitForAnimationToEnd",
+        Step::WaitForAnimationToEnd { .. } => "waitForAnimationToEnd",
         Step::ExtendedWaitUntil { .. } => "extendedWaitUntil",
         Step::TakeScreenshot { .. } => "takeScreenshot",
         Step::OpenLink(_) => "openLink",
@@ -1280,9 +1280,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.tap_at_coord(*nx, *ny).await?;
                 Ok(RunStepReport::Ok)
             }
-            Step::WaitForAnimationToEnd => {
-                // No smix-sdk idle API; fixed sleep is the maestro-1:1 stub.
-                tokio::time::sleep(Duration::from_millis(400)).await;
+            Step::WaitForAnimationToEnd { duration_ms } => {
+                // v1.0.18 — fixed sleep, NOT XCTest idle-wait.
+                // SmixQuiescenceSwizzle.m no-ops XCTest idle-wait for
+                // performance (RN animations would otherwise stall
+                // every op). Default 400 ms preserved for maestro
+                // yaml compat; consumers with longer animations pass
+                // `- waitForAnimationToEnd: 500` (integer = ms).
+                tokio::time::sleep(Duration::from_millis(*duration_ms)).await;
                 Ok(RunStepReport::Ok)
             }
             Step::WebViewEval { js, assert_eq } => {
