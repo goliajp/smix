@@ -260,11 +260,86 @@ public enum TreeRoute {
     return envelope(.internalServerError, body)
   }
 
+  /// v1.0.15 Cluster C D2 — extended snapshot_unavailable envelope
+  /// with `reason` (categorized enum) and `hint` (actionable text)
+  /// so downstream tooling can steer to the right next step instead
+  /// of guessing from a single generic error string. Insight ask #4
+  /// in `smix-feedback-2026-07-11-post-native-fix.md`.
+  ///
+  /// Wire shape:
+  /// ```
+  /// {"ok":false,"error":"snapshot_unavailable",
+  ///  "reason":"alive-but-tree-empty",
+  ///  "hint":"Process foreground but no named a11y descendants — ..."}
+  /// ```
+  ///
+  /// Backward-compat: pre-v1.0.15 clients that don't know about
+  /// `reason` / `hint` see the same `error` key and same 500 status;
+  /// only the body is enriched.
+  public static func unavailable(
+    reason: AppUnavailableReason,
+    hint: String
+  ) -> HTTPResponse {
+    let escapedHint = hint
+      .replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "\"", with: "\\\"")
+    let body = Data(
+      #"{"ok":false,"error":"snapshot_unavailable","reason":"\#(reason.rawValue)","hint":"\#(escapedHint)"}"#
+        .utf8)
+    return envelope(.internalServerError, body)
+  }
+
   private static func envelope(_ status: HTTPStatusCode, _ body: Data) -> HTTPResponse {
     HTTPResponse(
       statusCode: status,
       headers: [.contentType: "application/json"],
       body: body
     )
+  }
+}
+
+/// v1.0.15 Cluster C D2 — categorization of why a tree probe failed.
+/// Emitted as the `reason` field on `unavailable(reason:hint:)`.
+/// String values are stable kebab-case identifiers that consumers can
+/// match on without needing an enum decoder — the wire is JSON-string,
+/// not a numeric tag.
+public enum AppUnavailableReason: String, Sendable {
+  /// Process exited between launch and the tree probe. Often paired
+  /// with a `.ips` file appearing in
+  /// `~/Library/Logs/DiagnosticReports/` within 30 s.
+  case crashedDuringInit = "crashed-during-init"
+  /// Process alive but a11y tree returned zero descendants with a
+  /// non-empty `accessibilityIdentifier`. Usual causes: splash screen
+  /// ceremony still running, or the consumer's app hasn't populated
+  /// accessibility identifiers on its top-level components.
+  case aliveButTreeEmpty = "alive-but-tree-empty"
+  /// Tree content hash matches a previous session's snapshot. Runner
+  /// may be returning cached content; try `POST /session/renew-activation`.
+  case aliveButTreeStale = "alive-but-tree-stale"
+  /// XCUITest driver-side query threw or timed out. Restart the
+  /// runner (`smix runner cycle`) if this persists.
+  case driverDisconnected = "driver-disconnected"
+  /// Fallback for the "we know something's wrong but not why" case.
+  /// Pre-v1.0.15 semantics.
+  case unknown = "unknown"
+}
+
+extension AppUnavailableReason {
+  /// v1.0.15 Cluster C D2 — actionable text for each reason. Kept
+  /// alongside the enum so `TreeRoute.unavailable(reason:)` can
+  /// compute a default hint without the caller supplying one.
+  public var defaultHint: String {
+    switch self {
+    case .crashedDuringInit:
+      return "Process exited during initialization — look at ~/Library/Logs/DiagnosticReports/ for the .ips file."
+    case .aliveButTreeEmpty:
+      return "Process foreground but no named a11y descendants — likely splash-screen ceremony still running, or your app's accessibility tree lacks accessibilityIdentifier coverage."
+    case .aliveButTreeStale:
+      return "Tree hash matches a previous session's snapshot — driver may be returning cached content. Try POST /session/renew-activation."
+    case .driverDisconnected:
+      return "XCUITest driver query failed — try `smix runner cycle` to restart the runner."
+    case .unknown:
+      return "Tree probe failed for an uncategorized reason — inspect the runner log."
+    }
   }
 }

@@ -196,6 +196,9 @@ public enum SessionRoute {
     public let launchAppTotal: UInt64
     public let launchAppReachedForeground: UInt64
     public let launchAppTimedOutBeforeForeground: UInt64
+    /// v1.0.15 Cluster C D1 — interactive fingerprint counters.
+    public let launchAppReachedInteractive: UInt64
+    public let launchAppTimedOutBeforeInteractive: UInt64
     public init(
       openedTotal: UInt64 = 0,
       closedTotal: UInt64 = 0,
@@ -205,7 +208,9 @@ public enum SessionRoute {
       terminateAppViaFallback: UInt64 = 0,
       launchAppTotal: UInt64 = 0,
       launchAppReachedForeground: UInt64 = 0,
-      launchAppTimedOutBeforeForeground: UInt64 = 0
+      launchAppTimedOutBeforeForeground: UInt64 = 0,
+      launchAppReachedInteractive: UInt64 = 0,
+      launchAppTimedOutBeforeInteractive: UInt64 = 0
     ) {
       self.openedTotal = openedTotal
       self.closedTotal = closedTotal
@@ -216,6 +221,8 @@ public enum SessionRoute {
       self.launchAppTotal = launchAppTotal
       self.launchAppReachedForeground = launchAppReachedForeground
       self.launchAppTimedOutBeforeForeground = launchAppTimedOutBeforeForeground
+      self.launchAppReachedInteractive = launchAppReachedInteractive
+      self.launchAppTimedOutBeforeInteractive = launchAppTimedOutBeforeInteractive
     }
   }
 
@@ -261,7 +268,7 @@ public enum SessionRoute {
     let c = snap.aliveCache
     s += #","aliveCache":{"wired":\#(c.wired),"markDeadTotal":\#(c.markDeadTotal),"markAliveTotal":\#(c.markAliveTotal),"suppressHitTotal":\#(c.suppressHitTotal),"suppressMissTotal":\#(c.suppressMissTotal),"reprobeAttemptedTotal":\#(c.reprobeAttemptedTotal),"reprobeSucceededTotal":\#(c.reprobeSucceededTotal),"reprobeInvalidatedEarly":\#(c.reprobeInvalidatedEarly),"reprobeExhaustedWindow":\#(c.reprobeExhaustedWindow)}"#
     let sc = snap.sessionCounters
-    s += #","sessionCounters":{"openedTotal":\#(sc.openedTotal),"closedTotal":\#(sc.closedTotal),"relaunchAppTotal":\#(sc.relaunchAppTotal),"terminateAppTotal":\#(sc.terminateAppTotal),"terminateAppViaXCUIApplication":\#(sc.terminateAppViaXCUIApplication),"terminateAppViaFallback":\#(sc.terminateAppViaFallback),"launchAppTotal":\#(sc.launchAppTotal),"launchAppReachedForeground":\#(sc.launchAppReachedForeground),"launchAppTimedOutBeforeForeground":\#(sc.launchAppTimedOutBeforeForeground)}"#
+    s += #","sessionCounters":{"openedTotal":\#(sc.openedTotal),"closedTotal":\#(sc.closedTotal),"relaunchAppTotal":\#(sc.relaunchAppTotal),"terminateAppTotal":\#(sc.terminateAppTotal),"terminateAppViaXCUIApplication":\#(sc.terminateAppViaXCUIApplication),"terminateAppViaFallback":\#(sc.terminateAppViaFallback),"launchAppTotal":\#(sc.launchAppTotal),"launchAppReachedForeground":\#(sc.launchAppReachedForeground),"launchAppTimedOutBeforeForeground":\#(sc.launchAppTimedOutBeforeForeground),"launchAppReachedInteractive":\#(sc.launchAppReachedInteractive),"launchAppTimedOutBeforeInteractive":\#(sc.launchAppTimedOutBeforeInteractive)}"#
     s += "}"
     return envelope(.ok, Data(s.utf8))
   }
@@ -326,32 +333,39 @@ public enum SessionRoute {
   /// their app shows after `clearAppData` wipes persisted state. §D3 —
   /// `waitForForegroundMs` opts the launch handler into a polling loop
   /// on `XCUIApplication.state == .runningForeground` before returning.
+  /// v1.0.15 Cluster C D1 — `waitForInteractiveMs` opts into a
+  /// downstream interactive-fingerprint probe on the a11y tree.
   public struct AppLifecycleRequest: Equatable, Sendable {
     public let sessionId: String
     public let args: [String]
     public let env: [String: String]
     public let waitForForegroundMs: UInt64?
+    public let waitForInteractiveMs: UInt64?
     public init(
       sessionId: String,
       args: [String] = [],
       env: [String: String] = [:],
-      waitForForegroundMs: UInt64? = nil
+      waitForForegroundMs: UInt64? = nil,
+      waitForInteractiveMs: UInt64? = nil
     ) {
       self.sessionId = sessionId
       self.args = args
       self.env = env
       self.waitForForegroundMs = waitForForegroundMs
+      self.waitForInteractiveMs = waitForInteractiveMs
     }
   }
 
   public static func decodeAppLifecycle(_ body: Data) throws -> AppLifecycleRequest {
-    // v1.0.11 §D2/§D3 — try full decode first; fall back to the pre-
-    // v1.0.11 shape (bare `sessionId`) so older clients still work.
+    // v1.0.11 §D2/§D3 + v1.0.15 D1 — try full decode first; fall back
+    // to the pre-v1.0.11 shape (bare `sessionId`) so older clients
+    // still work.
     struct FullBody: Decodable {
       let sessionId: String
       let args: [String]?
       let env: [String: String]?
       let waitForForegroundMs: UInt64?
+      let waitForInteractiveMs: UInt64?
     }
     do {
       let dec = JSONDecoder()
@@ -360,7 +374,8 @@ public enum SessionRoute {
         sessionId: parsed.sessionId,
         args: parsed.args ?? [],
         env: parsed.env ?? [:],
-        waitForForegroundMs: parsed.waitForForegroundMs
+        waitForForegroundMs: parsed.waitForForegroundMs,
+        waitForInteractiveMs: parsed.waitForInteractiveMs
       )
     } catch {
       // Fall through to legacy `{"sessionId": "..."}` shape via
@@ -375,10 +390,20 @@ public enum SessionRoute {
     wallMs: UInt64,
     waitedMs: UInt64 = 0,
     terminalState: UInt8 = 0,
-    terminatedCooperatively: Bool = false
+    terminatedCooperatively: Bool = false,
+    reachedInteractive: Bool = false,
+    interactiveNamedIds: [String] = []
   ) -> HTTPResponse {
+    // Serialize interactiveNamedIds inline — small enough that
+    // avoiding a full JSONEncoder detour keeps the wire byte-stable.
+    var idsPart = "["
+    for (i, id) in interactiveNamedIds.enumerated() {
+      if i > 0 { idsPart += "," }
+      idsPart += "\"" + jsonEscape(id) + "\""
+    }
+    idsPart += "]"
     let body = Data(
-      #"{"ok":\#(ok),"wallMs":\#(wallMs),"waitedMs":\#(waitedMs),"terminalState":\#(terminalState),"terminatedCooperatively":\#(terminatedCooperatively)}"#
+      #"{"ok":\#(ok),"wallMs":\#(wallMs),"waitedMs":\#(waitedMs),"terminalState":\#(terminalState),"terminatedCooperatively":\#(terminatedCooperatively),"reachedInteractive":\#(reachedInteractive),"interactiveNamedIds":\#(idsPart)}"#
         .utf8)
     return envelope(.ok, body)
   }
