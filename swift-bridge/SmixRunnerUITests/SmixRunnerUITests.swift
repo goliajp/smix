@@ -2608,43 +2608,40 @@ final class SmixRunnerUITests: XCTestCase {
             let interactivePollNs: UInt64 = 500_000_000  // 500 ms
             while UInt64(Date().timeIntervalSince(interactiveStart) * 1000) < interactiveDeadlineMs {
               let observed: [String] = await SmixRunnerServer.onMain {
-                // v1.0.16 — force a fresh XCUITest snapshot each
-                // iteration, per insight's round-2 diagnosis in
-                // `smix-feedback-2026-07-11-round-2-status.md`
-                // "Maestro-vs-smix investigation". RN 0.86 Fabric +
-                // iOS 26.5 sim populate the a11y tree as
-                // RCTMountItemProtocol mount items drain, NOT during
-                // layout. XCUITest's internal snapshot cache holds
-                // the sparse tree from before mount items drained,
-                // and `descendants(matching:)` returns the cached
-                // snapshot on subsequent polls without a refresh.
+                // v1.0.16 forced a fresh snapshot each iteration (per
+                // insight round-2 diagnosis on Fabric mount-item
+                // drain), but then enumerated via
+                // `descendants(matching:).element(boundBy: i)` which
+                // is XCTest-lazy — the element resolves at access
+                // time, against the CURRENT (possibly re-snapshotted)
+                // tree. When the tree shrank mid-iteration (insight
+                // stopApp + openLink dev-launcher round-3
+                // observation), XCTest raised an unrecoverable
+                // assertion "No matches found for Element at index N"
+                // that killed test_runForever.
                 //
-                // `try? entry.app.snapshot()` is the public API for
-                // forcing a fresh top-of-hierarchy snapshot. Runs
-                // ~50-150 ms on iOS 26.5 sim; combined with our
-                // 500 ms poll interval it's cheap.
-                _ = try? entry.app.snapshot()
-                // Note: no `waitForQuiescenceIncludingAnimations` call
-                // here — smix's `SmixQuiescenceSwizzle.m` already
-                // no-ops that private XCTest daemon idle-wait for
-                // performance (long-running animations would stall
-                // every tap/read otherwise). Snapshot alone forces
+                // v1.0.17 walks the frozen `XCUIElementSnapshot`
+                // instead — snap is an in-memory snapshot object,
+                // there's no XCUITest re-resolution during the walk,
+                // so a shrinking tree between iterations is safe. Same
+                // pattern the runner already uses for modal popup
+                // collection (see collectPopupNodes below) and
+                // FocusedIdentifier.find. Snapshot itself still forces
                 // XCUITest to re-scrape the a11y hierarchy from
-                // scratch, which is what we need on Fabric.
-                let query = entry.app.descendants(matching: .any)
-                let count = query.count
-                var ids: [String] = []
-                ids.reserveCapacity(min(count, 32))
-                // Cap the enumeration at 200 to avoid pathological
-                // trees (large lists) stalling the probe.
-                let cap = min(count, 200)
-                for i in 0..<cap {
-                  let element = query.element(boundBy: i)
-                  let id = element.identifier
-                  if !id.isEmpty && !probeConfig.ignore.contains(id) {
-                    ids.append(id)
-                  }
+                // scratch — the fix insight's round-2 diagnosed.
+                guard let snap = try? entry.app.snapshot() else {
+                  return []
                 }
+                var ids: [String] = []
+                var enumerated = 0
+                let enumCap = 200  // pathological-tree stall guard
+                collectInteractiveIds(
+                  snap.dictionaryRepresentation,
+                  ignore: probeConfig.ignore,
+                  ids: &ids,
+                  enumerated: &enumerated,
+                  cap: enumCap
+                )
                 return ids
               }
               if observed.count >= probeConfig.minIdentifierCount {
@@ -2726,6 +2723,39 @@ final class SmixRunnerUITests: XCTestCase {
         }
       }
     )
+  }
+}
+
+/// v1.0.17 Cluster C hotfix — recursive walk over
+/// `XCUIElementSnapshot.dictionaryRepresentation` to collect every
+/// non-empty `accessibilityIdentifier` in the tree that is NOT in the
+/// caller-supplied ignore list. Same pattern as
+/// [`collectPopupNodes`] below — nothing about it re-invokes XCUITest,
+/// so a tree that shrinks or grows between v1.0.15's outer poll
+/// iterations can't crash the loop.
+///
+/// The `enumerated`/`cap` counter is a pathological-tree stall guard
+/// (large lists could otherwise hold the run loop for seconds); once
+/// hit we stop walking, but the accumulated `ids` up to that point
+/// are still valid.
+private func collectInteractiveIds(
+  _ node: [XCUIElement.AttributeName: Any],
+  ignore: Set<String>,
+  ids: inout [String],
+  enumerated: inout Int,
+  cap: Int
+) {
+  if enumerated >= cap { return }
+  enumerated += 1
+  func val(_ k: String) -> Any? { node[XCUIElement.AttributeName(rawValue: k)] }
+  if let id = val("identifier") as? String, !id.isEmpty, !ignore.contains(id) {
+    ids.append(id)
+  }
+  if let kids = val("children") as? [[XCUIElement.AttributeName: Any]] {
+    for k in kids {
+      collectInteractiveIds(k, ignore: ignore, ids: &ids, enumerated: &enumerated, cap: cap)
+      if enumerated >= cap { return }
+    }
   }
 }
 
