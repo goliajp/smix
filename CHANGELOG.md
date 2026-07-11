@@ -2,6 +2,46 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.17] — 2026-07-12
+
+**Hotfix: v1.0.16 introduced a hard-crash mode in the interactive polling loop.** Insight round-3 investigation in `smix-feedback-2026-07-12-v1.0.16-runner-crash.md` diagnosed: `descendants(matching:).element(boundBy: i)` is XCTest-lazy — the element resolves at access time against the CURRENT tree. When the tree shrunk mid-iteration (their `stopApp + openLink dev-launcher` between test phases), XCTest raised an unrecoverable assertion "No matches found for Element at index N" that killed `test_runForever` and the runner process, taking subsequent flows down with it.
+
+**Good news from their round-3 report before naming the crash:** v1.0.16 snapshot-refresh DID help — Flow 1 (`force-update.yaml`) reached STEP 47/47 vs the previous max of 34. `.ips` growth stayed at 36 → 36 (native crash triple stays fully closed).
+
+### D1 — walk frozen `XCUIElementSnapshot` instead of live-query enumeration
+
+Replaces:
+```swift
+_ = try? entry.app.snapshot()
+let query = entry.app.descendants(matching: .any)
+for i in 0..<query.count {
+  let el = query.element(boundBy: i)   // lazy resolution at access → hard-fail on shrink
+  ...
+}
+```
+
+with:
+```swift
+guard let snap = try? entry.app.snapshot() else { return [] }
+collectInteractiveIds(snap.dictionaryRepresentation, ignore, ids, ...)
+```
+
+- `snap.dictionaryRepresentation` returns a frozen in-memory tree that we walk recursively, collecting non-empty `accessibilityIdentifier` values not in the ignore list. Same pattern the runner already uses for modal popup collection (see `collectPopupNodes`) and keyboard focus detection (see `FocusedIdentifier.find`).
+- `snapshot()` itself still forces XCUITest to re-scrape the a11y hierarchy from scratch (v1.0.16 fix for the Fabric mount-item-drain race). The walk over the returned snapshot is safe against any subsequent tree mutation.
+- Pathological-tree stall guard: walk stops at 200 enumerated nodes (guards against runaway lists).
+
+### Ship gate (real-sim, `sim-insight` iOS 26.5 Preferences)
+
+- Baseline: `POST /session/launch-app waitForInteractiveMs:15000` → `HTTP 200, reachedInteractive:true, interactiveNamedIds:["Settings","AdditionalDimmingOverlay",…8]`. Snapshot-walk yields the same result as v1.0.15/v1.0.16 on the working Preferences case.
+- **Stress test — 3 rapid terminate + launch cycles** to trigger the tree-shrink race pattern insight observed. Every cycle returned `reachedInteractive:true` and runner stayed reachable after all cycles. `/health` still returning 200. v1.0.16 in the same scenario would have crashed after 1-2 cycles.
+
+### Wire compatibility
+
+- No wire changes. All v1.0.15 wire shape unchanged.
+- Runner-side behavior change is invisible to consumers unless polling was hitting the tree-shrink race, in which case runner-death → runner-alive is the observation flip.
+
+680 workspace tests + all pre-existing tests green.
+
 ## [1.0.16] — 2026-07-12
 
 **Hotfix: v1.0.15's interactive polling had a stale-snapshot bug on RN Fabric + iOS 26.5 sim.** Insight's round-2 investigation in `smix-feedback-2026-07-11-round-2-status.md` diagnosed the exact race: RN 0.86 Fabric New Arch populates the a11y tree via `RCTMountItemProtocol` as mount items drain, NOT during layout. XCUITest's snapshot cache holds the sparse pre-drain tree, and `descendants(matching:)` returned the same cached snapshot every poll iteration.
