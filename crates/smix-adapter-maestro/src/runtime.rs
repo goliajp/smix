@@ -275,6 +275,17 @@ pub trait AppLike: Send + Sync {
             ..Default::default()
         }))
     }
+    /// v1.0.11 §D2 — same as [`clear_app_data`], but applies caller-
+    /// supplied launchArguments + launchEnvironment on the runner-side
+    /// launch step. Default impl delegates to `clear_app_data`
+    /// (ignores args) so mock backends stay working.
+    async fn clear_app_data_with_launch(
+        &self,
+        _launch_args: &[String],
+        _launch_env: &std::collections::BTreeMap<String, String>,
+    ) -> Result<(), ExpectationFailure> {
+        self.clear_app_data().await
+    }
     /// v1.0.4 §D11 — snapshot the runner's a11y tree. Mirrors
     /// [`App::tree`]. Used by `write_step_debug` to persist
     /// `step-<N>-fail.tree.json` alongside the fail PNG. Default impl
@@ -476,6 +487,15 @@ impl AppLike for App {
     async fn clear_app_data(&self) -> Result<(), ExpectationFailure> {
         App::clear_app_data(self).await.map(|_wall_ms| ())
     }
+    async fn clear_app_data_with_launch(
+        &self,
+        launch_args: &[String],
+        launch_env: &std::collections::BTreeMap<String, String>,
+    ) -> Result<(), ExpectationFailure> {
+        App::clear_app_data_with_launch(self, launch_args, launch_env)
+            .await
+            .map(|_wall_ms| ())
+    }
     async fn set_clipboard(&self, text: &str) -> Result<(), ExpectationFailure> {
         App::set_clipboard(self, text).await
     }
@@ -653,7 +673,7 @@ fn summarize_step_verb(step: &Step) -> String {
     match step {
         Step::LaunchApp { .. } => "launchApp",
         Step::StopApp => "stopApp",
-        Step::ClearAppData => "clearAppData",
+        Step::ClearAppData { .. } => "clearAppData",
         Step::KillApp { .. } => "killApp",
         Step::TapOn { .. } => "tapOn",
         Step::TapAtPoint { .. } => "tapAtPoint",
@@ -1367,17 +1387,22 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.terminate(app_id).await?;
                 Ok(RunStepReport::Ok)
             }
-            Step::ClearAppData => {
-                // v1.0.8 §D2 — session-scoped in-place data clear.
-                // Orchestrates: runner cooperative terminate + host
-                // sandbox wipe + runner cooperative launch. Preserves
+            Step::ClearAppData { launch_args, launch_env } => {
+                // v1.0.8 §D2 + v1.0.11 §D2 — session-scoped in-place
+                // data clear. Orchestrates: runner cooperative
+                // terminate + host sandbox wipe + runner cooperative
+                // launch (with caller-supplied launchArgs /
+                // launchEnvironment when provided). Preserves
                 // XCUITest binding and does not signal ReportCrash.
                 //
                 // Requires a session to be open (Rust adapter runs
                 // through Session-Id from `smix run` auto-session
-                // path). AppLike's `clear_app_data` on the trait
-                // routes through to the SDK Session::reset_app_data.
-                self.app.clear_app_data().await?;
+                // path). AppLike's `clear_app_data_with_launch` on
+                // the trait routes through to the SDK
+                // `App::clear_app_data_with_launch`.
+                self.app
+                    .clear_app_data_with_launch(launch_args, launch_env)
+                    .await?;
                 Ok(RunStepReport::Ok)
             }
             Step::ClearState { app_id } => {

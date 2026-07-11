@@ -1082,6 +1082,76 @@ final class SmixRunnerUITests: XCTestCase {
       }
     }
 
+    // v1.0.11 §D1 — extract the app-alive cache so the diagnostic
+    // handler can direct-capture it (not read the task-local). Insight
+    // v1.0.10 observations reported `aliveCache: null` — root-cause
+    // hypothesis: FlyingFox's per-request task spawn doesn't inherit
+    // the `withValue` scope wrapping `server.run()`, so reading
+    // `SmixRunnerServer.currentAppAliveCache` returned nil at request
+    // time. Capturing the reference in the closure sidesteps that.
+    let localAppAliveCache = AppAliveCache(ttlMs: 20_000)
+
+    // v1.0.11 §D3/§D4/§D5 — cumulative session lifecycle counters.
+    // Advance on every mutation; survive session close (unlike the
+    // instantaneous `sessionTable.count` view that returns 0 at
+    // end-of-batch and hides "was anything opened during this run").
+    // A final class + NSLock rather than an actor so we can access
+    // synchronously from inside sync handlers without stray suspend
+    // points, and so the counter increment is a single-line inline
+    // operation not an `await`.
+    final class LifecycleCounters: @unchecked Sendable {
+      private let lock = NSLock()
+      private var counters = SessionRoute.SessionLifecycleCounters()
+      func advance(_ change: (inout LifecycleCountersInner) -> Void) {
+        lock.lock(); defer { lock.unlock() }
+        var inner = LifecycleCountersInner(from: counters)
+        change(&inner)
+        counters = inner.toWire()
+      }
+      func snapshot() -> SessionRoute.SessionLifecycleCounters {
+        lock.lock(); defer { lock.unlock() }
+        return counters
+      }
+    }
+    // Mutable inner mirror so we can advance individual fields inside
+    // the `advance` closure (the wire type is immutable-let-based).
+    struct LifecycleCountersInner {
+      var openedTotal: UInt64
+      var closedTotal: UInt64
+      var relaunchAppTotal: UInt64
+      var terminateAppTotal: UInt64
+      var terminateAppViaXCUIApplication: UInt64
+      var terminateAppViaFallback: UInt64
+      var launchAppTotal: UInt64
+      var launchAppReachedForeground: UInt64
+      var launchAppTimedOutBeforeForeground: UInt64
+      init(from c: SessionRoute.SessionLifecycleCounters) {
+        openedTotal = c.openedTotal
+        closedTotal = c.closedTotal
+        relaunchAppTotal = c.relaunchAppTotal
+        terminateAppTotal = c.terminateAppTotal
+        terminateAppViaXCUIApplication = c.terminateAppViaXCUIApplication
+        terminateAppViaFallback = c.terminateAppViaFallback
+        launchAppTotal = c.launchAppTotal
+        launchAppReachedForeground = c.launchAppReachedForeground
+        launchAppTimedOutBeforeForeground = c.launchAppTimedOutBeforeForeground
+      }
+      func toWire() -> SessionRoute.SessionLifecycleCounters {
+        SessionRoute.SessionLifecycleCounters(
+          openedTotal: openedTotal,
+          closedTotal: closedTotal,
+          relaunchAppTotal: relaunchAppTotal,
+          terminateAppTotal: terminateAppTotal,
+          terminateAppViaXCUIApplication: terminateAppViaXCUIApplication,
+          terminateAppViaFallback: terminateAppViaFallback,
+          launchAppTotal: launchAppTotal,
+          launchAppReachedForeground: launchAppReachedForeground,
+          launchAppTimedOutBeforeForeground: launchAppTimedOutBeforeForeground
+        )
+      }
+    }
+    let lifecycleCounters = LifecycleCounters()
+
     try await server.runForever(
       port: resolvedPort,
       tapHandler: { req, scope in
@@ -2216,6 +2286,7 @@ final class SmixRunnerUITests: XCTestCase {
           sessionTable[sid] = entry
           persistSessions()
           sessions.unlock()
+          lifecycleCounters.advance { $0.openedTotal &+= 1 }
           return SmixRunnerServer.SessionOpenOutcome(
             sessionId: sid,
             activatedOnce: activatedOnce
@@ -2226,6 +2297,7 @@ final class SmixRunnerUITests: XCTestCase {
           sessionTable.removeValue(forKey: req.sessionId)
           persistSessions()
           sessions.unlock()
+          lifecycleCounters.advance { $0.closedTotal &+= 1 }
           // Idempotent — unknown session id → ok=true anyway.
           return SmixRunnerServer.SessionCloseOutcome(ok: true)
         },
@@ -2285,6 +2357,7 @@ final class SmixRunnerUITests: XCTestCase {
             entry.app.launch()
           }
           let wallMs = UInt64(Date().timeIntervalSince(start) * 1000)
+          lifecycleCounters.advance { $0.relaunchAppTotal &+= 1 }
           return SmixRunnerServer.SessionRelaunchOutcome(
             notFound: false, ok: true, wallMs: wallMs
           )
@@ -2316,6 +2389,11 @@ final class SmixRunnerUITests: XCTestCase {
         // "log line got dropped by cycle"; the counters make that a
         // numeric question that survives a runner cycle (D6 persists
         // them). `nil` when the runner opted out of app-alive caching.
+        // v1.0.11 §D1 — direct-capture `localAppAliveCache` (not the
+        // task-local); v1.0.11 §D4/§D5 — emit cumulative session
+        // lifecycle counters. Always emit `aliveCache` with the
+        // `wired: true` sentinel so consumers can distinguish "runner
+        // has no cache" from "cache present, workload didn't fire".
         diagnostic: {
           sessions.lock()
           let summaries: [SessionRoute.SessionSummary] = sessionTable.map { (sid, entry) in
@@ -2329,27 +2407,27 @@ final class SmixRunnerUITests: XCTestCase {
           }
           sessions.unlock()
           let uptimeMs = UInt64(Date().timeIntervalSince(bootAt) * 1000)
-          var aliveCache: SessionRoute.AliveCacheCounters? = nil
-          if let cache = SmixRunnerServer.currentAppAliveCache {
-            let c = await cache.counterSnapshot()
-            aliveCache = SessionRoute.AliveCacheCounters(
-              markDeadTotal: c.markDeadTotal,
-              markAliveTotal: c.markAliveTotal,
-              suppressHitTotal: c.suppressHitTotal,
-              suppressMissTotal: c.suppressMissTotal,
-              reprobeAttemptedTotal: c.reprobeAttemptedTotal,
-              reprobeSucceededTotal: c.reprobeSucceededTotal,
-              reprobeInvalidatedEarly: c.reprobeInvalidatedEarly,
-              reprobeExhaustedWindow: c.reprobeExhaustedWindow
-            )
-          }
+          let c = await localAppAliveCache.counterSnapshot()
+          let aliveCache = SessionRoute.AliveCacheCounters(
+            wired: true,
+            markDeadTotal: c.markDeadTotal,
+            markAliveTotal: c.markAliveTotal,
+            suppressHitTotal: c.suppressHitTotal,
+            suppressMissTotal: c.suppressMissTotal,
+            reprobeAttemptedTotal: c.reprobeAttemptedTotal,
+            reprobeSucceededTotal: c.reprobeSucceededTotal,
+            reprobeInvalidatedEarly: c.reprobeInvalidatedEarly,
+            reprobeExhaustedWindow: c.reprobeExhaustedWindow
+          )
+          let sessionCounters = lifecycleCounters.snapshot()
           return SmixRunnerServer.DiagnosticOutcome(
             snapshot: SessionRoute.DiagnosticSnapshot(
               sessions: summaries,
               simHealth: "healthy",
               supervisorPid: nil,
               uptimeMs: uptimeMs,
-              aliveCache: aliveCache
+              aliveCache: aliveCache,
+              sessionCounters: sessionCounters
             )
           )
         },
@@ -2360,6 +2438,13 @@ final class SmixRunnerUITests: XCTestCase {
         // ReportCrash; XCUIApplication.terminate() is the graceful
         // pathway. Paired with `launchApp` below via SDK-side
         // orchestration + host-side simctl sandbox wipe.
+        // v1.0.8 §D1 + v1.0.11 §D5 — cooperative XCUIApplication.terminate()
+        // via testmanagerd. Detect cooperative outcome by checking that
+        // `.state == .notRunning` after the call returned within a
+        // reasonable window. If it doesn't, XCUIApplication likely
+        // timed out and internally fell back to a hard kill —
+        // triggering `bug_type: 309` `.ips` writes in insight's
+        // v1.0.10 followup.
         terminateApp: { req in
           let start = Date()
           sessions.lock()
@@ -2370,17 +2455,44 @@ final class SmixRunnerUITests: XCTestCase {
               notFound: true, ok: false, wallMs: 0
             )
           }
-          await SmixRunnerServer.onMain {
+          let terminatedCooperatively: Bool = await SmixRunnerServer.onMain {
             entry.app.terminate()
+            // `.terminate()` is blocking; XCUIApplication waits until
+            // the process observed `.notRunning` OR the framework's
+            // internal ~30 s timeout. Reading `.state` here tells us
+            // which happened.
+            return entry.app.state == .notRunning
           }
           let wallMs = UInt64(Date().timeIntervalSince(start) * 1000)
+          lifecycleCounters.advance {
+            $0.terminateAppTotal &+= 1
+            if terminatedCooperatively {
+              $0.terminateAppViaXCUIApplication &+= 1
+            } else {
+              $0.terminateAppViaFallback &+= 1
+            }
+          }
+          let terminalState: UInt8 = await SmixRunnerServer.onMain {
+            UInt8(entry.app.state.rawValue)
+          }
           return SmixRunnerServer.SessionAppLifecycleOutcome(
-            notFound: false, ok: true, wallMs: wallMs
+            notFound: false,
+            ok: true,
+            wallMs: wallMs,
+            waitedMs: 0,
+            terminalState: terminalState,
+            terminatedCooperatively: terminatedCooperatively
           )
         },
-        // v1.0.8 §D1 — cooperative XCUIApplication.launch(). Fresh
-        // app instance sees whatever sandbox state exists when the
-        // SDK's host-side wipe (if any) completes before this call.
+        // v1.0.8 §D1 + v1.0.11 §D2/§D3 — cooperative
+        // `XCUIApplication.launch()`. §D2 applies request-supplied
+        // `launchArguments` + `launchEnvironment` before launching so
+        // callers can bypass scaffolding like the Expo dev-launcher
+        // server picker (SDK 57 stopped auto-navigating on URL scheme
+        // in insight's workload). §D3 polls `.state` for
+        // `.runningForeground` up to `waitForForegroundMs` so the
+        // caller's next terminate does not hit a not-yet-ready
+        // process — the trigger for `bug_type: 309` `.ips` writes.
         launchApp: { req in
           let start = Date()
           sessions.lock()
@@ -2392,11 +2504,48 @@ final class SmixRunnerUITests: XCTestCase {
             )
           }
           await SmixRunnerServer.onMain {
+            // Empty args / empty env preserve pre-v1.0.11 behaviour
+            // (whatever the runner had cached, initially empty).
+            entry.app.launchArguments = req.args
+            entry.app.launchEnvironment = req.env
             entry.app.launch()
           }
-          let wallMs = UInt64(Date().timeIntervalSince(start) * 1000)
+          let launchDoneWallMs = UInt64(Date().timeIntervalSince(start) * 1000)
+          var waitedMs: UInt64 = 0
+          var reachedForeground = false
+          if let deadlineMs = req.waitForForegroundMs, deadlineMs > 0 {
+            let waitStart = Date()
+            let pollIntervalNs: UInt64 = 250_000_000  // 250 ms
+            while UInt64(Date().timeIntervalSince(waitStart) * 1000) < deadlineMs {
+              let state = await SmixRunnerServer.onMain { entry.app.state }
+              if state == .runningForeground {
+                reachedForeground = true
+                break
+              }
+              try? await Task.sleep(nanoseconds: pollIntervalNs)
+            }
+            waitedMs = UInt64(Date().timeIntervalSince(waitStart) * 1000)
+          }
+          let terminalState: UInt8 = await SmixRunnerServer.onMain {
+            UInt8(entry.app.state.rawValue)
+          }
+          lifecycleCounters.advance {
+            $0.launchAppTotal &+= 1
+            if req.waitForForegroundMs != nil && req.waitForForegroundMs != 0 {
+              if reachedForeground {
+                $0.launchAppReachedForeground &+= 1
+              } else {
+                $0.launchAppTimedOutBeforeForeground &+= 1
+              }
+            }
+          }
           return SmixRunnerServer.SessionAppLifecycleOutcome(
-            notFound: false, ok: true, wallMs: wallMs
+            notFound: false,
+            ok: true,
+            wallMs: launchDoneWallMs,
+            waitedMs: waitedMs,
+            terminalState: terminalState,
+            terminatedCooperatively: false
           )
         }
       ),
@@ -2405,9 +2554,14 @@ final class SmixRunnerUITests: XCTestCase {
       // loop (~1.7 QPS × 6 XCUIQuery); no consumer benefit at faster
       // than 500 ms cadence and the arbitration cost is decisive.
       popupPacer: PopupPacer(floorMs: 500),
-      // v1.0.4 §D2 — 20 s app-alive suppression window after an
-      // observed XCTIssue about the target app. See RFC 1.0.4 §D2.
-      appAliveCache: AppAliveCache(ttlMs: 20_000),
+      // v1.0.4 §D2 / v1.0.11 §D1 — 20 s app-alive suppression window
+      // after an observed XCTIssue about the target app. See RFC
+      // 1.0.4 §D2. v1.0.11 hoists the cache instantiation to a named
+      // local `localAppAliveCache` so the diagnostic handler can
+      // direct-capture it (rather than reading via task-local, which
+      // insight's v1.0.10 observations suggested wasn't propagating
+      // through FlyingFox's per-request spawn).
+      appAliveCache: localAppAliveCache,
       // v1.0.4 §D7 — initially `.healthy`; downgraded by the runner
       // supervisor as it observes SimRenderServer / xcodebuild
       // signals or by handlers that catch specific error shapes.

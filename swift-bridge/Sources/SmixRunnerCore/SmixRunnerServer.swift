@@ -658,14 +658,42 @@ public actor SmixRunnerServer {
   }
 
   /// v1.0.8 §D1 — /session/terminate-app / /session/launch-app outcome.
+  /// v1.0.11 §D3/§D5 — extended with wait-for-foreground observations
+  /// (`waitedMs`, `terminalState`) and cooperative-terminate flag
+  /// (`terminatedCooperatively`) so the diagnostic dump can surface
+  /// whether the terminate call went through the XCUIApplication
+  /// pathway or fell back to a hard kill (bug_type 309 signal).
   public struct SessionAppLifecycleOutcome: Sendable {
     public let notFound: Bool
     public let ok: Bool
     public let wallMs: UInt64
-    public init(notFound: Bool, ok: Bool, wallMs: UInt64) {
+    /// v1.0.11 §D3 — wall-clock milliseconds spent in the
+    /// wait-for-foreground poll loop. Zero when the caller passed
+    /// `waitForForegroundMs: nil` or on terminate calls.
+    public let waitedMs: UInt64
+    /// v1.0.11 §D3 — final observed `XCUIApplication.state` at the
+    /// moment the handler returned. Wire-encoded as the XCTest raw
+    /// value: 0 unknown / 1 notRunning / 2 runningBackgroundSuspended /
+    /// 3 runningBackground / 4 runningForeground.
+    public let terminalState: UInt8
+    /// v1.0.11 §D5 — set on terminate outcomes when the cooperative
+    /// `XCUIApplication.terminate()` pathway observed the process
+    /// `.notRunning` after the call returned. Always false on launch.
+    public let terminatedCooperatively: Bool
+    public init(
+      notFound: Bool,
+      ok: Bool,
+      wallMs: UInt64,
+      waitedMs: UInt64 = 0,
+      terminalState: UInt8 = 0,
+      terminatedCooperatively: Bool = false
+    ) {
       self.notFound = notFound
       self.ok = ok
       self.wallMs = wallMs
+      self.waitedMs = waitedMs
+      self.terminalState = terminalState
+      self.terminatedCooperatively = terminatedCooperatively
     }
   }
 
@@ -964,7 +992,13 @@ public actor SmixRunnerServer {
           if outcome.notFound {
             return SessionRoute.notFound(reason: "unknown session id")
           }
-          return SessionRoute.appLifecycleResponse(ok: outcome.ok, wallMs: outcome.wallMs)
+          return SessionRoute.appLifecycleResponse(
+            ok: outcome.ok,
+            wallMs: outcome.wallMs,
+            waitedMs: outcome.waitedMs,
+            terminalState: outcome.terminalState,
+            terminatedCooperatively: outcome.terminatedCooperatively
+          )
         }
       }
     }
