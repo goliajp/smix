@@ -984,6 +984,18 @@ pub struct DiagnosticDumpResponse {
     /// flow context available at dump time.
     #[serde(default)]
     pub recent_flows: Vec<FlowAttemptRecord>,
+    /// v1.0.19 — most-recent `interactiveNamedIds` sample observed
+    /// across all `launchApp` completions since runner boot. Survives
+    /// session teardown so post-batch triage can see WHICH ax-ids
+    /// triggered `reachedInteractive` on the last observed launch,
+    /// not just the count. Empty when no launch this run.
+    ///
+    /// Per-session values (v1.0.18) remain on `sessions[n].interactiveNamedIds`
+    /// but go with the session at teardown. This top-level field is
+    /// the last-values-standing for post-mortem observation. Insight
+    /// round-4 §Ask.
+    #[serde(default)]
+    pub last_interactive_named_ids: Vec<String>,
 }
 
 /// v1.0.4 §D7 — Session state exposed to SDK consumers via the

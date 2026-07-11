@@ -2093,6 +2093,18 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 sc.launch_app_reached_interactive,
                 sc.launch_app_timed_out_before_interactive,
             );
+            // v1.0.19 — top-level lastInteractiveNamedIds sample.
+            if !resp.last_interactive_named_ids.is_empty() {
+                println!(
+                    "  lastInteractiveNamedIds ({}): {}",
+                    resp.last_interactive_named_ids.len(),
+                    resp.last_interactive_named_ids.join(", "),
+                );
+            } else {
+                println!(
+                    "  lastInteractiveNamedIds: []  # no launch has completed with a non-empty sample yet",
+                );
+            }
             println!();
             // v1.0.14 Cluster B — external metro log tail. Only printed
             // when the user passed `--metro-log <path>` to this dump

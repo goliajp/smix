@@ -1208,6 +1208,28 @@ final class SmixRunnerUITests: XCTestCase {
       }
     }
     let lifecycleCounters = LifecycleCounters()
+    // v1.0.19 — top-level `lastInteractiveNamedIds` on the diagnostic
+    // dump. Insight round-4 §Ask: per-session `interactiveNamedIds`
+    // (v1.0.18 D1) goes with the session at teardown, but post-mortem
+    // triage often runs AFTER the batch closes every session — so the
+    // WHICH-ids sample vanishes right when we want it. This box
+    // survives session-close: last non-empty snapshot across all
+    // launchApp completions since runner boot. Empty when no launch
+    // has completed with a non-empty sample yet.
+    final class LastInteractiveIdsBox: @unchecked Sendable {
+      private let lock = NSLock()
+      private var ids: [String] = []
+      func update(_ next: [String]) {
+        guard !next.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        ids = next
+      }
+      func snapshot() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return ids
+      }
+    }
+    let lastInteractiveIdsBox = LastInteractiveIdsBox()
 
     try await server.runForever(
       port: resolvedPort,
@@ -2479,6 +2501,7 @@ final class SmixRunnerUITests: XCTestCase {
             reprobeExhaustedWindow: c.reprobeExhaustedWindow
           )
           let sessionCounters = lifecycleCounters.snapshot()
+          let lastInteractiveIds = lastInteractiveIdsBox.snapshot()
           return SmixRunnerServer.DiagnosticOutcome(
             snapshot: SessionRoute.DiagnosticSnapshot(
               sessions: summaries,
@@ -2486,7 +2509,8 @@ final class SmixRunnerUITests: XCTestCase {
               supervisorPid: nil,
               uptimeMs: uptimeMs,
               aliveCache: aliveCache,
-              sessionCounters: sessionCounters
+              sessionCounters: sessionCounters,
+              lastInteractiveNamedIds: lastInteractiveIds
             )
           )
         },
@@ -2691,6 +2715,10 @@ final class SmixRunnerUITests: XCTestCase {
             persistSessions()
           }
           sessions.unlock()
+          // v1.0.19 — mirror non-empty samples into the runner-scope
+          // box so `/diagnostic/dump.runner.lastInteractiveNamedIds`
+          // survives session close.
+          lastInteractiveIdsBox.update(interactiveNamedIds)
           return SmixRunnerServer.SessionAppLifecycleOutcome(
             notFound: false,
             ok: true,
