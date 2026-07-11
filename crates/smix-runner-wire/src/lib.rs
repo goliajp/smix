@@ -617,30 +617,78 @@ pub struct SessionRelaunchAppResponse {
 }
 
 /// v1.0.8 §D1 — request body shared by `POST /session/terminate-app`
-/// and `POST /session/launch-app`. Both endpoints take just the
-/// session id.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// and `POST /session/launch-app`. v1.0.11 §D2 — extended with launch-
+/// argument / launch-environment injection so consumers can bypass
+/// scaffolding like Expo dev-launcher server pickers that vanish on
+/// clearAppData (SDK 57 stops auto-navigating on URL scheme).
+// Not `#[non_exhaustive]` — consumers construct these directly. Wire
+// evolution is handled by `#[serde(default)]` on each field, so
+// adding a field is source-compatible for anyone using
+// `..Default::default()` in their struct literal (idiomatic pattern
+// in the SDK). The response variant DOES carry `#[non_exhaustive]`
+// because consumers only READ it, not construct.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionAppLifecycleRequest {
     /// Session whose cached `XCUIApplication` binding will be acted on.
     pub session_id: String,
+    /// v1.0.11 §D2 — launchArguments passed to `XCUIApplication.launch()`.
+    /// Empty vec = pre-v1.0.11 behavior (whatever the runner already had
+    /// cached on `entry.app.launchArguments`, which is empty by default).
+    /// Ignored by `/session/terminate-app`.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// v1.0.11 §D2 — launchEnvironment passed to `XCUIApplication.launch()`.
+    /// Empty map = pre-v1.0.11 behavior. Ignored by
+    /// `/session/terminate-app`.
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
+    /// v1.0.11 §D3 — after `.launch()` dispatches, poll
+    /// `XCUIApplication.state` at 250 ms cadence until `.runningForeground`
+    /// (or timeout). Prevents callers from firing a subsequent
+    /// terminateApp before the process has signalled launchd ready — the
+    /// root cause of `bug_type: 309 exec_terminated_before_ready` `.ips`
+    /// writes insight reported on v1.0.10. `None` = pre-v1.0.11 fire-
+    /// and-return semantics; `Some(0)` = wait one iteration then return
+    /// terminal state (useful for tests). Default: `Some(15000)` at the
+    /// SDK layer.
+    #[serde(default)]
+    pub wait_for_foreground_ms: Option<u64>,
 }
 
 /// v1.0.8 §D1 — response for `POST /session/terminate-app` and
-/// `POST /session/launch-app`. Runner reports wall time for
-/// observability; the whole point of splitting terminate + launch
-/// from `/session/relaunch-app` is to let the SDK insert a
-/// host-side `SimctlClient::clear_app_sandbox` call between them,
-/// eliminating the "Insight quit unexpectedly" ReportCrash dialog
-/// that even v1.0.4 §D12's in-place `simctl` wipe still tripped.
+/// `POST /session/launch-app`. v1.0.11 §D3 — extended with the
+/// observed terminal `.state` and the wall time spent waiting for
+/// foreground.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct SessionAppLifecycleResponse {
     /// True on success.
     pub ok: bool,
     /// Wall-clock milliseconds the terminate or launch took.
     #[serde(default)]
     pub wall_ms: u64,
+    /// v1.0.11 §D3 — Wall-clock milliseconds spent inside the wait-
+    /// for-foreground loop. Zero when the caller passed
+    /// `wait_for_foreground_ms: 0` or when the runner is pre-v1.0.11.
+    #[serde(default)]
+    pub waited_ms: u64,
+    /// v1.0.11 §D3 — final observed `XCUIApplication.state` at the
+    /// moment the runner returned. Wire-encoded as the raw `Int`
+    /// value XCTest uses: `0` unknown, `1` notRunning, `2` runningBackgroundSuspended,
+    /// `3` runningBackground, `4` runningForeground. Zero when
+    /// pre-v1.0.11 or when the caller opted out.
+    #[serde(default)]
+    pub terminal_state: u8,
+    /// v1.0.11 §D5 — set when the runner observed cooperative
+    /// termination (`XCUIApplication.terminate()` observed
+    /// `.notRunning` before timeout). `false` on `terminate-app` when
+    /// the runner had to fall back to a hard signal.
+    /// Only meaningful on `terminate-app` responses; `false` on
+    /// `launch-app`.
+    #[serde(default)]
+    pub terminated_cooperatively: bool,
 }
 
 /// v1.0.5 §D1 — one entry in `POST /session/list` response.
@@ -690,14 +738,103 @@ pub struct SubprocessRecord {
     pub timestamp_ms: u64,
 }
 
-/// `POST /diagnostic/dump` response body (v1.0.7 §D5).
+/// v1.0.10 §D5 / v1.0.11 §D1 — app-alive cache observability counters.
+/// Always emitted (even when the runner was booted without an
+/// `appAliveCache` — `wired: false` sentinel + all-zero counters).
+/// Consumers use `wired` to distinguish "workload never fired the
+/// re-probe path" from "runner version predates this observability".
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct AliveCacheCounters {
+    /// `false` sentinel — set explicitly by pre-v1.0.11 runners that
+    /// omit the field or by v1.0.11+ runners booted without a cache.
+    /// When `true`, the field values reflect an actual live cache.
+    #[serde(default)]
+    pub wired: bool,
+    /// Total calls to `AppAliveCache::markDead`.
+    #[serde(default)]
+    pub mark_dead_total: u64,
+    /// Total calls to `AppAliveCache::markAlive` (explicit + re-probe-success).
+    #[serde(default)]
+    pub mark_alive_total: u64,
+    /// `isSuppressed` returned true — a call was short-circuited.
+    #[serde(default)]
+    pub suppress_hit_total: u64,
+    /// `isSuppressed` returned false — a call was allowed through.
+    #[serde(default)]
+    pub suppress_miss_total: u64,
+    /// v1.0.9 §D4 re-probe Task spawned.
+    #[serde(default)]
+    pub reprobe_attempted_total: u64,
+    /// Re-probe observed target return to running.
+    #[serde(default)]
+    pub reprobe_succeeded_total: u64,
+    /// Re-probe was invalidated mid-flight by external markAlive.
+    #[serde(default)]
+    pub reprobe_invalidated_early: u64,
+    /// Re-probe ran all 6 iterations without recovery.
+    #[serde(default)]
+    pub reprobe_exhausted_window: u64,
+}
+
+/// v1.0.11 §D3 / §D4 / §D5 — cumulative session lifecycle counters.
+/// Unlike the instantaneous `sessions: Vec<SessionSummary>` view,
+/// these are advanced on every mutation and survive `close`. Answers
+/// insight's v1.0.10 followup question "did clearAppData actually use
+/// the cooperative pathway or fall back to SIGKILL" via the split
+/// `terminate_app_via_xcuiapplication` / `terminate_app_via_fallback`
+/// counters.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct SessionLifecycleCounters {
+    /// Total `POST /session/open` outcomes.
+    #[serde(default)]
+    pub opened_total: u64,
+    /// Total `POST /session/close` outcomes (idempotent — includes closes
+    /// of unknown sessions).
+    #[serde(default)]
+    pub closed_total: u64,
+    /// Total `POST /session/relaunch-app` outcomes.
+    #[serde(default)]
+    pub relaunch_app_total: u64,
+    /// Total `POST /session/terminate-app` outcomes.
+    #[serde(default)]
+    pub terminate_app_total: u64,
+    /// Terminate calls that observed the target `.notRunning` before
+    /// the XCUIApplication timeout — cooperative pathway succeeded.
+    #[serde(default)]
+    pub terminate_app_via_xcuiapplication: u64,
+    /// Terminate calls where XCUIApplication timed out and the runner
+    /// fell back to a hard-kill pathway. `> 0` is the smoking-gun
+    /// insight asked us to expose in the v1.0.10 followup.
+    #[serde(default)]
+    pub terminate_app_via_fallback: u64,
+    /// Total `POST /session/launch-app` outcomes.
+    #[serde(default)]
+    pub launch_app_total: u64,
+    /// Launch calls that observed `.runningForeground` inside the
+    /// requested `wait_for_foreground_ms` window.
+    #[serde(default)]
+    pub launch_app_reached_foreground: u64,
+    /// Launch calls that timed out waiting for foreground.
+    #[serde(default)]
+    pub launch_app_timed_out_before_foreground: u64,
+}
+
+/// `POST /diagnostic/dump` response body (v1.0.7 §D5, extended
+/// v1.0.11 §D1/§D4/§D5).
 ///
 /// Snapshot of the runner's runtime state: recent subprocess
 /// invocations, currently-open sessions, sim health state, supervisor
-/// pid. Consumers dump this after a failed flow to get post-mortem
-/// visibility without needing a new patch for each failure mode.
+/// pid, plus the always-emitted app-alive cache + cumulative session
+/// lifecycle counters that answer "is the observability instrumented?"
+/// as a numeric question, not a grep for a log line that may or may
+/// not survive a supervisor cycle.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct DiagnosticDumpResponse {
     /// Recent `xcrun simctl` invocations recorded by the runner's
     /// subprocess ring buffer. Ordered oldest → newest, capped at 128.
@@ -717,6 +854,19 @@ pub struct DiagnosticDumpResponse {
     /// Runner wall-clock uptime in milliseconds.
     #[serde(default)]
     pub uptime_ms: u64,
+    /// v1.0.11 §D1 — always-present. `wired=false` when the runner
+    /// didn't have an `AppAliveCache` wired at boot (opt-out) or
+    /// predates this observability. When `wired=true`, the counter
+    /// fields reflect an actual live cache — even all-zero is
+    /// meaningful ("workload didn't fire the re-probe path").
+    #[serde(default)]
+    pub alive_cache: AliveCacheCounters,
+    /// v1.0.11 §D4/§D5 — cumulative session lifecycle counters. Advance
+    /// on every mutation, survive close, persisted alongside the
+    /// v1.0.5 session-persistence file so `smix runner cycle` doesn't
+    /// wipe them.
+    #[serde(default)]
+    pub session_counters: SessionLifecycleCounters,
 }
 
 /// v1.0.4 §D7 — Session state exposed to SDK consumers via the

@@ -1791,6 +1791,49 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 );
             }
             println!();
+            // v1.0.11 §D1/§D4/§D5 — surface the always-emitted
+            // counter fields so consumers can numerically check
+            // "did the observability actually reach this workload"
+            // without dropping into `--json`.
+            let ac = &resp.alive_cache;
+            println!("=== app-alive cache counters ===");
+            println!(
+                "  wired={} markDead={} markAlive={} suppressHit={} suppressMiss={}",
+                ac.wired,
+                ac.mark_dead_total,
+                ac.mark_alive_total,
+                ac.suppress_hit_total,
+                ac.suppress_miss_total,
+            );
+            println!(
+                "  reprobeAttempted={} reprobeSucceeded={} reprobeInvalidatedEarly={} reprobeExhaustedWindow={}",
+                ac.reprobe_attempted_total,
+                ac.reprobe_succeeded_total,
+                ac.reprobe_invalidated_early,
+                ac.reprobe_exhausted_window,
+            );
+            let sc = &resp.session_counters;
+            println!();
+            println!("=== session lifecycle counters (cumulative, survive close) ===");
+            println!(
+                "  opened={} closed={} relaunch={} terminate={} launch={}",
+                sc.opened_total,
+                sc.closed_total,
+                sc.relaunch_app_total,
+                sc.terminate_app_total,
+                sc.launch_app_total,
+            );
+            println!(
+                "  terminate: viaXCUIApplication={} viaFallback={}  # fallback>0 = cooperative terminate failed → potential .ips writes",
+                sc.terminate_app_via_xcuiapplication,
+                sc.terminate_app_via_fallback,
+            );
+            println!(
+                "  launch:    reachedForeground={} timedOutBeforeForeground={}  # timedOut>0 → next call may fire during launch → bug_type 309",
+                sc.launch_app_reached_foreground,
+                sc.launch_app_timed_out_before_foreground,
+            );
+            println!();
             println!(
                 "=== runner-side subprocesses (last {} of {}) ===",
                 resp.recent_subprocesses.len().min(20),

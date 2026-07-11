@@ -872,6 +872,66 @@ fn parse_assert_not_visible(v: &Value) -> Result<Step, ParseError> {
 // `killApp: { appId: "com.x" }` (full form, for forward-compat with
 // future scope fields). maestro currently only documents the bare
 // string form but accepts either at parser level.
+// v1.0.11 §D2 — accept either bare `- clearAppData` (unit) or the
+// map form with `launchArgs` / `launchEnv`. Bare form is a valid
+// yaml value in serde_norway sense: the parent step-list entry is
+// `- clearAppData` where the value under the step-name key is
+// `null`. Map form is `- clearAppData: { launchArgs: [...], ... }`.
+fn parse_clear_app_data(v: &Value) -> Result<Step, ParseError> {
+    let mut launch_args: Vec<String> = Vec::new();
+    let mut launch_env: std::collections::BTreeMap<String, String> = Default::default();
+    match v {
+        Value::Null => {}
+        Value::Mapping(_) => {
+            let map = v.as_mapping().expect("just matched");
+            if let Some(args_v) = map.get(Value::String("launchArgs".into()))
+                .or_else(|| map.get(Value::String("args".into())))
+            {
+                let arr = args_v.as_sequence().ok_or_else(|| ParseError::InvalidValue {
+                    field: "clearAppData.launchArgs".into(),
+                    reason: format!("expected sequence, got {args_v:?}"),
+                })?;
+                for item in arr {
+                    let s = item.as_str().ok_or_else(|| ParseError::InvalidValue {
+                        field: "clearAppData.launchArgs[]".into(),
+                        reason: format!("expected string, got {item:?}"),
+                    })?;
+                    launch_args.push(s.to_string());
+                }
+            }
+            if let Some(env_v) = map.get(Value::String("launchEnv".into()))
+                .or_else(|| map.get(Value::String("env".into())))
+            {
+                let em = env_v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
+                    field: "clearAppData.launchEnv".into(),
+                    reason: format!("expected mapping, got {env_v:?}"),
+                })?;
+                for (k, v) in em {
+                    let ks = k.as_str().ok_or_else(|| ParseError::InvalidValue {
+                        field: "clearAppData.launchEnv key".into(),
+                        reason: format!("expected string key, got {k:?}"),
+                    })?;
+                    let vs = v.as_str().ok_or_else(|| ParseError::InvalidValue {
+                        field: format!("clearAppData.launchEnv.{ks}"),
+                        reason: format!("expected string value, got {v:?}"),
+                    })?;
+                    launch_env.insert(ks.to_string(), vs.to_string());
+                }
+            }
+        }
+        other => {
+            return Err(ParseError::InvalidValue {
+                field: "clearAppData".into(),
+                reason: format!("expected null (bare) or mapping, got {other:?}"),
+            });
+        }
+    }
+    Ok(Step::ClearAppData {
+        launch_args,
+        launch_env,
+    })
+}
+
 fn parse_kill_app(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::KillApp { app_id: s.clone() }),
@@ -1649,11 +1709,19 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "launchApp" => parse_launch_app(value),
         "openLink" => parse_open_link(value),
         "stopApp" => Ok(Step::StopApp),
-        // v1.0.8 §D2 — session-scoped in-place data clear. Bare verb
-        // (no args). Replaces `launchApp: { clearState: true }` — the
-        // old shape stays as a legacy alias that emits a deprecation
-        // WARN on run and expands to ClearAppData + LaunchApp.
-        "clearAppData" => Ok(Step::ClearAppData),
+        // v1.0.8 §D2 + v1.0.11 §D2 — session-scoped in-place data clear.
+        // Accepts either:
+        //   - clearAppData                         (bare — legacy)
+        //   - clearAppData:
+        //       launchArgs: ["-EXInternalMetroPort", "8081"]
+        //       launchEnv:
+        //         EX_DEV_CLIENT_METRO_URL: "http://localhost:8081"
+        //
+        // v1.0.11 launchArgs/launchEnv are forwarded to the cooperative
+        // runner-side launch step inside clearAppData. Unblocks Expo
+        // SDK 57 dev-launcher server picker (which stopped auto-
+        // navigating on URL scheme, per insight's v1.0.10 followup).
+        "clearAppData" => parse_clear_app_data(value),
         // v5.2 c1 — 7 ⊘ adapter-only-gap wires.
         "scroll" => Ok(Step::Scroll),
         "hideKeyboard" => Ok(Step::HideKeyboard),

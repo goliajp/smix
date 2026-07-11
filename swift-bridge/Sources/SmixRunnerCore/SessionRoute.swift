@@ -138,9 +138,16 @@ public enum SessionRoute {
 
   // -- v1.0.7 §D5 diagnostic dump ----------------------------------------
 
-  /// v1.0.10 §D5 — app-alive-cache observability counters (subset of
-  /// [`AppAliveCache.Counters`] transferred over the wire).
+  /// v1.0.10 §D5 / v1.0.11 §D1 — app-alive-cache observability counters
+  /// (subset of [`AppAliveCache.Counters`] transferred over the wire).
+  /// v1.0.11 §D1 — carries a `wired` sentinel so consumers can
+  /// distinguish "runner has no cache" from "cache present but no
+  /// activity" (both used to serialize as absent or all-zero).
   public struct AliveCacheCounters: Equatable, Sendable {
+    /// `true` when the runner was booted with an `AppAliveCache`. When
+    /// `false`, the counter fields are always zero (sentinel-value
+    /// meaning "feature not wired at runner boot").
+    public let wired: Bool
     public let markDeadTotal: UInt64
     public let markAliveTotal: UInt64
     public let suppressHitTotal: UInt64
@@ -150,6 +157,7 @@ public enum SessionRoute {
     public let reprobeInvalidatedEarly: UInt64
     public let reprobeExhaustedWindow: UInt64
     public init(
+      wired: Bool = false,
       markDeadTotal: UInt64 = 0,
       markAliveTotal: UInt64 = 0,
       suppressHitTotal: UInt64 = 0,
@@ -159,6 +167,7 @@ public enum SessionRoute {
       reprobeInvalidatedEarly: UInt64 = 0,
       reprobeExhaustedWindow: UInt64 = 0
     ) {
+      self.wired = wired
       self.markDeadTotal = markDeadTotal
       self.markAliveTotal = markAliveTotal
       self.suppressHitTotal = suppressHitTotal
@@ -170,26 +179,71 @@ public enum SessionRoute {
     }
   }
 
+  /// v1.0.11 §D3/§D4/§D5 — cumulative session lifecycle counters.
+  /// Advance on every mutation, survive session close. Persisted to
+  /// `~/Documents/smix-session-counters.json`; rehydrated on runner
+  /// boot. Answers insight's v1.0.10 followup question "did the
+  /// clearAppData terminate go through the cooperative pathway or
+  /// fall back to a hard kill" via the split
+  /// `terminateAppViaXCUIApplication` / `terminateAppViaFallback`.
+  public struct SessionLifecycleCounters: Equatable, Sendable {
+    public let openedTotal: UInt64
+    public let closedTotal: UInt64
+    public let relaunchAppTotal: UInt64
+    public let terminateAppTotal: UInt64
+    public let terminateAppViaXCUIApplication: UInt64
+    public let terminateAppViaFallback: UInt64
+    public let launchAppTotal: UInt64
+    public let launchAppReachedForeground: UInt64
+    public let launchAppTimedOutBeforeForeground: UInt64
+    public init(
+      openedTotal: UInt64 = 0,
+      closedTotal: UInt64 = 0,
+      relaunchAppTotal: UInt64 = 0,
+      terminateAppTotal: UInt64 = 0,
+      terminateAppViaXCUIApplication: UInt64 = 0,
+      terminateAppViaFallback: UInt64 = 0,
+      launchAppTotal: UInt64 = 0,
+      launchAppReachedForeground: UInt64 = 0,
+      launchAppTimedOutBeforeForeground: UInt64 = 0
+    ) {
+      self.openedTotal = openedTotal
+      self.closedTotal = closedTotal
+      self.relaunchAppTotal = relaunchAppTotal
+      self.terminateAppTotal = terminateAppTotal
+      self.terminateAppViaXCUIApplication = terminateAppViaXCUIApplication
+      self.terminateAppViaFallback = terminateAppViaFallback
+      self.launchAppTotal = launchAppTotal
+      self.launchAppReachedForeground = launchAppReachedForeground
+      self.launchAppTimedOutBeforeForeground = launchAppTimedOutBeforeForeground
+    }
+  }
+
   public struct DiagnosticSnapshot: Sendable {
     public let sessions: [SessionSummary]
     public let simHealth: String
     public let supervisorPid: UInt32?
     public let uptimeMs: UInt64
-    /// v1.0.10 §D5 — app-alive cache counters. `nil` when the runner
-    /// was booted without `appAliveCache` wired in (opt-out).
-    public let aliveCache: AliveCacheCounters?
+    /// v1.0.11 §D1 — ALWAYS present (was optional pre-v1.0.11). The
+    /// `wired` field inside distinguishes "runner has no cache" from
+    /// "cache present but no activity".
+    public let aliveCache: AliveCacheCounters
+    /// v1.0.11 §D4/§D5 — cumulative counters that survive session close.
+    public let sessionCounters: SessionLifecycleCounters
     public init(
       sessions: [SessionSummary],
       simHealth: String,
       supervisorPid: UInt32?,
       uptimeMs: UInt64,
-      aliveCache: AliveCacheCounters? = nil
+      aliveCache: AliveCacheCounters = AliveCacheCounters(),
+      sessionCounters: SessionLifecycleCounters = SessionLifecycleCounters()
     ) {
       self.sessions = sessions
       self.simHealth = simHealth
       self.supervisorPid = supervisorPid
       self.uptimeMs = uptimeMs
       self.aliveCache = aliveCache
+      self.sessionCounters = sessionCounters
     }
   }
 
@@ -204,9 +258,10 @@ public enum SessionRoute {
     let health = jsonEscape(snap.simHealth)
     let sup = snap.supervisorPid.map { String($0) } ?? "null"
     s += #"],"simHealth":""# + health + #"","supervisorPid":\#(sup),"uptimeMs":\#(snap.uptimeMs)"#
-    if let c = snap.aliveCache {
-      s += #","aliveCache":{"markDeadTotal":\#(c.markDeadTotal),"markAliveTotal":\#(c.markAliveTotal),"suppressHitTotal":\#(c.suppressHitTotal),"suppressMissTotal":\#(c.suppressMissTotal),"reprobeAttemptedTotal":\#(c.reprobeAttemptedTotal),"reprobeSucceededTotal":\#(c.reprobeSucceededTotal),"reprobeInvalidatedEarly":\#(c.reprobeInvalidatedEarly),"reprobeExhaustedWindow":\#(c.reprobeExhaustedWindow)}"#
-    }
+    let c = snap.aliveCache
+    s += #","aliveCache":{"wired":\#(c.wired),"markDeadTotal":\#(c.markDeadTotal),"markAliveTotal":\#(c.markAliveTotal),"suppressHitTotal":\#(c.suppressHitTotal),"suppressMissTotal":\#(c.suppressMissTotal),"reprobeAttemptedTotal":\#(c.reprobeAttemptedTotal),"reprobeSucceededTotal":\#(c.reprobeSucceededTotal),"reprobeInvalidatedEarly":\#(c.reprobeInvalidatedEarly),"reprobeExhaustedWindow":\#(c.reprobeExhaustedWindow)}"#
+    let sc = snap.sessionCounters
+    s += #","sessionCounters":{"openedTotal":\#(sc.openedTotal),"closedTotal":\#(sc.closedTotal),"relaunchAppTotal":\#(sc.relaunchAppTotal),"terminateAppTotal":\#(sc.terminateAppTotal),"terminateAppViaXCUIApplication":\#(sc.terminateAppViaXCUIApplication),"terminateAppViaFallback":\#(sc.terminateAppViaFallback),"launchAppTotal":\#(sc.launchAppTotal),"launchAppReachedForeground":\#(sc.launchAppReachedForeground),"launchAppTimedOutBeforeForeground":\#(sc.launchAppTimedOutBeforeForeground)}"#
     s += "}"
     return envelope(.ok, Data(s.utf8))
   }
@@ -265,20 +320,66 @@ public enum SessionRoute {
 
   // -- v1.0.8 §D1 terminate-app / launch-app -----------------------------
 
+  /// v1.0.8 §D1 request body. v1.0.11 §D2 — extended with
+  /// launchArguments / launchEnvironment injection so callers can
+  /// steer scaffolding (e.g., Expo dev-launcher server picker) that
+  /// their app shows after `clearAppData` wipes persisted state. §D3 —
+  /// `waitForForegroundMs` opts the launch handler into a polling loop
+  /// on `XCUIApplication.state == .runningForeground` before returning.
   public struct AppLifecycleRequest: Equatable, Sendable {
     public let sessionId: String
-    public init(sessionId: String) {
+    public let args: [String]
+    public let env: [String: String]
+    public let waitForForegroundMs: UInt64?
+    public init(
+      sessionId: String,
+      args: [String] = [],
+      env: [String: String] = [:],
+      waitForForegroundMs: UInt64? = nil
+    ) {
       self.sessionId = sessionId
+      self.args = args
+      self.env = env
+      self.waitForForegroundMs = waitForForegroundMs
     }
   }
 
   public static func decodeAppLifecycle(_ body: Data) throws -> AppLifecycleRequest {
-    let close = try decodeClose(body)
-    return AppLifecycleRequest(sessionId: close.sessionId)
+    // v1.0.11 §D2/§D3 — try full decode first; fall back to the pre-
+    // v1.0.11 shape (bare `sessionId`) so older clients still work.
+    struct FullBody: Decodable {
+      let sessionId: String
+      let args: [String]?
+      let env: [String: String]?
+      let waitForForegroundMs: UInt64?
+    }
+    do {
+      let dec = JSONDecoder()
+      let parsed = try dec.decode(FullBody.self, from: body)
+      return AppLifecycleRequest(
+        sessionId: parsed.sessionId,
+        args: parsed.args ?? [],
+        env: parsed.env ?? [:],
+        waitForForegroundMs: parsed.waitForForegroundMs
+      )
+    } catch {
+      // Fall through to legacy `{"sessionId": "..."}` shape via
+      // decodeClose which already parses that.
+      let close = try decodeClose(body)
+      return AppLifecycleRequest(sessionId: close.sessionId)
+    }
   }
 
-  public static func appLifecycleResponse(ok: Bool, wallMs: UInt64) -> HTTPResponse {
-    let body = Data(#"{"ok":\#(ok),"wallMs":\#(wallMs)}"#.utf8)
+  public static func appLifecycleResponse(
+    ok: Bool,
+    wallMs: UInt64,
+    waitedMs: UInt64 = 0,
+    terminalState: UInt8 = 0,
+    terminatedCooperatively: Bool = false
+  ) -> HTTPResponse {
+    let body = Data(
+      #"{"ok":\#(ok),"wallMs":\#(wallMs),"waitedMs":\#(waitedMs),"terminalState":\#(terminalState),"terminatedCooperatively":\#(terminatedCooperatively)}"#
+        .utf8)
     return envelope(.ok, body)
   }
 

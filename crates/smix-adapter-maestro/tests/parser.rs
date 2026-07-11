@@ -1058,3 +1058,67 @@ fn parse_expect_top_level_text_still_works() {
         other => panic!("expected AssertVisible, got: {other:?}"),
     }
 }
+
+// v1.0.11 §D2 — clearAppData parser tests. Bare + map form both
+// accepted; map form extracts launchArgs / launchEnv (or the shorthand
+// args / env aliases). Wiring is verified end-to-end at the runner
+// route (real-sim gate), but the parse shape is locked here so a
+// regression to unit form breaks tests before it breaks consumers.
+
+#[test]
+fn parse_clear_app_data_bare_yields_empty_options() {
+    let yaml = "appId: com.test.app\n---\n- clearAppData\n";
+    let flow = parse_flow_yaml(yaml).expect("parse bare clearAppData");
+    match &flow.steps[0] {
+        Step::ClearAppData { launch_args, launch_env } => {
+            assert!(launch_args.is_empty());
+            assert!(launch_env.is_empty());
+        }
+        other => panic!("expected ClearAppData, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_clear_app_data_with_launch_args_and_env() {
+    let yaml = r#"appId: com.test.app
+---
+- clearAppData:
+    launchArgs:
+      - "-EXInternalMetroPort"
+      - "8081"
+    launchEnv:
+      EX_DEV_CLIENT_METRO_URL: "http://localhost:8081"
+"#;
+    let flow = parse_flow_yaml(yaml).expect("parse clearAppData with args + env");
+    match &flow.steps[0] {
+        Step::ClearAppData { launch_args, launch_env } => {
+            assert_eq!(launch_args, &vec!["-EXInternalMetroPort".to_string(), "8081".to_string()]);
+            assert_eq!(
+                launch_env.get("EX_DEV_CLIENT_METRO_URL").map(String::as_str),
+                Some("http://localhost:8081")
+            );
+        }
+        other => panic!("expected ClearAppData, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_clear_app_data_accepts_short_args_and_env_aliases() {
+    // Shorthand `args` / `env` accepted alongside canonical
+    // `launchArgs` / `launchEnv` so yaml stays concise.
+    let yaml = r#"appId: com.test.app
+---
+- clearAppData:
+    args: ["-Foo"]
+    env:
+      BAR: "baz"
+"#;
+    let flow = parse_flow_yaml(yaml).expect("parse clearAppData short form");
+    match &flow.steps[0] {
+        Step::ClearAppData { launch_args, launch_env } => {
+            assert_eq!(launch_args, &vec!["-Foo".to_string()]);
+            assert_eq!(launch_env.get("BAR").map(String::as_str), Some("baz"));
+        }
+        other => panic!("expected ClearAppData, got: {other:?}"),
+    }
+}

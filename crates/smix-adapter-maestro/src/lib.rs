@@ -440,15 +440,30 @@ pub enum Step {
     },
     /// v1.0.8 §D2 — clear the current session's app data IN PLACE
     /// without launching. Maps to
-    /// [`smix_sdk::Session::reset_app_data`]. Pairs with a subsequent
-    /// `launchApp: {}` when the caller wants a fresh instance.
+    /// [`smix_sdk::App::clear_app_data`] (v1.0.11 §D2: the
+    /// `_with_launch_options` variant when the yaml supplies args or
+    /// env). Pairs with an optional trailing `launchApp: {}` when the
+    /// caller wants a fresh instance.
     ///
     /// Replaces `launchApp: { clearState: true }` — the old shape now
     /// emits a deprecation WARN and internally expands to
     /// `ClearAppData + LaunchApp`. Consumers who migrate see the
     /// deprecation notice go away and get the crash-dialog fix
     /// automatically.
-    ClearAppData,
+    ///
+    /// v1.0.11 §D2 — accepts optional `launchArgs` / `launchEnv` to
+    /// steer scaffolding shown at cold launch (e.g., Expo dev-launcher
+    /// server picker on SDK 57 which stopped auto-navigating on URL
+    /// scheme). Bare `- clearAppData` remains valid and equivalent to
+    /// empty vec + empty map.
+    ClearAppData {
+        /// v1.0.11 §D2 — launchArguments forwarded to the cooperative
+        /// runner-side launch. Empty vec = pre-v1.0.11 behavior.
+        launch_args: Vec<String>,
+        /// v1.0.11 §D2 — launchEnvironment forwarded to the cooperative
+        /// runner-side launch. Empty map = pre-v1.0.11 behavior.
+        launch_env: std::collections::BTreeMap<String, String>,
+    },
     /// Open a URL / deep link in the OS handler. Maps to
     /// `simctl openurl` (c3 mapping).
     OpenLink(String),

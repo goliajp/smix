@@ -919,6 +919,31 @@ impl App {
     /// host-side wipe). Android is not supported yet — Android's
     /// UiAutomator lifecycle differs and needs its own charter.
     pub async fn clear_app_data(&self) -> Result<u64, ExpectationFailure> {
+        self.clear_app_data_with_launch(&[], &std::collections::BTreeMap::new()).await
+    }
+
+    /// v1.0.11 §D2 — same three-step orchestration as
+    /// [`Self::clear_app_data`], but applies caller-supplied
+    /// `launchArguments` and `launchEnvironment` to the runner's
+    /// cooperative launch step. Unblocks scaffolding like the Expo
+    /// SDK 57 dev-launcher server picker that `clearAppData` wipes
+    /// from persisted state and can no longer restore via a URL
+    /// scheme call. Insight-side yaml:
+    ///
+    /// ```yaml
+    /// - clearAppData:
+    ///     launchArgs: ["-EXInternalMetroPort", "8081"]
+    ///     launchEnv:
+    ///       EX_DEV_CLIENT_METRO_URL: "http://localhost:8081"
+    /// ```
+    ///
+    /// Empty args + empty env is equivalent to
+    /// [`Self::clear_app_data`].
+    pub async fn clear_app_data_with_launch(
+        &self,
+        launch_args: &[String],
+        launch_env: &std::collections::BTreeMap<String, String>,
+    ) -> Result<u64, ExpectationFailure> {
         let start = std::time::Instant::now();
         let runner = self.http_runner_client().ok_or_else(|| {
             ExpectationFailure::new(FailureInit {
@@ -953,11 +978,26 @@ impl App {
             })?
             .to_string();
         let udid = self.require_udid()?.to_string();
-        let req = smix_runner_client::SessionAppLifecycleRequest {
+        // v1.0.11 §D3 — launch step waits for `.runningForeground`
+        // before returning by default. Prevents the caller's next
+        // step (or a batch-retry firing another clearAppData) from
+        // terminating the app mid-launch, which insight's v1.0.10
+        // followup traced to `bug_type: 309 exec_terminated_before_ready`
+        // .ips writes. 15 s window is generous for cold RN/Expo
+        // bundle load on iOS 26.5 sim.
+        let terminate_req = smix_runner_client::SessionAppLifecycleRequest {
             session_id: session_id.clone(),
+            ..Default::default()
+        };
+        let launch_req = smix_runner_client::SessionAppLifecycleRequest {
+            session_id: session_id.clone(),
+            args: launch_args.to_vec(),
+            env: launch_env.clone(),
+            wait_for_foreground_ms: Some(15_000),
+            ..Default::default()
         };
         // Step 1 — cooperative terminate on runner side.
-        runner.terminate_session_app(&req).await.map_err(|e| {
+        runner.terminate_session_app(&terminate_req).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
                 message: format!("clear_app_data terminate: {e}"),
@@ -974,7 +1014,7 @@ impl App {
             .map_err(simctl_to_failure)?;
         // Step 3 — cooperative launch on runner side. Fresh app
         // instance sees the cleaned sandbox.
-        runner.launch_session_app(&req).await.map_err(|e| {
+        runner.launch_session_app(&launch_req).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
                 message: format!("clear_app_data launch: {e}"),

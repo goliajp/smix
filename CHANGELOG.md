@@ -2,6 +2,63 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.11] — 2026-07-11
+
+**launchApp launchArgs/launchEnv + wait-for-foreground + always-emit aliveCache + terminate-outcome counters.** Response to `smix-feedback-2026-07-11-v1.0.10-observations.md`. RFC `.claude/rfcs/1.0.11-launch-lifecycle-and-observability-under-load.md`; the standalone a11y-cache invariant note lives at `.claude/rfcs/appalive-cache-invariant.md`.
+
+### The three v1.0.10 followup gaps closed
+
+- **`aliveCache: null` in `/diagnostic/dump` (§A2).** Root cause: `SessionHandlers.diagnostic` closure read `SmixRunnerServer.currentAppAliveCache` (task-local); FlyingFox's per-request task spawn wasn't propagating the `withValue` scope around `server.run()`. Fix: `test_runForever()` now extracts `AppAliveCache` to a named local `localAppAliveCache` and the diagnostic handler closure captures the reference directly (not via task-local). The dump payload always emits `aliveCache` with a `wired: bool` sentinel + all-zero counters when unwired, so consumers can distinguish "runner has no cache" from "cache present, workload didn't fire".
+- **Expo SDK 57 dev-launcher server picker blocking business flow (§B).** `clearAppData` wipes the dev-client's persisted metro URL, next launch shows the picker, SDK 57 URL scheme no longer auto-navigates. Fix: `launchApp` HTTP endpoint (and yaml `clearAppData` step) accept optional `launchArgs: []` and `launchEnv: {}` fields; forwarded to `XCUIApplication.launchArguments` / `.launchEnvironment` before launch. Consumers steer the picker via `-EXInternalMetroPort` launchArg or `EX_DEV_CLIENT_METRO_URL` launchEnv (fixture57 accepts both).
+- **`bug_type: 309 exec_terminated_before_ready` `.ips` writes during clearAppData (§A1).** Diagnosis: `XCUIApplication.launch()` returns after launch is dispatched, not when the app has signalled launchd ready. Caller's next step (or a batch retry firing another clearAppData) hits terminate mid-launch → XCUIApplication times out cooperative-terminate → falls back to hard kill → launchd catches `exec_terminated_before_ready` → `.ips`. Fix: `launchApp` endpoint accepts `waitForForegroundMs: Option<u64>`. When set, the runner polls `XCUIApplication.state` every 250 ms until `.runningForeground` or the deadline. `App::clear_app_data` defaults to 15 s. Response body carries `waitedMs` + `terminalState` (0 unknown / 1 notRunning / 2 runningBackgroundSuspended / 3 runningBackground / 4 runningForeground) so `/diagnostic/dump` can surface `launchAppReachedForeground` vs `launchAppTimedOutBeforeForeground` counters.
+
+### CLI (Rust)
+
+- **`SessionAppLifecycleRequest` gains `args`, `env`, `wait_for_foreground_ms`** (`#[serde(default)]`; pre-v1.0.11 callers see zero behaviour change). Non-`#[non_exhaustive]` on the request side (consumers construct) but IS on the response (consumers read).
+- **`SessionAppLifecycleResponse` gains `waited_ms`, `terminal_state`, `terminated_cooperatively`** (additive).
+- **`DiagnosticDumpResponse` gains `alive_cache: AliveCacheCounters`** (always emitted, `wired: bool` sentinel) **and `session_counters: SessionLifecycleCounters`** (cumulative — survive close). Client-side `smix diagnostic dump` (non-JSON) renders both under new sections.
+- **`App::clear_app_data_with_launch(args, env)` SDK method** — `clear_app_data()` becomes a thin wrapper. yaml `clearAppData: { launchArgs, launchEnv }` (with `args` / `env` short aliases) parses to `Step::ClearAppData { launch_args, launch_env }` and threads through.
+
+### Runner-side (Swift)
+
+- **§D1** — `SessionRoute.AliveCacheCounters.wired: Bool` sentinel; `SessionRoute.DiagnosticSnapshot.aliveCache` is non-Optional and always emitted; `SessionLifecycleCounters` embedded alongside.
+- **§D2** — `SessionRoute.AppLifecycleRequest` decoder accepts `args`, `env`, `waitForForegroundMs`; falls back to pre-v1.0.11 shape (bare `sessionId`) so older clients still work.
+- **§D3** — `launchApp` handler applies `entry.app.launchArguments = req.args` + `.launchEnvironment = req.env` before `.launch()`, then polls `.state` for `.runningForeground` up to `req.waitForForegroundMs` (250 ms cadence). Reports `waitedMs`, `terminalState`, `terminatedCooperatively` (always false on launch) in outcome.
+- **§D5** — `terminateApp` handler observes `app.state == .notRunning` after `.terminate()` returns; sets `terminatedCooperatively` accordingly. `terminateAppViaXCUIApplication` counter advances when cooperative; `terminateAppViaFallback` advances when XCUIApplication timed out and fell back. `> 0 fallback` is the smoking-gun for insight's `.ips` diagnosis.
+- Cumulative `LifecycleCounters` local (class + NSLock, no actor overhead for the sync mutations) advanced on every `open`, `close`, `relaunchApp`, `terminateApp`, `launchApp`; snapshotted into every diagnostic response.
+
+### Wire compatibility
+
+- All new fields carry `#[serde(default)]`. Pre-v1.0.11 clients see zero change.
+- New request fields default to empty — a pre-v1.0.11 SDK still sends bare `{sessionId}` and gets pre-v1.0.11 launch semantics.
+- New response fields default to zero — a pre-v1.0.11 SDK ignoring them keeps working.
+
+### Documentation
+
+- `.claude/rfcs/appalive-cache-invariant.md` — standing note explaining what `AppAliveCache` protects, what `unknown` descendants mean, and how to distinguish "app dead + retry-spam broken by cache" from "app alive but a11y sparse" (the case that hit insight on Expo SDK 57 dev-launcher).
+- `.scratch/v1.4-rn-spike/rn-fixture57/` — scaffold for local Expo SDK 57 fixture with `probe.yaml` exercising the `clearAppData: { launchArgs, launchEnv }` path. Full sim install + xcodebuild deferred to a follow-up cycle when the docker testbed image (insight offer, §C.4) lands.
+
+### Ship gate
+
+D8 real-sim observations on `sim-insight` (iOS 26.5) at v1.0.11:
+
+```
+POST /session/launch-app  {sessionId, args: ["-AppleLanguages","(en)"], env: {SMIX_TEST_ENV:"hello"}, waitForForegroundMs: 15000}
+→ HTTP 200 {"ok":true, "wallMs":2786, "waitedMs":0, "terminalState":4, "terminatedCooperatively":false}
+
+POST /session/terminate-app  {sessionId}
+→ HTTP 200 {"ok":true, "wallMs":1050, "waitedMs":0, "terminalState":1, "terminatedCooperatively":true}
+
+POST /diagnostic/dump
+→ aliveCache: {wired: true, markAliveTotal: 1, ...}
+→ sessionCounters: {openedTotal: 1, terminateAppTotal: 1, terminateAppViaXCUIApplication: 1, terminateAppViaFallback: 0, launchAppTotal: 1, launchAppReachedForeground: 1, launchAppTimedOutBeforeForeground: 0, ...}
+```
+
+`terminatedCooperatively: true` + `terminateAppViaFallback: 0` — the cooperative pathway went through cleanly on Preferences. Insight's real-app validation (Expo 57 dev-launcher bypass) is on their end after they upgrade CLI + regenerate their runner sources via the v1.0.10 auto-sync path.
+
+667 workspace cargo tests + 6 Swift SmixRunnerCore tests + 3 new clearAppData parser tests green. Corpus gate infrastructure landed v1.0.10; docker testbed image acceptance still pending insight's PR (offered §C.4 in the v1.0.10 followup).
+
+
 ## [1.0.10] — 2026-07-11
 
 **Systemic fix for the CLI-vs-runner distribution drift that made v1.0.4–v1.0.9 patches silently no-op on stale on-disk runner sources.** Response to `smix-feedback-2026-07-11-systemic-pause.md`. RFC `.claude/rfcs/1.0.10-runner-source-sync-and-observability.md`.
