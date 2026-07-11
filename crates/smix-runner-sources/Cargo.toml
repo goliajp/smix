@@ -1,0 +1,23 @@
+[package]
+name = "smix-runner-sources"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Embedded Swift runner sources for smix — solves the CLI/runner version-drift problem where cargo install ships only the Rust binary but the runner project is separately maintained on-disk."
+readme = "README.md"
+keywords = ["ios", "simulator", "smix", "runner"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+flate2 = "1"
+tar = "0.4"
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

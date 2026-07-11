@@ -274,24 +274,71 @@ pub struct SubprocessRecord {
 mod subprocess_ring {
     use super::SubprocessRecord;
     use std::collections::VecDeque;
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
     use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, UNIX_EPOCH};
 
     fn cell() -> &'static Mutex<VecDeque<SubprocessRecord>> {
         static INSTANCE: OnceLock<Mutex<VecDeque<SubprocessRecord>>> = OnceLock::new();
         INSTANCE.get_or_init(|| Mutex::new(VecDeque::with_capacity(128)))
     }
 
-    /// v1.0.7 §D3 — record one invocation. Ring buffer capped at 128
-    /// entries; oldest evicted on push.
-    pub(super) fn record(entry: SubprocessRecord) {
-        let mut g = match cell().lock() {
+    /// v1.0.10 §D6 — persist path for the ring buffer. Nil = in-memory
+    /// only (legacy pre-v1.0.10 behavior). Set once at process startup
+    /// via [`set_persist_path`]; unchanged for the lifetime of the
+    /// process. Insight's v1.0.7 dogfood reported empty
+    /// `/diagnostic/dump` payloads because supervisor cycles killed the
+    /// CLI faster than a dump could snapshot the in-memory buffer.
+    /// Persisting side-steps that: the file survives cycles, so
+    /// post-mortem tools read the file rather than the (now-gone)
+    /// in-memory state.
+    fn persist_cell() -> &'static Mutex<Option<PathBuf>> {
+        static INSTANCE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| Mutex::new(None))
+    }
+
+    /// v1.0.10 §D6 — install a persist path. Callers should also call
+    /// [`load_persisted`] once after this so the in-memory ring starts
+    /// pre-populated with the last-known state.
+    pub fn set_persist_path(path: PathBuf) {
+        let mut g = match persist_cell().lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        if g.len() >= 128 {
-            g.pop_front();
+        *g = Some(path);
+    }
+
+    fn persist_path_copy() -> Option<PathBuf> {
+        let g = match persist_cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        g.clone()
+    }
+
+    /// v1.0.10 §D6 — record one invocation. Ring buffer capped at 128
+    /// entries; oldest evicted on push. When [`set_persist_path`] is
+    /// active, atomically writes the buffer to disk after the mutation
+    /// so a subsequent supervisor-cycle doesn't lose the observation.
+    pub(super) fn record(entry: SubprocessRecord) {
+        {
+            let mut g = match cell().lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            if g.len() >= 128 {
+                g.pop_front();
+            }
+            g.push_back(entry);
         }
-        g.push_back(entry);
+        if let Some(path) = persist_path_copy() {
+            let snapshot = snapshot();
+            // Best-effort. Failure to persist must never affect the
+            // caller of `xcrun simctl` — we swallow errors here and
+            // let the next `record()` retry.
+            let _ = write_json_atomic(&path, &snapshot);
+        }
     }
 
     /// Snapshot the current ring buffer. Ordered oldest → newest.
@@ -302,6 +349,135 @@ mod subprocess_ring {
         };
         g.iter().cloned().collect()
     }
+
+    /// v1.0.10 §D6 — load a previously-persisted ring from disk. No-op
+    /// when the file does not exist. Called by CLI startup after
+    /// [`set_persist_path`] so the in-memory view starts with the
+    /// last-known state. Silently drops parse failures — corrupt files
+    /// are noise, not fatal.
+    pub fn load_persisted() {
+        let Some(path) = persist_path_copy() else {
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&path) else {
+            return;
+        };
+        let Ok(records) = serde_json::from_slice::<Vec<PersistedRecord>>(&bytes) else {
+            return;
+        };
+        let mut g = match cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        for r in records.into_iter().rev().take(128).rev() {
+            g.push_back(r.into_record());
+        }
+    }
+
+    fn write_json_atomic(path: &Path, records: &[SubprocessRecord]) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        {
+            let payload: Vec<PersistedRecord> = records.iter().cloned().map(Into::into).collect();
+            let serialized = serde_json::to_vec(&payload)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let mut f = std::fs::File::create(&tmp)?;
+            f.write_all(&serialized)?;
+            f.sync_all()?;
+        }
+        std::fs::rename(&tmp, path)
+    }
+
+    /// On-disk representation. Kept separate from
+    /// [`SubprocessRecord`] because the wall-clock timestamp is a
+    /// `SystemTime` which does not serde-derive cleanly; we convert to
+    /// UNIX millis for a stable JSON shape.
+    #[derive(Clone, serde::Serialize, serde::Deserialize)]
+    struct PersistedRecord {
+        argv: Vec<String>,
+        exit_code: Option<i32>,
+        wall_ms: u64,
+        stderr_head: String,
+        timestamp_ms: u64,
+    }
+
+    impl From<SubprocessRecord> for PersistedRecord {
+        fn from(r: SubprocessRecord) -> Self {
+            let timestamp_ms = r
+                .timestamp
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            Self {
+                argv: r.argv,
+                exit_code: r.exit_code,
+                wall_ms: r.wall_ms,
+                stderr_head: r.stderr_head,
+                timestamp_ms,
+            }
+        }
+    }
+
+    impl PersistedRecord {
+        fn into_record(self) -> SubprocessRecord {
+            let timestamp =
+                UNIX_EPOCH + Duration::from_millis(self.timestamp_ms);
+            SubprocessRecord {
+                argv: self.argv,
+                exit_code: self.exit_code,
+                wall_ms: self.wall_ms,
+                stderr_head: self.stderr_head,
+                timestamp,
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::time::SystemTime;
+
+        #[test]
+        fn persist_roundtrip_after_supervisor_cycle_simulation() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("ring.json");
+            set_persist_path(path.clone());
+
+            record(SubprocessRecord {
+                argv: vec!["shutdown".into(), "UDID-A".into()],
+                exit_code: Some(0),
+                wall_ms: 42,
+                stderr_head: String::new(),
+                timestamp: SystemTime::now(),
+            });
+            assert!(path.exists(), "persist file must exist after record");
+
+            // Simulate supervisor cycle: clear in-memory then load.
+            {
+                let mut g = cell().lock().unwrap();
+                g.clear();
+            }
+            assert!(snapshot().is_empty());
+
+            load_persisted();
+            let after = snapshot();
+            assert_eq!(after.len(), 1);
+            assert_eq!(after[0].argv, vec!["shutdown".to_string(), "UDID-A".into()]);
+            assert_eq!(after[0].exit_code, Some(0));
+            assert_eq!(after[0].wall_ms, 42);
+        }
+    }
+}
+
+/// v1.0.10 §D6 — enable subprocess-ring persistence at the given path.
+/// CLI startup wires this to `~/.local/share/smix/subprocess-ring.json`
+/// so `/diagnostic/dump` payloads survive supervisor cycles. Optional;
+/// missing this call keeps pre-v1.0.10 in-memory-only behavior.
+pub fn set_subprocess_ring_persist_path(path: std::path::PathBuf) {
+    subprocess_ring::set_persist_path(path);
+    subprocess_ring::load_persisted();
 }
 
 /// v1.0.7 §D3 — snapshot the process-wide ring buffer of recent

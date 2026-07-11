@@ -120,6 +120,40 @@ public actor AppAliveCache {
   private var deadUntil: [String: Date] = [:]
   private let ttl: TimeInterval
 
+  // v1.0.10 §D5 — observability counters. Insight's v1.0.9 followup
+  // reported "grep -c 'app-alive cache re-probe hit' = 0" — the fix
+  // shipped, but with only a stderr log line to prove it, there was
+  // no way to distinguish "code path not fired" from "log line got
+  // dropped mid-cycle". Each mutation now advances a counter; the
+  // counters flow through /diagnostic/dump so "is it working" becomes
+  // a numeric check.
+  private var counters = Counters()
+
+  public struct Counters: Sendable {
+    /// Total calls to [`markDead`].
+    public var markDeadTotal: UInt64 = 0
+    /// Total calls to [`markAlive`] (both explicit unblock + re-probe).
+    public var markAliveTotal: UInt64 = 0
+    /// `isSuppressed` returned true (suppressed a call).
+    public var suppressHitTotal: UInt64 = 0
+    /// `isSuppressed` returned false (allowed a call).
+    public var suppressMissTotal: UInt64 = 0
+    /// A background re-probe task was spawned (v1.0.9 §D4 path fired).
+    /// Incremented by the runner-side XCTIssue observer when it
+    /// spawns the polling Task.
+    public var reprobeAttemptedTotal: UInt64 = 0
+    /// A re-probe iteration observed the app return to running →
+    /// markAlive was called from within the re-probe loop.
+    public var reprobeSucceededTotal: UInt64 = 0
+    /// The re-probe was invalidated mid-flight because someone else
+    /// called markAlive (e.g. a fresh /session/open).
+    public var reprobeInvalidatedEarly: UInt64 = 0
+    /// The re-probe exhausted all 6 polling iterations without seeing
+    /// the app come back — the suppression stayed and the caller is
+    /// blocked.
+    public var reprobeExhaustedWindow: UInt64 = 0
+  }
+
   public init(ttlMs: Int = 20_000) {
     self.ttl = TimeInterval(ttlMs) / 1000.0
   }
@@ -127,12 +161,14 @@ public actor AppAliveCache {
   /// Mark the bundle-id as "known dead" for `ttl` seconds from now.
   public func markDead(bundleId: String) {
     deadUntil[bundleId] = Date().addingTimeInterval(ttl)
+    counters.markDeadTotal &+= 1
   }
 
   /// Invalidate a previous "dead" mark for the given bundle. Called
   /// on `/sim/launch` and `/session/open` for the same bundle id.
   public func markAlive(bundleId: String) {
     deadUntil.removeValue(forKey: bundleId)
+    counters.markAliveTotal &+= 1
   }
 
   /// Returns true when the caller should short-circuit XCUITest for
@@ -140,11 +176,41 @@ public actor AppAliveCache {
   public func isSuppressed(bundleId: String) -> Bool {
     if let until = deadUntil[bundleId] {
       if Date() < until {
+        counters.suppressHitTotal &+= 1
         return true
       }
       deadUntil.removeValue(forKey: bundleId)
     }
+    counters.suppressMissTotal &+= 1
     return false
+  }
+
+  /// v1.0.10 §D5 — re-probe telemetry. Called by the XCTIssue
+  /// observer when it spawns a background alive-check Task.
+  public func noteReprobeAttempted() {
+    counters.reprobeAttemptedTotal &+= 1
+  }
+
+  /// v1.0.10 §D5 — re-probe observed the app return to running.
+  public func noteReprobeSucceeded() {
+    counters.reprobeSucceededTotal &+= 1
+  }
+
+  /// v1.0.10 §D5 — re-probe was interrupted by an external markAlive.
+  public func noteReprobeInvalidatedEarly() {
+    counters.reprobeInvalidatedEarly &+= 1
+  }
+
+  /// v1.0.10 §D5 — re-probe iterations exhausted without recovery.
+  public func noteReprobeExhaustedWindow() {
+    counters.reprobeExhaustedWindow &+= 1
+  }
+
+  /// v1.0.10 §D5 — snapshot counters for /diagnostic/dump. Copied
+  /// out under the actor's serial context so callers see a coherent
+  /// point-in-time view.
+  public func counterSnapshot() -> Counters {
+    return counters
   }
 }
 
@@ -1017,8 +1083,31 @@ public actor SmixRunnerServer {
   ) async throws {
     let server = Self.makeServer(port: port)
     let shutdownSignal = ShutdownSignal()
+
+    // v1.0.10 §D3 — wire real /health extended body. The v1.0.2
+    // HealthRoute.responseDetail helper has been in the tree since
+    // v1.0.2 but was never wired here (the route always returned the
+    // legacy `{"ok":true}`). That's why 6 CLI releases could not
+    // detect on-disk runner version drift — the runner never told the
+    // CLI what version it was. Now the version comes from the
+    // TEST_RUNNER_SMIX_RUNNER_VERSION env var (forwarded by the Rust
+    // side of `smix runner up`), and uptime is measured from server
+    // start. sessionsOpen / activationsTotal are wired in D5 (0 for
+    // now — placeholder so the wire shape is stable across the two
+    // sub-releases).
+    let runnerVersion = ProcessInfo.processInfo.environment[
+      "SMIX_RUNNER_VERSION"
+    ] ?? "unknown"
+    let bootDate = Date()
     await server.appendRoute("GET /health") { _ in
-      HealthRoute.response()
+      let uptime = UInt64(Date().timeIntervalSince(bootDate) * 1000)
+      return HealthRoute.responseDetail(
+        runnerVersion: runnerVersion,
+        uptimeMs: uptime,
+        lastRequestAtMs: 0,
+        sessionsOpen: 0,
+        activationsTotal: 0
+      )
     }
 
     // v7.9 c1 — register /select/resolve* routes when handler provided.

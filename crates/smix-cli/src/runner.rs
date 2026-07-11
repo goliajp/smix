@@ -59,6 +59,18 @@ pub fn runner_env(bundle: Option<&str>, record_enabled: bool, port: u16) -> Vec<
         ));
     }
     env.push(("TEST_RUNNER_SMIX_RUNNER_PORT".to_string(), port.to_string()));
+    // v1.0.10 §D3 — forward the CLI's compile-time version to the
+    // runner so `HealthRoute.responseDetail` can echo it back on
+    // `GET /health`. Rust `env!("CARGO_PKG_VERSION")` inside the CLI
+    // binary matches `smix-runner-sources::SOURCES_VERSION` because
+    // the workspace pins them together. The consumer's client then
+    // compares this echo against its own CARGO_PKG_VERSION and
+    // refuses boot on mismatch — closing the CLI-vs-runner drift
+    // that made v1.0.4–v1.0.9 patches silently no-op on stale sources.
+    env.push((
+        "TEST_RUNNER_SMIX_RUNNER_VERSION".to_string(),
+        env!("CARGO_PKG_VERSION").to_string(),
+    ));
     env
 }
 
@@ -100,25 +112,63 @@ pub fn xcodebuild_argv(project: &Path, udid: &str) -> Vec<String> {
 
 /// Bare HTTP GET /health against `localhost:<port>`; true on a 200 line.
 pub fn health_ok(port: u16) -> bool {
+    read_health_bytes(port, 64)
+        .map(|(status_ok, _body)| status_ok)
+        .unwrap_or(false)
+}
+
+/// v1.0.10 §D4 — read `runnerVersion` from `GET /health` body. Returns
+/// `Some("<ver>")` when the runner emits the extended body (v1.0.10+
+/// runners include `SmixRunnerServer.swift`'s `responseDetail` wiring);
+/// `None` for pre-v1.0.10 runners that still return the legacy
+/// `{"ok":true}` shape, or when the socket read failed / body wasn't
+/// parseable JSON. `None` MUST NOT be treated as a version-mismatch —
+/// it's the "runner too old to tell me" signal, and the CLI keeps
+/// booting.
+pub fn health_runner_version(port: u16) -> Option<String> {
+    let (ok, body) = read_health_bytes(port, 4096).ok()?;
+    if !ok {
+        return None;
+    }
+    // Extract just the JSON body (after the blank line separator).
+    let body_start = body
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|i| i + 4)?;
+    let json_bytes = &body[body_start..];
+    let value: serde_json::Value = serde_json::from_slice(json_bytes).ok()?;
+    let v = value.get("runnerVersion")?.as_str()?;
+    if v.is_empty() { None } else { Some(v.to_string()) }
+}
+
+/// Shared HTTP GET /health primitive. Returns `(status_is_200, raw_response_bytes)`
+/// on connection success, `Err(())` on IO failure. Callers pick apart
+/// the byte buffer to answer specific questions.
+fn read_health_bytes(port: u16, cap: usize) -> Result<(bool, Vec<u8>), ()> {
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::time::Duration;
-    let Ok(mut s) =
-        TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_secs(1))
-    else {
-        return false;
-    };
-    let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
-    if s.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-        .is_err()
-    {
-        return false;
+    let mut s = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_secs(1))
+        .map_err(|_| ())?;
+    s.set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|_| ())?;
+    s.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .map_err(|_| ())?;
+    let mut buf = vec![0u8; cap];
+    let mut total = 0usize;
+    while total < cap {
+        match s.read(&mut buf[total..]) {
+            Ok(0) => break,
+            Ok(n) => total += n,
+            Err(_) => break,
+        }
     }
-    let mut buf = [0u8; 64];
-    let Ok(n) = s.read(&mut buf) else {
-        return false;
-    };
-    String::from_utf8_lossy(&buf[..n]).contains(" 200")
+    buf.truncate(total);
+    let status_ok = std::str::from_utf8(&buf)
+        .ok()
+        .map(|s| s.contains(" 200"))
+        .unwrap_or(false);
+    Ok((status_ok, buf))
 }
 
 fn state_path(root: &Path) -> PathBuf {
@@ -163,13 +213,22 @@ fn tail_log(log: &Path, lines: usize) -> String {
 ///
 /// 1. `override` — explicit `--runner-project <path>` from CLI. Wins.
 /// 2. `$SMIX_RUNNER_PROJECT` env — semi-explicit.
-/// 3. Install-shipped default:
-///    - `$XDG_DATA_HOME/smix/runner/SmixRunner.xcodeproj` when set
-///    - `~/.local/share/smix/runner/SmixRunner.xcodeproj` (macOS + Linux
-///      XDG fallback)
+/// 3. Install-shipped default (with auto-sync — see below):
+///    - `$XDG_DATA_HOME/smix/runner/` when set
+///    - `~/.local/share/smix/runner/` (macOS + Linux XDG fallback)
 /// 4. `<root>/swift-bridge/SmixRunner.xcodeproj` — smix-dev-repo fallback
 ///    so `cd smix; cargo run --bin smix -- runner up ...` still works
 ///    from a fresh checkout.
+///
+/// v1.0.10 §D2 — the install-shipped step is auto-syncing. Before we
+/// return the install-shipped path, we compare the on-disk version file
+/// (`~/.local/share/smix/runner/.smix-runner-version`) against the CLI
+/// version. On drift OR missing, we extract the embedded
+/// `smix-runner-sources` tarball, preserving the previous tree as a
+/// timestamped backup. This closes the v1.0.4–v1.0.9 distribution gap
+/// where `cargo install smix` shipped only the Rust binary and the
+/// Swift runner project silently stayed frozen at whatever revision the
+/// consumer first put on disk.
 ///
 /// Returns the first existing path, or the last candidate's error
 /// (which prints as "runner project missing: `<path>`") so users see the
@@ -198,6 +257,35 @@ pub fn resolve_runner_project(
         ));
     }
 
+    // v1.0.10 §D2 — auto-sync install-shipped sources on version drift.
+    // Runs before the existence check so a first-run consumer with an
+    // empty ~/.local/share/smix/ gets sources extracted transparently.
+    if let Some(installed_dir) = installed_runner_dir() {
+        match ensure_installed_runner_synced(&installed_dir) {
+            Ok(SyncOutcome::AlreadyCurrent) => {}
+            Ok(SyncOutcome::Extracted { previous_version, .. }) => {
+                let from = previous_version.as_deref().unwrap_or("<none>");
+                eprintln!(
+                    "smix-runner: synced runner sources → {} (was {}) at {}",
+                    smix_runner_sources::SOURCES_VERSION,
+                    from,
+                    installed_dir.display()
+                );
+            }
+            Err(err) => {
+                // Don't fail the whole resolve — fall through to the
+                // repo-local candidate. A dev running from the repo
+                // still works; a consumer without $HOME hits the same
+                // "runner project missing" error they'd have hit before
+                // auto-sync existed.
+                eprintln!(
+                    "smix-runner: auto-sync failed at {}: {err}",
+                    installed_dir.display()
+                );
+            }
+        }
+    }
+
     // No explicit override — try install-shipped, then repo-local.
     let candidates: Vec<PathBuf> = std::iter::empty()
         .chain(installed_runner_project())
@@ -224,21 +312,74 @@ pub fn resolve_runner_project(
     Err(format!(
         "runner project missing: {}\n\
          tried:\n{attempted}\n\
-         fix: (a) install via `bash scripts/install-local.sh` to populate ~/.local/share/smix/runner/, \
+         fix: (a) `smix runner install` to populate ~/.local/share/smix/runner/, \
          or (b) pass `--runner-project <path>` on `smix runner up`, \
          or (c) set $SMIX_RUNNER_PROJECT",
         last.display()
     ))
 }
 
-/// Install-shipped runner project location. Follows XDG basedir when
-/// `$XDG_DATA_HOME` is set; falls back to `~/.local/share/smix/runner/`
-/// on macOS + Linux. Returns `None` when `$HOME` is unset (rare).
+/// Install-shipped runner *project* path — the SmixRunner.xcodeproj
+/// under [`installed_runner_dir`]. Returns `None` when `$HOME` is unset.
 fn installed_runner_project() -> Option<PathBuf> {
+    installed_runner_dir().map(|d| d.join("SmixRunner.xcodeproj"))
+}
+
+/// Install-shipped runner *directory* (parent of SmixRunner.xcodeproj).
+/// Follows XDG basedir when `$XDG_DATA_HOME` is set; falls back to
+/// `~/.local/share/smix/runner/` on macOS + Linux. Returns `None` when
+/// `$HOME` is unset (rare).
+pub(crate) fn installed_runner_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
-    Some(base.join("smix/runner/SmixRunner.xcodeproj"))
+    Some(base.join("smix/runner"))
+}
+
+/// Outcome of an [`ensure_installed_runner_synced`] call.
+#[derive(Debug)]
+pub(crate) enum SyncOutcome {
+    /// The on-disk `.smix-runner-version` already matched the CLI
+    /// version — no extract performed.
+    AlreadyCurrent,
+    /// Sources were extracted. Callers should emit an info banner.
+    Extracted {
+        /// Version string previously on disk (if any).
+        previous_version: Option<String>,
+        /// Backup path where the previous tree was moved, `None` when
+        /// the destination was empty.
+        #[allow(dead_code)]
+        backup: Option<PathBuf>,
+    },
+}
+
+/// Ensure `dir` contains runner sources whose `.smix-runner-version`
+/// matches the CLI's [`smix_runner_sources::SOURCES_VERSION`]. Extracts
+/// the embedded tarball on mismatch or missing, backing up any prior
+/// contents. Idempotent: a second call with the same version is a
+/// cheap file read.
+///
+/// This is where the v1.0.4–v1.0.9 distribution gap closes: the Swift
+/// runner sources are baked into the CLI binary and re-materialise on
+/// every `smix runner up` when the CLI version has moved forward
+/// (typically after `cargo install smix` / `brew upgrade smix`).
+pub(crate) fn ensure_installed_runner_synced(
+    dir: &Path,
+) -> Result<SyncOutcome, smix_runner_sources::ExtractError> {
+    let previous = smix_runner_sources::read_installed_version(dir)?;
+    if previous.as_deref() == Some(smix_runner_sources::SOURCES_VERSION) {
+        return Ok(SyncOutcome::AlreadyCurrent);
+    }
+    // Version drift OR missing → extract with force. `force=true` is
+    // safe: extract_to backs up any existing tree to a timestamped
+    // sibling directory before writing, so a consumer's local
+    // modifications (rare — the install dir is meant to be
+    // CLI-managed) are preserved for post-mortem inspection.
+    let report = smix_runner_sources::extract_to(dir, true)?;
+    Ok(SyncOutcome::Extracted {
+        previous_version: previous,
+        backup: report.backup,
+    })
 }
 
 /// Bring the runner up on `udid`. Blocks until `/health` answers 200 or
@@ -426,7 +567,53 @@ pub fn up_with_options(
             ));
         }
         if health_ok(port) {
-            println!("runner up: http://localhost:{port}/health = 200");
+            // v1.0.10 §D4 — version-mismatch gate. Ask the runner
+            // what version it thinks it is; if it disagrees with the
+            // CLI, refuse boot with an actionable message. This is
+            // the last line of defense against the CLI-vs-runner drift
+            // that made v1.0.4-v1.0.9 patches silently no-op — if
+            // ensure_installed_runner_synced (D2) failed for any
+            // reason (unwritable XDG dir, custom SMIX_RUNNER_PROJECT,
+            // stale supervisor cache), this check catches it before
+            // the consumer runs into a mysterious 404.
+            let cli_version = env!("CARGO_PKG_VERSION");
+            match health_runner_version(port) {
+                Some(v) if v == cli_version => {
+                    println!(
+                        "runner up: http://localhost:{port}/health = 200 (runner v{v})"
+                    );
+                }
+                Some(v) => {
+                    let _ = std::fs::remove_file(state_path(root));
+                    signal(pid, "-TERM");
+                    return Err(format!(
+                        "runner version mismatch: CLI is v{cli_version} but the \
+                         running SmixRunner reports v{v}. This means the on-disk \
+                         runner project used by xcodebuild is out of sync with the \
+                         installed CLI — the v1.0.4-v1.0.9 distribution gap the \
+                         v1.0.10 auto-sync closes. Fix: `smix runner install --force` \
+                         to re-extract the embedded runner sources, then retry \
+                         `smix runner up`. If you're using an explicit \
+                         --runner-project / $SMIX_RUNNER_PROJECT, either update \
+                         that path to a v{cli_version} runner or drop the override."
+                    ));
+                }
+                None => {
+                    // Pre-v1.0.10 runner (legacy `{\"ok\":true}` body).
+                    // Don't refuse boot — that would break every user
+                    // who has an older runner they haven't re-installed.
+                    // Warn instead. On next `runner install`/upgrade the
+                    // warning goes away.
+                    eprintln!(
+                        "runner up: warning — runner /health returned legacy body \
+                         (no `runnerVersion` field). This runner predates v1.0.10 \
+                         and cannot self-report its version. If you see missing \
+                         routes (e.g. `/session/open` 404), run \
+                         `smix runner install --force` to sync sources to v{cli_version}."
+                    );
+                    println!("runner up: http://localhost:{port}/health = 200 (legacy body)");
+                }
+            }
             // v1.0.6 D1 — sidecar mode.
             if supervise {
                 match spawn_supervisor(root, runner_project) {
@@ -889,9 +1076,26 @@ mod tests {
             Some("22087")
         );
         let env_no_bundle = runner_env(None, false, 22090);
-        assert_eq!(env_no_bundle.len(), 1);
-        assert_eq!(env_no_bundle[0].0, "TEST_RUNNER_SMIX_RUNNER_PORT");
-        assert_eq!(env_no_bundle[0].1, "22090");
+        // v1.0.10 §D3 — version is now unconditionally forwarded.
+        assert_eq!(env_no_bundle.len(), 2);
+        assert!(
+            env_no_bundle
+                .iter()
+                .any(|(k, v)| k == "TEST_RUNNER_SMIX_RUNNER_PORT" && v == "22090")
+        );
+    }
+
+    #[test]
+    fn runner_env_forwards_cli_version_for_health_echo() {
+        // §D3 — the CLI's own version reaches the runner via
+        // TEST_RUNNER_SMIX_RUNNER_VERSION so /health can echo it and
+        // the client can refuse boot on mismatch.
+        let env = runner_env(None, false, 22087);
+        let map: std::collections::HashMap<String, String> = env.into_iter().collect();
+        assert_eq!(
+            map.get("TEST_RUNNER_SMIX_RUNNER_VERSION").map(String::as_str),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]
@@ -908,6 +1112,78 @@ mod tests {
                 .map(String::as_str),
             Some("1")
         );
+    }
+
+    // v1.0.10 §D2 — auto-sync regression tests. These lock in the
+    // behavior that closes the CLI-vs-runner distribution gap: on
+    // version drift OR missing version file, ensure_installed_runner_synced
+    // MUST extract the embedded tarball; on matching version it MUST
+    // be a no-op.
+
+    #[test]
+    fn ensure_installed_runner_synced_extracts_on_missing_version_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outcome = ensure_installed_runner_synced(dir.path()).expect("sync");
+        matches!(outcome, SyncOutcome::Extracted { previous_version: None, .. })
+            .then_some(())
+            .expect("expected first-run extract with no previous version");
+        assert!(
+            dir.path().join(".smix-runner-version").exists(),
+            "version file must be written"
+        );
+        assert!(
+            dir.path().join("SmixRunner.xcodeproj/project.pbxproj").exists(),
+            "xcodeproj must land on disk after sync"
+        );
+    }
+
+    #[test]
+    fn ensure_installed_runner_synced_reextracts_on_stale_version() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Simulate a consumer whose runner tree was populated by an
+        // earlier CLI. The stale sentinel version 0.0.0-stale MUST NOT
+        // survive the sync call.
+        fs::write(dir.path().join(".smix-runner-version"), "0.0.0-stale\n")
+            .expect("seed stale version");
+        fs::write(dir.path().join("stale-marker.txt"), b"old contents")
+            .expect("seed stale marker");
+
+        let outcome = ensure_installed_runner_synced(dir.path()).expect("sync");
+        match outcome {
+            SyncOutcome::Extracted {
+                previous_version,
+                backup,
+            } => {
+                assert_eq!(previous_version.as_deref(), Some("0.0.0-stale"));
+                let backup = backup.expect("backup path present");
+                assert!(backup.exists(), "backup dir must exist");
+                assert!(
+                    backup.join("stale-marker.txt").exists(),
+                    "backup must preserve prior tree contents"
+                );
+            }
+            SyncOutcome::AlreadyCurrent => panic!("stale must not be treated as current"),
+        }
+        // Fresh sources landed; stale marker is NOT in the new tree.
+        assert!(!dir.path().join("stale-marker.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".smix-runner-version"))
+                .unwrap()
+                .trim(),
+            smix_runner_sources::SOURCES_VERSION
+        );
+    }
+
+    #[test]
+    fn ensure_installed_runner_synced_is_noop_when_current() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // First call: extracts.
+        ensure_installed_runner_synced(dir.path()).expect("first sync");
+        // Second call: same version file → no-op.
+        let outcome = ensure_installed_runner_synced(dir.path()).expect("second sync");
+        matches!(outcome, SyncOutcome::AlreadyCurrent)
+            .then_some(())
+            .expect("second call must be AlreadyCurrent, not Extracted");
     }
 
     #[test]

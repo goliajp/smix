@@ -613,6 +613,25 @@ enum RunnerAction {
     /// v1.0.5 — List every session the runner currently tracks.
     /// Reads `POST /session/list`. Useful for post-cycle diagnostics.
     ListSessions,
+    /// v1.0.10 §D2 — Extract the CLI's embedded Swift runner sources
+    /// into `~/.local/share/smix/runner/`. Normally auto-invoked by
+    /// `smix runner up` when the on-disk `.smix-runner-version` file
+    /// is missing or does not match the CLI version; this verb makes
+    /// the operation explicit for troubleshooting or first-time setup
+    /// on an air-gapped machine. Backs up any pre-existing runner tree
+    /// to `~/.local/share/smix/runner.bak-<ts>/` before writing.
+    Install {
+        /// Destination directory. Defaults to
+        /// `$XDG_DATA_HOME/smix/runner/` (falling back to
+        /// `~/.local/share/smix/runner/`).
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Extract even when the version file already matches the CLI
+        /// version. Useful when the on-disk tree has been manually
+        /// edited and you want a clean baseline.
+        #[arg(long, default_value_t = false)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -779,6 +798,18 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> Result<ExitCode, CliError> {
+    // v1.0.10 §D6 — enable subprocess-ring persistence so
+    // `/diagnostic/dump` payloads survive supervisor cycles that used
+    // to wipe the in-memory ring. Path is $XDG_DATA_HOME/smix or
+    // ~/.local/share/smix; best-effort — a missing $HOME is a no-op.
+    if let Some(dir) = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+    {
+        let path = dir.join("smix/subprocess-ring.json");
+        smix_simctl::set_subprocess_ring_persist_path(path);
+    }
+
     let simctl = SimctlClient::new();
     match cli.cmd {
         Cmd::Doctor => cmd_doctor(&simctl).await?,
@@ -995,6 +1026,65 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 s.opened_at_ms,
                                 s.last_activated_at_ms,
                             );
+                        }
+                    }
+                }
+                RunnerAction::Install { path, force } => {
+                    let target = path.unwrap_or_else(|| {
+                        runner::installed_runner_dir().unwrap_or_else(|| {
+                            PathBuf::from("~/.local/share/smix/runner")
+                        })
+                    });
+                    if !force {
+                        // Delegate to the same auto-sync used inside
+                        // `runner up`. Idempotent when already current.
+                        match runner::ensure_installed_runner_synced(&target) {
+                            Ok(runner::SyncOutcome::AlreadyCurrent) => {
+                                println!(
+                                    "runner install: already at v{} — nothing to do (pass --force to re-extract).",
+                                    smix_runner_sources::SOURCES_VERSION
+                                );
+                            }
+                            Ok(runner::SyncOutcome::Extracted {
+                                previous_version, ..
+                            }) => {
+                                let from = previous_version.as_deref().unwrap_or("<none>");
+                                println!(
+                                    "runner install: extracted v{} into {} (was {}).",
+                                    smix_runner_sources::SOURCES_VERSION,
+                                    target.display(),
+                                    from
+                                );
+                            }
+                            Err(e) => {
+                                return Err(CliError::Other(format!(
+                                    "runner install: sync failed at {}: {e}",
+                                    target.display()
+                                )));
+                            }
+                        }
+                    } else {
+                        // Force path: unconditional extract with backup.
+                        match smix_runner_sources::extract_to(&target, true) {
+                            Ok(report) => {
+                                let backup_note = report
+                                    .backup
+                                    .as_ref()
+                                    .map(|b| format!(" (previous tree backed up to {})", b.display()))
+                                    .unwrap_or_default();
+                                println!(
+                                    "runner install: extracted {} files at v{} into {}{}.",
+                                    report.file_count,
+                                    report.version_written,
+                                    target.display(),
+                                    backup_note
+                                );
+                            }
+                            Err(e) => {
+                                return Err(CliError::Other(format!(
+                                    "runner install --force: {e}"
+                                )));
+                            }
                         }
                     }
                 }
