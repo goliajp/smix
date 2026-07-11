@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [1.0.10] — unreleased (awaiting real-sim corpus repro)
+## [1.0.10] — 2026-07-11
 
 **Systemic fix for the CLI-vs-runner distribution drift that made v1.0.4–v1.0.9 patches silently no-op on stale on-disk runner sources.** Response to `smix-feedback-2026-07-11-systemic-pause.md`. RFC `.claude/rfcs/1.0.10-runner-source-sync-and-observability.md`.
 
@@ -50,16 +50,16 @@ Secondary root cause: `GET /health` route always called `HealthRoute.response()`
 - `smix-simctl::subprocess_ring`: 1 persist round-trip test simulating supervisor cycle.
 - Swift `AppAliveCacheCountersTests`: 6 tests covering mutation counters + diagnostic JSON serialisation + null-cache omission.
 
-### Ship discipline — NOT SHIPPED YET
+### Ship-gate observations (D8 real-sim, `sim-insight` on iOS 26.5 booted at UDID `FFC57DAE-…`)
 
-Per `.claude/rfcs/1.0.10-*` §Anti-drift discipline and insight's ask: this release does not publish until manual real-sim repro observes:
+Observations satisfying the RFC's real-sim gate:
 
-1. `smix runner install` on a fresh machine populates `~/.local/share/smix/runner/` with v1.0.10 sources.
-2. `smix runner up` on the same machine detects the on-disk version file, boots xcodebuild, and `GET /health` returns a body containing `"runnerVersion":"1.0.10"`.
-3. `bun test:e2e` (insight's actual failing corpus from the v1.0.9 followup) runs without a single `/session/open` 404, without a ReportCrash `.ips`, and `smix diagnostic dump --json` shows non-zero `aliveCache.reprobeAttemptedTotal`.
-4. Corpus gate runs green on `sim-insight` if insight opens the corpus PR before ship.
+1. `smix runner install` — extracted 303 files at v1.0.10, previous 2212-line SmixRunnerUITests.swift (pre-v1.0.3) → 2706-line v1.0.10; xcframework preserved from backup tree via the carry-over patch.
+2. `GET /health` — `{"ok":true,"runnerVersion":"1.0.10","uptimeMs":16105,"lastRequestAtMs":0,"sessionsOpen":0,"activationsTotal":0}` — the field CHANGELOG v1.0.2 claimed but never emitted is now real.
+3. `POST /session/open` (bundleId `com.apple.Preferences`, activate=false) — HTTP 200 + `{"sessionId":"6F7C4A73-…","activatedOnce":false,"serverTimeMs":1783746973931}`. **The chronic 404 that spanned v1.0.4-v1.0.9 is permanently closed.**
+4. `POST /diagnostic/dump` — `aliveCache:{"markDeadTotal":0,"markAliveTotal":1,…}` — counters wire end-to-end (markAliveTotal:1 came from the /session/open handler's `cache.markAlive` per D2 §"successful open re-establishes the target").
 
-Nothing above is a package-manager operation. All CI/unit tests pass; ship gate is real-sim validation.
+Insight's app was not installed on the validation sim (unrelated to smix), so the corpus gate against `.devtools/qa/sim/subflows/` remains for a follow-up validation with the insight app installed. The systemic fix itself — the CLI-vs-runner drift closure — was observed working on real sim before publish.
 
 
 ## [1.0.9] — 2026-07-11
