@@ -654,6 +654,23 @@ pub struct SessionAppLifecycleRequest {
     /// SDK layer.
     #[serde(default)]
     pub wait_for_foreground_ms: Option<u64>,
+    /// v1.0.15 Cluster C D1 — after `.runningForeground` is observed
+    /// (or immediately when `wait_for_foreground_ms == None`), poll
+    /// the a11y tree at 500 ms cadence looking for ≥ `minIdentifierCount`
+    /// descendants with a non-empty `accessibilityIdentifier` NOT in
+    /// the interactive-probe ignore list. Fires
+    /// `launchAppReachedInteractive` when found; on timeout fires
+    /// `launchAppTimedOutBeforeInteractive`. Both counters live on
+    /// [`SessionLifecycleCounters`] and were wire-scaffolded in v1.0.14.
+    ///
+    /// `None` = pre-v1.0.15 fire-and-return (no interactive polling).
+    /// Consumer config `.smix/config.yaml interactiveProbe: { minIdentifierCount, ignore: [...] }`
+    /// forwards to the runner via `TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON`
+    /// at boot. Q7 answers in `smix-feedback-2026-07-11-v1.0.12-answers.md`
+    /// seeded defaults: `minIdentifierCount: 3`, `ignore: [SplashScreenLogo,
+    /// com.focusai.app.mobile]`.
+    #[serde(default)]
+    pub wait_for_interactive_ms: Option<u64>,
 }
 
 /// v1.0.8 §D1 — response for `POST /session/terminate-app` and
@@ -689,6 +706,22 @@ pub struct SessionAppLifecycleResponse {
     /// `launch-app`.
     #[serde(default)]
     pub terminated_cooperatively: bool,
+    /// v1.0.15 Cluster C D1 — set on `launch-app` responses when the
+    /// interactive-probe (≥ `minIdentifierCount` non-empty ax-ids
+    /// outside the ignore list) fired inside `wait_for_interactive_ms`.
+    /// `false` when the caller didn't set `wait_for_interactive_ms`
+    /// OR when polling timed out without observing the interactive
+    /// fingerprint.
+    #[serde(default)]
+    pub reached_interactive: bool,
+    /// v1.0.15 Cluster C D1 — sample of up to 8 `accessibilityIdentifier`
+    /// values observed at the moment `reached_interactive` fired.
+    /// Non-normative; useful for consumers debugging "did my
+    /// interactive probe fire on the right screen". Empty when
+    /// `reached_interactive == false` or the caller didn't set
+    /// `wait_for_interactive_ms`.
+    #[serde(default)]
+    pub interactive_named_ids: Vec<String>,
 }
 
 /// v1.0.5 §D1 — one entry in `POST /session/list` response.

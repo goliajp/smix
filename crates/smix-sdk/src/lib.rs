@@ -1013,6 +1013,16 @@ impl App {
             args: launch_args.to_vec(),
             env: launch_env.clone(),
             wait_for_foreground_ms: Some(15_000),
+            // v1.0.15 Cluster C D1 — also probe the interactive
+            // fingerprint after foreground is observed. Consumer
+            // sees `launchAppReachedInteractive` counter delta in
+            // `smix diagnostic dump` without any yaml migration. 30 s
+            // is generous for cold RN/Expo bundle load on iOS 26.5 sim
+            // (foreground reached in ~3 s + JS eval + first-render
+            // typically <10 s more). Runner falls back to bundled
+            // defaults for minIdentifierCount + ignore-list when
+            // consumer hasn't dropped `.smix/config.yaml`.
+            wait_for_interactive_ms: Some(30_000),
             ..Default::default()
         };
         // Step 1 — cooperative terminate on runner side.

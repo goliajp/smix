@@ -17,6 +17,49 @@ import UIKit
 // Standin selector). 此版用 `class_getMethodImplementation(Standin.self,
 // swizzledSel) + unsafeBitCast` IMP-直调走 C ABI 绕 ObjC msgSend.
 
+// v1.0.15 Cluster C D1 — interactive-probe config.
+//
+// Runner reads `SMIX_INTERACTIVE_PROBE_JSON` at boot; consumer sets it
+// via `.smix/config.yaml interactiveProbe: { minIdentifierCount, ignore }`
+// which the CLI JSON-encodes and forwards as
+// `TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON` (Xcode strips the
+// `TEST_RUNNER_` prefix; runner sees `SMIX_INTERACTIVE_PROBE_JSON`).
+//
+// When missing / malformed, falls back to bundled defaults per
+// insight Q7 answer: `minIdentifierCount: 3`, `ignore:
+// [SplashScreenLogo, com.focusai.app.mobile]`. Defaults are
+// deliberately RN-Expo-shaped since that's what consumers using this
+// primitive care about.
+struct InteractiveProbeConfig {
+  let minIdentifierCount: Int
+  let ignore: Set<String>
+
+  static let bundledDefault = InteractiveProbeConfig(
+    minIdentifierCount: 3,
+    ignore: ["SplashScreenLogo", "com.focusai.app.mobile"]
+  )
+
+  static func fromEnv() -> InteractiveProbeConfig {
+    guard let raw = ProcessInfo.processInfo.environment["SMIX_INTERACTIVE_PROBE_JSON"],
+          !raw.isEmpty,
+          let data = raw.data(using: .utf8)
+    else {
+      return bundledDefault
+    }
+    struct Wire: Decodable {
+      let minIdentifierCount: Int?
+      let ignore: [String]?
+    }
+    guard let parsed = try? JSONDecoder().decode(Wire.self, from: data) else {
+      return bundledDefault
+    }
+    return InteractiveProbeConfig(
+      minIdentifierCount: max(1, parsed.minIdentifierCount ?? 3),
+      ignore: Set(parsed.ignore ?? ["SplashScreenLogo", "com.focusai.app.mobile"])
+    )
+  }
+}
+
 private var _overwriteDefaultParameters: [String: Int] = [:]
 
 private final class AXClientStandin: NSObject {
@@ -1125,6 +1168,9 @@ final class SmixRunnerUITests: XCTestCase {
       var launchAppTotal: UInt64
       var launchAppReachedForeground: UInt64
       var launchAppTimedOutBeforeForeground: UInt64
+      // v1.0.15 Cluster C D1 — interactive fingerprint counters.
+      var launchAppReachedInteractive: UInt64
+      var launchAppTimedOutBeforeInteractive: UInt64
       init(from c: SessionRoute.SessionLifecycleCounters) {
         openedTotal = c.openedTotal
         closedTotal = c.closedTotal
@@ -1135,6 +1181,8 @@ final class SmixRunnerUITests: XCTestCase {
         launchAppTotal = c.launchAppTotal
         launchAppReachedForeground = c.launchAppReachedForeground
         launchAppTimedOutBeforeForeground = c.launchAppTimedOutBeforeForeground
+        launchAppReachedInteractive = c.launchAppReachedInteractive
+        launchAppTimedOutBeforeInteractive = c.launchAppTimedOutBeforeInteractive
       }
       func toWire() -> SessionRoute.SessionLifecycleCounters {
         SessionRoute.SessionLifecycleCounters(
@@ -1146,7 +1194,9 @@ final class SmixRunnerUITests: XCTestCase {
           terminateAppViaFallback: terminateAppViaFallback,
           launchAppTotal: launchAppTotal,
           launchAppReachedForeground: launchAppReachedForeground,
-          launchAppTimedOutBeforeForeground: launchAppTimedOutBeforeForeground
+          launchAppTimedOutBeforeForeground: launchAppTimedOutBeforeForeground,
+          launchAppReachedInteractive: launchAppReachedInteractive,
+          launchAppTimedOutBeforeInteractive: launchAppTimedOutBeforeInteractive
         )
       }
     }
@@ -2529,6 +2579,60 @@ final class SmixRunnerUITests: XCTestCase {
           let terminalState: UInt8 = await SmixRunnerServer.onMain {
             UInt8(entry.app.state.rawValue)
           }
+          // v1.0.15 Cluster C D1 — interactive fingerprint probe.
+          // After foreground is observed (or immediately if the
+          // caller didn't request a foreground wait), poll the a11y
+          // tree at 500 ms cadence looking for ≥ minIdentifierCount
+          // descendants with a non-empty accessibilityIdentifier
+          // that isn't in the interactive-probe ignore-list.
+          //
+          // Fires `reachedInteractive = true` on first match; capture
+          // up to 8 observed ax-ids for debug attribution. On
+          // timeout: reachedInteractive stays false, counter
+          // `launchAppTimedOutBeforeInteractive` +1. Per Q8 answer
+          // (a): `launchApp` still returns success either way —
+          // consumer detects the "up but unusable" state via the
+          // counter delta, not via a hard failure.
+          //
+          // Ignore-list + minIdentifierCount come from
+          // `.smix/config.yaml interactiveProbe: {...}` forwarded to
+          // the runner via SMIX_INTERACTIVE_PROBE_JSON. Missing env
+          // = defaults: minIdentifierCount 3, ignore [SplashScreenLogo,
+          // com.focusai.app.mobile] per insight Q7 answer.
+          var reachedInteractive = false
+          var interactiveNamedIds: [String] = []
+          if let interactiveDeadlineMs = req.waitForInteractiveMs,
+             interactiveDeadlineMs > 0 {
+            let probeConfig = InteractiveProbeConfig.fromEnv()
+            let interactiveStart = Date()
+            let interactivePollNs: UInt64 = 500_000_000  // 500 ms
+            while UInt64(Date().timeIntervalSince(interactiveStart) * 1000) < interactiveDeadlineMs {
+              let observed: [String] = await SmixRunnerServer.onMain {
+                let query = entry.app.descendants(matching: .any)
+                let count = query.count
+                var ids: [String] = []
+                ids.reserveCapacity(min(count, 32))
+                // Cap the enumeration at 200 to avoid pathological
+                // trees (large lists) stalling the probe.
+                let cap = min(count, 200)
+                for i in 0..<cap {
+                  let element = query.element(boundBy: i)
+                  let id = element.identifier
+                  if !id.isEmpty && !probeConfig.ignore.contains(id) {
+                    ids.append(id)
+                  }
+                }
+                return ids
+              }
+              if observed.count >= probeConfig.minIdentifierCount {
+                reachedInteractive = true
+                // Sample up to 8 to keep the wire small.
+                interactiveNamedIds = Array(observed.prefix(8))
+                break
+              }
+              try? await Task.sleep(nanoseconds: interactivePollNs)
+            }
+          }
           lifecycleCounters.advance {
             $0.launchAppTotal &+= 1
             if req.waitForForegroundMs != nil && req.waitForForegroundMs != 0 {
@@ -2538,6 +2642,13 @@ final class SmixRunnerUITests: XCTestCase {
                 $0.launchAppTimedOutBeforeForeground &+= 1
               }
             }
+            if let ms = req.waitForInteractiveMs, ms > 0 {
+              if reachedInteractive {
+                $0.launchAppReachedInteractive &+= 1
+              } else {
+                $0.launchAppTimedOutBeforeInteractive &+= 1
+              }
+            }
           }
           return SmixRunnerServer.SessionAppLifecycleOutcome(
             notFound: false,
@@ -2545,7 +2656,9 @@ final class SmixRunnerUITests: XCTestCase {
             wallMs: launchDoneWallMs,
             waitedMs: waitedMs,
             terminalState: terminalState,
-            terminatedCooperatively: false
+            terminatedCooperatively: false,
+            reachedInteractive: reachedInteractive,
+            interactiveNamedIds: interactiveNamedIds
           )
         }
       ),
@@ -2565,7 +2678,30 @@ final class SmixRunnerUITests: XCTestCase {
       // v1.0.4 §D7 — initially `.healthy`; downgraded by the runner
       // supervisor as it observes SimRenderServer / xcodebuild
       // signals or by handlers that catch specific error shapes.
-      simHealthPublisher: SimHealthPublisher(initial: .healthy)
+      simHealthPublisher: SimHealthPublisher(initial: .healthy),
+      // v1.0.15 Cluster C D2 — categorization for /tree unavailable
+      // envelope. UITest-scope logic: read `XCUIApplication.state`
+      // for the current bundle to distinguish crashed-during-init
+      // (`.notRunning`) from alive-but-tree-empty (running); scan
+      // ~/Library/Logs/DiagnosticReports/ for a recent .ips to
+      // strengthen the crashed-during-init hint. Deliberately reads
+      // the file system per call (rare failure path); no caching.
+      unavailableReasonInferer: { bundleId in
+        guard let bundleId, !bundleId.isEmpty else { return .unknown }
+        let state = await SmixRunnerServer.onMain {
+          XCUIApplication(bundleIdentifier: bundleId).state
+        }
+        switch state {
+        case .notRunning:
+          return .crashedDuringInit
+        case .runningForeground, .runningBackground, .runningBackgroundSuspended:
+          return .aliveButTreeEmpty
+        case .unknown:
+          return .unknown
+        @unknown default:
+          return .unknown
+        }
+      }
     )
   }
 }

@@ -333,6 +333,17 @@ Documentation: docs/AI_GUIDE.md
         /// batch after the first flow that exits non-zero.
         #[arg(long, default_value_t = false)]
         fail_fast: bool,
+        /// v1.0.15 §6 — per-flow retry count. Default 1 = one attempt
+        /// only (pre-v1.0.15 behaviour). `--retry 2` = up to 2
+        /// attempts per flow; if the first fails and the second
+        /// succeeds, the flow's exit code is that of the second.
+        /// Each attempt is recorded in `~/.local/share/smix/flow-attempts.json`
+        /// with status + errorClass + wallMs + any `.ips` that
+        /// appeared during the attempt (attribution vs whole-batch).
+        /// `smix diagnostic dump` reads that file and surfaces the
+        /// attribution table under a `recent flows` section.
+        #[arg(long = "retry", default_value_t = 1)]
+        retry: u32,
         /// Append an implicit `expect.signal { regex }` step to the end
         /// of each flow. The `--timeout` value is used as the timeout
         /// (default 8000ms).
@@ -813,6 +824,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         // count from any prior `smix run` invocations.
         let reset_counters_path = dir.join("smix/reset-app-data-counters.json");
         smix_simctl::set_reset_app_data_counters_persist_path(reset_counters_path);
+        // v1.0.15 §6 — flow-attempts persistence for retry
+        // attribution. `smix run` records per-flow attempts here,
+        // `smix diagnostic dump` reads back for the `recent flows`
+        // section.
+        let flow_attempts_path = dir.join("smix/flow-attempts.json");
+        smix_simctl::set_flow_attempts_persist_path(flow_attempts_path);
     }
 
     let simctl = SimctlClient::new();
@@ -1223,6 +1240,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             format,
             activate,
             fail_fast,
+            retry,
             await_signal,
             gate_signal,
             gate_signal_timeout_ms,
@@ -1298,38 +1316,104 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         flow_path.display()
                     );
                 }
-                let exit = smix_adapter_maestro::run_flow(smix_adapter_maestro::FlowArgs {
-                    flow: flow_path.clone(),
-                    udid: udid.clone(),
-                    bundle_id: bundle.clone(),
-                    runner_port: port,
-                    no_launch,
-                    platform: plat,
-                    apps_config: apps_config.clone(),
-                    env_vars: env.clone(),
-                    debug_output: per_flow_debug,
-                    verbose,
-                    format: out_fmt,
-                    auto_activate: activate,
-                    metro_log_url: metro_log_url.clone(),
-                    await_signal: await_signal.clone(),
-                    gate_signal: gate_signal.clone(),
-                    gate_signal_timeout_ms,
-                    expect_log_clean,
-                    fixture_registry: fixture_registry.clone(),
-                    force_key_events,
-                    no_fail_annotate,
-                })
-                .await;
-                // Extract per-flow exit code. ExitCode's numeric surface
-                // isn't public; use Debug repr as a stable extraction path
-                // (the Rust nightly `to_i32` isn't stable). We already own
-                // the u8 via the adapter API — see ExitCode::from(u8).
-                let code = exit_code_to_u8(exit);
-                worst_exit = worst_exit.max(code);
-                if fail_fast && code != 0 {
+                // v1.0.15 §6 — per-flow retry loop + attempt attribution.
+                // Retry only fires on non-zero exit. Each attempt records
+                // status + errorClass (best-effort from exit code) + wallMs
+                // + any new `.ips` for the target bundle appearing between
+                // attempt start and end. `flow-attempts.json` persistence
+                // + `smix diagnostic dump` overlay surface the attribution
+                // table.
+                let max_attempts = retry.max(1);
+                let mut attempts: Vec<smix_runner_wire::FlowAttempt> = Vec::new();
+                let flow_name = flow_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| flow_path.display().to_string());
+                let mut final_code: u8 = 1;
+                for attempt_index in 0..max_attempts {
+                    if attempt_index > 0 {
+                        eprintln!(
+                            "smix run: retry #{attempt_index} for flow {flow_name}"
+                        );
+                    }
+                    let ips_before = ips_snapshot(Some(bundle.as_str()));
+                    let started = std::time::Instant::now();
+                    let exit = smix_adapter_maestro::run_flow(smix_adapter_maestro::FlowArgs {
+                        flow: flow_path.clone(),
+                        udid: udid.clone(),
+                        bundle_id: bundle.clone(),
+                        runner_port: port,
+                        no_launch,
+                        platform: plat,
+                        apps_config: apps_config.clone(),
+                        env_vars: env.clone(),
+                        debug_output: per_flow_debug.clone(),
+                        verbose,
+                        format: out_fmt,
+                        auto_activate: activate,
+                        metro_log_url: metro_log_url.clone(),
+                        await_signal: await_signal.clone(),
+                        gate_signal: gate_signal.clone(),
+                        gate_signal_timeout_ms,
+                        expect_log_clean,
+                        fixture_registry: fixture_registry.clone(),
+                        force_key_events,
+                        no_fail_annotate,
+                    })
+                    .await;
+                    let wall_ms = started.elapsed().as_millis() as u64;
+                    let code = exit_code_to_u8(exit);
+                    let ips_after = ips_snapshot(Some(bundle.as_str()));
+                    let new_ips: Option<String> = ips_after
+                        .iter()
+                        .find(|p| !ips_before.contains(*p))
+                        .cloned();
+                    let (status, error_class) = match code {
+                        0 => ("ok".to_string(), None),
+                        1 => ("error".to_string(), Some("EXPECTATION_FAILURE".to_string())),
+                        2 => ("timeout".to_string(), Some("TIMEOUT".to_string())),
+                        5 => ("error".to_string(), Some("DRIVER_ERROR".to_string())),
+                        6 => (
+                            "error".to_string(),
+                            Some("RUNNER_UNREACHABLE".to_string()),
+                        ),
+                        n => ("error".to_string(), Some(format!("EXIT_{n}"))),
+                    };
+                    let mut a = smix_runner_wire::FlowAttempt::default();
+                    a.attempt_index = attempt_index;
+                    a.status = status;
+                    a.error_class = error_class;
+                    a.ips_generated = new_ips;
+                    a.wall_ms = wall_ms;
+                    attempts.push(a);
+                    final_code = code;
+                    if code == 0 {
+                        break;
+                    }
+                }
+                // Persist per-flow attempts so `smix diagnostic dump`
+                // (later, separate process) can render the attribution.
+                // Wire type doesn't implement the trait; convert to local
+                // shape here (thin adapter).
+                struct AttemptView<'a>(&'a smix_runner_wire::FlowAttempt);
+                impl<'a> smix_simctl::FlowAttemptShape for AttemptView<'a> {
+                    fn attempt_index(&self) -> u32 { self.0.attempt_index }
+                    fn status(&self) -> &str { &self.0.status }
+                    fn error_class(&self) -> Option<&str> {
+                        self.0.error_class.as_deref()
+                    }
+                    fn ips_generated(&self) -> Option<&str> {
+                        self.0.ips_generated.as_deref()
+                    }
+                    fn wall_ms(&self) -> u64 { self.0.wall_ms }
+                }
+                let views: Vec<AttemptView> = attempts.iter().map(AttemptView).collect();
+                smix_simctl::record_flow_attempts(&flow_name, &views);
+                worst_exit = worst_exit.max(final_code);
+                if fail_fast && final_code != 0 {
                     eprintln!(
-                        "smix run: --fail-fast — aborting batch on first failure (exit={code})"
+                        "smix run: --fail-fast — aborting batch on first failure (exit={final_code})"
                     );
                     break;
                 }
@@ -1760,6 +1844,49 @@ enum DiagnosticAction {
     },
 }
 
+/// v1.0.15 §6 — snapshot the current set of `.ips` filenames under
+/// `~/Library/Logs/DiagnosticReports/` matching the target bundle id
+/// (or all Insight/SimRenderServer entries when `bundle_id` is None).
+/// Used before / after each flow attempt so retry attribution can
+/// diff the sets and attribute any new `.ips` to the attempt that
+/// generated it.
+///
+/// Best-effort: returns empty on unreadable directory. Cost per call:
+/// a single readdir + up to ~30 filename comparisons on a typical
+/// developer machine.
+fn ips_snapshot(bundle_id: Option<&str>) -> std::collections::HashSet<String> {
+    let mut set: std::collections::HashSet<String> = Default::default();
+    let Some(home) = std::env::var_os("HOME") else {
+        return set;
+    };
+    let dir = std::path::PathBuf::from(home).join("Library/Logs/DiagnosticReports");
+    let Ok(read_dir) = std::fs::read_dir(&dir) else {
+        return set;
+    };
+    // Match logic: when `bundle_id` is set, look for the last
+    // component after the final `.` — bundle-id-shaped names
+    // (com.foo.bar) match against the .ips filename prefix in
+    // heuristic-match mode. When None, catch anything that looks
+    // like a smix-relevant process crash.
+    let bundle_leaf = bundle_id
+        .and_then(|b| b.rsplit('.').next())
+        .map(|s| s.to_lowercase());
+    for entry in read_dir.flatten() {
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if !name.ends_with(".ips") {
+            continue;
+        }
+        let interesting = match &bundle_leaf {
+            Some(leaf) => name.contains(leaf),
+            None => name.contains("insight") || name.contains("simrenderserver"),
+        };
+        if interesting {
+            set.insert(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    set
+}
+
 /// v1.0.14 Cluster B — read the last `n` lines from `path`. Seeks
 /// from EOF backward in 8 KB chunks, splitting on `\n`, until it has
 /// gathered `n` lines or reached BOF. Handles the "file smaller than
@@ -1852,6 +1979,32 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 reset_counters.reset_app_data_total;
             resp.session_counters.reset_app_data_timed_out =
                 reset_counters.reset_app_data_timed_out;
+            // v1.0.15 §6 — overlay per-flow retry attribution from the
+            // CLI-persisted store. Runner side never sees flow-level
+            // retry (it's CLI-orchestrated), so wire arrives empty and
+            // we merge from disk here.
+            let recent_flows = smix_simctl::recent_flow_attempts();
+            resp.recent_flows = recent_flows
+                .into_iter()
+                .map(|f| {
+                    let mut rec = smix_runner_wire::FlowAttemptRecord::default();
+                    rec.flow_name = f.flow_name;
+                    rec.attempts = f
+                        .attempts
+                        .into_iter()
+                        .map(|a| {
+                            let mut w = smix_runner_wire::FlowAttempt::default();
+                            w.attempt_index = a.attempt_index;
+                            w.status = a.status;
+                            w.error_class = a.error_class;
+                            w.ips_generated = a.ips_generated;
+                            w.wall_ms = a.wall_ms;
+                            w
+                        })
+                        .collect();
+                    rec
+                })
+                .collect();
             let client_side = smix_simctl::recent_subprocesses();
 
             if json {

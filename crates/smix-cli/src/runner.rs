@@ -71,7 +71,38 @@ pub fn runner_env(bundle: Option<&str>, record_enabled: bool, port: u16) -> Vec<
         "TEST_RUNNER_SMIX_RUNNER_VERSION".to_string(),
         env!("CARGO_PKG_VERSION").to_string(),
     ));
+    // v1.0.15 Cluster C D1 — forward `.smix/config.yaml
+    // interactiveProbe:` (JSON-encoded) to the runner so the
+    // `launchApp` handler's interactive-fingerprint probe knows the
+    // consumer's minIdentifierCount + ignore-list. Missing config →
+    // env unset → Swift falls back to bundled defaults (Q7 answer:
+    // minIdentifierCount 3, ignore [SplashScreenLogo,
+    // com.focusai.app.mobile]).
+    if let Some(json) = load_interactive_probe_env() {
+        env.push((
+            "TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON".to_string(),
+            json,
+        ));
+    }
     env
+}
+
+/// v1.0.15 Cluster C D1 — read `.smix/config.yaml` looking for the
+/// `interactiveProbe:` key. Returns JSON-encoded string when present,
+/// `None` when file absent OR key absent OR file unreadable. Runner
+/// side falls back to bundled defaults in either case.
+///
+/// Yaml → JSON conversion is via `serde_norway` (already a workspace
+/// dep) into a `serde_json::Value` — no explicit schema on this
+/// crate's side so consumers can grow the `interactiveProbe` mapping
+/// without smix-cli needing an update.
+fn load_interactive_probe_env() -> Option<String> {
+    let root = workspace_root(&std::env::current_dir().ok()?)?;
+    let config_path = root.join(".smix/config.yaml");
+    let text = std::fs::read_to_string(&config_path).ok()?;
+    let root_value: serde_json::Value = serde_norway::from_str(&text).ok()?;
+    let probe = root_value.get("interactiveProbe")?;
+    serde_json::to_string(probe).ok()
 }
 
 /// Walk up from `start` to the directory containing `.smix/` — the smix

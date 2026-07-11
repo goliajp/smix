@@ -350,6 +350,25 @@ public actor SmixRunnerServer {
     await MainActor.run { body() }
   }
 
+  /// v1.0.15 Cluster C D2 — closure that the UITest target provides
+  /// to categorize why `snapshotHandler` returned nil (or the tree
+  /// query threw). Returns a categorized `AppUnavailableReason`
+  /// value. `nil` bundle id → the caller should return `.unknown`.
+  ///
+  /// The UITest target reads `XCUIApplication.state` and
+  /// `~/Library/Logs/DiagnosticReports/` for the given bundle id (both
+  /// XCTest-scope APIs, not accessible from `SmixRunnerCore` directly)
+  /// to discriminate `crashed-during-init` vs `alive-but-tree-empty`.
+  /// The closure runs on demand from the `/tree` handler, so
+  /// runtime cost is per-failure only.
+  public typealias UnavailableReasonInferer = @Sendable (String?) async -> AppUnavailableReason
+
+  /// v1.0.15 Cluster C D2 — task-local inference closure. Set by
+  /// `runForever` when the UITest target provides one; `nil` opts
+  /// out (older UITest targets that don't know about categorization
+  /// get the pre-v1.0.15 `.unknown` fallback).
+  @TaskLocal public static var currentUnavailableReasonInferer: UnavailableReasonInferer? = nil
+
   public enum TapOutcome: Sendable {
     // v1.1 C3 — `frame` / `appFrame` are populated by the UITest handler so
     // the SDK can host-HID-inject at coord when `mode == .resolve`. Both
@@ -663,6 +682,10 @@ public actor SmixRunnerServer {
   /// (`terminatedCooperatively`) so the diagnostic dump can surface
   /// whether the terminate call went through the XCUIApplication
   /// pathway or fell back to a hard kill (bug_type 309 signal).
+  /// v1.0.15 Cluster C D1 — extended with `reachedInteractive` +
+  /// `interactiveNamedIds` so `launchApp` can tell "process foreground
+  /// but tree unusable" (splash / dev-launcher / sparse a11y) apart
+  /// from "process foreground AND probeable" numerically.
   public struct SessionAppLifecycleOutcome: Sendable {
     public let notFound: Bool
     public let ok: Bool
@@ -680,13 +703,26 @@ public actor SmixRunnerServer {
     /// `XCUIApplication.terminate()` pathway observed the process
     /// `.notRunning` after the call returned. Always false on launch.
     public let terminatedCooperatively: Bool
+    /// v1.0.15 Cluster C D1 — set on `launch-app` outcomes when the
+    /// interactive fingerprint (≥ `minIdentifierCount` non-ignored
+    /// ax-ids in the tree) was observed within
+    /// `waitForInteractiveMs`. Always false on terminate.
+    public let reachedInteractive: Bool
+    /// v1.0.15 Cluster C D1 — sample of up to 8 `accessibilityIdentifier`
+    /// values captured at the moment `reachedInteractive` fired.
+    /// Debug aid so consumers can tell "the probe fired on the right
+    /// screen" from "the probe fired on a splash-screen artifact
+    /// leak". Empty otherwise.
+    public let interactiveNamedIds: [String]
     public init(
       notFound: Bool,
       ok: Bool,
       wallMs: UInt64,
       waitedMs: UInt64 = 0,
       terminalState: UInt8 = 0,
-      terminatedCooperatively: Bool = false
+      terminatedCooperatively: Bool = false,
+      reachedInteractive: Bool = false,
+      interactiveNamedIds: [String] = []
     ) {
       self.notFound = notFound
       self.ok = ok
@@ -694,6 +730,8 @@ public actor SmixRunnerServer {
       self.waitedMs = waitedMs
       self.terminalState = terminalState
       self.terminatedCooperatively = terminatedCooperatively
+      self.reachedInteractive = reachedInteractive
+      self.interactiveNamedIds = interactiveNamedIds
     }
   }
 
@@ -997,7 +1035,9 @@ public actor SmixRunnerServer {
             wallMs: outcome.wallMs,
             waitedMs: outcome.waitedMs,
             terminalState: outcome.terminalState,
-            terminatedCooperatively: outcome.terminatedCooperatively
+            terminatedCooperatively: outcome.terminatedCooperatively,
+            reachedInteractive: outcome.reachedInteractive,
+            interactiveNamedIds: outcome.interactiveNamedIds
           )
         }
       }
@@ -1113,7 +1153,12 @@ public actor SmixRunnerServer {
     appAliveCache: AppAliveCache? = nil,
     /// v1.0.4 §D7 — publisher for the `X-Sim-Health` response header.
     /// `nil` opts out (no header emitted).
-    simHealthPublisher: SimHealthPublisher? = nil
+    simHealthPublisher: SimHealthPublisher? = nil,
+    /// v1.0.15 Cluster C D2 — closure the /tree route consults to
+    /// categorize why a snapshot returned nil. UITest target
+    /// implements via `XCUIApplication.state` + .ips scan. `nil` opts
+    /// out (pre-v1.0.15 fallback: `.aliveButTreeEmpty` best-guess).
+    unavailableReasonInferer: UnavailableReasonInferer? = nil
   ) async throws {
     let server = Self.makeServer(port: port)
     let shutdownSignal = ShutdownSignal()
@@ -1206,9 +1251,18 @@ public actor SmixRunnerServer {
     await server.appendRoute("GET /tree") { request in
       // v1.4 ③-C1 B3 — snapshotHandler calls XCUIApplication.snapshot()
       // which throws under modal masking; the trampoline surfaces it.
-      // unavailable() is the route's own error envelope (legacy: a nil
-      // snapshot already mapped here, so a thrown snapshot is wire-equivalent).
-      return await Self.contextGuardedResponse(request: request,fallback: TreeRoute.unavailable()) {
+      // v1.0.15 Cluster C D2 — categorize the failure so consumers get
+      // an actionable `reason` + `hint` in the error envelope. The
+      // fallback (used when the guarded closure throws entirely) stays
+      // as the `.unknown` category — we don't have process state to
+      // discriminate from that path.
+      return await Self.contextGuardedResponse(
+        request: request,
+        fallback: TreeRoute.unavailable(
+          reason: .driverDisconnected,
+          hint: AppUnavailableReason.driverDisconnected.defaultHint
+        )
+      ) {
         // v1.0.4 §D2 — app-alive suppression short-circuit. When the
         // target bundle is known-dead (observed XCTIssue in the last
         // 20 s), return unavailable without running XCUIQuery. This
@@ -1216,10 +1270,37 @@ public actor SmixRunnerServer {
         if let cache = Self.currentAppAliveCache,
            let bundleId = Self.currentContext.bundleId,
            await cache.isSuppressed(bundleId: bundleId) {
-          return TreeRoute.unavailable()
+          // v1.0.15 Cluster C D2 — cache-suppressed = observed
+          // XCTIssue about app not running. Most likely
+          // `crashed-during-init` (process was up, then died); could
+          // also be an XCUITest race that the re-probe cycle will
+          // resolve. Ship `crashed-during-init` as the best guess so
+          // consumers know to look at .ips first.
+          return TreeRoute.unavailable(
+            reason: .crashedDuringInit,
+            hint: AppUnavailableReason.crashedDuringInit.defaultHint
+          )
         }
         guard let snap = await snapshotHandler(request.query["include"]) else {
-          return TreeRoute.unavailable()
+          // v1.0.15 Cluster C D2 — snapshotHandler returned nil
+          // without throwing. Ask the UITest-provided inference
+          // closure (set as `currentUnavailableReasonInferer` task-
+          // local at boot when the UITest target knows about D2). If
+          // the closure isn't wired, fall back to `.aliveButTreeEmpty`
+          // as the best guess — the most common consumer-observed
+          // case is "process foreground but a11y tree came back
+          // empty" (splash screen or sparse annotation) rather than
+          // "process actually crashed".
+          let inferredReason: AppUnavailableReason
+          if let inferer = Self.currentUnavailableReasonInferer {
+            inferredReason = await inferer(Self.currentContext.bundleId)
+          } else {
+            inferredReason = .aliveButTreeEmpty
+          }
+          return TreeRoute.unavailable(
+            reason: inferredReason,
+            hint: inferredReason.defaultHint
+          )
         }
         let payload = TreeRoute.serialize(
           snap.root,
@@ -1844,6 +1925,7 @@ public actor SmixRunnerServer {
     try await Self.$currentSimHealth.withValue(simHealthPublisher) {
     try await Self.$currentAppAliveCache.withValue(appAliveCache) {
     try await Self.$currentPopupPacer.withValue(popupPacer) {
+    try await Self.$currentUnavailableReasonInferer.withValue(unavailableReasonInferer) {
       do {
         try await withThrowingTaskGroup(of: Void.self) { group in
           group.addTask {
@@ -1867,6 +1949,6 @@ public actor SmixRunnerServer {
       } catch {
         if !sawShutdown { throw error }
       }
-    }}}
+    }}}}
   }
 }

@@ -73,11 +73,25 @@ pub enum RunnerTransportError {
     /// failure — it means XCUITest could not snapshot the app the client
     /// asked about. Callers that see this after all retries can surface
     /// an AI-readable hint about foreground state.
-    #[error("runner {endpoint}: app unavailable (target={target:?}, reason={reason:?})")]
+    #[error(
+        "runner {endpoint}: app unavailable (target={target:?}, reason={reason:?}, category={category:?}, hint={hint:?})"
+    )]
     AppUnavailable {
         endpoint: String,
         target: Option<String>,
+        /// v1.0.11 legacy free-form `reason` string (kept for wire
+        /// compatibility with pre-v1.0.15 runners).
         reason: Option<String>,
+        /// v1.0.15 Cluster C D2 — categorized enum from the runner's
+        /// tree-unavailable envelope. `Some(String)` when the runner
+        /// is v1.0.15+, `None` when older; string values are the
+        /// kebab-case identifiers in `AppUnavailableReason`:
+        /// `crashed-during-init`, `alive-but-tree-empty`,
+        /// `alive-but-tree-stale`, `driver-disconnected`, `unknown`.
+        category: Option<String>,
+        /// v1.0.15 Cluster C D2 — actionable text steering downstream
+        /// tooling. `Some(String)` when the runner is v1.0.15+.
+        hint: Option<String>,
     },
     /// Client-side rolling-window observation: consecutive requests
     /// have been failing (5xx, unreachable, non-JSON). The runner is
@@ -294,12 +308,32 @@ fn classify_error_body(endpoint: &str, status: u16, body: &str) -> RunnerTranspo
             target: Option<String>,
             #[serde(default)]
             reason: Option<String>,
+            #[serde(default)]
+            hint: Option<String>,
         }
         let parsed: Option<Unavailable> = serde_json::from_str(body).ok();
+        // v1.0.15 Cluster C D2 — the wire's `reason` field is the
+        // category enum (kebab-case) on v1.0.15+ runners and the
+        // legacy free-form string on pre-v1.0.15 runners. We
+        // discriminate by matching against the known category values;
+        // anything else falls through to the legacy `reason` slot.
+        let parsed_reason = parsed.as_ref().and_then(|p| p.reason.clone());
+        let (category, legacy_reason) = match parsed_reason.as_deref() {
+            Some(
+                "crashed-during-init"
+                | "alive-but-tree-empty"
+                | "alive-but-tree-stale"
+                | "driver-disconnected"
+                | "unknown",
+            ) => (parsed_reason.clone(), parsed_reason),
+            _ => (None, parsed_reason),
+        };
         return RunnerTransportError::AppUnavailable {
             endpoint: endpoint.to_string(),
             target: parsed.as_ref().and_then(|p| p.target.clone()),
-            reason: parsed.as_ref().and_then(|p| p.reason.clone()),
+            reason: legacy_reason,
+            category,
+            hint: parsed.as_ref().and_then(|p| p.hint.clone()),
         };
     }
     RunnerTransportError::NonSuccessStatus {

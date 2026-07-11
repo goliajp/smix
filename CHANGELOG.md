@@ -2,6 +2,74 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.15] — 2026-07-11
+
+**Cluster C interactive polling + reason disambiguation + §6 retry attribution — the v1.0.14 deferred work.** Wire scaffolding from v1.0.14 now populated with the Swift + CLI implementation. RFC `.claude/rfcs/1.0.15-cluster-c-plus-retry.md`.
+
+### D1 — Cluster C interactive polling (Swift-side)
+
+- Wire: `SessionAppLifecycleRequest.wait_for_interactive_ms: Option<u64>` (additive; `#[serde(default)]`).
+- Wire response: `SessionAppLifecycleResponse.reached_interactive: bool` + `interactive_named_ids: Vec<String>` (up to 8 sample ax-ids captured at fire moment).
+- Runner: after `.state == .runningForeground` is observed, the `launchApp` handler polls `entry.app.descendants(matching: .any)` at 500 ms cadence, counts descendants with non-empty `accessibilityIdentifier` NOT in the ignore-list, fires `reachedInteractive` on ≥ `minIdentifierCount`, or times out and increments `launchAppTimedOutBeforeInteractive` per Q8 answer (a).
+- Config file: `.smix/config.yaml interactiveProbe: { minIdentifierCount: 3, ignore: [SplashScreenLogo, com.focusai.app.mobile] }`. CLI reads via `serde_norway`, JSON-encodes, forwards to runner as `TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON`. Runner falls back to bundled defaults when absent per insight Q7 answer.
+- SDK: `App::clear_app_data_with_launch` defaults `wait_for_interactive_ms: Some(30_000)` — consumers using yaml `clearAppData` automatically see `launchAppReachedInteractive` counter delta with zero yaml migration.
+- Counter fields `launch_app_reached_interactive` + `launch_app_timed_out_before_interactive` in `SessionLifecycleCounters` are now populated by the runner (were 0 in v1.0.14 wire-scaffold).
+
+### D2 — Cluster C `AppUnavailableReason` enum + hint field on `/tree` unavailable envelope
+
+- Swift `TreeRoute.unavailable(reason:hint:)` variant emits enriched `{"ok":false,"error":"snapshot_unavailable","reason":"alive-but-tree-empty","hint":"…"}` body. Legacy `TreeRoute.unavailable()` still present for compat.
+- Swift `AppUnavailableReason` enum: `crashedDuringInit` / `aliveButTreeEmpty` / `aliveButTreeStale` / `driverDisconnected` / `unknown`. Each carries a `defaultHint: String` steering downstream tooling.
+- Runner-side detection in `SmixRunnerServer.swift` `/tree` handler:
+  - Cache-suppressed short-circuit → `crashed-during-init` (observed XCTIssue about app not running).
+  - Snapshot handler returned nil → consults `currentUnavailableReasonInferer` task-local closure. UITest target reads `XCUIApplication.state` for the current bundle: `.notRunning` → `crashed-during-init`; foreground/background running → `alive-but-tree-empty`; unknown → `.unknown` fallback.
+  - Fallback (guarded closure threw entirely) → `driver-disconnected`.
+- Wire in `smix-runner-client`: `RunnerTransportError::AppUnavailable` gains `category: Option<String>` + `hint: Option<String>` fields. `classify_error_body` discriminates v1.0.15 category values (`crashed-during-init` etc.) from legacy free-form `reason` strings; both populate cleanly for backward compat.
+- Pre-v1.0.15 runners emitting legacy `{"ok":false,"error":"snapshot_unavailable"}` land in `category: None, hint: None` — the consumer's error message stays functional either way.
+
+### D3 — §6 `smix run --retry N` + per-flow attempt attribution
+
+- CLI: new `--retry <N>` flag on `smix run` (default 1 = pre-v1.0.15 behaviour).
+- Runtime: each flow wrapped in an attempt loop; retries only fire on non-zero exit; first success short-circuits.
+- Per-attempt tracking captures `attempt_index`, `status` (`ok`/`timeout`/`error`), `error_class` (`TIMEOUT`/`DRIVER_ERROR`/`EXPECTATION_FAILURE`/`RUNNER_UNREACHABLE`), `wall_ms`, and any new `.ips` filename that appeared under `~/Library/Logs/DiagnosticReports/` during the attempt's window (attribution vs whole batch).
+- Persistence: `~/.local/share/smix/flow-attempts.json` (last 32 flows) via new `smix-simctl::set_flow_attempts_persist_path` (parallels the v1.0.7 `subprocess_ring` and v1.0.14 `reset_app_data_counters` patterns).
+- CLI dump overlay: `smix diagnostic dump` (non-JSON) renders a new `=== recent flows (retry attribution) ===` section per flow with per-attempt lines; `--json` payload gets `runner.recentFlows: Vec<FlowAttemptRecord>` (wire type land in v1.0.14).
+
+### Wire compatibility
+
+- All new request/response fields carry `#[serde(default)]`. Pre-v1.0.15 clients see zero behaviour change.
+- `SessionAppLifecycleRequest.wait_for_interactive_ms: Option<u64>` — opt-in.
+- `SessionAppLifecycleResponse.reached_interactive: bool` + `interactive_named_ids: Vec<String>` — additive.
+- `TreeRoute.unavailable(reason:hint:)` — new variant; legacy `unavailable()` kept.
+- `RunnerTransportError::AppUnavailable.category` + `.hint` — additive Option fields.
+- `SessionLifecycleCounters.launch_app_reached_interactive` + `launch_app_timed_out_before_interactive` — already in v1.0.14 wire; v1.0.15 populates.
+- `DiagnosticDumpResponse.recent_flows` — already in v1.0.14 wire; v1.0.15 populates via CLI overlay.
+
+### Ship gate (real-sim, `sim-insight` iOS 26.5)
+
+```
+$ smix --version                                     → smix 1.0.15
+$ smix runner install --force                       → extracted 303 files at v1.0.15
+$ /health.runnerVersion                              → "1.0.15"
+
+$ curl -X POST /session/open …
+$ curl -X POST /session/launch-app -d '{"sessionId":"…","waitForForegroundMs":15000,"waitForInteractiveMs":15000}'
+→ HTTP 200
+→ reachedInteractive: true
+→ interactiveNamedIds: ["Settings", "AdditionalDimmingOverlay", "com.apple.settings.primaryAppleAccount", …8 sampled]
+
+$ smix diagnostic dump | grep -A1 interactive
+  interactive: reachedInteractive=1 timedOutBeforeInteractive=0  # timedOut>0 → process foreground but a11y tree unusable
+
+$ /diagnostic/dump payload sessionCounters
+  launchAppReachedInteractive: 1
+  launchAppTimedOutBeforeInteractive: 0
+```
+
+680 workspace tests + all pre-existing tests green. `smix run --retry` mechanism not exercised in real-sim gate (needs a yaml with flaky expectations to fail-then-retry, out of scope for Preferences smoke); implementation locked by static tests.
+
+Insight-side canary post-publish: same discipline as v1.0.10-v1.0.14. Docker testbed image (§C.4 offer, Q9 in v1.0.12 open questions) still pending on their side.
+
+
 ## [1.0.14] — 2026-07-11
 
 **resetAppData verb (URL-scheme JS-wipe) + external metro log tail (`--metro-log <path>`) + verb-selection guide.** Response to `smix-feedback-2026-07-11-post-native-fix.md` + insight Q&A in `smix-feedback-2026-07-11-v1.0.12-answers.md`. RFC `.claude/rfcs/1.0.14-cluster-a-b-c-plus-retry.md`; verb-selection guide at `.claude/rfcs/verb-selection-guide.md`.

@@ -673,6 +673,217 @@ pub fn reset_app_data_counters_snapshot() -> ResetAppDataCounters {
     }
 }
 
+// v1.0.15 §6 — flow-attempt persistence for retry attribution. Called
+// by `smix run` after each flow completes (all its attempts done);
+// read by `smix diagnostic dump` to render the attribution table.
+// Backed by `~/.local/share/smix/flow-attempts.json`; capped at last
+// 32 flows (heuristic — enough for a batch or two of insight bootstrap
+// while keeping the dump snapshot cheap to serialize).
+mod flow_attempts {
+    use serde::{Deserialize, Serialize};
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct PersistedAttempt {
+        pub attempt_index: u32,
+        pub status: String,
+        pub error_class: Option<String>,
+        pub ips_generated: Option<String>,
+        pub wall_ms: u64,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct PersistedFlow {
+        pub flow_name: String,
+        pub attempts: Vec<PersistedAttempt>,
+    }
+
+    fn cell() -> &'static Mutex<Vec<PersistedFlow>> {
+        static INSTANCE: OnceLock<Mutex<Vec<PersistedFlow>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| Mutex::new(Vec::new()))
+    }
+    fn persist_cell() -> &'static Mutex<Option<PathBuf>> {
+        static INSTANCE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| Mutex::new(None))
+    }
+
+    pub fn set_persist_path(path: PathBuf) {
+        let mut g = match persist_cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        *g = Some(path);
+    }
+
+    fn persist_path_copy() -> Option<PathBuf> {
+        let g = match persist_cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        g.clone()
+    }
+
+    pub fn load_persisted() {
+        let Some(path) = persist_path_copy() else {
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&path) else {
+            return;
+        };
+        let Ok(loaded) = serde_json::from_slice::<Vec<PersistedFlow>>(&bytes) else {
+            return;
+        };
+        let mut g = match cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        *g = loaded;
+    }
+
+    pub fn record(flow_name: &str, attempts: &[PersistedAttempt]) {
+        {
+            let mut g = match cell().lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            g.push(PersistedFlow {
+                flow_name: flow_name.to_string(),
+                attempts: attempts.to_vec(),
+            });
+            if g.len() > 32 {
+                let drop = g.len() - 32;
+                g.drain(0..drop);
+            }
+        }
+        persist_best_effort();
+    }
+
+    pub fn snapshot() -> Vec<PersistedFlow> {
+        let g = match cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        g.clone()
+    }
+
+    fn persist_best_effort() {
+        let Some(path) = persist_path_copy() else {
+            return;
+        };
+        let flows = snapshot();
+        let _ = write_json_atomic(&path, &flows);
+    }
+
+    fn write_json_atomic(path: &Path, flows: &[PersistedFlow]) -> std::io::Result<()> {
+        use std::io::Write;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        let bytes = serde_json::to_vec(flows)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        {
+            let mut f = std::fs::File::create(&tmp)?;
+            f.write_all(&bytes)?;
+            f.sync_all()?;
+        }
+        std::fs::rename(&tmp, path)
+    }
+}
+
+/// v1.0.15 §6 — enable flow-attempts persistence at the given path.
+/// CLI startup wires this to `~/.local/share/smix/flow-attempts.json`
+/// so retry attribution survives across `smix run` → `smix diagnostic
+/// dump` invocations.
+pub fn set_flow_attempts_persist_path(path: std::path::PathBuf) {
+    flow_attempts::set_persist_path(path);
+    flow_attempts::load_persisted();
+}
+
+/// v1.0.15 §6 — public accessor with just the fields needed by callers.
+/// Mirrors [`smix_runner_wire::FlowAttempt`] shape.
+#[derive(Clone, Debug)]
+pub struct FlowAttemptData {
+    /// Zero-based retry index.
+    pub attempt_index: u32,
+    /// Overall outcome ("ok" / "timeout" / "error" / "crashed").
+    pub status: String,
+    /// Free-form error class code (`Some` on non-ok).
+    pub error_class: Option<String>,
+    /// `.ips` filename that appeared during this attempt, when detected.
+    pub ips_generated: Option<String>,
+    /// Wall-clock milliseconds.
+    pub wall_ms: u64,
+}
+
+/// v1.0.15 §6 — recorded flow with its attempt list.
+#[derive(Clone, Debug)]
+pub struct FlowAttemptRecordData {
+    /// Flow name (yaml basename or explicit id).
+    pub flow_name: String,
+    /// Ordered attempts, first try first.
+    pub attempts: Vec<FlowAttemptData>,
+}
+
+/// v1.0.15 §6 — record the outcome of a flow's attempts. Called from
+/// `smix run` after all retries for that flow have completed. `smix
+/// diagnostic dump` reads via [`recent_flow_attempts`] later.
+pub fn record_flow_attempts<A>(flow_name: &str, attempts: &[A])
+where
+    A: FlowAttemptShape,
+{
+    let converted: Vec<flow_attempts::PersistedAttempt> = attempts
+        .iter()
+        .map(|a| flow_attempts::PersistedAttempt {
+            attempt_index: a.attempt_index(),
+            status: a.status().to_string(),
+            error_class: a.error_class().map(str::to_string),
+            ips_generated: a.ips_generated().map(str::to_string),
+            wall_ms: a.wall_ms(),
+        })
+        .collect();
+    flow_attempts::record(flow_name, &converted);
+}
+
+/// v1.0.15 §6 — abstraction so callers pass either
+/// [`smix_runner_wire::FlowAttempt`] or a local struct with the same
+/// shape without a cross-crate dep on smix-runner-wire from smix-simctl.
+pub trait FlowAttemptShape {
+    /// Zero-based retry index.
+    fn attempt_index(&self) -> u32;
+    /// "ok" / "timeout" / "error" / "crashed".
+    fn status(&self) -> &str;
+    /// Error class code, if any.
+    fn error_class(&self) -> Option<&str>;
+    /// `.ips` filename attributable to this attempt, if any.
+    fn ips_generated(&self) -> Option<&str>;
+    /// Wall-clock milliseconds.
+    fn wall_ms(&self) -> u64;
+}
+
+/// v1.0.15 §6 — snapshot recent flow attempts for display / wire
+/// emission. Returns empty when persistence was never wired.
+pub fn recent_flow_attempts() -> Vec<FlowAttemptRecordData> {
+    flow_attempts::snapshot()
+        .into_iter()
+        .map(|f| FlowAttemptRecordData {
+            flow_name: f.flow_name,
+            attempts: f
+                .attempts
+                .into_iter()
+                .map(|a| FlowAttemptData {
+                    attempt_index: a.attempt_index,
+                    status: a.status,
+                    error_class: a.error_class,
+                    ips_generated: a.ips_generated,
+                    wall_ms: a.wall_ms,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 /// v1.0.7 §D3 — snapshot the process-wide ring buffer of recent
 /// `xcrun simctl` invocations. Ordered oldest → newest, capped at 128
 /// entries. Reset on process restart.
