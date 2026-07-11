@@ -919,6 +919,13 @@ final class SmixRunnerUITests: XCTestCase {
       /// idle-close sweep uses this to reap sessions that haven't
       /// been used within `sessionIdleTimeoutSec`.
       var lastAccessedAt: Date
+      /// v1.0.18 D1 — snapshot of `interactiveNamedIds` observed on
+      /// the most-recent successful `launchApp` that opted into
+      /// `waitForInteractiveMs`. Empty on session open + on launches
+      /// where reachedInteractive was false. Persisted per-session
+      /// so `smix diagnostic dump` / `session/list` can surface WHICH
+      /// ax-ids fired the interactive gate, not just the count.
+      var lastInteractiveNamedIds: [String] = []
     }
     let sessions: NSLock = NSLock()
     var sessionTable: [String: SessionEntry] = [:]
@@ -2422,7 +2429,8 @@ final class SmixRunnerUITests: XCTestCase {
               sessionId: sid,
               bundleId: entry.bundleId,
               openedAtMs: ms,
-              lastActivatedAtMs: ms
+              lastActivatedAtMs: ms,
+              interactiveNamedIds: entry.lastInteractiveNamedIds
             )
           }
           sessions.unlock()
@@ -2452,7 +2460,8 @@ final class SmixRunnerUITests: XCTestCase {
               sessionId: sid,
               bundleId: entry.bundleId,
               openedAtMs: ms,
-              lastActivatedAtMs: ms
+              lastActivatedAtMs: ms,
+              interactiveNamedIds: entry.lastInteractiveNamedIds
             )
           }
           sessions.unlock()
@@ -2670,6 +2679,18 @@ final class SmixRunnerUITests: XCTestCase {
               }
             }
           }
+          // v1.0.18 D1 — persist interactiveNamedIds on the session so
+          // list/diagnostic surfaces the WHICH-ids, not just the count.
+          // Update happens on every launch (both success and timeout).
+          // On timeout, `interactiveNamedIds` is empty — that's the
+          // signal to the consumer that the gate didn't fire.
+          sessions.lock()
+          if var entry = sessionTable[req.sessionId] {
+            entry.lastInteractiveNamedIds = interactiveNamedIds
+            sessionTable[req.sessionId] = entry
+            persistSessions()
+          }
+          sessions.unlock()
           return SmixRunnerServer.SessionAppLifecycleOutcome(
             notFound: false,
             ok: true,

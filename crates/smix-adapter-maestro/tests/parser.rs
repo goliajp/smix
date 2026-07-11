@@ -41,7 +41,7 @@ fn parse_alerts_counting_full_match() {
                 selector: text_selector(Pattern::Text("Counting".to_string())),
                 optional: false,
             },
-            Step::WaitForAnimationToEnd,
+            Step::WaitForAnimationToEnd { duration_ms: 400 },
             // extendedWaitUntil { visible: { text: "...|...|..." }, timeout: 30000 }
             Step::ExtendedWaitUntil {
                 selector: text_selector(Pattern::Regex {
@@ -66,7 +66,7 @@ fn parse_alerts_counting_full_match() {
                 },
                 optional: true,
             },
-            Step::WaitForAnimationToEnd,
+            Step::WaitForAnimationToEnd { duration_ms: 400 },
             Step::ExtendedWaitUntil {
                 selector: text_selector(Pattern::Regex {
                     regex: "Day|Week|Month|No counting configurations|Area Counting".to_string(),
@@ -145,7 +145,7 @@ fn parse_run_flow_inline_commands_with_when() {
                     selector: text_selector(Pattern::Text("Open".to_string())),
                     optional: false,
                 },
-                Step::WaitForAnimationToEnd,
+                Step::WaitForAnimationToEnd { duration_ms: 400 },
             ],
         }],
     };
@@ -251,7 +251,7 @@ fn parse_launch_warm_extras() {
                 timeout_ms: 45000,
                 expect_visible: true,
             },
-            Step::WaitForAnimationToEnd,
+            Step::WaitForAnimationToEnd { duration_ms: 400 },
         ],
     };
 
@@ -1184,5 +1184,27 @@ fn parse_reset_app_data_map_form_with_sleep_fallback() {
             other => panic!("expected Sleep(500), got {other:?}"),
         },
         other => panic!("expected ResetAppData, got {other:?}"),
+    }
+}
+
+// v1.0.18 D2 — waitForAnimationToEnd numeric override.
+
+#[test]
+fn parse_wait_for_animation_to_end_bare_default_400ms() {
+    let yaml = "appId: com.test.app\n---\n- waitForAnimationToEnd\n";
+    let flow = parse_flow_yaml(yaml).expect("parse bare waitForAnimationToEnd");
+    match &flow.steps[0] {
+        Step::WaitForAnimationToEnd { duration_ms } => assert_eq!(*duration_ms, 400),
+        other => panic!("expected WaitForAnimationToEnd, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_wait_for_animation_to_end_numeric_override() {
+    let yaml = "appId: com.test.app\n---\n- waitForAnimationToEnd: 750\n";
+    let flow = parse_flow_yaml(yaml).expect("parse numeric waitForAnimationToEnd");
+    match &flow.steps[0] {
+        Step::WaitForAnimationToEnd { duration_ms } => assert_eq!(*duration_ms, 750),
+        other => panic!("expected WaitForAnimationToEnd, got: {other:?}"),
     }
 }

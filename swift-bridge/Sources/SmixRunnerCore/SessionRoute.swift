@@ -260,7 +260,13 @@ public enum SessionRoute {
       if i > 0 { s += "," }
       let sid = jsonEscape(entry.sessionId)
       let bid = jsonEscape(entry.bundleId)
-      s += #"{"sessionId":""# + sid + #"","bundleId":""# + bid + #"","openedAtMs":\#(entry.openedAtMs),"lastActivatedAtMs":\#(entry.lastActivatedAtMs)}"#
+      var idsPart = "["
+      for (j, id) in entry.interactiveNamedIds.enumerated() {
+        if j > 0 { idsPart += "," }
+        idsPart += "\"" + jsonEscape(id) + "\""
+      }
+      idsPart += "]"
+      s += #"{"sessionId":""# + sid + #"","bundleId":""# + bid + #"","openedAtMs":\#(entry.openedAtMs),"lastActivatedAtMs":\#(entry.lastActivatedAtMs),"interactiveNamedIds":\#(idsPart)}"#
     }
     let health = jsonEscape(snap.simHealth)
     let sup = snap.supervisorPid.map { String($0) } ?? "null"
@@ -280,16 +286,29 @@ public enum SessionRoute {
     public let bundleId: String
     public let openedAtMs: UInt64
     public let lastActivatedAtMs: UInt64
+    /// v1.0.18 D1 — snapshot of `interactiveNamedIds` captured on the
+    /// most-recent successful `launchApp` for this session (empty when
+    /// the session's last launch didn't opt into `waitForInteractiveMs`
+    /// or when `reachedInteractive` was false).
+    ///
+    /// Persists across `smix diagnostic dump` calls so consumers can
+    /// tell WHICH ax-ids triggered `reachedInteractive` per launch —
+    /// not just the counter. Insight round-4 §"Smix ask": the counter
+    /// alone doesn't distinguish "probe fired on dev-bubble" from
+    /// "probe fired on splash-screen artifacts."
+    public let interactiveNamedIds: [String]
     public init(
       sessionId: String,
       bundleId: String,
       openedAtMs: UInt64,
-      lastActivatedAtMs: UInt64
+      lastActivatedAtMs: UInt64,
+      interactiveNamedIds: [String] = []
     ) {
       self.sessionId = sessionId
       self.bundleId = bundleId
       self.openedAtMs = openedAtMs
       self.lastActivatedAtMs = lastActivatedAtMs
+      self.interactiveNamedIds = interactiveNamedIds
     }
   }
 
@@ -299,7 +318,13 @@ public enum SessionRoute {
       if i > 0 { s += "," }
       let sid = jsonEscape(entry.sessionId)
       let bid = jsonEscape(entry.bundleId)
-      s += #"{"sessionId":""# + sid + #"","bundleId":""# + bid + #"","openedAtMs":\#(entry.openedAtMs),"lastActivatedAtMs":\#(entry.lastActivatedAtMs)}"#
+      var idsPart = "["
+      for (j, id) in entry.interactiveNamedIds.enumerated() {
+        if j > 0 { idsPart += "," }
+        idsPart += "\"" + jsonEscape(id) + "\""
+      }
+      idsPart += "]"
+      s += #"{"sessionId":""# + sid + #"","bundleId":""# + bid + #"","openedAtMs":\#(entry.openedAtMs),"lastActivatedAtMs":\#(entry.lastActivatedAtMs),"interactiveNamedIds":\#(idsPart)}"#
     }
     s += "]}"
     return envelope(.ok, Data(s.utf8))

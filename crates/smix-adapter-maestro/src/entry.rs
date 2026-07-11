@@ -624,7 +624,7 @@ fn summarize_step(step: &Step) -> String {
             let preview = if js.len() > 40 { &js[..40] } else { js };
             format!("webview_eval `{preview}`")
         }
-        Step::WaitForAnimationToEnd => "waitForAnimationToEnd".into(),
+        Step::WaitForAnimationToEnd { .. } => "waitForAnimationToEnd".into(),
         Step::ExtendedWaitUntil { timeout_ms, .. } => {
             format!("extendedWaitUntil (timeout {timeout_ms}ms)")
         }
