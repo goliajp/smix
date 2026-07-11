@@ -464,6 +464,39 @@ pub enum Step {
         /// runner-side launch. Empty map = pre-v1.0.11 behavior.
         launch_env: std::collections::BTreeMap<String, String>,
     },
+    /// v1.0.14 Cluster A — URL-scheme-driven app-owned reset.
+    /// Distinct from [`Step::ClearAppData`] (which wipes the whole
+    /// container including dev-fixture state). resetAppData fires the
+    /// supplied URL via `simctl openurl`, then optionally tails the
+    /// external metro log for a completion pattern before returning.
+    ///
+    /// Consumer app is responsible for handling the URL and emitting
+    /// the completion signal (e.g., `console.log('[dev]
+    /// reset-complete token=...')`). This keeps smix agnostic to
+    /// what "reset" means for the app; the app decides.
+    ///
+    /// yaml shapes both accepted:
+    /// ```yaml
+    /// - resetAppData: 'insight://dev-mutate?action=reset'
+    ///
+    /// - resetAppData:
+    ///     via: url-scheme
+    ///     url: 'insight://dev-mutate?action=reset'
+    ///     waitFor:
+    ///       logLinePattern: '\[insight-dev\] reset-complete token='
+    ///       timeoutMs: 5000
+    /// ```
+    ResetAppData {
+        /// URL scheme string (`simctl openurl <UDID> <url>`).
+        url: String,
+        /// Completion-signal wait strategy. `None` = fire URL and
+        /// return immediately (no wait). See [`ResetAppDataWaitFor`]
+        /// for supported variants.
+        wait_for: Option<ResetAppDataWaitFor>,
+        /// Timeout in ms for the wait_for path. Ignored when
+        /// `wait_for` is None. Default 5000 at the parser layer.
+        timeout_ms: u64,
+    },
     /// Open a URL / deep link in the OS handler. Maps to
     /// `simctl openurl` (c3 mapping).
     OpenLink(String),
@@ -766,6 +799,16 @@ pub struct SignalMatch {
 /// `smix_metro_log::Window` at the yaml level. Runtime translates
 /// `SinceStep` to `Window::SinceMs` using the tail's ms cursor
 /// captured at each step-end.
+// v1.0.14 Cluster A — re-export smix_sdk's ResetAppDataWaitFor so
+// the yaml adapter Step type + parser can name it without an extra
+// import path indirection. The canonical definition lives in
+// smix-sdk since the App impl needs to consume it.
+pub use smix_sdk::ResetAppDataWaitFor;
+
+/// Sliding-window spec for `expect.signal` / `expect.signals` verbs.
+/// Selects the segment of the metro log tail that a signal search
+/// scans against. Restored above `pub enum SignalWindow` in v1.0.14
+/// after the earlier ResetAppData placement shuffled its docstring.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SignalWindow {

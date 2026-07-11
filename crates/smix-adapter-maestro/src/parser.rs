@@ -932,6 +932,71 @@ fn parse_clear_app_data(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
+// v1.0.14 Cluster A — resetAppData shape:
+//   - resetAppData: 'insight://dev-mutate?action=reset'   # short
+//   - resetAppData:                                          # map
+//       via: url-scheme          # future-proofing; only 'url-scheme' today
+//       url: 'insight://dev-mutate?action=reset'
+//       waitFor:
+//         logLinePattern: '\[insight-dev\] reset-complete token='
+//         # OR: sleepMs: 500
+//       timeoutMs: 5000
+fn parse_reset_app_data(v: &Value) -> Result<Step, ParseError> {
+    use smix_sdk::ResetAppDataWaitFor;
+    match v {
+        Value::String(url) => Ok(Step::ResetAppData {
+            url: url.clone(),
+            wait_for: None,
+            timeout_ms: 5000,
+        }),
+        Value::Mapping(_) => {
+            let map = v.as_mapping().expect("just matched");
+            let url = map
+                .get(Value::String("url".into()))
+                .and_then(Value::as_str)
+                .ok_or_else(|| ParseError::MissingField("resetAppData.url".into()))?
+                .to_string();
+            let timeout_ms = map
+                .get(Value::String("timeoutMs".into()))
+                .and_then(Value::as_u64)
+                .unwrap_or(5000);
+            let wait_for = if let Some(wf_v) = map.get(Value::String("waitFor".into())) {
+                let wf_map = wf_v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
+                    field: "resetAppData.waitFor".into(),
+                    reason: format!("expected mapping, got {wf_v:?}"),
+                })?;
+                if let Some(pattern) = wf_map
+                    .get(Value::String("logLinePattern".into()))
+                    .and_then(Value::as_str)
+                {
+                    Some(ResetAppDataWaitFor::LogLinePattern(pattern.to_string()))
+                } else if let Some(sleep_ms) = wf_map
+                    .get(Value::String("sleepMs".into()))
+                    .and_then(Value::as_u64)
+                {
+                    Some(ResetAppDataWaitFor::Sleep(sleep_ms))
+                } else {
+                    return Err(ParseError::InvalidValue {
+                        field: "resetAppData.waitFor".into(),
+                        reason: "expected either `logLinePattern` or `sleepMs`".into(),
+                    });
+                }
+            } else {
+                None
+            };
+            Ok(Step::ResetAppData {
+                url,
+                wait_for,
+                timeout_ms,
+            })
+        }
+        other => Err(ParseError::InvalidValue {
+            field: "resetAppData".into(),
+            reason: format!("expected string (short-form URL) or map, got {other:?}"),
+        }),
+    }
+}
+
 fn parse_kill_app(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::KillApp { app_id: s.clone() }),
@@ -1722,6 +1787,9 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         // SDK 57 dev-launcher server picker (which stopped auto-
         // navigating on URL scheme, per insight's v1.0.10 followup).
         "clearAppData" => parse_clear_app_data(value),
+        // v1.0.14 Cluster A — URL-scheme JS-wipe. Bare short-form
+        // (`resetAppData: 'url'`) OR map-form (with waitFor + timeout).
+        "resetAppData" => parse_reset_app_data(value),
         // v5.2 c1 — 7 ⊘ adapter-only-gap wires.
         "scroll" => Ok(Step::Scroll),
         "hideKeyboard" => Ok(Step::HideKeyboard),

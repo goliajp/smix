@@ -674,6 +674,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::LaunchApp { .. } => "launchApp",
         Step::StopApp => "stopApp",
         Step::ClearAppData { .. } => "clearAppData",
+        Step::ResetAppData { .. } => "resetAppData",
         Step::KillApp { .. } => "killApp",
         Step::TapOn { .. } => "tapOn",
         Step::TapAtPoint { .. } => "tapAtPoint",
@@ -1403,6 +1404,78 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app
                     .clear_app_data_with_launch(launch_args, launch_env)
                     .await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::ResetAppData { url, wait_for, timeout_ms } => {
+                // v1.0.14 Cluster A — URL-scheme JS-wipe. Fires
+                // `simctl openurl <UDID> <url>` on host side (no
+                // runner HTTP round-trip), then optionally waits for
+                // a completion signal per `wait_for`. Distinct from
+                // ClearAppData: no container wipe → dev-fixture state
+                // (Expo dev-launcher metro URL cache, dev-tools
+                // state, MMKV keys the app chooses to preserve)
+                // survives, so consumers don't pay the dev-client
+                // ceremony cost on every reset. Insight §1 answer
+                // from `smix-feedback-2026-07-11-post-native-fix.md`.
+                //
+                // Runtime dispatch (as opposed to a bare
+                // `App::reset_app_data`) — needs the runtime's
+                // MetroLogTail reference to satisfy the
+                // `waitFor: { logLinePattern }` shape, and the
+                // MetroLogTail is only threaded through the runtime
+                // (not down into `App`). CLI-side reset counter
+                // increments happen here on both success and
+                // timeout so `smix diagnostic dump` can surface the
+                // outcome even when the whole run failed.
+                self.app.open_url(url).await?;
+                smix_simctl::increment_reset_app_data_total();
+                match wait_for {
+                    None => {}
+                    Some(smix_sdk::ResetAppDataWaitFor::Sleep(ms)) => {
+                        tokio::time::sleep(std::time::Duration::from_millis(*ms)).await;
+                    }
+                    Some(smix_sdk::ResetAppDataWaitFor::LogLinePattern(pattern)) => {
+                        let Some(tail) = self.metro_tail.as_ref() else {
+                            // Best-effort: no metro log wired.
+                            // Sleep 500 ms so the URL propagates,
+                            // don't count as timeout — the caller
+                            // knew it hadn't set --metro-log.
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                            return Ok(RunStepReport::Ok);
+                        };
+                        let matcher = smix_metro_log::SignalMatcher::new(pattern, None)
+                            .map_err(|e| {
+                                RunError::Sdk(smix_sdk::ExpectationFailure::new(
+                                    smix_sdk::FailureInit {
+                                        code: Some(smix_sdk::FailureCode::DriverError),
+                                        message: format!(
+                                            "resetAppData.waitFor.logLinePattern invalid regex ({pattern:?}): {e}"
+                                        ),
+                                        ..Default::default()
+                                    },
+                                ))
+                            })?;
+                        let outcome = tail
+                            .await_signal(
+                                &matcher,
+                                std::time::Duration::from_millis(*timeout_ms),
+                                smix_metro_log::Window::LastMs(u64::MAX),
+                            )
+                            .await;
+                        if outcome.is_err() {
+                            smix_simctl::increment_reset_app_data_timed_out();
+                            return Err(RunError::Sdk(smix_sdk::ExpectationFailure::new(
+                                smix_sdk::FailureInit {
+                                    code: Some(smix_sdk::FailureCode::Timeout),
+                                    message: format!(
+                                        "resetAppData: URL fired ({url}) but log-line pattern ({pattern:?}) did not appear on the metro log within {timeout_ms}ms"
+                                    ),
+                                    ..Default::default()
+                                },
+                            )));
+                        }
+                    }
+                }
                 Ok(RunStepReport::Ok)
             }
             Step::ClearState { app_id } => {

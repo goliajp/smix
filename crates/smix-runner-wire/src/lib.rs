@@ -821,6 +821,73 @@ pub struct SessionLifecycleCounters {
     /// Launch calls that timed out waiting for foreground.
     #[serde(default)]
     pub launch_app_timed_out_before_foreground: u64,
+    /// v1.0.14 Cluster A — total `resetAppData` verbs dispatched
+    /// (URL-scheme JS-wipe pattern, separate from `clearAppData`'s
+    /// container-wipe pathway).
+    #[serde(default)]
+    pub reset_app_data_total: u64,
+    /// v1.0.14 Cluster A — resetAppData calls where the completion
+    /// signal (log-line pattern match on the metro log tail) never
+    /// arrived inside the timeout window. `> 0` = the URL fired but
+    /// the app didn't emit the expected `[dev] reset-complete` line.
+    #[serde(default)]
+    pub reset_app_data_timed_out: u64,
+    /// v1.0.14 Cluster C — launch calls that observed the
+    /// interactive fingerprint (`≥ minIdentifierCount` non-ignored
+    /// ax-ids in the a11y tree) inside `wait_for_interactive_ms`.
+    /// Distinct from `launch_app_reached_foreground` which only
+    /// tracks process state, not tree probeability.
+    #[serde(default)]
+    pub launch_app_reached_interactive: u64,
+    /// v1.0.14 Cluster C — launch calls that timed out waiting for
+    /// the interactive fingerprint. Non-zero = "process foreground
+    /// but tree unusable" = the case insight's v1.0.11 followup
+    /// observed on their bootstrap batch (SplashScreenLogo + all
+    /// unknown descendants).
+    #[serde(default)]
+    pub launch_app_timed_out_before_interactive: u64,
+}
+
+/// v1.0.14 §6 — per-flow attempt attribution. Populated by
+/// `smix run --retry <N>` (default 1) as each flow completes; carries
+/// through `/diagnostic/dump` so consumers can attribute a `.ips` to
+/// a specific retry rather than a whole batch.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct FlowAttemptRecord {
+    /// Flow name (yaml basename or explicit id).
+    #[serde(default)]
+    pub flow_name: String,
+    /// Ordered attempts. Retry #0 is the first try; retry #1 is
+    /// second; etc.
+    #[serde(default)]
+    pub attempts: Vec<FlowAttempt>,
+}
+
+/// One attempt within a flow (see [`FlowAttemptRecord`]).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct FlowAttempt {
+    /// Zero-based retry index. `0` = first try.
+    #[serde(default)]
+    pub attempt_index: u32,
+    /// Overall outcome: "ok" / "timeout" / "error" / "crashed".
+    #[serde(default)]
+    pub status: String,
+    /// Free-form error class code when non-ok (e.g., "TIMEOUT",
+    /// "DRIVER_ERROR", "APP_UNAVAILABLE"). Empty on success.
+    #[serde(default)]
+    pub error_class: Option<String>,
+    /// If a `.ips` file appeared under `~/Library/Logs/DiagnosticReports/`
+    /// during this attempt's window, its filename. Consumers grep for
+    /// this to tie a crash-report to a specific retry.
+    #[serde(default)]
+    pub ips_generated: Option<String>,
+    /// Wall-clock milliseconds this attempt ran.
+    #[serde(default)]
+    pub wall_ms: u64,
 }
 
 /// `POST /diagnostic/dump` response body (v1.0.7 §D5, extended
@@ -867,6 +934,23 @@ pub struct DiagnosticDumpResponse {
     /// wipe them.
     #[serde(default)]
     pub session_counters: SessionLifecycleCounters,
+    /// v1.0.14 Cluster B / §5 — trailing N lines from the external
+    /// metro log the CLI was told to tail (via `--metro-log <path>`
+    /// on `smix run` or `smix diagnostic dump`). Empty when the CLI
+    /// was not given a log path OR when the file was unreadable at
+    /// dump time. Default N is 200 lines; consumer overrides with
+    /// `--metro-log-tail-lines <N>`. Purely additive — a pre-v1.0.14
+    /// consumer ignoring this field sees no behavior change.
+    #[serde(default)]
+    pub metro_log_tail: Vec<String>,
+    /// v1.0.14 §6 — retry-attribution roll-up. Populated by
+    /// `smix run` when it has driven at least one flow. Each entry
+    /// carries per-attempt status + errorClass + any `.ips` generated
+    /// so consumers can tell "flow X passed on retry 2 after retry 1
+    /// crashed" from "flow X passed on the first try". Empty when no
+    /// flow context available at dump time.
+    #[serde(default)]
+    pub recent_flows: Vec<FlowAttemptRecord>,
 }
 
 /// v1.0.4 §D7 — Session state exposed to SDK consumers via the

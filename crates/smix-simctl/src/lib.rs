@@ -480,6 +480,199 @@ pub fn set_subprocess_ring_persist_path(path: std::path::PathBuf) {
     subprocess_ring::load_persisted();
 }
 
+// v1.0.14 Cluster A — CLI-side resetAppData counter tracking.
+//
+// The `resetAppData` verb dispatches host-side (simctl openurl + metro
+// log tail, no runner HTTP endpoint) so counters can't come from the
+// runner's `/diagnostic/dump` payload. This module owns them,
+// persisting to `~/.local/share/smix/reset-app-data-counters.json`
+// so counter deltas across `smix run` invocations + `smix diagnostic
+// dump` (later, separate process) all see the same data.
+//
+// Public API mirrors [`subprocess_ring`] shape for consistency.
+mod reset_app_data_counters {
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
+
+    fn cell() -> &'static Mutex<Counters> {
+        static INSTANCE: OnceLock<Mutex<Counters>> = OnceLock::new();
+        INSTANCE.get_or_init(|| Mutex::new(Counters::default()))
+    }
+    fn persist_cell() -> &'static Mutex<Option<PathBuf>> {
+        static INSTANCE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| Mutex::new(None))
+    }
+
+    #[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
+    pub struct Counters {
+        pub reset_app_data_total: u64,
+        pub reset_app_data_timed_out: u64,
+    }
+
+    pub fn set_persist_path(path: PathBuf) {
+        let mut g = match persist_cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        *g = Some(path);
+    }
+
+    fn persist_path_copy() -> Option<PathBuf> {
+        let g = match persist_cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        g.clone()
+    }
+
+    pub fn load_persisted() {
+        let Some(path) = persist_path_copy() else {
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&path) else {
+            return;
+        };
+        let Ok(loaded) = serde_json::from_slice::<Counters>(&bytes) else {
+            return;
+        };
+        let mut g = match cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        *g = loaded;
+    }
+
+    pub fn increment_total() {
+        {
+            let mut g = match cell().lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            g.reset_app_data_total = g.reset_app_data_total.saturating_add(1);
+        }
+        persist_best_effort();
+    }
+
+    pub fn increment_timed_out() {
+        {
+            let mut g = match cell().lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            g.reset_app_data_timed_out = g.reset_app_data_timed_out.saturating_add(1);
+        }
+        persist_best_effort();
+    }
+
+    pub fn snapshot() -> Counters {
+        let g = match cell().lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        *g
+    }
+
+    fn persist_best_effort() {
+        let Some(path) = persist_path_copy() else {
+            return;
+        };
+        let snapshot = snapshot();
+        let _ = write_json_atomic(&path, &snapshot);
+    }
+
+    fn write_json_atomic(path: &Path, counters: &Counters) -> std::io::Result<()> {
+        use std::io::Write;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        let bytes = serde_json::to_vec(counters)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        {
+            let mut f = std::fs::File::create(&tmp)?;
+            f.write_all(&bytes)?;
+            f.sync_all()?;
+        }
+        std::fs::rename(&tmp, path)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn increment_and_persist_roundtrip() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("counters.json");
+            set_persist_path(path.clone());
+            // Reset in-memory to avoid cross-test pollution.
+            {
+                let mut g = cell().lock().unwrap();
+                *g = Counters::default();
+            }
+            increment_total();
+            increment_total();
+            increment_timed_out();
+            assert!(path.exists());
+            let raw = std::fs::read_to_string(&path).unwrap();
+            let loaded: Counters = serde_json::from_str(&raw).unwrap();
+            assert_eq!(loaded.reset_app_data_total, 2);
+            assert_eq!(loaded.reset_app_data_timed_out, 1);
+        }
+    }
+}
+
+/// v1.0.14 Cluster A — public snapshot of CLI-side resetAppData
+/// counter state. Populated by [`increment_reset_app_data_total`] +
+/// [`increment_reset_app_data_timed_out`] as the CLI dispatches the
+/// verb; loaded from disk on CLI startup if
+/// [`set_reset_app_data_counters_persist_path`] was called.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ResetAppDataCounters {
+    /// Total resetAppData dispatches (any outcome).
+    pub reset_app_data_total: u64,
+    /// resetAppData dispatches where the completion signal did not
+    /// arrive inside the timeout window. `> 0` = the URL was fired
+    /// but the app did not emit the expected reset-complete log line.
+    pub reset_app_data_timed_out: u64,
+}
+
+/// v1.0.14 Cluster A — enable resetAppData counter persistence at
+/// the given path. Callers pass
+/// `~/.local/share/smix/reset-app-data-counters.json` at CLI startup
+/// so counter state survives across `smix run` → `smix diagnostic
+/// dump` invocations.
+pub fn set_reset_app_data_counters_persist_path(path: std::path::PathBuf) {
+    reset_app_data_counters::set_persist_path(path);
+    reset_app_data_counters::load_persisted();
+}
+
+/// v1.0.14 Cluster A — advance the resetAppData total counter.
+/// Called by the CLI runtime after each dispatch (success or timeout).
+pub fn increment_reset_app_data_total() {
+    reset_app_data_counters::increment_total();
+}
+
+/// v1.0.14 Cluster A — advance the resetAppData timed-out counter.
+/// Called by the CLI runtime when the completion signal (log-line
+/// pattern match) did not arrive inside the timeout window. Always
+/// paired with a preceding [`increment_reset_app_data_total`] on the
+/// same dispatch.
+pub fn increment_reset_app_data_timed_out() {
+    reset_app_data_counters::increment_timed_out();
+}
+
+/// v1.0.14 Cluster A — snapshot the current counter state for
+/// display / wire emission. Returns zero-valued counters when
+/// persistence was never wired.
+pub fn reset_app_data_counters_snapshot() -> ResetAppDataCounters {
+    let s = reset_app_data_counters::snapshot();
+    ResetAppDataCounters {
+        reset_app_data_total: s.reset_app_data_total,
+        reset_app_data_timed_out: s.reset_app_data_timed_out,
+    }
+}
+
 /// v1.0.7 §D3 — snapshot the process-wide ring buffer of recent
 /// `xcrun simctl` invocations. Ordered oldest → newest, capped at 128
 /// entries. Reset on process restart.

@@ -25,9 +25,12 @@ smix-metro-log = { path = "../smix-metro-log", version = "1.0.0" }
 smix-fixture = { path = "../smix-fixture", version = "1.0.0" }
 smix-verbs = { path = "../smix-verbs", version = "1.0.0" }
 smix-annotate = { path = "../smix-annotate", version = "1.0.0" }
+# v1.0.14 Cluster A — reset-app-data counter tracking.
+smix-simctl = { path = "../smix-simctl", version = "1.0.0" }
 dirs = "5"
 async-trait.workspace = true
 clap = { workspace = true, features = ["env"] }
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true

@@ -239,6 +239,25 @@ pub struct LaunchAppOptions {
     pub app_path: Option<String>,
 }
 
+/// v1.0.14 Cluster A — completion-signal wait strategy for the
+/// `resetAppData` verb (URL-scheme JS-wipe). See
+/// `.claude/rfcs/1.0.14-*.md` §Cluster A. The runtime executor
+/// (smix-adapter-maestro) is responsible for interpreting these
+/// variants; smix-sdk owns the type so the adapter's `Step` and the
+/// runtime's dispatch stay in agreement.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ResetAppDataWaitFor {
+    /// Regex against the external metro log. Requires the CLI has
+    /// been given `--metro-log <path>` so the runtime holds a
+    /// `smix_metro_log::MetroLogTail` subscribed to the file.
+    LogLinePattern(String),
+    /// Sleep the given milliseconds after firing the URL, then
+    /// return. Best-effort fallback for the no-metro-log case per
+    /// insight Q1 answer.
+    Sleep(u64),
+}
+
 // -------------------- selector helpers (ergonomic factories) --------
 
 /// `text("Login")` shortcut. Mirrors TS `{ text: 'Login' }` shorthand.
