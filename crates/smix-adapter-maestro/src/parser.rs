@@ -705,6 +705,7 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
             permissions: Vec::new(),
             arguments: Vec::new(),
             stop_app: true,
+            wait_for_interactive_ms: None,
         });
     }
     let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
@@ -830,6 +831,14 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
             });
         }
     };
+    // v1.0.16 — accept `waitForInteractiveMs: <ms>` on the map form.
+    // Threads through to the runner's `SessionAppLifecycleRequest`
+    // when `stop_app == true` (cooperative launch pathway). Bare
+    // form (`launchApp: null`) can't have opts; that path stays at
+    // pre-v1.0.16 semantics.
+    let wait_for_interactive_ms = map
+        .get(Value::String("waitForInteractiveMs".into()))
+        .and_then(Value::as_u64);
     Ok(Step::LaunchApp {
         app_id,
         clear_state,
@@ -837,6 +846,7 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
         permissions,
         arguments,
         stop_app,
+        wait_for_interactive_ms,
     })
 }
 

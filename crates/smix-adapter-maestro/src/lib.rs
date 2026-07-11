@@ -437,6 +437,17 @@ pub enum Step {
         /// v5.2 c2 — maestro yaml `stopApp: bool` (default true).
         #[serde(default = "default_stop_app")]
         stop_app: bool,
+        /// v1.0.16 — maestro yaml `waitForInteractiveMs: <ms>`. When
+        /// set (and stopApp is true — so we go through the cooperative
+        /// launch pathway), threads through to
+        /// `SessionAppLifecycleRequest.wait_for_interactive_ms` on the
+        /// runner. Runner polls the a11y tree at 500 ms cadence with a
+        /// snapshot-refresh each iteration (v1.0.16 D1 fix for the
+        /// Fabric mount-item-drain race insight diagnosed in
+        /// round-2). None = pre-v1.0.16 behaviour (dispatch and return
+        /// on foreground reached).
+        #[serde(default)]
+        wait_for_interactive_ms: Option<u64>,
     },
     /// v1.0.8 §D2 — clear the current session's app data IN PLACE
     /// without launching. Maps to

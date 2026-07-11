@@ -2,6 +2,43 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.16] — 2026-07-12
+
+**Hotfix: v1.0.15's interactive polling had a stale-snapshot bug on RN Fabric + iOS 26.5 sim.** Insight's round-2 investigation in `smix-feedback-2026-07-11-round-2-status.md` diagnosed the exact race: RN 0.86 Fabric New Arch populates the a11y tree via `RCTMountItemProtocol` as mount items drain, NOT during layout. XCUITest's snapshot cache holds the sparse pre-drain tree, and `descendants(matching:)` returned the same cached snapshot every poll iteration.
+
+### D1 — Swift snapshot-refresh in interactive polling
+
+- `launchApp` handler now calls `_ = try? entry.app.snapshot()` on every polling iteration before reading `descendants(matching:)`. Forces XCUITest to re-scrape the a11y hierarchy from scratch, catching mount-item-drain updates.
+- No `waitForQuiescenceIncludingAnimations` call — smix's existing `SmixQuiescenceSwizzle.m` already no-ops that private XCTest daemon idle-wait for performance. Snapshot alone forces the invalidation.
+- `.smix/config.yaml interactiveProbe:` schema unchanged. Config-driven ignore-list and minIdentifierCount still work as v1.0.15 shipped.
+
+### D2 — yaml `launchApp: { waitForInteractiveMs }` marker
+
+- Parser accepts the new field on the map form of `launchApp:`.
+- `Step::LaunchApp.wait_for_interactive_ms: Option<u64>` — additive; `#[serde(default)]`.
+- Runtime: emits a warning (non-fatal) explaining the SDK launch pathway (`simctl launch --args`) is host-side and can't route to `/session/launch-app`. Consumers who want interactive gating use the `clearAppData` yaml verb instead — its SDK path defaults `wait_for_interactive_ms: Some(30_000)` since v1.0.15. Full first-class routing lands in a follow-up release that unifies the two launch pathways.
+
+### Ship gate (real-sim, `sim-insight` iOS 26.5 Preferences)
+
+- Baseline reproducibility check — the v1.0.16 snapshot-refresh doesn't regress the working Preferences case that v1.0.15 shipped on:
+
+```
+POST /session/launch-app  {sessionId, waitForForegroundMs:15000, waitForInteractiveMs:15000}
+→ HTTP 200
+→ reachedInteractive:true
+→ interactiveNamedIds:["Settings","AdditionalDimmingOverlay",
+                       "com.apple.settings.primaryAppleAccount", …8]
+```
+
+Real-world validation (insight bootstrap batch on RN Fabric + iOS 26.5) is theirs — they migrate `launch-fresh.yaml` to `clearAppData` (which gets the interactive probe with v1.0.15's default and now v1.0.16's snapshot-refresh) and rerun.
+
+### Wire compatibility
+
+- No wire changes (v1.0.15 wire shape unchanged).
+- Runner-side behavior change is invisible to consumers unless the polling loop was hitting the stale-snapshot case; when it was, the observation flip is (a) v1.0.15 always saw `reachedInteractive:false` on Fabric or (b) v1.0.16 sees `reachedInteractive:true` once the tree actually populates.
+
+680 workspace tests + all pre-existing tests green.
+
 ## [1.0.15] — 2026-07-11
 
 **Cluster C interactive polling + reason disambiguation + §6 retry attribution — the v1.0.14 deferred work.** Wire scaffolding from v1.0.14 now populated with the Swift + CLI implementation. RFC `.claude/rfcs/1.0.15-cluster-c-plus-retry.md`.
