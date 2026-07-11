@@ -686,6 +686,7 @@ final class SmixRunnerUITests: XCTestCase {
         if !bundleId.isEmpty && bundleId.contains(".") {
           Task {
             await cache.markDead(bundleId: bundleId)
+            await cache.noteReprobeAttempted()
             // v1.0.9 §D4 — adaptive re-probe. During the 20 s dead
             // window, poll XCUIApplication.state every 3 s. On the
             // first observation of `.runningForeground` (or any
@@ -697,21 +698,35 @@ final class SmixRunnerUITests: XCTestCase {
             // window minus one probe interval for slack. If the
             // app is still `.notRunning` after 6 probes the cache
             // expires naturally.
+            //
+            // v1.0.10 §D5 — every observable exit path advances a
+            // counter (noteReprobeInvalidatedEarly / Succeeded /
+            // ExhaustedWindow) so /diagnostic/dump can prove whether
+            // this fired, hit, or timed out. That closes insight's
+            // v1.0.9 followup finding that a stderr log line couldn't
+            // distinguish these states from grep-returned-zero.
+            var iterationsRun = 0
             for _ in 0..<6 {
               try? await Task.sleep(nanoseconds: 3_000_000_000)
+              iterationsRun += 1
               // Cache may have been invalidated by /session/open or
               // /sim/launch during the wait; check before probing.
               if !(await cache.isSuppressed(bundleId: bundleId)) {
+                await cache.noteReprobeInvalidatedEarly()
                 return
               }
               let target = XCUIApplication(bundleIdentifier: bundleId)
               let state = await SmixRunnerServer.onMain { target.state }
               if state != .notRunning && state != .unknown {
                 await cache.markAlive(bundleId: bundleId)
+                await cache.noteReprobeSucceeded()
                 FileHandle.standardError.write(
                   Data("smix-runner: app-alive cache re-probe hit \(bundleId) state=\(state.rawValue); early invalidate\n".utf8))
                 return
               }
+            }
+            if iterationsRun == 6 {
+              await cache.noteReprobeExhaustedWindow()
             }
           }
         }
@@ -2294,6 +2309,13 @@ final class SmixRunnerUITests: XCTestCase {
         // shell out to `simctl` (that's the CLI process); recent
         // subprocesses stay empty on this side, and the CLI merges
         // its own client-side ring on top when it prints.
+        //
+        // v1.0.10 §D5 — also snapshot the app-alive cache counters
+        // (when the runner was booted with one). Insight's v1.0.9
+        // followup couldn't distinguish "re-probe never fired" from
+        // "log line got dropped by cycle"; the counters make that a
+        // numeric question that survives a runner cycle (D6 persists
+        // them). `nil` when the runner opted out of app-alive caching.
         diagnostic: {
           sessions.lock()
           let summaries: [SessionRoute.SessionSummary] = sessionTable.map { (sid, entry) in
@@ -2307,12 +2329,27 @@ final class SmixRunnerUITests: XCTestCase {
           }
           sessions.unlock()
           let uptimeMs = UInt64(Date().timeIntervalSince(bootAt) * 1000)
+          var aliveCache: SessionRoute.AliveCacheCounters? = nil
+          if let cache = SmixRunnerServer.currentAppAliveCache {
+            let c = await cache.counterSnapshot()
+            aliveCache = SessionRoute.AliveCacheCounters(
+              markDeadTotal: c.markDeadTotal,
+              markAliveTotal: c.markAliveTotal,
+              suppressHitTotal: c.suppressHitTotal,
+              suppressMissTotal: c.suppressMissTotal,
+              reprobeAttemptedTotal: c.reprobeAttemptedTotal,
+              reprobeSucceededTotal: c.reprobeSucceededTotal,
+              reprobeInvalidatedEarly: c.reprobeInvalidatedEarly,
+              reprobeExhaustedWindow: c.reprobeExhaustedWindow
+            )
+          }
           return SmixRunnerServer.DiagnosticOutcome(
             snapshot: SessionRoute.DiagnosticSnapshot(
               sessions: summaries,
               simHealth: "healthy",
               supervisorPid: nil,
-              uptimeMs: uptimeMs
+              uptimeMs: uptimeMs,
+              aliveCache: aliveCache
             )
           )
         },

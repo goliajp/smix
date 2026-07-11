@@ -138,21 +138,58 @@ public enum SessionRoute {
 
   // -- v1.0.7 §D5 diagnostic dump ----------------------------------------
 
+  /// v1.0.10 §D5 — app-alive-cache observability counters (subset of
+  /// [`AppAliveCache.Counters`] transferred over the wire).
+  public struct AliveCacheCounters: Equatable, Sendable {
+    public let markDeadTotal: UInt64
+    public let markAliveTotal: UInt64
+    public let suppressHitTotal: UInt64
+    public let suppressMissTotal: UInt64
+    public let reprobeAttemptedTotal: UInt64
+    public let reprobeSucceededTotal: UInt64
+    public let reprobeInvalidatedEarly: UInt64
+    public let reprobeExhaustedWindow: UInt64
+    public init(
+      markDeadTotal: UInt64 = 0,
+      markAliveTotal: UInt64 = 0,
+      suppressHitTotal: UInt64 = 0,
+      suppressMissTotal: UInt64 = 0,
+      reprobeAttemptedTotal: UInt64 = 0,
+      reprobeSucceededTotal: UInt64 = 0,
+      reprobeInvalidatedEarly: UInt64 = 0,
+      reprobeExhaustedWindow: UInt64 = 0
+    ) {
+      self.markDeadTotal = markDeadTotal
+      self.markAliveTotal = markAliveTotal
+      self.suppressHitTotal = suppressHitTotal
+      self.suppressMissTotal = suppressMissTotal
+      self.reprobeAttemptedTotal = reprobeAttemptedTotal
+      self.reprobeSucceededTotal = reprobeSucceededTotal
+      self.reprobeInvalidatedEarly = reprobeInvalidatedEarly
+      self.reprobeExhaustedWindow = reprobeExhaustedWindow
+    }
+  }
+
   public struct DiagnosticSnapshot: Sendable {
     public let sessions: [SessionSummary]
     public let simHealth: String
     public let supervisorPid: UInt32?
     public let uptimeMs: UInt64
+    /// v1.0.10 §D5 — app-alive cache counters. `nil` when the runner
+    /// was booted without `appAliveCache` wired in (opt-out).
+    public let aliveCache: AliveCacheCounters?
     public init(
       sessions: [SessionSummary],
       simHealth: String,
       supervisorPid: UInt32?,
-      uptimeMs: UInt64
+      uptimeMs: UInt64,
+      aliveCache: AliveCacheCounters? = nil
     ) {
       self.sessions = sessions
       self.simHealth = simHealth
       self.supervisorPid = supervisorPid
       self.uptimeMs = uptimeMs
+      self.aliveCache = aliveCache
     }
   }
 
@@ -166,7 +203,11 @@ public enum SessionRoute {
     }
     let health = jsonEscape(snap.simHealth)
     let sup = snap.supervisorPid.map { String($0) } ?? "null"
-    s += #"],"simHealth":""# + health + #"","supervisorPid":\#(sup),"uptimeMs":\#(snap.uptimeMs)}"#
+    s += #"],"simHealth":""# + health + #"","supervisorPid":\#(sup),"uptimeMs":\#(snap.uptimeMs)"#
+    if let c = snap.aliveCache {
+      s += #","aliveCache":{"markDeadTotal":\#(c.markDeadTotal),"markAliveTotal":\#(c.markAliveTotal),"suppressHitTotal":\#(c.suppressHitTotal),"suppressMissTotal":\#(c.suppressMissTotal),"reprobeAttemptedTotal":\#(c.reprobeAttemptedTotal),"reprobeSucceededTotal":\#(c.reprobeSucceededTotal),"reprobeInvalidatedEarly":\#(c.reprobeInvalidatedEarly),"reprobeExhaustedWindow":\#(c.reprobeExhaustedWindow)}"#
+    }
+    s += "}"
     return envelope(.ok, Data(s.utf8))
   }
 

@@ -1,8 +1,11 @@
-.claude/
-# .claude/rfcs/ is the tracked exception — process docs (RFCs) belong under
-# .claude/ (not docs/, which is the public-facing surface), but the RFCs
-# themselves are versioned alongside the code so consumers reading the
-# repo can see the design decisions.
+# .claude/ is a process/dev-workflow directory (agent memory, RFC drafts,
+# session logs). Two-line pattern: first ignore everything under it, then
+# unignore the .claude/rfcs/ subtree (the exception) as the versioned
+# design-decision record. `.claude/` alone (trailing-slash form) makes
+# every path inside untrackable — including negated exceptions — because
+# git skips the whole subtree. Use `.claude/*` + a re-include of `rfcs/`
+# so the negation for individual files under it actually applies.
+.claude/*
 !.claude/rfcs/
 !.claude/rfcs/**
 .DS_Store
