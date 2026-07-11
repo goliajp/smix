@@ -45,7 +45,24 @@ pub struct ExtractReport {
     /// Version string written to `.smix-runner-version`. Always equals
     /// [`SOURCES_VERSION`].
     pub version_written: &'static str,
+    /// v1.0.10 patch — set when the extract path carried a
+    /// `SmixCoreFFI.xcframework/` in the pre-extract tree and we
+    /// preserved it into the new tree. Empty when no xcframework was
+    /// carried over (fresh install; caller should fetch/build the
+    /// xcframework separately).
+    pub carried_xcframework_from: Option<PathBuf>,
 }
+
+/// Subdirectory names within the extract tree that must be preserved
+/// across auto-sync because they are big binary artefacts intentionally
+/// excluded from the shipped tarball (fetched or built separately). If
+/// found in the pre-extract tree, they are moved back into the new
+/// tree after extract completes.
+const CARRIED_ARTEFACTS: &[&str] = &[
+    "SmixCoreFFI.xcframework",
+    "SmixCoreFFI.xcframework.zip",
+    "SmixCoreFFI.xcframework.zip.sha256",
+];
 
 /// Errors from [`extract_to`].
 #[derive(Debug, Error)]
@@ -127,6 +144,43 @@ pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError
     std::fs::create_dir_all(dst)
         .map_err(|e| ExtractError::io(format!("mkdir -p {}", dst.display()), e))?;
 
+    // v1.0.10 patch — before writing the fresh tarball contents, carry
+    // over the excluded-from-tarball binary artefacts (SmixCoreFFI
+    // xcframework and its sidecars) from the backup tree. Without this,
+    // an auto-sync leaves the runner project unbuildable because
+    // `Package.swift` declares a `.binaryTarget(path: "SmixCoreFFI.
+    // xcframework")` that xcodebuild dereferences at `Resolve Package
+    // Graph` time.
+    let mut carried_xcframework_from: Option<PathBuf> = None;
+    if let Some(bak) = backup.as_ref() {
+        for artefact in CARRIED_ARTEFACTS {
+            let src = bak.join(artefact);
+            if src.exists() {
+                let dst_path = dst.join(artefact);
+                // `rename` is atomic within the same filesystem; the
+                // backup is a sibling of the destination so this is
+                // fast. Fallback to recursive copy if rename fails
+                // (e.g., different volumes — unlikely under XDG basedir
+                // but defensive).
+                if std::fs::rename(&src, &dst_path).is_err() {
+                    copy_dir_recursive(&src, &dst_path).map_err(|e| {
+                        ExtractError::io(
+                            format!(
+                                "copying {} to {}",
+                                src.display(),
+                                dst_path.display()
+                            ),
+                            e,
+                        )
+                    })?;
+                }
+                if carried_xcframework_from.is_none() {
+                    carried_xcframework_from = Some(bak.clone());
+                }
+            }
+        }
+    }
+
     let gz = GzDecoder::new(SOURCES_TAR_GZ);
     let mut ar = tar::Archive::new(gz);
     ar.set_preserve_permissions(true);
@@ -167,7 +221,31 @@ pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError
         file_count,
         backup,
         version_written: SOURCES_VERSION,
+        carried_xcframework_from,
     })
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
+    if src.is_file() {
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(src, dst)?;
+        return Ok(());
+    }
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ft = entry.file_type()?;
+        let src_p = entry.path();
+        let dst_p = dst.join(entry.file_name());
+        if ft.is_dir() {
+            copy_dir_recursive(&src_p, &dst_p)?;
+        } else {
+            std::fs::copy(&src_p, &dst_p)?;
+        }
+    }
+    Ok(())
 }
 
 fn is_directory_empty(p: &Path) -> io::Result<bool> {
