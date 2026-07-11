@@ -2608,6 +2608,29 @@ final class SmixRunnerUITests: XCTestCase {
             let interactivePollNs: UInt64 = 500_000_000  // 500 ms
             while UInt64(Date().timeIntervalSince(interactiveStart) * 1000) < interactiveDeadlineMs {
               let observed: [String] = await SmixRunnerServer.onMain {
+                // v1.0.16 — force a fresh XCUITest snapshot each
+                // iteration, per insight's round-2 diagnosis in
+                // `smix-feedback-2026-07-11-round-2-status.md`
+                // "Maestro-vs-smix investigation". RN 0.86 Fabric +
+                // iOS 26.5 sim populate the a11y tree as
+                // RCTMountItemProtocol mount items drain, NOT during
+                // layout. XCUITest's internal snapshot cache holds
+                // the sparse tree from before mount items drained,
+                // and `descendants(matching:)` returns the cached
+                // snapshot on subsequent polls without a refresh.
+                //
+                // `try? entry.app.snapshot()` is the public API for
+                // forcing a fresh top-of-hierarchy snapshot. Runs
+                // ~50-150 ms on iOS 26.5 sim; combined with our
+                // 500 ms poll interval it's cheap.
+                _ = try? entry.app.snapshot()
+                // Note: no `waitForQuiescenceIncludingAnimations` call
+                // here — smix's `SmixQuiescenceSwizzle.m` already
+                // no-ops that private XCTest daemon idle-wait for
+                // performance (long-running animations would stall
+                // every tap/read otherwise). Snapshot alone forces
+                // XCUITest to re-scrape the a11y hierarchy from
+                // scratch, which is what we need on Fabric.
                 let query = entry.app.descendants(matching: .any)
                 let count = query.count
                 var ids: [String] = []

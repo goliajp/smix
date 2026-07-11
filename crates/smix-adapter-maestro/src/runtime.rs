@@ -1834,6 +1834,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 permissions,
                 arguments,
                 stop_app,
+                wait_for_interactive_ms,
             } => {
                 // v5.18 c1 — update last_locale from `-AppleLanguages "(xx)"`
                 // pair in arguments, for Selector::LocalizedText desugar.
@@ -1880,6 +1881,29 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         permissions: sdk_perms,
                         app_path,
                     };
+                    // v1.0.16 — `waitForInteractiveMs` on `launchApp`
+                    // yaml today is a warning-only marker. The
+                    // launch-with-options SDK path uses `simctl
+                    // launch --args` (host-side, not
+                    // session-scoped), so it can't populate the
+                    // `/session/launch-app` request field the runner
+                    // reads for interactive polling. Consumers who
+                    // want interactive gating use the `clearAppData`
+                    // yaml verb instead — its SDK path
+                    // (`App::clear_app_data_with_launch`) defaults
+                    // `wait_for_interactive_ms: Some(30_000)` and
+                    // populates `launchAppReachedInteractive` in the
+                    // diagnostic dump. Warn so the yaml author knows
+                    // this rather than silently doing nothing.
+                    if wait_for_interactive_ms.is_some() {
+                        warnings.push(format!(
+                            "launchApp.waitForInteractiveMs (bundle={app_id}) is a v1.0.16 marker \
+                             — the launch pathway is host-side simctl and doesn't route to the \
+                             /session/launch-app interactive polling. Use `clearAppData` yaml \
+                             (which SDK-defaults `wait_for_interactive_ms: 30000`) to opt into \
+                             interactive counter observability."
+                        ));
+                    }
                     let extra = self.app.launch_app_with_options(&opts).await?;
                     warnings.extend(extra);
                     self.last_bundle = Some(app_id.clone());
