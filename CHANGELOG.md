@@ -2,6 +2,36 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.19] — 2026-07-12
+
+**Post-mortem triage QoL from insight round-4** (`smix-feedback-2026-07-12-v1.0.18-round-4.md`). Their v1.0.18 batch results confirmed:
+- Both v1.0.18 wins (D1 per-session `interactiveNamedIds` + D2 `waitForAnimationToEnd: N`) landed cleanly on real workload.
+- **`.ips` growth 36→36 across 5 consecutive batches** — native cold-boot crash chain closed decisively (v1.0.14 → v1.0.18).
+- Flow depth advanced 6–8 steps in every case; remaining stalls all on target-screen `waitFor { text: … }` (insight-side RN Fabric a11y-label propagation, not smix).
+- Insight's `bugfix/GOL-611-native-cold-boot-crash` branch is **ready to merge to develop**.
+
+### D1 — top-level `lastInteractiveNamedIds` on `/diagnostic/dump`
+
+Insight round-4 §Ask (nice-to-have): per-session `interactiveNamedIds` (v1.0.18) goes with the session when `close-all` teardown fires. Post-batch triage often runs AFTER teardown, so the sample vanishes right when consumers want it.
+
+Wire additions (all `#[serde(default)]`, backward-compat):
+- `DiagnosticDumpResponse.last_interactive_named_ids: Vec<String>` — most-recent non-empty sample across all `launchApp` completions since runner boot. Survives session close.
+- Swift `SessionRoute.DiagnosticSnapshot.lastInteractiveNamedIds: [String]`; runner-side `LastInteractiveIdsBox` holder updated on every non-empty launch outcome.
+- `smix diagnostic dump` (text mode) prints one line: `lastInteractiveNamedIds (N): id1, id2, ...` or `[]  # no launch has completed with a non-empty sample yet`.
+- `smix diagnostic dump --json` emits the same field on the top-level `runner` object.
+
+Per-session `sessions[n].interactiveNamedIds` from v1.0.18 remains — this new top-level field is the "last-values-standing" post-teardown observation surface, not a replacement.
+
+### Wire compatibility
+
+- `DiagnosticDumpResponse.last_interactive_named_ids` is `#[serde(default)]` + on a `#[non_exhaustive]` struct — pre-v1.0.19 consumers ignoring it see zero behaviour change.
+- No new HTTP routes. No CLI flag changes. No yaml schema changes.
+
+### Ship gate (real-sim, `sim-insight` iOS 26.5 Preferences)
+
+- Baseline v1.0.18 behaviour unchanged; every previous assertion still holds.
+- **D1 verified**: after 1 launch of Preferences, `curl -s -X POST /diagnostic/dump | jq '.lastInteractiveNamedIds'` returns the same 8-name sample as `sessions[0].interactiveNamedIds` and as the launch-app response. After closing that session via `/session/close-all`, `sessions` becomes empty but `lastInteractiveNamedIds` still holds the 8-name sample.
+
 ## [1.0.18] — 2026-07-12
 
 **Two QoL asks from insight round-4** (`smix-feedback-2026-07-12-v1.0.17-results.md`) landed. Their v1.0.17 batch results:

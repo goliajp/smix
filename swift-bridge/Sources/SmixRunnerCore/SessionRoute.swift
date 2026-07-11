@@ -237,13 +237,20 @@ public enum SessionRoute {
     public let aliveCache: AliveCacheCounters
     /// v1.0.11 §D4/§D5 — cumulative counters that survive session close.
     public let sessionCounters: SessionLifecycleCounters
+    /// v1.0.19 — most-recent non-empty `interactiveNamedIds` sample
+    /// across all `launchApp` completions since runner boot. Survives
+    /// session teardown (unlike `sessions[n].interactiveNamedIds`,
+    /// which goes with the session at close). Enables post-mortem
+    /// batch triage — insight round-4 §Ask.
+    public let lastInteractiveNamedIds: [String]
     public init(
       sessions: [SessionSummary],
       simHealth: String,
       supervisorPid: UInt32?,
       uptimeMs: UInt64,
       aliveCache: AliveCacheCounters = AliveCacheCounters(),
-      sessionCounters: SessionLifecycleCounters = SessionLifecycleCounters()
+      sessionCounters: SessionLifecycleCounters = SessionLifecycleCounters(),
+      lastInteractiveNamedIds: [String] = []
     ) {
       self.sessions = sessions
       self.simHealth = simHealth
@@ -251,6 +258,7 @@ public enum SessionRoute {
       self.uptimeMs = uptimeMs
       self.aliveCache = aliveCache
       self.sessionCounters = sessionCounters
+      self.lastInteractiveNamedIds = lastInteractiveNamedIds
     }
   }
 
@@ -275,6 +283,14 @@ public enum SessionRoute {
     s += #","aliveCache":{"wired":\#(c.wired),"markDeadTotal":\#(c.markDeadTotal),"markAliveTotal":\#(c.markAliveTotal),"suppressHitTotal":\#(c.suppressHitTotal),"suppressMissTotal":\#(c.suppressMissTotal),"reprobeAttemptedTotal":\#(c.reprobeAttemptedTotal),"reprobeSucceededTotal":\#(c.reprobeSucceededTotal),"reprobeInvalidatedEarly":\#(c.reprobeInvalidatedEarly),"reprobeExhaustedWindow":\#(c.reprobeExhaustedWindow)}"#
     let sc = snap.sessionCounters
     s += #","sessionCounters":{"openedTotal":\#(sc.openedTotal),"closedTotal":\#(sc.closedTotal),"relaunchAppTotal":\#(sc.relaunchAppTotal),"terminateAppTotal":\#(sc.terminateAppTotal),"terminateAppViaXCUIApplication":\#(sc.terminateAppViaXCUIApplication),"terminateAppViaFallback":\#(sc.terminateAppViaFallback),"launchAppTotal":\#(sc.launchAppTotal),"launchAppReachedForeground":\#(sc.launchAppReachedForeground),"launchAppTimedOutBeforeForeground":\#(sc.launchAppTimedOutBeforeForeground),"launchAppReachedInteractive":\#(sc.launchAppReachedInteractive),"launchAppTimedOutBeforeInteractive":\#(sc.launchAppTimedOutBeforeInteractive)}"#
+    // v1.0.19 — top-level last-observed interactiveNamedIds sample.
+    var lastIdsPart = "["
+    for (i, id) in snap.lastInteractiveNamedIds.enumerated() {
+      if i > 0 { lastIdsPart += "," }
+      lastIdsPart += "\"" + jsonEscape(id) + "\""
+    }
+    lastIdsPart += "]"
+    s += #","lastInteractiveNamedIds":\#(lastIdsPart)"#
     s += "}"
     return envelope(.ok, Data(s.utf8))
   }
