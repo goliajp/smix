@@ -1171,6 +1171,55 @@ impl SimctlClient {
         Ok(None)
     }
 
+    /// v1.0.27 — delete a single key from an app's NSUserDefaults
+    /// domain via `simctl spawn <udid> defaults delete <bundleId>
+    /// <key>`. Running `defaults` INSIDE the sim (spawn) goes through
+    /// the sim's cfprefsd, so the deletion is coherent with what the
+    /// app reads on next launch (editing the container plist from the
+    /// host would race cfprefsd's cache).
+    ///
+    /// Returns `Ok(true)` when the key existed and was deleted,
+    /// `Ok(false)` when the key (or the whole domain) was absent —
+    /// the verb contract is "ensure key absent", so an already-absent
+    /// key is success, not an error. Any other failure surfaces as
+    /// the underlying [`SimctlError`].
+    ///
+    /// Motivating case (insight round-5 Ask 12): expo-dev-launcher
+    /// persists the most recent deep link and re-delivers it after
+    /// every JS bundle load; deleting its storage key between
+    /// terminate and relaunch neutralizes the replay at the source.
+    ///
+    /// **Terminate the app first** — a running process has its
+    /// defaults cached in-memory and may rewrite the key at exit.
+    pub async fn user_defaults_delete(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+        key: &str,
+    ) -> Result<bool, SimctlError> {
+        match simctl_run(&[
+            "spawn",
+            udid,
+            "/usr/bin/defaults",
+            "delete",
+            bundle_id,
+            key,
+        ])
+        .await
+        {
+            Ok(_) => Ok(true),
+            // `defaults delete` exits non-zero with "does not exist"
+            // on stderr for both a missing key and a missing domain.
+            // Both are the target state.
+            Err(SimctlError::NonZeroExit { stderr, .. })
+                if stderr.contains("does not exist") =>
+            {
+                Ok(false)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Write `AppleLanguages` (array) + `AppleLocale` (scalar) to the
     /// sim's NSGlobalDomain so SpringBoard + apps re-localize on next
     /// launch. AppleLocale is BCP-47 with hyphen replaced by underscore

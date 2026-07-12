@@ -87,10 +87,14 @@ final class AppAliveCacheCountersTests: XCTestCase {
     XCTAssertTrue(bodyString.contains(#""uptimeMs":12345"#))
   }
 
-  func testDiagnosticResponseOmitsAliveCacheWhenNil() async throws {
-    // Runner opted out of app-alive caching → snapshot.aliveCache is
-    // nil → the wire body doesn't emit the field (clients still parse
-    // the rest, backward-compatible).
+  func testDiagnosticResponseEmitsWiredFalseSentinelByDefault() async throws {
+    // v1.0.11 §D1 changed the contract: `aliveCache` is ALWAYS present.
+    // A runner without a wired cache emits the default counters with
+    // `wired: false` so consumers can distinguish "runner has no
+    // cache" from "cache present but no activity". (This test used to
+    // assert the pre-v1.0.11 omit-when-nil behaviour and had been
+    // failing silently ever since — the swift-bridge test suite was
+    // not part of the ship gate. Corrected during the v1.0.27 sweep.)
     let snapshot = SessionRoute.DiagnosticSnapshot(
       sessions: [],
       simHealth: "healthy",
@@ -100,7 +104,10 @@ final class AppAliveCacheCountersTests: XCTestCase {
     let response = SessionRoute.diagnosticResponse(snapshot)
     let bodyData = try await response.bodyData ?? Data()
     let bodyString = String(data: bodyData, encoding: .utf8) ?? ""
-    XCTAssertFalse(bodyString.contains("aliveCache"), "aliveCache must be omitted when nil: \(bodyString)")
+    XCTAssertTrue(
+      bodyString.contains(#""aliveCache":{"wired":false"#),
+      "aliveCache must be present with the wired:false sentinel: \(bodyString)"
+    )
     XCTAssertTrue(bodyString.contains(#""uptimeMs":42"#))
   }
 }

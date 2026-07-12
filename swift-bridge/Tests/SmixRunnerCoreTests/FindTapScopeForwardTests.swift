@@ -84,7 +84,7 @@ final class FindTapScopeForwardTests: XCTestCase {
         port: port,
         tapHandler: { _, _ in .notFound },
         snapshotHandler: { _ in nil },
-        findHandler: { _, scope in
+        findHandler: { _, scope, _ in
           await received.set(scope)
           return false
         }

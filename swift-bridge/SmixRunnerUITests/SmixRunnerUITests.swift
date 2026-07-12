@@ -1666,7 +1666,7 @@ final class SmixRunnerUITests: XCTestCase {
       // exist", without paying the cost of XCUIApplication.snapshot() +
       // serialization. Used by SDK `expect.toBeVisible()` for simple
       // text selectors. Returns boolean.
-      findHandler: { selectorText, scope in
+      findHandler: { selectorText, scope, requireOnScreen in
         let app = await resolveApp()  // v0.2.1 — per-request target-app rebind.
         // v1.4 ③-C1 B1 — `.exists` triggers a snapshot that can fail
         // under modal masking. Guard it; a caught failure maps to the
@@ -1689,10 +1689,24 @@ final class SmixRunnerUITests: XCTestCase {
             format: "label == %@ OR identifier == %@",
             selectorText, selectorText
           )
-          return app.descendants(matching: .any)
+          let el = app.descendants(matching: .any)
             .matching(predicate)
             .firstMatch
-            .exists
+          guard el.exists else { return false }
+          // v1.0.27 — live on-screen confirmation. iOS 26.5 + RN
+          // Fabric SNAPSHOT frames drift for below-the-fold elements
+          // (report stale in-viewport coords with visible=true), so
+          // the tree tier can false-green a wait while the same
+          // element honestly fails a tap. The LIVE query here
+          // re-resolves current layout: `el.frame` is the truth. We
+          // check frame ∩ app.frame (on-screen) rather than
+          // `isHittable` deliberately — hittability is false for
+          // elements under floating overlays (e.g. a QA bubble),
+          // which are genuinely visible and assertable.
+          if requireOnScreen {
+            return el.frame.intersects(app.frame)
+          }
+          return true
         } ?? false
       },
       // v1.4 ③-C1 (third restart) S3.a — system popup sense. Per CLAUDE.md

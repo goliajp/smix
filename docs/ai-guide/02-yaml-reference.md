@@ -36,6 +36,18 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 - stopApp                                # graceful background
 - clearState                             # wipe state without restart
 - clearKeychain                          # wipe keychain (iOS only)
+
+# v1.0.27 — delete specific NSUserDefaults keys (iOS only). Surgical
+# alternative to clearState when one persisted value poisons the next
+# run (canonical case: expo-dev-launcher re-delivers its stored deep
+# link after every JS bundle load — delete its key between stopApp
+# and the next launch to neutralize the replay at the source).
+# Contract: "ensure keys absent" — already-absent keys succeed.
+# Terminate the app first; running processes cache defaults in-memory.
+- clearUserDefaults:
+    keys:
+      - "expo.devlauncher.pendingDeepLink"
+    bundleId: com.acme.app               # optional; default = flow appId
 ```
 
 ### Assertions (read-only checks; do not change app state)

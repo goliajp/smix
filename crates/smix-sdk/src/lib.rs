@@ -1226,6 +1226,32 @@ impl App {
         Ok(warnings)
     }
 
+    /// v1.0.27 — delete keys from the target app's persisted
+    /// user-defaults store (iOS: NSUserDefaults via `simctl spawn
+    /// defaults delete`; Android: unsupported, explicit error).
+    /// Contract is "ensure keys absent" — already-absent keys are
+    /// success. Terminate the app first: a running process caches its
+    /// defaults in-memory and may rewrite keys at exit.
+    ///
+    /// Motivating case: expo-dev-launcher persists the most recent
+    /// deep link and re-delivers it after every JS bundle load
+    /// (insight round-5 Ask 12); deleting its storage key between
+    /// terminate and relaunch neutralizes the replay at the source.
+    pub async fn clear_user_defaults(
+        &self,
+        bundle_id: &str,
+        keys: &[String],
+    ) -> Result<(), ExpectationFailure> {
+        let udid = self.require_udid()?;
+        for key in keys {
+            self.device
+                .user_defaults_delete(udid, bundle_id, key)
+                .await
+                .map_err(simctl_to_failure)?;
+        }
+        Ok(())
+    }
+
     pub async fn open_url(&self, url: &str) -> Result<(), ExpectationFailure> {
         let udid = self.require_udid()?;
         self.device

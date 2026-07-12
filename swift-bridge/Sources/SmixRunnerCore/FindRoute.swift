@@ -22,7 +22,19 @@ public enum FindRoute {
 
   public struct FindRequest: Equatable, Sendable {
     public let selector: Selector
-    public init(selector: Selector) { self.selector = selector }
+    /// v1.0.27 — when true, `found` additionally requires the LIVE
+    /// element frame to intersect the app frame ("on screen"), not
+    /// just `.exists`. iOS 26.5 + RN Fabric snapshots report drifted
+    /// in-viewport frames for below-the-fold elements, so the tree
+    /// tier's frame∩viewport proxy can false-green; the live XCUI
+    /// query re-resolves current layout and tells the truth. Optional
+    /// on the wire; absent = false (pre-v1.0.27 exists-only
+    /// behaviour).
+    public let requireOnScreen: Bool
+    public init(selector: Selector, requireOnScreen: Bool = false) {
+      self.selector = selector
+      self.requireOnScreen = requireOnScreen
+    }
   }
 
   public enum DecodeError: Error, Equatable {
@@ -41,7 +53,11 @@ public enum FindRoute {
     guard let selObj = sel as? [String: Any] else { throw DecodeError.wrongType("selector not object") }
     guard let rawText = selObj["text"] else { throw DecodeError.missingText }
     guard let text = rawText as? String else { throw DecodeError.wrongType("selector.text not string") }
-    return FindRequest(selector: Selector(text: text))
+    let requireOnScreen = (root["requireOnScreen"] as? Bool) ?? false
+    return FindRequest(
+      selector: Selector(text: text),
+      requireOnScreen: requireOnScreen
+    )
   }
 
   public static func success(found: Bool) -> HTTPResponse {

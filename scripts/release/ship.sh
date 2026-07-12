@@ -46,6 +46,14 @@ else
   log "WARNING: bypass smoke gate via --i-know-what-im-doing"
 fi
 
+# --- swift-bridge unit tests ------------------------------------------
+# v1.0.27 — NOT bypassable. This suite was never in the gate and a
+# stale test (asserting the pre-v1.0.11 aliveCache omit-when-nil
+# contract) sat failing unnoticed for 15+ releases. ~18 s.
+log "swift-bridge unit tests"
+( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
+  || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
+
 # --- version match ---------------------------------------------------
 
 WORKSPACE_VERSION="$(grep '^version' "$ROOT/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')"

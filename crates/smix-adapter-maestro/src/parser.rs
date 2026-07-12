@@ -1378,6 +1378,51 @@ fn parse_clear_app_data(v: &Value) -> Result<Step, ParseError> {
 //         logLinePattern: '\[insight-dev\] reset-complete token='
 //         # OR: sleepMs: 500
 //       timeoutMs: 5000
+// v1.0.27 — `clearUserDefaults: { keys: [k1, k2], bundleId?: <id> }`.
+// Deletes keys from the target app's NSUserDefaults (iOS). `bundleId`
+// absent ⇒ the flow's resolved app id at runtime. Insight round-5
+// Ask 12 (expo-dev-launcher deep-link replay neutralization).
+fn parse_clear_user_defaults(v: &Value) -> Result<Step, ParseError> {
+    let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
+        field: "clearUserDefaults".into(),
+        reason: "expected a mapping with a `keys` list".into(),
+    })?;
+    let keys_val = map
+        .get(Value::String("keys".into()))
+        .ok_or_else(|| ParseError::MissingField("clearUserDefaults.keys".into()))?;
+    let seq = keys_val
+        .as_sequence()
+        .ok_or_else(|| ParseError::InvalidValue {
+            field: "clearUserDefaults.keys".into(),
+            reason: "expected a list of key strings".into(),
+        })?;
+    let mut keys = Vec::with_capacity(seq.len());
+    for item in seq {
+        let s = item.as_str().ok_or_else(|| ParseError::InvalidValue {
+            field: "clearUserDefaults.keys".into(),
+            reason: format!("expected string key, got {item:?}"),
+        })?;
+        if s.is_empty() {
+            return Err(ParseError::InvalidValue {
+                field: "clearUserDefaults.keys".into(),
+                reason: "empty key string".into(),
+            });
+        }
+        keys.push(s.to_string());
+    }
+    if keys.is_empty() {
+        return Err(ParseError::InvalidValue {
+            field: "clearUserDefaults.keys".into(),
+            reason: "keys list must not be empty".into(),
+        });
+    }
+    let bundle_id = map
+        .get(Value::String("bundleId".into()))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    Ok(Step::ClearUserDefaults { keys, bundle_id })
+}
+
 fn parse_reset_app_data(v: &Value) -> Result<Step, ParseError> {
     use smix_sdk::ResetAppDataWaitFor;
     match v {
@@ -2227,6 +2272,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         // v1.0.14 Cluster A — URL-scheme JS-wipe. Bare short-form
         // (`resetAppData: 'url'`) OR map-form (with waitFor + timeout).
         "resetAppData" => parse_reset_app_data(value),
+        "clearUserDefaults" => parse_clear_user_defaults(value),
         // v5.2 c1 — 7 ⊘ adapter-only-gap wires.
         "scroll" => Ok(Step::Scroll),
         "hideKeyboard" => Ok(Step::HideKeyboard),

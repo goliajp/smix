@@ -112,6 +112,17 @@ impl DeviceControl for IosDeviceControl {
         self.client.clear_app_sandbox(udid, bundle_id).await
     }
 
+    /// v1.0.27 — per-key NSUserDefaults deletion via
+    /// `simctl spawn defaults delete`. See [`SimctlClient::user_defaults_delete`].
+    async fn user_defaults_delete(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+        key: &str,
+    ) -> Result<bool, SimctlError> {
+        self.client.user_defaults_delete(udid, bundle_id, key).await
+    }
+
     // === Lifecycle ancillary ===
 
     async fn open_url(&self, udid: &str, url: &str) -> Result<(), SimctlError> {

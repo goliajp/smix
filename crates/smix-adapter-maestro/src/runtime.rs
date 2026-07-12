@@ -171,6 +171,13 @@ pub trait AppLike: Send + Sync {
         selector: &Selector,
         mode: smix_sdk::TapMode,
     ) -> Result<(), ExpectationFailure>;
+    /// v1.0.27 — delete keys from the target app's persisted
+    /// user-defaults store. Mirrors [`App::clear_user_defaults`].
+    async fn clear_user_defaults(
+        &self,
+        bundle_id: &str,
+        keys: &[String],
+    ) -> Result<(), ExpectationFailure>;
     /// Tap at normalized coordinates. Mirrors [`App::tap_at_coord`].
     async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
     /// v5.19 c1 — Apple Vision OCR find. Mirrors [`App::find_by_text_ocr`].
@@ -406,6 +413,13 @@ impl AppLike for App {
         mode: smix_sdk::TapMode,
     ) -> Result<(), ExpectationFailure> {
         App::tap_with_mode(self, selector, mode).await
+    }
+    async fn clear_user_defaults(
+        &self,
+        bundle_id: &str,
+        keys: &[String],
+    ) -> Result<(), ExpectationFailure> {
+        App::clear_user_defaults(self, bundle_id, keys).await
     }
     async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
         App::fill(self, selector, text).await
@@ -699,6 +713,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::StopApp => "stopApp",
         Step::ClearAppData { .. } => "clearAppData",
         Step::ResetAppData { .. } => "resetAppData",
+        Step::ClearUserDefaults { .. } => "clearUserDefaults",
         Step::KillApp { .. } => "killApp",
         Step::TapOn { .. } => "tapOn",
         Step::TapAtPoint { .. } => "tapAtPoint",
@@ -1595,6 +1610,28 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app
                     .clear_app_data_with_launch(launch_args, launch_env)
                     .await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::ClearUserDefaults { keys, bundle_id } => {
+                // v1.0.27 — host-side per-key NSUserDefaults deletion
+                // (insight round-5 Ask 12: neutralize expo-dev-launcher
+                // deep-link replay). Bundle resolution: explicit
+                // `bundleId:` wins, else the flow's resolved app id
+                // (seeded into last_bundle at run start).
+                let Some(bundle) = bundle_id.clone().or_else(|| self.last_bundle.clone())
+                else {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message: "clearUserDefaults: no target bundle id".into(),
+                        hint: Some(
+                            "set `bundleId:` on the step, or give the flow an `appId:` \
+                             header / pass --bundle-id"
+                                .into(),
+                        ),
+                        ..Default::default()
+                    })));
+                };
+                self.app.clear_user_defaults(&bundle, keys).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::ResetAppData { url, wait_for, timeout_ms } => {

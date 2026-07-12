@@ -1430,6 +1430,48 @@ impl HttpRunnerClient {
         Ok(r.found || r.exists)
     }
 
+    /// v1.0.27 — `POST /find` with `requireOnScreen: true`. Like
+    /// [`Self::find`] but `found` additionally requires the LIVE
+    /// element frame to intersect the app frame. Used by the driver's
+    /// on-screen confirmation pass: iOS 26.5 + RN Fabric SNAPSHOT
+    /// frames drift for below-the-fold elements (stale in-viewport
+    /// coords with visible=true), so tree-tier visibility can
+    /// false-green a wait that the subsequent tap then honestly
+    /// fails. The live query re-resolves current layout. Frame ∩
+    /// viewport is checked instead of `isHittable` deliberately —
+    /// hittability is false under floating overlays (QA bubbles),
+    /// which are genuinely visible and assertable.
+    pub async fn find_on_screen(
+        &self,
+        selector: &Selector,
+        include: Option<IncludeScope>,
+    ) -> Result<bool, RunnerTransportError> {
+        #[derive(Serialize)]
+        struct Req<'a> {
+            selector: &'a Selector,
+            #[serde(rename = "requireOnScreen")]
+            require_on_screen: bool,
+        }
+        #[derive(Deserialize)]
+        struct Resp {
+            #[serde(default)]
+            found: bool,
+            #[serde(default)]
+            exists: bool,
+        }
+        let r: Resp = self
+            .json_post(
+                "/find",
+                &Req {
+                    selector,
+                    require_on_screen: true,
+                },
+                include,
+            )
+            .await?;
+        Ok(r.found || r.exists)
+    }
+
     /// `POST /fill` — fill text into focused / matched input.
     pub async fn fill(
         &self,

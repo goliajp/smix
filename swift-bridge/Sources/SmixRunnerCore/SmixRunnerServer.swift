@@ -432,8 +432,13 @@ public actor SmixRunnerServer {
   // SDK runner-client posts /find WITHOUT a query); "all-windows" ⇒ the
   // see-through element set so `expect.toBeVisible()` of content behind a
   // native modal returns the truthful answer instead of a masked false.
+  // v1.0.27 — `requireOnScreen`: when true, the handler additionally
+  // requires the LIVE element frame to intersect the app frame. Snapshot
+  // frames drift on iOS 26.5 + RN Fabric for below-the-fold elements;
+  // the live query re-resolves current layout. Exists-only callers pass
+  // false (pre-v1.0.27 behaviour).
   public typealias FindHandler = @Sendable (
-    _ selectorText: String, _ scope: String?
+    _ selectorText: String, _ scope: String?, _ requireOnScreen: Bool
   ) async -> Bool
 
   /// v0.3 C1 — XCUI snapshot is constructed inside the UITest target closure
@@ -1429,7 +1434,7 @@ public actor SmixRunnerServer {
         // GET /tree. nil ⇒ legacy `app.descendants(.any)` (zero-regression
         // anchor: SDK posts /find with no query).
         let found = await findHandler(
-          req.selector.text, request.query["include"])
+          req.selector.text, request.query["include"], req.requireOnScreen)
         return FindRoute.success(found: found)
       }
     }

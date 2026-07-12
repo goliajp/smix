@@ -1745,3 +1745,54 @@ appId: com.t
         other => panic!("expected TapOn AnchorRelative, got: {other:?}"),
     }
 }
+
+// v1.0.27 — `clearUserDefaults: { keys: [...], bundleId?: ... }`.
+#[test]
+fn parse_clear_user_defaults_keys_only() {
+    let yaml = "\
+appId: com.t
+---
+- clearUserDefaults:
+    keys:
+      - 'expo.devlauncher.pendingDeepLink'
+      - 'another.key'
+";
+    let flow = parse_flow_yaml(yaml).expect("clearUserDefaults must parse");
+    match &flow.steps[0] {
+        Step::ClearUserDefaults { keys, bundle_id: None } => {
+            assert_eq!(keys.len(), 2);
+            assert_eq!(keys[0], "expo.devlauncher.pendingDeepLink");
+        }
+        other => panic!("expected ClearUserDefaults, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_clear_user_defaults_with_bundle_override() {
+    let yaml = "\
+appId: com.t
+---
+- clearUserDefaults:
+    keys: ['k1']
+    bundleId: 'com.other.app'
+";
+    let flow = parse_flow_yaml(yaml).expect("parse with bundleId");
+    match &flow.steps[0] {
+        Step::ClearUserDefaults { bundle_id: Some(b), .. } => assert_eq!(b, "com.other.app"),
+        other => panic!("expected bundle override, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_clear_user_defaults_empty_keys_rejects() {
+    let yaml = "appId: com.t\n---\n- clearUserDefaults:\n    keys: []\n";
+    let err = parse_flow_yaml(yaml).expect_err("empty keys must error");
+    assert!(format!("{err:?}").contains("keys"), "err names keys: {err:?}");
+}
+
+#[test]
+fn parse_clear_user_defaults_missing_keys_rejects() {
+    let yaml = "appId: com.t\n---\n- clearUserDefaults:\n    bundleId: 'x'\n";
+    let err = parse_flow_yaml(yaml).expect_err("missing keys must error");
+    assert!(format!("{err:?}").contains("keys"), "err names keys: {err:?}");
+}

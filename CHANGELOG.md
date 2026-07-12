@@ -2,6 +2,65 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.27] — 2026-07-13
+
+**Insight round-5 (`smix-feedback-2026-07-13-replay-and-tree-visibility.md`)** — their `--all` batch reached **12/12 + log gate 7/7 clean, zero retries** (b32) with flow-side workarounds for both issues below; this release moves the fixes to the runner level where they belong.
+
+### D1 (Ask 12) — `clearUserDefaults` verb: per-key NSUserDefaults deletion
+
+expo-dev-launcher persists the most recent custom-scheme deep link and re-delivers it after EVERY JS bundle load — always AFTER any URL the flow sends post-relaunch, so flow-side neutralizer URLs and post-relaunch closes all lose the ordering race (insight burned 5 batches on it). App-side replay gates misclassified legit deep links and failed whole batches.
+
+New verb — surgical, host-side, ordering-race-free (runs between terminate and relaunch, no app cooperation needed):
+
+```yaml
+- stopApp
+- clearUserDefaults:
+    keys:
+      - "expo.devlauncher.pendingDeepLink"   # whatever key your investigation names
+    bundleId: com.acme.app                   # optional; default = flow appId
+- launchApp
+```
+
+- iOS: `simctl spawn <udid> defaults delete <bundle> <key>` — goes through the sim's cfprefsd so the deletion is coherent with the app's next launch (host-side plist editing would race the cache).
+- Contract: "ensure keys absent" — already-absent keys (or a missing domain) are success, not errors.
+- Android: explicit unsupported error (SharedPreferences has no host-side per-key path; `clearAppData` remains the whole-store option).
+- The generic decision split per the three-layer model: smix owns the deletion capability; WHICH keys encode replay state is app knowledge that stays with the test author.
+
+### D2 (Ask 13) — tree-tier visibility agrees with tapOn (live on-screen confirmation)
+
+Under iOS 26.5 + RN 0.86 Fabric, XCUITest SNAPSHOTS report below-the-fold elements with drifted in-viewport frames and `visible=true`. The resolver's frame∩viewport filter passes them, so `extendedWaitUntil` false-greened, `scrollUntilVisible` returned without scrolling, and `tapOn` then honestly failed on the same selector — three verbs, two answers.
+
+Fix — live on-screen confirmation at the driver layer:
+
+- When a tree probe matches a node, the driver issues ONE live `/find` with the new `requireOnScreen: true` flag, using the matched node's `identifier` (else `label`) as the probe handle. The live XCUI query re-resolves current layout — live frames don't drift.
+- Confirmed ⇒ hit (one extra live query per successful wait, ~ms). Refuted ⇒ treated as not-yet-visible: `wait_for` keeps polling, `scrollUntilVisible` keeps swiping (exactly the state another swipe fixes), `find`/`runFlow.when`/`wait_for_not_visible` return false.
+- On `wait_for` timeout after refuted confirms, the failure hint states it explicitly: "the a11y tree matched this selector but the LIVE on-screen check refuted it every time … use scrollUntilVisible … or an ocrText tier."
+- **Frame∩viewport, deliberately NOT `isHittable`** — hittability is false for elements under floating overlays (QA bubbles), which are genuinely visible and assertable; hittability-strict checks would false-negative overlay-tolerant assertions.
+- Matched nodes with neither identifier nor label can't be live-confirmed → tree verdict stands (pre-v1.0.27 semantics; OCR tiers remain the play for handle-less degraded trees). Live-probe transport errors also let the tree verdict stand — a flaky probe must not turn a real hit into a miss.
+- The live `/find` fast path (simple literal Text selectors) now also requires on-screen, so `find`-based paths agree without a second round-trip.
+- Android untouched: its tree is live per-node-refreshed (`AccessibilityNodeInfo.refresh()`), so snapshot drift doesn't arise.
+
+### D2 bonus — regex Text selectors no longer burn the live-route budget
+
+Found while wiring D2: `can_use_find_route` admitted regex-pattern Text selectors, but `Pattern::Regex` serializes as an object the runner's `/find` decode rejects with 400 — a regex Text selector dispatched there would burn the full transport-retry budget (~8 s) and fail with a DriverError instead of evaluating. Regex patterns now host-resolve like other complex shapes.
+
+### D3 — supervisor health-unreachable auto-cycle
+
+Insight's b24 observed a runner death with no `** TEST INTERRUPTED **` banner (warm derived-data reuse after a downgrade sync) — the log-marker supervisor sat through it. `smix runner supervise` now also probes `GET /health` every ~10 s; 3 consecutive failures (~30 s unreachable) triggers a cycle through the same cooldown + storm accounting as the log markers, emitting `{"event":"RunnerCycled","reasonMatched":"health-unreachable x3", …}`.
+
+### Wire compatibility
+
+- `POST /find` gains optional `requireOnScreen` (absent = pre-v1.0.27 exists-only). `FindHandler` typealias gains the param (runner + CLI ship together via the version-mismatch gate).
+- `Step::ClearUserDefaults` new enum variant; `clearUserDefaults` new verb key — additive.
+- `DeviceControl::user_defaults_delete` new trait method with an explicit-error default impl (Android inherits the honest unsupported error).
+- CLI flags unchanged.
+
+### Ship gate
+
+- 81 parser (+4 clearUserDefaults) + 90 runtime_mock (+2 dispatch) tests green; 360 swift-bridge tests green (now a NON-BYPASSABLE ship.sh gate — a stale test asserting the pre-v1.0.11 aliveCache contract had sat failing unnoticed for 15+ releases because this suite was never in the gate; corrected).
+- Full workspace + Swift build green.
+- Real-sim smoke: wait/scroll/tap agreement + clearUserDefaults key deletion on Preferences.
+
 ## [1.0.26] — 2026-07-13
 
 **Systematic polish sweep** — audit of the v1.0.14 → v1.0.25 rapid-patch arc for consumer-specific design leakage, iOS/Android parity drift, and documented-but-unimplemented yaml shapes. No single-consumer feedback drove this cycle; the charter was "sweep everything before moving on."
