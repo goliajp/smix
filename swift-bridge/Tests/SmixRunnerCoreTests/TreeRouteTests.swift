@@ -205,6 +205,95 @@ final class TreeRouteTests: XCTestCase {
     XCTAssertEqual((bounds["y"] as? NSNumber)?.doubleValue, 20.5)
   }
 
+  // MARK: - v1.0.21 D1 — action-container button promotion
+
+  // iOS 26.5 XCUITest exposes UIAlertController action buttons with
+  // elementType `.other` (rawValue 1) instead of `.button` (9). Under
+  // .alert / .dialog / .sheet ancestors we promote labeled `.other` /
+  // `.staticText` nodes to `rawType: "button"` so `role: button` yaml
+  // still matches on iOS 26+.
+
+  func test_serialize_alertOtherChildWithLabel_promotedToButton() {
+    let cancelBtn = mkData(type: 1, label: "Cancel")
+    let okBtn = mkData(type: 1, label: "OK")
+    let alert = mkData(type: 7, label: "Confirm", children: [cancelBtn, okBtn])
+    let data = TreeRoute.serialize(alert, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let obj = parse(data)
+    XCTAssertEqual(obj["rawType"] as? String, "alert")
+    let children = obj["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(children.count, 2)
+    XCTAssertEqual(children[0]["rawType"] as? String, "button", "Cancel .other under .alert must promote to button")
+    XCTAssertEqual(children[0]["label"] as? String, "Cancel")
+    XCTAssertEqual(children[1]["rawType"] as? String, "button", "OK .other under .alert must promote to button")
+  }
+
+  func test_serialize_alertStaticTextChildWithLabel_promotedToButton() {
+    let btn = mkData(type: 48, label: "Reload")
+    let alert = mkData(type: 7, label: "Update", children: [btn])
+    let data = TreeRoute.serialize(alert, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let obj = parse(data)
+    let children = obj["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(children[0]["rawType"] as? String, "button", ".staticText with label under .alert must promote")
+  }
+
+  func test_serialize_dialogNestedButton_promoted() {
+    // .other button several layers deep under .dialog still promotes.
+    let deepBtn = mkData(type: 1, label: "Retry")
+    let inner = mkData(type: 3, children: [deepBtn])  // group wrapper
+    let dialog = mkData(type: 8, label: "Error", children: [inner])
+    let data = TreeRoute.serialize(dialog, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let obj = parse(data)
+    let dialogChildren = obj["children"] as? [[String: Any]] ?? []
+    let innerChildren = dialogChildren[0]["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(innerChildren[0]["rawType"] as? String, "button", "nested .other in dialog subtree must promote")
+  }
+
+  func test_serialize_alertOtherChildNoLabel_notPromoted() {
+    // Empty-label .other under .alert stays as "other" — promotion
+    // requires a non-empty label so we don't sweep up decorative
+    // background views.
+    let deco = mkData(type: 1, label: "")
+    let alert = mkData(type: 7, label: "X", children: [deco])
+    let data = TreeRoute.serialize(alert, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let obj = parse(data)
+    let children = obj["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(children[0]["rawType"] as? String, "other", "no-label .other under alert stays other")
+  }
+
+  func test_serialize_otherOutsideActionContainer_notPromoted() {
+    // Baseline: .other with label OUTSIDE any alert/dialog/sheet must
+    // remain `other` — promotion is scoped to action containers only.
+    let leaf = mkData(type: 1, label: "just some other")
+    let root = mkData(type: 2, children: [leaf])  // application
+    let data = TreeRoute.serialize(root, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let obj = parse(data)
+    let children = obj["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(children[0]["rawType"] as? String, "other", ".other with label outside action container stays other")
+  }
+
+  func test_serialize_realButtonUnderAlert_stillButton() {
+    // A real .button (rawValue 9) under .alert stays button. The
+    // promotion only lifts `.other` / `.staticText` — never touches
+    // pre-existing buttons.
+    let btn = mkData(type: 9, label: "Yes")
+    let alert = mkData(type: 7, label: "?", children: [btn])
+    let data = TreeRoute.serialize(alert, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let obj = parse(data)
+    let children = obj["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(children[0]["rawType"] as? String, "button")
+  }
+
+  func test_serialize_sheetOtherChild_promoted() {
+    // .sheet is an action container too — matches SwiftUI
+    // .confirmationDialog / actionSheet exposure.
+    let btn = mkData(type: 1, label: "Delete")
+    let sheet = mkData(type: 5, label: "Delete confirm", children: [btn])
+    let data = TreeRoute.serialize(sheet, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let obj = parse(data)
+    let children = obj["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(children[0]["rawType"] as? String, "button", ".other under .sheet must promote")
+  }
+
   // MARK: - response builders
 
   func test_success_returns200WithBody() async throws {
