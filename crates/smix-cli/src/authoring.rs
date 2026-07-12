@@ -352,6 +352,7 @@ mod tests {
     fn node(id: Option<&str>, text: Option<&str>) -> A11yNode {
         A11yNode {
             raw_type: "any".into(),
+            element_type_raw: 1,
             role: Some(Role::Button),
             identifier: id.map(String::from),
             label: None,

@@ -18,6 +18,8 @@ fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {
 #[derive(Default, Clone)]
 struct NodePartial {
     raw_type: Option<String>,
+    #[allow(dead_code)]
+    element_type_raw: Option<u64>,
     role: Option<Role>,
     identifier: Option<String>,
     label: Option<String>,
@@ -33,6 +35,7 @@ struct NodePartial {
 fn mk(p: NodePartial) -> A11yNode {
     A11yNode {
         raw_type: p.raw_type.unwrap_or_else(|| "other".into()),
+        element_type_raw: 1,
         role: p.role,
         identifier: p.identifier,
         label: p.label,

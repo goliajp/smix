@@ -10,6 +10,7 @@ use smix_selector::{Pattern, match_text};
 fn mk(partial: NodePartial) -> A11yNode {
     A11yNode {
         raw_type: "other".into(),
+        element_type_raw: 1,
         role: None,
         identifier: partial.identifier,
         label: partial.label,

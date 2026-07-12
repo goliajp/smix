@@ -13,6 +13,7 @@ use smix_selector::{Pattern, match_text, match_text_compiled};
 fn mk_node(label: Option<String>, id: Option<String>) -> A11yNode {
     A11yNode {
         raw_type: "other".into(),
+        element_type_raw: 1,
         role: None,
         identifier: id,
         label,

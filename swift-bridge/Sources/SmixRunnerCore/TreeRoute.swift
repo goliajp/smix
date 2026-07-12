@@ -212,6 +212,16 @@ public enum TreeRoute {
       && (rawRawType == "other" || rawRawType == "staticText")
     let rawType = promotable ? "button" : rawRawType
     out["rawType"] = rawType
+    // v1.0.22 D3 — always emit the raw elementType number. Consumers
+    // debugging a degraded a11y tree (RN Fabric on iOS 26.5 is the
+    // motivating case) can now distinguish "iOS types this as a
+    // button (9) but identifier / label are empty" (a bridge issue on
+    // the app side — likely RN → UIAccessibility drop) from "iOS
+    // types this as other (1)" (a plain custom-view wrapper that
+    // never had a probe-friendly type). Consumer client-side triage:
+    // `elementTypeRaw != 1 && identifier == "" && label == ""` is the
+    // signal to check the app's accessibility bridge, not smix.
+    out["elementTypeRaw"] = d.elementTypeRawValue
     if !d.identifier.isEmpty { out["identifier"] = d.identifier }
     if !d.label.isEmpty { out["label"] = d.label }
     if let t = d.title, !t.isEmpty { out["title"] = t }
