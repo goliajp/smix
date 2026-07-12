@@ -98,6 +98,51 @@ fn auto_ocr_fallback_enabled() -> bool {
     )
 }
 
+// v1.0.25 D1 — split a bare string on top-level `|` for D4's auto-
+// OCR-fallback lift. Preserves user's regex-OR intent while giving
+// Apple Vision literal strings it can actually match.
+//
+// "Top-level" means we skip `|` inside `[...]` character classes
+// and after `\` escapes. Any string without `|` returns a
+// singleton [s]. Empty alternatives are filtered out — `'||A'`
+// yields ['A'], not `['', '', 'A']`.
+fn split_top_level_pipe(s: &str) -> Vec<&str> {
+    if !s.contains('|') {
+        return vec![s];
+    }
+    let bytes = s.as_bytes();
+    let mut alts: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if i + 1 < bytes.len() => i += 1, // skip escaped char
+            b'[' => depth += 1,
+            b']' if depth > 0 => depth -= 1,
+            b'|' if depth == 0 => {
+                let slice = &s[start..i];
+                if !slice.is_empty() {
+                    alts.push(slice);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let tail = &s[start..];
+    if !tail.is_empty() {
+        alts.push(tail);
+    }
+    if alts.is_empty() {
+        // All-`|` string (e.g. `"||"`): degenerate. Return original
+        // so callers still get a probe.
+        alts.push(s);
+    }
+    alts
+}
+
 // v1.0.20 D2 — parse `name:` sub-key (companion to `role:`) into an
 // optional [`Pattern`]. Accepts a scalar string (plain literal OR
 // pipe-alternation regex, same rules as `text_to_pattern`).
@@ -410,23 +455,43 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
             // first (cheap, hits when tree exposes text), OCR after
             // (~500 ms Vision call, hits when tree is degraded).
             //
+            // v1.0.25 D1 — Insight round-4 Ask 11: when the bare
+            // string contains `|`, `text_to_pattern` treats it as a
+            // regex OR (`/A|B/i`), which is right for the tree tier
+            // but WRONG for the OCR tier — Apple Vision does not
+            // interpret pipes; the literal string `"A|B"` is never
+            // on screen. Result before v1.0.25: `visible: 'A|B'`
+            // under D4 silently missed OCR every time. Fix: split on
+            // top-level `|` and emit one `OcrText` per alternative
+            // AFTER the single regex text tier:
+            //   `fallback: [Text('/A|B/i'), OcrText('A'), OcrText('B')]`
+            // The tree tier still covers "either A or B" in one
+            // probe; OCR now has real strings to search for.
+            //
+            // "Top-level `|`" means we don't try to parse
+            // `[A|B]` character classes or `\|` escapes — those
+            // stay as-is on the text tier and don't split. Any
+            // string containing `|` under normal user yaml intent
+            // is a simple `A|B|C` OR, and that's what we handle.
+            //
             // Non-empty check: an empty selector doesn't get auto-
             // lifted — bubbles to the same Selector::Text as before
             // and gets rejected by validators downstream.
             if auto_ocr_fallback_enabled() && !s.is_empty() {
-                return Ok(Selector::Fallback {
-                    fallback: vec![
-                        Selector::Text {
-                            text: text_to_pattern(s),
-                            modifiers: Modifiers::default(),
-                        },
-                        Selector::OcrText {
-                            ocr_text: s.clone(),
-                            locales: Vec::new(),
-                            modifiers: Modifiers::default(),
-                        },
-                    ],
-                });
+                let text_layer = Selector::Text {
+                    text: text_to_pattern(s),
+                    modifiers: Modifiers::default(),
+                };
+                let mut fallback = Vec::with_capacity(4);
+                fallback.push(text_layer);
+                for alt in split_top_level_pipe(s) {
+                    fallback.push(Selector::OcrText {
+                        ocr_text: alt.to_string(),
+                        locales: Vec::new(),
+                        modifiers: Modifiers::default(),
+                    });
+                }
+                return Ok(Selector::Fallback { fallback });
             }
             Ok(Selector::Text {
                 text: text_to_pattern(s),

@@ -1523,3 +1523,133 @@ fn parse_run_flow_when_visible_and_not_visible_together_rejects() {
     let msg = format!("{err:?}");
     assert!(msg.contains("mutually exclusive"), "err msg should say mutually exclusive: {msg}");
 }
+
+// v1.0.25 D1 — regex-OR `A|B` auto-lift splits per alternative on OCR tier.
+
+#[test]
+fn parse_visible_bare_string_regex_or_splits_ocr_per_alternative() {
+    with_env("SMIX_AUTO_OCR_FALLBACK", Some("1"), || {
+        let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible: 'Log in|Device'
+    timeout: 5000
+";
+        let flow = parse_flow_yaml(yaml).expect("regex-OR bare with env");
+        match &flow.steps[0] {
+            Step::ExtendedWaitUntil {
+                selector: Selector::Fallback { fallback },
+                ..
+            } => {
+                // Expected: [Text(regex A|B), OcrText(A), OcrText(B)]
+                assert_eq!(fallback.len(), 3, "expected 3 tiers, got {}", fallback.len());
+                match &fallback[0] {
+                    Selector::Text { text: Pattern::Regex { regex, .. }, .. } => {
+                        assert_eq!(regex, "Log in|Device");
+                    }
+                    other => panic!("tier 0 should be Text regex, got {other:?}"),
+                }
+                match &fallback[1] {
+                    Selector::OcrText { ocr_text, .. } => assert_eq!(ocr_text, "Log in"),
+                    other => panic!("tier 1 should be OcrText 'Log in', got {other:?}"),
+                }
+                match &fallback[2] {
+                    Selector::OcrText { ocr_text, .. } => assert_eq!(ocr_text, "Device"),
+                    other => panic!("tier 2 should be OcrText 'Device', got {other:?}"),
+                }
+            }
+            other => panic!("expected Fallback, got {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn parse_visible_bare_string_no_pipe_unchanged() {
+    // No `|` = single OcrText tier (unchanged from v1.0.23 behavior).
+    with_env("SMIX_AUTO_OCR_FALLBACK", Some("1"), || {
+        let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible: 'Sign In'
+    timeout: 5000
+";
+        let flow = parse_flow_yaml(yaml).expect("no-pipe bare with env");
+        match &flow.steps[0] {
+            Step::ExtendedWaitUntil {
+                selector: Selector::Fallback { fallback },
+                ..
+            } => {
+                assert_eq!(fallback.len(), 2);
+                match &fallback[0] {
+                    Selector::Text { text: Pattern::Text(t), .. } => assert_eq!(t, "Sign In"),
+                    other => panic!("tier 0 should be Text literal, got {other:?}"),
+                }
+                match &fallback[1] {
+                    Selector::OcrText { ocr_text, .. } => assert_eq!(ocr_text, "Sign In"),
+                    other => panic!("tier 1 should be OcrText literal, got {other:?}"),
+                }
+            }
+            other => panic!("expected Fallback, got {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn parse_visible_bare_string_three_alternatives() {
+    with_env("SMIX_AUTO_OCR_FALLBACK", Some("1"), || {
+        let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible: 'A|B|C'
+    timeout: 5000
+";
+        let flow = parse_flow_yaml(yaml).expect("3-alt bare with env");
+        match &flow.steps[0] {
+            Step::ExtendedWaitUntil {
+                selector: Selector::Fallback { fallback },
+                ..
+            } => {
+                // [Text(regex A|B|C), OcrText(A), OcrText(B), OcrText(C)]
+                assert_eq!(fallback.len(), 4);
+                let ocrs: Vec<&str> = fallback[1..].iter().map(|s| match s {
+                    Selector::OcrText { ocr_text, .. } => ocr_text.as_str(),
+                    _ => panic!("expected OcrText"),
+                }).collect();
+                assert_eq!(ocrs, vec!["A", "B", "C"]);
+            }
+            other => panic!("expected Fallback, got {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn parse_visible_bare_string_empty_alternatives_filtered() {
+    // `'|A|'` → one alternative "A", not three empties.
+    with_env("SMIX_AUTO_OCR_FALLBACK", Some("1"), || {
+        let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible: '|A|'
+    timeout: 5000
+";
+        let flow = parse_flow_yaml(yaml).expect("empty-alt bare");
+        match &flow.steps[0] {
+            Step::ExtendedWaitUntil {
+                selector: Selector::Fallback { fallback },
+                ..
+            } => {
+                // [Text(regex |A|), OcrText(A)] — empties filtered
+                assert_eq!(fallback.len(), 2);
+                match &fallback[1] {
+                    Selector::OcrText { ocr_text, .. } => assert_eq!(ocr_text, "A"),
+                    other => panic!("expected OcrText 'A', got {other:?}"),
+                }
+            }
+            other => panic!("expected Fallback, got {other:?}"),
+        }
+    });
+}

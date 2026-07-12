@@ -2,6 +2,52 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.25] — 2026-07-13
+
+**Insight round-4 (`smix-feedback-2026-07-13.md`) empirical validation of v1.0.24 D1/D2** — qa-gate ceremony restored via `runFlow when.notVisible: qa-bubble file: qa-gate-passcode.yaml`, `--all` batch 7/12 → 8/12 with real gate coverage. Two follow-up fixes:
+
+### D1 — `SMIX_AUTO_OCR_FALLBACK` splits regex-OR strings per alternative on OCR tier
+
+Pre-v1.0.25, bare-string `visible: 'A|B'` under D4 auto-lifted to:
+```
+fallback: [text: /A|B/i, ocrText: 'A|B']
+```
+Text tier's regex worked; OCR tier's literal `"A|B"` was never on screen — Apple Vision doesn't interpret pipes. Insight round-4 Ask 11: `launch-warm.yaml` used `visible: 'Log in to Insight|Device'` (legacy regex OR), auto-lift silently misfired OCR, launch-chain timeout at 45 s.
+
+Fix: split on top-level `|` and emit one `OcrText` tier per alternative AFTER the single regex text tier:
+```
+'A|B'       → fallback: [Text('/A|B/i'), OcrText('A'), OcrText('B')]
+'A|B|C'     → fallback: [Text('/A|B|C/i'), OcrText('A'), OcrText('B'), OcrText('C')]
+'Sign In'   → fallback: [Text('Sign In'), OcrText('Sign In')]      # unchanged, no pipe
+```
+
+Tree tier still covers "either A or B" in one probe (cheap); OCR now has real strings per alternative. Character classes (`[A|B]`) and escaped pipes (`\|`) are respected — split only on top-level pipes. Empty alternatives (`|A|` → just `A`) filtered.
+
+4 new parser tests locked (`parse_visible_bare_string_regex_or_splits_ocr_per_alternative`, `..._no_pipe_unchanged`, `..._three_alternatives`, `..._empty_alternatives_filtered`).
+
+### D2 — Skipped diagnostic emitted to stderr per step
+
+v1.0.24 D3 improved the `RunStepReport::Skipped { reason }` string to include the selector + evaluation outcome, but the reason only surfaced in `--debug-output/step-N.json`. Under `stdio: inherit` consumers (insight's qa-sim runner uses `spawnSync(SMIX_BIN, ..., { stdio: 'inherit' })`) the diagnostic was invisible.
+
+Fix: emit `STEP N: <verb-summary> → SKIPPED: <reason>` to stderr after each Skipped step. Non-Skipped outcomes stay quiet — no noise for the happy path.
+
+Under insight's flow-2-through-12 (each with `runFlow when.notVisible: qa-bubble` short-circuiting), consumers now see:
+```
+STEP 3: runFlow qa-gate-passcode.yaml (conditional) → SKIPPED: runFlow when.notVisible visible=true ({ id="qa-bubble" }); skipped subflow qa-gate-passcode.yaml
+```
+
+### Wire compatibility
+
+- D1 auto-lift shape change only affects yaml parsed under `SMIX_AUTO_OCR_FALLBACK=1`. Pre-v1.0.25 (and OCR-off) parses unchanged.
+- D2 emits stderr lines only when a Skipped outcome occurs. Silent for Ok / ExpandedSubflow / errored outcomes.
+- CLI / Rust wire types / other subsystems byte-identical to v1.0.24.
+
+### Ship gate
+
+- 70 total parser tests green (+4 D1 tests, Mutex-serialized env-touching helper reused).
+- 119 workspace test-result-ok buckets green (unchanged bucket count).
+- CLI smoke on `visible: 'Log in|Device'` under `SMIX_AUTO_OCR_FALLBACK=1` — dry-run parses to 3-tier fallback as spec.
+
 ## [1.0.24] — 2026-07-12
 
 **Insight round-3 (`smix-feedback-2026-07-12-round-3.md`) Ask 8 — `runFlow.when.visible` + `inputText` silently no-op.** Empirical: `--all` batch **0/12 → 7/12** on v1.0.23 with URL-scheme bypass; native (D1/D2 tapOn/scroll OCR poll) confirmed working. Root cause of Ask 8 traced to the tree-only visibility check in `runFlow.when.visible`: `Selector::OcrText` is silently dropped by the tree resolver, so a `fallback: [text, ocrText]` gate under iOS 26.5 + RN 0.86 Fabric a11y drop returns false and the whole conditional body is skipped without any signal. `inputText` never fires because the conditional never enters. 3 fixes land:

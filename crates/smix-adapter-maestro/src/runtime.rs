@@ -1063,6 +1063,18 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.debug_records.push(rec);
             }
             let outcome = outcome_result?;
+            // v1.0.25 D2 — surface Skipped `reason` to stderr as each
+            // step completes. Pre-v1.0.25 the reason only landed in
+            // `--debug-output/step-N.json`; consumers running under
+            // `stdio: inherit` (or without `--debug-output`) never saw
+            // WHY a conditional runFlow or optional tapOn was skipped
+            // — v1.0.24 D3's improved reason string was invisible.
+            // Emit the summary + reason on a single stderr line so
+            // stdio-inherit consumers grep it directly. Non-Skipped
+            // outcomes stay quiet.
+            if let RunStepReport::Skipped { reason } = &outcome {
+                eprintln!("STEP {idx}: {step_summary} → SKIPPED: {reason}");
+            }
             report.steps.push(outcome);
         }
         Ok(report)
