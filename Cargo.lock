@@ -2823,7 +2823,7 @@ checksum = "e8e2fb0f499abb4d162f2bedad68f5ef91a1682b5a03596ddb67efd37768d100"
 
 [[package]]
 name = "smix-adapter-maestro"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "async-trait",
  "clap",
@@ -2849,7 +2849,7 @@ dependencies = [
 
 [[package]]
 name = "smix-adb"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "serde",
  "serde_json",
@@ -2860,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "smix-annotate"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "ab_glyph",
  "image",
@@ -2871,7 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "smix-cli"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "chrono",
  "clap",
@@ -2899,14 +2899,14 @@ dependencies = [
 
 [[package]]
 name = "smix-core"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
 ]
 
 [[package]]
 name = "smix-core-conformance"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "anyhow",
  "serde",
@@ -2916,7 +2916,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "async-trait",
  "criterion",
@@ -2935,7 +2935,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "dhat",
@@ -2947,7 +2947,7 @@ dependencies = [
 
 [[package]]
 name = "smix-ffi"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "serde",
  "serde_json",
@@ -2960,7 +2960,7 @@ dependencies = [
 
 [[package]]
 name = "smix-fixture"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "serde",
  "serde_json",
@@ -2970,7 +2970,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "proptest",
@@ -2982,7 +2982,7 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "serde",
@@ -2991,7 +2991,7 @@ dependencies = [
 
 [[package]]
 name = "smix-mcp"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "base64",
  "criterion",
@@ -3009,7 +3009,7 @@ dependencies = [
 
 [[package]]
 name = "smix-metro-log"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "futures-util",
  "regex",
@@ -3022,7 +3022,7 @@ dependencies = [
 
 [[package]]
 name = "smix-migrate"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "serde",
  "serde_norway",
@@ -3032,7 +3032,7 @@ dependencies = [
 
 [[package]]
 name = "smix-recorder"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "serde",
@@ -3049,7 +3049,7 @@ dependencies = [
 
 [[package]]
 name = "smix-recorder-ir"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "serde",
@@ -3060,7 +3060,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "reqwest",
@@ -3080,7 +3080,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-sources"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "flate2",
  "tar",
@@ -3090,7 +3090,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "serde",
@@ -3102,7 +3102,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "dhat",
@@ -3113,7 +3113,7 @@ dependencies = [
 
 [[package]]
 name = "smix-sdk"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3137,7 +3137,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "dhat",
@@ -3150,7 +3150,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "dhat",
@@ -3161,7 +3161,7 @@ dependencies = [
 
 [[package]]
 name = "smix-server"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "anyhow",
  "axum",
@@ -3186,14 +3186,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "1.0.19"
+version = "1.0.20"
 dependencies = [
  "criterion",
  "libc",
@@ -3208,7 +3208,7 @@ dependencies = [
 
 [[package]]
 name = "smix-verbs"
-version = "1.0.19"
+version = "1.0.20"
 
 [[package]]
 name = "socket2"

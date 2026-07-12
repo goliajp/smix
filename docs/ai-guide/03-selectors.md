@@ -79,8 +79,9 @@ worst (escape hatch — fragile, breaks on layout change)
     name: "Welcome"
 ```
 
-- Supported roles: button, link, heading, image, textfield, checkbox, radio, switch, slider, tab, alert (system popup).
+- Supported roles (docs-friendly lowercase and camelCase both accepted; wire is camelCase): button, link, textField, secureTextField, searchField, switch, toggle, checkBox, radio, image, staticText (accepts `heading` as an alias), tab, tabBar, navigationBar, cell, alert, dialog, slider, progressBar, picker, menu, menuItem, scrollView, segmentedControl, table, collectionView, webView, keyboard.
 - iOS: derived from XCUIElement type + traits. Android: from AccessibilityNodeInfo class name + roleDescription.
+- `role:` and its optional `name:` work anywhere a selector map does — `tapOn:`, `assertVisible:`, `extendedWaitUntil.visible:`, `scrollUntilVisible:`, etc.
 
 ### 5. Focused
 

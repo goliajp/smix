@@ -3,7 +3,7 @@
 //! into the Step enum.
 
 use smix_adapter_maestro::{Flow, ParseError, Step, parse_flow_yaml, text_to_pattern};
-use smix_selector::{Modifiers, Pattern, Selector};
+use smix_selector::{Modifiers, Pattern, Role, Selector};
 
 fn read_fixture(name: &str) -> String {
     let path = format!("tests/fixtures/{name}");
@@ -1206,5 +1206,128 @@ fn parse_wait_for_animation_to_end_numeric_override() {
     match &flow.steps[0] {
         Step::WaitForAnimationToEnd { duration_ms } => assert_eq!(*duration_ms, 750),
         other => panic!("expected WaitForAnimationToEnd, got: {other:?}"),
+    }
+}
+
+// v1.0.20 D1 — extendedWaitUntil.visible now accepts every selector
+// key that tapOn does (docs promise; parser was rejecting).
+#[test]
+fn parse_extended_wait_until_visible_ocr_text() {
+    let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible:
+      ocrText: '1'
+    timeout: 10000
+";
+    let flow = parse_flow_yaml(yaml).expect("visible:{ocrText} must parse");
+    match &flow.steps[0] {
+        Step::ExtendedWaitUntil {
+            selector: Selector::OcrText { ocr_text, .. },
+            timeout_ms: 10000,
+            expect_visible: true,
+        } => assert_eq!(ocr_text, "1"),
+        other => panic!("expected ExtendedWaitUntil with OcrText selector, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_extended_wait_until_visible_role_name() {
+    let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible:
+      role: button
+      name: 'OK'
+    timeout: 5000
+";
+    let flow = parse_flow_yaml(yaml).expect("visible:{role,name} must parse");
+    match &flow.steps[0] {
+        Step::ExtendedWaitUntil {
+            selector: Selector::Role { role, name: Some(Pattern::Text(t)), .. },
+            timeout_ms: 5000,
+            expect_visible: true,
+        } => {
+            assert_eq!(*role, Role::Button);
+            assert_eq!(t, "OK");
+        }
+        other => panic!("expected ExtendedWaitUntil with Role selector, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_extended_wait_until_visible_label() {
+    let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible:
+      label: 'Settings'
+    timeout: 3000
+";
+    let flow = parse_flow_yaml(yaml).expect("visible:{label} must parse");
+    match &flow.steps[0] {
+        Step::ExtendedWaitUntil {
+            selector: Selector::Label { label, .. },
+            expect_visible: true,
+            ..
+        } => assert_eq!(label, "Settings"),
+        other => panic!("expected ExtendedWaitUntil with Label selector, got: {other:?}"),
+    }
+}
+
+// v1.0.20 D2 — tapOn: {role, name} + tapOn: {label}
+#[test]
+fn parse_tap_on_role_name() {
+    let yaml = "appId: com.test.app\n---\n- tapOn:\n    role: button\n    name: 'Submit'\n";
+    let flow = parse_flow_yaml(yaml).expect("tapOn:{role,name} must parse");
+    match &flow.steps[0] {
+        Step::TapOn {
+            selector: Selector::Role { role, name: Some(Pattern::Text(t)), .. },
+            ..
+        } => {
+            assert_eq!(*role, Role::Button);
+            assert_eq!(t, "Submit");
+        }
+        other => panic!("expected TapOn with Role selector, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_tap_on_role_lowercase_alias() {
+    // Docs promise `role: textfield` (lowercase); wire is camelCase.
+    // Parser accepts both.
+    let yaml = "appId: com.test.app\n---\n- tapOn:\n    role: textfield\n";
+    let flow = parse_flow_yaml(yaml).expect("lowercase `textfield` must alias to TextField");
+    match &flow.steps[0] {
+        Step::TapOn {
+            selector: Selector::Role { role, name: None, .. },
+            ..
+        } => assert_eq!(*role, Role::TextField),
+        other => panic!("expected TapOn with Role::TextField, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_tap_on_role_unknown_errors_actionably() {
+    let yaml = "appId: com.test.app\n---\n- tapOn:\n    role: notarole\n";
+    let err = parse_flow_yaml(yaml).expect_err("unknown role must error");
+    let msg = format!("{err:?}");
+    assert!(msg.contains("unknown role"), "err={msg}");
+    assert!(msg.contains("button"), "err message must list accepted roles: {msg}");
+}
+
+#[test]
+fn parse_tap_on_label() {
+    let yaml = "appId: com.test.app\n---\n- tapOn:\n    label: 'Home tab'\n";
+    let flow = parse_flow_yaml(yaml).expect("tapOn:{label} must parse");
+    match &flow.steps[0] {
+        Step::TapOn {
+            selector: Selector::Label { label, .. },
+            ..
+        } => assert_eq!(label, "Home tab"),
+        other => panic!("expected TapOn with Label selector, got: {other:?}"),
     }
 }
