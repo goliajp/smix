@@ -25,18 +25,23 @@ import UIKit
 // `TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON` (Xcode strips the
 // `TEST_RUNNER_` prefix; runner sees `SMIX_INTERACTIVE_PROBE_JSON`).
 //
-// When missing / malformed, falls back to bundled defaults per
-// insight Q7 answer: `minIdentifierCount: 3`, `ignore:
-// [SplashScreenLogo, com.focusai.app.mobile]`. Defaults are
-// deliberately RN-Expo-shaped since that's what consumers using this
-// primitive care about.
+// When missing / malformed, falls back to bundled defaults:
+// `minIdentifierCount: 3`, `ignore: [SplashScreenLogo]`.
+// "SplashScreenLogo" is the generic Expo splash-screen a11y id —
+// present in every Expo app during the pre-JS-mount window, never
+// evidence of interactivity. v1.0.26 removed the consumer-specific
+// bundle-id entry that used to sit here; the target app's own bundle
+// id is now ALWAYS ignored dynamically at probe time (the root node
+// carries identifier == bundleId on every app — counting it toward
+// minIdentifierCount was a semantic bug, not a per-consumer config
+// concern).
 struct InteractiveProbeConfig {
   let minIdentifierCount: Int
   let ignore: Set<String>
 
   static let bundledDefault = InteractiveProbeConfig(
     minIdentifierCount: 3,
-    ignore: ["SplashScreenLogo", "com.focusai.app.mobile"]
+    ignore: ["SplashScreenLogo"]
   )
 
   static func fromEnv() -> InteractiveProbeConfig {
@@ -55,7 +60,7 @@ struct InteractiveProbeConfig {
     }
     return InteractiveProbeConfig(
       minIdentifierCount: max(1, parsed.minIdentifierCount ?? 3),
-      ignore: Set(parsed.ignore ?? ["SplashScreenLogo", "com.focusai.app.mobile"])
+      ignore: Set(parsed.ignore ?? ["SplashScreenLogo"])
     )
   }
 }
@@ -2630,13 +2635,19 @@ final class SmixRunnerUITests: XCTestCase {
           // Ignore-list + minIdentifierCount come from
           // `.smix/config.yaml interactiveProbe: {...}` forwarded to
           // the runner via SMIX_INTERACTIVE_PROBE_JSON. Missing env
-          // = defaults: minIdentifierCount 3, ignore [SplashScreenLogo,
-          // com.focusai.app.mobile] per insight Q7 answer.
+          // = defaults: minIdentifierCount 3, ignore [SplashScreenLogo].
           var reachedInteractive = false
           var interactiveNamedIds: [String] = []
           if let interactiveDeadlineMs = req.waitForInteractiveMs,
              interactiveDeadlineMs > 0 {
             let probeConfig = InteractiveProbeConfig.fromEnv()
+            // v1.0.26 — the target app's own bundle id never counts as
+            // interactivity evidence: the application root node carries
+            // identifier == bundleId on EVERY app, so leaving it in the
+            // sample inflates the count by one for free. Merge it into
+            // the ignore set dynamically instead of asking each
+            // consumer to configure their own bundle id away.
+            let effectiveIgnore = probeConfig.ignore.union([entry.bundleId])
             let interactiveStart = Date()
             let interactivePollNs: UInt64 = 500_000_000  // 500 ms
             while UInt64(Date().timeIntervalSince(interactiveStart) * 1000) < interactiveDeadlineMs {
@@ -2670,7 +2681,7 @@ final class SmixRunnerUITests: XCTestCase {
                 let enumCap = 200  // pathological-tree stall guard
                 collectInteractiveIds(
                   snap.dictionaryRepresentation,
-                  ignore: probeConfig.ignore,
+                  ignore: effectiveIgnore,
                   ids: &ids,
                   enumerated: &enumerated,
                   cap: enumCap

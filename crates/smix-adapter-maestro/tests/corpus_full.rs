@@ -39,6 +39,13 @@ impl AppLike for SilentMockApp {
     async fn tap_xcui(&self, _: &str) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn tap_with_mode(
+        &self,
+        _: &Selector,
+        _: smix_sdk::TapMode,
+    ) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn find_by_text_ocr(
         &self,
         _: &str,

@@ -40,6 +40,7 @@ fn parse_alerts_counting_full_match() {
             Step::TapOn {
                 selector: text_selector(Pattern::Text("Counting".to_string())),
                 optional: false,
+                dispatch: None,
             },
             Step::WaitForAnimationToEnd { duration_ms: 400 },
             // extendedWaitUntil { visible: { text: "...|...|..." }, timeout: 30000 }
@@ -65,6 +66,7 @@ fn parse_alerts_counting_full_match() {
                     },
                 },
                 optional: true,
+                dispatch: None,
             },
             Step::WaitForAnimationToEnd { duration_ms: 400 },
             Step::ExtendedWaitUntil {
@@ -79,11 +81,13 @@ fn parse_alerts_counting_full_match() {
             Step::TapOn {
                 selector: text_selector(Pattern::Text("Week".to_string())),
                 optional: true,
+                dispatch: None,
             },
             // tapOn { text: "Month", optional: true }
             Step::TapOn {
                 selector: text_selector(Pattern::Text("Month".to_string())),
                 optional: true,
+                dispatch: None,
             },
         ],
     };
@@ -146,6 +150,7 @@ fn parse_run_flow_inline_commands_with_when() {
                 Step::TapOn {
                     selector: text_selector(Pattern::Text("Open".to_string())),
                     optional: false,
+                    dispatch: None,
                 },
                 Step::WaitForAnimationToEnd { duration_ms: 400 },
             ],
@@ -173,6 +178,7 @@ fn parse_run_flow_inline_commands_no_when() {
             steps: vec![Step::TapOn {
                 selector: text_selector(Pattern::Text("Hello".to_string())),
                 optional: false,
+                dispatch: None,
             }],
         }]
     );
@@ -327,7 +333,7 @@ fn localized_text_basic_3_locale_table() {
     let flow = parse_flow_yaml(yaml).expect("parse ok");
     assert_eq!(flow.steps.len(), 1);
     match &flow.steps[0] {
-        Step::TapOn { selector, optional } => {
+        Step::TapOn { selector, optional, .. } => {
             assert!(!optional);
             match selector {
                 Selector::LocalizedText {
@@ -415,7 +421,7 @@ fn localized_text_with_optional_flag() {
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse ok");
     match &flow.steps[0] {
-        Step::TapOn { selector, optional } => {
+        Step::TapOn { selector, optional, .. } => {
             assert!(optional);
             match selector {
                 Selector::LocalizedText { localized_text, .. } => {
@@ -441,7 +447,7 @@ fn ocr_text_short_form_string() {
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse ok");
     match &flow.steps[0] {
-        Step::TapOn { selector, optional } => {
+        Step::TapOn { selector, optional, .. } => {
             assert!(!optional);
             match selector {
                 Selector::OcrText {
@@ -561,7 +567,7 @@ fn anchored_basic_id_anchor() {
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse ok");
     match &flow.steps[0] {
-        Step::TapOn { selector, optional } => {
+        Step::TapOn { selector, optional, .. } => {
             assert!(!optional);
             match selector {
                 Selector::AnchorRelative { anchor, dx, dy } => {
@@ -1336,26 +1342,22 @@ fn parse_tap_on_label() {
 }
 
 // v1.0.23 D4 — bare-string auto-OCR opt-in via SMIX_AUTO_OCR_FALLBACK.
-// Env vars are process-wide; Cargo runs tests in parallel by default.
-// Every test that touches SMIX_AUTO_OCR_FALLBACK must acquire this
-// Mutex first so the set/restore pair around the test body isn't
-// interleaved with a sibling test's set/restore. Poisoning is
-// ignored — a poisoned lock means a prior test panicked mid-restore,
-// but the restore itself always runs (see `with_env` scaffolding).
-static AUTO_OCR_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn with_env<F: FnOnce()>(key: &str, val: Option<&str>, f: F) {
-    let _guard = AUTO_OCR_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let saved = std::env::var(key).ok();
-    match val {
-        Some(v) => unsafe { std::env::set_var(key, v) },
-        None => unsafe { std::env::remove_var(key) },
-    }
+//
+// v1.0.26 — these tests use the thread-local override seam
+// (`set_auto_ocr_fallback_override`) instead of mutating process env.
+// Process env is global while Cargo runs tests on parallel threads:
+// the old set_var/restore approach raced every OTHER test parsing a
+// bare-string selector on a sibling thread, flipping their parse
+// output between Text and Fallback mid-run (observed as flaky
+// failures on parse_ensure_login_with_runflow_when_clause /
+// parse_launch_warm_extras). The thread-local pins the decision for
+// this test's thread only. `val` maps to truthiness the same way the
+// env would.
+fn with_env<F: FnOnce()>(_key: &str, val: Option<&str>, f: F) {
+    let pinned = matches!(val, Some("1" | "true" | "TRUE" | "yes"));
+    smix_adapter_maestro::set_auto_ocr_fallback_override(Some(pinned));
     let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-    match saved {
-        Some(v) => unsafe { std::env::set_var(key, v) },
-        None => unsafe { std::env::remove_var(key) },
-    }
+    smix_adapter_maestro::set_auto_ocr_fallback_override(None);
     if let Err(e) = unwind {
         std::panic::resume_unwind(e);
     }
@@ -1652,4 +1654,94 @@ appId: com.test.app
             other => panic!("expected Fallback, got {other:?}"),
         }
     });
+}
+
+// v1.0.26 — maestro-canonical map form `waitForAnimationToEnd: { timeout: N }`.
+// Docs showed the shape since v1.0; the parser rejected it (same
+// documented-but-unimplemented class as the v1.0.20 gaps).
+#[test]
+fn parse_wait_for_animation_to_end_map_timeout_form() {
+    let yaml = "appId: com.test.app\n---\n- waitForAnimationToEnd:\n    timeout: 5000\n";
+    let flow = parse_flow_yaml(yaml).expect("parse map-form waitForAnimationToEnd");
+    match &flow.steps[0] {
+        Step::WaitForAnimationToEnd { duration_ms } => assert_eq!(*duration_ms, 5000),
+        other => panic!("expected WaitForAnimationToEnd, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_wait_for_animation_to_end_map_missing_timeout_rejects() {
+    let yaml = "appId: com.test.app\n---\n- waitForAnimationToEnd:\n    seconds: 5\n";
+    let err = parse_flow_yaml(yaml).expect_err("map without `timeout` key must error");
+    let msg = format!("{err:?}");
+    assert!(msg.contains("timeout"), "err should name the expected key: {msg}");
+}
+
+// v1.0.26 — `tapOn: { dispatch: xcui | daemonProxy }` explicit
+// dispatch-mechanism override. Generic replacement for the old
+// fixture-namespace auto-routing; docs used to promise a `mode:` key
+// that never parsed.
+#[test]
+fn parse_tap_on_dispatch_xcui() {
+    let yaml = "appId: com.t\n---\n- tapOn:\n    id: 'modal-dismiss-btn'\n    dispatch: xcui\n";
+    let flow = parse_flow_yaml(yaml).expect("dispatch: xcui must parse");
+    match &flow.steps[0] {
+        Step::TapOn {
+            selector: Selector::Id { id, .. },
+            dispatch: Some(smix_adapter_maestro::TapDispatch::Xcui),
+            ..
+        } => assert_eq!(id, "modal-dismiss-btn"),
+        other => panic!("expected TapOn with dispatch xcui, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_tap_on_dispatch_daemon_proxy() {
+    let yaml = "appId: com.t\n---\n- tapOn:\n    id: 'btn-login'\n    dispatch: daemonProxy\n";
+    let flow = parse_flow_yaml(yaml).expect("dispatch: daemonProxy must parse");
+    assert!(matches!(
+        &flow.steps[0],
+        Step::TapOn { dispatch: Some(smix_adapter_maestro::TapDispatch::DaemonProxy), .. }
+    ));
+}
+
+#[test]
+fn parse_tap_on_dispatch_unknown_rejects() {
+    let yaml = "appId: com.t\n---\n- tapOn:\n    id: 'x'\n    dispatch: warp\n";
+    let err = parse_flow_yaml(yaml).expect_err("unknown dispatch must error");
+    let msg = format!("{err:?}");
+    assert!(msg.contains("xcui") && msg.contains("daemonProxy"), "err lists accepted: {msg}");
+}
+
+#[test]
+fn parse_tap_on_no_dispatch_defaults_none() {
+    let yaml = "appId: com.t\n---\n- tapOn:\n    id: 'x'\n";
+    let flow = parse_flow_yaml(yaml).expect("parse");
+    assert!(matches!(&flow.steps[0], Step::TapOn { dispatch: None, .. }));
+}
+
+// v1.0.26 — `anchorRelative:` alias for `anchored:` (docs promised
+// the alias since v5.20; parser only read `anchored`).
+#[test]
+fn parse_tap_on_anchor_relative_alias() {
+    let yaml = "\
+appId: com.t
+---
+- tapOn:
+    anchorRelative:
+      anchor: { id: 'header' }
+      dx: 0.45
+      dy: 0.0
+";
+    let flow = parse_flow_yaml(yaml).expect("anchorRelative alias must parse");
+    match &flow.steps[0] {
+        Step::TapOn {
+            selector: Selector::AnchorRelative { dx, dy, .. },
+            ..
+        } => {
+            assert!((dx - 0.45).abs() < 1e-9);
+            assert!(dy.abs() < 1e-9);
+        }
+        other => panic!("expected TapOn AnchorRelative, got: {other:?}"),
+    }
 }

@@ -1893,8 +1893,13 @@ fn ips_snapshot(bundle_id: Option<&str>) -> std::collections::HashSet<String> {
     // Match logic: when `bundle_id` is set, look for the last
     // component after the final `.` — bundle-id-shaped names
     // (com.foo.bar) match against the .ips filename prefix in
-    // heuristic-match mode. When None, catch anything that looks
-    // like a smix-relevant process crash.
+    // heuristic-match mode. When None, include EVERY `.ips` file:
+    // callers use this snapshot as a before/after diff around a flow
+    // run, so time-bounding does the relevance filtering — any crash
+    // report that appears during the flow window is a candidate
+    // regardless of process name. (v1.0.26 — pre-v1.0.26 the None arm
+    // matched a hardcoded consumer app name; generic diff semantics
+    // replace it.)
     let bundle_leaf = bundle_id
         .and_then(|b| b.rsplit('.').next())
         .map(|s| s.to_lowercase());
@@ -1905,7 +1910,7 @@ fn ips_snapshot(bundle_id: Option<&str>) -> std::collections::HashSet<String> {
         }
         let interesting = match &bundle_leaf {
             Some(leaf) => name.contains(leaf),
-            None => name.contains("insight") || name.contains("simrenderserver"),
+            None => true,
         };
         if interesting {
             set.insert(entry.file_name().to_string_lossy().into_owned());

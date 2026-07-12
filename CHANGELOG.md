@@ -2,6 +2,48 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.26] — 2026-07-13
+
+**Systematic polish sweep** — audit of the v1.0.14 → v1.0.25 rapid-patch arc for consumer-specific design leakage, iOS/Android parity drift, and documented-but-unimplemented yaml shapes. No single-consumer feedback drove this cycle; the charter was "sweep everything before moving on."
+
+### De-consumer-ization (generic semantics replace hardcoded values)
+
+- **Interactive-probe default ignore list** (Swift runner): the bundled default contained a specific consumer's bundle id. Replaced with the generic semantic — the target app's OWN bundle id is now always merged into the ignore set dynamically at probe time (the application root node carries `identifier == bundleId` on every app; counting it toward `minIdentifierCount` was a semantic bug, not a per-consumer config concern). Default ignore is now `["SplashScreenLogo"]` (generic Expo splash artifact) only. Consumers with explicit `.smix/config.yaml interactiveProbe.ignore` are unaffected; consumers relying on defaults get strictly more correct behavior.
+- **`.ips` snapshot heuristic** (`smix run` crash attribution): the no-bundle-id fallback matched a hardcoded consumer app name. Now matches ALL `.ips` files when the bundle is unknown — the before/after diff around the flow run already time-bounds relevance; name-filtering was both consumer-specific and lossy.
+
+### iOS/Android parity
+
+- **Android runner `/tree` snapshot-freshness headers** — `X-Tree-Snapshot-Refresh-Count` + `X-Tree-Snapshot-Wall-Ms` now emitted by the Kotlin runner (v1.0.23 D3 shipped iOS-only).
+- **Android runner version string** — `SmixRunner.VERSION` had frozen at an old build id (`v6.0-c3b`) for multiple releases while the workspace advanced; `/health` lied about the running version. Now tracks the workspace version, and `scripts/release/ship.sh` gates on BOTH the Kotlin `VERSION` and the gradle `mavenCentralVersion` matching the ship version — the drift class is mechanically closed.
+- **`elementTypeRaw` documented as iOS-only** (`wire-format.md`): Android has no `XCUIElement.ElementType` numeric; payloads omit the field and deserialize to the default `1`. Android's equivalent triage signal is the full a11y class name in `rawType` plus the runner-emitted `role`.
+
+### Documented-but-unimplemented yaml shapes (docs promised, parser rejected)
+
+- **`tapOn: { dispatch: xcui | daemonProxy }`** — docs described a `mode: pathA|pathB` tap override that never parsed. Implemented as `dispatch:` with the real mechanism names: `xcui` = XCUIElement-anchored dispatch (required for SwiftUI `.sheet`/`.alert`/`.confirmationDialog`/`.fullScreenCover` dismiss bindings; requires `id:`; cross-platform via the runner's id-anchored tap), `daemonProxy` = XCTRunnerDaemonSession synthesize (stubborn RN Pressables; iOS-only). This is the GENERIC surface for what the `v2-*` fixture-namespace auto-routing heuristics did for smix's own selftest — those heuristics remain (scoped to smix's own id namespace, zero third-party blast radius) but are frozen; new yaml uses `dispatch:`.
+- **`waitForAnimationToEnd: { timeout: N }`** — maestro-canonical map form now parses (docs showed it; parser only accepted bare/integer forms).
+- **`anchorRelative:`** — accepted as alias of `anchored:` in `tapOn` and fallback-chain elements (3 docs pages promised the alias since v5.20).
+- **`runFlowConditional:`** — was documented as a verb name in 2 places but never parsed (it's the internal enum variant name). Docs corrected to the canonical `runFlow: { when: …, file|commands: … }` shape.
+
+### Docs alignment sweep
+
+- `02-yaml-reference.md` — `waitForAnimationToEnd` described as "blocks until UI quiescent" (wrong since ever; it's a fixed sleep). Rewritten. Added `runFlow.when.notVisible`, OCR-in-verbs section, `SMIX_AUTO_OCR_FALLBACK` + `SMIX_TAP_OCR_POLL_MS` env docs.
+- `04-actions.md` — OCR fallback tap + poll semantics, OCR-aware scrollUntilVisible, real `dispatch:` surface replacing the fictional pathA/pathB.
+- `05-cli.md` — `--dry-run`/`--check`, `--retry`, `--debug-output` flags + env var table.
+- `06-fixtures.md` — the `- fixture:` verb host-app contract (the `qa-bubble-toggle` toggle id, chip testIDs, completion-signal registry shape) was only documented in non-public notes; now in the public guide with the registry JSON verified against `smix-fixture`'s actual wire shape.
+- `verb-parity.md` — version-at-freeze refreshed, `extendedWaitUntil` poll cadence corrected (250 ms, not 100 ms), OCR-in-fallback + snapshot-header rows updated.
+- `wire-format.md` — `elementTypeRaw`, `role`, snapshot-freshness headers documented.
+- `08-cookbook.md` — conditional-flow recipe corrected to the real verb shape + `notVisible` idempotency example.
+
+### Test-infra fix
+
+- v1.0.23's `SMIX_AUTO_OCR_FALLBACK` parser tests mutated process env under a Mutex — which serialized the env-touching tests against each other but still raced every OTHER parallel test parsing a bare-string selector (observed as flaky failures on two fixture tests). Replaced with a thread-local override seam (`set_auto_ocr_fallback_override`, `#[doc(hidden)]`); tests no longer touch process env at all. 3× consecutive full-bucket runs green.
+
+### Ship gate
+
+- 77 parser tests (+5 new: dispatch ×3 shapes, anchorRelative alias, waitForAnimationToEnd map form ×2) + 88 runtime_mock tests (+3 new dispatch-routing tests) green.
+- Full workspace green; Swift build + Android Kotlin compile green.
+- Real-sim smoke on Preferences (iOS) for the probe-ignore change.
+
 ## [1.0.25] — 2026-07-13
 
 **Insight round-4 (`smix-feedback-2026-07-13.md`) empirical validation of v1.0.24 D1/D2** — qa-gate ceremony restored via `runFlow when.notVisible: qa-bubble file: qa-gate-passcode.yaml`, `--all` batch 7/12 → 8/12 with real gate coverage. Two follow-up fixes:

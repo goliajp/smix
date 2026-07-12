@@ -202,12 +202,30 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 # Run a sub-flow (file include)
 - runFlow: "../subflows/launch-fresh.yaml"
 
-# Run a sub-flow conditionally
-- runFlowConditional:
+# Run a sub-flow conditionally (same `runFlow` verb + `when:` gate)
+- runFlow:
     when:
-      visible: "Need Login"
+      visible: "Need Login"           # enter only when this is visible
+    file: "../subflows/login.yaml"
+
+# Inverse gate (v1.0.24) — enter only when the selector is NOT visible.
+# Idempotency pattern: skip a ceremony whose end state is already reached.
+- runFlow:
+    when:
+      notVisible: { id: "qa-bubble" }
+    file: "../subflows/enter-qa-mode.yaml"
+
+# Inline body instead of a file (`commands:`); `when:` gates identically.
+- runFlow:
+    when:
+      visible: "Open in"
     commands:
-      - runFlow: "../subflows/login.yaml"
+      - tapOn: "Open"
+      - waitForAnimationToEnd
+
+# `visible` / `notVisible` are mutually exclusive within one `when:`.
+# The gate selector supports the full selector table, including
+# `fallback:` chains with `ocrText` (OCR fires for the check).
 
 # Run inline JS (evaluated in the maestro JS context)
 - evalScript: |
@@ -218,9 +236,13 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 ### Wait / sync
 
 ```yaml
-- waitForAnimationToEnd                  # blocks until UI quiescent
+# Fixed sleep — NOT an XCTest quiescence wait. smix no-ops XCTest's
+# internal idle-wait for performance (SmixQuiescenceSwizzle); this verb
+# has always been a bounded pause at the runtime layer.
+- waitForAnimationToEnd                  # bare form: 400 ms (maestro-compat)
+- waitForAnimationToEnd: 500             # integer: sleep N ms
 - waitForAnimationToEnd:
-    timeout: 5000
+    timeout: 5000                        # maestro-canonical map form
 
 - extendedWaitUntil:
     visible: "Loading complete"
@@ -229,6 +251,10 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 - extendedWaitUntil:
     notVisible: "Spinner"
     timeout: 10000
+
+# On timeout, extendedWaitUntil auto-captures a screenshot + tree JSON
+# to `.smix/timeouts/` (or `--debug-output` dir when set) and appends
+# the written paths to the failure hint — no flag needed.
 ```
 
 ### Media (file upload simulators)
@@ -269,7 +295,24 @@ Full selector taxonomy is in [03-selectors.md](03-selectors.md).
 ## Conditional + optional patterns
 
 - `optional: true` on tapOn/assertVisible: step never fails the flow; it is skipped silently if the element is absent (used for cross-platform yamls where a step is iOS-only or Android-only).
-- `runFlowConditional` with `when: { visible: ... }`: include a sub-flow only when a condition holds at runtime (e.g., "if Need Login is shown, run the login subflow").
+- `runFlow` with `when: { visible: ... }`: include a sub-flow only when a condition holds at runtime (e.g., "if Need Login is shown, run the login subflow").
+- `runFlow` with `when: { notVisible: ... }` (v1.0.24): inverse gate — enter only when the selector is NOT visible ("run the ceremony unless its end state is already on screen").
+- Skipped conditionals emit `STEP N: … → SKIPPED: <reason>` to stderr with the checked selector + evaluation outcome, so batch logs show WHY a gate short-circuited.
+
+## OCR behavior in verbs
+
+Any selector position accepts `ocrText:` (standalone or inside `fallback:`); when present, the verb's runtime actually fires Vision (iOS) / ML Kit (Android) instead of only polling the a11y tree:
+
+- `extendedWaitUntil.visible` — polls tree + OCR per iteration until timeout.
+- `tapOn` with `fallback: [..., ocrText]` — polls the whole chain within `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) before failing, closing tap-vs-mount races.
+- `scrollUntilVisible` — probes tree + OCR between swipe strokes (off-screen items dropped from a degraded a11y tree are still found by OCR once scrolled into view).
+- `runFlow.when.visible` / `when.notVisible` — the gate check fires OCR.
+
+Cost note: one OCR call is ~500 ms on-sim. Order `fallback:` chains cheapest-first (`id` → `text` → `ocrText`) so tree hits pre-empt Vision cost.
+
+### `SMIX_AUTO_OCR_FALLBACK=1` (env opt-in)
+
+Auto-lifts every bare-string selector `visible: 'X'` to `fallback: [text: 'X', ocrText: 'X']` at parse time. Strings containing top-level `|` (regex OR) split per alternative for the OCR tiers: `'A|B'` → `fallback: [text: /A|B/i, ocrText: 'A', ocrText: 'B']`. Accepted truthy values: `1`, `true`, `TRUE`, `yes`.
 
 ## Output variables (between steps)
 
