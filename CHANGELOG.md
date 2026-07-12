@@ -2,6 +2,75 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.24] — 2026-07-12
+
+**Insight round-3 (`smix-feedback-2026-07-12-round-3.md`) Ask 8 — `runFlow.when.visible` + `inputText` silently no-op.** Empirical: `--all` batch **0/12 → 7/12** on v1.0.23 with URL-scheme bypass; native (D1/D2 tapOn/scroll OCR poll) confirmed working. Root cause of Ask 8 traced to the tree-only visibility check in `runFlow.when.visible`: `Selector::OcrText` is silently dropped by the tree resolver, so a `fallback: [text, ocrText]` gate under iOS 26.5 + RN 0.86 Fabric a11y drop returns false and the whole conditional body is skipped without any signal. `inputText` never fires because the conditional never enters. 3 fixes land:
+
+### D1 — `runFlow.when.visible` fires OCR when selector contains OcrText
+
+Runtime dispatch for `Step::RunFlowInline` and `Step::RunFlowConditional` now goes through `check_selector_visible` (introduced in v1.0.23 D2/D1 as the shared "probe once via tree + OCR" primitive) instead of tree-only `App::find`. When the gate selector contains any `OcrText` sub-selector, OCR fires; when it doesn't, tree resolver runs unchanged. Fast path preserved for OCR-free gates.
+
+Insight round-3 concrete scenario:
+```yaml
+- runFlow:
+    when:
+      visible:
+        fallback:
+          - text: 'For internal testers only'
+          - ocrText: 'For internal testers only'
+    commands:
+      - tapOn: { id: 'qa-passcode' }
+      - inputText: '0429'
+```
+Pre-v1.0.24: `text:` misses under Fabric drop → OCR silently skipped → gate returns false → whole body skipped → `inputText` never fires → passcode field stays empty → 45 s wait inside the (never-entered) conditional appears as ~0 s STEP wall.
+
+Post-v1.0.24: OCR fires on the `ocrText` layer → gate returns true → body runs → `tapOn` + `inputText` deliver as expected.
+
+### D2 — `runFlow.when.notVisible` inverse gate
+
+Idempotency pattern: "only enter the conditional if the target state hasn't been reached." Enables:
+```yaml
+- runFlow:
+    when:
+      notVisible:              # ← NEW — enter gate only if not already past it
+        id: 'qa-bubble'
+    file: enter-qa-mode.yaml
+```
+- Runtime: fires the conditional when the selector is NOT visible.
+- Same OCR-aware `check_selector_visible` under the hood — no wire divergence from D1.
+- Mutually exclusive with `when.visible` at parse time (both Some → parse error with clear message).
+- Same `#[serde(default, skip_serializing_if = "Option::is_none")]` treatment — additive on the enum.
+
+### D3 — better `runFlow` Skipped diagnostic
+
+Pre-v1.0.24 message: `runFlow when.visible=false; skipped inline body (5 steps)`. Told consumers nothing about WHAT was checked. Now the reason includes the selector's `describe_selector` form:
+```
+runFlow when.visible=false ({ fallback=[{ text="For internal testers only" }, { ocr_text="For internal testers only" }] }); skipped inline body (5 steps)
+```
+For `notVisible`:
+```
+runFlow when.notVisible visible=true ({ id="qa-bubble" }); skipped subflow enter-qa-mode.yaml
+```
+Consumers get selector shape + evaluation outcome in one line — sufficient to grep the runner log + know if the gate misfired.
+
+### Ask 9 (blank Landing after Skip) + Ask 10 (M/N chip navigation) — insight-side
+
+Both flagged as app-side, not smix. Insight noted v1.0.22 D2 auto-capture made these one-turn diagnoses vs prior 3-5 turns — no smix action needed.
+
+### Wire compatibility
+
+- `Step::RunFlowConditional.when_not_visible` + `Step::RunFlowInline.when_not_visible` new fields, both `Option<Selector>` with `#[serde(default, skip_serializing_if = "Option::is_none")]`. Pre-v1.0.24 serialized flows deserialize with `when_not_visible: None` = unchanged behaviour.
+- `runFlow.when.notVisible` parser is additive on the accept-set. Any yaml that parsed before still parses.
+- Runtime `evaluate_run_flow_gate` shared method centralizes the gate evaluation for both variants and both gate types.
+- No wire / HTTP surface changes.
+- CLI / other subsystems byte-identical to v1.0.23.
+
+### Ship gate
+
+- 3 new parser tests: `parse_run_flow_conditional_when_not_visible`, `parse_run_flow_inline_when_not_visible`, `parse_run_flow_when_visible_and_not_visible_together_rejects`. 66 total parser tests green (+3 new).
+- Full workspace `cargo check` + `cargo test` green (119 test-result-ok buckets, unchanged bucket count).
+- Real-sim empirical validation pending on insight's next batch — they have the failing case (the qa-gate ceremony wrapped in `runFlow.when.visible` with `fallback: [text, ocrText]`) ready to test.
+
 ## [1.0.23] — 2026-07-12
 
 **Insight round-2 (`smix-feedback-2026-07-12-round-2.md`) empirical validation of v1.0.22 + 4 new asks.** Real-world impact confirmed: bootstrap 3/3 pass on v1.0.22 + OCR fallback yaml vs 0/3 on v1.0.21 same yaml. `.smix/timeouts/*.png` cut triage-per-failure from 4-5 turns down to 1 turn. 4 new fixes for the same OCR-runtime pattern in tapOn / scrollUntilVisible + snapshot freshness diagnostic + ergonomic bare-string auto-OCR opt-in.

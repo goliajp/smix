@@ -391,6 +391,16 @@ pub enum Step {
         /// forward-compat, mapping `None` to "run unconditionally".
         #[serde(skip_serializing_if = "Option::is_none")]
         when_visible: Option<Selector>,
+        /// v1.0.24 D2 — inverse gate (`when.notVisible`). Runs the
+        /// subflow only when the selector is NOT visible. Enables the
+        /// idempotency pattern "only enter conditional if the target
+        /// state hasn't already been reached" (e.g. `notVisible:
+        /// 'qa-bubble'` = enter the gate ceremony only if not already
+        /// past it). Exactly one of `when_visible` / `when_not_visible`
+        /// should be Some in idiomatic yaml; both Some is a parse
+        /// error, both None is unconditional (same as legacy).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        when_not_visible: Option<Selector>,
         /// v5.6 c5 — outputs alias: after the subflow runs, read the device
         /// pasteboard (canonical "what the subflow captured via
         /// copyTextFrom") and write it into the parent flow's output map
@@ -411,6 +421,10 @@ pub enum Step {
         /// Visibility precondition (`when.visible`). `None` ⇒ unconditional.
         #[serde(skip_serializing_if = "Option::is_none")]
         when_visible: Option<Selector>,
+        /// v1.0.24 D2 — inverse gate (`when.notVisible`). See
+        /// [`Step::RunFlowConditional::when_not_visible`] for semantics.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        when_not_visible: Option<Selector>,
         /// Inline step list. Runtime executes top-to-bottom under the
         /// same warning channel as the parent flow.
         steps: Vec<Step>,

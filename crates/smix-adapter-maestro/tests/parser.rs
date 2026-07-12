@@ -104,6 +104,7 @@ fn parse_ensure_login_with_runflow_when_clause() {
             Step::RunFlowConditional {
                 file: "../subflows/login.yaml".to_string(),
                 when_visible: Some(text_selector(Pattern::Text("Log in".to_string()))),
+                when_not_visible: None,
                 as_name: None,
             },
             // extendedWaitUntil: { visible: { id: "btn-open-menu" }, timeout: 30000 }
@@ -140,6 +141,7 @@ fn parse_run_flow_inline_commands_with_when() {
         app: None,
         steps: vec![Step::RunFlowInline {
             when_visible: Some(text_selector(Pattern::Text("Open in".to_string()))),
+            when_not_visible: None,
             steps: vec![
                 Step::TapOn {
                     selector: text_selector(Pattern::Text("Open".to_string())),
@@ -167,6 +169,7 @@ fn parse_run_flow_inline_commands_no_when() {
         flow.steps,
         vec![Step::RunFlowInline {
             when_visible: None,
+            when_not_visible: None,
             steps: vec![Step::TapOn {
                 selector: text_selector(Pattern::Text("Hello".to_string())),
                 optional: false,
@@ -1448,4 +1451,75 @@ appId: com.test.app
             Step::ExtendedWaitUntil { selector: Selector::Text { .. }, .. }
         ));
     });
+}
+
+// v1.0.24 D2 — `runFlow.when.notVisible` inverse gate parses.
+#[test]
+fn parse_run_flow_conditional_when_not_visible() {
+    let yaml = concat!(
+        "appId: com.t.r\n",
+        "---\n",
+        "- runFlow:\n",
+        "    when:\n",
+        "      notVisible: 'qa-bubble'\n",
+        "    file: ../subflows/enter-qa.yaml\n",
+    );
+    let flow = parse_flow_yaml(yaml).expect("parse when.notVisible + file");
+    match &flow.steps[0] {
+        Step::RunFlowConditional {
+            file,
+            when_visible: None,
+            when_not_visible: Some(sel),
+            as_name: None,
+        } => {
+            assert!(file.ends_with("enter-qa.yaml"));
+            match sel {
+                Selector::Text { text: Pattern::Text(t), .. } => assert_eq!(t, "qa-bubble"),
+                other => panic!("expected Text selector, got {other:?}"),
+            }
+        }
+        other => panic!("expected RunFlowConditional with when_not_visible, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_run_flow_inline_when_not_visible() {
+    let yaml = concat!(
+        "appId: com.t.r\n",
+        "---\n",
+        "- runFlow:\n",
+        "    when:\n",
+        "      notVisible:\n",
+        "        id: 'qa-bubble'\n",
+        "    commands:\n",
+        "      - tapOn: 'Enter'\n",
+    );
+    let flow = parse_flow_yaml(yaml).expect("parse when.notVisible + inline");
+    match &flow.steps[0] {
+        Step::RunFlowInline {
+            when_visible: None,
+            when_not_visible: Some(Selector::Id { id, .. }),
+            steps,
+        } => {
+            assert_eq!(id, "qa-bubble");
+            assert_eq!(steps.len(), 1);
+        }
+        other => panic!("expected RunFlowInline with when_not_visible, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_run_flow_when_visible_and_not_visible_together_rejects() {
+    let yaml = concat!(
+        "appId: com.t.r\n",
+        "---\n",
+        "- runFlow:\n",
+        "    when:\n",
+        "      visible: 'A'\n",
+        "      notVisible: 'B'\n",
+        "    file: subflow.yaml\n",
+    );
+    let err = parse_flow_yaml(yaml).expect_err("both visible + notVisible must error");
+    let msg = format!("{err:?}");
+    assert!(msg.contains("mutually exclusive"), "err msg should say mutually exclusive: {msg}");
 }

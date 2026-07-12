@@ -701,6 +701,16 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
             }
 
             let when_visible = parse_run_flow_when_visible(map)?;
+            let when_not_visible = parse_run_flow_when_not_visible(map)?;
+            // v1.0.24 D2 — both gates set at once is ambiguous;
+            // reject at parse time with a clear message so consumers
+            // don't accidentally combine.
+            if when_visible.is_some() && when_not_visible.is_some() {
+                return Err(ParseError::InvalidValue {
+                    field: "runFlow.when".into(),
+                    reason: "`visible` and `notVisible` are mutually exclusive; use one".into(),
+                });
+            }
 
             if has_commands {
                 // v6.8 c1 — inline commands form (maestro YamlRunFlow's
@@ -721,6 +731,7 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
                 let steps = parse_step_sequence(commands_val, "runFlow.commands")?;
                 return Ok(Step::RunFlowInline {
                     when_visible,
+                    when_not_visible,
                     steps,
                 });
             }
@@ -746,6 +757,7 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
             Ok(Step::RunFlowConditional {
                 file,
                 when_visible,
+                when_not_visible,
                 as_name,
             })
         }
@@ -770,6 +782,26 @@ fn parse_run_flow_when_visible(
     })?;
     match when_map.get(Value::String("visible".into())) {
         Some(visible) => Ok(Some(visible_to_selector(visible)?)),
+        None => Ok(None),
+    }
+}
+
+// v1.0.24 D2 — parse `runFlow.when.notVisible`. Same shape as
+// `when.visible` but the runtime gate fires when the selector is
+// NOT visible. Sibling helper to `parse_run_flow_when_visible` so
+// the parser dispatches both from one `when:` block.
+fn parse_run_flow_when_not_visible(
+    map: &serde_norway::Mapping,
+) -> Result<Option<Selector>, ParseError> {
+    let Some(when) = map.get(Value::String("when".into())) else {
+        return Ok(None);
+    };
+    let when_map = when.as_mapping().ok_or_else(|| ParseError::InvalidValue {
+        field: "runFlow.when".into(),
+        reason: "expected a mapping".into(),
+    })?;
+    match when_map.get(Value::String("notVisible".into())) {
+        Some(not_visible) => Ok(Some(visible_to_selector(not_visible)?)),
         None => Ok(None),
     }
 }
@@ -2489,6 +2521,7 @@ fn parse_flow_file_body(abs: &Path, stack: &mut Vec<PathBuf>) -> Result<Flow, Pa
             Step::RunFlowConditional {
                 file,
                 when_visible,
+                when_not_visible,
                 as_name,
             } => {
                 let resolved = dir.join(&file);
@@ -2496,6 +2529,7 @@ fn parse_flow_file_body(abs: &Path, stack: &mut Vec<PathBuf>) -> Result<Flow, Pa
                 expanded.push(Step::RunFlowConditional {
                     file: resolved_str,
                     when_visible,
+                    when_not_visible,
                     as_name,
                 });
             }
