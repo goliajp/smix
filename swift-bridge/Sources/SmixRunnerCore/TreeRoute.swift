@@ -288,10 +288,27 @@ public enum TreeRoute {
   /// shape change), so legacy SDK consumers ignore the headers and still
   /// parse the A11yNode root. New SDK reads `X-Tree-Size-Bytes` /
   /// `X-Tree-Node-Count` for hot-spot instrumentation.
+  ///
+  /// v1.0.23 D3 — Insight round-2 Ask 6: consumers hitting `--all`
+  /// batch snapshot drift want a signal that the runner is or isn't
+  /// keeping up. Two additive headers surface it without changing the
+  /// JSON body wire shape:
+  /// - `X-Tree-Snapshot-Refresh-Count` — cumulative /tree successful
+  ///   serves since runner boot. Consumers can subtract the value
+  ///   between calls to know how many refreshes happened; if the
+  ///   sequence stalls while /tree is being polled, XCUITest is
+  ///   returning cached snapshots.
+  /// - `X-Tree-Snapshot-Wall-Ms` — how long THIS `snapshotHandler`
+  ///   invocation took end-to-end. Trending upward across a batch =
+  ///   XCUITest bogging down; the underlying a11y tree is under
+  ///   sustained pressure (RN 0.86 Fabric on iOS 26.5 under
+  ///   `--all` sweep hits this).
   public static func successWithMeta(
     _ payload: Data,
     sizeBytes: Int,
-    nodeCount: Int
+    nodeCount: Int,
+    snapshotRefreshCount: UInt64 = 0,
+    snapshotWallMs: UInt64 = 0
   ) -> HTTPResponse {
     HTTPResponse(
       statusCode: .ok,
@@ -299,6 +316,8 @@ public enum TreeRoute {
         .contentType: "application/json",
         HTTPHeader("X-Tree-Size-Bytes"): String(sizeBytes),
         HTTPHeader("X-Tree-Node-Count"): String(nodeCount),
+        HTTPHeader("X-Tree-Snapshot-Refresh-Count"): String(snapshotRefreshCount),
+        HTTPHeader("X-Tree-Snapshot-Wall-Ms"): String(snapshotWallMs),
       ],
       body: payload
     )

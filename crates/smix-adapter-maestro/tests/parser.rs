@@ -1331,3 +1331,121 @@ fn parse_tap_on_label() {
         other => panic!("expected TapOn with Label selector, got: {other:?}"),
     }
 }
+
+// v1.0.23 D4 — bare-string auto-OCR opt-in via SMIX_AUTO_OCR_FALLBACK.
+// Env vars are process-wide; Cargo runs tests in parallel by default.
+// Every test that touches SMIX_AUTO_OCR_FALLBACK must acquire this
+// Mutex first so the set/restore pair around the test body isn't
+// interleaved with a sibling test's set/restore. Poisoning is
+// ignored — a poisoned lock means a prior test panicked mid-restore,
+// but the restore itself always runs (see `with_env` scaffolding).
+static AUTO_OCR_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn with_env<F: FnOnce()>(key: &str, val: Option<&str>, f: F) {
+    let _guard = AUTO_OCR_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let saved = std::env::var(key).ok();
+    match val {
+        Some(v) => unsafe { std::env::set_var(key, v) },
+        None => unsafe { std::env::remove_var(key) },
+    }
+    let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    match saved {
+        Some(v) => unsafe { std::env::set_var(key, v) },
+        None => unsafe { std::env::remove_var(key) },
+    }
+    if let Err(e) = unwind {
+        std::panic::resume_unwind(e);
+    }
+}
+
+#[test]
+fn parse_visible_bare_string_default_stays_text() {
+    with_env("SMIX_AUTO_OCR_FALLBACK", None, || {
+        let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible: 'Log in'
+    timeout: 5000
+";
+        let flow = parse_flow_yaml(yaml).expect("bare-string default parse");
+        match &flow.steps[0] {
+            Step::ExtendedWaitUntil {
+                selector: Selector::Text { text: Pattern::Text(t), .. },
+                ..
+            } => assert_eq!(t, "Log in"),
+            other => panic!("expected Text selector without env, got {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn parse_visible_bare_string_with_env_lifts_to_fallback() {
+    with_env("SMIX_AUTO_OCR_FALLBACK", Some("1"), || {
+        let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible: 'Log in'
+    timeout: 5000
+";
+        let flow = parse_flow_yaml(yaml).expect("bare-string parse with env");
+        match &flow.steps[0] {
+            Step::ExtendedWaitUntil {
+                selector: Selector::Fallback { fallback },
+                ..
+            } => {
+                assert_eq!(fallback.len(), 2, "expected 2-layer fallback");
+                match &fallback[0] {
+                    Selector::Text { text: Pattern::Text(t), .. } => assert_eq!(t, "Log in"),
+                    other => panic!("layer 0 should be Text, got {other:?}"),
+                }
+                match &fallback[1] {
+                    Selector::OcrText { ocr_text, locales, .. } => {
+                        assert_eq!(ocr_text, "Log in");
+                        assert!(locales.is_empty());
+                    }
+                    other => panic!("layer 1 should be OcrText, got {other:?}"),
+                }
+            }
+            other => panic!("expected Fallback with env, got {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn parse_visible_bare_string_with_env_true() {
+    with_env("SMIX_AUTO_OCR_FALLBACK", Some("true"), || {
+        let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible: 'Login'
+    timeout: 5000
+";
+        let flow = parse_flow_yaml(yaml).expect("bare parse with env=true");
+        assert!(matches!(
+            &flow.steps[0],
+            Step::ExtendedWaitUntil { selector: Selector::Fallback { .. }, .. }
+        ));
+    });
+}
+
+#[test]
+fn parse_visible_bare_string_with_env_zero_stays_text() {
+    // Explicit off — `0` shouldn't lift. Same as unset.
+    with_env("SMIX_AUTO_OCR_FALLBACK", Some("0"), || {
+        let yaml = "\
+appId: com.test.app
+---
+- extendedWaitUntil:
+    visible: 'Login'
+    timeout: 5000
+";
+        let flow = parse_flow_yaml(yaml).expect("parse");
+        assert!(matches!(
+            &flow.steps[0],
+            Step::ExtendedWaitUntil { selector: Selector::Text { .. }, .. }
+        ));
+    });
+}

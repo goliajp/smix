@@ -2,6 +2,58 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.23] — 2026-07-12
+
+**Insight round-2 (`smix-feedback-2026-07-12-round-2.md`) empirical validation of v1.0.22 + 4 new asks.** Real-world impact confirmed: bootstrap 3/3 pass on v1.0.22 + OCR fallback yaml vs 0/3 on v1.0.21 same yaml. `.smix/timeouts/*.png` cut triage-per-failure from 4-5 turns down to 1 turn. 4 new fixes for the same OCR-runtime pattern in tapOn / scrollUntilVisible + snapshot freshness diagnostic + ergonomic bare-string auto-OCR opt-in.
+
+### D1 — `tapOn: fallback` implicit poll window when OcrText present
+
+Pre-v1.0.23 `run_tap` fallback was one-shot: try every sub-selector once, exit. On iOS 26.5 + RN 0.86 Fabric the tap moment often races the app's post-transition mount — OCR misses because Vision snapshots BEFORE the target text is visible, not because it isn't there. Insight round-2 §Ask 4.
+
+Fix: when the fallback contains any `OcrText` sub-selector, the whole chain is now polled within `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) at 250 ms cadence. First hit wins. Fast path (no OCR anywhere) unchanged: single pass, no poll — pre-v1.0.23 semantics preserved for tree-only selectors.
+
+The failure hint now names the poll budget for consumer visibility: `v1.0.23 poll budget (SMIX_TAP_OCR_POLL_MS, default 3000 ms) activates automatically when Fallback contains OCR — bump it if your post-transition mount is slower than 3 s.`
+
+### D2 — `scrollUntilVisible` fires OCR between scroll strokes
+
+Pre-v1.0.23 `Step::ScrollUntilVisible` delegated to `driver.scroll`, whose tree-only resolver couldn't see off-screen targets in degraded a11y trees (RN 0.86 Fabric LazyColumn/LazyRow drops off-screen items on iOS 26.5). Insight round-2 §Ask 5.
+
+Fix: new adapter path `scroll_until_visible_with_ocr` — activates when the selector contains any `OcrText`. Per iteration: probe via `App::find` (tree) AND `App::find_by_text_ocr` (OCR); first hit stops the scroll. `scroll_screen(direction)` swipes between iterations. 30-swipe budget + 20 s wall (matches driver's `driver.scroll`). Fast path (no OCR anywhere) unchanged.
+
+Shared helper `check_selector_visible` used by D1 tapOn poll and D2 scroll poll — single implementation of "probe this selector once via tree + OCR".
+
+### D3 — `X-Tree-Snapshot-Refresh-Count` + `X-Tree-Snapshot-Wall-Ms` response headers on /tree
+
+Insight round-2 §Ask 6: consumers debugging `--all` batch snapshot drift want a signal that the runner is (or isn't) doing fresh work. Fix — two additive headers, wire body byte-identical:
+
+- `X-Tree-Snapshot-Refresh-Count` — cumulative /tree successful serves since runner boot (monotonic UInt64). Consumers subtracting between calls detect stalls.
+- `X-Tree-Snapshot-Wall-Ms` — how long THIS `snapshotHandler` invocation took end-to-end. Trending upward across a batch = XCUITest bogging down under sustained JS reload pressure.
+
+Insight's original proposal was to add `snapshotAgeMs` / `snapshotRefreshCount` to the JSON body under a wrapping `root` field. Wire body wrap would break every existing consumer that parses the top-level as an A11yNode. Headers are additive — pre-v1.0.23 consumers see zero change; new consumers add a single header read.
+
+### D4 — `SMIX_AUTO_OCR_FALLBACK=1` bare-string auto-lift
+
+Insight round-2 §Ask 7: every one of their 12 flows spelled out the 3-line `visible: fallback: [text, ocrText]` form. Fix — env-opt-in `SMIX_AUTO_OCR_FALLBACK=1` lifts bare-string `visible: 'X'` to `visible: fallback: [text: X, ocrText: X]` at parse time. Reduces yaml boilerplate ~40% for degraded-tree callers; portable back down to versions with less-degraded trees (bare form still parses without the env).
+
+Accepted truthy values: `1`, `true`, `TRUE`, `yes`. Anything else (including unset) leaves bare strings as `Selector::Text` — pre-v1.0.23 semantics preserved.
+
+Reading the env at PARSE time (not RUN time) keeps the emitted Selector shape stable across a flow — you can't have "sometimes this yaml parses to Text, sometimes to Fallback" depending on runtime state, which would violate the parser's determinism contract.
+
+4 new parser tests locked (`parse_visible_bare_string_default_stays_text`, `..._with_env_lifts_to_fallback`, `..._with_env_true`, `..._with_env_zero_stays_text`) + Mutex-serialized to survive Cargo's default parallel test execution.
+
+### Wire compatibility
+
+- `X-Tree-Snapshot-Refresh-Count` + `X-Tree-Snapshot-Wall-Ms` headers additive — pre-v1.0.23 consumers see zero change.
+- `SMIX_AUTO_OCR_FALLBACK` env-off ⇒ bare-string `visible: 'X'` still parses to `Selector::Text`.
+- tapOn / scrollUntilVisible without any OCR in the selector: fast path preserved — no polling, no perf change.
+- CLI / other subsystems byte-identical to v1.0.22.
+
+### Ship gate
+
+- 119 test-result-ok buckets across the workspace green (63 parser + 56 elsewhere; +4 new parser tests for D4).
+- Full workspace `cargo check` green + Swift build green.
+- Real-sim empirical validation pending on insight's next batch — they have the failing case for tapOn OCR (force-update Skip flake) + scrollUntilVisible OCR (M/N deeplink panel) ready.
+
 ## [1.0.22] — 2026-07-12
 
 **iOS 26.5 + RN 0.86 Fabric tree-degradation triage upgrade.** Insight round-7 (`smix-feedback-2026-07-12.md`) hit a wall: on Xcode 26.6 + iOS 26.5 sim + RN 0.86 New Arch (Fabric), `GET /tree` returns every child under the app root with empty `identifier` and empty `label` — 10 "unknown" nodes visibly showing a `Log in to Insight` button that has JSX `testID="btn-log-in-to-insight"` + `accessibilityLabel` + `accessibilityRole="button"` + `accessible={true}`. Every bootstrap flow times out on the first `extendedWaitUntil` regardless of resetAppData / clearAppData choice, and the `fallback: [ocrText]` last resort silently never fires. Three fixes land:
