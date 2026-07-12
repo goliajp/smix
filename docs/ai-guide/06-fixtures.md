@@ -207,6 +207,39 @@ For flows using `webViewEval`, see [04-actions.md](04-actions.md) §WebView JS b
 - assertVisible: { id: "wizard-company-input" }    # conditional field
 ```
 
+## The `- fixture:` verb — host-app contract
+
+The `- fixture: <id>` yaml verb drives a QA overlay in your app-under-test ("fire a state-priming chip, await its completion signal"). Using it requires your app to implement a small contract:
+
+1. **Toggle element** — an always-reachable element with a11y id **`qa-bubble-toggle`** that opens/closes your QA overlay. The runtime taps it before and after firing a chip (idempotent open-then-close, even on failure).
+2. **Chip elements** — each fixture chip exposes the `testID` you register (see below).
+3. **Completion signal** — each chip logs a distinctive line the metro/log tail can match (regex), so the verb blocks until the primed state is actually written, not just until the tap landed.
+
+Registry (`fixturesRegistry` in `.smix/config.json`, JSON or lightweight TS):
+
+```jsonc
+{
+  "version": 1,
+  "fixtures": {
+    "prime-search-history": {
+      "testID": "chip-prime-search-history",
+      "signal": { "regex": "\\[qa\\] search-history primed count=5" },
+      "timeoutMs": 8000
+    }
+  }
+}
+```
+
+Flow usage:
+
+```yaml
+- fixture: prime-search-history      # tap toggle → tap chip → await signal → close toggle
+```
+
+The verb needs a metro/log tail configured (`.smix/config.json` `metroLog` or `--metro-log-url`) — without one it errors with an actionable hint rather than silently skipping the signal await.
+
+> Chip-fire ≠ behavior verified. The fixture verb proves the primed state was WRITTEN; follow it with assertions on the screen where that state is CONSUMED (navigate there and assert the primed content is visible).
+
 ## See also
 
 - [03-selectors.md](03-selectors.md) — selector forms including `id:`

@@ -270,7 +270,10 @@ pub(crate) use expr::{Context as ExprContext, parse_and_eval as expr_eval};
 /// Number / String).
 pub use expr::Value as ExprValue;
 
-pub use parser::{parse_flow_file, parse_flow_yaml, text_to_pattern, visible_to_selector};
+pub use parser::{
+    parse_flow_file, parse_flow_yaml, set_auto_ocr_fallback_override, text_to_pattern,
+    visible_to_selector,
+};
 pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebugRecord};
 
 /// A maestro YAML command. Each variant corresponds to one or more
@@ -292,6 +295,35 @@ pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebu
 /// - `launchApp`: `{ "launchApp": { clearState, clearKeychain, appId } }`
 /// - `openLink`: `{ "openLink": "<url>" }`
 /// - `stopApp`: `{ "stopApp": null }`
+/// v1.0.26 — explicit tap-dispatch override for `tapOn: { dispatch: … }`.
+///
+/// The default tap path (host-resolve → IOHID native-event synthesize)
+/// fires SwiftUI `onTap` and RN Pressable `onPress` reliably. Two
+/// runtime-specific cases need a different mechanism, and WHICH taps
+/// need it is knowledge only the test author has (per the smix
+/// three-layer model the capability lives in core; the decision is the
+/// caller's):
+///
+/// - `xcui` — `XCUIElement.tap()` anchored dispatch. SwiftUI
+///   `.sheet` / `.alert` / `.confirmationDialog` / `.fullScreenCover`
+///   dismiss BINDINGS don't fire from coord-based taps on iOS 17+;
+///   the element-anchored path is the only one that flips the binding.
+///   Requires an `id:` selector (the runner resolves by identifier).
+/// - `daemonProxy` — XCTRunnerDaemonSession synthesize (v4.0 G8 fix).
+///   Bypasses the XCUIElement gesture-recognizer chain so RN
+///   `RCTTouchHandler` receives the raw touch; use when a Pressable
+///   swallows the default path on an older RN.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TapDispatch {
+    /// `XCUIElement.tap()` anchored dispatch (requires `id:` selector).
+    Xcui,
+    /// XCTRunnerDaemonSession touch synthesize.
+    DaemonProxy,
+}
+
+/// One parsed yaml step. See the maestro-compat command table in the
+/// module docs above for the yaml shapes each variant corresponds to.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Step {
@@ -303,6 +335,10 @@ pub enum Step {
         /// `optional: true` swallows the not-found error per maestro semantics.
         #[serde(default)]
         optional: bool,
+        /// v1.0.26 — explicit dispatch-mechanism override
+        /// (`dispatch: xcui | daemonProxy`). `None` = default routing.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dispatch: Option<TapDispatch>,
     },
     /// Tap at a normalized coordinate point (escape hatch for yaml
     /// `tapOn: { point: "X%,Y%" }`). Mirrors the v3.16 §9 #3 lift

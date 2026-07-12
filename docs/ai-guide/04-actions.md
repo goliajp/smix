@@ -30,21 +30,29 @@ The YAML is platform-agnostic. The driver picks the right strategy for the targe
 **Android dispatch**:
 - Kotlin runner `/tap-by-id` → resolves via UiAutomation `findAccessibilityNodeInfosByViewId` → returns center coord → native event synthesize.
 
-### Tap with explicit mode
+### Tap with explicit dispatch (v1.0.26)
+
+The default tap path (host-resolve → IOHID native-event synthesize) fires SwiftUI `onTap` and RN Pressable `onPress` reliably. Two runtime-specific cases need a different mechanism — declare it per tap:
 
 ```yaml
+# SwiftUI .sheet / .alert / .confirmationDialog / .fullScreenCover
+# dismiss BINDINGS don't flip from coord-based taps on iOS 17+; the
+# XCUIElement-anchored path is the one that fires them. Requires `id:`.
 - tapOn:
-    id: "tab-home"
-    mode: pathA       # force IOHID synthesize (iOS only)
+    id: "modal-sheet-dismiss-btn"
+    dispatch: xcui
 
+# XCTRunnerDaemonSession synthesize — bypasses the XCUIElement gesture-
+# recognizer chain so RN RCTTouchHandler receives the raw touch. Use
+# when a Pressable swallows the default path on an older RN.
 - tapOn:
-    id: "tab-home"
-    mode: pathB       # force XCUI coord.tap
+    id: "btn-login"
+    dispatch: daemonProxy
 ```
 
-- Path A (IOHID) fires Apple's full native event chain including SwiftUI gesture handlers. Required for any button that uses `onTap` closure rather than `.gesture(TapGesture())`.
-- Path B (XCUI) dispatches a touch event. Faster but does not fire SwiftUI Button onClick in some iOS versions.
-- Android always uses native event synthesize (no Path A/B distinction).
+- Omit `dispatch:` for the default routing — it is right for almost every tap.
+- `dispatch: xcui` requires an `id:` selector (resolution is by accessibilityIdentifier). Cross-platform: on Android it routes through the runner's id-anchored tap (`/tap-by-id`), same semantics.
+- `dispatch: daemonProxy` is an iOS-runner mechanism; on Android it errors with an explicit unsupported message (native synthesize is already the Android default — the override is never needed there).
 
 ### Tap by coord
 
@@ -56,6 +64,21 @@ The YAML is platform-agnostic. The driver picks the right strategy for the targe
 - nx, ny in viewport normalized [0, 1].
 - Bypasses element resolution — direct touch dispatch at coord.
 - Brittle; only use when no element identifier is reliable.
+
+### Tap with OCR fallback
+
+```yaml
+- tapOn:
+    fallback:
+      - id: "btn-skip"            # tier 1 — a11y identifier (cheap)
+      - text: "Skip"              # tier 2 — a11y text
+      - ocrText: "Skip"           # tier 3 — Vision (iOS) / ML Kit (Android)
+```
+
+- Each tier is probed in order; first hit taps. OCR taps at the recognized text's bounding-box center via native event synthesize.
+- When the chain contains any `ocrText`, the whole chain is **polled** for up to `SMIX_TAP_OCR_POLL_MS` (default 3000 ms, 250 ms cadence) before failing — this closes the race where the tap fires while the target is still mounting and a one-shot OCR would snapshot too early. Chains without OCR keep single-pass semantics (no perf change).
+- On full miss the failure hint carries a per-layer trace (`L1 …: MISS; L2 …: MISS; L3 …: MISS`) naming exactly which tiers were probed.
+- One OCR call is ~500 ms on-sim; keep at least one cheap tree tier ahead of `ocrText`.
 
 ### Double tap
 
@@ -136,11 +159,22 @@ The YAML is platform-agnostic. The driver picks the right strategy for the targe
       text: "Row #5000"
     direction: DOWN
     timeout: 30000
+
+# OCR-aware variant — for virtualized lists whose off-screen items are
+# dropped from the a11y tree (RN Fabric LazyColumn/LazyRow etc.), add
+# an ocrText tier: tree + OCR are both probed between swipe strokes.
+- scrollUntilVisible:
+    element:
+      fallback:
+        - id: "btn-target"
+        - ocrText: "Target label"
+    direction: DOWN
 ```
 
 - Iteratively scrolls + checks for element visibility.
 - Default timeout 30s.
 - Useful for very long lists.
+- When the selector contains `ocrText`, each inter-swipe probe fires OCR in addition to the tree check (30-swipe / 20 s budget). Selectors without OCR keep the tree-only fast path.
 
 ### Custom swipe (explicit start/end)
 

@@ -34,6 +34,8 @@ enum MockCall {
     Tap(Selector),
     /// v5.3 c5 — `App::tap_xcui(id)` (SwiftUI modal dismiss routing).
     TapXcui(String),
+    /// v1.0.26 — `App::tap_with_mode(selector, mode)` (`dispatch: daemonProxy`).
+    TapWithMode(String),
     /// v5.19 c1 — `App::find_by_text_ocr(text, locales)` (L5 sense layer).
     FindByTextOcr(String, Vec<String>),
     /// v5.20 c1 — `App::find_norm_coord(selector)` (L6 anchor resolution).
@@ -287,6 +289,17 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::TapXcui(id.to_string()));
+        Ok(())
+    }
+    async fn tap_with_mode(
+        &self,
+        selector: &Selector,
+        _: smix_sdk::TapMode,
+    ) -> Result<(), ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::TapWithMode(format!("{selector:?}")));
         Ok(())
     }
     async fn find_by_text_ocr(
@@ -2648,4 +2661,56 @@ async fn undefined_env_var_errors_with_name() {
         msg.contains("MISSING_VAR"),
         "error message should mention the missing env var, got: {msg}"
     );
+}
+
+// v1.0.26 — explicit `dispatch:` override routing.
+
+#[tokio::test]
+async fn tapon_dispatch_xcui_routes_through_tap_xcui() {
+    let flow = parse_inline(
+        "appId: x\n---\n- tapOn:\n    id: \"my-modal-dismiss\"\n    dispatch: xcui\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let report = adapter.run(&flow).await.expect("run ok");
+    assert!(matches!(report.steps[0], RunStepReport::Ok));
+    let calls = app.calls();
+    assert_eq!(calls.len(), 1);
+    match &calls[0] {
+        MockCall::TapXcui(captured) => assert_eq!(captured, "my-modal-dismiss"),
+        other => panic!("expected TapXcui, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn tapon_dispatch_daemon_proxy_routes_through_tap_with_mode() {
+    let flow = parse_inline(
+        "appId: x\n---\n- tapOn:\n    id: \"btn-login\"\n    dispatch: daemonProxy\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let report = adapter.run(&flow).await.expect("run ok");
+    assert!(matches!(report.steps[0], RunStepReport::Ok));
+    let calls = app.calls();
+    assert_eq!(calls.len(), 1);
+    assert!(
+        matches!(&calls[0], MockCall::TapWithMode(_)),
+        "expected TapWithMode, got {:?}",
+        calls[0]
+    );
+}
+
+#[tokio::test]
+async fn tapon_dispatch_xcui_non_id_selector_errors() {
+    // `dispatch: xcui` resolves by accessibilityIdentifier; a text
+    // selector can't route there — explicit DriverError, not a silent
+    // fallback to the default path.
+    let flow = parse_inline(
+        "appId: x\n---\n- tapOn:\n    text: \"Dismiss\"\n    dispatch: xcui\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let err = adapter.run(&flow).await.expect_err("must error");
+    let msg = format!("{err}");
+    assert!(msg.contains("requires an `id:` selector"), "got: {msg}");
 }

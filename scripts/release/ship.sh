@@ -56,6 +56,24 @@ NPM_VERSION="$(cd "$ROOT/npm/smix-rn" && node -p 'require("./package.json").vers
 [[ "$NPM_VERSION" == "$VERSION" ]] \
   || fail "npm package.json version=$NPM_VERSION doesn't match arg $VERSION"
 
+# v1.0.26 — Android side version gates. Two spots historically drifted:
+#   1. android-runner Kotlin runner VERSION (froze at v6.0-c3b for
+#      multiple releases while the workspace advanced — /health lied).
+#   2. android-runner/sdk gradle mavenCentralVersion.
+KOTLIN_RUNNER_VERSION="$(grep 'const val VERSION' "$ROOT/android-runner/app/src/main/kotlin/dev/smix/runner/SmixRunner.kt" | sed 's/.*"\(.*\)".*/\1/')"
+[[ "$KOTLIN_RUNNER_VERSION" == "$VERSION" ]] \
+  || fail "android-runner SmixRunner.VERSION=$KOTLIN_RUNNER_VERSION doesn't match arg $VERSION (bump android-runner/app/src/main/kotlin/dev/smix/runner/SmixRunner.kt)"
+
+GRADLE_VERSION="$(grep 'val mavenCentralVersion' "$ROOT/android-runner/sdk/build.gradle.kts" | sed 's/.*"\(.*\)".*/\1/')"
+[[ "$GRADLE_VERSION" == "$VERSION" ]] \
+  || fail "android-runner sdk mavenCentralVersion=$GRADLE_VERSION doesn't match arg $VERSION"
+
+# v1.0.26 — README install snippet shows the current gradle release
+# coordinate; gate it so it can't silently go stale across releases.
+README_GRADLE_VERSION="$(grep 'jp.golia.smix:smix-sdk:' "$ROOT/README.md" | sed 's/.*smix-sdk:\([0-9.]*\).*/\1/' | head -1)"
+[[ "$README_GRADLE_VERSION" == "$VERSION" ]] \
+  || fail "README.md gradle coordinate=$README_GRADLE_VERSION doesn't match arg $VERSION (update the Install section)"
+
 # --- publish crates.io (DAG order) -----------------------------------
 
 log "publish crates.io DAG at $VERSION"

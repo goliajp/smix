@@ -79,6 +79,10 @@ class SmixHttpServer(
     private val device: UiDevice,
     private val instrumentation: android.app.Instrumentation,
 ) : NanoHTTPD(port) {
+    // v1.0.26 — /tree serve counter for the
+    // X-Tree-Snapshot-Refresh-Count header (iOS v1.0.23 D3 parity).
+    private val treeServeCounter = java.util.concurrent.atomic.AtomicLong(0)
+
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
         return try {
@@ -142,13 +146,26 @@ class SmixHttpServer(
         // walk via UiAutomation iterates all attached windows and
         // surfaces Compose testTag via
         // AccessibilityNodeInfo.viewIdResourceName.
+        //
+        // v1.0.26 — snapshot-freshness headers, parity with the iOS
+        // runner's v1.0.23 D3: `X-Tree-Snapshot-Refresh-Count` is a
+        // monotonic count of successful /tree serves since runner boot,
+        // `X-Tree-Snapshot-Wall-Ms` is this walk's end-to-end wall.
+        // Consumers use the pair to detect snapshot pipeline stalls /
+        // slowdown across a batch without any wire-body change.
+        val walkStart = System.currentTimeMillis()
         val automation = instrumentation.uiAutomation
         val root = TreeBuilder.fromWindows(automation)
-        return newFixedLengthResponse(
+        val wallMs = System.currentTimeMillis() - walkStart
+        val refreshCount = treeServeCounter.incrementAndGet()
+        val resp = newFixedLengthResponse(
             Response.Status.OK,
             "application/json",
             root.toString(),
         )
+        resp.addHeader("X-Tree-Snapshot-Refresh-Count", refreshCount.toString())
+        resp.addHeader("X-Tree-Snapshot-Wall-Ms", wallMs.toString())
+        return resp
     }
 
     private fun serveTapAtNormCoord(session: IHTTPSession): Response {

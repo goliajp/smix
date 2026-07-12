@@ -222,11 +222,17 @@ appId: com.example.app
 ## Conditional flow (login if needed, else skip)
 
 ```yaml
-- runFlowConditional:
+- runFlow:
     when:
-      visible: { id: "tab-form" }        # condition
-    commands:
-      - runFlow: "../subflows/login.yaml"
+      visible: "Log in"                  # enter only when login is shown
+    file: "../subflows/login.yaml"
+
+# Inverse gate — run a setup ceremony only if its end state isn't
+# already on screen (idempotent across a batch):
+- runFlow:
+    when:
+      notVisible: { id: "qa-bubble" }
+    file: "../subflows/enter-qa-mode.yaml"
 ```
 
 ## Retry flaky step

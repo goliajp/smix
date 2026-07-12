@@ -35,6 +35,21 @@ Response: `{ ok: bool, tapped: bool }` on success; standard error envelope on fa
 
 Response: `A11yNode` tree.
 
+Node fields of note:
+
+- `rawType` — element type name. iOS: camelCase `XCUIElement.ElementType` name (`"button"`, `"staticText"`, …); Android: full a11y class name (`"android.widget.Button"`, …).
+- `elementTypeRaw` (v1.0.22+) — the numeric `XCUIElement.ElementType.rawValue`. **iOS-only signal**; Android payloads omit it and deserialize to the default `1` (`.other`). Triage rule on iOS: `elementTypeRaw != 1 && identifier == "" && label == ""` ⇒ the OS typed the element but the app's a11y bridge dropped its name (app-side issue, not smix).
+- `role` — curated semantic role. Android emits it directly (derived from class name); iOS consumers derive it client-side from `rawType`.
+
+Response headers (metadata only — body shape unchanged; all additive):
+
+| Header | Since | Meaning |
+|---|---|---|
+| `X-Tree-Size-Bytes` | v1.2 | Serialized payload size |
+| `X-Tree-Node-Count` | v1.2 | Total node count |
+| `X-Tree-Snapshot-Refresh-Count` | v1.0.23 (iOS) / v1.0.26 (Android) | Monotonic count of successful `/tree` serves since runner boot — a flat value across polls indicates a stalled snapshot pipeline |
+| `X-Tree-Snapshot-Wall-Ms` | v1.0.23 (iOS) / v1.0.26 (Android) | Wall time of this snapshot walk — trending upward across a batch indicates the OS a11y pipeline is bogging down |
+
 ### `POST /find`
 
 Body: `{ selector: Selector, include?: IncludeScope }`

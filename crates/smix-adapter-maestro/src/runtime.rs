@@ -49,6 +49,15 @@ use smix_sdk::{
 /// the SDK self-path (see `scenario.rs::seg_v2_modal_*_basic`). The match is
 /// prefix + suffix conjunction — the prefix filters to the V2 modal area and
 /// the suffix excludes triggers (`-open-...-btn`) and unrelated elements.
+///
+/// v1.0.26 scope note: the prefixes below are the SMIX SELFTEST FIXTURE
+/// id namespace (`v2-*`), so this auto-routing can never fire on a
+/// third-party consumer's ids — it is back-compat for smix's own e2e
+/// yamls only. The GENERIC surface for the same capability is
+/// `tapOn: { id: …, dispatch: xcui }` (v1.0.26): consumers whose
+/// SwiftUI modal dismiss buttons need XCUIElement-anchored dispatch
+/// declare it explicitly. New yaml (including smix's own) should use
+/// `dispatch: xcui`; this heuristic is not extended.
 fn is_swiftui_modal_dismiss_id(id: &str) -> bool {
     const PREFIXES: &[&str] = &[
         "v2-modal-sheet-",
@@ -154,6 +163,14 @@ pub trait AppLike: Send + Sync {
     /// dismiss whitelist (see `is_swiftui_modal_dismiss_id`) — keeps
     /// capability parity with the SDK self-path (`seg_v2_modal_*_basic`).
     async fn tap_xcui(&self, id: &str) -> Result<(), ExpectationFailure>;
+    /// v1.0.26 — tap with an explicit [`smix_sdk::TapMode`]. Mirrors
+    /// [`App::tap_with_mode`]. Used by `tapOn: { dispatch: daemonProxy }`
+    /// (XCTRunnerDaemonSession synthesize for stubborn RN Pressables).
+    async fn tap_with_mode(
+        &self,
+        selector: &Selector,
+        mode: smix_sdk::TapMode,
+    ) -> Result<(), ExpectationFailure>;
     /// Tap at normalized coordinates. Mirrors [`App::tap_at_coord`].
     async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
     /// v5.19 c1 — Apple Vision OCR find. Mirrors [`App::find_by_text_ocr`].
@@ -382,6 +399,13 @@ impl AppLike for App {
 
     async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
         App::tap_at_coord(self, nx, ny).await
+    }
+    async fn tap_with_mode(
+        &self,
+        selector: &Selector,
+        mode: smix_sdk::TapMode,
+    ) -> Result<(), ExpectationFailure> {
+        App::tap_with_mode(self, selector, mode).await
     }
     async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
         App::fill(self, selector, text).await
@@ -1318,7 +1342,72 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         warnings: &mut Vec<String>,
     ) -> Result<RunStepReport, RunError> {
         match step {
-            Step::TapOn { selector, optional } => self.run_tap(selector, *optional).await,
+            Step::TapOn {
+                selector,
+                optional,
+                dispatch,
+            } => {
+                // v1.0.26 — explicit dispatch override. The capability
+                // (tap_xcui / tap_with_mode) has lived in core since
+                // v5.3 / v4.0; the yaml surface for choosing it is new.
+                // Which taps need which mechanism is runtime knowledge
+                // (SwiftUI modal binding vs RN Pressable) that belongs
+                // to the test author — see `TapDispatch` docs.
+                match dispatch {
+                    Some(crate::TapDispatch::Xcui) => {
+                        let desugared = self.desugar_localized_text(selector);
+                        let Selector::Id { id, .. } = desugared.as_ref() else {
+                            return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                                code: Some(FailureCode::DriverError),
+                                message: "tapOn dispatch: xcui requires an `id:` selector"
+                                    .into(),
+                                selector: Some(selector.clone()),
+                                hint: Some(
+                                    "XCUIElement-anchored dispatch resolves by \
+                                     accessibilityIdentifier; give the target an id or \
+                                     drop `dispatch: xcui` to use default routing"
+                                        .into(),
+                                ),
+                                ..Default::default()
+                            })));
+                        };
+                        match self.app.tap_xcui(id).await {
+                            Ok(()) => Ok(RunStepReport::Ok),
+                            Err(e) if *optional && e.code == FailureCode::ElementNotFound => {
+                                Ok(RunStepReport::Skipped {
+                                    reason: format!(
+                                        "optional tapOn (dispatch: xcui): element not found (id={id}); skipped"
+                                    ),
+                                })
+                            }
+                            Err(e) => Err(RunError::Sdk(e)),
+                        }
+                    }
+                    Some(crate::TapDispatch::DaemonProxy) => {
+                        let desugared = self.desugar_localized_text(selector);
+                        match self
+                            .app
+                            .tap_with_mode(
+                                &desugared,
+                                smix_sdk::TapMode::DaemonProxySynthesize,
+                            )
+                            .await
+                        {
+                            Ok(()) => Ok(RunStepReport::Ok),
+                            Err(e) if *optional && e.code == FailureCode::ElementNotFound => {
+                                Ok(RunStepReport::Skipped {
+                                    reason: format!(
+                                        "optional tapOn (dispatch: daemonProxy): element not found ({}); skipped",
+                                        smix_sdk::describe_selector(selector)
+                                    ),
+                                })
+                            }
+                            Err(e) => Err(RunError::Sdk(e)),
+                        }
+                    }
+                    None => self.run_tap(selector, *optional).await,
+                }
+            }
             Step::TapAtPoint { nx, ny } => {
                 self.app.tap_at_coord(*nx, *ny).await?;
                 Ok(RunStepReport::Ok)

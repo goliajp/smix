@@ -91,7 +91,32 @@ fn parse_role_yaml(v: &Value, ctx: &str) -> Result<Role, ParseError> {
 // contract. Consumer sets `SMIX_AUTO_OCR_FALLBACK=1` in the shell
 // environment before invoking `smix run`. Reset by unsetting the var
 // or setting it to any value other than `1` / `true`.
+std::thread_local! {
+    // v1.0.26 — test seam. Process env is process-global while cargo
+    // runs tests on parallel threads: a test toggling
+    // SMIX_AUTO_OCR_FALLBACK via set_var races every OTHER test that
+    // parses a bare-string selector on a sibling thread (their parse
+    // output flips between Text and Fallback mid-run). The thread-local
+    // override lets tests pin the decision for their own thread only,
+    // never touching process env. `None` (the always-default outside
+    // tests) falls through to the env read.
+    static AUTO_OCR_FALLBACK_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Test seam — pin the auto-OCR-fallback decision for the current
+/// thread (bypasses the `SMIX_AUTO_OCR_FALLBACK` env read). Pass
+/// `None` to restore env-driven behaviour. Not part of the public API
+/// surface; production code paths never call this.
+#[doc(hidden)]
+pub fn set_auto_ocr_fallback_override(v: Option<bool>) {
+    AUTO_OCR_FALLBACK_OVERRIDE.with(|c| c.set(v));
+}
+
 fn auto_ocr_fallback_enabled() -> bool {
+    if let Some(v) = AUTO_OCR_FALLBACK_OVERRIDE.with(|c| c.get()) {
+        return v;
+    }
     matches!(
         std::env::var("SMIX_AUTO_OCR_FALLBACK").ok().as_deref(),
         Some("1" | "true" | "TRUE" | "yes")
@@ -234,7 +259,14 @@ fn parse_fallback_element(v: &Value, field: &str) -> Result<Selector, ParseError
             modifiers: Modifiers::default(),
         });
     }
-    if let Some(raw) = map.get(Value::String("anchored".into())) {
+    // v1.0.26 — `anchorRelative` accepted as an alias of `anchored`
+    // (docs promised the former since v5.20; parser only read the
+    // latter — same documented-but-unimplemented class as the
+    // v1.0.20 gaps).
+    if let Some(raw) = map
+        .get(Value::String("anchored".into()))
+        .or_else(|| map.get(Value::String("anchorRelative".into())))
+    {
         let (anchor, dx, dy) = parse_anchored(raw, &format!("{field}.anchored"))?;
         return Ok(Selector::AnchorRelative {
             anchor: Box::new(anchor),
@@ -244,7 +276,7 @@ fn parse_fallback_element(v: &Value, field: &str) -> Result<Selector, ParseError
     }
     Err(ParseError::InvalidValue {
         field: field.into(),
-        reason: "fallback chain element expected one of: id / text / localized_text / ocrText / anchored / point".into(),
+        reason: "fallback chain element expected one of: id / text / localized_text / ocrText / anchored (alias anchorRelative) / point".into(),
     })
 }
 
@@ -577,13 +609,44 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                 modifiers: Modifiers::default(),
             },
             optional: false,
+            dispatch: None,
         }),
-        // full form: `tapOn: { id|text|point, index?, optional? }`
+        // full form: `tapOn: { id|text|point, index?, optional?, dispatch? }`
         Value::Mapping(map) => {
             let optional = map
                 .get(Value::String("optional".into()))
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
+
+            // v1.0.26 — explicit dispatch-mechanism override. `xcui`
+            // (XCUIElement-anchored tap, needed for SwiftUI modal
+            // dismiss bindings; requires `id:`) or `daemonProxy`
+            // (XCTRunnerDaemonSession synthesize for stubborn RN
+            // Pressables). Absent = default routing.
+            let dispatch: Option<crate::TapDispatch> =
+                match map.get(Value::String("dispatch".into())) {
+                    None => None,
+                    Some(raw) => {
+                        let s = raw.as_str().ok_or_else(|| ParseError::InvalidValue {
+                            field: "tapOn.dispatch".into(),
+                            reason: format!("expected string, got {raw:?}"),
+                        })?;
+                        match s {
+                            "xcui" => Some(crate::TapDispatch::Xcui),
+                            "daemonProxy" | "daemonproxy" => {
+                                Some(crate::TapDispatch::DaemonProxy)
+                            }
+                            other => {
+                                return Err(ParseError::InvalidValue {
+                                    field: "tapOn.dispatch".into(),
+                                    reason: format!(
+                                        "unknown dispatch `{other}`; accepted: xcui, daemonProxy"
+                                    ),
+                                });
+                            }
+                        }
+                    }
+                };
 
             let index = map
                 .get(Value::String("index".into()))
@@ -614,6 +677,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                         modifiers,
                     },
                     optional,
+                    dispatch,
                 });
             }
             if let Some(id) = map.get(Value::String("id".into())).and_then(Value::as_str) {
@@ -623,6 +687,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                         modifiers,
                     },
                     optional,
+                    dispatch,
                 });
             }
             // v5.18 c1 — `localized_text: { en: "...", ja: "...", es: "..." }`
@@ -639,6 +704,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                         modifiers,
                     },
                     optional,
+                    dispatch,
                 });
             }
             // v5.19 c1 — `ocrText: "Submit"` (short) or
@@ -654,13 +720,18 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                         modifiers,
                     },
                     optional,
+                    dispatch,
                 });
             }
             // v5.20 c1 — `anchored: { anchor: {<selector>}, dx: <f>, dy: <f> }`
             // (escape hatch family L6). Resolve anchor centroid + (dx, dy)
             // normalized shift → tap_at_norm_coord. Adapter dispatches
             // directly; resolver never sees AnchorRelative.
-            if let Some(raw) = map.get(Value::String("anchored".into())) {
+            // v1.0.26 — `anchorRelative` alias accepted (docs promised it).
+            if let Some(raw) = map
+                .get(Value::String("anchored".into()))
+                .or_else(|| map.get(Value::String("anchorRelative".into())))
+            {
                 let (anchor, dx, dy) = parse_anchored(raw, "tapOn.anchored")?;
                 return Ok(Step::TapOn {
                     selector: Selector::AnchorRelative {
@@ -669,6 +740,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                         dy,
                     },
                     optional,
+                    dispatch,
                 });
             }
             // v5.20 c2 — `fallback: [<selector1>, <selector2>, ...]` (L7
@@ -678,6 +750,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                 return Ok(Step::TapOn {
                     selector: Selector::Fallback { fallback: chain },
                     optional,
+                    dispatch,
                 });
             }
             // v1.0.20 D2 — `role: <role>` (+ optional `name:` pattern).
@@ -694,6 +767,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                         modifiers,
                     },
                     optional,
+                    dispatch,
                 });
             }
             // v1.0.20 D2 — `label: <string>` for accessibilityLabel (iOS)
@@ -709,6 +783,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                         modifiers,
                     },
                     optional,
+                    dispatch,
                 });
             }
 
@@ -1168,6 +1243,11 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
 // wait. Insight round-4 clarification: the swizzle only touches
 // XCTest's internal idle wait; this verb never went through it in
 // the first place. maestro-compat default preserved.
+//
+// v1.0.26 — also accept the maestro-canonical map form
+// `- waitForAnimationToEnd: { timeout: 5000 }` (maestro yaml uses a
+// `timeout:` sub-key; smix docs showed it but the parser rejected it
+// — same documented-but-unimplemented class as the v1.0.20 gaps).
 fn parse_wait_for_animation_to_end(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::Null => Ok(Step::WaitForAnimationToEnd { duration_ms: 400 }),
@@ -1178,10 +1258,20 @@ fn parse_wait_for_animation_to_end(v: &Value) -> Result<Step, ParseError> {
             })?;
             Ok(Step::WaitForAnimationToEnd { duration_ms: ms })
         }
+        Value::Mapping(map) => {
+            let ms = map
+                .get(Value::String("timeout".into()))
+                .and_then(Value::as_u64)
+                .ok_or_else(|| ParseError::InvalidValue {
+                    field: "waitForAnimationToEnd".into(),
+                    reason: "map form expects a `timeout` key with integer ms".into(),
+                })?;
+            Ok(Step::WaitForAnimationToEnd { duration_ms: ms })
+        }
         other => Err(ParseError::InvalidValue {
             field: "waitForAnimationToEnd".into(),
             reason: format!(
-                "expected null (bare form → 400 ms default) or integer ms, got {other:?}"
+                "expected null (bare form → 400 ms default), integer ms, or {{ timeout: ms }} map, got {other:?}"
             ),
         }),
     }

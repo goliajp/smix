@@ -19,6 +19,16 @@ smix run [FLAGS] <FLOW.yaml>
 | `--apps-config <PATH>` | `SMIX_APPS_CONFIG` | (unset) | Path to `apps.yaml` for cross-platform `app:` logical key resolution |
 | `--no-launch` | — | (off) | Skip initial `foreground()` call. Use when you launched the app via other means |
 | `--trace-dir <PATH>` | — | `./.smix/trace/<runid>` | Where screenshots / video / JSON traces go |
+| `--dry-run` (alias `--check`) | — | (off) | Parse-only gate: validates every listed yaml (+ `runFlow:` includes) and reports `parse OK/FAIL` per file with step counts. No runner, no simulator. Exit 0 on clean parse, 2 on any error |
+| `--retry <N>` | — | `1` | Per-flow attempt count; attempts recorded in `~/.local/share/smix/flow-attempts.json` for `smix diagnostic dump` attribution |
+| `--debug-output <DIR>` | — | (unset) | Per-step JSON + on-fail screenshot/tree artifacts |
+
+Environment variables consumed by `smix run` (beyond the flag-bound ones above):
+
+| Env | Default | Description |
+|---|---|---|
+| `SMIX_AUTO_OCR_FALLBACK` | (off) | `1`/`true`/`yes` — auto-lift bare-string selectors to `fallback: [text, ocrText]` at parse time; `A\|B` regex-OR strings split per alternative on the OCR tiers |
+| `SMIX_TAP_OCR_POLL_MS` | `3000` | Poll budget for `tapOn` fallback chains that contain `ocrText` (250 ms cadence) |
 
 ### Exit codes
 

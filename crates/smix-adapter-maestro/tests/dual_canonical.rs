@@ -27,10 +27,12 @@ appId: com.example
             Step::TapOn {
                 selector: s1,
                 optional: o1,
+                dispatch: None,
             },
             Step::TapOn {
                 selector: s2,
                 optional: o2,
+                dispatch: None,
             },
         ) => {
             assert_eq!(s1, s2);

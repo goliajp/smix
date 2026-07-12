@@ -8,13 +8,13 @@
 - ⚠️ — supported with caveats (documented per-row)
 - ❌ — not supported on this platform in v1.0
 
-Version at freeze: v1.0.0.
+Version at freeze: v1.0.26.
 
 ## Tap family
 
 | verb | iOS | Android | notes |
 |---|---|---|---|
-| `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch |
+| `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
 | `doubleTapOn` / `doubleTap` | ✅ | ⚠️ | Android uses an IME long-press-then-release approximation |
 | `longPressOn` / `longPress` | ✅ | ✅ | Duration = 700ms default; not configurable in v1.0 |
 | `tapByCoord` | ✅ | ✅ | Normalized [0, 1] coordinates; escape hatch for non-a11y-semantic tests |
@@ -35,7 +35,7 @@ Version at freeze: v1.0.0.
 |---|---|---|---|
 | `assertVisible` / `expect` | ✅ | ✅ | Visibility check via a11y tree bounds + visible flag |
 | `assertNotVisible` / `expectNotVisible` | ✅ | ✅ | |
-| `extendedWaitUntil` | ✅ | ✅ | `timeoutMs` field; polls at 100ms |
+| `extendedWaitUntil` | ✅ | ✅ | `timeout` field; polls at 250 ms; `ocrText` in `fallback:` fires OCR per iteration; auto-captures screenshot + tree JSON to `.smix/timeouts/` on timeout |
 | `expect: { signal }` | ✅ | ✅ | Metro log signal; consumer configures `.smix/config.json` metroLog |
 | `expect: { signals }` | ✅ | ✅ | Ordered / any-order variants |
 | `expectLogClean` | ✅ | ✅ | Allowlist multi-source merge |
@@ -47,7 +47,7 @@ Version at freeze: v1.0.0.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `runFlow` | ✅ | ✅ | Path resolution: cwd → `std/` catalogue |
-| `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional |
+| `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when.visible` / `when.notVisible` gates (mutually exclusive); OCR fires when the gate selector contains `ocrText`; skips emit `SKIPPED: <reason>` to stderr |
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
 | `repeat` | ✅ | ✅ | |
 | `pressKey` | ✅ | ✅ | Names: enter, back, home, escape, delete, tab, etc. |
@@ -77,7 +77,7 @@ Version at freeze: v1.0.0.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `scroll` | ✅ | ✅ | |
-| `scrollUntilVisible` | ✅ | ✅ | Polls a11y tree between scrolls |
+| `scrollUntilVisible` | ✅ | ✅ | Polls a11y tree between scrolls; selectors containing `ocrText` also probe OCR per stroke |
 | `swipe` | ✅ | ✅ | Absolute + relative coord shapes |
 | `hideKeyboard` | ✅ | ✅ | |
 
@@ -109,7 +109,7 @@ Version at freeze: v1.0.0.
 
 | verb | iOS | Android | notes |
 |---|---|---|---|
-| `waitForAnimationToEnd` | ✅ | ⚠️ | Android best-effort; no formal animation-idle signal |
+| `waitForAnimationToEnd` | ✅ | ✅ | Fixed sleep on BOTH platforms (bare = 400 ms; `: N` or `{ timeout: N }` = N ms). Not an animation-idle signal anywhere |
 | `evalScript` | ⚠️ | ⚠️ | JS eval via the app's debug bridge (consumer wires) |
 | `runScript` | ⚠️ | ⚠️ | Sibling of `evalScript` |
 
