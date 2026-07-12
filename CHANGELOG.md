@@ -2,6 +2,31 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.21] — 2026-07-12
+
+**iOS 26.5 UIAlertController button role mapping fixed.** Insight round-6 addendum reported `tapOn: { role: button, name: 'Reload' }` (newly-parsing in v1.0.20) regressed 3/3 flows on iOS 26.5 sim — the wire and parser are correct, but iOS 26.5 XCUITest now exposes `UIAlertController` action buttons with `elementType == .other` (rawValue 1) instead of `.button` (rawValue 9). Same failure mode expected for SwiftUI `.confirmationDialog`, `.actionSheet`, keyboard `return`/`done` bar buttons on iOS 26+.
+
+### D1 — Swift-side action-container button promotion
+
+Fixed at the perception layer (`swift-bridge/Sources/SmixRunnerCore/TreeRoute.swift`, `nodeToDict`). When emitting a tree snapshot, if a node is inside an `.alert` / `.dialog` / `.sheet` ancestor at any depth AND has a non-empty label AND its own elementType is `.other` (1) or `.staticText` (48), the wire `rawType` is promoted to `"button"`. This preserves `role: button` semantics across iOS versions without requiring per-consumer yaml patches.
+
+- Promotion is **ancestor-scoped**, not global — a `.other` node outside an action container stays `"other"`.
+- Promotion requires a **non-empty label** — decorative background views under an alert are not swept up.
+- Promotion **never demotes** — a real `.button` (rawValue 9) inside an action container stays `"button"`.
+- Nested containers (a sheet inside an alert) don't loop-double-promote; we track a single boolean.
+
+### Wire compatibility
+
+- `rawType` field on the wire is unchanged in shape (still `String`).
+- Existing yaml `role: alert` / `role: dialog` / `role: sheet` targeting the container itself is unaffected — we only touch descendant elementTypes, not the container's own.
+- Pre-v1.0.21 consumers that were matching alert-buttons via `text:` or `id:` still see the same match — text and id fields aren't touched.
+- CLI / adapter parser is byte-identical to v1.0.20.
+
+### Ship gate
+
+- 7 new Swift unit tests in `TreeRouteTests` (`test_serialize_alertOtherChildWithLabel_promotedToButton`, `..._alertStaticTextChildWithLabel_...`, `..._dialogNestedButton_...`, `..._alertOtherChildNoLabel_notPromoted`, `..._otherOutsideActionContainer_notPromoted`, `..._realButtonUnderAlert_stillButton`, `..._sheetOtherChild_...`) — 26 TreeRoute tests total, all green.
+- Real-sim empirical verification pending on insight's next batch (they have the failing 3/3 case ready — an alert-button `role: button, name: 'Reload'` yaml — that will confirm v1.0.21 resolves it).
+
 ## [1.0.20] — 2026-07-12
 
 **3 docs/impl gaps closed** from insight round-5 (`smix-feedback-2026-07-12-v1.0.19-flow-progress.md`). Insight reported bootstrap batch flow completion is now **2/3 passing** (`force-update` + `pinning-failure` green; `launch-chain` fails on their own QA staging role-assignment). `v1.0.19` wins (`lastInteractiveNamedIds` at top-level + `AppUnavailableReason` disambiguation) both delivered exactly the observability they asked for — steered them to find a 4th latent native race in `expo::setProperty` / `ConstantDefinition.buildDescriptor`.

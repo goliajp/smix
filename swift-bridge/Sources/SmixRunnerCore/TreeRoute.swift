@@ -185,10 +185,33 @@ public enum TreeRoute {
     appFrame: CGRect,
     depth: Int,
     truncated: inout Bool,
-    logSink: ((String) -> Void)?
+    logSink: ((String) -> Void)?,
+    inActionContainer: Bool = false
   ) -> [String: Any] {
     var out: [String: Any] = [:]
-    out["rawType"] = elementTypeName(d.elementTypeRawValue)
+    let rawRawType = elementTypeName(d.elementTypeRawValue)
+    // v1.0.21 D1 — iOS 26.5 XCUITest exposes UIAlertController /
+    // .confirmationDialog action buttons as `.other` (rawValue 1) or
+    // `.staticText` (rawValue 48) instead of `.button` (rawValue 9).
+    // Consumer yaml `tapOn: { role: button, name: 'Reload' }` broke on
+    // iOS 26.5 because the resolver walks nodes matching `rawType ==
+    // "button"` and iOS 26 alert buttons no longer report as such.
+    //
+    // Fix: enrich at the perception layer. When we're inside an
+    // action-container ancestor (alert / dialog / sheet), any
+    // descendant that has a non-empty label AND is currently `other` or
+    // `staticText` gets promoted to `button` on the wire. This
+    // preserves cross-iOS-version `role: button` semantics without
+    // requiring per-consumer patches. Nested containers (a sheet inside
+    // an alert) don't loop — we only lift, never demote.
+    //
+    // Insight round-6 report; sim-insight iOS 26.5. See
+    // `docs/ai-guide/insight-v1.0.20-shipping.md` follow-up.
+    let hasLabel = !d.label.isEmpty || (d.title.map { !$0.isEmpty } ?? false)
+    let promotable = inActionContainer && hasLabel
+      && (rawRawType == "other" || rawRawType == "staticText")
+    let rawType = promotable ? "button" : rawRawType
+    out["rawType"] = rawType
     if !d.identifier.isEmpty { out["identifier"] = d.identifier }
     if !d.label.isEmpty { out["label"] = d.label }
     if let t = d.title, !t.isEmpty { out["title"] = t }
@@ -208,12 +231,28 @@ public enum TreeRoute {
     out["hasFocus"] = d.hasFocus
     out["visible"] = isVisible(d.frame, appFrame: appFrame)
 
+    // v1.0.21 D1 — mark child recursion "in action container" once we
+    // hit an alert / dialog / sheet at any depth. Use the ORIGINAL
+    // rawType (rawRawType) not the promoted one — a promoted button
+    // isn't itself an action container.
+    let childInActionContainer = inActionContainer
+      || rawRawType == "alert"
+      || rawRawType == "dialog"
+      || rawRawType == "sheet"
+
     if depth >= MAX_DEPTH {
       truncated = true
       out["children"] = [[String: Any]]()
     } else {
       out["children"] = d.children.map {
-        nodeToDict($0, appFrame: appFrame, depth: depth + 1, truncated: &truncated, logSink: logSink)
+        nodeToDict(
+          $0,
+          appFrame: appFrame,
+          depth: depth + 1,
+          truncated: &truncated,
+          logSink: logSink,
+          inActionContainer: childInActionContainer
+        )
       }
     }
     return out
