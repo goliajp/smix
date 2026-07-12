@@ -30,6 +30,7 @@ fn measure_ns<F: FnMut()>(mut body: F, iterations: u32) -> f64 {
 fn mk_node(label: &str, bounds: Rect) -> A11yNode {
     A11yNode {
         raw_type: "other".into(),
+        element_type_raw: 1,
         role: None,
         identifier: None,
         label: Some(label.into()),

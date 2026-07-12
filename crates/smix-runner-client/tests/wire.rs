@@ -21,6 +21,7 @@ fn text_sel(t: &str) -> Selector {
 fn minimal_tree() -> A11yNode {
     A11yNode {
         raw_type: "application".into(),
+        element_type_raw: 1,
         role: None,
         identifier: None,
         label: None,

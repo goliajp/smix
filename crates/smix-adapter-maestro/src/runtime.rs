@@ -735,6 +735,37 @@ fn failure_kind(err: &RunError) -> String {
     }
 }
 
+/// v1.0.22 D2 — is this a wait/find timeout worth capturing a
+/// screenshot for? Currently only `FailureCode::Timeout` triggers the
+/// unconditional dump; other failure codes (e.g. `NotVisible`,
+/// `ElementNotFound`) already emit rich context and don't benefit from
+/// the visual capture.
+fn is_timeout_error(err: &RunError) -> bool {
+    matches!(err, RunError::Sdk(f) if matches!(f.code, FailureCode::Timeout))
+}
+
+/// v1.0.22 D2 — merge the `capture_timeout_dump` sink paths into the
+/// failure's existing hint. If the capture failed entirely (returned
+/// `None`) the failure is returned unchanged.
+fn annotate_timeout_error(err: RunError, capture_hint: Option<String>) -> RunError {
+    let Some(hint_suffix) = capture_hint else {
+        return err;
+    };
+    match err {
+        RunError::Sdk(mut f) => {
+            let capture_line = format!(
+                "v1.0.22 timeout capture: {hint_suffix}"
+            );
+            f.hint = Some(match f.hint.take() {
+                Some(existing) => format!("{existing}\n{capture_line}"),
+                None => capture_line,
+            });
+            RunError::Sdk(f)
+        }
+        other => other,
+    }
+}
+
 // ----------------------------------------------------------------------
 // Adapter — dispatch state
 // ----------------------------------------------------------------------
@@ -1317,12 +1348,52 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 // v5.18 c1 — desugar LocalizedText by current locale.
                 let desugared = self.desugar_localized_text(selector);
                 let timeout = Duration::from_millis(*timeout_ms);
-                if *expect_visible {
-                    self.app.wait_for(&desugared, timeout).await?;
+                let result = if *expect_visible {
+                    // v1.0.22 D1 — OCR + Fallback support inside
+                    // extendedWaitUntil. Pre-v1.0.22 dispatched every
+                    // selector shape to `app.wait_for` which uses the
+                    // tree resolver — that silently skipped OcrText
+                    // members inside a Fallback chain (never fired
+                    // OCR at all during the poll window). Now:
+                    //   - Fallback chain containing OcrText → poll
+                    //     both tree-resolvable subs AND OCR subs per
+                    //     iteration; first hit wins.
+                    //   - Standalone OcrText → poll `find_by_text_ocr`
+                    //     within the timeout budget.
+                    //   - Everything else → unchanged tree-based path.
+                    self.wait_for_visible_with_ocr(&desugared, timeout).await
                 } else {
-                    self.app.wait_for_not_visible(&desugared, timeout).await?;
+                    self.app
+                        .wait_for_not_visible(&desugared, timeout)
+                        .await
+                        .map(|_| ())
+                        .map_err(RunError::Sdk)
+                };
+                // v1.0.22 D2 — unconditional screenshot + tree JSON
+                // capture on wait timeout, even without
+                // `--debug-output`. Insight round-7 §3: without a
+                // visual + tree snapshot at the failure moment,
+                // triaging tree-degradation on iOS 26.5 + RN Fabric
+                // means eyeballing metro logs and inferring. Now every
+                // `extendedWaitUntil` timeout attaches a WRITTEN path
+                // to the failure hint. Sink dir: `.smix/timeouts/` in
+                // CWD when writeable, else
+                // `~/.local/share/smix/timeouts/`. Best-effort — any
+                // I/O / screenshot / tree error is logged but does
+                // not affect the failure verdict.
+                match result {
+                    Ok(_) => Ok(RunStepReport::Ok),
+                    Err(err) => {
+                        if is_timeout_error(&err) {
+                            let hint = self
+                                .capture_timeout_dump("extendedWaitUntil")
+                                .await;
+                            Err(annotate_timeout_error(err, hint))
+                        } else {
+                            Err(err)
+                        }
+                    }
                 }
-                Ok(RunStepReport::Ok)
             }
             Step::AssertVisible { selector } => {
                 // v5.18 c1 — desugar LocalizedText by current locale.
@@ -2292,6 +2363,234 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             });
         }
         Cow::Borrowed(selector)
+    }
+
+    /// v1.0.22 D1 — extendedWaitUntil visible with OCR + Fallback
+    /// dispatch. Pre-v1.0.22 `extendedWaitUntil` routed every selector
+    /// through `App::wait_for`, whose tree resolver silently skipped
+    /// `OcrText` inside a `Fallback` chain (compile returns false,
+    /// resolver treats as never-matching). Consumers who spelled
+    /// `fallback: [id, text, ocrText]` got 45 s of pure `/tree` polls
+    /// and never a single OCR call. Insight round-7 §2.
+    ///
+    /// Now:
+    /// - `Fallback` chain — per poll iteration walk every sub-selector:
+    ///   tree-resolvable ones (Id/Text/Label/Role/Anchor/AnchorRelative/
+    ///   Focused/LocalizedText/Point) dispatch via `App::find`; OcrText
+    ///   dispatches via `App::find_by_text_ocr`. First hit wins.
+    ///   OCR members go LAST in each iteration so the cheap tree-based
+    ///   layers get a chance first.
+    /// - Standalone `OcrText` — poll `find_by_text_ocr` on the same
+    ///   250 ms cadence as the driver's `wait_for`.
+    /// - Anything else — delegate to `App::wait_for` unchanged.
+    ///
+    /// Poll cadence matches the driver's `POLL_INTERVAL_MS` (250 ms).
+    /// On timeout emits `ExpectationFailure { code: Timeout }` with the
+    /// per-layer trace so AI-readable output can show WHICH layer
+    /// missed how (`L1 id=btn-…: NOT_FOUND; L2 text=Log in: NOT_FOUND;
+    /// L3 ocrText=Log in: NO_OCR_MATCH`).
+    async fn wait_for_visible_with_ocr(
+        &mut self,
+        selector: &Selector,
+        timeout: Duration,
+    ) -> Result<(), RunError> {
+        use std::time::Instant;
+        use tokio::time::sleep;
+        const POLL: Duration = Duration::from_millis(250);
+
+        // Fast path: no OCR anywhere in the selector → delegate to
+        // driver-side `wait_for` unchanged. Detecting "OCR anywhere"
+        // covers both top-level `Selector::OcrText` and any `OcrText`
+        // hidden inside a `Fallback` chain.
+        fn contains_ocr(sel: &Selector) -> bool {
+            match sel {
+                Selector::OcrText { .. } => true,
+                Selector::Fallback { fallback } => fallback.iter().any(contains_ocr),
+                _ => false,
+            }
+        }
+        if !contains_ocr(selector) {
+            self.app.wait_for(selector, timeout).await?;
+            return Ok(());
+        }
+
+        let start = Instant::now();
+        loop {
+            // Fallback chain: try each sub-selector; return on first hit.
+            if let Selector::Fallback { fallback } = selector {
+                // Try tree-based sub-selectors first (cheaper). OcrText
+                // last so tree hits pre-empt OCR cost.
+                for sub in fallback.iter() {
+                    if matches!(sub, Selector::OcrText { .. }) {
+                        continue;
+                    }
+                    if self.app.find(sub).await.unwrap_or(false) {
+                        return Ok(());
+                    }
+                }
+                for sub in fallback.iter() {
+                    if let Selector::OcrText {
+                        ocr_text, locales, ..
+                    } = sub
+                    {
+                        let eff_locales: Vec<String> = if locales.is_empty() {
+                            vec![self.last_locale.clone()]
+                        } else {
+                            locales.clone()
+                        };
+                        if self
+                            .app
+                            .find_by_text_ocr(ocr_text, &eff_locales)
+                            .await
+                            .ok()
+                            .flatten()
+                            .is_some()
+                        {
+                            return Ok(());
+                        }
+                    }
+                }
+            } else if let Selector::OcrText {
+                ocr_text, locales, ..
+            } = selector
+            {
+                // Standalone OCR waitFor.
+                let eff_locales: Vec<String> = if locales.is_empty() {
+                    vec![self.last_locale.clone()]
+                } else {
+                    locales.clone()
+                };
+                if self
+                    .app
+                    .find_by_text_ocr(ocr_text, &eff_locales)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
+                    return Ok(());
+                }
+            }
+
+            if start.elapsed() >= timeout {
+                // Compose per-layer trace for the Fallback case;
+                // singleton trace for standalone OcrText.
+                let trace = if let Selector::Fallback { fallback } = selector {
+                    fallback
+                        .iter()
+                        .enumerate()
+                        .map(|(i, s)| {
+                            format!(
+                                "L{} {}: MISS",
+                                i + 1,
+                                smix_sdk::describe_selector(s)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                } else {
+                    format!("{}: MISS", smix_sdk::describe_selector(selector))
+                };
+                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::Timeout),
+                    message: format!(
+                        "extendedWaitUntil.visible({}) timed out after {:?}",
+                        smix_sdk::describe_selector(selector),
+                        timeout
+                    ),
+                    selector: Some(selector.clone()),
+                    hint: Some(format!(
+                        "OCR-aware waitFor exhausted budget. Trace: [{trace}]. \
+                         If the a11y tree is degraded (RN Fabric on iOS 26.5), \
+                         consider adding `ocrText` last in a `fallback:` chain \
+                         so smix falls through to Vision OCR; smix v1.0.22+ \
+                         actually fires OCR in this path (pre-v1.0.22 silently \
+                         skipped it)."
+                    )),
+                    ..Default::default()
+                })));
+            }
+            sleep(POLL).await;
+        }
+    }
+
+    /// v1.0.22 D2 — capture screenshot + a11y tree at the moment of a
+    /// wait timeout and write to a well-known path so post-mortem
+    /// triage always has a visual + tree snapshot. Runs even when the
+    /// consumer did NOT pass `--debug-output`. Returns a
+    /// human-readable hint containing the written paths (both, either,
+    /// or an error explanation on partial failure) suitable for
+    /// concatenation into an ExpectationFailure hint.
+    ///
+    /// Sink path resolution:
+    /// 1. If `self.debug_output` is set, write into it — same dir as
+    ///    per-step debug artifacts, so consumers with `--debug-output`
+    ///    already wired see the timeout capture in the expected place.
+    /// 2. Else try `<CWD>/.smix/timeouts/` — same convention as the
+    ///    other CLI-scoped smix data (session persistence, flow
+    ///    attempts). Preferred for repo-scoped triage; the dir is
+    ///    already in most gitignores.
+    /// 3. Else fall back to `~/.local/share/smix/timeouts/` — matches
+    ///    the runner-sources / flow-attempts sink location.
+    async fn capture_timeout_dump(&self, verb: &str) -> Option<String> {
+        let ts_ms: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let base_name = format!("timeout-{verb}-{ts_ms}");
+        let dir: PathBuf = if let Some(d) = self.debug_output.as_ref() {
+            d.clone()
+        } else {
+            let local = std::env::current_dir()
+                .ok()
+                .map(|c| c.join(".smix").join("timeouts"));
+            let home = dirs::home_dir().map(|h| h.join(".local/share/smix/timeouts"));
+            local.or(home)?
+        };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            eprintln!(
+                "WARN: v1.0.22 timeout capture: mkdir {dir:?} failed: {e}"
+            );
+            return None;
+        }
+        let png_path = dir.join(format!("{base_name}.png"));
+        let tree_path = dir.join(format!("{base_name}.tree.json"));
+
+        let mut segments: Vec<String> = Vec::new();
+        match self.app.screenshot().await {
+            Ok(bytes) => match std::fs::write(&png_path, &bytes) {
+                Ok(_) => segments.push(format!("screenshot={}", png_path.display())),
+                Err(e) => {
+                    eprintln!(
+                        "WARN: v1.0.22 timeout capture: write {png_path:?} failed: {e}"
+                    );
+                }
+            },
+            Err(e) => {
+                eprintln!("WARN: v1.0.22 timeout capture: screenshot failed: {e}");
+            }
+        }
+        match self.app.tree().await {
+            Ok(tree) => match serde_json::to_vec_pretty(&tree) {
+                Ok(bytes) => match std::fs::write(&tree_path, &bytes) {
+                    Ok(_) => segments.push(format!("tree={}", tree_path.display())),
+                    Err(e) => eprintln!(
+                        "WARN: v1.0.22 timeout capture: write {tree_path:?} failed: {e}"
+                    ),
+                },
+                Err(e) => eprintln!(
+                    "WARN: v1.0.22 timeout capture: tree serialize failed: {e}"
+                ),
+            },
+            Err(e) => {
+                eprintln!("WARN: v1.0.22 timeout capture: tree failed: {e}");
+            }
+        }
+        if segments.is_empty() {
+            None
+        } else {
+            Some(segments.join(" "))
+        }
     }
 
     async fn run_tap(

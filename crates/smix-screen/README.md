@@ -25,6 +25,7 @@ use smix_screen::{
 
 let node = A11yNode {
     raw_type: "button".into(),
+    element_type_raw: 9,
     role: Some(Role::Button),
     identifier: Some("btn-login".into()),
     label: Some("Log in".into()),

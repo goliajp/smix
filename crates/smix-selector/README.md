@@ -64,7 +64,7 @@ assert!(s.contains("below="));
 let pattern = Pattern::text("Login");
 let compiled = pattern.compile().expect("text compile is infallible");
 let node = A11yNode { /* ... */
-#    raw_type: "button".into(), role: Some(Role::Button),
+#    raw_type: "button".into(), element_type_raw: 9, role: Some(Role::Button),
 #    identifier: None, label: Some("Login".into()),
 #    title: None, placeholder_value: None, value: None, text: None,
 #    bounds: Rect { x: 0.0, y: 0.0, w: 10.0, h: 10.0 },

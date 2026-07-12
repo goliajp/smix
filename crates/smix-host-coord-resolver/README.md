@@ -24,7 +24,7 @@ use smix_selector::{Modifiers, Pattern, Selector};
 
 # fn mk(label: &str, bounds: Rect) -> A11yNode {
 #     A11yNode {
-#         raw_type: "other".into(), role: None, identifier: None,
+#         raw_type: "other".into(), element_type_raw: 1, role: None, identifier: None,
 #         label: Some(label.into()), title: None, placeholder_value: None,
 #         value: None, text: None, bounds, enabled: true, selected: false,
 #         has_focus: false, visible: true, children: vec![],

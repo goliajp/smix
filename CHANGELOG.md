@@ -2,6 +2,61 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.22] — 2026-07-12
+
+**iOS 26.5 + RN 0.86 Fabric tree-degradation triage upgrade.** Insight round-7 (`smix-feedback-2026-07-12.md`) hit a wall: on Xcode 26.6 + iOS 26.5 sim + RN 0.86 New Arch (Fabric), `GET /tree` returns every child under the app root with empty `identifier` and empty `label` — 10 "unknown" nodes visibly showing a `Log in to Insight` button that has JSX `testID="btn-log-in-to-insight"` + `accessibilityLabel` + `accessibilityRole="button"` + `accessible={true}`. Every bootstrap flow times out on the first `extendedWaitUntil` regardless of resetAppData / clearAppData choice, and the `fallback: [ocrText]` last resort silently never fires. Three fixes land:
+
+### D1 — `extendedWaitUntil.visible.fallback: [ocrText: ...]` now actually calls OCR
+
+Parser accepted `ocrText` in fallback since v1.0.20, but the runtime dispatched every selector through `App::wait_for` which uses the tree resolver — the tree resolver skips `Selector::OcrText` (correct behavior in isolation; OCR is meant to be dispatched at the adapter layer). Consumers who spelled `fallback: [id, text, ocrText]` got 45 s of pure `/tree` polls and never a single Vision call.
+
+New adapter method `wait_for_visible_with_ocr` splits the fallback per poll iteration:
+- Tree-resolvable sub-selectors (Id / Text / Label / Role / LocalizedText / Anchor / AnchorRelative / Focused / Point) fire via `App::find`.
+- `OcrText` sub-selectors fire via `App::find_by_text_ocr`.
+- First hit wins. OCR members run LAST in each iteration so tree hits pre-empt OCR cost.
+- Standalone `Selector::OcrText` at top level: polls `find_by_text_ocr` on the same 250 ms cadence as the driver.
+- Fast path: selectors without any `OcrText` anywhere still delegate to `App::wait_for` unchanged.
+
+Timeout emits a per-layer trace: `L1 id=btn-…: MISS; L2 text=Log in: MISS; L3 ocrText=Log in: MISS`.
+
+### D2 — Screenshot + tree JSON always captured on `extendedWaitUntil` timeout
+
+Pre-v1.0.22 required `--debug-output <dir>` to get a fail PNG + tree snapshot. Consumers debugging a tree-degradation regression in CI didn't have that wired; every timeout left them blind. Now every `extendedWaitUntil` timeout auto-captures both.
+
+Sink resolution:
+1. `--debug-output <dir>` if set (same convention as per-step debug).
+2. Else `<CWD>/.smix/timeouts/` (repo-scoped triage; already in typical gitignores).
+3. Else `~/.local/share/smix/timeouts/`.
+
+File names: `timeout-extendedWaitUntil-<epoch-ms>.png` + `.tree.json`. The written paths are appended to the failure's existing hint (`v1.0.22 timeout capture: screenshot=<path> tree=<path>`) so AI-readable output surfaces them.
+
+Best-effort: any screenshot / tree / I/O error is logged to stderr and does not affect the failure verdict.
+
+### D3 — `A11yNode.elementTypeRaw` numeric on wire (partial fix for RN Fabric tree gap)
+
+Insight's root-cause diagnosis is right — iOS 26.5 XCUITest returns empty `identifier` and empty `label` for RN 0.86 Fabric-mounted views despite the JSX setting `testID` and `accessibilityLabel`. That's an app-side (RN → UIAccessibility bridge) issue, not a smix serializer bug. But smix consumers had no way to see that from the wire: `rawType` was the only exposed type info, and the numeric `XCUIElement.ElementType.rawValue` was lost.
+
+Now `A11yNode.elementTypeRaw: u64` ships on every wire payload. Consumer client-side triage:
+- `elementTypeRaw != 1 && identifier == "" && label == ""` ⇒ iOS types this as a real element (`.button`, `.textField`, `.staticText`, ...) but the a11y bridge dropped its name — app-side fix needed (RN 0.86 Fabric accessibility bridge on iOS 26.5).
+- `elementTypeRaw == 1` (`.other`) ⇒ plain wrapper view, expected to be nameless.
+
+Insight can now distinguish "smix bug" from "RN bridge dropped the name" in one field lookup.
+
+Additive on the A11yNode wire; `#[serde(default = "default_element_type_raw")]` returns 1 (`.other`) for pre-v1.0.22 payloads.
+
+### Wire compatibility
+
+- `DiagnosticDumpResponse` unchanged.
+- `A11yNode.elementTypeRaw: u64` new (default 1) — pre-v1.0.22 consumers ignoring it see zero behaviour change.
+- `extendedWaitUntil` semantics preserved for selectors without OCR anywhere.
+- Timeout capture is additive — hint on the failure gets extra lines; the failure code / message / structure otherwise unchanged.
+
+### Ship gate
+
+- 119 test-result-ok buckets across the workspace (all pre-existing + new); no regressions.
+- Full workspace `cargo check` green.
+- Real-sim empirical validation pending on insight's next batch: they have the failing case with `fallback: [id, text, ocrText]` yaml + a screen where the a11y tree is degraded. If OCR fires and the tree-JSON capture surfaces at timeout, D1 + D2 are proved. D3 informs their next round's app-side fix or their choice to fall through to OCR.
+
 ## [1.0.21] — 2026-07-12
 
 **iOS 26.5 UIAlertController button role mapping fixed.** Insight round-6 addendum reported `tapOn: { role: button, name: 'Reload' }` (newly-parsing in v1.0.20) regressed 3/3 flows on iOS 26.5 sim — the wire and parser are correct, but iOS 26.5 XCUITest now exposes `UIAlertController` action buttons with `elementType == .other` (rawValue 1) instead of `.button` (rawValue 9). Same failure mode expected for SwiftUI `.confirmationDialog`, `.actionSheet`, keyboard `return`/`done` bar buttons on iOS 26+.
