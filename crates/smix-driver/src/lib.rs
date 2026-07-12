@@ -212,7 +212,13 @@ impl IosDriver {
             let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
             let mut last_transport_err: Option<ExpectationFailure> = None;
             loop {
-                match self.runner.find(selector, include).await {
+                // v1.0.27 — the live route asks for on-screen (frame ∩
+                // app frame), not bare existence. Bare `.exists` is
+                // true for below-the-fold elements, which made `find`
+                // (and everything built on it: runFlow.when gates,
+                // wait_for_not_visible, tapOn poll probes) disagree
+                // with tapOn's honest resolution on scrollable screens.
+                match self.runner.find_on_screen(selector, include).await {
                     Ok(present) => return Ok(present),
                     Err(e) => {
                         let failure = transport_to_failure(e);
@@ -226,8 +232,66 @@ impl IosDriver {
             }
         } else {
             let tree = self.tree_with_retry(include).await?;
-            Ok(!resolve_selector_all(&tree, selector).is_empty())
+            // v1.0.27 — tree-resolve branch gains the same live
+            // on-screen confirmation as wait_for. See
+            // `confirm_on_screen` for semantics.
+            let matched = resolve_selector_all(&tree, selector);
+            if matched.is_empty() {
+                return Ok(false);
+            }
+            Ok(self.confirm_on_screen(&matched, include).await)
         }
+    }
+
+    /// v1.0.27 — live on-screen confirmation for tree-matched nodes.
+    ///
+    /// iOS 26.5 + RN 0.86 Fabric SNAPSHOT frames drift for
+    /// below-the-fold elements: the tree reports stale in-viewport
+    /// coords with `visible=true`, so the resolver's frame∩viewport
+    /// filter passes while the element is actually off screen. The
+    /// LIVE XCUI query re-resolves current layout and tells the
+    /// truth (the same reason `tapOn` fails honestly on such
+    /// elements).
+    ///
+    /// For up to the first 3 matched nodes that carry a
+    /// live-queryable handle (`identifier`, else `label` — the two
+    /// fields the runner `/find` predicate matches), ask the runner
+    /// whether an element with that handle is on screen right now.
+    /// Any confirmed node ⇒ true. Nodes with NO handle can't be
+    /// live-confirmed — if none of the matched nodes has a handle,
+    /// the tree verdict stands (pre-v1.0.27 semantics; OCR tiers
+    /// remain the fallback for handle-less degraded trees).
+    ///
+    /// Transport errors during confirmation also let the tree
+    /// verdict stand: a flaky live probe must not turn a legitimate
+    /// tree hit into a miss.
+    async fn confirm_on_screen(
+        &self,
+        matched: &[&A11yNode],
+        include: Option<IncludeScope>,
+    ) -> bool {
+        let mut had_handle = false;
+        for node in matched.iter().take(3) {
+            let handle = node
+                .identifier
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .or_else(|| node.label.as_deref().filter(|s| !s.is_empty()));
+            let Some(handle) = handle else { continue };
+            had_handle = true;
+            let probe = Selector::Text {
+                text: Pattern::Text(handle.to_string()),
+                modifiers: smix_selector::Modifiers::default(),
+            };
+            match self.runner.find_on_screen(&probe, include).await {
+                Ok(true) => return true,
+                Ok(false) => continue,
+                // Live probe unavailable → tree verdict stands.
+                Err(_) => return true,
+            }
+        }
+        // No node carried a live handle → cannot confirm → trust tree.
+        !had_handle
     }
 
     /// Transient `/tree` transport retry helper. Shared by
@@ -643,8 +707,17 @@ impl IosDriver {
         for i in 0..=SCROLL_MAX_SWIPES {
             // Transport retry on tree fetch (see tap above).
             let tree = self.tree_with_retry(None).await?;
-            if resolve_selector_compiled(&tree, selector, &ctx).is_some() {
-                return Ok(());
+            if let Some(node) = resolve_selector_compiled(&tree, selector, &ctx) {
+                // v1.0.27 — live on-screen confirmation. Without it a
+                // below-the-fold element with a drifted snapshot frame
+                // satisfies the probe on swipe 0 and scrollUntilVisible
+                // returns WITHOUT scrolling (insight round-5 Ask 13).
+                // A refuted confirm means "exists but not on screen
+                // yet" — exactly the state another swipe should fix.
+                let matched = [node];
+                if self.confirm_on_screen(&matched, None).await {
+                    return Ok(());
+                }
             }
             if i == SCROLL_MAX_SWIPES || start.elapsed() > timeout {
                 let visible = collect_visible_summaries(&tree, 10);
@@ -835,17 +908,47 @@ impl IosDriver {
             }));
         };
         let mut last_transport_err: Option<ExpectationFailure> = None;
+        // v1.0.27 — tracks "the tree matched but the live on-screen
+        // check refuted it" across poll iterations so the timeout
+        // failure can say WHY the wait never greened (below-the-fold
+        // element with a drifted snapshot frame — insight round-5
+        // Ask 13's wait-pass → tap-miss pair).
+        let mut tree_hit_offscreen = false;
         loop {
             match self.tree(include).await {
                 Ok(tree) => {
                     if let Some(node) = resolve_selector_compiled(&tree, selector, &ctx) {
-                        return Ok(node.clone());
+                        // v1.0.27 — live on-screen confirmation.
+                        // Snapshot frames drift under iOS 26.5 + RN
+                        // Fabric; the resolver's frame∩viewport filter
+                        // can pass an element that is actually below
+                        // the fold. One live probe per tree hit keeps
+                        // wait_for / scrollUntilVisible / tapOn in
+                        // agreement on "visible".
+                        let matched = [node];
+                        if self.confirm_on_screen(&matched, include).await {
+                            return Ok(node.clone());
+                        }
+                        tree_hit_offscreen = true;
                     }
                     if start.elapsed() >= timeout {
                         let visible = collect_visible_summaries(&tree, 10);
                         let target = base_text_or_id(selector);
                         let suggestions =
                             smix_error::build_suggestions(target.as_deref(), &visible);
+                        let hint = if tree_hit_offscreen {
+                            Some(
+                                "the a11y tree matched this selector but the LIVE \
+                                 on-screen check refuted it every time — the element \
+                                 exists with a stale/drifted snapshot frame (typically \
+                                 below the fold on iOS 26.5 + RN Fabric). Use \
+                                 scrollUntilVisible to bring it into the viewport \
+                                 first, or an ocrText tier to assert by pixels."
+                                    .to_string(),
+                            )
+                        } else {
+                            None
+                        };
                         return Err(ExpectationFailure::new(FailureInit {
                             code: Some(FailureCode::Timeout),
                             message: format!(
@@ -856,6 +959,7 @@ impl IosDriver {
                             selector: Some(selector.clone()),
                             visible_elements: visible,
                             suggestions,
+                            hint,
                             ..Default::default()
                         }));
                     }
@@ -964,9 +1068,19 @@ fn base_text_or_id(selector: &Selector) -> Option<String> {
 // modifier is included here — Apple element query has no parent-chain
 // semantic, so ancestor-bearing selectors must host-resolve.
 fn can_use_find_route(selector: &Selector) -> bool {
-    let Selector::Text { modifiers, .. } = selector else {
+    let Selector::Text { text, modifiers } = selector else {
         return false;
     };
+    // v1.0.27 — regex patterns serialize as `{"regex": …, "flags": …}`
+    // objects, which the runner /find route's decode (expecting
+    // `selector.text` as a plain string) rejects with 400. Pre-v1.0.27
+    // a regex Text selector dispatched here would burn the full
+    // transport-retry budget (~8 s) and surface a DriverError instead
+    // of evaluating. Only literal patterns ride the live route; regex
+    // falls back to host-resolve like every other complex shape.
+    if !matches!(text, Pattern::Text(_)) {
+        return false;
+    }
     modifiers.near.is_none()
         && modifiers.below.is_none()
         && modifiers.above.is_none()

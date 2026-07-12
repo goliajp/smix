@@ -578,6 +578,24 @@ pub enum Step {
         /// `wait_for` is None. Default 5000 at the parser layer.
         timeout_ms: u64,
     },
+    /// v1.0.27 — delete keys from the target app's persisted
+    /// user-defaults store (iOS NSUserDefaults via `simctl spawn
+    /// defaults delete`; Android unsupported). yaml shape:
+    /// `clearUserDefaults: { keys: [k1, k2], bundleId?: <id> }`.
+    /// `bundleId` absent ⇒ the flow's resolved app id. Contract is
+    /// "ensure keys absent" — already-absent keys succeed. Terminate
+    /// the app first (running processes cache defaults in-memory).
+    ///
+    /// Motivating case (insight round-5 Ask 12): neutralize
+    /// expo-dev-launcher's persisted deep-link replay between
+    /// terminate and relaunch.
+    ClearUserDefaults {
+        /// NSUserDefaults keys to delete.
+        keys: Vec<String>,
+        /// Target defaults domain. `None` ⇒ flow's resolved app id.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bundle_id: Option<String>,
+    },
     /// Open a URL / deep link in the OS handler. Maps to
     /// `simctl openurl` (c3 mapping).
     OpenLink(String),

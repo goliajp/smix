@@ -62,6 +62,7 @@ Version at freeze: v1.0.26.
 | `killApp` | ✅ | ✅ | |
 | `clearState` / `reset` | ✅ | ✅ | |
 | `clearKeychain` / `resetKeychain` | ✅ | ⚠️ | Android has no keychain; no-op with warning |
+| `clearUserDefaults` | ✅ | ❌ | v1.0.27 — per-key NSUserDefaults deletion via `simctl spawn defaults delete`; Android SharedPreferences has no host-side per-key path (explicit error; use `clearAppData` for a full wipe) |
 
 ## Media
 

@@ -179,6 +179,33 @@ pub trait DeviceControl: Send + Sync {
         Ok(())
     }
 
+    /// v1.0.27 — delete a single key from the target app's persisted
+    /// user-defaults / preferences store. iOS: `simctl spawn defaults
+    /// delete <bundle> <key>` (NSUserDefaults via the sim's cfprefsd).
+    /// Returns `Ok(true)` when the key existed, `Ok(false)` when
+    /// already absent (both are the "ensure absent" target state).
+    ///
+    /// Default impl errors explicitly — Android SharedPreferences has
+    /// no host-side per-key deletion path (files are app-private;
+    /// `pm clear` is the whole-store hammer, which is `clearAppData`'s
+    /// job, not this verb's). NOT a silent no-op: a consumer relying
+    /// on the deletion for test correctness must hear that it didn't
+    /// happen.
+    async fn user_defaults_delete(
+        &self,
+        _udid: &str,
+        _bundle_id: &str,
+        _key: &str,
+    ) -> Result<bool, SimctlError> {
+        Err(SimctlError::non_zero_exit(
+            "user-defaults-delete",
+            1,
+            "clearUserDefaults is not supported on this platform (iOS simulator only — \
+             Android SharedPreferences has no host-side per-key deletion; use clearAppData \
+             for a full store wipe)",
+        ))
+    }
+
     // === Lifecycle ancillary ===
 
     async fn open_url(&self, udid: &str, url: &str) -> Result<(), SimctlError>;

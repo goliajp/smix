@@ -36,6 +36,8 @@ enum MockCall {
     TapXcui(String),
     /// v1.0.26 — `App::tap_with_mode(selector, mode)` (`dispatch: daemonProxy`).
     TapWithMode(String),
+    /// v1.0.27 — `App::clear_user_defaults(bundle, keys)`.
+    ClearUserDefaults(String, Vec<String>),
     /// v5.19 c1 — `App::find_by_text_ocr(text, locales)` (L5 sense layer).
     FindByTextOcr(String, Vec<String>),
     /// v5.20 c1 — `App::find_norm_coord(selector)` (L6 anchor resolution).
@@ -300,6 +302,17 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::TapWithMode(format!("{selector:?}")));
+        Ok(())
+    }
+    async fn clear_user_defaults(
+        &self,
+        bundle_id: &str,
+        keys: &[String],
+    ) -> Result<(), ExpectationFailure> {
+        self.calls.lock().unwrap().push(MockCall::ClearUserDefaults(
+            bundle_id.to_string(),
+            keys.to_vec(),
+        ));
         Ok(())
     }
     async fn find_by_text_ocr(
@@ -2713,4 +2726,40 @@ async fn tapon_dispatch_xcui_non_id_selector_errors() {
     let err = adapter.run(&flow).await.expect_err("must error");
     let msg = format!("{err}");
     assert!(msg.contains("requires an `id:` selector"), "got: {msg}");
+}
+
+// v1.0.27 — clearUserDefaults dispatch routing.
+
+#[tokio::test]
+async fn clear_user_defaults_uses_flow_app_id_by_default() {
+    let flow = parse_inline(
+        "appId: com.flow.app\n---\n- clearUserDefaults:\n    keys: ['k1', 'k2']\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let report = adapter.run(&flow).await.expect("run ok");
+    assert!(matches!(report.steps[0], RunStepReport::Ok));
+    let calls = app.calls();
+    match &calls[0] {
+        MockCall::ClearUserDefaults(bundle, keys) => {
+            assert_eq!(bundle, "com.flow.app");
+            assert_eq!(keys, &vec!["k1".to_string(), "k2".to_string()]);
+        }
+        other => panic!("expected ClearUserDefaults, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn clear_user_defaults_bundle_override_wins() {
+    let flow = parse_inline(
+        "appId: com.flow.app\n---\n- clearUserDefaults:\n    keys: ['k']\n    bundleId: 'com.other'\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("run ok");
+    let calls = app.calls();
+    match &calls[0] {
+        MockCall::ClearUserDefaults(bundle, _) => assert_eq!(bundle, "com.other"),
+        other => panic!("expected ClearUserDefaults, got {other:?}"),
+    }
 }

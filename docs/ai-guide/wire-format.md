@@ -52,8 +52,10 @@ Response headers (metadata only — body shape unchanged; all additive):
 
 ### `POST /find`
 
-Body: `{ selector: Selector, include?: IncludeScope }`
+Body: `{ selector: Selector, include?: IncludeScope, requireOnScreen?: bool }`
 Response: `{ found: bool, exists: bool }` (both fields present; consumers may OR-merge for backwards compatibility).
+
+`requireOnScreen: true` (v1.0.27) — `found` additionally requires the LIVE element frame to intersect the app frame. Snapshot frames drift on iOS 26.5 + RN Fabric for below-the-fold elements; the live query re-resolves current layout. The driver's visibility-semantic paths (`wait_for` / `find` / scroll probes) use this so `extendedWaitUntil` / `scrollUntilVisible` / `tapOn` agree on "visible". Deliberately checks frame∩viewport rather than `isHittable` — hittability is false under floating overlays, which are genuinely visible and assertable.
 
 ### `POST /fill`
 

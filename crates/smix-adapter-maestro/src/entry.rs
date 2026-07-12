@@ -655,6 +655,7 @@ fn summarize_step(step: &Step) -> String {
         Step::StopApp => "stopApp".into(),
         Step::ClearAppData { .. } => "clearAppData".into(),
         Step::ResetAppData { .. } => "resetAppData".into(),
+        Step::ClearUserDefaults { keys, .. } => format!("clearUserDefaults ({} key{})", keys.len(), if keys.len() == 1 { "" } else { "s" }),
         Step::Scroll => "scroll".into(),
         Step::HideKeyboard => "hideKeyboard".into(),
         Step::AssertNotVisible { .. } => "assertNotVisible".into(),

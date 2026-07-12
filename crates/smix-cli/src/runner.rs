@@ -934,10 +934,113 @@ pub fn supervise(
     let storm_window = std::time::Duration::from_secs(600);
     let storm_threshold = 5;
 
+    // v1.0.27 — health-unreachable trigger. The log-marker triggers
+    // only fire when xcodebuild prints a recognizable death banner;
+    // insight's b24 observed a runner death with NO marker (warm
+    // derived-data reuse after a downgrade sync), which the supervisor
+    // sat through. Probe GET /health every ~10 s; 3 consecutive
+    // failures (~30 s unreachable) is a cycle trigger through the same
+    // cooldown + storm accounting as the log markers.
+    let health_probe_every = 20; // × 500 ms sleep = ~10 s cadence
+    let health_fail_threshold = 3;
+    let mut loop_ticks: u64 = 0;
+    let mut health_consecutive_fails: u32 = 0;
+
+    fn probe_health(port: u16) -> bool {
+        use std::io::{Read, Write};
+        let addr = format!("127.0.0.1:{port}");
+        let timeout = std::time::Duration::from_secs(3);
+        let Ok(mut stream) = std::net::TcpStream::connect_timeout(
+            &match addr.parse() {
+                Ok(a) => a,
+                Err(_) => return false,
+            },
+            timeout,
+        ) else {
+            return false;
+        };
+        let _ = stream.set_read_timeout(Some(timeout));
+        let _ = stream.set_write_timeout(Some(timeout));
+        if stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .is_err()
+        {
+            return false;
+        }
+        let mut buf = [0u8; 64];
+        match stream.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                // Any HTTP response line counts as alive; /health
+                // never legitimately errors on a healthy runner.
+                buf[..n].starts_with(b"HTTP/1.1 200") || buf[..n].starts_with(b"HTTP/1.0 200")
+            }
+            _ => false,
+        }
+    }
+
     let mut carry = String::new();
     loop {
         // Sleep between polls; keeps CPU low.
         std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // v1.0.27 — periodic health probe (see above).
+        loop_ticks += 1;
+        if loop_ticks % health_probe_every == 0 {
+            if probe_health(port) {
+                health_consecutive_fails = 0;
+            } else {
+                health_consecutive_fails += 1;
+                eprintln!(
+                    "supervise: /health unreachable ({health_consecutive_fails}/{health_fail_threshold})"
+                );
+                if health_consecutive_fails >= health_fail_threshold {
+                    health_consecutive_fails = 0;
+                    let now = std::time::Instant::now();
+                    let in_cooldown = last_cycle_at
+                        .map(|prev| now.duration_since(prev) < cycle_cooldown)
+                        .unwrap_or(false);
+                    if in_cooldown {
+                        eprintln!(
+                            "supervise: health trigger within {:?} of last cycle — skipping (cooldown)",
+                            cycle_cooldown
+                        );
+                    } else {
+                        cycle_times.retain(|t| now.duration_since(*t) < storm_window);
+                        if cycle_times.len() >= storm_threshold {
+                            return Err(format!(
+                                "supervise: {} cycles inside {:?} — bailing so a monitoring \
+                                 layer can escalate",
+                                cycle_times.len(),
+                                storm_window
+                            ));
+                        }
+                        use std::io::Write;
+                        let mut out = std::io::stdout().lock();
+                        let _ = writeln!(
+                            out,
+                            r#"{{"event":"RunnerCycled","reasonMatched":"health-unreachable x{}","context":[],"atMs":{}}}"#,
+                            health_fail_threshold,
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis())
+                                .unwrap_or(0)
+                        );
+                        let _ = out.flush();
+                        match cycle(root, port, runner_project) {
+                            Ok(()) => {
+                                cycle_times.push(now);
+                                last_cycle_at = Some(now);
+                                position = 0;
+                                carry.clear();
+                            }
+                            Err(e) => {
+                                return Err(format!("supervise: cycle failed: {e}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         let meta = match std::fs::metadata(&log_path) {
             Ok(m) => m,
