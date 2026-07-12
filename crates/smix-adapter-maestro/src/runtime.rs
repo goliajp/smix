@@ -2032,6 +2032,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             Step::RunFlow(rel) => self.expand_subflow(rel, warnings).await,
             Step::RunFlowInline {
                 when_visible,
+                when_not_visible,
                 steps,
             } => {
                 // v6.8 c1 — inline-commands form. Same visibility gate
@@ -2039,23 +2040,33 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 // list (no child file lookup). Mirrors maestro yaml
                 // `runFlow: { when: { visible }, commands: [...] }`.
                 //
-                // `find` for the visibility predicate treats any
-                // driver error as "not visible" — the predicate is a
-                // *skip decision*, not an assertion. Ambiguity →
-                // conservative skip. Otherwise a transient runner-side
-                // ELEMENT_NOT_FOUND leaks a spurious `error:` stderr
-                // line even when the flow correctly proceeds with
-                // exit 0.
-                let visible = match when_visible {
-                    None => true,
-                    Some(sel) => self.app.find(sel).await.unwrap_or(false),
-                };
-                if visible {
+                // v1.0.24 D1 — visibility predicate now goes through
+                // `check_selector_visible` which fires OCR when the
+                // selector contains OcrText anywhere. Pre-v1.0.24 used
+                // `self.app.find(sel)` which routes through the tree-
+                // only resolver; `Selector::OcrText` was silently
+                // dropped (compile returns false), so `when.visible`
+                // with `fallback: [text, ocrText]` under a degraded
+                // a11y tree (RN Fabric on iOS 26.5) returned false
+                // and the whole conditional body was skipped without
+                // any signal. Insight round-3 Ask 8 — inputText
+                // "silently no-op" was actually "conditional never
+                // entered because tree text missed and OCR wasn't
+                // fired".
+                //
+                // v1.0.24 D2 — `when.notVisible` inverse gate.
+                // Idempotency pattern: only enter the ceremony if the
+                // target state hasn't been reached yet.
+                let (should_run, gate_reason) = self
+                    .evaluate_run_flow_gate(when_visible.as_ref(), when_not_visible.as_ref())
+                    .await;
+                if should_run {
                     Box::pin(self.run_steps_inner(steps, warnings)).await?;
                     Ok(RunStepReport::Ok)
                 } else {
                     let reason = format!(
-                        "runFlow when.visible=false; skipped inline body ({} step{})",
+                        "runFlow {}; skipped inline body ({} step{})",
+                        gate_reason,
                         steps.len(),
                         if steps.len() == 1 { "" } else { "s" }
                     );
@@ -2065,17 +2076,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             Step::RunFlowConditional {
                 file,
                 when_visible,
+                when_not_visible,
                 as_name,
             } => {
-                // Same conservative-skip
-                // handling as RunFlowInline above. `find` for a
-                // visibility predicate is a skip decision, not an
-                // assertion; treat driver errors as "not visible".
-                let visible = match when_visible {
-                    None => true,
-                    Some(sel) => self.app.find(sel).await.unwrap_or(false),
-                };
-                if visible {
+                // v1.0.24 D1/D2 — same OCR-aware gate as RunFlowInline.
+                let (should_run, gate_reason) = self
+                    .evaluate_run_flow_gate(when_visible.as_ref(), when_not_visible.as_ref())
+                    .await;
+                if should_run {
                     let result = self.expand_subflow(file, warnings).await?;
                     // v5.6 c5 — `as: <name>` outputs alias capture. After the
                     // subflow runs (which conventionally ends with a
@@ -2099,11 +2107,67 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     }
                     Ok(result)
                 } else {
-                    let reason = format!("runFlow when.visible=false; skipped subflow {file}");
+                    let reason = format!("runFlow {}; skipped subflow {file}", gate_reason);
                     Ok(RunStepReport::Skipped { reason })
                 }
             }
         }
+    }
+
+    /// v1.0.24 D1 + D2 + D3 — evaluate a runFlow gate.
+    ///
+    /// Returns `(should_run, reason)` where `reason` is a human-readable
+    /// description of the outcome:
+    /// - No gate: `should_run=true`, reason `unconditional`.
+    /// - `when.visible` present + selector visible: `should_run=true`.
+    ///   The subflow proceeds and the reason is never surfaced.
+    /// - `when.visible` present + selector NOT visible: `should_run=false`,
+    ///   reason names the selector's describe form so consumers see
+    ///   exactly WHAT was checked and know to grep OCR logs or bump
+    ///   settle-wait.
+    /// - `when.notVisible` present: symmetric to above with inverted
+    ///   sense.
+    ///
+    /// Visibility check goes through `check_selector_visible` which
+    /// fires OCR (`App::find_by_text_ocr`) when the selector contains
+    /// `OcrText` anywhere. Pre-v1.0.24 used tree-only `App::find` and
+    /// silently dropped OCR sub-selectors — that's the concrete bug
+    /// insight round-3 Ask 8 hit under RN 0.86 Fabric a11y drop.
+    ///
+    /// Any driver error is treated as "not visible" (same conservative
+    /// behavior as pre-v1.0.24). Predicate ambiguity → skip is the
+    /// consumer-safe default.
+    async fn evaluate_run_flow_gate(
+        &mut self,
+        when_visible: Option<&Selector>,
+        when_not_visible: Option<&Selector>,
+    ) -> (bool, String) {
+        if let Some(sel) = when_visible {
+            let visible = self
+                .check_selector_visible(sel)
+                .await
+                .unwrap_or(false);
+            let reason = format!(
+                "when.visible={} ({})",
+                visible,
+                smix_sdk::describe_selector(sel)
+            );
+            return (visible, reason);
+        }
+        if let Some(sel) = when_not_visible {
+            let visible = self
+                .check_selector_visible(sel)
+                .await
+                .unwrap_or(false);
+            let reason = format!(
+                "when.notVisible visible={} ({})",
+                visible,
+                smix_sdk::describe_selector(sel)
+            );
+            // notVisible fires when the selector is NOT visible.
+            return (!visible, reason);
+        }
+        (true, "unconditional".to_string())
     }
 
     /// v0.3.0 Phase B B4 — dispatch [`Step::Fixture`].

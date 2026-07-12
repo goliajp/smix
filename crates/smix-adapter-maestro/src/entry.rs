@@ -636,8 +636,9 @@ fn summarize_step(step: &Step) -> String {
         Step::RunFlowInline {
             steps,
             when_visible,
+            when_not_visible,
         } => {
-            let cond = if when_visible.is_some() {
+            let cond = if when_visible.is_some() || when_not_visible.is_some() {
                 " (conditional)"
             } else {
                 ""
