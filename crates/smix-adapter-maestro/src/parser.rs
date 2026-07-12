@@ -83,6 +83,21 @@ fn parse_role_yaml(v: &Value, ctx: &str) -> Result<Role, ParseError> {
     Ok(role)
 }
 
+// v1.0.23 D4 — env-var opt-in for the bare-string auto-OCR desugar.
+// Reading the env at parse time (not at run time) keeps the emitted
+// Selector shape stable across a flow — you can't have "sometimes
+// this yaml parses to Text, sometimes to Fallback" depending on
+// runtime state, which would violate the parser's determinism
+// contract. Consumer sets `SMIX_AUTO_OCR_FALLBACK=1` in the shell
+// environment before invoking `smix run`. Reset by unsetting the var
+// or setting it to any value other than `1` / `true`.
+fn auto_ocr_fallback_enabled() -> bool {
+    matches!(
+        std::env::var("SMIX_AUTO_OCR_FALLBACK").ok().as_deref(),
+        Some("1" | "true" | "TRUE" | "yes")
+    )
+}
+
 // v1.0.20 D2 — parse `name:` sub-key (companion to `role:`) into an
 // optional [`Pattern`]. Accepts a scalar string (plain literal OR
 // pipe-alternation regex, same rules as `text_to_pattern`).
@@ -385,10 +400,39 @@ pub fn text_to_pattern(s: &str) -> Pattern {
 /// time of writing).
 pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
     match v {
-        Value::String(s) => Ok(Selector::Text {
-            text: text_to_pattern(s),
-            modifiers: Modifiers::default(),
-        }),
+        Value::String(s) => {
+            // v1.0.23 D4 — bare-string `visible: 'X'` optionally
+            // auto-lifts to `visible: fallback: [text: X, ocrText: X]`
+            // when `SMIX_AUTO_OCR_FALLBACK=1`. Insight round-2 Ask 7:
+            // every one of their 12 flows spelled out the 3-line
+            // fallback form; env-opt-in lets them keep bare strings
+            // and still get the OCR safety net. Tier order: text
+            // first (cheap, hits when tree exposes text), OCR after
+            // (~500 ms Vision call, hits when tree is degraded).
+            //
+            // Non-empty check: an empty selector doesn't get auto-
+            // lifted — bubbles to the same Selector::Text as before
+            // and gets rejected by validators downstream.
+            if auto_ocr_fallback_enabled() && !s.is_empty() {
+                return Ok(Selector::Fallback {
+                    fallback: vec![
+                        Selector::Text {
+                            text: text_to_pattern(s),
+                            modifiers: Modifiers::default(),
+                        },
+                        Selector::OcrText {
+                            ocr_text: s.clone(),
+                            locales: Vec::new(),
+                            modifiers: Modifiers::default(),
+                        },
+                    ],
+                });
+            }
+            Ok(Selector::Text {
+                text: text_to_pattern(s),
+                modifiers: Modifiers::default(),
+            })
+        },
         Value::Mapping(map) => {
             if let Some(text) = map
                 .get(Value::String("text".into()))

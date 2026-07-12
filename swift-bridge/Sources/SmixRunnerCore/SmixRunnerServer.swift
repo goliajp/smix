@@ -1248,6 +1248,21 @@ public actor SmixRunnerServer {
         }
       }
     }
+    // v1.0.23 D3 — cumulative /tree successful-serve counter for the
+    // `X-Tree-Snapshot-Refresh-Count` response header. Insight round-2
+    // Ask 6: consumers debugging `--all` batch snapshot drift need a
+    // monotonic signal that the runner is (or isn't) doing fresh work.
+    // Simple @unchecked-Sendable wrapper around an atomic counter.
+    final class TreeServeCounter: @unchecked Sendable {
+      private let lock = NSLock()
+      private var value: UInt64 = 0
+      func advance() -> UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        value &+= 1
+        return value
+      }
+    }
+    let treeServeCounter = TreeServeCounter()
     await server.appendRoute("GET /tree") { request in
       // v1.4 ③-C1 B3 — snapshotHandler calls XCUIApplication.snapshot()
       // which throws under modal masking; the trampoline surfaces it.
@@ -1281,6 +1296,10 @@ public actor SmixRunnerServer {
             hint: AppUnavailableReason.crashedDuringInit.defaultHint
           )
         }
+        // v1.0.23 D3 — time the snapshotHandler call end-to-end for
+        // the `X-Tree-Snapshot-Wall-Ms` header. Trending upward = the
+        // underlying XCUITest snapshot pipeline is bogging down.
+        let snapStart = Date()
         guard let snap = await snapshotHandler(request.query["include"]) else {
           // v1.0.15 Cluster C D2 — snapshotHandler returned nil
           // without throwing. Ask the UITest-provided inference
@@ -1302,6 +1321,8 @@ public actor SmixRunnerServer {
             hint: inferredReason.defaultHint
           )
         }
+        let snapWallMs = UInt64(Date().timeIntervalSince(snapStart) * 1000)
+        let refreshCount = treeServeCounter.advance()
         let payload = TreeRoute.serialize(
           snap.root,
           appFrame: snap.appFrame,
@@ -1311,10 +1332,13 @@ public actor SmixRunnerServer {
         )
         // v1.2 C2 — emit tree size + node count as response headers so SDK
         // can record hot-spot data without changing the JSON wire shape.
+        // v1.0.23 D3 — plus snapshot refresh count + wall-ms.
         return TreeRoute.successWithMeta(
           payload,
           sizeBytes: payload.count,
-          nodeCount: TreeRoute.countNodes(snap.root)
+          nodeCount: TreeRoute.countNodes(snap.root),
+          snapshotRefreshCount: refreshCount,
+          snapshotWallMs: snapWallMs
         )
       }
     }

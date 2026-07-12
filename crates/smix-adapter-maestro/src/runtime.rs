@@ -1434,7 +1434,21 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 direction,
             } => {
                 let dir = parse_swipe_direction(direction)?;
-                self.app.scroll(selector, dir).await?;
+                // v1.0.23 D2 — when the selector contains any `OcrText`
+                // sub, the driver's `scroll` (tree-only resolver) can't
+                // see off-screen targets in degraded a11y trees (RN
+                // 0.86 Fabric LazyColumn/LazyRow on iOS 26.5 drops
+                // off-screen items). Adapter-side loop instead: probe
+                // tree via `App::find` AND OCR via
+                // `App::find_by_text_ocr` between each swipe. First
+                // hit stops. Perf caveat same as tapOn D1: OCR ~500ms
+                // per iteration; each swipe already ~250ms.
+                if self.selector_contains_ocr(selector) {
+                    self.scroll_until_visible_with_ocr(selector, dir)
+                        .await?;
+                } else {
+                    self.app.scroll(selector, dir).await?;
+                }
                 Ok(RunStepReport::Ok)
             }
             Step::Swipe { from, to } => {
@@ -2593,6 +2607,144 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
+    /// v1.0.23 — is `OcrText` present anywhere in this selector tree?
+    /// Standalone or inside a `Fallback` chain both count. Used by
+    /// tapOn / scrollUntilVisible dispatch to decide whether to activate
+    /// the OCR-aware polling variant.
+    fn selector_contains_ocr(&self, sel: &Selector) -> bool {
+        match sel {
+            Selector::OcrText { .. } => true,
+            Selector::Fallback { fallback } => {
+                fallback.iter().any(|s| self.selector_contains_ocr(s))
+            }
+            _ => false,
+        }
+    }
+
+    /// v1.0.23 D2 — scrollUntilVisible with OCR probe between swipes.
+    /// Insight round-2 Ask 5: RN 0.86 Fabric LazyColumn/LazyRow on iOS
+    /// 26.5 drops off-screen items from the a11y tree, so
+    /// `driver.scroll`'s tree-only resolver can never see them. OCR
+    /// reads pixels — sees whatever's on screen after each swipe.
+    ///
+    /// Cadence: probe (tree + OCR if present) → swipe → probe → swipe
+    /// until a hit or 30 swipes (matches driver's SCROLL_MAX_SWIPES) or
+    /// 20 s wall (matches driver's timeout).
+    async fn scroll_until_visible_with_ocr(
+        &mut self,
+        selector: &Selector,
+        direction: smix_sdk::SwipeDirection,
+    ) -> Result<(), RunError> {
+        use std::time::Instant;
+        const MAX_SWIPES: usize = 30;
+        let deadline = Instant::now() + Duration::from_secs(20);
+        for _ in 0..=MAX_SWIPES {
+            // Probe the selector. If it's a Fallback we walk each sub;
+            // otherwise probe the standalone selector.
+            if self.check_selector_visible(selector).await? {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::ElementNotFound),
+                    message: format!(
+                        "scrollUntilVisible({}, '{:?}'): OCR-aware poll exhausted \
+                         after {} swipes / 20 s deadline",
+                        smix_sdk::describe_selector(selector),
+                        direction,
+                        MAX_SWIPES,
+                    ),
+                    selector: Some(selector.clone()),
+                    hint: Some(
+                        "Tree probe + OCR probe both missed on every swipe. \
+                         Either the target text isn't on any screen the swipe \
+                         direction can reveal, OR the OCR text spelling doesn't \
+                         match what Apple Vision recognizes. Try a shorter \
+                         substring in `ocrText` and re-run."
+                            .into(),
+                    ),
+                    ..Default::default()
+                })));
+            }
+            self.app.scroll_screen(direction).await?;
+        }
+        Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::ElementNotFound),
+            message: format!(
+                "scrollUntilVisible({}, '{:?}'): OCR-aware poll exhausted \
+                 {} swipe budget",
+                smix_sdk::describe_selector(selector),
+                direction,
+                MAX_SWIPES
+            ),
+            selector: Some(selector.clone()),
+            ..Default::default()
+        })))
+    }
+
+    /// v1.0.23 — one-shot visibility probe. Returns Ok(true) if the
+    /// selector matches on the current screen (via tree or OCR). Used
+    /// by tapOn poll + scrollUntilVisible poll. Uses `App::find` for
+    /// tree-based subs and `App::find_by_text_ocr` for OcrText subs.
+    async fn check_selector_visible(
+        &mut self,
+        sel: &Selector,
+    ) -> Result<bool, RunError> {
+        match sel {
+            Selector::OcrText {
+                ocr_text, locales, ..
+            } => {
+                let eff_locales: Vec<String> = if locales.is_empty() {
+                    vec![self.last_locale.clone()]
+                } else {
+                    locales.clone()
+                };
+                Ok(self
+                    .app
+                    .find_by_text_ocr(ocr_text, &eff_locales)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some())
+            }
+            Selector::Fallback { fallback } => {
+                // Tree-based subs first (cheap), then OCR subs.
+                for sub in fallback.iter() {
+                    if matches!(sub, Selector::OcrText { .. }) {
+                        continue;
+                    }
+                    if self.app.find(sub).await.unwrap_or(false) {
+                        return Ok(true);
+                    }
+                }
+                for sub in fallback.iter() {
+                    if let Selector::OcrText {
+                        ocr_text, locales, ..
+                    } = sub
+                    {
+                        let eff_locales: Vec<String> = if locales.is_empty() {
+                            vec![self.last_locale.clone()]
+                        } else {
+                            locales.clone()
+                        };
+                        if self
+                            .app
+                            .find_by_text_ocr(ocr_text, &eff_locales)
+                            .await
+                            .ok()
+                            .flatten()
+                            .is_some()
+                        {
+                            return Ok(true);
+                        }
+                    }
+                }
+                Ok(false)
+            }
+            _ => Ok(self.app.find(sel).await.unwrap_or(false)),
+        }
+    }
+
     async fn run_tap(
         &mut self,
         selector: &Selector,
@@ -2601,47 +2753,95 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         // v5.20 c2 — Fallback chain. 顺序 try 每 sub-selector, 第一个 hit
         // 即 tap. Miss 记 per-layer trace for AI-readable suggestion. 全
         // miss → ElementNotFound 含 chain-trace hint.
+        //
+        // v1.0.23 D1 — when the fallback contains any `OcrText` sub, the
+        // whole chain is now POLLED within an implicit wait window
+        // (`SMIX_TAP_OCR_POLL_MS`, default 3000 ms) instead of trying
+        // once and failing fast. Insight round-2 Ask 4: on iOS 26.5 +
+        // RN 0.86 Fabric the tap moment often races the app's post-
+        // transition mount — OCR misses because Vision snapshots a
+        // frame BEFORE the target text is visible, not because it
+        // isn't there. Polling closes the race identically to how
+        // `extendedWaitUntil`'s `wait_for_visible_with_ocr` does. Fast
+        // path (no OCR anywhere) unchanged: single pass, no poll.
         if let Selector::Fallback { fallback } = selector {
+            fn contains_ocr(sel: &Selector) -> bool {
+                match sel {
+                    Selector::OcrText { .. } => true,
+                    Selector::Fallback { fallback } => fallback.iter().any(contains_ocr),
+                    _ => false,
+                }
+            }
+            let has_ocr = fallback.iter().any(contains_ocr);
+            let poll_budget: Duration = if has_ocr {
+                Duration::from_millis(
+                    std::env::var("SMIX_TAP_OCR_POLL_MS")
+                        .ok()
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(3000),
+                )
+            } else {
+                // No OCR anywhere: budget = 0 ⇒ single pass, same as
+                // pre-v1.0.23 semantics.
+                Duration::from_millis(0)
+            };
+            use std::time::Instant;
+            use tokio::time::sleep;
+            const POLL: Duration = Duration::from_millis(250);
+            let start = Instant::now();
             let mut trace: Vec<String> = Vec::with_capacity(fallback.len());
-            for (i, sub) in fallback.iter().enumerate() {
-                let layer = format!("L{}", i + 1);
-                // Recursively dispatch sub-selector through run_tap. Each
-                // sub-selector handles its own miss; we treat
-                // ElementNotFound as "this layer missed, try next" but
-                // propagate other errors immediately.
-                let sub_result = Box::pin(self.run_tap(sub, true /* optional */)).await;
-                match sub_result {
-                    Ok(RunStepReport::Ok) => {
-                        return Ok(RunStepReport::Ok);
-                    }
-                    Ok(RunStepReport::Skipped { reason }) => {
-                        trace.push(format!(
-                            "{layer} {} MISS: {}",
-                            smix_sdk::describe_selector(sub),
-                            reason
-                        ));
-                    }
-                    Err(e) => return Err(e),
-                    _ => {
-                        trace.push(format!(
-                            "{layer} {} unexpected report",
-                            smix_sdk::describe_selector(sub)
-                        ));
+            loop {
+                trace.clear();
+                for (i, sub) in fallback.iter().enumerate() {
+                    let layer = format!("L{}", i + 1);
+                    // Recursively dispatch sub-selector through run_tap. Each
+                    // sub-selector handles its own miss; we treat
+                    // ElementNotFound as "this layer missed, try next" but
+                    // propagate other errors immediately.
+                    let sub_result =
+                        Box::pin(self.run_tap(sub, true /* optional */)).await;
+                    match sub_result {
+                        Ok(RunStepReport::Ok) => {
+                            return Ok(RunStepReport::Ok);
+                        }
+                        Ok(RunStepReport::Skipped { reason }) => {
+                            trace.push(format!(
+                                "{layer} {} MISS: {}",
+                                smix_sdk::describe_selector(sub),
+                                reason
+                            ));
+                        }
+                        Err(e) => return Err(e),
+                        _ => {
+                            trace.push(format!(
+                                "{layer} {} unexpected report",
+                                smix_sdk::describe_selector(sub)
+                            ));
+                        }
                     }
                 }
+                if start.elapsed() >= poll_budget {
+                    break;
+                }
+                sleep(POLL).await;
             }
             if optional {
                 return Ok(RunStepReport::Skipped {
                     reason: format!(
-                        "optional tapOn fallback chain: all {} layers missed; trace=[{}]",
+                        "optional tapOn fallback chain: all {} layers missed after {:?} poll; trace=[{}]",
                         fallback.len(),
+                        poll_budget,
                         trace.join("; ")
                     ),
                 });
             }
             return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::ElementNotFound),
-                message: format!("tapOn fallback chain: all {} layers missed", fallback.len()),
+                message: format!(
+                    "tapOn fallback chain: all {} layers missed after {:?} poll",
+                    fallback.len(),
+                    poll_budget
+                ),
                 selector: Some(selector.clone()),
                 hint: Some(format!(
                     "Per-layer trace (AI-readable): [{}]. \
@@ -2649,7 +2849,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                      accessibilityIdentifier (L1 hit, fastest+stable); \
                      2) if multi-locale, add localized_text table (L4); \
                      3) if visible text varies, use ocrText (L5). \
-                     Avoid L7 absolute coord as default.",
+                     Avoid L7 absolute coord as default. \
+                     v1.0.23 poll budget (SMIX_TAP_OCR_POLL_MS, default 3000 ms) \
+                     activates automatically when Fallback contains OCR — bump it \
+                     if your post-transition mount is slower than 3 s.",
                     trace.join("; ")
                 )),
                 ..Default::default()
