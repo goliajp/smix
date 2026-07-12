@@ -2,6 +2,47 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [1.0.20] — 2026-07-12
+
+**3 docs/impl gaps closed** from insight round-5 (`smix-feedback-2026-07-12-v1.0.19-flow-progress.md`). Insight reported bootstrap batch flow completion is now **2/3 passing** (`force-update` + `pinning-failure` green; `launch-chain` fails on their own QA staging role-assignment). `v1.0.19` wins (`lastInteractiveNamedIds` at top-level + `AppUnavailableReason` disambiguation) both delivered exactly the observability they asked for — steered them to find a 4th latent native race in `expo::setProperty` / `ConstantDefinition.buildDescriptor`.
+
+### D1 — `extendedWaitUntil.visible` accepts every selector key `tapOn` does
+
+`docs/ai-guide/03-selectors.md` promised `ocrText:` as a first-class selector everywhere. Reality: `visible_to_selector` in `crates/smix-adapter-maestro/src/parser.rs` only accepted `text` and `id`. Fixed — now accepts every base selector form: `text`, `id`, `label`, `role` (+ optional `name`), `ocrText`, `localized_text`, `fallback`.
+
+All 8 verbs that route through `visible_to_selector` benefit at once: `extendedWaitUntil.visible/.notVisible`, `assertVisible`, `assertNotVisible`, `scrollUntilVisible`, `copyTextFrom`, `runFlow.when.visible`, `tapOn.anchored.anchor`.
+
+### D2 — `tapOn: {role, name}` + `tapOn: {label}` parse
+
+`Selector::Role` wire type exists (since v5.x); the yaml parser just wasn't wiring it. Fixed — `parse_tap_on` now accepts:
+
+```yaml
+- tapOn:
+    role: button        # camelCase (wire) or lowercase (docs-friendly) — both work
+    name: 'Submit'      # optional Pattern (literal or |-alternation regex)
+
+- tapOn:
+    label: 'Home tab'   # accessibilityLabel strict equal (Selector::Label)
+```
+
+Role parser tolerates docs-friendly aliases: `role: textfield` → `Role::TextField`; `role: checkbox` → `Role::CheckBox`; `role: heading` → `Role::StaticText` (nearest wire equivalent since iOS/SwiftUI has no `.header` XCUIElement type). Unknown roles emit an actionable error listing every accepted variant.
+
+### D3 — `smix run --dry-run` alias for `--check`
+
+`--check` already existed with the exact "parse-only, no runner, no simulator" semantics insight asked for, but `--dry-run` is the idiomatic name in most CLI tools. Added `--dry-run` as a clap alias for `--check`; output prefix changed to neutral `smix run: parse OK/FAIL <path> (N steps)` so it reads correctly under either name. Also appends a summary line: `smix run: parse OK — N flow(s), M total step(s)`.
+
+### Wire compatibility
+
+- `smix_selector::Role` re-exported at crate root (was `pub use smix_screen::Role` internally) — adapter crates can now `use smix_selector::Role` without pulling `smix-screen` directly.
+- All parser changes are additive on the accept-set — no yaml that parsed before still fails.
+- Docs updated in `docs/ai-guide/03-selectors.md §4 Role` to enumerate every supported role and note the "role works anywhere a selector map does" broader guarantee.
+
+### Ship gate
+
+- 59 parser tests (5 new: `parse_extended_wait_until_visible_ocr_text`, `..._role_name`, `..._label`, `parse_tap_on_role_name`, `..._role_lowercase_alias`, `..._role_unknown_errors_actionably`, `..._label`) + 25 CLI runner tests + all pre-existing green across touched crates.
+- CLI dry-run smoke on 3-step yaml with `tapOn: {role, name}` + `extendedWaitUntil.visible: {ocrText}` + `tapOn: {label}` — parses clean, reports "3 steps, 1 flow".
+- Unknown role smoke — emits full accepted-roles list, exit 2.
+
 ## [1.0.19] — 2026-07-12
 
 **Post-mortem triage QoL from insight round-4** (`smix-feedback-2026-07-12-v1.0.18-round-4.md`). Their v1.0.18 batch results confirmed:

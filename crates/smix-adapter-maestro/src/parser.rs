@@ -12,9 +12,91 @@
 use crate::{Flow, MaestroPermissionAction, ParseError, RepeatMode, Step};
 use serde::Deserialize;
 use serde_norway::Value;
-use smix_selector::{Modifiers, Pattern, Selector};
+use smix_selector::{Modifiers, Pattern, Role, Selector};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+// v1.0.20 D2 — parse the yaml `role:` value into a [`Role`] variant.
+//
+// Docs (`docs/ai-guide/03-selectors.md §4 Role`) show docs-friendly
+// lowercase forms (`role: button`, `role: textfield`, `role: checkbox`),
+// but the wire schema uses camelCase (`textField`, `checkBox`).
+// Accept BOTH — docs-friendly aliases are canonicalised to the
+// camelCase wire form before dispatch. Unknown values return
+// `ParseError::InvalidValue` with the full accepted list so the
+// consumer sees exactly what smix speaks.
+fn parse_role_yaml(v: &Value, ctx: &str) -> Result<Role, ParseError> {
+    let s = v.as_str().ok_or_else(|| ParseError::InvalidValue {
+        field: format!("{ctx}.role"),
+        reason: format!("expected role name string, got {v:?}"),
+    })?;
+    // Case-tolerant lookup. The wire is camelCase; docs are lowercase.
+    // Snake_case (`text_field`) is also tolerated since insight uses it
+    // in `.smix/config.yaml`-adjacent selectors.
+    let normalized: String = s
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    let role = match normalized.as_str() {
+        "button" => Role::Button,
+        "link" => Role::Link,
+        "textfield" => Role::TextField,
+        "securetextfield" => Role::SecureTextField,
+        "searchfield" => Role::SearchField,
+        "switch" => Role::Switch,
+        "toggle" => Role::Toggle,
+        "checkbox" => Role::CheckBox,
+        "radio" | "radiobutton" => Role::Radio,
+        "image" => Role::Image,
+        // Docs mention `heading` as an accepted role. iOS/SwiftUI has no
+        // `.header` XCUIElement type; heading semantics collapse to
+        // static text with a heading trait, which the resolver treats
+        // as `StaticText` since that is what the a11y tree emits.
+        "heading" | "statictext" => Role::StaticText,
+        "tab" => Role::Tab,
+        "tabbar" => Role::TabBar,
+        "navigationbar" => Role::NavigationBar,
+        "cell" => Role::Cell,
+        "alert" => Role::Alert,
+        "dialog" => Role::Dialog,
+        "slider" => Role::Slider,
+        "progressbar" | "progressindicator" => Role::ProgressBar,
+        "picker" => Role::Picker,
+        "menu" => Role::Menu,
+        "menuitem" => Role::MenuItem,
+        "scrollview" => Role::ScrollView,
+        "segmentedcontrol" => Role::SegmentedControl,
+        "table" => Role::Table,
+        "collectionview" => Role::CollectionView,
+        "webview" => Role::WebView,
+        "keyboard" => Role::Keyboard,
+        _ => {
+            return Err(ParseError::InvalidValue {
+                field: format!("{ctx}.role"),
+                reason: format!(
+                    "unknown role `{s}`; accepted: button, link, textField, secureTextField, searchField, switch, toggle, checkBox, radio, image, staticText (or heading), tab, tabBar, navigationBar, cell, alert, dialog, slider, progressBar, picker, menu, menuItem, scrollView, segmentedControl, table, collectionView, webView, keyboard"
+                ),
+            });
+        }
+    };
+    Ok(role)
+}
+
+// v1.0.20 D2 — parse `name:` sub-key (companion to `role:`) into an
+// optional [`Pattern`]. Accepts a scalar string (plain literal OR
+// pipe-alternation regex, same rules as `text_to_pattern`).
+fn parse_role_name_yaml(map: &serde_norway::Mapping, ctx: &str) -> Result<Option<Pattern>, ParseError> {
+    let raw = match map.get(Value::String("name".into())) {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+    let s = raw.as_str().ok_or_else(|| ParseError::InvalidValue {
+        field: format!("{ctx}.name"),
+        reason: format!("expected pattern string, got {raw:?}"),
+    })?;
+    Ok(Some(text_to_pattern(s)))
+}
 
 // v5.20 c2 — parse a single chain element of `fallback: [...]`. Reuses
 // the same map-shape dispatcher as parse_tap_on's selector arm — accepts
@@ -277,13 +359,30 @@ pub fn text_to_pattern(s: &str) -> Pattern {
     }
 }
 
-/// Convert a `visible:` value (one of: scalar string, `{text}` map,
-/// `{id}` map) into a [`Selector`].
+/// Convert a `visible:` value (scalar string or map with a selector
+/// sub-key) into a [`Selector`].
+///
+/// Accepted map keys mirror the base selector table:
+/// - `text` — literal or `|`-alternation regex
+/// - `id` — accessibilityIdentifier
+/// - `label` — accessibilityLabel (strict equal)
+/// - `role` — semantic role (+ optional `name:` pattern)
+/// - `ocrText` — Vision (iOS) / ML Kit (Android) OCR match
+/// - `localized_text` — per-locale text table
+/// - `fallback` — sequential selector chain, first hit wins
 ///
 /// # Errors
 ///
-/// Returns [`ParseError::InvalidValue`] if the value is none of the
-/// three accepted shapes.
+/// Returns [`ParseError::InvalidValue`] if the value is neither a
+/// scalar string nor a map containing one of the accepted keys.
+///
+/// v1.0.20 D1 — pre-v1.0.20 accepted only `text` and `id`, which
+/// disagreed with `docs/ai-guide/03-selectors.md §9 OcrText` promising
+/// `ocrText` as a first-class selector everywhere selectors appear.
+/// Extending here fixes `extendedWaitUntil.visible: {ocrText}`,
+/// `assertVisible: {role, name}`, `scrollUntilVisible: {label}`,
+/// and every other verb that resolves through this helper (8 sites at
+/// time of writing).
 pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
     match v {
         Value::String(s) => Ok(Selector::Text {
@@ -306,9 +405,49 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
                     modifiers: Modifiers::default(),
                 });
             }
+            if let Some(label) = map
+                .get(Value::String("label".into()))
+                .and_then(Value::as_str)
+            {
+                return Ok(Selector::Label {
+                    label: label.to_string(),
+                    modifiers: Modifiers::default(),
+                });
+            }
+            if let Some(role_raw) = map.get(Value::String("role".into())) {
+                let role = parse_role_yaml(role_raw, "visible")?;
+                let name = parse_role_name_yaml(map, "visible")?;
+                return Ok(Selector::Role {
+                    role,
+                    name,
+                    modifiers: Modifiers::default(),
+                });
+            }
+            if let Some(raw) = map.get(Value::String("ocrText".into())) {
+                let (text, locales) = parse_ocr_text(raw, "visible.ocrText")?;
+                return Ok(Selector::OcrText {
+                    ocr_text: text,
+                    locales,
+                    modifiers: Modifiers::default(),
+                });
+            }
+            if let Some(loc_map) = map
+                .get(Value::String("localized_text".into()))
+                .and_then(Value::as_mapping)
+            {
+                let table = parse_localized_table(loc_map, "visible.localized_text")?;
+                return Ok(Selector::LocalizedText {
+                    localized_text: table,
+                    modifiers: Modifiers::default(),
+                });
+            }
+            if let Some(raw) = map.get(Value::String("fallback".into())) {
+                let chain = parse_fallback_chain(raw, "visible.fallback")?;
+                return Ok(Selector::Fallback { fallback: chain });
+            }
             Err(ParseError::InvalidValue {
                 field: "visible".into(),
-                reason: "expected `text` or `id` key".into(),
+                reason: "expected one of `text`, `id`, `label`, `role`, `ocrText`, `localized_text`, `fallback` keys".into(),
             })
         }
         other => Err(ParseError::InvalidValue {
@@ -432,10 +571,41 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                     optional,
                 });
             }
+            // v1.0.20 D2 — `role: <role>` (+ optional `name:` pattern).
+            // Wire type `Selector::Role` has existed since v5.x for the
+            // resolver path; docs promised the yaml shape but the
+            // parser did not accept it. Now it does.
+            if let Some(role_raw) = map.get(Value::String("role".into())) {
+                let role = parse_role_yaml(role_raw, "tapOn")?;
+                let name = parse_role_name_yaml(map, "tapOn")?;
+                return Ok(Step::TapOn {
+                    selector: Selector::Role {
+                        role,
+                        name,
+                        modifiers,
+                    },
+                    optional,
+                });
+            }
+            // v1.0.20 D2 — `label: <string>` for accessibilityLabel (iOS)
+            // / contentDescription (Android) strict equal. Same
+            // documented-but-unimplemented gap as `role:`.
+            if let Some(label) = map
+                .get(Value::String("label".into()))
+                .and_then(Value::as_str)
+            {
+                return Ok(Step::TapOn {
+                    selector: Selector::Label {
+                        label: label.to_string(),
+                        modifiers,
+                    },
+                    optional,
+                });
+            }
 
             Err(ParseError::InvalidValue {
                 field: "tapOn".into(),
-                reason: "expected `text`, `id`, `point`, `localized_text`, `ocrText`, `anchored`, or `fallback` key".into(),
+                reason: "expected `text`, `id`, `label`, `role`, `point`, `localized_text`, `ocrText`, `anchored`, or `fallback` key".into(),
             })
         }
         other => Err(ParseError::InvalidValue {

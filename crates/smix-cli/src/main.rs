@@ -398,7 +398,11 @@ Documentation: docs/AI_GUIDE.md
         /// does not execute any step. Exit 0 on clean parse across
         /// every flow; non-zero on the first error, listing all
         /// remaining flows unparsed. Suitable for CI pre-flight.
-        #[arg(long = "check", default_value_t = false)]
+        ///
+        /// v1.0.20 D3 — accepts `--dry-run` as an equivalent alias
+        /// (idiomatic in most CLI tools). Insight round-5 hit the
+        /// discoverability gap first-hand.
+        #[arg(long = "check", alias = "dry-run", default_value_t = false)]
         check: bool,
     },
     /// Static maestro → smix yaml codemod. Renames verbs to smix
@@ -1252,21 +1256,44 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             check,
         } => {
             if check {
+                // v1.0.20 D3 — invoked via either `--check` or its
+                // `--dry-run` alias; render prefix neutrally so the
+                // output reads correctly for both.
                 let mut fail = 0u8;
+                let mut step_total: usize = 0;
                 for flow_path in &flows {
                     match std::fs::read_to_string(flow_path) {
                         Ok(yaml) => match smix_adapter_maestro::parse_flow_yaml(&yaml) {
-                            Ok(_) => eprintln!("smix run --check: OK  {}", flow_path.display()),
+                            Ok(flow) => {
+                                let n = flow.steps.len();
+                                step_total += n;
+                                eprintln!(
+                                    "smix run: parse OK  {} ({n} step{})",
+                                    flow_path.display(),
+                                    if n == 1 { "" } else { "s" },
+                                );
+                            }
                             Err(e) => {
-                                eprintln!("smix run --check: FAIL {}: {e}", flow_path.display());
+                                eprintln!("smix run: parse FAIL {}: {e}", flow_path.display());
                                 fail = 2;
                             }
                         },
                         Err(e) => {
-                            eprintln!("smix run --check: FAIL {}: read: {e}", flow_path.display());
+                            eprintln!(
+                                "smix run: parse FAIL {}: read: {e}",
+                                flow_path.display()
+                            );
                             fail = 2;
                         }
                     }
+                }
+                if fail == 0 {
+                    eprintln!(
+                        "smix run: parse OK — {} flow{}, {step_total} total step{}",
+                        flows.len(),
+                        if flows.len() == 1 { "" } else { "s" },
+                        if step_total == 1 { "" } else { "s" },
+                    );
                 }
                 return Ok(std::process::ExitCode::from(fail));
             }

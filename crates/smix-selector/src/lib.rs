@@ -47,7 +47,14 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use smix_screen::{A11yNode, Role};
+use smix_screen::A11yNode;
+// v1.0.20 D2 — re-export `Role` at the crate root so adapter crates
+// building `Selector::Role { role, .. }` can `use smix_selector::Role`
+// alongside `smix_selector::Selector` without pulling `smix-screen`
+// as a direct dependency. Role is fundamentally a wire concept —
+// selectors, adapters, and resolvers all touch it — so this belongs
+// next to the other wire types here.
+pub use smix_screen::Role;
 
 // -------------------- Pattern (string | regex wire form) -----------------
 
