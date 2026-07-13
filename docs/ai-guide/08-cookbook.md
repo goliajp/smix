@@ -319,6 +319,50 @@ If you add a screen to the app under test, stick to `<screen>-<element>-<kind>`:
 - `foo-submit-btn` — button
 - `foo-input-name` — text input
 
+## Expo dev-client: deep-link replay after JS reloads
+
+If your app-under-test is an Expo dev-client build and your flows drive
+state through custom-scheme deep links (`myapp://…`), you will
+eventually see a link you sent earlier get **re-delivered after a later
+JS bundle reload** — re-opening a panel or re-firing an action over the
+screen your next step asserts.
+
+**Mechanism** (expo-dev-launcher source): any custom-scheme URL that
+arrives while the React host is not running — including the window
+between a dev-client relaunch's two boots (embedded file bundle, then
+the metro bundle) — is stashed in `EXDevLauncherPendingDeepLinkRegistry`,
+an **in-memory** registry inside the app process. The NEXT React host
+start consumes it via `getLaunchOptions` and injects the URL as the
+router's initial URL. It is your own in-flight URL re-emerging one boot
+later, not stale persisted state.
+
+**What does NOT work**:
+
+- `clearUserDefaults` — the registry is in-memory; there is no persisted
+  key to delete.
+- A hypothetical runner-side "drain the queued URL" — the registry is
+  private in-process state; nothing outside the app (XCUITest, simctl)
+  can reach it.
+- Flow-side "neutralizer" URLs before/after the relaunch — the queued
+  URL is always delivered after the boot, so it always lands after
+  anything you send; the ordering race is structural.
+
+**What works** (pick per cost):
+
+1. **Process-level relaunch** — `stopApp` then `launchApp` instead of a
+   JS-level reload. Terminating the process destroys the in-memory
+   registry. Costs the dev-launcher ceremony on the next launch (can be
+   15–30 s on a dev-client); right when your ceremony budget allows it.
+2. **App-side replay gate** — dev-mode code that tags flow-sent links
+   (e.g. a nonce query param) and drops any second delivery of the same
+   nonce. Zero runtime cost, needs app cooperation; the most durable
+   option for a QA-instrumented app.
+3. **Overlay-tolerant assertions** — accept that the replayed action may
+   fire and make the subsequent asserts robust to it (e.g. a terminal
+   `close-panel` + text tiers that don't require exclusive screen
+   ownership). Works today with zero code, at the cost of flow-author
+   vigilance.
+
 ## See also
 
 - [02-yaml-reference.md](02-yaml-reference.md) — full grammar
