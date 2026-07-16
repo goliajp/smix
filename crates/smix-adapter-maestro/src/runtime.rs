@@ -875,6 +875,10 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// setting: tests point `claude_bin` at a stub so a mock run never
     /// spends a real model call.
     ai_cfg: smix_ai_tier::AiTierConfig,
+    /// What counts as a still screen for `waitForAnimationToEnd`. The
+    /// defaults are reasoned rather than measured and want tuning against a
+    /// real simulator.
+    quiescence: smix_sdk::quiescence::QuiescenceParams,
 }
 
 impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
@@ -896,6 +900,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             fixture_registry: None,
             no_fail_annotate: false,
             ai_cfg: smix_ai_tier::AiTierConfig::default(),
+            quiescence: smix_sdk::quiescence::QuiescenceParams::default(),
         }
     }
 
@@ -911,6 +916,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     #[must_use]
     pub fn with_ai_config(mut self, cfg: smix_ai_tier::AiTierConfig) -> Self {
         self.ai_cfg = cfg;
+        self
+    }
+
+    /// Override what counts as a still screen for `waitForAnimationToEnd`.
+    #[must_use]
+    pub fn with_quiescence(mut self, params: smix_sdk::quiescence::QuiescenceParams) -> Self {
+        self.quiescence = params;
         self
     }
 
@@ -1361,6 +1373,34 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Ok(())
     }
 
+    /// Sample the screen until two consecutive frames are still, or until
+    /// `ceiling_ms` runs out. Returns whether it settled.
+    ///
+    /// A screenshot that won't decode propagates rather than reading as
+    /// motion: a frame we cannot compare is a broken toolchain, and silently
+    /// treating it as "still moving" would burn the whole ceiling on every
+    /// step and look like a slow device.
+    async fn wait_until_still(&self, ceiling_ms: u64) -> Result<bool, RunError> {
+        // Each sample costs a screenshot round-trip, so the cadence sets both
+        // how fast stillness is noticed and what the verb costs on a screen
+        // that was never moving.
+        const CADENCE_MS: u64 = 60;
+
+        let deadline = std::time::Instant::now() + Duration::from_millis(ceiling_ms);
+        let mut previous = self.app.screenshot().await?;
+        loop {
+            tokio::time::sleep(Duration::from_millis(CADENCE_MS)).await;
+            let next = self.app.screenshot().await?;
+            if smix_sdk::quiescence::frames_are_still(&previous, &next, &self.quiescence)? {
+                return Ok(true);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Ok(false);
+            }
+            previous = next;
+        }
+    }
+
     async fn run_step(
         &mut self,
         step: &Step,
@@ -1435,14 +1475,16 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.tap_at_coord(*nx, *ny).await?;
                 Ok(RunStepReport::Ok)
             }
-            Step::WaitForAnimationToEnd { duration_ms } => {
-                // A fixed sleep, NOT an XCTest idle-wait.
-                // SmixQuiescenceSwizzle.m no-ops XCTest idle-wait for
-                // performance (RN animations would otherwise stall
-                // every op). Default 400 ms preserved for maestro
-                // yaml compat; consumers with longer animations pass
-                // `- waitForAnimationToEnd: 500` (integer = ms).
-                tokio::time::sleep(Duration::from_millis(*duration_ms)).await;
+            Step::WaitForAnimationToEnd { ceiling_ms } => {
+                if !self.wait_until_still(*ceiling_ms).await? {
+                    // Not a failure. A screen that never settles is usually
+                    // a spinner or a caret the flow doesn't care about, and
+                    // failing here would make the verb unusable on any screen
+                    // with one.
+                    warnings.push(format!(
+                        "waitForAnimationToEnd: the screen was still moving after {ceiling_ms}ms; carrying on. Raise the ceiling if the animation really is longer."
+                    ));
+                }
                 Ok(RunStepReport::Ok)
             }
             Step::WebViewEval { js, assert_eq } => {

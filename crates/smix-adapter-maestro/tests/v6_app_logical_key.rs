@@ -55,7 +55,7 @@ fn resolve_logical_to_ios_bundle() {
     let mut flow = Flow {
         app_id: String::new(),
         app: Some("demoApp".to_string()),
-        steps: vec![Step::WaitForAnimationToEnd { duration_ms: 400 }],
+        steps: vec![Step::WaitForAnimationToEnd { ceiling_ms: 400 }],
     };
     resolve_app_into_flow(&mut flow, &apps, Platform::Ios).unwrap();
     assert_eq!(flow.app_id, "com.example.app");
@@ -67,7 +67,7 @@ fn resolve_logical_to_android_package() {
     let mut flow = Flow {
         app_id: String::new(),
         app: Some("demoApp".to_string()),
-        steps: vec![Step::WaitForAnimationToEnd { duration_ms: 400 }],
+        steps: vec![Step::WaitForAnimationToEnd { ceiling_ms: 400 }],
     };
     resolve_app_into_flow(&mut flow, &apps, Platform::Android).unwrap();
     assert_eq!(flow.app_id, "com.example.app");

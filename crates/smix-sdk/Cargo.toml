@@ -32,7 +32,7 @@ serde_json.workspace = true
 async-trait.workspace = true
 # assertScreenshot dhash 64-bit perceptual hash (decode-only).
 # Pure Rust, MIT/Apache, no `image` full-crate bloat (`image` is ~3MB).
-png = "0.17"
+png.workspace = true
 
 [dev-dependencies]
 wiremock = "0.6"

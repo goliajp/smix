@@ -49,6 +49,9 @@ serde_json.workspace = true
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
 criterion.workspace = true
+# Frame fixtures for the quiescence tests: the mock has to hand the runtime
+# real PNGs, because the comparison decodes them.
+png.workspace = true
 
 [[bench]]
 name = "perf_gate"
