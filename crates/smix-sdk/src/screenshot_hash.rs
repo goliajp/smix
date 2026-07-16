@@ -11,7 +11,7 @@
 //! Threshold: hamming distance ≤ 5 = visually identical (hard-coded at
 //! the adapter runtime layer; the SDK pub fn exposes `max_hamming`).
 
-use smix_error::{ExpectationFailure, FailureCode, FailureInit};
+use smix_error::ExpectationFailure;
 
 /// Compute the 64-bit dhash for a PNG byte stream.
 ///
@@ -19,64 +19,10 @@ use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 /// is outside `{Rgb, Rgba, Grayscale, GrayscaleAlpha}` — an explicit
 /// failure, never a silent no-op.
 pub(crate) fn compute_dhash(png_bytes: &[u8]) -> Result<u64, ExpectationFailure> {
-    let decoder = png::Decoder::new(png_bytes);
-    let mut reader = decoder.read_info().map_err(|e| {
-        ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: format!("PNG decode (read_info) failed: {e}"),
-            ..Default::default()
-        })
-    })?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf).map_err(|e| {
-        ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: format!("PNG decode (next_frame) failed: {e}"),
-            ..Default::default()
-        })
-    })?;
-    let raw = &buf[..info.buffer_size()];
-    let (channels, has_alpha) = match info.color_type {
-        png::ColorType::Rgb => (3usize, false),
-        png::ColorType::Rgba => (4usize, true),
-        png::ColorType::Grayscale => (1usize, false),
-        png::ColorType::GrayscaleAlpha => (2usize, true),
-        other => {
-            return Err(ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("unsupported PNG color type: {other:?}"),
-                ..Default::default()
-            }));
-        }
-    };
-    let w = info.width as usize;
-    let h = info.height as usize;
-    if w == 0 || h == 0 {
-        return Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: format!("PNG has zero dimension: {w}×{h}"),
-            ..Default::default()
-        }));
-    }
+    let frame = crate::png_gray::decode_gray(png_bytes)?;
+    let (w, h) = (frame.w, frame.h);
 
-    // Step 1: source pixel → grayscale u8 helper (pixel at (x, y)).
-    let pixel_gray = |x: usize, y: usize| -> u8 {
-        let idx = (y * w + x) * channels;
-        match channels {
-            1 => raw[idx],
-            2 => raw[idx], // Grayscale + alpha: ignore alpha.
-            3 | 4 => {
-                let r = raw[idx] as u16;
-                let g = raw[idx + 1] as u16;
-                let b = raw[idx + 2] as u16;
-                ((r + g + b) / 3) as u8
-            }
-            _ => 0,
-        }
-    };
-    let _ = has_alpha;
-
-    // Step 2: resize to 9×8 grayscale via nearest-neighbor (pure integer
+    // Step 1: resize to 9×8 grayscale via nearest-neighbor (pure integer
     // arithmetic — no resize dep). Width 9 = 8 left/right pairs per row;
     // height 8 × 8 bits = 64 bits.
     let mut grid = [[0u8; 9]; 8];
@@ -84,11 +30,11 @@ pub(crate) fn compute_dhash(png_bytes: &[u8]) -> Result<u64, ExpectationFailure>
         for (dx, cell) in row.iter_mut().enumerate() {
             let sx = (dx * w) / 9;
             let sy = (dy * h) / 8;
-            *cell = pixel_gray(sx, sy);
+            *cell = frame.gray(sx, sy);
         }
     }
 
-    // Step 3: row-wise left/right diff → 64-bit MSB-first.
+    // Step 2: row-wise left/right diff → 64-bit MSB-first.
     let mut hash: u64 = 0;
     for row in &grid {
         for dx in 0..8 {
@@ -110,6 +56,7 @@ pub(crate) fn hamming_distance(a: u64, b: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smix_error::FailureCode;
 
     /// Encode a `width × height` PNG with the given pixel callback (returns u8 grayscale).
     fn encode_gray(width: u32, height: u32, mut pixel: impl FnMut(u32, u32) -> u8) -> Vec<u8> {
