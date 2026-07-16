@@ -1,23 +1,28 @@
-//! v5.1 c3 — SDK 内部 issued-action 账本(Capsule 软胶囊 G angle 主线)。
+//! SDK-internal ledger of issued actions.
 //!
-//! Capsule 软胶囊检测外来 user 干预的对账逻辑:
-//!   UITest runner EventRecorder 抓 1018 焦点变化 events ── ground truth
+//! Reconciliation logic for detecting outside user interference:
+//!   focus-change (1018) events caught by the UITest runner's
+//!     EventRecorder ── ground truth
 //!     ∖
-//!   SDK 端 issued-action 账本(每次 `app.tap` / `app.fill` / `app.tap_at_coord`
-//!     落账 timestamp + 类型 + selector hint)── SDK 自发的动作
-//!   = 外来 user 干预的焦点变化
+//!   the SDK-side issued-action ledger (every `app.tap` / `app.fill` /
+//!     `app.tap_at_coord` records a timestamp + kind + selector hint)
+//!     ── actions the SDK originated
+//!   = focus changes caused by outside user interference
 //!
-//! 容量上限 [`LEDGER_CAP`] = 1024,push 后超容量 pop_front(LRU)。
+//! Capacity is capped at [`LEDGER_CAP`] = 1024; pushing past the cap
+//! pops the front (LRU).
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-/// LRU 容量上限。每个 SDK act 入口一条记录,1024 足够覆盖典型 capsule
-/// session(start_record → 大量 tap/fill → stop_record 几分钟内的全量)。
+/// LRU capacity cap. One record per SDK act entry point; 1024 covers a
+/// typical capsule session end to end (start_record → many tap/fill →
+/// stop_record, spanning a few minutes).
 pub const LEDGER_CAP: usize = 1024;
 
-/// SDK 发起的 act 类型。`tap_at_coord` 携带归一化坐标(0..1),`Tap` / `Fill`
-/// 走 selector 路径,`target_hint` 在 [`IssuedAction`] 上携带 selector 描述。
+/// Kind of act the SDK originated. `tap_at_coord` carries normalized
+/// coordinates (0..1); `Tap` / `Fill` go through the selector path and
+/// carry their selector description in [`IssuedAction::target_hint`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum IssuedKind {
     Tap,
@@ -30,37 +35,45 @@ pub enum IssuedKind {
         from: (f64, f64),
         to: (f64, f64),
     },
-    /// v5.2 c1 — capsule recording 启动锚点。`start_capsule_recording` 调
-    /// `driver.start_record()` 触发 swift `EventRecorder.installSwizzle +
-    /// start` — fixture lifecycle settle 期(swizzle 安装后 firstResponder
-    /// 重置等)抓到的 1018 焦点变化在物理上是 SDK 自发的 capsule start 引起,
-    /// 应被 reconcile attribute 到本 act,不被算 user 干预。
+    /// Anchor for the start of capsule recording.
+    /// `start_capsule_recording` calls `driver.start_record()`, which
+    /// triggers the Swift `EventRecorder.installSwizzle + start`. Any
+    /// 1018 focus change caught during the fixture lifecycle settle
+    /// window (firstResponder reset after swizzle install, and
+    /// similar) is physically caused by the SDK's own capsule start,
+    /// so reconcile must attribute it to this act rather than count it
+    /// as user interference.
     CapsuleStart,
-    /// v5.9 c2 — fixture-side action 锚点。 fixture-owned UIKit modal present
-    /// (UIActivityViewController / UIDocumentPickerViewController /
-    /// SpringBoard permission alert) 触发 `kAXFirstResponderChangedNotification`
-    /// 1018 events, 但 SDK driver 没直接 dispatch — fixture-side delegate
-    /// 走 UIKit native API。 selftest seg 在调 fixture trigger button 之前
-    /// 调 `App::mark_fixture_action(action_id)` 把 expected phantom focus
-    /// change 钉到 ledger, reconcile window (3000ms) 内 attribute 到本 mark
-    /// 不算 user 干预。 升级 v5.7 c2 UNATTR_MAX=1 cushion 到 architectural fix。
+    /// Anchor for a fixture-side action. A fixture-owned UIKit modal
+    /// present (UIActivityViewController /
+    /// UIDocumentPickerViewController / SpringBoard permission alert)
+    /// fires `kAXFirstResponderChangedNotification` 1018 events, but
+    /// the SDK driver never dispatched them — the fixture-side
+    /// delegate went through the UIKit native API. A test segment
+    /// calls `App::mark_fixture_action(action_id)` before hitting the
+    /// fixture trigger button to pin the expected phantom focus change
+    /// to the ledger; reconcile attributes any change inside the
+    /// window (3000 ms) to this mark instead of counting it as user
+    /// interference.
     FixtureAction(String),
 }
 
-/// 一条 SDK 发起的 act 记录。
+/// One recorded act originated by the SDK.
 #[derive(Clone, Debug, PartialEq)]
 pub struct IssuedAction {
     pub kind: IssuedKind,
-    /// 毫秒级 Unix epoch(`chrono::Utc::now().timestamp_millis() as f64`)。
+    /// Unix epoch in milliseconds
+    /// (`chrono::Utc::now().timestamp_millis() as f64`).
     pub timestamp_ms: f64,
-    /// Selector 描述,典型是 `selector.id` / `selector.text` /
-    /// `selector.label`。`tap_at_coord` 用 `None`(无 selector)。
+    /// Selector description — typically `selector.id` / `selector.text`
+    /// / `selector.label`. `tap_at_coord` uses `None` (no selector).
     pub target_hint: Option<String>,
 }
 
-/// 线程安全的 LRU 账本。多份 `IssuedLedger` 通过 `Arc<Mutex<_>>` 共享同一
-/// 底层 `VecDeque` — `App` 内部一份,SDK 端的 `start_capsule_recording` /
-/// `stop_capsule_recording_and_reconcile` 复用。
+/// Thread-safe LRU ledger. Clones of `IssuedLedger` share one
+/// underlying `VecDeque` via `Arc<Mutex<_>>` — `App` holds one
+/// internally and the SDK-side `start_capsule_recording` /
+/// `stop_capsule_recording_and_reconcile` reuse it.
 #[derive(Clone, Debug, Default)]
 pub struct IssuedLedger {
     inner: Arc<Mutex<VecDeque<IssuedAction>>>,
@@ -73,7 +86,7 @@ impl IssuedLedger {
         }
     }
 
-    /// 记一条 act。超 LRU 容量则 pop 最旧的一条。
+    /// Record one act. Pops the oldest entry when over LRU capacity.
     pub fn record(&self, action: IssuedAction) {
         let mut q = self.inner.lock().expect("issued ledger mutex poisoned");
         if q.len() >= LEDGER_CAP {
@@ -122,7 +135,7 @@ impl IssuedLedger {
         });
     }
 
-    /// v5.9 c2 — record a fixture-side action anchor. `action_id` is the
+    /// Record a fixture-side action anchor. `action_id` is the
     /// human-readable hint surfaced under [`IssuedAction::target_hint`]
     /// for diagnostics; reconcile only matches by timestamp window.
     pub fn record_fixture_action(&self, ts_ms: f64, action_id: String) {
@@ -133,7 +146,8 @@ impl IssuedLedger {
         });
     }
 
-    /// 快照拷贝当前账本(用于 `reconcile` 调用 + 单元测试断言)。
+    /// Snapshot-copy the current ledger (used by `reconcile` calls and
+    /// unit-test assertions).
     pub fn get_all(&self) -> Vec<IssuedAction> {
         let q = self.inner.lock().expect("issued ledger mutex poisoned");
         q.iter().cloned().collect()

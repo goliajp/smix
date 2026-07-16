@@ -1,4 +1,4 @@
-// v7.4 c2 — JVM test helper: deterministic mock SelectorResolver.
+// JVM test helper: deterministic mock SelectorResolver.
 //
 // Tests pre-seed `returnMap` keyed by selectorJson; the mock looks up
 // the matching key on resolve(). Falls back to empty List when no
@@ -30,7 +30,7 @@ class MockSelectorResolver : SelectorResolver {
 }
 
 /**
- * v7.6 c1 — JVM test helper: mock LabelResolver for Locator.toHaveCount /
+ * JVM test helper: mock LabelResolver for Locator.toHaveCount /
  * toHaveLabel tests. Pre-seed `returnMap` with selectorJson →
  * matched-labels list; falls back to empty list when no match registered.
  */

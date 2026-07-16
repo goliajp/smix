@@ -1,4 +1,4 @@
-//! v3.1 c7 — wire round-trip for KeyName + SwipeDirection.
+//! Wire round-trip for KeyName + SwipeDirection.
 
 use smix_input::{KeyName, SwipeDirection};
 

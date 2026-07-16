@@ -15,7 +15,7 @@ final class TapRouteTests: XCTestCase {
     XCTAssertEqual(req, TapRoute.TapRequest(selector: .init(text: "General"), mode: .resolveAndTap))
   }
 
-  // v1.1 C3 — mode field controls whether the runner calls element.tap() or
+  // The mode field controls whether the runner calls element.tap() or
   // just resolves the element and returns its frame (SDK injects via host-HID).
 
   func test_decode_modeResolve_returnsRequestWithResolveMode() throws {
@@ -88,7 +88,7 @@ final class TapRouteTests: XCTestCase {
     XCTAssertTrue(body.contains(#""matched":{"label":"General"}"#), body)
   }
 
-  // v1.1 C1 — stages field opt-in, default nil = body shape unchanged.
+  // stages field is opt-in; default nil leaves the body shape unchanged.
   func test_success_includesStages() async throws {
     let resp = TapRoute.success(
       matchedLabel: "About",
@@ -110,7 +110,7 @@ final class TapRouteTests: XCTestCase {
     XCTAssertFalse(body.contains(#""stages""#), body)
   }
 
-  // v1.1 C3 — frame + appFrame are optional new fields on the success body.
+  // frame + appFrame are optional fields on the success body.
   // Both nil → wire shape identical to before (legacy tapViaRunner reads must
   // still parse). Both provided → matched object gains "frame" and "appFrame"
   // so the SDK can normalize sim-internal coords for host-HID injection.
@@ -133,8 +133,8 @@ final class TapRouteTests: XCTestCase {
 
   func test_success_omitsFrameAndAppFrameWhenNil() async throws {
     // Legacy tapViaRunner path: mode=resolveAndTap, no frame/appFrame on response.
-    // Body shape must equal the v1.1 C1 baseline so tapViaRunner readers don't
-    // need a change in this checkpoint.
+    // Body shape must equal the no-frame baseline so tapViaRunner readers
+    // don't need a change.
     let resp = TapRoute.success(
       matchedLabel: "About",
       stages: TapRoute.TapStages(resolveMs: 12.5, tapCallMs: 870.0, totalMs: 882.5),

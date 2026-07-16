@@ -1,5 +1,5 @@
-// v7.2 c5 — App.tapAtCoord escape hatch + Smix.launchApp(.appPath)
-// mock-based unit tests.
+// App.tapAtCoord escape hatch + Smix.launchApp(.appPath) mock-based
+// unit tests.
 
 import Foundation
 import XCTest

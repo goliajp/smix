@@ -1,8 +1,8 @@
-//! v3.28 c1 — perf_gate real bench swap from v3.21 c1 placeholder.
+//! Perf gate bench for smix-screen.
 //!
-//! Mirrors v3.26 c1 `smix-selector/benches/perf_gate.rs` template:
-//! the per-crate hot path lands in `perf_gate`; the broader matrix
-//! stays in the sibling target (`benches/visibility.rs`).
+//! Follows the `smix-selector/benches/perf_gate.rs` template: the
+//! per-crate hot path lands in `perf_gate`; the broader matrix stays in
+//! the sibling target (`benches/visibility.rs`).
 //!
 //! Hot path measured: `collect_visible_summaries(tree, limit)` (every
 //! `/system-popups` and AI-driven `/find` triage call walks the tree

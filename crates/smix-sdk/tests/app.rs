@@ -1,4 +1,4 @@
-//! v3.1 c11 — smix-sdk App + selector helper tests via wiremock.
+//! Smix-sdk App + selector helper tests via wiremock.
 
 use smix_screen::{A11yNode, Rect};
 use smix_sdk::{

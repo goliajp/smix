@@ -1,4 +1,4 @@
-//! v3.3 c2 — criterion bench for smix-input enum primitives.
+//! Criterion bench for smix-input enum primitives.
 //!
 //! enum -> &'static str is the hot accessor used by every recorder JSON
 //! emit + every runner wire encode. Must stay single-digit ns.

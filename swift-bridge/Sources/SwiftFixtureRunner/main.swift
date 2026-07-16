@@ -1,4 +1,4 @@
-// v7.2 c-final — Swift conformance fixture runner.
+// Swift conformance fixture runner.
 //
 // Usage:
 //   swift run --package-path swift-bridge SwiftFixtureRunner <path-to-fixture.json>

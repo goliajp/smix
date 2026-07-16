@@ -1,11 +1,10 @@
-//! v6.0 c1b — `DeviceControl` trait: cross-platform sim/host control.
+//! `DeviceControl` trait: cross-platform sim/host control.
 //!
-//! Per docs/plan-cold/v6-cross-platform-yaml-design.md §4.2 + §7
-//! (audit-revised 2026-06-23). Two-trait architecture: pair with
-//! [`smix_driver::Driver`] (sense+act).
+//! Two-trait architecture: pairs with [`smix_driver::Driver`]
+//! (sense+act).
 //!
 //! Methods on this trait wrap host-side simulator/emulator control
-//! commands (`xcrun simctl` for iOS, `adb` for Android in v6.0 c2).
+//! commands (`xcrun simctl` for iOS, `adb` for Android).
 //! Sense+act methods (tap/find/etc) live on [`smix_driver::Driver`].
 
 use async_trait::async_trait;
@@ -20,8 +19,8 @@ pub use crate::PermissionAction;
 ///
 /// Naming follows iOS convention where present; Android-only permissions
 /// (Storage, PostNotifications) have explicit variants. Cross-platform
-/// permissions (Camera/Location/etc.) map both ways via `to_simctl` and
-/// (v6.0 c2) `to_android`.
+/// permissions (Camera/Location/etc.) map both ways via `to_simctl`
+/// and `to_android`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Permission {
     Camera,
@@ -102,7 +101,7 @@ impl Permission {
 
     /// Map to Android `android.permission.X` string. Returns `None` for
     /// iOS-only permissions (`FaceId`, `HomeKit`). Wired by
-    /// `AndroidDeviceControl` in v6.0 c2; iOS impl ignores.
+    /// `AndroidDeviceControl`; the iOS impl ignores it.
     #[must_use]
     pub fn to_android(self) -> Option<&'static str> {
         match self {
@@ -128,13 +127,12 @@ impl Permission {
     }
 }
 
-/// Sim/host control trait. iOS impl wraps `xcrun simctl`; Android impl
-/// (v6.0 c2) wraps `adb`.
+/// Sim/host control trait. The iOS impl wraps `xcrun simctl`; the
+/// Android impl wraps `adb`.
 ///
-/// Methods take `udid: &str` first (iOS terminology; Android maps to
-/// device serial). All return `Result<_, SimctlError>` for v6.0 c1b —
-/// Android impl in v6.0 c2 wraps adb errors into the same enum (or
-/// a new `DeviceError` introduced if needed).
+/// Methods take `udid: &str` first (iOS terminology; Android maps this
+/// to the device serial). All return `Result<_, SimctlError>` — the
+/// Android impl wraps adb errors into the same enum.
 #[async_trait]
 pub trait DeviceControl: Send + Sync {
     /// Platform identifier. Returns `smix_driver::Platform`.
@@ -160,18 +158,18 @@ pub trait DeviceControl: Send + Sync {
     async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError>;
     async fn keychain_reset(&self, udid: &str) -> Result<(), SimctlError>;
 
-    /// v1.0.4 §D12 — reset all granted privacy permissions for a
+    /// Reset all granted privacy permissions for a
     /// bundle. Companion to `clear_app_sandbox`; together they form
     /// the in-place `launchApp: clearState: true` replacement that
     /// avoids `simctl uninstall + install` and its downstream
-    /// XCUITest binding loss (feedback §F) + ReportCrash dialog
-    /// (feedback §H). Default impl no-ops so non-iOS device controls
+    /// XCUITest binding loss + ReportCrash dialog.
+    /// Default impl no-ops so non-iOS device controls
     /// (Android) keep compiling; iOS override supplies real behavior.
     async fn privacy_reset_all(&self, _udid: &str, _bundle_id: &str) -> Result<(), SimctlError> {
         Ok(())
     }
 
-    /// v1.0.4 §D12 — wipe an app's `Documents/`, `Library/`, `tmp/`
+    /// Wipe an app's `Documents/`, `Library/`, `tmp/`
     /// directories in the sim's Containers/Data root, without
     /// uninstalling the app. Preserves the XCUITest binding.
     /// Default impl no-ops; iOS override does the real wipe.
@@ -179,7 +177,7 @@ pub trait DeviceControl: Send + Sync {
         Ok(())
     }
 
-    /// v1.0.27 — delete a single key from the target app's persisted
+    /// Delete a single key from the target app's persisted
     /// user-defaults / preferences store. iOS: `simctl spawn defaults
     /// delete <bundle> <key>` (NSUserDefaults via the sim's cfprefsd).
     /// Returns `Ok(true)` when the key existed, `Ok(false)` when

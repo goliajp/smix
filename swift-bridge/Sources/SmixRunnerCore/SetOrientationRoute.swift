@@ -1,10 +1,10 @@
 import FlyingFox
 import Foundation
 
-// v5.2 c5 — POST /set-orientation {"orientation": "portrait|portraitUpsideDown
+// POST /set-orientation {"orientation": "portrait|portraitUpsideDown
 // |landscapeLeft|landscapeRight"} → 200 {ok:true|false}.
-// XCUIDevice.shared.orientation public XCUI API (not dlsym private — §9 #6
-// 不变量 在此不触发, XCUIDevice.orientation 是 framework documented property).
+// Drives `XCUIDevice.shared.orientation`, a documented public framework
+// property — no private symbol needs to be dlsym'd for this route.
 public enum SetOrientationRoute {
   public struct SetOrientationRequest: Equatable, Sendable {
     public let orientation: String

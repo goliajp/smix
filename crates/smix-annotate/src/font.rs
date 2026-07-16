@@ -1,4 +1,4 @@
-//! v1.0 Phase C1 — bundled default fonts.
+//! Bundled default fonts.
 //!
 //! smix-annotate ships two fonts embedded via `include_bytes!` so
 //! text annotations work out of the box without any consumer-supplied
@@ -38,7 +38,7 @@ pub const INTER_REGULAR: &[u8] = include_bytes!("../fonts/inter-regular.ttf");
 /// <https://github.com/googlefonts/noto-cjk>.
 pub const NOTO_SANS_SC_SUBSET: &[u8] = include_bytes!("../fonts/noto-sans-sc-subset.ttf");
 
-/// v1.0 Phase C1 — pick the bundled font best suited to render `cp`.
+/// Pick the bundled font best suited to render `cp`.
 ///
 /// Precedence:
 /// 1. CJK Unified Ideographs (U+4E00-U+9FFF), CJK Extension A
@@ -81,9 +81,9 @@ mod tests {
 
     #[test]
     fn routing_cjk_uses_noto_sc() {
-        // 中 = U+4E2D — inside CJK Unified Ideographs.
+        // U+4E2D — inside CJK Unified Ideographs.
         assert_eq!(pick_font_for_codepoint('中' as u32), NOTO_SANS_SC_SUBSET);
-        // 登 = U+767B
+        // U+767B
         assert_eq!(pick_font_for_codepoint('登' as u32), NOTO_SANS_SC_SUBSET);
     }
 

@@ -1,17 +1,16 @@
 import Foundation
 
-/// R5.b (audit Med-11) — resolves the HTTP port the runner binds on
-/// from the `SMIX_RUNNER_PORT` env. Mirrors `TargetBundleResolver` /
-/// `LaunchModeResolver` / `LaunchArgsResolver` shape: pure over env,
-/// fail-closed to default on malformed input.
+/// Resolves the HTTP port the runner binds on from the `SMIX_RUNNER_PORT`
+/// env. Mirrors `TargetBundleResolver` / `LaunchModeResolver` /
+/// `LaunchArgsResolver` shape: pure over env, fail-closed to default on
+/// malformed input.
 ///
-/// Pre-R5.b `test_runForever` hard-coded `runForever(port: 22087)`, so
-/// `cell-pool` N>1 (allocating `DEFAULT_RUNNER_PORT + i` per cell) had
-/// no way to tell the swift runner which port to bind. Every cell
-/// collided on 22087 → multi-cell concurrency was structurally broken
-/// at the wire level. The TS side now plumbs the chosen port through
-/// `TEST_RUNNER_SMIX_RUNNER_PORT` (Xcode forwards `TEST_RUNNER_`-prefixed
-/// vars into the XCUITest process with the prefix stripped); this
+/// The port must be injectable because `cell-pool` N>1 allocates
+/// `DEFAULT_RUNNER_PORT + i` per cell; without it every cell would collide
+/// on the default port and multi-cell concurrency would break at the wire
+/// level. The TS side plumbs the chosen port through
+/// `TEST_RUNNER_SMIX_RUNNER_PORT` — Xcode forwards `TEST_RUNNER_`-prefixed
+/// vars into the XCUITest process with the prefix stripped — and this
 /// resolver decodes it on the swift side.
 public enum RunnerPortResolver {
   public static let envKey = "SMIX_RUNNER_PORT"

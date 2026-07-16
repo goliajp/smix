@@ -32,9 +32,10 @@ final class SmixHostHIDResultPathTests: XCTestCase {
     )
   }
 
-  func test_success_pathIndigo9_unchanged_from_c3() throws {
-    // Behaviour identical to C3 `SmixHostHIDResultTests` lockdown — only assert
-    // the path passthrough piece (the broader JSON shape is C3's contract).
+  func test_success_pathIndigo9_unchanged() throws {
+    // Behaviour identical to the `SmixHostHIDResultTests` lockdown — this
+    // only asserts the path passthrough piece; the broader JSON shape is
+    // that test's contract.
     let s = SmixHostHIDResult.success(
       path: "indigo9",
       resolved: ["IndigoHIDMessageForMouseNSEvent"]

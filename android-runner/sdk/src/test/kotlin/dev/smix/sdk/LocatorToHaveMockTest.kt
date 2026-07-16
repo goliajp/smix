@@ -1,9 +1,9 @@
-// v7.6 c1 — Locator.toHaveCount + toHaveLabel mock-based unit tests.
+// Locator.toHaveCount + toHaveLabel mock-based unit tests.
 //
-// Mirror Swift Locator.toHave* + TS LocatorToHave tests (v7.6 c1).
-// Verifies count + label assertions wire through MockLabelsResolver +
-// MockSelectorResolver (resolve_selector_count / resolve_selector_labels
-// dedicated FFI fns from c1).
+// Mirrors the Swift Locator.toHave* + TS LocatorToHave tests. Verifies
+// count + label assertions wire through MockLabelsResolver +
+// MockSelectorResolver (the dedicated resolve_selector_count /
+// resolve_selector_labels FFI fns).
 
 package dev.smix.sdk
 

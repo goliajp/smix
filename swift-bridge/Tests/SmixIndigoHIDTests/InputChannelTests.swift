@@ -1,7 +1,7 @@
 import XCTest
 @testable import SmixIndigoHID
 
-/// C5 — `InputChannel` protocol shape + concrete channel identities. Pure
+/// `InputChannel` protocol shape + concrete channel identities. Pure
 /// value-level assertions; no dlsym / no IO.
 final class InputChannelTests: XCTestCase {
 
@@ -19,10 +19,10 @@ final class InputChannelTests: XCTestCase {
     XCTAssertEqual(InputChannelId.indigo9.rawValue, "indigo9")
   }
 
-  func test_digitizerChannel_requiredSymbolNames_match_DigitizerSymbolNames_allRequiredForC4() {
+  func test_digitizerChannel_requiredSymbolNames_match_DigitizerSymbolNames_allRequired() {
     XCTAssertEqual(
       DigitizerChannel().requiredSymbolNames,
-      DigitizerSymbolNames.allRequiredForC4
+      DigitizerSymbolNames.allRequired
     )
     // And the wire-stable byte values are pinned (defensive against drift):
     XCTAssertEqual(
@@ -36,10 +36,10 @@ final class InputChannelTests: XCTestCase {
     )
   }
 
-  func test_indigoChannel_requiredSymbolNames_match_IndigoSymbolNames_allRequiredForC3() {
+  func test_indigoChannel_requiredSymbolNames_match_IndigoSymbolNames_allRequired() {
     XCTAssertEqual(
       IndigoChannel().requiredSymbolNames,
-      IndigoSymbolNames.allRequiredForC3
+      IndigoSymbolNames.allRequired
     )
     XCTAssertEqual(
       IndigoChannel().requiredSymbolNames,

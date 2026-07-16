@@ -2,12 +2,12 @@ import XCTest
 import FlyingFox
 @testable import SmixRunnerCore
 
-// v1.5 C5d' S1 — BackRoute POCO 单测. 形态镜像 ForegroundRouteTests / ScrollRouteTests.
-// 不跑 XCUITest (BackRoute 只持 decode + envelope 职责).
+// BackRoute POCO unit tests. Mirrors ForegroundRouteTests / ScrollRouteTests.
+// No XCUITest here — BackRoute only owns decode + envelope.
 //
-// case I: decode happy path — empty body 允许 (back 0 字段, 不需 body)
-// case J: decode happy path — `{}` JSON object 也允许
-// case K: decode 非 JSON 字符串 → DecodeError.invalidJSON
+// case I: decode happy path — empty body allowed (back takes no fields, so no body is required)
+// case J: decode happy path — a `{}` JSON object is also allowed
+// case K: decode a non-JSON string → DecodeError.invalidJSON
 // case L: success(ok:true) → 200 + body {"ok":true}
 // case M: success(ok:false) → 200 + body {"ok":false}
 final class BackRouteTests: XCTestCase {

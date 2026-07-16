@@ -1,4 +1,4 @@
-// v1.0.3 — Session lifecycle guard for Kotlin SDK.
+// Session lifecycle guard for the Kotlin SDK.
 //
 // A Session is opened against a running smix-runner (via
 // HttpSmixSimRuntime) and drives POST /session/open|close|
@@ -32,9 +32,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 /**
- * v1.0.4 §D7 — session-scoped sim health classification observed via
- * the runner's `X-Sim-Health` response header. Consumers subscribe via
- * [Session.stateFlow].
+ * Session-scoped sim health classification, observed via the runner's
+ * `X-Sim-Health` response header. Subscribe via [Session.stateFlow].
  */
 enum class SessionState {
     HEALTHY,
@@ -74,12 +73,12 @@ class Session private constructor(
     private val _stateFlow = MutableStateFlow(SessionState.HEALTHY)
 
     /**
-     * v1.0.4 §D7 — current sim-health classification. Updated
-     * automatically as the runtime parses `X-Sim-Health` headers.
+     * Current sim-health classification. Updated automatically as the
+     * runtime parses `X-Sim-Health` headers.
      */
     val stateFlow: StateFlow<SessionState> get() = _stateFlow.asStateFlow()
 
-    /** v1.0.4 §D7 — current state snapshot. */
+    /** Current state snapshot. */
     val state: SessionState get() = _stateFlow.value
 
     internal fun updateState(next: SessionState) {
@@ -87,11 +86,10 @@ class Session private constructor(
     }
 
     /**
-     * v1.0.5 §D1 — probe `/session/list` and return `true` iff this
-     * session's id is still known to the runner. Consumers wire this
-     * after a state transition to `CYCLING`/`DEAD` to decide whether
-     * to keep the session (persisted across `runner cycle`) or open
-     * a fresh one.
+     * Probe `/session/list` and return `true` iff this session's id is
+     * still known to the runner. Call this after a state transition to
+     * `CYCLING`/`DEAD` to decide whether to keep the session (it is
+     * persisted across `runner cycle`) or open a fresh one.
      */
     suspend fun stillValid(): Boolean {
         check(!closed) { "session already closed" }
@@ -104,9 +102,9 @@ class Session private constructor(
     }
 
     /**
-     * v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
-     * the session's cached UiAutomator binding IN PLACE, preserving
-     * this session id. Returns wall-clock milliseconds the cycle took.
+     * Instruct the runner to `terminate()` + `launch()` the session's
+     * cached UiAutomator binding IN PLACE, preserving this session id.
+     * Returns wall-clock milliseconds the cycle took.
      */
     suspend fun relaunchApp(): Long {
         check(!closed) { "session already closed" }
@@ -131,7 +129,7 @@ class Session private constructor(
      * Release the session — sends POST /session/close (idempotent),
      * clears the `Session-Id` header from the runtime. Subsequent
      * runtime requests fall through to the legacy per-request rebind
-     * path (rate-limited to 1 activate / 5s / bundle-id as of v1.0.2).
+     * path (rate-limited to 1 activate / 5s / bundle-id).
      */
     suspend fun close() {
         if (closed) {
@@ -174,8 +172,8 @@ class Session private constructor(
             val serverTimeMs = obj["serverTimeMs"]?.jsonPrimitive?.longOrNull ?: 0L
             runtime.setSessionId(sid)
             val session = Session(sid, activatedOnce, serverTimeMs, runtime)
-            // v1.0.4 §D7 — wire the runtime's X-Sim-Health parse into
-            // this session's state machine.
+            // Wire the runtime's X-Sim-Health parse into this
+            // session's state machine.
             runtime.attachSessionStateSetter { next -> session.updateState(next) }
             return session
         }

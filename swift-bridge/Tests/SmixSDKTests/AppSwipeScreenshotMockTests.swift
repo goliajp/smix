@@ -1,4 +1,4 @@
-// v7.2 c1 — App.swipe / App.screenshot mock-based unit tests.
+// App.swipe / App.screenshot mock-based unit tests.
 //
 // Verifies the runtime wire-through is direct (no transformation,
 // no buffering) for both methods.

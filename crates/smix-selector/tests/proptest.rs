@@ -1,4 +1,4 @@
-//! v3.3 c5 — property-based tests for smix-selector match_text + Pattern.
+//! Property-based tests for smix-selector match_text + Pattern.
 //!
 //! Invariants:
 //! - Empty `Pattern::Text("")` never matches anything.

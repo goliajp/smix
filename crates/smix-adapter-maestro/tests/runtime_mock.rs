@@ -1,14 +1,14 @@
-//! v3.20 c3 — Adapter::run mock-driven unit coverage.
+//! Adapter::run mock-driven unit coverage.
 //!
 //! Each test isolates the runtime from a real simulator by impl-ing
 //! [`AppLike`] on a hand-rolled `MockApp` that records the call
 //! sequence. The 15 [`Step`] variants → smix-sdk action mapping is
 //! verified via the captured trace; failure shapes (optional swallow,
-//! Swipe graceful skip, G10 clear_state graceful skip, RunFlowConditional
-//! visibility evaluation, ParseError::UnsupportedCommand graceful skip
-//! per §9 #5) all surface as concrete trace assertions.
+//! Swipe graceful skip, clear_state graceful skip, RunFlowConditional
+//! visibility evaluation, ParseError::UnsupportedCommand graceful
+//! skip) all surface as concrete trace assertions.
 //!
-//! v3.27 c1 — `Step::LaunchApp` now routes through
+//! `Step::LaunchApp` now routes through
 //! `AppLike::launch_fresh`. The `LaunchFresh` capture variant records
 //! the env-var bridge (`SMIX_APP_PATH_<NORMALIZED_BUNDLE>` →
 //! `app_path: Option<&str>`); the two `mock_run_launch_app_clear_state_*`
@@ -32,24 +32,24 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq)]
 enum MockCall {
     Tap(Selector),
-    /// v5.3 c5 — `App::tap_xcui(id)` (SwiftUI modal dismiss routing).
+    /// `App::tap_xcui(id)` (SwiftUI modal dismiss routing).
     TapXcui(String),
-    /// v1.0.26 — `App::tap_with_mode(selector, mode)` (`dispatch: daemonProxy`).
+    /// `App::tap_with_mode(selector, mode)` (`dispatch: daemonProxy`).
     TapWithMode(String),
-    /// v1.0.27 — `App::clear_user_defaults(bundle, keys)`.
+    /// `App::clear_user_defaults(bundle, keys)`.
     ClearUserDefaults(String, Vec<String>),
-    /// v5.19 c1 — `App::find_by_text_ocr(text, locales)` (L5 sense layer).
+    /// `App::find_by_text_ocr(text, locales)` (OCR sense layer).
     FindByTextOcr(String, Vec<String>),
-    /// v5.20 c1 — `App::find_norm_coord(selector)` (L6 anchor resolution).
+    /// `App::find_norm_coord(selector)` (anchor resolution).
     FindNormCoord(Selector),
-    /// v5.21 c1b — `App::webview_eval(js)` (Option A debug bridge).
+    /// `App::webview_eval(js)` (Option A debug bridge).
     WebViewEval(String),
     TapAtCoord(f64, f64),
     Fill(Selector, String),
     PressKey(KeyName),
     Scroll(Selector, SwipeDirection),
     WaitFor(Selector, Duration),
-    /// v5.2 c2 — `App::wait_for_not_visible(selector, timeout)`.
+    /// `App::wait_for_not_visible(selector, timeout)`.
     WaitForNotVisible(Selector, Duration),
     AssertVisible(Selector),
     Find(Selector),
@@ -62,53 +62,53 @@ enum MockCall {
         app_path: Option<String>,
     },
     OpenUrl(String),
-    /// v5.2 c1 — `App::swipe_at_coord(from, to)`.
+    /// `App::swipe_at_coord(from, to)`.
     SwipeAtCoord((f64, f64), (f64, f64)),
-    /// v5.2 c1 — `App::scroll_screen(direction)`.
+    /// `App::scroll_screen(direction)`.
     ScrollScreen(SwipeDirection),
-    /// v5.2 c1 — `App::assert_not_visible(selector)`. Adapter only records
+    /// `App::assert_not_visible(selector)`. Adapter only records
     /// the call; the per-selector pass/fail is injected via
     /// `with_assert_not_visible_failure`.
     AssertNotVisible(Selector),
-    /// v5.2 c1 — `App::hide_keyboard`.
+    /// `App::hide_keyboard`.
     HideKeyboard,
-    /// v5.2 c1 — `App::screenshot`.
+    /// `App::screenshot`.
     Screenshot,
-    /// v5.2 c2 — `App::foreground(bundle)`.
+    /// `App::foreground(bundle)`.
     Foreground(String),
-    /// v5.2 c2 — `App::launch_app_with_options(opts)`.
+    /// `App::launch_app_with_options(opts)`.
     LaunchAppWithOptions(smix_sdk::LaunchAppOptions),
-    /// v5.2 c3 — `App::set_clipboard(text)`.
+    /// `App::set_clipboard(text)`.
     SetClipboard(String),
-    /// v5.2 c3 — `App::paste_text(text)`. `None` 表示从 clipboard 读.
+    /// `App::paste_text(text)`. `None` means read from the clipboard.
     PasteText(Option<String>),
-    /// v5.2 c3 — `App::copy_text_from(selector)`.
+    /// `App::copy_text_from(selector)`.
     CopyTextFrom(Selector),
-    /// v5.2 c3 — `App::double_tap(selector)`.
+    /// `App::double_tap(selector)`.
     DoubleTap(Selector),
-    /// v5.2 c3 — `App::long_press(selector, duration)`.
+    /// `App::long_press(selector, duration)`.
     LongPress(Selector, Duration),
-    /// v5.2 c5 — `App::set_location(lat, lng)`.
+    /// `App::set_location(lat, lng)`.
     SetLocation(f64, f64),
-    /// v5.2 c5 — `App::travel(points, speed)`.
+    /// `App::travel(points, speed)`.
     Travel(Vec<(f64, f64)>, Option<f64>),
-    /// v5.2 c5 — `App::set_permissions(bundle, perms)`.
+    /// `App::set_permissions(bundle, perms)`.
     SetPermissions(
         String,
         Vec<(smix_sdk::SimctlPermission, smix_sdk::PermissionAction)>,
     ),
-    /// v5.2 c5 — `App::add_media(paths)`.
+    /// `App::add_media(paths)`.
     AddMedia(Vec<String>),
-    /// v5.2 c5 — `App::set_orientation(orientation)`.
+    /// `App::set_orientation(orientation)`.
     SetOrientation(smix_sdk::MaestroOrientation),
-    /// v5.2 c5 — `App::start_recording(path)`.
+    /// `App::start_recording(path)`.
     StartRecording(String),
-    /// v5.2 c5 — `App::stop_recording()` bare.
+    /// `App::stop_recording()` bare.
     StopRecording,
-    /// v5.2 c6 — `App::assert_screenshot(path, max_hamming)` (path is abs
+    /// `App::assert_screenshot(path, max_hamming)` (path is abs
     /// after base_dir.join resolution).
     AssertScreenshot(std::path::PathBuf),
-    /// v5.6 c5 — `App::get_clipboard()` read (used by runFlow.as outputs).
+    /// `App::get_clipboard()` read (used by runFlow.as outputs).
     GetClipboard,
 }
 
@@ -125,31 +125,31 @@ struct MockApp {
     find_error_selectors: Mutex<std::collections::HashSet<String>>,
     /// describe_selector-keyed map of tap responses; missing key = Ok.
     tap_failures: Mutex<HashMap<String, FailureCode>>,
-    /// v5.2 c4 — describe_selector-keyed transient fail count: (code,
+    /// Describe_selector-keyed transient fail count: (code,
     /// target_fail_count, current_call_count). tap() returns fail while
     /// current < target, then success. Used to model retry semantics.
     tap_failures_n_times: Mutex<HashMap<String, (FailureCode, u32, u32)>>,
-    /// v5.2 c1 — describe_selector-keyed: if present, assert_not_visible
+    /// Describe_selector-keyed: if present, assert_not_visible
     /// raises AssertionFailed for that selector. Missing key = Ok.
     assert_not_visible_failures: Mutex<HashMap<String, ()>>,
-    /// v5.5 c5 — describe_selector-keyed transient visibility counter:
+    /// Describe_selector-keyed transient visibility counter:
     /// (target_visible_count, current_call_count). find() returns true
     /// while current < target, then false. Used to model selector-style
     /// repeat.while.visible loops.
     find_visible_n_times: Mutex<HashMap<String, (u32, u32)>>,
-    /// v5.6 c5 — current device pasteboard contents returned by
+    /// Current device pasteboard contents returned by
     /// `get_clipboard()`. Used to model `runFlow.as: <name>` outputs
     /// capture (subflow leaves a value in the pasteboard, parent reads
     /// it back via clipboard sense).
     clipboard: Mutex<String>,
-    /// v5.19 c1 — canned return for `find_by_text_ocr`. None = OCR miss
+    /// Canned return for `find_by_text_ocr`. None = OCR miss
     /// (default). Tests set via `set_ocr_result(Some(OcrFrame{...}))`.
     ocr_result: Mutex<Option<smix_sdk::OcrFrame>>,
-    /// v5.20 c1 — canned return for `find_norm_coord` (used by L6
+    /// Canned return for `find_norm_coord` (used by
     /// AnchorRelative). Default `Some((0.5, 0.5))` (center) so adapter
     /// dispatch always finds an anchor unless tests override.
     anchor_coord: Mutex<Option<(f64, f64)>>,
-    /// v5.21 c1b — canned return for `webview_eval`. Defaults to JSON
+    /// Canned return for `webview_eval`. Defaults to JSON
     /// `null`; tests set via `with_webview_result(serde_json::json!(...))`.
     webview_result: Mutex<serde_json::Value>,
 }
@@ -171,7 +171,7 @@ impl MockApp {
         }
     }
 
-    /// v5.19 c1 — preset the OCR result `find_by_text_ocr` will return.
+    /// Preset the OCR result `find_by_text_ocr` will return.
     /// `None` (default) = OCR miss; `Some(frame)` = OCR hit at given frame.
     #[allow(dead_code)]
     fn with_ocr_result(self, frame: Option<smix_sdk::OcrFrame>) -> Self {
@@ -179,7 +179,7 @@ impl MockApp {
         self
     }
 
-    /// v5.6 c5 — preset the device pasteboard contents that
+    /// Preset the device pasteboard contents that
     /// `get_clipboard()` will return on the next call. Used to model the
     /// canonical `runFlow.as: <name>` flow where the subflow ends with a
     /// `copyTextFrom` that leaves text in the pasteboard for the parent.
@@ -188,7 +188,7 @@ impl MockApp {
         self
     }
 
-    /// v5.5 c5 — transient visibility helper: report `sel_key` visible
+    /// Transient visibility helper: report `sel_key` visible
     /// for the first `n` find() calls, then not visible. Used to model
     /// `repeat: { while: { visible: <sel> }, commands: [...] }` loops.
     fn with_find_visible_n_times(self, sel_key: &str, n: u32) -> Self {
@@ -199,7 +199,7 @@ impl MockApp {
         self
     }
 
-    /// v5.2 c4 — transient tap failure helper: fail the first `n` calls
+    /// Transient tap failure helper: fail the first `n` calls
     /// on `sel_key`, then succeed. Used to model retry semantics.
     fn with_tap_failure_n_times(self, sel_key: &str, code: FailureCode, n: u32) -> Self {
         self.tap_failures_n_times
@@ -238,7 +238,7 @@ impl MockApp {
         self
     }
 
-    #[allow(dead_code)] // wired by v5.2 c1 S2 mock_run_assert_not_visible_fail
+    #[allow(dead_code)] // wired by mock_run_assert_not_visible_fail
     fn with_assert_not_visible_failure(self, sel_key: &str) -> Self {
         self.assert_not_visible_failures
             .lock()
@@ -260,7 +260,7 @@ impl AppLike for MockApp {
             .unwrap()
             .push(MockCall::Tap(selector.clone()));
         let key = smix_sdk::describe_selector(selector);
-        // v5.2 c4 — transient n-times failure path (retry mock).
+        // Transient n-times failure path (retry mock).
         {
             let mut map = self.tap_failures_n_times.lock().unwrap();
             if let Some((code, target, current)) = map.get_mut(&key)
@@ -393,7 +393,7 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::WaitForNotVisible(selector.clone(), timeout));
-        // v5.3 c3 — adapter now routes assertNotVisible through wait_for_not_visible,
+        // Adapter now routes assertNotVisible through wait_for_not_visible,
         // so the assert_not_visible failure-injection key must surface here too.
         let key = smix_sdk::describe_selector(selector);
         if self
@@ -435,7 +435,7 @@ impl AppLike for MockApp {
                 ..Default::default()
             }));
         }
-        // v5.5 c5 — transient counter takes precedence over static map.
+        // Transient counter takes precedence over static map.
         {
             let mut counters = self.find_visible_n_times.lock().unwrap();
             if let Some(entry) = counters.get_mut(&key) {
@@ -752,7 +752,7 @@ async fn mock_run_tap_id_optional_swallows_not_found() {
 
 #[tokio::test]
 async fn tapon_swiftui_modal_dismiss_id_routes_through_tap_xcui() {
-    // v5.3 c5 — adapter capability parity with SDK self-path: tapOn on a
+    // Adapter capability parity with SDK self-path: tapOn on a
     // SwiftUI modal dismiss button id routes via App::tap_xcui, not the
     // default App::tap. Behavior under (c) backlog is the same as the SDK
     // path; this test guards the dispatch (capability), not the outcome.
@@ -779,8 +779,8 @@ async fn tapon_swiftui_modal_dismiss_id_routes_through_tap_xcui() {
 
 #[tokio::test]
 async fn tapon_non_modal_id_uses_default_tap() {
-    // v5.3 c5 — non-modal ids stay on the default tap path so v3.20-v5.2
-    // adapter behavior is byte-identical for the 99% non-modal case.
+    // Non-modal ids stay on the default tap path, which is the
+    // overwhelmingly common case.
     let flow = parse_inline("appId: x\n---\n- tapOn:\n    id: \"v2-form-submit-btn\"\n");
     let app = MockApp::new();
     let mut adapter = Adapter::new(&app, fixtures_dir());
@@ -796,16 +796,16 @@ async fn tapon_non_modal_id_uses_default_tap() {
 
 #[tokio::test]
 async fn tapon_swiftui_navigation_tab_id_routes_through_tap_xcui() {
-    // v5.10 c3 — adapter capability gap closure: SwiftUI tab bar buttons
+    // Adapter capability gap closure: SwiftUI tab bar buttons
     // (`v2-tab-*` accessibilityIdentifier per V2RootScreen.swift) route via
     // App::tap_xcui (swift `/tap-by-id` → XCUIElement.tap with implicit
     // scrollToVisible) so the adapter can tap tabs even when a future
     // fixture grows past the iPhone width and the bar wraps into a
     // ScrollView. maestro CLI tapOn id is static (no auto-scroll); this
-    // routing makes smix strictly ≥ maestro on the tab-navigation path
-    // ([[smix-must-be-superset-of-maestro]]). R2 mitigation: scoped to
-    // SwiftUI tab id prefix only — RN Pressable (where tap_xcui does not
-    // fire onPress per v4.0 c3 G8) is NOT in the v2 fixture namespace.
+    // routing keeps smix ahead of maestro on the tab-navigation path.
+    // Deliberately scoped to the SwiftUI tab id prefix only: tap_xcui
+    // does not fire onPress on an RN Pressable, and RN is NOT in the
+    // fixture namespace.
     for id in [
         "v2-tab-home",
         "v2-tab-form",
@@ -830,7 +830,7 @@ async fn tapon_swiftui_navigation_tab_id_routes_through_tap_xcui() {
 
 #[tokio::test]
 async fn tapon_non_navigation_v2_id_uses_default_tap() {
-    // v5.10 c3 — only the SwiftUI tab-bar `v2-tab-*` namespace routes via
+    // Only the SwiftUI tab-bar `v2-tab-*` namespace routes via
     // tap_xcui (auto-scroll path). Other v2 ids (form fields, labels,
     // submit buttons, list rows) keep the default host-resolve tap path so
     // existing 14-flow smix adapter baseline stays byte-identical.
@@ -994,7 +994,7 @@ async fn mock_run_run_flow_conditional_expands_when_visible_true() {
     );
 }
 
-// v5.6 c5 — runFlow.as: name captures the subflow's pasteboard into
+// RunFlow.as: name captures the subflow's pasteboard into
 // the parent flow's outputs map under the given alias. After the subflow
 // runs (which conventionally ends with `copyTextFrom` leaving text on the
 // pasteboard), the parent can reference ${output.name} downstream.
@@ -1129,8 +1129,7 @@ async fn mock_run_run_flow_inline_no_when_runs_unconditionally() {
     );
 }
 
-// v5.2 c1 — §9 #3 partial lift: swipe_at_coord now in SDK escape hatch.
-// The v3.x graceful-skip behavior is replaced by a real swipe dispatch.
+// swipe_at_coord dispatches a real swipe through the SDK escape hatch.
 #[tokio::test]
 async fn mock_run_swipe_at_coord() {
     let path = fixtures_dir().join("swipe_only.yaml");
@@ -1140,7 +1139,7 @@ async fn mock_run_swipe_at_coord() {
     let report = adapter
         .run(&flow)
         .await
-        .expect("swipe should dispatch (v5.2 c1 lift)");
+        .expect("swipe should dispatch");
     assert_eq!(report.steps.len(), 1);
     assert!(
         matches!(report.steps[0], RunStepReport::Ok),
@@ -1170,8 +1169,7 @@ async fn mock_run_swipe_at_coord() {
     }
 }
 
-// v5.2 c1 — 7 ⊘ adapter-only-gap wires (+ swipe lift companion above).
-// All adapter-only translations; capability sits in smix-sdk (§12.1 三层架构).
+// Adapter-only translations; the capability itself sits in smix-sdk.
 
 #[tokio::test]
 async fn mock_run_scroll() {
@@ -1208,7 +1206,7 @@ async fn mock_run_assert_not_visible_pass() {
     assert!(matches!(report.steps[0], RunStepReport::Ok));
     let calls = app.calls();
     assert_eq!(calls.len(), 1);
-    // v5.3 c3 — adapter dispatches assertNotVisible through wait_for_not_visible
+    // Adapter dispatches assertNotVisible through wait_for_not_visible
     // (5s implicit timeout) to match maestro CLI's settle-then-check semantics.
     assert!(matches!(calls[0], MockCall::WaitForNotVisible(_, _)));
 }
@@ -1314,10 +1312,11 @@ async fn mock_run_clear_keychain_after_launch() {
     }
 }
 
-// v5.2 c2 — pressKey 全键扩 (4 个新 maestro yaml 字串映射). home 真走 swift
-// XCUIDevice.shared.press(.home); lock / volumeUp / volumeDown 在 iOS sim
-// Apple 明示 unavailable → adapter runtime 前置 graceful Skipped + warning,
-// 不撞 swift unavailable API.
+// Full PressKey coverage for the maestro yaml key strings. `home`
+// really goes through swift XCUIDevice.shared.press(.home); Apple
+// documents lock / volumeUp / volumeDown as unavailable on the iOS
+// simulator, so the adapter runtime reports a graceful Skipped +
+// warning up front rather than hitting the unavailable swift API.
 
 #[tokio::test]
 async fn mock_run_press_key_home() {
@@ -1384,8 +1383,8 @@ async fn mock_run_press_key_volume_down_graceful_skip() {
     assert!(app.calls().is_empty());
 }
 
-// v5.2 c2 — extendedWaitUntil notVisible 分支(SDK App::wait_for_not_visible
-// 平铺 + adapter parser 双 arm).
+// ExtendedWaitUntil notVisible branch (SDK App::wait_for_not_visible
+// plus the adapter parser's two arms).
 #[tokio::test]
 async fn mock_run_extended_wait_until_not_visible() {
     let flow = parse_inline(concat!(
@@ -1415,7 +1414,7 @@ async fn mock_run_extended_wait_until_not_visible() {
 
 #[tokio::test]
 async fn mock_run_extended_wait_until_visible_still_works() {
-    // v5.2 c2 regression: visible arm pre-c2 default 行为不退化.
+    // Regression guard: the `visible` arm keeps its default behavior.
     let flow = parse_inline(concat!(
         "appId: com.t.p\n",
         "---\n",
@@ -1441,7 +1440,8 @@ async fn mock_run_extended_wait_until_visible_still_works() {
     }
 }
 
-// v5.2 c2 — launchApp 三子参 (permissions / arguments / stopApp) 双 arm dispatch.
+// LaunchApp sub-parameters (permissions / arguments / stopApp) across
+// both dispatch arms.
 // stopApp=true (default) → launch_app_with_options;stopApp=false → foreground.
 
 #[tokio::test]
@@ -1520,7 +1520,7 @@ async fn mock_run_launch_app_with_arguments() {
     }
 }
 
-// v5.5 c6 — mapping form launchApp.arguments lifts to argv pairs
+// Mapping form launchApp.arguments lifts to argv pairs
 // (maestro CLI accepts but drops these via its IDB path; smix bypasses
 // IDB and forwards via simctl launch).
 #[tokio::test]
@@ -1558,7 +1558,7 @@ async fn mock_run_launch_app_with_arguments_mapping_form() {
     }
 }
 
-// v5.5 c6 — mapping form rejects non-scalar values (lists / nested maps)
+// Mapping form rejects non-scalar values (lists / nested maps)
 // — keeps the contract small and aligned with simctl argv semantics.
 #[tokio::test]
 async fn parse_launch_app_arguments_mapping_form_rejects_non_scalar() {
@@ -1615,8 +1615,8 @@ async fn mock_run_launch_app_with_permissions() {
     }
 }
 
-// v5.2 c3 — clipboard 三命令 (setClipboard / pasteText 双形态 / copyTextFrom).
-// SDK 走 simctl host-side (pasteboard_set/get + fill/find_one 已有 wire).
+// The three clipboard commands (setClipboard / both pasteText forms /
+// copyTextFrom). The SDK routes these host-side through simctl.
 
 #[tokio::test]
 async fn mock_run_set_clipboard() {
@@ -1631,8 +1631,9 @@ async fn mock_run_set_clipboard() {
     );
 }
 
-// v5.2 c4 — ${expr} parser-time reject 已 sweep; expression 走 runtime expand.
-// 未定义变量在 runtime 报 DriverError (UndefinedVariable).
+// Expressions are expanded at runtime, not rejected at parse time.
+// An undefined variable raises a DriverError (UndefinedVariable) at
+// runtime.
 #[tokio::test]
 async fn mock_run_set_clipboard_unknown_var_driver_error() {
     let flow = parse_inline("appId: com.t.c\n---\n- setClipboard: \"${output.PIN}\"\n");
@@ -1723,7 +1724,7 @@ async fn mock_run_copy_text_from_text_short() {
     }
 }
 
-// v5.2 c3 — doubleTapOn / longPressOn (XCUI public API path).
+// DoubleTapOn / longPressOn (XCUI public API path).
 
 #[tokio::test]
 async fn mock_run_double_tap_on_id() {
@@ -1781,7 +1782,7 @@ async fn mock_run_long_press_on_with_duration_overrides() {
     }
 }
 
-// v5.2 c4 — assertTrue + ${expr} template sweep on 3 string commands.
+// AssertTrue + ${expr} template sweep on 3 string commands.
 
 #[tokio::test]
 async fn mock_run_assert_true_literal_true() {
@@ -1890,7 +1891,7 @@ async fn mock_run_paste_text_literal_template_expanded() {
     );
 }
 
-// v5.2 c4 — repeat / retry / runScript / evalScript.
+// Repeat / retry / runScript / evalScript.
 
 #[tokio::test]
 async fn mock_run_repeat_times_runs_body_n_times() {
@@ -1936,7 +1937,7 @@ async fn mock_run_repeat_while_false_runs_zero_times() {
     );
 }
 
-// v5.5 c5 — selector-style while is now accepted (was deferred-to-v5.3+).
+// Selector-style while is accepted.
 // Mock app reports the selector non-visible immediately → loop body
 // runs zero times.
 #[tokio::test]
@@ -1970,7 +1971,7 @@ async fn mock_run_repeat_while_visible_not_visible_runs_zero_times() {
     );
 }
 
-// v5.5 c5 — selector-style while loop runs N body iterations while the
+// Selector-style while loop runs N body iterations while the
 // element is visible, exits when it disappears. Mock makes the spinner
 // visible exactly twice via with_find_visible_n_times.
 #[tokio::test]
@@ -2014,7 +2015,8 @@ async fn mock_run_retry_succeeds_on_second_attempt() {
         "      - tapOn:\n",
         "          id: \"flaky\"\n",
     ));
-    // mock app: tap on `id=flaky` 第 1 次 fail (ElementNotFound), 第 2 次 success.
+    // mock app: tap on `id=flaky` fails the 1st time
+    // (ElementNotFound) and succeeds the 2nd.
     let sel_key = smix_sdk::describe_selector(&smix_sdk::id("flaky"));
     let app = MockApp::new().with_tap_failure_n_times(&sel_key, FailureCode::ElementNotFound, 1);
     let mut adapter = Adapter::new(&app, fixtures_dir());
@@ -2089,7 +2091,7 @@ async fn mock_run_eval_script_unsupported_driver_error() {
     }
 }
 
-// v5.2 c5 — Device + Media gap (setLocation / travel / setPermissions / addMedia).
+// Device + Media gap (setLocation / travel / setPermissions / addMedia).
 
 #[tokio::test]
 async fn mock_run_set_location() {
@@ -2174,7 +2176,8 @@ async fn mock_run_set_permissions_uses_last_bundle() {
     let mut adapter = Adapter::new(&app, fixtures_dir());
     adapter.run(&flow).await.expect("setPermissions dispatch");
     let calls = app.calls();
-    // 第二个 call 应是 SetPermissions, bundle = com.target.app (last_bundle).
+    // The second call should be SetPermissions, with
+    // bundle = com.target.app (last_bundle).
     let perms_call = calls
         .iter()
         .find(|c| matches!(c, MockCall::SetPermissions(_, _)))
@@ -2190,8 +2193,9 @@ async fn mock_run_set_permissions_uses_last_bundle() {
 
 #[tokio::test]
 async fn mock_run_set_permissions_no_launch_driver_error() {
-    // Adapter::run seeds last_bundle from flow.app_id; 用空 appId 测
-    // "完全没 launch app" 边界 (parser 接受空 string).
+    // Adapter::run seeds last_bundle from flow.app_id; an empty appId
+    // exercises the "no app was ever launched" edge (the parser
+    // accepts an empty string).
     let flow = parse_inline(concat!(
         "appId: \"\"\n",
         "---\n",
@@ -2239,7 +2243,7 @@ async fn mock_run_add_media_scalar_and_array() {
     }
 }
 
-// v5.2 c5 — setOrientation 全栈 (swift XCUIDevice public API path).
+// SetOrientation end-to-end (swift XCUIDevice public API path).
 
 #[tokio::test]
 async fn mock_run_set_orientation_literal() {
@@ -2283,7 +2287,7 @@ async fn mock_run_set_orientation_unknown_rejected() {
     }
 }
 
-// v5.2 c5 — startRecording / stopRecording (simctl io recordVideo SIGINT path).
+// StartRecording / stopRecording (simctl io recordVideo SIGINT path).
 
 #[tokio::test]
 async fn mock_run_start_then_stop_recording() {
@@ -2323,7 +2327,7 @@ async fn mock_run_start_recording_non_string_rejected() {
     }
 }
 
-// v5.2 c6 — assertScreenshot (visual regression via dhash 64-bit).
+// AssertScreenshot (visual regression via dhash 64-bit).
 
 #[tokio::test]
 async fn mock_run_assert_screenshot_records_resolved_path() {
@@ -2340,7 +2344,7 @@ async fn mock_run_assert_screenshot_records_resolved_path() {
     assert_eq!(app.calls(), vec![MockCall::AssertScreenshot(expected)]);
 }
 
-// v5.5 c5 — mapping form `{ path, threshold }` accepted; runtime
+// Mapping form `{ path, threshold }` accepted; runtime
 // dispatches with the override.
 #[tokio::test]
 async fn mock_run_assert_screenshot_mapping_form_threshold_passes_through() {
@@ -2364,7 +2368,7 @@ async fn mock_run_assert_screenshot_mapping_form_threshold_passes_through() {
     // succeeding proves the mapping form parsed and routed.
 }
 
-// v5.5 c5 — mapping form `{ path, mask: [...] }` accepted; runtime
+// Mapping form `{ path, mask: [...] }` accepted; runtime
 // emits an explicit warn-and-ignore (R2-tier algorithm deferred to v6+).
 #[tokio::test]
 async fn mock_run_assert_screenshot_mask_warns_and_ignores() {
@@ -2392,12 +2396,12 @@ async fn mock_run_assert_screenshot_mask_warns_and_ignores() {
         .find(|w| w.contains("mask"))
         .expect("mask warn-and-ignore must surface in run report");
     assert!(
-        warn.contains("ignored") && warn.contains("R2-tier"),
-        "warn should call out R2-tier deferral, got: {warn}"
+        warn.contains("ignored") && warn.contains("SSIM/pHash"),
+        "warn should explain why mask regions are ignored, got: {warn}"
     );
 }
 
-// v5.5 c5 — scalar form remains a clean path (back-compat).
+// Scalar form remains a clean path (back-compat).
 #[tokio::test]
 async fn parse_assert_screenshot_scalar_form_still_works() {
     let flow = parse_inline(concat!(
@@ -2435,9 +2439,10 @@ async fn mock_run_take_screenshot_no_path() {
 static G10_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test]
-// v5.2 c2 — launchApp 走 typed LaunchAppOptions dispatch (adapter 一层翻译,
-// LaunchFresh 是 SDK 内部 op 不再直接出现在 adapter mock trace 里). 旧 v3.27
-// c1 时代的 "LaunchFresh trace + G10 warning" 形态已 SDK-internal 化.
+// LaunchApp dispatches through the typed LaunchAppOptions path (the
+// adapter is a thin translation layer). LaunchFresh is an
+// SDK-internal op and no longer appears directly in the adapter mock
+// trace.
 async fn mock_run_launch_app_clear_state_no_env_var_routes_via_options() {
     let _guard = G10_ENV_LOCK.lock().await;
     unsafe {
@@ -2676,7 +2681,7 @@ async fn undefined_env_var_errors_with_name() {
     );
 }
 
-// v1.0.26 — explicit `dispatch:` override routing.
+// Explicit `dispatch:` override routing.
 
 #[tokio::test]
 async fn tapon_dispatch_xcui_routes_through_tap_xcui() {
@@ -2728,7 +2733,7 @@ async fn tapon_dispatch_xcui_non_id_selector_errors() {
     assert!(msg.contains("requires an `id:` selector"), "got: {msg}");
 }
 
-// v1.0.27 — clearUserDefaults dispatch routing.
+// ClearUserDefaults dispatch routing.
 
 #[tokio::test]
 async fn clear_user_defaults_uses_flow_app_id_by_default() {

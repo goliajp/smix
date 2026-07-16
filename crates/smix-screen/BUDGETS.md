@@ -31,8 +31,7 @@ sub-microsecond.
 ## Comparative numbers (vs TS V8 baseline)
 
 Real measured medians on M-series Mac, release profile, ≥100-sample.
-**These are the numbers to quote** — see also workspace-level
-[PERFORMANCE.md](../../PERFORMANCE.md).
+**These are the numbers to quote.**
 
 | Operation | TS V8 baseline | Rust release | Speedup |
 |---|---:|---:|---:|

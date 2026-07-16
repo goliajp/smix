@@ -2,7 +2,7 @@ import XCTest
 import FlyingFox
 @testable import SmixRunnerCore
 
-/// v1.2 C2 S1 — fill/clear/pressKey timing emitted to SDK side via response
+/// fill/clear/pressKey timing emitted to SDK side via response
 /// body `stages` field (mirrors TapRoute.TapStages wire convention).
 final class KeyboardRouteStagesTest: XCTestCase {
 

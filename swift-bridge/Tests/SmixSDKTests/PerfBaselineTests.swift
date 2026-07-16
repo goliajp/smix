@@ -1,7 +1,6 @@
-// v7.8 c3 — Swift perf baseline test. Measures Smix.launchApp + App.tap
-// round-trip against MockSimRuntime. Output goes to stdout (capture via
-// `swift test --filter PerfBaseline... 2>&1 | grep '^perf:'`) and gets
-// written to docs/perf/v7.8-baseline-swift.txt by the bench harness.
+// Swift perf baseline test. Measures Smix.launchApp + App.tap round-trip
+// against MockSimRuntime. Output goes to stdout (capture via
+// `swift test --filter PerfBaseline... 2>&1 | grep '^perf:'`).
 //
 // This test always passes; it's an information producer, not an
 // assertion. Skipped in regression suite — gated by SMIX_PERF_BENCH=1.
@@ -64,7 +63,7 @@ final class PerfBaselineTests: XCTestCase {
         let maxV = samples.last ?? 0
         let avg = samples.reduce(0, +) / Double(samples.count)
 
-        print("perf: # SmixSDK Swift perf baseline (v7.8 c3)")
+        print("perf: # SmixSDK Swift perf baseline")
         print("perf: # Date: \(ISO8601DateFormatter().string(from: Date()))")
         print("perf: # Operation: Smix.launchApp + App.tap(.id)")
         print("perf: # Backend: MockSimRuntime (in-memory)")

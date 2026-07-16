@@ -1,7 +1,5 @@
-//! v3.1 c3 — criterion bench for smix-screen visibility primitives.
-//!
-//! Mirrors TS `src/core/__bench__/visibility.bench.ts` 6 cases so the
-//! Rust vs TS numbers in PERFORMANCE.md §4 are apples-to-apples.
+//! Criterion bench for smix-screen visibility primitives, across
+//! 6 cases.
 //!
 //! Run: `cargo bench --bench visibility --package smix-screen`
 

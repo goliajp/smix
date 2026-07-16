@@ -1,5 +1,3 @@
-//! v3.28 c1 — perf_gate real bench swap from v3.21 c1 placeholder.
-//!
 //! Hot path: `generate_rust` is the only pure-synchronous transform on
 //! the recorder surface — `IRAction[]` → idiomatic `#[tokio::test]`
 //! Rust source string. Everything else in `smix-recorder` is async +

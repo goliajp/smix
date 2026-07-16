@@ -1,6 +1,4 @@
 //! `IRAction[]` → maestro yaml flow.
-//!
-//! Ported from now-retired TS source (was `legacy/src/recorder/generator-maestro-yaml.ts`, retired in v3.22).
 
 use smix_input::SwipeDirection;
 use smix_recorder_ir::{IRAction, RecorderError, RecorderErrorReason};
@@ -14,7 +12,7 @@ const DEFAULT_WAIT_TIMEOUT_MS: u64 = 5000;
 /// - tap → `tapOn` (selector inline or as map)
 /// - fill → `tapOn` + `inputText`
 /// - clear → `eraseText: 100`
-/// - press_key → `pressKey: <CapitalizedName>` (跟 maestro docs 同 convention)
+/// - press_key → `pressKey: <CapitalizedName>` (same convention as the maestro docs)
 /// - swipe → `swipeOnce: { direction: UP|DOWN|LEFT|RIGHT }`
 /// - go_back → `back`
 /// - wait_for → `extendedWaitUntil: { visible: <sel>, timeout: 5000 }`

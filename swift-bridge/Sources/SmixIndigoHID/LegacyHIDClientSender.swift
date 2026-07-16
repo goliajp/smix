@@ -6,12 +6,10 @@ import ObjectiveC.runtime
 /// Single-source ObjC selector caller for
 /// `SimDeviceLegacyHIDClient.sendWithMessage:freeWhenDone:completionQueue:completion:`.
 ///
-/// Extracted in C4 so both legacy paths (Indigo mouseFn 9-arg, IOHIDEvent
-/// digitizer tree) hit one common Mach-port handoff site. Behaviour is
-/// byte-identical to the C3 `IndigoHIDDispatcher.sendMessage` it replaced —
-/// the C3 test suite still locks the call shape via end-to-end smoke.
+/// Both legacy paths (Indigo mouseFn 9-arg, IOHIDEvent digitizer tree) hit
+/// this one common Mach-port handoff site.
 ///
-/// CLAUDE.md §9.6 invariant: we never construct `mach_msg` directly; the Mach
+/// Private-symbol invariant: we never construct `mach_msg` directly; the Mach
 /// port is encapsulated inside the private SimulatorKit class.
 internal enum LegacyHIDClientSender {
   /// Sends an Indigo message blob through `SimDeviceLegacyHIDClient`'s

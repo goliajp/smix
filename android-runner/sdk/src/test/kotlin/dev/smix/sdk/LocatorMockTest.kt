@@ -1,7 +1,7 @@
-// v7.4 c3 — Locator + App.fill / App.pressKey mock-based unit tests.
+// Locator + App.fill / App.pressKey mock-based unit tests.
 //
-// Mirror swift-bridge/Tests/SmixSDKTests/LocatorMockTests.swift +
-// AppFillPressKeyMockTests.swift (v7.1 c3). Verifies:
+// Mirrors swift-bridge/Tests/SmixSDKTests/LocatorMockTests.swift +
+// AppFillPressKeyMockTests.swift. Verifies:
 //   - Locator.toBeVisible polls + returns on first visible match
 //   - Locator.toBeVisible throws .timeout when never visible
 //   - Locator.toBeVisible throws .wrongState when matched but not visible
@@ -167,7 +167,6 @@ class LocatorMockTest {
         }
     }
 
-    // v7.6 c1 update: toHaveLabel + toHaveCount stubs replaced with real
-    // wires via dedicated FFI resolve_selector_count / labels paths.
-    // See LocatorToHaveMockTest for the c1 replacement tests.
+    // toHaveLabel + toHaveCount are wired via the dedicated FFI
+    // resolve_selector_count / labels paths; see LocatorToHaveMockTest.
 }

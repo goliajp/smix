@@ -1,24 +1,21 @@
 import XCTest
 @testable import SmixRunnerCore
 
-// G8 fix verify — RN Pressable XCUITest tap onPress reliability.
+// Verifies the tap mode that makes RN Pressable onPress fire reliably.
 //
-// v4.0 c2 red anchor (TapRouteG8RedTests.swift) renamed + rewritten in c3.
-// The cap-gap is multi-cycle confirmed v3.16 c2 → v3.17 c1/c2/c3 →
-// v3.18 → v3.19 → v3.20: SmixRunnerCore TapRoute.resolveAndTap drives
-// XCUIElement.tap() which synthesises pointerDown/pointerUp through
-// Apple's gesture recognizer chain; RN Pressable's `RCTTouchHandler`
-// UIGestureRecognizer registered on the native side gets that synthesised
-// gesture cancelled or routed past it, so the JS-thread `onPress`
-// callback never fires reliably.
+// Root cause: `TapRoute.resolveAndTap` drives `XCUIElement.tap()`, which
+// synthesises pointerDown/pointerUp through Apple's gesture recognizer
+// chain. RN Pressable's `RCTTouchHandler` UIGestureRecognizer, registered
+// on the native side, gets that synthesised gesture cancelled or routed
+// past it — so the JS-thread `onPress` callback never fires reliably.
 //
-// c3 fix wires a third TapMode — `.daemonProxySynthesize` — alongside
-// the existing `.resolve` and `.resolveAndTap`. The UITests-side
-// tapHandler dispatches the new mode through the v1.8 c2 EventSynthesizer
-// path (`XCSynthesizedEventRecord` + `XCPointerEventPath` +
+// The fix is a third TapMode — `.daemonProxySynthesize` — alongside
+// `.resolve` and `.resolveAndTap`. The UITests-side tapHandler dispatches
+// that mode through the EventSynthesizer path
+// (`XCSynthesizedEventRecord` + `XCPointerEventPath` +
 // `XCTRunnerDaemonSession.daemonProxy._XCT_synthesizeEvent:completion:`
-// ObjC dlsym, same as the v1.6 c5 tap-at-norm-coord route): the runner
-// resolves the element's frame center coord then emits a raw IOKit-level
+// via ObjC dlsym, the same route tap-at-norm-coord takes): the runner
+// resolves the element's frame centre coord, then emits a raw IOKit-level
 // touch event with NO XCUIElement-owner metadata, which UIKit's standard
 // hit-test routes through RN's `RCTTouchHandler` UIGestureRecognizer →
 // Pressable onPress fires.
@@ -61,9 +58,9 @@ final class TapRouteG8FixTests: XCTestCase {
 
     // -- response wire-compat --
     //
-    // The new mode is request-only; the response wire shape stays
-    // byte-identical to v1.1 C3 success (matched.label only, no extra
-    // fields). This test re-checks the existing `success` builder still
+    // The new mode is request-only; the response wire shape is unchanged
+    // (matched.label only, no extra fields). This test re-checks the
+    // existing `success` builder still
     // returns the same envelope when called from any mode path.
 
     func test_success_matchedLabel_envelopeUnchanged() async throws {

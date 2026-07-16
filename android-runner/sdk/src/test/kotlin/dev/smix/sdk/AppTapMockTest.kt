@@ -1,6 +1,6 @@
-// v7.4 c2 — App.tap mock-based unit tests.
+// App.tap mock-based unit tests.
 //
-// Mirror swift-bridge/Tests/SmixSDKTests/AppTapMockTests.swift (v7.1 c2).
+// Mirrors swift-bridge/Tests/SmixSDKTests/AppTapMockTests.swift.
 // Verifies wire pipeline (snapshot → SelectorResolver → tap synthesize)
 // end-to-end via MockSimRuntime + MockSelectorResolver. JVM-only —
 // no JNA init, no libuniffi_smix.so load.
@@ -215,9 +215,8 @@ class AppTapMockTest {
         assertEquals(listOf("dev.smix.target"), runtime.terminateCalls)
     }
 
-    // v7.4 c5: launchApp(.AppPath) now wired to runtime.launchFromPath.
-    // See AppActSenseExtMockTest.launchWithAppPathDispatchesToRuntime
-    // for the c5 replacement test.
+    // launchApp(.AppPath) is wired to runtime.launchFromPath; see
+    // AppActSenseExtMockTest.launchWithAppPathDispatchesToRuntime.
 
     // MARK: - tree() sense
 

@@ -1,5 +1,5 @@
 #![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive (test-optimize.md §2.4)
-//! v3.3 c2 — perf gate for smix-error cold-path primitives.
+//! Perf gate for smix-error cold-path primitives.
 //!
 //! Cold path (only fires on assertion failure) but must stay tight so
 //! AI-readable failure rendering doesn't dominate the failure window.

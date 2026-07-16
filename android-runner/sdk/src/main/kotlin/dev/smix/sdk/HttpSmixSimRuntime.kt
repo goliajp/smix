@@ -1,4 +1,4 @@
-// v1.0.3 — HttpSmixSimRuntime + Session wiring for Kotlin SDK.
+// HttpSmixSimRuntime + Session wiring for the Kotlin SDK.
 //
 // java.net.HttpURLConnection–backed SmixSimRuntime implementation that
 // speaks the SmixRunnerCore wire (mirror of TS HttpSimRuntime and
@@ -46,26 +46,25 @@ class HttpSmixSimRuntime(
 
     private val sessionIdRef = AtomicReference<String?>(null)
 
-    /** v1.0.4 §D7 — setter installed by [Session.open] to receive
-     *  `X-Sim-Health` header transitions from every response. */
+    /** Setter installed by [Session.open] to receive `X-Sim-Health`
+     *  header transitions from every response. */
     private val sessionStateSetterRef = AtomicReference<((SessionState) -> Unit)?>(null)
 
-    /** v1.0.4 §D7 — called by [Session.open]. */
+    /** Called by [Session.open]. */
     fun attachSessionStateSetter(setter: (SessionState) -> Unit) {
         sessionStateSetterRef.set(setter)
     }
 
-    /** JSON codec — lenient so pre-v1.0.3 runners without new fields still decode. */
+    /** JSON codec — lenient so older runners without newer fields still decode. */
     val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
     /**
-     * v1.0.3 — attach or clear the `Session-Id` header on every
-     * subsequent request. Typically driven by [Session.open] /
-     * [Session.close]; consumers who manage sessions manually may call
-     * directly.
+     * Attach or clear the `Session-Id` header on every subsequent
+     * request. Typically driven by [Session.open] / [Session.close];
+     * callers who manage sessions manually may call this directly.
      */
     fun setSessionId(id: String?) {
         sessionIdRef.set(id)
@@ -161,7 +160,7 @@ class HttpSmixSimRuntime(
     // ---- internal HTTP helpers --------------------------------------
 
     /**
-     * v1.0.3 — used by [Session] to drive the `/session/open`,
+     * Used by [Session] to drive the `/session/open`,
      * `/session/close`, and `/session/renew-activation` routes through
      * the same transport.
      */
@@ -193,8 +192,8 @@ class HttpSmixSimRuntime(
             val payload = json.encodeToString(JsonElement.serializer(), body).toByteArray()
             conn.outputStream.use { it.write(payload) }
             val status = conn.responseCode
-            // v1.0.4 §D7 — parse X-Sim-Health response header and
-            // forward to the attached session state setter (if any).
+            // Parse the X-Sim-Health response header and forward it
+            // to the attached session state setter (if any).
             val simHealthHeader = conn.getHeaderField("X-Sim-Health")
             if (simHealthHeader != null) {
                 val parsed = SessionState.fromHeader(simHealthHeader)

@@ -1,15 +1,16 @@
 import FlyingFox
 import Foundation
 
-// v1.6 c5 — POST /tap-at-norm-coord {"nx":<0..1>, "ny":<0..1>} → 200 {ok:<bool>}.
+// POST /tap-at-norm-coord {"nx":<0..1>, "ny":<0..1>} → 200 {ok:<bool>}.
 // Coordinate-based tap via `XCUIApplication.coordinate(withNormalizedOffset:).tap()`
-// (Apple native UI event chain, 触 RN Pressable React event). 合 host-side
-// DFS-first resolve + runner native event chain — host 提供具体 coord, runner
-// 不 re-query Apple element table (跳 ambiguous text 排序歧义).
+// — the Apple native UI event chain, which does fire RN Pressable React
+// events. Pairs a host-side DFS-first resolve with the runner's native event
+// chain: the host supplies the concrete coord, so the runner never re-queries
+// Apple's element table and thereby sidesteps ambiguous-text ordering.
 //
-// 跟 BackRoute / SwipeOnceRoute envelope shape 1:1. Body 必含 nx + ny ∈ [0,1].
-// 越界 / 缺失 / 非数字 → 400 bad_request. Mode 唯一 (无 mode field), handler
-// 直接 dispatch.
+// Envelope shape matches BackRoute / SwipeOnceRoute 1:1. Body must carry
+// nx + ny ∈ [0,1]; out of range / missing / non-numeric → 400 bad_request.
+// Single mode (no `mode` field), so the handler dispatches directly.
 public enum TapAtCoordRoute {
   public struct TapAtCoordRequest: Equatable, Sendable {
     public let nx: Double

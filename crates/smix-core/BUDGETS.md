@@ -19,4 +19,3 @@ relevant leaf stone:
 | Input enum primitives | [`smix-input` BUDGETS.md](../smix-input/BUDGETS.md) |
 | Runner wire serde | [`smix-runner-wire` BUDGETS.md](../smix-runner-wire/BUDGETS.md) |
 | `xcrun simctl` IO baseline | [`smix-simctl` BUDGETS.md](../smix-simctl/BUDGETS.md) |
-| Workspace-level perf framework | [PERFORMANCE.md](../../PERFORMANCE.md) |

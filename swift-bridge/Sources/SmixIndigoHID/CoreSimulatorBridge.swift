@@ -5,7 +5,7 @@ import ObjectiveC.runtime
 
 /// Bridges to CoreSimulator (SimDevice / SimDeviceSet) via dlopen + ObjC
 /// runtime — the framework is loaded dynamically; we never declare a module
-/// import for it (CLAUDE.md §9.6 dlsym invariant).
+/// import for it (dlsym-only invariant for private frameworks).
 public enum CoreSimulatorBridge {
   /// SimulatorKit lives per-Xcode under `xcode-select -p`.
   public static let simulatorKitPath: (_ developerDir: String) -> String = { dev in

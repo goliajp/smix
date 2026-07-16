@@ -1,4 +1,4 @@
-// v7.1 c3 — Locator actor with host-side poll loop.
+// Locator actor with a host-side poll loop.
 //
 // Playwright-style: `app.find(.text("Welcome")).toBeVisible(timeout:)`.
 // Each `.toBe…(...)` call polls the runtime snapshot at 250ms tick
@@ -167,10 +167,10 @@ extension App {
 
     /// FFI resolve to count matches — used by `toHaveCount`.
     ///
-    /// v8 polish (post-v7.6 c1): migrated from `resolveSelector` (returns
-    /// `[String]` then `.count`) to dedicated `resolveSelectorCount`
-    /// (returns `UInt32` directly). Skips index modifier per Playwright
-    /// "match all" semantics — matches Kotlin v7.6 c1 + TS v7.6 c1 pattern.
+    /// Uses the dedicated `resolveSelectorCount` (returns `UInt32`)
+    /// rather than counting `resolveSelector`'s `[String]`. Index
+    /// modifiers are skipped, per Playwright "match all" semantics —
+    /// same behaviour as the Kotlin and TS SDKs.
     internal func matchCount(for selector: Selector) async throws -> Int {
         let tree = try await runtimeSnapshot()
         let (treeJson, selectorJson) = try encodeForFfi(tree: tree, selector: selector)

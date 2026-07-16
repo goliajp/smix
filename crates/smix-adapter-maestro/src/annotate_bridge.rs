@@ -1,18 +1,15 @@
-//! v1.0 Phase C2 — bridge between yaml `takeScreenshot: { annotate }`
-//! specs and the [`smix_annotate`] renderer.
+//! Bridge between yaml `takeScreenshot: { annotate }` specs and the
+//! [`smix_annotate`] renderer.
 //!
 //! # Position resolution
 //!
 //! - [`AnnotationPos::Pixel`] → `smix_annotate::Position::pixel(x, y)`
 //! - [`AnnotationPos::Normalized`] → `smix_annotate::Position::normalized(nx, ny)`
-//! - [`AnnotationPos::Selector`] → **v1.0: unsupported in yaml**, logged
-//!   as a warning and defaults to (0, 0). Rationale: adapter's
-//!   `AppLike` trait exposes `find(bool)` but not tree-fetch; wiring
-//!   selector → pixel requires the tree accessor which is scheduled
-//!   for Phase E authoring tier (adds `find_center` API). Consumers
-//!   who need selector-relative annotations today use `assertScreenshot`
-//!   baseline with pre-computed pixel coords via `smix authoring
-//!   tap-record` (Phase E ships).
+//! - [`AnnotationPos::Selector`] → **unsupported in yaml**, logged
+//!   as a warning and defaults to (0, 0). The adapter's `AppLike`
+//!   trait exposes `find(bool)` but not a tree fetch, and resolving
+//!   selector → pixel needs a tree accessor. Use pre-computed pixel
+//!   coords for selector-relative annotations.
 
 use crate::{AnnotationPos, AnnotationSpec};
 use smix_annotate::{Annotation, Annotator, Color, Compression, Position};
@@ -112,9 +109,8 @@ fn pos_to_position(p: &AnnotationPos, field: &str, warnings: &mut Vec<String>) -
         AnnotationPos::Normalized { nx, ny } => Position::normalized(*nx, *ny),
         AnnotationPos::Selector(sel) => {
             warnings.push(format!(
-                "{field}: selector-relative positions unsupported in yaml verb (v1.0); \
-                 defaulting to (0, 0). Use {{x, y}} or {{nx, ny}} or wait for Phase E \
-                 `smix authoring tap-record`. selector={sel:?}"
+                "{field}: selector-relative positions are not supported by the yaml verb; \
+                 defaulting to (0, 0). Use {{x, y}} or {{nx, ny}} instead. selector={sel:?}"
             ));
             Position::pixel(0, 0)
         }

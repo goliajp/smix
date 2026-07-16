@@ -1,7 +1,7 @@
 import Foundation
 
-// v1.1 C2 — long-running sidecar daemon op set + line parser/formatter.
-// Used by `smix-host-hid daemon` subcommand (stdin JSON-RPC). Each op is
+// Long-running sidecar daemon op set + line parser/formatter.
+// Used by the `smix-host-hid daemon` subcommand (stdin JSON-RPC). Each op is
 // one newline-delimited JSON object; the parser is hand-rolled so the
 // daemon stays free of any serialization framework.
 
@@ -9,7 +9,7 @@ public enum SidecarOp: Equatable {
   case ping
   case tap(udid: String, x: Double, y: Double, path: SmixHostHIDArgs.Path)
   case shutdown
-  // v1.1 C3 — request a host-side AX tree snapshot for the given sim.
+  // Request a host-side AX tree snapshot for the given sim.
   // The daemon constructs the snapshot via AccessibilityPlatformTranslation
   // (dlopen'd at daemon start) and emits a TreeRoute-compatible JSON body.
   case axTree(udid: String)
@@ -66,7 +66,7 @@ public enum SidecarDaemon {
     return #"{"ok":\#(okStr),"op":"tap","path":"\#(pathEsc)","resolved":\#(resolvedJson)}"#
   }
 
-  // v1.1 C3 — axTree response. `jsonBody` is pre-serialized A11yNode-shape
+  // axTree response. `jsonBody` is pre-serialized A11yNode-shape
   // payload (TreeRoute.serialize output); embedded as a literal sub-object,
   // so callers can `JSON.parse(line).tree` to get the tree directly.
   public static func formatAxTree(ok: Bool, jsonBody: String) -> String {

@@ -1,19 +1,17 @@
-// v7.2 c4 — ExpectationFailure schema parity + AI-readable JSON
-// contract hardening tests.
+// ExpectationFailure schema parity + AI-readable JSON contract
+// hardening tests.
 //
 // Verifies:
 //   - All 6 FailureCode cases roundtrip (encode → decode → equal)
 //   - errorDescription returns valid JSON with stable key set
 //   - visibleElements + suggestions populate via App.tap path
 //   - timestamp encoded as ISO-8601 (stable across locales)
-//   - selector field encoded with custom Codable matching c3 schema
+//   - selector field encoded with custom Codable matching the Selector schema
 //
-// UDL FfiError schema extension to mirror full FailureCode case set
-// (with structured visible_elements + suggestions fields) is c5
-// scope — current FfiError has only InvalidTreeJson / InvalidSelectorJson
-// (parse failure cases) and ExpectationFailure is constructed
-// SDK-side from FFI results. The schema contract verified here is
-// what the AI agent (Claude Code) consumes.
+// FfiError in the UDL carries only InvalidTreeJson / InvalidSelectorJson
+// (the parse failure cases); it does not mirror the full FailureCode set.
+// ExpectationFailure is constructed SDK-side from FFI results, so the
+// schema contract verified here is what the AI agent consumes.
 
 import Foundation
 import XCTest
@@ -42,7 +40,7 @@ final class ExpectationFailureContractTests: XCTestCase {
 
     func testFailureCodeCountIs6() {
         XCTAssertEqual(FailureCode.allCases.count, 6,
-                       "v7.1 c1 spec: 6 codes (notFound/ambiguous/notInteractable/timeout/wrongState/unknown). v7.2 c5+ UDL扩 if Rust adds more.")
+                       "spec: 6 codes (notFound/ambiguous/notInteractable/timeout/wrongState/unknown). Extend the UDL if Rust adds more.")
     }
 
     // MARK: - AI-readable JSON contract

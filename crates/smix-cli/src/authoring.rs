@@ -1,6 +1,6 @@
-//! v1.0 Phase E — authoring tier subcommands.
+//! Authoring tier subcommands.
 //!
-//! Consumer-facing surface `smix authoring <action>` for composing
+//! User-facing surface `smix authoring <action>` for composing
 //! yaml against a live sim. Backed by the runner's a11y tree + tap
 //! synthesis primitives, exposed via smix-sdk.
 //!
@@ -34,7 +34,7 @@ pub struct SelectorCandidate {
     pub bounds: (f64, f64, f64, f64),
 }
 
-/// v1.0 Phase E1 — enumerate candidate selectors matching a partial spec.
+/// Enumerate candidate selectors matching a partial spec.
 pub fn suggest_selectors(tree: &A11yNode, partial: &str) -> Vec<SelectorCandidate> {
     let mut out = Vec::new();
     let (field, pattern) = parse_partial(partial);
@@ -124,7 +124,7 @@ fn walk_tree<F: FnMut(&A11yNode)>(node: &A11yNode, visit: &mut F) {
     }
 }
 
-/// v1.0 Phase E3 — semantic a11y-tree diff.
+/// Semantic a11y-tree diff.
 ///
 /// Compares `current` against `baseline` and returns a list of
 /// structural differences. Missing / new / mismatched nodes are
@@ -227,7 +227,7 @@ fn collect_keyed(node: &A11yNode, out: &mut std::collections::BTreeMap<String, S
 
 // -------------------- CLI dispatch surface ------------------------------
 
-/// v1.0 Phase E — dispatch `smix authoring <action>`.
+/// Dispatch `smix authoring <action>`.
 pub async fn cmd_suggest(port: u16, partial: String) -> Result<ExitCode, CliError> {
     let tree_json = act::fetch_tree_json(port)
         .await
@@ -276,13 +276,13 @@ pub async fn cmd_diff_tree(port: u16, baseline: PathBuf) -> Result<ExitCode, Cli
     }
 }
 
-/// v1.0 Phase E4 — session recording: capture periodic tree
+/// Session recording: capture periodic tree
 /// snapshots + emit a yaml scaffold that captures a11y drift over
 /// time. Minimal impl: sample at `interval_ms`, write per-sample
 /// tree JSONs, emit a yaml with `- assertVisible` steps per stable
-/// visible element. Full XCUITest tap-event recording is Phase E4
-/// evolution (needs runner-side event capture); this session captures
-/// enough for authoring iteration.
+/// visible element. Full XCUITest tap-event recording would need
+/// runner-side event capture; this session captures enough for
+/// authoring iteration.
 pub async fn cmd_record_session(
     port: u16,
     duration_secs: u64,
@@ -315,7 +315,7 @@ pub async fn cmd_record_session(
         });
     }
     let mut yaml = String::new();
-    yaml.push_str("# v1.0 Phase E4 — auto-generated session recording\n");
+    yaml.push_str("# auto-generated session recording\n");
     yaml.push_str("appId: com.example    # update to your app\n");
     yaml.push_str("---\n");
     for (id, count) in &stable_ids {

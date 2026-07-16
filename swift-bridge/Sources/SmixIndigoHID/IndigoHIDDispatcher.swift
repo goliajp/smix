@@ -23,8 +23,8 @@ public typealias IndigoMouseFn = @convention(c) (
 /// no-arg warm-up factories.
 public typealias IndigoServiceFn = @convention(c) () -> UnsafeMutableRawPointer?
 
-/// `IndigoHIDMessageForButton` — reserved for C4 (home/lock); kept here so
-/// `unsafeBitCast` site lives in one file.
+/// `IndigoHIDMessageForButton` — reserved for hardware buttons (home/lock);
+/// kept here so the `unsafeBitCast` site lives in one file.
 public typealias IndigoButtonFn = @convention(c) (UInt32, UInt32, UInt32) -> UnsafeMutableRawPointer?
 
 /// Wire-ABI constants — must NEVER drift; pinned by `IndigoConstantsTests`.

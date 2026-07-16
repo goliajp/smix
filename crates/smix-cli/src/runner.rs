@@ -21,7 +21,7 @@ pub struct RunnerState {
     /// runner default, com.apple.Preferences).
     #[serde(default)]
     pub bundle: Option<String>,
-    /// v1.0.6 — pid of the supervisor sidecar spawned when `runner up`
+    /// Pid of the supervisor sidecar spawned when `runner up`
     /// was invoked with `--supervise`. `None` means no sidecar was
     /// started. `runner down` cascades a SIGTERM to this pid before
     /// tearing down xcodebuild.
@@ -59,25 +59,23 @@ pub fn runner_env(bundle: Option<&str>, record_enabled: bool, port: u16) -> Vec<
         ));
     }
     env.push(("TEST_RUNNER_SMIX_RUNNER_PORT".to_string(), port.to_string()));
-    // v1.0.10 §D3 — forward the CLI's compile-time version to the
-    // runner so `HealthRoute.responseDetail` can echo it back on
-    // `GET /health`. Rust `env!("CARGO_PKG_VERSION")` inside the CLI
-    // binary matches `smix-runner-sources::SOURCES_VERSION` because
-    // the workspace pins them together. The consumer's client then
-    // compares this echo against its own CARGO_PKG_VERSION and
-    // refuses boot on mismatch — closing the CLI-vs-runner drift
-    // that made v1.0.4–v1.0.9 patches silently no-op on stale sources.
+    // Forward the CLI's compile-time version to the runner so
+    // `HealthRoute.responseDetail` can echo it back on `GET /health`.
+    // Rust `env!("CARGO_PKG_VERSION")` inside the CLI binary matches
+    // `smix-runner-sources::SOURCES_VERSION` because the workspace pins
+    // them together. The client then compares this echo against its own
+    // CARGO_PKG_VERSION and refuses boot on mismatch — without this,
+    // CLI-vs-runner drift makes CLI patches silently no-op against
+    // stale Swift sources.
     env.push((
         "TEST_RUNNER_SMIX_RUNNER_VERSION".to_string(),
         env!("CARGO_PKG_VERSION").to_string(),
     ));
-    // v1.0.15 Cluster C D1 — forward `.smix/config.yaml
-    // interactiveProbe:` (JSON-encoded) to the runner so the
-    // `launchApp` handler's interactive-fingerprint probe knows the
-    // consumer's minIdentifierCount + ignore-list. Missing config →
-    // env unset → Swift falls back to bundled defaults (Q7 answer:
-    // minIdentifierCount 3, ignore [SplashScreenLogo,
-    // com.focusai.app.mobile]).
+    // Forward `.smix/config.yaml interactiveProbe:` (JSON-encoded) to
+    // the runner so the `launchApp` handler's interactive-fingerprint
+    // probe knows the configured minIdentifierCount + ignore-list.
+    // Missing config → env unset → Swift falls back to bundled
+    // defaults.
     if let Some(json) = load_interactive_probe_env() {
         env.push((
             "TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON".to_string(),
@@ -87,15 +85,15 @@ pub fn runner_env(bundle: Option<&str>, record_enabled: bool, port: u16) -> Vec<
     env
 }
 
-/// v1.0.15 Cluster C D1 — read `.smix/config.yaml` looking for the
-/// `interactiveProbe:` key. Returns JSON-encoded string when present,
-/// `None` when file absent OR key absent OR file unreadable. Runner
-/// side falls back to bundled defaults in either case.
+/// Read `.smix/config.yaml` looking for the `interactiveProbe:` key.
+/// Returns a JSON-encoded string when present, `None` when file absent
+/// OR key absent OR file unreadable. The runner side falls back to
+/// bundled defaults in either case.
 ///
-/// Yaml → JSON conversion is via `serde_norway` (already a workspace
-/// dep) into a `serde_json::Value` — no explicit schema on this
-/// crate's side so consumers can grow the `interactiveProbe` mapping
-/// without smix-cli needing an update.
+/// Yaml → JSON conversion goes via `serde_norway` into a
+/// `serde_json::Value` — deliberately no explicit schema on this
+/// crate's side, so the `interactiveProbe` mapping can grow without
+/// smix-cli needing an update.
 fn load_interactive_probe_env() -> Option<String> {
     let root = workspace_root(&std::env::current_dir().ok()?)?;
     let config_path = root.join(".smix/config.yaml");
@@ -148,14 +146,13 @@ pub fn health_ok(port: u16) -> bool {
         .unwrap_or(false)
 }
 
-/// v1.0.10 §D4 — read `runnerVersion` from `GET /health` body. Returns
-/// `Some("<ver>")` when the runner emits the extended body (v1.0.10+
-/// runners include `SmixRunnerServer.swift`'s `responseDetail` wiring);
-/// `None` for pre-v1.0.10 runners that still return the legacy
-/// `{"ok":true}` shape, or when the socket read failed / body wasn't
-/// parseable JSON. `None` MUST NOT be treated as a version-mismatch —
-/// it's the "runner too old to tell me" signal, and the CLI keeps
-/// booting.
+/// Read `runnerVersion` from the `GET /health` body. Returns
+/// `Some("<ver>")` when the runner emits the extended body (runners
+/// carrying `SmixRunnerServer.swift`'s `responseDetail` wiring);
+/// `None` for older runners that still return the legacy `{"ok":true}`
+/// shape, or when the socket read failed / the body wasn't parseable
+/// JSON. `None` MUST NOT be treated as a version-mismatch — it's the
+/// "runner too old to tell me" signal, and the CLI keeps booting.
 pub fn health_runner_version(port: u16) -> Option<String> {
     let (ok, body) = read_health_bytes(port, 4096).ok()?;
     if !ok {
@@ -251,15 +248,14 @@ fn tail_log(log: &Path, lines: usize) -> String {
 ///    so `cd smix; cargo run --bin smix -- runner up ...` still works
 ///    from a fresh checkout.
 ///
-/// v1.0.10 §D2 — the install-shipped step is auto-syncing. Before we
-/// return the install-shipped path, we compare the on-disk version file
+/// The install-shipped step is auto-syncing. Before returning the
+/// install-shipped path, we compare the on-disk version file
 /// (`~/.local/share/smix/runner/.smix-runner-version`) against the CLI
 /// version. On drift OR missing, we extract the embedded
 /// `smix-runner-sources` tarball, preserving the previous tree as a
-/// timestamped backup. This closes the v1.0.4–v1.0.9 distribution gap
-/// where `cargo install smix` shipped only the Rust binary and the
-/// Swift runner project silently stayed frozen at whatever revision the
-/// consumer first put on disk.
+/// timestamped backup. Without this, `cargo install smix` would ship
+/// only the Rust binary and the Swift runner project would silently
+/// stay frozen at whatever revision first landed on disk.
 ///
 /// Returns the first existing path, or the last candidate's error
 /// (which prints as "runner project missing: `<path>`") so users see the
@@ -288,8 +284,8 @@ pub fn resolve_runner_project(
         ));
     }
 
-    // v1.0.10 §D2 — auto-sync install-shipped sources on version drift.
-    // Runs before the existence check so a first-run consumer with an
+    // Auto-sync install-shipped sources on version drift. Runs before
+    // the existence check so a first-run consumer with an
     // empty ~/.local/share/smix/ gets sources extracted transparently.
     if let Some(installed_dir) = installed_runner_dir() {
         match ensure_installed_runner_synced(&installed_dir) {
@@ -390,10 +386,10 @@ pub(crate) enum SyncOutcome {
 /// contents. Idempotent: a second call with the same version is a
 /// cheap file read.
 ///
-/// This is where the v1.0.4–v1.0.9 distribution gap closes: the Swift
-/// runner sources are baked into the CLI binary and re-materialise on
-/// every `smix runner up` when the CLI version has moved forward
-/// (typically after `cargo install smix` / `brew upgrade smix`).
+/// This is what keeps the Swift sources in step with the CLI: they are
+/// baked into the CLI binary and re-materialise on every `smix runner
+/// up` when the CLI version has moved forward (typically after
+/// `cargo install smix` / `brew upgrade smix`).
 pub(crate) fn ensure_installed_runner_synced(
     dir: &Path,
 ) -> Result<SyncOutcome, smix_runner_sources::ExtractError> {
@@ -430,15 +426,13 @@ pub fn up(
     up_with_options(root, udid, port, bundle, record_enabled, runner_project, false)
 }
 
-/// v1.0.6 — extended `up` with the `--supervise` sidecar flag. When
+/// [`up`] extended with the `--supervise` sidecar flag. When
 /// `supervise = true`, after `/health` returns 200 spawn a detached
 /// `smix runner supervise` process, record its pid in state.json, and
 /// return. `runner down` cascades a SIGTERM to that pid before
 /// tearing down xcodebuild.
 ///
-/// `up_with_options(_, _, _, _, _, _, false)` is equivalent to the
-/// v1.0.5 `up` — so consumers on the classic path see no behaviour
-/// change.
+/// `up_with_options(_, _, _, _, _, _, false)` is equivalent to [`up`].
 pub fn up_with_options(
     root: &Path,
     udid: &str,
@@ -448,13 +442,12 @@ pub fn up_with_options(
     runner_project: Option<&Path>,
     supervise: bool,
 ) -> Result<(), String> {
-    // v1.0.4 §A / D8 — refuse to boot without --bundle unless the
-    // caller explicitly opts in via SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1.
-    // Rationale: the runner's built-in default `com.apple.Preferences`
-    // silently latches every `/tree` call to Preferences and every
-    // `takeScreenshot` to the wrong app. Feedback §A: this cost
-    // insight-side "an afternoon chasing 'empty tree' ghosts". Now
-    // explicit-or-error.
+    // Refuse to boot without --bundle unless the caller explicitly
+    // opts in via SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1. The runner's
+    // built-in default `com.apple.Preferences` silently latches every
+    // `/tree` call to Preferences and every `takeScreenshot` to the
+    // wrong app, which surfaces as baffling "empty tree" results —
+    // so it's explicit-or-error.
     match bundle {
         Some(b) => {
             println!("[runner] target bundle-id: {b}");
@@ -551,11 +544,11 @@ pub fn up_with_options(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(300);
-    // v1.0.7 §D7 — detect cold vs warm rebuild by inspecting whether
-    // the per-udid derived-data dir is already populated. Cold rebuilds
-    // after a version bump can take 5-10 min (full swift stdlib copy +
-    // linker + code sign). Print an explicit banner so consumers know
-    // to budget the wait and don't spawnSync timeout too aggressively.
+    // Detect cold vs warm rebuild by inspecting whether the per-udid
+    // derived-data dir is already populated. Cold rebuilds after a
+    // version bump can take 5-10 min (full swift stdlib copy + linker +
+    // code sign). Print an explicit banner so callers know to budget the
+    // wait and don't set a spawnSync timeout too aggressively.
     let derived_dir = root.join(format!(".smix/runner/derived-data-{udid}"));
     let is_cold = !derived_dir.is_dir()
         || std::fs::read_dir(&derived_dir)
@@ -578,8 +571,8 @@ pub fn up_with_options(
         );
     }
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
-    // v1.0.7 §D7 — heartbeat every 30 s during a cold rebuild so
-    // consumers watching stdout see progress instead of a stall.
+    // Heartbeat every 30 s during a cold rebuild so anyone watching
+    // stdout sees progress instead of a stall.
     let started_at = std::time::Instant::now();
     let mut last_heartbeat = started_at;
     while std::time::Instant::now() < deadline {
@@ -598,15 +591,14 @@ pub fn up_with_options(
             ));
         }
         if health_ok(port) {
-            // v1.0.10 §D4 — version-mismatch gate. Ask the runner
-            // what version it thinks it is; if it disagrees with the
-            // CLI, refuse boot with an actionable message. This is
-            // the last line of defense against the CLI-vs-runner drift
-            // that made v1.0.4-v1.0.9 patches silently no-op — if
-            // ensure_installed_runner_synced (D2) failed for any
-            // reason (unwritable XDG dir, custom SMIX_RUNNER_PROJECT,
-            // stale supervisor cache), this check catches it before
-            // the consumer runs into a mysterious 404.
+            // Version-mismatch gate. Ask the runner what version it
+            // thinks it is; if it disagrees with the CLI, refuse boot
+            // with an actionable message. This is the last line of
+            // defense against CLI-vs-runner drift silently no-oping CLI
+            // patches — if `ensure_installed_runner_synced` failed for
+            // any reason (unwritable XDG dir, custom
+            // SMIX_RUNNER_PROJECT, stale supervisor cache), this check
+            // catches it before the user runs into a mysterious 404.
             let cli_version = env!("CARGO_PKG_VERSION");
             match health_runner_version(port) {
                 Some(v) if v == cli_version => {
@@ -630,7 +622,7 @@ pub fn up_with_options(
                     ));
                 }
                 None => {
-                    // Pre-v1.0.10 runner (legacy `{\"ok\":true}` body).
+                    // Older runner (legacy `{\"ok\":true}` body).
                     // Don't refuse boot — that would break every user
                     // who has an older runner they haven't re-installed.
                     // Warn instead. On next `runner install`/upgrade the
@@ -645,7 +637,7 @@ pub fn up_with_options(
                     println!("runner up: http://localhost:{port}/health = 200 (legacy body)");
                 }
             }
-            // v1.0.6 D1 — sidecar mode.
+            // Sidecar mode.
             if supervise {
                 match spawn_supervisor(root, runner_project) {
                     Ok(sup_pid) => {
@@ -687,14 +679,14 @@ pub fn up_with_options(
 /// session cleanly via testmanagerd; a hard kill SIGABRTs the runner app
 /// and macOS pops a crash-report dialog that steals user focus.
 ///
-/// v1.0.6 D2 — if state.json records a supervisor pid, cascade a
-/// SIGTERM to it BEFORE tearing down xcodebuild. Otherwise the sidecar
+/// If state.json records a supervisor pid, cascade a SIGTERM to it
+/// BEFORE tearing down xcodebuild. Otherwise the sidecar
 /// would flap into a `TEST INTERRUPTED` trigger the moment we send
 /// SIGINT to xcodebuild and try to re-cycle a runner we just killed.
 pub fn down(root: &Path, port: u16) -> Result<(), String> {
     let mut acted = false;
     if let Some(st) = read_state(root) {
-        // v1.0.6 D2 — supervisor teardown first. Skip when we are
+        // Supervisor teardown first. Skip when we are
         // the supervisor calling down() (avoid killing ourselves
         // mid-cycle — the re-entrant case).
         if let Some(sup_pid) = st.supervisor_pid
@@ -773,7 +765,7 @@ pub fn down(root: &Path, port: u16) -> Result<(), String> {
     Ok(())
 }
 
-/// v1.0.4 — `smix runner cycle`.
+/// `smix runner cycle`.
 ///
 /// Reads the current runner state, tears the runner down (SIGINT +
 /// wait), and brings it back up on the SAME device + port + bundle. The
@@ -781,10 +773,9 @@ pub fn down(root: &Path, port: u16) -> Result<(), String> {
 /// is preserved by both [`down`] and [`up`], so the second `xcodebuild
 /// test-without-building` boots in ~3 s instead of the ~15 s cold path.
 ///
-/// Motivation: feedback §E and D6 — when the XCTest test-host observes
-/// `** TEST INTERRUPTED **`, the safest recovery is to cycle. This
-/// verb exposes cycle to consumers explicitly, and is also invoked
-/// internally by the runner supervisor (S7).
+/// When the XCTest test-host observes `** TEST INTERRUPTED **`, the
+/// safest recovery is to cycle. This verb exposes cycle explicitly, and
+/// is also invoked internally by the runner supervisor.
 ///
 /// Errors if no state.json exists — cycle only cycles known runners;
 /// use `smix runner up` for a cold start.
@@ -801,7 +792,7 @@ pub fn cycle(
     let udid = st.udid.clone();
     let bundle = st.bundle.clone();
     let cycle_port = st.port;
-    // v1.0.6 D2 — carry the supervise flag across the cycle so the
+    // Carry the supervise flag across the cycle so the
     // sidecar re-attaches to the new xcodebuild after `up` returns.
     // Otherwise `runner cycle` from inside a supervisor-managed runner
     // would silently drop supervision.
@@ -827,12 +818,12 @@ pub fn cycle(
     )
 }
 
-/// v1.0.9 §D5 — collect ±`context_size` lines surrounding the first
-/// occurrence of `match_line` inside the log file. Best-effort:
-/// returns empty on file-read failure, or on partial matches (log
-/// rotated between trigger + read). Emitted inside the supervisor's
-/// `RunnerCycled` JSON event so consumers get cycle-cascade
-/// classification data without needing a separate `grep` pass.
+/// Collect ±`context_size` lines surrounding the first occurrence of
+/// `match_line` inside the log file. Best-effort: returns empty on
+/// file-read failure, or on partial matches (log rotated between
+/// trigger + read). Emitted inside the supervisor's `RunnerCycled` JSON
+/// event so callers get cycle-cascade classification data without
+/// needing a separate `grep` pass.
 fn collect_log_context(
     log_path: &Path,
     match_line: &str,
@@ -851,8 +842,8 @@ fn collect_log_context(
     lines[start..end].iter().map(|l| l.to_string()).collect()
 }
 
-/// v1.0.6 D1 — spawn the supervisor as a detached child process
-/// after `runner up --supervise`. Redirects stdout/stderr to
+/// Spawn the supervisor as a detached child process after
+/// `runner up --supervise`. Redirects stdout/stderr to
 /// `.smix/runner/supervise-<UDID>.log`. Uses its own process group so
 /// a ctrl-C on the CLI doesn't tear the supervisor down. Returns the
 /// child pid on success.
@@ -887,14 +878,14 @@ fn spawn_supervisor(root: &Path, runner_project: Option<&Path>) -> Result<u32, S
     Ok(child.id())
 }
 
-/// v1.0.5 §D2 — host-side XCTest supervisor.
+/// Host-side XCTest supervisor.
 ///
 /// Tails the runner log at `.smix/runner/runner-<UDID>.log` and looks
 /// for interrupt patterns (`** TEST INTERRUPTED **`,
 /// `SchemeActionResultOperation started unexpectedly`). On match:
 /// invokes [`cycle`] to tear the runner down and bring it back up on
-/// the same device/port/bundle. Session persistence (§D1) preserves
-/// the consumer's `Session-Id` across the cycle.
+/// the same device/port/bundle. Session persistence preserves the
+/// client's `Session-Id` across the cycle.
 ///
 /// Backoff: at most one cycle per 60 s (a spurious hit during boot is
 /// common). If 5 cycles fire inside 10 minutes the supervisor exits
@@ -934,13 +925,13 @@ pub fn supervise(
     let storm_window = std::time::Duration::from_secs(600);
     let storm_threshold = 5;
 
-    // v1.0.27 — health-unreachable trigger. The log-marker triggers
-    // only fire when xcodebuild prints a recognizable death banner;
-    // insight's b24 observed a runner death with NO marker (warm
-    // derived-data reuse after a downgrade sync), which the supervisor
-    // sat through. Probe GET /health every ~10 s; 3 consecutive
-    // failures (~30 s unreachable) is a cycle trigger through the same
-    // cooldown + storm accounting as the log markers.
+    // Health-unreachable trigger. The log-marker triggers only fire
+    // when xcodebuild prints a recognizable death banner, but a runner
+    // can die with NO marker at all (e.g. warm derived-data reuse after
+    // a downgrade sync), which the supervisor would otherwise sit
+    // through. Probe GET /health every ~10 s; 3 consecutive failures
+    // (~30 s unreachable) is a cycle trigger through the same cooldown +
+    // storm accounting as the log markers.
     let health_probe_every = 20; // × 500 ms sleep = ~10 s cadence
     let health_fail_threshold = 3;
     let mut loop_ticks: u64 = 0;
@@ -983,7 +974,7 @@ pub fn supervise(
         // Sleep between polls; keeps CPU low.
         std::thread::sleep(std::time::Duration::from_millis(500));
 
-        // v1.0.27 — periodic health probe (see above).
+        // Periodic health probe (see above).
         loop_ticks += 1;
         if loop_ticks % health_probe_every == 0 {
             if probe_health(port) {
@@ -1105,15 +1096,15 @@ pub fn supervise(
                     storm_window
                 ));
             }
-            // v1.0.7 §D6 — flush after every JSON event so consumers
-            // parsing supervisor stdout see the event immediately even
-            // when the outer flow crashes fast right after.
+            // Flush after every JSON event so anything parsing
+            // supervisor stdout sees the event immediately even when
+            // the outer flow crashes fast right after.
             //
-            // v1.0.9 §D5 — attach the surrounding ±5 lines of runner
-            // log context so consumers can classify the cycle without
-            // needing a separate grep. Context is best-effort — if
-            // the log file has been rotated between the trigger and
-            // the read we still emit the event with an empty context.
+            // Attach the surrounding ±5 lines of runner log context so
+            // the cycle can be classified without a separate grep.
+            // Context is best-effort — if the log file has been rotated
+            // between the trigger and the read we still emit the event
+            // with an empty context.
             let context: Vec<String> = collect_log_context(&log_path, line, 5);
             use std::io::Write;
             let mut out = std::io::stdout().lock();
@@ -1210,7 +1201,7 @@ mod tests {
             Some("22087")
         );
         let env_no_bundle = runner_env(None, false, 22090);
-        // v1.0.10 §D3 — version is now unconditionally forwarded.
+        // The version is unconditionally forwarded.
         assert_eq!(env_no_bundle.len(), 2);
         assert!(
             env_no_bundle
@@ -1221,7 +1212,7 @@ mod tests {
 
     #[test]
     fn runner_env_forwards_cli_version_for_health_echo() {
-        // §D3 — the CLI's own version reaches the runner via
+        // The CLI's own version reaches the runner via
         // TEST_RUNNER_SMIX_RUNNER_VERSION so /health can echo it and
         // the client can refuse boot on mismatch.
         let env = runner_env(None, false, 22087);
@@ -1248,11 +1239,10 @@ mod tests {
         );
     }
 
-    // v1.0.10 §D2 — auto-sync regression tests. These lock in the
-    // behavior that closes the CLI-vs-runner distribution gap: on
-    // version drift OR missing version file, ensure_installed_runner_synced
-    // MUST extract the embedded tarball; on matching version it MUST
-    // be a no-op.
+    // Auto-sync regression tests. These lock in the behavior that
+    // closes the CLI-vs-runner distribution gap: on version drift OR
+    // missing version file, ensure_installed_runner_synced MUST extract
+    // the embedded tarball; on matching version it MUST be a no-op.
 
     #[test]
     fn ensure_installed_runner_synced_extracts_on_missing_version_file() {

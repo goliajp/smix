@@ -1,8 +1,7 @@
-//! v3.1 c4 — unit tests for smix-selector `match_text`.
+//! Unit tests for smix-selector `match_text`.
 //!
-//! Mirrors TS test fixtures in `src/core/__tests__/resolve-selector.test.ts`
-//! (matchText behavior: 6-field OR + case-insensitive + auto-/i regex
-//! flag + empty-string reject + identifier-late-DFS hit).
+//! Covers: 6-field OR + case-insensitive + auto-/i regex flag +
+//! empty-string reject + identifier-late-DFS hit.
 
 use smix_screen::{A11yNode, Rect};
 use smix_selector::{Pattern, match_text};
@@ -84,7 +83,7 @@ fn text_string_miss_returns_false() {
 
 #[test]
 fn text_string_empty_returns_false() {
-    // TS resolve-selector.ts:178 — `if (pattern === '') return false`.
+    // An empty pattern rejects, even against an empty label.
     let n = mk(NodePartial {
         label: Some("".into()),
         ..Default::default()
@@ -112,7 +111,7 @@ fn text_string_no_partial_match() {
 
 #[test]
 fn regex_default_auto_i_flag_inject() {
-    // v1.5 c5i-d — regex 缺 /i flag 自动注入.
+    // A regex missing the /i flag gets it injected automatically.
     let n = mk(NodePartial {
         label: Some("Hello".into()),
         ..Default::default()
@@ -226,7 +225,7 @@ fn selector_anchor_serde_with_index_modifiers() {
     assert_eq!(parsed, s);
 }
 
-// ---- v3.14 c1 S1 — Modifiers::ancestor (G7) -----------------------------
+// ---- Modifiers::ancestor -------------------------------------------------
 
 #[test]
 fn selector_text_serde_round_trip_with_ancestor_modifier() {
@@ -246,7 +245,7 @@ fn selector_text_serde_round_trip_with_ancestor_modifier() {
     let json = serde_json::to_string(&s).unwrap();
     assert!(
         json.contains("\"ancestor\":{"),
-        "wire 字段名应为 camelCase ancestor, 实际 json = {json}"
+        "wire field name should be camelCase `ancestor`; actual json = {json}"
     );
     let parsed: Selector = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed, s);
@@ -268,7 +267,7 @@ fn modifiers_omit_ancestor_when_none_back_compat() {
     let json = serde_json::to_string(&s).unwrap();
     assert!(
         !json.contains("ancestor"),
-        "skip_serializing_if=Option::is_none 应让 ancestor 字段在 None 时 wire 不出, 实际 json = {json}"
+        "skip_serializing_if=Option::is_none should keep `ancestor` off the wire when None; actual json = {json}"
     );
 }
 
@@ -288,6 +287,6 @@ fn describe_selector_renders_ancestor_segment() {
     let rendered = describe_selector(&s);
     assert!(
         rendered.contains("ancestor=("),
-        "describe_selector 应渲染 ancestor=( 段, 实际 = {rendered}"
+        "describe_selector should render an ancestor=( segment; actual = {rendered}"
     );
 }

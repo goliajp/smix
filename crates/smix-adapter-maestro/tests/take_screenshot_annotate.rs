@@ -1,4 +1,4 @@
-//! v1.0 Phase C2 — `takeScreenshot: { name, annotate: [...] }` yaml verb.
+//! `takeScreenshot: { name, annotate: [...] }` yaml verb.
 
 use smix_adapter_maestro::{AnnotationPos, AnnotationSpec, Step, parse_flow_yaml};
 

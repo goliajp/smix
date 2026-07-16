@@ -1,4 +1,4 @@
-//! v3.2 c5 — host-coord-resolver pure-pipeline tests.
+//! Host-coord-resolver pure-pipeline tests.
 
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
 use smix_screen::{A11yNode, Rect};

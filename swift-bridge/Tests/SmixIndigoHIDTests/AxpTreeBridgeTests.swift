@@ -69,13 +69,13 @@ final class AxpTreeBridgeTests: XCTestCase {
     XCTAssertEqual(AxpTreeBridge.elementTypeRaw(forAXRole: "AXUnknownRoleXyz"), 1)
   }
 
-  // case 5 — live AXP invocation gate (spike). Opt-in via SMIX_C3_SPIKE_OK=run
-  // since the bridgeTokenDelegate / XPC routing characterisation is the
-  // C3 risk surface (`docs/plan-hot.md` "S1 spike gate"). Default skip.
+  // case 5 — live AXP invocation gate (spike). Opt-in via SMIX_AXP_SPIKE_OK=run
+  // because it needs a booted simulator and the bridgeTokenDelegate / XPC
+  // routing behaviour is not yet fully characterised. Default skip.
   func test_axpTreeBridgeSpikeRealLiveSim() throws {
-    let env = ProcessInfo.processInfo.environment["SMIX_C3_SPIKE_OK"]
+    let env = ProcessInfo.processInfo.environment["SMIX_AXP_SPIKE_OK"]
     if env != "run" {
-      throw XCTSkip("spike requires SMIX_C3_SPIKE_OK=run (live AXP invocation pending C3 spike work)")
+      throw XCTSkip("spike requires SMIX_AXP_SPIKE_OK=run (live AXP invocation against a booted simulator)")
     }
     let udid = try Self.requireDevSimUdid()
     let bridge = try AxpTreeBridge.acquire(udid: udid)

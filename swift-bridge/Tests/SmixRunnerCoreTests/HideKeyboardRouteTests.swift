@@ -2,7 +2,7 @@ import XCTest
 import FlyingFox
 @testable import SmixRunnerCore
 
-// v1.5 c5g'' S2 — HideKeyboardRoute POCO unit tests. Mirrors BackRouteTests
+// HideKeyboardRoute POCO unit tests. Mirrors BackRouteTests
 // (parameterless app-level capability). Does not exercise XCUITest — route
 // owns only decode + envelope serialization.
 //

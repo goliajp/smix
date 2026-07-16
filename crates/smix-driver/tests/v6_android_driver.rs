@@ -1,4 +1,4 @@
-//! v6.0 c3a — `AndroidDriver` impl smoke. Box<dyn Driver> + platform
+//! `AndroidDriver` impl smoke. Box<dyn Driver> + platform
 //! reports Android + as_ios_driver returns None.
 
 use smix_driver::{AndroidDriver, Driver, HttpRunnerClient, Platform};

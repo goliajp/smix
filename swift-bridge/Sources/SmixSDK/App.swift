@@ -1,8 +1,5 @@
-// v7.1 c2 — App actor wires real pipeline via SmixSimRuntime protocol.
-//
-// Per master.md §1 v7.1 c2: tap = snapshot → FFI resolveSelector →
-// IOHID synthesize. c1 stubs replaced for tap / launchApp; remaining
-// act/sense methods still throw notImplemented(stage:api:).
+// App actor — drives the act/sense pipeline via the SmixSimRuntime
+// protocol. A tap is: snapshot → FFI resolveSelector → IOHID synthesize.
 
 import Foundation
 import SmixCoreFFIBindings
@@ -127,7 +124,8 @@ public actor App {
         try await runtime.screenshot()
     }
 
-    /// Tap at a normalized coordinate (0..1) — escape hatch per §9 #3.
+    /// Tap at a normalized coordinate (0..1) — escape hatch for targets
+    /// with no accessibility semantics to select on.
     ///
     /// Both `nx` and `ny` must be in `[0.0, 1.0]` (normalized to the
     /// device's logical viewport). Out-of-range values throw

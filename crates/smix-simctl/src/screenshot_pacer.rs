@@ -1,12 +1,9 @@
-// v1.0.4 — screenshot pacer.
+// Screenshot pacer.
 //
 // `xcrun simctl io <udid> screenshot` under high-frequency load
 // triggers `brk 1` inside `SimRenderServer`'s
 // `com.apple.display.captureservice` dispatch queue on iOS 26.5.2
-// (25F84) with SimRenderServer 1051.55. See
-// `.claude/rfcs/1.0.4-sim-health-and-backpressure.md` §D3 and
-// `docs/ai-guide/insight-v1.0.3-studio-crash-2026-07-10.md` for the
-// forensic evidence.
+// (25F84) with SimRenderServer 1051.55, crashing the simulator.
 //
 // This pacer keeps a rolling window of recent screenshot wall times
 // and enforces a minimum interval between calls:
@@ -34,8 +31,7 @@ use std::collections::VecDeque;
 use std::time::Duration;
 use std::time::Instant;
 
-/// Knobs for [`ScreenshotPacer`]. Defaults implement the RFC 1.0.4
-/// §D3 policy.
+/// Knobs for [`ScreenshotPacer`].
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ScreenshotPacerConfig {
@@ -157,8 +153,8 @@ impl ScreenshotPacer {
     fn in_slow_path(&self) -> bool {
         // Any recent sample above the slow threshold pushes us into
         // slow-path pacing. Sensitive to a single spike, on purpose —
-        // one 800+ ms screenshot is the warning we needed a v1.0.4
-        // in the first place.
+        // one 800+ ms screenshot is the early warning that
+        // SimRenderServer is under pressure.
         self.recent_walls
             .iter()
             .any(|d| *d >= self.config.slow_threshold)

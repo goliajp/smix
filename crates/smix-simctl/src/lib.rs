@@ -16,9 +16,8 @@
 #![doc(html_root_url = "https://docs.smix.dev/smix-simctl")]
 
 pub mod registry;
-/// v1.0.4 — adaptive `xcrun simctl io screenshot` pacer. See
-/// [`screenshot_pacer::ScreenshotPacer`] and
-/// `.claude/rfcs/1.0.4-sim-health-and-backpressure.md` §D3.
+/// Adaptive `xcrun simctl io screenshot` pacer. See
+/// [`screenshot_pacer::ScreenshotPacer`].
 pub mod screenshot_pacer;
 
 use screenshot_pacer::{ScreenshotPacer, ScreenshotPacerConfig};
@@ -39,12 +38,11 @@ pub enum SimctlError {
     Spawn(#[from] io::Error),
     /// `xcrun simctl <sub>` exited non-zero.
     ///
-    /// v1.0.7 §D2 — carries the full `argv` and `wall_ms` so the
-    /// `Display` impl surfaces every argument the consumer needs to
-    /// reproduce or file a precise upstream bug. Prior versions
-    /// reported only the subcommand name (e.g., `"spawn"`) without
-    /// telling the caller which binary or paths simctl was asked to
-    /// touch. See `.claude/rfcs/1.0.7-observability-layer.md` §D2.
+    /// Carries the full `argv` and `wall_ms` so the `Display` impl
+    /// surfaces every argument needed to reproduce the failure or file
+    /// a precise upstream bug — the subcommand name alone (e.g.
+    /// `"spawn"`) does not say which binary or paths simctl was asked
+    /// to touch.
     #[error("xcrun simctl {} exited {code} ({wall_ms}ms): {stderr}", .argv.join(" "))]
     NonZeroExit {
         /// Subcommand name (e.g. `"boot"`, `"launch"`).
@@ -83,8 +81,7 @@ pub enum SimctlError {
     /// The screenshot pacer's circuit is open — a recent screenshot
     /// wall time exceeded the circuit threshold, or a screenshot
     /// failed. Callers should back off for `retry_after` and try
-    /// again. See [`screenshot_pacer::ScreenshotPacer`] and
-    /// `.claude/rfcs/1.0.4-sim-health-and-backpressure.md` §D3.
+    /// again. See [`screenshot_pacer::ScreenshotPacer`].
     ///
     /// Since smix 1.0.4.
     #[error("screenshot pacer circuit open; retry after {retry_after:?}")]
@@ -95,8 +92,8 @@ pub enum SimctlError {
 }
 
 impl SimctlError {
-    /// v1.0.7 §D2 — synthetic `NonZeroExit` for callers translating
-    /// a foreign subprocess error into `SimctlError` (e.g.
+    /// Synthetic `NonZeroExit` for callers translating a foreign
+    /// subprocess error into `SimctlError` (e.g.
     /// AndroidDeviceControl adapting adb failures). Fills
     /// `argv = [subcommand]` + `wall_ms = 0`; when the caller has a
     /// real argv, prefer the struct literal.
@@ -250,9 +247,9 @@ pub struct LaunchResult {
     pub pid: u32,
 }
 
-// -------------------- v1.0.7 §D3 subprocess ring buffer -----------------
+// -------------------- subprocess ring buffer ----------------------------
 
-/// v1.0.7 §D3 — recorded snapshot of one `xcrun simctl` invocation.
+/// Recorded snapshot of one `xcrun simctl` invocation.
 /// Exposed so callers can dump the ring buffer for post-mortem when
 /// something upstream fails.
 #[derive(Clone, Debug)]
@@ -284,21 +281,21 @@ mod subprocess_ring {
         INSTANCE.get_or_init(|| Mutex::new(VecDeque::with_capacity(128)))
     }
 
-    /// v1.0.10 §D6 — persist path for the ring buffer. Nil = in-memory
-    /// only (legacy pre-v1.0.10 behavior). Set once at process startup
-    /// via [`set_persist_path`]; unchanged for the lifetime of the
-    /// process. Insight's v1.0.7 dogfood reported empty
-    /// `/diagnostic/dump` payloads because supervisor cycles killed the
-    /// CLI faster than a dump could snapshot the in-memory buffer.
-    /// Persisting side-steps that: the file survives cycles, so
-    /// post-mortem tools read the file rather than the (now-gone)
-    /// in-memory state.
+    /// Persist path for the ring buffer. `None` = in-memory only. Set
+    /// once at process startup via [`set_persist_path`]; unchanged for
+    /// the lifetime of the process.
+    ///
+    /// Persistence matters because supervisor cycles can kill the CLI
+    /// faster than a `/diagnostic/dump` can snapshot the in-memory
+    /// buffer, yielding empty payloads. The file survives cycles, so
+    /// post-mortem tools read it rather than the (now-gone) in-memory
+    /// state.
     fn persist_cell() -> &'static Mutex<Option<PathBuf>> {
         static INSTANCE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
         INSTANCE.get_or_init(|| Mutex::new(None))
     }
 
-    /// v1.0.10 §D6 — install a persist path. Callers should also call
+    /// Install a persist path. Callers should also call
     /// [`load_persisted`] once after this so the in-memory ring starts
     /// pre-populated with the last-known state.
     pub fn set_persist_path(path: PathBuf) {
@@ -317,7 +314,7 @@ mod subprocess_ring {
         g.clone()
     }
 
-    /// v1.0.10 §D6 — record one invocation. Ring buffer capped at 128
+    /// Record one invocation. Ring buffer capped at 128
     /// entries; oldest evicted on push. When [`set_persist_path`] is
     /// active, atomically writes the buffer to disk after the mutation
     /// so a subsequent supervisor-cycle doesn't lose the observation.
@@ -350,7 +347,7 @@ mod subprocess_ring {
         g.iter().cloned().collect()
     }
 
-    /// v1.0.10 §D6 — load a previously-persisted ring from disk. No-op
+    /// Load a previously-persisted ring from disk. No-op
     /// when the file does not exist. Called by CLI startup after
     /// [`set_persist_path`] so the in-memory view starts with the
     /// last-known state. Silently drops parse failures — corrupt files
@@ -471,16 +468,16 @@ mod subprocess_ring {
     }
 }
 
-/// v1.0.10 §D6 — enable subprocess-ring persistence at the given path.
+/// Enable subprocess-ring persistence at the given path.
 /// CLI startup wires this to `~/.local/share/smix/subprocess-ring.json`
 /// so `/diagnostic/dump` payloads survive supervisor cycles. Optional;
-/// missing this call keeps pre-v1.0.10 in-memory-only behavior.
+/// without this call the ring stays in-memory only.
 pub fn set_subprocess_ring_persist_path(path: std::path::PathBuf) {
     subprocess_ring::set_persist_path(path);
     subprocess_ring::load_persisted();
 }
 
-// v1.0.14 Cluster A — CLI-side resetAppData counter tracking.
+// CLI-side resetAppData counter tracking.
 //
 // The `resetAppData` verb dispatches host-side (simctl openurl + metro
 // log tail, no runner HTTP endpoint) so counters can't come from the
@@ -622,8 +619,7 @@ mod reset_app_data_counters {
     }
 }
 
-/// v1.0.14 Cluster A — public snapshot of CLI-side resetAppData
-/// counter state. Populated by [`increment_reset_app_data_total`] +
+/// Public snapshot of CLI-side resetAppData counter state. Populated by [`increment_reset_app_data_total`] +
 /// [`increment_reset_app_data_timed_out`] as the CLI dispatches the
 /// verb; loaded from disk on CLI startup if
 /// [`set_reset_app_data_counters_persist_path`] was called.
@@ -637,8 +633,7 @@ pub struct ResetAppDataCounters {
     pub reset_app_data_timed_out: u64,
 }
 
-/// v1.0.14 Cluster A — enable resetAppData counter persistence at
-/// the given path. Callers pass
+/// Enable resetAppData counter persistence at the given path. Callers pass
 /// `~/.local/share/smix/reset-app-data-counters.json` at CLI startup
 /// so counter state survives across `smix run` → `smix diagnostic
 /// dump` invocations.
@@ -647,13 +642,13 @@ pub fn set_reset_app_data_counters_persist_path(path: std::path::PathBuf) {
     reset_app_data_counters::load_persisted();
 }
 
-/// v1.0.14 Cluster A — advance the resetAppData total counter.
+/// Advance the resetAppData total counter.
 /// Called by the CLI runtime after each dispatch (success or timeout).
 pub fn increment_reset_app_data_total() {
     reset_app_data_counters::increment_total();
 }
 
-/// v1.0.14 Cluster A — advance the resetAppData timed-out counter.
+/// Advance the resetAppData timed-out counter.
 /// Called by the CLI runtime when the completion signal (log-line
 /// pattern match) did not arrive inside the timeout window. Always
 /// paired with a preceding [`increment_reset_app_data_total`] on the
@@ -662,8 +657,7 @@ pub fn increment_reset_app_data_timed_out() {
     reset_app_data_counters::increment_timed_out();
 }
 
-/// v1.0.14 Cluster A — snapshot the current counter state for
-/// display / wire emission. Returns zero-valued counters when
+/// Snapshot the current counter state for display / wire emission. Returns zero-valued counters when
 /// persistence was never wired.
 pub fn reset_app_data_counters_snapshot() -> ResetAppDataCounters {
     let s = reset_app_data_counters::snapshot();
@@ -673,12 +667,12 @@ pub fn reset_app_data_counters_snapshot() -> ResetAppDataCounters {
     }
 }
 
-// v1.0.15 §6 — flow-attempt persistence for retry attribution. Called
-// by `smix run` after each flow completes (all its attempts done);
-// read by `smix diagnostic dump` to render the attribution table.
-// Backed by `~/.local/share/smix/flow-attempts.json`; capped at last
-// 32 flows (heuristic — enough for a batch or two of insight bootstrap
-// while keeping the dump snapshot cheap to serialize).
+// Flow-attempt persistence for retry attribution. Called by `smix run`
+// after each flow completes (all its attempts done); read by
+// `smix diagnostic dump` to render the attribution table.
+// Backed by `~/.local/share/smix/flow-attempts.json`; capped at the
+// last 32 flows — enough history to diagnose a batch or two while
+// keeping the dump snapshot cheap to serialize.
 mod flow_attempts {
     use serde::{Deserialize, Serialize};
     use std::path::{Path, PathBuf};
@@ -792,7 +786,7 @@ mod flow_attempts {
     }
 }
 
-/// v1.0.15 §6 — enable flow-attempts persistence at the given path.
+/// Enable flow-attempts persistence at the given path.
 /// CLI startup wires this to `~/.local/share/smix/flow-attempts.json`
 /// so retry attribution survives across `smix run` → `smix diagnostic
 /// dump` invocations.
@@ -801,7 +795,7 @@ pub fn set_flow_attempts_persist_path(path: std::path::PathBuf) {
     flow_attempts::load_persisted();
 }
 
-/// v1.0.15 §6 — public accessor with just the fields needed by callers.
+/// Public accessor with just the fields needed by callers.
 /// Mirrors [`smix_runner_wire::FlowAttempt`] shape.
 #[derive(Clone, Debug)]
 pub struct FlowAttemptData {
@@ -817,7 +811,7 @@ pub struct FlowAttemptData {
     pub wall_ms: u64,
 }
 
-/// v1.0.15 §6 — recorded flow with its attempt list.
+/// Recorded flow with its attempt list.
 #[derive(Clone, Debug)]
 pub struct FlowAttemptRecordData {
     /// Flow name (yaml basename or explicit id).
@@ -826,7 +820,7 @@ pub struct FlowAttemptRecordData {
     pub attempts: Vec<FlowAttemptData>,
 }
 
-/// v1.0.15 §6 — record the outcome of a flow's attempts. Called from
+/// Record the outcome of a flow's attempts. Called from
 /// `smix run` after all retries for that flow have completed. `smix
 /// diagnostic dump` reads via [`recent_flow_attempts`] later.
 pub fn record_flow_attempts<A>(flow_name: &str, attempts: &[A])
@@ -846,7 +840,7 @@ where
     flow_attempts::record(flow_name, &converted);
 }
 
-/// v1.0.15 §6 — abstraction so callers pass either
+/// Abstraction so callers pass either
 /// [`smix_runner_wire::FlowAttempt`] or a local struct with the same
 /// shape without a cross-crate dep on smix-runner-wire from smix-simctl.
 pub trait FlowAttemptShape {
@@ -862,7 +856,7 @@ pub trait FlowAttemptShape {
     fn wall_ms(&self) -> u64;
 }
 
-/// v1.0.15 §6 — snapshot recent flow attempts for display / wire
+/// Snapshot recent flow attempts for display / wire
 /// emission. Returns empty when persistence was never wired.
 pub fn recent_flow_attempts() -> Vec<FlowAttemptRecordData> {
     flow_attempts::snapshot()
@@ -884,7 +878,7 @@ pub fn recent_flow_attempts() -> Vec<FlowAttemptRecordData> {
         .collect()
 }
 
-/// v1.0.7 §D3 — snapshot the process-wide ring buffer of recent
+/// Snapshot the process-wide ring buffer of recent
 /// `xcrun simctl` invocations. Ordered oldest → newest, capped at 128
 /// entries. Reset on process restart.
 pub fn recent_subprocesses() -> Vec<SubprocessRecord> {
@@ -920,8 +914,8 @@ async fn simctl_capture_env(
     let output = cmd.output().await?;
     let wall_ms = started.elapsed().as_millis() as u64;
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    // v1.0.7 §D3 — every simctl invocation records to the ring buffer
-    // regardless of exit status.
+    // Every simctl invocation records to the ring buffer regardless of
+    // exit status.
     subprocess_ring::record(SubprocessRecord {
         argv: args.iter().map(|s| s.to_string()).collect(),
         exit_code: output.status.code(),
@@ -998,14 +992,14 @@ pub fn compose_child_env(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 /// in spirit (no instance state beyond optionally-cached `xcrun` path);
 /// kept as a struct for API ergonomics + future caching.
 ///
-/// Since v1.0.4, the client also holds a [`ScreenshotPacer`] that
+/// The client also holds a [`ScreenshotPacer`] that
 /// throttles `xcrun simctl io screenshot` under high-frequency
 /// load. Defaults are conservative (100 ms interval floor);
 /// consumers whose flows are already loose are unaffected.
 #[derive(Debug)]
 pub struct SimctlClient {
-    /// Screenshot pacer — enforces the RFC 1.0.4 §D3 interval floor,
-    /// slow-path lift, and circuit breaker. Shared via `Arc<Mutex<_>>`
+    /// Screenshot pacer — enforces the interval floor, slow-path lift,
+    /// and circuit breaker. Shared via `Arc<Mutex<_>>`
     /// so a cloned client (which callers occasionally do) still shares
     /// pressure accounting.
     screenshot_pacer: Arc<std::sync::Mutex<ScreenshotPacer>>,
@@ -1171,9 +1165,9 @@ impl SimctlClient {
         Ok(None)
     }
 
-    /// v1.0.27 — delete a single key from an app's NSUserDefaults
-    /// domain via `simctl spawn <udid> defaults delete <bundleId>
-    /// <key>`. Running `defaults` INSIDE the sim (spawn) goes through
+    /// Delete a single key from an app's NSUserDefaults domain via
+    /// `simctl spawn <udid> defaults delete <bundleId> <key>`.
+    /// Running `defaults` INSIDE the sim (spawn) goes through
     /// the sim's cfprefsd, so the deletion is coherent with what the
     /// app reads on next launch (editing the container plist from the
     /// host would race cfprefsd's cache).
@@ -1184,7 +1178,7 @@ impl SimctlClient {
     /// key is success, not an error. Any other failure surfaces as
     /// the underlying [`SimctlError`].
     ///
-    /// Motivating case (insight round-5 Ask 12): expo-dev-launcher
+    /// Motivating case: expo-dev-launcher
     /// persists the most recent deep link and re-delivers it after
     /// every JS bundle load; deleting its storage key between
     /// terminate and relaunch neutralizes the replay at the source.
@@ -1361,12 +1355,13 @@ impl SimctlClient {
         Ok(LaunchResult { pid })
     }
 
-    /// v1.0.4 §D12 — reset every privacy permission granted to
-    /// `bundle_id` on the sim: `xcrun simctl privacy <udid> reset all
-    /// <bundle-id>`. Companion to [`Self::clear_app_sandbox`] on the
-    /// in-place `launchApp: clearState: true` path that replaces
-    /// `simctl uninstall + install` (which triggers iOS 26.5 XCUITest
-    /// binding loss + ReportCrash's "Insight quit unexpectedly" dialog).
+    /// Reset every privacy permission granted to `bundle_id` on the
+    /// sim: `xcrun simctl privacy <udid> reset all <bundle-id>`.
+    /// Companion to [`Self::clear_app_sandbox`] on the in-place
+    /// `launchApp: clearState: true` path, which replaces
+    /// `simctl uninstall + install` — that pairing triggers iOS 26.5
+    /// XCUITest binding loss plus a ReportCrash "<app> quit
+    /// unexpectedly" dialog.
     pub async fn privacy_reset_all(
         &self,
         udid: &str,
@@ -1376,7 +1371,7 @@ impl SimctlClient {
         Ok(())
     }
 
-    /// v1.0.4 §D12 — wipe the app's sandbox on the sim: locate the
+    /// Wipe the app's sandbox on the sim: locate the
     /// Data container via `simctl get_app_container <udid> <bundle>
     /// data`, then `simctl spawn <udid> rm -rf <container>/Documents
     /// <container>/Library <container>/tmp`. The app remains installed
@@ -1399,12 +1394,11 @@ impl SimctlClient {
         let documents = format!("{container}/Documents");
         let library = format!("{container}/Library");
         let tmp = format!("{container}/tmp");
-        // v1.0.7 §D1 — `xcrun simctl spawn <UDID> <cmd>` uses
-        // `posix_spawn` inside the sim OS; `<cmd>` must be an absolute
-        // path (no PATH resolution). Prior versions passed `"rm"` and
-        // hit `NSPOSIXErrorDomain code 2: No such file or directory`
-        // on iOS 17+ sims. `/bin/rm` is present on every stock sim
-        // image.
+        // `xcrun simctl spawn <UDID> <cmd>` uses `posix_spawn` inside
+        // the sim OS; `<cmd>` must be an absolute path (there is no
+        // PATH resolution). A bare `"rm"` fails with
+        // `NSPOSIXErrorDomain code 2: No such file or directory` on
+        // iOS 17+ sims. `/bin/rm` is present on every stock sim image.
         //
         // Best-effort: any missing subdir is fine (fresh app that never
         // wrote to that path). `rm -rf` treats absent targets as no-ops.
@@ -1422,10 +1416,10 @@ impl SimctlClient {
     /// stripping. Verified by [`openurl_argv`] (test-visible helper)
     /// and its unit test asserting query-params like
     /// `?url=http%3A%2F%2Flocalhost%3A8081` reach the argv byte-for-byte.
-    /// Feedback §G verification — if the target app's URL router
-    /// (e.g. expo-dev-client 57.0.5) shows a picker instead of
-    /// auto-connecting, the URL made it through smix intact and the
-    /// finding lives on the URL-router side.
+    /// Consequently, if the target app's URL router (e.g.
+    /// expo-dev-client 57.0.5) shows a picker instead of
+    /// auto-connecting, the URL reached it intact and the problem
+    /// lives on the URL-router side.
     pub async fn open_url(&self, udid: &str, url: &str) -> Result<(), SimctlError> {
         let argv = openurl_argv(udid, url);
         let refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
@@ -1434,7 +1428,7 @@ impl SimctlClient {
     }
 }
 
-/// v1.0.4 §G — argv construction for `xcrun simctl openurl`. Extracted
+/// Argv construction for `xcrun simctl openurl`. Extracted
 /// as a test-visible helper so the URL-preservation contract is
 /// unit-testable without invoking `xcrun`.
 #[doc(hidden)]
@@ -1706,7 +1700,7 @@ impl SimctlClient {
     /// decoded or modified. See [`ensure_srgb_chunk`] for the exact
     /// splice operation.
     pub async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, SimctlError> {
-        // v1.0.4 — pace + circuit-check before invoking simctl.
+        // Pace + circuit-check before invoking simctl.
         let wait = {
             let mut pacer = self
                 .screenshot_pacer
@@ -1771,7 +1765,7 @@ impl SimctlClient {
     }
 }
 
-// -------------------- PNG sRGB chunk normalization (v1.0.2) --------------------
+// -------------------- PNG sRGB chunk normalization --------------------
 //
 // iOS 26.5 sub-builds (mid-2026) started omitting the `sRGB` ancillary
 // chunk from `simctl io screenshot` output. macOS Preview.app and other
@@ -1915,7 +1909,7 @@ mod tests {
         assert!(compose_child_env(&[]).is_empty());
     }
 
-    // -- v1.0.4 §G openurl URL preservation -----------------------------
+    // -- openurl URL preservation ---------------------------------------
 
     #[test]
     fn openurl_argv_preserves_url_verbatim() {
@@ -1934,7 +1928,7 @@ mod tests {
     #[test]
     fn openurl_argv_preserves_ampersand_and_hash() {
         let udid = "12345678-1234-5678-1234-567812345678";
-        let url = "insight://dev-mutate?action=env&value=staging#anchor";
+        let url = "myapp://dev-mutate?action=env&value=staging#anchor";
         let argv = super::openurl_argv(udid, url);
         assert_eq!(argv[2], url);
         assert!(argv[2].contains('&'));
@@ -1944,7 +1938,7 @@ mod tests {
     #[test]
     fn openurl_argv_preserves_unicode() {
         let udid = "12345678-1234-5678-1234-567812345678";
-        let url = "insight://route?name=%E7%94%B0%E4%B8%AD";
+        let url = "myapp://route?name=%E7%94%B0%E4%B8%AD";
         let argv = super::openurl_argv(udid, url);
         assert_eq!(argv[2], url);
     }

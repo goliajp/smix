@@ -1,8 +1,8 @@
-// v7.1 c1 — Role enum mirror Rust smix-screen Role.
+// Role enum — mirrors Rust smix-screen `Role`.
 //
 // Wire JSON form: lowercase camelCase ("button" / "textField" / etc.) —
-// matches Rust `#[derive(Serialize)] #[serde(rename_all = "camelCase")]`
-// pattern (verified via crates/smix-screen/src/lib.rs:163-).
+// matches the Rust `#[derive(Serialize)] #[serde(rename_all = "camelCase")]`
+// pattern.
 
 import Foundation
 

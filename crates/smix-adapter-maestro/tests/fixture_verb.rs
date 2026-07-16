@@ -1,4 +1,4 @@
-//! v0.3.0 Phase B B3 — `- fixture:` yaml verb parser tests.
+//! `- fixture:` yaml verb parser tests.
 
 use smix_adapter_maestro::{Step, parse_flow_yaml};
 

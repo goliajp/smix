@@ -1,5 +1,5 @@
-// v7.4 c2 — SelectorResolver injection boundary.
-// v7.6 c1 — extended with LabelResolver for Locator.toHaveCount / toHaveLabel.
+// SelectorResolver injection boundary, plus LabelResolver for
+// Locator.toHaveCount / toHaveLabel.
 //
 // App takes a SelectorResolver in its constructor; default impl wraps
 // the UniFFI Kotlin binding `uniffi.smix.resolveSelector`. JVM unit
@@ -20,7 +20,7 @@ fun interface SelectorResolver {
 /**
  * Functional interface wrapping `resolve_selector_labels` — returns
  * each matched node's `.label` (empty string when label is None).
- * Used by Locator.toHaveCount / toHaveLabel (v7.6 c1).
+ * Used by Locator.toHaveCount / toHaveLabel.
  */
 fun interface LabelResolver {
     fun resolve(treeJson: String, selectorJson: String): List<String>

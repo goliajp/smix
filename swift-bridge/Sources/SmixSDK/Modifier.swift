@@ -1,22 +1,19 @@
-// v7.1 c1 — Modifier API placeholder.
+// Modifier — a single selector modifier expressed as a value.
 //
 // Rust smix-selector `Modifiers` is a struct with optional fields
 // (near / below / above / leftOf / rightOf / inside / ancestor +
 // nth / first / last) that gets `#[serde(flatten)]`-ed into the
-// Selector base JSON. v7.2 c3 will land the full Modifiers struct
-// + Selector fluent chaining (`.id("btn").below(.text("hi")).nth(0)`).
-//
-// v7.1 c1 MVP keeps Modifier as a placeholder for shape tests but
-// does not wire it into Selector yet. Test author writes plain base
-// selectors only this cycle.
+// Selector base JSON. The Swift mirror of that struct is `Modifiers`
+// (Modifiers.swift), reached through Selector's fluent chaining
+// (`.id("btn").below(.text("hi")).nth(0)`).
 
 import Foundation
 
-/// Modifier — placeholder enum for v7.1 c1 shape tests. v7.2 c3 will
-/// replace with the full Modifiers struct + fluent chaining methods.
+/// A single selector modifier. `Selector` itself carries the
+/// all-optional [`Modifiers`] struct rather than this enum.
 ///
-/// Wire JSON form (when wired in v7.2): flattened into Selector body
-/// so `{"id":"btn","nth":0,"below":{"text":"hi"}}` round-trips.
+/// Wire JSON form: flattened into the Selector body so
+/// `{"id":"btn","nth":0,"below":{"text":"hi"}}` round-trips.
 public enum Modifier: Sendable, Equatable {
     /// Pick first match from surviving candidates.
     case first

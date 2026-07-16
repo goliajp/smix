@@ -3,57 +3,58 @@ import Foundation
 import ObjectiveC.runtime
 import SmixRunnerCore
 
-// v2.0 c2 S1 — AX-event capture via `XCAXClient_iOS.
-// handleAccessibilityNotification:fromElement:payload:` swizzle. Pattern
-// parity: `SmixA11ySwizzle.m` `+load` swizzle (method_setImplementation +
-// original IMP captured in C function pointer + IMP-直调 via unsafeBitCast
-// forwards to Apple's original handler so XCAXClient internals continue
-// to run unimpaired). The recorder is purely additive — when
-// SMIX_RECORD_ENABLED env is not "1", `installSwizzle()` is never called,
-// the swizzle is never installed, and v1.x stable paths are byte-identical.
+// AX-event capture via a swizzle of `XCAXClient_iOS.
+// handleAccessibilityNotification:fromElement:payload:`. Same pattern as
+// `SmixA11ySwizzle.m`'s `+load` swizzle: method_setImplementation (not
+// exchange), the original IMP stashed in a C function pointer, and the
+// swizzled IMP forwarding to Apple's original handler through that pointer
+// (direct IMP call via unsafeBitCast, no msgSend) so XCAXClient internals
+// continue to run unimpaired. The recorder is purely additive — when the
+// SMIX_RECORD_ENABLED env var is not "1", `installSwizzle()` is never
+// called and the swizzle is never installed, leaving every non-recording
+// code path untouched.
 //
-// Selector dig (c2 e2e probe on iOS 26.5 sim, 2026-05-25): maestro
-// cli-2.2.0's `XCAXClient_iOS.h` lists
-// `handleAccessibilityNotification:withPayload:` (2-arg) — that selector
-// does NOT exist on iOS 26.5 sim's live `XCAXClient_iOS` class
+// Selector note: maestro cli-2.2.0's copied `XCAXClient_iOS.h` lists
+// `handleAccessibilityNotification:withPayload:` (2-arg). That selector
+// does NOT exist on iOS 26.5's live `XCAXClient_iOS` class
 // (`class_getInstanceMethod` returns nil). The class DOES carry
 // `handleAccessibilityNotification:fromElement:payload:` (3-arg: int
 // code + id element + id payload) and the cleaner block-API
-// `addObserverForAXNotification:handler:`. maestro header dump appears to
-// be from an older iOS SDK; this swizzle target is the iOS 26.5 real-class
-// real-name, dug via `class_copyMethodList` dump at runtime.
+// `addObserverForAXNotification:handler:`. The maestro header dump appears
+// to be from an older iOS SDK; the swizzle target here is the real name on
+// the live iOS 26.5 class, found via a runtime `class_copyMethodList` dump.
 //
-// c3 dig (2026-05-25, nm -gU XCTAutomationSupport.framework binary): the
-// c2 conclusion that `_XCGetWrappedAXUIElementFromNotificationPayload`
-// does NOT exist was wrong — agent A only checked maestro's copied .h
-// headers, not the framework binary itself. Real symbols dug:
-//   T _XCGetWrappedAXUIElementFromNotificationPayload @ 0x1ba38
-//   T _XCTStringFromAXNotification @ 0x1c6c0
-// c3 dlsym both via RTLD_DEFAULT (sentinel `-2`, same pattern as
-// SmixIndigoHID/IOHIDDigitizerTap.swift line 366-367). _XCTStringFromAX
-// Notification(int code) returns the named Apple constant
-// ("kAXHIDEventReceivedNotification" / "kAXFirstResponderChangedNotification"
-// / "kAXUserTestingNotification" etc) → kind classification. _XCGetWrapped
-// AXUIElementFromNotificationPayload(id payload) wraps the binary
-// `_NSInlineData` payload into an `XCAccessibilityElement` instance →
-// KVC introspect for identifier / label / placeholderValue / value /
+// Two C functions exported by the XCTAutomationSupport framework binary
+// (they are absent from maestro's copied headers, so read the binary's
+// symbol table rather than those headers):
+//   T _XCGetWrappedAXUIElementFromNotificationPayload
+//   T _XCTStringFromAXNotification
+// Both are reached via dlsym against RTLD_DEFAULT (the `-2` sentinel, same
+// pattern as SmixIndigoHID/IOHIDDigitizerTap.swift) rather than being
+// hard-linked. `XCTStringFromAXNotification(int code)` returns the named
+// Apple constant ("kAXHIDEventReceivedNotification" /
+// "kAXFirstResponderChangedNotification" / "kAXUserTestingNotification"
+// etc) used for kind classification.
+// `XCGetWrappedAXUIElementFromNotificationPayload(id payload)` wraps the
+// binary `_NSInlineData` payload into an `XCAccessibilityElement` instance
+// for introspection of identifier / label / placeholderValue / value /
 // frame / elementType.
 
 @objc(SmixEventRecorderStandin)
 final class SmixEventRecorderStandin: NSObject {
-  // IMP-直调 lookup: `class_getMethodImplementation(Standin.self, swizzledSel)`
-  // pulls the static IMP — same trick AXClientStandin uses to dodge msgSend
-  // re-validation when the receiver class is XCAXClient_iOS (which has
-  // never had `swizzledHandle:fromElement:payload:` registered).
+  // Direct IMP lookup: `class_getMethodImplementation(Standin.self,
+  // swizzledSel)` pulls the static IMP — the same trick AXClientStandin uses
+  // to dodge msgSend re-validation when the receiver class is XCAXClient_iOS
+  // (which has never had `swizzledHandle:fromElement:payload:` registered).
   //
-  // Signature dug 2026-05-25 from iOS 26.5 sim runtime
+  // Signature taken from the live iOS 26.5 runtime via
   // `class_copyMethodList`: `handleAccessibilityNotification:fromElement:
   // payload:` is 3-arg `(int code, id element, id payload)` → Void.
   @objc func swizzledHandle(_ code: Int, fromElement element: Any?, payload: Any?) {
     EventRecorder.shared.captureFromSwizzle(code: code, element: element, payload: payload)
     // Forward to Apple's original implementation via the C function pointer
-    // saved at install time. Mirrors SmixA11ySwizzle.m's IMP-直调 zero-
-    // msgSend forwarding pattern.
+    // saved at install time. Mirrors SmixA11ySwizzle.m's direct-IMP,
+    // zero-msgSend forwarding pattern.
     if let imp = EventRecorder.shared.originalHandleIMP {
       typealias HandleIMP = @convention(c) (NSObject, Selector, Int, Any?, Any?) -> Void
       let fn = unsafeBitCast(imp, to: HandleIMP.self)
@@ -127,8 +128,8 @@ final class EventRecorder: @unchecked Sendable {
     Self.registerForUIEventNotifications(target: target)
   }
 
-  // c3 dig — sweep code 1..9999 through XCTStringFromAXNotification to
-  // dump every named notification known to XCTAutomationSupport. Helps
+  // Sweep code 1..9999 through XCTStringFromAXNotification to dump every
+  // named notification known to XCTAutomationSupport. Helps
   // identify the HIDEvent / element-bearing notification codes Apple
   // exposes (not just the ones the framework happens to fire on startup).
   // One-shot; runs once per installSwizzle().
@@ -152,8 +153,8 @@ final class EventRecorder: @unchecked Sendable {
     }
   }
 
-  // c3 dig — actively subscribe to UI-element-bearing notifications by
-  // calling `_registerForAXNotification:error:` for every named code the
+  // Actively subscribe to UI-element-bearing notifications by calling
+  // `_registerForAXNotification:error:` for every named code the
   // sweep finds. Apple's XCAXClient_iOS only auto-registers framework
   // lifecycle notifications (PidStatusChanged / AppAccessibilityReady /
   // UserTesting); HIDEvent / FirstResponderChanged / element-attribute
@@ -234,7 +235,7 @@ final class EventRecorder: @unchecked Sendable {
       Data("smix-runner: EventRecorder: registered \(registered) AX notifications (failed=\(failed))\n".utf8))
   }
 
-  // c3 dig — class method list dump (sweep instance methods only finds
+  // Class method list dump (sweep instance methods only finds
   // `-` methods, not `+`). Apple's singleton accessors are usually class
   // methods (`+sharedFoo`); they live on the meta-class.
   static func dumpClassMethods(of cls: AnyClass, label: String) {
@@ -260,7 +261,7 @@ final class EventRecorder: @unchecked Sendable {
     }
   }
 
-  // c2 start: flip active flag + reset buffer. Swizzle stays installed
+  // Flip the active flag + reset the buffer. The swizzle stays installed
   // (cheap to leave on; only `active` gates the append).
   func start() {
     lock.lock()
@@ -269,8 +270,8 @@ final class EventRecorder: @unchecked Sendable {
     lock.unlock()
   }
 
-  // c2 stop: flip inactive + return accumulated. Caller (RecordHandlers.
-  // stop closure) emits via wire.
+  // Flip inactive + return the accumulated events. The caller
+  // (RecordHandlers' stop closure) emits them over the wire.
   func stop() -> [RecordedEvent] {
     lock.lock()
     active = false
@@ -280,8 +281,8 @@ final class EventRecorder: @unchecked Sendable {
     return out
   }
 
-  // c2 drain: snapshot current, clear, leave `active` unchanged. Used by
-  // the host-TS poller (GET /record/poll) for streaming reads during a
+  // Snapshot current events, clear, leave `active` unchanged. Used by
+  // the host poller (GET /record/poll) for streaming reads during a
   // long record session without losing in-flight events between polls.
   func drain() -> [RecordedEvent] {
     lock.lock()
@@ -303,23 +304,23 @@ final class EventRecorder: @unchecked Sendable {
     lock.unlock()
   }
 
-  // c3 S1 — Build a RecordedEvent with kind / selectorHints / frame /
-  // elementType / location all best-effort filled via:
-  //   1. `_XCTStringFromAXNotification(code)` → notif name → `kind` classify
-  //   2. `_XCGetWrappedAXUIElementFromNotificationPayload(payload)` →
+  // Build a RecordedEvent with kind / selectorHints / frame / elementType /
+  // location all best-effort filled via:
+  //   1. `XCTStringFromAXNotification(code)` → notif name → `kind` classify
+  //   2. `XCGetWrappedAXUIElementFromNotificationPayload(payload)` →
   //      XCAccessibilityElement wrapper (binary `_NSInlineData` decoded)
-  //   3. KVC introspect on XCAccessibilityElement (or the directly-passed
+  //   3. Introspection on XCAccessibilityElement (or the directly-passed
   //      `element` param) for the 5 selector hint keys + frame + elementType
-  // All steps fail-safe: dlsym miss / KVC miss → field stays nil, wire
-  // shape preserved, host TS IR layer's `case E` fallback path handles
-  // partially-filled events.
+  // All steps fail-safe: dlsym miss / selector miss → the field stays nil,
+  // the wire shape is preserved, and the host IR layer's fallback path
+  // handles partially-filled events.
   private static func makeEvent(code: Int, element: Any?, payload: Any?, appBundleId: String?) -> RecordedEvent {
     let ts = Int64(Date().timeIntervalSince1970 * 1000)
     var className: String?
     var description: String?
 
     // Decode notification name + classify kind. The decoded name is also
-    // attached to payloadDescription for host TS visibility / debug.
+    // attached to payloadDescription for host-side visibility / debug.
     let notifName = decodeNotificationName(code: Int32(code))
     let kind = classifyKind(notificationName: notifName)
 
@@ -333,20 +334,19 @@ final class EventRecorder: @unchecked Sendable {
       introspectTarget = wrapPayloadAsElement(payload: payload)
     }
 
-    // c3 S1 dig (2026-05-25): payload is `_NSInlineData` (NSData subclass).
-    // First e2e dump revealed bytes start with `0x62706c69 73743030` =
-    // ASCII "bplist00" — payload is a binary plist! Apple internally
-    // serializes the attribute dict as binary plist. Decode via
-    // `NSPropertyListSerialization` directly — no CF API / no async
-    // network call to XCAXClient required (which was c3's plan-hot 假设).
+    // The payload is an `_NSInlineData` (a private NSData subclass) whose
+    // bytes start with `0x62706c69 73743030` = ASCII "bplist00": Apple
+    // serializes the attribute dict as a binary plist. That means it can be
+    // decoded with `NSPropertyListSerialization` directly — no CF API and no
+    // async round trip to XCAXClient is required.
     let payloadDict: [String: Any]? = decodePayloadPlist(payload: payload, code: code)
 
     // Hints / frame / elementType extraction:
     //  1. Prefer payloadDict (plist-decoded attribute dict — Apple's
     //     own internal representation).
-    //  2. Fall back to KVC-style ObjC method invocation on the wrapped
-    //     XCAccessibilityElement (frame works via `responds(to:)` +
-    //     IMP-直调; identifier / label etc miss the selector probe).
+    //  2. Fall back to ObjC method invocation on the wrapped
+    //     XCAccessibilityElement (frame works via `responds(to:)` + a direct
+    //     IMP call; identifier / label etc miss the selector probe).
     let hints = payloadDict.flatMap(extractHintsFromDict)
       ?? introspectTarget.flatMap(extractHintsFromElement)
     let frame = payloadDict.flatMap(extractFrameFromDict)
@@ -355,7 +355,7 @@ final class EventRecorder: @unchecked Sendable {
       ?? introspectTarget.flatMap(extractElementTypeFromElement)
     let location: Point? = {
       // For tap-like events, record the element's center as the action
-      // location. host TS may use it for coord fallback if selector
+      // location. The host may use it as a coordinate fallback if selector
       // resolution misses.
       guard kind == "tap", let f = frame else { return nil }
       return Point(x: f.x + f.width / 2.0, y: f.y + f.height / 2.0)
@@ -370,8 +370,8 @@ final class EventRecorder: @unchecked Sendable {
     }
 
     // Truncated debug description — payloadClassName + notif name + raw
-    // payload `description`. Useful for c3 IR layer's `case E` fallback
-    // path when hints / frame all came back nil.
+    // payload `description`. Useful for the host IR layer's fallback path
+    // when hints / frame all came back nil.
     var descParts: [String] = []
     if let notifName { descParts.append("notif=\(notifName)") }
     if let payload = payload as AnyObject? {
@@ -416,11 +416,11 @@ final class EventRecorder: @unchecked Sendable {
   // future SDK rename) → makeEvent skips kind / element wrap gracefully.
   //
   // Mach-O ABI artifact: C function symbols in `nm` output carry a leading
-  // underscore (e.g. `_XCTStringFromAXNotification @ 0x1c6c0`), but
-  // `dlsym(...)` expects the API name WITHOUT the underscore — dyld strips
-  // it internally before lookup. Passing the underscore-prefixed name
-  // returns NULL ("symbol not found"), which is what bit c3 S1's first
-  // attempt — kind classification silently degraded to nil for every event.
+  // underscore (e.g. `_XCTStringFromAXNotification`), but `dlsym(...)`
+  // expects the API name WITHOUT the underscore — dyld strips it internally
+  // before lookup. Passing the underscore-prefixed name returns NULL
+  // ("symbol not found"), which silently degrades kind classification to nil
+  // for every event.
   private static let stringFromAXNotificationPtr: UnsafeMutableRawPointer? = {
     let p = dlsym(rtldDefault, "XCTStringFromAXNotification")
     if p == nil {
@@ -445,8 +445,8 @@ final class EventRecorder: @unchecked Sendable {
     let fn = unsafeBitCast(ptr, to: Fn.self)
     guard let unmanaged = fn(code) else { return nil }
     let name = unmanaged.takeUnretainedValue() as String
-    // c3 dig: log unique code→name pairs so we can see which notifications
-    // Apple's runtime is firing. Single dump per code.
+    // Log unique code→name pairs so we can see which notifications Apple's
+    // runtime is firing. Single dump per code.
     dumpCodeNameOnce(code: Int(code), name: name)
     return name
   }
@@ -473,9 +473,9 @@ final class EventRecorder: @unchecked Sendable {
 
   // MARK: - kind classification
 
-  // Apple notification name → smix event kind. Names dug live via stderr
-  // dump during the first c3 e2e run; unknown names map to nil so host
-  // TS IR's `case E` fallback (payloadDescription-based selector) kicks in.
+  // Apple notification name → smix event kind. The known names are read off
+  // the live runtime via the stderr dump above; unknown names map to nil so
+  // the host IR's fallback (payloadDescription-based selector) kicks in.
   private static func classifyKind(notificationName name: String?) -> String? {
     guard let name else { return nil }
     let lower = name.lowercased()
@@ -488,18 +488,14 @@ final class EventRecorder: @unchecked Sendable {
 
   // MARK: - KVC introspect on XCAccessibilityElement
 
-  // 5-field OR-match. XCAccessibilityElement is NOT KVC-compliant (live
-  // test 2026-05-25 showed `valueForKey:identifier` throws NSUnknownKey
-  // exception). Instead, probe via `responds(to:)` + `perform(_:)` per
-  // selector — Apple's private ObjC class only exposes specific selectors,
-  // not generic KVC. First-call dump (c3 dig diagnostic) lists every
-  // instance method so c3 implementation can adjust selector names.
-  //
-  // Selectors dug via `class_copyMethodList` on first call (see
-  // `dumpElementMethodsOnce`). c3 starting guesses (will narrow when dump
-  // surfaces): `identifier` / `accessibilityIdentifier` / `_axIdentifier`,
-  // `label` / `accessibilityLabel`, `value` / `stringValue`. The probe
-  // tries each candidate via `responds(to:)` and returns the first hit.
+  // 5-field OR-match. XCAccessibilityElement is NOT KVC-compliant —
+  // `valueForKey:identifier` throws an NSUnknownKey exception on the live
+  // class. Instead, probe via `responds(to:)` + `perform(_:)` per selector:
+  // Apple's private ObjC class only exposes specific selectors, not generic
+  // KVC. The first-call dump (see `dumpElementMethodsOnce`) lists every
+  // instance method so the candidate selector names below can be adjusted
+  // against whatever the running OS actually exposes. The probe tries each
+  // candidate via `responds(to:)` and returns the first hit.
   private static func extractHintsFromElement(_ element: AnyObject) -> SelectorHints? {
     dumpElementMethodsOnce(element)
     let id = stringValueViaSelector(element,
@@ -539,7 +535,7 @@ final class EventRecorder: @unchecked Sendable {
       let fn = unsafeBitCast(imp, to: Fn.self)
       let rect = fn(ns, sel)
       // Sanity: zero-frame events are common (focus-only notif) — return
-      // them rather than discarding so `case E` can still see the field.
+      // them rather than discarding so the host still sees the field.
       return Rect(
         x: Double(rect.origin.x), y: Double(rect.origin.y),
         width: Double(rect.size.width), height: Double(rect.size.height)
@@ -583,17 +579,16 @@ final class EventRecorder: @unchecked Sendable {
 
   // MARK: - payload binary plist decode
 
-  // c3 S1 dig progression (2026-05-25):
-  //  Step 1: payload is `_NSInlineData` (NSData private subclass).
-  //  Step 2: bytes start with `bplist00` magic — binary plist format.
-  //  Step 3: `PropertyListSerialization.propertyList(...)` parses, but the
-  //          top-level dict is `{$archiver, $objects, $top, $version}` =
-  //          NSKeyedArchiver envelope, NOT a flat attribute dict.
-  //  Step 4: `NSKeyedUnarchiver.unarchiveTopLevelObjectWithData` walks the
-  //          $objects table and reconstructs the real Apple object graph.
-  //          The root is typically an NSDictionary keyed by Apple's
-  //          internal attribute keys (`identifier` / `label` / `value` /
-  //          `frame` / `elementType` etc).
+  // Payload shape, from the outside in:
+  //  1. The payload is `_NSInlineData`, a private NSData subclass.
+  //  2. Its bytes start with the `bplist00` magic — binary plist format.
+  //  3. `PropertyListSerialization.propertyList(...)` parses it, but the
+  //     top-level dict is `{$archiver, $objects, $top, $version}` — an
+  //     NSKeyedArchiver envelope, NOT a flat attribute dict.
+  //  4. NSKeyedUnarchiver walks the $objects table and reconstructs the real
+  //     Apple object graph. The root is typically an NSDictionary keyed by
+  //     Apple's internal attribute keys (`identifier` / `label` / `value` /
+  //     `frame` / `elementType` etc).
   private static func decodePayloadPlist(payload: Any?, code: Int) -> [String: Any]? {
     guard let data = payload as? Data else { return nil }
     // Try NSKeyedUnarchiver first (the observed envelope). Allow any
@@ -634,10 +629,9 @@ final class EventRecorder: @unchecked Sendable {
     return nil
   }
 
-  // c3 S1 dig — dump decoded payload plist dict's keys once per
-  // notification code (1021 = HIDEvent / 3031 = UserTesting / 4002 = ?).
-  // Different notification codes carry different payload dict shapes;
-  // a single-shot dump misses the variation.
+  // Dump the decoded payload plist dict's keys once per notification code.
+  // Different notification codes carry different payload dict shapes, so a
+  // single-shot dump would miss the variation.
   private static var payloadDumpedCodes: Set<Int> = []
   private static let payloadDumpLock = NSLock()
   private static func dumpPayloadDictByCode(_ dict: [String: Any]?, code: Int) {
@@ -732,10 +726,9 @@ final class EventRecorder: @unchecked Sendable {
     return nil
   }
 
-  // c3 dig — one-time dump of XCAccessibilityElement (or whatever class
-  // the wrapped element resolves to) instance methods. Helps narrow the
-  // candidate selector list above when the e2e log surfaces what's really
-  // available on iOS 26.5 sim.
+  // One-time dump of XCAccessibilityElement (or whatever class the wrapped
+  // element resolves to) instance methods. Helps narrow the candidate
+  // selector list above to what the running OS really exposes.
   private static var elementDumpOnce: Bool = false
   private static let elementDumpLock = NSLock()
   private static func dumpElementMethodsOnce(_ element: AnyObject) {
@@ -751,12 +744,11 @@ final class EventRecorder: @unchecked Sendable {
     }
   }
 
-  // c2 dig — when `handleAccessibilityNotification:withPayload:` (as named
-  // in maestro's copied XCAXClient_iOS.h) isn't found on the live class,
-  // dump every registered instance method's selector + signature to
-  // stderr. This is the cheapest path to identifying the actual selector
-  // name on iOS 26.5 sim (which is what we run against) vs whatever iOS
-  // version maestro's header dump was taken from.
+  // When `handleAccessibilityNotification:withPayload:` (as named in
+  // maestro's copied XCAXClient_iOS.h) isn't found on the live class, dump
+  // every registered instance method's selector + signature to stderr. This
+  // is the cheapest path to identifying the actual selector name on the OS
+  // we run against versus whatever iOS version that header dump came from.
   static func dumpInstanceMethods(of cls: AnyClass, label: String) {
     var count: UInt32 = 0
     guard let methodList = class_copyMethodList(cls, &count) else {

@@ -1,5 +1,5 @@
-// v7.1 c2 — A11yNode + Rect mirror smix-screen wire form, with
-// DFS lookup + flatten helpers for SDK callers.
+// A11yNode + Rect — mirror the smix-screen wire form, with DFS lookup
+// + flatten helpers for SDK callers.
 
 import Foundation
 

@@ -141,9 +141,9 @@ final class TreeRouteTests: XCTestCase {
   }
 
   func test_serialize_truncatesAtMaxDepth() {
-    // c5i-a S3: MAX_DEPTH bumped 60→500 (RN flat-deep dashboard 真 80-200 levels
-    // 真 baseline; 60 真截掉 staticText). Build a chain deeper than 500 to
-    // verify the cliff still works.
+    // MAX_DEPTH is 500 because a real RN flat-deep dashboard genuinely nests
+    // 80-200 levels; a limit of 60 truncated staticText nodes off the tree.
+    // Build a chain deeper than MAX_DEPTH to verify the cliff still works.
     var chain = mkData(type: 9, label: "leaf")
     for _ in 0..<(TreeRoute.MAX_DEPTH + 2) {
       chain = mkData(type: 3, children: [chain])
@@ -151,8 +151,8 @@ final class TreeRouteTests: XCTestCase {
     var logs: [String] = []
     let logSink: (String) -> Void = { logs.append($0) }
     let data = TreeRoute.serialize(chain, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: logSink)
-    // c5i-a S3: walk down to MAX_DEPTH (bumped 60→500) — at the cliff children
-    // must be empty array. Use [Any] cast (not [[String:Any]]) so we keep
+    // Walk down to MAX_DEPTH — at the cliff children must be an empty
+    // array. Use [Any] cast (not [[String:Any]]) so we keep
     // walking while non-empty AND stop as soon as kids = [].
     var node: [String: Any] = parse(data)
     var depth = 0
@@ -169,11 +169,13 @@ final class TreeRouteTests: XCTestCase {
   }
 
   func test_serialize_hasFocusReflectsInput() {
-    // v5.1 c1 — `focused` 解冻:`out["hasFocus"]` 不再是 placeholder false,
-    // 而是把 POCO `hasFocus` 真实输出。POCO 这边是普通 field passthrough;
-    // UITest 侧 snapshotHandler 通过 KVC `value(forKey: "hasKeyboardFocus")`
-    // 在 snapshot 子树深度优先找 first responder,然后把 identifier 作为
-    // focusHint 沿 convertSnapshotDict 子树下传,匹配的节点 set hasFocus=true。
+    // `out["hasFocus"]` carries the POCO's real `hasFocus` value — on this
+    // side it is a plain field passthrough. The UITest-side snapshotHandler
+    // is what derives it: it finds the first responder by walking the
+    // snapshot subtree depth-first, reading KVC
+    // `value(forKey: "hasKeyboardFocus")`, then passes that node's
+    // identifier down the convertSnapshotDict subtree as a focusHint and
+    // sets hasFocus=true on the matching node.
     let inner = mkData(type: 9, label: "inner", hasFocus: false)
     let outer = mkData(type: 2, hasFocus: true, children: [inner])
     let data = TreeRoute.serialize(outer, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
@@ -205,7 +207,7 @@ final class TreeRouteTests: XCTestCase {
     XCTAssertEqual((bounds["y"] as? NSNumber)?.doubleValue, 20.5)
   }
 
-  // MARK: - v1.0.21 D1 — action-container button promotion
+  // MARK: - action-container button promotion
 
   // iOS 26.5 XCUITest exposes UIAlertController action buttons with
   // elementType `.other` (rawValue 1) instead of `.button` (9). Under

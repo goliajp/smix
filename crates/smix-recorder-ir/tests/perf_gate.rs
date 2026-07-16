@@ -1,5 +1,5 @@
 #![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive (test-optimize.md §2.4)
-//! v3.3 c2 — perf gate for smix-recorder-ir.
+//! Perf gate for smix-recorder-ir.
 //!
 //! Accessors + sort + serde encode/decode budgets.
 

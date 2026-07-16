@@ -2,12 +2,14 @@ import XCTest
 
 @testable import SmixRunnerCore
 
-// C-fix — role 分类去 per-button live query 后的纯函数语义锁。旧逻辑：
-// 每 button 跑 2 次 live predicate (label==%@ AND userTestingAttributes
-// CONTAINS "cancel-button" / "destructive")，cancel 命中优先 destructive，
-// 都不命中为 default。新逻辑：consume 开头一次性两个去 label 约束的
-// attribute-only query 收 cancelLabels / destructiveLabels Set，button
-// 循环改内存比对。本 file 锁纯函数三态判定与旧 per-button 等价。
+// Semantic lock for popup button role classification as a pure function.
+// Role used to be resolved with two live predicates per button
+// (label == %@ AND userTestingAttributes CONTAINS "cancel-button" /
+// "destructive"), which cost two round-trips per button. Instead, the
+// consume path now runs the two attribute-only queries once, without the
+// label constraint, collecting the cancelLabels / destructiveLabels sets;
+// the per-button loop is a plain in-memory comparison. This file locks the
+// three-way verdict, which stays equivalent to the per-button predicates.
 final class PopupRoleClassifierTests: XCTestCase {
   func test_cancelLabel_returnsCancel() {
     XCTAssertEqual(
@@ -30,7 +32,8 @@ final class PopupRoleClassifierTests: XCTestCase {
       "default")
   }
 
-  // Priority: cancel 命中优先于 destructive (旧逻辑 cancelPred 先查先返回)。
+  // Priority: a cancel match wins over a destructive one — the cancel
+  // predicate was queried first and returned first.
   func test_inBothSets_cancelWins() {
     XCTAssertEqual(
       classifyPopupButtonRole(

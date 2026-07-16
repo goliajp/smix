@@ -4,7 +4,7 @@ import Foundation
 /// result wire JSON) and `ChannelProbeReport` (probe wire JSON) so the
 /// downstream byte sequence stays byte-identical regardless of producer.
 ///
-/// Behaviour mirrors the original `SmixHostHIDResult.jsonEscape` (C3/C4):
+/// Behaviour:
 ///   - `"` → `\"`
 ///   - `\` → `\\`
 ///   - `\n` / `\r` / `\t` → escaped two-byte forms

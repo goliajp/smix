@@ -1,7 +1,7 @@
 import FlyingFox
 import Foundation
 
-// v1.5 c5g'' — POST /hide-keyboard {} → 200 {ok:<bool>}.
+// POST /hide-keyboard {} → 200 {ok:<bool>}.
 // Mirrors BackRoute / ForegroundRoute envelope shape. Runner-side handler
 // queries XCUIApplication.shared.keyboards.firstMatch and calls swipeDown()
 // when the keyboard is on screen (XCUITest portable; no private API). The

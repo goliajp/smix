@@ -1,4 +1,4 @@
-//! v6.0 c1a — assert `Driver` trait is dyn-compatible (Box<dyn Driver> works).
+//! Assert `Driver` trait is dyn-compatible (Box<dyn Driver> works).
 
 use smix_driver::Driver;
 

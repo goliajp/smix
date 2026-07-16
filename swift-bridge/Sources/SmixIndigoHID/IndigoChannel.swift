@@ -1,6 +1,6 @@
 import Foundation
 
-/// C3 9-arg `IndigoHIDMessageForMouseNSEvent` path — thin wrapper over
+/// 9-arg `IndigoHIDMessageForMouseNSEvent` path — thin wrapper over
 /// `IndigoHIDDispatcher`.
 public struct IndigoChannel: InputChannel {
   public init() {}
@@ -8,7 +8,7 @@ public struct IndigoChannel: InputChannel {
   public var id: InputChannelId { .indigo9 }
 
   public var requiredSymbolNames: [String] {
-    IndigoSymbolNames.allRequiredForC3
+    IndigoSymbolNames.allRequired
   }
 
   public func tap(

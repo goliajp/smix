@@ -4,15 +4,13 @@ import CoreGraphics
 import Darwin
 #endif
 
-/// IOHIDEvent-tree digitizer tap (C4 default path).
+/// IOHIDEvent-tree digitizer tap — the default HID dispatch path.
 ///
-/// Mirrors the architecture pinned in the cold plan / baguette
-/// `IOHIDDigitizerDispatch` — but the *function bodies* in this file are
-/// rewritten from the fact-tables in `docs/plan-hot.md` §S1 (byte offsets,
-/// constants, typealias shapes) and the §"baguette IOHIDDigitizerDispatch
-/// 关键发现" table (event-construction sequence, phase masks, edge bits).
-/// Apache-2.0 baguette source serves as architecture reference only —
-/// per CLAUDE.md §8.7 (no GPL/AGPL, code-author rewrites bodies).
+/// Mirrors the architecture of baguette's `IOHIDDigitizerDispatch`, but the
+/// *function bodies* here are written independently from documented fact
+/// tables (byte offsets, constants, typealias shapes, event-construction
+/// sequence, phase masks, edge bits). The Apache-2.0 baguette source serves
+/// as an architecture reference only.
 ///
 /// Why this path: iOS 26.4 reroutes 9-arg `IndigoHIDMessageForMouseNSEvent`
 /// taps to the Home gesture path or drops them; the IOHIDEvent-tree path is
@@ -59,11 +57,11 @@ public enum IOHIDDigitizerTap {
   // MARK: - Public entry
 
   /// Tap once at normalized coordinates `(x, y)` ∈ [0, 1]^2 via the IOHIDEvent
-  /// digitizer-tree path. Default hold = 100 ms.
+  /// digitizer-tree path.
   ///
-  /// Steps (mirrors the architecture; bodies rewritten from §S1 fact tables):
+  /// Steps:
   ///   1. Resolve `SimDevice` for `udid` via `CoreSimulatorBridge`.
-  ///   2. Build `SimDeviceLegacyHIDClient` (reused from C3 dispatcher).
+  ///   2. Build `SimDeviceLegacyHIDClient`.
   ///   3. For down then up phases:
   ///        a. Build parent digitizer event + finger child event +
   ///           append child → parent (IOKit C functions).
@@ -71,12 +69,13 @@ public enum IOHIDDigitizerTap {
   ///           (SimulatorKit private).
   ///        c. Byte-patch target tag + edge bits at the offsets locked
   ///           in `DigitizerConstants`.
-  ///        d. Send via `LegacyHIDClientSender.send(...)` (shared with C3).
-  ///   4. Sleep 100 ms between down and up.
+  ///        d. Send via `LegacyHIDClientSender.send(...)` (shared with the
+  ///           9-arg mouseFn path).
+  ///   4. Sleep for `holdMicros` between down and up.
   ///
-  /// `symbols` (C3 IndigoSymbols) is resolved but not actually invoked here.
-  /// C5 InputChannel work will split "digitizer-required" vs "mouseFn-required"
-  /// symbol bags (plan decision #6).
+  /// `symbols` (IndigoSymbols) is resolved by the caller but not invoked on
+  /// this path — the "digitizer-required" and "mouseFn-required" symbol bags
+  /// are not split yet.
   public static func tapNormalized(
     udid: String,
     x: Double, y: Double,
@@ -85,13 +84,11 @@ public enum IOHIDDigitizerTap {
     developerDir: String,
     coreSimulatorHandle: UnsafeMutableRawPointer,
     edge: Edge = .none,
-    // v1.2.4 — hold reduced from 100_000us → 50_000us. Apple's gesture
-    // recognizer only needs down/up pair within ~50ms to register a tap;
-    // 100ms was conservative legacy from earlier exploration. Verified via
-    // complex bench (3 iter × 30 step + 3 Path B taps/iter, 0 failures).
+    // Apple's gesture recognizer only needs a down/up pair within ~50 ms to
+    // register a tap.
     holdMicros: UInt32 = 50_000
   ) throws {
-    _ = symbols  // resolved by caller, unused here — see C5 split note above.
+    _ = symbols  // resolved by caller, unused here — see the split note above.
 
     let device = try CoreSimulatorBridge.resolveSimDevice(
       udid: udid,
@@ -109,10 +106,9 @@ public enum IOHIDDigitizerTap {
       client: client, symbols: digitizerSymbols,
       x: x, y: y, phase: .up, edge: edge
     )
-    // v1.2.4 — settle reduced from 20_000us → 5_000us. The settle was
-    // to ensure event delivery starts before the sidecar IPC returns;
-    // 5ms is enough for the queue handoff. Caller's next action provides
-    // natural sync (no race observed in bench).
+    // Settle so event delivery starts before the sidecar IPC returns; 5 ms is
+    // enough for the queue handoff. The caller's next action provides natural
+    // synchronisation beyond that.
     usleep(5_000)
   }
 
@@ -120,7 +116,7 @@ public enum IOHIDDigitizerTap {
 
   /// In-place patch of a SimulatorKit trackpad-wrapped message blob.
   ///
-  /// Layout (verified from §S1 fact table, baguette L210-225):
+  /// Layout (verified against baguette L210-225):
   ///   - `[0x6c..0x70)` ← UInt32 LE `kIndigoHIDTouchTarget = 0x32` (always written).
   ///   - `[0x10c..0x110)` ← UInt32 LE `kIndigoHIDTouchTarget = 0x32`
   ///     **only when `size >= 0x110`** (the wrapper produces a 0x180-byte
@@ -235,7 +231,7 @@ public enum IOHIDDigitizerTap {
     let mask = phase.eventMask
     let range = phase.range
     let touch = phase.touch
-    let identifier: UInt32 = 1  // fixed for single-tap session (C5 will auto-increment for swipe)
+    let identifier: UInt32 = 1  // fixed for a single-tap session; swipe would auto-increment
 
     // Parent digitizer event (15-arg). transducer=2 (Finger), index=0,
     // identifier=1, mask=phase mask, button=0,
@@ -323,7 +319,7 @@ public struct DigitizerSymbols: Equatable {
 
   /// Resolves the four symbols.
   ///
-  /// CLAUDE.md §9.6 invariant: `dlsym` access only. IOKit (public) goes
+  /// Private-symbol invariant: `dlsym` access only. IOKit (public) goes
   /// through the `RTLD_DEFAULT` sentinel; SimulatorKit (private) is loaded
   /// with explicit `dlopen` by the caller and the handle passed in.
   public static func resolve(
@@ -360,9 +356,8 @@ public struct DigitizerSymbols: Equatable {
   /// "search all loaded images in default load order". Used for IOKit
   /// (public framework, already in dyld shared cache).
   ///
-  /// CLAUDE.md §9.6 still satisfied: this is a dlsym handle, no IOKit
-  /// module import, no `linkedFramework` in Package.swift (verified by
-  /// plan checkpoint commands #11-#16).
+  /// The dlsym-only invariant still holds: this is a dlsym handle, with no
+  /// IOKit module import and no `linkedFramework` in Package.swift.
   public static let rtldDefault: UnsafeMutableRawPointer =
     UnsafeMutableRawPointer(bitPattern: -2)!
 }
@@ -377,7 +372,7 @@ public struct DigitizerSymbolNames {
   public static let trackpadWrap         =
     "IndigoHIDMessageForTrackpadEventFromHIDEventRef"
 
-  public static let allRequiredForC4: [String] = [
+  public static let allRequired: [String] = [
     createDigitizerEvent, createFingerEvent, appendEvent, trackpadWrap,
   ]
 }

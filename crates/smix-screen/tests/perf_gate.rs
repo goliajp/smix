@@ -1,4 +1,4 @@
-#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive (test-optimize.md §2.4)
+#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive
 //! Perf gate for smix-screen.
 //!
 //! Hard ceiling on the hot-path visibility primitives. Numbers come from

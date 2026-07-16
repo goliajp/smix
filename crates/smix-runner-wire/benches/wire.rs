@@ -1,4 +1,4 @@
-//! v3.3 c2 — criterion bench for smix-runner-wire serde encode/decode.
+//! Criterion bench for smix-runner-wire serde encode/decode.
 //!
 //! Every runner HTTP roundtrip pays an encode + decode. Large payloads
 //! (100-node A11yNode tree) dominate; small ones (TapRequest) are noise

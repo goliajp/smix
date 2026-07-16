@@ -51,3 +51,7 @@ docs/ai-guide/insight-*.md
 docs/ai-guide/gol-611-*.md
 docs/ai-guide/patches/
 .smoke-passed-at
+
+# Python bytecode from dev scripts
+__pycache__/
+*.pyc

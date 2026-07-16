@@ -1,5 +1,5 @@
-#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive (test-optimize.md §2.4)
-//! v3.1 c5 — perf gate for smix-selector-resolver (hot path).
+#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive
+//! Perf gate for smix-selector-resolver (hot path).
 //!
 //! Numbers come from `cargo bench --bench resolver` + headroom. Release-
 //! mode only. CI: `cargo test --release --test perf_gate -p
@@ -97,7 +97,7 @@ fn perf_gate_text_hit_100_node() {
         },
         ITERATIONS,
     );
-    // TS V8 ~ 3650 ns. Rust target < 2 μs (cached DFA + zero-alloc walk).
+    // Target < 2 μs (cached DFA + zero-alloc walk).
     assert!(
         ns < 2000.0,
         "resolve_selector text-hit 100-node exceeded 2μs budget: {:.2} ns/iter",
@@ -118,7 +118,7 @@ fn perf_gate_id_miss_100_node() {
         },
         ITERATIONS,
     );
-    // Pure strict-equal walk, no regex compile. TS ~ 3230 ns; Rust target < 500 ns.
+    // Pure strict-equal walk, no regex compile. Target < 500 ns.
     assert!(
         ns < 500.0,
         "resolve_selector id-miss 100-node exceeded 500ns budget: {:.2} ns/iter",

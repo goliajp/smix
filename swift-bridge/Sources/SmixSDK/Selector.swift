@@ -1,4 +1,4 @@
-// v7.2 c3 — Selector full 7-case + Modifiers flatten + Pattern + fluent.
+// Selector — 7 base cases + Modifiers flatten + Pattern + fluent chaining.
 //
 // Mirror Rust smix-selector `#[serde(untagged)] enum Selector` with full
 // `Modifiers` flatten on Text/Id/Label/Role/LocalizedText bases. Focused
@@ -40,7 +40,7 @@ public indirect enum Selector: Sendable, Equatable {
     /// (spatial fields only, no index) + IndexModifiers (nth/first/last).
     case anchor(AnchorBox, index: IndexModifiers = .empty)
     /// `{"localizedText": {"en":"Submit","ja":"送信"}, ...modifiers}` —
-    /// per-locale text table (v5.18 c1 a11y-i18n L4 layer).
+    /// per-locale text table.
     case localizedText([String: String], modifiers: Modifiers = .empty)
 }
 

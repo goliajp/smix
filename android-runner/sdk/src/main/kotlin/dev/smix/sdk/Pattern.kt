@@ -1,4 +1,4 @@
-// v7.4 c4 — Pattern (literal vs regex) mirror Swift v7.2 c3 + Rust
+// Pattern (literal vs regex) mirrors the Swift SDK + Rust
 // smix-selector `#[serde(untagged)] enum Pattern`.
 //
 // Wire JSON forms (untagged):
@@ -31,8 +31,8 @@ sealed interface Pattern {
     data class Literal(val value: String) : Pattern
 
     /**
-     * Regex match. Flags default to "i" (case-insensitive) to mirror
-     * Rust smix-selector v1.5 c5i-d maestro parity.
+     * Regex match. Flags default to "i" (case-insensitive), mirroring
+     * Rust smix-selector and matching maestro's behaviour.
      */
     data class Regex(val regex: String, val flags: String = "i") : Pattern
 }

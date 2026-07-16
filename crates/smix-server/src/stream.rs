@@ -2,7 +2,7 @@
 //!
 //! Serves per-sim live HLS observability: a REST sim registry (this file)
 //! plus a `tower-http` ServeDir mount (wired in `lib::app`) that serves the
-//! rolling `index.m3u8 + seg_*.ts` produced by the web-v0.3 c1 recorder.
+//! rolling `index.m3u8 + seg_*.ts` produced by the recorder.
 //! Future capabilities (metrics, control API) attach to the same server as
 //! sibling modules — hence the generic crate name, not `-stream-server`.
 

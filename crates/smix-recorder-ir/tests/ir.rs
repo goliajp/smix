@@ -1,4 +1,4 @@
-//! v3.1 c7 — unit tests for smix-recorder-ir.
+//! Unit tests for smix-recorder-ir.
 
 use smix_input::{KeyName, SwipeDirection};
 use smix_recorder_ir::{IRAction, RecorderError, RecorderErrorReason, sort_by_timestamp};

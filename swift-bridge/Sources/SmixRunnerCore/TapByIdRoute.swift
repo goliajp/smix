@@ -1,14 +1,13 @@
 import FlyingFox
 import Foundation
 
-// v5.3 c4 — POST /tap-by-id {"id":"<a11y-id>"} → 200 {ok:<bool>}.
+// POST /tap-by-id {"id":"<a11y-id>"} → 200 {ok:<bool>}.
 //
 // Dedicated XCUIElement.tap() path for accessibility-id selectors. Lets the
 // SDK opt into the XCTest gesture-recognizer chain when the default
 // host-HID-at-coord tap doesn't trigger SwiftUI bindings (notably .sheet /
-// .alert / .confirmationDialog / .fullScreenCover dismiss buttons in
-// iOS 17+ — see v5.3 c3 (b) findings). Parallel to /tap-at-norm-coord;
-// the existing /tap route stays untouched so v1 41-段 baseline is zero-risk.
+// .alert / .confirmationDialog / .fullScreenCover dismiss buttons on
+// iOS 17+). Parallel to /tap-at-norm-coord; the /tap route is unaffected.
 //
 // Wire shape (purposefully minimal):
 //   request:  {"id": "v2-modal-sheet-dismiss-btn"}

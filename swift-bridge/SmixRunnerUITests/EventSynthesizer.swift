@@ -1,25 +1,30 @@
-// v1.8 c2 — XCSynthesizedEventRecord + XCPointerEventPath + XCTRunnerDaemonSession
-// 私有 ObjC class 调用, 合成 raw IOKit-level touch event (无 XCUIElement-owner 元数据),
-// 经 UIKit `UIApplication.sendEvent:` 标准 hit-test → RN Pressable 触 onPress.
+// Calls into the private ObjC classes XCSynthesizedEventRecord,
+// XCPointerEventPath and XCTRunnerDaemonSession to synthesize a raw
+// IOKit-level touch event (one with no XCUIElement-owner metadata). The
+// event goes through UIKit's standard `UIApplication.sendEvent:` hit-test,
+// which is what makes a React Native Pressable actually fire onPress.
 //
-// 跟 maestro `cli-2.2.0`:
-//   - maestro-driver-iosUITests/Routes/Handlers/TouchRouteHandler.swift:34-44
+// The approach mirrors maestro `cli-2.2.0`:
+//   - maestro-driver-iosUITests/Routes/Handlers/TouchRouteHandler.swift
 //   - maestro-driver-iosUITests/Routes/XCTest/EventRecord.swift
 //   - maestro-driver-iosUITests/Routes/XCTest/PointerEventPath.swift
 //   - maestro-driver-iosUITests/Routes/XCTest/RunnerDaemonProxy.swift
-// 1:1 同源 — smix 合并为单文件 (smix swift-bridge 单 target 不分目录).
+// Those four are merged into this single file because the swift-bridge
+// target is flat.
 //
-// CLAUDE.md §9 #6 合规: 全用 `NSClassFromString` / `objc_lookUpClass` +
-// `unsafeBitCast(method(for:), to: ...)` 动态加载, 不硬链接私有符号. 跟 smix
-// 既有 `DaemonKeyboard.sendString` (SmixRunnerUITests.swift:95-135) 同 pattern.
+// Private-symbol policy: private symbols must be reached dynamically and
+// never hard-linked. Everything here goes through `NSClassFromString` /
+// `objc_lookUpClass` plus `unsafeBitCast(method(for:), to: ...)`, the same
+// pattern as the existing `DaemonKeyboard.sendString`.
 
 import Foundation
 import ObjectiveC
 import UIKit
 
-/// alloc helper — Swift 不允许 `AnyClass.alloc()` 直接调用 (Swift 5.x 后弃用),
-/// 用 ObjC runtime class_getClassMethod + method_getImplementation 拿 alloc IMP
-/// 再 unsafeBitCast 调.
+/// alloc helper. Swift does not allow calling `AnyClass.alloc()` directly
+/// (deprecated since Swift 5.x), so fetch the `alloc` IMP through the ObjC
+/// runtime with class_getClassMethod + method_getImplementation and call it
+/// via unsafeBitCast.
 private func ocAlloc(_ className: String) -> NSObject? {
   guard let cls = NSClassFromString(className) else { return nil }
   let sel = NSSelectorFromString("alloc")
@@ -32,7 +37,7 @@ private func ocAlloc(_ className: String) -> NSObject? {
 
 /// Wraps `XCPointerEventPath` private ObjC class. Constructed via
 /// `initForTouchAtPoint:offset:`; lifted via `liftUpAtOffset:`; intermediate
-/// `moveToPoint:atOffset:` calls compose swipe / drag gestures (v5.2 c1).
+/// `moveToPoint:atOffset:` calls compose swipe / drag gestures.
 final class SmixPointerEventPath {
   let path: NSObject
   var offset: TimeInterval
@@ -47,7 +52,7 @@ final class SmixPointerEventPath {
     return SmixPointerEventPath(path: path, offset: offset)
   }
 
-  /// v5.2 c1 — swipe path: touch-down at `from`, drag to `to` over `duration`,
+  /// Swipe path: touch-down at `from`, drag to `to` over `duration`,
   /// then `liftUp` at the same offset. The caller adds the path to a
   /// SmixEventRecord and dispatches via daemonProxy.
   static func forSwipe(
@@ -64,7 +69,7 @@ final class SmixPointerEventPath {
     self.offset = offset
   }
 
-  /// v5.2 c1 — add an intermediate path point at `offset`; used to compose
+  /// Add an intermediate path point at `offset`; used to compose
   /// swipe / drag gestures between `forTouch` (touch-down) and `liftUp`.
   func moveTo(point: CGPoint, atOffset offset: TimeInterval) {
     let selector = NSSelectorFromString("moveToPoint:atOffset:")
@@ -118,7 +123,7 @@ final class SmixEventRecord {
     return true
   }
 
-  /// v5.2 c1 — build a swipe event path: touch-down at `from`, drag to `to`
+  /// Build a swipe event path: touch-down at `from`, drag to `to`
   /// over `duration`, then liftUp. Returns false if `XCPointerEventPath`
   /// allocation failed (Apple bumped the private API on this OS).
   /// Default duration mirrors maestro `cli-2.2.0` swipe handler (0.3s).

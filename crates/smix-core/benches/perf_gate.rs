@@ -1,10 +1,10 @@
-//! v3.28 c1 — explicit N/A marker.
+//! Explicit N/A marker.
 //!
 //! `smix-core` exposes only the `__CRATE_VERSION` const and carries no
 //! pure synchronous hot path; design.md §D1's "stone = pure types + no
 //! outer io" criterion has no surface area to measure here.
 //!
-//! Per design.md §"stone vs cement 维度 — D1 决策", perf_gate is the
+//! Per design.md's stone-vs-cement decision (§D1), perf_gate is the
 //! one cross-cutting bench target uniformly present in all crates; for
 //! crates without a pure synchronous hot path, the bench body is an
 //! explicit no-op rather than fake measurement. Real performance for

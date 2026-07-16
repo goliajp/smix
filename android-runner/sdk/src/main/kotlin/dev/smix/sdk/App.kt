@@ -1,8 +1,4 @@
-// v7.4 c1 — App class skeleton mirrors Swift SmixSDK.App.
-//
-// v7.4 c1 stubs all act/sense methods to throw SmixError.NotImplemented
-// with explicit stage markers; c2 wires App.tap via FFI + SimRuntime,
-// c3 wires App.find + Locator. v7.5+ adds full API parity.
+// App class mirrors Swift SmixSDK.App.
 
 package dev.smix.sdk
 
@@ -65,7 +61,7 @@ class App internal constructor(
 
     /**
      * Resolve [selector], tap to focus, then type [text]. Mirrors
-     * Swift `App.fill` from v7.1 c3.
+     * Swift `App.fill`.
      */
     suspend fun fill(selector: Selector, text: String) {
         tap(selector)  // tap → focuses the field
@@ -83,7 +79,8 @@ class App internal constructor(
     suspend fun screenshot(): ByteArray = runtime.screenshot()
 
     /**
-     * Tap at a normalized coordinate (0..1) — escape hatch per §9 #3.
+     * Tap at a normalized coordinate (0..1) — the one coordinate
+     * escape hatch on the API surface.
      *
      * Both [nx] and [ny] must be in `[0.0, 1.0]`. Out-of-range values
      * throw [ExpectationFailure] with code `WRONG_STATE`.
@@ -111,8 +108,8 @@ class App internal constructor(
     }
 
     /**
-     * Launch fresh with state clearing options. Mirror Swift
-     * App.launchFresh from v7.2 c2.
+     * Launch fresh with state clearing options. Mirrors Swift
+     * `App.launchFresh`.
      */
     suspend fun launchFresh(
         clearState: Boolean = false,

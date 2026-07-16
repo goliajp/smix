@@ -39,7 +39,7 @@ final class ForegroundRouteTests: XCTestCase {
     }
   }
 
-  // case L: decode bundleId 非 String → DecodeError.wrongType
+  // case L: decode a non-String bundleId → DecodeError.wrongType
   func test_decode_wrongTypeBundleId_throws() {
     let body = Data(#"{"bundleId":123}"#.utf8)
     XCTAssertThrowsError(try ForegroundRoute.decode(body)) { error in

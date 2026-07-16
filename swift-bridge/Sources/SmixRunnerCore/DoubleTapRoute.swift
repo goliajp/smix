@@ -1,12 +1,11 @@
 import FlyingFox
 import Foundation
 
-// v5.2 c3 — POST /double-tap {selector: {text}} → 200 {ok:true|false}.
-// XCUIElement.doubleTap() public API path (RN-modal-not-firing 留 mode 切换 §10
-// 决策面,c3 单路径).
+// POST /double-tap {selector: {text}} → 200 {ok:true|false}.
+// Uses the public XCUIElement.doubleTap() API.
 //
-// 跟 BackRoute / TapAtCoordRoute envelope shape 1:1. Body 必含 selector.text.
-// 缺失 / 非字串 → 400 bad_request. Handler 调 XCUIElement.doubleTap() 公开 API.
+// Envelope shape matches BackRoute / TapAtCoordRoute 1:1. Body must carry
+// selector.text; missing / non-string → 400 bad_request.
 public enum DoubleTapRoute {
   public struct DoubleTapRequest: Equatable, Sendable {
     public let selectorText: String

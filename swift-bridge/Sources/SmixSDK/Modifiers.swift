@@ -1,5 +1,5 @@
-// v7.2 c3 — Modifiers struct mirror Rust smix-selector `Modifiers` +
-// `IndexModifiers` flattened into Selector body via custom Codable.
+// Modifiers struct — mirrors Rust smix-selector `Modifiers` +
+// `IndexModifiers`, flattened into the Selector body via custom Codable.
 //
 // Wire JSON shape: fields are FLATTENED into the Selector base body.
 // E.g. Rust:

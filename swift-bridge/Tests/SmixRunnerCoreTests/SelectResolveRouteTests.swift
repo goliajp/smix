@@ -1,4 +1,4 @@
-// v7.8 c1 — SelectResolveRoute Request/Response wire shape tests.
+// SelectResolveRoute Request/Response wire shape tests.
 //
 // Mirror npm/smix-rn/src/HttpRunner.ts contract:
 //   POST /select/resolve         { treeJson, selectorJson } → { ids: [String] }

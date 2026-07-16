@@ -1,18 +1,18 @@
-//! v6.0 c3a — Android `Driver` impl skeleton.
+//! Android `Driver` impl.
 //!
 //! Wraps [`HttpRunnerClient`] talking to the Android-side Kotlin runner
-//! (v6.0 c3b — APK + KTOR HTTP server backed by UiAutomator2). The
+//! (an APK running a KTOR HTTP server backed by UiAutomator2). The
 //! runner is reached via `adb forward tcp:HOST tcp:DEVICE` so host-side
 //! HTTP transport is identical to iOS.
 //!
-//! **State** — c3a ships trait skeleton: all 26 sense+act methods
-//! compile + return either (a) a transparent delegation to the runner
-//! if the wire shape is reusable, or (b) an explicit "v6.0 c3b runner
-//! not yet shipped" error so failures are visible (not silent).
+//! Each of the 26 sense+act methods either delegates transparently to
+//! the runner where the wire shape is reusable, or returns an explicit
+//! "endpoint not yet shipped" error — failures are visible, never
+//! silent.
 //!
-//! Acceptance gated by v6.0 c3b (Kotlin runner APK install + booted
-//! emulator). c3a is unit-tested via `Box<dyn Driver>` dyn_compat +
-//! platform=Android probes; end-to-end smoke lands at c3b.
+//! End-to-end acceptance needs a Kotlin runner APK installed on a
+//! booted emulator; the host side is unit-tested via `Box<dyn Driver>`
+//! dyn-compatibility and platform=Android probes.
 
 use async_trait::async_trait;
 use std::time::Duration;
@@ -46,7 +46,7 @@ impl AndroidDriver {
     }
 }
 
-/// v6.0 c3c-v — host-resolve loop with 5s implicit-wait + 250ms poll.
+/// Host-resolve loop with 5s implicit-wait + 250ms poll.
 /// Returns viewport-normalized centroid coord. Shared by tap / double_tap
 /// / long_press / fill / clear.
 async fn resolve_with_implicit_wait(
@@ -91,7 +91,7 @@ fn defer_err(method: &str) -> ExpectationFailure {
     ExpectationFailure::new(FailureInit {
         code: Some(FailureCode::DriverError),
         message: format!(
-            "AndroidDriver::{method}: Kotlin runner endpoint not yet shipped (v6.0 c3b earned defer)"
+            "AndroidDriver::{method}: not implemented by the Kotlin runner"
         ),
         ..Default::default()
     })
@@ -105,7 +105,7 @@ impl Driver for AndroidDriver {
 
     // No as_ios_driver override — uses default `None` from trait.
 
-    /// v1.0.3 — Android impl: attach / clear the `Session-Id` header
+    /// Android impl: attach / clear the `Session-Id` header
     /// on every subsequent request. Same wire as iOS; the Kotlin
     /// runner-side session table is symmetric.
     fn set_session_id(&mut self, id: Option<String>) {
@@ -118,7 +118,7 @@ impl Driver for AndroidDriver {
     // === Sense ===
 
     async fn tree(&self, include: Option<IncludeScope>) -> Result<A11yNode, ExpectationFailure> {
-        // v6.0 c3c-ii — delegates to Kotlin runner GET /tree (UiAutomator2
+        // Delegates to Kotlin runner GET /tree (UiAutomator2
         // dumpWindowHierarchy → A11yNode JSON shape). HttpRunnerClient
         // is platform-agnostic; same wire as iOS.
         self.runner.get_tree(include).await.map_err(|e| {
@@ -135,8 +135,8 @@ impl Driver for AndroidDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<bool, ExpectationFailure> {
-        // v6.0 c3c-iii — host-resolve over tree (Kotlin runner /find route
-        // not needed; tree dump 已含全树).
+        // Host-resolve over tree (the Kotlin runner /find route is not
+        // needed; the tree dump already contains the whole tree).
         let tree = self.tree(include).await?;
         Ok(resolve_selector(&tree, selector).is_some())
     }
@@ -186,7 +186,7 @@ impl Driver for AndroidDriver {
         locales: &[String],
         recognition_level: &str,
     ) -> Result<Option<OcrFrame>, ExpectationFailure> {
-        // v6.3 c2 — Google ML Kit Text Recognition (Latin script package).
+        // Google ML Kit Text Recognition (Latin script package).
         // Locales + recognition_level args are iOS Apple Vision specific;
         // Kotlin /find-text-by-ocr endpoint reads + ignores them today
         // (ML Kit Latin handles ASCII/European text universally).
@@ -206,7 +206,7 @@ impl Driver for AndroidDriver {
         &self,
         include: Option<IncludeScope>,
     ) -> Result<Vec<SystemPopup>, ExpectationFailure> {
-        // v6.3 c3 — Kotlin /system-popups walks UiAutomation.windows and
+        // Kotlin /system-popups walks UiAutomation.windows and
         // classifies dialog-shaped TYPE_APPLICATION windows. Returns
         // envelope {popups: [...]} per HttpRunnerClient deserialization.
         self.runner.system_popups(include).await.map_err(|e| {
@@ -223,7 +223,7 @@ impl Driver for AndroidDriver {
         popup_id: &str,
         button_id: &str,
     ) -> Result<bool, ExpectationFailure> {
-        // v6.3 c3 — Kotlin /system-popup-action re-walks windows + finds
+        // Kotlin /system-popup-action re-walks windows + finds
         // popup by id + button by testTag-derived id + UiDevice.click on
         // its bounding box center.
         self.runner
@@ -244,7 +244,7 @@ impl Driver for AndroidDriver {
         timeout: Duration,
         include: Option<IncludeScope>,
     ) -> Result<A11yNode, ExpectationFailure> {
-        // v6.0 c3c-iii — poll tree at 250ms cadence up to `timeout`, return
+        // Poll tree at 250ms cadence up to `timeout`, return
         // matched node on first hit. Mirror of iOS wait_for semantics.
         let start = std::time::Instant::now();
         loop {
@@ -275,8 +275,7 @@ impl Driver for AndroidDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-iii — host-resolve + tap_at_norm_coord (mirror IosDriver
-        // Path B). v6.0 c3c-v — refactored to shared helper.
+        // Host-resolve + tap_at_norm_coord (mirrors IosDriver Path B).
         let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
         self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
@@ -297,7 +296,7 @@ impl Driver for AndroidDriver {
     }
 
     async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-iii — direct passthru to Kotlin runner /tap-at-norm-coord.
+        // Direct passthru to Kotlin runner /tap-at-norm-coord.
         self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
@@ -308,7 +307,7 @@ impl Driver for AndroidDriver {
     }
 
     async fn tap_by_id(&self, id: &str) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-v — POST /tap-by-id with {id}. Kotlin side finds
+        // POST /tap-by-id with {id}. Kotlin side finds
         // UiObject2 via By.res(short or fully-qualified) and clicks.
         let ok = self.runner.tap_by_id(id).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
@@ -332,7 +331,7 @@ impl Driver for AndroidDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-v — host-resolve + /double-tap-at-norm-coord (Kotlin
+        // Host-resolve + /double-tap-at-norm-coord (Kotlin
         // side dispatches 2 clicks 150ms apart).
         let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
         self.runner
@@ -353,7 +352,7 @@ impl Driver for AndroidDriver {
         duration: Duration,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-v — host-resolve + /long-press-at-norm-coord with
+        // Host-resolve + /long-press-at-norm-coord with
         // duration. Kotlin uses UiDevice.swipe(x,y,x,y,steps) where
         // steps = duration / 5ms to approximate a sustained press.
         let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
@@ -376,7 +375,7 @@ impl Driver for AndroidDriver {
         text: &str,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-v — host-resolve → tap to focus → /input-text. Mirror
+        // Host-resolve → tap to focus → /input-text. Mirror
         // of swift FlyingFox /fill semantics (selector resolves; client
         // types text into focused field).
         let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
@@ -401,7 +400,7 @@ impl Driver for AndroidDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-v — host-resolve → tap to focus → press DELETE N times.
+        // Host-resolve → tap to focus → press DELETE N times.
         // No Kotlin /clear endpoint needed (avoids UiObject2 fragility);
         // 50 BACKSPACE presses cover near all real-world input fields.
         let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
@@ -425,7 +424,7 @@ impl Driver for AndroidDriver {
     }
 
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-iv — Kotlin /press-key maps smix KeyName → KeyEvent.KEYCODE_*.
+        // Kotlin /press-key maps smix KeyName → KeyEvent.KEYCODE_*.
         self.runner.press_key(key).await.map(|_| ()).map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
@@ -440,7 +439,7 @@ impl Driver for AndroidDriver {
         selector: &Selector,
         direction: SwipeDirection,
     ) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-iv — host-side scroll-until-visible loop. /tree +
+        // Host-side scroll-until-visible loop. /tree +
         // /swipe-once primitives — same pattern as iOS.
         let start = std::time::Instant::now();
         let timeout = Duration::from_secs(20);
@@ -505,7 +504,7 @@ impl Driver for AndroidDriver {
     }
 
     async fn back(&self) -> Result<(), ExpectationFailure> {
-        // v6.0 c3c-iv — Kotlin /back → UiDevice.pressBack (KEYCODE_BACK).
+        // Kotlin /back → UiDevice.pressBack (KEYCODE_BACK).
         self.runner.back().await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
@@ -529,7 +528,7 @@ impl Driver for AndroidDriver {
     }
 
     async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
-        // v6.3 c1 — Kotlin /foreground runs `am start --activity-single-top
+        // Kotlin /foreground runs `am start --activity-single-top
         // -n pkg/.MainActivity` (mirror iOS XCUIDevice activate semantic
         // without launching a new instance).
         self.runner.foreground(bundle_id).await.map_err(|e| {
@@ -542,7 +541,7 @@ impl Driver for AndroidDriver {
     }
 
     async fn webview_eval(&self, js: &str) -> Result<serde_json::Value, ExpectationFailure> {
-        // v6.5 c1 — runner /webview-eval proxies HTTP to fixture's shim
+        // Runner /webview-eval proxies HTTP to fixture's shim
         // server (WebViewEvalServer on :28081, started by MainActivity
         // onCreate). evaluateJavascript callback result is a JSON-encoded
         // string (e.g. "null", "\"hello\"", "42") passed verbatim.

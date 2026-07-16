@@ -9,8 +9,8 @@
 //! a host-side abort.
 //!
 //! The launch-stdout arm mirrors the inline parser shape (not a
-//! re-export — keeps `lib.rs` surface unchanged per CLAUDE.md §8.1 +
-//! §9 #6): `from_utf8 -> rsplit(':').next().map(str::trim) ->
+//! re-export — that keeps the `lib.rs` public surface unchanged):
+//! `from_utf8 -> rsplit(':').next().map(str::trim) ->
 //! parse::<u32>()`. If this arm ever panics on a fuzz input, the
 //! production `launch` path would panic on the same Apple stdout shape;
 //! the fix is to harden `lib.rs` and re-run.

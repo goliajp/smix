@@ -1,5 +1,5 @@
-#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive (test-optimize.md §2.4)
-//! v3.3 c2 — perf gate for smix-input.
+#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive
+//! Perf gate for smix-input.
 //!
 //! Hard ceilings on enum -> &'static str accessors + serde encode/decode.
 //! Numbers come from `cargo bench --bench input` + 3-5× headroom.

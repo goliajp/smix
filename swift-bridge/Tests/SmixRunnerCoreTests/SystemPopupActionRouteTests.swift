@@ -2,17 +2,17 @@ import XCTest
 import FlyingFox
 @testable import SmixRunnerCore
 
-// v4.2 c1 — G9 act side — POST /system-popup-action {popupId, buttonId}.
+// POST /system-popup-action {popupId, buttonId} — the act side of system
+// popup handling.
 //
-// v3.17 c-final first confirmed cap-gap; multi-cycle deferred under v3.x
-// "swift sim-side 不动" constraint. SystemPopupsRoute (v1.4 ③-C1 S3.a)
-// holds the enumerate side (sense). This route closes the act side —
-// dismiss / button-tap by popupId + buttonId. id derivation mirrors
-// SystemPopupsRoute enumerate (popup.id ← container.identifier fallback
-// "popup-N"; button.id ← b.identifier fallback "b-N") so enumerate→action
-// round-trips. UITests dispatch (S3) walks the same scan order, taps via
-// v1.8 c2 EventSynthesizer + v4.0 c3 daemonProxySynthesize dlsym chain
-// (§9 #6).
+// SystemPopupsRoute holds the enumerate side (sense). This route closes the
+// act side — dismiss / button-tap by popupId + buttonId. id derivation
+// mirrors SystemPopupsRoute enumerate (popup.id ← container.identifier
+// fallback "popup-N"; button.id ← b.identifier fallback "b-N") so
+// enumerate→action round-trips. UITests dispatch walks the same scan order
+// and taps via the EventSynthesizer + daemonProxySynthesize chain, whose
+// private symbols are always resolved with dlsym at runtime rather than
+// hard-linked.
 //
 // This file covers Core-layer wire only: request decode and 200/404
 // envelope encode.

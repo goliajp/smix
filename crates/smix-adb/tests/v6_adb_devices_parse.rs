@@ -1,5 +1,5 @@
-//! v6.0 c2 — `adb devices -l` stdout parser unit tests.
-//! Mirrors smix-simctl test pattern: pure-function parsing on canned stdout,
+//! `adb devices -l` stdout parser unit tests.
+//! Mirrors the smix-simctl test pattern: pure-function parsing on canned stdout,
 //! no live adb spawn (those go to integration tests with #[ignore]).
 
 use smix_adb::{AdbDevice, parse_devices_stdout};

@@ -1,7 +1,7 @@
 import XCTest
 @testable import SmixIndigoHID
 
-/// C4: `--path <digitizer|indigo9>` flag on `smix-host-hid tap`. Default
+/// `--path <digitizer|indigo9>` flag on `smix-host-hid tap`. Default
 /// (flag absent) → `.digitizer`. Unknown value → `.invalidFlagValue`.
 final class SmixHostHIDArgsPathTests: XCTestCase {
   func test_parse_tap_noPathFlag_defaultsToDigitizer() throws {

@@ -1,4 +1,4 @@
-//! v3.16 c1 S2 — App::tap_at_coord(nx, ny) escape hatch (§9 #3 lift).
+//! App::tap_at_coord(nx, ny) escape hatch.
 //! Test that the SDK surface emits POST /tap-at-norm-coord with the
 //! normalized coords in the JSON body — end-to-end thin pipe from
 //! SDK App → SimctlDriver → HttpRunnerClient → wire.

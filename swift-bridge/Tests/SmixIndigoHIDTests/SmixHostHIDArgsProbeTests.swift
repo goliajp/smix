@@ -1,8 +1,8 @@
 import XCTest
 @testable import SmixIndigoHID
 
-/// C5 — `probe` subcommand args parsing. Pinned alongside the existing tap
-/// parse tests so C3/C4 forms are byte-identical to the pre-C5 behaviour.
+/// `probe` subcommand args parsing. Pinned alongside the existing tap parse
+/// tests so that adding `probe` leaves the `tap` forms byte-identical.
 final class SmixHostHIDArgsProbeTests: XCTestCase {
 
   func test_parse_probe_noFlags_returnsProbe() throws {

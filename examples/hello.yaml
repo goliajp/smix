@@ -1,0 +1,23 @@
+# smix hello — the golden-path smoke flow.
+#
+# Parse-check only (no device needed):
+#   smix run --check examples/hello.yaml
+#
+# Run against a booted simulator:
+#   smix run --device <udid> examples/hello.yaml
+#
+# Every verb below is a VerbEntry in the canonical VERB_TABLE
+# (crates/smix-verbs). Selectors use ids — the most robust form; see
+# docs/ai-guide/03-selectors.md for the full taxonomy.
+appId: com.example.app
+---
+- launchApp:
+    clearState: true
+
+- tapOn: { id: "tab-home" }
+- assertVisible: { id: "home-counter-label" }
+
+- tapOn: { id: "home-increment-btn" }
+- assertVisible:
+    id: "home-counter-label"
+    text: "1"

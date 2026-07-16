@@ -1,6 +1,6 @@
-// v7.4 c4 — Selector full 7-case + Modifiers flatten + Pattern + fluent.
+// Selector: full 7-case + Modifiers flatten + Pattern + fluent.
 //
-// Mirror Swift v7.2 c3 + Rust smix-selector `#[serde(untagged)] enum
+// Mirrors the Swift SDK + Rust smix-selector `#[serde(untagged)] enum
 // Selector` with full `Modifiers` flatten on Text/Id/Label/Role/
 // LocalizedText bases. Focused has no modifiers. Anchor uses
 // AnchorBox + IndexModifiers.

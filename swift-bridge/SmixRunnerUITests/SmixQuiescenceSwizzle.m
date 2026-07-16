@@ -1,24 +1,30 @@
-// v1.6 c3 — swizzle XCUIApplicationProcess waitForQuiescenceIncludingAnimationsIdle
-// to early-return no-op, mirror maestro `cli-2.2.0`
-// `XCUIApplicationProcess+FBQuiescence.m`. 真因: Apple `snapshot()` 内部触发
-// `waitForQuiescenceIncludingAnimationsIdle:` 自动等 app idle (含动画结束),
-// RN 持续动画 (loading spinner / CursorView) 致 wait 阻 5+s / timeout, dashboard
-// 等 flow 在 smix 跑 fluky 1/3 PASS. maestro 同问题 fix = swizzle Apple
-// quiescence wait → 直接 no-op, snapshot 即时 fire 当前 frame, race window
-// 用 multi-step yaml + assertVisible 30s timeout 实际兜底.
+// Swizzles XCUIApplicationProcess's waitForQuiescenceIncludingAnimationsIdle
+// to an early-returning no-op, mirroring maestro `cli-2.2.0`'s
+// `XCUIApplicationProcess+FBQuiescence.m`.
 //
-// Selector 两 variant 都 swizzle (Apple iOS 17+ 后增 isPreEvent: 参数):
+// Why: Apple's `snapshot()` internally calls
+// `waitForQuiescenceIncludingAnimationsIdle:`, which waits for the app to go
+// idle including all animations finishing. An app with a continuously
+// animating element (a loading spinner, a blinking cursor view) never
+// reaches that state, so the wait blocks for 5+ seconds or times out and
+// flows become flaky. maestro fixes the same problem the same way: no-op the
+// quiescence wait so snapshot fires immediately against the current frame.
+// The resulting race window is covered instead by explicit multi-step waits
+// and assertVisible timeouts at the flow level.
+//
+// Both selector variants are swizzled (iOS 17+ added the isPreEvent: arg):
 //   - waitForQuiescenceIncludingAnimationsIdle:
 //   - waitForQuiescenceIncludingAnimationsIdle:isPreEvent:
 //
-// method_setImplementation (跟 SmixA11ySwizzle.m 同 pattern, 不 exchange) +
-// 不调 original = 永久 no-op. 不依赖 env / 不依赖 host 透传.
+// method_setImplementation (same pattern as SmixA11ySwizzle.m — not
+// exchange) and never calling the original makes this a permanent no-op. It
+// depends on no env var and on nothing passed through from the host.
 
 #import "SmixQuiescenceSwizzle.h"
 #import <objc/runtime.h>
 
 static void swizzledWaitForQuiescenceIncludingAnimationsIdle(id self, SEL _cmd, BOOL includingAnimations) {
-    // no-op — let snapshot/event 立即 fire (maestro `cli-2.2.0` 同源)
+    // no-op — let the snapshot / event fire immediately
     return;
 }
 

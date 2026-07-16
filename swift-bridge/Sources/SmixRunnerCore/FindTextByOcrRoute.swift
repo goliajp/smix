@@ -1,14 +1,14 @@
 import FlyingFox
 import Foundation
 
-// v5.19 c1a — POST /find-text-by-ocr {"text":"...","locales":["en"]}
+// POST /find-text-by-ocr {"text":"...","locales":["en"]}
 //   → 200 {"found": bool, "frame": [nx, ny, w, h]?}
 //
-// L5 sense layer for the a11y-less + i18n initiative (per docs/plan-cold/
-// v5.17-v5.22-a11y-i18n-master.md). Apple Vision OCR over the current
-// XCUIScreen.main screenshot. Returns the first matching text observation's
-// bounding box normalized to [0,1] in UIKit coord space (top-left origin,
-// y-down — Vision's native [0,1] is bottom-left, y-up; handler converts).
+// Sense layer for a11y-less and internationalized screens. Apple Vision OCR
+// over the current XCUIScreen.main screenshot. Returns the first matching
+// text observation's bounding box normalized to [0,1] in UIKit coord space
+// (top-left origin, y-down — Vision's native [0,1] is bottom-left, y-up;
+// handler converts).
 //
 // Locales default to ["en"] when empty/missing. Pass BCP-47 language
 // subtags (e.g. "en", "ja", "es"). Apple Vision uses these to pick the

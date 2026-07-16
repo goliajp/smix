@@ -1,4 +1,4 @@
-//! v3.3 c2 — criterion bench for smix-recorder-ir.
+//! Criterion bench for smix-recorder-ir.
 //!
 //! IR is cold-ish (one append per user-recorded action) but generators
 //! parse/serialize the full session and recorders may merge 100+ events

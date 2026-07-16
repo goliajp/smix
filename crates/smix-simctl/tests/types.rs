@@ -1,5 +1,5 @@
-//! v3.1 c10 — unit tests for smix-simctl types (subprocess integration
-//! tests live in c-final capstone with real sim).
+//! Unit tests for smix-simctl types (subprocess integration tests run
+//! against a real sim elsewhere).
 
 use smix_simctl::{Appearance, SimctlClient, SimctlPermission};
 

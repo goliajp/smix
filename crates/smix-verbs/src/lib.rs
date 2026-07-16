@@ -17,7 +17,7 @@
 //!   they're identical (e.g. `runFlow`), the entry still appears with
 //!   both fields set to the same string.
 //! - **Category** — grouping for reviewer sanity checks + future
-//!   auto-generated cross-platform parity tables (Phase F).
+//!   auto-generated cross-platform parity tables.
 //! - **Arg shape** — reserved for future codemod arg-transform lookup;
 //!   currently informational.
 
@@ -31,7 +31,7 @@ pub struct VerbEntry {
     /// smix-canonical surface name (`tap`, `expect`, ...).
     pub smix_name: &'static str,
     /// Grouping category. Used by the future cross-platform parity
-    /// audit table (Phase F).
+    /// audit table.
     pub category: VerbCategory,
     /// Shape of the argument — informational; used by codemod's
     /// argument transform lookup + parser's shape validation.
@@ -387,6 +387,34 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         "waitForAnimationToEnd",
         "waitForAnimationToEnd",
         VerbCategory::Utility,
+        ArgShape::None,
+    ),
+    // ----- Lifecycle / Assert additions: parser-accepted verbs that
+    // were absent from the table. VERB_TABLE is the enforced single
+    // source of truth (a parser-dispatch ⊆ VERB_TABLE test guards it);
+    // these have Step:: variants + parser dispatch but no entry until now.
+    v(
+        "clearAppData",
+        "clearAppData",
+        VerbCategory::Lifecycle,
+        ArgShape::Mapping,
+    ),
+    v(
+        "resetAppData",
+        "resetAppData",
+        VerbCategory::Lifecycle,
+        ArgShape::Mapping,
+    ),
+    v(
+        "clearUserDefaults",
+        "clearUserDefaults",
+        VerbCategory::Lifecycle,
+        ArgShape::Mapping,
+    ),
+    v(
+        "expectLogClean",
+        "expectLogClean",
+        VerbCategory::Assert,
         ArgShape::None,
     ),
     // Note: `evalScript` / `runScript` / `assertWithAI` deliberately

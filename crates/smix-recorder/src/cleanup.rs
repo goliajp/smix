@@ -1,7 +1,5 @@
 //! Claude CLI cleanup pass — sweetener for generated test source.
 //!
-//! Ported from now-retired TS source (was `legacy/src/recorder/cleanup.ts`, retired in v3.22). v2.0 c4.
-//!
 //! Calls `claude --tools "" -p <prompt> --output-format text` with the
 //! raw generated source embedded. The prompt is heavily constrained
 //! (see `build_prompt`); cleanup is a sweetener, **not** a critical

@@ -1,5 +1,5 @@
-// v7.2 c2 — App sense extension API mock tests (systemPopups /
-// openUrl / launchFresh).
+// App sense extension API mock tests (systemPopups / openUrl /
+// launchFresh).
 
 import Foundation
 import XCTest

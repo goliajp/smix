@@ -1,7 +1,5 @@
-//! v3.1 c5 — criterion bench for smix-selector-resolver hot path.
-//!
-//! Mirrors TS `src/core/__bench__/resolve-selector.bench.ts` 7 cases for
-//! apples-to-apples comparison in PERFORMANCE.md §4.
+//! Criterion bench for the smix-selector-resolver hot path, across
+//! 7 cases.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use smix_screen::{A11yNode, Rect};

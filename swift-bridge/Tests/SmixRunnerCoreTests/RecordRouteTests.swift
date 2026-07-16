@@ -2,7 +2,7 @@ import XCTest
 import FlyingFox
 @testable import SmixRunnerCore
 
-// v2.0 c2 S1 — RecordRoute POCO unit tests. Mirrors BackRouteTests /
+// RecordRoute POCO unit tests. Mirrors BackRouteTests /
 // SwipeOnceRouteTests structure. RecordRoute owns decode + envelope only
 // (no XCUITest — capture is in the UITest target's EventRecorder).
 final class RecordRouteTests: XCTestCase {

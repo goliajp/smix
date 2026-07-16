@@ -1,7 +1,7 @@
 import FlyingFox
 import Foundation
 
-// v1.5 C4b — POST /foreground {bundleId:"<id>"} → 200 {ok:<bool>}.
+// POST /foreground {bundleId:"<id>"} → 200 {ok:<bool>}.
 // Mirrors FindRoute / ScrollRoute / TapRoute envelope shape. Runner-side
 // handler instantiates XCUIApplication(bundleIdentifier:) and calls
 // .activate() (Apple synchronous fire-and-forget API; documented
@@ -10,9 +10,9 @@ import Foundation
 //
 // `bundleId` is required + non-empty (empty string == programmer error;
 // driver-layer caller passes a real bundle identifier from SDK). No
-// `?include=` query — foreground is an app-level act, not element-level;
-// see-through scope 议题不适用 (recon §6.2 #6 缺位闭合, 与 c1 scroll 不同 —
-// scroll 有 element 解析需 scope).
+// `?include=` query — foreground is an app-level act, not an element-level
+// one, so the see-through scope question does not arise; contrast /scroll,
+// which resolves an element and therefore does need a scope.
 public enum ForegroundRoute {
   public struct ForegroundRequest: Equatable, Sendable {
     public let bundleId: String

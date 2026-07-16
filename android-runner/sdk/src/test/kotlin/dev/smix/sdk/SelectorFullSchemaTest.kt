@@ -1,9 +1,9 @@
-// v7.4 c4 — Selector full 7-case + Modifiers flatten + Pattern + fluent
+// Selector full 7-case + Modifiers flatten + Pattern + fluent
 // chaining roundtrip + Rust-compatible wire shape tests.
 //
-// Mirror swift-bridge/Tests/SmixSDKTests/SelectorFullSchemaTests.swift
-// (v7.2 c3). Verifies Pattern wire shape, Selector custom KSerializer
-// untagged + flatten output, fluent chaining mutation semantics.
+// Mirrors swift-bridge/Tests/SmixSDKTests/SelectorFullSchemaTests.swift.
+// Verifies Pattern wire shape, Selector custom KSerializer untagged +
+// flatten output, fluent chaining mutation semantics.
 
 package dev.smix.sdk
 

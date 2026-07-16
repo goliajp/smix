@@ -3,11 +3,14 @@ import XCTest
 
 @testable import SmixRunnerCore
 
-// v4.3 c1 — frameFromDictValue 纯函数语义锁。act side findAndTapSystemPopupButton
-// snapshot 化需从 XCUIElementSnapshot.dictionaryRepresentation 的 frame value
-// 拿 button tap center; frame value 形态 = [String: Double] (X/Y/Width/Height)
-// 或 CGRect。本 file 锁三态解析 (dict / CGRect / 不可解析→.zero), 与 UITests 侧
-// convertSnapshotDict 既有 frame 解析逻辑等价。Core 层无 XCUI 依赖, 入参 Any?。
+// Semantic lock for the frameFromDictValue pure function. The act-side
+// findAndTapSystemPopupButton works off snapshots, so it has to derive a
+// button's tap centre from the frame value inside
+// XCUIElementSnapshot.dictionaryRepresentation. That value comes in two
+// shapes: [String: Double] (X/Y/Width/Height) or a CGRect. This file locks
+// all three outcomes (dict / CGRect / unparseable → .zero), equivalent to
+// the frame parsing convertSnapshotDict already does on the UITests side.
+// The Core layer has no XCUI dependency, hence the Any? parameter.
 final class FrameFromDictValueTests: XCTestCase {
   func test_dictForm_parsesXYWH() {
     XCTAssertEqual(

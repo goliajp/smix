@@ -123,7 +123,7 @@ fn parse_ensure_login_with_runflow_when_clause() {
     assert_eq!(flow, expected);
 }
 
-// v6.8 c1 — `runFlow: { when: { visible }, commands: [...] }` inline form.
+// `runFlow: { when: { visible }, commands: [...] }` inline form.
 // Mirrors maestro YamlRunFlow's `commands:` alternative to `file:`. Body is
 // a literal step list (no child yaml lookup); the parser must surface it as
 // `Step::RunFlowInline`.
@@ -286,15 +286,10 @@ fn pattern_regex_inference_on_pipe() {
 
 #[test]
 fn unsupported_command_returns_error() {
-    // v5.2 c4 — evalScript / runScript / repeat / retry 已 wire (parser
-    // 接受 + runtime graceful unsupported / 真跑); 旧"未实现 c4"断言已失效.
-    // pivot 到 maestro 文档列出但 smix 仍未 wire 的命令作"真未实现"探针:
-    //   - `back`:Android-only (matrix #7), iOS sim 不适用; parser 应报
-    //     UnsupportedCommand (本 cp parser 未单独列 N/A 命令进 whitelist).
-    //   - `addMedia`:Media gap, 仍是 ❌ SDK-gap (matrix #30, 留 v5.2 c5).
-    //
-    // 这两个真是当前 smix 不支持的 maestro 命令,parser 须 explicit 报
-    // UnsupportedCommand (不静默 noop, §13).
+    // Probes for maestro commands that smix genuinely does not wire.
+    // `back` is Android-only and does not apply to the iOS simulator,
+    // so the parser must report UnsupportedCommand rather than
+    // silently no-op'ing.
     let yaml = "appId: com.test.app\n---\n- back\n";
     let err = parse_flow_yaml(yaml).expect_err("back (Android-only) must error");
     match err {
@@ -304,8 +299,9 @@ fn unsupported_command_returns_error() {
         other => panic!("expected UnsupportedCommand back, got: {other:?}"),
     }
 
-    // assertWithAI 是 verdict 段明示 out-of-scope (AI 三件套 — user 走
-    // claude CLI 自有 key, 不在 SDK 表面 ship), 永不 wire — 真未实现探针.
+    // assertWithAI is deliberately out of scope and will never be
+    // wired: AI assertions run through the user's own claude CLI, not
+    // the SDK surface. Another genuinely-unimplemented probe.
     let yaml = "appId: com.test.app\n---\n- assertWithAI: \"is logged in\"\n";
     let err = parse_flow_yaml(yaml).expect_err("assertWithAI must error (verdict out-of-scope)");
     match err {
@@ -317,7 +313,7 @@ fn unsupported_command_returns_error() {
 }
 
 // ----------------------------------------------------------------------
-// v5.18 c1 — Selector::LocalizedText DSL parser tests (5 cases)
+// Selector::LocalizedText DSL parser tests (5 cases)
 // ----------------------------------------------------------------------
 
 #[test]
@@ -435,7 +431,7 @@ fn localized_text_with_optional_flag() {
 }
 
 // ----------------------------------------------------------------------
-// v5.19 c1 — Selector::OcrText DSL parser tests (5 cases)
+// Selector::OcrText DSL parser tests (5 cases)
 // ----------------------------------------------------------------------
 
 #[test]
@@ -551,7 +547,7 @@ fn ocr_text_full_form_missing_text_field_rejected() {
 }
 
 // ----------------------------------------------------------------------
-// v5.20 c1 — Selector::AnchorRelative DSL parser tests (5 cases)
+// Selector::AnchorRelative DSL parser tests (5 cases)
 // ----------------------------------------------------------------------
 
 #[test]
@@ -652,7 +648,8 @@ fn anchored_missing_dx_rejected() {
 
 #[test]
 fn anchored_negative_dx_ok() {
-    // 负方向偏移合法 (yaml 不限正负, adapter clamp 在 [0,1])
+    // Negative offsets are legal: the yaml does not constrain sign,
+    // and the adapter clamps into [0, 1].
     let yaml = r#"appId: com.test.app
 ---
 - tapOn:
@@ -673,7 +670,7 @@ fn anchored_negative_dx_ok() {
 }
 
 // ----------------------------------------------------------------------
-// v5.20 c2 — Selector::Fallback + Selector::Point DSL parser tests (5)
+// Selector::Fallback + Selector::Point DSL parser tests (5)
 // ----------------------------------------------------------------------
 
 #[test]
@@ -797,7 +794,7 @@ fn fallback_point_pct_string_form() {
 }
 
 // ----------------------------------------------------------------------
-// v5.21 c1b — webview_eval Step parser tests (5)
+// Webview_eval Step parser tests (5)
 // ----------------------------------------------------------------------
 
 #[test]
@@ -1068,7 +1065,7 @@ fn parse_expect_top_level_text_still_works() {
     }
 }
 
-// v1.0.11 §D2 — clearAppData parser tests. Bare + map form both
+// ClearAppData parser tests. Bare + map form both
 // accepted; map form extracts launchArgs / launchEnv (or the shorthand
 // args / env aliases). Wiring is verified end-to-end at the runner
 // route (real-sim gate), but the parse shape is locked here so a
@@ -1132,15 +1129,15 @@ fn parse_clear_app_data_accepts_short_args_and_env_aliases() {
     }
 }
 
-// v1.0.14 Cluster A — resetAppData parser shape locks.
+// ResetAppData parser shape locks.
 
 #[test]
 fn parse_reset_app_data_short_form_url_string() {
-    let yaml = "appId: com.test.app\n---\n- resetAppData: 'insight://dev-mutate?action=reset'\n";
+    let yaml = "appId: com.test.app\n---\n- resetAppData: 'myapp://dev-mutate?action=reset'\n";
     let flow = parse_flow_yaml(yaml).expect("parse short-form resetAppData");
     match &flow.steps[0] {
         Step::ResetAppData { url, wait_for, timeout_ms } => {
-            assert_eq!(url, "insight://dev-mutate?action=reset");
+            assert_eq!(url, "myapp://dev-mutate?action=reset");
             assert!(wait_for.is_none());
             assert_eq!(*timeout_ms, 5000);
         }
@@ -1155,19 +1152,19 @@ fn parse_reset_app_data_map_form_with_log_line_pattern() {
 ---
 - resetAppData:
     via: url-scheme
-    url: 'insight://dev-mutate?action=reset'
+    url: 'myapp://dev-mutate?action=reset'
     waitFor:
-      logLinePattern: '\[insight-dev\] reset-complete token='
+      logLinePattern: '\[myapp-dev\] reset-complete token='
     timeoutMs: 7000
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse map-form resetAppData");
     match &flow.steps[0] {
         Step::ResetAppData { url, wait_for, timeout_ms } => {
-            assert_eq!(url, "insight://dev-mutate?action=reset");
+            assert_eq!(url, "myapp://dev-mutate?action=reset");
             assert_eq!(*timeout_ms, 7000);
             match wait_for {
                 Some(ResetAppDataWaitFor::LogLinePattern(p)) => {
-                    assert_eq!(p, r"\[insight-dev\] reset-complete token=");
+                    assert_eq!(p, r"\[myapp-dev\] reset-complete token=");
                 }
                 other => panic!("expected LogLinePattern, got: {other:?}"),
             }
@@ -1182,7 +1179,7 @@ fn parse_reset_app_data_map_form_with_sleep_fallback() {
     let yaml = r#"appId: com.test.app
 ---
 - resetAppData:
-    url: 'insight://dev-mutate?action=reset'
+    url: 'myapp://dev-mutate?action=reset'
     waitFor:
       sleepMs: 500
 "#;
@@ -1196,7 +1193,7 @@ fn parse_reset_app_data_map_form_with_sleep_fallback() {
     }
 }
 
-// v1.0.18 D2 — waitForAnimationToEnd numeric override.
+// WaitForAnimationToEnd numeric override.
 
 #[test]
 fn parse_wait_for_animation_to_end_bare_default_400ms() {
@@ -1218,7 +1215,7 @@ fn parse_wait_for_animation_to_end_numeric_override() {
     }
 }
 
-// v1.0.20 D1 — extendedWaitUntil.visible now accepts every selector
+// ExtendedWaitUntil.visible now accepts every selector
 // key that tapOn does (docs promise; parser was rejecting).
 #[test]
 fn parse_extended_wait_until_visible_ocr_text() {
@@ -1287,7 +1284,7 @@ appId: com.test.app
     }
 }
 
-// v1.0.20 D2 — tapOn: {role, name} + tapOn: {label}
+// TapOn: {role, name} + tapOn: {label}
 #[test]
 fn parse_tap_on_role_name() {
     let yaml = "appId: com.test.app\n---\n- tapOn:\n    role: button\n    name: 'Submit'\n";
@@ -1341,9 +1338,9 @@ fn parse_tap_on_label() {
     }
 }
 
-// v1.0.23 D4 — bare-string auto-OCR opt-in via SMIX_AUTO_OCR_FALLBACK.
+// Bare-string auto-OCR opt-in via SMIX_AUTO_OCR_FALLBACK.
 //
-// v1.0.26 — these tests use the thread-local override seam
+// These tests use the thread-local override seam
 // (`set_auto_ocr_fallback_override`) instead of mutating process env.
 // Process env is global while Cargo runs tests on parallel threads:
 // the old set_var/restore approach raced every OTHER test parsing a
@@ -1455,7 +1452,7 @@ appId: com.test.app
     });
 }
 
-// v1.0.24 D2 — `runFlow.when.notVisible` inverse gate parses.
+// `runFlow.when.notVisible` inverse gate parses.
 #[test]
 fn parse_run_flow_conditional_when_not_visible() {
     let yaml = concat!(
@@ -1526,7 +1523,7 @@ fn parse_run_flow_when_visible_and_not_visible_together_rejects() {
     assert!(msg.contains("mutually exclusive"), "err msg should say mutually exclusive: {msg}");
 }
 
-// v1.0.25 D1 — regex-OR `A|B` auto-lift splits per alternative on OCR tier.
+// Regex-OR `A|B` auto-lift splits per alternative on OCR tier.
 
 #[test]
 fn parse_visible_bare_string_regex_or_splits_ocr_per_alternative() {
@@ -1568,7 +1565,7 @@ appId: com.test.app
 
 #[test]
 fn parse_visible_bare_string_no_pipe_unchanged() {
-    // No `|` = single OcrText tier (unchanged from v1.0.23 behavior).
+    // No `|` = single OcrText tier.
     with_env("SMIX_AUTO_OCR_FALLBACK", Some("1"), || {
         let yaml = "\
 appId: com.test.app
@@ -1656,9 +1653,8 @@ appId: com.test.app
     });
 }
 
-// v1.0.26 — maestro-canonical map form `waitForAnimationToEnd: { timeout: N }`.
-// Docs showed the shape since v1.0; the parser rejected it (same
-// documented-but-unimplemented class as the v1.0.20 gaps).
+// Maestro-canonical map form `waitForAnimationToEnd: { timeout: N }`.
+// The docs show this shape; the parser originally rejected it.
 #[test]
 fn parse_wait_for_animation_to_end_map_timeout_form() {
     let yaml = "appId: com.test.app\n---\n- waitForAnimationToEnd:\n    timeout: 5000\n";
@@ -1677,7 +1673,7 @@ fn parse_wait_for_animation_to_end_map_missing_timeout_rejects() {
     assert!(msg.contains("timeout"), "err should name the expected key: {msg}");
 }
 
-// v1.0.26 — `tapOn: { dispatch: xcui | daemonProxy }` explicit
+// `tapOn: { dispatch: xcui | daemonProxy }` explicit
 // dispatch-mechanism override. Generic replacement for the old
 // fixture-namespace auto-routing; docs used to promise a `mode:` key
 // that never parsed.
@@ -1720,8 +1716,8 @@ fn parse_tap_on_no_dispatch_defaults_none() {
     assert!(matches!(&flow.steps[0], Step::TapOn { dispatch: None, .. }));
 }
 
-// v1.0.26 — `anchorRelative:` alias for `anchored:` (docs promised
-// the alias since v5.20; parser only read `anchored`).
+// `anchorRelative:` alias for `anchored:` (docs promised
+// the alias; the parser originally read only `anchored`).
 #[test]
 fn parse_tap_on_anchor_relative_alias() {
     let yaml = "\
@@ -1746,7 +1742,7 @@ appId: com.t
     }
 }
 
-// v1.0.27 — `clearUserDefaults: { keys: [...], bundleId?: ... }`.
+// `clearUserDefaults: { keys: [...], bundleId?: ... }`.
 #[test]
 fn parse_clear_user_defaults_keys_only() {
     let yaml = "\

@@ -1,23 +1,21 @@
 import FlyingFox
 import Foundation
 
-// v2.0 c2 — POST /record/start, POST /record/stop, GET /record/poll.
+// POST /record/start, POST /record/stop, GET /record/poll.
 // AX-event capture route. Decoupled from XCUITest target — Core owns wire
 // shape + JSON encoding; UI test target's EventRecorder produces the
 // RecordedEvent stream via `XCAXClient_iOS.handleAccessibilityNotification:
 // withPayload:` swizzle.
 //
-// c1 dig (`.scratch/v2.0-c1-design.md` §3) bet 4 named AX notification
-// constants + a `_XCGetWrappedAXUIElementFromNotificationPayload` C
-// function for payload decoding. Header verification (maestro cli-2.2.0's
-// copied `XCAXClient_iOS.h`) shows the real selector signature is
-// `_registerForAXNotification:(int)code error:(NSError**)` /
-// `handleAccessibilityNotification:(int)code withPayload:(id)payload`
-// — int codes, no named string constants, no payload-decode C function
-// in the header set. So RecordedEvent's discriminator stays as the raw
-// `int` code + best-effort kind classification done in the UI target;
-// payload decoding (selector hint extraction, element-type) is deferred
-// to c3 IR layer with all hint fields optional in c2.
+// There are no named AX notification constants to key off, and no
+// payload-decode C function to lean on. Header verification (against
+// maestro cli-2.2.0's copied `XCAXClient_iOS.h`) shows the real selector
+// signatures are `_registerForAXNotification:(int)code error:(NSError**)`
+// and `handleAccessibilityNotification:(int)code withPayload:(id)payload`
+// — int codes only, and no `_XCGetWrappedAXUIElementFromNotificationPayload`
+// in the header set. So RecordedEvent's discriminator is the raw `int` code
+// plus a best-effort kind classification done in the UI target, and every
+// payload-derived hint field is optional.
 public enum RecordRoute {
 
   public struct StartRequest: Equatable, Sendable {
@@ -129,12 +127,13 @@ public enum RecordRoute {
 }
 
 // Wire-shape Codable. UI target (XCUITest) produces; host TS (runner-client)
-// consumes. selectorHints + frame + elementType all optional — the c2 swift
-// capture only fills `timestampMs` + `rawCode` reliably; richer fields (kind
+// consumes. selectorHints + frame + elementType are all optional — the Swift
+// capture only fills `timestampMs` + `rawCode` reliably. Richer fields (kind
 // classification, selector hints from `XCUIRecorderUtilities.
-// nodeToFindElementForSnapshots:`, element-type, frame) are progressive
-// — populated where the payload's `id` type permits without depending on
-// header-absent C function `_XCGetWrappedAXUIElementFromNotificationPayload`.
+// nodeToFindElementForSnapshots:`, element-type, frame) are progressive:
+// populated where the payload's `id` type permits, without depending on the
+// header-absent C function
+// `_XCGetWrappedAXUIElementFromNotificationPayload`.
 public struct RecordedEvent: Codable, Equatable, Sendable {
   public let timestampMs: Int64
   public let rawCode: Int
@@ -182,8 +181,8 @@ public struct RecordedEvent: Codable, Equatable, Sendable {
 }
 
 // 5-field OR-match candidates, mirrors smix `find` selector hint priority
-// (id > label > title > placeholder > value). c3 IR layer picks the most
-// unique one; c2 capture populates as many as the payload permits.
+// (id > label > title > placeholder > value). Capture populates as many as
+// the payload permits; the consumer picks the most unique one.
 public struct SelectorHints: Codable, Equatable, Sendable {
   public let identifier: String?
   public let label: String?

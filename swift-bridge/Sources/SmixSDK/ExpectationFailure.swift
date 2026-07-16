@@ -1,8 +1,7 @@
-// v7.1 c1 — ExpectationFailure / FailureCode (skeleton).
+// ExpectationFailure / FailureCode — the AI-readable failure contract.
 //
-// Per design.md §9 #11 (AI-readable failure contract). Mirror Rust
-// smix-error ExpectationFailure JSON schema. v7.1 c3 / v7.2 c4 起完
-// 整 wire 三端 byte-identical conformance T5.
+// Mirrors the Rust smix-error `ExpectationFailure` JSON schema; the
+// wire form is byte-identical across all three SDK languages.
 
 import Foundation
 

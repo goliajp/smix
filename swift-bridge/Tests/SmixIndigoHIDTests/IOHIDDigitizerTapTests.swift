@@ -1,7 +1,7 @@
 import XCTest
 @testable import SmixIndigoHID
 
-/// C4 unit coverage for `IOHIDDigitizerTap`. Targets host-side (zero
+/// Unit coverage for `IOHIDDigitizerTap`. Targets host-side (zero
 /// simulator) reach: byte-patch pure function + Phase/Edge enums + dlsym
 /// failure paths. End-to-end IOHIDEvent + trackpad wrap + send is covered
 /// by `scripts/smix-hostid-digitizer-smoke.sh` (real dev-sim).
@@ -116,7 +116,7 @@ final class IOHIDDigitizerTapTests: XCTestCase {
     XCTAssertEqual(DigitizerSymbolNames.trackpadWrap,
                    "IndigoHIDMessageForTrackpadEventFromHIDEventRef")
     XCTAssertEqual(
-      DigitizerSymbolNames.allRequiredForC4,
+      DigitizerSymbolNames.allRequired,
       [
         "IOHIDEventCreateDigitizerEvent",
         "IOHIDEventCreateDigitizerFingerEvent",

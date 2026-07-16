@@ -1,4 +1,4 @@
-// v7.1 c3 — Locator poll loop mock-based tests.
+// Locator poll loop mock-based tests.
 //
 // Verifies host-side poll behavior (250ms tick + timeout deadline) +
 // ExpectationFailure(.timeout / .wrongState) populated with last

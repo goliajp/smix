@@ -1,9 +1,10 @@
 import FlyingFox
 import Foundation
 
-// v5.2 c3 — POST /long-press {selector: {text}, durationMs: N} → 200 {ok:true|false}.
-// XCUIElement.press(forDuration:) public API path. duration 单位 ms, default
-// 500 (maestro cli-2.2.0 默认 + XCUIElement standard 0.5s).
+// POST /long-press {selector: {text}, durationMs: N} → 200 {ok:true|false}.
+// Uses the public XCUIElement.press(forDuration:) API. `durationMs` is in
+// milliseconds and defaults to 500 — the maestro cli-2.2.0 default, which
+// also matches the XCUIElement standard press of 0.5s.
 public enum LongPressRoute {
   public struct LongPressRequest: Equatable, Sendable {
     public let selectorText: String

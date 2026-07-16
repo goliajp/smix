@@ -1,9 +1,7 @@
-//! v3.1 c3 — unit tests for smix-screen visibility primitives.
+//! Unit tests for smix-screen visibility primitives.
 //!
-//! Behavioral contract mirrors TS test fixtures in
-//! `src/core/__tests__/resolve-selector.test.ts` + `resolve-selector-anchor.test.ts`
-//! (v1.5 c5i-d semantics: zero-bounds reject / unknown-root pass /
-//! intersection check / cases F-K viewport contains children).
+//! Behavioral contract covered: zero-bounds reject / unknown-root pass /
+//! intersection check / cases F-K viewport contains children.
 
 use smix_screen::{A11yNode, Rect, is_visible_enough, visible_area};
 
@@ -56,8 +54,8 @@ fn is_visible_enough_negative_width_returns_false() {
 
 #[test]
 fn is_visible_enough_unknown_root_conservative_pass() {
-    // tree.bounds w/h ≤ 0 → conservative true (跟 TS resolve-selector.ts
-    // line 109 同源 `if (root.w <= 0 || root.h <= 0) return true`).
+    // A tree whose bounds have w/h ≤ 0 means the viewport is unknown, so
+    // visibility can't be judged — pass conservatively rather than reject.
     let node = mk(rect(50.0, 50.0, 10.0, 10.0));
     let tree = mk(rect(0.0, 0.0, 0.0, 0.0));
     assert!(is_visible_enough(&node, &tree));

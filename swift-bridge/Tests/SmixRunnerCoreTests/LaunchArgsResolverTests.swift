@@ -1,17 +1,17 @@
 import XCTest
 @testable import SmixRunnerCore
 
-// R4.d (audit #6) — LaunchArgsResolver: read SMIX_RUNNER_LAUNCH_ARGS env
-// (JSON array literal) and resolve to an XCUIApplication launchArguments
-// array. Empty/missing/malformed env → empty array = app's natural
-// locale + defaults. Mirrors TargetBundleResolver / LaunchModeResolver
-// shape so the runner side stays declarative (no inline env reading).
+// LaunchArgsResolver: read SMIX_RUNNER_LAUNCH_ARGS env (JSON array
+// literal) and resolve to an XCUIApplication launchArguments array.
+// Empty/missing/malformed env → empty array = app's natural locale +
+// defaults. Mirrors TargetBundleResolver / LaunchModeResolver shape so the
+// runner side stays declarative (no inline env reading).
 //
-// Pre-R4 the runner hard-coded
-// `["-AppleLanguages","(en)","-AppleLocale","en_US"]` for every app
-// launch, hijacking locale across every caller. R4.d makes locale an
-// opt-in env injection: e2e that need en locale ship the JSON literal;
-// runner default is empty array so the app shows in its natural locale.
+// Locale is an opt-in env injection rather than a runner default: hard-coding
+// `["-AppleLanguages","(en)","-AppleLocale","en_US"]` on every app launch
+// would hijack locale for every caller. e2e that need the en locale ship the
+// JSON literal themselves; the default empty array leaves the app in its
+// natural locale.
 
 final class LaunchArgsResolverTests: XCTestCase {
   func test_emptyEnv_returnsEmpty() {

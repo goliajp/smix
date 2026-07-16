@@ -1,6 +1,6 @@
-// v7.4 c1 — Kotlin SDK MVP shape JVM unit tests.
+// Kotlin SDK MVP shape JVM unit tests.
 //
-// Mirror swift-bridge/Tests/SmixSDKTests/MvpApiShapeTests.swift (v7.1 c1).
+// Mirrors swift-bridge/Tests/SmixSDKTests/MvpApiShapeTests.swift.
 // Verifies:
 //   - Selector 4 base case constructible
 //   - Modifier 9 case constructible
@@ -23,7 +23,7 @@ class MvpApiShapeTest {
 
     @Test
     fun selectorBaseCasesExhaustive() {
-        // v7.4 c4 expanded: Text/Role.name now take Pattern (not String).
+        // Text/Role.name take a Pattern, not a String.
         val cases: List<Selector> = listOf(
             Selector.Id("btn-login"),
             Selector.Text(Pattern.Literal("Sign In")),
@@ -56,14 +56,14 @@ class MvpApiShapeTest {
             Modifier.Near(Selector.Id("anchor"), thresholdPts = 50.0),
             Modifier.Inside(Selector.Id("anchor")),
         )
-        assertEquals("v7.4 c1 MVP exposes 9 modifier cases", 9, cases.size)
+        assertEquals("MVP exposes 9 modifier cases", 9, cases.size)
     }
 
     // MARK: - Role cases
 
     @Test
     fun a11yRoleCasesAllExposed() {
-        // Snapshot of v7.4 c1 mirror of Rust smix-screen Role enum.
+        // Snapshot mirror of the Rust smix-screen Role enum.
         val expected = setOf(
             "BUTTON", "LINK", "TEXT_FIELD", "SECURE_TEXT_FIELD", "SEARCH_FIELD",
             "SWITCH", "TOGGLE", "CHECK_BOX", "RADIO", "IMAGE", "STATIC_TEXT",
@@ -170,26 +170,8 @@ class MvpApiShapeTest {
         assertTrue("must contain wrongState rawValue", json.contains("\"wrongState\""))
     }
 
-    // MARK: - Stub surface verification
-
-    // v7.4 c2 update: Smix.launchApp / App.tap NO LONGER throw
-    // NotImplemented — both wired via SmixSimRuntime. See
-    // AppTapMockTest for the c2 replacement tests. The c1-style stub
-    // tests now verify still-stubbed surface (fill / pressKey / etc.).
-
-    // v7.4 c3 update: fill / pressKey / Locator.toBeVisible / toContainText
-    // are now wired (App.fill = tap+sendString; pressKey direct;
-    // toBeVisible/toContainText poll). Stale stub tests replaced with
-    // remaining-stub coverage (swipe / screenshot / tapAtCoord).
-
-    // v7.4 c5 update: swipe / screenshot / tapAtCoord / launchFresh /
-    // systemPopups / openUrl / launchApp(.AppPath) all wired via
-    // SimRuntime extension. See AppActSenseExtMockTest for the c5
-    // replacement tests. The only remaining-stub surface is
-    // Locator.toHaveLabel / toHaveCount (v7.5 c2 — needs match-count
-    // resolver path that hasn't landed in smix-ffi yet for Android).
-
-    // v7.6 c1 update: Locator.toHaveLabel / toHaveCount now wired via
-    // dedicated FFI resolve_selector_count / resolve_selector_labels
-    // helpers. See LocatorToHaveMockTest for replacement tests.
+    // No stubbed surface remains — every act/sense method is wired
+    // through SmixSimRuntime. Behavioural coverage lives in the
+    // mock-based suites: AppTapMockTest, LocatorMockTest,
+    // AppActSenseExtMockTest, LocatorToHaveMockTest.
 }

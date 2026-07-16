@@ -74,7 +74,7 @@ public struct ChannelProbeReport: Equatable {
   ) -> ChannelProbeReport {
     let digitizer = probeChannel(
       name: InputChannelId.digitizer.rawValue,
-      symbolNames: DigitizerSymbolNames.allRequiredForC4
+      symbolNames: DigitizerSymbolNames.allRequired
     ) { name in
       // Trackpad wrap lives in SimulatorKit; the other 3 are in IOKit
       // (resolved via the RTLD_DEFAULT sentinel by production callers).
@@ -85,7 +85,7 @@ public struct ChannelProbeReport: Equatable {
     }
     let indigo = probeChannel(
       name: InputChannelId.indigo9.rawValue,
-      symbolNames: IndigoSymbolNames.allRequiredForC3
+      symbolNames: IndigoSymbolNames.allRequired
     ) { name in
       resolver.sym(simulatorKitHandle, name)
     }

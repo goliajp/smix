@@ -1,4 +1,4 @@
-//! v0.3.0 Phase A A2 — log source subscribers.
+//! Log source subscribers.
 //!
 //! Two shapes:
 //!
