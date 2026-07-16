@@ -1,75 +1,75 @@
-# plan-hot — v2 到 C1：VERB_TABLE 单一真源 + 五矛盾收敛 + hygiene sweep
+# plan-hot — v2 到 C2：围栏式 AI 断言层
 
 ## 目标 checkpoint
 
-C1：VERB_TABLE 成为被测试强制的单一真源（parser 接受的 verb ⊆ VERB_TABLE）；五矛盾各有落地答案；crate/Swift/Kotlin 源码开发噪声清零；`examples/hello.yaml` 存在且 parse OK。通过后世界：外部读者读到的是干净、自洽、单一真源的代码。
+C2：`assertCondition` / `extractWithAI` 可用 —— 截图 → 本地 `claude` CLI → 结构化 verdict，opt-in、输出标注非确定性。通过后世界：smix 补上 maestro `assertWithAI` / `extractTextWithAI` 的对位能力，且**删掉 `smix-ai-tier` crate 不会动到任何 sensing 代码**（这条可执行的删除性即 §9#2 围栏的证明，也是 C2 的核心验收）。
 
 ## 前置条件
 
 ```bash
-pgrep -fl "runner.ts|smix run|supervise|bun test:e2e"   # 期望空（in-house batch 不活动）
-git branch --show-current                                # 期望 develop（或从 develop 切 feature 分支）
-cargo build --workspace 2>&1 | grep -c warning           # 记录基线 warning 数
+git log --oneline -1                                    # 期望 C1 已提交（ed2285cff 或其后）
+python3 scripts/dev/hygiene-scan.py --noise-only        # 期望 clean（C1 不回归）
+cargo test -p smix-adapter-maestro --test verb_table_gate  # 期望 2 passed
+which claude                                            # 期望有；无则仅 mock 路径可测
+pgrep -fl "runner.ts|smix run|supervise"                # 期望空
 ```
 
 ## 步骤（线性）
 
-### S1. VERB_TABLE 单一真源（矛盾①）
+### S1. `smix-ai-tier` crate + verdict 契约
 
 **红（写测试）**
-- 文件：`crates/smix-adapter-maestro/tests/parser.rs`
-- 断言：枚举 parser dispatch 接受的每个 top-level verb 字符串，断言每个都在 `smix_verbs::VERB_TABLE`（`is_known_verb`）。当前应**失败**，暴露 `clearUserDefaults` / `resetAppData` / `clearAppData` 等缺失项（精确全集由测试打印，不用 grep）。
+- 文件：`crates/smix-ai-tier/tests/verdict.rs`
+- 断言：(a) `StructuredVerdict` 从 CLI 的 JSON 输出反序列化，`{pass, reason}` 齐全；(b) CLI 不存在时返回 `DriverError` 且 hint 含安装指引，**不 panic**；(c) CLI 返回非 JSON 时是明确错误而非静默 false。
 
 **绿（实现）**
-- 文件：`crates/smix-verbs/src/lib.rs`
-- 动作：为测试暴露的每个缺失 verb 加 `VerbEntry`（正确 category/arg_shape；`clearUserDefaults`→Lifecycle/Mapping、`resetAppData`→Lifecycle、`clearAppData`→Lifecycle）。`runScript`/`evalScript`/`assertWithAI` 保持排除（parser 若接受则测试需 allowlist 它们为「有意排除」并让 codemod warn）。
-- 关键点：测试变绿 = parser ⊆ table 成立；这条测试进 ship gate。
-
-**重构**
-- 若发现 smix_name 重载（expect×3 等）无 helper，酌情补 `find_by_smix` 反查。
-
-### S2. 其余四矛盾 + examples/hello.yaml
-
-**红**
-- 文件：`crates/smix-selector/tests/` + 新 `examples/hello.yaml`
-- 断言：(a) selector 变体数测试 == 11；(b) `smix run --check examples/hello.yaml` parse OK（先失败：文件不存在）。
-
-**绿**
-- 矛盾③ swipeAtCoord：在 `docs/v2.md` §10 决策日志加一行——授权 `swipeAtCoord` 为第二 native escape hatch（理由：与 tapAtCoord 同源 Apple event chain），**或**从 VERB_TABLE 删除。二选一，记录。
-- 矛盾② assertScreenshot：`docs/v2.md` 决策——v2 实现 snapshot-compare 或移除 row；本 step 先定状态。
-- 矛盾④ selector count：改 `crates/smix-selector/src/lib.rs:241` 注释 "6 base forms" → 准确描述 11 变体（6 base + 5 L4-L7 层）。
-- 矛盾⑤ 4 层文档：本 cycle 已建 `docs/v2.md` + `plan-cold/v2.md` + `plan-hot.md`（本文件）；C7 修 `docs/v3.md` 指针。
-- 新建 `examples/hello.yaml`（黄金路径：launchApp → tapOn id → assertVisible）+ `examples/README.md`。
+- 文件：`crates/smix-ai-tier/src/lib.rs`（新 crate，加进 workspace members）
+- API：`pub async fn judge(screenshot_png: &[u8], condition: &str) -> Result<StructuredVerdict, ExpectationFailure>`
+- 关键点：截图**带外**取（simctl / `smix-screen`，**不是** runner HTTP route —— 无 `/screenshot` route）；单 provider 走本地 `claude` CLI（§9#2）；crate 只依赖 `smix-error` + `smix-screen`，**不依赖** resolver / driver / selector（依赖方向即围栏）。
 
 **重构**
 - 无。
 
-### S3. hygiene sweep（26 crate + Swift + Kotlin + MCP schema）
+### S2. verb 接线（VERB_TABLE → parser → runtime → SDK）
 
-**红（不变式基线）**
-- 命令：`python3 scripts/dev/hygiene-scan.py --noise-only` → **实测基线 1642 处**（初测 1229 漏了 `swift-bridge/SmixRunnerUITests/` 的 413 处——最初 scope 误写成 `swift-bridge/Sources`；该目录经 `smix-runner-sources` 分发到用户机器，必须扫）。原 1229 分布 / 28 区域（version-cluster 726 · cjk-comment 292 · insight 72 · cluster-tag 51 · phase-tag 28 · round-n 25 · ask-n 15 · c5i 15 · plan-refs 5）。最重：adapter-maestro 481 · swift-bridge 244 · sdk 80 · android-runner 65 · driver 53。仅 `smix-fixture` / `smix-runner-sources` 干净（26/28 crate 受影响）。
-- 该脚本有噪声即 exit 1，是 C1 的机器可判 gate，并防未来回归。CJK 只扫注释行——`localizedText` 的日文/中文测试数据是合法输入，绝不能算噪声。
+**红**
+- 文件：`crates/smix-adapter-maestro/tests/parser.rs` + `tests/runtime_mock.rs`
+- 断言：(a) `assertCondition: "a red toast is visible"` 解析成 `Step::AssertCondition`；(b) `extractWithAI: {into, fields}` 解析成 `Step::ExtractWithAI`；(c) 未开 opt-in 时这两个 verb **明确报错**（不静默跳过）；(d) mock verdict `pass=false` → `AssertionFailed` 且 message 含 `[AI · non-deterministic]`；(e) `verb_table_gate` 仍绿（新 verb 必须同时进 VERB_TABLE）。
 
-**绿（实现，派 worktree-isolated agent 批量）**
-- 规则：删 vX.Y cN / Phase X / insight / round-N / Ask N / plan-cold / plan-hot / CJK 注释片段（含 MCP `main.rs:58` 的 `跟` 与 `smix-selector/src/lib.rs:431`）。保留 OS-bug workaround / invariant / ABI 契约注释（带 WHY）。修 shipped example 里的 `insight://` 泄漏。
-- 每 crate 独立 diff review；`smix-fixture` / `smix-runner-sources` 已干净跳过。
-- 不变式：sweep 后 `cargo build --workspace` warning 数 ≤ 基线且 `cargo test --workspace` 全绿、`swift test` 全绿。
+**绿**
+- `crates/smix-verbs`：加 `v("assertWithAI", "assertCondition", Assert, BareString)` + `v("extractTextWithAI", "extractWithAI", Assert, Mapping)`；**从末尾「有意排除」注释里移除 assertWithAI**（它不再是排除项）。
+- `smix-adapter-maestro`：parser dispatch + `Step::AssertCondition` / `Step::ExtractWithAI`；runtime 调 `smix-ai-tier::judge`；`ACCEPTED` 列表同步（gate 会强制）。
+- `smix-sdk`：`App::assert_condition(&self, condition: &str)`。
+- opt-in：`config: { aiAssertions: on }` frontmatter 或 `--enable-ai-assertions`（对齐既有 `--enable-ocr-fallback` 先例）。
 
 **重构**
-- 无（纯注释/字符串清理，不改行为）。
+- `extractWithAI` 的 `output.*` 写入复用既有 output store，不新建。
 
-## Checkpoint C1 验收
+### S3. 围栏证明 + 文档
+
+**红（可执行的删除性）**
+- 命令：临时从 workspace 移除 `smix-ai-tier` 并 stub 掉两个 verb → `cargo test -p smix-selector -p smix-selector-resolver -p smix-screen` **必须全绿**（sensing 零改动）。这条是 §9#2 的机器可判证明，不是口头声明。
+
+**绿**
+- 恢复；把该删除性测试固化成 CI 可跑的形式（feature flag 或文档化命令）。
+- `docs/ai-guide/` 补 AI 断言层用法 + 明说非确定性；`docs/v2.md` 记决策。
+
+**重构**
+- 无。
+
+## Checkpoint C2 验收
 
 ```bash
-cargo test -p smix-adapter-maestro 2>&1 | grep -E "parser.*table|verbs_subset"   # 期望 pass
-cargo build --workspace 2>&1 | grep -c warning                                    # 期望 0
-cargo test --workspace 2>&1 | tail -3                                             # 期望 all pass
-python3 scripts/dev/hygiene-scan.py --noise-only                                   # 期望 exit 0 "clean"
-test -f examples/hello.yaml && echo OK                                            # 期望 OK
+cargo test -p smix-ai-tier 2>&1 | tail -3                          # 期望 all pass
+cargo test -p smix-adapter-maestro 2>&1 | grep -c "FAILED"         # 期望 0
+cargo test -p smix-adapter-maestro --test verb_table_gate          # 期望 pass（新 verb 已进表）
+cargo build --workspace 2>&1 | grep -c warning                     # 期望 0
+python3 scripts/dev/hygiene-scan.py --noise-only                   # 期望 clean
+grep -rn "smix_ai_tier\|smix-ai-tier" crates/smix-selector crates/smix-selector-resolver crates/smix-screen crates/smix-driver | wc -l   # 期望 0（围栏：sensing 不得引用 AI 层）
 ```
-期望：全部通过；VERB_TABLE 与 parser 对齐；噪声清零；hello.yaml 存在。
+期望：全部通过。最后一条是围栏的静态证明 —— sensing / driver 侧对 AI 层零引用。
 
 ## 完成后动作
 
-1. 归档本文件到 `docs/plan-history/v2-c1-hot.md`
-2. 调 sub-agent 生成新 `plan-hot.md`（到 C2：围栏式 AI 断言层），见 CLAUDE.md §6
+1. 归档本文件到 `docs/plan-history/v2-c2-hot.md`
+2. 生成新 `plan-hot.md`（到 C3：真 animation-idle + OCR 键盘 fallback），见 CLAUDE.md §6
