@@ -7,11 +7,29 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use smix_ai_tier::{AiTierConfig, StructuredVerdict, judge};
+use smix_ai_tier::{AiTierConfig, StructuredVerdict, extract, judge};
 use smix_error::FailureCode;
 
-/// A PNG signature is enough: the stubs below never decode the image, and the
-/// real CLI reads it off disk.
+/// One runtime for the whole binary, rather than one per test.
+///
+/// tokio reaps child processes through a driver owned by a runtime. Give each
+/// test its own runtime and a stub's exit can land while that runtime isn't
+/// being polled, so `output()` never resolves and the call sits there until the
+/// timeout fires — indistinguishable from a judge that hung. Production runs on
+/// a single runtime; the tests should model that rather than invent a
+/// concurrency shape the real caller never has.
+fn rt() -> &'static tokio::runtime::Runtime {
+    static RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+    RT.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime")
+    })
+}
+
+/// A PNG signature is enough: the stubs never decode the image, and the real
+/// CLI reads it off disk.
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 const CONDITION: &str = "a red error toast is visible";
@@ -35,79 +53,119 @@ fn verdict_deserializes_from_cli_json() {
     assert_eq!(v.reason, "a red toast is on screen");
 }
 
-#[tokio::test]
-async fn missing_cli_reports_driver_error_with_an_install_hint() {
-    let cfg = AiTierConfig {
-        claude_bin: "/nonexistent/definitely-not-claude".into(),
-        timeout_secs: 10,
-    };
-    let err = judge(PNG, CONDITION, &cfg).await.unwrap_err();
-    assert_eq!(err.code, FailureCode::DriverError);
-    let hint = err.hint.unwrap_or_default();
-    assert!(
-        hint.contains("claude"),
-        "hint should tell the user which binary is missing; got: {hint}"
-    );
+#[test]
+fn missing_cli_reports_driver_error_with_an_install_hint() {
+    rt().block_on(async {
+        let cfg = AiTierConfig {
+            claude_bin: "/nonexistent/definitely-not-claude".into(),
+            timeout_secs: 10,
+        };
+        let err = judge(PNG, CONDITION, &cfg).await.unwrap_err();
+        assert_eq!(err.code, FailureCode::DriverError);
+        let hint = err.hint.unwrap_or_default();
+        assert!(
+            hint.contains("claude"),
+            "hint should tell the user which binary is missing; got: {hint}"
+        );
+    });
 }
 
-#[tokio::test]
-async fn a_verdict_round_trips_from_the_cli() {
-    let dir = tempfile::tempdir().unwrap();
-    let cfg = stub_cli(dir.path(), r#"echo '{"pass": false, "reason": "no toast on screen"}'"#);
-    let v = judge(PNG, CONDITION, &cfg).await.unwrap();
-    assert!(!v.pass);
-    assert_eq!(v.reason, "no toast on screen");
+#[test]
+fn a_verdict_round_trips_from_the_cli() {
+    rt().block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = stub_cli(
+            dir.path(),
+            r#"echo '{"pass": false, "reason": "no toast on screen"}'"#,
+        );
+        let v = judge(PNG, CONDITION, &cfg).await.unwrap();
+        assert!(!v.pass);
+        assert_eq!(v.reason, "no toast on screen");
+    });
 }
 
-#[tokio::test]
-async fn a_verdict_wrapped_in_prose_still_parses() {
-    // Models like to introduce themselves. The object is what matters.
-    let dir = tempfile::tempdir().unwrap();
-    let cfg = stub_cli(
-        dir.path(),
-        r#"echo 'Looking at the screenshot: {"pass": true, "reason": "red toast, top right"} — hope that helps!'"#,
-    );
-    let v = judge(PNG, CONDITION, &cfg).await.unwrap();
-    assert!(v.pass);
-    assert_eq!(v.reason, "red toast, top right");
+#[test]
+fn a_verdict_wrapped_in_prose_still_parses() {
+    rt().block_on(async {
+        // Models like to introduce themselves. The object is what matters.
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = stub_cli(
+            dir.path(),
+            r#"echo 'Looking at the screenshot: {"pass": true, "reason": "red toast, top right"} — hope that helps!'"#,
+        );
+        let v = judge(PNG, CONDITION, &cfg).await.unwrap();
+        assert!(v.pass);
+        assert_eq!(v.reason, "red toast, top right");
+    });
 }
 
-#[tokio::test]
-async fn unparseable_output_is_an_error_not_a_false_verdict() {
-    let dir = tempfile::tempdir().unwrap();
-    let cfg = stub_cli(dir.path(), "echo 'I think the toast is probably fine'");
-    let err = judge(PNG, CONDITION, &cfg).await.unwrap_err();
-    assert_eq!(err.code, FailureCode::DriverError);
-    assert!(
-        err.message.contains("verdict"),
-        "the error must say the verdict was unreadable, not that the assertion failed; got: {}",
-        err.message
-    );
+#[test]
+fn unparseable_output_is_an_error_not_a_false_verdict() {
+    rt().block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = stub_cli(dir.path(), "echo 'I think the toast is probably fine'");
+        let err = judge(PNG, CONDITION, &cfg).await.unwrap_err();
+        assert_eq!(err.code, FailureCode::DriverError);
+        assert!(
+            err.message.contains("verdict"),
+            "the error must say the verdict was unreadable, not that the assertion failed; got: {}",
+            err.message
+        );
+    });
 }
 
-#[tokio::test]
-async fn a_failing_cli_is_an_error_not_a_false_verdict() {
-    let dir = tempfile::tempdir().unwrap();
-    let cfg = stub_cli(dir.path(), "echo 'not logged in' >&2\nexit 1");
-    let err = judge(PNG, CONDITION, &cfg).await.unwrap_err();
-    assert_eq!(err.code, FailureCode::DriverError);
-    assert!(
-        err.message.contains("not logged in"),
-        "the CLI's own stderr is the useful part; got: {}",
-        err.message
-    );
+#[test]
+fn a_failing_cli_is_an_error_not_a_false_verdict() {
+    rt().block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = stub_cli(dir.path(), "echo 'not logged in' >&2\nexit 1");
+        let err = judge(PNG, CONDITION, &cfg).await.unwrap_err();
+        assert_eq!(err.code, FailureCode::DriverError);
+        assert!(
+            err.message.contains("not logged in"),
+            "the CLI's own stderr is the useful part; got: {}",
+            err.message
+        );
+    });
 }
 
-#[tokio::test]
-async fn a_hanging_cli_times_out_rather_than_blocking_the_flow() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut cfg = stub_cli(dir.path(), "sleep 30");
-    cfg.timeout_secs = 1;
-    let err = judge(PNG, CONDITION, &cfg).await.unwrap_err();
-    assert_eq!(err.code, FailureCode::DriverError);
-    assert!(
-        err.message.contains("timed out"),
-        "got: {}",
-        err.message
-    );
+#[test]
+fn a_hanging_cli_times_out_rather_than_blocking_the_flow() {
+    rt().block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = stub_cli(dir.path(), "sleep 30");
+        cfg.timeout_secs = 1;
+        let err = judge(PNG, CONDITION, &cfg).await.unwrap_err();
+        assert_eq!(err.code, FailureCode::DriverError);
+        assert!(err.message.contains("timed out"), "got: {}", err.message);
+    });
+}
+
+#[test]
+fn extract_reads_named_fields_off_the_screen() {
+    rt().block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = stub_cli(
+            dir.path(),
+            r#"echo '{"total": "42.00", "currency": "JPY"}'"#,
+        );
+        let fields = vec!["total".to_string(), "currency".to_string()];
+        let got = extract(PNG, &fields, &cfg).await.unwrap();
+        assert_eq!(got.get("total").map(String::as_str), Some("42.00"));
+        assert_eq!(got.get("currency").map(String::as_str), Some("JPY"));
+    });
+}
+
+#[test]
+fn extract_reports_an_unreadable_reply_rather_than_empty_fields() {
+    rt().block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = stub_cli(dir.path(), "echo 'the total looks like 42 yen'");
+        let fields = vec!["total".to_string()];
+        let err = extract(PNG, &fields, &cfg).await.unwrap_err();
+        assert_eq!(err.code, FailureCode::DriverError);
+        // Silently returning an empty map would read as "the screen has no
+        // total", which is a different claim from "the judge didn't answer".
+        assert!(err.message.contains("field object"), "got: {}", err.message);
+    });
 }

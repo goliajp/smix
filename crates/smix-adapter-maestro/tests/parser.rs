@@ -299,16 +299,17 @@ fn unsupported_command_returns_error() {
         other => panic!("expected UnsupportedCommand back, got: {other:?}"),
     }
 
-    // assertWithAI is deliberately out of scope and will never be
-    // wired: AI assertions run through the user's own claude CLI, not
-    // the SDK surface. Another genuinely-unimplemented probe.
-    let yaml = "appId: com.test.app\n---\n- assertWithAI: \"is logged in\"\n";
-    let err = parse_flow_yaml(yaml).expect_err("assertWithAI must error (verdict out-of-scope)");
+    // `inputRandomEmail` is a real maestro verb smix does not wire — a
+    // second probe, so the check isn't resting on one Android-only case.
+    // (`assertWithAI` is wired now, gated behind the AI tier's opt-in; its
+    // refusal path is covered in tests/ai_verbs.rs.)
+    let yaml = "appId: com.test.app\n---\n- inputRandomEmail\n";
+    let err = parse_flow_yaml(yaml).expect_err("inputRandomEmail is not wired");
     match err {
         ParseError::UnsupportedCommand(cmd) => {
-            assert_eq!(cmd, "assertWithAI");
+            assert_eq!(cmd, "inputRandomEmail");
         }
-        other => panic!("expected UnsupportedCommand assertWithAI, got: {other:?}"),
+        other => panic!("expected UnsupportedCommand inputRandomEmail, got: {other:?}"),
     }
 }
 

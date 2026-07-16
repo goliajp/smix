@@ -121,6 +121,50 @@ fn auto_ocr_fallback_enabled() -> bool {
     )
 }
 
+// The AI-assertion tier stays off unless a run asks for it. Its verdicts come
+// from a local `claude` CLI, so they cost a model call and are not
+// reproducible — a flow should not reach for that by accident. The gate is
+// read at parse time so an un-opted-in flow fails before a device is touched,
+// rather than halfway through a run.
+std::thread_local! {
+    // Test seam, for the same reason as AUTO_OCR_FALLBACK_OVERRIDE: process
+    // env is global while cargo runs tests across threads.
+    static AI_ASSERTIONS_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Test seam — pin the AI-assertion gate for the current thread (bypasses the
+/// `SMIX_ENABLE_AI_ASSERTIONS` env read). Pass `None` to restore env-driven
+/// behaviour. Not part of the public API surface; production paths never call
+/// this.
+#[doc(hidden)]
+pub fn set_ai_assertions_override(v: Option<bool>) {
+    AI_ASSERTIONS_OVERRIDE.with(|c| c.set(v));
+}
+
+fn ai_assertions_enabled() -> bool {
+    if let Some(v) = AI_ASSERTIONS_OVERRIDE.with(|c| c.get()) {
+        return v;
+    }
+    matches!(
+        std::env::var("SMIX_ENABLE_AI_ASSERTIONS").ok().as_deref(),
+        Some("1" | "true" | "TRUE" | "yes")
+    )
+}
+
+fn ai_gate(verb: &str) -> Result<(), ParseError> {
+    if ai_assertions_enabled() {
+        return Ok(());
+    }
+    Err(ParseError::InvalidValue {
+        field: verb.into(),
+        reason: "the AI-assertion tier is off. It judges the screen with a local `claude` CLI, so \
+                 a verdict costs a model call and is not reproducible run to run. Turn it on \
+                 deliberately with SMIX_ENABLE_AI_ASSERTIONS=1"
+            .into(),
+    })
+}
+
 // Split a bare string on top-level `|` for the auto-OCR-fallback
 // lift. Preserves the user's regex-OR intent while giving Apple
 // Vision literal strings it can actually match.
@@ -1417,6 +1461,61 @@ fn parse_clear_user_defaults(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::ClearUserDefaults { keys, bundle_id })
 }
 
+fn parse_assert_condition(v: &Value) -> Result<Step, ParseError> {
+    match v.as_str() {
+        Some(condition) if !condition.trim().is_empty() => Ok(Step::AssertCondition {
+            condition: condition.to_string(),
+        }),
+        _ => Err(ParseError::InvalidValue {
+            field: "assertCondition".into(),
+            reason: "expected a plain-language condition, e.g. \"a red error toast is visible\""
+                .into(),
+        }),
+    }
+}
+
+fn parse_extract_with_ai(v: &Value) -> Result<Step, ParseError> {
+    let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
+        field: "extractWithAI".into(),
+        reason: "expected a mapping with `into` and `fields`".into(),
+    })?;
+    let into = map
+        .get(Value::String("into".into()))
+        .and_then(Value::as_str)
+        .ok_or_else(|| ParseError::MissingField("extractWithAI.into".into()))?
+        .to_string();
+    if into.trim().is_empty() {
+        return Err(ParseError::InvalidValue {
+            field: "extractWithAI.into".into(),
+            reason: "expected a non-empty output key".into(),
+        });
+    }
+    let seq = map
+        .get(Value::String("fields".into()))
+        .ok_or_else(|| ParseError::MissingField("extractWithAI.fields".into()))?
+        .as_sequence()
+        .ok_or_else(|| ParseError::InvalidValue {
+            field: "extractWithAI.fields".into(),
+            reason: "expected a list of field names".into(),
+        })?
+        .clone();
+    let mut fields = Vec::with_capacity(seq.len());
+    for item in &seq {
+        let s = item.as_str().ok_or_else(|| ParseError::InvalidValue {
+            field: "extractWithAI.fields".into(),
+            reason: format!("expected a string field name, got {item:?}"),
+        })?;
+        fields.push(s.to_string());
+    }
+    if fields.is_empty() {
+        return Err(ParseError::InvalidValue {
+            field: "extractWithAI.fields".into(),
+            reason: "expected at least one field name".into(),
+        });
+    }
+    Ok(Step::ExtractWithAI { into, fields })
+}
+
 fn parse_reset_app_data(v: &Value) -> Result<Step, ParseError> {
     use smix_sdk::ResetAppDataWaitFor;
     match v {
@@ -2306,6 +2405,15 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "stopRecording" => Ok(Step::StopRecording),
         // Visual regression.
         "assertScreenshot" => parse_assert_screenshot(value),
+        // The AI tier. Gated at parse time — see `ai_gate`.
+        "assertCondition" | "assertWithAI" => {
+            ai_gate("assertCondition")?;
+            parse_assert_condition(value)
+        }
+        "extractWithAI" | "extractTextWithAI" => {
+            ai_gate("extractWithAI")?;
+            parse_extract_with_ai(value)
+        }
         // Expect.signal / expect.signals / expect.logClean.
         // The `expect` key here means the maestro `expect:` verb (currently
         // aliased to assertVisible in maestro). We route to the signal

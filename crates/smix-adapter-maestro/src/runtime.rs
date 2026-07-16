@@ -711,6 +711,8 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::ClearAppData { .. } => "clearAppData",
         Step::ResetAppData { .. } => "resetAppData",
         Step::ClearUserDefaults { .. } => "clearUserDefaults",
+        Step::AssertCondition { .. } => "assertCondition",
+        Step::ExtractWithAI { .. } => "extractWithAI",
         Step::KillApp { .. } => "killApp",
         Step::TapOn { .. } => "tapOn",
         Step::TapAtPoint { .. } => "tapAtPoint",
@@ -817,7 +819,9 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     run_stack: Vec<PathBuf>,
     /// Yaml flow-level `output` store, used by the expression
     /// engine (`${output.x}` template + `assertTrue` evaluation).
-    /// Read-only during a run; defaults to an empty map.
+    /// Seeded from the flow and then written only by
+    /// [`Step::ExtractWithAI`], which is the one verb that reads values
+    /// off the screen into it; defaults to an empty map.
     output: std::collections::BTreeMap<String, crate::ExprValue>,
     /// Env store used by the expression engine for bare `${NAME}`
     /// lookup. Populated from CLI `--env KEY=VAL` (repeatable) + the
@@ -867,6 +871,10 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// stays raw (no annotation overlay). Opt-out via `smix run
     /// --no-fail-annotate`. Default false = annotate.
     no_fail_annotate: bool,
+    /// How the AI-assertion verbs reach their judge. A seam as much as a
+    /// setting: tests point `claude_bin` at a stub so a mock run never
+    /// spends a real model call.
+    ai_cfg: smix_ai_tier::AiTierConfig,
 }
 
 impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
@@ -887,6 +895,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             step_ms_cursors: vec![0],
             fixture_registry: None,
             no_fail_annotate: false,
+            ai_cfg: smix_ai_tier::AiTierConfig::default(),
         }
     }
 
@@ -896,6 +905,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// consumable by the CLI summary writer.
     pub fn debug_records(&self) -> &[StepDebugRecord] {
         &self.debug_records
+    }
+
+    /// Point the AI-assertion verbs at a specific judge.
+    #[must_use]
+    pub fn with_ai_config(mut self, cfg: smix_ai_tier::AiTierConfig) -> Self {
+        self.ai_cfg = cfg;
+        self
     }
 
     /// Opt-out for auto-annotate on --debug-output
@@ -1834,7 +1850,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                                 return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
                                     code: Some(FailureCode::DriverError),
                                     message: format!(
-                                        "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — condition `{condition_expr}` never became falsy; the output store is read-only (the condition must depend on something else that changes)"
+                                        "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — condition `{condition_expr}` never became falsy; it has to depend on something that changes between iterations (of the stores it can read, only `output` changes, and only `extractWithAI` writes it)"
                                     ),
                                     suggestions: vec![
                                         "Convert to `repeat: { times: N }` with a known bound"
@@ -2024,6 +2040,37 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         "assertScreenshot: auto-recorded baseline at {} (first run; subsequent runs will diff against it)",
                         path.display()
                     ));
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::AssertCondition { condition } => {
+                let png = self.app.screenshot().await?;
+                let verdict = smix_ai_tier::judge(&png, condition, &self.ai_cfg).await?;
+                if !verdict.pass {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::AssertionFailed),
+                        message: format!(
+                            "[AI · non-deterministic] assertCondition did not hold: {condition} — the judge saw: {}",
+                            verdict.reason
+                        ),
+                        hint: Some(
+                            "this verdict is a judgement rather than a measurement; another run may answer differently"
+                                .into(),
+                        ),
+                        ..Default::default()
+                    })));
+                }
+                Ok(RunStepReport::Ok)
+            }
+            Step::ExtractWithAI { into, fields } => {
+                let png = self.app.screenshot().await?;
+                let extracted = smix_ai_tier::extract(&png, fields, &self.ai_cfg).await?;
+                for (field, value) in extracted {
+                    // The output store is flat — no nested objects — so `into`
+                    // is a key prefix, not an object. Read a field back with
+                    // `${output["order.total"]}`.
+                    self.output
+                        .insert(format!("{into}.{field}"), crate::ExprValue::String(value));
                 }
                 Ok(RunStepReport::Ok)
             }

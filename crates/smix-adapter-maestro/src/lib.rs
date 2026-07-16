@@ -271,7 +271,8 @@ pub(crate) use expr::{Context as ExprContext, parse_and_eval as expr_eval};
 pub use expr::Value as ExprValue;
 
 pub use parser::{
-    parse_flow_file, parse_flow_yaml, set_auto_ocr_fallback_override, text_to_pattern,
+    parse_flow_file, parse_flow_yaml, set_ai_assertions_override, set_auto_ocr_fallback_override,
+    text_to_pattern,
     visible_to_selector,
 };
 pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebugRecord};
@@ -808,6 +809,27 @@ pub enum Step {
         /// Empty Vec for scalar form.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         mask: Vec<MaskRegion>,
+    },
+    /// Ask the AI judge whether a plain-language condition holds on the
+    /// current screen.
+    ///
+    /// Unlike every other assert, this one is a judgement rather than a
+    /// measurement: the verdict comes from a local `claude` CLI reading a
+    /// screenshot, and the same screen may not produce the same answer
+    /// twice. Opt-in, and the runtime marks the result as non-deterministic.
+    AssertCondition {
+        /// The condition, in plain language.
+        condition: String,
+    },
+    /// Have the AI judge read structured fields off the screen into the
+    /// output store, for later `assertTrue` expressions.
+    ///
+    /// Non-deterministic, on the same terms as [`Step::AssertCondition`].
+    ExtractWithAI {
+        /// Key the extracted object lands under in `output.*`.
+        into: String,
+        /// Field names to read off the screen.
+        fields: Vec<String>,
     },
     /// Await a single log signal matching `regex` (optionally
     /// constrained by `level`) within `timeout_ms`, over the specified
