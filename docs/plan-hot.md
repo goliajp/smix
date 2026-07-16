@@ -52,18 +52,11 @@ pgrep -fl "gradle|mobilegate|emulator"                  # C3 不碰 Android，�
 **重构**
 - 无。
 
-### S3. OCR 键盘字符 fallback（spec F）
+### S3. ~~OCR 键盘字符 fallback（spec F）~~ — **撤回，不建**
 
-**红**
-- 文件：`crates/smix-adapter-maestro/tests/runtime_mock.rs`
-- 断言：(a) mock 的 `fill` 后 OCR 读回缺字 → 触发重试；(b) 干净输入 → **不**产生 OCR 往返（快路径不被拖慢）；(c) 重试仍缺 → 明确失败，不静默通过。
+动手前回源核对，发现 dossier 的前提是误读。源文档 `insight-v1.0-comprehensive.md:85` 原话是「**not implemented** — **subsumed by §P0-A** … **if a future consumer surfaces a case §P0-A doesn't cover**」：从未实现、从未在 flag 后、且**条件从未满足**（§P0-A `:41` 标 ✅ SHIPPED，经 daemon 级 `sendString` 等键盘就绪；无人报告过 `inputText` 丢字符）。且 OCR 核验打字文本在密码/长文本/格式化输入上必然误报 —— 是**降级**而非能力。详见 `docs/v2.md` 决策日志。
 
-**绿**
-- `smix-input` / runtime：`fill` 后按需 OCR 核验；仅在 OCR 兜底已启用时生效。
-- 关键点：这是 sense(verify) + act(retry) 的组合，两者都在 core。
-
-**重构**
-- 无。
+**替代 S3：real-sim 实测**（S1/S2 的诚实收尾，见验收段）。
 
 ## Checkpoint C3 验收
 
