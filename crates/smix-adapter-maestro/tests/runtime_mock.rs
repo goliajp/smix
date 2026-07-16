@@ -177,12 +177,18 @@ struct MockApp {
     /// Canned return for `webview_eval`. Defaults to JSON
     /// `null`; tests set via `with_webview_result(serde_json::json!(...))`.
     webview_result: Mutex<serde_json::Value>,
-    /// Frame sequence for `screenshot()`. Empty (default) = the opaque
-    /// `PNG-MOCK` bytes every other test relies on. When set, each call takes
-    /// the next frame and the last one repeats — so "moves, then settles and
-    /// stays settled" needs no padding.
+    /// Frame sequence for `screenshot()`. Empty (default) = a flat PNG.
+    /// Otherwise each call takes the next frame; what happens at the end is
+    /// `screenshot_cycles`.
     screenshot_frames: Mutex<Vec<Vec<u8>>>,
     screenshot_calls: Mutex<usize>,
+    /// At the end of the sequence: repeat the last frame (false, the default)
+    /// or wrap around (true).
+    ///
+    /// Repeating models "moves, then settles and stays settled". Cycling
+    /// models a screen that never settles — a spinner — which repeating
+    /// cannot express, since a repeated frame is by definition still.
+    screenshot_cycles: Mutex<bool>,
 }
 
 impl MockApp {
@@ -201,14 +207,24 @@ impl MockApp {
             webview_result: Mutex::new(serde_json::Value::Null),
             screenshot_frames: Mutex::new(Vec::new()),
             screenshot_calls: Mutex::new(0),
+            screenshot_cycles: Mutex::new(false),
         }
     }
 
     /// Hand `screenshot()` a frame sequence. The last frame repeats once the
-    /// sequence runs out.
+    /// sequence runs out, so the screen settles and stays settled.
     #[allow(dead_code)]
     fn with_screenshot_frames(self, frames: Vec<Vec<u8>>) -> Self {
         *self.screenshot_frames.lock().unwrap() = frames;
+        self
+    }
+
+    /// Hand `screenshot()` a frame sequence that wraps around — a screen that
+    /// never settles.
+    #[allow(dead_code)]
+    fn with_screenshot_cycle(self, frames: Vec<Vec<u8>>) -> Self {
+        *self.screenshot_frames.lock().unwrap() = frames;
+        *self.screenshot_cycles.lock().unwrap() = true;
         self
     }
 
@@ -622,7 +638,11 @@ impl AppLike for MockApp {
             return Ok(mock_png(128));
         }
         let mut n = self.screenshot_calls.lock().unwrap();
-        let idx = (*n).min(frames.len() - 1);
+        let idx = if *self.screenshot_cycles.lock().unwrap() {
+            *n % frames.len()
+        } else {
+            (*n).min(frames.len() - 1)
+        };
         *n += 1;
         Ok(frames[idx].clone())
     }
@@ -2863,14 +2883,7 @@ async fn wait_for_animation_gives_up_at_the_ceiling_and_says_so() {
     // tolerance. The step must not hang, and must not pretend it settled.
     let flicker_a = mock_png_sized(64, 64, |_, _| 0);
     let flicker_b = mock_png_sized(64, 64, |_, _| 255);
-    let app = MockApp::new().with_screenshot_frames(vec![
-        flicker_a.clone(),
-        flicker_b.clone(),
-        flicker_a.clone(),
-        flicker_b.clone(),
-        flicker_a,
-        flicker_b,
-    ]);
+    let app = MockApp::new().with_screenshot_cycle(vec![flicker_a, flicker_b]);
     let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd: 200\n").unwrap();
 
     let mut adapter = Adapter::new(&app, fixtures_dir());
@@ -2885,21 +2898,54 @@ async fn wait_for_animation_gives_up_at_the_ceiling_and_says_so() {
 }
 
 #[tokio::test]
-async fn wait_for_animation_on_a_still_screen_is_cheap() {
-    // The case the old fixed sleep always charged for: nothing was animating.
+async fn wait_for_animation_on_a_still_screen_takes_two_samples_and_stops() {
+    // A still screen settles on the first comparison, so the step ends after
+    // exactly two captures.
+    //
+    // Note what this does *not* claim. On a real sim a screenshot round-trip
+    // is ~174ms and the compare ~39ms, so a still screen costs ~387ms against
+    // the 400ms sleep this replaced — a wash, not a saving. The win is
+    // elsewhere: an animation longer than the ceiling used to be truncated
+    // silently, and a defensive `waitForAnimationToEnd: 5000` used to cost the
+    // full 5s. The mock's instant screenshots would happily let this test
+    // assert a speedup that the hardware does not deliver.
     let app = MockApp::new();
     let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd\n").unwrap();
 
-    let started = std::time::Instant::now();
     let mut adapter = Adapter::new(&app, fixtures_dir());
     adapter.run(&flow).await.expect("run ok");
-    let elapsed = started.elapsed();
 
-    // The default ceiling is 400ms; a still screen should cost about one
-    // sampling cadence, not the ceiling.
+    let shots = app
+        .calls()
+        .iter()
+        .filter(|c| matches!(c, MockCall::Screenshot))
+        .count();
+    assert_eq!(
+        shots, 2,
+        "a still screen should settle on the first comparison, not keep sampling"
+    );
+}
+
+#[tokio::test]
+async fn wait_for_animation_beats_a_large_ceiling_by_a_wide_margin() {
+    // Where the change actually pays: someone set a defensive ceiling, and the
+    // animation was short. The old sleep charged the whole 5s.
+    let app = MockApp::new().with_screenshot_frames(moving_then_settled());
+    let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd: 5000\n").unwrap();
+
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("run ok");
+
+    let shots = app
+        .calls()
+        .iter()
+        .filter(|c| matches!(c, MockCall::Screenshot))
+        .count();
+    // Four captures against a 5s ceiling — on real hardware roughly 850ms of
+    // sampling instead of five seconds of sleeping.
     assert!(
-        elapsed < std::time::Duration::from_millis(300),
-        "a still screen should not pay the 400ms ceiling; took {elapsed:?}"
+        shots <= 5,
+        "settling should end the wait; a 5s ceiling should not mean 5s of sampling (took {shots} captures)"
     );
 }
 

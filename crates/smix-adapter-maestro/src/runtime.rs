@@ -1381,15 +1381,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// treating it as "still moving" would burn the whole ceiling on every
     /// step and look like a slow device.
     async fn wait_until_still(&self, ceiling_ms: u64) -> Result<bool, RunError> {
-        // Each sample costs a screenshot round-trip, so the cadence sets both
-        // how fast stillness is noticed and what the verb costs on a screen
-        // that was never moving.
-        const CADENCE_MS: u64 = 60;
-
+        // No sleep between samples: the capture is the interval. Measured on a
+        // booted sim, a simctl screenshot round-trip is ~174 ms and the
+        // compare ~39 ms, so consecutive frames are already ~174 ms apart —
+        // a fine spacing to see an animation in. Sleeping on top of that
+        // would only make the verb slower without sampling anything new.
         let deadline = std::time::Instant::now() + Duration::from_millis(ceiling_ms);
         let mut previous = self.app.screenshot().await?;
         loop {
-            tokio::time::sleep(Duration::from_millis(CADENCE_MS)).await;
             let next = self.app.screenshot().await?;
             if smix_sdk::quiescence::frames_are_still(&previous, &next, &self.quiescence)? {
                 return Ok(true);
