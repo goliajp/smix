@@ -1,79 +1,84 @@
-# plan-hot — v2 到 C3：真 animation-idle + OCR 键盘字符 fallback
+# plan-hot — v2 到 C4：MCP 全驱动面
 
 ## 目标 checkpoint
 
-C3：`waitForAnimationToEnd` 从**固定 sleep** 变成**真的等到静止**（frame-diff 静默检测），`fill` 的字符落地由 OCR 兜底核验。通过后世界：§9#4「不提供裸 sleep」在字面上成立 —— 现存最后一处「等待与可观察条件无关」的实现被消掉。
+C4：外部 agent 能只经 MCP 跑完一次真实会话 —— 启动 app → 找 → 点 → 输入 → 滚动 → 断言 → 出错时拿到可读诊断。通过后世界：「smix 是 AI dev/debug 闭环里的执行底座」这句话有可执行的证据，而不是 dossier 里的一句话。
 
 ## 前置条件
 
 ```bash
-git log --oneline -1                                    # 期望 C2 已提交（6788b1ae1 或其后）
-python3 scripts/dev/hygiene-scan.py --noise-only        # 期望 clean
-bash scripts/dev/fence-check.sh                         # 期望 clean（C2 围栏不回归）
-cargo test -p smix-adapter-maestro --test verb_table_gate   # 期望 2 passed
-pgrep -fl "runner.ts|smix run|supervise"                # 期望空
-pgrep -fl "gradle|mobilegate|emulator"                  # C3 不碰 Android，但 Swift 侧编译要 CPU
+git log --oneline -1                                  # 期望 C3 已提交（57774207c 或其后）
+python3 scripts/dev/hygiene-scan.py --noise-only      # 期望 clean
+bash scripts/dev/fence-check.sh                       # 期望 clean
+cargo test -p smix-adapter-maestro --test verb_table_gate  # 期望 2 passed
+pgrep -fl "runner.ts|smix run|supervise"              # 期望空
 ```
 
-## 已确证的起点（C2 收尾时查实，不必重查）
+## 已确证的起点（C3 收尾时查实）
 
-- `parser.rs:1279-1283` 自陈：**「this verb is a FIXED sleep in smix, not an XCTest quiescence wait」**。`SmixQuiescenceSwizzle.m` 为性能把 XCTest 的 idle-wait no-op 掉了，而该 verb 本来也没走那条路。400ms 默认值是为 maestro 兼容留的。
-- 该 verb 实际接受**三种形式**：bare（400ms 默认）/ 数字（ms）/ `{timeout: N}` 映射。
-- 但 `VERB_TABLE` 记的 `arg_shape` 是 **`None`** —— `ArgShape` 是单值枚举，**表达不了联合**。C1 的 gate 只验「verb 在不在表里」，不验 arg_shape 准不准，所以抓不到这类失真。
+- MCP 现有 **6** 个 tool：`smix_describe` / `smix_tree` / `smix_find_text` / `smix_tap_text` / `smix_press_key` / `smix_screenshot`。`App::` 有 **68** 个公开 async 方法。
+- **`smix_tap_by_id` 不存在** —— MCP 只能按文本点。而 `docs/ai-guide/03-selectors.md` 把 id 列为最稳的选择器，`examples/hello.yaml` 也全用 id。**MCP 拿不到自家推荐的那条路**。
+- `App::tap(&Selector)` 吃完整 `Selector`；`Selector` 是 serde untagged + camelCase wire。即 MCP 可以直接收选择器对象，不必每种选择器开一个 tool。
 
 ## 步骤（线性）
 
-### S1. frame-diff 静默检测（sense 层）
+### S1. 选择器入参形状（先定，否则每个 tool 都要返工）
 
-**红（写测试）**
-- 文件：`crates/smix-screen/tests/quiescence.rs`
-- 断言：(a) 两帧像素差 < ε 且连续 N 次 → `idle`；(b) 持续变化的帧序列在 ceiling 之前**不**报 idle；(c) 静止帧在一个 cadence 窗口内报 idle；(d) ε / N / cadence 是显式参数而非魔数。
-- 纯函数先行：判定逻辑吃「帧序列」而非设备，可无设备单测。
+**决策点**：MCP 的点/找/断言类 tool 怎么收选择器？
+- (a) 每种选择器一个 tool（`tap_text` / `tap_id` / `tap_role` …）→ 组合爆炸，且新增选择器要动 MCP。
+- (b) 一个 tool 收 `Selector` JSON blob → 最强，但 `Selector` 是 untagged enum，`JsonSchema` 对它不友好，agent 读到的 schema 会含糊。
+- (c) **一个 tool + 扁平可选字段**（`{ id?, text?, label?, role?, ocrText? }`），镜像 yaml 短形式，内部构造 `Selector`。
 
-**绿（实现）**
-- 文件：`crates/smix-screen/src/`（新增 quiescence 模块）
-- API：`pub fn is_quiescent(prev: &[u8], next: &[u8], epsilon: f32) -> bool` + 一个吃采样迭代器的判定器
-- 关键点：判定是**纯逻辑**（stone 层，可单测）；**采样**是 I/O，留给调用方注入。这样 sense 判定不依赖 runner。
-
-**重构**
-- 无。
-
-### S2. 接线 + arg_shape 失真收敛
+**倾向 (c)**：agent 读到的 schema 自解释、与 yaml 表面同构、新增选择器只加一个可选字段。**恰好一个字段必须给** —— 零个或多个都是明确报错（不猜）。
 
 **红**
-- 文件：`crates/smix-adapter-maestro/tests/runtime_mock.rs`
-- 断言：(a) mock 的帧序列「先动后静」→ bare `waitForAnimationToEnd` 等到静止才返回，且**早于** ceiling；(b) 一直动 → 到 ceiling 返回并 warn（不静默假装 idle）；(c) 数字形式 `waitForAnimationToEnd: 500` 保持 maestro 兼容语义（**显式 sleep，不做 idle 检测** —— 用户点名要 500ms 就给 500ms）。
+- 文件：`crates/smix-mcp/tests/selector_params.rs`
+- 断言：(a) `{id:"foo"}` → `Selector::Id`；(b) `{text:"Submit"}` → `Selector::Text`；(c) 空对象 → 明确错误且**指出该给哪些字段**；(d) `{id, text}` 同给 → 明确错误（不静默取其一）。
 
 **绿**
-- runtime：bare/`{timeout}` 走 idle 检测（timeout 作 ceiling）；数字形式保持 sleep。
-- `VERB_TABLE`：`waitForAnimationToEnd` 的 arg_shape 现状 `None` 与实际三形式不符。**二选一并记决策**：(i) 给 `ArgShape` 加联合表达（改动波及整表 + codemod），或 (ii) 承认 arg_shape 是「主形式」的近似、在 `smix-verbs` 头部注释里写清它不是完备契约。倾向 (ii) —— (i) 的收益不抵其 blast radius，且 arg_shape 自陈就是 "informational"。
-- **顺带**：C1 的 gate 只验成员关系。若选 (ii)，把「arg_shape 是近似」这一事实写进 gate 测试的注释，免得后人再当契约读。
+- `smix-mcp`：`SelectorParams` + `fn to_selector(&self) -> Result<Selector, McpError>`。
 
-**重构**
-- 无。
+### S2. 补齐驱动面
 
-### S3. ~~OCR 键盘字符 fallback（spec F）~~ — **撤回，不建**
+**红**
+- 文件：`crates/smix-mcp/tests/tools.rs`（新，mock 或 schema 级）
+- 断言：每个新 tool 的 schema 有非空 description（它就是 agent 的**唯一**文档）、参数可解析、错误经 `to_prompt()` 出（不是 `Debug`）。
 
-动手前回源核对，发现 dossier 的前提是误读。源文档 `insight-v1.0-comprehensive.md:85` 原话是「**not implemented** — **subsumed by §P0-A** … **if a future consumer surfaces a case §P0-A doesn't cover**」：从未实现、从未在 flag 后、且**条件从未满足**（§P0-A `:41` 标 ✅ SHIPPED，经 daemon 级 `sendString` 等键盘就绪；无人报告过 `inputText` 丢字符）。且 OCR 核验打字文本在密码/长文本/格式化输入上必然误报 —— 是**降级**而非能力。详见 `docs/v2.md` 决策日志。
+**绿** —— 按「agent 跑完一次会话真正需要什么」补，不是按 dossier 清单照抄：
+- `smix_tap`（收 SelectorParams —— **补上缺失的 by-id**）
+- `smix_fill`（selector + text）
+- `smix_swipe`（direction）· `smix_scroll`
+- `smix_launch_app` / `smix_stop_app`（没有这两个，agent 无法起手）
+- `smix_assert_visible` / `smix_assert_not_visible`
+- `smix_diagnostic_dump`（出错时 agent 自救的入口）
+- 关键点：每个 tool 映射一个已有 `App::` 方法，**不在 MCP 层写新逻辑**。
 
-**替代 S3：real-sim 实测**（S1/S2 的诚实收尾，见验收段）。
+**不做，且记理由**：
+- **不暴露 AI 断言层**。经 MCP 驱动的已经是一个 agent —— 它能直接看 `smix_screenshot`。让 agent 调一个 tool 去请另一个模型判断它自己看得见的屏幕，是绕路，不是能力。
+- 不暴露 68 个方法。MCP 是驱动面，不是 SDK 镜像。
 
-## Checkpoint C3 验收
+### S3. 文档 + 诚实收尾
+
+**绿**
+- 重写 MCP README（现为 stub）：连接模型、env、tool 全表、`.mcp.json` 拷贝即用。
+- `docs/ai-guide/` 补 MCP 设置页（dossier 的 docs-web 已 spec 过）。
+- **schema 里的英文即文档** —— C1 修 `跟` 那次教训：这些字符串直接送给每个连上来的 agent。
+
+## Checkpoint C4 验收
 
 ```bash
-cargo test -p smix-screen 2>&1 | tail -3                          # 期望 all pass（含 quiescence）
-cargo test -p smix-adapter-maestro 2>&1 | grep -c FAILED           # 期望 0
-cargo test --workspace 2>&1 | grep -c "^test result: ok"           # 期望 ≥124（不回退）
+cargo test -p smix-mcp 2>&1 | tail -3                              # 期望 all pass
 cargo build --workspace 2>&1 | grep -c warning                     # 期望 0
 python3 scripts/dev/hygiene-scan.py --noise-only                    # 期望 clean
 bash scripts/dev/fence-check.sh                                     # 期望 clean
-cd swift-bridge && swift test 2>&1 | grep "Executed"                # 期望 0 failures
-xcodebuild build-for-testing -project swift-bridge/SmixRunner.xcodeproj \
-  -scheme SmixRunner -destination 'generic/platform=iOS Simulator'  # 期望 exit 0（C1 发现：此前无 gate 编译它）
+# 每个 tool 的 schema description 非空（它是 agent 唯一的文档）
+cargo run -p smix-mcp -- --dump-schema 2>/dev/null | python3 -c "import sys,json; ..."  # 若无此 flag，S2 顺带加
 ```
-期望：全部通过。**真机验证留 real-sim smoke**：frame-diff 的 ε / cadence 只有在真模拟器上才有意义 —— 纯逻辑单测证明不了「400ms 固定 sleep 换成 idle 检测后，真实动画不早退」。这条要么本 checkpoint 做一次 real-sim smoke，要么明确记为「做了+未验证」。
+期望：全部通过。
+
+**真机端到端留 real-sim smoke**：schema 测试证明不了「agent 真能跑完一次会话」。C3 的教训 —— mock 会证明硬件给不了的东西。要么本 checkpoint 起一次 runner + 真 MCP 会话（起 runner 前必查 batch 占有者），要么明记「做了+未验证」。
 
 ## 完成后动作
 
-1. 归档本文件到 `docs/plan-history/v2-c3-hot.md`
-2. 生成新 `plan-hot.md`（到 C4：MCP 全驱动面），见 CLAUDE.md §6
+1. 归档本文件到 `docs/plan-history/v2-c4-hot.md`
+2. 生成新 `plan-hot.md`（到 C5：Android parity 门禁），见 CLAUDE.md §6
