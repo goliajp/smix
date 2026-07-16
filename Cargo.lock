@@ -2833,6 +2833,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_norway",
+ "smix-ai-tier",
  "smix-annotate",
  "smix-driver",
  "smix-fixture",

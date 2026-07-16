@@ -51,6 +51,69 @@ pub async fn judge(
     condition: &str,
     cfg: &AiTierConfig,
 ) -> Result<StructuredVerdict, ExpectationFailure> {
+    let reply = with_staged_image(screenshot_png, cfg, |image| {
+        format!(
+            "Read the screenshot at {}.\n\n\
+             Decide whether this condition holds on that screen:\n\
+             {condition}\n\n\
+             Reply with one JSON object and nothing else:\n\
+             {{\"pass\": true|false, \"reason\": \"<one sentence naming what you saw>\"}}",
+            image.display()
+        )
+    })
+    .await?;
+
+    parse_json_object(&reply).ok_or_else(|| {
+        driver_error(
+            format!(
+                "ai-tier: no verdict in the judge's reply — wanted a JSON object, got: {}",
+                reply.trim()
+            ),
+            Some("the judge answered but not in the shape asked for; this is not an assertion failure".into()),
+        )
+    })
+}
+
+/// Read `fields` off the screen.
+///
+/// Values come back as strings. The expression engine's output store is flat
+/// and stringly-typed, and what a judge reads off a screen is text anyway.
+pub async fn extract(
+    screenshot_png: &[u8],
+    fields: &[String],
+    cfg: &AiTierConfig,
+) -> Result<std::collections::BTreeMap<String, String>, ExpectationFailure> {
+    let wanted = fields.join(", ");
+    let reply = with_staged_image(screenshot_png, cfg, |image| {
+        format!(
+            "Read the screenshot at {}.\n\n\
+             Read these fields off that screen: {wanted}\n\n\
+             Reply with one JSON object and nothing else, mapping each field \
+             name to its value as a string. Use an empty string for a field \
+             you cannot find:\n\
+             {{\"<field>\": \"<value>\"}}",
+            image.display()
+        )
+    })
+    .await?;
+
+    parse_json_object(&reply).ok_or_else(|| {
+        driver_error(
+            format!(
+                "ai-tier: no field object in the judge's reply — wanted a JSON object, got: {}",
+                reply.trim()
+            ),
+            Some("the judge answered but not in the shape asked for".into()),
+        )
+    })
+}
+
+/// Stage the screenshot where the CLI can read it, ask, then clean up.
+async fn with_staged_image(
+    screenshot_png: &[u8],
+    cfg: &AiTierConfig,
+    prompt: impl FnOnce(&Path) -> String,
+) -> Result<String, ExpectationFailure> {
     // The CLI reads the image off disk, so it has to land somewhere first.
     let image = scratch_png_path();
     tokio::fs::write(&image, screenshot_png)
@@ -65,24 +128,20 @@ pub async fn judge(
             )
         })?;
 
-    let verdict = ask(&image, condition, cfg).await;
+    let reply = ask(prompt(&image), cfg).await;
     // Best-effort: a leftover temp png must never turn into a flow failure.
     let _ = tokio::fs::remove_file(&image).await;
-    verdict
+    reply
 }
 
-async fn ask(
-    image: &Path,
-    condition: &str,
-    cfg: &AiTierConfig,
-) -> Result<StructuredVerdict, ExpectationFailure> {
+async fn ask(prompt: String, cfg: &AiTierConfig) -> Result<String, ExpectationFailure> {
     let mut cmd = Command::new(&cfg.claude_bin);
     // `-p` needs an explicit `--tools`; `Read` is the narrowest set that can
     // still open the screenshot.
     cmd.arg("--tools")
         .arg("Read")
         .arg("-p")
-        .arg(build_prompt(image, condition))
+        .arg(prompt)
         .arg("--output-format")
         .arg("text")
         // Timing out only drops the future — without this the judge keeps
@@ -124,16 +183,7 @@ async fn ask(
         ));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_verdict(&stdout).ok_or_else(|| {
-        driver_error(
-            format!(
-                "ai-tier: no verdict in the judge's reply — wanted a JSON object, got: {}",
-                stdout.trim()
-            ),
-            Some("the judge answered but not in the shape asked for; this is not an assertion failure".into()),
-        )
-    })
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 fn driver_error(message: String, hint: Option<String>) -> ExpectationFailure {
@@ -153,24 +203,13 @@ fn scratch_png_path() -> PathBuf {
     std::env::temp_dir().join(format!("smix-ai-tier-{}-{nanos}.png", std::process::id()))
 }
 
-fn build_prompt(image: &Path, condition: &str) -> String {
-    format!(
-        "Read the screenshot at {}.\n\n\
-         Decide whether this condition holds on that screen:\n\
-         {condition}\n\n\
-         Reply with one JSON object and nothing else:\n\
-         {{\"pass\": true|false, \"reason\": \"<one sentence naming what you saw>\"}}",
-        image.display()
-    )
-}
-
-/// Take the verdict out of the reply, tolerating prose around it — models
-/// like to introduce themselves, and that is not a reason to fail a flow.
-fn parse_verdict(stdout: &str) -> Option<StructuredVerdict> {
-    let start = stdout.find('{')?;
-    let end = stdout.rfind('}')?;
+/// Take the object out of the reply, tolerating prose around it — models like
+/// to introduce themselves, and that is not a reason to fail a flow.
+fn parse_json_object<T: serde::de::DeserializeOwned>(reply: &str) -> Option<T> {
+    let start = reply.find('{')?;
+    let end = reply.rfind('}')?;
     if end < start {
         return None;
     }
-    serde_json::from_str(&stdout[start..=end]).ok()
+    serde_json::from_str(&reply[start..=end]).ok()
 }

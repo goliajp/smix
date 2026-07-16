@@ -175,6 +175,22 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Assert,
         ArgShape::Mapping,
     ),
+    // The AI-assertion tier. Opt-in and non-deterministic: a verdict comes
+    // from a local `claude` CLI judging a screenshot, so these two are the
+    // only verbs in the table whose result is a judgement rather than a
+    // measurement.
+    v(
+        "assertWithAI",
+        "assertCondition",
+        VerbCategory::Assert,
+        ArgShape::BareString,
+    ),
+    v(
+        "extractTextWithAI",
+        "extractWithAI",
+        VerbCategory::Assert,
+        ArgShape::Mapping,
+    ),
     // ----- Control flow -----
     v(
         "runFlow",
@@ -417,12 +433,11 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Assert,
         ArgShape::None,
     ),
-    // Note: `evalScript` / `runScript` / `assertWithAI` deliberately
-    // NOT in the table — they're valid maestro verbs but flagged as
-    // unknown by migrate to warn corpus maintainers that porting
-    // requires manual review (typical case: script bodies contain
-    // maestro-specific APIs). Consumers who want them silently
-    // preserved can add rows locally.
+    // Note: `evalScript` / `runScript` deliberately NOT in the table —
+    // they're valid maestro verbs but flagged as unknown by migrate to
+    // warn corpus maintainers that porting requires manual review
+    // (typical case: script bodies contain maestro-specific APIs).
+    // Consumers who want them silently preserved can add rows locally.
 ];
 
 const fn v(

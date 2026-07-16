@@ -47,8 +47,9 @@ pgrep -fl "runner.ts|smix run|supervise"                # 期望空
 
 ### S3. 围栏证明 + 文档
 
-**红（可执行的删除性）**
-- 命令：临时从 workspace 移除 `smix-ai-tier` 并 stub 掉两个 verb → `cargo test -p smix-selector -p smix-selector-resolver -p smix-screen` **必须全绿**（sensing 零改动）。这条是 §9#2 的机器可判证明，不是口头声明。
+**红（可执行的围栏证明）**
+- 命令：`bash scripts/dev/fence-check.sh` —— 断言 sense path 上的每个 crate（selector / selector-resolver / host-coord-resolver / screen / driver / error / input / runner-wire / runner-client）**在依赖树里都到不了 `smix-ai-tier`**（`cargo tree -e normal`，含传递依赖）。
+- 为什么用依赖树而非 grep：grep 只看得见直接的 `use`，看不见传递依赖；而「删掉 crate 不影响 sensing」这个性质，等价于「sensing 的依赖树里没有它」，后者是静态可判、可 CI 的。这是 §9#2 的机器可判证明，不是注释里的声明。
 
 **绿**
 - 恢复；把该删除性测试固化成 CI 可跑的形式（feature flag 或文档化命令）。
@@ -65,7 +66,7 @@ cargo test -p smix-adapter-maestro 2>&1 | grep -c "FAILED"         # 期望 0
 cargo test -p smix-adapter-maestro --test verb_table_gate          # 期望 pass（新 verb 已进表）
 cargo build --workspace 2>&1 | grep -c warning                     # 期望 0
 python3 scripts/dev/hygiene-scan.py --noise-only                   # 期望 clean
-grep -rn "smix_ai_tier\|smix-ai-tier" crates/smix-selector crates/smix-selector-resolver crates/smix-screen crates/smix-driver | wc -l   # 期望 0（围栏：sensing 不得引用 AI 层）
+bash scripts/dev/fence-check.sh                                     # 期望 exit 0 "clean"（围栏：sense path 的依赖树到不了 AI 层）
 ```
 期望：全部通过。最后一条是围栏的静态证明 —— sensing / driver 侧对 AI 层零引用。
 
