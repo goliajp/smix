@@ -23,7 +23,11 @@
 /// Visual regression perceptual hash (dhash 64-bit). Crate-internal:
 /// `compute_dhash` + `hamming_distance` back the public
 /// `App::assert_screenshot`, not part of the SDK surface.
+pub(crate) mod png_gray;
 pub(crate) mod screenshot_hash;
+
+/// Frame-to-frame stillness, backing `waitForAnimationToEnd`.
+pub mod quiescence;
 
 pub mod issued_ledger;
 pub use issued_ledger::{IssuedAction, IssuedKind, IssuedLedger};
