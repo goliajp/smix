@@ -17,25 +17,32 @@ use crate::png_gray::decode_gray;
 
 /// What counts as still.
 ///
-/// The defaults are reasoned rather than measured — see the note on
-/// `max_moved_samples`. They want a real simulator before anyone treats them
-/// as tuned.
+/// The defaults are measured against a booted simulator at device resolution
+/// (1206×2622): a settled screen reads as still, a real launch transition
+/// reads as motion for its whole duration, a caret-sized region is tolerated,
+/// and a spinner-sized one is not.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct QuiescenceParams {
     /// Frames are compared on a `grid × grid` lattice rather than pixel by
     /// pixel: a screenshot is millions of pixels, and comparing all of them
-    /// every cadence would cost more than the wait being replaced.
+    /// would cost more than the wait being replaced.
     pub grid: usize,
     /// A sample counts as moved when its grayscale differs by more than this.
-    /// Absorbs encoder noise and dithering, which are not motion.
+    ///
+    /// A small guard rather than a noise filter. Measured on a settled sim
+    /// screen, consecutive screenshots are *pixel-identical* — zero samples
+    /// differ — because the renderer is deterministic and there is no camera
+    /// or encoder in the path. This exists so a single level of rounding
+    /// somewhere cannot read as motion.
     pub pixel_delta: u8,
     /// How many moved samples still count as still.
     ///
-    /// Deliberately not zero. A blinking caret never stops, and a screen with
-    /// one in it would never be still — so every wait on a text field would
-    /// run to the ceiling, which is worse than the sleep this replaces. A
-    /// caret lands on about one sample; a spinner or a transition covers
-    /// considerably more.
+    /// This is the one doing real work, and it is deliberately not zero. A
+    /// blinking caret never stops, so a screen with one would never be still
+    /// and every wait on a text field would run to the ceiling — worse than
+    /// the sleep this replaces. At device resolution a 3pt×20pt caret lands
+    /// on a handful of samples; a spinner covers many more, and still reads
+    /// as motion.
     pub max_moved_samples: usize,
 }
 
@@ -131,13 +138,17 @@ mod tests {
     }
 
     #[test]
-    fn noise_under_the_pixel_delta_is_not_motion() {
-        // Encoder noise and dithering wobble a value or two. That is not the
-        // screen doing something.
+    fn a_level_of_rounding_is_not_motion() {
+        // A settled sim screen is pixel-identical frame to frame, so this
+        // guard has nothing to absorb in practice. It is here so that one
+        // level of difference somewhere cannot read as a moving screen.
         let a = flat(128);
         let b = encode(W, H, |x, y| if (x + y) % 2 == 0 { 130 } else { 126 });
         let p = QuiescenceParams::default();
-        assert!(p.pixel_delta >= 2, "the case only means something below the threshold");
+        assert!(
+            p.pixel_delta >= 2,
+            "the case only means something below the threshold"
+        );
         assert!(frames_are_still(&a, &b, &p).unwrap());
     }
 
