@@ -2859,6 +2859,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "smix-ai-tier"
+version = "1.0.27"
+dependencies = [
+ "serde",
+ "serde_json",
+ "smix-error",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "smix-annotate"
 version = "1.0.27"
 dependencies = [
