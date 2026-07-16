@@ -10,6 +10,11 @@
 //! `ACCEPTED` mirrors the `parse_step` match arms in `src/parser.rs`. When a
 //! verb is added to the dispatch, add it here (and to VERB_TABLE) — this test
 //! makes forgetting the table entry a hard failure.
+//!
+//! Scope: membership only. It does not check `arg_shape`, and deliberately —
+//! that field holds one value while plenty of verbs accept several yaml
+//! shapes, so it names the primary one rather than stating a contract. The
+//! parser is the authority on what parses.
 
 /// Every top-level verb the parser accepts (canonical, post-normalize),
 /// mirroring the `parse_step` dispatch. Excludes the two script verbs.

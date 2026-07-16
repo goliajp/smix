@@ -364,27 +364,34 @@ pub enum Step {
         /// eval and discard.
         assert_eq: Option<serde_json::Value>,
     },
-    /// Wait for animations to settle. **NOT** an XCTest idle-wait —
-    /// `SmixQuiescenceSwizzle.m` no-ops XCTest's idle wait for
-    /// performance (RN long-running animations would otherwise stall
-    /// every operation). This verb is a **fixed sleep** in the smix
-    /// implementation, 400 ms by default.
+    /// Wait for the screen to stop moving.
     ///
-    /// Accepts a numeric override:
-    /// - `- waitForAnimationToEnd` — 400 ms sleep (default)
-    /// - `- waitForAnimationToEnd: 500` — 500 ms sleep (integer = ms)
+    /// Returns as soon as two sampled frames are still, so a flow pays
+    /// only for the animation that actually ran. The number is a
+    /// ceiling:
+    /// - `- waitForAnimationToEnd` — up to 400 ms (maestro's default)
+    /// - `- waitForAnimationToEnd: 500` — up to 500 ms
+    /// - `- waitForAnimationToEnd: { timeout: 5000 }` — maestro's form
     ///
-    /// Use the numeric form when your animation is longer than 400 ms.
-    /// A common misreading is that the quiescence swizzle no-ops this
-    /// verb; it does not — the verb never went through XCTest
-    /// idle-wait in the first place. The 400 ms default is preserved
-    /// for maestro yaml compat.
+    /// Reaching the ceiling is not a failure: the step warns and moves
+    /// on, because a screen that never settles is usually a spinner the
+    /// flow does not care about.
+    ///
+    /// **NOT** an XCTest idle-wait — `SmixQuiescenceSwizzle.m` no-ops
+    /// XCTest's idle wait for performance (RN long-running animations
+    /// would otherwise stall every operation), and this verb never went
+    /// through it anyway. Stillness here is measured by comparing
+    /// screenshots.
     WaitForAnimationToEnd {
-        /// Sleep duration in milliseconds. Bare yaml form
-        /// (`- waitForAnimationToEnd`) parses to 400 ms (maestro-compat
-        /// default); numeric form (`- waitForAnimationToEnd: 500`)
-        /// overrides.
-        duration_ms: u64,
+        /// How long to wait for the screen to stop moving, in
+        /// milliseconds — a ceiling, not a duration. The step returns as
+        /// soon as the screen is still.
+        ///
+        /// All three yaml forms land here: bare
+        /// (`- waitForAnimationToEnd`) → 400 ms, maestro's default;
+        /// numeric (`- waitForAnimationToEnd: 500`); and maestro's
+        /// mapping form (`- waitForAnimationToEnd: { timeout: 5000 }`).
+        ceiling_ms: u64,
     },
     /// Extended wait until a selector matches the expected visibility.
     /// `expect_visible=true` waits for visible (maestro yaml `visible:` arm);

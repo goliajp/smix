@@ -112,6 +112,31 @@ enum MockCall {
     GetClipboard,
 }
 
+/// A flat grayscale PNG, standing in for a device screenshot.
+fn mock_png(shade: u8) -> Vec<u8> {
+    mock_png_sized(64, 64, |_, _| shade)
+}
+
+/// A grayscale PNG built from a pixel callback — the frame fixtures for
+/// quiescence, where what matters is which samples differ between frames.
+fn mock_png_sized(width: u32, height: u32, mut pixel: impl FnMut(u32, u32) -> u8) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut out, width, height);
+        encoder.set_color(png::ColorType::Grayscale);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        let mut data = Vec::with_capacity((width * height) as usize);
+        for y in 0..height {
+            for x in 0..width {
+                data.push(pixel(x, y));
+            }
+        }
+        writer.write_image_data(&data).unwrap();
+    }
+    out
+}
+
 struct MockApp {
     calls: Mutex<Vec<MockCall>>,
     /// describe_selector-keyed map of find responses (true = visible).
@@ -152,6 +177,12 @@ struct MockApp {
     /// Canned return for `webview_eval`. Defaults to JSON
     /// `null`; tests set via `with_webview_result(serde_json::json!(...))`.
     webview_result: Mutex<serde_json::Value>,
+    /// Frame sequence for `screenshot()`. Empty (default) = the opaque
+    /// `PNG-MOCK` bytes every other test relies on. When set, each call takes
+    /// the next frame and the last one repeats — so "moves, then settles and
+    /// stays settled" needs no padding.
+    screenshot_frames: Mutex<Vec<Vec<u8>>>,
+    screenshot_calls: Mutex<usize>,
 }
 
 impl MockApp {
@@ -168,7 +199,17 @@ impl MockApp {
             ocr_result: Mutex::new(None),
             anchor_coord: Mutex::new(Some((0.5, 0.5))),
             webview_result: Mutex::new(serde_json::Value::Null),
+            screenshot_frames: Mutex::new(Vec::new()),
+            screenshot_calls: Mutex::new(0),
         }
+    }
+
+    /// Hand `screenshot()` a frame sequence. The last frame repeats once the
+    /// sequence runs out.
+    #[allow(dead_code)]
+    fn with_screenshot_frames(self, frames: Vec<Vec<u8>>) -> Self {
+        *self.screenshot_frames.lock().unwrap() = frames;
+        self
     }
 
     /// Preset the OCR result `find_by_text_ocr` will return.
@@ -572,7 +613,18 @@ impl AppLike for MockApp {
     }
     async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::Screenshot);
-        Ok(b"PNG-MOCK".to_vec())
+        let frames = self.screenshot_frames.lock().unwrap();
+        if frames.is_empty() {
+            // A real screenshot is a real PNG, and waitForAnimationToEnd
+            // decodes it. Handing back opaque bytes would only mean every
+            // flow containing that verb fails in tests for a reason no user
+            // would ever hit.
+            return Ok(mock_png(128));
+        }
+        let mut n = self.screenshot_calls.lock().unwrap();
+        let idx = (*n).min(frames.len() - 1);
+        *n += 1;
+        Ok(frames[idx].clone())
     }
     async fn get_clipboard(&self) -> Result<String, ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::GetClipboard);
@@ -2767,4 +2819,101 @@ async fn clear_user_defaults_bundle_override_wins() {
         MockCall::ClearUserDefaults(bundle, _) => assert_eq!(bundle, "com.other"),
         other => panic!("expected ClearUserDefaults, got {other:?}"),
     }
+}
+
+// ----------------------------------------------------------------------
+// waitForAnimationToEnd — waiting for stillness rather than sleeping.
+// ----------------------------------------------------------------------
+
+/// Frames for "the screen is animating, then it stops": two moving frames,
+/// then a settled one that repeats.
+fn moving_then_settled() -> Vec<Vec<u8>> {
+    let moving_a = mock_png_sized(64, 64, |x, _| if x < 32 { 0 } else { 255 });
+    let moving_b = mock_png_sized(64, 64, |x, _| if x < 48 { 0 } else { 255 });
+    let settled = mock_png_sized(64, 64, |_, _| 255);
+    vec![moving_a, moving_b, settled]
+}
+
+#[tokio::test]
+async fn wait_for_animation_returns_once_the_screen_settles() {
+    let app = MockApp::new().with_screenshot_frames(moving_then_settled());
+    let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd: 5000\n").unwrap();
+
+    let started = std::time::Instant::now();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let report = adapter.run(&flow).await.expect("run ok");
+    let elapsed = started.elapsed();
+
+    assert!(matches!(report.steps[0], RunStepReport::Ok));
+    // The whole point: a 5s ceiling costs only as long as the animation ran.
+    assert!(
+        elapsed < std::time::Duration::from_millis(2000),
+        "settled early, so the step should not have paid the ceiling; took {elapsed:?}"
+    );
+    assert!(
+        report.warnings.is_empty(),
+        "settling is the normal path and should not warn: {:?}",
+        report.warnings
+    );
+}
+
+#[tokio::test]
+async fn wait_for_animation_gives_up_at_the_ceiling_and_says_so() {
+    // A screen that never stops — a spinner, or a caret bigger than the
+    // tolerance. The step must not hang, and must not pretend it settled.
+    let flicker_a = mock_png_sized(64, 64, |_, _| 0);
+    let flicker_b = mock_png_sized(64, 64, |_, _| 255);
+    let app = MockApp::new().with_screenshot_frames(vec![
+        flicker_a.clone(),
+        flicker_b.clone(),
+        flicker_a.clone(),
+        flicker_b.clone(),
+        flicker_a,
+        flicker_b,
+    ]);
+    let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd: 200\n").unwrap();
+
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let report = adapter.run(&flow).await.expect("hitting the ceiling is not a failure");
+
+    assert!(matches!(report.steps[0], RunStepReport::Ok));
+    assert!(
+        report.warnings.iter().any(|w| w.contains("still moving")),
+        "the flow author needs to know the wait expired: {:?}",
+        report.warnings
+    );
+}
+
+#[tokio::test]
+async fn wait_for_animation_on_a_still_screen_is_cheap() {
+    // The case the old fixed sleep always charged for: nothing was animating.
+    let app = MockApp::new();
+    let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd\n").unwrap();
+
+    let started = std::time::Instant::now();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("run ok");
+    let elapsed = started.elapsed();
+
+    // The default ceiling is 400ms; a still screen should cost about one
+    // sampling cadence, not the ceiling.
+    assert!(
+        elapsed < std::time::Duration::from_millis(300),
+        "a still screen should not pay the 400ms ceiling; took {elapsed:?}"
+    );
+}
+
+#[tokio::test]
+async fn wait_for_animation_surfaces_an_undecodable_frame() {
+    // A frame we cannot compare means a broken toolchain, not a still screen.
+    let app = MockApp::new()
+        .with_screenshot_frames(vec![mock_png(10), b"not a png at all".to_vec()]);
+    let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd\n").unwrap();
+
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let err = adapter.run(&flow).await.expect_err("a broken frame must surface");
+    assert!(
+        format!("{err:?}").contains("PNG decode"),
+        "got: {err:?}"
+    );
 }

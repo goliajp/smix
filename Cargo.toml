@@ -73,6 +73,11 @@ dhat = "0.3"
 # dev-only: property-based testing.
 proptest = "1"
 
+# PNG decode/encode for the screenshot comparisons (dhash, frame-diff
+# quiescence) and for the fixtures that exercise them. The `image` crate
+# would do it too, at ~3MB for a job this narrow.
+png = "0.17"
+
 # dev-only: `tempfile` for test isolation (report files, tmpdir
 # scratch). Preferred over `std::env::temp_dir` for RAII cleanup and
 # collision immunity.

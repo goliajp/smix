@@ -18,8 +18,21 @@
 //!   both fields set to the same string.
 //! - **Category** — grouping for reviewer sanity checks + future
 //!   auto-generated cross-platform parity tables.
-//! - **Arg shape** — reserved for future codemod arg-transform lookup;
-//!   currently informational.
+//! - **Arg shape** — the verb's *primary* yaml shape, and only that.
+//!   Informational, reserved for a future codemod arg-transform lookup.
+//!
+//! # What this table does and does not guarantee
+//!
+//! Membership is enforced: a test in `smix-adapter-maestro` fails if the
+//! parser dispatches a verb with no [`VerbEntry`], so the table cannot
+//! silently fall behind the parser again.
+//!
+//! `arg_shape` is **not** enforced, and cannot be. Many verbs accept more
+//! than one shape — `waitForAnimationToEnd` takes bare, numeric, and
+//! `{ timeout }` — while [`ArgShape`] holds a single value. Teaching it
+//! unions would mean encoding the yaml grammar in an enum that exists to
+//! label rows. So it names the shape a reader should expect first, and the
+//! parser remains the authority on what actually parses.
 
 #![forbid(unsafe_code)]
 
@@ -72,8 +85,11 @@ pub enum VerbCategory {
     Utility,
 }
 
-/// Shape of a verb's argument. Determines how the parser + codemod
-/// treat the yaml body.
+/// A verb's primary yaml argument shape.
+///
+/// One value per verb, so a verb accepting several shapes is recorded by
+/// its most common one — see the crate header. The parser decides what
+/// actually parses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArgShape {
     /// No argument (`- back`, `- stopApp`, `- waitForAnimationToEnd`).

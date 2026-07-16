@@ -1274,26 +1274,23 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
-// Accept bare `- waitForAnimationToEnd` (400 ms default)
-// or numeric `- waitForAnimationToEnd: 500` (integer = ms sleep).
-// SmixQuiescenceSwizzle.m no-ops XCTest's idle-wait for performance,
-// so this verb is a FIXED sleep in smix, not an XCTest quiescence
-// wait. To be precise: the swizzle only touches XCTest's internal
-// idle wait, and this verb never went through it in the first place.
-// The 400 ms default is kept for maestro compat.
+// Three yaml forms, one meaning: wait for the screen to stop moving,
+// giving up after N ms.
+//   - bare `- waitForAnimationToEnd`            → 400 ms (maestro default)
+//   - numeric `- waitForAnimationToEnd: 500`    → 500 ms
+//   - maestro's map `- waitForAnimationToEnd: { timeout: 5000 }`
 //
-// Also accept the maestro-canonical map form
-// `- waitForAnimationToEnd: { timeout: 5000 }` — maestro yaml uses a
-// `timeout:` sub-key.
+// The number is a ceiling in every form. It used to be a sleep, which
+// meant the verb charged for an animation whether or not one ran.
 fn parse_wait_for_animation_to_end(v: &Value) -> Result<Step, ParseError> {
     match v {
-        Value::Null => Ok(Step::WaitForAnimationToEnd { duration_ms: 400 }),
+        Value::Null => Ok(Step::WaitForAnimationToEnd { ceiling_ms: 400 }),
         Value::Number(_) => {
             let ms = v.as_u64().ok_or_else(|| ParseError::InvalidValue {
                 field: "waitForAnimationToEnd".into(),
                 reason: format!("expected u64 milliseconds, got {v:?}"),
             })?;
-            Ok(Step::WaitForAnimationToEnd { duration_ms: ms })
+            Ok(Step::WaitForAnimationToEnd { ceiling_ms: ms })
         }
         Value::Mapping(map) => {
             let ms = map
@@ -1303,7 +1300,7 @@ fn parse_wait_for_animation_to_end(v: &Value) -> Result<Step, ParseError> {
                     field: "waitForAnimationToEnd".into(),
                     reason: "map form expects a `timeout` key with integer ms".into(),
                 })?;
-            Ok(Step::WaitForAnimationToEnd { duration_ms: ms })
+            Ok(Step::WaitForAnimationToEnd { ceiling_ms: ms })
         }
         other => Err(ParseError::InvalidValue {
             field: "waitForAnimationToEnd".into(),
