@@ -1,76 +1,86 @@
-# plan-hot — v2 到 C2：围栏式 AI 断言层
+# plan-hot — v2 到 C3：真 animation-idle + OCR 键盘字符 fallback
 
 ## 目标 checkpoint
 
-C2：`assertCondition` / `extractWithAI` 可用 —— 截图 → 本地 `claude` CLI → 结构化 verdict，opt-in、输出标注非确定性。通过后世界：smix 补上 maestro `assertWithAI` / `extractTextWithAI` 的对位能力，且**删掉 `smix-ai-tier` crate 不会动到任何 sensing 代码**（这条可执行的删除性即 §9#2 围栏的证明，也是 C2 的核心验收）。
+C3：`waitForAnimationToEnd` 从**固定 sleep** 变成**真的等到静止**（frame-diff 静默检测），`fill` 的字符落地由 OCR 兜底核验。通过后世界：§9#4「不提供裸 sleep」在字面上成立 —— 现存最后一处「等待与可观察条件无关」的实现被消掉。
 
 ## 前置条件
 
 ```bash
-git log --oneline -1                                    # 期望 C1 已提交（ed2285cff 或其后）
-python3 scripts/dev/hygiene-scan.py --noise-only        # 期望 clean（C1 不回归）
-cargo test -p smix-adapter-maestro --test verb_table_gate  # 期望 2 passed
-which claude                                            # 期望有；无则仅 mock 路径可测
+git log --oneline -1                                    # 期望 C2 已提交（6788b1ae1 或其后）
+python3 scripts/dev/hygiene-scan.py --noise-only        # 期望 clean
+bash scripts/dev/fence-check.sh                         # 期望 clean（C2 围栏不回归）
+cargo test -p smix-adapter-maestro --test verb_table_gate   # 期望 2 passed
 pgrep -fl "runner.ts|smix run|supervise"                # 期望空
+pgrep -fl "gradle|mobilegate|emulator"                  # C3 不碰 Android，但 Swift 侧编译要 CPU
 ```
+
+## 已确证的起点（C2 收尾时查实，不必重查）
+
+- `parser.rs:1279-1283` 自陈：**「this verb is a FIXED sleep in smix, not an XCTest quiescence wait」**。`SmixQuiescenceSwizzle.m` 为性能把 XCTest 的 idle-wait no-op 掉了，而该 verb 本来也没走那条路。400ms 默认值是为 maestro 兼容留的。
+- 该 verb 实际接受**三种形式**：bare（400ms 默认）/ 数字（ms）/ `{timeout: N}` 映射。
+- 但 `VERB_TABLE` 记的 `arg_shape` 是 **`None`** —— `ArgShape` 是单值枚举，**表达不了联合**。C1 的 gate 只验「verb 在不在表里」，不验 arg_shape 准不准，所以抓不到这类失真。
 
 ## 步骤（线性）
 
-### S1. `smix-ai-tier` crate + verdict 契约
+### S1. frame-diff 静默检测（sense 层）
 
 **红（写测试）**
-- 文件：`crates/smix-ai-tier/tests/verdict.rs`
-- 断言：(a) `StructuredVerdict` 从 CLI 的 JSON 输出反序列化，`{pass, reason}` 齐全；(b) CLI 不存在时返回 `DriverError` 且 hint 含安装指引，**不 panic**；(c) CLI 返回非 JSON 时是明确错误而非静默 false。
+- 文件：`crates/smix-screen/tests/quiescence.rs`
+- 断言：(a) 两帧像素差 < ε 且连续 N 次 → `idle`；(b) 持续变化的帧序列在 ceiling 之前**不**报 idle；(c) 静止帧在一个 cadence 窗口内报 idle；(d) ε / N / cadence 是显式参数而非魔数。
+- 纯函数先行：判定逻辑吃「帧序列」而非设备，可无设备单测。
 
 **绿（实现）**
-- 文件：`crates/smix-ai-tier/src/lib.rs`（新 crate，加进 workspace members）
-- API：`pub async fn judge(screenshot_png: &[u8], condition: &str) -> Result<StructuredVerdict, ExpectationFailure>`
-- 关键点：截图**带外**取（simctl / `smix-screen`，**不是** runner HTTP route —— 无 `/screenshot` route）；单 provider 走本地 `claude` CLI（§9#2）；crate 只依赖 `smix-error` + `smix-screen`，**不依赖** resolver / driver / selector（依赖方向即围栏）。
+- 文件：`crates/smix-screen/src/`（新增 quiescence 模块）
+- API：`pub fn is_quiescent(prev: &[u8], next: &[u8], epsilon: f32) -> bool` + 一个吃采样迭代器的判定器
+- 关键点：判定是**纯逻辑**（stone 层，可单测）；**采样**是 I/O，留给调用方注入。这样 sense 判定不依赖 runner。
 
 **重构**
 - 无。
 
-### S2. verb 接线（VERB_TABLE → parser → runtime → SDK）
+### S2. 接线 + arg_shape 失真收敛
 
 **红**
-- 文件：`crates/smix-adapter-maestro/tests/parser.rs` + `tests/runtime_mock.rs`
-- 断言：(a) `assertCondition: "a red toast is visible"` 解析成 `Step::AssertCondition`；(b) `extractWithAI: {into, fields}` 解析成 `Step::ExtractWithAI`；(c) 未开 opt-in 时这两个 verb **明确报错**（不静默跳过）；(d) mock verdict `pass=false` → `AssertionFailed` 且 message 含 `[AI · non-deterministic]`；(e) `verb_table_gate` 仍绿（新 verb 必须同时进 VERB_TABLE）。
+- 文件：`crates/smix-adapter-maestro/tests/runtime_mock.rs`
+- 断言：(a) mock 的帧序列「先动后静」→ bare `waitForAnimationToEnd` 等到静止才返回，且**早于** ceiling；(b) 一直动 → 到 ceiling 返回并 warn（不静默假装 idle）；(c) 数字形式 `waitForAnimationToEnd: 500` 保持 maestro 兼容语义（**显式 sleep，不做 idle 检测** —— 用户点名要 500ms 就给 500ms）。
 
 **绿**
-- `crates/smix-verbs`：加 `v("assertWithAI", "assertCondition", Assert, BareString)` + `v("extractTextWithAI", "extractWithAI", Assert, Mapping)`；**从末尾「有意排除」注释里移除 assertWithAI**（它不再是排除项）。
-- `smix-adapter-maestro`：parser dispatch + `Step::AssertCondition` / `Step::ExtractWithAI`；runtime 调 `smix-ai-tier::judge`；`ACCEPTED` 列表同步（gate 会强制）。
-- `smix-sdk`：`App::assert_condition(&self, condition: &str)`。
-- opt-in：`config: { aiAssertions: on }` frontmatter 或 `--enable-ai-assertions`（对齐既有 `--enable-ocr-fallback` 先例）。
-
-**重构**
-- `extractWithAI` 的 `output.*` 写入复用既有 output store，不新建。
-
-### S3. 围栏证明 + 文档
-
-**红（可执行的围栏证明）**
-- 命令：`bash scripts/dev/fence-check.sh` —— 断言 sense path 上的每个 crate（selector / selector-resolver / host-coord-resolver / screen / driver / error / input / runner-wire / runner-client）**在依赖树里都到不了 `smix-ai-tier`**（`cargo tree -e normal`，含传递依赖）。
-- 为什么用依赖树而非 grep：grep 只看得见直接的 `use`，看不见传递依赖；而「删掉 crate 不影响 sensing」这个性质，等价于「sensing 的依赖树里没有它」，后者是静态可判、可 CI 的。这是 §9#2 的机器可判证明，不是注释里的声明。
-
-**绿**
-- 恢复；把该删除性测试固化成 CI 可跑的形式（feature flag 或文档化命令）。
-- `docs/ai-guide/` 补 AI 断言层用法 + 明说非确定性；`docs/v2.md` 记决策。
+- runtime：bare/`{timeout}` 走 idle 检测（timeout 作 ceiling）；数字形式保持 sleep。
+- `VERB_TABLE`：`waitForAnimationToEnd` 的 arg_shape 现状 `None` 与实际三形式不符。**二选一并记决策**：(i) 给 `ArgShape` 加联合表达（改动波及整表 + codemod），或 (ii) 承认 arg_shape 是「主形式」的近似、在 `smix-verbs` 头部注释里写清它不是完备契约。倾向 (ii) —— (i) 的收益不抵其 blast radius，且 arg_shape 自陈就是 "informational"。
+- **顺带**：C1 的 gate 只验成员关系。若选 (ii)，把「arg_shape 是近似」这一事实写进 gate 测试的注释，免得后人再当契约读。
 
 **重构**
 - 无。
 
-## Checkpoint C2 验收
+### S3. OCR 键盘字符 fallback（spec F）
+
+**红**
+- 文件：`crates/smix-adapter-maestro/tests/runtime_mock.rs`
+- 断言：(a) mock 的 `fill` 后 OCR 读回缺字 → 触发重试；(b) 干净输入 → **不**产生 OCR 往返（快路径不被拖慢）；(c) 重试仍缺 → 明确失败，不静默通过。
+
+**绿**
+- `smix-input` / runtime：`fill` 后按需 OCR 核验；仅在 OCR 兜底已启用时生效。
+- 关键点：这是 sense(verify) + act(retry) 的组合，两者都在 core。
+
+**重构**
+- 无。
+
+## Checkpoint C3 验收
 
 ```bash
-cargo test -p smix-ai-tier 2>&1 | tail -3                          # 期望 all pass
-cargo test -p smix-adapter-maestro 2>&1 | grep -c "FAILED"         # 期望 0
-cargo test -p smix-adapter-maestro --test verb_table_gate          # 期望 pass（新 verb 已进表）
+cargo test -p smix-screen 2>&1 | tail -3                          # 期望 all pass（含 quiescence）
+cargo test -p smix-adapter-maestro 2>&1 | grep -c FAILED           # 期望 0
+cargo test --workspace 2>&1 | grep -c "^test result: ok"           # 期望 ≥124（不回退）
 cargo build --workspace 2>&1 | grep -c warning                     # 期望 0
-python3 scripts/dev/hygiene-scan.py --noise-only                   # 期望 clean
-bash scripts/dev/fence-check.sh                                     # 期望 exit 0 "clean"（围栏：sense path 的依赖树到不了 AI 层）
+python3 scripts/dev/hygiene-scan.py --noise-only                    # 期望 clean
+bash scripts/dev/fence-check.sh                                     # 期望 clean
+cd swift-bridge && swift test 2>&1 | grep "Executed"                # 期望 0 failures
+xcodebuild build-for-testing -project swift-bridge/SmixRunner.xcodeproj \
+  -scheme SmixRunner -destination 'generic/platform=iOS Simulator'  # 期望 exit 0（C1 发现：此前无 gate 编译它）
 ```
-期望：全部通过。最后一条是围栏的静态证明 —— sensing / driver 侧对 AI 层零引用。
+期望：全部通过。**真机验证留 real-sim smoke**：frame-diff 的 ε / cadence 只有在真模拟器上才有意义 —— 纯逻辑单测证明不了「400ms 固定 sleep 换成 idle 检测后，真实动画不早退」。这条要么本 checkpoint 做一次 real-sim smoke，要么明确记为「做了+未验证」。
 
 ## 完成后动作
 
-1. 归档本文件到 `docs/plan-history/v2-c2-hot.md`
-2. 生成新 `plan-hot.md`（到 C3：真 animation-idle + OCR 键盘 fallback），见 CLAUDE.md §6
+1. 归档本文件到 `docs/plan-history/v2-c3-hot.md`
+2. 生成新 `plan-hot.md`（到 C4：MCP 全驱动面），见 CLAUDE.md §6
