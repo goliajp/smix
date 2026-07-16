@@ -1,16 +1,15 @@
 import Foundation
 
-/// R4.d (audit #6) — resolves `XCUIApplication.launchArguments` from the
+/// Resolves `XCUIApplication.launchArguments` from the
 /// `SMIX_RUNNER_LAUNCH_ARGS` env (JSON array literal). Mirrors
 /// `TargetBundleResolver` / `LaunchModeResolver` shape: pure over env,
 /// fail-closed on malformed input.
 ///
-/// Pre-R4 the runner hard-coded
-/// `["-AppleLanguages","(en)","-AppleLocale","en_US"]` for every app
-/// launch, hijacking locale across every caller. R4.d makes locale an
-/// opt-in env injection: callers wanting English locale ship the JSON
-/// literal via `TEST_RUNNER_SMIX_RUNNER_LAUNCH_ARGS=`; runner default
-/// is empty array so the app launches in its natural locale.
+/// Locale is opt-in rather than imposed: the runner default is an empty
+/// array, so the app launches in its natural locale, and a caller that
+/// wants a forced locale ships the JSON literal itself — e.g.
+/// `["-AppleLanguages","(en)","-AppleLocale","en_US"]` via
+/// `TEST_RUNNER_SMIX_RUNNER_LAUNCH_ARGS=`.
 ///
 /// Fail-closed (empty) on any non-string element: partial mixed-type
 /// arrays would corrupt `launchArguments` so silent strip is unsafe.

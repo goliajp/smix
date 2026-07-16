@@ -1,4 +1,4 @@
-// v7.4 c3 — Locator poll loop, mirror Swift SmixSDK.Locator from v7.1 c3.
+// Locator poll loop, mirrors Swift SmixSDK.Locator.
 //
 // 250ms tick over a Duration deadline. On timeout, throws
 // ExpectationFailure with the LAST tree's first-20 visible elements
@@ -64,7 +64,7 @@ class Locator internal constructor(
 
     /**
      * Resolve [selector] until at least one match exists AND that
-     * match's label equals [label]. v7.6 c1 wires via dedicated FFI
+     * match's label equals [label]. Wired via the dedicated FFI
      * `resolve_selector_labels` for clean label-only semantics.
      */
     suspend fun toHaveLabel(label: String, timeout: Duration = 5.seconds) {
@@ -80,8 +80,8 @@ class Locator internal constructor(
 
     /**
      * Resolve [selector] until the resolver returns exactly [n] matches.
-     * v7.6 c1 wires via dedicated FFI `resolve_selector_count` —
-     * counted via labels resolver (skips index modifier per Playwright
+     * Wired via the dedicated FFI `resolve_selector_count` — counted
+     * via the labels resolver (skips index modifiers, per Playwright
      * "match all" semantics).
      *
      * Note: this uses [LabelResolver] on the App not the standard

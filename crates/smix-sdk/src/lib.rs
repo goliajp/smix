@@ -239,9 +239,8 @@ pub struct LaunchAppOptions {
     pub app_path: Option<String>,
 }
 
-/// v1.0.14 Cluster A — completion-signal wait strategy for the
-/// `resetAppData` verb (URL-scheme JS-wipe). See
-/// `.claude/rfcs/1.0.14-*.md` §Cluster A. The runtime executor
+/// Completion-signal wait strategy for the
+/// `resetAppData` verb (URL-scheme JS-wipe). The runtime executor
 /// (smix-adapter-maestro) is responsible for interpreting these
 /// variants; smix-sdk owns the type so the adapter's `Step` and the
 /// runtime's dispatch stay in agreement.
@@ -253,8 +252,7 @@ pub enum ResetAppDataWaitFor {
     /// `smix_metro_log::MetroLogTail` subscribed to the file.
     LogLinePattern(String),
     /// Sleep the given milliseconds after firing the URL, then
-    /// return. Best-effort fallback for the no-metro-log case per
-    /// insight Q1 answer.
+    /// return. Best-effort fallback for the no-metro-log case.
     Sleep(u64),
 }
 
@@ -333,15 +331,13 @@ pub enum LaunchFreshOp {
     /// `simctl terminate` on the target — clean SIGTERM, no crash-report
     /// daemon interpretation.
     Terminate,
-    /// `simctl uninstall` on the target. As of v1.0.4 §D12 this is
-    /// used only when `SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1` is set;
+    /// `simctl uninstall` on the target. Used only when `SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1` is set;
     /// the default clear-state path uses [`SandboxClearInPlace`] to
-    /// avoid the iOS 26.5 XCUITest binding loss (feedback §F) and
-    /// ReportCrash "Insight quit unexpectedly" dialog (feedback §H).
+    /// avoid the iOS 26.5 XCUITest binding loss and
+    /// ReportCrash "<app> quit unexpectedly" dialog.
     Uninstall,
     /// `simctl install <path>` — reinstalls the .app bundle. Same
-    /// v1.0.4 §D12 note as [`Uninstall`]: only used on the
-    /// force-reinstall path.
+    /// note as [`Uninstall`]: only used on the force-reinstall path.
     Install(String),
     /// `simctl privacy reset all` — wipes granted permissions
     /// without touching the app's data. Companion to
@@ -350,11 +346,11 @@ pub enum LaunchFreshOp {
     ///
     /// Since smix 1.0.4.
     PrivacyResetAll,
-    /// v1.0.4 §D12 — wipe the app's sandbox
+    /// Wipe the app's sandbox
     /// (`Documents/`, `Library/`, `tmp/`) via NSFileManager
     /// on the running sim, without `simctl uninstall`. Preserves
-    /// the XCUITest binding (fixes feedback §F) and does not trip
-    /// ReportCrash (fixes feedback §H). Argument is the target bundle-id.
+    /// the XCUITest binding and does not trip
+    /// ReportCrash. Argument is the target bundle-id.
     SandboxClearInPlace(String),
     KeychainReset,
     Launch,
@@ -380,17 +376,17 @@ pub fn plan_launch_fresh_calls(
     plan_launch_fresh_calls_v2(clear_state, clear_keychain, app_path, false)
 }
 
-/// v1.0.4 §D12 — extended planner with an explicit `force_reinstall`
+/// Extended planner with an explicit `force_reinstall`
 /// switch. When `false` (the new default), `clear_state=true` runs
 /// the in-place sandbox clear + privacy reset instead of
 /// `simctl uninstall + install`. This avoids the iOS 26.5 XCUITest
-/// binding loss (feedback §F) and the ReportCrash "Insight quit
-/// unexpectedly" system dialog (feedback §H) — both of which stem
+/// binding loss and the ReportCrash "<app> quit
+/// unexpectedly" system dialog — both of which stem
 /// from the uninstall+install sequence.
 ///
 /// When `force_reinstall=true` (opt-in via
-/// `SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1`), the pre-v1.0.4 path is
-/// preserved for cases where a bit-for-bit reinstall is required.
+/// `SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1`), the uninstall+install path
+/// is preserved for cases where a bit-for-bit reinstall is required.
 ///
 /// Since smix 1.0.4.
 #[must_use]
@@ -421,9 +417,9 @@ pub fn plan_launch_fresh_calls_v2(
                 }
             }
         } else {
-            // v1.0.4 default: in-place sandbox clear + privacy reset.
+            // Default: in-place sandbox clear + privacy reset.
             // No uninstall/install → XCUITest binding preserved
-            // (feedback §F fix) + no ReportCrash dialog (§H fix).
+            // + no ReportCrash dialog.
             //
             // The SandboxClearInPlace op receives an empty string
             // here; the executor fills it in from the target bundle-id
@@ -454,12 +450,11 @@ pub fn plan_launch_fresh_calls_v2(
 /// with corpus the AI was trained on.
 ///
 /// Every method is async — no chaining shortcuts, no fluent builder
-/// pattern. One step, one await, one observable side effect (CLAUDE.md
-/// §9 #5).
-/// v1.0.3 — a runner-side session guard. Obtained via
-/// v1.0.4 §D7 — Session state exposed to consumers via
-/// [`Session::state`]. Additive over v1.0.3; the runner's
-/// `X-Sim-Health` response header drives transitions.
+/// pattern. One step, one await, one observable side effect.
+///
+/// State of a runner-side session guard, exposed to consumers via
+/// [`Session::state`]. The runner's `X-Sim-Health` response header
+/// drives transitions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum SessionState {
@@ -516,7 +511,7 @@ pub struct Session {
     /// panics.
     app: Option<App>,
     session_id: String,
-    /// v1.0.4 §D7 — sim-health state observed via `X-Sim-Health`
+    /// Sim-health state observed via `X-Sim-Health`
     /// response header on the last runner response. Updated
     /// automatically by [`HttpRunnerClient`] when the header is
     /// present; defaults to `Healthy` at open time. Consumers read
@@ -543,7 +538,7 @@ impl Session {
         &self.session_id
     }
 
-    /// v1.0.4 §D7 — current sim-health classification observed via
+    /// Current sim-health classification observed via
     /// the `X-Sim-Health` response header on the most recent runner
     /// request. `Healthy` at open time (optimistic — the open call
     /// itself succeeded); transitions to `Degraded` / `Cycling` / `Dead`
@@ -554,11 +549,11 @@ impl Session {
         )
     }
 
-    /// v1.0.5 §D1 — probe the runner's `/session/list` and return
+    /// Probe the runner's `/session/list` and return
     /// `true` iff this session's id is still known. Consumers wire
     /// this after a `Session::state` transition to `Cycling` or `Dead`
     /// to decide whether to keep using the session (still valid across
-    /// the cycle thanks to §D1 persistence) or reopen a fresh one.
+    /// the cycle thanks to session persistence) or reopen a fresh one.
     ///
     /// Runner errors return `Err` — treat as "unknown"; consumers
     /// typically bail on that path anyway.
@@ -581,7 +576,7 @@ impl Session {
         Ok(resp.sessions.iter().any(|s| s.session_id == self.session_id))
     }
 
-    /// v1.0.8 §D1 — clear the session's target app data IN PLACE.
+    /// Clear the session's target app data IN PLACE.
     /// Runner-side does:
     ///
     /// 1. `XCUIApplication.terminate()` on the target (cooperative
@@ -594,10 +589,10 @@ impl Session {
     ///    cleanly.
     ///
     /// This replaces the maestro `launchApp: { clearState: true }`
-    /// shape that was ultimately triggering the "Insight quit
-    /// unexpectedly" system dialog on iOS 26.5 sim even after v1.0.4
-    /// §D12's `simctl uninstall + install` removal. The dialog is
-    /// eliminated because the terminate path is cooperative.
+    /// shape that triggered the "<app> quit unexpectedly" system dialog
+    /// on the iOS 26.5 sim even once `simctl uninstall + install` was
+    /// removed. The dialog is eliminated because the terminate path is
+    /// cooperative.
     ///
     /// Wraps [`App::clear_app_data`] with session-scoped ergonomics.
     /// The heavy lifting (3-step orchestration + host-side wipe)
@@ -608,7 +603,7 @@ impl Session {
         self.app().clear_app_data().await
     }
 
-    /// v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
+    /// Instruct the runner to `terminate()` + `launch()`
     /// the session's cached `XCUIApplication` in place. Preserves the
     /// session id and XCUITest binding. Consumers wire this after
     /// observing an app crash (via [`Self::state`] transitioning to
@@ -746,7 +741,7 @@ impl App {
         }
     }
 
-    /// v1.0.3 — accessor for the underlying HTTP runner client, used by
+    /// Accessor for the underlying HTTP runner client, used by
     /// [`Session`] to drive the `/session/*` routes. Returns `None`
     /// when the driver is not backed by an HTTP runner (e.g. mock
     /// driver in tests).
@@ -754,7 +749,7 @@ impl App {
         self.driver.as_ios_driver().map(|ios| ios.runner())
     }
 
-    /// v1.0.3 — open a runner-side session bound to `bundle_id`.
+    /// Open a runner-side session bound to `bundle_id`.
     /// Subsequent requests via the returned [`Session`] send the
     /// `Session-Id` header and skip per-request activation entirely.
     ///
@@ -790,7 +785,7 @@ impl App {
         })?;
         let sid = resp.session_id.clone();
         self.driver.set_session_id(Some(sid.clone()));
-        // v1.0.4 §D7 — hook the state atomic into the client so future
+        // Hook the state atomic into the client so future
         // X-Sim-Health header transitions are visible to consumers via
         // Session::state(). Optimistic Healthy at open time.
         let state = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(
@@ -924,13 +919,13 @@ impl App {
 
     // ---- lifecycle (simctl-bound, requires UDID) ----------------------
 
-    /// v1.0.8 §D2 — clear the current session's target app data
+    /// Clear the current session's target app data
     /// IN PLACE via cooperative XCUIApplication.terminate() + host
     /// SimctlClient sandbox wipe + cooperative XCUIApplication.launch().
     /// Preserves XCUITest binding and does NOT signal
-    /// `com.apple.ReportCrash` — the fix for the "Insight quit
+    /// `com.apple.ReportCrash` — the fix for the "<app> quit
     /// unexpectedly" system dialog that both `simctl uninstall + install`
-    /// and v1.0.4's `simctl terminate + simctl spawn rm` still tripped.
+    /// and `simctl terminate + simctl spawn rm` still tripped.
     ///
     /// Requires a Session-Id set on the driver (auto-populated by
     /// `smix run` and by `App::open_session`); errors otherwise.
@@ -941,13 +936,13 @@ impl App {
         self.clear_app_data_with_launch(&[], &std::collections::BTreeMap::new()).await
     }
 
-    /// v1.0.11 §D2 — same three-step orchestration as
+    /// Same three-step orchestration as
     /// [`Self::clear_app_data`], but applies caller-supplied
     /// `launchArguments` and `launchEnvironment` to the runner's
     /// cooperative launch step. Unblocks scaffolding like the Expo
     /// SDK 57 dev-launcher server picker that `clearAppData` wipes
     /// from persisted state and can no longer restore via a URL
-    /// scheme call. Insight-side yaml:
+    /// Example yaml:
     ///
     /// ```yaml
     /// - clearAppData:
@@ -997,12 +992,12 @@ impl App {
             })?
             .to_string();
         let udid = self.require_udid()?.to_string();
-        // v1.0.11 §D3 — launch step waits for `.runningForeground`
+        // Launch step waits for `.runningForeground`
         // before returning by default. Prevents the caller's next
         // step (or a batch-retry firing another clearAppData) from
-        // terminating the app mid-launch, which insight's v1.0.10
-        // followup traced to `bug_type: 309 exec_terminated_before_ready`
-        // .ips writes. 15 s window is generous for cold RN/Expo
+        // terminating the app mid-launch, which shows up as
+        // `bug_type: 309 exec_terminated_before_ready` .ips writes.
+        // The 15 s window is generous for cold RN/Expo
         // bundle load on iOS 26.5 sim.
         let terminate_req = smix_runner_client::SessionAppLifecycleRequest {
             session_id: session_id.clone(),
@@ -1013,7 +1008,7 @@ impl App {
             args: launch_args.to_vec(),
             env: launch_env.clone(),
             wait_for_foreground_ms: Some(15_000),
-            // v1.0.15 Cluster C D1 — also probe the interactive
+            // Also probe the interactive
             // fingerprint after foreground is observed. Consumer
             // sees `launchAppReachedInteractive` counter delta in
             // `smix diagnostic dump` without any yaml migration. 30 s
@@ -1103,10 +1098,9 @@ impl App {
         launch_arguments: &[String],
     ) -> Result<Vec<String>, ExpectationFailure> {
         let udid = self.require_udid()?;
-        // v1.0.4 §D12 — probe SMIX_LAUNCH_FRESH_FORCE_REINSTALL env
-        // for the pre-v1.0.4 uninstall+install path. Default is the
-        // new in-place clear that preserves XCUITest binding + does
-        // not trip ReportCrash.
+        // Probe SMIX_LAUNCH_FRESH_FORCE_REINSTALL env for the
+        // uninstall+install path. Default is the in-place clear, which
+        // preserves the XCUITest binding and does not trip ReportCrash.
         let force_reinstall = std::env::var("SMIX_LAUNCH_FRESH_FORCE_REINSTALL")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
@@ -1167,9 +1161,8 @@ impl App {
 
     /// Apply a permission action to a bundle.
     /// Maps maestro yaml `permissions: { camera: allow|deny|unset }` to simctl
-    /// privacy. **§12.1 three-layer architecture**: sense+act live in
-    /// core; the adapter only translates maestro yaml strings to the
-    /// `PermissionAction` enum.
+    /// privacy. Sense+act live in core; the adapter only translates
+    /// maestro yaml strings to the `PermissionAction` enum.
     pub async fn set_permission(
         &self,
         bundle_id: &str,
@@ -1226,7 +1219,7 @@ impl App {
         Ok(warnings)
     }
 
-    /// v1.0.27 — delete keys from the target app's persisted
+    /// Delete keys from the target app's persisted
     /// user-defaults store (iOS: NSUserDefaults via `simctl spawn
     /// defaults delete`; Android: unsupported, explicit error).
     /// Contract is "ensure keys absent" — already-absent keys are
@@ -1234,8 +1227,8 @@ impl App {
     /// defaults in-memory and may rewrite keys at exit.
     ///
     /// Motivating case: expo-dev-launcher persists the most recent
-    /// deep link and re-delivers it after every JS bundle load
-    /// (insight round-5 Ask 12); deleting its storage key between
+    /// deep link and re-delivers it after every JS bundle load;
+    /// deleting its storage key between
     /// terminate and relaunch neutralizes the replay at the source.
     pub async fn clear_user_defaults(
         &self,
@@ -1425,12 +1418,11 @@ impl App {
     /// coord-based maestro yaml port and other no-a11y-semantic
     /// scenarios. (nx, ny) MUST be in [0, 1] (normalized to viewport).
     ///
-    /// **§9 #3 lift (v3.16, escape hatch)**: the Selector surface still
-    /// forbids xpath/coord — this method is NOT a Selector, it is the
-    /// direct Apple-native-event-chain wire entry. Only `tap` is exposed;
-    /// `swipe_at_coord` / `fill_at_coord` / `anchor_at_coord` are
-    /// intentionally NOT provided and would require an independent
-    /// CLAUDE.md §10 decision.
+    /// **Escape hatch**: the Selector surface still forbids xpath/coord
+    /// — this method is NOT a Selector, it is the direct
+    /// Apple-native-event-chain wire entry. Only `tap` is exposed;
+    /// `fill_at_coord` / `anchor_at_coord` are intentionally NOT
+    /// provided.
     ///
     /// Prefer `tap(&selector)` for any path with a11y semantic. Use this
     /// only for yaml-port edge cases (e.g. maestro `point: "X%,Y%"`).
@@ -1535,13 +1527,12 @@ impl App {
     /// coord-based maestro yaml port (`swipe: { from: "X%,Y%", to: "X%,Y%" }`).
     /// Both points MUST be in [0, 1].
     ///
-    /// **§9 #3 lift (escape hatch)**: companion to
-    /// [`Self::tap_at_coord`]. The Selector surface still forbids
-    /// xpath/coord — this method is NOT a Selector, it is the direct
-    /// Apple-native-event-chain wire entry. Only `tap` and `swipe` coord
-    /// forms are exposed; `fill_at_coord` / `anchor_at_coord` /
-    /// `hover_at_coord` are intentionally NOT provided and would each
-    /// require an independent CLAUDE.md §10 decision.
+    /// **Escape hatch**: companion to [`Self::tap_at_coord`]. The
+    /// Selector surface still forbids xpath/coord — this method is NOT
+    /// a Selector, it is the direct Apple-native-event-chain wire
+    /// entry. Only the `tap` and `swipe` coord forms are exposed;
+    /// `fill_at_coord` / `anchor_at_coord` / `hover_at_coord` are
+    /// intentionally NOT provided.
     pub async fn swipe_at_coord(
         &self,
         from: (f64, f64),
@@ -2039,7 +2030,7 @@ fn simctl_to_failure(e: SimctlError) -> ExpectationFailure {
                 retry_after.as_millis()
             )),
         ),
-        // v1.0.7 §D2 — SimctlError is #[non_exhaustive]; a new variant
+        // SimctlError is #[non_exhaustive]; a new variant
         // arriving from a future patch falls through here as a generic
         // driver error until we augment this map.
         _ => (FailureCode::DriverError, None),

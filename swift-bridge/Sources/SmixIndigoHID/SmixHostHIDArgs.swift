@@ -1,26 +1,25 @@
 import Foundation
 
-/// CLI args for `smix-host-hid`. Currently only `tap` exists; future
-/// checkpoints will add `swipe` / `longPress` / etc.
+/// CLI args for `smix-host-hid`.
 public enum SmixHostHIDArgs: Equatable {
   /// Which HID dispatch implementation to use for `tap`.
   ///
-  /// - `digitizer`: IOHIDEvent-tree path (C4 default) — works on iOS 26.4 where
-  ///   the 9-arg mouseFn path is rerouted to Home gesture / dropped.
-  /// - `indigo9`: 9-arg `IndigoHIDMessageForMouseNSEvent` (C3 path, retained
-  ///   for `smix doctor` comparisons + iOS < 26 fallback work in C5).
+  /// - `digitizer`: IOHIDEvent-tree path (the default) — works on iOS 26.4
+  ///   where the 9-arg mouseFn path is rerouted to Home gesture / dropped.
+  /// - `indigo9`: 9-arg `IndigoHIDMessageForMouseNSEvent`, retained for
+  ///   `smix doctor` comparisons and iOS < 26 fallback work.
   public enum Path: String, Equatable {
     case digitizer
     case indigo9
   }
 
   case tap(udid: String, x: Double, y: Double, path: Path)
-  /// C5 `probe` subcommand — host-side symbol availability report; no args.
+  /// `probe` subcommand — host-side symbol availability report; no args.
   case probe
-  /// v0.3 C2 `axp-probe` subcommand — host-side
+  /// `axp-probe` subcommand — host-side
   /// `AccessibilityPlatformTranslation.framework` capability report; no args.
   case axpProbe
-  /// v1.1 C2 `daemon` subcommand — long-running sidecar; stdin JSON-RPC.
+  /// `daemon` subcommand — long-running sidecar; stdin JSON-RPC.
   case daemon
 
   public enum ParseError: Error, Equatable {
@@ -68,7 +67,7 @@ public enum SmixHostHIDArgs: Equatable {
     return .axpProbe
   }
 
-  /// v1.1 C2 `daemon` takes no flags — long-running sidecar with stdin JSON-RPC.
+  /// `daemon` takes no flags — long-running sidecar with stdin JSON-RPC.
   private static func parseDaemon(_ args: [String]) throws -> SmixHostHIDArgs {
     if let first = args.first {
       let value = args.count > 1 ? args[1] : ""
@@ -118,7 +117,7 @@ public enum SmixHostHIDArgs: Equatable {
       }
       path = parsed
     } else {
-      // C4 default: IOHIDEvent digitizer-tree path.
+      // Default: IOHIDEvent digitizer-tree path.
       path = .digitizer
     }
 

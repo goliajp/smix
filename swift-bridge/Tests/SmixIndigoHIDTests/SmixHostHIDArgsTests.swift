@@ -4,7 +4,7 @@ import XCTest
 final class SmixHostHIDArgsTests: XCTestCase {
   func test_parse_tap_validFlags_returnsTapCase() throws {
     let parsed = try SmixHostHIDArgs.parse(["tap", "--udid", "ABCD", "--x", "0.5", "--y", "0.18"])
-    // C4: no `--path` flag → default `.digitizer`.
+    // No `--path` flag → default `.digitizer`.
     XCTAssertEqual(parsed, SmixHostHIDArgs.tap(udid: "ABCD", x: 0.5, y: 0.18, path: .digitizer))
   }
 
@@ -37,7 +37,7 @@ final class SmixHostHIDArgsTests: XCTestCase {
     }
   }
 
-  // MARK: - v0.3 C2 axp-probe subcommand parse
+  // MARK: - axp-probe subcommand parse
 
   func test_parse_axpProbe_noFlags_returnsAxpProbe() throws {
     let parsed = try SmixHostHIDArgs.parse(["axp-probe"])

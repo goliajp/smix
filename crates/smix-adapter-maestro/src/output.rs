@@ -1,4 +1,4 @@
-//! v0.3.1 — canonical file-write helper for yaml output verbs.
+//! Canonical file-write helper for yaml output verbs.
 //!
 //! # Reviewer invariant
 //!
@@ -91,7 +91,7 @@ pub fn write_yaml_output_lenient(
 
 /// Infer a file extension when the caller-supplied path has none.
 ///
-/// Recognized magic bytes (v0.3.1): PNG, JPEG. Any other byte
+/// Recognized magic bytes: PNG, JPEG. Any other byte
 /// sequence + missing extension → return path unchanged (caller
 /// wrote a raw dump).
 fn infer_extension(path: &Path, bytes: &[u8]) -> PathBuf {

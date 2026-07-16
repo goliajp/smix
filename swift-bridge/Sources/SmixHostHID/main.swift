@@ -69,7 +69,7 @@ enum SmixHostHIDCLI {
         developerDir: dev,
         coreSimulatorHandle: csHandle
       )
-      return IndigoSymbolNames.allRequiredForC3
+      return IndigoSymbolNames.allRequired
 
     case .digitizer:
       // IOKit is public + already in dyld shared cache; use the
@@ -87,7 +87,7 @@ enum SmixHostHIDCLI {
         developerDir: dev,
         coreSimulatorHandle: csHandle
       )
-      return DigitizerSymbolNames.allRequiredForC4
+      return DigitizerSymbolNames.allRequired
     }
   }
 
@@ -205,7 +205,7 @@ enum SmixHostHIDCLI {
               developerDir: dev,
               coreSimulatorHandle: csHandle
             )
-            resolvedNames = IndigoSymbolNames.allRequiredForC3
+            resolvedNames = IndigoSymbolNames.allRequired
           case .digitizer:
             try IOHIDDigitizerTap.tapNormalized(
               udid: udid, x: x, y: y,
@@ -214,7 +214,7 @@ enum SmixHostHIDCLI {
               developerDir: dev,
               coreSimulatorHandle: csHandle
             )
-            resolvedNames = DigitizerSymbolNames.allRequiredForC4
+            resolvedNames = DigitizerSymbolNames.allRequired
           }
           print(SidecarDaemon.formatTap(ok: true, path: path.rawValue, resolved: resolvedNames))
         } catch {
@@ -236,13 +236,13 @@ enum SmixHostHIDCLI {
         name: InputChannelId.digitizer.rawValue,
         available: false,
         resolved: [],
-        missing: DigitizerSymbolNames.allRequiredForC4
+        missing: DigitizerSymbolNames.allRequired
       ),
       .init(
         name: InputChannelId.indigo9.rawValue,
         available: false,
         resolved: [],
-        missing: IndigoSymbolNames.allRequiredForC3
+        missing: IndigoSymbolNames.allRequired
       ),
     ])
   }

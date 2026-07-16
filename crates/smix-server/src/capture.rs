@@ -1,7 +1,7 @@
 //! `mod capture` — sibling of `mod stream`. smix-server actively orchestrates a
-//! per-sim live-HLS capture pipeline (web-v0.3 c3).
+//! per-sim live-HLS capture pipeline.
 //!
-//! The pipeline (rawvideo-pipe single-encoder, selected by the c3 spike):
+//! The pipeline (rawvideo-pipe single-encoder):
 //!
 //! ```text
 //!   rolling task:  simctl recordVideo (SIGINT finalize)  ──┐  decode to
@@ -11,11 +11,10 @@
 //!                                                     <dir>/index.m3u8 + seg_*.ts
 //! ```
 //!
-//! A single continuous encoder process is what removes the c1 per-segment
-//! `EXT-X-DISCONTINUITY` (each c1 round spawned its own ffmpeg with fresh
-//! timestamps). Here every recorded round is decoded to raw frames and fed
-//! into the *same* encoder, so the HLS timeline stays continuous (spike
-//! measured 0 discontinuities).
+//! A single continuous encoder process is what removes per-segment
+//! `EXT-X-DISCONTINUITY`: spawning one ffmpeg per recorded round restarts
+//! timestamps each time. Here every recorded round is decoded to raw frames
+//! and fed into the *same* encoder, so the HLS timeline stays continuous.
 
 use crate::{error::Error, error::Result, state::AppState, valkey};
 use axum::{Json, extract::State};
@@ -63,8 +62,8 @@ pub struct CaptureHandle {
 }
 
 /// The active source feeding the encoder. Direct = `smix-capture-host` Swift
-/// binary streaming raw BGRA at 30fps from CoreSimulator's IOSurface (web-v0.5
-/// F2). Fallback = the recordVideo rolling-segment pipeline (web-v0.3 c3).
+/// binary streaming raw BGRA at 30fps from CoreSimulator's IOSurface.
+/// Fallback = the recordVideo rolling-segment pipeline.
 enum CaptureMode {
     RollingRecord {
         stop_tx: watch::Sender<bool>,
@@ -279,7 +278,7 @@ async fn try_start_direct(
     })
 }
 
-/// Original web-v0.3 c3 pipeline: simctl recordVideo rolling segments → ffprobe
+/// simctl recordVideo rolling segments → ffprobe
 /// geometry → ffmpeg decode-into-fifo → single persistent encoder with
 /// wall-clock pacing. Kept as fallback when the direct path is unavailable.
 async fn start_via_record_video(

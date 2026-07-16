@@ -1,10 +1,11 @@
-//! v3.28 c1 — explicit N/A marker.
+//! Explicit N/A marker.
 //!
 //! `smix-runner-client` is cement (design.md §D1) — a `reqwest` HTTP
-//! client, fully async with outer network io; design.md §D1 explicitly
-//! states "cement 不强求 stone 标准, perf_gate 普适但内涵 N/A 接受".
+//! client, fully async with outer network io. design.md §D1 explicitly
+//! exempts cement from the stone standard: perf_gate is universal as a
+//! target, but an N/A body is accepted.
 //!
-//! Per design.md §"stone vs cement 维度 — D1 决策", perf_gate is the
+//! Per design.md's stone-vs-cement decision (§D1), perf_gate is the
 //! one cross-cutting bench target uniformly present in all crates; for
 //! crates without a pure synchronous hot path, the bench body is an
 //! explicit no-op rather than fake measurement. Real performance for

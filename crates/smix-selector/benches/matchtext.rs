@@ -1,11 +1,8 @@
-//! v3.1 c4 — criterion bench for smix-selector `match_text`.
+//! Criterion bench for smix-selector `match_text`, across 6 cases.
 //!
-//! Mirrors TS `src/core/__bench__/matchtext.bench.ts` 6 cases for an
-//! apples-to-apples Rust vs TS comparison in PERFORMANCE.md §4.
-//!
-//! Note: regex variants compile inside `match_text` (no cache at stone
-//! layer). Numbers therefore reflect compile + match overhead per call;
-//! cache layer can come in c5+ resolver.
+//! Note: regex variants compile inside `match_text` (no cache at the
+//! stone layer). Numbers therefore reflect compile + match overhead per
+//! call; the cache layer lives in `smix-selector-resolver`.
 //!
 //! Run: `cargo bench --bench matchtext --package smix-selector`
 

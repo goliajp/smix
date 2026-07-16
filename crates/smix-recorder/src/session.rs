@@ -1,6 +1,4 @@
 //! `RecordSession` + `RecordingApp` — host-side capture wrappers.
-//!
-//! Ported from now-retired TS source (was `legacy/src/recorder/session.ts`, 117 lines, retired in v3.22).
 
 use smix_input::{KeyName, SwipeDirection};
 use smix_recorder_ir::IRAction;

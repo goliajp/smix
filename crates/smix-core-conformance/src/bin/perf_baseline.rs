@@ -1,4 +1,4 @@
-//! v7.8 c3 — Rust perf baseline. Measures `resolve_selector` round-trip
+//! Rust perf baseline. Measures `resolve_selector` round-trip
 //! against a fixed tree+selector, mirroring the Swift / Kotlin / TS
 //! `Smix.launchApp + App.tap` benchmarks.
 //!
@@ -49,7 +49,7 @@ fn main() {
     let max_v = samples[samples.len() - 1];
     let avg = samples.iter().sum::<f64>() / samples.len() as f64;
 
-    println!("# SmixSDK Rust perf baseline (v7.8 c3)");
+    println!("# SmixSDK Rust perf baseline");
     println!(
         "# Date: {}",
         std::env::var("PERF_DATE").unwrap_or_else(|_| "(set PERF_DATE env)".into())

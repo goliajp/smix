@@ -1,12 +1,10 @@
 #![doc = include_str!("../README.md")]
 #![deny(missing_docs)]
 
-//! smix-ffi — UniFFI v0.29+ FFI scaffolding crate (v7.0 c2 MVP).
+//! smix-ffi — UniFFI v0.29+ FFI scaffolding crate.
 //!
-//! Wraps Rust stone API (smix-selector + smix-selector-resolver + smix-screen)
-//! into cross-language bindings via UniFFI. v7.0 c3+ 起 expand 到 ~10
-//! runner async fn + cancellation siblings per design.md D8 + spike #4
-//! workaround.
+//! Wraps the Rust stone API (smix-selector + smix-selector-resolver +
+//! smix-screen) into cross-language bindings via UniFFI.
 //!
 //! Generated bindings (post-build):
 //!   - Swift via `uniffi-bindgen-swift` → `bindings/swift/SmixFFI.swift`
@@ -42,7 +40,7 @@ pub fn resolve_selector(tree_json: String, selector_json: String) -> Result<Vec<
     let selector: Selector = serde_json::from_str(&selector_json)
         .map_err(|e| FfiError::InvalidSelectorJson(e.to_string()))?;
 
-    // v7.2 c5: respect index modifiers (first/last/nth).
+    // Respect index modifiers (first/last/nth).
     //
     // When the selector carries any index modifier, dispatch through
     // `resolve_selector` (single result; applies index pick) to satisfy
@@ -77,8 +75,8 @@ fn has_index_modifier(selector: &Selector) -> bool {
             index.nth.is_some() || index.first.is_some() || index.last.is_some()
         }
         // Other variants (Focused / OcrText / AnchorRelative / Point /
-        // etc.) — index modifiers are either N/A or absent from the v7.2
-        // c5 fixture surface. Future fixtures touching these can extend
+        // etc.) — index modifiers are either N/A or absent from the
+        // fixture surface. Future fixtures touching these can extend
         // this match.
         _ => false,
     }

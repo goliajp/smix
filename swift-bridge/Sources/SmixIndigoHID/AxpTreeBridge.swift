@@ -5,7 +5,7 @@ import SmixRunnerCore
 import CoreGraphics
 #endif
 
-// v1.1 C3 — host-side AX tree resolver via AccessibilityPlatformTranslation.
+// Host-side AX tree resolver via AccessibilityPlatformTranslation.
 //
 // This file has two concerns:
 //
@@ -19,9 +19,9 @@ import CoreGraphics
 //
 // 2. **Live AXP invocation** (`acquire` / `release` / `captureSnapshot`):
 //    real `dlopen(AccessibilityPlatformTranslation)` + bridgeTokenDelegate
-//    install + XPC routing. This is C3's spike-gate work — until that's
-//    cleared, `acquire(udid:)` throws `.notImplemented`. The pure mapping
-//    above is independently useful for tests and future caching.
+//    install + XPC routing. Not implemented yet — `acquire(udid:)` throws
+//    `.notImplemented`. The pure mapping above is independently useful for
+//    tests and future caching.
 public enum AxpTreeBridge {
   public enum AxpTreeError: Error, Equatable {
     case notImplemented(String)
@@ -73,7 +73,7 @@ public enum AxpTreeBridge {
 
   /// Recursive: `AxpElementLike` → `TreeRoute.A11ySnapshotData`.
   /// `isFocused` from AXFocused is dropped to match the existing
-  /// A11ySnapshotData shape (v1 wire keeps isEnabled+isSelected only).
+  /// A11ySnapshotData shape — the wire carries isEnabled + isSelected only.
   public static func elementToSnapshot(_ e: AxpElementLike) -> TreeRoute.A11ySnapshotData {
     let kids = e.children.map(elementToSnapshot)
     let valueNorm: String? = (e.value?.isEmpty == true) ? nil : e.value
@@ -91,7 +91,7 @@ public enum AxpTreeBridge {
 
   /// Reverse of `TreeRoute.elementTypeName`: NSAccessibility role string
   /// (`"AXButton"`, `"AXCell"`, ...) → the XCUIElementType numeric raw value
-  /// that the wire uses (kept in sync with `src/core/role.ts`).
+  /// that the wire uses.
   ///
   /// Unknown / missing roles map to 1 ("other"), matching the existing
   /// fallback convention.
@@ -158,16 +158,16 @@ public enum AxpTreeBridge {
     }
   }
 
-  // -- live AXP invocation (C3 spike — gated) --------------------------------
+  // -- live AXP invocation (gated) -------------------------------------------
 
   /// Lifetime-managed handle to an acquired AXP bridge for a given sim. The
   /// host-side implementation will be filled in once the bridgeTokenDelegate
   /// XPC routing has been characterised; until then `acquire(udid:)` throws
-  /// `.notImplemented` so the spike test (case 5) can be opted into via
-  /// `SMIX_C3_SPIKE_OK=run`.
+  /// `.notImplemented`, and the opt-in exploratory test is gated behind
+  /// `SMIX_AXP_SPIKE_OK=run`.
   public final class Bridge {
     public func captureSnapshot() throws -> TreeRoute.A11ySnapshotData {
-      throw AxpTreeError.notImplemented("AxpTreeBridge.Bridge.captureSnapshot — live AXP invocation pending C3 spike (see plan-hot)")
+      throw AxpTreeError.notImplemented("AxpTreeBridge.Bridge.captureSnapshot — live AXP invocation not implemented")
     }
 
     public func release() {
@@ -177,6 +177,6 @@ public enum AxpTreeBridge {
 
   public static func acquire(udid: String) throws -> Bridge {
     _ = udid
-    throw AxpTreeError.notImplemented("AxpTreeBridge.acquire — live AXP invocation pending C3 spike")
+    throw AxpTreeError.notImplemented("AxpTreeBridge.acquire — live AXP invocation not implemented")
   }
 }

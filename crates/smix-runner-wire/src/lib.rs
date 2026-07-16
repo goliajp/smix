@@ -130,15 +130,15 @@ impl IncludeScope {
 #[serde(rename_all = "camelCase")]
 pub enum TapMode {
     /// Runner returns only the matched frame; host normalizes + injects
-    /// via `/tap-at-norm-coord` (v1.6 c5 default).
+    /// via `/tap-at-norm-coord`. This is the default.
     Resolve,
-    /// Runner resolves AND taps (legacy v1.1 path A, host-HID-based).
+    /// Runner resolves AND taps (legacy host-HID-based path).
     ResolveAndTap,
     /// Runner resolves selector then synthesizes the touch event via the
-    /// XCTRunnerDaemonSession daemonProxy (v4.0 c3 swift G8 fix —
-    /// bypasses the XCUIElement gesture recognizer chain so RN
-    /// Pressable `RCTTouchHandler` UIGestureRecognizer receives the
-    /// touch and fires the JS-thread `onPress` callback reliably).
+    /// XCTRunnerDaemonSession daemonProxy. This bypasses the XCUIElement
+    /// gesture recognizer chain so RN Pressable `RCTTouchHandler`
+    /// UIGestureRecognizer receives the touch and fires the JS-thread
+    /// `onPress` callback reliably.
     DaemonProxySynthesize,
 }
 
@@ -325,7 +325,7 @@ pub struct SystemPopupButton {
     pub outcome_hint: Option<String>,
 }
 
-/// `POST /system-popup-action` request body (v4.2 c2 — G9 act side).
+/// `POST /system-popup-action` request body.
 ///
 /// `popupId` and `buttonId` round-trip from a prior `GET /system-popups`
 /// enumerate (`Popup.id` / `PopupButton.id` fields). The runner walks the
@@ -370,30 +370,33 @@ pub struct SystemPopupsResponse {
 
 /// One recorder event captured by `/record/start` → `/record/poll` flow.
 ///
-/// v5.1 c3 S2 校正:swift `EventRecorder` 端实际 emit 的是 `rawCode` field
-/// (kAXNotification raw int — 1018 = focus change / 1028 = HID / 4002 = userTesting / ...),
-/// 不是 `code`。c2 capstone 初版 jq 用 `.code` 查 events.json 全返 null,
-/// 误判 "0 个 1018",修正后真实有 3 × 1018。SDK 端 deserialize 之前同样
-/// silent → `code` 字段永远 0。本 struct 字段名按 swift 真实 schema 对齐
-/// (`raw_code` + serde camelCase → `rawCode`),并加 `extra` flatten 兜底
-/// 把 swift 在 RecordedEvent 顶层平铺的 enrich 字段(`kind` / `frame` /
-/// `payloadDescription` / `elementType` / 等)宽松接收。
+/// The Swift `EventRecorder` emits the notification discriminator as
+/// `rawCode`, not `code`. Field names here mirror that schema exactly
+/// (`raw_code` + serde camelCase → `rawCode`); a mismatch deserializes
+/// silently to `0` rather than erroring, so the naming is load-bearing.
+///
+/// `extra` is a flatten catch-all for the enrich fields Swift splats onto
+/// the top level of `RecordedEvent` (`kind` / `frame` /
+/// `payloadDescription` / `elementType` / …), so new ones are accepted
+/// without a wire break.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordedEvent {
-    /// Numeric event-type discriminator(swift `RecordedEvent.rawCode`)。
-    /// 典型值:1018 (kAXFirstResponderChangedNotification) / 1028
+    /// Numeric event-type discriminator (Swift `RecordedEvent.rawCode`),
+    /// carrying the raw kAXNotification int. Typical values: 1018
+    /// (kAXFirstResponderChangedNotification) / 1028
     /// (kAXHIDEventReceivedNotification) / 4002 (kAXUserTestingNotification)
-    /// / 1006 (kAXAlertNotification) / 1021 (kAXPidStatusChangedNotification)。
+    /// / 1006 (kAXAlertNotification) / 1021 (kAXPidStatusChangedNotification).
     #[serde(default)]
     pub raw_code: i32,
     /// Capture-time timestamp in milliseconds.
     #[serde(default)]
     pub timestamp_ms: f64,
-    /// Free-form per-event 顶层 enrich 字段(swift 端平铺 `kind` / `frame` /
-    /// `payloadDescription` / `elementType` / `appBundleId` / `payloadClassName`
-    /// 等)。reconcile 只读 `raw_code` + `timestamp_ms`,不依赖此字段;
-    /// 上层 SDK 想看明细时按需取(类型 = `serde_json::Map`)。
+    /// Free-form per-event enrich fields that the Swift side splats onto
+    /// the top level (`kind` / `frame` / `payloadDescription` /
+    /// `elementType` / `appBundleId` / `payloadClassName` / …).
+    /// Reconciliation reads only `raw_code` + `timestamp_ms` and never
+    /// depends on this; consumers wanting detail can read it on demand.
     #[serde(flatten, default)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -407,11 +410,11 @@ pub struct RecordEventsResponse {
     pub events: Vec<RecordedEvent>,
 }
 
-// -------------------- /session/* wire shape (v1.0.2) --------------------
+// -------------------- /session/* wire shape ------------------------------
 //
-// Session lifecycle addresses the "activation storm" root cause: pre-v1.0.2
-// runners re-bind + `.activate()` an `XCUIApplication` on every request
-// whose `App-Activate: true` header is set. Long-running gates (visual /
+// Session lifecycle addresses the "activation storm" root cause: without a
+// session the runner re-binds + `.activate()`s an `XCUIApplication` on every
+// request whose `App-Activate: true` header is set. Long-running gates (visual /
 // perf regression) accumulate thousands of activate calls, exhausting
 // XCTest process arbitration on iOS 26.5+ and crashing `test_runForever()`
 // mid-run. Sessions replace that with a one-shot lifecycle: open once,
@@ -510,9 +513,9 @@ pub struct SessionRenewActivationResponse {
     pub activated: bool,
 }
 
-/// Extended `GET /health` response body (v1.0.2 additive).
+/// Extended `GET /health` response body.
 ///
-/// Prior to v1.0.2 the endpoint returned a bare 200 with no body.
+/// The body is purely additive over the legacy bare-200 response.
 /// Consumers that ignore the body get identical behavior; consumers
 /// that parse the JSON gain liveness observability.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -536,18 +539,18 @@ pub struct HealthResponse {
     /// Total `.activate()` calls issued since runner boot.
     #[serde(default)]
     pub activations_total: u64,
-    /// v1.0.4 — SimRenderServer pid + alive flag observed by the
-    /// runner's sim-health sensor. `alive = false` after
+    /// SimRenderServer pid + alive flag observed by the runner's
+    /// sim-health sensor. `alive = false` after
     /// `com.apple.display.captureservice` internal assertion trips.
     #[serde(default)]
     pub sim_render_server: HealthProcessInfo,
-    /// v1.0.4 — xcodebuild test-host pid + alive flag + total restart
-    /// count (S7 auto-restart on `** TEST INTERRUPTED **`).
+    /// xcodebuild test-host pid + alive flag + total restart count
+    /// (auto-restart on `** TEST INTERRUPTED **`).
     #[serde(default)]
     pub xcodebuild_test_host: HealthTestHostInfo,
 }
 
-/// v1.0.4 — pid + alive flag for a watched process. Additive to
+/// Pid + alive flag for a watched process. Additive to
 /// [`HealthResponse`].
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -560,7 +563,7 @@ pub struct HealthProcessInfo {
     pub pid: u32,
 }
 
-/// v1.0.4 — xcodebuild test-host health with restart accounting.
+/// xcodebuild test-host health with restart accounting.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthTestHostInfo {
@@ -570,17 +573,13 @@ pub struct HealthTestHostInfo {
     /// Last-known pid (0 if unrecorded).
     #[serde(default)]
     pub pid: u32,
-    /// Number of times the supervisor has restarted the test-host
-    /// (RFC 1.0.4 §D6).
+    /// Number of times the supervisor has restarted the test-host.
     #[serde(default)]
     pub restart_count: u32,
 }
 
-// ---- v1.0.4 D5 / D6 / D7 / D14 additive wire ----------------------------
-
-/// `POST /session/close-all` — v1.0.4 §D5 support for `smix runner
-/// cycle`. Runner-side clears every open session and returns the
-/// count that was cleared.
+/// `POST /session/close-all` — backs `smix runner cycle`. Runner-side
+/// clears every open session and returns the count that was cleared.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionCloseAllResponse {
@@ -592,7 +591,7 @@ pub struct SessionCloseAllResponse {
     pub closed: u32,
 }
 
-/// `POST /session/relaunch-app` request body (v1.0.4 §D14).
+/// `POST /session/relaunch-app` request body.
 ///
 /// Instructs the runner to `terminate()` + `launch()` the session's
 /// cached `XCUIApplication` binding IN PLACE — same test-host process,
@@ -616,11 +615,12 @@ pub struct SessionRelaunchAppResponse {
     pub wall_ms: u64,
 }
 
-/// v1.0.8 §D1 — request body shared by `POST /session/terminate-app`
-/// and `POST /session/launch-app`. v1.0.11 §D2 — extended with launch-
-/// argument / launch-environment injection so consumers can bypass
-/// scaffolding like Expo dev-launcher server pickers that vanish on
-/// clearAppData (SDK 57 stops auto-navigating on URL scheme).
+/// Request body shared by `POST /session/terminate-app` and
+/// `POST /session/launch-app`.
+///
+/// Carries launch-argument / launch-environment injection so consumers
+/// can bypass scaffolding like Expo dev-launcher server pickers that
+/// vanish on clearAppData (SDK 57 stops auto-navigating on URL scheme).
 // Not `#[non_exhaustive]` — consumers construct these directly. Wire
 // evolution is handled by `#[serde(default)]` on each field, so
 // adding a field is source-compatible for anyone using
@@ -632,51 +632,46 @@ pub struct SessionRelaunchAppResponse {
 pub struct SessionAppLifecycleRequest {
     /// Session whose cached `XCUIApplication` binding will be acted on.
     pub session_id: String,
-    /// v1.0.11 §D2 — launchArguments passed to `XCUIApplication.launch()`.
-    /// Empty vec = pre-v1.0.11 behavior (whatever the runner already had
-    /// cached on `entry.app.launchArguments`, which is empty by default).
+    /// launchArguments passed to `XCUIApplication.launch()`. Empty vec
+    /// leaves whatever the runner already had cached on
+    /// `entry.app.launchArguments` (empty by default).
     /// Ignored by `/session/terminate-app`.
     #[serde(default)]
     pub args: Vec<String>,
-    /// v1.0.11 §D2 — launchEnvironment passed to `XCUIApplication.launch()`.
-    /// Empty map = pre-v1.0.11 behavior. Ignored by
+    /// launchEnvironment passed to `XCUIApplication.launch()`. Empty map
+    /// leaves the runner's cached environment untouched. Ignored by
     /// `/session/terminate-app`.
     #[serde(default)]
     pub env: std::collections::BTreeMap<String, String>,
-    /// v1.0.11 §D3 — after `.launch()` dispatches, poll
-    /// `XCUIApplication.state` at 250 ms cadence until `.runningForeground`
-    /// (or timeout). Prevents callers from firing a subsequent
-    /// terminateApp before the process has signalled launchd ready — the
-    /// root cause of `bug_type: 309 exec_terminated_before_ready` `.ips`
-    /// writes insight reported on v1.0.10. `None` = pre-v1.0.11 fire-
-    /// and-return semantics; `Some(0)` = wait one iteration then return
-    /// terminal state (useful for tests). Default: `Some(15000)` at the
-    /// SDK layer.
+    /// After `.launch()` dispatches, poll `XCUIApplication.state` at
+    /// 250 ms cadence until `.runningForeground` (or timeout). Prevents
+    /// callers from firing a subsequent terminateApp before the process
+    /// has signalled launchd ready — the root cause of
+    /// `bug_type: 309 exec_terminated_before_ready` `.ips` writes.
+    /// `None` = fire-and-return semantics; `Some(0)` = wait one
+    /// iteration then return terminal state (useful for tests).
+    /// Default: `Some(15000)` at the SDK layer.
     #[serde(default)]
     pub wait_for_foreground_ms: Option<u64>,
-    /// v1.0.15 Cluster C D1 — after `.runningForeground` is observed
-    /// (or immediately when `wait_for_foreground_ms == None`), poll
-    /// the a11y tree at 500 ms cadence looking for ≥ `minIdentifierCount`
-    /// descendants with a non-empty `accessibilityIdentifier` NOT in
-    /// the interactive-probe ignore list. Fires
-    /// `launchAppReachedInteractive` when found; on timeout fires
-    /// `launchAppTimedOutBeforeInteractive`. Both counters live on
-    /// [`SessionLifecycleCounters`] and were wire-scaffolded in v1.0.14.
+    /// After `.runningForeground` is observed (or immediately when
+    /// `wait_for_foreground_ms == None`), poll the a11y tree at 500 ms
+    /// cadence looking for ≥ `minIdentifierCount` descendants with a
+    /// non-empty `accessibilityIdentifier` NOT in the interactive-probe
+    /// ignore list. Fires `launchAppReachedInteractive` when found; on
+    /// timeout fires `launchAppTimedOutBeforeInteractive`. Both counters
+    /// live on [`SessionLifecycleCounters`].
     ///
-    /// `None` = pre-v1.0.15 fire-and-return (no interactive polling).
-    /// Consumer config `.smix/config.yaml interactiveProbe: { minIdentifierCount, ignore: [...] }`
+    /// `None` = fire-and-return (no interactive polling). Consumer config
+    /// `.smix/config.yaml interactiveProbe: { minIdentifierCount, ignore: [...] }`
     /// forwards to the runner via `TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON`
-    /// at boot. Q7 answers in `smix-feedback-2026-07-11-v1.0.12-answers.md`
-    /// seeded defaults: `minIdentifierCount: 3`, `ignore: [SplashScreenLogo,
-    /// com.focusai.app.mobile]`.
+    /// at boot; defaults are `minIdentifierCount: 3` and
+    /// `ignore: ["SplashScreenLogo"]`.
     #[serde(default)]
     pub wait_for_interactive_ms: Option<u64>,
 }
 
-/// v1.0.8 §D1 — response for `POST /session/terminate-app` and
-/// `POST /session/launch-app`. v1.0.11 §D3 — extended with the
-/// observed terminal `.state` and the wall time spent waiting for
-/// foreground.
+/// Response for `POST /session/terminate-app` and
+/// `POST /session/launch-app`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -686,19 +681,19 @@ pub struct SessionAppLifecycleResponse {
     /// Wall-clock milliseconds the terminate or launch took.
     #[serde(default)]
     pub wall_ms: u64,
-    /// v1.0.11 §D3 — Wall-clock milliseconds spent inside the wait-
-    /// for-foreground loop. Zero when the caller passed
-    /// `wait_for_foreground_ms: 0` or when the runner is pre-v1.0.11.
+    /// Wall-clock milliseconds spent inside the wait-for-foreground
+    /// loop. Zero when the caller passed `wait_for_foreground_ms: 0`
+    /// or when the runner does not implement the wait.
     #[serde(default)]
     pub waited_ms: u64,
-    /// v1.0.11 §D3 — final observed `XCUIApplication.state` at the
-    /// moment the runner returned. Wire-encoded as the raw `Int`
-    /// value XCTest uses: `0` unknown, `1` notRunning, `2` runningBackgroundSuspended,
-    /// `3` runningBackground, `4` runningForeground. Zero when
-    /// pre-v1.0.11 or when the caller opted out.
+    /// Final observed `XCUIApplication.state` at the moment the runner
+    /// returned. Wire-encoded as the raw `Int` value XCTest uses:
+    /// `0` unknown, `1` notRunning, `2` runningBackgroundSuspended,
+    /// `3` runningBackground, `4` runningForeground. Zero when the
+    /// caller opted out or the runner does not implement the wait.
     #[serde(default)]
     pub terminal_state: u8,
-    /// v1.0.11 §D5 — set when the runner observed cooperative
+    /// Set when the runner observed cooperative
     /// termination (`XCUIApplication.terminate()` observed
     /// `.notRunning` before timeout). `false` on `terminate-app` when
     /// the runner had to fall back to a hard signal.
@@ -706,7 +701,7 @@ pub struct SessionAppLifecycleResponse {
     /// `launch-app`.
     #[serde(default)]
     pub terminated_cooperatively: bool,
-    /// v1.0.15 Cluster C D1 — set on `launch-app` responses when the
+    /// Set on `launch-app` responses when the
     /// interactive-probe (≥ `minIdentifierCount` non-empty ax-ids
     /// outside the ignore list) fired inside `wait_for_interactive_ms`.
     /// `false` when the caller didn't set `wait_for_interactive_ms`
@@ -714,7 +709,7 @@ pub struct SessionAppLifecycleResponse {
     /// fingerprint.
     #[serde(default)]
     pub reached_interactive: bool,
-    /// v1.0.15 Cluster C D1 — sample of up to 8 `accessibilityIdentifier`
+    /// Sample of up to 8 `accessibilityIdentifier`
     /// values observed at the moment `reached_interactive` fired.
     /// Non-normative; useful for consumers debugging "did my
     /// interactive probe fire on the right screen". Empty when
@@ -724,7 +719,7 @@ pub struct SessionAppLifecycleResponse {
     pub interactive_named_ids: Vec<String>,
 }
 
-/// v1.0.5 §D1 — one entry in `POST /session/list` response.
+/// One entry in `POST /session/list` response.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSummary {
@@ -742,7 +737,7 @@ pub struct SessionSummary {
     pub last_activated_at_ms: u64,
 }
 
-/// `POST /session/list` response body (v1.0.5 §D1).
+/// `POST /session/list` response body.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionListResponse {
@@ -751,7 +746,7 @@ pub struct SessionListResponse {
     pub sessions: Vec<SessionSummary>,
 }
 
-/// v1.0.7 §D3 — one entry in the subprocess ring buffer.
+/// One entry in the subprocess ring buffer.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubprocessRecord {
@@ -771,7 +766,7 @@ pub struct SubprocessRecord {
     pub timestamp_ms: u64,
 }
 
-/// v1.0.10 §D5 / v1.0.11 §D1 — app-alive cache observability counters.
+/// App-alive cache observability counters.
 /// Always emitted (even when the runner was booted without an
 /// `appAliveCache` — `wired: false` sentinel + all-zero counters).
 /// Consumers use `wired` to distinguish "workload never fired the
@@ -780,9 +775,9 @@ pub struct SubprocessRecord {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct AliveCacheCounters {
-    /// `false` sentinel — set explicitly by pre-v1.0.11 runners that
-    /// omit the field or by v1.0.11+ runners booted without a cache.
-    /// When `true`, the field values reflect an actual live cache.
+    /// `false` sentinel — either the runner omits the field entirely
+    /// or it was booted without a cache. When `true`, the field values
+    /// reflect an actual live cache.
     #[serde(default)]
     pub wired: bool,
     /// Total calls to `AppAliveCache::markDead`.
@@ -797,7 +792,7 @@ pub struct AliveCacheCounters {
     /// `isSuppressed` returned false — a call was allowed through.
     #[serde(default)]
     pub suppress_miss_total: u64,
-    /// v1.0.9 §D4 re-probe Task spawned.
+    /// Re-probe Task spawned.
     #[serde(default)]
     pub reprobe_attempted_total: u64,
     /// Re-probe observed target return to running.
@@ -811,13 +806,13 @@ pub struct AliveCacheCounters {
     pub reprobe_exhausted_window: u64,
 }
 
-/// v1.0.11 §D3 / §D4 / §D5 — cumulative session lifecycle counters.
+/// Cumulative session lifecycle counters.
+///
 /// Unlike the instantaneous `sessions: Vec<SessionSummary>` view,
-/// these are advanced on every mutation and survive `close`. Answers
-/// insight's v1.0.10 followup question "did clearAppData actually use
-/// the cooperative pathway or fall back to SIGKILL" via the split
+/// these are advanced on every mutation and survive `close`. The split
 /// `terminate_app_via_xcuiapplication` / `terminate_app_via_fallback`
-/// counters.
+/// counters answer "did clearAppData actually use the cooperative
+/// pathway or fall back to SIGKILL".
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -840,8 +835,8 @@ pub struct SessionLifecycleCounters {
     #[serde(default)]
     pub terminate_app_via_xcuiapplication: u64,
     /// Terminate calls where XCUIApplication timed out and the runner
-    /// fell back to a hard-kill pathway. `> 0` is the smoking-gun
-    /// insight asked us to expose in the v1.0.10 followup.
+    /// fell back to a hard-kill pathway. `> 0` is the smoking gun for
+    /// a non-cooperative teardown.
     #[serde(default)]
     pub terminate_app_via_fallback: u64,
     /// Total `POST /session/launch-app` outcomes.
@@ -854,34 +849,31 @@ pub struct SessionLifecycleCounters {
     /// Launch calls that timed out waiting for foreground.
     #[serde(default)]
     pub launch_app_timed_out_before_foreground: u64,
-    /// v1.0.14 Cluster A — total `resetAppData` verbs dispatched
-    /// (URL-scheme JS-wipe pattern, separate from `clearAppData`'s
-    /// container-wipe pathway).
+    /// Total `resetAppData` verbs dispatched (URL-scheme JS-wipe
+    /// pattern, separate from `clearAppData`'s container-wipe pathway).
     #[serde(default)]
     pub reset_app_data_total: u64,
-    /// v1.0.14 Cluster A — resetAppData calls where the completion
+    /// resetAppData calls where the completion
     /// signal (log-line pattern match on the metro log tail) never
     /// arrived inside the timeout window. `> 0` = the URL fired but
     /// the app didn't emit the expected `[dev] reset-complete` line.
     #[serde(default)]
     pub reset_app_data_timed_out: u64,
-    /// v1.0.14 Cluster C — launch calls that observed the
+    /// Launch calls that observed the
     /// interactive fingerprint (`≥ minIdentifierCount` non-ignored
     /// ax-ids in the a11y tree) inside `wait_for_interactive_ms`.
     /// Distinct from `launch_app_reached_foreground` which only
     /// tracks process state, not tree probeability.
     #[serde(default)]
     pub launch_app_reached_interactive: u64,
-    /// v1.0.14 Cluster C — launch calls that timed out waiting for
-    /// the interactive fingerprint. Non-zero = "process foreground
-    /// but tree unusable" = the case insight's v1.0.11 followup
-    /// observed on their bootstrap batch (SplashScreenLogo + all
-    /// unknown descendants).
+    /// Launch calls that timed out waiting for the interactive
+    /// fingerprint. Non-zero = "process foreground but tree unusable"
+    /// — typically a splash screen whose descendants are all unnamed.
     #[serde(default)]
     pub launch_app_timed_out_before_interactive: u64,
 }
 
-/// v1.0.14 §6 — per-flow attempt attribution. Populated by
+/// Per-flow attempt attribution. Populated by
 /// `smix run --retry <N>` (default 1) as each flow completes; carries
 /// through `/diagnostic/dump` so consumers can attribute a `.ips` to
 /// a specific retry rather than a whole batch.
@@ -923,8 +915,7 @@ pub struct FlowAttempt {
     pub wall_ms: u64,
 }
 
-/// `POST /diagnostic/dump` response body (v1.0.7 §D5, extended
-/// v1.0.11 §D1/§D4/§D5).
+/// `POST /diagnostic/dump` response body.
 ///
 /// Snapshot of the runner's runtime state: recent subprocess
 /// invocations, currently-open sessions, sim health state, supervisor
@@ -948,35 +939,35 @@ pub struct DiagnosticDumpResponse {
     #[serde(default)]
     pub sim_health: String,
     /// Pid of the supervisor sidecar, when spawned via
-    /// `smix runner up --supervise` (v1.0.6 §D1).
+    /// `smix runner up --supervise`.
     #[serde(default)]
     pub supervisor_pid: Option<u32>,
     /// Runner wall-clock uptime in milliseconds.
     #[serde(default)]
     pub uptime_ms: u64,
-    /// v1.0.11 §D1 — always-present. `wired=false` when the runner
-    /// didn't have an `AppAliveCache` wired at boot (opt-out) or
-    /// predates this observability. When `wired=true`, the counter
+    /// Always-present. `wired=false` when the runner didn't have an
+    /// `AppAliveCache` wired at boot (opt-out) or doesn't implement
+    /// this observability. When `wired=true`, the counter
     /// fields reflect an actual live cache — even all-zero is
     /// meaningful ("workload didn't fire the re-probe path").
     #[serde(default)]
     pub alive_cache: AliveCacheCounters,
-    /// v1.0.11 §D4/§D5 — cumulative session lifecycle counters. Advance
-    /// on every mutation, survive close, persisted alongside the
-    /// v1.0.5 session-persistence file so `smix runner cycle` doesn't
-    /// wipe them.
+    /// Cumulative session lifecycle counters. Advance on every
+    /// mutation, survive close, and are persisted alongside the
+    /// session-persistence file so `smix runner cycle` doesn't wipe
+    /// them.
     #[serde(default)]
     pub session_counters: SessionLifecycleCounters,
-    /// v1.0.14 Cluster B / §5 — trailing N lines from the external
+    /// Trailing N lines from the external
     /// metro log the CLI was told to tail (via `--metro-log <path>`
     /// on `smix run` or `smix diagnostic dump`). Empty when the CLI
     /// was not given a log path OR when the file was unreadable at
     /// dump time. Default N is 200 lines; consumer overrides with
-    /// `--metro-log-tail-lines <N>`. Purely additive — a pre-v1.0.14
-    /// consumer ignoring this field sees no behavior change.
+    /// `--metro-log-tail-lines <N>`. Purely additive — a consumer
+    /// ignoring this field sees no behavior change.
     #[serde(default)]
     pub metro_log_tail: Vec<String>,
-    /// v1.0.14 §6 — retry-attribution roll-up. Populated by
+    /// Retry-attribution roll-up. Populated by
     /// `smix run` when it has driven at least one flow. Each entry
     /// carries per-attempt status + errorClass + any `.ips` generated
     /// so consumers can tell "flow X passed on retry 2 after retry 1
@@ -984,26 +975,25 @@ pub struct DiagnosticDumpResponse {
     /// flow context available at dump time.
     #[serde(default)]
     pub recent_flows: Vec<FlowAttemptRecord>,
-    /// v1.0.19 — most-recent `interactiveNamedIds` sample observed
+    /// Most-recent `interactiveNamedIds` sample observed
     /// across all `launchApp` completions since runner boot. Survives
     /// session teardown so post-batch triage can see WHICH ax-ids
     /// triggered `reachedInteractive` on the last observed launch,
     /// not just the count. Empty when no launch this run.
     ///
-    /// Per-session values (v1.0.18) remain on `sessions[n].interactiveNamedIds`
+    /// Per-session values remain on `sessions[n].interactiveNamedIds`
     /// but go with the session at teardown. This top-level field is
-    /// the last-values-standing for post-mortem observation. Insight
-    /// round-4 §Ask.
+    /// the last-values-standing for post-mortem observation.
     #[serde(default)]
     pub last_interactive_named_ids: Vec<String>,
 }
 
-/// v1.0.4 §D7 — Session state exposed to SDK consumers via the
-/// `X-Sim-Health` response header on every runner response.
+/// Session state exposed to SDK consumers via the `X-Sim-Health`
+/// response header on every runner response.
 ///
-/// Additive to v1.0.3 sessions — consumers that ignore the header get
-/// v1.0.3 behavior; consumers that read it get `Degraded` / `Dead` /
-/// `Cycling` transitions without polling.
+/// Purely additive — consumers that ignore the header are unaffected;
+/// consumers that read it get `Degraded` / `Dead` / `Cycling`
+/// transitions without polling.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SimHealthWireState {

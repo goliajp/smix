@@ -1,9 +1,9 @@
-// v7.9 c1 — Integration test: SmixRunnerServer + SelectResolveRoute.
+// Integration test: SmixRunnerServer + SelectResolveRoute.
 //
 // Boots a real HTTPServer on ephemeral port + registers /select/resolve*
 // routes with a mock handler + POSTs via URLSession + asserts byte-exact
-// response body. End-to-end verification that the v7.8 c1 wire contract
-// is correctly wired in v7.9 c1.
+// response body. End-to-end verification that the SelectResolveRoute wire
+// contract is correctly wired into the server.
 
 import FlyingFox
 import FlyingSocks

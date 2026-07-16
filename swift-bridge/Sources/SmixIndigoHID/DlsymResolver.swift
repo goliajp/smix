@@ -46,21 +46,22 @@ public struct IndigoSymbolNames {
   public static let removePointerSvc   = "IndigoHIDMessageToRemovePointerService"
   public static let hidArbitrary       = "IndigoHIDMessageForHIDArbitrary"
 
-  /// Symbols actually invoked by C3. Missing any → `dlsymFailed`.
-  public static let allRequiredForC3: [String] = [
+  /// Symbols the 9-arg mouseFn path needs. Missing any → `dlsymFailed`.
+  public static let allRequired: [String] = [
     mouseNSEvent, button, createPointerSvc, createMouseSvc,
   ]
 
-  /// Resolved best-effort; missing is OK (C3 doesn't call them; C4+ may).
-  public static let optionalForC3: [String] = [
+  /// Resolved best-effort; missing is OK — the 9-arg mouseFn path never
+  /// calls them, but later paths may.
+  public static let allOptional: [String] = [
     removePointerSvc, hidArbitrary,
   ]
 }
 
 /// Bag of resolved private-symbol function pointers. `mouseFn`,
-/// `buttonFn`, `createPointerSvc`, `createMouseSvc` are required (C3 actually
-/// calls all but `buttonFn`); the last two are best-effort for forward
-/// compatibility.
+/// `buttonFn`, `createPointerSvc`, `createMouseSvc` are required (the 9-arg
+/// mouseFn path calls all but `buttonFn`); the last two are best-effort for
+/// forward compatibility.
 public struct IndigoSymbols: Equatable {
   public let mouseFn: UnsafeMutableRawPointer
   public let buttonFn: UnsafeMutableRawPointer

@@ -1,29 +1,29 @@
 import FlyingFox
 import Foundation
 
-// v1.5 C5i-d — POST /swipe-once {"direction":"up"|"down"} → 200 {ok:<bool>}.
-// Single-swipe gesture, no probe, no selector. Driver-side host loop calls
+// POST /swipe-once {"direction":"up"|"down"} → 200 {ok:<bool>}.
+// Single-swipe gesture, no probe, no selector. The driver-side host loop calls
 // this between host-side dict tree probes (via driver.tree() + resolveSelector)
-// to bypass runner-side XCUIElement query.firstMatch stall on dict-only RN
-// elements (which 触发 FlyingFox 15s handler timeout + /scroll 500 — c5i-a
-// e2e dashboard.yaml scrollUntilVisible "Recent events" 100% 重现).
+// to bypass the runner-side XCUIElement query.firstMatch stall on dict-only RN
+// elements, which otherwise trips the FlyingFox 15s handler timeout and turns
+// /scroll into a 500.
 //
 // Mirrors BackRoute / ScrollRoute envelope shape. Direction "up" / "down"
 // follows the same semantic as ScrollRoute (the SDK / driver maps content
 // scroll direction to swipe gesture direction inside the handler).
 public enum SwipeOnceRoute {
-  // v6.10 c1 — Direction enum extended to left/right (additive, no
-  // behavior change for up/down). Semantics for left/right mirror the
-  // XCUIElement primitives (swipeLeft/swipeRight) and the Kotlin runner's
-  // existing left/right impl: it's the FINGER direction (swipeLeft =
-  // finger gestures from right to left, content follows finger left,
-  // reveals right-side hidden content). NOTE: the existing up/down
-  // convention here is INVERTED — "down" maps to swipeUp() (treating
-  // direction as scroll/navigation direction, i.e. "scroll DOWN through
-  // content = swipe finger UP"). The two-axis inconsistency is a
-  // known cross-platform U/D semantic drift (Kotlin runner treats U/D
-  // as finger direction too); aligning U/D is deferred to v6.11+
-  // since it would change behavior of existing flows.
+  // left/right follow the XCUIElement primitives (swipeLeft/swipeRight) and
+  // the Kotlin runner's left/right impl: the value names the FINGER direction
+  // (swipeLeft = finger travels right to left, content follows the finger
+  // left, revealing right-side hidden content).
+  //
+  // NOTE: the up/down convention on this axis is INVERTED relative to that —
+  // "down" maps to swipeUp(), treating the value as the scroll/navigation
+  // direction ("scroll DOWN through content = swipe finger UP"). The two axes
+  // are therefore inconsistent, and so is up/down against the Kotlin runner,
+  // which reads up/down as a finger direction too. This reaches users through
+  // `App::swipe_once`. Aligning up/down is a behavior break for existing
+  // flows and is an open v2 decision, not a settled contract.
   public enum Direction: String, Sendable {
     case up
     case down

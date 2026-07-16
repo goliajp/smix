@@ -1,4 +1,4 @@
-//! v3.1 c6 — unit tests for smix-error.
+//! Unit tests for smix-error.
 
 use smix_error::{
     ExpectationFailure, FailureCode, FailureInit, build_suggestions, edit_distance, similarity,
@@ -89,8 +89,8 @@ fn expectation_failure_serde_round_trip_camel_case() {
 #[test]
 fn expectation_failure_skip_empty_optionals() {
     // Empty suggestions / visible_elements / device_log default-serialize
-    // to empty arrays (TS wire: present-but-empty). hint/selector/
-    // screenshot 走 skip_serializing_if so they're absent when None.
+    // to empty arrays (wire contract: present-but-empty). hint / selector /
+    // screenshot use skip_serializing_if so they're absent when None.
     let f = ExpectationFailure::new(FailureInit {
         code: Some(FailureCode::Timeout),
         message: "tap timed out".into(),

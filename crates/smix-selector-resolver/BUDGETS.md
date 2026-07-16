@@ -56,10 +56,8 @@ this for the resolver-consumer layer: callers that hold a Selector
 across multiple resolve calls (e.g. inside a `wait_for` poll loop
 where the same selector polls every 100ms) should cache the
 `ResolverContext` and re-use it; per-call cost then drops to ~1 µs
-and overall speedup vs TS reaches ~11×. This is documented in
-[PERFORMANCE.md §3](../../PERFORMANCE.md) as the c6+ optimization
-path; for v3.x the cost is fine because typical resolve calls are
-fewer than the SDK / driver cache layer turnover.
+. Not re-using it is acceptable in practice because typical resolve
+calls are fewer than the SDK / driver cache layer turnover.
 
 ## Memory
 

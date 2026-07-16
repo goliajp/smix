@@ -3,8 +3,7 @@
 //! Why hand-written (vs `serde(untagged)` derive): each command key is
 //! the discriminator, and the same key (e.g. `tapOn`) accepts both a
 //! scalar and a map. `untagged` enums would either become ambiguous or
-//! silently swallow malformed input — both unacceptable per CLAUDE.md
-//! §13 (quality / arch clean > research cost). Walking the
+//! silently swallow malformed input — both unacceptable. Walking the
 //! `serde_norway::Value` tree by hand keeps the dispatch explicit,
 //! lets us surface a precise [`ParseError`] for every malformed shape,
 //! and mirrors the maestro Kotlin parser layout 1:1.
@@ -16,10 +15,10 @@ use smix_selector::{Modifiers, Pattern, Role, Selector};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-// v1.0.20 D2 — parse the yaml `role:` value into a [`Role`] variant.
+// Parse the yaml `role:` value into a [`Role`] variant.
 //
-// Docs (`docs/ai-guide/03-selectors.md §4 Role`) show docs-friendly
-// lowercase forms (`role: button`, `role: textfield`, `role: checkbox`),
+// The docs show docs-friendly lowercase forms
+// (`role: button`, `role: textfield`, `role: checkbox`),
 // but the wire schema uses camelCase (`textField`, `checkBox`).
 // Accept BOTH — docs-friendly aliases are canonicalised to the
 // camelCase wire form before dispatch. Unknown values return
@@ -31,8 +30,7 @@ fn parse_role_yaml(v: &Value, ctx: &str) -> Result<Role, ParseError> {
         reason: format!("expected role name string, got {v:?}"),
     })?;
     // Case-tolerant lookup. The wire is camelCase; docs are lowercase.
-    // Snake_case (`text_field`) is also tolerated since insight uses it
-    // in `.smix/config.yaml`-adjacent selectors.
+    // Snake_case (`text_field`) is tolerated too.
     let normalized: String = s
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
@@ -83,7 +81,7 @@ fn parse_role_yaml(v: &Value, ctx: &str) -> Result<Role, ParseError> {
     Ok(role)
 }
 
-// v1.0.23 D4 — env-var opt-in for the bare-string auto-OCR desugar.
+// Env-var opt-in for the bare-string auto-OCR desugar.
 // Reading the env at parse time (not at run time) keeps the emitted
 // Selector shape stable across a flow — you can't have "sometimes
 // this yaml parses to Text, sometimes to Fallback" depending on
@@ -92,7 +90,7 @@ fn parse_role_yaml(v: &Value, ctx: &str) -> Result<Role, ParseError> {
 // environment before invoking `smix run`. Reset by unsetting the var
 // or setting it to any value other than `1` / `true`.
 std::thread_local! {
-    // v1.0.26 — test seam. Process env is process-global while cargo
+    // Test seam. Process env is process-global while cargo
     // runs tests on parallel threads: a test toggling
     // SMIX_AUTO_OCR_FALLBACK via set_var races every OTHER test that
     // parses a bare-string selector on a sibling thread (their parse
@@ -123,9 +121,9 @@ fn auto_ocr_fallback_enabled() -> bool {
     )
 }
 
-// v1.0.25 D1 — split a bare string on top-level `|` for D4's auto-
-// OCR-fallback lift. Preserves user's regex-OR intent while giving
-// Apple Vision literal strings it can actually match.
+// Split a bare string on top-level `|` for the auto-OCR-fallback
+// lift. Preserves the user's regex-OR intent while giving Apple
+// Vision literal strings it can actually match.
 //
 // "Top-level" means we skip `|` inside `[...]` character classes
 // and after `\` escapes. Any string without `|` returns a
@@ -168,7 +166,7 @@ fn split_top_level_pipe(s: &str) -> Vec<&str> {
     alts
 }
 
-// v1.0.20 D2 — parse `name:` sub-key (companion to `role:`) into an
+// Parse `name:` sub-key (companion to `role:`) into an
 // optional [`Pattern`]. Accepts a scalar string (plain literal OR
 // pipe-alternation regex, same rules as `text_to_pattern`).
 fn parse_role_name_yaml(map: &serde_norway::Mapping, ctx: &str) -> Result<Option<Pattern>, ParseError> {
@@ -183,7 +181,7 @@ fn parse_role_name_yaml(map: &serde_norway::Mapping, ctx: &str) -> Result<Option
     Ok(Some(text_to_pattern(s)))
 }
 
-// v5.20 c2 — parse a single chain element of `fallback: [...]`. Reuses
+// Parse a single chain element of `fallback: [...]`. Reuses
 // the same map-shape dispatcher as parse_tap_on's selector arm — accepts
 // `{id}`, `{text}`, `{localized_text}`, `{ocrText}`, `{anchored}`,
 // `{point: "X%,Y%"}`. Returns the appropriate Selector variant
@@ -259,10 +257,9 @@ fn parse_fallback_element(v: &Value, field: &str) -> Result<Selector, ParseError
             modifiers: Modifiers::default(),
         });
     }
-    // v1.0.26 — `anchorRelative` accepted as an alias of `anchored`
-    // (docs promised the former since v5.20; parser only read the
-    // latter — same documented-but-unimplemented class as the
-    // v1.0.20 gaps).
+    // `anchorRelative` is accepted as an alias of `anchored`: the
+    // docs name the former, the parser originally read only the
+    // latter.
     if let Some(raw) = map
         .get(Value::String("anchored".into()))
         .or_else(|| map.get(Value::String("anchorRelative".into())))
@@ -280,7 +277,7 @@ fn parse_fallback_element(v: &Value, field: &str) -> Result<Selector, ParseError
     })
 }
 
-// v5.20 c2 — parse `fallback: [...]` yaml value into Vec<Selector>.
+// Parse `fallback: [...]` yaml value into Vec<Selector>.
 // Each element is a single-selector map (id / text / localized_text /
 // ocrText / anchored / point). Empty list → InvalidValue (no chain to
 // try). Last element should be a stable fallback (typically point).
@@ -307,7 +304,7 @@ fn parse_fallback_chain(v: &Value, field: &str) -> Result<Vec<Selector>, ParseEr
     Ok(chain)
 }
 
-// v5.20 c1 — parse `anchored: { anchor: <selector>, dx: <f>, dy: <f> }`
+// Parse `anchored: { anchor: <selector>, dx: <f>, dy: <f> }`
 // yaml value into (anchor Selector, dx, dy). anchor sub-selector accepts
 // `{id|text|label|role}` map (reuses visible_to_selector helper). dx/dy
 // are required f64s in normalized [0,1] viewport space (negatives OK for
@@ -346,7 +343,7 @@ fn parse_anchored(v: &Value, field: &str) -> Result<(Selector, f64, f64), ParseE
     Ok((anchor, dx, dy))
 }
 
-// v5.19 c1 — parse `ocrText:` yaml value into (text, locales). Accepts
+// Parse `ocrText:` yaml value into (text, locales). Accepts
 // short form `ocrText: "Submit"` and full form
 // `ocrText: { text: "送信", locales: ["ja"] }`. Returns (text, locales)
 // where locales is empty Vec when not specified (adapter fills from
@@ -398,7 +395,7 @@ fn parse_ocr_text(v: &Value, field: &str) -> Result<(String, Vec<String>), Parse
     }
 }
 
-// v5.18 c1 — parse `{ en: "...", ja: "...", es: "..." }` per-locale text
+// Parse `{ en: "...", ja: "...", es: "..." }` per-locale text
 // table into a BTreeMap<String, String>. Keys must be non-empty strings;
 // values must be non-empty strings; empty table → InvalidValue.
 fn parse_localized_table(
@@ -468,32 +465,29 @@ pub fn text_to_pattern(s: &str) -> Pattern {
 /// Returns [`ParseError::InvalidValue`] if the value is neither a
 /// scalar string nor a map containing one of the accepted keys.
 ///
-/// v1.0.20 D1 — pre-v1.0.20 accepted only `text` and `id`, which
-/// disagreed with `docs/ai-guide/03-selectors.md §9 OcrText` promising
-/// `ocrText` as a first-class selector everywhere selectors appear.
-/// Extending here fixes `extendedWaitUntil.visible: {ocrText}`,
-/// `assertVisible: {role, name}`, `scrollUntilVisible: {label}`,
-/// and every other verb that resolves through this helper (8 sites at
-/// time of writing).
+/// This helper is the single resolution point for
+/// `extendedWaitUntil.visible: {ocrText}`, `assertVisible: {role,
+/// name}`, `scrollUntilVisible: {label}` and every other verb that
+/// takes a selector, so the full accepted key set must live here —
+/// narrowing it silently drops selector forms from ~8 verbs at once.
 pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
     match v {
         Value::String(s) => {
-            // v1.0.23 D4 — bare-string `visible: 'X'` optionally
-            // auto-lifts to `visible: fallback: [text: X, ocrText: X]`
-            // when `SMIX_AUTO_OCR_FALLBACK=1`. Insight round-2 Ask 7:
-            // every one of their 12 flows spelled out the 3-line
-            // fallback form; env-opt-in lets them keep bare strings
-            // and still get the OCR safety net. Tier order: text
-            // first (cheap, hits when tree exposes text), OCR after
-            // (~500 ms Vision call, hits when tree is degraded).
+            // Bare-string `visible: 'X'` optionally auto-lifts to
+            // `visible: fallback: [text: X, ocrText: X]` when
+            // `SMIX_AUTO_OCR_FALLBACK=1`. Spelling out the 3-line
+            // fallback form in every flow is tedious, so this
+            // env-opt-in lets callers keep bare strings and still get
+            // the OCR safety net. Tier order: text first (cheap, hits
+            // when the tree exposes text), OCR after (~500 ms Vision
+            // call, hits when the tree is degraded).
             //
-            // v1.0.25 D1 — Insight round-4 Ask 11: when the bare
-            // string contains `|`, `text_to_pattern` treats it as a
-            // regex OR (`/A|B/i`), which is right for the tree tier
-            // but WRONG for the OCR tier — Apple Vision does not
-            // interpret pipes; the literal string `"A|B"` is never
-            // on screen. Result before v1.0.25: `visible: 'A|B'`
-            // under D4 silently missed OCR every time. Fix: split on
+            // When the bare string contains `|`, `text_to_pattern`
+            // treats it as a regex OR (`/A|B/i`). That is right for
+            // the tree tier but WRONG for the OCR tier: Apple Vision
+            // does not interpret pipes, so it would search for the
+            // literal string `"A|B"`, which is never on screen — and
+            // the OCR tier would miss every time. So split on
             // top-level `|` and emit one `OcrText` per alternative
             // AFTER the single regex text tier:
             //   `fallback: [Text('/A|B/i'), OcrText('A'), OcrText('B')]`
@@ -618,7 +612,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
 
-            // v1.0.26 — explicit dispatch-mechanism override. `xcui`
+            // Explicit dispatch-mechanism override. `xcui`
             // (XCUIElement-anchored tap, needed for SwiftUI modal
             // dismiss bindings; requires `id:`) or `daemonProxy`
             // (XCTRunnerDaemonSession synthesize for stubborn RN
@@ -690,7 +684,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                     dispatch,
                 });
             }
-            // v5.18 c1 — `localized_text: { en: "...", ja: "...", es: "..." }`
+            // `localized_text: { en: "...", ja: "...", es: "..." }`
             // per-locale text table. Adapter desugars to Selector::Text
             // before dispatch based on last_locale state.
             if let Some(loc_map) = map
@@ -707,9 +701,9 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                     dispatch,
                 });
             }
-            // v5.19 c1 — `ocrText: "Submit"` (short) or
+            // `ocrText: "Submit"` (short) or
             // `ocrText: { text: "送信", locales: ["ja"] }` (full). Apple Vision
-            // OCR sense layer (L5). Adapter dispatches directly via
+            // OCR sense layer. Adapter dispatches directly via
             // App::find_by_text_ocr + tap_at_norm_coord, bypassing resolver.
             if let Some(raw) = map.get(Value::String("ocrText".into())) {
                 let (text, locales) = parse_ocr_text(raw, "tapOn.ocrText")?;
@@ -723,11 +717,11 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                     dispatch,
                 });
             }
-            // v5.20 c1 — `anchored: { anchor: {<selector>}, dx: <f>, dy: <f> }`
-            // (escape hatch family L6). Resolve anchor centroid + (dx, dy)
+            // `anchored: { anchor: {<selector>}, dx: <f>, dy: <f> }`
+            // (escape hatch). Resolve anchor centroid + (dx, dy)
             // normalized shift → tap_at_norm_coord. Adapter dispatches
             // directly; resolver never sees AnchorRelative.
-            // v1.0.26 — `anchorRelative` alias accepted (docs promised it).
+            // `anchorRelative` alias accepted (docs promised it).
             if let Some(raw) = map
                 .get(Value::String("anchored".into()))
                 .or_else(|| map.get(Value::String("anchorRelative".into())))
@@ -743,8 +737,8 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                     dispatch,
                 });
             }
-            // v5.20 c2 — `fallback: [<selector1>, <selector2>, ...]` (L7
-            // sequential chain). Adapter iterates chain, first hit wins.
+            // `fallback: [<selector1>, <selector2>, ...]` (sequential
+            // chain). Adapter iterates the chain, first hit wins.
             if let Some(raw) = map.get(Value::String("fallback".into())) {
                 let chain = parse_fallback_chain(raw, "tapOn.fallback")?;
                 return Ok(Step::TapOn {
@@ -753,7 +747,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                     dispatch,
                 });
             }
-            // v1.0.20 D2 — `role: <role>` (+ optional `name:` pattern).
+            // `role: <role>` (+ optional `name:` pattern).
             // Wire type `Selector::Role` has existed since v5.x for the
             // resolver path; docs promised the yaml shape but the
             // parser did not accept it. Now it does.
@@ -770,7 +764,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                     dispatch,
                 });
             }
-            // v1.0.20 D2 — `label: <string>` for accessibilityLabel (iOS)
+            // `label: <string>` for accessibilityLabel (iOS)
             // / contentDescription (Android) strict equal. Same
             // documented-but-unimplemented gap as `role:`.
             if let Some(label) = map
@@ -829,7 +823,7 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
         Value::String(s) => Ok(Step::RunFlow(s.clone())),
         // full forms:
         //   - `runFlow: { when: { visible }, file, as }`        → RunFlowConditional
-        //   - `runFlow: { when: { visible }, commands: [...] }` → RunFlowInline (v6.8 c1)
+        //   - `runFlow: { when: { visible }, commands: [...] }` → RunFlowInline
         Value::Mapping(map) => {
             let has_file = map.get(Value::String("file".into())).is_some();
             let has_commands = map.get(Value::String("commands".into())).is_some();
@@ -842,7 +836,7 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
 
             let when_visible = parse_run_flow_when_visible(map)?;
             let when_not_visible = parse_run_flow_when_not_visible(map)?;
-            // v1.0.24 D2 — both gates set at once is ambiguous;
+            // Both gates set at once is ambiguous;
             // reject at parse time with a clear message so consumers
             // don't accidentally combine.
             if when_visible.is_some() && when_not_visible.is_some() {
@@ -853,7 +847,7 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
             }
 
             if has_commands {
-                // v6.8 c1 — inline commands form (maestro YamlRunFlow's
+                // Inline commands form (maestro YamlRunFlow's
                 // `commands:` alternative). `as:` is rejected here —
                 // alias capture is tied to subflow pasteboard handoff,
                 // which inline body has no boundary for.
@@ -882,7 +876,7 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
                 .ok_or_else(|| ParseError::MissingField("runFlow.file OR runFlow.commands".into()))?
                 .to_string();
 
-            // v5.6 c5 — `as: <name>` outputs alias capture.
+            // `as: <name>` outputs alias capture.
             let as_name = match map.get(Value::String("as".into())) {
                 None => None,
                 Some(Value::String(s)) => Some(s.clone()),
@@ -908,7 +902,7 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v6.8 c1 — shared `when.visible` parser for both `runFlow` arms
+// Shared `when.visible` parser for both `runFlow` arms
 // (file → RunFlowConditional, commands → RunFlowInline).
 fn parse_run_flow_when_visible(
     map: &serde_norway::Mapping,
@@ -926,7 +920,7 @@ fn parse_run_flow_when_visible(
     }
 }
 
-// v1.0.24 D2 — parse `runFlow.when.notVisible`. Same shape as
+// Parse `runFlow.when.notVisible`. Same shape as
 // `when.visible` but the runtime gate fires when the selector is
 // NOT visible. Sibling helper to `parse_run_flow_when_visible` so
 // the parser dispatches both from one `when:` block.
@@ -955,7 +949,7 @@ fn parse_extended_wait_until(v: &Value) -> Result<Step, ParseError> {
         .get(Value::String("timeout".into()))
         .and_then(Value::as_u64)
         .ok_or_else(|| ParseError::MissingField("extendedWaitUntil.timeout".into()))?;
-    // v5.2 c2 — visible XOR notVisible 编译期 dispatch.
+    // Visible XOR notVisible, resolved at parse time.
     if let Some(visible) = map.get(Value::String("visible".into())) {
         let selector = visible_to_selector(visible)?;
         Ok(Step::ExtendedWaitUntil {
@@ -1081,7 +1075,7 @@ fn parse_xy(v: &Value, field: &str) -> Result<(f64, f64), ParseError> {
 }
 
 fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
-    // v5.3 c3 — bare `- launchApp` (Null) inherits the flow header appId
+    // Bare `- launchApp` (Null) inherits the flow header appId
     // (filled in by parse_flow_yaml post-pass). Matches maestro CLI semantics.
     if v.is_null() {
         return Ok(Step::LaunchApp {
@@ -1110,13 +1104,13 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
         .get(Value::String("clearKeychain".into()))
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    // v5.2 c2 — stopApp default true (maestro 文档明示).
+    // StopApp default true (explicit in the maestro docs).
     let stop_app = map
         .get(Value::String("stopApp".into()))
         .and_then(Value::as_bool)
         .unwrap_or(true);
-    // v5.2 c2 — arguments: sequence form `[a, b, c]` (default).
-    // v5.5 c6 — also accept mapping form `{ key: value, ... }` (maestro CLI
+    // Arguments: sequence form `[a, b, c]` (default).
+    // Also accept mapping form `{ key: value, ... }` (maestro CLI
     // accepts the mapping form syntactically but does NOT forward it to the
     // launched app's argv because its IDB path drops them silently; smix
     // bypasses IDB and uses simctl launch directly so mapping form can now
@@ -1177,7 +1171,7 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
             });
         }
     };
-    // v5.2 c2 — permissions: map<string, "allow"|"deny"|"unset">, default empty.
+    // Permissions: map<string, "allow"|"deny"|"unset">, default empty.
     let permissions = match map.get(Value::String("permissions".into())) {
         None => Vec::new(),
         Some(Value::Mapping(m)) => m
@@ -1217,11 +1211,11 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
             });
         }
     };
-    // v1.0.16 — accept `waitForInteractiveMs: <ms>` on the map form.
+    // Accept `waitForInteractiveMs: <ms>` on the map form.
     // Threads through to the runner's `SessionAppLifecycleRequest`
-    // when `stop_app == true` (cooperative launch pathway). Bare
-    // form (`launchApp: null`) can't have opts; that path stays at
-    // pre-v1.0.16 semantics.
+    // when `stop_app == true` (cooperative launch pathway). The bare
+    // form (`launchApp: null`) can't carry opts, so it never gets an
+    // interactive wait.
     let wait_for_interactive_ms = map
         .get(Value::String("waitForInteractiveMs".into()))
         .and_then(Value::as_u64);
@@ -1236,18 +1230,17 @@ fn parse_launch_app(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
-// v1.0.18 D2 — accept bare `- waitForAnimationToEnd` (400 ms default)
+// Accept bare `- waitForAnimationToEnd` (400 ms default)
 // or numeric `- waitForAnimationToEnd: 500` (integer = ms sleep).
 // SmixQuiescenceSwizzle.m no-ops XCTest's idle-wait for performance,
 // so this verb is a FIXED sleep in smix, not an XCTest quiescence
-// wait. Insight round-4 clarification: the swizzle only touches
-// XCTest's internal idle wait; this verb never went through it in
-// the first place. maestro-compat default preserved.
+// wait. To be precise: the swizzle only touches XCTest's internal
+// idle wait, and this verb never went through it in the first place.
+// The 400 ms default is kept for maestro compat.
 //
-// v1.0.26 — also accept the maestro-canonical map form
-// `- waitForAnimationToEnd: { timeout: 5000 }` (maestro yaml uses a
-// `timeout:` sub-key; smix docs showed it but the parser rejected it
-// — same documented-but-unimplemented class as the v1.0.20 gaps).
+// Also accept the maestro-canonical map form
+// `- waitForAnimationToEnd: { timeout: 5000 }` — maestro yaml uses a
+// `timeout:` sub-key.
 fn parse_wait_for_animation_to_end(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::Null => Ok(Step::WaitForAnimationToEnd { duration_ms: 400 }),
@@ -1285,7 +1278,7 @@ fn parse_open_link(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::OpenLink(s.to_string()))
 }
 
-// v5.2 c1 — assertNotVisible accepts the same selector shapes as
+// AssertNotVisible accepts the same selector shapes as
 // assertVisible (short string = text shortcut, full mapping = id / text
 // / point disambiguation).
 fn parse_assert_not_visible(v: &Value) -> Result<Step, ParseError> {
@@ -1305,11 +1298,11 @@ fn parse_assert_not_visible(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::AssertNotVisible { selector })
 }
 
-// v5.2 c1 — killApp accepts `killApp: "com.x"` (string short form) or
+// KillApp accepts `killApp: "com.x"` (string short form) or
 // `killApp: { appId: "com.x" }` (full form, for forward-compat with
 // future scope fields). maestro currently only documents the bare
 // string form but accepts either at parser level.
-// v1.0.11 §D2 — accept either bare `- clearAppData` (unit) or the
+// Accept either bare `- clearAppData` (unit) or the
 // map form with `launchArgs` / `launchEnv`. Bare form is a valid
 // yaml value in serde_norway sense: the parent step-list entry is
 // `- clearAppData` where the value under the step-name key is
@@ -1369,19 +1362,20 @@ fn parse_clear_app_data(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
-// v1.0.14 Cluster A — resetAppData shape:
-//   - resetAppData: 'insight://dev-mutate?action=reset'   # short
-//   - resetAppData:                                          # map
+// ResetAppData shape:
+//   - resetAppData: 'myapp://dev-mutate?action=reset'   # short
+//   - resetAppData:                                        # map
 //       via: url-scheme          # future-proofing; only 'url-scheme' today
-//       url: 'insight://dev-mutate?action=reset'
+//       url: 'myapp://dev-mutate?action=reset'
 //       waitFor:
-//         logLinePattern: '\[insight-dev\] reset-complete token='
+//         logLinePattern: '\[myapp-dev\] reset-complete token='
 //         # OR: sleepMs: 500
 //       timeoutMs: 5000
-// v1.0.27 — `clearUserDefaults: { keys: [k1, k2], bundleId?: <id> }`.
+
+// `clearUserDefaults: { keys: [k1, k2], bundleId?: <id> }`.
 // Deletes keys from the target app's NSUserDefaults (iOS). `bundleId`
-// absent ⇒ the flow's resolved app id at runtime. Insight round-5
-// Ask 12 (expo-dev-launcher deep-link replay neutralization).
+// absent ⇒ the flow's resolved app id at runtime. Motivating case:
+// neutralizing expo-dev-launcher's persisted deep-link replay.
 fn parse_clear_user_defaults(v: &Value) -> Result<Step, ParseError> {
     let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
         field: "clearUserDefaults".into(),
@@ -1498,7 +1492,7 @@ fn parse_kill_app(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.2 c1 — clearState as an independent command (vs the launchApp child
+// ClearState as an independent command (vs the launchApp child
 // field that already exists). Accepts `clearState: { appId: "com.x" }`.
 // maestro variant also accepts a bare `- clearState` when used inside
 // `launchApp` (handled by parse_launch_app); the top-level form requires
@@ -1516,8 +1510,9 @@ fn parse_clear_state(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::ClearState { app_id })
 }
 
-// v5.2 c4 — setClipboard accepts string literal含 `${expr}` 模板; runtime
-// `expand_template` 调 expr engine 替换. (v5.2 c3 deferred-to-c4 guard 已 sweep)
+// SetClipboard accepts a string literal, which may contain `${expr}`
+// templates; the runtime's `expand_template` calls the expression
+// engine to substitute them.
 fn parse_set_clipboard(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::SetClipboard(s.clone())),
@@ -1528,9 +1523,9 @@ fn parse_set_clipboard(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.2 c4 — pasteText 双形态: 裸 `- pasteText` (None) / `pasteText: "literal"`
-// (Some). literal 含 `${expr}` 模板; runtime expand_template 处理. (v5.2 c3
-// deferred-to-c4 guard 已 sweep)
+// PasteText has two forms: bare `- pasteText` (None) and
+// `pasteText: "literal"` (Some). The literal may contain `${expr}`
+// templates, which the runtime's expand_template handles.
 fn parse_paste_text(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::Null => Ok(Step::PasteText { text: None }),
@@ -1544,7 +1539,7 @@ fn parse_paste_text(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.2 c5 — `setLocation: { latitude, longitude }`. Both required f64.
+// `setLocation: { latitude, longitude }`. Both required f64.
 fn parse_set_location(v: &Value) -> Result<Step, ParseError> {
     let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
         field: "setLocation".into(),
@@ -1564,8 +1559,8 @@ fn parse_set_location(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
-// v5.2 c5 — `travel: { points: [{ latitude, longitude }, ...], speed_mps?: f64 }`.
-// ≥2 waypoints required (simctl location start 语义).
+// `travel: { points: [{ latitude, longitude }, ...], speed_mps?: f64 }`.
+// >=2 waypoints required, per `simctl location start` semantics.
 fn parse_travel(v: &Value) -> Result<Step, ParseError> {
     let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
         field: "travel".into(),
@@ -1614,9 +1609,9 @@ fn parse_travel(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::Travel { points, speed_mps })
 }
 
-// v5.2 c5 — top-level `setPermissions: { camera: allow, location: deny, ... }`.
-// 跟 c2 launchApp.permissions 子参同款 inner parse, app_id 留 None 由
-// runtime 解析 last_bundle.
+// Top-level `setPermissions: { camera: allow, location: deny, ... }`.
+// Same inner parse as the launchApp.permissions sub-parameter.
+// app_id is left None for the runtime to resolve from last_bundle.
 fn parse_set_permissions(v: &Value) -> Result<Step, ParseError> {
     let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
         field: "setPermissions".into(),
@@ -1662,11 +1657,12 @@ fn parse_set_permissions(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
-// v5.2 c6 — `assertScreenshot: "path"` scalar.
-// v5.5 c5 lifted mapping form `{ path, threshold?, mask? }` (surface-only:
-// threshold passes to dhash max_hamming, mask carried but runtime
-// warn-and-ignored — algorithm-level region exclusion is R2-tier, deferred
-// to v6+ when SSIM/pHash backbone replaces dhash; cold plan §scope).
+// `assertScreenshot: "path"` scalar.
+// Also accepts the mapping form `{ path, threshold?, mask? }`.
+// `threshold` passes through to the dhash max_hamming; `mask` is
+// carried but warn-and-ignored by the runtime, since algorithm-level
+// region exclusion needs a perceptual hash (SSIM/pHash) backbone that
+// dhash does not provide.
 fn parse_assert_screenshot(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::AssertScreenshot {
@@ -1742,7 +1738,7 @@ fn parse_assert_screenshot(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.2 c5 — `startRecording: <path>` scalar string only.
+// `startRecording: <path>` scalar string only.
 fn parse_start_recording(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::StartRecording { path: s.clone() }),
@@ -1753,14 +1749,15 @@ fn parse_start_recording(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.2 c5 — `setOrientation: <portrait|portraitUpsideDown|landscapeLeft|
-// landscapeRight|landscape>`. `landscape` alias → LandscapeLeft (maestro 同源).
+// `setOrientation: <portrait|portraitUpsideDown|landscapeLeft|
+// landscapeRight|landscape>`. The `landscape` alias maps to
+// LandscapeLeft, matching maestro.
 fn parse_set_orientation(v: &Value) -> Result<Step, ParseError> {
     let s = v.as_str().ok_or_else(|| ParseError::InvalidValue {
         field: "setOrientation".into(),
         reason: "expected a string literal".into(),
     })?;
-    // v5.3 c3 — accept both camelCase (maestro doc) and UPPER_SNAKE_CASE
+    // Accept both camelCase (maestro doc) and UPPER_SNAKE_CASE
     // (community style) aliases. maestro CLI accepts both.
     let orientation = match s {
         "portrait" | "PORTRAIT" => smix_sdk::MaestroOrientation::Portrait,
@@ -1782,7 +1779,7 @@ fn parse_set_orientation(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::SetOrientation { orientation })
 }
 
-// v5.2 c5 — `addMedia: <path>` (scalar) or `addMedia: [paths]` (array).
+// `addMedia: <path>` (scalar) or `addMedia: [paths]` (array).
 fn parse_add_media(v: &Value) -> Result<Step, ParseError> {
     let paths = match v {
         Value::String(s) => vec![s.clone()],
@@ -1814,9 +1811,9 @@ fn parse_add_media(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::AddMedia { paths })
 }
 
-// v5.2 c4 — `repeat: { while|times, commands }`.
-// v5.5 c5 — selector-style while (`while: { visible: <sel> }`) is now
-// accepted as `RepeatMode::WhileVisible` (was parser-rejected pre-v5.5).
+// `repeat: { while|times, commands }`.
+// Selector-style while (`while: { visible: <sel> }`) is accepted as
+// `RepeatMode::WhileVisible`.
 fn parse_repeat(v: &Value) -> Result<Step, ParseError> {
     let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
         field: "repeat".into(),
@@ -1914,7 +1911,7 @@ fn parse_repeat(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::Repeat { mode, commands })
 }
 
-// v5.2 c4 — `retry: { maxRetries, commands }`.
+// `retry: { maxRetries, commands }`.
 fn parse_retry(v: &Value) -> Result<Step, ParseError> {
     let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
         field: "retry".into(),
@@ -1940,8 +1937,9 @@ fn parse_retry(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
-// v5.2 c4 — `runScript: <inline literal or path>`. Parser 接受, runtime
-// explicit DriverError "complete JS runtime not supported in v5.2".
+// `runScript: <inline literal or path>`. The parser accepts it so
+// yaml stays portable with maestro; the runtime raises an explicit
+// DriverError because there is no JS runtime behind it.
 fn parse_run_script(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::RunScript { source: s.clone() }),
@@ -1952,10 +1950,9 @@ fn parse_run_script(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.21 c1b — `webview_eval: "<js>"` (short) or
+// `webview_eval: "<js>"` (short) or
 // `webview_eval: { js: "...", assert_eq: <json value> }` (full).
-// Evals JS against fixture-side WKWebView bridge (Option A, a11y-i18n
-// master plan §1).
+// Evals JS against the fixture-side WKWebView bridge.
 fn parse_webview_eval(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => {
@@ -2013,7 +2010,8 @@ fn parse_webview_eval(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.2 c4 — `evalScript: <inline expression>`. 同 runScript graceful unsupported.
+// `evalScript: <inline expression>`. Same graceful-unsupported
+// handling as runScript.
 fn parse_eval_script(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::EvalScript { source: s.clone() }),
@@ -2024,7 +2022,7 @@ fn parse_eval_script(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.2 c4 — recursive helper: parse a yaml sequence of step items
+// Recursive helper: parse a yaml sequence of step items
 // (used by repeat.commands / retry.commands).
 fn parse_step_sequence(v: &Value, field: &str) -> Result<Vec<Step>, ParseError> {
     let seq = match v {
@@ -2043,7 +2041,7 @@ fn parse_step_sequence(v: &Value, field: &str) -> Result<Vec<Step>, ParseError> 
     Ok(out)
 }
 
-// v5.2 c4 — assertTrue accepts a string literal (raw expression source).
+// AssertTrue accepts a string literal (raw expression source).
 // runtime walks expand_template + expr engine + truthy check.
 fn parse_assert_true(v: &Value) -> Result<Step, ParseError> {
     match v {
@@ -2058,12 +2056,15 @@ fn parse_assert_true(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.2 c3 — maestro `longPressOn` 默认 duration (ms).
-// cli-2.2.0 文档明示 0.5s + XCUIElement.press(forDuration:) 标准 0.5s.
+// Default duration (ms) for maestro `longPressOn`. The maestro CLI
+// docs specify 0.5s, which also matches the XCUIElement
+// press(forDuration:) convention.
 const LONG_PRESS_DEFAULT_MS: u64 = 500;
 
-// v5.2 c3 — doubleTapOn 单 arm: scalar string → text selector;
-// mapping → 全 selector (id/text/label/...). 不接 maestro 暂未文档化的子参.
+// DoubleTapOn has a single arm: a scalar string becomes a text
+// selector; a mapping accepts the full selector set
+// (id/text/label/...). Sub-parameters maestro has not documented are
+// not accepted.
 fn parse_double_tap_on(v: &Value) -> Result<Step, ParseError> {
     let selector = match v {
         Value::String(s) => Selector::Text {
@@ -2081,9 +2082,9 @@ fn parse_double_tap_on(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::DoubleTapOn { selector })
 }
 
-// v5.2 c3 — longPressOn 双形态: scalar (default duration) 或 mapping
-// (selector 字段 + optional `duration: <ms>`). maestro 文档字段名 `duration`
-// 单位 ms.
+// LongPressOn has two forms: scalar (default duration) or mapping
+// (selector fields + optional `duration: <ms>`). maestro documents
+// the field name as `duration`, in milliseconds.
 fn parse_long_press_on(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::LongPressOn {
@@ -2111,7 +2112,8 @@ fn parse_long_press_on(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// v5.2 c3 — copyTextFrom 同 assertVisible / tapOn 的 selector 抽取模式.
+// CopyTextFrom uses the same selector-extraction pattern as
+// assertVisible / tapOn.
 fn parse_copy_text_from(v: &Value) -> Result<Step, ParseError> {
     let selector = match v {
         Value::String(s) => Selector::Text {
@@ -2129,8 +2131,8 @@ fn parse_copy_text_from(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::CopyTextFrom { selector })
 }
 
-// v5.2 c1 / v1.0 Phase C2 — takeScreenshot accepts three shapes:
-//   `takeScreenshot: "name"`          — string path (byte-compat v0.3.x)
+// takeScreenshot accepts three shapes:
+//   `takeScreenshot: "name"`          — string path
 //   `- takeScreenshot`                 — bare (None ⇒ discard bytes)
 //   `takeScreenshot: { name, annotate }` — long form with annotations
 fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
@@ -2205,7 +2207,7 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
 
 // -------------------- top-level entry ------------------------------------
 
-/// v1.0 Phase A3 — normalize verb name to maestro-canonical form
+/// Normalize verb name to maestro-canonical form
 /// before dispatching. Consumer yaml may use either the maestro form
 /// (`tapOn`, `assertVisible`) or the smix-canonical form (`tap`,
 /// `expect`); this fn maps smix names back to maestro names so
@@ -2233,7 +2235,7 @@ fn normalize_verb_name(key: &str) -> &str {
 }
 
 fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
-    // v1.0 Phase A3 — polymorphic-dispatch keys must route BEFORE
+    // Polymorphic-dispatch keys must route BEFORE
     // verb-name normalization. `expect` maps to `assertVisible` in
     // smix_verbs but the parser routes it based on subkeys
     // (signal / signals / logClean / else assertVisible fallback);
@@ -2256,24 +2258,23 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "launchApp" => parse_launch_app(value),
         "openLink" => parse_open_link(value),
         "stopApp" => Ok(Step::StopApp),
-        // v1.0.8 §D2 + v1.0.11 §D2 — session-scoped in-place data clear.
-        // Accepts either:
-        //   - clearAppData                         (bare — legacy)
+        // Session-scoped in-place data clear. Accepts either:
+        //   - clearAppData                         (bare)
         //   - clearAppData:
         //       launchArgs: ["-EXInternalMetroPort", "8081"]
         //       launchEnv:
         //         EX_DEV_CLIENT_METRO_URL: "http://localhost:8081"
         //
-        // v1.0.11 launchArgs/launchEnv are forwarded to the cooperative
-        // runner-side launch step inside clearAppData. Unblocks Expo
-        // SDK 57 dev-launcher server picker (which stopped auto-
-        // navigating on URL scheme, per insight's v1.0.10 followup).
+        // launchArgs/launchEnv are forwarded to the runner-side launch
+        // step inside clearAppData: the Expo SDK 57 dev-launcher
+        // server picker stopped auto-navigating on a URL scheme, so
+        // launch args are how the metro target reaches it.
         "clearAppData" => parse_clear_app_data(value),
-        // v1.0.14 Cluster A — URL-scheme JS-wipe. Bare short-form
+        // URL-scheme JS-wipe. Bare short-form
         // (`resetAppData: 'url'`) OR map-form (with waitFor + timeout).
         "resetAppData" => parse_reset_app_data(value),
         "clearUserDefaults" => parse_clear_user_defaults(value),
-        // v5.2 c1 — 7 ⊘ adapter-only-gap wires.
+        // 7 ⊘ adapter-only-gap wires.
         "scroll" => Ok(Step::Scroll),
         "hideKeyboard" => Ok(Step::HideKeyboard),
         "assertNotVisible" => parse_assert_not_visible(value),
@@ -2281,21 +2282,21 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "clearState" => parse_clear_state(value),
         "clearKeychain" => Ok(Step::ClearKeychain),
         "takeScreenshot" => parse_take_screenshot(value),
-        // v5.2 c3 — clipboard surface + interaction (doubleTap / longPress).
+        // Clipboard surface + interaction (doubleTap / longPress).
         "setClipboard" => parse_set_clipboard(value),
         "pasteText" => parse_paste_text(value),
         "copyTextFrom" => parse_copy_text_from(value),
         "doubleTapOn" => parse_double_tap_on(value),
         "longPressOn" => parse_long_press_on(value),
-        // v5.2 c4 — Flow gap.
+        // Flow gap.
         "assertTrue" => parse_assert_true(value),
         "repeat" => parse_repeat(value),
         "retry" => parse_retry(value),
         "runScript" => parse_run_script(value),
         "evalScript" => parse_eval_script(value),
-        // v5.21 c1b — webview JS eval via fixture-side debug bridge.
+        // Webview JS eval via fixture-side debug bridge.
         "webview_eval" | "webviewEval" => parse_webview_eval(value),
-        // v5.2 c5 — Device + Media gap.
+        // Device + Media gap.
         "setLocation" => parse_set_location(value),
         "travel" => parse_travel(value),
         "setPermissions" => parse_set_permissions(value),
@@ -2303,9 +2304,9 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "setOrientation" => parse_set_orientation(value),
         "startRecording" => parse_start_recording(value),
         "stopRecording" => Ok(Step::StopRecording),
-        // v5.2 c6 — visual regression.
+        // Visual regression.
         "assertScreenshot" => parse_assert_screenshot(value),
-        // v0.3.0 Phase A — expect.signal / expect.signals / expect.logClean.
+        // Expect.signal / expect.signals / expect.logClean.
         // The `expect` key here means the maestro `expect:` verb (currently
         // aliased to assertVisible in maestro). We route to the signal
         // parser when the value has `signal:` / `signals:` / `logClean:`
@@ -2483,7 +2484,7 @@ fn parse_expect_signals(
     })
 }
 
-/// v0.3.0 Phase B B3 — `- fixture: <id>` short form OR
+/// `- fixture: <id>` short form OR
 /// `- fixture: {id: <>, timeoutMs: <>}` long form.
 fn parse_fixture(value: &Value) -> Result<Step, ParseError> {
     match value {
@@ -2585,7 +2586,7 @@ pub fn parse_flow_yaml(yaml: &str) -> Result<Flow, ParseError> {
         }
     }
 
-    // v5.3 c3 — bare `- launchApp` steps inherit the flow header appId here
+    // Bare `- launchApp` steps inherit the flow header appId here
     // (parser layer; runtime stays appId-agnostic).
     for step in &mut steps {
         if let Step::LaunchApp { app_id: sid, .. } = step
@@ -2597,7 +2598,7 @@ pub fn parse_flow_yaml(yaml: &str) -> Result<Flow, ParseError> {
     Ok(Flow { app_id, app, steps })
 }
 
-/// v6.0 c4 — extract `(app_id, app)` from yaml header. Backward-compatible:
+/// Extract `(app_id, app)` from yaml header. Backward-compatible:
 /// accepts legacy `appId:` literal, new `app:` logical key, or both. At
 /// least one field key must be PRESENT (explicit empty `appId: ""` is
 /// allowed for v5 tests probing the "no launch" boundary).

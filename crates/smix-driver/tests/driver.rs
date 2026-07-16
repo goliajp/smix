@@ -1,4 +1,4 @@
-//! v3.1 c9 — wiremock-based driver integration tests.
+//! Wiremock-based driver integration tests.
 
 use smix_driver::{HttpRunnerClient, SimctlDriver};
 use smix_error::FailureCode;
@@ -176,7 +176,7 @@ async fn tap_miss_returns_element_not_found_after_implicit_wait() {
 
 #[tokio::test]
 async fn fill_chunks_one_char_per_post() {
-    // v3.6 c1 G1 fix — driver.fill splits multi-char text into 1-char
+    // Driver.fill splits multi-char text into 1-char
     // chunks, posting each to runner /fill separately so the RN
     // TextInput onChangeText debounce on the main thread can flush
     // between keystrokes. Verify the mock receives exactly N posts for
@@ -202,7 +202,7 @@ async fn fill_chunks_one_char_per_post() {
 
 #[tokio::test]
 async fn fill_with_id_selector_focus_taps_then_fills_focused() {
-    // v3.6 c2 — runner /fill only accepts text selectors (or the
+    // Runner /fill only accepts text selectors (or the
     // _focused_ magic). For id/label/role/anchor selectors, driver.fill
     // host-resolves + taps the target first (to give it keyboard focus),
     // then issues chunked /fill posts with `selector: {focused: true}`.
@@ -261,7 +261,7 @@ async fn fill_single_char_takes_fast_path() {
 
 #[tokio::test]
 async fn clear_with_text_selector_takes_fast_path() {
-    // v3.7 c1 — pure Text selector hits /clear directly (mirroring fill
+    // Pure Text selector hits /clear directly (mirroring fill
     // fast path). No /tree, no /tap.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -281,9 +281,9 @@ async fn clear_with_text_selector_takes_fast_path() {
 
 #[tokio::test]
 async fn clear_with_id_selector_focus_taps_then_clears_focused() {
-    // v3.7 c1 — runner /clear only accepts text selectors (or the
-    // `_focused_` magic); id-selector clear returns missingText. Mirror
-    // the v3.6 c2 fill dispatch: host-resolve + tap the id target for
+    // Runner /clear only accepts text selectors (or the
+    // `_focused_` magic); id-selector clear returns missingText. Mirrors
+    // the fill dispatch: host-resolve + tap the id target for
     // focus, then issue /clear with `selector: {focused: true}`.
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -407,7 +407,7 @@ async fn dispose_idempotent_noop() {
     d.dispose().await.unwrap();
 }
 
-// ---- v3.5 c2 — find() selector-type dispatch -----------------------------
+// ---- find() selector-type dispatch ---------------------------------------
 
 fn id_sel(s: &str) -> Selector {
     Selector::Id {
@@ -435,7 +435,7 @@ fn tree_with_id_and_role() -> A11yNode {
     let mut button = mk_node(Some("Login"), rect(50.0, 100.0, 200.0, 40.0), vec![]);
     button.raw_type = "button".into();
     button.identifier = Some("login-btn".into());
-    // v3.5 c3 — DO NOT set `role` manually here. The Swift /tree route
+    // DO NOT set `role` manually here. The Swift /tree route
     // never emits `role` on the wire, only `rawType`; runner-client's
     // `get_tree` runs `derive_roles_recursive` post-deser to lift
     // `raw_type = "button"` into `role = Some(Role::Button)`. This test
@@ -506,7 +506,7 @@ async fn find_with_text_plus_index_modifier_falls_back_to_host_resolve() {
 
 #[tokio::test]
 async fn find_with_text_plus_ancestor_modifier_falls_back_to_host_resolve() {
-    // v3.14 c1.5 — text + Modifiers::ancestor MUST fall back to host-resolve
+    // Text + Modifiers::ancestor MUST fall back to host-resolve
     // (via /tree GET) because runner /find route is Apple element query
     // which has no parent-chain semantic. If dispatch wrongly hits /find,
     // wiremock 404 makes this fail. Only the /tree mock is registered.
@@ -546,7 +546,7 @@ async fn find_with_text_plus_ancestor_modifier_falls_back_to_host_resolve() {
 
 #[tokio::test]
 async fn tap_at_norm_coord_passthrough() {
-    // v3.16 c1 S1 — SimctlDriver::tap_at_norm_coord(nx, ny) thin
+    // SimctlDriver::tap_at_norm_coord(nx, ny) thin
     // wrapper on runner. wiremock only mounts POST /tap-at-norm-coord;
     // any other route (e.g. /tree) is wiremock 404 → test fail. Body
     // must contain {nx, ny} per swift-bridge TapAtNormCoordRoute wire
@@ -567,13 +567,12 @@ async fn tap_at_norm_coord_passthrough() {
         .expect("tap_at_norm_coord should pass through to runner");
 }
 
-// ---- v4.1 c1 — find / find_one / find_all transient /tree (or /find)
-// transport retry. Mirrors the v3.17 c1 wait_for transient-retry pattern
-// — sim still launching / runner attached app context switching can
-// return a transient `/tree 500 snapshot_unavailable` (or `/find 500`)
-// that the original `find*` impl surfaced as `DriverError` instead of
-// polling within the standard 5s implicit-wait budget. v4.1 c1 closes
-// the asymmetry: host-side polish, capability unchanged.
+// ---- find / find_one / find_all transient /tree (or /find) transport
+// retry. Mirrors the wait_for transient-retry pattern — a sim still
+// launching, or the runner switching attached app context, can return a
+// transient `/tree 500 snapshot_unavailable` (or `/find 500`). These
+// must be polled within the standard 5s implicit-wait budget rather
+// than surfaced as a `DriverError`.
 
 #[tokio::test]
 async fn find_host_resolve_retries_transient_tree_500() {
@@ -637,7 +636,7 @@ async fn tap_retries_transient_tree_500() {
     let server = MockServer::start().await;
     // First /tree call returns transient 500, second returns the populated
     // tree containing the "Login" text node. tap() must retry within budget
-    // and proceed to /tap-at-norm-coord (v4.1 c4 parity with wait_for).
+    // and proceed to /tap-at-norm-coord (parity with wait_for).
     Mock::given(method("GET"))
         .and(path("/tree"))
         .respond_with(
@@ -693,7 +692,7 @@ async fn find_one_and_find_all_retry_transient_tree_500() {
     assert_eq!(all.len(), 1, "find_all should match 1 node after retry");
 }
 
-// -------------------- /system-popup-action passthru (v4.2 c2) ------------
+// -------------------- /system-popup-action passthru ----------------------
 //
 // G9 act side — Ok(true) on 200 + `{"ok":true}` envelope; Ok(false) on
 // 404 `not_found` from the runner (popup or button id stale). camelCase

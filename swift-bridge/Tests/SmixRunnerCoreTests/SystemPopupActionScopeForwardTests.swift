@@ -2,7 +2,7 @@ import XCTest
 import FlyingFox
 @testable import SmixRunnerCore
 
-// v4.2 c1 — G9 act side — POST /system-popup-action integration test.
+// POST /system-popup-action integration test.
 // Drive the REAL `runForever` route via an IPv4 client on a fixed free
 // port (mirrors SystemPopupsRouteTests / TreeScopeForwardTests). The
 // real handler is mocked here to assert the wire envelope shape +

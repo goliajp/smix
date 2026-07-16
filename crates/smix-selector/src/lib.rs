@@ -3,8 +3,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 //! smix-selector — Selector enum + Modifiers + AnchorBox + `match_text`
-//! (stone). Ported from now-retired TS source: `src/core/selector.ts` +
-//! `src/core/resolve-selector.ts:153-184`.
+//! (stone).
 //!
 //! # Scope
 //!
@@ -12,17 +11,21 @@
 //!   `IndexModifiers`) with serde wire compatibility (camelCase JSON,
 //!   matching SDK / CLI / MCP / runner-client wire shape).
 //! - Pure functions (`match_text`, `describe_selector`) — no I/O, no Tree
-//!   traversal (resolver lives in `smix-selector-resolver`, c5+).
+//!   traversal (the resolver lives in `smix-selector-resolver`).
 //!
-//! # Selector base forms (跟 TS 同源, v1.5 C2 lock-in)
+//! # Selector forms
 //!
-//! 6 mutually exclusive base forms:
+//! 11 variants. Six are mutually exclusive base forms, whose field
+//! presence is the wire discriminator:
 //! 1. Text (string / regex)
 //! 2. Id (string strict equal vs node.identifier)
 //! 3. Label (string strict equal vs node.label)
 //! 4. Role { role, name?: pattern } (role enum + optional pattern name)
 //! 5. Focused (focused: true — runtime-resolved current focus target)
 //! 6. Anchor (anchor-only, no own base; spatial keys do the filtering)
+//!
+//! The other five are later sense layers, each dispatched directly by
+//! the adapter: LocalizedText, OcrText, AnchorRelative, Point, Fallback.
 //!
 //! # Modifiers / AnchorBox (recursive)
 //!
@@ -32,10 +35,10 @@
 //!
 //! # `Pattern` wire form (string-or-regex union, serde-friendly)
 //!
-//! TS `string | RegExp` doesn't survive JSON serialization (RegExp →
-//! `{}`). Wire form is:
+//! A native regex object doesn't survive JSON serialization, so a
+//! `string | regex` union needs an explicit wire form:
 //! - `"plain"` (untagged string) — string strict equal (case-insensitive,
-//!   v1.5 c5i-d maestro parity)
+//!   for maestro parity)
 //! - `{ "regex": "pattern", "flags": "i" }` (object tag) — regex form,
 //!   auto-/i flag inject if absent
 //!
@@ -48,7 +51,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use smix_screen::A11yNode;
-// v1.0.20 D2 — re-export `Role` at the crate root so adapter crates
+// Re-export `Role` at the crate root so adapter crates
 // building `Selector::Role { role, .. }` can `use smix_selector::Role`
 // alongside `smix_selector::Selector` without pulling `smix-screen`
 // as a direct dependency. Role is fundamentally a wire concept —
@@ -61,16 +64,16 @@ pub use smix_screen::Role;
 /// String-or-regex pattern. Wire-compatible: plain JSON string ↔
 /// [`Pattern::Text`]; tagged object `{regex, flags}` ↔ [`Pattern::Regex`].
 ///
-/// Case-insensitive 模式跟 TS v1.5 c5i-d 1:1: regex 缺 /i flag 自动注入;
-/// text 走 `eq_ignore_ascii_case` 模拟 `toLowerCase` strict equal.
+/// Matching is always case-insensitive: a regex missing the `/i` flag gets
+/// it injected automatically; plain text compares via
+/// `eq_ignore_ascii_case`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Pattern {
-    /// Plain literal string. Empty string never matches anything (TS
-    /// resolve-selector.ts:178 `if (pattern === '') return false`).
+    /// Plain literal string. An empty string never matches anything.
     Text(String),
     /// Compiled-on-call regex. `flags` defaults to "i" when absent to
-    /// satisfy v1.5 c5i-d maestro parity.
+    /// satisfy maestro parity.
     Regex {
         /// Regex source string (PCRE-like syntax via the `regex` crate).
         regex: String,
@@ -132,13 +135,12 @@ impl Pattern {
 }
 
 /// Compiled, hot-path-ready pattern. Caches the compiled `regex::Regex`
-/// (跟 TS RegExp 对象内部 compile-once cache 同精神 — TS RegExp lazily
-/// compiles on first `.test()` and re-uses the compiled DFA; we eager-
-/// compile via [`Pattern::compile`] and store the result for the same
-/// effect on Rust side).
+/// so the DFA is built once and re-used across matches, rather than
+/// recompiled on every call.
 ///
-/// Not serde-serializable (regex::Regex 不 derive Serialize/Deserialize).
-/// Wire form is [`Pattern`]; resolver/SDK convert with `.compile()` once.
+/// Not serde-serializable (`regex::Regex` does not derive
+/// `Serialize`/`Deserialize`). Wire form is [`Pattern`]; resolver/SDK
+/// convert with `.compile()` once.
 #[derive(Clone, Debug)]
 pub enum CompiledPattern {
     /// Plain literal string (case-insensitive ASCII equality).
@@ -238,14 +240,17 @@ pub struct IndexModifiers {
     pub last: Option<bool>,
 }
 
-/// Selector — 6 mutually exclusive base forms.
+/// Selector — 11 variants: 6 base forms (Text / Id / Label / Role /
+/// Focused / Anchor), whose field presence is the wire discriminator,
+/// plus 5 later layers (LocalizedText / OcrText / AnchorRelative /
+/// Point / Fallback).
 ///
 /// Each variant carries its base-shape fields *and* the modifier set
-/// stackable on that base. `serde(untagged)` ensures the JSON wire form
-/// matches the existing TS Selector wire 1:1 (no `{type: "text", ...}`
-/// discriminator — the presence of `text` / `id` / `label` / `role` /
-/// `focused` / `anchor` is the discriminator, mirroring TS's
-/// `isXSelector` type-guards).
+/// stackable on that base. `serde(untagged)` keeps the JSON wire form
+/// free of any explicit tag: there is no `{type: "text", ...}`
+/// discriminator — the *presence* of the `text` / `id` / `label` /
+/// `role` / `focused` / `anchor` field is itself the discriminator.
+/// The wire shape matches the SDK / CLI / MCP / runner-client 1:1.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Selector {
@@ -298,7 +303,7 @@ pub enum Selector {
         index: IndexModifiers,
     },
     /// `{ localized_text: { en: "Submit", ja: "送信", es: "Enviar" }, ...modifiers }`
-    /// — v5.18 c1 (a11y-i18n initiative L4 layer). Per-locale text table for
+    /// — sense layer L4. Per-locale text table for
     /// elements whose visible text varies across locales when no stable
     /// accessibilityIdentifier is exposed. Adapter desugars this variant to
     /// `Selector::Text { text: <picked-by-current-locale> }` before passing
@@ -316,8 +321,8 @@ pub enum Selector {
         #[serde(flatten)]
         modifiers: Modifiers,
     },
-    /// `{ ocr_text: "Submit", locales: ["en"], ...modifiers }` — v5.19 c1
-    /// (a11y-i18n initiative L5 layer). Apple Vision OCR keyword over the
+    /// `{ ocr_text: "Submit", locales: ["en"], ...modifiers }` — sense
+    /// layer L5. Apple Vision OCR keyword over the
     /// current XCUIScreen screenshot. For elements with no stable
     /// accessibilityIdentifier AND no a11y label (custom-drawn UI / 3rd
     /// party libs that bypass UIAccessibility). Adapter handles dispatch
@@ -340,8 +345,8 @@ pub enum Selector {
         #[serde(flatten)]
         modifiers: Modifiers,
     },
-    /// `{ anchored: { anchor: <selector>, dx: -0.15, dy: 0 } }` — v5.20 c1
-    /// (a11y-i18n initiative L6 layer). Anchor-relative coord for icon-only
+    /// `{ anchored: { anchor: <selector>, dx: -0.15, dy: 0 } }` — sense
+    /// layer L6. Anchor-relative coord for icon-only
     /// / pure-graphic elements (~15-20% of "lib without a11y" scenarios)
     /// where no sense layer can locate the target directly, but a STABLE
     /// nearby element (status label, header text, etc.) is sense-able.
@@ -353,7 +358,7 @@ pub enum Selector {
     ///
     /// Compared to `Selector::Anchor` (spatial-relation chain — "find a
     /// node near/below/leftOf `<anchor>`"), `AnchorRelative` is an escape
-    /// hatch family (§9 #3 sibling to `tap_at_coord`) — the target itself
+    /// hatch family (sibling to `tap_at_coord`) — the target itself
     /// has no a11y form, only the anchor does. Adapter dispatches directly
     /// (find_norm_coord(anchor) → tap_at_coord), bypassing resolver.
     AnchorRelative {
@@ -369,8 +374,8 @@ pub enum Selector {
         /// (`dy: 0.05` = 5% of screen height downward).
         dy: f64,
     },
-    /// `{ point: [0.5, 0.9] }` — v5.20 c2 (a11y-i18n initiative L7 layer,
-    /// last-resort within fallback chain). Direct viewport-normalized
+    /// `{ point: [0.5, 0.9] }` — sense layer L7 (last-resort within a
+    /// fallback chain). Direct viewport-normalized
     /// coord. Equivalent to `Step::TapAtPoint` for standalone use, but
     /// expressed as a Selector for uniform composition inside
     /// `Selector::Fallback { chain: Vec<Selector> }`. Adapter dispatches
@@ -381,8 +386,8 @@ pub enum Selector {
         /// Y in viewport-normalized [0, 1].
         ny: f64,
     },
-    /// `{ fallback: [<selector1>, <selector2>, ...] }` — v5.20 c2 (a11y-i18n
-    /// initiative L7 layer). Sequential resolution chain — adapter tries
+    /// `{ fallback: [<selector1>, <selector2>, ...] }` — sense layer L7.
+    /// Sequential resolution chain — adapter tries
     /// each sub-selector in order; first hit wins. Misses are recorded
     /// for AI-readable error report (`sense_layer` / `missing_id_hint` /
     /// `suggested_fixes`). On all-miss, surfaces ElementNotFound with a
@@ -423,24 +428,24 @@ impl Default for True {
 
 // -------------------- match_text -----------------------------------------
 
-/// Text matching against an [`A11yNode`]. 1:1 with TS
-/// `src/core/resolve-selector.ts:153-184` (matchText).
+/// Text matching against an [`A11yNode`].
 ///
 /// Scans 6 candidate fields in priority order — `label`, `title`, `value`,
-/// `placeholder_value`, `identifier`, `text` (跟 maestro `IOSDriver.kt:192-210`
-/// 同源 5 字段 + smix `text` backward-compat).
+/// `placeholder_value`, `identifier`, `text`. The first five mirror the
+/// fields maestro scans (`IOSDriver.kt:192-210`); `text` is smix's own
+/// backward-compatible addition.
 ///
 /// Case handling:
 /// - `Pattern::Text("")` returns false (empty pattern matches nothing).
 /// - `Pattern::Text("X")` does ASCII-case-insensitive strict equal
-///   against each candidate (TS uses `toLowerCase()` strict equal; we
-///   `eq_ignore_ascii_case` because RN labels are ASCII-dominant).
+///   against each candidate — `eq_ignore_ascii_case`, chosen because RN
+///   labels are ASCII-dominant.
 /// - `Pattern::Regex {regex, flags}` compiles the regex; if `flags` lacks
-///   `i`, injects it (matches TS auto-/i v1.5 c5i-d).
+///   `i`, injects it.
 ///
-/// Regex compile errors short-circuit to `false` (TS `new RegExp` throws —
-/// we choose silent false to keep `match_text` infallible at the stone
-/// layer; the resolver layer can wrap with explicit error reporting).
+/// Regex compile errors short-circuit to `false` — a deliberate choice
+/// to keep `match_text` infallible at the stone layer; the resolver
+/// layer can wrap with explicit error reporting.
 ///
 /// Pure / branch-only / one Vec scan — should be 5-50 ns text path, 50-200
 /// ns regex path after compile-once amortization.
@@ -487,7 +492,6 @@ pub fn match_text_compiled(node: &A11yNode, pattern: &CompiledPattern) -> bool {
 
 /// Human / AI-readable rendering of a [`Selector`] for error prompts and
 /// logs. Stable enough that AI can pattern-match against past failures.
-/// Mirrors TS `describeSelector` in `src/core/selector.ts:118-160` 1:1.
 #[must_use]
 pub fn describe_selector(s: &Selector) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -667,10 +671,8 @@ pub fn match_text(node: &A11yNode, pattern: &Pattern) -> bool {
             false
         }
         Pattern::Regex { regex, flags: _ } => {
-            // v1.5 c5i-d — always case-insensitive (跟 TS resolve-selector.ts
-            // line 170-172 同源: flags.includes('i') ? pattern : add /i).
-            // The `flags` field is purely wire-shape for round-trip JSON
-            // parity with TS RegExp.flags; on the matching side we
+            // Always case-insensitive. The `flags` field is purely
+            // wire-shape for round-trip JSON parity; on the matching side we
             // unconditionally prepend `(?i)` (or skip if user already
             // wrote it) because Rust `regex::Regex::new` doesn't accept
             // a separate flags arg — case folding goes in the pattern

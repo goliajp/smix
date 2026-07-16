@@ -1,5 +1,5 @@
-// v7.4 c4 — Modifiers data class + AnchorBox + IndexModifiers mirror
-// Swift v7.2 c3 + Rust smix-selector struct shape.
+// Modifiers data class + AnchorBox + IndexModifiers mirror the Swift
+// SDK + Rust smix-selector struct shape.
 //
 // Wire JSON shape: Modifiers fields are FLATTENED into the Selector
 // body via custom KSerializer (matches Rust `#[serde(flatten)]`).
@@ -15,7 +15,7 @@ import kotlinx.serialization.Serializable
  * Spatial fields hold sub-selectors; index fields are scalar picks.
  *
  * Serialization: fields are FLATTENED into the Selector JSON body
- * via SelectorSerializer (c4); standalone @Serializable used only
+ * via SelectorSerializer; the standalone @Serializable is used only
  * for nested decoding helpers.
  */
 @Serializable

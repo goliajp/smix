@@ -2,7 +2,7 @@ import Foundation
 
 /// Typed errors for the host-side HID path. The string codes in
 /// `HostHIDErrorCode` are part of the wire contract with TS-side jq parsing
-/// downstream (C5+ doctor), so changing them is a breaking change.
+/// downstream (`smix doctor`), so changing them is a breaking change.
 public enum HostHIDError: Error, Equatable {
   case dlopenFailed(path: String, detail: String)
   case dlsymFailed(name: String)

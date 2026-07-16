@@ -15,7 +15,7 @@ fn maestro_input_maps_to_expected_smix() {
         eprintln!("=== actual ===\n{actual_trim}\n=== expected ===\n{expected_trim}\n=== end ===");
         panic!("fixture diff mismatch");
     }
-    // v0.2.5 §Phase B B3 — every rule in the table gets one fixture
+    // Every rule in the table gets one fixture
     // exercise. If we add / remove a rule and forget the fixture pair,
     // this count goes stale.
     assert!(

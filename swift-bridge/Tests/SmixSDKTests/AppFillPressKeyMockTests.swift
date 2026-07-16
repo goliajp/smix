@@ -1,4 +1,4 @@
-// v7.1 c3 — App.fill / App.pressKey mock-based unit tests.
+// App.fill / App.pressKey mock-based unit tests.
 //
 // Verifies wire-through to SmixSimRuntime sendString / pressKey
 // primitives after focus tap.

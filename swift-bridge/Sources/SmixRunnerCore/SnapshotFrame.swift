@@ -1,11 +1,14 @@
 import CoreGraphics
 
-// v4.3 c1 — XCUIElementSnapshot.dictionaryRepresentation 的 frame value → CGRect。
-// frame value 形态 = [String: Double] (X/Y/Width/Height, Apple a11y server raw
-// dict) 或 CGRect; 不可解析 → .zero。与 UITests 侧 convertSnapshotDict 既有
-// frame 解析逻辑等价, 抽 Core 纯函数 (无 XCUI 依赖, 入参 Any?) 供 act side
-// (findAndTapSystemPopupButton 经 collectPopupNodes 拿 button frame 算 tap
-// center) + sense side convertSnapshotDict 复用 + SPM 单测可直验。
+// Converts the `frame` value of `XCUIElementSnapshot.dictionaryRepresentation`
+// into a CGRect. The value arrives either as `[String: Double]` (X/Y/Width/
+// Height — the Apple a11y server's raw dict) or as a CGRect; anything else
+// yields `.zero`.
+//
+// Kept as a pure Core function taking `Any?` so it has no XCUI dependency:
+// the act side (findAndTapSystemPopupButton, which gets button frames via
+// collectPopupNodes to compute a tap center), the sense side
+// (convertSnapshotDict), and SPM unit tests all share one implementation.
 public func frameFromDictValue(_ value: Any?) -> CGRect {
   if let d = value as? [String: Double] {
     return CGRect(

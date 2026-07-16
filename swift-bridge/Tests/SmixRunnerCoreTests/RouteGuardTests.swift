@@ -2,9 +2,9 @@ import XCTest
 import FlyingFox
 @testable import SmixRunnerCore
 
-// v1.4 ③-C1 B3 — server-side route guard (defense-in-depth layer 1).
+// Server-side route guard (defense-in-depth layer 1).
 //
-// Root cause (v1.md §7 2026-05-19): a route closure that invokes a
+// Root cause: a route closure that invokes a
 // throwing/failing XCUITest API (SmixRunnerUITests.swift:262 element.tap()
 // when the element vanishes mid-interaction) lets the ObjC exception /
 // Swift error propagate out of the closure → through FlyingFox →
@@ -12,7 +12,7 @@ import FlyingFox
 // re-throws every non-shutdown error → test_runForever terminates →
 // xcodebuild restarts the whole runner.
 //
-// B3 is the purely-additive server-side layer: a route response builder
+// The guard is the purely-additive server-side layer: a route response builder
 // that can throw is wrapped so any thrown error is converted into the
 // route's own error envelope (4xx/5xx) and NEVER escapes the closure. This
 // is unit-decidable in SmixRunnerCore (no XCUI/XCTest, no sim): inject a

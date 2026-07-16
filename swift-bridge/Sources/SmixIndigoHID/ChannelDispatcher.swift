@@ -1,7 +1,7 @@
 import Foundation
 
 /// Pure version-dispatch helper. **No IO** — no dlsym, no simctl, no
-/// framework lookups. Caller (CLI / TS Driver in C6) supplies the runtime
+/// framework lookups. The caller (CLI / TS Driver) supplies the runtime
 /// version it already knows.
 public enum ChannelDispatcher {
 
@@ -36,11 +36,10 @@ public enum ChannelDispatcher {
   /// Non-fatal hints surfaced alongside a dispatch decision.
   public enum Warning: Equatable {
     /// iOS 17/18 *could* use the 5-arg `IndigoHIDMessageForMouseNSEvent` ABI;
-    /// not implemented and **permanently deferred** unless an ABI reference
-    /// becomes available — see `docs/v1.md` 2026-05-16 decision log entry
-    /// "v1.0 release hygiene 落地 + 5-arg Indigo HID 永久 defer". The
-    /// `.digitizer` fallback (IOHIDEvent tree) is functional on iOS 17/18;
-    /// this warning stays as an informational hint, not a failure signal.
+    /// it is not implemented and stays deferred unless an ABI reference
+    /// becomes available. The `.digitizer` fallback (IOHIDEvent tree) is
+    /// functional on iOS 17/18, so this warning is an informational hint,
+    /// not a failure signal.
     case fiveArgIndigoNotImplemented(version: String)
   }
 
@@ -57,7 +56,7 @@ public enum ChannelDispatcher {
 
   /// Decision table:
   ///   - `override != nil` → that channel, no warning (user knows best)
-  ///   - `major >= 26`     → `.digitizer` (C4 path is the supported route)
+  ///   - `major >= 26`     → `.digitizer` (the supported route)
   ///   - `major == 17/18`  → `.digitizer` + `.fiveArgIndigoNotImplemented`
   ///                          (5-arg legacy ABI permanently deferred; the
   ///                          `.digitizer` fallback is functional)

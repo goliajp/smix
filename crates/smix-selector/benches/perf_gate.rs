@@ -1,24 +1,19 @@
-//! v3.26 c1 — perf_gate bench switched to the real hot path
-//! (`match_text_compiled`).
+//! Perf gate bench for the real hot path (`match_text_compiled`).
 //!
-//! v3.24 c2 placed the 4 cases on the SDK convenience surface
-//! (`match_text(node, &Pattern)`, which `regex::Regex::new`-s on every
-//! call). That surface is not what `smix-selector-resolver` or
-//! `smix-driver` actually invoke at runtime — both walk via
-//! `Pattern::compile()` (once) + `match_text_compiled(node,
-//! &CompiledPattern)` (per node), amortizing compile cost across the
-//! tree walk.
+//! The SDK convenience surface (`match_text(node, &Pattern)`) calls
+//! `regex::Regex::new` on every call, and is not what
+//! `smix-selector-resolver` or `smix-driver` actually invoke at runtime
+//! — both walk via `Pattern::compile()` (once) +
+//! `match_text_compiled(node, &CompiledPattern)` (per node), amortizing
+//! compile cost across the tree walk. So this bench mirrors the
+//! resolver / driver path: compile patterns once in setup, then bench
+//! `match_text_compiled` per iteration. Per-call compile + match cost
+//! (the SDK path) is captured separately in `benches/matchtext.rs`
+//! § "Pattern::compile" group.
 //!
-//! This bench now mirrors the resolver / driver path: compile patterns
-//! once in setup, then bench `match_text_compiled` per iteration. The
-//! original SDK-convenience numbers stay recorded in PERFORMANCE.md
-//! § v3.24 c2 as historical baseline for the one-shot ad-hoc call cost.
-//! Per-call compile + match cost (the SDK path) is also captured
-//! explicitly in `benches/matchtext.rs` § "Pattern::compile" group.
-//!
-//! Cases mirror the TS baseline 6-field-OR matcher: plain-text hit
-//! (most common), plain-text miss (most-called rejection branch when
-//! scanning a large a11y tree), regex hit, and regex miss.
+//! Cases exercise the 6-field-OR matcher: plain-text hit (most common),
+//! plain-text miss (most-called rejection branch when scanning a large
+//! a11y tree), regex hit, and regex miss.
 //!
 //! Run: `cargo bench --bench perf_gate -p smix-selector`
 

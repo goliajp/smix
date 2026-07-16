@@ -1,7 +1,5 @@
 //! smix-mcp — MCP server exposing smix tools to Claude Code via stdio.
 //!
-//! Ported from now-retired TS source: `src/mcp/*`. v3.1 c13 cement.
-//!
 //! # Connection model
 //!
 //! Each MCP server process binds to *one* simulator's runner. UDID and
@@ -18,8 +16,7 @@
 //!
 //! - `smix_describe` — return `ScreenDescription` of current screen
 //! - `smix_tree` — return full A11yNode JSON
-//! - `smix_find_text` — boolean existence of a text selector (v1.4
-//!   quick-probe)
+//! - `smix_find_text` — boolean existence of a text selector
 //! - `smix_tap_text` — tap by text selector
 //! - `smix_press_key` — press named key (Return / Tab / arrow keys)
 //! - `smix_screenshot` — capture base64 PNG (UDID-bound)
@@ -54,8 +51,8 @@ struct SmixMcpService {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct TextSelectorParams {
-    /// Literal label / title / value text to match (case-insensitive,
-    /// 6-field OR scan跟 v1.5 c5i-d maestro parity).
+    /// Literal text to match; case-insensitive, scanned across
+    /// label / title / value.
     text: String,
 }
 

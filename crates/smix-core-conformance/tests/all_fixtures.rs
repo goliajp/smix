@@ -1,10 +1,10 @@
-//! v7.2 c5 — Run every JSON fixture in `crates/smix-core-conformance/fixtures/`
+//! Run every JSON fixture in `crates/smix-core-conformance/fixtures/`
 //! through `smix_ffi::resolve_selector` and assert the returned id list
 //! equals the fixture's `expected` field.
 //!
 //! This is the Rust backend's T1 conformance ground truth. The Swift +
 //! Kotlin SDK backends must produce byte-identical output for the same
-//! fixtures (per design.md §11 T1 + v7.2 c-final cross-binary diff
+//! fixtures (per design.md §11 T1, checked by the cross-binary diff
 //! harness).
 
 use std::fs;

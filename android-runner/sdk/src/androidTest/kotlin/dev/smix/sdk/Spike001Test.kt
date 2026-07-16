@@ -1,4 +1,4 @@
-// Spike001Test.kt — v7.0 c4 conformance fixture #1 (empty tree + id miss → []).
+// Conformance fixture #1 (empty tree + id miss → []).
 //
 // Mirror of:
 //   - crates/smix-core-conformance/fixtures/spike-001-empty-tree.json (Rust)
@@ -9,8 +9,6 @@
 // output to Rust + Swift backends. Conformance T1 third cell (Rust +
 // Swift + Kotlin three-way byte-identical).
 //
-// Per design.md §11 industrial-grade selftest T1.
-
 package dev.smix.sdk
 
 import androidx.test.ext.junit.runners.AndroidJUnit4

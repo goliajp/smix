@@ -1,13 +1,11 @@
 //! smix-adb — Android Debug Bridge (adb) child_process wrapper.
 //!
 //! Counterpart of `smix_simctl::SimctlClient` for Android. Used by
-//! `smix_sdk::AndroidDeviceControl` (v6.0 c2) to implement the
-//! `DeviceControl` trait on Android.
+//! `smix_sdk::AndroidDeviceControl` to implement the `DeviceControl`
+//! trait on Android.
 //!
-//! Per docs/plan-cold/v6-android-master.md §1 v6.0 c2 — skeleton with
-//! parser unit tests + command dispatch + error envelope. Real-device
-//! invocations need a booted emulator (acceptance gated by `ignore`
-//! attribute on tests requiring live `adb`).
+//! Real-device invocations need a booted emulator, so tests requiring a
+//! live `adb` are gated behind the `ignore` attribute.
 //!
 //! ## Wire model
 //!

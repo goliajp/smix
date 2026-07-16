@@ -1,4 +1,4 @@
-//! v3.3 c2 — criterion bench for smix-host-coord-resolver.
+//! Criterion bench for smix-host-coord-resolver.
 //!
 //! End-to-end resolve-to-normalized-coord pipeline. Hot path — every
 //! driver.tap runs this once before injecting the tap event.

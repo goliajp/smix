@@ -5,8 +5,8 @@ import CoreGraphics
 #endif
 @testable import SmixRunnerCore
 
-// v1.4 ③-C1 A — `GET /tree?include=` scope forwarding + zero-regression
-// anchor. The server's `GET /tree` route reads the `include` query value
+// `GET /tree?include=` scope forwarding + zero-regression anchor.
+// The server's `GET /tree` route reads the `include` query value
 // and hands it to the SnapshotHandler. nil scope (no query param) MUST
 // produce a body byte-identical to the legacy single-snapshot path (the
 // contract: existing SDK / host smoke gates parse the same bytes).
@@ -15,7 +15,7 @@ import CoreGraphics
 // (no XCUI / no sim): drive the REAL `runForever` route via an IPv4
 // client on a fixed free port, recording the scope the handler received,
 // then `POST /shutdown` for a clean graceful stop (no hang, no leaked
-// server — the v1.4 C3 shutdown path).
+// server).
 final class TreeScopeForwardTests: XCTestCase {
 
   private func leaf() -> TreeRoute.A11ySnapshotData {
@@ -107,7 +107,7 @@ final class TreeScopeForwardTests: XCTestCase {
     XCTAssertEqual(scope2, "all-windows",
       "?include=all-windows forwarded verbatim to SnapshotHandler")
 
-    // Graceful stop (v1.4 C3 path) so runForever returns and the test
+    // Graceful stop so runForever returns and the test
     // does not hang / leak a server.
     var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/shutdown")!)
     req.httpMethod = "POST"
@@ -126,7 +126,7 @@ final class TreeScopeForwardTests: XCTestCase {
     XCTAssertEqual(obj?["rawType"] as? String, "application")
   }
 
-  // v1.4 ③-C1 (third restart) S3.a — `GET /system-popups?include=` mirrors
+  // `GET /system-popups?include=` mirrors
   // the same `?include=` query forwarding mechanism this file already
   // exercises for `GET /tree` (FlyingFox `[QueryItem]` string subscript,
   // method-independent). nil scope ⇒ handler receives nil ⇒ the empty

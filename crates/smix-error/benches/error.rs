@@ -1,4 +1,4 @@
-//! v3.3 c2 — criterion bench for smix-error cold-path primitives.
+//! Criterion bench for smix-error cold-path primitives.
 //!
 //! These are cold-path (only run on assertion failure) but suggestions+
 //! to_prompt go to AI-readable output which the user reads — needs to be

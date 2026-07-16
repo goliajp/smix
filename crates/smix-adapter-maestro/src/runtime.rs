@@ -31,10 +31,10 @@
 
 use crate::{Flow, ParseError, RepeatMode, Step, parse_flow_file};
 
-/// v5.2 c4 — safety valve for `repeat.while: <expr>` loops. Bounds
-/// expression-driven repeat to avoid runaway when output store is
-/// effectively static (c4 内 output 只读). Hitting this cap surfaces an
-/// explicit DriverError naming the condition expression.
+/// Safety valve for `repeat.while: <expr>` loops. The output store is
+/// read-only during a flow, so an expression-driven repeat whose
+/// condition never changes would run forever. Hitting this cap
+/// surfaces an explicit DriverError naming the condition expression.
 const MAX_REPEAT_ITERATIONS: u32 = 1000;
 use async_trait::async_trait;
 use smix_sdk::{
@@ -42,21 +42,21 @@ use smix_sdk::{
     PermissionAction, Selector, SimctlPermission, SwipeDirection,
 };
 
-/// v5.3 c5 — SwiftUI modal dismiss id classifier. Returns true when the
-/// accessibility id encodes a v2 fixture modal dismiss button (sheet / alert
-/// / confirmationDialog / fullScreenCover). adapter `Step::TapOn` routes
-/// matching selectors through [`App::tap_xcui`] for capability parity with
-/// the SDK self-path (see `scenario.rs::seg_v2_modal_*_basic`). The match is
-/// prefix + suffix conjunction — the prefix filters to the V2 modal area and
-/// the suffix excludes triggers (`-open-...-btn`) and unrelated elements.
+/// SwiftUI modal dismiss id classifier. Returns true when the
+/// accessibility id encodes a fixture modal dismiss button (sheet /
+/// alert / confirmationDialog / fullScreenCover). `Step::TapOn`
+/// routes matching selectors through [`App::tap_xcui`] for capability
+/// parity with the SDK self-path. The match is a prefix + suffix
+/// conjunction — the prefix filters to the modal area and the suffix
+/// excludes triggers (`-open-...-btn`) and unrelated elements.
 ///
-/// v1.0.26 scope note: the prefixes below are the SMIX SELFTEST FIXTURE
-/// id namespace (`v2-*`), so this auto-routing can never fire on a
+/// Scope note: the prefixes below are the smix selftest fixture id
+/// namespace (`v2-*`), so this auto-routing can never fire on a
 /// third-party consumer's ids — it is back-compat for smix's own e2e
-/// yamls only. The GENERIC surface for the same capability is
-/// `tapOn: { id: …, dispatch: xcui }` (v1.0.26): consumers whose
-/// SwiftUI modal dismiss buttons need XCUIElement-anchored dispatch
-/// declare it explicitly. New yaml (including smix's own) should use
+/// yamls only. The generic surface for the same capability is
+/// `tapOn: { id: …, dispatch: xcui }`: consumers whose SwiftUI modal
+/// dismiss buttons need XCUIElement-anchored dispatch declare it
+/// explicitly. New yaml (including smix's own) should use
 /// `dispatch: xcui`; this heuristic is not extended.
 fn is_swiftui_modal_dismiss_id(id: &str) -> bool {
     const PREFIXES: &[&str] = &[
@@ -74,18 +74,18 @@ fn is_swiftui_modal_dismiss_id(id: &str) -> bool {
     PREFIXES.iter().any(|p| id.starts_with(p)) && SUFFIXES.iter().any(|s| id.ends_with(s))
 }
 
-/// v5.10 c3 — SwiftUI tab-bar id classifier. Returns true when the
-/// accessibility id matches the V2 fixture tab-bar button namespace
-/// (`v2-tab-<area>`, set in `V2RootScreen.swift::tabBar`). adapter
-/// `Step::TapOn` routes matching selectors through [`App::tap_xcui`]
-/// (swift `/tap-by-id` → XCUIElement.tap with implicit
-/// scrollToVisible) so the tab can be tapped even when the tab bar
-/// wraps into a ScrollView. maestro CLI's `tapOn id:` is static (no
-/// auto-scroll) — this routing makes smix adapter strictly ≥ maestro
-/// on the tab-navigation path ([[smix-must-be-superset-of-maestro]]).
-/// R2 guard: scoped to the SwiftUI tab namespace only — RN Pressable
-/// (where XCUIElement.tap does NOT fire onPress per v4.0 c3 G8) is
-/// not in the v2 fixture namespace.
+/// SwiftUI tab-bar id classifier. Returns true when the accessibility
+/// id matches the fixture tab-bar button namespace (`v2-tab-<area>`,
+/// set in `V2RootScreen.swift::tabBar`). `Step::TapOn` routes
+/// matching selectors through [`App::tap_xcui`] (swift `/tap-by-id` →
+/// XCUIElement.tap with implicit scrollToVisible) so the tab can be
+/// tapped even when the tab bar wraps into a ScrollView. maestro
+/// CLI's `tapOn id:` is static (no auto-scroll), so this routing keeps
+/// the adapter strictly ahead of maestro on the tab-navigation path.
+///
+/// Deliberately scoped to the SwiftUI tab namespace only:
+/// XCUIElement.tap does NOT fire `onPress` on an RN Pressable, and
+/// widening this predicate would silently break RN taps.
 fn is_swiftui_navigation_or_tab_id(id: &str) -> bool {
     id.starts_with("v2-tab-")
 }
@@ -157,13 +157,13 @@ fn launch_fresh_app_path_from_env(bundle_id: &str) -> Option<String> {
 pub trait AppLike: Send + Sync {
     /// Tap an element matched by selector. Mirrors [`App::tap`].
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
-    /// v5.3 c5 — route tap via SDK [`App::tap_xcui`] (swift `/tap-by-id` →
-    /// XCUIElement-anchored coord.tap). adapter `Step::TapOn` calls this when
-    /// the selector is `Selector::Id` and the id matches the SwiftUI modal
-    /// dismiss whitelist (see `is_swiftui_modal_dismiss_id`) — keeps
-    /// capability parity with the SDK self-path (`seg_v2_modal_*_basic`).
+    /// Route tap via SDK [`App::tap_xcui`] (swift `/tap-by-id` →
+    /// XCUIElement-anchored coord.tap). `Step::TapOn` calls this when
+    /// the selector is `Selector::Id` and the id matches the SwiftUI
+    /// modal dismiss whitelist (see `is_swiftui_modal_dismiss_id`),
+    /// keeping capability parity with the SDK self-path.
     async fn tap_xcui(&self, id: &str) -> Result<(), ExpectationFailure>;
-    /// v1.0.26 — tap with an explicit [`smix_sdk::TapMode`]. Mirrors
+    /// Tap with an explicit [`smix_sdk::TapMode`]. Mirrors
     /// [`App::tap_with_mode`]. Used by `tapOn: { dispatch: daemonProxy }`
     /// (XCTRunnerDaemonSession synthesize for stubborn RN Pressables).
     async fn tap_with_mode(
@@ -171,7 +171,7 @@ pub trait AppLike: Send + Sync {
         selector: &Selector,
         mode: smix_sdk::TapMode,
     ) -> Result<(), ExpectationFailure>;
-    /// v1.0.27 — delete keys from the target app's persisted
+    /// Delete keys from the target app's persisted
     /// user-defaults store. Mirrors [`App::clear_user_defaults`].
     async fn clear_user_defaults(
         &self,
@@ -180,24 +180,23 @@ pub trait AppLike: Send + Sync {
     ) -> Result<(), ExpectationFailure>;
     /// Tap at normalized coordinates. Mirrors [`App::tap_at_coord`].
     async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
-    /// v5.19 c1 — Apple Vision OCR find. Mirrors [`App::find_by_text_ocr`].
+    /// Apple Vision OCR find. Mirrors [`App::find_by_text_ocr`].
     /// Returns the matching text observation's bounding box (UIKit
-    /// normalized) or `None`. L5 sense layer per a11y-i18n master plan.
+    /// normalized) or `None`.
     async fn find_by_text_ocr(
         &self,
         text: &str,
         locales: &[String],
     ) -> Result<Option<smix_sdk::OcrFrame>, ExpectationFailure>;
 
-    /// v5.20 c1 — find a selector's centroid as viewport-normalized
-    /// `(nx, ny)`. Mirrors [`App::find_norm_coord`]. L6 sense layer
-    /// per a11y-i18n master plan §1.
+    /// Find a selector's centroid as viewport-normalized
+    /// `(nx, ny)`. Mirrors [`App::find_norm_coord`].
     async fn find_norm_coord(
         &self,
         selector: &Selector,
     ) -> Result<Option<(f64, f64)>, ExpectationFailure>;
 
-    /// v5.21 c1b — eval JS via fixture-side WKWebView bridge.
+    /// Eval JS via fixture-side WKWebView bridge.
     async fn webview_eval(&self, js: &str) -> Result<serde_json::Value, ExpectationFailure>;
     /// Type text into the matched field. Mirrors [`App::fill`].
     async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure>;
@@ -217,7 +216,7 @@ pub trait AppLike: Send + Sync {
         timeout: Duration,
     ) -> Result<(), ExpectationFailure>;
     /// Wait until selector is NOT visible within `timeout`. Mirrors
-    /// [`App::wait_for_not_visible`] — v5.2 c2.
+    /// [`App::wait_for_not_visible`].
     async fn wait_for_not_visible(
         &self,
         selector: &Selector,
@@ -235,8 +234,8 @@ pub trait AppLike: Send + Sync {
     /// [`App::launch_fresh`](smix_sdk::App::launch_fresh). Returns the
     /// warnings the planner emitted (e.g. graceful fallback when
     /// `app_path` is `None` but `clear_state=true`).
-    /// v5.2 c2 — `launch_arguments` 是 process-level argv; 空 `&[]` 与
-    /// v5.1 行为等价.
+    /// `launch_arguments` is process-level argv; an empty `&[]` means
+    /// no arguments are passed.
     async fn launch_fresh(
         &self,
         bundle_id: &str,
@@ -247,47 +246,45 @@ pub trait AppLike: Send + Sync {
     ) -> Result<Vec<String>, ExpectationFailure>;
     /// Open a URL / deep link. Mirrors [`App::open_url`].
     async fn open_url(&self, url: &str) -> Result<(), ExpectationFailure>;
-    /// v5.7 c1 — enumerate any system-level (SpringBoard / share-sheet)
+    /// Enumerate any system-level (SpringBoard / share-sheet)
     /// alert currently on screen. Mirrors [`App::system_popups`]. Used by
     /// the adapter to auto-dismiss the iOS 17+ "Open in `<App>`?" alert that
     /// follows `openLink` against a custom URL scheme.
     async fn system_popups(&self) -> Result<Vec<smix_sdk::SystemPopup>, ExpectationFailure>;
-    /// v5.7 c1 — invoke a button on a popup surfaced by [`Self::system_popups`].
+    /// Invoke a button on a popup surfaced by [`Self::system_popups`].
     /// Mirrors [`App::system_popup_action`].
     async fn system_popup_action(
         &self,
         popup_id: &str,
         button_id: &str,
     ) -> Result<bool, ExpectationFailure>;
-    /// v5.2 c2 — bring an already-installed bundle to foreground without
+    /// Bring an already-installed bundle to foreground without
     /// restart. Mirrors [`App::foreground`]. Used by `Step::LaunchApp`
     /// `stopApp=false` arm.
     async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure>;
-    /// v5.2 c2 — typed `launchApp` 三子参 dispatch entry. Mirrors
+    /// Typed `launchApp` dispatch entry for the sub-parameter set. Mirrors
     /// [`App::launch_app_with_options`].
     async fn launch_app_with_options(
         &self,
         opts: &LaunchAppOptions,
     ) -> Result<Vec<String>, ExpectationFailure>;
     /// Swipe between two normalized coordinates. Mirrors
-    /// [`App::swipe_at_coord`] — v5.2 c1 escape hatch.
+    /// [`App::swipe_at_coord`] escape hatch.
     async fn swipe_at_coord(
         &self,
         from: (f64, f64),
         to: (f64, f64),
     ) -> Result<(), ExpectationFailure>;
     /// Viewport scroll one swipe in the given direction. Mirrors
-    /// [`App::scroll_screen`] — v5.2 c1.
+    /// [`App::scroll_screen`].
     async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure>;
-    /// Assert selector is NOT visible. Mirrors [`App::assert_not_visible`]
-    /// — v5.2 c1.
+    /// Assert selector is NOT visible. Mirrors [`App::assert_not_visible`].
     async fn assert_not_visible(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
-    /// Dismiss the on-screen keyboard. Mirrors [`App::hide_keyboard`]
-    /// — v5.2 c1 adapter wire.
+    /// Dismiss the on-screen keyboard. Mirrors [`App::hide_keyboard`].
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure>;
-    /// Capture a screenshot. Mirrors [`App::screenshot`] — v5.2 c1.
+    /// Capture a screenshot. Mirrors [`App::screenshot`].
     async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure>;
-    /// v1.0.8 §D2 — session-scoped in-place data clear. Default
+    /// Session-scoped in-place data clear. Default
     /// impl errors — the real path is only meaningful when a session
     /// is open and the driver is iOS + host has SimctlClient access.
     /// The `App` impl overrides with the full three-step
@@ -299,7 +296,7 @@ pub trait AppLike: Send + Sync {
             ..Default::default()
         }))
     }
-    /// v1.0.11 §D2 — same as [`clear_app_data`], but applies caller-
+    /// Same as [`clear_app_data`], but applies caller-
     /// supplied launchArguments + launchEnvironment on the runner-side
     /// launch step. Default impl delegates to `clear_app_data`
     /// (ignores args) so mock backends stay working.
@@ -310,7 +307,7 @@ pub trait AppLike: Send + Sync {
     ) -> Result<(), ExpectationFailure> {
         self.clear_app_data().await
     }
-    /// v1.0.4 §D11 — snapshot the runner's a11y tree. Mirrors
+    /// Snapshot the runner's a11y tree. Mirrors
     /// [`App::tree`]. Used by `write_step_debug` to persist
     /// `step-<N>-fail.tree.json` alongside the fail PNG. Default impl
     /// returns an `ExpectationFailure` so mocks that don't need this
@@ -322,54 +319,54 @@ pub trait AppLike: Send + Sync {
             ..Default::default()
         }))
     }
-    /// v5.2 c3 — write a literal to device pasteboard.
+    /// Write a literal to device pasteboard.
     /// Mirrors [`App::set_clipboard`].
     async fn set_clipboard(&self, text: &str) -> Result<(), ExpectationFailure>;
-    /// v5.6 c5 — read the device pasteboard. Mirrors [`App::get_clipboard`].
+    /// Read the device pasteboard. Mirrors [`App::get_clipboard`].
     /// Used by `runFlow.as: <name>` to capture the subflow's pasteboard
     /// state (canonical "what the subflow's `copyTextFrom` left behind")
     /// into the parent flow's outputs map.
     async fn get_clipboard(&self) -> Result<String, ExpectationFailure>;
-    /// v5.2 c3 — paste into focused field. `None` reads clipboard first.
+    /// Paste into focused field. `None` reads clipboard first.
     /// Mirrors [`App::paste_text`].
     async fn paste_text(&self, text: Option<&str>) -> Result<(), ExpectationFailure>;
-    /// v5.2 c3 — copy matched element's text content to device pasteboard.
+    /// Copy matched element's text content to device pasteboard.
     /// Mirrors [`App::copy_text_from`].
     async fn copy_text_from(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
-    /// v5.2 c3 — double-tap an element. Mirrors [`App::double_tap`].
+    /// Double-tap an element. Mirrors [`App::double_tap`].
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
-    /// v5.2 c3 — long-press for `duration`. Mirrors [`App::long_press`].
+    /// Long-press for `duration`. Mirrors [`App::long_press`].
     async fn long_press(
         &self,
         selector: &Selector,
         duration: Duration,
     ) -> Result<(), ExpectationFailure>;
-    /// v5.2 c5 — set sim location. Mirrors [`App::set_location`].
+    /// Set sim location. Mirrors [`App::set_location`].
     async fn set_location(&self, latitude: f64, longitude: f64) -> Result<(), ExpectationFailure>;
-    /// v5.2 c5 — interpolate sim location. Mirrors [`App::travel`].
+    /// Interpolate sim location. Mirrors [`App::travel`].
     async fn travel(
         &self,
         points: &[(f64, f64)],
         speed_mps: Option<f64>,
     ) -> Result<(), ExpectationFailure>;
-    /// v5.2 c5 — batch permission setter. Mirrors [`App::set_permissions`].
+    /// Batch permission setter. Mirrors [`App::set_permissions`].
     async fn set_permissions(
         &self,
         bundle_id: &str,
         permissions: &[(SimctlPermission, PermissionAction)],
     ) -> Result<(), ExpectationFailure>;
-    /// v5.2 c5 — add media to sim library. Mirrors [`App::add_media`].
+    /// Add media to sim library. Mirrors [`App::add_media`].
     async fn add_media(&self, paths: &[String]) -> Result<(), ExpectationFailure>;
-    /// v5.2 c5 — rotate sim via swift XCUIDevice. Mirrors [`App::set_orientation`].
+    /// Rotate sim via swift XCUIDevice. Mirrors [`App::set_orientation`].
     async fn set_orientation(
         &self,
         orientation: smix_sdk::MaestroOrientation,
     ) -> Result<(), ExpectationFailure>;
-    /// v5.2 c5 — start sim display recording. Mirrors [`App::start_recording`].
+    /// Start sim display recording. Mirrors [`App::start_recording`].
     async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure>;
-    /// v5.2 c5 — stop active recording. Mirrors [`App::stop_recording`].
+    /// Stop active recording. Mirrors [`App::stop_recording`].
     async fn stop_recording(&self) -> Result<(), ExpectationFailure>;
-    /// v5.2 c6 — visual regression assertion. Mirrors
+    /// Visual regression assertion. Mirrors
     /// [`App::assert_screenshot`]. Outcome distinguishes auto-record
     /// (first run) from diff-matched (steady state).
     async fn assert_screenshot(
@@ -621,9 +618,9 @@ pub enum RunStepReport {
     },
 }
 
-/// v1.0.4 — per-step trace record populated when `--debug-output` is
+/// Per-step trace record populated when `--debug-output` is
 /// set. Feeds an enriched `run-summary.json` and separately-written
-/// `step-<N>-<verb>.tree.json` on failure. See RFC 1.0.4 §D11.
+/// `step-<N>-<verb>.tree.json` on failure.
 #[derive(Debug, Clone, serde::Serialize)]
 #[non_exhaustive]
 pub struct StepDebugRecord {
@@ -644,7 +641,7 @@ pub struct StepDebugRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub png_path: Option<PathBuf>,
     /// Relative path of the a11y tree JSON snapshot. Present on
-    /// failure (§I ask).
+    /// failure.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tree_path: Option<PathBuf>,
     /// On failure: kind slug from `failure_kind(err)`.
@@ -774,8 +771,8 @@ fn failure_kind(err: &RunError) -> String {
     }
 }
 
-/// v1.0.22 D2 — is this a wait/find timeout worth capturing a
-/// screenshot for? Currently only `FailureCode::Timeout` triggers the
+/// Is this a wait/find timeout worth capturing a screenshot for?
+/// Currently only `FailureCode::Timeout` triggers the
 /// unconditional dump; other failure codes (e.g. `NotVisible`,
 /// `ElementNotFound`) already emit rich context and don't benefit from
 /// the visual capture.
@@ -783,7 +780,7 @@ fn is_timeout_error(err: &RunError) -> bool {
     matches!(err, RunError::Sdk(f) if matches!(f.code, FailureCode::Timeout))
 }
 
-/// v1.0.22 D2 — merge the `capture_timeout_dump` sink paths into the
+/// Merge the `capture_timeout_dump` sink paths into the
 /// failure's existing hint. If the capture failed entirely (returned
 /// `None`) the failure is returned unchanged.
 fn annotate_timeout_error(err: RunError, capture_hint: Option<String>) -> RunError {
@@ -793,7 +790,7 @@ fn annotate_timeout_error(err: RunError, capture_hint: Option<String>) -> RunErr
     match err {
         RunError::Sdk(mut f) => {
             let capture_line = format!(
-                "v1.0.22 timeout capture: {hint_suffix}"
+                "timeout capture: {hint_suffix}"
             );
             f.hint = Some(match f.hint.take() {
                 Some(existing) => format!("{existing}\n{capture_line}"),
@@ -818,9 +815,9 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     base_dir: PathBuf,
     last_bundle: Option<String>,
     run_stack: Vec<PathBuf>,
-    /// v5.2 c4 — yaml flow-level `output` store, used by expression
+    /// Yaml flow-level `output` store, used by the expression
     /// engine (`${output.x}` template + `assertTrue` evaluation).
-    /// c4 内 read-only + 默认空 map; `as: name` 写入留 v5.3+.
+    /// Read-only during a run; defaults to an empty map.
     output: std::collections::BTreeMap<String, crate::ExprValue>,
     /// Env store used by the expression engine for bare `${NAME}`
     /// lookup. Populated from CLI `--env KEY=VAL` (repeatable) + the
@@ -833,7 +830,7 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// `<dir>/step-<N>-fail.png` (screenshot) + a failure record in
     /// the same json.
     debug_output: Option<PathBuf>,
-    /// v1.0.4 §D11 — accumulator for [`StepDebugRecord`] entries as
+    /// Accumulator for [`StepDebugRecord`] entries as
     /// steps execute. Populated only when `debug_output` is set.
     /// Kept on the adapter (not on `RunReport`) so a failed run still
     /// exposes the partial trace via [`Adapter::debug_records`].
@@ -844,30 +841,29 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// shares the same counter (inner-block steps still get unique
     /// file names).
     step_index: usize,
-    /// v5.18 c1 — last `-AppleLanguages` value seen in a `launchApp.arguments`
+    /// Last `-AppleLanguages` value seen in a `launchApp.arguments`
     /// step (e.g. "en" / "ja" / "es"). Used by [`Selector::LocalizedText`]
     /// desugar to pick the right per-locale text. Defaults to "en" when no
     /// launchApp arg has been parsed yet (or arg lacked `-AppleLanguages`).
-    /// per a11y-i18n master plan §1 L4.
     last_locale: String,
-    /// v0.3.0 Phase A — attached metro/expo log tail. When Some, the
+    /// Attached metro/expo log tail. When Some, the
     /// runtime dispatches [`Step::ExpectSignal`] / [`Step::ExpectSignals`]
     /// / [`Step::ExpectLogClean`] via [`smix_metro_log::MetroLogTail`].
     /// None → those verbs fail immediately with an actionable hint to
     /// configure `.smix/config.json` `metroLog` section.
     metro_tail: Option<smix_metro_log::MetroLogTail>,
-    /// v0.3.0 Phase A — step-end `ms_since_start` cursors. Populated at
+    /// Step-end `ms_since_start` cursors. Populated at
     /// the end of each step execution; the [`SignalWindow::SinceStep`]
     /// yaml field maps to `Window::SinceMs(step_ms_cursors[n])`. Vec
     /// index N holds ms at end of step N (1-indexed to match run report
     /// step numbering).
     step_ms_cursors: Vec<u64>,
-    /// v0.3.0 Phase B — attached fixture registry. When Some, the
+    /// Attached fixture registry. When Some, the
     /// runtime dispatches [`Step::Fixture`] by looking up the yaml
     /// `id:` in this registry. None → the verb fails with an
     /// actionable hint to configure `.smix/config.json`.
     fixture_registry: Option<smix_fixture::FixtureRegistry>,
-    /// v1.0 Phase C3 — when true, `write_step_debug`'s fail-PNG output
+    /// When true, `write_step_debug`'s fail-PNG output
     /// stays raw (no annotation overlay). Opt-out via `smix run
     /// --no-fail-annotate`. Default false = annotate.
     no_fail_annotate: bool,
@@ -894,7 +890,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
-    /// v1.0.4 §D11 — accumulated per-step trace records populated when
+    /// Accumulated per-step trace records populated when
     /// `--debug-output` is set. Available after `run()` returns
     /// regardless of Ok/Err, so a failed run's partial trace is still
     /// consumable by the CLI summary writer.
@@ -902,7 +898,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         &self.debug_records
     }
 
-    /// v1.0 Phase C3 — opt-out for auto-annotate on --debug-output
+    /// Opt-out for auto-annotate on --debug-output
     /// fail-PNG. Consumer sets via `smix run --no-fail-annotate`.
     #[must_use]
     pub fn with_no_fail_annotate(mut self, no_annotate: bool) -> Self {
@@ -910,7 +906,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         self
     }
 
-    /// v0.3.0 Phase A — attach a [`smix_metro_log::MetroLogTail`] for
+    /// Attach a [`smix_metro_log::MetroLogTail`] for
     /// signal-await verbs. Idempotent: subsequent calls replace the
     /// tail (subscriber lifecycle is caller's responsibility).
     #[must_use]
@@ -919,7 +915,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         self
     }
 
-    /// v0.3.0 Phase B — attach a fixture registry for the
+    /// Attach a fixture registry for the
     /// [`Step::Fixture`] verb.
     #[must_use]
     pub fn with_fixture_registry(mut self, reg: smix_fixture::FixtureRegistry) -> Self {
@@ -944,7 +940,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         self
     }
 
-    /// v5.18 c1 — extract `(xx)` from `-AppleLanguages "(xx)"` pattern in a
+    /// Extract `(xx)` from `-AppleLanguages "(xx)"` pattern in a
     /// `launchApp.arguments` array. Returns Some("xx") on match; None when
     /// arg pair missing or shape mismatches. Used by [`Adapter::run_step`]
     /// to update `last_locale` for [`Selector::LocalizedText`] desugar.
@@ -971,7 +967,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         None
     }
 
-    /// v5.2 c4 — seed the yaml flow-level `output` store. Builder-style;
+    /// Seed the yaml flow-level `output` store. Builder-style;
     /// useful for tests that exercise `${output.x}` expansion / assertTrue.
     pub fn with_output(
         mut self,
@@ -981,7 +977,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         self
     }
 
-    /// v5.2 c4 — expand `${expr}` placeholders inside `src`. Non-`${...}`
+    /// Expand `${expr}` placeholders inside `src`. Non-`${...}`
     /// segments preserved verbatim. Engine errors surface as
     /// `RunError::Sdk(DriverError)` (AI-readable hint).
     fn expand_template(&self, src: &str) -> Result<String, RunError> {
@@ -1033,11 +1029,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Ok(out)
     }
 
-    /// v5.2 c4 — eval a raw expression (no `${}` wrapping). Used by
+    /// Eval a raw expression (no `${}` wrapping). Used by
     /// `assertTrue`. Errors → DriverError.
     fn eval_expr_or_driver(&self, src: &str) -> Result<crate::ExprValue, RunError> {
         let trimmed = src.trim();
-        // tolerate `${...}` 包裹: assertTrue: "${expr}" → strip wrapping.
+        // Tolerate `${...}` wrapping: assertTrue: "${expr}" → strip it.
         let inner = if trimmed.starts_with("${") && trimmed.ends_with('}') {
             &trimmed[2..trimmed.len() - 1]
         } else {
@@ -1102,15 +1098,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.debug_records.push(rec);
             }
             let outcome = outcome_result?;
-            // v1.0.25 D2 — surface Skipped `reason` to stderr as each
-            // step completes. Pre-v1.0.25 the reason only landed in
-            // `--debug-output/step-N.json`; consumers running under
-            // `stdio: inherit` (or without `--debug-output`) never saw
-            // WHY a conditional runFlow or optional tapOn was skipped
-            // — v1.0.24 D3's improved reason string was invisible.
-            // Emit the summary + reason on a single stderr line so
-            // stdio-inherit consumers grep it directly. Non-Skipped
-            // outcomes stay quiet.
+            // Surface a Skipped `reason` on stderr as each step
+            // completes. The reason otherwise only lands in
+            // `--debug-output/step-N.json`, so consumers running under
+            // `stdio: inherit` (or without `--debug-output`) never see
+            // WHY a conditional runFlow or optional tapOn was skipped.
+            // One stderr line keeps it greppable. Non-Skipped outcomes
+            // stay quiet.
             if let RunStepReport::Skipped { reason } = &outcome {
                 eprintln!("STEP {idx}: {step_summary} → SKIPPED: {reason}");
             }
@@ -1122,7 +1116,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// Write `<debug_output>/step-<N>-<verb>.json` with the step
     /// outcome. On failure additionally emits `step-<N>-fail.png` via
     /// `App::screenshot` AND `step-<N>-fail.tree.json` via `App::tree`
-    /// (v1.0.4 §D11). Best-effort: any I/O, screenshot, or tree error
+    /// Best-effort: any I/O, screenshot, or tree error
     /// is logged to stderr but does not affect the run result.
     ///
     /// Returns a [`StepDebugRecord`] with the paths + timing +
@@ -1187,14 +1181,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 let png_path = base.with_extension("fail.png");
                 match self.app.screenshot().await {
                     Ok(mut bytes) => {
-                        // v1.0 Phase C3 — auto-annotate the fail
-                        // screenshot with a corner banner + red circle
-                        // approx-centered (viewport 50%, 50%) to
-                        // visually mark the fail without needing
-                        // selector→pixel resolution (which requires
-                        // Phase E authoring tier). --no-fail-annotate
-                        // in FlowArgs disables. Best-effort: annotation
-                        // failure = ship raw bytes.
+                        // Auto-annotate the fail screenshot with a
+                        // corner banner + a red circle approximately
+                        // centered (viewport 50%, 50%). The circle is
+                        // placed blind rather than on the failing
+                        // element because selector→pixel resolution is
+                        // not available here. `--no-fail-annotate`
+                        // disables. Best-effort: on annotation failure
+                        // ship the raw bytes.
                         if !self.no_fail_annotate {
                             let annotations = vec![
                                 crate::AnnotationSpec::Circle {
@@ -1249,8 +1243,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         fail["screenshotError"] = serde_json::json!(format!("{e}"));
                     }
                 }
-                // v1.0.4 §D11 — snapshot a11y tree alongside the fail
-                // PNG so post-mortem analysis can see what the runner
+                // Snapshot the a11y tree alongside the fail PNG so
+                // post-mortem analysis can see what the runner
                 // saw, not just what the sim rendered. Best-effort;
                 // any tree() error is recorded but does not affect
                 // the run result.
@@ -1309,7 +1303,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         })
     }
 
-    /// v5.7 c1 — poll the smix runner for any SpringBoard / share-sheet
+    /// Poll the smix runner for any SpringBoard / share-sheet
     /// alert currently on screen and tap the first non-cancel button. iOS
     /// 17+ raises an "Open in <App>?" alert after `simctl openurl` against
     /// a registered custom scheme; without dismissing it every subsequent
@@ -1336,7 +1330,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Ok(())
     }
 
-    /// v5.2 c4 — recursive body runner for `repeat` / `retry`. Re-uses
+    /// Recursive body runner for `repeat` / `retry`. Re-uses
     /// the caller's `warnings` collector + does not push outer-level
     /// `RunStepReport`. Box-pinned at call sites (async-trait Send
     /// recursion bound).
@@ -1362,12 +1356,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 optional,
                 dispatch,
             } => {
-                // v1.0.26 — explicit dispatch override. The capability
-                // (tap_xcui / tap_with_mode) has lived in core since
-                // v5.3 / v4.0; the yaml surface for choosing it is new.
-                // Which taps need which mechanism is runtime knowledge
-                // (SwiftUI modal binding vs RN Pressable) that belongs
-                // to the test author — see `TapDispatch` docs.
+                // Explicit dispatch override. Which taps need which
+                // mechanism is runtime knowledge (SwiftUI modal
+                // binding vs RN Pressable) that belongs to the test
+                // author — see `TapDispatch` docs.
                 match dispatch {
                     Some(crate::TapDispatch::Xcui) => {
                         let desugared = self.desugar_localized_text(selector);
@@ -1428,7 +1420,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::WaitForAnimationToEnd { duration_ms } => {
-                // v1.0.18 — fixed sleep, NOT XCTest idle-wait.
+                // A fixed sleep, NOT an XCTest idle-wait.
                 // SmixQuiescenceSwizzle.m no-ops XCTest idle-wait for
                 // performance (RN animations would otherwise stall
                 // every op). Default 400 ms preserved for maestro
@@ -1461,22 +1453,22 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 timeout_ms,
                 expect_visible,
             } => {
-                // v5.18 c1 — desugar LocalizedText by current locale.
+                // Desugar LocalizedText by current locale.
                 let desugared = self.desugar_localized_text(selector);
                 let timeout = Duration::from_millis(*timeout_ms);
                 let result = if *expect_visible {
-                    // v1.0.22 D1 — OCR + Fallback support inside
-                    // extendedWaitUntil. Pre-v1.0.22 dispatched every
-                    // selector shape to `app.wait_for` which uses the
-                    // tree resolver — that silently skipped OcrText
-                    // members inside a Fallback chain (never fired
-                    // OCR at all during the poll window). Now:
+                    // OCR + Fallback support inside extendedWaitUntil.
+                    // Dispatching every selector shape to
+                    // `app.wait_for` would use the tree resolver,
+                    // which silently skips OcrText members inside a
+                    // Fallback chain — OCR would never fire during the
+                    // poll window. So:
                     //   - Fallback chain containing OcrText → poll
                     //     both tree-resolvable subs AND OCR subs per
                     //     iteration; first hit wins.
                     //   - Standalone OcrText → poll `find_by_text_ocr`
                     //     within the timeout budget.
-                    //   - Everything else → unchanged tree-based path.
+                    //   - Everything else → plain tree-based path.
                     self.wait_for_visible_with_ocr(&desugared, timeout).await
                 } else {
                     self.app
@@ -1485,12 +1477,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         .map(|_| ())
                         .map_err(RunError::Sdk)
                 };
-                // v1.0.22 D2 — unconditional screenshot + tree JSON
-                // capture on wait timeout, even without
-                // `--debug-output`. Insight round-7 §3: without a
+                // Unconditional screenshot + tree JSON capture on wait
+                // timeout, even without `--debug-output`. Without a
                 // visual + tree snapshot at the failure moment,
                 // triaging tree-degradation on iOS 26.5 + RN Fabric
-                // means eyeballing metro logs and inferring. Now every
+                // means eyeballing metro logs and inferring. Every
                 // `extendedWaitUntil` timeout attaches a WRITTEN path
                 // to the failure hint. Sink dir: `.smix/timeouts/` in
                 // CWD when writeable, else
@@ -1512,7 +1503,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
             }
             Step::AssertVisible { selector } => {
-                // v5.18 c1 — desugar LocalizedText by current locale.
+                // Desugar LocalizedText by current locale.
                 let desugared = self.desugar_localized_text(selector);
                 self.app.assert_visible(&desugared).await?;
                 Ok(RunStepReport::Ok)
@@ -1524,14 +1515,17 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::PressKey(s) => {
                 let key = parse_key_name(s)?;
-                // v5.2 c2 — iOS Simulator hardware-button restrictions:
-                //   XCUIDevice.Button.volumeUp / .volumeDown 在 iOS sim
-                //   Apple 明示 unavailable; lock 在公开 enum 中根本未暴露
-                //   且 simctl 无 lock verb。同 maestro 自身在 iOS sim 上的限
-                //   制 — 不静默 noop, 显式 Skipped + warning, 让上层 aware.
+                // iOS Simulator hardware-button restrictions:
+                //   Apple documents XCUIDevice.Button.volumeUp /
+                //   .volumeDown as unavailable on the simulator; lock
+                //   is not exposed in the public enum at all and
+                //   simctl has no lock verb. maestro has the same
+                //   limitation on the iOS simulator. Rather than
+                //   no-op silently, report an explicit Skipped +
+                //   warning so the caller knows.
                 if matches!(key, KeyName::Lock | KeyName::VolumeUp | KeyName::VolumeDown) {
                     let reason = format!(
-                        "pressKey {key}: unavailable in iOS Simulator (Apple XCUIDevice.Button restriction); maestro 同源限制"
+                        "pressKey {key}: unavailable in iOS Simulator (Apple XCUIDevice.Button restriction); maestro has the same limitation"
                     );
                     warnings.push(reason.clone());
                     return Ok(RunStepReport::Skipped { reason });
@@ -1550,15 +1544,15 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 direction,
             } => {
                 let dir = parse_swipe_direction(direction)?;
-                // v1.0.23 D2 — when the selector contains any `OcrText`
-                // sub, the driver's `scroll` (tree-only resolver) can't
-                // see off-screen targets in degraded a11y trees (RN
-                // 0.86 Fabric LazyColumn/LazyRow on iOS 26.5 drops
-                // off-screen items). Adapter-side loop instead: probe
-                // tree via `App::find` AND OCR via
+                // When the selector contains any `OcrText` sub, the
+                // driver's `scroll` (tree-only resolver) can't see
+                // off-screen targets in degraded a11y trees (RN 0.86
+                // Fabric LazyColumn/LazyRow on iOS 26.5 drops
+                // off-screen items). Use an adapter-side loop instead:
+                // probe the tree via `App::find` AND OCR via
                 // `App::find_by_text_ocr` between each swipe. First
-                // hit stops. Perf caveat same as tapOn D1: OCR ~500ms
-                // per iteration; each swipe already ~250ms.
+                // hit stops. Perf caveat: OCR costs ~500ms per
+                // iteration on top of the ~250ms each swipe takes.
                 if self.selector_contains_ocr(selector) {
                     self.scroll_until_visible_with_ocr(selector, dir)
                         .await?;
@@ -1568,7 +1562,6 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::Swipe { from, to } => {
-                // v5.2 c1 — §9 #3 lift: swipe_at_coord now in SDK escape hatch.
                 self.app.swipe_at_coord(*from, *to).await?;
                 Ok(RunStepReport::Ok)
             }
@@ -1581,7 +1574,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::AssertNotVisible { selector } => {
-                // v5.3 c3 — match maestro CLI implicit retry semantics: wait up
+                // Match maestro CLI implicit retry semantics: wait up
                 // to 5s for the element to disappear. SwiftUI sheet/alert/
                 // confirmation-dialog dismiss animations take 200-700ms, and
                 // a bare one-shot assert_not_visible races them.
@@ -1595,8 +1588,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::ClearAppData { launch_args, launch_env } => {
-                // v1.0.8 §D2 + v1.0.11 §D2 — session-scoped in-place
-                // data clear. Orchestrates: runner cooperative
+                // Session-scoped in-place data clear.
+                // Orchestrates: runner cooperative
                 // terminate + host sandbox wipe + runner cooperative
                 // launch (with caller-supplied launchArgs /
                 // launchEnvironment when provided). Preserves
@@ -1613,9 +1606,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::ClearUserDefaults { keys, bundle_id } => {
-                // v1.0.27 — host-side per-key NSUserDefaults deletion
-                // (insight round-5 Ask 12: neutralize expo-dev-launcher
-                // deep-link replay). Bundle resolution: explicit
+                // Host-side per-key NSUserDefaults deletion — the
+                // motivating case is neutralizing expo-dev-launcher's
+                // deep-link replay. Bundle resolution: explicit
                 // `bundleId:` wins, else the flow's resolved app id
                 // (seeded into last_bundle at run start).
                 let Some(bundle) = bundle_id.clone().or_else(|| self.last_bundle.clone())
@@ -1635,7 +1628,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::ResetAppData { url, wait_for, timeout_ms } => {
-                // v1.0.14 Cluster A — URL-scheme JS-wipe. Fires
+                // URL-scheme JS-wipe. Fires
                 // `simctl openurl <UDID> <url>` on host side (no
                 // runner HTTP round-trip), then optionally waits for
                 // a completion signal per `wait_for`. Distinct from
@@ -1643,8 +1636,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 // (Expo dev-launcher metro URL cache, dev-tools
                 // state, MMKV keys the app chooses to preserve)
                 // survives, so consumers don't pay the dev-client
-                // ceremony cost on every reset. Insight §1 answer
-                // from `smix-feedback-2026-07-11-post-native-fix.md`.
+                // ceremony cost on every reset.
                 //
                 // Runtime dispatch (as opposed to a bare
                 // `App::reset_app_data`) — needs the runtime's
@@ -1735,12 +1727,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             },
             Step::TakeScreenshot { path, annotations } => {
                 let mut bytes = self.app.screenshot().await?;
-                // v1.0 Phase C2 — compose annotations onto the PNG
-                // BEFORE writing. Empty annotations = plain screenshot
-                // (byte-compat v0.3.x). Selector-relative positions
-                // are documented as unsupported in yaml verb (v1.0):
-                // caller uses `{x, y}` or `{nx, ny}` shapes. Selector
-                // shape logs a warning and skips.
+                // Compose annotations onto the PNG BEFORE writing.
+                // Empty annotations = plain screenshot.
+                // Selector-relative positions are unsupported in this
+                // yaml verb: callers use `{x, y}` or `{nx, ny}`
+                // shapes. A Selector shape logs a warning and skips.
                 if !annotations.is_empty() {
                     match crate::annotate_bridge::render_yaml_annotations(&bytes, annotations) {
                         Ok((annotated, extra_warns)) => {
@@ -1815,7 +1806,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         ),
                         suggestions: vec![
                             "Verify `output.*` referenced in the expression".to_string(),
-                            "v5.2 yaml expression engine supports == != && || ! () output.x .contains()"
+                            "yaml expression engine supports == != && || ! () output.x .contains()"
                                 .to_string(),
                         ],
                         ..Default::default()
@@ -1843,7 +1834,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                                 return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
                                     code: Some(FailureCode::DriverError),
                                     message: format!(
-                                        "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — condition `{condition_expr}` never became falsy; output store is read-only in v5.2 (condition must depend on something else that changes)"
+                                        "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — condition `{condition_expr}` never became falsy; the output store is read-only (the condition must depend on something else that changes)"
                                     ),
                                     suggestions: vec![
                                         "Convert to `repeat: { times: N }` with a known bound"
@@ -1857,10 +1848,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     RepeatMode::WhileVisible { selector } => {
                         let mut iter = 0u32;
                         loop {
-                            // v5.5 c5 — visible iff find returns Ok(true).
-                            // `find` 是 AppLike 同源签名 (driver `find` route,
-                            // 返回 bool, 不抛 ElementNotFound), exactly what
-                            // 我们需要的 truthy 检测.
+                            // Visible iff find returns Ok(true). `find`
+                            // maps to the driver's `find` route and
+                            // returns a bool rather than raising
+                            // ElementNotFound — exactly the truthy
+                            // probe this loop needs.
                             let visible = self.app.find(selector).await.unwrap_or(false);
                             if !visible {
                                 break;
@@ -1885,7 +1877,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     RepeatMode::WhileNotVisible { selector } => {
                         let mut iter = 0u32;
                         loop {
-                            // v5.6 c5 — loop continues while element is NOT
+                            // Loop continues while element is NOT
                             // visible; exits once it appears. Mirrors the
                             // `WhileVisible` arm but inverts the truthy test.
                             let visible = self.app.find(selector).await.unwrap_or(false);
@@ -1929,7 +1921,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
                     code: Some(FailureCode::DriverError),
                     message: format!(
-                        "runScript: complete JS runtime not supported in v5.2 — left for v6+ (maestro GraalJS path). Move scripting logic out of yaml or use assertTrue + minimal expression engine (== != && || ! () output.x .contains()). source snippet: {:?}",
+                        "runScript: a complete JS runtime is not supported (maestro runs these on GraalJS). Move scripting logic out of yaml, or use assertTrue with the minimal expression engine (== != && || ! () output.x .contains()). source snippet: {:?}",
                         source.chars().take(80).collect::<String>()
                     ),
                     suggestions: vec![
@@ -1943,7 +1935,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
                     code: Some(FailureCode::DriverError),
                     message: format!(
-                        "evalScript: complete JS runtime not supported in v5.2 — left for v6+. For boolean expressions, use `assertTrue: \"<expr>\"` with the minimal engine subset. source snippet: {:?}",
+                        "evalScript: a complete JS runtime is not supported. For boolean expressions, use `assertTrue: \"<expr>\"` with the minimal engine subset. source snippet: {:?}",
                         source.chars().take(80).collect::<String>()
                     ),
                     suggestions: vec![
@@ -2017,11 +2009,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 let abs = self.base_dir.join(path);
                 let cap = max_hamming.unwrap_or(5);
                 if !mask.is_empty() {
-                    // Surface-only: parser carried the regions, runtime
-                    // skips them. Visible-in-RunReport warning is the §13
-                    // explicit-not-silent contract.
+                    // Surface-only: the parser carried the regions but
+                    // the runtime skips them. Warn into the RunReport
+                    // rather than dropping them silently.
                     warnings.push(format!(
-                        "assertScreenshot.mask: {} region(s) accepted but ignored (region-exclusion is an R2-tier algorithm deferred to v6+ when SSIM/pHash replaces dhash); full-frame dhash dispatched with max_hamming={}",
+                        "assertScreenshot.mask: {} region(s) accepted but ignored (region exclusion needs SSIM/pHash; the current dhash compares the full frame); full-frame dhash dispatched with max_hamming={}",
                         mask.len(),
                         cap
                     ));
@@ -2064,7 +2056,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 stop_app,
                 wait_for_interactive_ms,
             } => {
-                // v5.18 c1 — update last_locale from `-AppleLanguages "(xx)"`
+                // Update last_locale from the `-AppleLanguages "(xx)"`
                 // pair in arguments, for Selector::LocalizedText desugar.
                 // Applies on both stopApp=true (kill+launch) and stopApp=false
                 // foreground; in foreground path arguments are ignored by
@@ -2075,9 +2067,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     self.last_locale = lang;
                 }
                 if !*stop_app {
-                    // v5.2 c2 — maestro `stopApp: false` = foreground resume.
-                    // permissions / arguments / clear flags 在此 path 无意义
-                    // (foreground 不重启) — 若 yaml 给了, 显式 warn (不静默).
+                    // maestro `stopApp: false` = foreground resume.
+                    // permissions / arguments / clear flags are
+                    // meaningless here because foreground does not
+                    // restart the process — warn explicitly rather
+                    // than dropping them silently.
                     if !permissions.is_empty()
                         || !arguments.is_empty()
                         || *clear_state
@@ -2091,7 +2085,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     self.last_bundle = Some(app_id.clone());
                     Ok(RunStepReport::Ok)
                 } else {
-                    // v5.2 c2 — maestro `stopApp: true` (default) = kill+launch
+                    // maestro `stopApp: true` (default) = kill+launch
                     // with optional wipe + args + permissions.
                     let app_path = launch_fresh_app_path_from_env(app_id);
                     let sdk_perms = permissions
@@ -2109,8 +2103,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         permissions: sdk_perms,
                         app_path,
                     };
-                    // v1.0.16 — `waitForInteractiveMs` on `launchApp`
-                    // yaml today is a warning-only marker. The
+                    // `waitForInteractiveMs` on `launchApp` yaml is a
+                    // warning-only marker. The
                     // launch-with-options SDK path uses `simctl
                     // launch --args` (host-side, not
                     // session-scoped), so it can't populate the
@@ -2140,7 +2134,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::OpenLink(url) => {
                 self.app.open_url(url).await?;
-                // v5.7 c1 — iOS 17+ raises a SpringBoard "Open in <App>?"
+                // iOS 17+ raises a SpringBoard "Open in <App>?"
                 // confirmation alert when an external URL (here: simctl
                 // openurl) is routed to a registered custom scheme. Host
                 // maestro CLI's openLink swallows the popup via the XCUITest
@@ -2173,27 +2167,26 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 when_not_visible,
                 steps,
             } => {
-                // v6.8 c1 — inline-commands form. Same visibility gate
-                // as RunFlowConditional, but body is the literal step
+                // Inline-commands form. Same visibility gate as
+                // RunFlowConditional, but the body is the literal step
                 // list (no child file lookup). Mirrors maestro yaml
                 // `runFlow: { when: { visible }, commands: [...] }`.
                 //
-                // v1.0.24 D1 — visibility predicate now goes through
-                // `check_selector_visible` which fires OCR when the
-                // selector contains OcrText anywhere. Pre-v1.0.24 used
-                // `self.app.find(sel)` which routes through the tree-
-                // only resolver; `Selector::OcrText` was silently
-                // dropped (compile returns false), so `when.visible`
-                // with `fallback: [text, ocrText]` under a degraded
-                // a11y tree (RN Fabric on iOS 26.5) returned false
-                // and the whole conditional body was skipped without
-                // any signal. Insight round-3 Ask 8 — inputText
-                // "silently no-op" was actually "conditional never
-                // entered because tree text missed and OCR wasn't
-                // fired".
+                // The visibility predicate goes through
+                // `check_selector_visible`, which fires OCR when the
+                // selector contains OcrText anywhere. Using
+                // `self.app.find(sel)` instead would route through the
+                // tree-only resolver, where `Selector::OcrText` is
+                // silently dropped (compile returns false): a
+                // `when.visible` with `fallback: [text, ocrText]`
+                // under a degraded a11y tree (RN Fabric on iOS 26.5)
+                // would return false and skip the whole conditional
+                // body with no signal — which surfaces downstream as a
+                // verb appearing to "silently no-op" when in fact the
+                // conditional was never entered.
                 //
-                // v1.0.24 D2 — `when.notVisible` inverse gate.
-                // Idempotency pattern: only enter the ceremony if the
+                // `when.notVisible` is the inverse gate, for the
+                // idempotency pattern: only enter the ceremony if the
                 // target state hasn't been reached yet.
                 let (should_run, gate_reason) = self
                     .evaluate_run_flow_gate(when_visible.as_ref(), when_not_visible.as_ref())
@@ -2217,13 +2210,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 when_not_visible,
                 as_name,
             } => {
-                // v1.0.24 D1/D2 — same OCR-aware gate as RunFlowInline.
+                // Same OCR-aware gate as RunFlowInline.
                 let (should_run, gate_reason) = self
                     .evaluate_run_flow_gate(when_visible.as_ref(), when_not_visible.as_ref())
                     .await;
                 if should_run {
                     let result = self.expand_subflow(file, warnings).await?;
-                    // v5.6 c5 — `as: <name>` outputs alias capture. After the
+                    // `as: <name>` outputs alias capture. After the
                     // subflow runs (which conventionally ends with a
                     // copyTextFrom that wrote to the device pasteboard), read
                     // the clipboard and write it into the parent's outputs
@@ -2252,7 +2245,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
-    /// v1.0.24 D1 + D2 + D3 — evaluate a runFlow gate.
+    /// Evaluate a runFlow gate.
     ///
     /// Returns `(should_run, reason)` where `reason` is a human-readable
     /// description of the outcome:
@@ -2266,15 +2259,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// - `when.notVisible` present: symmetric to above with inverted
     ///   sense.
     ///
-    /// Visibility check goes through `check_selector_visible` which
+    /// Visibility check goes through `check_selector_visible`, which
     /// fires OCR (`App::find_by_text_ocr`) when the selector contains
-    /// `OcrText` anywhere. Pre-v1.0.24 used tree-only `App::find` and
-    /// silently dropped OCR sub-selectors — that's the concrete bug
-    /// insight round-3 Ask 8 hit under RN 0.86 Fabric a11y drop.
+    /// `OcrText` anywhere. A tree-only `App::find` would silently drop
+    /// OCR sub-selectors, which misfires the gate under an RN 0.86
+    /// Fabric a11y drop.
     ///
-    /// Any driver error is treated as "not visible" (same conservative
-    /// behavior as pre-v1.0.24). Predicate ambiguity → skip is the
-    /// consumer-safe default.
+    /// Any driver error is treated as "not visible": on predicate
+    /// ambiguity, skipping is the caller-safe default.
     async fn evaluate_run_flow_gate(
         &mut self,
         when_visible: Option<&Selector>,
@@ -2308,7 +2300,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         (true, "unconditional".to_string())
     }
 
-    /// v0.3.0 Phase B B4 — dispatch [`Step::Fixture`].
+    /// Dispatch [`Step::Fixture`].
     ///
     /// Sequence:
     ///   1. Look up `id` in the attached fixture registry
@@ -2402,7 +2394,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Ok(RunStepReport::Ok)
     }
 
-    /// v0.3.0 Phase A A5 — dispatch [`Step::ExpectSignal`] against the
+    /// Dispatch [`Step::ExpectSignal`] against the
     /// attached metro tail.
     async fn run_expect_signal(
         &mut self,
@@ -2548,7 +2540,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
-    /// v5.18 c1 — desugar `Selector::LocalizedText` → `Selector::Text` using
+    /// Desugar `Selector::LocalizedText` → `Selector::Text` using
     /// the adapter's `last_locale` state (updated by the last `launchApp`
     /// step's `-AppleLanguages` argument). Returns the picked text via
     /// `Cow::Owned(Selector::Text { ... })` when input is LocalizedText;
@@ -2581,13 +2573,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         Cow::Borrowed(selector)
     }
 
-    /// v1.0.22 D1 — extendedWaitUntil visible with OCR + Fallback
-    /// dispatch. Pre-v1.0.22 `extendedWaitUntil` routed every selector
-    /// through `App::wait_for`, whose tree resolver silently skipped
-    /// `OcrText` inside a `Fallback` chain (compile returns false,
-    /// resolver treats as never-matching). Consumers who spelled
-    /// `fallback: [id, text, ocrText]` got 45 s of pure `/tree` polls
-    /// and never a single OCR call. Insight round-7 §2.
+    /// extendedWaitUntil visible with OCR + Fallback dispatch.
+    /// Routing every selector through `App::wait_for` would use its
+    /// tree resolver, which silently skips `OcrText` inside a
+    /// `Fallback` chain (compile returns false, resolver treats it as
+    /// never-matching): a `fallback: [id, text, ocrText]` would spend
+    /// the whole 45 s timeout on pure `/tree` polls without ever
+    /// making a single OCR call.
     ///
     /// Now:
     /// - `Fallback` chain — per poll iteration walk every sub-selector:
@@ -2730,7 +2722,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
-    /// v1.0.22 D2 — capture screenshot + a11y tree at the moment of a
+    /// Capture screenshot + a11y tree at the moment of a
     /// wait timeout and write to a well-known path so post-mortem
     /// triage always has a visual + tree snapshot. Runs even when the
     /// consumer did NOT pass `--debug-output`. Returns a
@@ -2765,7 +2757,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         };
         if let Err(e) = std::fs::create_dir_all(&dir) {
             eprintln!(
-                "WARN: v1.0.22 timeout capture: mkdir {dir:?} failed: {e}"
+                "WARN: timeout capture: mkdir {dir:?} failed: {e}"
             );
             return None;
         }
@@ -2809,7 +2801,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
-    /// v1.0.23 — is `OcrText` present anywhere in this selector tree?
+    /// Is `OcrText` present anywhere in this selector tree?
     /// Standalone or inside a `Fallback` chain both count. Used by
     /// tapOn / scrollUntilVisible dispatch to decide whether to activate
     /// the OCR-aware polling variant.
@@ -2823,8 +2815,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
-    /// v1.0.23 D2 — scrollUntilVisible with OCR probe between swipes.
-    /// Insight round-2 Ask 5: RN 0.86 Fabric LazyColumn/LazyRow on iOS
+    /// scrollUntilVisible with an OCR probe between swipes.
+    /// RN 0.86 Fabric LazyColumn/LazyRow on iOS
     /// 26.5 drops off-screen items from the a11y tree, so
     /// `driver.scroll`'s tree-only resolver can never see them. OCR
     /// reads pixels — sees whatever's on screen after each swipe.
@@ -2884,7 +2876,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         })))
     }
 
-    /// v1.0.23 — one-shot visibility probe. Returns Ok(true) if the
+    /// One-shot visibility probe. Returns Ok(true) if the
     /// selector matches on the current screen (via tree or OCR). Used
     /// by tapOn poll + scrollUntilVisible poll. Uses `App::find` for
     /// tree-based subs and `App::find_by_text_ocr` for OcrText subs.
@@ -2952,20 +2944,21 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         selector: &Selector,
         optional: bool,
     ) -> Result<RunStepReport, RunError> {
-        // v5.20 c2 — Fallback chain. 顺序 try 每 sub-selector, 第一个 hit
-        // 即 tap. Miss 记 per-layer trace for AI-readable suggestion. 全
-        // miss → ElementNotFound 含 chain-trace hint.
+        // Fallback chain: try each sub-selector in order and tap the
+        // first hit. Misses record a per-layer trace for an
+        // AI-readable suggestion; an all-miss raises ElementNotFound
+        // carrying that chain trace as a hint.
         //
-        // v1.0.23 D1 — when the fallback contains any `OcrText` sub, the
-        // whole chain is now POLLED within an implicit wait window
+        // When the fallback contains any `OcrText` sub, the whole
+        // chain is POLLED within an implicit wait window
         // (`SMIX_TAP_OCR_POLL_MS`, default 3000 ms) instead of trying
-        // once and failing fast. Insight round-2 Ask 4: on iOS 26.5 +
-        // RN 0.86 Fabric the tap moment often races the app's post-
-        // transition mount — OCR misses because Vision snapshots a
-        // frame BEFORE the target text is visible, not because it
-        // isn't there. Polling closes the race identically to how
-        // `extendedWaitUntil`'s `wait_for_visible_with_ocr` does. Fast
-        // path (no OCR anywhere) unchanged: single pass, no poll.
+        // once and failing fast: on iOS 26.5 + RN 0.86 Fabric the tap
+        // moment often races the app's post-transition mount, so OCR
+        // misses because Vision snapshots a frame BEFORE the target
+        // text is visible, not because it isn't there. Polling closes
+        // the race the same way `extendedWaitUntil`'s
+        // `wait_for_visible_with_ocr` does. Fast path (no OCR
+        // anywhere): single pass, no poll.
         if let Selector::Fallback { fallback } = selector {
             fn contains_ocr(sel: &Selector) -> bool {
                 match sel {
@@ -2983,8 +2976,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         .unwrap_or(3000),
                 )
             } else {
-                // No OCR anywhere: budget = 0 ⇒ single pass, same as
-                // pre-v1.0.23 semantics.
+                // No OCR anywhere: budget = 0 ⇒ single pass.
                 Duration::from_millis(0)
             };
             use std::time::Instant;
@@ -3060,16 +3052,17 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 ..Default::default()
             })));
         }
-        // v5.20 c2 — Point 是 L7 last-resort direct coord. Adapter dispatch
-        // 直接 tap_at_coord (IOHID synthesize, 同 Step::TapAtPoint).
+        // Point is the last-resort direct coord form: dispatch
+        // straight to tap_at_coord (IOHID synthesize, same as
+        // Step::TapAtPoint).
         if let Selector::Point { nx, ny } = selector {
             self.app.tap_at_coord(*nx, *ny).await?;
             return Ok(RunStepReport::Ok);
         }
-        // v5.20 c1 — AnchorRelative 是 escape hatch family L6, adapter
-        // dispatch 直接 — find anchor norm coord → add (dx, dy) shift →
-        // tap_at_norm_coord (IOHID synthesize). 不经 resolver 因 target
-        // 本无 a11y form 只有 anchor 有.
+        // AnchorRelative is an escape hatch: find the anchor's norm
+        // coord → add the (dx, dy) shift → tap_at_norm_coord (IOHID
+        // synthesize). It bypasses the resolver because the target
+        // has no a11y form of its own — only the anchor does.
         if let Selector::AnchorRelative { anchor, dx, dy } = selector {
             return match self.app.find_norm_coord(anchor).await? {
                 Some((anchor_nx, anchor_ny)) => {
@@ -3095,7 +3088,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                             ),
                             selector: Some(selector.clone()),
                             hint: Some(
-                                "L6 anchored coord requires the anchor sub-selector to \
+                                "anchored coord requires the anchor sub-selector to \
                                  resolve to exactly one node; check anchor selector"
                                     .into(),
                             ),
@@ -3105,11 +3098,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
             };
         }
-        // v5.19 c1 — OcrText 是 sense layer L5, adapter dispatch 直接走
-        // App::find_by_text_ocr → tap_at_norm_coord (IOHID synthesize 同
-        // /tap-at-norm-coord path), 不经 resolver 也不 desugar 成
-        // Selector::Text (OCR 找的元素可能不在 a11y tree). 空 locales 默
-        // adapter last_locale.
+        // OcrText dispatches straight through App::find_by_text_ocr →
+        // tap_at_norm_coord (IOHID synthesize, same as the
+        // /tap-at-norm-coord path). It bypasses the resolver and is
+        // NOT desugared into Selector::Text, because an element OCR
+        // can see may not exist in the a11y tree at all. Empty
+        // `locales` falls back to the adapter's last_locale.
         if let Selector::OcrText {
             ocr_text, locales, ..
         } = selector
@@ -3153,20 +3147,20 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
             };
         }
-        // v5.18 c1 — desugar LocalizedText → Text by last_locale before all
+        // Desugar LocalizedText → Text by last_locale before all
         // routing below.
         let desugared = self.desugar_localized_text(selector);
         let selector: &Selector = &desugared;
-        // v5.3 c5 — capability-gap closure: SwiftUI modal dismiss ids route via
-        // App::tap_xcui (swift /tap-by-id → XCUIElement-anchored coord.tap) to
-        // match the SDK self-path c4 seg_v2_modal_*_basic. Behavior is still
-        // gated by the v5.x-backlog-c4 (c) root cause (SwiftUI .sheet/.alert/
-        // .confirmationDialog/.fullScreenCover binding doesn't fire from
-        // XCUIElement.tap() in iOS 17+); this branch addresses capability
-        // parity (adapter side mustn't quietly downgrade SDK capability),
-        // not the root cause. Only Id-form selectors with default modifiers
-        // route through tap_xcui — Text/Label/Role and Id-with-modifiers
-        // selectors keep the default tap path (v3.20-v5.2 behavior unchanged).
+        // SwiftUI modal dismiss ids route via App::tap_xcui (swift
+        // /tap-by-id → XCUIElement-anchored coord.tap) to match the
+        // SDK self-path. This branch exists for capability parity —
+        // the adapter must not quietly downgrade an SDK capability —
+        // and does NOT address the underlying iOS 17+ behavior where a
+        // SwiftUI .sheet / .alert / .confirmationDialog /
+        // .fullScreenCover binding doesn't fire from
+        // XCUIElement.tap(). Only Id-form selectors with default
+        // modifiers route through tap_xcui; Text/Label/Role and
+        // Id-with-modifiers selectors keep the default tap path.
         if let Selector::Id { id, modifiers } = selector
             && modifiers == &smix_sdk::Modifiers::default()
             && is_swiftui_modal_dismiss_id(id)
@@ -3184,15 +3178,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Err(e) => Err(RunError::Sdk(e)),
             };
         }
-        // v5.10 c3 — capability-gap closure (auto-scroll on tab tap):
-        // SwiftUI tab-bar ids (`v2-tab-*`) route via App::tap_xcui so the
-        // tap survives a future fixture where the bar wraps into a
-        // ScrollView. maestro CLI `tapOn id:` is static — this routing
-        // makes smix adapter strictly ≥ maestro on the tab-navigation
-        // path ([[smix-must-be-superset-of-maestro]]). R2 guard: scoped
-        // to the SwiftUI tab namespace; RN Pressable (where tap_xcui
-        // does not fire onPress, v4.0 c3 G8) is not in the v2 fixture
-        // id space, so widening here doesn't risk that regression.
+        // Auto-scroll on tab tap: SwiftUI tab-bar ids (`v2-tab-*`)
+        // route via App::tap_xcui so the tap survives a fixture where
+        // the bar wraps into a ScrollView. maestro CLI's `tapOn id:`
+        // is static, so this routing keeps the adapter ahead of
+        // maestro on the tab-navigation path. Deliberately scoped to
+        // the SwiftUI tab namespace: tap_xcui does not fire onPress on
+        // an RN Pressable, and RN is not in the fixture id space, so
+        // widening this branch would risk that regression.
         if let Selector::Id { id, modifiers } = selector
             && modifiers == &smix_sdk::Modifiers::default()
             && is_swiftui_navigation_or_tab_id(id)
@@ -3230,7 +3223,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         rel: &str,
         warnings: &mut Vec<String>,
     ) -> Result<RunStepReport, RunError> {
-        // v0.3.0 Phase C — `std/<name>.yaml` prefix resolves to the
+        // The `std/<name>.yaml` prefix resolves to the
         // shipped std-subflow catalogue. Priority:
         //   1. <cwd>/std/<name>.yaml (consumer override)
         //   2. <SMIX_STD_SUBFLOWS>/<name>.yaml (env override)
@@ -3297,10 +3290,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
 // Helper parsers
 // ----------------------------------------------------------------------
 
-/// v5.2 c2 — maestro yaml `launchApp.permissions.<name>` 字串映射到 typed
-/// [`SimctlPermission`]. **explicit 不猜**: 未知 permission name 显式
-/// [`ParseError::InvalidValue`] 报全集 supported list, 不静默 noop
-/// (§13 + [[priority-quality-perf-over-cost]]).
+/// Map the maestro yaml `launchApp.permissions.<name>` string to a
+/// typed [`SimctlPermission`]. Never guesses: an unknown permission
+/// name raises [`ParseError::InvalidValue`] listing the full supported
+/// set rather than silently no-op'ing.
 fn parse_simctl_permission(name: &str) -> Result<SimctlPermission, ParseError> {
     match name.trim().to_ascii_lowercase().as_str() {
         "camera" => Ok(SimctlPermission::Camera),
@@ -3341,11 +3334,15 @@ fn parse_key_name(s: &str) -> Result<KeyName, RunError> {
         "arrowdown" | "down" => Ok(KeyName::ArrowDown),
         "arrowleft" | "left" => Ok(KeyName::ArrowLeft),
         "arrowright" | "right" => Ok(KeyName::ArrowRight),
-        // v5.2 c2 — iOS 硬件按键(maestro yaml 全键覆盖,iOS sim 适用):
-        // home / lock 走 XCUIDevice.shared.perform(.homeButton/.lockButton);
-        // volume up / volume down 走 XCUIDevice.Button.volumeUp/volumeDown。
-        // to_ascii_lowercase() 不影响空格,maestro 文档 `pressKey: volume up`
-        // 是真实格式 — 单独 arm 覆盖空格 / 下划线 / 连写三种。
+        // iOS hardware keys (full maestro yaml key coverage):
+        // home / lock go through
+        // XCUIDevice.shared.perform(.homeButton/.lockButton); volume
+        // up / volume down go through
+        // XCUIDevice.Button.volumeUp/volumeDown.
+        // to_ascii_lowercase() leaves spaces intact, and maestro
+        // documents `pressKey: volume up` as a real format — hence a
+        // separate arm for each of the spaced / underscored / joined
+        // spellings.
         "home" => Ok(KeyName::Home),
         "lock" => Ok(KeyName::Lock),
         "volumeup" | "volume up" | "volume_up" => Ok(KeyName::VolumeUp),
@@ -3364,7 +3361,7 @@ fn parse_swipe_direction(s: &str) -> Result<SwipeDirection, RunError> {
     }
 }
 
-/// v0.3.0 Phase C C2 — resolve `std/<name>.yaml` against the shipped
+/// Resolve `std/<name>.yaml` against the shipped
 /// subflow catalogue. Priority:
 ///   1. `<base_dir>/std/<name>.yaml` (consumer override, wins)
 ///   2. `$SMIX_STD_SUBFLOWS/<name>.yaml`

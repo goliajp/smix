@@ -1,4 +1,4 @@
-// v7.4 c3 — App.fill / App.pressKey mock-based unit tests.
+// App.fill / App.pressKey mock-based unit tests.
 
 package dev.smix.sdk
 

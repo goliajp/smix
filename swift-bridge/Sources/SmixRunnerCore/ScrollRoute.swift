@@ -1,16 +1,15 @@
 import FlyingFox
 import Foundation
 
-// v1.5 C1 — POST /scroll {selector:{text|id}, direction:"up"|"down"} →
+// POST /scroll {selector:{text|id}, direction:"up"|"down"|"left"|"right"} →
 // 200 {matched:<bool>,swipes:<int>}. Mirrors FindRoute / TapRoute envelope
 // shape. Runner-side handler reads selector + direction, drives the
 // XCUITest swipe-until-visible loop, and returns matched/swipes; this
 // route module owns request decoding + response serialization only.
 //
-// `direction` accepts "up" or "down" only (cold-plan v1.5 §40 maestro
-// `scrollUntilVisible` direction set = UP|DOWN; LEFT/RIGHT not in scope
-// for this checkpoint). `selector` mirrors FindRoute.Selector but
-// additionally accepts `id` so id-based scroll targets are wire-supported
+// `direction` mirrors SwipeOnceRoute.Direction — see that file for the
+// up/down vs left/right semantic note. `selector` mirrors FindRoute.Selector
+// but additionally accepts `id`, so id-based scroll targets are wire-supported
 // even though the SimctlDriver currently routes only text selectors here.
 public enum ScrollRoute {
   public struct Selector: Equatable, Sendable {
@@ -54,8 +53,7 @@ public enum ScrollRoute {
     }
     guard let rawDir = root["direction"] else { throw DecodeError.missingDirection }
     guard let direction = rawDir as? String else { throw DecodeError.wrongType("direction not string") }
-    // v6.10 c1 — accept left/right in addition to up/down. See
-    // SwipeOnceRoute.swift comment for cross-axis semantic note.
+    // See SwipeOnceRoute.swift for the cross-axis semantic note.
     if direction != "up" && direction != "down"
         && direction != "left" && direction != "right" {
       throw DecodeError.invalidDirection(direction)

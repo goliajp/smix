@@ -1,5 +1,5 @@
 #![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive (test-optimize.md §2.4)
-//! v3.3 c2 — perf gate for smix-runner-wire serde encode/decode.
+//! Perf gate for smix-runner-wire serde encode/decode.
 
 use smix_runner_wire::{
     SystemPopup, SystemPopupButton, TapAtNormCoordRequest, TapMode, TapRequest, TapResult,

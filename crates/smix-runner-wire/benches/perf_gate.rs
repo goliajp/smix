@@ -1,5 +1,3 @@
-//! v3.28 c1 — perf_gate real bench swap from v3.21 c1 placeholder.
-//!
 //! Hot path: serde round-trip on the request body sent on every `/tap`
 //! call (the most-issued wire endpoint on a typical run) plus the
 //! cheap `IncludeScope::query_value` helper that runs once per

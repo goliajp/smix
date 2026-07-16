@@ -1,4 +1,4 @@
-//! v6.0 c3c-ii — live `AndroidDriver::tree` integration test.
+//! Live `AndroidDriver::tree` integration test.
 //!
 //! `#[ignore]` by default — requires booted emulator + running
 //! smix-android-runner instrumentation + adb forward tcp:28080. Drive

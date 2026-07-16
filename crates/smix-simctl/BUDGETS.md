@@ -7,7 +7,7 @@ any inline cost), so there is no useful inline budget to track here.
 
 Protocol stones ship dense in-house `perf_gate.rs` ceilings; IO-bound
 stones use integration tests + real-world latency baselines kept in
-`docs/PERFORMANCE.md`.
+this file.
 
 ## Per-call wall-clock baseline (host: macOS 26.x, M-series, dev laptop)
 

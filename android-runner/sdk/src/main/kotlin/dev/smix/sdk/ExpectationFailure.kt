@@ -1,10 +1,9 @@
-// v7.4 c1 — ExpectationFailure + FailureCode mirrors Swift
+// ExpectationFailure + FailureCode mirror Swift
 // SmixSDK.ExpectationFailure + Rust smix-error.
 //
 // AI-readable JSON contract: errorJson() emits sorted-keys, ISO-8601
-// timestamp single-line JSON matching Swift errorDescription contract
-// (per design.md §9 #11). v7.4 c4 / v7.5 extends to byte-identical
-// cross-binary T1 evidence.
+// timestamp single-line JSON byte-identical to the Swift
+// errorDescription contract.
 
 package dev.smix.sdk
 

@@ -31,9 +31,10 @@ targets:
     info:
       path: SmixRunnerUITests/Info.plist
       properties:
-        # v1.5 c5i-g — Apple a11y server modal subtree access (maestro runner
-        # xcodeproj 同款). 跟 v1.6 c2 ObjC swizzle `snapshotKeyHonorModalViews=NO`
-        # 是双保险 (Info.plist hint + 运行时 overlay).
+        # Grants the Apple a11y server access to modal subtrees (the same
+        # setting maestro's runner xcodeproj uses). Belt and braces with the
+        # ObjC `snapshotKeyHonorModalViews=NO` swizzle: an Info.plist hint
+        # here, a runtime overlay there.
         UIApplicationSupportsIndirectInputEvents: true
     dependencies:
       - target: SmixRunner

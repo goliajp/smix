@@ -6,9 +6,10 @@ import CoreGraphics
 #endif
 
 public enum TapRoute {
-  // v1.1 C3 — `resolve` returns the matched element's frame so the SDK can
-  // inject via host-HID at coord; `resolveAndTap` keeps the legacy XCUIElement
-  // .tap() call (synchronous animation wait — the stage C3 bypasses by default).
+  // `resolve` returns the matched element's frame so the SDK can inject the
+  // tap via host-HID at that coordinate; `resolveAndTap` performs the
+  // XCUIElement.tap() call in-process, which blocks on a synchronous
+  // animation wait.
   public enum TapMode: String, Sendable {
     case resolve
     case resolveAndTap
@@ -28,15 +29,14 @@ public enum TapRoute {
     }
   }
 
-  // v1.1 C1 — runner-side per-tap latency breakdown.
+  // Runner-side per-tap latency breakdown.
   // `resolveMs` covers element resolution (predicate match + isHittable).
-  // `tapCallMs` covers the XCUIElement.tap() synchronous call (the suspected
-  // dominant stage). `totalMs` covers the whole tapHandler closure.
+  // `tapCallMs` covers the XCUIElement.tap() synchronous call, typically the
+  // dominant stage. `totalMs` covers the whole tapHandler closure.
   //
-  // v1.1 C3 S2.7 — optional sub-stage timers within `resolveMs`. Both are
-  // nil for the legacy resolveAndTap path; mode=resolve fills them so the
-  // C3 bench can attribute the remaining gap between theoretical (~1107ms)
-  // and measured (~1270ms) wall-clock.
+  // `waitExistenceMs` / `frameReadMs` are optional sub-stage timers within
+  // `resolveMs`: both are nil on the resolveAndTap path and are filled only
+  // when mode=resolve.
   public struct TapStages: Equatable, Sendable {
     public let resolveMs: Double
     public let tapCallMs: Double

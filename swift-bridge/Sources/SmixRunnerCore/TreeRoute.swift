@@ -5,37 +5,42 @@ import Foundation
 import CoreGraphics
 #endif
 
-// XCUI snapshot → JSON tree serializer (v0.3 C1).
+// XCUI snapshot → JSON tree serializer.
 // Pure functions on a POCO (`A11ySnapshotData`) so SmixRunnerCore stays free
 // of XCTest/XCUI imports — the UITest target converts XCUIElementSnapshot
 // into A11ySnapshotData inside the snapshotHandler closure.
 public enum TreeRoute {
-  /// POCO mirror of the XCUIElementSnapshot fields C1 consumes.
+  /// POCO mirror of the XCUIElementSnapshot fields the serializer consumes.
   /// Sendable so it can flow across the actor boundary back into the server.
   public struct A11ySnapshotData: Sendable {
     public let elementTypeRawValue: UInt
     public let identifier: String
     public let label: String
-    // v1.5 c5i-a S2 — `title` + `placeholderValue` 跟 maestro IOSDriver.kt:192-210
-    // 同源 attribute. RN `<Text>` 渲染常落 title 而非 label
-    // (UIKit `accessibilityTitle` vs `accessibilityLabel` 不同字段).
-    // TextInput placeholder 落 placeholderValue (XCUIElementSnapshot 公开
-    // API). host-side TS resolveSelector OR-match 从 5 字段拓到 6 候选 (5
-    // maestro + 既有 smix node.text 保 backward-compat).
+    // `title` and `placeholderValue` come from the same XCUIElementSnapshot
+    // attributes maestro's IOSDriver reads. RN `<Text>` frequently renders
+    // into `title` rather than `label` — UIKit's `accessibilityTitle` and
+    // `accessibilityLabel` are distinct fields — and a TextInput's
+    // placeholder lands in `placeholderValue`. Both must be on the wire so
+    // host-side selector resolution can OR-match across all of them.
     public let title: String?
     public let placeholderValue: String?
     public let value: String?
     public let frame: CGRect
     public let isEnabled: Bool
     public let isSelected: Bool
-    /// v5.1 c1 — keyboard focus (first responder)。iOS 26.5 sim 公开
-    /// `XCUIElementSnapshot.dictionaryRepresentation` 把 `hasKeyboardFocus`
-    /// key filter 掉(自 iOS 15 起的 Apple regression / deprecation,maestro
-    /// #2842 OPEN 也撞同墙)。底层 `XCElementSnapshot._hasKeyboardFocus` ivar
-    /// 仍承载真值;UITest 侧 `FocusedIdentifier.find` 走 Foundation KVC
-    /// `value(forKey: "hasKeyboardFocus")` 透过 filter 直读,深度优先找到
-    /// first responder 的 identifier,作为 focusHint 沿 convertSnapshotDict
-    /// 子树下传,匹配节点 set 此字段 true。
+    /// Keyboard focus (first responder).
+    ///
+    /// On the iOS 26.5 simulator the public
+    /// `XCUIElementSnapshot.dictionaryRepresentation` filters the
+    /// `hasKeyboardFocus` key out — an Apple regression/deprecation
+    /// present since iOS 15 (maestro #2842 is open against the same
+    /// wall). The underlying `XCElementSnapshot._hasKeyboardFocus` ivar
+    /// still carries the true value, so the UITest side's
+    /// `FocusedIdentifier.find` reads it through Foundation KVC
+    /// (`value(forKey: "hasKeyboardFocus")`), bypassing the filter. It
+    /// walks depth-first for the first responder's identifier and passes
+    /// that down the `convertSnapshotDict` subtree as a focus hint; the
+    /// matching node sets this field to true.
     public let hasFocus: Bool
     public let children: [A11ySnapshotData]
 
@@ -76,7 +81,7 @@ public enum TreeRoute {
 
   // MARK: - elementType name table
 
-  /// Mirror of `src/core/role.ts:43-104` XCUIElementType numeric → name.
+  /// XCUIElementType numeric → name, as carried on the wire.
   /// Apple does not publish a public string description for
   /// XCUIElement.ElementType, so we hand-maintain this table. Unknown
   /// values (and rawValue == 1) map to "other".
@@ -173,7 +178,7 @@ public enum TreeRoute {
     return (try? JSONSerialization.data(withJSONObject: dict, options: opts)) ?? Data("{}".utf8)
   }
 
-  /// v1.2 C2 — recursive node count. Used by the route handler to populate
+  /// Recursive node count. Used by the route handler to populate
   /// the `X-Tree-Node-Count` response header alongside `X-Tree-Size-Bytes`,
   /// giving SDK-side instrumentation a true measure of tree complexity.
   public static func countNodes(_ root: A11ySnapshotData) -> Int {
@@ -190,37 +195,34 @@ public enum TreeRoute {
   ) -> [String: Any] {
     var out: [String: Any] = [:]
     let rawRawType = elementTypeName(d.elementTypeRawValue)
-    // v1.0.21 D1 — iOS 26.5 XCUITest exposes UIAlertController /
-    // .confirmationDialog action buttons as `.other` (rawValue 1) or
-    // `.staticText` (rawValue 48) instead of `.button` (rawValue 9).
-    // Consumer yaml `tapOn: { role: button, name: 'Reload' }` broke on
-    // iOS 26.5 because the resolver walks nodes matching `rawType ==
-    // "button"` and iOS 26 alert buttons no longer report as such.
+    // iOS 26.5 XCUITest exposes UIAlertController / .confirmationDialog
+    // action buttons as `.other` (rawValue 1) or `.staticText` (rawValue
+    // 48) instead of `.button` (rawValue 9). A `tapOn: { role: button,
+    // name: 'Reload' }` selector therefore finds nothing there: the
+    // resolver walks nodes matching `rawType == "button"` and iOS 26
+    // alert buttons no longer report as such.
     //
-    // Fix: enrich at the perception layer. When we're inside an
-    // action-container ancestor (alert / dialog / sheet), any
-    // descendant that has a non-empty label AND is currently `other` or
-    // `staticText` gets promoted to `button` on the wire. This
-    // preserves cross-iOS-version `role: button` semantics without
-    // requiring per-consumer patches. Nested containers (a sheet inside
-    // an alert) don't loop — we only lift, never demote.
-    //
-    // Insight round-6 report; sim-insight iOS 26.5. See
-    // `docs/ai-guide/insight-v1.0.20-shipping.md` follow-up.
+    // Enrich at the perception layer instead. When we're inside an
+    // action-container ancestor (alert / dialog / sheet), any descendant
+    // that has a non-empty label AND is currently `other` or
+    // `staticText` gets promoted to `button` on the wire. This preserves
+    // `role: button` semantics across iOS versions without requiring
+    // per-consumer patches. Nested containers (a sheet inside an alert)
+    // don't loop — we only lift, never demote.
     let hasLabel = !d.label.isEmpty || (d.title.map { !$0.isEmpty } ?? false)
     let promotable = inActionContainer && hasLabel
       && (rawRawType == "other" || rawRawType == "staticText")
     let rawType = promotable ? "button" : rawRawType
     out["rawType"] = rawType
-    // v1.0.22 D3 — always emit the raw elementType number. Consumers
-    // debugging a degraded a11y tree (RN Fabric on iOS 26.5 is the
-    // motivating case) can now distinguish "iOS types this as a
-    // button (9) but identifier / label are empty" (a bridge issue on
-    // the app side — likely RN → UIAccessibility drop) from "iOS
-    // types this as other (1)" (a plain custom-view wrapper that
-    // never had a probe-friendly type). Consumer client-side triage:
-    // `elementTypeRaw != 1 && identifier == "" && label == ""` is the
-    // signal to check the app's accessibility bridge, not smix.
+    // Always emit the raw elementType number. Consumers debugging a
+    // degraded a11y tree (RN Fabric on iOS 26.5 is the motivating case)
+    // can then distinguish "iOS types this as a button (9) but
+    // identifier / label are empty" (a bridge issue on the app side —
+    // likely an RN → UIAccessibility drop) from "iOS types this as other
+    // (1)" (a plain custom-view wrapper that never had a probe-friendly
+    // type). Client-side triage: `elementTypeRaw != 1 && identifier ==
+    // "" && label == ""` is the signal to check the app's accessibility
+    // bridge, not smix.
     out["elementTypeRaw"] = d.elementTypeRawValue
     if !d.identifier.isEmpty { out["identifier"] = d.identifier }
     if !d.label.isEmpty { out["label"] = d.label }
@@ -235,14 +237,14 @@ public enum TreeRoute {
     ]
     out["enabled"] = d.isEnabled
     out["selected"] = d.isSelected
-    // v5.1 c1 — `focused` 解冻:POCO `hasFocus` 由 UITest snapshotHandler
-    // 通过 KVC walk `_hasKeyboardFocus` ivar + focusHint identifier 匹配
-    // 填好。详 POCO 字段 doc 注释。
+    // The POCO's `hasFocus` is filled in by the UITest snapshotHandler,
+    // which KVC-walks the `_hasKeyboardFocus` ivar and matches the
+    // focusHint identifier. See the POCO field's doc comment.
     out["hasFocus"] = d.hasFocus
     out["visible"] = isVisible(d.frame, appFrame: appFrame)
 
-    // v1.0.21 D1 — mark child recursion "in action container" once we
-    // hit an alert / dialog / sheet at any depth. Use the ORIGINAL
+    // Mark child recursion "in action container" once we hit an alert /
+    // dialog / sheet at any depth. Use the ORIGINAL
     // rawType (rawRawType) not the promoted one — a promoted button
     // isn't itself an action container.
     let childInActionContainer = inActionContainer
@@ -283,16 +285,15 @@ public enum TreeRoute {
     return envelope(.ok, payload)
   }
 
-  /// v1.2 C2 — `success` variant emitting tree meta as HTTP response
-  /// headers. Body is byte-identical to `success(payload)` (no JSON wire
-  /// shape change), so legacy SDK consumers ignore the headers and still
-  /// parse the A11yNode root. New SDK reads `X-Tree-Size-Bytes` /
-  /// `X-Tree-Node-Count` for hot-spot instrumentation.
+  /// `success` variant emitting tree meta as HTTP response headers. Body
+  /// is byte-identical to `success(payload)` (no JSON wire shape
+  /// change), so SDK consumers that don't know the headers still parse
+  /// the A11yNode root. `X-Tree-Size-Bytes` / `X-Tree-Node-Count` drive
+  /// hot-spot instrumentation.
   ///
-  /// v1.0.23 D3 — Insight round-2 Ask 6: consumers hitting `--all`
-  /// batch snapshot drift want a signal that the runner is or isn't
-  /// keeping up. Two additive headers surface it without changing the
-  /// JSON body wire shape:
+  /// Consumers hitting batch snapshot drift need a signal for whether
+  /// the runner is keeping up. Two further additive headers surface it,
+  /// again without changing the JSON body wire shape:
   /// - `X-Tree-Snapshot-Refresh-Count` — cumulative /tree successful
   ///   serves since runner boot. Consumers can subtract the value
   ///   between calls to know how many refreshes happened; if the
@@ -301,8 +302,8 @@ public enum TreeRoute {
   /// - `X-Tree-Snapshot-Wall-Ms` — how long THIS `snapshotHandler`
   ///   invocation took end-to-end. Trending upward across a batch =
   ///   XCUITest bogging down; the underlying a11y tree is under
-  ///   sustained pressure (RN 0.86 Fabric on iOS 26.5 under
-  ///   `--all` sweep hits this).
+  ///   sustained pressure (RN 0.86 Fabric on iOS 26.5 under a
+  ///   whole-suite sweep hits this).
   public static func successWithMeta(
     _ payload: Data,
     sizeBytes: Int,
@@ -328,11 +329,10 @@ public enum TreeRoute {
     return envelope(.internalServerError, body)
   }
 
-  /// v1.0.15 Cluster C D2 — extended snapshot_unavailable envelope
-  /// with `reason` (categorized enum) and `hint` (actionable text)
-  /// so downstream tooling can steer to the right next step instead
-  /// of guessing from a single generic error string. Insight ask #4
-  /// in `smix-feedback-2026-07-11-post-native-fix.md`.
+  /// Extended snapshot_unavailable envelope with `reason` (categorized
+  /// enum) and `hint` (actionable text) so downstream tooling can steer
+  /// to the right next step instead of guessing from a single generic
+  /// error string.
   ///
   /// Wire shape:
   /// ```
@@ -341,9 +341,9 @@ public enum TreeRoute {
   ///  "hint":"Process foreground but no named a11y descendants — ..."}
   /// ```
   ///
-  /// Backward-compat: pre-v1.0.15 clients that don't know about
-  /// `reason` / `hint` see the same `error` key and same 500 status;
-  /// only the body is enriched.
+  /// Backward-compat: clients that don't know about `reason` / `hint`
+  /// see the same `error` key and same 500 status; only the body is
+  /// enriched.
   public static func unavailable(
     reason: AppUnavailableReason,
     hint: String
@@ -366,7 +366,7 @@ public enum TreeRoute {
   }
 }
 
-/// v1.0.15 Cluster C D2 — categorization of why a tree probe failed.
+/// Categorization of why a tree probe failed.
 /// Emitted as the `reason` field on `unavailable(reason:hint:)`.
 /// String values are stable kebab-case identifiers that consumers can
 /// match on without needing an enum decoder — the wire is JSON-string,
@@ -388,12 +388,11 @@ public enum AppUnavailableReason: String, Sendable {
   /// runner (`smix runner cycle`) if this persists.
   case driverDisconnected = "driver-disconnected"
   /// Fallback for the "we know something's wrong but not why" case.
-  /// Pre-v1.0.15 semantics.
   case unknown = "unknown"
 }
 
 extension AppUnavailableReason {
-  /// v1.0.15 Cluster C D2 — actionable text for each reason. Kept
+  /// Actionable text for each reason. Kept
   /// alongside the enum so `TreeRoute.unavailable(reason:)` can
   /// compute a default hint without the caller supplying one.
   public var defaultHint: String {

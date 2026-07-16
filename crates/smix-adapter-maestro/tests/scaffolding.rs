@@ -1,6 +1,5 @@
-//! Scaffolding placeholder tests (v3.20 c1). c2 parser tests land here
-//! as fixture-driven red→green; for now these just verify the public
-//! API surface compiles.
+//! Scaffolding placeholder tests — these verify that the public API
+//! surface compiles.
 
 use smix_adapter_maestro::{Flow, ParseError, Step};
 

@@ -1,4 +1,4 @@
-// HttpSmixSimRuntime — v1.0.3.
+// HttpSmixSimRuntime.
 //
 // URLSession-backed `SmixSimRuntime` speaking the SmixRunnerCore HTTP
 // wire (mirror of TS `HttpSimRuntime` and Rust `HttpRunnerClient`).
@@ -9,7 +9,7 @@
 //
 // Consumers who need session lifecycle use the `Session` type
 // (Session.swift) which drives `/session/open|close|renew-activation`
-// through this runtime. Consumers who want the legacy per-request path
+// through this runtime. Consumers who want the per-request rebind path
 // simply skip Session; every request goes out without `Session-Id`.
 
 import Foundation
@@ -27,7 +27,7 @@ public final class HttpSmixSimRuntime: SmixSimRuntime, @unchecked Sendable {
     public let bundleId: String
     private let urlSession: URLSession
     private var sessionId: String?
-    /// v1.0.4 §D7 — setter installed by `Session.open`. Every response
+    /// Setter installed by `Session.open`. Every response
     /// carrying `X-Sim-Health` invokes this closure with the parsed
     /// state so the associated `Session` can update its state stream.
     private var sessionStateSetter: ((SessionState) -> Void)?
@@ -42,7 +42,7 @@ public final class HttpSmixSimRuntime: SmixSimRuntime, @unchecked Sendable {
         self.urlSession = urlSession
     }
 
-    /// v1.0.3 — attach / clear the `Session-Id` header on every
+    /// Attach / clear the `Session-Id` header on every
     /// subsequent request. Typically driven by `Session.open` /
     /// `Session.close`. Consumers can call directly if they manage
     /// sessions manually.
@@ -55,7 +55,7 @@ public final class HttpSmixSimRuntime: SmixSimRuntime, @unchecked Sendable {
         sessionId
     }
 
-    /// v1.0.4 §D7 — install a state setter invoked on every response
+    /// Install a state setter invoked on every response
     /// that carries `X-Sim-Health`. Called by `Session.open`.
     public func setSessionStateSetter(_ setter: @escaping (SessionState) -> Void) {
         self.sessionStateSetter = setter
@@ -240,7 +240,7 @@ public final class HttpSmixSimRuntime: SmixSimRuntime, @unchecked Sendable {
         guard let http = response as? HTTPURLResponse else {
             throw HttpSmixSimRuntimeError.nonHttpResponse(path: path)
         }
-        // v1.0.4 §D7 — parse X-Sim-Health header + forward to attached
+        // Parse the X-Sim-Health header + forward to the attached
         // session state setter (if any). Runs BEFORE the status check
         // so state transitions are visible on error paths too.
         if let setter = sessionStateSetter,

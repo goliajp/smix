@@ -1,4 +1,4 @@
-// v7.2 c3 — Pattern (literal vs regex) mirror Rust smix-selector
+// Pattern (literal vs regex) — mirrors Rust smix-selector
 // `#[serde(untagged)] enum Pattern`.
 //
 // Wire JSON forms (untagged — discriminator = which shape matches):
@@ -11,8 +11,8 @@ import Foundation
 public enum Pattern: Sendable, Equatable {
     /// Strict literal match (case-sensitive).
     case literal(String)
-    /// Regex match. Flags default to "i" (case-insensitive) to mirror
-    /// Rust smix-selector v1.5 c5i-d maestro parity.
+    /// Regex match. Flags default to "i" (case-insensitive), matching
+    /// Rust smix-selector and Maestro.
     case regex(String, flags: String = "i")
 }
 

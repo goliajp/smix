@@ -1,16 +1,10 @@
-// v7.4 c1 — Modifier sealed interface (placeholder for shape tests).
-//
-// Mirror Swift SmixSDK.Modifier (v7.1 c1) — 9 case enum. v7.4 c4 lands
-// the proper Modifiers struct + Selector fluent chaining (matching
-// Swift v7.2 c3 schema).
+// Modifier sealed interface — mirrors the Swift SmixSDK.Modifier
+// 9-case enum.
 
 package dev.smix.sdk
 
 /**
- * Modifier — placeholder for v7.4 c1 shape tests. v7.4 c4 replaces with
- * full Modifiers struct + fluent chaining methods on Selector.
- *
- * Wire JSON (when wired in c4): flattened into Selector body so
+ * Wire JSON: flattened into the Selector body so
  * `{"id":"btn","nth":0,"below":{"text":"hi"}}` round-trips.
  */
 sealed interface Modifier {

@@ -1,6 +1,4 @@
-//! v3.28 c1 — perf_gate real bench swap from v3.21 c1 placeholder.
-//!
-//! Mirrors v3.26 c1 `smix-selector/benches/perf_gate.rs` template:
+//! Mirrors the `smix-selector/benches/perf_gate.rs` template:
 //! the per-crate hot path lands in `perf_gate`; the broader matrix
 //! stays in the sibling target (`benches/error.rs`).
 //!

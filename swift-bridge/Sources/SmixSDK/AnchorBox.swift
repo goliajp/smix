@@ -1,4 +1,4 @@
-// v7.2 c3 — AnchorBox + IndexModifiers mirror Rust smix-selector.
+// AnchorBox + IndexModifiers — mirror Rust smix-selector.
 //
 // `AnchorBox` carries only spatial anchor sub-selectors (no index, no
 // base form). Used by `Selector.anchor(AnchorBox, ...)` where the

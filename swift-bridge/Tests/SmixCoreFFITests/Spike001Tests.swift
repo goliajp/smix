@@ -1,11 +1,11 @@
-// Spike001Tests — v7.0 c3 conformance fixture #1 (empty tree + id miss → []).
+// Spike001Tests — conformance fixture #1 (empty tree + id miss → []).
 //
 // Pairs with `crates/smix-core-conformance/fixtures/spike-001-empty-tree.json`
 // + `crates/smix-ffi/src/lib.rs#tests#spike_001_empty_tree_id_miss`.
 //
 // Goal: prove Swift FFI binding (UniFFI-generated) calls into the same
 // Rust core (`smix_ffi::resolve_selector`) and produces byte-identical
-// output to the Rust backend. Conformance T1 first cell.
+// output to the Rust backend.
 
 import XCTest
 @testable import SmixCoreFFIBindings

@@ -25,7 +25,7 @@
 //! - `GET /record/poll` — drain recorded events
 //! - `POST /record/stop` — stop recording, drain final events
 //!
-//! Per CLAUDE.md §9 #4 — never expose raw URL / sleep / xpath surfaces.
+//! Design invariant: no raw URL / sleep / xpath surface is ever exposed.
 //! All operations go through the typed methods below.
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-runner-client")]
@@ -79,18 +79,18 @@ pub enum RunnerTransportError {
     AppUnavailable {
         endpoint: String,
         target: Option<String>,
-        /// v1.0.11 legacy free-form `reason` string (kept for wire
-        /// compatibility with pre-v1.0.15 runners).
+        /// Legacy free-form `reason` string, kept for wire
+        /// compatibility with runners that predate `category`.
         reason: Option<String>,
-        /// v1.0.15 Cluster C D2 — categorized enum from the runner's
-        /// tree-unavailable envelope. `Some(String)` when the runner
-        /// is v1.0.15+, `None` when older; string values are the
-        /// kebab-case identifiers in `AppUnavailableReason`:
-        /// `crashed-during-init`, `alive-but-tree-empty`,
-        /// `alive-but-tree-stale`, `driver-disconnected`, `unknown`.
+        /// Categorized enum from the runner's tree-unavailable
+        /// envelope. `None` when the runner is too old to emit it;
+        /// string values are the kebab-case identifiers in
+        /// `AppUnavailableReason`: `crashed-during-init`,
+        /// `alive-but-tree-empty`, `alive-but-tree-stale`,
+        /// `driver-disconnected`, `unknown`.
         category: Option<String>,
-        /// v1.0.15 Cluster C D2 — actionable text steering downstream
-        /// tooling. `Some(String)` when the runner is v1.0.15+.
+        /// Actionable text steering downstream tooling. `None` when
+        /// the runner is too old to emit it.
         hint: Option<String>,
     },
     /// Client-side rolling-window observation: consecutive requests
@@ -312,10 +312,9 @@ fn classify_error_body(endpoint: &str, status: u16, body: &str) -> RunnerTranspo
             hint: Option<String>,
         }
         let parsed: Option<Unavailable> = serde_json::from_str(body).ok();
-        // v1.0.15 Cluster C D2 — the wire's `reason` field is the
-        // category enum (kebab-case) on v1.0.15+ runners and the
-        // legacy free-form string on pre-v1.0.15 runners. We
-        // discriminate by matching against the known category values;
+        // The wire's `reason` field carries the kebab-case category
+        // enum on newer runners and a free-form string on older ones.
+        // Discriminate by matching against the known category values;
         // anything else falls through to the legacy `reason` slot.
         let parsed_reason = parsed.as_ref().and_then(|p| p.reason.clone());
         let (category, legacy_reason) = match parsed_reason.as_deref() {
@@ -379,7 +378,7 @@ pub struct HttpRunnerClient {
     /// feed `SimHealthMonitor::record_health_ok` / `_fail`, so a
     /// subscriber gets `Degraded` / `Dead` transitions without polling.
     sim_health: Option<smix_sim_health::SimHealthMonitor>,
-    /// v1.0.4 §D7 — session state atomic shared with the SDK Session.
+    /// Session state atomic shared with the SDK Session.
     /// Updated on every response by parsing the `X-Sim-Health` header
     /// (values `healthy` | `degraded` | `cycling` | `dead`). Unknown /
     /// missing header leaves the state unchanged.
@@ -436,7 +435,7 @@ impl HttpRunnerClient {
         }
     }
 
-    /// v1.0.4 §D7 — attach the SDK Session's state atomic so the
+    /// Attach the SDK Session's state atomic so the
     /// client updates it on every response by parsing `X-Sim-Health`.
     /// Called by `App::open_session`. External callers rarely need
     /// this directly.
@@ -570,7 +569,7 @@ impl HttpRunnerClient {
     /// [`RunnerTransportError::RunnerDied`].
     ///
     /// Idempotent; safe to call more than once (last window size wins).
-    /// Default is disabled (behavior identical to v1.0.1).
+    /// Disabled by default.
     #[must_use]
     pub fn with_liveness_window(self, window: usize) -> Self {
         {
@@ -678,7 +677,7 @@ impl HttpRunnerClient {
             attempts_left -= 1;
             match builder_fn(&self.client).send().await {
                 Ok(res) => {
-                    // v1.0.4 §D7 — parse `X-Sim-Health` response header
+                    // Parse the `X-Sim-Health` response header
                     // and propagate to the attached Session state atomic
                     // (if any). Absent header leaves state unchanged.
                     let sim_health_hdr = res
@@ -878,9 +877,9 @@ impl HttpRunnerClient {
         })
     }
 
-    /// `GET /health` extended — parses the v1.0.2+ JSON body carrying
-    /// uptime / activation counters / open-session count. On pre-v1.0.2
-    /// runners returning a bare 200 with no body, returns a default
+    /// `GET /health` extended — parses the JSON body carrying uptime /
+    /// activation counters / open-session count. Legacy runners return a
+    /// bare 200 with no body; for those this returns a default
     /// [`smix_runner_wire::HealthResponse`] with only `ok = true` set.
     pub async fn health_detail(
         &self,
@@ -910,7 +909,7 @@ impl HttpRunnerClient {
         if let Some(monitor) = &self.sim_health {
             monitor.record_health_ok();
         }
-        // Legacy runners (< v1.0.2) return an empty body; treat parse
+        // Legacy runners return an empty body; treat parse
         // failure as {ok: true} to keep the "health passed" invariant.
         let text = res.text().await.unwrap_or_default();
         if text.trim().is_empty() {
@@ -957,7 +956,7 @@ impl HttpRunnerClient {
         self.json_post("/session/renew-activation", req, None).await
     }
 
-    /// v1.0.4 §D5 — `POST /session/close-all` — clear every open
+    /// `POST /session/close-all` — clear every open
     /// session on the runner. Used by `smix runner cycle` and the
     /// runner-side supervisor to drop stale bindings after a cycle.
     /// Idempotent — closing an empty session table returns
@@ -970,7 +969,7 @@ impl HttpRunnerClient {
             .await
     }
 
-    /// v1.0.4 §D14 — `POST /session/relaunch-app` — instruct the runner
+    /// `POST /session/relaunch-app` — instruct the runner
     /// to `terminate()` + `launch()` the session's cached
     /// `XCUIApplication` binding IN PLACE. Preserves session id and
     /// XCUITest binding; recovers from a downstream app crash without
@@ -982,7 +981,7 @@ impl HttpRunnerClient {
         self.json_post("/session/relaunch-app", req, None).await
     }
 
-    /// v1.0.5 §D1 — `POST /session/list` — enumerate every session
+    /// `POST /session/list` — enumerate every session
     /// currently known to the runner. Useful for diagnostics + the
     /// supervisor + SDK `Session::still_valid()` probe after a cycle.
     pub async fn list_sessions(
@@ -992,14 +991,14 @@ impl HttpRunnerClient {
             .await
     }
 
-    /// v1.0.8 §D1 — `POST /session/terminate-app` — cooperative
+    /// `POST /session/terminate-app` — cooperative
     /// `XCUIApplication.terminate()` on the session's cached binding
     /// via testmanagerd (NOT `simctl terminate` SIGKILL). Does not
     /// signal `com.apple.ReportCrash`. Paired with
     /// [`Self::launch_session_app`] and a host-side
     /// `SimctlClient::clear_app_sandbox` invocation to implement the
     /// `Session::reset_app_data` orchestration that eliminates the
-    /// "Insight quit unexpectedly" system dialog.
+    /// app's "quit unexpectedly" system dialog.
     pub async fn terminate_session_app(
         &self,
         req: &smix_runner_wire::SessionAppLifecycleRequest,
@@ -1007,7 +1006,7 @@ impl HttpRunnerClient {
         self.json_post("/session/terminate-app", req, None).await
     }
 
-    /// v1.0.8 §D1 — `POST /session/launch-app` — cooperative
+    /// `POST /session/launch-app` — cooperative
     /// `XCUIApplication.launch()` on the session's cached binding.
     /// Companion of [`Self::terminate_session_app`].
     pub async fn launch_session_app(
@@ -1017,13 +1016,13 @@ impl HttpRunnerClient {
         self.json_post("/session/launch-app", req, None).await
     }
 
-    /// v1.0.7 §D5 — `POST /diagnostic/dump` — one-shot post-mortem
+    /// `POST /diagnostic/dump` — one-shot post-mortem
     /// snapshot of the runner's runtime state. Bundles the recent
     /// subprocess ring buffer, open sessions, sim-health state,
     /// supervisor pid, and uptime. `smix diagnostic dump` calls this
     /// then pretty-prints.
     ///
-    /// Legacy runners (v1.0.6 and earlier) return 404; consumers can
+    /// Legacy runners return 404; consumers can
     /// gracefully fall back to the client-side ring buffer only.
     pub async fn diagnostic_dump(
         &self,
@@ -1369,7 +1368,8 @@ impl HttpRunnerClient {
     }
 
     /// `POST /swipe-at-norm-coord` — Apple native UI event from-to
-    /// swipe. Sibling of [`Self::tap_at_norm_coord`] under §9 #3 escape hatch.
+    /// swipe. Sibling of [`Self::tap_at_norm_coord`] under the same
+    /// normalized-coordinate escape hatch.
     pub async fn swipe_at_norm_coord(
         &self,
         from: (f64, f64),
@@ -1430,7 +1430,7 @@ impl HttpRunnerClient {
         Ok(r.found || r.exists)
     }
 
-    /// v1.0.27 — `POST /find` with `requireOnScreen: true`. Like
+    /// `POST /find` with `requireOnScreen: true`. Like
     /// [`Self::find`] but `found` additionally requires the LIVE
     /// element frame to intersect the app frame. Used by the driver's
     /// on-screen confirmation pass: iOS 26.5 + RN Fabric SNAPSHOT

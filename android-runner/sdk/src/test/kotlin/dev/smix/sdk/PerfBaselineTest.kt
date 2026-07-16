@@ -1,4 +1,4 @@
-// v7.8 c3 — Kotlin perf baseline. Measures Smix.launchApp + App.tap
+// Kotlin perf baseline. Measures Smix.launchApp + App.tap
 // round-trip against MockSimRuntime + MockSelectorResolver. Output to
 // stdout (capture via `./gradlew :sdk:testDebugUnitTest --tests
 // PerfBaselineTest -i 2>&1 | grep '^perf:'`).
@@ -74,7 +74,7 @@ class PerfBaselineTest {
         val maxV = samples.last()
         val avg = samples.average()
 
-        println("perf: # SmixSDK Kotlin perf baseline (v7.8 c3)")
+        println("perf: # SmixSDK Kotlin perf baseline")
         println("perf: # Date: ${java.time.Instant.now()}")
         println("perf: # Operation: Smix.launchApp + App.tap(Selector.Id)")
         println("perf: # Backend: MockSimRuntime + MockSelectorResolver (in-memory)")

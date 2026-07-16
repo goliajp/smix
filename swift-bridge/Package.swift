@@ -30,14 +30,14 @@ let package = Package(
     .executableTarget(name: "SmixHostHID", dependencies: ["SmixIndigoHID"]),
     .executableTarget(name: "SmixCaptureHost"),
 
-    // v7.0 c3 — SmixCoreFFI binary target (Rust core via UniFFI 0.29.5)
+    // SmixCoreFFI binary target (Rust core via UniFFI 0.29.5)
     // built by `scripts/sdk/build-xcframework.sh` from `crates/smix-ffi`.
-    // Slices: ios-arm64-simulator + macos-arm64 (per design.md §9 #1
-    // sim-only + macos host test). Real-device slice (ios-arm64) NOT
-    // included per §9 #1 sim-only invariant.
+    // Slices: ios-arm64-simulator + macos-arm64 (simulator, plus the
+    // macOS host test). The real-device slice (ios-arm64) is deliberately
+    // NOT included: smix supports the simulator only.
     .binaryTarget(name: "SmixCoreFFI", path: "SmixCoreFFI.xcframework"),
 
-    // v7.0 c3 — Swift wrapper around SmixCoreFFI (UniFFI-generated
+    // Swift wrapper around SmixCoreFFI (UniFFI-generated
     // bindings + thin idiomatic API). Generated files live under
     // Sources/SmixCoreFFIBindings/Generated (smix.swift,
     // smixFFI.h re-exported via module.modulemap inside .xcframework).
@@ -52,12 +52,10 @@ let package = Package(
       path: "Tests/SmixCoreFFITests"
     ),
 
-    // v7.1 c1 — SmixSDK ergonomic facade target.
+    // SmixSDK ergonomic facade target.
     // Playwright-style Swift API: Smix.launchApp + App actor +
-    // Selector enum + Locator + ExpectationFailure. Mirrors Rust
-    // smix-sdk surface (per design.md §3 D6). c1 lands type system
-    // skeleton; c2 wires App.tap to FFI + SmixRunnerCore; c3 wires
-    // App.find + Locator.toBeVisible + ExpectationFailure throw.
+    // Selector enum + Locator + ExpectationFailure. Mirrors the Rust
+    // smix-sdk surface.
     .target(
       name: "SmixSDK",
       dependencies: ["SmixCoreFFIBindings", "SmixRunnerCore"],
@@ -69,7 +67,7 @@ let package = Package(
       path: "Tests/SmixSDKTests"
     ),
 
-    // v7.2 c-final — cross-binary conformance fixture runner. Loads
+    // Cross-binary conformance fixture runner. Loads
     // a fixture JSON, calls SmixCoreFFIBindings.resolveSelector, prints
     // sorted JSON id array to stdout. Paired with the Rust
     // fixture-runner bin for byte-identical diff via

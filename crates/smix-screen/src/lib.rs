@@ -355,9 +355,9 @@ fn derive_roles_inner(node: &mut A11yNode, inside_tab_bar: bool) {
 /// terminal nodes in JSON to omit the field entirely (`/tree` route emits
 /// `"children":[]` consistently but we accept both for forward-compat).
 
-/// v1.0.22 D3 — pre-v1.0.22 wire payloads have no `elementTypeRaw`
-/// field; default to 1 (`.other`) which is the safest fallback and
-/// matches how Swift `elementTypeName` treats unknown raw values.
+/// Older wire payloads predate the `elementTypeRaw` field; default to
+/// 1 (`.other`), which is the safest fallback and matches how Swift
+/// `elementTypeName` treats unknown raw values.
 fn default_element_type_raw() -> u64 { 1 }
 
 /// Single-node accessibility snapshot returned by `/tree`. Fields
@@ -367,16 +367,16 @@ fn default_element_type_raw() -> u64 { 1 }
 pub struct A11yNode {
     /// Raw Apple `XCUIElement.ElementType` name (e.g. `"any"`, `"other"`).
     pub raw_type: String,
-    /// v1.0.22 D3 — raw numeric `XCUIElement.ElementType.rawValue`.
+    /// Raw numeric `XCUIElement.ElementType.rawValue`.
     /// `raw_type` above is a string form derived by `elementTypeName`,
     /// but consumers debugging a degraded a11y tree (RN Fabric on iOS
     /// 26.5 is the motivating case) need the numeric form to spot
     /// "iOS types this as .button (9) but identifier / label empty"
     /// — the signature of an app-side accessibility-bridge drop. The
-    /// numeric form also disambiguates smix's v1.0.21 alert/dialog
-    /// button promotion (rawType lifted to "button" for consumer
+    /// numeric form also disambiguates the alert/dialog button
+    /// promotion (rawType is lifted to "button" for consumer
     /// selectors, but the original ElementType number stays here).
-    /// Defaults to 1 (`.other`) for pre-v1.0.22 wire payloads.
+    /// Defaults to 1 (`.other`) for wire payloads that omit it.
     #[serde(default = "default_element_type_raw")]
     pub element_type_raw: u64,
     /// Curated semantic role; None when the raw type doesn't map.

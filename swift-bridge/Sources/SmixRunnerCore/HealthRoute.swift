@@ -2,10 +2,10 @@ import FlyingFox
 import Foundation
 
 /// `GET /health` response builder. The bare `body()` is the
-/// backward-compatible v1.0.1 shape (`{"ok": true}`), preserved so
-/// tools that jq-parse the exact literal don't break. `bodyDetail(...)`
-/// emits the v1.0.2+ extended payload with liveness counters that the
-/// Rust client parses via `HttpRunnerClient::health_detail`.
+/// backward-compatible shape (`{"ok": true}`), preserved so tools that
+/// jq-parse the exact literal don't break. `bodyDetail(...)` emits the
+/// extended payload with liveness counters that the Rust client parses
+/// via `HttpRunnerClient::health_detail`.
 public enum HealthRoute {
   /// Legacy body — stable byte sequence.
   public static func body() -> Data {
@@ -21,7 +21,7 @@ public enum HealthRoute {
     )
   }
 
-  /// v1.0.2 — extended body carrying runner-side observability
+  /// Extended body carrying runner-side observability
   /// counters. Callers pass the currently-observed values; the JSON
   /// encode uses camelCase field names matching
   /// `smix_runner_wire::HealthResponse`.
@@ -49,7 +49,7 @@ public enum HealthRoute {
     return Data(json.utf8)
   }
 
-  /// v1.0.2 — extended response variant.
+  /// Extended response variant.
   public static func responseDetail(
     runnerVersion: String,
     uptimeMs: UInt64,

@@ -1,4 +1,4 @@
-// v7.8 c1 — smix-runner-server route module for selector resolution.
+// smix-runner-server route module for selector resolution.
 //
 // Handles 3 endpoints used by TS @smix/rn HttpSimRuntime + future
 // Kotlin / Swift consumers that want HTTP-mediated FFI access:
@@ -18,7 +18,7 @@ import Foundation
 
 public enum SelectResolveRoute {
 
-  // MARK: - Action discriminator + Result enum (v7.9 c1)
+  // MARK: - Action discriminator + Result enum
 
   /// The 3 select/resolve endpoints share Request + handler signature
   /// but differ in result shape. SelectResolveAction lets a single

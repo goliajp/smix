@@ -1,4 +1,4 @@
-//! v0.3.0 Phase A A4 — `expect.signal` / `expect.signals` /
+//! `expect.signal` / `expect.signals` /
 //! `expect.logClean` yaml verb parser tests.
 
 use smix_adapter_maestro::{SignalMatch, SignalOrderKind, SignalWindow, Step, parse_flow_yaml};

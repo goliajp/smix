@@ -1,12 +1,11 @@
-//! v3.26 c1 — perf contract regression guard.
+//! Perf contract regression guard.
 //!
 //! Hot `src/` paths inside the workspace must reach for
 //! `match_text_compiled` (paired with a one-time `Pattern::compile()`
 //! cache, as in `smix-selector-resolver::ResolverContext` and the
 //! `smix-driver` selector pipeline). Calling bare `match_text` from a
 //! hot loop forces `regex::Regex::new` on every node visit — a ~10000×
-//! per-call regression vs the compiled path (PERFORMANCE.md
-//! v3.24 c2 → v3.26 c1 closure).
+//! per-call regression vs the compiled path (see `BUDGETS.md`).
 //!
 //! The SDK convenience surface keeps `smix_selector::match_text` `pub`
 //! for one-shot ad-hoc calls and re-exports it through `smix-sdk` /
@@ -53,7 +52,7 @@ fn perf_contract_no_bare_match_text_in_src() {
 
     assert!(
         violations.is_empty(),
-        "v3.26 c1 perf contract violation: {n} src/ caller(s) reach bare \
+        "perf contract violation: {n} src/ caller(s) reach bare \
          `smix_selector::match_text` (forces `regex::Regex::new` on every \
          call, ~10000× slowdown vs `match_text_compiled`).\n\
          \n\

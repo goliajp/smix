@@ -1,4 +1,4 @@
-// Session — v1.0.3.
+// Session.
 //
 // Runner-side session lifecycle guard. Drives `POST /session/*` on the
 // smix runner and attaches the returned `Session-Id` to every
@@ -34,7 +34,7 @@
 
 import Foundation
 
-/// v1.0.4 §D7 — sim-health classification observed via the runner's
+/// Sim-health classification observed via the runner's
 /// `X-Sim-Health` response header. Consumers subscribe via
 /// `Session.stateStream` or poll `Session.state`.
 public enum SessionState: String, Sendable {
@@ -69,17 +69,17 @@ public final class Session: @unchecked Sendable {
     // runner side, so the worst case of a race is one extra request.
     private var closed = false
 
-    /// v1.0.4 §D7 — current sim-health classification. Updated
-    /// automatically as the runtime parses `X-Sim-Health` headers.
-    /// AsyncStream continuation set at open time; nil on legacy runners.
+    /// Current sim-health classification. Updated automatically as the
+    /// runtime parses `X-Sim-Health` headers. AsyncStream continuation
+    /// is set at open time; nil when the runner sends no health header.
     private var currentState: SessionState = .healthy
     private var stateContinuation: AsyncStream<SessionState>.Continuation?
 
     /// Current classification. Reads a plain stored value; no atomic —
-    /// v1.0.4 uses coarse polling, not lock-step precision.
+    /// health tracking is coarse polling, not lock-step precision.
     public var state: SessionState { currentState }
 
-    /// v1.0.4 §D7 — subscribe to state transitions. AsyncStream emits
+    /// Subscribe to state transitions. AsyncStream emits
     /// every time the runner's `X-Sim-Health` header changes. Buffers
     /// the most recent value.
     public lazy var stateStream: AsyncStream<SessionState> = {
@@ -137,15 +137,15 @@ public final class Session: @unchecked Sendable {
             serverTimeMs: resp.serverTimeMs ?? 0,
             runtime: runtime
         )
-        // v1.0.4 §D7 — install the header parser so every subsequent
-        // response updates this session's state.
+        // Install the header parser so every subsequent response
+        // updates this session's state.
         runtime.setSessionStateSetter { [weak session] next in
             session?.updateState(next)
         }
         return session
     }
 
-    /// v1.0.5 §D1 — probe `/session/list` and return `true` iff this
+    /// Probe `/session/list` and return `true` iff this
     /// session's id is still known to the runner. Consumers wire this
     /// after a state transition to `cycling`/`dead` to decide whether
     /// to keep using the session (persisted across `runner cycle`) or
@@ -163,7 +163,7 @@ public final class Session: @unchecked Sendable {
         return resp.sessions?.contains(where: { $0.sessionId == sessionId }) ?? false
     }
 
-    /// v1.0.4 §D14 — instruct the runner to `terminate()` + `launch()`
+    /// Instruct the runner to `terminate()` + `launch()`
     /// the session's cached `XCUIApplication` in place, preserving the
     /// session id and XCUITest binding. Returns wall-clock milliseconds.
     public func relaunchApp() async throws -> UInt64 {
@@ -204,8 +204,8 @@ public final class Session: @unchecked Sendable {
 
     /// Release the session — sends `POST /session/close` (idempotent),
     /// clears the `Session-Id` header from the runtime. Subsequent
-    /// runtime requests fall through to the legacy per-request rebind
-    /// path (rate-limited to 1 activate / 5 s / bundle-id as of v1.0.2).
+    /// runtime requests fall through to the per-request rebind path
+    /// (rate-limited to 1 activate / 5 s / bundle-id).
     public func close() async throws {
         if closed {
             return

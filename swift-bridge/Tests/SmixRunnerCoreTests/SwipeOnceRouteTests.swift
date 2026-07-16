@@ -1,10 +1,9 @@
 import XCTest
 @testable import SmixRunnerCore
 
-// v6.10 c1 — SwipeOnceRoute decode tests. Previously only ScrollRouteTests
-// existed; SwipeOnceRoute had implicit coverage via integration. With
-// left/right added to the Direction enum, separate decode tests guard
-// the parser shape (callers wire HTTP body → decode → handler dispatch).
+// SwipeOnceRoute decode tests. SwipeOnceRoute is otherwise only covered
+// implicitly via integration, so these decode tests guard the parser shape
+// directly (callers wire HTTP body → decode → handler dispatch).
 final class SwipeOnceRouteTests: XCTestCase {
 
   func test_decode_up_direction() throws {
@@ -19,8 +18,8 @@ final class SwipeOnceRouteTests: XCTestCase {
     XCTAssertEqual(req.direction, .down)
   }
 
-  // v6.10 c1 — left / right newly accepted (cli docs advertised them,
-  // runner rejected pre-v6.10 with invalidDirection("left")).
+  // left / right are advertised by the cli docs, so the runner must accept
+  // them rather than raise invalidDirection.
   func test_decode_left_direction() throws {
     let body = Data(#"{"direction":"left"}"#.utf8)
     let req = try SwipeOnceRoute.decode(body)

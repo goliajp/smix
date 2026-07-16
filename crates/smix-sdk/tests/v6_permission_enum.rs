@@ -1,6 +1,6 @@
-//! v6.0 c1b — `Permission` cross-platform enum maps correctly to iOS
-//! `SimctlPermission`. Android mapping (`to_android()`) verified in
-//! v6.0 c2 when AndroidDeviceControl lands.
+//! `Permission` cross-platform enum maps correctly to iOS
+//! `SimctlPermission`. Android mapping (`to_android()`) is verified
+//! alongside `AndroidDeviceControl`.
 
 use smix_sdk::Permission;
 use smix_simctl::SimctlPermission;

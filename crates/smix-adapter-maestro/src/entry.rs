@@ -88,14 +88,14 @@ pub struct FlowArgs {
     /// Append an implicit `expect.signal { regex }` step at the end of
     /// the flow.
     pub await_signal: Option<String>,
-    /// v1.0.4 §B / D9 — prepend an implicit `expect.signal { regex,
+    /// Prepend an implicit `expect.signal { regex,
     /// timeoutMs }` step at the START of the flow, before any yaml
     /// step runs. Blocks until the regex is observed in the metro log
     /// tail. Symmetric to [`Self::await_signal`] which fires at end
     /// of flow. Requires `metro_log_url` also set — otherwise the
     /// gate-signal step errors with an actionable hint.
     pub gate_signal: Option<String>,
-    /// v1.0.4 §B / D9 — timeout (ms) for [`Self::gate_signal`]. Default
+    /// Timeout (ms) for [`Self::gate_signal`]. Default
     /// 60_000. Zero disables the timeout (waits forever — usually not
     /// what you want in CI).
     pub gate_signal_timeout_ms: u64,
@@ -162,16 +162,16 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
     };
     let app = configure(app);
 
-    // v1.0.3 — session lifecycle. `smix run` opens a runner-side
+    // Session lifecycle. `smix run` opens a runner-side
     // session at start-up and closes it on exit. Every request in
     // between carries `Session-Id`, so the runner short-circuits
     // per-request `.activate()` — eliminating the activation storm at
     // the root without any yaml-side change.
     //
-    // Runners that don't implement `/session/open` (older v1.0.x) will
-    // return non-2xx; on that path we WARN + reconnect + continue with
-    // the legacy per-request rebind (which as of v1.0.2 is itself
-    // rate-limited to 1 activate / 5 s / bundle-id, so still safe).
+    // Runners that don't implement `/session/open` return non-2xx;
+    // on that path we WARN + reconnect + continue with the legacy
+    // per-request rebind, which is itself rate-limited to 1 activate
+    // / 5 s / bundle-id, so it stays safe.
     enum AppHolder {
         Session(smix_sdk::Session),
         Loose(smix_sdk::App),
@@ -224,7 +224,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
         }
     };
 
-    // v1.0.4 §B — prepend gate-signal step at the START of the flow.
+    // Prepend the gate-signal step at the START of the flow.
     // Insertion at index 0 so it runs BEFORE any yaml step, matching
     // the "hold the entire flow until this regex appears" contract.
     // Timeout defaults to 60s at the FlowArgs layer; here we pass it
@@ -350,7 +350,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
         None
     };
 
-    // v1.0.4 §D15 / feedback lifecycle-safe-exit — race the flow
+    // Race the flow
     // execution against SIGINT / SIGTERM. On signal we abandon the
     // in-flight flow (its next .await point drops out), run the
     // session-close cascade below, and exit with the POSIX-conventional
@@ -393,18 +393,18 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
             },
         }
     };
-    // v1.0.4 §D11 — snapshot per-step trace records BEFORE dropping
+    // Snapshot per-step trace records BEFORE dropping
     // the adapter, so a failed run still surfaces its partial trace
     // in run-summary.json.
     let debug_records: Vec<crate::StepDebugRecord> = adapter.debug_records().to_vec();
     drop(adapter);
 
-    // v1.0.3 — release the session (best-effort). Errors here are
+    // Release the session (best-effort). Errors here are
     // warnings only: the flow's result is already captured. The
     // dispatch is a small POST /session/close and the runner's
     // idempotent contract means "already gone" is not an error.
     //
-    // v1.0.4 §D15 — best-effort session close under a tight 2 s
+    // Best-effort session close under a tight 2 s
     // timeout even on interrupt paths, so ctrl-C actually terminates
     // instead of hanging behind a dead runner.
     if let AppHolder::Session(session) = holder {
@@ -452,7 +452,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
                 OutputFormat::Junit => emit_junit(&args.flow, Err(&e)),
                 OutputFormat::Human => {}
             }
-            // v1.0.4 §D15 — POSIX-conventional exit codes for signal
+            // POSIX-conventional exit codes for signal
             // interrupts override the RunError-based classification.
             match interrupted_by {
                 Some("SIGINT") => ExitCode::from(130),
@@ -557,7 +557,7 @@ fn build_summary_json(
             "flow": flow.display().to_string(),
             "runOutcome": "success",
             "warnings": report.warnings,
-            // v1.0.4 §D11 — per-step trace for post-mortem. Empty
+            // Per-step trace for post-mortem. Empty
             // unless --debug-output was set.
             "steps": debug_records,
         }),
@@ -565,7 +565,7 @@ fn build_summary_json(
             "flow": flow.display().to_string(),
             "runOutcome": "failure",
             "error": e.to_string(),
-            // v1.0.4 §D11 — partial trace up to the failing step.
+            // Partial trace up to the failing step.
             "steps": debug_records,
         }),
     }

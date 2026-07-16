@@ -1,4 +1,4 @@
-// v7.1 c1 — SmixSDK MVP shape tests.
+// SmixSDK MVP shape tests.
 //
 // Verifies:
 //   - Selector / Modifier / Role enum case completeness
@@ -23,7 +23,7 @@ final class MvpApiShapeTests: XCTestCase {
             .role(Role.button),
             .role(Role.button, name: "Submit"),
         ]
-        XCTAssertEqual(cases.count, 5, "v7.1 c1 MVP exposes 4 base + role-with-name variant")
+        XCTAssertEqual(cases.count, 5, "MVP exposes 4 base + role-with-name variant")
     }
 
     func testSelectorIdEncodesRustCompatibleShape() throws {
@@ -94,13 +94,13 @@ final class MvpApiShapeTests: XCTestCase {
             .near(.id("anchor"), thresholdPts: 50),
             .inside(.id("anchor")),
         ]
-        XCTAssertEqual(cases.count, 9, "v7.1 c1 MVP exposes 9 modifier cases (Modifiers struct landing in v7.2 c3)")
+        XCTAssertEqual(cases.count, 9, "MVP exposes 9 modifier cases")
     }
 
     // MARK: - Role cases
 
     func testRoleCasesAllExposed() {
-        // Snapshot of v7.1 c1 mirror of Rust smix-screen Role enum.
+        // Mirrors the Rust smix-screen Role enum.
         // Expanding Role requires updating this list AND Rust side.
         let expected: Set<String> = [
             "button", "link", "textField", "secureTextField", "searchField",
@@ -178,15 +178,11 @@ final class MvpApiShapeTests: XCTestCase {
 
     // MARK: - App / Locator surface area
     //
-    // c3 update: tap / fill / pressKey / find / toBeVisible / toContainText
-    // / toHaveLabel / toHaveCount / terminate / relaunch / tree all WIRED
-    // through SmixSimRuntime. These tests now verify the still-stubbed
-    // surface (swipe / screenshot / systemPopups / openUrl / tapAtCoord —
-    // landing in v7.2).
-
-    // testTapAtCoordStillStubReturnsNotImplemented + testSmixLaunchAppWithAppPathStillThrows
-    // removed in v7.2 c5 — both are now wired via SimRuntime
-    // (tapAtCoord via synthesizeTapAtNormalized; .appPath via
-    // launchFromPath). See AppTapAtCoordAndAppPathMockTests for the
-    // c5 replacement tests.
+    // tap / fill / pressKey / find / toBeVisible / toContainText /
+    // toHaveLabel / toHaveCount / terminate / relaunch / tree, plus swipe /
+    // screenshot / systemPopups / openUrl / tapAtCoord and
+    // Smix.launchApp(.appPath), are all wired through SmixSimRuntime.
+    // Their behaviour is covered by the mock suites — AppTapMockTests,
+    // AppFillPressKeyMockTests, LocatorMockTests, AppSwipeScreenshotMockTests,
+    // AppSenseExtMockTests, AppTapAtCoordAndAppPathMockTests.
 }

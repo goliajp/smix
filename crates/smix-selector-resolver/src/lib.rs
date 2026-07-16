@@ -5,23 +5,22 @@
 //! smix-selector-resolver — Selector resolution against an [`A11yNode`]
 //! tree (stone, hot path).
 //!
-//! Ported from now-retired TS source: `src/core/resolve-selector.ts` (279 lines, v1.5
-//! c5i-d + v1.6 c4 lock-in). 1:1 semantics:
+//! Resolution pipeline:
 //!
 //! 1. **Collect**: DFS pre-order over the tree, collect every node whose
 //!    base form matches (text / id / label / role+name / focused / anchor
 //!    accept-all).
-//! 2. **Visibility filter** (v1.5 c5i-d): drop nodes whose bounds are
+//! 2. **Visibility filter**: drop nodes whose bounds are
 //!    zero or completely outside the tree viewport — unless no candidate
-//!    is visible, then drop nothing (TS semantic preserves miss reports).
-//! 3. **Spatial filter** (v0.3 C5): for each
+//!    is visible, then drop nothing, which preserves miss reports.
+//! 3. **Spatial filter**: for each
 //!    `near/below/above/leftOf/rightOf/inside` key (top-level for
 //!    base 1-4, or inside `anchor.*` for base 6), recursively resolve
 //!    the anchor sub-selector; filter candidates by centroid-axis or
 //!    geometric containment. AND semantics. Anchor null → overall null.
-//! 4. **Index pick** (v0.3 C5): apply `first/last/nth` in declaration
-//!    order; later overrides earlier (TS line 273-278 — `nth` wins
-//!    if both `first` and `nth` set).
+//! 4. **Index pick**: apply `first/last/nth` in declaration
+//!    order; later overrides earlier — `nth` wins if both `first` and
+//!    `nth` are set.
 //!
 //! # Pattern compile cache
 //!
@@ -32,11 +31,9 @@
 //! resulting [`CompiledPattern`] keyed by the raw pointer to the wire
 //! `Pattern` (stable for the lifetime of the borrowed selector).
 //!
-//! This is the key perf gain over the TS resolver (which lacks an
-//! explicit cache — V8 RegExp object internally lazy-compiles, but every
-//! `matchText` call still pays the per-candidate fold). For a 100-node
-//! tree with a single text base, Rust 1× compile + 100 × match_compiled
-//! ≪ TS 100 × compile-and-match.
+//! This cache is the pipeline's key perf gain: for a 100-node tree with
+//! a single text base, 1× compile + 100 × match_compiled costs far less
+//! than 100 × compile-and-match.
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-selector-resolver")]
 
@@ -46,7 +43,7 @@ use smix_selector::{
 };
 use std::collections::HashMap;
 
-const NEAR_THRESHOLD_PT: f64 = 100.0; // logical points @1x (1:1 跟 TS line 188)
+const NEAR_THRESHOLD_PT: f64 = 100.0; // logical points @1x
 
 // -------------------- public API -----------------------------------------
 
@@ -54,9 +51,9 @@ const NEAR_THRESHOLD_PT: f64 = 100.0; // logical points @1x (1:1 跟 TS line 188
 /// surviving candidate after collect → visibility → spatial → index.
 ///
 /// Returns `None` when the selector has no matching node OR any
-/// transitive regex compilation fails (TS resolver throws on regex
-/// error; we choose silent None — caller can `Pattern::compile()` first
-/// to surface compile errors explicitly).
+/// transitive regex compilation fails — a compile error yields a silent
+/// `None` rather than an error, so callers who need to surface compile
+/// failures explicitly should `Pattern::compile()` first.
 #[must_use]
 pub fn resolve_selector<'tree>(
     tree: &'tree A11yNode,
@@ -66,7 +63,7 @@ pub fn resolve_selector<'tree>(
     resolve_selector_compiled(tree, selector, &ctx)
 }
 
-/// Resolve all matching candidates (TS `resolveSelectorAll`, line 89-96).
+/// Resolve all matching candidates.
 ///
 /// Same pipeline as [`resolve_selector`] but skips the final index pick —
 /// `first/last/nth` are silently ignored when present (Playwright
@@ -117,13 +114,13 @@ pub fn resolve_selector_all_compiled<'tree>(
 /// tree to its [`CompiledPattern`]. Built once at entry; lookup is O(1)
 /// hash.
 ///
-/// # Cache reuse across calls (v3.31 c1)
+/// # Cache reuse across calls
 ///
 /// Build a single `ResolverContext` outside a retry loop and pass it to
 /// [`resolve_selector_compiled`] / [`resolve_selector_all_compiled`] on
 /// every iteration to skip the per-call regex compile prepass. The
 /// regex hit case drops from ~9.5 µs/iter to ~260 ns/iter on a 15-node
-/// tree (see `PERFORMANCE.md` v3.31 c1 segment). The convenience
+/// tree (see `BUDGETS.md`). The convenience
 /// wrappers [`resolve_selector`] / [`resolve_selector_all`] keep the
 /// per-call construction for one-shot callers.
 ///
@@ -193,7 +190,7 @@ impl ResolverContext {
             Selector::Focused { .. } => true,
             Selector::Anchor { anchor, .. } => Self::compile_anchor(anchor, out),
             Selector::LocalizedText { modifiers, .. } => {
-                // v5.18 c1 — adapter is expected to desugar LocalizedText →
+                // The adapter is expected to desugar LocalizedText →
                 // Selector::Text before invoking the resolver. The variant
                 // reaches compile only when the caller forgot to desugar
                 // (test path / direct SDK use without adapter). Compile the
@@ -203,7 +200,7 @@ impl ResolverContext {
                 Self::compile_modifiers(modifiers, out)
             }
             Selector::OcrText { modifiers, .. } => {
-                // v5.19 c1 — adapter handles OcrText dispatch directly via
+                // The adapter handles OcrText dispatch directly via
                 // App::find_by_text_ocr + tap_at_norm_coord, bypassing the
                 // resolver pipeline. Variant reaches resolver only when
                 // adapter forgot to dispatch; treat same as LocalizedText
@@ -211,7 +208,7 @@ impl ResolverContext {
                 Self::compile_modifiers(modifiers, out)
             }
             Selector::AnchorRelative { anchor, .. } => {
-                // v5.20 c1 — adapter dispatches AnchorRelative directly via
+                // The adapter dispatches AnchorRelative directly via
                 // App::find_norm_coord(anchor) + tap_at_norm_coord, never
                 // calls resolver on the AnchorRelative itself. But the
                 // ANCHOR sub-selector reaches the resolver through SDK
@@ -220,7 +217,7 @@ impl ResolverContext {
             }
             Selector::Point { .. } => true,
             Selector::Fallback { fallback } => {
-                // v5.20 c2 — compile every chain element's patterns; adapter
+                // Compile every chain element's patterns; the adapter
                 // iterates chain in dispatch but each sub-selector may need
                 // its own pattern cache. Returns false on first compile
                 // failure (matches LocalizedText / OcrText semantics).
@@ -302,8 +299,8 @@ fn resolve_inner<'tree>(
         .filter(|n| is_visible_enough(n, tree))
         .collect();
     let topmost = topmost_modal_filter(tree, visible);
-    // v3.14 c1.6 / v3.19 c2 — explicit structural intent (ancestor /
-    // spatial modifier) overrides implicit interactive preference
+    // Explicit structural intent (ancestor / spatial modifier)
+    // overrides implicit interactive preference
     // (tappable filter). If a non-tappable candidate is the one that
     // satisfies the user-provided structural / spatial constraint and a
     // tappable sibling sits in a position that fails it, tappable-first
@@ -339,13 +336,13 @@ fn resolve_inner_no_index<'tree>(
     tappable_subset_filter(after_spatial)
 }
 
-// v3.5 c1 — tappable preference. When candidate set mixes tappable
+// Tappable preference. When the candidate set mixes tappable
 // (button / link / cell / tab / menuItem) and non-tappable (alert /
 // staticText / window / group / ...), drop the non-tappable so a single
 // label selector picks the actual interactive element, not the alert
 // container or its title. Same semantic as `XCUIElementQuery.firstMatch`
 // which favours hit-testable leaves over their surrounding chrome.
-// Single-kind candidate lists fall through untouched (v1.x behaviour).
+// Single-kind candidate lists fall through untouched.
 fn tappable_subset_filter(candidates: Vec<&A11yNode>) -> Vec<&A11yNode> {
     if candidates.len() <= 1 {
         return candidates;
@@ -365,12 +362,12 @@ fn tappable_subset_filter(candidates: Vec<&A11yNode>) -> Vec<&A11yNode> {
     }
 }
 
-// v3.5 c1 — topmost hit-test (Apple XCUIElementQuery.firstMatch +
-// maestro findElement semantic): when ≥1 candidate is inside a
+// Topmost hit-test (Apple XCUIElementQuery.firstMatch + maestro
+// findElement semantic): when ≥1 candidate is inside a
 // Role::Alert / Role::Dialog subtree (modal overlay in play), drop
 // the candidates that live under the underlying drawer/page so a
 // single selector picks the modal button. When no modal overlay is
-// present, the input list passes through unchanged — v1.x DFS
+// present, the input list passes through unchanged — plain DFS
 // pre-order behaviour stays intact.
 // Modal container detection. The Swift `/tree` route does not emit a `role`
 // field (only `rawType`, see TreeRoute.swift `nodeToDict`) — so Rust-side
@@ -458,7 +455,7 @@ where
 
 fn matches_base(node: &A11yNode, selector: &Selector, ctx: &ResolverContext) -> bool {
     match selector {
-        // v1.5 C2 — anchor-only base: every node is a candidate.
+        // Anchor-only base: every node is a candidate.
         Selector::Anchor { .. } => true,
         Selector::Text { text, .. } => match ctx.pattern(text) {
             Some(cp) => match_text_compiled(node, cp),
@@ -489,38 +486,38 @@ fn matches_base(node: &A11yNode, selector: &Selector, ctx: &ResolverContext) -> 
             }
         }
         Selector::Focused { .. } => node.has_focus,
-        // v5.18 c1 — adapter is expected to desugar LocalizedText → Text
+        // The adapter is expected to desugar LocalizedText → Text
         // before resolving. If we somehow get here (unit-test path / direct
         // SDK use), no node matches — describe_selector still renders this
         // variant for AI-readable error output.
         Selector::LocalizedText { .. } => false,
-        // v5.19 c1 — adapter dispatches OcrText directly via OCR + tap_at_coord
-        // and never invokes the resolver pipeline. Variant reaches here only
-        // when adapter forgot to dispatch; no node matches.
+        // The adapter dispatches OcrText directly via OCR + tap_at_coord
+        // and never invokes the resolver pipeline. The variant reaches here
+        // only when the adapter forgot to dispatch; no node matches.
         Selector::OcrText { .. } => false,
-        // v5.20 c1 — adapter dispatches AnchorRelative directly (resolve anchor
+        // The adapter dispatches AnchorRelative directly (resolve anchor
         // sub-selector → norm coord + dx/dy → tap_at_norm_coord). Variant
         // never reaches here through the standard pipeline; if it somehow
         // does, no node matches.
         Selector::AnchorRelative { .. } => false,
-        // v5.20 c2 — Point + Fallback are dispatched by adapter without
+        // Point + Fallback are dispatched by the adapter without
         // resolver involvement. Reaching matches_base means a caller
         // forgot to dispatch; no node matches.
         Selector::Point { .. } | Selector::Fallback { .. } => false,
     }
 }
 
-// -------------------- v3.14 c1 — ancestor modifier (G7) ------------------
+// -------------------- ancestor modifier ----------------------------------
 
 // Ancestor-chain filter. Keep only candidates whose a11y tree parent chain
 // (recursive ancestors, excluding self) contains at least one node matching
 // the selector's `Modifiers::ancestor` sub-selector. Ancestor sub-selector
-// resolving to empty short-circuits the whole resolve to None (跟 spatial
-// anchor null 同语义).
+// resolving to empty short-circuits the whole resolve to None — same
+// semantics as a null spatial anchor.
 //
 // Different from `inside` spatial modifier (geometric bounds-containment):
 // `ancestor` walks the a11y tree parent chain — structural filter, not spatial.
-// Same parent-map idiom as `topmost_modal_filter` (line 283 段).
+// Same parent-map idiom as `topmost_modal_filter`.
 //
 // `Selector::Anchor` / `Selector::Focused` have no `Modifiers::ancestor`
 // field on their wire shape (anchor base is already a spatial intent,
@@ -537,9 +534,9 @@ fn apply_ancestor_filter<'tree>(
         | Selector::Role { modifiers, .. }
         | Selector::LocalizedText { modifiers, .. }
         | Selector::OcrText { modifiers, .. } => modifiers.ancestor.as_deref(),
-        // v5.20 c1 — AnchorRelative has no Modifiers (anchor sub-selector
-        // carries its own); adapter dispatches directly, ancestor n/a.
-        // v5.20 c2 — Point + Fallback no Modifiers either.
+        // AnchorRelative has no Modifiers (the anchor sub-selector carries
+        // its own); the adapter dispatches directly, so ancestor is n/a.
+        // Point + Fallback carry no Modifiers either.
         Selector::Anchor { .. }
         | Selector::Focused { .. }
         | Selector::AnchorRelative { .. }
@@ -711,7 +708,7 @@ fn apply_index<'tree>(list: Vec<&'tree A11yNode>, selector: &Selector) -> Vec<&'
     if !has_first && !has_last && !has_nth {
         return list;
     }
-    // TS semantics (line 274-278): first → list[0], last overrides → list[len-1],
+    // Precedence: first → list[0], last overrides → list[len-1],
     // nth overrides both → list[nth]. Single-shot return [picked] or [].
     let picked: Option<&'tree A11yNode> = if has_nth {
         nth.and_then(|i| list.get(i).copied())

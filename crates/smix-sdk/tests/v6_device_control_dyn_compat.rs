@@ -1,4 +1,4 @@
-//! v6.0 c1b — assert `DeviceControl` trait is dyn-compatible.
+//! Assert `DeviceControl` trait is dyn-compatible.
 
 use smix_sdk::DeviceControl;
 

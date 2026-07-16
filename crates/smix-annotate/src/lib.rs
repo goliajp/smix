@@ -1,8 +1,7 @@
 //! smix-annotate — screenshot annotation.
 //!
 //! Compose circle / arrow / text / box / line primitives onto a PNG,
-//! then emit compressed output. RFC: `docs/ai-guide/rfc-v0.3.0-
-//! annotated-screenshots.md`.
+//! then emit compressed output.
 //!
 //! # Quick tour
 //!
@@ -19,7 +18,7 @@
 //! std::fs::write("output.png", out)?;
 //! ```
 //!
-//! # v0.3.0 scope
+//! # Scope
 //!
 //! - 5 primitives: circle, arrow, text, box, line
 //! - Position resolvers: absolute pixel + normalized (0..1)
@@ -28,8 +27,8 @@
 //!   resolves selector → pixel before adding annotation)
 //! - Named + hex + rgba color palette
 //! - Compression 3 presets: fast, balanced, aggressive
-//! - Text rendering via `ab_glyph`; font supplied by caller (v0.3.5
-//!   will bundle Inter + Noto Sans SC)
+//! - Text rendering via `ab_glyph`; bundled Inter + Noto Sans SC by
+//!   default, overridable by the caller via `.font(bytes)`
 
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 use image::{DynamicImage, Rgba, RgbaImage};
@@ -48,10 +47,10 @@ pub enum AnnotateError {
     Compress(String),
     #[error("font load: {0}")]
     Font(String),
-    /// v1.0 Phase C1 retired: bundled fonts (Inter + Noto SC subset)
-    /// now cover text rendering out of the box. Consumers can still
-    /// override with `.font(bytes)`; this variant is retained for
-    /// wire compat but no longer produced by v1.0 code paths.
+    /// Retired: the bundled fonts (Inter + Noto SC subset) cover text
+    /// rendering out of the box, and consumers can still override with
+    /// `.font(bytes)`. Retained for wire compat; no current code path
+    /// produces it.
     #[error("text annotation without font — call `.font(bytes)` before `.render()`")]
     MissingFont,
 }
@@ -410,7 +409,7 @@ impl Annotator {
     /// compressed) output bytes.
     pub fn render(mut self) -> Result<Vec<u8>, AnnotateError> {
         let (w, h) = (self.image.width(), self.image.height());
-        // v1.0 Phase C1 — if consumer supplied .font(bytes), use it
+        // If the consumer supplied .font(bytes), use it
         // for the whole render (override). Otherwise text primitive
         // picks bundled Inter or Noto SC subset per codepoint.
         let override_font: Option<FontRef> = self
@@ -502,7 +501,7 @@ impl Annotator {
                     let (x, y) = at.resolve(w, h);
                     let scale = PxScale::from(size);
                     let rgba = Rgba(color.to_rgba());
-                    // v1.0 Phase C1 — per-codepoint font routing when no
+                    // Per-codepoint font routing when no
                     // override supplied. Load each bundled font once,
                     // then pick per char.
                     let inter_font = FontRef::try_from_slice(font::INTER_REGULAR)
@@ -715,9 +714,8 @@ mod tests {
 
     #[test]
     fn text_without_explicit_font_uses_bundled_inter() {
-        // v1.0 Phase C1 — bundled Inter font renders text without any
-        // .font() call. Prior to v1.0 this test asserted a MissingFont
-        // error; that error is now unreachable via v1.0 code paths.
+        // The bundled Inter font renders text without any .font()
+        // call, so MissingFont is unreachable here.
         let png = blank_png();
         let out = Annotator::new(&png)
             .unwrap()
@@ -745,7 +743,7 @@ mod tests {
 
     #[test]
     fn cjk_char_renders_via_bundled_noto_sc() {
-        // v1.0 Phase C1 — 登 = U+767B (in Noto SC subset).
+        // U+767B (in the Noto SC subset).
         let png = blank_png();
         let out = Annotator::new(&png)
             .unwrap()

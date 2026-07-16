@@ -1,7 +1,7 @@
 import FlyingFox
 import Foundation
 
-// v1.5 C5d' — POST /back {} → 200 {ok:<bool>}.
+// POST /back {} → 200 {ok:<bool>}.
 // Mirrors ForegroundRoute / ScrollRoute / TapRoute envelope shape. Runner-side
 // handler queries XCUIApplication.navigationBars.buttons.firstMatch and calls
 // .tap() (XCUITest standard navbar back button path, i18n-safe — `firstMatch`
@@ -11,7 +11,7 @@ import Foundation
 //
 // Empty body or `{}` JSON object both decode to BackRequest. Back is
 // app-bound (operates on the runner-bound XCUIApplication) — no bundleId
-// or scope parameter, unlike c4b /foreground which takes caller-supplied
+// or scope parameter, unlike /foreground which takes a caller-supplied
 // bundleId for cross-app activation.
 public enum BackRoute {
   public struct BackRequest: Equatable, Sendable {
@@ -30,7 +30,7 @@ public enum BackRoute {
     catch { throw DecodeError.invalidJSON }
     // Any valid JSON object body (including `{}`) is acceptable; ignore any
     // unexpected fields — back's contract is parameterless and additive
-    // payload fields are forward-compatible (future c{N} may add e.g. count).
+    // payload fields are forward-compatible.
     guard json is [String: Any] else { throw DecodeError.invalidJSON }
     return BackRequest()
   }

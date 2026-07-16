@@ -69,11 +69,11 @@ pub trait Driver: Send + Sync {
     /// header. Default no-op.
     fn set_force_key_events(&mut self, _force: bool) {}
 
-    /// v1.0.3 — attach a `Session-Id` header to every subsequent
+    /// Attach a `Session-Id` header to every subsequent
     /// request. Set to `Some(id)` after `POST /session/open`; set to
     /// `None` to revert to the legacy per-request rebind path (which
     /// is rate-limited to at most one `.activate()` per 5 s per
-    /// bundle-id as of v1.0.2). Default no-op — only impls backed by
+    /// bundle-id). Default no-op — only impls backed by
     /// an HTTP runner override.
     fn set_session_id(&mut self, _id: Option<String>) {}
 
@@ -156,7 +156,7 @@ pub trait Driver: Send + Sync {
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure>;
 
-    /// Tap at viewport-normalized coordinate (§9 #3 escape hatch).
+    /// Tap at viewport-normalized coordinate (escape hatch).
     async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
 
     /// Tap by accessibility identifier via the swift `/tap-by-id`

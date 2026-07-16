@@ -1,17 +1,11 @@
-//! v3.28 c2 — perf_gate real bench swap from v3.21 c1 placeholder.
+//! Perf gate bench for the full resolver pipeline.
 //!
-//! v3.24 c2 deferred this swap explicitly: "smix-selector-resolver real
-//! perf bench deferred — selector match is the inner loop of the
-//! resolver pipeline, so optimizing match_text first is the right
-//! ordering. Resolver bench will follow when the CompiledPattern cache
-//! wires through" (PERFORMANCE.md §4 v3.24 c2 segment). The condition
-//! has been met since v3.1 c4 — `ResolverContext` holds `compiled:
-//! HashMap<*const Pattern, CompiledPattern>` (`lib.rs:98`), populated
-//! once per `resolve_selector` call by `cache_pattern` / `compile_anchor`
-//! (lib.rs:114 / lib.rs:176), and the hot DFS calls
-//! `match_text_compiled(node, cp)` per candidate (lib.rs:373 / 395).
+//! `ResolverContext` holds `compiled: HashMap<*const Pattern,
+//! CompiledPattern>`, populated once per `resolve_selector` call by
+//! `cache_pattern` / `compile_anchor`, and the hot DFS calls
+//! `match_text_compiled(node, cp)` per candidate.
 //!
-//! Cases mirror the selector-side `perf_gate.rs` v3.26 c1 layout (plain
+//! Cases mirror the selector-side `perf_gate.rs` layout (plain
 //! hit / regex hit / miss) but bench the **full resolver pipeline**:
 //! `resolve_selector` builds the `ResolverContext` (cache prepass over
 //! the selector tree), runs `dfs_collect` over the a11y tree
@@ -24,15 +18,14 @@
 //!
 //! Run: `cargo bench --bench perf_gate -p smix-selector-resolver`
 //!
-//! # v3.31 c1 — ctx-reused path
+//! # ctx-reused path
 //!
 //! Mirrors the 3 baseline cases with `resolve_selector_compiled` after
 //! building a single `ResolverContext` outside the `b.iter` loop. This
 //! is the production retry-loop pattern (driver `wait_for` / `scroll`).
 //! The plain hit case sees a marginal speedup (HashMap lookup already
 //! ~ns); the regex hit case sees the big win (regex compile lifted out
-//! of the hot loop). Validates the cross-call cache optimization landed
-//! in v3.31 c1.
+//! of the hot loop). Validates the cross-call cache optimization.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use smix_screen::{A11yNode, Rect};
@@ -135,10 +128,9 @@ fn perf_gate(c: &mut Criterion) {
         b.iter(|| resolve_selector(black_box(&tree), black_box(&sel_miss)));
     });
 
-    // v3.31 c1 — ctx-reused variants. Build context once outside
-    // `b.iter` so the regex compile prepass is paid at setup, not per
-    // iteration — production pattern in `smix-driver::wait_for` /
-    // `scroll`.
+    // ctx-reused variants. Build context once outside `b.iter` so the
+    // regex compile prepass is paid at setup, not per iteration —
+    // production pattern in `smix-driver::wait_for` / `scroll`.
     let ctx_plain = ResolverContext::new(&sel_plain_hit).expect("plain compiles");
     let ctx_regex = ResolverContext::new(&sel_regex_hit).expect("regex compiles");
     let ctx_miss = ResolverContext::new(&sel_miss).expect("miss plain compiles");

@@ -1,19 +1,19 @@
 import FlyingFox
 import Foundation
 
-// v5.2 c1 — POST /swipe-at-norm-coord {"fromNx", "fromNy", "toNx", "toNy"}
-// → 200 {ok:<bool>}. From-to coordinate swipe gesture via Apple native event
-// chain (XCSynthesizedEventRecord + XCPointerEventPath
+// POST /swipe-at-norm-coord {"fromNx", "fromNy", "toNx", "toNy"}
+// → 200 {ok:<bool>}. From-to coordinate swipe gesture via the Apple native
+// event chain (XCSynthesizedEventRecord + XCPointerEventPath
 // `initForTouchAtPoint:` → `moveToPoint:atOffset:` → `liftUpAtOffset:`).
 //
-// Companion to `/tap-at-norm-coord` under CLAUDE.md §9 #3 partial-lift escape
-// hatch (docs/v5.md 2026-06-15 决策日志). Only swipe coord form is exposed;
-// fill / anchor / hover coord forms are intentionally NOT provided and each
-// would require an independent §10 decision.
+// Companion to `/tap-at-norm-coord`. Swipe is the only coordinate form
+// exposed here; fill / anchor / hover coordinate forms are intentionally NOT
+// provided.
 //
-// 跟 BackRoute / SwipeOnceRoute / TapAtCoordRoute envelope shape 1:1.
-// Body 必含 fromNx / fromNy / toNx / toNy ∈ [0,1]. 越界 / 缺失 / 非数字 → 400
-// bad_request. Mode 唯一 (无 mode field), handler 直接 dispatch.
+// Envelope shape matches BackRoute / SwipeOnceRoute / TapAtCoordRoute 1:1.
+// Body must carry fromNx / fromNy / toNx / toNy ∈ [0,1]; out of range /
+// missing / non-numeric → 400 bad_request. Single mode (no `mode` field), so
+// the handler dispatches directly.
 public enum SwipeAtCoordRoute {
   public struct SwipeAtCoordRequest: Equatable, Sendable {
     public let fromNx: Double

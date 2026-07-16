@@ -1,4 +1,4 @@
-//! smix-driver — decide layer (CLAUDE.md §12.1 middle).
+//! smix-driver — the decide layer.
 //!
 //! Wraps [`HttpRunnerClient`] (sense + act IPC) with host-side resolve
 //! dispatch. The default path is: SDK call → `driver.tap` → `tree()` →
@@ -212,7 +212,7 @@ impl IosDriver {
             let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
             let mut last_transport_err: Option<ExpectationFailure> = None;
             loop {
-                // v1.0.27 — the live route asks for on-screen (frame ∩
+                // The live route asks for on-screen (frame ∩
                 // app frame), not bare existence. Bare `.exists` is
                 // true for below-the-fold elements, which made `find`
                 // (and everything built on it: runFlow.when gates,
@@ -232,7 +232,7 @@ impl IosDriver {
             }
         } else {
             let tree = self.tree_with_retry(include).await?;
-            // v1.0.27 — tree-resolve branch gains the same live
+            // Tree-resolve branch gains the same live
             // on-screen confirmation as wait_for. See
             // `confirm_on_screen` for semantics.
             let matched = resolve_selector_all(&tree, selector);
@@ -243,7 +243,7 @@ impl IosDriver {
         }
     }
 
-    /// v1.0.27 — live on-screen confirmation for tree-matched nodes.
+    /// Live on-screen confirmation for tree-matched nodes.
     ///
     /// iOS 26.5 + RN 0.86 Fabric SNAPSHOT frames drift for
     /// below-the-fold elements: the tree reports stale in-viewport
@@ -259,8 +259,8 @@ impl IosDriver {
     /// whether an element with that handle is on screen right now.
     /// Any confirmed node ⇒ true. Nodes with NO handle can't be
     /// live-confirmed — if none of the matched nodes has a handle,
-    /// the tree verdict stands (pre-v1.0.27 semantics; OCR tiers
-    /// remain the fallback for handle-less degraded trees).
+    /// the tree verdict stands; OCR tiers remain the fallback for
+    /// handle-less degraded trees.
     ///
     /// Transport errors during confirmation also let the tree
     /// verdict stand: a flaky live probe must not turn a legitimate
@@ -708,10 +708,10 @@ impl IosDriver {
             // Transport retry on tree fetch (see tap above).
             let tree = self.tree_with_retry(None).await?;
             if let Some(node) = resolve_selector_compiled(&tree, selector, &ctx) {
-                // v1.0.27 — live on-screen confirmation. Without it a
+                // Live on-screen confirmation. Without it a
                 // below-the-fold element with a drifted snapshot frame
                 // satisfies the probe on swipe 0 and scrollUntilVisible
-                // returns WITHOUT scrolling (insight round-5 Ask 13).
+                // returns WITHOUT scrolling.
                 // A refuted confirm means "exists but not on screen
                 // yet" — exactly the state another swipe should fix.
                 let matched = [node];
@@ -770,15 +770,14 @@ impl IosDriver {
     }
 
     /// Tap at normalized (nx, ny) coordinates — escape hatch for
-    /// coord-based maestro yaml port (§9 #3 lift).
+    /// coord-based maestro yaml ports.
     ///
     /// (nx, ny) must be in [0, 1] (normalized to viewport). The runner
     /// converts to device pixels via the Apple native event chain
     /// (same path as the regular `tap()` centroid pipeline).
     ///
-    /// **Escape hatch only — selector path (`tap(&selector)`) is the
-    /// canonical surface.** This bypasses a11y resolve entirely. See
-    /// CLAUDE.md §9 #3.
+    /// **Escape hatch only — the selector path (`tap(&selector)`) is the
+    /// canonical surface.** This bypasses a11y resolve entirely.
     pub async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
         self.runner
             .tap_at_norm_coord(nx, ny)
@@ -846,7 +845,7 @@ impl IosDriver {
 
     /// `POST /swipe-at-norm-coord {from, to}` passthru — escape hatch
     /// from-to swipe gesture sibling to [`Self::tap_at_norm_coord`].
-    /// `from` / `to` are normalized to viewport `(0, 1)`. §9 #3 lift
+    /// `from` / `to` are normalized to viewport `(0, 1)`. Escape-hatch
     /// companion to `tap_at_coord`.
     pub async fn swipe_at_norm_coord(
         &self,
@@ -908,17 +907,17 @@ impl IosDriver {
             }));
         };
         let mut last_transport_err: Option<ExpectationFailure> = None;
-        // v1.0.27 — tracks "the tree matched but the live on-screen
+        // Tracks "the tree matched but the live on-screen
         // check refuted it" across poll iterations so the timeout
         // failure can say WHY the wait never greened (below-the-fold
-        // element with a drifted snapshot frame — insight round-5
-        // Ask 13's wait-pass → tap-miss pair).
+        // element with a drifted snapshot frame, which produces a
+        // wait-pass → tap-miss pair).
         let mut tree_hit_offscreen = false;
         loop {
             match self.tree(include).await {
                 Ok(tree) => {
                     if let Some(node) = resolve_selector_compiled(&tree, selector, &ctx) {
-                        // v1.0.27 — live on-screen confirmation.
+                        // Live on-screen confirmation.
                         // Snapshot frames drift under iOS 26.5 + RN
                         // Fabric; the resolver's frame∩viewport filter
                         // can pass an element that is actually below
@@ -1050,7 +1049,7 @@ fn base_text_or_id(selector: &Selector) -> Option<String> {
         // base_text_or_id still returns ocr_text as an AI-readable
         // suggestion hint (e.g. for fallback-chain error reports).
         Selector::OcrText { ocr_text, .. } => Some(ocr_text.clone()),
-        // AnchorRelative is an escape hatch family (§9 #3); the
+        // AnchorRelative is an escape hatch family; the
         // adapter dispatches directly. Recurse into the anchor
         // sub-selector for the hint.
         Selector::AnchorRelative { anchor, .. } => base_text_or_id(anchor),
@@ -1071,10 +1070,10 @@ fn can_use_find_route(selector: &Selector) -> bool {
     let Selector::Text { text, modifiers } = selector else {
         return false;
     };
-    // v1.0.27 — regex patterns serialize as `{"regex": …, "flags": …}`
+    // Regex patterns serialize as `{"regex": …, "flags": …}`
     // objects, which the runner /find route's decode (expecting
-    // `selector.text` as a plain string) rejects with 400. Pre-v1.0.27
-    // a regex Text selector dispatched here would burn the full
+    // `selector.text` as a plain string) rejects with 400. A regex
+    // Text selector dispatched here would therefore burn the full
     // transport-retry budget (~8 s) and surface a DriverError instead
     // of evaluating. Only literal patterns ride the live route; regex
     // falls back to host-resolve like every other complex shape.

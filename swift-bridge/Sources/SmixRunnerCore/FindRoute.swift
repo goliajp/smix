@@ -1,7 +1,7 @@
 import FlyingFox
 import Foundation
 
-// v1.2 C4 — POST /find {selector:{text}} -> {ok:true,found:<bool>}.
+// POST /find {selector:{text}} -> {ok:true,found:<bool>}.
 //
 // `expect.toBeVisible()` for a simple text selector pays a full /tree
 // fetch + serialization + SDK-side JS predicate walk. /find lets the
@@ -22,14 +22,13 @@ public enum FindRoute {
 
   public struct FindRequest: Equatable, Sendable {
     public let selector: Selector
-    /// v1.0.27 — when true, `found` additionally requires the LIVE
-    /// element frame to intersect the app frame ("on screen"), not
-    /// just `.exists`. iOS 26.5 + RN Fabric snapshots report drifted
-    /// in-viewport frames for below-the-fold elements, so the tree
-    /// tier's frame∩viewport proxy can false-green; the live XCUI
-    /// query re-resolves current layout and tells the truth. Optional
-    /// on the wire; absent = false (pre-v1.0.27 exists-only
-    /// behaviour).
+    /// When true, `found` additionally requires the LIVE element frame
+    /// to intersect the app frame ("on screen"), not just `.exists`.
+    /// iOS 26.5 + RN Fabric snapshots report drifted in-viewport frames
+    /// for below-the-fold elements, so the tree tier's frame∩viewport
+    /// proxy can false-green; the live XCUI query re-resolves current
+    /// layout and tells the truth. Optional on the wire; absent = false,
+    /// i.e. exists-only behaviour.
     public let requireOnScreen: Bool
     public init(selector: Selector, requireOnScreen: Bool = false) {
       self.selector = selector

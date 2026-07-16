@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use smix_selector::Selector;
 use std::path::PathBuf;
 
-/// v1.0 Phase C2 — one annotation composed onto a screenshot output.
-/// Position resolves against pixel/normalized coords or a smix
-/// `Selector` (adapter runtime resolves selector → pixel at
-/// screenshot time via a11y tree).
+/// One annotation composed onto a screenshot output. Position
+/// resolves against pixel/normalized coords or a smix `Selector`
+/// (adapter runtime resolves selector → pixel at screenshot time via
+/// the a11y tree).
 ///
 /// Serialization: externally-tagged with PascalCase (matches
 /// `parse_annotation_from_kind`'s wrapper).
@@ -92,7 +92,7 @@ pub enum AnnotationSpec {
     },
 }
 
-/// v1.0 Phase C2 — position spec for an annotation. Three shapes:
+/// Position spec for an annotation. Three shapes:
 /// - `{ x: 100, y: 100 }` — absolute pixel
 /// - `{ nx: 0.5, ny: 0.5 }` — normalized 0..1 (viewport-relative)
 /// - `{ id: "submit-btn" }` — smix Selector — resolved against a11y
@@ -143,7 +143,7 @@ fn default_annotation_font_size() -> f32 {
     20.0
 }
 
-/// v1.0 Phase C2 — parse an [`AnnotationSpec`] from a yaml annotation
+/// Parse an [`AnnotationSpec`] from a yaml annotation
 /// entry like `circle: { at: ..., color: ..., radius: ... }`. `kind`
 /// is the outer key (`circle`/`arrow`/`text`/`box`/`line`); `body` is
 /// the mapping value. Returns human-readable error string on shape
@@ -265,9 +265,9 @@ pub use apps_config::{
 
 pub(crate) use expr::{Context as ExprContext, parse_and_eval as expr_eval};
 
-/// v5.2 c4 — yaml expression engine 的 `Value` 类型. 用于 `Adapter::with_output`
-/// seeding 调用方构造 output store. 表面 stable subset (Null / Bool /
-/// Number / String).
+/// The yaml expression engine's `Value` type. Callers use it to build
+/// the output store passed to `Adapter::with_output`. The exposed
+/// surface is a stable subset (Null / Bool / Number / String).
 pub use expr::Value as ExprValue;
 
 pub use parser::{
@@ -277,8 +277,8 @@ pub use parser::{
 pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebugRecord};
 
 /// A maestro YAML command. Each variant corresponds to one or more
-/// `smix-sdk` action calls (the mapping is the c3 job — for now the
-/// enum is a structural representation of the parsed yaml node).
+/// `smix-sdk` action calls; the enum itself is a structural
+/// representation of the parsed yaml node.
 ///
 /// References to the yaml schema:
 /// - `tapOn`: `{ "tapOn": "X" }` short or `{ "tapOn": { text, id, index, ... } }` full
@@ -295,7 +295,8 @@ pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebu
 /// - `launchApp`: `{ "launchApp": { clearState, clearKeychain, appId } }`
 /// - `openLink`: `{ "openLink": "<url>" }`
 /// - `stopApp`: `{ "stopApp": null }`
-/// v1.0.26 — explicit tap-dispatch override for `tapOn: { dispatch: … }`.
+///
+/// Explicit tap-dispatch override for `tapOn: { dispatch: … }`.
 ///
 /// The default tap path (host-resolve → IOHID native-event synthesize)
 /// fires SwiftUI `onTap` and RN Pressable `onPress` reliably. Two
@@ -309,7 +310,7 @@ pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebu
 ///   dismiss BINDINGS don't fire from coord-based taps on iOS 17+;
 ///   the element-anchored path is the only one that flips the binding.
 ///   Requires an `id:` selector (the runner resolves by identifier).
-/// - `daemonProxy` — XCTRunnerDaemonSession synthesize (v4.0 G8 fix).
+/// - `daemonProxy` — XCTRunnerDaemonSession synthesize.
 ///   Bypasses the XCUIElement gesture-recognizer chain so RN
 ///   `RCTTouchHandler` receives the raw touch; use when a Pressable
 ///   swallows the default path on an older RN.
@@ -335,22 +336,21 @@ pub enum Step {
         /// `optional: true` swallows the not-found error per maestro semantics.
         #[serde(default)]
         optional: bool,
-        /// v1.0.26 — explicit dispatch-mechanism override
+        /// Explicit dispatch-mechanism override
         /// (`dispatch: xcui | daemonProxy`). `None` = default routing.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dispatch: Option<TapDispatch>,
     },
     /// Tap at a normalized coordinate point (escape hatch for yaml
-    /// `tapOn: { point: "X%,Y%" }`). Mirrors the v3.16 §9 #3 lift
-    /// `App::tap_at_coord(nx, ny)` decision: `nx`/`ny` ∈ \[0.0, 1.0\].
+    /// `tapOn: { point: "X%,Y%" }`). Maps to `App::tap_at_coord(nx,
+    /// ny)`: `nx`/`ny` ∈ \[0.0, 1.0\].
     TapAtPoint {
         /// Normalized X (0.0 = left, 1.0 = right).
         nx: f64,
         /// Normalized Y (0.0 = top, 1.0 = bottom).
         ny: f64,
     },
-    /// v5.21 c1b — Eval JS against fixture-side WKWebView bridge
-    /// (a11y-i18n master plan §1 Option A). yaml shape:
+    /// Eval JS against the fixture-side WKWebView bridge. yaml shape:
     ///   `- webview_eval: "<js expression>"`  (short form)
     ///   `- webview_eval: { js: "...", assert_eq: <expected JSON value> }` (full form)
     /// Adapter dispatches to `App::webview_eval(js)`; on `assert_eq`
@@ -369,15 +369,15 @@ pub enum Step {
     /// every operation). This verb is a **fixed sleep** in the smix
     /// implementation, 400 ms by default.
     ///
-    /// v1.0.18 — accepts a numeric override:
-    /// - `- waitForAnimationToEnd` — 400 ms sleep (default, unchanged)
+    /// Accepts a numeric override:
+    /// - `- waitForAnimationToEnd` — 400 ms sleep (default)
     /// - `- waitForAnimationToEnd: 500` — 500 ms sleep (integer = ms)
     ///
     /// Use the numeric form when your animation is longer than 400 ms.
-    /// Insight round-4 confusion: consumers assumed the swizzle no-op'd
-    /// this verb; the truth is it never went through XCTest idle-wait
-    /// in the first place. The default value is preserved for maestro
-    /// yaml compat.
+    /// A common misreading is that the quiescence swizzle no-ops this
+    /// verb; it does not — the verb never went through XCTest
+    /// idle-wait in the first place. The 400 ms default is preserved
+    /// for maestro yaml compat.
     WaitForAnimationToEnd {
         /// Sleep duration in milliseconds. Bare yaml form
         /// (`- waitForAnimationToEnd`) parses to 400 ms (maestro-compat
@@ -388,7 +388,8 @@ pub enum Step {
     /// Extended wait until a selector matches the expected visibility.
     /// `expect_visible=true` waits for visible (maestro yaml `visible:` arm);
     /// `expect_visible=false` waits for not visible (maestro yaml
-    /// `notVisible:` arm). v5.2 c2 — 双 arm 编译期 dispatch, parse 时确定.
+    /// `notVisible:` arm). Which arm applies is decided at parse time,
+    /// so the runtime has no branch.
     ExtendedWaitUntil {
         /// Selector that must match the expected visibility state.
         selector: Selector,
@@ -417,8 +418,8 @@ pub enum Step {
     RunFlow(String),
     /// Conditional `runFlow: { when: { visible }, file, as }`. Parser stores
     /// the path verbatim, the gating selector, and the optional outputs
-    /// alias name; runtime decision is c3 (`Adapter::run` checks visibility
-    /// before invoking the inner flow), v5.6 c5 adds outputs alias capture.
+    /// alias name; `Adapter::run` checks visibility before invoking the
+    /// inner flow and captures the outputs alias.
     RunFlowConditional {
         /// Raw path string from the yaml (relative to invoking file).
         file: String,
@@ -427,7 +428,7 @@ pub enum Step {
         /// forward-compat, mapping `None` to "run unconditionally".
         #[serde(skip_serializing_if = "Option::is_none")]
         when_visible: Option<Selector>,
-        /// v1.0.24 D2 — inverse gate (`when.notVisible`). Runs the
+        /// Inverse gate (`when.notVisible`). Runs the
         /// subflow only when the selector is NOT visible. Enables the
         /// idempotency pattern "only enter conditional if the target
         /// state hasn't already been reached" (e.g. `notVisible:
@@ -437,7 +438,7 @@ pub enum Step {
         /// error, both None is unconditional (same as legacy).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         when_not_visible: Option<Selector>,
-        /// v5.6 c5 — outputs alias: after the subflow runs, read the device
+        /// Outputs alias: after the subflow runs, read the device
         /// pasteboard (canonical "what the subflow captured via
         /// copyTextFrom") and write it into the parent flow's output map
         /// under this name. None ⇒ no capture (legacy semantics). Mirrors
@@ -445,7 +446,7 @@ pub enum Step {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         as_name: Option<String>,
     },
-    /// v6.8 c1 — maestro `runFlow: { when: { visible }, commands: [...] }`
+    /// maestro `runFlow: { when: { visible }, commands: [...] }`
     /// inline form. The body is a literal list of steps held in-place; no
     /// child yaml file is referenced. `when.visible` gates execution
     /// identically to [`Step::RunFlowConditional`]. Mirrors maestro's
@@ -457,7 +458,7 @@ pub enum Step {
         /// Visibility precondition (`when.visible`). `None` ⇒ unconditional.
         #[serde(skip_serializing_if = "Option::is_none")]
         when_visible: Option<Selector>,
-        /// v1.0.24 D2 — inverse gate (`when.notVisible`). See
+        /// Inverse gate (`when.notVisible`). See
         /// [`Step::RunFlowConditional::when_not_visible`] for semantics.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         when_not_visible: Option<Selector>,
@@ -482,9 +483,9 @@ pub enum Step {
         /// End point (normalized coords).
         to: (f64, f64),
     },
-    /// Launch / relaunch the app under test. v5.2 c2 — maestro yaml 全集
-    /// 子参支持: appId / clearState / clearKeychain / permissions /
-    /// arguments / stopApp.
+    /// Launch / relaunch the app under test. Supports the full maestro
+    /// yaml sub-parameter set: appId / clearState / clearKeychain /
+    /// permissions / arguments / stopApp.
     /// `stopApp=true` (default) → terminate + (optional wipe) + launch_with_args;
     /// `stopApp=false` → foreground (resume already-running app).
     LaunchApp {
@@ -496,32 +497,31 @@ pub enum Step {
         /// Whether to wipe the Keychain before launching.
         #[serde(default)]
         clear_keychain: bool,
-        /// v5.2 c2 — maestro yaml `permissions: { name: allow|deny|unset }`.
+        /// maestro yaml `permissions: { name: allow|deny|unset }`.
         /// Empty = no permission changes. Applied in mapping iteration order
         /// before launch.
         #[serde(default)]
         permissions: Vec<(String, MaestroPermissionAction)>,
-        /// v5.2 c2 — maestro yaml `arguments: [...]` — process-level argv.
+        /// maestro yaml `arguments: [...]` — process-level argv.
         #[serde(default)]
         arguments: Vec<String>,
-        /// v5.2 c2 — maestro yaml `stopApp: bool` (default true).
+        /// maestro yaml `stopApp: bool` (default true).
         #[serde(default = "default_stop_app")]
         stop_app: bool,
-        /// v1.0.16 — maestro yaml `waitForInteractiveMs: <ms>`. When
-        /// set (and stopApp is true — so we go through the cooperative
-        /// launch pathway), threads through to
+        /// maestro yaml `waitForInteractiveMs: <ms>`. When set (and
+        /// stopApp is true — so we go through the cooperative launch
+        /// pathway), threads through to
         /// `SessionAppLifecycleRequest.wait_for_interactive_ms` on the
-        /// runner. Runner polls the a11y tree at 500 ms cadence with a
-        /// snapshot-refresh each iteration (v1.0.16 D1 fix for the
-        /// Fabric mount-item-drain race insight diagnosed in
-        /// round-2). None = pre-v1.0.16 behaviour (dispatch and return
-        /// on foreground reached).
+        /// runner. The runner polls the a11y tree at 500 ms cadence
+        /// and re-snapshots each iteration: without the refresh, a
+        /// Fabric mount-item drain that lands mid-poll is read off a
+        /// stale snapshot and the tree looks empty. `None` = dispatch
+        /// and return as soon as the app reaches foreground.
         #[serde(default)]
         wait_for_interactive_ms: Option<u64>,
     },
-    /// v1.0.8 §D2 — clear the current session's app data IN PLACE
-    /// without launching. Maps to
-    /// [`smix_sdk::App::clear_app_data`] (v1.0.11 §D2: the
+    /// Clear the current session's app data IN PLACE without
+    /// launching. Maps to [`smix_sdk::App::clear_app_data`] (the
     /// `_with_launch_options` variant when the yaml supplies args or
     /// env). Pairs with an optional trailing `launchApp: {}` when the
     /// caller wants a fresh instance.
@@ -532,20 +532,21 @@ pub enum Step {
     /// deprecation notice go away and get the crash-dialog fix
     /// automatically.
     ///
-    /// v1.0.11 §D2 — accepts optional `launchArgs` / `launchEnv` to
-    /// steer scaffolding shown at cold launch (e.g., Expo dev-launcher
-    /// server picker on SDK 57 which stopped auto-navigating on URL
-    /// scheme). Bare `- clearAppData` remains valid and equivalent to
-    /// empty vec + empty map.
+    /// Accepts optional `launchArgs` / `launchEnv` to steer
+    /// scaffolding shown at cold launch: the Expo dev-launcher server
+    /// picker on SDK 57 stopped auto-navigating on a URL scheme, so
+    /// launch args are how the metro target reaches it. Bare
+    /// `- clearAppData` remains valid and equivalent to empty vec +
+    /// empty map.
     ClearAppData {
-        /// v1.0.11 §D2 — launchArguments forwarded to the cooperative
-        /// runner-side launch. Empty vec = pre-v1.0.11 behavior.
+        /// launchArguments forwarded to the cooperative runner-side
+        /// launch. Empty vec = no arguments.
         launch_args: Vec<String>,
-        /// v1.0.11 §D2 — launchEnvironment forwarded to the cooperative
-        /// runner-side launch. Empty map = pre-v1.0.11 behavior.
+        /// launchEnvironment forwarded to the cooperative runner-side
+        /// launch. Empty map = no environment overrides.
         launch_env: std::collections::BTreeMap<String, String>,
     },
-    /// v1.0.14 Cluster A — URL-scheme-driven app-owned reset.
+    /// URL-scheme-driven app-owned reset.
     /// Distinct from [`Step::ClearAppData`] (which wipes the whole
     /// container including dev-fixture state). resetAppData fires the
     /// supplied URL via `simctl openurl`, then optionally tails the
@@ -558,13 +559,13 @@ pub enum Step {
     ///
     /// yaml shapes both accepted:
     /// ```yaml
-    /// - resetAppData: 'insight://dev-mutate?action=reset'
+    /// - resetAppData: 'myapp://dev-mutate?action=reset'
     ///
     /// - resetAppData:
     ///     via: url-scheme
-    ///     url: 'insight://dev-mutate?action=reset'
+    ///     url: 'myapp://dev-mutate?action=reset'
     ///     waitFor:
-    ///       logLinePattern: '\[insight-dev\] reset-complete token='
+    ///       logLinePattern: '\[myapp-dev\] reset-complete token='
     ///       timeoutMs: 5000
     /// ```
     ResetAppData {
@@ -578,7 +579,7 @@ pub enum Step {
         /// `wait_for` is None. Default 5000 at the parser layer.
         timeout_ms: u64,
     },
-    /// v1.0.27 — delete keys from the target app's persisted
+    /// Delete keys from the target app's persisted
     /// user-defaults store (iOS NSUserDefaults via `simctl spawn
     /// defaults delete`; Android unsupported). yaml shape:
     /// `clearUserDefaults: { keys: [k1, k2], bundleId?: <id> }`.
@@ -586,9 +587,8 @@ pub enum Step {
     /// "ensure keys absent" — already-absent keys succeed. Terminate
     /// the app first (running processes cache defaults in-memory).
     ///
-    /// Motivating case (insight round-5 Ask 12): neutralize
-    /// expo-dev-launcher's persisted deep-link replay between
-    /// terminate and relaunch.
+    /// Motivating case: neutralizing expo-dev-launcher's persisted
+    /// deep-link replay between terminate and relaunch.
     ClearUserDefaults {
         /// NSUserDefaults keys to delete.
         keys: Vec<String>,
@@ -597,41 +597,41 @@ pub enum Step {
         bundle_id: Option<String>,
     },
     /// Open a URL / deep link in the OS handler. Maps to
-    /// `simctl openurl` (c3 mapping).
+    /// `simctl openurl`.
     OpenLink(String),
     /// Terminate the foreground app. Maps to `simctl terminate`.
     StopApp,
-    /// v5.2 c1 — viewport scroll one swipe (default direction = down).
+    /// Viewport scroll one swipe (default direction = down).
     /// maestro `scroll:` (bare, no args). Maps to `App::scroll_screen`.
     Scroll,
-    /// v5.2 c1 — dismiss the on-screen keyboard. maestro `hideKeyboard`.
+    /// Dismiss the on-screen keyboard. maestro `hideKeyboard`.
     /// Maps to `App::hide_keyboard`.
     HideKeyboard,
-    /// v5.2 c1 — assert selector is NOT visible. maestro `assertNotVisible`.
+    /// Assert selector is NOT visible. maestro `assertNotVisible`.
     /// Maps to `App::assert_not_visible`.
     AssertNotVisible {
         /// Selector that must NOT be visible.
         selector: Selector,
     },
-    /// v5.2 c1 — terminate an explicitly-specified app by bundle id.
+    /// Terminate an explicitly-specified app by bundle id.
     /// maestro `killApp: "com.x"` (independent from launchApp). Maps to
     /// `App::terminate`.
     KillApp {
         /// Bundle id to terminate.
         app_id: String,
     },
-    /// v5.2 c1 — wipe an app's MMKV / NSUserDefaults / file storage
+    /// Wipe an app's MMKV / NSUserDefaults / file storage
     /// independent of launchApp. maestro `clearState: { appId }`.
     /// Maps to `App::launch_fresh(_, clear_state: true, clear_keychain: false, _)`.
     ClearState {
         /// Bundle id to wipe.
         app_id: String,
     },
-    /// v5.2 c1 — wipe the Keychain entries for the last launched app
+    /// Wipe the Keychain entries for the last launched app
     /// (or top-of-flow appId). maestro `clearKeychain` (bare, no args).
     /// Maps to `App::launch_fresh(_, false, true, _)` with last_bundle.
     ClearKeychain,
-    /// v5.2 c1 / v1.0 Phase C2 — capture a screenshot with optional
+    /// Capture a screenshot with optional
     /// annotations. maestro `takeScreenshot: "name"` (string) or bare
     /// `- takeScreenshot` (None). smix-native long form:
     /// ```yaml
@@ -646,18 +646,16 @@ pub enum Step {
         /// Optional output file name relative to cwd. None = discard bytes.
         #[serde(skip_serializing_if = "Option::is_none")]
         path: Option<String>,
-        /// v1.0 Phase C2 — annotations composed onto the PNG before
-        /// write. Empty = plain screenshot (byte-compat with v0.3.x
-        /// bare shorthand). Selector-relative positions resolve
+        /// Annotations composed onto the PNG before write. Empty =
+        /// plain screenshot. Selector-relative positions resolve
         /// against the a11y tree fetched at capture time.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         annotations: Vec<AnnotationSpec>,
     },
-    /// v5.2 c3 — write literal to device pasteboard. maestro yaml
-    /// `setClipboard: "literal"`. Expressions (`${x}`) c4 才支持; c3
-    /// 内 expression 显式 `ParseError::InvalidValue` 报"deferred to c4".
+    /// Write a literal to the device pasteboard. maestro yaml
+    /// `setClipboard: "literal"`.
     SetClipboard(String),
-    /// v5.2 c3 — paste into focused field. `text: Some(literal)` =
+    /// Paste into focused field. `text: Some(literal)` =
     /// `pasteText: "literal"` (writes clipboard then fills);
     /// `text: None` = bare `- pasteText` (reads current clipboard then fills).
     PasteText {
@@ -665,19 +663,19 @@ pub enum Step {
         #[serde(skip_serializing_if = "Option::is_none")]
         text: Option<String>,
     },
-    /// v5.2 c3 — copy element text content into device pasteboard.
+    /// Copy element text content into the device pasteboard.
     /// maestro yaml `copyTextFrom: <selector>`. Field priority value→text→label.
     CopyTextFrom {
         /// Selector picking the text-bearing element.
         selector: Selector,
     },
-    /// v5.2 c3 — double-tap on element. maestro `doubleTapOn: <selector>`.
+    /// Double-tap on element. maestro `doubleTapOn: <selector>`.
     /// XCUIElement.doubleTap() public API path.
     DoubleTapOn {
         /// Selector picking the tap target.
         selector: Selector,
     },
-    /// v5.2 c3 — long-press on element with optional duration (ms,
+    /// Long-press on element with optional duration (ms,
     /// default 500). maestro `longPressOn: <selector>` (scalar) or
     /// `longPressOn: { ..., duration: N }`. XCUIElement.press(forDuration:).
     LongPressOn {
@@ -686,26 +684,28 @@ pub enum Step {
         /// Press duration in milliseconds (default 500 per maestro doc).
         duration_ms: u64,
     },
-    /// v5.2 c4 — assert a yaml expression evaluates truthy. maestro
-    /// `assertTrue: ${expression}`. Expression source is held raw (含
-    /// `${...}` 包裹或裸字面); runtime expand_template + expr engine
-    /// 一并处理. 不支持 pattern 显式 DriverError 报错 (§13).
+    /// Assert a yaml expression evaluates truthy. maestro
+    /// `assertTrue: ${expression}`. The expression source is held raw
+    /// (either `${...}`-wrapped or a bare literal); the runtime
+    /// applies expand_template and the expression engine together.
+    /// Unsupported patterns raise an explicit `DriverError` rather
+    /// than silently passing.
     AssertTrue {
-        /// Raw expression source (字面值原文).
+        /// Raw expression source, verbatim.
         expr: String,
     },
-    /// v5.2 c4 — looped subflow. maestro yaml `repeat: { ... }`.
+    /// Looped subflow. maestro yaml `repeat: { ... }`.
     /// `RepeatMode::While { condition_expr }` evaluates the expression
     /// truthy before each iteration; `RepeatMode::Times(N)` runs fixed
-    /// N iterations. v5.5 c5 lifted `repeat.while: { visible: <selector> }`
-    /// into [`RepeatMode::WhileVisible`] (was parser-rejected pre-v5.5).
+    /// N iterations. `repeat.while: { visible: <selector> }` maps to
+    /// [`RepeatMode::WhileVisible`].
     Repeat {
-        /// Loop mode (parser 编译期 dispatch, runtime 无运行时分叉).
+        /// Loop mode. Chosen at parse time, so the runtime has no branch.
         mode: RepeatMode,
         /// Body to run per iteration (recursively parsed).
         commands: Vec<Step>,
     },
-    /// v5.2 c4 — retry body on failure up to `max_retries` extra attempts.
+    /// Retry body on failure up to `max_retries` extra attempts.
     /// Initial + max_retries = max attempts total. Last attempt's
     /// `RunError` propagates if all attempts fail.
     Retry {
@@ -714,22 +714,22 @@ pub enum Step {
         /// Body to attempt (recursively parsed).
         commands: Vec<Step>,
     },
-    /// v5.2 c4 — maestro `runScript: <source>` (inline literal or file
-    /// path verbatim). Parser accepts so yaml files remain portable.
-    /// Runtime raises explicit `DriverError` — complete JS runtime
-    /// deferred to v6+ (cold plan §不包含, [[priority-quality-perf-over-cost]]
-    /// + §13 不静默 noop).
+    /// maestro `runScript: <source>` (inline literal or file path
+    /// verbatim). The parser accepts it so yaml files stay portable
+    /// with maestro, but there is no JS runtime behind it: the adapter
+    /// runtime raises an explicit `DriverError` rather than silently
+    /// treating the script as a no-op.
     RunScript {
         /// Raw script source (inline literal or file path verbatim).
         source: String,
     },
-    /// v5.2 c4 — maestro `evalScript: <expr>`. Same graceful unsupported
+    /// maestro `evalScript: <expr>`. Same graceful unsupported
     /// semantics as [`Step::RunScript`].
     EvalScript {
         /// Raw expression source.
         source: String,
     },
-    /// v5.2 c5 — maestro `setLocation: { latitude, longitude }`.
+    /// maestro `setLocation: { latitude, longitude }`.
     /// Walks `App::set_location` → simctl location set.
     SetLocation {
         /// Latitude in decimal degrees.
@@ -737,7 +737,7 @@ pub enum Step {
         /// Longitude in decimal degrees.
         longitude: f64,
     },
-    /// v5.2 c5 — maestro `travel: { points: [...], speed_mps?: <m/s> }`.
+    /// maestro `travel: { points: [...], speed_mps?: <m/s> }`.
     /// Fire-and-return — downstream Step does not block on playback.
     Travel {
         /// Ordered waypoints (lat, lng). ≥2 required (enforced by parser).
@@ -746,9 +746,9 @@ pub enum Step {
         /// start --speed=...`).
         speed_mps: Option<f64>,
     },
-    /// v5.2 c5 — maestro `setPermissions: { camera: allow, ... }`
-    /// (top-level command, distinct from `launchApp.permissions` 子参 in
-    /// c2). `app_id` is None at parse time — runtime resolves from
+    /// maestro `setPermissions: { camera: allow, ... }` (top-level
+    /// command, distinct from the `launchApp.permissions`
+    /// sub-parameter). `app_id` is None at parse time — runtime resolves from
     /// `last_bundle`; empty `last_bundle` → explicit DriverError.
     SetPermissions {
         /// Bundle id; `None` ⇒ runtime resolves from `last_bundle`.
@@ -757,32 +757,32 @@ pub enum Step {
         /// Permission directives in mapping iteration order.
         permissions: Vec<(String, MaestroPermissionAction)>,
     },
-    /// v5.2 c5 — maestro `addMedia: <path>` (scalar) or `addMedia: [paths]`
+    /// maestro `addMedia: <path>` (scalar) or `addMedia: [paths]`
     /// (array). Adapter flattens both into `Vec<String>`.
     AddMedia {
         /// Absolute or relative paths to media files.
         paths: Vec<String>,
     },
-    /// v5.2 c5 — maestro `setOrientation: <variant>`. Walks
+    /// maestro `setOrientation: <variant>`. Walks
     /// `App::set_orientation` → driver `/set-orientation` route →
     /// swift `XCUIDevice.shared.orientation`.
     SetOrientation {
         /// Orientation literal aligned with maestro yaml.
         orientation: smix_sdk::MaestroOrientation,
     },
-    /// v5.2 c5 — maestro `startRecording: <output-path>`. Spawns
+    /// maestro `startRecording: <output-path>`. Spawns
     /// `xcrun simctl io recordVideo` as a long-running child via SDK::App.
     /// Pair with `stopRecording` for clean SIGINT-and-wait shutdown.
     StartRecording {
         /// Output mp4 path (relative or absolute).
         path: String,
     },
-    /// v5.2 c5 — maestro `stopRecording` (bare). SIGINT-and-wait the
+    /// maestro `stopRecording` (bare). SIGINT-and-wait the
     /// child started by previous `startRecording`. No prior start →
     /// DriverError.
     StopRecording,
-    /// v5.2 c6 — visual regression assertion against a baseline PNG. maestro
-    /// `assertScreenshot: "path/to/baseline.png"` (scalar) OR v5.5 c5 mapping
+    /// Visual regression assertion against a baseline PNG. maestro
+    /// `assertScreenshot: "path/to/baseline.png"` (scalar) OR mapping
     /// form `{ path, threshold?, mask? }`. Baseline path is resolved relative
     /// to the invoking yaml's base_dir; first run auto-records (writes the
     /// captured screenshot to baseline_path + warns the adapter RunReport),
@@ -790,19 +790,20 @@ pub enum Step {
     /// distance ≤ `max_hamming` (None = 5 default). Set env
     /// `SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD=1` to force strict mode.
     ///
-    /// v5.5 c5 — mapping form is **surface-only**: `threshold` overrides
-    /// the dhash hamming cap; `mask` is parsed into [`MaskRegion`] but
-    /// runtime emits a warning and ignores the regions (region-exclusion
-    /// is an R2-tier algorithm change deferred to v6+ when SSIM/pHash
-    /// stack lands — cold plan §scope).
+    /// The mapping form is **partly surface-only**: `threshold`
+    /// overrides the dhash hamming cap and takes effect; `mask` is
+    /// parsed into [`MaskRegion`] but the runtime emits a warning and
+    /// ignores the regions — region exclusion needs a perceptual hash
+    /// (SSIM/pHash) backbone that the current dhash implementation
+    /// does not provide.
     AssertScreenshot {
         /// Baseline PNG path relative to the flow's base_dir.
         path: String,
-        /// v5.5 c5 — `threshold` field from mapping form, dhash hamming
+        /// `threshold` field from mapping form, dhash hamming
         /// max distance override. None ⇒ scalar-form default (5).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_hamming: Option<u32>,
-        /// v5.5 c5 — `mask` regions (normalized 0..1 bbox) accepted from
+        /// `mask` regions (normalized 0..1 bbox) accepted from
         /// mapping form. Runtime emits warn-and-ignore (surface-only).
         /// Empty Vec for scalar form.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -835,7 +836,7 @@ pub enum Step {
         #[serde(default)]
         window: SignalWindow,
     },
-    /// v0.3.0 Phase A — ordered / unordered multi-signal await. See
+    /// Ordered / unordered multi-signal await. See
     /// [`Step::ExpectSignal`] for surface details.
     ///
     /// ```yaml
@@ -858,7 +859,7 @@ pub enum Step {
         #[serde(default)]
         window: SignalWindow,
     },
-    /// v0.3.0 Phase A — post-run log-hygiene assertion. Verifies that
+    /// Post-run log-hygiene assertion. Verifies that
     /// no log entries outside the configured allowlist have been
     /// emitted at level >= warn during the flow. Populated by the CLI
     /// flag `--expect-log-clean` or the yaml verb `expectLogClean: true`.
@@ -884,7 +885,7 @@ pub enum Step {
     },
 }
 
-/// v0.3.0 Phase A — sub-field of [`Step::ExpectSignals`].
+/// Sub-field of [`Step::ExpectSignals`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SignalMatch {
     /// Regex to match against the log line message.
@@ -894,20 +895,17 @@ pub struct SignalMatch {
     pub level: Option<String>,
 }
 
-/// v0.3.0 Phase A — window shape for signal await. Mirrors
-/// `smix_metro_log::Window` at the yaml level. Runtime translates
-/// `SinceStep` to `Window::SinceMs` using the tail's ms cursor
-/// captured at each step-end.
-// v1.0.14 Cluster A — re-export smix_sdk's ResetAppDataWaitFor so
-// the yaml adapter Step type + parser can name it without an extra
-// import path indirection. The canonical definition lives in
-// smix-sdk since the App impl needs to consume it.
+/// Completion-signal wait strategy for [`Step::ResetAppData`].
+///
+/// Re-exported from `smix-sdk`, where the canonical definition lives
+/// because the `App` impl consumes it.
 pub use smix_sdk::ResetAppDataWaitFor;
 
 /// Sliding-window spec for `expect.signal` / `expect.signals` verbs.
 /// Selects the segment of the metro log tail that a signal search
-/// scans against. Restored above `pub enum SignalWindow` in v1.0.14
-/// after the earlier ResetAppData placement shuffled its docstring.
+/// scans against. Mirrors `smix_metro_log::Window` at the yaml level;
+/// the runtime translates `SinceStep` to `Window::SinceMs` using the
+/// tail's ms cursor captured at each step-end.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SignalWindow {
@@ -932,7 +930,7 @@ impl Default for SignalWindow {
     }
 }
 
-/// v0.3.0 Phase A — ordering semantics for [`Step::ExpectSignals`].
+/// Ordering semantics for [`Step::ExpectSignals`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SignalOrderKind {
@@ -950,12 +948,12 @@ impl Default for SignalOrderKind {
     }
 }
 
-/// v5.5 c5 — normalized bbox for `assertScreenshot.mask` regions.
-/// Coordinates are 0..1 fractions of the captured screenshot; the same
-/// convention maestro's mapping form uses. Surface-only in v5.5: the
-/// adapter parses + carries the regions but the runtime currently emits
-/// a warning and skips region exclusion (R2-tier algorithm change
-/// deferred to v6+ when SSIM/pHash replaces the dhash backbone).
+/// Normalized bbox for `assertScreenshot.mask` regions. Coordinates
+/// are 0..1 fractions of the captured screenshot — the same
+/// convention maestro's mapping form uses. Surface-only: the adapter
+/// parses and carries the regions, but the runtime emits a warning
+/// and skips region exclusion, which needs a perceptual hash backbone
+/// the current dhash implementation does not provide.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MaskRegion {
     /// Top-left x in 0..1 fraction of capture width.
@@ -968,11 +966,8 @@ pub struct MaskRegion {
     pub height: f64,
 }
 
-/// v5.2 c4 — `Step::Repeat` mode. Parser 编译期 dispatch (yaml `repeat.times`
-/// xor `repeat.while`), runtime 无运行时分叉.
-///
-/// v5.5 c5 — added [`RepeatMode::WhileVisible`] for `while: { visible:
-/// <selector> }` mapping form (was parser-rejected pre-v5.5).
+/// `Step::Repeat` mode. The parser resolves the mode (yaml
+/// `repeat.times` xor `repeat.while`), so the runtime has no branch.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "mode", content = "value")]
 pub enum RepeatMode {
@@ -983,7 +978,7 @@ pub enum RepeatMode {
         /// Expression source (raw; `${...}` wrapping handled).
         condition_expr: String,
     },
-    /// v5.5 c5 — `repeat: { while: { visible: <selector> }, commands: [...] }`
+    /// `repeat: { while: { visible: <selector> }, commands: [...] }`
     /// mapping form. Loop continues while the selector resolves to a
     /// visible element; exits when not visible. Bounded by
     /// `MAX_REPEAT_ITERATIONS` runtime safety valve.
@@ -991,7 +986,7 @@ pub enum RepeatMode {
         /// Element selector evaluated each iteration via App::find_first.
         selector: smix_sdk::Selector,
     },
-    /// v5.6 c5 — `repeat: { while: { notVisible: <selector> }, commands: [...] }`
+    /// `repeat: { while: { notVisible: <selector> }, commands: [...] }`
     /// mapping form. Loop continues while the selector does NOT resolve
     /// to a visible element; exits when the element appears. Bounded by
     /// `MAX_REPEAT_ITERATIONS` runtime safety valve. Useful for "wait
@@ -1006,18 +1001,18 @@ pub enum RepeatMode {
 }
 
 /// serde default for [`Step::ExtendedWaitUntil::expect_visible`] —
-/// pre-v5.2 yaml shapes only had `visible:` arm.
+/// a yaml shape with neither arm named means the `visible:` arm.
 fn default_expect_visible() -> bool {
     true
 }
 
-/// serde default for [`Step::LaunchApp::stop_app`] — maestro yaml `stopApp`
-/// 字段缺省值是 true (kill + launch path).
+/// serde default for [`Step::LaunchApp::stop_app`] — maestro yaml
+/// defaults `stopApp` to true (kill + launch path).
 fn default_stop_app() -> bool {
     true
 }
 
-/// v5.2 c2 — maestro yaml `permissions:` action 字面值.
+/// maestro yaml `permissions:` action literal.
 /// `Allow` → simctl `grant`, `Deny` → simctl `revoke`, `Unset` → simctl `reset`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1031,7 +1026,7 @@ pub enum MaestroPermissionAction {
 }
 
 impl MaestroPermissionAction {
-    /// 翻译到 SDK 的 typed enum (cement 层 1:1 forward).
+    /// Translate to the SDK's typed enum (1:1 forward).
     pub fn to_sdk(self) -> smix_sdk::PermissionAction {
         match self {
             Self::Allow => smix_sdk::PermissionAction::Grant,
@@ -1081,7 +1076,7 @@ pub enum ParseError {
         /// Human-readable reason.
         reason: String,
     },
-    /// Unsupported command (not in the v3.17-ported 38 yaml subset).
+    /// Unsupported command (not in the supported maestro yaml subset).
     #[error("unsupported command: {0}")]
     UnsupportedCommand(String),
     /// runFlow cycle detected. `path` is the absolute path that closes

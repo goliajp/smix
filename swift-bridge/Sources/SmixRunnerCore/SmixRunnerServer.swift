@@ -8,13 +8,13 @@ import CoreGraphics
 // Wraps FlyingFox HTTPServer so the XCUITest runner does not need to import
 // FlyingFox directly — it links SmixRunnerCore only. Subsequent checkpoints
 // register more routes on this server (screenshot/swipe/...).
-// v1.4 C3 — one-shot graceful-shutdown signal. `/shutdown` fires it; the
+// One-shot graceful-shutdown signal. `/shutdown` fires it; the
 // stop-observer task in `runForever` awaits it then calls `server.stop()`.
 // Repeated `fire()` is idempotent (continuation resumed at most once) so a
 // double POST /shutdown cannot crash. Never fired (no /shutdown call) →
 // `wait()` suspends forever → `server.run()` is never stopped → `runForever`
-// blocks exactly as before this checkpoint (purely additive opt-in).
-// v1.5 C1 S1 — minimal JSON-string escape for selector field re-serialization
+// blocks exactly as it would without the signal (purely additive opt-in).
+// Minimal JSON-string escape for selector field re-serialization
 // inside the /scroll route handler. Same character set as
 // ScrollRoute.jsonEscape (control + quote + backslash). Local helper because
 // the route handler reassembles a {"text":"..."} JSON literal to forward as
@@ -64,14 +64,14 @@ actor ShutdownSignal {
   }
 }
 
-/// v1.0.4 §D4 — per-session `/system-popups` request pacer.
+/// Per-session `/system-popups` request pacer.
 ///
 /// The XCTest arbitration cost of `/system-popups` is 6 accessibility
-/// query descents (Alert × 2, Sheet × 2, Dialog, Popover) per call.
-/// Insight's 2026-07-10 gate ran the endpoint at ~1.7 QPS across a
-/// 340 s bootstrap flow — 3400+ XCUIQuery executions on top of every
-/// other route, contributing to the arbitration exhaustion that
-/// preceded SimRenderServer's brk 1 trip. This actor enforces a 500 ms
+/// query descents (Alert × 2, Sheet × 2, Dialog, Popover) per call. An
+/// unpaced consumer has been measured driving the endpoint at ~1.7 QPS
+/// across a 340 s bootstrap flow — 3400+ XCUIQuery executions on top of
+/// every other route, contributing to the arbitration exhaustion that
+/// preceded a SimRenderServer `brk 1` trip. This actor enforces a 500 ms
 /// floor per session id (or `"default"` for header-less callers);
 /// too-soon calls return `SystemPopupsRoute.tooManyRequests`.
 ///
@@ -102,7 +102,7 @@ public actor PopupPacer {
   }
 }
 
-/// v1.0.4 §D2 — per-bundle app-alive cache.
+/// Per-bundle app-alive cache.
 ///
 /// The runner's XCUIElement query layer surfaces "Application X is not
 /// running" via `XCTIssue` when the target app has crashed. Without a
@@ -120,13 +120,11 @@ public actor AppAliveCache {
   private var deadUntil: [String: Date] = [:]
   private let ttl: TimeInterval
 
-  // v1.0.10 §D5 — observability counters. Insight's v1.0.9 followup
-  // reported "grep -c 'app-alive cache re-probe hit' = 0" — the fix
-  // shipped, but with only a stderr log line to prove it, there was
-  // no way to distinguish "code path not fired" from "log line got
-  // dropped mid-cycle". Each mutation now advances a counter; the
-  // counters flow through /diagnostic/dump so "is it working" becomes
-  // a numeric check.
+  // Observability counters. A stderr log line alone cannot prove a code
+  // path fired: a zero grep count is ambiguous between "path not fired"
+  // and "log line dropped mid-cycle". Each mutation advances a counter
+  // instead, and the counters flow through /diagnostic/dump, so "is it
+  // working" becomes a numeric check.
   private var counters = Counters()
 
   public struct Counters: Sendable {
@@ -138,7 +136,7 @@ public actor AppAliveCache {
     public var suppressHitTotal: UInt64 = 0
     /// `isSuppressed` returned false (allowed a call).
     public var suppressMissTotal: UInt64 = 0
-    /// A background re-probe task was spawned (v1.0.9 §D4 path fired).
+    /// A background re-probe task was spawned.
     /// Incremented by the runner-side XCTIssue observer when it
     /// spawns the polling Task.
     public var reprobeAttemptedTotal: UInt64 = 0
@@ -185,28 +183,28 @@ public actor AppAliveCache {
     return false
   }
 
-  /// v1.0.10 §D5 — re-probe telemetry. Called by the XCTIssue
-  /// observer when it spawns a background alive-check Task.
+  /// Re-probe telemetry. Called by the XCTIssue observer when it
+  /// spawns a background alive-check Task.
   public func noteReprobeAttempted() {
     counters.reprobeAttemptedTotal &+= 1
   }
 
-  /// v1.0.10 §D5 — re-probe observed the app return to running.
+  /// Re-probe observed the app return to running.
   public func noteReprobeSucceeded() {
     counters.reprobeSucceededTotal &+= 1
   }
 
-  /// v1.0.10 §D5 — re-probe was interrupted by an external markAlive.
+  /// Re-probe was interrupted by an external markAlive.
   public func noteReprobeInvalidatedEarly() {
     counters.reprobeInvalidatedEarly &+= 1
   }
 
-  /// v1.0.10 §D5 — re-probe iterations exhausted without recovery.
+  /// Re-probe iterations exhausted without recovery.
   public func noteReprobeExhaustedWindow() {
     counters.reprobeExhaustedWindow &+= 1
   }
 
-  /// v1.0.10 §D5 — snapshot counters for /diagnostic/dump. Copied
+  /// Snapshot counters for /diagnostic/dump. Copied
   /// out under the actor's serial context so callers see a coherent
   /// point-in-time view.
   public func counterSnapshot() -> Counters {
@@ -214,7 +212,7 @@ public actor AppAliveCache {
   }
 }
 
-/// v1.0.4 §D1 — server-side sim-health state, emitted on every
+/// Server-side sim-health state, emitted on every
 /// response via the `X-Sim-Health` header. Consumers on all 4 SDKs
 /// parse the header and surface transitions via `Session.state` /
 /// `session.on('state', ...)` / `session.stateStream` / `stateFlow`.
@@ -242,17 +240,17 @@ public actor SimHealthPublisher {
   }
 }
 
-/// v0.2.1 — per-request context propagated from HTTP headers into every
+/// Per-request context propagated from HTTP headers into every
 /// handler that operates on the "app under test".
 ///
-/// **Why this exists**: pre-v0.2.1, SmixRunnerUITests.swift bound
+/// **Why this exists**: binding
 /// `let app = XCUIApplication(bundleIdentifier: bundleId)` once at runner
-/// boot time. Every handler closure captured that `app` reference and
-/// used it forever, even if the sim's foreground app changed. If
-/// Preferences (or any non-target app) happened to be foreground at
-/// runner boot (`TargetBundleResolver.resolve` fell back to
-/// `com.apple.Preferences`), all subsequent `/tree` / `/find` calls
-/// asked XCUITest for a snapshot of an app that was no longer visible,
+/// boot time does not work. Every handler closure captures that `app`
+/// reference and uses it forever, even if the sim's foreground app changes. If
+/// Preferences (or any non-target app) happens to be foreground at
+/// runner boot (`TargetBundleResolver.resolve` falls back to
+/// `com.apple.Preferences`), every subsequent `/tree` / `/find` call
+/// asks XCUITest for a snapshot of an app that is no longer visible,
 /// returning `snapshot_unavailable` forever.
 ///
 /// **Wire**: client sends `App-Bundle-Id: <bundle>` and optionally
@@ -271,12 +269,12 @@ public struct RequestContext: Sendable {
   /// the operation. Auto-recovers from cases where XCUITest's implicit
   /// "app under test" resolution latched onto a stale foreground.
   public let activate: Bool
-  /// v1.0.2 — the client's session id when it opened one via
+  /// The client's session id when it opened one via
   /// `POST /session/open`. When present, `resolveApp()` looks up the
   /// session's cached `XCUIApplication` and skips per-request
-  /// `.activate()` regardless of `activate`. Absent → legacy path
-  /// (per-request rebind, now rate-limited to at most one activation
-  /// per 5 s per bundle-id).
+  /// `.activate()` regardless of `activate`. Absent → per-request
+  /// rebind, rate-limited to at most one activation per 5 s per
+  /// bundle-id.
   public let sessionId: String?
 
   public init(bundleId: String? = nil, activate: Bool = false, sessionId: String? = nil) {
@@ -307,34 +305,33 @@ public struct RequestContext: Sendable {
 }
 
 public actor SmixRunnerServer {
-  /// v0.2.1 — set inside every route handler via
+  /// Set inside every route handler via
   /// `SmixRunnerServer.$currentContext.withValue(ctx) { handler() }`.
   /// Handlers read this when they need per-request bundle / activate
   /// info. Uses `@TaskLocal` because handler closures are captured at
-  /// server construction time (line 720 in SmixRunnerUITests.swift) —
+  /// server construction time in SmixRunnerUITests.swift —
   /// changing 20+ typealias signatures to thread context explicitly
   /// would be an invasive refactor with no wire-level benefit. Task-
   /// local scoped-mutation gives every handler read access to the
   /// current-request context without touching closure signatures.
   @TaskLocal public static var currentContext: RequestContext = .default
 
-  /// v1.0.4 §D7 — task-local sim-health publisher. `runForever` sets
+  /// Task-local sim-health publisher. `runForever` sets
   /// this via `.withValue` before dispatching each request; the
   /// `guardedResponse` wrapper reads it and attaches the
   /// `X-Sim-Health` response header on the way out. `nil` when the
-  /// caller opted out (default legacy behavior; SDKs cope).
+  /// caller opted out — no header is emitted and SDKs cope.
   @TaskLocal public static var currentSimHealth: SimHealthPublisher? = nil
 
-  /// v1.0.4 §D2 — task-local app-alive cache. Routes on the
+  /// Task-local app-alive cache. Routes on the
   /// request-with-target path (`/tree`, `/system-popups`, etc.) read
   /// this to short-circuit XCUITest when a bundle is known-dead.
   @TaskLocal public static var currentAppAliveCache: AppAliveCache? = nil
 
-  /// v1.0.4 §D4 — task-local popup pacer for the `/system-popups`
-  /// route middleware.
+  /// Task-local popup pacer for the `/system-popups` route middleware.
   @TaskLocal public static var currentPopupPacer: PopupPacer? = nil
 
-  /// v0.3.1 — canonical main-actor hop for XCUITest APIs that require
+  /// Canonical main-actor hop for XCUITest APIs that require
   /// it (activate / launch / terminate on iOS 26+ SDK). Any new
   /// XCUITest call added to the runner must be categorized:
   ///
@@ -350,7 +347,7 @@ public actor SmixRunnerServer {
     await MainActor.run { body() }
   }
 
-  /// v1.0.15 Cluster C D2 — closure that the UITest target provides
+  /// Closure that the UITest target provides
   /// to categorize why `snapshotHandler` returned nil (or the tree
   /// query threw). Returns a categorized `AppUnavailableReason`
   /// value. `nil` bundle id → the caller should return `.unknown`.
@@ -363,17 +360,17 @@ public actor SmixRunnerServer {
   /// runtime cost is per-failure only.
   public typealias UnavailableReasonInferer = @Sendable (String?) async -> AppUnavailableReason
 
-  /// v1.0.15 Cluster C D2 — task-local inference closure. Set by
+  /// Task-local inference closure. Set by
   /// `runForever` when the UITest target provides one; `nil` opts
-  /// out (older UITest targets that don't know about categorization
-  /// get the pre-v1.0.15 `.unknown` fallback).
+  /// out — UITest targets that don't know about categorization
+  /// get the `.unknown` fallback.
   @TaskLocal public static var currentUnavailableReasonInferer: UnavailableReasonInferer? = nil
 
   public enum TapOutcome: Sendable {
-    // v1.1 C3 — `frame` / `appFrame` are populated by the UITest handler so
+    // `frame` / `appFrame` are populated by the UITest handler so
     // the SDK can host-HID-inject at coord when `mode == .resolve`. Both
-    // remain optional so legacy `resolveAndTap` outcomes serialize identical
-    // to v1.1 C1.
+    // stay optional so plain `resolveAndTap` outcomes keep serializing
+    // without them.
     case matched(
       label: String,
       stages: TapRoute.TapStages? = nil,
@@ -382,11 +379,10 @@ public actor SmixRunnerServer {
     )
     case notFound
   }
-  // v1.4 ③-C1 (see-through续修) — `scope` carries the `?include=` query
-  // value (nil when absent), identical to SnapshotHandler. nil ⇒ the
-  // byte-identical legacy element-resolution source (zero-regression
-  // anchor: the SDK runner-client posts /tap WITHOUT a query). "all-windows"
-  // ⇒ the UITest target resolves the candidate element from the SAME
+  // `scope` carries the `?include=` query value (nil when absent),
+  // identical to SnapshotHandler. nil ⇒ the default element-resolution
+  // source (the SDK runner-client posts /tap WITHOUT a query).
+  // "all-windows" ⇒ the UITest target resolves the candidate element from the SAME
   // see-through capture (`buildAllWindowsSnapshot`'s per-window +
   // flat-descendants set) that `/tree?include=all-windows` already uses,
   // so an element the SDK can SEE through a native modal is also tappable.
@@ -394,7 +390,7 @@ public actor SmixRunnerServer {
     TapRoute.TapRequest, _ scope: String?
   ) async -> TapOutcome
 
-  // v1.2 keyboard input — runner-side XCUIElement.typeText path. The smix
+  // Runner-side XCUIElement.typeText path. The smix
   // SDK side delegates to these routes for fill / clear / pressKey because
   // host-HID keyboard injection requires per-key code mapping + modifier
   // handling that is materially larger work than digitizer; runner
@@ -402,7 +398,7 @@ public actor SmixRunnerServer {
   // (success carries per-stage timing; notFound when element resolution
   // fails or — for pressKey — the key string is unsupported).
   //
-  // v1.2 C2 — handlers carry sub-stage timing so the SDK side can record
+  // Handlers carry sub-stage timing so the SDK side can record
   // hot-spot data alongside TapStages (focus_ms = resolve + focus tap;
   // daemon_send_ms = `_XCT_sendString:` round-trip).
   public enum KeyboardOutcome: Sendable {
@@ -410,10 +406,10 @@ public actor SmixRunnerServer {
     case notFound
   }
 
-  // v1.4 ③-C1 (see-through续修) — `scope` mirrors TapHandler: nil ⇒ legacy
-  // byte-identical focus-tap element source; "all-windows" ⇒ the
-  // see-through capture (so a typable field masked by a native modal is
-  // still focus-tappable). Same `?include=` query mechanism as /tree.
+  // `scope` mirrors TapHandler: nil ⇒ the default focus-tap element
+  // source; "all-windows" ⇒ the see-through capture (so a typable field
+  // masked by a native modal is still focus-tappable). Same `?include=`
+  // query mechanism as /tree.
   public typealias FillHandler = @Sendable (
     _ selector: String, _ text: String, _ scope: String?
   ) async -> KeyboardOutcome
@@ -424,46 +420,48 @@ public actor SmixRunnerServer {
     _ key: String
   ) async -> KeyboardOutcome
 
-  // v1.2 C4 — /find handler. Returns boolean: true = element exists in
+  // /find handler. Returns boolean: true = element exists in
   // current XCUIElement query, false = not found. No `.notFound` case
   // because /find is a query, not an action — false IS a valid result.
-  // v1.4 ③-C1 (see-through续修) — `scope` mirrors TapHandler: nil ⇒ legacy
-  // byte-identical `app.descendants(.any)` query (zero-regression anchor:
-  // SDK runner-client posts /find WITHOUT a query); "all-windows" ⇒ the
-  // see-through element set so `expect.toBeVisible()` of content behind a
-  // native modal returns the truthful answer instead of a masked false.
-  // v1.0.27 — `requireOnScreen`: when true, the handler additionally
-  // requires the LIVE element frame to intersect the app frame. Snapshot
-  // frames drift on iOS 26.5 + RN Fabric for below-the-fold elements;
-  // the live query re-resolves current layout. Exists-only callers pass
-  // false (pre-v1.0.27 behaviour).
+  //
+  // `scope` mirrors TapHandler: nil ⇒ the default `app.descendants(.any)`
+  // query (the SDK runner-client posts /find WITHOUT a query);
+  // "all-windows" ⇒ the see-through element set so `expect.toBeVisible()`
+  // of content behind a native modal returns the truthful answer instead
+  // of a masked false.
+  //
+  // `requireOnScreen`: when true, the handler additionally requires the
+  // LIVE element frame to intersect the app frame. Snapshot frames drift
+  // on iOS 26.5 + RN Fabric for below-the-fold elements — they report
+  // in-viewport coords — so the live query is needed to re-resolve
+  // current layout. Exists-only callers pass false.
   public typealias FindHandler = @Sendable (
     _ selectorText: String, _ scope: String?, _ requireOnScreen: Bool
   ) async -> Bool
 
-  /// v0.3 C1 — XCUI snapshot is constructed inside the UITest target closure
+  /// XCUI snapshot is constructed inside the UITest target closure
   /// (XCUIApplication.snapshot() is a throwing, blocking API) and returned
   /// as a POCO so SmixRunnerCore stays free of XCTest/XCUI imports.
   /// nil indicates the snapshot is unavailable (app not launched / crashed) —
   /// the server responds with 500 + snapshot_unavailable in that case.
   public typealias SnapshotResult = (root: TreeRoute.A11ySnapshotData, appFrame: CGRect)
-  // `scope` 携 `?include=` query 值 (absent ⇒ nil). nil ⇒ legacy single
-  // `app.snapshot()` root (byte-identical to 历史路径 = 零回归锚).
-  // "all-windows" ⇒ per-window snapshot + flat descendants fallback 合并
-  // 进 synthetic root, /tree 可看穿任何 opaque native modal overlay 取到
-  // 底下 AX-reachable 内容. handler 拥有 scope 解释权; server 仅 verbatim
-  // 转发 raw signal.
+  // `scope` carries the `?include=` query value (absent ⇒ nil). nil ⇒ a
+  // single `app.snapshot()` root. "all-windows" ⇒ per-window snapshots
+  // plus a flat-descendants fallback, merged into a synthetic root, so
+  // /tree can see through any opaque native modal overlay and reach the
+  // AX-reachable content beneath it. The handler owns interpretation of
+  // `scope`; the server forwards the raw signal verbatim.
   public typealias SnapshotHandler = @Sendable (_ scope: String?) async -> SnapshotResult?
 
-  // v1.4 ③-C1 (third restart) S3.a — system popup sense handler. Per
-  // CLAUDE.md §9 #8 + §12.1 popup sense is a core flat capability (peer of
-  // /tree / /find / /tap). `scope` carries the `?include=` query value with
+  // System popup sense handler. Popup sense is a core flat capability
+  // (peer of /tree / /find / /tap), not something buried in a driver.
+  // `scope` carries the `?include=` query value with
   // the same semantics as SnapshotHandler. The handler enumerates
   // SpringBoard alerts / sheets / dialogs and returns POCOs the server
   // serializes via `SystemPopupsRoute.success(popups:)`.
   public typealias SystemPopupsHandler = @Sendable (_ scope: String?) async -> [SystemPopupsRoute.Popup]
 
-  // v1.5 C1 S1 — POST /scroll handler. Drives the runner-side XCUITest
+  // POST /scroll handler. Drives the runner-side XCUITest
   // swipe-until-visible loop. The route module owns decode + envelope; the
   // handler owns selector → element resolution + per-swipe existence probe.
   // Returns matched + swipes count; the wire layer (RunnerClient.scroll)
@@ -476,7 +474,7 @@ public actor SmixRunnerServer {
     _ maxSwipes: Int, _ timeoutMs: Int, _ scope: String?
   ) async -> (matched: Bool, swipes: Int)
 
-  // v1.5 C4b — POST /foreground handler. App-level act capability (no
+  // POST /foreground handler. App-level act capability (no
   // selector / no scope / no loop) — instantiates XCUIApplication
   // (bundleIdentifier:) and calls .activate(). XCUIApplication.activate
   // is documented idempotent: repeated call on frontmost app is no-op.
@@ -486,7 +484,7 @@ public actor SmixRunnerServer {
   // an NSException (vanished bundle / sim mid-crash / etc.).
   public typealias ForegroundHandler = @Sendable (_ bundleId: String) async -> Bool
 
-  // v1.5 C5d' — POST /back handler. App-level navigation pop capability —
+  // POST /back handler. App-level navigation pop capability —
   // queries `XCUIApplication.navigationBars.buttons.firstMatch` and calls
   // `.tap()`. The standard XCUITest path is i18n-safe (firstMatch is
   // positional, not label-based). No selector / no scope / no bundleId
@@ -496,74 +494,78 @@ public actor SmixRunnerServer {
   // (top-level / root screens) or smixGuarded caught an NSException.
   public typealias BackHandler = @Sendable () async -> Bool
 
-  /// v1.5 C5i-d — single-swipe gesture handler. Caller (driver host-side loop)
+  /// Single-swipe gesture handler. Caller (driver host-side loop)
   /// passes direction; handler triggers XCUITest swipe gesture (`app.swipeUp()`
   /// for content direction "down", symmetric for "up") with no probe / no
   /// selector. Returns true on swipe completed, false on swizzler / XCUITest
   /// internal NSException (vanished-element / app terminated mid-gesture).
   public typealias SwipeOnceHandler = @Sendable (_ direction: String, _ scope: String?) async -> Bool
 
-  /// v1.6 c5 — POST /tap-at-norm-coord handler. Coord-based tap via
-  /// `app.coordinate(withNormalizedOffset: CGVector(dx:nx, dy:ny)).tap()`
-  /// — Apple native UI event chain 触 RN Pressable React event (host-HID
-  /// 合成 touch 在 RN modal 不触), 又跳 Apple element query ordering 排序歧义
-  /// (host 提供具体 coord, runner 不 re-query). Returns true on tap dispatched,
-  /// false on smixGuarded NSException.
+  /// POST /tap-at-norm-coord handler. Coord-based tap via
+  /// `app.coordinate(withNormalizedOffset: CGVector(dx:nx, dy:ny)).tap()`.
+  /// The Apple native UI event chain fires RN Pressable React events,
+  /// whereas host-HID-synthesized touches do not fire inside an RN modal.
+  /// It also sidesteps Apple's element-query ordering ambiguity: the host
+  /// supplies concrete coords and the runner never re-queries. Returns
+  /// true on tap dispatched, false on smixGuarded NSException.
   public typealias TapAtCoordHandler = @Sendable (_ nx: Double, _ ny: Double) async -> Bool
 
-  /// v5.3 c4 — POST /tap-by-id handler. Resolves an element by accessibility
+  /// POST /tap-by-id handler. Resolves an element by accessibility
   /// identifier and invokes `XCUIElement.tap()` (the XCTest gesture-recognizer
   /// chain). Lets the SDK opt into the path that drives SwiftUI .sheet /
   /// .alert / .confirmationDialog / .fullScreenCover binding actions —
   /// the default host-HID-at-coord tap lands on the frame but doesn't fire
-  /// SwiftUI's onTap closure for modal dismiss buttons (v5.3 c3 (b) findings).
+  /// SwiftUI's onTap closure for modal dismiss buttons.
   /// Returns true when the element was found and tapped, false when not
   /// found (no element matching the identifier) or when a smixGuarded
   /// NSException surfaces.
   public typealias TapByIdHandler = @Sendable (_ identifier: String) async -> Bool
 
-  /// v5.19 c1a — POST /find-text-by-ocr handler. Apple Vision OCR (VNRecognize
+  /// POST /find-text-by-ocr handler. Apple Vision OCR (VNRecognize
   /// TextRequest) over the current XCUIScreen screenshot. Returns the
   /// matching text observation's bounding box in UIKit-normalized
   /// `(nx, ny, w, h)` (top-left origin, y-down, [0,1]). nil when no match.
-  /// L5 sense layer for a11y-less + i18n initiative — covers ~40-50% of
-  /// "third-party lib without testID but with visible text" scenarios.
+  /// Sense-layer fallback for a11y-less and i18n cases — covers roughly
+  /// 40-50% of "third-party lib without testID but with visible text"
+  /// scenarios.
   public typealias FindTextByOcrHandler = @Sendable (
     _ text: String, _ locales: [String], _ recognitionLevel: String
   ) async -> (Double, Double, Double, Double)?
 
-  /// v5.2 c1 — POST /swipe-at-norm-coord handler. Coord-based swipe gesture
+  /// POST /swipe-at-norm-coord handler. Coord-based swipe gesture
   /// via Apple native event chain `XCSynthesizedEventRecord` +
   /// `XCPointerEventPath` (`initForTouchAtPoint:` → `moveToPoint:atOffset:`
-  /// → `liftUpAtOffset:`). Companion to `TapAtCoordHandler` under §9 #3
-  /// partial-lift escape hatch. Returns true on swipe dispatched, false on
-  /// smixGuarded NSException / synthesize error.
+  /// → `liftUpAtOffset:`). Companion to `TapAtCoordHandler` on the
+  /// normalized-coordinate escape-hatch path. Returns true on swipe
+  /// dispatched, false on smixGuarded NSException / synthesize error.
   public typealias SwipeAtCoordHandler = @Sendable (
     _ fromNx: Double, _ fromNy: Double, _ toNx: Double, _ toNy: Double
   ) async -> Bool
 
-  /// v5.2 c3 — POST /double-tap handler. XCUIElement.doubleTap() public API
-  /// path (RN-modal-not-firing 留 mode 切换 §10 决策, c3 单路径).
+  /// POST /double-tap handler. XCUIElement.doubleTap() public API path —
+  /// note it does not fire on React Native modals.
   /// Returns true on double-tap dispatched; false on smixGuarded NSException
   /// or element-not-found.
   public typealias DoubleTapHandler = @Sendable (
     _ selectorText: String
   ) async -> Bool
 
-  /// v5.2 c3 — POST /long-press handler. XCUIElement.press(forDuration:)
-  /// public API; duration 单位 ms (调用方负责 ms → seconds 转换).
+  /// POST /long-press handler. XCUIElement.press(forDuration:)
+  /// public API. `durationMs` is in milliseconds; the caller is
+  /// responsible for the ms → seconds conversion.
   public typealias LongPressHandler = @Sendable (
     _ selectorText: String, _ durationMs: UInt32
   ) async -> Bool
 
-  /// v5.2 c5 — POST /set-orientation handler. XCUIDevice.shared.orientation
-  /// public XCUI API (framework documented property; §9 #6 dlsym 不变量
-  /// 在此不触发). Returns true on dispatch, false on smixGuarded NSException.
+  /// POST /set-orientation handler. XCUIDevice.shared.orientation is a
+  /// framework-documented public XCUI property, so the rule requiring
+  /// private symbols to be resolved via dlsym does not apply here.
+  /// Returns true on dispatch, false on smixGuarded NSException.
   public typealias SetOrientationHandler = @Sendable (
     _ orientation: String
   ) async -> Bool
 
-  // v1.5 c5g'' — POST /hide-keyboard handler. App-level keyboard dismiss
+  // POST /hide-keyboard handler. App-level keyboard dismiss
   // capability — queries `XCUIApplication.shared.keyboards.firstMatch` and
   // calls `.swipeDown()` (XCUITest standard portable API; no private API).
   // Idempotent: if no keyboard is on screen, returns `ok:true` (no-op).
@@ -572,14 +574,14 @@ public actor SmixRunnerServer {
   // already-dismissed), `ok:false` when smixGuarded caught an NSException.
   public typealias HideKeyboardHandler = @Sendable () async -> Bool
 
-  // v4.2 c1 — G9 act side. POST /system-popup-action {popupId, buttonId}.
+  // POST /system-popup-action {popupId, buttonId} — the act side.
   // Companion to SystemPopupsHandler (sense side). The handler walks the
   // same enumerate scan order — SpringBoard alerts → SpringBoard sheets
   // → bound-app alerts/sheets/dialogs/popovers — matches popup + button
   // by the id derivation `collectSystemPopups` uses
   // (container.identifier fallback "popup-N"; b.identifier fallback
-  // "b-N"), and taps the matched button via the v1.8 c2 EventSynthesizer
-  // + v4.0 c3 daemonProxySynthesize dlsym chain. .found ⇒ 200 ok envelope;
+  // "b-N"), and taps the matched button via the EventSynthesizer +
+  // daemonProxySynthesize dlsym chain. .found ⇒ 200 ok envelope;
   // .notFound (popup or button id missed, or synthesize raised) ⇒ 404
   // not_found envelope echoing the input ids.
   public enum SystemPopupActionOutcome: Sendable {
@@ -590,7 +592,7 @@ public actor SmixRunnerServer {
     _ popupId: String, _ buttonId: String
   ) async -> SystemPopupActionOutcome
 
-  // v7.9 c1 — SelectResolve handler dispatches the 3 /select/resolve*
+  // SelectResolve handler dispatches the 3 /select/resolve*
   // endpoints. Single closure receives the Request + Action discriminator
   // and returns a Result variant matching the action. In production
   // SmixRunnerUITests injects a closure that calls
@@ -601,7 +603,7 @@ public actor SmixRunnerServer {
     _ action: SelectResolveRoute.Action
   ) async throws -> SelectResolveRoute.Result
 
-  // v2.0 c2 — record route handlers triple. /record/start enables the
+  // Record route handlers triple. /record/start enables the
   // EventRecorder capture buffer (swizzle already installed in UITest
   // setUp gated by SMIX_RECORD_ENABLED). /record/stop drains + disables;
   // /record/poll drains without disabling for streaming reads. Triple
@@ -624,7 +626,7 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.3 — outcome of a session-open request from the UITest handler's
+  /// Outcome of a session-open request from the UITest handler's
   /// perspective. The runner's session table is owned by the UITest target
   /// (where XCUIApplication instances live); this DTO shape lets Core
   /// serialize the response without pulling XCUIApplication into the
@@ -638,7 +640,7 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.3 — outcome of a session-close request. `ok` is always true for
+  /// Outcome of a session-close request. `ok` is always true for
   /// known sessions; unknown sessions also return true (idempotent close).
   public struct SessionCloseOutcome: Sendable {
     public let ok: Bool
@@ -647,7 +649,7 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.3 — outcome of a renew-activation request. `notFound = true`
+  /// Outcome of a renew-activation request. `notFound = true`
   /// when the session id does not exist in the table; otherwise `ok` +
   /// `activated` (was `.activate()` actually called, or rate-limited).
   public struct SessionRenewOutcome: Sendable {
@@ -661,7 +663,7 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.4 §D5 — /session/close-all outcome.
+  /// `/session/close-all` outcome.
   public struct SessionCloseAllOutcome: Sendable {
     public let closed: Int
     public init(closed: Int) {
@@ -669,7 +671,7 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.4 §D14 — /session/relaunch-app outcome.
+  /// `/session/relaunch-app` outcome.
   public struct SessionRelaunchOutcome: Sendable {
     public let notFound: Bool
     public let ok: Bool
@@ -681,39 +683,41 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.8 §D1 — /session/terminate-app / /session/launch-app outcome.
-  /// v1.0.11 §D3/§D5 — extended with wait-for-foreground observations
-  /// (`waitedMs`, `terminalState`) and cooperative-terminate flag
+  /// `/session/terminate-app` / `/session/launch-app` outcome.
+  ///
+  /// Carries wait-for-foreground observations (`waitedMs`,
+  /// `terminalState`) and a cooperative-terminate flag
   /// (`terminatedCooperatively`) so the diagnostic dump can surface
   /// whether the terminate call went through the XCUIApplication
   /// pathway or fell back to a hard kill (bug_type 309 signal).
-  /// v1.0.15 Cluster C D1 — extended with `reachedInteractive` +
-  /// `interactiveNamedIds` so `launchApp` can tell "process foreground
-  /// but tree unusable" (splash / dev-launcher / sparse a11y) apart
-  /// from "process foreground AND probeable" numerically.
+  ///
+  /// `reachedInteractive` + `interactiveNamedIds` let `launchApp` tell
+  /// "process foreground but tree unusable" (splash / dev-launcher /
+  /// sparse a11y) apart from "process foreground AND probeable"
+  /// numerically.
   public struct SessionAppLifecycleOutcome: Sendable {
     public let notFound: Bool
     public let ok: Bool
     public let wallMs: UInt64
-    /// v1.0.11 §D3 — wall-clock milliseconds spent in the
+    /// Wall-clock milliseconds spent in the
     /// wait-for-foreground poll loop. Zero when the caller passed
     /// `waitForForegroundMs: nil` or on terminate calls.
     public let waitedMs: UInt64
-    /// v1.0.11 §D3 — final observed `XCUIApplication.state` at the
+    /// Final observed `XCUIApplication.state` at the
     /// moment the handler returned. Wire-encoded as the XCTest raw
     /// value: 0 unknown / 1 notRunning / 2 runningBackgroundSuspended /
     /// 3 runningBackground / 4 runningForeground.
     public let terminalState: UInt8
-    /// v1.0.11 §D5 — set on terminate outcomes when the cooperative
+    /// Set on terminate outcomes when the cooperative
     /// `XCUIApplication.terminate()` pathway observed the process
     /// `.notRunning` after the call returned. Always false on launch.
     public let terminatedCooperatively: Bool
-    /// v1.0.15 Cluster C D1 — set on `launch-app` outcomes when the
+    /// Set on `launch-app` outcomes when the
     /// interactive fingerprint (≥ `minIdentifierCount` non-ignored
     /// ax-ids in the tree) was observed within
     /// `waitForInteractiveMs`. Always false on terminate.
     public let reachedInteractive: Bool
-    /// v1.0.15 Cluster C D1 — sample of up to 8 `accessibilityIdentifier`
+    /// Sample of up to 8 `accessibilityIdentifier`
     /// values captured at the moment `reachedInteractive` fired.
     /// Debug aid so consumers can tell "the probe fired on the right
     /// screen" from "the probe fired on a splash-screen artifact
@@ -740,7 +744,7 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.5 §D1 — /session/list outcome.
+  /// `/session/list` outcome.
   public struct SessionListOutcome: Sendable {
     public let sessions: [SessionRoute.SessionSummary]
     public init(sessions: [SessionRoute.SessionSummary]) {
@@ -748,7 +752,7 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.7 §D5 — /diagnostic/dump outcome.
+  /// `/diagnostic/dump` outcome.
   public struct DiagnosticOutcome: Sendable {
     public let snapshot: SessionRoute.DiagnosticSnapshot
     public init(snapshot: SessionRoute.DiagnosticSnapshot) {
@@ -756,24 +760,24 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.3 — session lifecycle handlers. Triple bundled (vs three
-  /// independent typealiases) because they share the session-table state
-  /// in the UITest target. v1.0.4 extends with close-all + relaunch-app.
+  /// Session lifecycle handlers. Bundled together (vs independent
+  /// typealiases) because they share the session-table state in the
+  /// UITest target.
   public struct SessionHandlers: Sendable {
     public let open: @Sendable (SessionRoute.OpenRequest) async -> SessionOpenOutcome
     public let close: @Sendable (SessionRoute.CloseRequest) async -> SessionCloseOutcome
     public let renew: @Sendable (SessionRoute.RenewRequest) async -> SessionRenewOutcome
-    /// v1.0.4 §D5 — invoked by `POST /session/close-all`.
+    /// Invoked by `POST /session/close-all`.
     public let closeAll: @Sendable () async -> SessionCloseAllOutcome
-    /// v1.0.4 §D14 — invoked by `POST /session/relaunch-app`.
+    /// Invoked by `POST /session/relaunch-app`.
     public let relaunchApp: @Sendable (SessionRoute.RelaunchRequest) async -> SessionRelaunchOutcome
-    /// v1.0.5 §D1 — invoked by `POST /session/list`.
+    /// Invoked by `POST /session/list`.
     public let list: @Sendable () async -> SessionListOutcome
-    /// v1.0.7 §D5 — invoked by `POST /diagnostic/dump`.
+    /// Invoked by `POST /diagnostic/dump`.
     public let diagnostic: @Sendable () async -> DiagnosticOutcome
-    /// v1.0.8 §D1 — invoked by `POST /session/terminate-app`.
+    /// Invoked by `POST /session/terminate-app`.
     public let terminateApp: @Sendable (SessionRoute.AppLifecycleRequest) async -> SessionAppLifecycleOutcome
-    /// v1.0.8 §D1 — invoked by `POST /session/launch-app`.
+    /// Invoked by `POST /session/launch-app`.
     public let launchApp: @Sendable (SessionRoute.AppLifecycleRequest) async -> SessionAppLifecycleOutcome
     public init(
       open: @escaping @Sendable (SessionRoute.OpenRequest) async -> SessionOpenOutcome,
@@ -800,8 +804,8 @@ public actor SmixRunnerServer {
 
   public init() {}
 
-  // v1.2 C1 — single point of HTTPServer construction. v1.2 invariant #3 requires
-  // Runner port localhost-only; FlyingFox's `HTTPServer(port:)` shorthand binds
+  // Single point of HTTPServer construction. The runner port must be
+  // localhost-only; FlyingFox's `HTTPServer(port:)` shorthand binds
   // IPv6 wildcard `::` (= all interfaces, LAN-reachable, real compliance bug).
   // We bind IPv4 127.0.0.1 explicitly because the SDK `RunnerClient` connects
   // via `127.0.0.1` (IPv4); the FlyingFox `.loopback(port:)` shorthand returns
@@ -814,7 +818,7 @@ public actor SmixRunnerServer {
     return HTTPServer(address: addr)
   }
 
-  // v1.2 C2 — DispatchTime delta → ms (truncates fractional). Shared by tap
+  // DispatchTime delta → ms (truncates fractional). Shared by tap
   // (TapStages) and keyboard (KeyboardOutcome.success) timing paths in the
   // UITest closure.
   public static func msBetween(_ start: DispatchTime, _ end: DispatchTime) -> UInt32 {
@@ -822,25 +826,23 @@ public actor SmixRunnerServer {
     return UInt32(min(nanos / 1_000_000, UInt64(UInt32.max)))
   }
 
-  // v1.4 ③-C1 B3 — server-side route guard (defense-in-depth layer 1).
+  // Server-side route guard — the structural backstop against a route
+  // error taking the whole runner down.
   //
   // The runner's route closures call into the UITest target's handler
   // closures, which in turn drive XCUITest. When a resolved element
   // vanishes mid-interaction XCUITest fails the running test
-  // (SmixRunnerUITests.swift:262 element.tap() → "Failed to get matching
-  // snapshot: No matches found"). B1 turns that into a thrown Swift Error
-  // via an ObjC trampoline; B3 is the structural backstop that guarantees
-  // such an error — or ANY error the response builder raises — never
-  // escapes the route closure into FlyingFox and from there into
-  // `runForever`'s withThrowingTaskGroup (`:288-309`), which would
-  // re-throw it and terminate `test_runForever` (= runner restart, the
-  // exact failure this checkpoint exists to kill).
+  // (`element.tap()` → "Failed to get matching snapshot: No matches
+  // found"). An ObjC trampoline turns that into a thrown Swift Error;
+  // this guard then ensures such an error — or ANY error the response
+  // builder raises — never escapes the route closure into FlyingFox and
+  // from there into `runForever`'s withThrowingTaskGroup, which would
+  // re-throw it and terminate `test_runForever`, restarting the runner.
   //
   // Contract: on success the builder's HTTPResponse is returned
-  // byte-identical (zero behaviour change → zero regression for every
-  // existing route); on throw the route's own error envelope `fallback`
-  // is returned and the error is swallowed. Purely additive, no XCUI /
-  // XCTest, unit-decidable in SmixRunnerCore.
+  // byte-identical; on throw the route's own error envelope `fallback`
+  // is returned and the error is swallowed. No XCUI / XCTest here, so
+  // this stays unit-decidable in SmixRunnerCore.
   public static func guardedResponse(
     fallback: HTTPResponse,
     _ build: () async throws -> HTTPResponse
@@ -849,17 +851,17 @@ public actor SmixRunnerServer {
     do {
       raw = try await build()
     } catch {
-      // v1.6 c2 — surface caught exception type+reason to stderr so c2 dig
-      // can identify modal-overlay side-effects (e.g. snapshot 500 on dashboard
-      // after `+load` swizzle). Pre-existing behavior was silent swallow.
+      // Surface the caught exception type+reason to stderr so modal-overlay
+      // side-effects stay diagnosable (e.g. a snapshot 500 on the dashboard
+      // after a `+load` swizzle) instead of being silently swallowed.
       FileHandle.standardError.write(
         Data("smix-runner: guardedResponse caught: \(error)\n".utf8))
       raw = fallback
     }
-    // v1.0.4 §D7 — attach X-Sim-Health header to every response the
-    // guard emits. Task-local publisher is set per-request by
-    // runForever's wrapping context; nil publisher means the runner
-    // opted out and consumers keep v1.0.3 header-less behavior.
+    // Attach the X-Sim-Health header to every response the guard emits.
+    // The task-local publisher is set per-request by runForever's
+    // wrapping context; a nil publisher means the runner opted out and
+    // no header is emitted.
     if let publisher = Self.currentSimHealth {
       let state = await publisher.snapshot()
       return await withHeader(raw, name: "X-Sim-Health", value: state.rawValue)
@@ -867,7 +869,7 @@ public actor SmixRunnerServer {
     return raw
   }
 
-  /// v1.0.4 §D7 — return a copy of the response with an extra
+  /// Return a copy of the response with an extra
   /// header injected. FlyingFox's HTTPResponse is a value type so
   /// mutating a copy is cheap.
   public static func withHeader(_ response: HTTPResponse, name: String, value: String) async -> HTTPResponse {
@@ -886,7 +888,7 @@ public actor SmixRunnerServer {
     )
   }
 
-  /// v0.2.1 — wraps [`guardedResponse`] with per-request context
+  /// Wraps [`guardedResponse`] with per-request context
   /// propagation. Reads `App-Bundle-Id` / `App-Activate` headers into a
   /// [`RequestContext`] and sets it as `SmixRunnerServer.currentContext`
   /// (task-local) for the duration of the handler.
@@ -910,12 +912,12 @@ public actor SmixRunnerServer {
     }
   }
 
-  /// v1.0.3 — register `/session/open`, `/session/close`,
-  /// `/session/renew-activation`. Session-lifecycle handlers are the
-  /// systemic fix for the activation storm: consumers open once, run
-  /// their entire flow against the cached binding, and close on exit.
-  /// The per-request `App-Activate: true` path stays as legacy
-  /// (rate-limited) for consumers that haven't migrated.
+  /// Register `/session/open`, `/session/close`,
+  /// `/session/renew-activation`. Session-lifecycle handlers exist to
+  /// avoid an activation storm: consumers open once, run their entire
+  /// flow against the cached binding, and close on exit. The
+  /// per-request `App-Activate: true` path remains available
+  /// (rate-limited) for consumers that do not use sessions.
   public static func registerSessionRoutes(
     server: HTTPServer,
     handlers: SessionHandlers
@@ -933,7 +935,7 @@ public actor SmixRunnerServer {
         fallback: SessionRoute.badRequest(reason: "handler crashed")
       ) {
         let outcome = await handlers.open(req)
-        // v1.0.4 §D2 — successful open re-establishes the target for
+        // A successful open re-establishes the target for
         // this bundle; clear any suppression entry.
         if let cache = Self.currentAppAliveCache {
           await cache.markAlive(bundleId: req.bundleId)
@@ -983,7 +985,7 @@ public actor SmixRunnerServer {
         return SessionRoute.renewResponse(ok: outcome.ok, activated: outcome.activated)
       }
     }
-    // v1.0.4 §D5 — POST /session/close-all
+    // POST /session/close-all
     await server.appendRoute("POST /session/close-all") { _ in
       return await Self.guardedResponse(
         fallback: SessionRoute.closeAllResponse(closed: 0)
@@ -992,7 +994,7 @@ public actor SmixRunnerServer {
         return SessionRoute.closeAllResponse(closed: outcome.closed)
       }
     }
-    // v1.0.5 §D1 — POST /session/list
+    // POST /session/list
     await server.appendRoute("POST /session/list") { _ in
       return await Self.guardedResponse(
         fallback: SessionRoute.listResponse([])
@@ -1001,7 +1003,7 @@ public actor SmixRunnerServer {
         return SessionRoute.listResponse(outcome.sessions)
       }
     }
-    // v1.0.7 §D5 — POST /diagnostic/dump
+    // POST /diagnostic/dump
     await server.appendRoute("POST /diagnostic/dump") { _ in
       return await Self.guardedResponse(
         fallback: SessionRoute.diagnosticResponse(
@@ -1014,7 +1016,7 @@ public actor SmixRunnerServer {
         return SessionRoute.diagnosticResponse(outcome.snapshot)
       }
     }
-    // v1.0.8 §D1 — POST /session/terminate-app + /session/launch-app
+    // POST /session/terminate-app + /session/launch-app
     for (path, isTerminate) in [("POST /session/terminate-app", true), ("POST /session/launch-app", false)] {
       let isTerm = isTerminate
       await server.appendRoute(HTTPRoute(path)) { request in
@@ -1047,7 +1049,7 @@ public actor SmixRunnerServer {
         }
       }
     }
-    // v1.0.4 §D14 — POST /session/relaunch-app
+    // POST /session/relaunch-app
     await server.appendRoute("POST /session/relaunch-app") { request in
       let body: Data
       do { body = try await request.bodyData }
@@ -1064,7 +1066,7 @@ public actor SmixRunnerServer {
         if outcome.notFound {
           return SessionRoute.notFound(reason: "unknown session id")
         }
-        // v1.0.4 §D2 — successful relaunch clears any suppression
+        // A successful relaunch clears any suppression
         // for the target bundle.
         if outcome.ok,
            let cache = Self.currentAppAliveCache,
@@ -1076,7 +1078,7 @@ public actor SmixRunnerServer {
     }
   }
 
-  // v7.9 c1 — register the 3 /select/resolve* endpoints. Public static
+  // Register the 3 /select/resolve* endpoints. Public static
   // so tests can boot a stub server + register without going through
   // full runForever signature. Each route decodes the shared
   // SelectResolveRoute.Request, dispatches to the handler with the
@@ -1150,35 +1152,31 @@ public actor SmixRunnerServer {
     recordHandlers: RecordHandlers? = nil,
     selectResolveHandler: SelectResolveHandler? = nil,
     sessionHandlers: SessionHandlers? = nil,
-    /// v1.0.4 §D4 — per-session `/system-popups` pacer. `nil` opts out
+    /// Per-session `/system-popups` pacer. `nil` opts out
     /// (legacy unlimited behavior).
     popupPacer: PopupPacer? = nil,
-    /// v1.0.4 §D2 — app-alive cache. `nil` opts out (no short-circuit
+    /// App-alive cache. `nil` opts out (no short-circuit
     /// on XCTIssue "Application not running").
     appAliveCache: AppAliveCache? = nil,
-    /// v1.0.4 §D7 — publisher for the `X-Sim-Health` response header.
+    /// Publisher for the `X-Sim-Health` response header.
     /// `nil` opts out (no header emitted).
     simHealthPublisher: SimHealthPublisher? = nil,
-    /// v1.0.15 Cluster C D2 — closure the /tree route consults to
+    /// Closure the /tree route consults to
     /// categorize why a snapshot returned nil. UITest target
     /// implements via `XCUIApplication.state` + .ips scan. `nil` opts
-    /// out (pre-v1.0.15 fallback: `.aliveButTreeEmpty` best-guess).
+    /// out and falls back to an `.aliveButTreeEmpty` best-guess.
     unavailableReasonInferer: UnavailableReasonInferer? = nil
   ) async throws {
     let server = Self.makeServer(port: port)
     let shutdownSignal = ShutdownSignal()
 
-    // v1.0.10 §D3 — wire real /health extended body. The v1.0.2
-    // HealthRoute.responseDetail helper has been in the tree since
-    // v1.0.2 but was never wired here (the route always returned the
-    // legacy `{"ok":true}`). That's why 6 CLI releases could not
-    // detect on-disk runner version drift — the runner never told the
-    // CLI what version it was. Now the version comes from the
+    // The extended /health body is what lets the CLI detect on-disk
+    // runner version drift — without it the runner never tells the CLI
+    // which version it is. The version comes from the
     // TEST_RUNNER_SMIX_RUNNER_VERSION env var (forwarded by the Rust
-    // side of `smix runner up`), and uptime is measured from server
-    // start. sessionsOpen / activationsTotal are wired in D5 (0 for
-    // now — placeholder so the wire shape is stable across the two
-    // sub-releases).
+    // side of `smix runner up`); uptime is measured from server start.
+    // sessionsOpen / activationsTotal are placeholders reporting 0 so
+    // the wire shape stays stable.
     let runnerVersion = ProcessInfo.processInfo.environment[
       "SMIX_RUNNER_VERSION"
     ] ?? "unknown"
@@ -1194,16 +1192,16 @@ public actor SmixRunnerServer {
       )
     }
 
-    // v7.9 c1 — register /select/resolve* routes when handler provided.
+    // Register /select/resolve* routes when handler provided.
     if let selectResolveHandler {
       await Self.registerSelectResolveRoutes(server: server, handler: selectResolveHandler)
     }
 
-    // v1.0.3 — register /session/* routes when handlers provided.
+    // Register /session/* routes when handlers provided.
     if let sessionHandlers {
       await Self.registerSessionRoutes(server: server, handlers: sessionHandlers)
     }
-    // v1.4 C3 — graceful teardown. The handler MUST NOT `await server.stop()`
+    // Graceful teardown. The handler MUST NOT `await server.stop()`
     // inline: stop() re-enters the same HTTPServer actor that server.run() is
     // executing on (deadlock), and the response must be sent before the socket
     // closes. So it only fires the one-shot signal + returns immediately; the
@@ -1227,14 +1225,15 @@ public actor SmixRunnerServer {
       } catch {
         return TapRoute.badRequest(reason: "\(error)")
       }
-      // v1.4 ③-C1 B3 — the handler drives XCUITest; if a resolved element
-      // vanishes mid-tap the trampoline (B1) surfaces a thrown error.
-      // Convert it to the route's own notFound envelope instead of letting
-      // it escape the closure and kill the runner.
-      // v1.4 ③-C1 (see-through续修) — same `?include=` mechanism as
-      // GET /tree (`request.query["include"]`, FlyingFox `[QueryItem]`
-      // string subscript, method-independent). nil ⇒ legacy element
-      // source (zero-regression: SDK posts no query).
+      // The handler drives XCUITest; if a resolved element vanishes
+      // mid-tap the ObjC trampoline surfaces a thrown error. Convert it
+      // to the route's own notFound envelope instead of letting it
+      // escape the closure and kill the runner.
+      //
+      // Same `?include=` mechanism as GET /tree
+      // (`request.query["include"]`, FlyingFox `[QueryItem]` string
+      // subscript, method-independent). nil ⇒ the default element
+      // source (the SDK posts no query).
       let scope = request.query["include"]
       return await Self.contextGuardedResponse(request: request,
         fallback: TapRoute.notFound(selector: req.selector)
@@ -1253,10 +1252,10 @@ public actor SmixRunnerServer {
         }
       }
     }
-    // v1.0.23 D3 — cumulative /tree successful-serve counter for the
-    // `X-Tree-Snapshot-Refresh-Count` response header. Insight round-2
-    // Ask 6: consumers debugging `--all` batch snapshot drift need a
-    // monotonic signal that the runner is (or isn't) doing fresh work.
+    // Cumulative /tree successful-serve counter for the
+    // `X-Tree-Snapshot-Refresh-Count` response header. Consumers
+    // debugging batch snapshot drift need a monotonic signal that the
+    // runner is (or isn't) doing fresh work.
     // Simple @unchecked-Sendable wrapper around an atomic counter.
     final class TreeServeCounter: @unchecked Sendable {
       private let lock = NSLock()
@@ -1269,10 +1268,10 @@ public actor SmixRunnerServer {
     }
     let treeServeCounter = TreeServeCounter()
     await server.appendRoute("GET /tree") { request in
-      // v1.4 ③-C1 B3 — snapshotHandler calls XCUIApplication.snapshot()
-      // which throws under modal masking; the trampoline surfaces it.
-      // v1.0.15 Cluster C D2 — categorize the failure so consumers get
-      // an actionable `reason` + `hint` in the error envelope. The
+      // snapshotHandler calls XCUIApplication.snapshot(), which throws
+      // under modal masking; the trampoline surfaces it. Categorize the
+      // failure so consumers get an actionable `reason` + `hint` in the
+      // error envelope. The
       // fallback (used when the guarded closure throws entirely) stays
       // as the `.unknown` category — we don't have process state to
       // discriminate from that path.
@@ -1283,15 +1282,15 @@ public actor SmixRunnerServer {
           hint: AppUnavailableReason.driverDisconnected.defaultHint
         )
       ) {
-        // v1.0.4 §D2 — app-alive suppression short-circuit. When the
+        // App-alive suppression short-circuit. When the
         // target bundle is known-dead (observed XCTIssue in the last
         // 20 s), return unavailable without running XCUIQuery. This
         // cuts the /tree firehose that continues after an app crash.
         if let cache = Self.currentAppAliveCache,
            let bundleId = Self.currentContext.bundleId,
            await cache.isSuppressed(bundleId: bundleId) {
-          // v1.0.15 Cluster C D2 — cache-suppressed = observed
-          // XCTIssue about app not running. Most likely
+          // Cache-suppressed means we observed an XCTIssue about the
+          // app not running. Most likely
           // `crashed-during-init` (process was up, then died); could
           // also be an XCUITest race that the re-probe cycle will
           // resolve. Ship `crashed-during-init` as the best guess so
@@ -1301,16 +1300,16 @@ public actor SmixRunnerServer {
             hint: AppUnavailableReason.crashedDuringInit.defaultHint
           )
         }
-        // v1.0.23 D3 — time the snapshotHandler call end-to-end for
+        // Time the snapshotHandler call end-to-end for
         // the `X-Tree-Snapshot-Wall-Ms` header. Trending upward = the
         // underlying XCUITest snapshot pipeline is bogging down.
         let snapStart = Date()
         guard let snap = await snapshotHandler(request.query["include"]) else {
-          // v1.0.15 Cluster C D2 — snapshotHandler returned nil
-          // without throwing. Ask the UITest-provided inference
-          // closure (set as `currentUnavailableReasonInferer` task-
-          // local at boot when the UITest target knows about D2). If
-          // the closure isn't wired, fall back to `.aliveButTreeEmpty`
+          // snapshotHandler returned nil without throwing. Ask the
+          // UITest-provided inference closure (set as
+          // `currentUnavailableReasonInferer` task-local at boot when
+          // the UITest target supports categorization). If the closure
+          // isn't wired, fall back to `.aliveButTreeEmpty`
           // as the best guess — the most common consumer-observed
           // case is "process foreground but a11y tree came back
           // empty" (splash screen or sparse annotation) rather than
@@ -1335,9 +1334,9 @@ public actor SmixRunnerServer {
             FileHandle.standardError.write(Data((line + "\n").utf8))
           }
         )
-        // v1.2 C2 — emit tree size + node count as response headers so SDK
-        // can record hot-spot data without changing the JSON wire shape.
-        // v1.0.23 D3 — plus snapshot refresh count + wall-ms.
+        // Emit tree size + node count as response headers so SDK
+        // can record hot-spot data without changing the JSON wire shape,
+        // plus the snapshot refresh count + wall-ms.
         return TreeRoute.successWithMeta(
           payload,
           sizeBytes: payload.count,
@@ -1347,25 +1346,21 @@ public actor SmixRunnerServer {
         )
       }
     }
-    // v1.2 keyboard ops — only register when handlers are provided so
-    // legacy UITest targets (older smix versions without fill support)
-    // stay binary compatible with the v1.1 SmixRunner.
-    // v1.2 P2 — keyboard ops route helper. WIRE SHAPE supports embedding
-    // the post-action AX tree snapshot in the same response (saves the
-    // SDK one HTTP round-trip when an `expect` follows a fill/clear/
-    // pressKey), but on iOS 26 sim `XCUIApplication.snapshot()` costs
-    // 80-150ms per call — heavier than the /tree round-trip it saves.
-    // Empirical bench (v1.2 complex flow, 30 steps × 7 fills): enabling
-    // snapshot-in-response REGRESSED per-step from 441ms (P1 alone) to
-    // 487ms (+10%). Capability is preserved in the wire (the
-    // `KeyboardRoute.successWithTree` builder + `tree` response field)
-    // and SDK-side cache (`SimctlDriver.cacheTreeIfPresent` +
-    // `cachedTree` TTL) so future versions can re-enable when snapshot
-    // cost drops (e.g., shallower snapshot, batched event sequence).
-    // Current behaviour: always emit plain {"ok":true} envelope, no tree.
-    // v1.2 C2 — success envelope. P2 tree-in-response capability is preserved
-    // in `KeyboardRoute.successWithTree` for future re-enable but unused here
-    // (snapshot regression cited above). Current path emits stages only.
+    // Keyboard ops are only registered when handlers are provided, so
+    // UITest targets without fill support stay binary compatible.
+    //
+    // The wire shape supports embedding the post-action AX tree snapshot
+    // in the same response (saving the SDK one HTTP round-trip when an
+    // `expect` follows a fill/clear/pressKey), but on the iOS 26 sim
+    // `XCUIApplication.snapshot()` costs 80-150 ms per call — heavier
+    // than the /tree round-trip it saves. Measured over a 30-step flow
+    // with 7 fills, enabling snapshot-in-response REGRESSED per-step
+    // timing from 441 ms to 487 ms (+10%). The capability is kept in the
+    // wire (`KeyboardRoute.successWithTree` + the `tree` response field)
+    // and in the SDK-side cache (`SimctlDriver.cacheTreeIfPresent` +
+    // `cachedTree` TTL) so it can be re-enabled if snapshot cost drops
+    // (e.g. a shallower snapshot or a batched event sequence).
+    // Current behaviour: emit stages only, never a tree.
     @Sendable func successFor(_ outcome: KeyboardOutcome) -> HTTPResponse? {
       if case let .success(focusMs, daemonSendMs) = outcome {
         return KeyboardRoute.successWithStages(focusMs: focusMs, daemonSendMs: daemonSendMs)
@@ -1418,7 +1413,7 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v1.2 C4 — /find lets the SDK side ask "does this selector match" without
+    // /find lets the SDK side ask "does this selector match" without
     // the cost of /tree (full snapshot serialization + JS predicate walk).
     if let findHandler {
       await server.appendRoute("POST /find") { request in
@@ -1430,19 +1425,19 @@ public actor SmixRunnerServer {
         do { req = try FindRoute.decode(body) }
         catch let e as FindRoute.DecodeError { return FindRoute.badRequest(reason: "\(e)") }
         catch { return FindRoute.badRequest(reason: "\(error)") }
-        // v1.4 ③-C1 (see-through续修) — same `?include=` mechanism as
-        // GET /tree. nil ⇒ legacy `app.descendants(.any)` (zero-regression
-        // anchor: SDK posts /find with no query).
+        // Same `?include=` mechanism as GET /tree. nil ⇒ the default
+        // `app.descendants(.any)` query (the SDK posts /find with no
+        // query).
         let found = await findHandler(
           req.selector.text, request.query["include"], req.requireOnScreen)
         return FindRoute.success(found: found)
       }
     }
 
-    // v1.4 ③-C1 (third restart) S3.a — `GET /system-popups[?include=]`.
-    // Core-flat popup sense; SDK runner-client posts without a query for
-    // the legacy nil scope; `?include=all-windows` reaches the handler
-    // verbatim (same mechanism as /tree). Sense failure ⇒ guard returns
+    // `GET /system-popups[?include=]`. Core-flat popup sense; the SDK
+    // runner-client posts without a query for the default nil scope;
+    // `?include=all-windows` reaches the handler verbatim (same
+    // mechanism as /tree). Sense failure ⇒ guard returns
     // the empty-popups envelope (NOT 5xx) so the upper layer reads
     // "nothing observed right now" rather than a protocol error.
     if let systemPopupsHandler {
@@ -1450,7 +1445,7 @@ public actor SmixRunnerServer {
         return await Self.contextGuardedResponse(request: request,
           fallback: SystemPopupsRoute.success(popups: [])
         ) {
-          // v1.0.4 §D4 — per-session 500 ms floor. sessionKey defaults
+          // Per-session 500 ms floor. sessionKey defaults
           // to the RequestContext session id when present; otherwise
           // "default" (a single bucket for header-less callers).
           if let pacer = Self.currentPopupPacer {
@@ -1459,7 +1454,7 @@ public actor SmixRunnerServer {
               return SystemPopupsRoute.tooManyRequests(retryAfterMs: remainMs)
             }
           }
-          // v1.0.4 §D2 — app-alive suppression short-circuit. When
+          // App-alive suppression short-circuit. When
           // the bundle is known-dead, return empty popups without
           // running any XCUIQuery.
           if let cache = Self.currentAppAliveCache,
@@ -1473,7 +1468,7 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v4.2 c1 — POST /system-popup-action. Decodes Request {popupId,
+    // POST /system-popup-action. Decodes Request {popupId,
     // buttonId}, dispatches to systemPopupActionHandler. .found ⇒ 200
     // ok envelope; .notFound (popup or button id missed at the UITest
     // side) ⇒ 404 not_found envelope echoing the input ids so the caller
@@ -1516,15 +1511,15 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v1.5 C1 S1 — POST /scroll. Decodes the ScrollRequest, drives the
+    // POST /scroll. Decodes the ScrollRequest, drives the
     // runner-side XCUITest swipe-until-visible loop via scrollHandler,
     // and emits the matched/swipes envelope. Guarded so a vanished-element
     // failure inside the handler (the same mid-interaction XCUITest hazard
     // /tap and /fill already protect against) surfaces as
     // `matched=false, swipes=0` instead of escaping the closure into
     // FlyingFox's withThrowingTaskGroup. maxSwipes / timeoutMs are
-    // hardcoded defaults (30 / 30_000ms) — caller-tunable via SDK opts
-    // would be a future surface; cold-plan v1.5 §40 anchors these.
+    // hardcoded defaults (30 / 30_000ms) — not caller-tunable via SDK
+    // opts today.
     if let scrollHandler {
       await server.appendRoute("POST /scroll") { request in
         let body: Data
@@ -1567,7 +1562,7 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v1.5 C4b — POST /foreground. Decodes ForegroundRequest, calls
+    // POST /foreground. Decodes ForegroundRequest, calls
     // foregroundHandler with bundleId, wraps result in {ok:<bool>} envelope.
     // Guarded so an XCUITest NSException inside the handler (the
     // XCUIApplication.activate same mid-interaction hazard /tap and /scroll
@@ -1599,7 +1594,7 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v1.5 C5d' — POST /back. Decodes BackRequest (empty body OK), calls
+    // POST /back. Decodes BackRequest (empty body OK), calls
     // backHandler, wraps result in {ok:<bool>} envelope. Guarded so an
     // XCUITest NSException inside the handler (the navigationBars query +
     // .tap() mid-interaction hazard that /tap and /scroll already protect
@@ -1629,7 +1624,7 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v1.5 c5i-d — POST /swipe-once. Single-swipe gesture, no probe, no
+    // POST /swipe-once. Single-swipe gesture, no probe, no
     // selector. Used by driver-side host-loop scrollUntilVisible to bypass
     // runner-side XCUIElement query.firstMatch stall on dict-only RN elements
     // (which triggers FlyingFox 15s handler timeout → /scroll 500). `?include=`
@@ -1661,9 +1656,10 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v1.6 c5 — POST /tap-at-norm-coord. Coord-based tap via
+    // POST /tap-at-norm-coord. Coord-based tap via
     // `app.coordinate(withNormalizedOffset:).tap()`. Body `{"nx", "ny"}` ∈ [0,1].
-    // 合 host-side DFS-first resolve + runner native UI event chain.
+    // Pairs a host-side DFS-first resolve with the runner's native UI
+    // event chain.
     if let tapAtCoordHandler {
       await server.appendRoute("POST /tap-at-norm-coord") { request in
         let body: Data
@@ -1689,11 +1685,11 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v5.3 c4 — POST /tap-by-id {"id":"<a11y-id>"}. XCUIElement.tap() via
+    // POST /tap-by-id {"id":"<a11y-id>"}. XCUIElement.tap() via
     // the XCTest gesture-recognizer chain for SwiftUI .sheet/.alert/
     // .confirmationDialog/.fullScreenCover dismiss buttons that the default
-    // host-HID-at-coord path can't trigger. Parallel to /tap-at-norm-coord —
-    // /tap stays untouched so v1 41-段 baseline is unaffected.
+    // host-HID-at-coord path can't trigger. Parallel to /tap-at-norm-coord;
+    // /tap itself is left untouched.
     if let tapByIdHandler {
       await server.appendRoute("POST /tap-by-id") { request in
         let body: Data
@@ -1719,7 +1715,7 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v5.19 c1a — POST /find-text-by-ocr. Apple Vision OCR over current
+    // POST /find-text-by-ocr. Apple Vision OCR over current
     // XCUIScreen screenshot. L5 sense layer per a11y-i18n master plan.
     if let findTextByOcrHandler {
       await server.appendRoute("POST /find-text-by-ocr") { request in
@@ -1746,11 +1742,11 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v5.2 c1 — POST /swipe-at-norm-coord. From-to coordinate swipe gesture
+    // POST /swipe-at-norm-coord. From-to coordinate swipe gesture
     // via Apple native event chain (XCSynthesizedEventRecord +
     // XCPointerEventPath moveToPoint / liftUp). Body
-    // `{"fromNx","fromNy","toNx","toNy"}` ∈ [0,1]. §9 #3 partial-lift escape
-    // hatch companion to /tap-at-norm-coord.
+    // `{"fromNx","fromNy","toNx","toNy"}` ∈ [0,1]. Normalized-coordinate
+    // escape-hatch companion to /tap-at-norm-coord.
     if let swipeAtCoordHandler {
       await server.appendRoute("POST /swipe-at-norm-coord") { request in
         let body: Data
@@ -1776,9 +1772,9 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v5.2 c3 — POST /double-tap. XCUIElement.doubleTap() public API path.
-    // Body {selector: {text}}. Sibling of /tap envelope (no stages — c3 走
-    // 单路径不细分 timing).
+    // POST /double-tap. XCUIElement.doubleTap() public API path.
+    // Body {selector: {text}}. Sibling of the /tap envelope, but with no
+    // stages — this is a single path, so timing is not broken down.
     if let doubleTapHandler {
       await server.appendRoute("POST /double-tap") { request in
         let body: Data
@@ -1804,8 +1800,8 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v5.2 c3 — POST /long-press. XCUIElement.press(forDuration:) public API.
-    // Body {selector: {text}, durationMs: N}. duration 单位 ms.
+    // POST /long-press. XCUIElement.press(forDuration:) public API.
+    // Body {selector: {text}, durationMs: N}. Duration is in milliseconds.
     if let longPressHandler {
       await server.appendRoute("POST /long-press") { request in
         let body: Data
@@ -1831,7 +1827,7 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v5.2 c5 — POST /set-orientation. XCUIDevice.shared.orientation public
+    // POST /set-orientation. XCUIDevice.shared.orientation public
     // XCUI API. Body {orientation: "portrait|portraitUpsideDown|landscapeLeft|landscapeRight"}.
     if let setOrientationHandler {
       await server.appendRoute("POST /set-orientation") { request in
@@ -1858,7 +1854,7 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v1.5 c5g'' — POST /hide-keyboard. Decodes HideKeyboardRequest (empty
+    // POST /hide-keyboard. Decodes HideKeyboardRequest (empty
     // body OK; mirrors /back), calls hideKeyboardHandler, wraps result in
     // {ok:<bool>} envelope. Guarded so an XCUITest NSException inside the
     // handler (keyboards.firstMatch.swipeDown() mid-interaction hazard that
@@ -1889,7 +1885,7 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v2.0 c2 — POST /record/start, POST /record/stop, GET /record/poll.
+    // POST /record/start, POST /record/stop, GET /record/poll.
     // Recorder is gated by `SMIX_RECORD_ENABLED` env in UITest setUp (default
     // off — zero v1.x impact). When the handler triple isn't wired (env off
     // or older UITest target), the routes simply aren't registered.
@@ -1935,22 +1931,21 @@ public actor SmixRunnerServer {
       }
     }
 
-    // v1.4 C3 — run the server concurrently with a stop-observer. On
+    // Run the server concurrently with a stop-observer. On
     // /shutdown the observer calls `server.stop(timeout: 0)` (close socket
     // immediately, no in-flight long connections to preserve — the /shutdown
     // response was already sent). FlyingFox `server.run()` then re-throws the
-    // socket-closed/cancellation error from its own catch (HTTPServer.swift
-    // :92-110); that throw, once shutdown was signalled, IS the expected
-    // graceful path — swallow it so `runForever` returns normally (→
-    // test_runForever returns → XCTest exit 0). If run() throws WITHOUT a
-    // shutdown signal (a genuine startup failure), it is re-thrown unchanged,
-    // and if /shutdown is never called the observer awaits forever so run()
-    // is never stopped (byte-identical to before this checkpoint).
+    // socket-closed/cancellation error from its own catch; that throw, once
+    // shutdown was signalled, IS the expected graceful path — swallow it so
+    // `runForever` returns normally (→ test_runForever returns → XCTest
+    // exit 0). If run() throws WITHOUT a shutdown signal (a genuine startup
+    // failure), it is re-thrown unchanged, and if /shutdown is never called
+    // the observer awaits forever so run() is never stopped.
     var sawShutdown = false
-    // v1.0.4 §D2/D4/D7 — set the runtime-scoped actors as task-locals
-    // so every request handler (spawned as child tasks by FlyingFox)
-    // inherits them via Swift's structured concurrency propagation.
-    // nil values keep v1.0.3 header-less / floor-less behavior.
+    // Set the runtime-scoped actors as task-locals so every request
+    // handler (spawned as child tasks by FlyingFox) inherits them via
+    // Swift's structured concurrency propagation. nil values mean
+    // header-less / floor-less behavior.
     try await Self.$currentSimHealth.withValue(simHealthPublisher) {
     try await Self.$currentAppAliveCache.withValue(appAliveCache) {
     try await Self.$currentPopupPacer.withValue(popupPacer) {

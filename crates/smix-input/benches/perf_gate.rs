@@ -1,8 +1,8 @@
-//! v3.28 c1 — perf_gate real bench swap from v3.21 c1 placeholder.
+//! Perf gate bench for smix-input.
 //!
-//! Mirrors v3.26 c1 `smix-selector/benches/perf_gate.rs` template:
-//! the per-crate hot path lands in `perf_gate`; the broader matrix
-//! stays in the sibling target (`benches/input.rs`).
+//! Follows the `smix-selector/benches/perf_gate.rs` template: the
+//! per-crate hot path lands in `perf_gate`; the broader matrix stays in
+//! the sibling target (`benches/input.rs`).
 //!
 //! Hot path measured: `KeyName::as_str(self)` (every recorder JSON
 //! emit + every runner wire encode goes through this enum-to-&'static

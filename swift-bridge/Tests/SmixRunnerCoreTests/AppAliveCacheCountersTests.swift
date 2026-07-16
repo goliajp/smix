@@ -1,13 +1,13 @@
 import XCTest
 @testable import SmixRunnerCore
 
-// v1.0.10 §D5 — counter regression tests.
+// Counter regression tests.
 //
 // Locks in the observability contract: every mutation to
 // AppAliveCache advances the paired counter, and counterSnapshot()
 // returns a coherent point-in-time view. Without this test the
-// noteReprobe* wire-ins in SmixRunnerUITests could silently regress
-// and insight's grep-can't-tell problem would come back.
+// noteReprobe* wire-ins in SmixRunnerUITests could silently regress,
+// leaving no signal that the counters had stopped tracking.
 
 final class AppAliveCacheCountersTests: XCTestCase {
   func testMarkDeadAdvancesCounter() async {
@@ -88,13 +88,10 @@ final class AppAliveCacheCountersTests: XCTestCase {
   }
 
   func testDiagnosticResponseEmitsWiredFalseSentinelByDefault() async throws {
-    // v1.0.11 §D1 changed the contract: `aliveCache` is ALWAYS present.
-    // A runner without a wired cache emits the default counters with
-    // `wired: false` so consumers can distinguish "runner has no
-    // cache" from "cache present but no activity". (This test used to
-    // assert the pre-v1.0.11 omit-when-nil behaviour and had been
-    // failing silently ever since — the swift-bridge test suite was
-    // not part of the ship gate. Corrected during the v1.0.27 sweep.)
+    // Wire contract: `aliveCache` is ALWAYS present. A runner without a
+    // wired cache emits the default counters with `wired: false` so
+    // consumers can distinguish "runner has no cache" from "cache
+    // present but no activity".
     let snapshot = SessionRoute.DiagnosticSnapshot(
       sessions: [],
       simHealth: "healthy",

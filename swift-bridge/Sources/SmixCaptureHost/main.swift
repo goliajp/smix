@@ -1,4 +1,4 @@
-// smix-capture-host — F2 product of the F1 framebuffer spike.
+// smix-capture-host — simulator framebuffer streamer.
 //
 // Reads CoreSimulator's display IOSurface for a booted sim and streams BGRA
 // frames at a target FPS:
@@ -8,8 +8,8 @@
 //   stdout: contiguous BGRA frames, exactly W*H*4 bytes each, row padding stripped
 //
 // Apple framework only (Foundation + IOSurface). All CoreSimulator entry
-// points are resolved via dlopen + objc dynamic lookup per §9 #6 of the
-// project charter (no link-time hard dependency on private frameworks).
+// points are resolved via dlopen + objc dynamic lookup, so there is no
+// link-time hard dependency on private frameworks.
 //
 // SIGINT triggers a clean exit (atomic flag, drains current iteration).
 

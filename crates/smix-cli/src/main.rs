@@ -97,10 +97,10 @@ struct Cli {
 enum Cmd {
     /// Probe environment health: xcrun simctl availability + sim listing.
     Doctor,
-    /// v1.0.7 — runtime observability commands. `dump` pretty-prints
-    /// the runner's recent subprocess ring buffer + open sessions +
-    /// sim health so a failed flow can be diagnosed without a new
-    /// smix patch.
+    /// Runtime observability commands. `dump` pretty-prints the
+    /// runner's recent subprocess ring buffer + open sessions + sim
+    /// health so a failed flow can be diagnosed without a new smix
+    /// patch.
     Diagnostic {
         #[command(subcommand)]
         action: DiagnosticAction,
@@ -333,10 +333,10 @@ Documentation: docs/AI_GUIDE.md
         /// batch after the first flow that exits non-zero.
         #[arg(long, default_value_t = false)]
         fail_fast: bool,
-        /// v1.0.15 §6 — per-flow retry count. Default 1 = one attempt
-        /// only (pre-v1.0.15 behaviour). `--retry 2` = up to 2
-        /// attempts per flow; if the first fails and the second
-        /// succeeds, the flow's exit code is that of the second.
+        /// Per-flow retry count. Default 1 = one attempt only.
+        /// `--retry 2` = up to 2 attempts per flow; if the first fails
+        /// and the second succeeds, the flow's exit code is that of the
+        /// second.
         /// Each attempt is recorded in `~/.local/share/smix/flow-attempts.json`
         /// with status + errorClass + wallMs + any `.ips` that
         /// appeared during the attempt (attribution vs whole-batch).
@@ -349,17 +349,16 @@ Documentation: docs/AI_GUIDE.md
         /// (default 8000ms).
         #[arg(long = "await-signal")]
         await_signal: Option<String>,
-        /// v1.0.4 §B — prepend an implicit `expect.signal { regex,
-        /// timeoutMs }` step at the START of the flow, blocking until
-        /// the regex is observed in the metro log tail. Symmetric to
+        /// Prepend an implicit `expect.signal { regex, timeoutMs }`
+        /// step at the START of the flow, blocking until the regex is
+        /// observed in the metro log tail. Symmetric to
         /// `--await-signal`. Requires `--metro-log-url` also set.
-        /// Consumers whose visual/perf gates prelaunch the app and
-        /// wait for "all systems go" (bootstrap-ready) use this to
-        /// avoid a Node-side waitForMetroLogSignal helper.
+        /// Useful when a visual/perf gate prelaunches the app and must
+        /// wait for a bootstrap-ready signal before the flow starts.
         #[arg(long = "gate-signal")]
         gate_signal: Option<String>,
-        /// v1.0.4 §B — timeout in ms for `--gate-signal`. Default
-        /// 60000. Zero disables the timeout (waits forever).
+        /// Timeout in ms for `--gate-signal`. Default 60000. Zero
+        /// disables the timeout (waits forever).
         #[arg(long = "gate-signal-timeout", default_value_t = 60_000)]
         gate_signal_timeout_ms: u64,
         /// Append an implicit `expectLogClean` step to the end of each
@@ -399,9 +398,8 @@ Documentation: docs/AI_GUIDE.md
         /// every flow; non-zero on the first error, listing all
         /// remaining flows unparsed. Suitable for CI pre-flight.
         ///
-        /// v1.0.20 D3 — accepts `--dry-run` as an equivalent alias
-        /// (idiomatic in most CLI tools). Insight round-5 hit the
-        /// discoverability gap first-hand.
+        /// Accepts `--dry-run` as an equivalent alias (idiomatic in
+        /// most CLI tools).
         #[arg(long = "check", alias = "dry-run", default_value_t = false)]
         check: bool,
     },
@@ -593,7 +591,7 @@ enum RunnerAction {
         /// concurrently without collision.
         #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
         runner_port: Option<u16>,
-        /// v1.0.6 — after `/health` returns 200, spawn a detached
+        /// After `/health` returns 200, spawn a detached
         /// `smix runner supervise` sidecar and record its pid in
         /// `.smix/runner/state.json`. `smix runner down` cascades a
         /// SIGTERM to the sidecar before tearing down xcodebuild.
@@ -603,32 +601,31 @@ enum RunnerAction {
     },
     /// Stop the runner (SIGINT-first to avoid the crash-report dialog).
     Down,
-    /// v1.0.4 — Cycle the runner: down + up on the same device/port/
-    /// bundle. Preserves the per-udid derived-data directory so the
-    /// warm re-up finishes in ~3 s. Errors if no runner state.json
-    /// exists — use `runner up` for a cold start. See RFC 1.0.4 D5.
+    /// Cycle the runner: down + up on the same device/port/bundle.
+    /// Preserves the per-udid derived-data directory so the warm re-up
+    /// finishes in ~3 s. Errors if no runner state.json exists — use
+    /// `runner up` for a cold start.
     Cycle {
         /// Explicit path to `SmixRunner.xcodeproj`. Same cascade as
         /// `runner up` — see `resolve_runner_project`.
         #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
         runner_project: Option<PathBuf>,
     },
-    /// v1.0.5 — Attach a supervisor to a running runner: tail its log
-    /// and auto-`cycle` on interrupt patterns (`** TEST INTERRUPTED
-    /// **` / `SchemeActionResultOperation started unexpectedly`).
-    /// Foreground process; SIGINT or SIGTERM cleanly exits. Session
-    /// persistence (v1.0.5 D1) preserves consumer session ids across
-    /// each cycle. See RFC 1.0.5 D2.
+    /// Attach a supervisor to a running runner: tail its log and
+    /// auto-`cycle` on interrupt patterns (`** TEST INTERRUPTED **` /
+    /// `SchemeActionResultOperation started unexpectedly`). Foreground
+    /// process; SIGINT or SIGTERM cleanly exits. Session persistence
+    /// preserves client session ids across each cycle.
     Supervise {
         /// Explicit path to `SmixRunner.xcodeproj` for the cycle
         /// operation. Same cascade as `runner up`.
         #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
         runner_project: Option<PathBuf>,
     },
-    /// v1.0.5 — List every session the runner currently tracks.
+    /// List every session the runner currently tracks.
     /// Reads `POST /session/list`. Useful for post-cycle diagnostics.
     ListSessions,
-    /// v1.0.10 §D2 — Extract the CLI's embedded Swift runner sources
+    /// Extract the CLI's embedded Swift runner sources
     /// into `~/.local/share/smix/runner/`. Normally auto-invoked by
     /// `smix runner up` when the on-disk `.smix-runner-version` file
     /// is missing or does not match the CLI version; this verb makes
@@ -813,7 +810,7 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> Result<ExitCode, CliError> {
-    // v1.0.10 §D6 — enable subprocess-ring persistence so
+    // Enable subprocess-ring persistence so
     // `/diagnostic/dump` payloads survive supervisor cycles that used
     // to wipe the in-memory ring. Path is $XDG_DATA_HOME/smix or
     // ~/.local/share/smix; best-effort — a missing $HOME is a no-op.
@@ -823,12 +820,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
     {
         let subprocess_ring_path = dir.join("smix/subprocess-ring.json");
         smix_simctl::set_subprocess_ring_persist_path(subprocess_ring_path);
-        // v1.0.14 Cluster A — resetAppData counter persistence so
+        // resetAppData counter persistence so
         // `smix diagnostic dump` (later, separate process) sees the
         // count from any prior `smix run` invocations.
         let reset_counters_path = dir.join("smix/reset-app-data-counters.json");
         smix_simctl::set_reset_app_data_counters_persist_path(reset_counters_path);
-        // v1.0.15 §6 — flow-attempts persistence for retry
+        // Flow-attempts persistence for retry
         // attribution. `smix run` records per-flow attempts here,
         // `smix diagnostic dump` reads back for the `recent flows`
         // section.
@@ -1256,9 +1253,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             check,
         } => {
             if check {
-                // v1.0.20 D3 — invoked via either `--check` or its
-                // `--dry-run` alias; render prefix neutrally so the
-                // output reads correctly for both.
+                // Invoked via either `--check` or its `--dry-run`
+                // alias; render prefix neutrally so the output reads
+                // correctly for both.
                 let mut fail = 0u8;
                 let mut step_total: usize = 0;
                 for flow_path in &flows {
@@ -1343,7 +1340,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         flow_path.display()
                     );
                 }
-                // v1.0.15 §6 — per-flow retry loop + attempt attribution.
+                // Per-flow retry loop + attempt attribution.
                 // Retry only fires on non-zero exit. Each attempt records
                 // status + errorClass (best-effort from exit code) + wallMs
                 // + any new `.ips` for the target bundle appearing between
@@ -1844,36 +1841,34 @@ async fn cmd_sim_exec(device: &str, verb: &str, args: &[String]) -> Result<ExitC
 
 #[derive(Subcommand, Debug)]
 enum DiagnosticAction {
-    /// v1.0.7 §D4 — pretty-print the runner's runtime observability
-    /// snapshot: recent subprocess argvs + exit codes + timings, open
-    /// sessions, sim-health state, supervisor pid, uptime. Calls
+    /// Pretty-print the runner's runtime observability snapshot:
+    /// recent subprocess argvs + exit codes + timings, open sessions,
+    /// sim-health state, supervisor pid, uptime. Calls
     /// `POST /diagnostic/dump` on the runner. When the runner is too
-    /// old (v1.0.6 and earlier), falls back to the client-side ring
+    /// old to serve that route, falls back to the client-side ring
     /// buffer only.
     Dump {
         /// JSON output instead of the human table.
         #[arg(long, default_value_t = false)]
         json: bool,
-        /// v1.0.14 Cluster B — path to an external metro log file. If
-        /// set, the dump tails the last N lines of this file (see
-        /// `--metro-log-tail-lines`) into a `metro log tail` section
-        /// (and into `runner.metroLogTail` on the JSON payload).
-        /// Complements insight's `nohup bun dev > /tmp/metro.log`
-        /// pattern where smix's own log-gate would otherwise skip
-        /// because metro was already running externally.
+        /// Path to an external metro log file. If set, the dump tails
+        /// the last N lines of this file (see `--metro-log-tail-lines`)
+        /// into a `metro log tail` section (and into
+        /// `runner.metroLogTail` on the JSON payload). Covers the case
+        /// where metro was started externally (e.g. redirected to a log
+        /// file), which smix's own log-gate would otherwise skip.
         #[arg(long = "metro-log")]
         metro_log: Option<PathBuf>,
-        /// v1.0.14 Cluster B — number of trailing lines to read from
-        /// `--metro-log`. Default 200 per insight Q6. Ignored when
-        /// `--metro-log` is unset.
+        /// Number of trailing lines to read from `--metro-log`.
+        /// Ignored when `--metro-log` is unset.
         #[arg(long = "metro-log-tail-lines", default_value_t = 200)]
         metro_log_tail_lines: usize,
     },
 }
 
-/// v1.0.15 §6 — snapshot the current set of `.ips` filenames under
+/// Snapshot the current set of `.ips` filenames under
 /// `~/Library/Logs/DiagnosticReports/` matching the target bundle id
-/// (or all Insight/SimRenderServer entries when `bundle_id` is None).
+/// (or every `.ips` entry when `bundle_id` is None).
 /// Used before / after each flow attempt so retry attribution can
 /// diff the sets and attribute any new `.ips` to the attempt that
 /// generated it.
@@ -1897,9 +1892,7 @@ fn ips_snapshot(bundle_id: Option<&str>) -> std::collections::HashSet<String> {
     // callers use this snapshot as a before/after diff around a flow
     // run, so time-bounding does the relevance filtering — any crash
     // report that appears during the flow window is a candidate
-    // regardless of process name. (v1.0.26 — pre-v1.0.26 the None arm
-    // matched a hardcoded consumer app name; generic diff semantics
-    // replace it.)
+    // regardless of process name.
     let bundle_leaf = bundle_id
         .and_then(|b| b.rsplit('.').next())
         .map(|s| s.to_lowercase());
@@ -1919,7 +1912,7 @@ fn ips_snapshot(bundle_id: Option<&str>) -> std::collections::HashSet<String> {
     set
 }
 
-/// v1.0.14 Cluster B — read the last `n` lines from `path`. Seeks
+/// Read the last `n` lines from `path`. Seeks
 /// from EOF backward in 8 KB chunks, splitting on `\n`, until it has
 /// gathered `n` lines or reached BOF. Handles the "file smaller than
 /// one chunk" and "file has no trailing newline" cases. Returns
@@ -1981,7 +1974,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                     smix_runner_wire::DiagnosticDumpResponse::default()
                 }
             };
-            // v1.0.14 Cluster B — CLI-side metro log tail. Read at
+            // CLI-side metro log tail. Read at
             // dump time from the file path (not from the runner) so
             // it works even when the runner never saw the log tail
             // and doesn't require the runner to have been booted
@@ -2000,7 +1993,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                     }
                 }
             }
-            // v1.0.14 Cluster A — overlay CLI-side resetAppData
+            // Overlay CLI-side resetAppData
             // counters onto the wire response before display. The
             // runner never sees resetAppData dispatches (they're
             // host-side simctl-openurl calls), so the wire counters
@@ -2011,7 +2004,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 reset_counters.reset_app_data_total;
             resp.session_counters.reset_app_data_timed_out =
                 reset_counters.reset_app_data_timed_out;
-            // v1.0.15 §6 — overlay per-flow retry attribution from the
+            // Overlay per-flow retry attribution from the
             // CLI-persisted store. Runner side never sees flow-level
             // retry (it's CLI-orchestrated), so wire arrives empty and
             // we merge from disk here.
@@ -2072,10 +2065,9 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 );
             }
             println!();
-            // v1.0.11 §D1/§D4/§D5 — surface the always-emitted
-            // counter fields so consumers can numerically check
-            // "did the observability actually reach this workload"
-            // without dropping into `--json`.
+            // Surface the always-emitted counter fields so callers
+            // can numerically check "did the observability actually
+            // reach this workload" without dropping into `--json`.
             let ac = &resp.alive_cache;
             println!("=== app-alive cache counters ===");
             println!(
@@ -2114,7 +2106,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 sc.launch_app_reached_foreground,
                 sc.launch_app_timed_out_before_foreground,
             );
-            // v1.0.14 Cluster A + C — resetAppData + interactive fingerprint.
+            // resetAppData + interactive fingerprint.
             println!(
                 "  resetAppData: total={} timedOut={}  # timedOut>0 → URL scheme fired but reset-complete log-line never arrived",
                 sc.reset_app_data_total,
@@ -2125,7 +2117,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 sc.launch_app_reached_interactive,
                 sc.launch_app_timed_out_before_interactive,
             );
-            // v1.0.19 — top-level lastInteractiveNamedIds sample.
+            // Top-level lastInteractiveNamedIds sample.
             if !resp.last_interactive_named_ids.is_empty() {
                 println!(
                     "  lastInteractiveNamedIds ({}): {}",
@@ -2138,7 +2130,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 );
             }
             println!();
-            // v1.0.14 Cluster B — external metro log tail. Only printed
+            // External metro log tail. Only printed
             // when the user passed `--metro-log <path>` to this dump
             // command; the runner doesn't buffer for us.
             if !resp.metro_log_tail.is_empty() {
@@ -2151,7 +2143,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 }
                 println!();
             }
-            // v1.0.14 §6 — retry-attribution roll-up.
+            // Retry-attribution roll-up.
             if !resp.recent_flows.is_empty() {
                 println!("=== recent flows (retry attribution) ===");
                 for flow in &resp.recent_flows {
@@ -2253,9 +2245,9 @@ async fn cmd_doctor(simctl: &SimctlClient) -> Result<(), CliError> {
         booted
     );
 
-    // 3. iOS-only enforcement reminder (CLAUDE.md §9 #1).
+    // 3. iOS-only enforcement reminder.
     println!("ℹ smix supports iOS Simulator only — real-device automation is");
-    println!("  explicitly out of scope per CLAUDE.md §9.");
+    println!("  explicitly out of scope.");
 
     Ok(())
 }
@@ -2325,7 +2317,7 @@ mod tests {
 
     const UDID: &str = "5D087114-ECB3-443C-8DDB-40EEF9CFB90C";
 
-    // v1.0.14 Cluster B — tail_lines behavior lock-ins. Small chunk
+    // tail_lines behavior lock-ins. Small chunk
     // reads deliberately (not just 1 huge chunk) so the "read
     // backward in 8 KB chunks" logic is exercised for files smaller,
     // equal, and larger than one chunk.

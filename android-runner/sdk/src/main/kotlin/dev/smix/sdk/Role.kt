@@ -1,4 +1,4 @@
-// v7.4 c1 — Role enum mirrors Swift SmixSDK.Role + Rust smix-screen Role.
+// Role enum mirrors Swift SmixSDK.Role + Rust smix-screen Role.
 //
 // Wire form: lowercase camelCase ("button" / "textField" / etc.) per
 // Rust `#[serde(rename_all = "camelCase")]`.

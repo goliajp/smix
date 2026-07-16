@@ -1,4 +1,4 @@
-//! v3.2 c4 — generator tests for smix-recorder.
+//! Generator tests for smix-recorder.
 
 use smix_input::{KeyName, SwipeDirection};
 use smix_recorder::{RecordSession, generate_maestro_yaml, generate_rust};

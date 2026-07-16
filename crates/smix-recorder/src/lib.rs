@@ -1,9 +1,8 @@
 //! smix-recorder — host-side recorder for smix test sessions.
 //!
-//! Ported from now-retired TS sources (was `legacy/src/recorder/{session,generator-*,cleanup}.ts`, retired in v3.22).
 //! Cement crate, smix-specific (depends on smix-sdk's `App`).
 //!
-//! # Architecture (v2.0 c3 lock-in)
+//! # Architecture
 //!
 //! The user runs a test session against smix via [`smix_sdk::App`], but
 //! routes the calls through [`RecordingApp`] (a wrapper that delegates

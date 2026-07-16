@@ -1,7 +1,7 @@
-//! v3.31 c1 — `ResolverContext` pub + `resolve_selector_compiled` /
+//! `ResolverContext` + `resolve_selector_compiled` /
 //! `resolve_selector_all_compiled` API surface unit tests.
 //!
-//! Validates the four entry-point cases callers of the new pub API must
+//! Validates the four entry-point cases callers of the pub API must
 //! handle:
 //! 1. plain hit — non-regex `Pattern`, single tree match
 //! 2. regex hit — regex `Pattern`, single tree match (cache prepass

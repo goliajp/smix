@@ -1,7 +1,7 @@
 import FlyingFox
 import Foundation
 
-// v1.2 — runner-side keyboard input routes (/fill, /clear, /press-key).
+// Runner-side keyboard input routes (/fill, /clear, /press-key).
 // Wire shape mirrors TapRoute (single `selector.text` plain selector +
 // `text` / `key` payload). Body JSON only — no querystring. Response is
 // minimal `{"ok":<bool>}` envelope; success/notFound/badRequest envelopes
@@ -69,13 +69,12 @@ public enum KeyboardRoute {
     return PressKeyRequest(key: key)
   }
 
-  // R4.e (audit Low-19) — recognise the explicit `{focused: true}`
-  // base form alongside the legacy `{text: "_focused_"}` magic. Both
-  // resolve to the same internal `Selector(text: "_focused_")` value
-  // so existing handler logic (KeyboardCache hot path / focus-tap
-  // skip in tapHandler/fillHandler) keeps working unchanged. SDK
-  // consumers now post the new wire shape; legacy magic stays
-  // supported as a backward-compat anchor.
+  // Two wire forms target the focused element: the explicit
+  // `{focused: true}` form that SDK consumers post, and the older
+  // `{text: "_focused_"}` magic string, which stays supported. Both
+  // resolve to the same internal `Selector(text: "_focused_")` value,
+  // which is what the handler logic keys off (KeyboardCache hot path /
+  // focus-tap skip in tapHandler/fillHandler).
   private static func decodeSelector(_ root: [String: Any]) throws -> Selector {
     guard let selector = root["selector"] else { throw DecodeError.missingSelector }
     guard let selectorObj = selector as? [String: Any] else { throw DecodeError.wrongType("selector not object") }
@@ -92,7 +91,7 @@ public enum KeyboardRoute {
     return envelope(.ok, body)
   }
 
-  /// v1.2 C2 — success with stage timing (focus_ms = element resolve + focus
+  /// Success with stage timing (focus_ms = element resolve + focus
   /// tap latency; daemon_send_ms = `_XCT_sendString:` round-trip). Mirrors
   /// TapRoute.TapStages wire convention so SDK-side recordStageLine consumes
   /// both paths uniformly.
@@ -103,7 +102,7 @@ public enum KeyboardRoute {
     return envelope(.ok, body)
   }
 
-  /// v1.2 P2 — success with embedded post-action AX tree snapshot.
+  /// Success with an embedded post-action AX tree snapshot.
   /// `treeJsonBody` MUST be a valid JSON object (already serialized via
   /// TreeRoute.serialize); the route splices it inline. Saves the SDK
   /// one HTTP round-trip when an `expect` follows a fill/clear/pressKey.

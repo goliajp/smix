@@ -3,22 +3,21 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(html_root_url = "https://docs.smix.dev/smix-input")]
 
-//! Ported from now-retired TS source: `src/driver/types.ts:8-19`. Small wire-only types
-//! shared by smix-driver / smix-recorder-ir / smix-runner-client. Kept as
-//! a separate crate so cement (CLI / MCP / SDK / recorder) can depend on
-//! them without dragging in heavier driver / runner deps.
+//! Small wire-only types shared by smix-driver / smix-recorder-ir /
+//! smix-runner-client. Kept as a separate crate so cement (CLI / MCP /
+//! SDK / recorder) can depend on them without dragging in heavier
+//! driver / runner deps.
 
 use serde::{Deserialize, Serialize};
 
-/// Maestro yaml `direction:` semantic (per
-/// [[smix-must-be-superset-of-maestro]]): the direction names what
+/// Maestro yaml `direction:` semantic: the direction names what
 /// content the caller wants to **see** (navigation through content),
 /// NOT the finger gesture direction. `Down` = "navigate down through
 /// content" = reveal what's BELOW the current viewport (visually content
 /// moves up, finger gestures up). Mirrors maestro CLI `direction: DOWN`
 /// semantics.
 ///
-/// v6.11 c1 — name "SwipeDirection" predates the convention pin and now
+/// The name "SwipeDirection" predates this convention and now
 /// reads as a slight misnomer (the value is the *navigation* direction,
 /// not the *swipe gesture* direction). Renaming the enum would ripple
 /// across every adapter/driver/runner crate without semantic gain;
@@ -59,11 +58,11 @@ impl std::fmt::Display for SwipeDirection {
     }
 }
 
-/// Keyboard key name for `press_key` / `record` (camelCase serde 1:1 跟 TS).
+/// Keyboard key name for `press_key` / `record` (camelCase on the wire).
 ///
-/// Subset is intentional — these are the keys SDK users reliably exercise
-/// in iOS-sim contexts. Adding more is a c{N} discussion: arrow keys are
-/// here because focus-traversal flows need them (v1.5 c5g'').
+/// The subset is intentional — these are the keys SDK users reliably
+/// exercise in iOS-sim contexts. Arrow keys are included because
+/// focus-traversal flows need them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum KeyName {
@@ -86,16 +85,16 @@ pub enum KeyName {
     /// Right-arrow key — moves selection / focus / caret rightward.
     ArrowRight,
     /// iOS hardware Home button — XCUIDevice.shared.perform(.homeButton).
-    /// v5.2 c2 — maestro `pressKey: home` ↔ smix core KeyName 平铺。
+    /// Maps 1:1 to maestro `pressKey: home`.
     Home,
     /// iOS hardware Lock button — XCUIDevice.shared.perform(.lockButton).
-    /// v5.2 c2 — maestro `pressKey: lock` ↔ smix core KeyName 平铺。
+    /// Maps 1:1 to maestro `pressKey: lock`.
     Lock,
     /// iOS hardware Volume Up button — XCUIDevice.Button.volumeUp.
-    /// v5.2 c2 — maestro `pressKey: volume up` ↔ smix core KeyName 平铺。
+    /// Maps 1:1 to maestro `pressKey: volume up`.
     VolumeUp,
     /// iOS hardware Volume Down button — XCUIDevice.Button.volumeDown.
-    /// v5.2 c2 — maestro `pressKey: volume down` ↔ smix core KeyName 平铺。
+    /// Maps 1:1 to maestro `pressKey: volume down`.
     VolumeDown,
 }
 

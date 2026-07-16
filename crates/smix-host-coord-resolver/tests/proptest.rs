@@ -1,4 +1,4 @@
-//! v3.3 c5 — property-based tests for smix-host-coord-resolver.
+//! Property-based tests for smix-host-coord-resolver.
 //!
 //! Invariants:
 //! - `resolve_to_norm_coord` Ok result `(nx, ny)` always in `(0, 1)`.

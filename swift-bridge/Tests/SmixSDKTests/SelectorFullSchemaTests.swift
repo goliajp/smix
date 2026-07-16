@@ -1,5 +1,5 @@
-// v7.2 c3 — Selector full 7-case + Modifiers flatten + Pattern + fluent
-// chaining roundtrip + Rust-compatible wire shape tests.
+// Selector full 7-case + Modifiers flatten + Pattern + fluent chaining
+// roundtrip + Rust-compatible wire shape tests.
 
 import Foundation
 import XCTest

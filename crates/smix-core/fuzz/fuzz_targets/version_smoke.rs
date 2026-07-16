@@ -10,11 +10,11 @@
 //! will not gain a parser "port surface" — that would contradict the
 //! anchor-crate design. The A11yNode JSON-parse fuzz an earlier TODO
 //! speculated about already lives where the type does:
-//! `smix-screen/fuzz/fuzz_targets/a11y_node_parse.rs`. (v4.3 B1 decision:
-//! reject move/alias of `smix-screen::A11yNode` into smix-core — A11yNode
+//! `smix-screen/fuzz/fuzz_targets/a11y_node_parse.rs`. Moving or aliasing
+//! `smix-screen::A11yNode` into smix-core is deliberately rejected: A11yNode
 //! is a screen-layer type with 20+ stone dependents; moving it violates
 //! the thin-umbrella design for zero functional gain, and the parse fuzz
-//! is already correctly homed in its owning stone.)
+//! is already correctly homed in its owning stone.
 
 use libfuzzer_sys::fuzz_target;
 

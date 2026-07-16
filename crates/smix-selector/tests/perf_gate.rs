@@ -1,4 +1,4 @@
-#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive (test-optimize.md §2.4)
+#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive
 //! Perf gate for smix-selector `match_text`.
 //!
 //! Hard ceiling on the hot-path text matching primitives. Numbers reflect

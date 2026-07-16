@@ -1,4 +1,4 @@
-//! v3.3 c5 — property-based tests for smix-screen visibility primitives.
+//! Property-based tests for smix-screen visibility primitives.
 //!
 //! Geometric invariants the implementation must hold for any valid Rect:
 //! - `visible_area >= 0` always

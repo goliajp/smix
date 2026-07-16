@@ -9,7 +9,7 @@
 //
 // The sense layer does not act. Actions live in the crates that own
 // the affected surface — this crate is deliberately business-unaware
-// (it does not know what "iOS", "simulator", or "insight" mean).
+// (it does not know what "iOS" or "simulator" mean).
 //
 // State machine
 // -------------
@@ -71,8 +71,7 @@ pub struct SimHealthEvent {
     pub reason: HealthReason,
 }
 
-/// Config knobs. Defaults match the values in
-/// `.claude/rfcs/1.0.4-sim-health-and-backpressure.md` §D1.
+/// Config knobs.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct SimHealthConfig {

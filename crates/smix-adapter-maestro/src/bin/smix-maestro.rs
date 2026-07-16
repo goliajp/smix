@@ -100,8 +100,8 @@ async fn main() -> ExitCode {
                 no_launch,
                 platform: platform.to_flow(),
                 apps_config,
-                // Legacy smix-maestro binary uses defaults for the
-                // v0.2.0 fields; `smix run` in smix-cli exposes them.
+                // The legacy smix-maestro binary uses defaults for
+                // these fields; `smix run` in smix-cli exposes them.
                 env_vars: Vec::new(),
                 debug_output: None,
                 verbose: false,

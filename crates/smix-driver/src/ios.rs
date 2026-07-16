@@ -1,4 +1,4 @@
-//! v6.0 c1a — iOS `Driver` impl. Pure delegation layer onto the existing
+//! iOS `Driver` impl. Pure delegation layer onto the existing
 //! `IosDriver` (renamed from `SimctlDriver`) inherent methods in lib.rs.
 //!
 //! 26 trait methods → 26 1-line delegations. No new logic.
@@ -25,20 +25,20 @@ impl Driver for IosDriver {
         Some(self)
     }
 
-    /// v0.2.1 — iOS impl: mutate the wrapped `HttpRunnerClient` so every
+    /// iOS impl: mutate the wrapped `HttpRunnerClient` so every
     /// subsequent request carries the `App-Bundle-Id` header. Runner
     /// side rebinds `XCUIApplication(bundleIdentifier:)` per request.
     fn set_target_bundle_id(&mut self, bundle: &str) {
         self.runner_mut().set_target_bundle_id(bundle);
     }
 
-    /// v0.2.1 — iOS impl: mutate the wrapped client to send
+    /// iOS impl: mutate the wrapped client to send
     /// `App-Activate: true` on every request.
     fn set_auto_activate(&mut self, activate: bool) {
         self.runner_mut().set_auto_activate(activate);
     }
 
-    /// v1.0 Phase A7 — iOS impl: force key-event dispatch mode on the
+    /// iOS impl: force key-event dispatch mode on the
     /// wrapped client. Sends `Input-Dispatch-Mode: key-events` header
     /// on every request; runner-side dispatches via daemon key events
     /// instead of a11y-anchored XCUIElement.typeText.
@@ -50,7 +50,7 @@ impl Driver for IosDriver {
         }
     }
 
-    /// v1.0.3 — iOS impl: attach / clear the `Session-Id` header on
+    /// iOS impl: attach / clear the `Session-Id` header on
     /// every subsequent request. When set, the runner short-circuits
     /// per-request activation and reuses the session-cached
     /// XCUIApplication binding.

@@ -1,9 +1,8 @@
 import FlyingFox
 import Foundation
 
-// v1.4 ③-C1 (third restart) S3.a — `GET /system-popups` route. Per
-// CLAUDE.md §9 #8 + §12 (2026-05-20) popup sense is a smix core flat
-// capability (peer of /tree, /find, /tap, /fill). The runner UITest target
+// `GET /system-popups` route. Popup sense is a smix core flat capability
+// (peer of /tree, /find, /tap, /fill). The runner UITest target
 // enumerates SpringBoard alerts / sheets / dialogs into a list of
 // `Popup` POCOs (all Sendable so they flow across the actor boundary back
 // into the server); this enum owns the wire envelope serialization,
@@ -66,8 +65,8 @@ public enum SystemPopupsRoute {
     )
   }
 
-  /// v1.0.4 §D4 — 429 emitted when the per-session `/system-popups`
-  /// interval floor (500 ms) is not yet elapsed. Callers back off for
+  /// 429 emitted when the per-session `/system-popups` interval floor
+  /// (500 ms) is not yet elapsed. Callers back off for
   /// `retryAfterMs` then retry. Body carries the retry hint verbatim
   /// so consumers without a Retry-After parser still see the number.
   public static func tooManyRequests(retryAfterMs: Int) -> HTTPResponse {

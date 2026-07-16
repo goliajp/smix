@@ -16,8 +16,8 @@ import Foundation
 /// `XCUIApplication` binding tied to the session.
 ///
 /// Backward compatibility: absent `Session-Id` header falls through to
-/// the legacy per-request rebind path (as of v1.0.2, rate-limited to
-/// at most one `.activate()` per 5 s per bundle-id).
+/// the legacy per-request rebind path, which is rate-limited to at most
+/// one `.activate()` per 5 s per bundle-id.
 public enum SessionRoute {
   // -- open ---------------------------------------------------------------
 
@@ -129,20 +129,20 @@ public enum SessionRoute {
     return envelope(.ok, body)
   }
 
-  // -- v1.0.4 §D5 close-all ----------------------------------------------
+  // -- close-all ----------------------------------------------------------
 
   public static func closeAllResponse(closed: Int) -> HTTPResponse {
     let body = Data(#"{"ok":true,"closed":\#(closed)}"#.utf8)
     return envelope(.ok, body)
   }
 
-  // -- v1.0.7 §D5 diagnostic dump ----------------------------------------
+  // -- diagnostic dump ----------------------------------------------------
 
-  /// v1.0.10 §D5 / v1.0.11 §D1 — app-alive-cache observability counters
-  /// (subset of [`AppAliveCache.Counters`] transferred over the wire).
-  /// v1.0.11 §D1 — carries a `wired` sentinel so consumers can
-  /// distinguish "runner has no cache" from "cache present but no
-  /// activity" (both used to serialize as absent or all-zero).
+  /// App-alive-cache observability counters (subset of
+  /// [`AppAliveCache.Counters`] transferred over the wire). Carries a
+  /// `wired` sentinel so consumers can distinguish "runner has no cache"
+  /// from "cache present but no activity" — otherwise both look like
+  /// all-zero counters.
   public struct AliveCacheCounters: Equatable, Sendable {
     /// `true` when the runner was booted with an `AppAliveCache`. When
     /// `false`, the counter fields are always zero (sentinel-value
@@ -179,13 +179,13 @@ public enum SessionRoute {
     }
   }
 
-  /// v1.0.11 §D3/§D4/§D5 — cumulative session lifecycle counters.
-  /// Advance on every mutation, survive session close. Persisted to
+  /// Cumulative session lifecycle counters. Advance on every mutation,
+  /// survive session close. Persisted to
   /// `~/Documents/smix-session-counters.json`; rehydrated on runner
-  /// boot. Answers insight's v1.0.10 followup question "did the
-  /// clearAppData terminate go through the cooperative pathway or
-  /// fall back to a hard kill" via the split
-  /// `terminateAppViaXCUIApplication` / `terminateAppViaFallback`.
+  /// boot. The split `terminateAppViaXCUIApplication` /
+  /// `terminateAppViaFallback` answers "did the `clearAppData` terminate
+  /// go through the cooperative pathway or fall back to a hard kill",
+  /// which a single total cannot.
   public struct SessionLifecycleCounters: Equatable, Sendable {
     public let openedTotal: UInt64
     public let closedTotal: UInt64
@@ -196,7 +196,7 @@ public enum SessionRoute {
     public let launchAppTotal: UInt64
     public let launchAppReachedForeground: UInt64
     public let launchAppTimedOutBeforeForeground: UInt64
-    /// v1.0.15 Cluster C D1 — interactive fingerprint counters.
+    /// Interactive fingerprint counters.
     public let launchAppReachedInteractive: UInt64
     public let launchAppTimedOutBeforeInteractive: UInt64
     public init(
@@ -231,17 +231,16 @@ public enum SessionRoute {
     public let simHealth: String
     public let supervisorPid: UInt32?
     public let uptimeMs: UInt64
-    /// v1.0.11 §D1 — ALWAYS present (was optional pre-v1.0.11). The
-    /// `wired` field inside distinguishes "runner has no cache" from
-    /// "cache present but no activity".
+    /// ALWAYS present. The `wired` field inside distinguishes "runner
+    /// has no cache" from "cache present but no activity".
     public let aliveCache: AliveCacheCounters
-    /// v1.0.11 §D4/§D5 — cumulative counters that survive session close.
+    /// Cumulative counters that survive session close.
     public let sessionCounters: SessionLifecycleCounters
-    /// v1.0.19 — most-recent non-empty `interactiveNamedIds` sample
-    /// across all `launchApp` completions since runner boot. Survives
-    /// session teardown (unlike `sessions[n].interactiveNamedIds`,
-    /// which goes with the session at close). Enables post-mortem
-    /// batch triage — insight round-4 §Ask.
+    /// Most-recent non-empty `interactiveNamedIds` sample across all
+    /// `launchApp` completions since runner boot. Survives session
+    /// teardown (unlike `sessions[n].interactiveNamedIds`, which goes
+    /// with the session at close), which is what makes post-mortem batch
+    /// triage possible.
     public let lastInteractiveNamedIds: [String]
     public init(
       sessions: [SessionSummary],
@@ -283,7 +282,7 @@ public enum SessionRoute {
     s += #","aliveCache":{"wired":\#(c.wired),"markDeadTotal":\#(c.markDeadTotal),"markAliveTotal":\#(c.markAliveTotal),"suppressHitTotal":\#(c.suppressHitTotal),"suppressMissTotal":\#(c.suppressMissTotal),"reprobeAttemptedTotal":\#(c.reprobeAttemptedTotal),"reprobeSucceededTotal":\#(c.reprobeSucceededTotal),"reprobeInvalidatedEarly":\#(c.reprobeInvalidatedEarly),"reprobeExhaustedWindow":\#(c.reprobeExhaustedWindow)}"#
     let sc = snap.sessionCounters
     s += #","sessionCounters":{"openedTotal":\#(sc.openedTotal),"closedTotal":\#(sc.closedTotal),"relaunchAppTotal":\#(sc.relaunchAppTotal),"terminateAppTotal":\#(sc.terminateAppTotal),"terminateAppViaXCUIApplication":\#(sc.terminateAppViaXCUIApplication),"terminateAppViaFallback":\#(sc.terminateAppViaFallback),"launchAppTotal":\#(sc.launchAppTotal),"launchAppReachedForeground":\#(sc.launchAppReachedForeground),"launchAppTimedOutBeforeForeground":\#(sc.launchAppTimedOutBeforeForeground),"launchAppReachedInteractive":\#(sc.launchAppReachedInteractive),"launchAppTimedOutBeforeInteractive":\#(sc.launchAppTimedOutBeforeInteractive)}"#
-    // v1.0.19 — top-level last-observed interactiveNamedIds sample.
+    // Top-level last-observed interactiveNamedIds sample.
     var lastIdsPart = "["
     for (i, id) in snap.lastInteractiveNamedIds.enumerated() {
       if i > 0 { lastIdsPart += "," }
@@ -295,23 +294,22 @@ public enum SessionRoute {
     return envelope(.ok, Data(s.utf8))
   }
 
-  // -- v1.0.5 §D1 list ---------------------------------------------------
+  // -- list ---------------------------------------------------------------
 
   public struct SessionSummary: Equatable, Sendable {
     public let sessionId: String
     public let bundleId: String
     public let openedAtMs: UInt64
     public let lastActivatedAtMs: UInt64
-    /// v1.0.18 D1 — snapshot of `interactiveNamedIds` captured on the
-    /// most-recent successful `launchApp` for this session (empty when
-    /// the session's last launch didn't opt into `waitForInteractiveMs`
-    /// or when `reachedInteractive` was false).
+    /// Snapshot of `interactiveNamedIds` captured on the most-recent
+    /// successful `launchApp` for this session (empty when the session's
+    /// last launch didn't opt into `waitForInteractiveMs` or when
+    /// `reachedInteractive` was false).
     ///
     /// Persists across `smix diagnostic dump` calls so consumers can
-    /// tell WHICH ax-ids triggered `reachedInteractive` per launch —
-    /// not just the counter. Insight round-4 §"Smix ask": the counter
-    /// alone doesn't distinguish "probe fired on dev-bubble" from
-    /// "probe fired on splash-screen artifacts."
+    /// tell WHICH ax-ids triggered `reachedInteractive` per launch — the
+    /// counter alone doesn't distinguish "probe fired on dev-bubble"
+    /// from "probe fired on splash-screen artifacts".
     public let interactiveNamedIds: [String]
     public init(
       sessionId: String,
@@ -346,7 +344,7 @@ public enum SessionRoute {
     return envelope(.ok, Data(s.utf8))
   }
 
-  // -- v1.0.4 §D14 relaunch-app ------------------------------------------
+  // -- relaunch-app -------------------------------------------------------
 
   public struct RelaunchRequest: Equatable, Sendable {
     public let sessionId: String
@@ -366,16 +364,17 @@ public enum SessionRoute {
     return envelope(.ok, body)
   }
 
-  // -- v1.0.8 §D1 terminate-app / launch-app -----------------------------
+  // -- terminate-app / launch-app -----------------------------------------
 
-  /// v1.0.8 §D1 request body. v1.0.11 §D2 — extended with
-  /// launchArguments / launchEnvironment injection so callers can
-  /// steer scaffolding (e.g., Expo dev-launcher server picker) that
-  /// their app shows after `clearAppData` wipes persisted state. §D3 —
-  /// `waitForForegroundMs` opts the launch handler into a polling loop
-  /// on `XCUIApplication.state == .runningForeground` before returning.
-  /// v1.0.15 Cluster C D1 — `waitForInteractiveMs` opts into a
-  /// downstream interactive-fingerprint probe on the a11y tree.
+  /// Request body for the app lifecycle routes.
+  ///
+  /// `args` / `env` map to launchArguments / launchEnvironment injection
+  /// so callers can steer scaffolding (e.g., Expo dev-launcher server
+  /// picker) that their app shows after `clearAppData` wipes persisted
+  /// state. `waitForForegroundMs` opts the launch handler into a polling
+  /// loop on `XCUIApplication.state == .runningForeground` before
+  /// returning; `waitForInteractiveMs` opts into a downstream
+  /// interactive-fingerprint probe on the a11y tree.
   public struct AppLifecycleRequest: Equatable, Sendable {
     public let sessionId: String
     public let args: [String]
@@ -398,9 +397,8 @@ public enum SessionRoute {
   }
 
   public static func decodeAppLifecycle(_ body: Data) throws -> AppLifecycleRequest {
-    // v1.0.11 §D2/§D3 + v1.0.15 D1 — try full decode first; fall back
-    // to the pre-v1.0.11 shape (bare `sessionId`) so older clients
-    // still work.
+    // Try the full decode first; fall back to the legacy shape (bare
+    // `sessionId`) so older clients still work.
     struct FullBody: Decodable {
       let sessionId: String
       let args: [String]?

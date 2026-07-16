@@ -5,17 +5,16 @@
 //! smix-recorder-ir — IRAction (intermediate representation) +
 //! RecorderError + sort helper (stone, cold path).
 //!
-//! Ported from now-retired TS source: `src/recorder/ir.ts` (v2.0 c3 + v2.0 c4 cleanup
-//! failure reasons). Each [`IRAction`] is one user-visible side-effecting
-//! step in a recorded session; the IR feeds generator-smix-ts +
-//! generator-maestro-yaml dual output (c{N}+ port).
+//! Each [`IRAction`] is one user-visible side-effecting step in a
+//! recorded session; the IR feeds the generator-smix-ts +
+//! generator-maestro-yaml dual output.
 //!
-//! Scope note (TS v2.0 c3): IR is captured from the **smix API channel**
-//! (host-side instrumentation in `RecordSession`), not from sim-side AX
-//! notification swizzle. The swizzle path was dug in v2.0 c2/c3 S1 and
-//! confirmed unable to surface user-tap events from outside the smix API
-//! channel. "User taps sim screen manually with smix watching" is a
-//! separate architecture (v2.1 字面方向 paused — see docs/roadmap.md).
+//! Scope note: IR is captured from the **smix API channel** (host-side
+//! instrumentation in `RecordSession`), not from a sim-side AX
+//! notification swizzle. The swizzle path cannot surface user-tap events
+//! originating outside the smix API channel. "User taps sim screen
+//! manually with smix watching" is a separate architecture — see
+//! docs/roadmap.md.
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-recorder-ir")]
 
@@ -26,9 +25,9 @@ use std::fmt;
 
 /// One user-visible side-effecting step in a recorded session.
 ///
-/// Wire serializes as an externally-tagged enum keyed by `kind` (跟 TS
-/// `{ kind: 'tap', selector: ..., timestampMs: ... }` 1:1 — serde
-/// `tag = "kind", rename_all = "camelCase"` emits exactly the same shape).
+/// Wire serializes as an internally-tagged enum keyed by `kind`: serde
+/// `tag = "kind", rename_all = "camelCase"` emits
+/// `{ kind: 'tap', selector: ..., timestampMs: ... }`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum IRAction {
@@ -135,9 +134,9 @@ impl IRAction {
 
 // -------------------- RecorderError --------------------------------------
 
-/// Reasons a recorder session might fail. v2.0 c4 extended with three
-/// `cleanup-*` variants to surface claude-CLI AI-cleanup failures
-/// distinctly from the recording itself.
+/// Reasons a recorder session might fail. The `cleanup-*` variants
+/// surface claude-CLI AI-cleanup failures distinctly from failures of
+/// the recording itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RecorderErrorReason {

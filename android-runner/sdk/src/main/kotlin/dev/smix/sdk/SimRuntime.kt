@@ -1,8 +1,5 @@
-// v7.4 c2 — SmixSimRuntime interface + MockSimRuntime impl.
-// v7.4 c3 — extended with sendString + pressKey for App.fill/pressKey wire.
-// v7.4 c5 — extended with swipe / screenshot / systemPopups / openUrl /
-//   launchFresh / launchFromPath / synthesizeTapAtNormalized for full
-//   API parity with Swift v7.2 c1/c2/c5.
+// SmixSimRuntime interface + MockSimRuntime impl. Kept at full API
+// parity with the Swift SDK's runtime protocol.
 
 package dev.smix.sdk
 
@@ -18,8 +15,6 @@ interface SmixSimRuntime {
     suspend fun sendString(text: String)
     suspend fun pressKey(key: KeyName)
 
-    // v7.4 c5 additions ---------------------------------------------
-
     /** Cardinal swipe on the app's main view. */
     suspend fun swipe(direction: SwipeDirection)
 
@@ -33,8 +28,8 @@ interface SmixSimRuntime {
     suspend fun openUrl(url: String)
 
     /**
-     * Launch fresh with state clearing options (mirror Swift
-     * SmixSimRuntime.launchFresh from v7.2 c2):
+     * Launch fresh with state clearing options (mirrors Swift
+     * `SmixSimRuntime.launchFresh`):
      *   - [clearState]: wipe sandbox dirs (Documents / Library) before relaunch
      *   - [clearKeychain]: wipe keychain items for this bundle id
      *   - [appPath]: optional override (when reinstalling from a path)

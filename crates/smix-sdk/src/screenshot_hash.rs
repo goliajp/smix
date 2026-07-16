@@ -1,4 +1,4 @@
-//! v5.2 c6 — visual regression perceptual hash (crate-internal).
+//! Visual regression perceptual hash (crate-internal).
 //!
 //! Standard **dhash 64-bit** (difference hash): decode PNG → grayscale →
 //! resize 9×8 nearest-neighbor → row-wise left/right pixel diff → 64 bits.
@@ -6,19 +6,18 @@
 //! Algorithm intent: tolerate anti-aliasing / encoder metadata noise (where
 //! byte-equality always fails) but flag substantive visual changes. Industry
 //! standard for screenshot regression; maestro's BlinkDiff is in the same
-//! family. SSIM / full pHash deferred to v5.3+ (cold plan §c6 字面"完整算法
-//! 分 minor").
+//! family. SSIM / full pHash are not implemented.
 //!
-//! Threshold: hamming distance ≤ 5 = visually identical (v5.2 c6 hard-coded
-//! at adapter runtime layer; SDK pub fn opens `max_hamming` for v5.3+).
+//! Threshold: hamming distance ≤ 5 = visually identical (hard-coded at
+//! the adapter runtime layer; the SDK pub fn exposes `max_hamming`).
 
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 
 /// Compute the 64-bit dhash for a PNG byte stream.
 ///
 /// Returns `Err(DriverError)` if the PNG is malformed or the color type
-/// is outside `{Rgb, Rgba, Grayscale, GrayscaleAlpha}` (§13 explicit fail
-/// — no silent noop).
+/// is outside `{Rgb, Rgba, Grayscale, GrayscaleAlpha}` — an explicit
+/// failure, never a silent no-op.
 pub(crate) fn compute_dhash(png_bytes: &[u8]) -> Result<u64, ExpectationFailure> {
     let decoder = png::Decoder::new(png_bytes);
     let mut reader = decoder.read_info().map_err(|e| {

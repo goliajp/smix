@@ -1,4 +1,4 @@
-// v7.4 c1 — A11yNode + Rect mirror Rust smix-screen A11yNode + Swift
+// A11yNode + Rect mirror Rust smix-screen A11yNode + Swift
 // SmixSDK.A11yNode. Wire form via `@SerialName` matches Rust
 // `#[serde(rename_all = "camelCase")]`.
 

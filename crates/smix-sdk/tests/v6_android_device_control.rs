@@ -1,4 +1,4 @@
-//! v6.0 c2 — `AndroidDeviceControl` impl smoke. Verifies trait surface
+//! `AndroidDeviceControl` impl smoke. Verifies trait surface
 //! compiles + Box<dyn DeviceControl> can hold an Android impl. Live
 //! `adb` invocations are integration-tested under `#[ignore]` when an
 //! emulator is booted.

@@ -5,8 +5,8 @@ import CoreGraphics
 #endif
 @testable import SmixRunnerCore
 
-// v1.4 ③-C1 (see-through续修) — `POST /find?include=` and
-// `POST /tap?include=` scope forwarding + zero-regression anchor.
+// `POST /find?include=` and `POST /tap?include=` scope forwarding +
+// zero-regression anchor.
 //
 // Root cause: the see-through capture (`?include=all-windows`) was
 // wired into the /tree SnapshotHandler only. /find and /tap kept
@@ -23,7 +23,7 @@ import CoreGraphics
 // source to the see-through set. Unit-decidable in SmixRunnerCore (no
 // XCUI / no sim): drive the REAL `runForever` route via an IPv4 client on
 // a fixed free port, recording the scope each handler received, then
-// `POST /shutdown` for a clean graceful stop (the v1.4 C3 path).
+// `POST /shutdown` for a clean graceful stop.
 final class FindTapScopeForwardTests: XCTestCase {
 
   private func freePort() async throws -> UInt16 {

@@ -1,5 +1,5 @@
-#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive (test-optimize.md §2.4)
-//! v3.3 c2 — perf gate for smix-host-coord-resolver.
+#![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive
+//! Perf gate for smix-host-coord-resolver.
 //!
 //! End-to-end resolve_to_norm_coord budget. Sits on top of
 //! smix-selector-resolver (~1 μs text-100-node-hit) + 1 centroid + 1

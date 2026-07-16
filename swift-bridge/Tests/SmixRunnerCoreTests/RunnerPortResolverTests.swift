@@ -1,16 +1,16 @@
 import XCTest
 @testable import SmixRunnerCore
 
-// R5.b (audit Med-11) — RunnerPortResolver: read SMIX_RUNNER_PORT env and
-// resolve to the HTTP port the runner binds on. Empty/missing → default
-// 22087 (matches DEFAULT_RUNNER_PORT in src/sim/cell.ts). Non-integer or
-// out-of-range → fallback to default (fail-closed; same shape as the
-// other resolvers).
+// RunnerPortResolver: read SMIX_RUNNER_PORT env and resolve to the HTTP
+// port the runner binds on. Empty/missing → default 22087 (matches
+// DEFAULT_RUNNER_PORT in src/sim/cell.ts). Non-integer or out-of-range →
+// fallback to default (fail-closed; same shape as the other resolvers).
 //
-// Pre-R5.b the runner hard-coded `runForever(port: 22087)`, so cell-pool
-// N>1 (allocating DEFAULT_RUNNER_PORT + i per cell) had no way to inform
-// the swift runner which port to bind. Every cell collided on 22087 → the
-// pool concurrency was structurally broken at the wire level.
+// The port must be env-driven: a cell pool of N>1 allocates
+// DEFAULT_RUNNER_PORT + i per cell, and with a hard-coded
+// `runForever(port: 22087)` there would be no way to tell the swift runner
+// which port to bind. Every cell would collide on 22087, breaking pool
+// concurrency at the wire level.
 
 final class RunnerPortResolverTests: XCTestCase {
   func test_emptyEnv_returnsDefault() {

@@ -1,7 +1,7 @@
 import XCTest
 @testable import SmixIndigoHID
 
-/// C5 — version-dispatch decision table for `ChannelDispatcher.decide(...)`.
+/// Version-dispatch decision table for `ChannelDispatcher.decide(...)`.
 /// Pure function — zero IO, zero dlsym.
 final class ChannelDispatcherTests: XCTestCase {
 
@@ -54,7 +54,7 @@ final class ChannelDispatcherTests: XCTestCase {
     XCTAssertEqual(d, .init(channel: .digitizer, warning: nil))
   }
 
-  // MARK: - RuntimeVersion identifier parsing (defensive — used by C6 callers)
+  // MARK: - RuntimeVersion identifier parsing
 
   func test_runtimeVersion_init_identifier_parses_iOS_26_4() {
     let v = ChannelDispatcher.RuntimeVersion(

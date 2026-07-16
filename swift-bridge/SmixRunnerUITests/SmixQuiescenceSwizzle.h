@@ -1,8 +1,10 @@
-// v1.6 c3 — disable Apple auto-quiescence wait for RN apps with continuous
-// animation. 跟 maestro `cli-2.2.0` `XCUIApplicationProcess+FBQuiescence.m`
-// 同源 (FBWaitForIdleTimeout=0 默认即 effective no-op return).
+// Disables Apple's automatic quiescence wait, which otherwise stalls on
+// apps with continuous animation. Mirrors maestro `cli-2.2.0`'s
+// `XCUIApplicationProcess+FBQuiescence.m` (where FBWaitForIdleTimeout=0
+// defaults to an effective no-op return).
 //
-// Header-only declaration; implementation 全在 .m + `+load`.
+// Header-only declaration; the implementation lives entirely in the .m
+// behind `+load`.
 
 #import <Foundation/Foundation.h>
 

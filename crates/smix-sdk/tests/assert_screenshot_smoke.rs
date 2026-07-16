@@ -1,4 +1,5 @@
-//! v5.2 c6 — `assert_screenshot_inner` 纯函数 smoke 测 (host-side, no App).
+//! Pure-function smoke tests for `assert_screenshot_inner` (host-side,
+//! no App).
 //!
 //! Strict-mode env handling and dhash match-vs-mismatch lifecycle covered
 //! here; full Adapter end-to-end covered in adapter `tests/runtime_mock.rs`.

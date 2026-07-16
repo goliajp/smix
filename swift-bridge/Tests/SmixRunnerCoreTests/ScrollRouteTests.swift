@@ -19,8 +19,8 @@ final class ScrollRouteTests: XCTestCase {
   }
 
   // case I: decode direction not in {up,down,left,right} → DecodeError
-  // v6.10 c1 — left/right are now accepted; use a non-direction string
-  // to retain the negative-path assertion.
+  // left/right are accepted, so the negative path needs a string that is
+  // not a direction at all.
   func test_decode_invalidDirection_throws() {
     let body = Data(#"{"selector":{"text":"X"},"direction":"diagonal"}"#.utf8)
     XCTAssertThrowsError(try ScrollRoute.decode(body)) { error in
@@ -28,8 +28,8 @@ final class ScrollRouteTests: XCTestCase {
     }
   }
 
-  // v6.10 c1 — direction "left" / "right" decode happy path (was
-  // structurally rejected pre-v6.10; cli docs already advertise them).
+  // direction "left" / "right" decode happy path — both are advertised
+  // by the cli docs, so the runner must accept them.
   func test_decode_left_direction_accepted() throws {
     let body = Data(#"{"selector":{"text":"X"},"direction":"left"}"#.utf8)
     let req = try ScrollRoute.decode(body)

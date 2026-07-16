@@ -5,10 +5,10 @@ import CoreGraphics
 #endif
 @testable import SmixRunnerCore
 
-// v1.4 ③-C1 (third restart) S3.a — `GET /system-popups` route + scope
-// forward + guarded fallback. Following CLAUDE.md §9 #8 + §12 (2026-05-20
-// landed) the popup-sense capability is a smix core flat route (peer of
-// /find, /tap, /tree, /fill); the runner exposes it via a handler that
+// `GET /system-popups` route + scope forward + guarded fallback.
+// Sensing capabilities belong to smix core as flat routes rather than being
+// buried inside a driver, so popup-sense is a peer of /find, /tap, /tree
+// and /fill; the runner exposes it via a handler that
 // returns a structured `[SystemPopupsRoute.Popup]` list, and the route
 // serializes the envelope. Unit-decidable in SmixRunnerCore (no XCUI / no
 // sim): drive the REAL `runForever` route via an IPv4 client on a fixed
@@ -301,7 +301,7 @@ final class SystemPopupsRouteTests: XCTestCase {
     await shutdown(port, runTask)
   }
 
-  // v1.4 ③-C1 S3.a' — bound-app modal extension. The runner now enumerates
+  // Bound-app modal extension. The runner enumerates
   // not only SpringBoard alerts / sheets / dialogs but also the bound-app's
   // own alert / sheet / dialog / popover (the structural iOS modal types).
   // Wire layer must accept the new `popover` type verbatim and an in-app
@@ -452,10 +452,9 @@ final class SystemPopupsRouteTests: XCTestCase {
     await shutdown(port, runTask)
   }
 
-  // v1.4 ③-C1 S3.a' phase 2 — bound-app NON-main-window extension. The
-  // first iteration covered the four iOS standard modal types
-  // (alert/sheet/dialog/popover); a RN custom overlay such as
-  // expo-dev-menu is NOT typed as any of them — it renders as a separate
+  // Bound-app NON-main-window extension. Enumerating the four iOS standard
+  // modal types (alert/sheet/dialog/popover) is not enough: a RN custom
+  // overlay such as expo-dev-menu is NOT typed as any of them — it renders as a separate
   // non-main bound-app window (XCUIElement.ElementType.window) which the
   // type-keyed enumeration missed. The runner therefore additionally
   // enumerates `app.windows.allElementsBoundByIndex` skipping index 0

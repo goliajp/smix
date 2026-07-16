@@ -34,8 +34,9 @@ id SmixGetCustomA11yParameter(NSString *name) {
 static id swizzledDefaultParameters(id self, SEL _cmd) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-      // original 只在第一次实际调用时 capture (XCTest framework 初始化后),
-      // 不是 +load 时 — 此时 XCAXClient_iOS 内部 Apple 默认还没 finalize.
+      // Capture the originals on the first real call (i.e. after the XCTest
+      // framework has initialized) rather than at +load time: at +load
+      // XCAXClient_iOS has not yet finalized Apple's internal defaults.
       defaultRequestParameters = original_defaultParameters(self, _cmd);
     });
     NSMutableDictionary *result =
@@ -61,10 +62,12 @@ static id swizzledSnapshotParameters(id self, SEL _cmd) {
 #pragma clang diagnostic ignored "-Wcast-function-type-strict"
 
 + (void)load {
-    // dyld 阶段触发, 早于 XCTest framework 初始化. NSClassFromString 动态查 —
-    // 如 XCAXClient_iOS 尚未注册 (XCTAutomationSupport.dylib 未 load), silent
-    // skip 不破坏 (后续 +load order 由 dyld 保证: XCTest UITest target 必 link
-    // XCTAutomationSupport, 此 +load 跑时 class 已存).
+    // Runs during the dyld phase, before the XCTest framework initializes.
+    // NSClassFromString looks the class up dynamically: if XCAXClient_iOS is
+    // not registered yet (XCTAutomationSupport.dylib not loaded), this
+    // silently skips without breaking anything. In practice dyld's +load
+    // ordering guarantees the class exists by the time this runs, because a
+    // UITest target always links XCTAutomationSupport.
 
     SmixSetCustomA11yParameter(@"snapshotKeyHonorModalViews", @0);
 

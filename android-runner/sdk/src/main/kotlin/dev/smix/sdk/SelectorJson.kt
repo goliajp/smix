@@ -1,6 +1,5 @@
-// v7.4 c2 — Selector wire JSON encoding helpers.
-// v7.4 c4 — switched to SelectorSerializer (handles 7 case + Modifiers
-// flatten + Pattern). Single entry point replaces per-case branching.
+// Selector wire JSON encoding helpers. SelectorSerializer (7 cases +
+// Modifiers flatten + Pattern) is the single entry point.
 
 package dev.smix.sdk
 
@@ -9,7 +8,7 @@ import kotlinx.serialization.json.Json
 /**
  * Encode a [Selector] to its Rust-compatible untagged JSON wire shape
  * with [Modifiers] / [IndexModifiers] flattened. Powered by
- * [SelectorSerializer] (c4).
+ * [SelectorSerializer].
  */
 internal fun encodeSelectorJson(selector: Selector): String =
     Json.encodeToString(SelectorSerializer, selector)

@@ -1,8 +1,7 @@
-// v7.4 c5 — App act/sense extension mock-based unit tests.
+// App act/sense extension mock-based unit tests.
 //
-// Mirror swift-bridge/Tests/SmixSDKTests/AppSwipeScreenshotMockTests.swift +
-// AppSenseExtMockTests.swift + AppTapAtCoordAndAppPathMockTests.swift
-// (Swift v7.2 c1+c2+c5).
+// Mirrors swift-bridge/Tests/SmixSDKTests/AppSwipeScreenshotMockTests.swift +
+// AppSenseExtMockTests.swift + AppTapAtCoordAndAppPathMockTests.swift.
 
 package dev.smix.sdk
 

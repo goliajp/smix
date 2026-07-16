@@ -1,7 +1,7 @@
 import XCTest
 @testable import SmixIndigoHID
 
-/// C5 — wire-stable JSON schema for `ChannelProbeReport`. The byte sequence
+/// Wire-stable JSON schema for `ChannelProbeReport`. The byte sequence
 /// is the contract with `src/cli/commands/doctor.ts` `JSON.parse`, so any
 /// drift here breaks `smix doctor`.
 final class ChannelProbeReportTests: XCTestCase {

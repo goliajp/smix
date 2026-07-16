@@ -5,7 +5,7 @@ import CoreGraphics
 #endif
 @testable import SmixRunnerCore
 
-/// v1.2 C2 — /tree response carries size + node count as HTTP response
+/// /tree response carries size + node count as HTTP response
 /// headers (`X-Tree-Size-Bytes`, `X-Tree-Node-Count`). JSON body shape
 /// is unchanged so legacy A11yNode consumers stay byte-identical; new SDK
 /// reads the headers for hot-spot instrumentation.

@@ -1,4 +1,4 @@
-//! v6.0 c1b — iOS `DeviceControl` impl backed by `SimctlClient`.
+//! iOS `DeviceControl` impl backed by `SimctlClient`.
 //!
 //! Owns the active recording handle internally (`Mutex<Option<RecordingHandle>>`)
 //! so the trait surface stays platform-agnostic. App no longer holds
@@ -99,20 +99,20 @@ impl DeviceControl for IosDeviceControl {
         self.client.keychain_reset(udid).await
     }
 
-    /// v1.0.4 §D12 — reset all privacy grants for the bundle via
+    /// Reset all privacy grants for the bundle via
     /// `simctl privacy <udid> reset all <bundle-id>`.
     async fn privacy_reset_all(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
         self.client.privacy_reset_all(udid, bundle_id).await
     }
 
-    /// v1.0.4 §D12 — wipe the app's sandbox (`Documents/`, `Library/`,
+    /// Wipe the app's sandbox (`Documents/`, `Library/`,
     /// `tmp/`) via `simctl spawn <udid> rm -rf` under the app's
     /// Containers/Data path. Preserves XCUITest binding.
     async fn clear_app_sandbox(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
         self.client.clear_app_sandbox(udid, bundle_id).await
     }
 
-    /// v1.0.27 — per-key NSUserDefaults deletion via
+    /// Per-key NSUserDefaults deletion via
     /// `simctl spawn defaults delete`. See [`SimctlClient::user_defaults_delete`].
     async fn user_defaults_delete(
         &self,
@@ -209,7 +209,7 @@ impl DeviceControl for IosDeviceControl {
         let mut guard = self.recording.lock().await;
         if guard.is_some() {
             // Caller must stop the existing one first; surface via SimctlError
-            // (App layer will translate to ExpectationFailure with hint per §13).
+            // (the App layer translates this to an ExpectationFailure with a hint).
             return Err(SimctlError::non_zero_exit(
                 "io recordVideo",
                 -1,

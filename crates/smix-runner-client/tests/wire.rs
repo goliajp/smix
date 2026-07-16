@@ -1,4 +1,4 @@
-//! v3.1 c8 — wiremock-based wire-level integration tests for HttpRunnerClient.
+//! Wiremock-based wire-level integration tests for HttpRunnerClient.
 //!
 //! Verifies URL shape + query params + request body + response parsing
 //! 1:1 with the TS runner-client. Not real-sim — real-sim binding lives
@@ -316,8 +316,8 @@ async fn record_start_stop_polls_drain_events() {
     assert!(polled.is_empty());
     let final_events = client.stop_record().await.unwrap();
     assert_eq!(final_events.len(), 1);
-    // v5.1 c3 S2 — 字段名校正 `code` → `raw_code`(serde camelCase → `rawCode`)
-    // 对齐 swift `EventRecorder` 真实 emit 的 schema。
+    // The field is `raw_code` (serde camelCase → `rawCode`), matching
+    // the schema the Swift `EventRecorder` actually emits.
     assert_eq!(final_events[0].raw_code, 1021);
 }
 
@@ -337,7 +337,7 @@ async fn non_2xx_returns_non_success_status_error() {
     assert!(msg.contains("503"), "got: {msg}");
 }
 
-// -------------------- v1.0.3 session lifecycle -------------------------
+// -------------------- session lifecycle --------------------------------
 
 use smix_runner_client::{SessionCloseRequest, SessionOpenRequest, SessionRenewActivationRequest};
 use wiremock::matchers::header;
@@ -496,7 +496,7 @@ async fn health_detail_tolerates_legacy_empty_body() {
     assert_eq!(resp.runner_version, "");
 }
 
-// ---- v1.0.4 sim-health feed -------------------------------------------
+// ---- sim-health feed --------------------------------------------------
 
 #[tokio::test]
 async fn sim_health_receives_health_ok_from_bare_probe() {

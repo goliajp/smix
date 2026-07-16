@@ -3,7 +3,8 @@ import FlyingFox
 import FlyingSocks
 @testable import SmixRunnerCore
 
-/// v1.2 C1 — Runner port localhost-only invariant (#3).
+/// The runner port is bound to localhost only — it must never be reachable
+/// from another host.
 ///
 /// `FlyingFox.HTTPServer(port:)` default binds IPv6 wildcard `::` (= all
 /// interfaces). Any LAN host could then GET /tree to read the SUT a11y tree
@@ -39,16 +40,16 @@ final class SmixRunnerServerBindTest: XCTestCase {
     switch addr {
     case .ip4(let ip, _):
       XCTAssertEqual(ip, "127.0.0.1",
-        "bind must be IPv4 loopback (127.0.0.1), got \(ip). v1.2 invariant #3.")
+        "bind must be IPv4 loopback (127.0.0.1), got \(ip). The runner must be loopback-only.")
     case .ip6(let ip, _):
       XCTAssertEqual(ip, "::1",
-        "bind must be IPv6 loopback (::1), got \(ip). v1.2 invariant #3.")
+        "bind must be IPv6 loopback (::1), got \(ip). The runner must be loopback-only.")
     case .unix:
       XCTFail("unexpected unix socket bind for Runner port")
     }
   }
 
-  /// Regression gate for v1.2 C2 bench failure: the bind-only test passes
+  /// Regression gate: the bind-only test passes
   /// when the server binds IPv6 ::1, but SDK RunnerClient connects via
   /// IPv4 127.0.0.1 — these are separate kernel addresses, so the bench
   /// fails to reach the runner. This test verifies an actual IPv4 client
@@ -86,7 +87,7 @@ final class SmixRunnerServerBindTest: XCTestCase {
       _ = data
     } catch {
       XCTFail("IPv4 client (127.0.0.1) failed to connect: \(error). " +
-        "Server bind address probably IPv6-only — v1.2 invariant #3 broken in practice.")
+        "Server bind address probably IPv6-only — loopback-only is satisfied but IPv4 clients are locked out.")
     }
 
     await server.stop(timeout: 0.5)

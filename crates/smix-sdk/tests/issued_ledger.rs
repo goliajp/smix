@@ -1,9 +1,12 @@
-//! v5.1 c3 S1 — issued-action 账本单元测。
+//! Issued-action ledger unit tests.
 //!
-//! Capsule 软胶囊 G angle ground truth proxy 由两件事拼起:UITest runner 的
-//! EventRecorder 抓 1018 焦点变化(swift 端,已 wired),SDK 端记每次 issued
-//! act 的 timestamp + 类型。本测试钉 SDK 端账本契约:LRU 1024 + record/clear
-//! 不漏不重复 + 三个便捷入口生成对应 `IssuedKind`。
+//! The ground-truth proxy for detecting user interference is assembled
+//! from two halves: the UITest runner EventRecorder catching 1018 focus
+//! changes (Swift side, already wired), and the SDK recording a
+//! timestamp + kind for every issued act. These tests pin the SDK-side
+//! ledger contract: LRU 1024, record/clear neither dropping nor
+//! duplicating entries, and the three convenience entry points emitting
+//! the matching `IssuedKind`.
 
 use smix_sdk::{IssuedAction, IssuedKind, IssuedLedger};
 
