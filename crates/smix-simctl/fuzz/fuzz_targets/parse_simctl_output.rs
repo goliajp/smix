@@ -5,7 +5,7 @@
 //! `SimctlClient::launch` (`crates/smix-simctl/src/lib.rs:355`). Apple
 //! bumps both surfaces quietly between Xcode releases; deserialization
 //! and stdout parsing must reject malformed input without panicking so a
-//! future shape change degrades to a `SimctlError::Malformed` rather than
+//! future shape change degrades to a `DeviceControlError::Malformed` rather than
 //! a host-side abort.
 //!
 //! The launch-stdout arm mirrors the inline parser shape (not a

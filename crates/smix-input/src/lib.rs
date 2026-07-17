@@ -3,7 +3,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![doc(html_root_url = "https://docs.smix.dev/smix-input")]
 
-//! Small wire-only types shared by smix-driver / smix-recorder-ir /
+//! Small wire-only types shared by smix-driver / smix-authoring-ir /
 //! smix-runner-client. Kept as a separate crate so cement (CLI / MCP /
 //! SDK / recorder) can depend on them without dragging in heavier
 //! driver / runner deps.

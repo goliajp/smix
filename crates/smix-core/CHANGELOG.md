@@ -10,5 +10,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial public release. Workspace anchor + version sentinel; the actual
 sense / decide / act primitives live in dedicated stones (`smix-screen`,
 `smix-selector`, `smix-selector-resolver`, `smix-host-coord-resolver`,
-`smix-simctl`, `smix-input`, `smix-error`, `smix-recorder-ir`,
+`smix-simctl`, `smix-input`, `smix-error`, `smix-authoring-ir`,
 `smix-runner-wire`).

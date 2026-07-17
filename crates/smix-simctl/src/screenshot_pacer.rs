@@ -98,7 +98,7 @@ impl ScreenshotPacer {
     ///
     /// Returns `Err(retry_after)` when the circuit is open — the
     /// caller is expected to translate this into
-    /// `SimctlError::CaptureBackpressure { retry_after }`.
+    /// `DeviceControlError::CaptureBackpressure { retry_after }`.
     pub fn compute_wait(&mut self) -> Result<Duration, Duration> {
         let now = Instant::now();
 

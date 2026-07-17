@@ -31,16 +31,14 @@ use tokio::time::sleep;
 
 /// Failure variants for a device-control invocation.
 ///
-/// Named for `xcrun simctl`, which is where it started, but
-/// `AndroidDeviceControl` raises it too — `DeviceControl` is one trait across
-/// both platforms and this is its error type. So the messages name the
-/// command that actually ran rather than assuming simctl; an Android failure
-/// claiming to come from `xcrun simctl` sends the reader to the wrong
-/// toolchain. (The type's own name is misleading and wants renaming, but that
-/// reaches every caller — it belongs with the v2 breaking changes.)
+/// `DeviceControl` is one trait across iOS and Android, and this is its error
+/// type — `AndroidDeviceControl` raises it as much as the simctl path does.
+/// The messages name the command that actually ran rather than assuming
+/// simctl, so an Android failure does not send the reader to the wrong
+/// toolchain by claiming to come from `xcrun simctl`.
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum SimctlError {
+pub enum DeviceControlError {
     /// Failed to spawn the device-control process (PATH lookup / fork failure).
     #[error("spawn failed: {0}")]
     Spawn(#[from] io::Error),
@@ -103,9 +101,9 @@ pub enum SimctlError {
     },
 }
 
-impl SimctlError {
+impl DeviceControlError {
     /// Synthetic `NonZeroExit` for callers translating a foreign
-    /// subprocess error into `SimctlError` (e.g.
+    /// subprocess error into `DeviceControlError` (e.g.
     /// AndroidDeviceControl adapting adb failures). Fills
     /// `argv = [subcommand]` + `wall_ms = 0`; when the caller has a
     /// real argv, prefer the struct literal.
@@ -900,7 +898,7 @@ pub fn recent_subprocesses() -> Vec<SubprocessRecord> {
 // -------------------- raw spawn primitive --------------------------------
 
 /// Execute `xcrun simctl <args>` and capture stdout/stderr.
-async fn simctl_capture(args: &[&str]) -> Result<(Vec<u8>, String), SimctlError> {
+async fn simctl_capture(args: &[&str]) -> Result<(Vec<u8>, String), DeviceControlError> {
     simctl_capture_env(args, &[]).await
 }
 
@@ -913,7 +911,7 @@ async fn simctl_capture(args: &[&str]) -> Result<(Vec<u8>, String), SimctlError>
 async fn simctl_capture_env(
     args: &[&str],
     env: &[(String, String)],
-) -> Result<(Vec<u8>, String), SimctlError> {
+) -> Result<(Vec<u8>, String), DeviceControlError> {
     let mut cmd = Command::new("xcrun");
     cmd.arg("simctl");
     for a in args {
@@ -945,7 +943,7 @@ async fn simctl_capture_env(
         timestamp: std::time::SystemTime::now(),
     });
     if !output.status.success() {
-        return Err(SimctlError::NonZeroExit {
+        return Err(DeviceControlError::NonZeroExit {
             subcommand: args.first().map(|s| s.to_string()).unwrap_or_default(),
             argv: std::iter::once("xcrun".to_string())
                 .chain(std::iter::once("simctl".to_string()))
@@ -959,7 +957,7 @@ async fn simctl_capture_env(
     Ok((output.stdout, stderr))
 }
 
-async fn simctl_run(args: &[&str]) -> Result<String, SimctlError> {
+async fn simctl_run(args: &[&str]) -> Result<String, DeviceControlError> {
     let (stdout, _) = simctl_capture(args).await?;
     Ok(String::from_utf8_lossy(&stdout).into_owned())
 }
@@ -967,7 +965,7 @@ async fn simctl_run(args: &[&str]) -> Result<String, SimctlError> {
 /// Like [`simctl_run`] but injects `child_env` envp on the spawned
 /// process. Used by the env-aware launch path so the launched app can
 /// read deploy-time secrets / endpoints via `ProcessInfo`.
-async fn simctl_run_env(args: &[&str], env: &[(String, String)]) -> Result<String, SimctlError> {
+async fn simctl_run_env(args: &[&str], env: &[(String, String)]) -> Result<String, DeviceControlError> {
     let (stdout, _) = simctl_capture_env(args, env).await?;
     Ok(String::from_utf8_lossy(&stdout).into_owned())
 }
@@ -1078,7 +1076,7 @@ impl SimctlClient {
     // ---- inventory ------------------------------------------------------
 
     /// `xcrun simctl list runtimes -j` → `Vec<SimctlRuntime>`.
-    pub async fn list_runtimes(&self) -> Result<Vec<SimctlRuntime>, SimctlError> {
+    pub async fn list_runtimes(&self) -> Result<Vec<SimctlRuntime>, DeviceControlError> {
         let raw = simctl_run(&["list", "runtimes", "-j"]).await?;
         #[derive(Deserialize)]
         struct Wrap {
@@ -1092,7 +1090,7 @@ impl SimctlClient {
             #[serde(rename = "isAvailable", default)]
             is_available: bool,
         }
-        let w: Wrap = serde_json::from_str(&raw).map_err(|e| SimctlError::Malformed {
+        let w: Wrap = serde_json::from_str(&raw).map_err(|e| DeviceControlError::Malformed {
             subcommand: "list runtimes".into(),
             detail: e.to_string(),
         })?;
@@ -1108,7 +1106,7 @@ impl SimctlClient {
     }
 
     /// `xcrun simctl list devices -j` → flattened `Vec<SimctlDevice>`.
-    pub async fn list_devices(&self) -> Result<Vec<SimctlDevice>, SimctlError> {
+    pub async fn list_devices(&self) -> Result<Vec<SimctlDevice>, DeviceControlError> {
         let raw = simctl_run(&["list", "devices", "-j"]).await?;
         #[derive(Deserialize)]
         struct Wrap {
@@ -1124,7 +1122,7 @@ impl SimctlClient {
             #[serde(rename = "deviceTypeIdentifier", default)]
             device_type_identifier: String,
         }
-        let w: Wrap = serde_json::from_str(&raw).map_err(|e| SimctlError::Malformed {
+        let w: Wrap = serde_json::from_str(&raw).map_err(|e| DeviceControlError::Malformed {
             subcommand: "list devices".into(),
             detail: e.to_string(),
         })?;
@@ -1147,13 +1145,13 @@ impl SimctlClient {
     // ---- lifecycle ------------------------------------------------------
 
     /// `xcrun simctl boot <udid>` — fire-and-forget boot request.
-    pub async fn boot(&self, udid: &str) -> Result<(), SimctlError> {
+    pub async fn boot(&self, udid: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["boot", udid]).await?;
         Ok(())
     }
 
     /// `xcrun simctl shutdown <udid>`.
-    pub async fn shutdown(&self, udid: &str) -> Result<(), SimctlError> {
+    pub async fn shutdown(&self, udid: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["shutdown", udid]).await?;
         Ok(())
     }
@@ -1164,13 +1162,13 @@ impl SimctlClient {
     /// Wire format: `simctl spawn <udid> defaults read -g AppleLanguages`
     /// stdout looks like `"(\n    \"en-US\"\n)\n"`; we extract the first
     /// quoted token.
-    pub async fn current_locale(&self, udid: &str) -> Result<Option<String>, SimctlError> {
+    pub async fn current_locale(&self, udid: &str) -> Result<Option<String>, DeviceControlError> {
         let out =
             match simctl_run(&["spawn", udid, "/usr/bin/defaults", "read", "-g", "AppleLanguages"]).await {
                 Ok(s) => s,
                 // `defaults read` returns non-zero when the key is unset; that
                 // is a legitimate "no opinion" state, not an error.
-                Err(SimctlError::NonZeroExit { .. }) => return Ok(None),
+                Err(DeviceControlError::NonZeroExit { .. }) => return Ok(None),
                 Err(e) => return Err(e),
             };
         // First quoted substring.
@@ -1194,7 +1192,7 @@ impl SimctlClient {
     /// `Ok(false)` when the key (or the whole domain) was absent —
     /// the verb contract is "ensure key absent", so an already-absent
     /// key is success, not an error. Any other failure surfaces as
-    /// the underlying [`SimctlError`].
+    /// the underlying [`DeviceControlError`].
     ///
     /// Motivating case: expo-dev-launcher
     /// persists the most recent deep link and re-delivers it after
@@ -1208,7 +1206,7 @@ impl SimctlClient {
         udid: &str,
         bundle_id: &str,
         key: &str,
-    ) -> Result<bool, SimctlError> {
+    ) -> Result<bool, DeviceControlError> {
         match simctl_run(&[
             "spawn",
             udid,
@@ -1223,7 +1221,7 @@ impl SimctlClient {
             // `defaults delete` exits non-zero with "does not exist"
             // on stderr for both a missing key and a missing domain.
             // Both are the target state.
-            Err(SimctlError::NonZeroExit { stderr, .. })
+            Err(DeviceControlError::NonZeroExit { stderr, .. })
                 if stderr.contains("does not exist") =>
             {
                 Ok(false)
@@ -1238,7 +1236,7 @@ impl SimctlClient {
     /// (`en_US`); AppleLanguages is the BCP-47 tag verbatim.
     /// **The caller must shutdown + reboot the sim for the change to
     /// take effect** — running apps cache the locale at process start.
-    pub async fn set_locale(&self, udid: &str, locale: &str) -> Result<(), SimctlError> {
+    pub async fn set_locale(&self, udid: &str, locale: &str) -> Result<(), DeviceControlError> {
         simctl_run(&[
             "spawn",
             udid,
@@ -1268,7 +1266,7 @@ impl SimctlClient {
     /// 500 ms until success or `timeout_ms` elapses. Idempotent on
     /// already-booted devices (`xcrun simctl boot` returns non-zero when
     /// the device is already booted; we swallow that).
-    pub async fn boot_and_wait(&self, udid: &str, timeout: Duration) -> Result<(), SimctlError> {
+    pub async fn boot_and_wait(&self, udid: &str, timeout: Duration) -> Result<(), DeviceControlError> {
         // Issue boot; ignore already-booted error (the only friendly path).
         let _ = simctl_run(&["boot", udid]).await;
         let start = std::time::Instant::now();
@@ -1281,7 +1279,7 @@ impl SimctlClient {
                 return Ok(());
             }
             if start.elapsed() > timeout {
-                return Err(SimctlError::Timeout {
+                return Err(DeviceControlError::Timeout {
                     subcommand: format!("boot {}", udid),
                     ms: timeout.as_millis() as u64,
                 });
@@ -1291,31 +1289,31 @@ impl SimctlClient {
     }
 
     /// `xcrun simctl erase <udid>` — wipe device contents.
-    pub async fn erase(&self, udid: &str) -> Result<(), SimctlError> {
+    pub async fn erase(&self, udid: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["erase", udid]).await?;
         Ok(())
     }
 
     /// `xcrun simctl install <udid> <app-path>` — install a `.app` bundle.
-    pub async fn install(&self, udid: &str, app_path: &str) -> Result<(), SimctlError> {
+    pub async fn install(&self, udid: &str, app_path: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["install", udid, app_path]).await?;
         Ok(())
     }
 
     /// `xcrun simctl uninstall <udid> <bundle-id>`.
-    pub async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    pub async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["uninstall", udid, bundle_id]).await?;
         Ok(())
     }
 
     /// `xcrun simctl terminate <udid> <bundle-id>` — kill a running app.
-    pub async fn terminate(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    pub async fn terminate(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["terminate", udid, bundle_id]).await?;
         Ok(())
     }
 
     /// `xcrun simctl launch <udid> <bundleId>` → parse `"<bundle>: <pid>"`.
-    pub async fn launch(&self, udid: &str, bundle_id: &str) -> Result<LaunchResult, SimctlError> {
+    pub async fn launch(&self, udid: &str, bundle_id: &str) -> Result<LaunchResult, DeviceControlError> {
         self.launch_with_args(udid, bundle_id, &[]).await
     }
 
@@ -1327,7 +1325,7 @@ impl SimctlClient {
         udid: &str,
         bundle_id: &str,
         args: &[String],
-    ) -> Result<LaunchResult, SimctlError> {
+    ) -> Result<LaunchResult, DeviceControlError> {
         self.launch_with_args_and_env(udid, bundle_id, args, &[])
             .await
     }
@@ -1347,7 +1345,7 @@ impl SimctlClient {
         bundle_id: &str,
         args: &[String],
         child_env: &[(&str, &str)],
-    ) -> Result<LaunchResult, SimctlError> {
+    ) -> Result<LaunchResult, DeviceControlError> {
         let mut argv: Vec<&str> = vec!["launch", udid, bundle_id];
         if !args.is_empty() {
             argv.push("--");
@@ -1362,11 +1360,11 @@ impl SimctlClient {
             out.rsplit(':')
                 .next()
                 .map(str::trim)
-                .ok_or_else(|| SimctlError::Malformed {
+                .ok_or_else(|| DeviceControlError::Malformed {
                     subcommand: "launch".into(),
                     detail: format!("unexpected stdout shape: {}", out.trim()),
                 })?;
-        let pid: u32 = pid_str.parse().map_err(|_| SimctlError::Malformed {
+        let pid: u32 = pid_str.parse().map_err(|_| DeviceControlError::Malformed {
             subcommand: "launch".into(),
             detail: format!("non-numeric pid in stdout: {}", out.trim()),
         })?;
@@ -1384,7 +1382,7 @@ impl SimctlClient {
         &self,
         udid: &str,
         bundle_id: &str,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         simctl_run(&["privacy", udid, "reset", "all", bundle_id]).await?;
         Ok(())
     }
@@ -1400,11 +1398,11 @@ impl SimctlClient {
         &self,
         udid: &str,
         bundle_id: &str,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         let raw = simctl_run(&["get_app_container", udid, bundle_id, "data"]).await?;
         let container = raw.trim();
         if container.is_empty() {
-            return Err(SimctlError::Malformed {
+            return Err(DeviceControlError::Malformed {
                 subcommand: "clear_app_sandbox".into(),
                 detail: format!("empty Data container path for bundle {bundle_id}"),
             });
@@ -1438,7 +1436,7 @@ impl SimctlClient {
     /// expo-dev-client 57.0.5) shows a picker instead of
     /// auto-connecting, the URL reached it intact and the problem
     /// lives on the URL-router side.
-    pub async fn open_url(&self, udid: &str, url: &str) -> Result<(), SimctlError> {
+    pub async fn open_url(&self, udid: &str, url: &str) -> Result<(), DeviceControlError> {
         let argv = openurl_argv(udid, url);
         let refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
         simctl_run(&refs).await?;
@@ -1467,13 +1465,13 @@ impl SimctlClient {
         udid: &str,
         bundle_id: &str,
         apns_json_path: &str,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         simctl_run(&["push", udid, bundle_id, apns_json_path]).await?;
         Ok(())
     }
 
     /// `xcrun simctl ui <udid> appearance <light|dark>` — set UI appearance.
-    pub async fn set_appearance(&self, udid: &str, mode: Appearance) -> Result<(), SimctlError> {
+    pub async fn set_appearance(&self, udid: &str, mode: Appearance) -> Result<(), DeviceControlError> {
         simctl_run(&["ui", udid, "appearance", mode.as_str()]).await?;
         Ok(())
     }
@@ -1484,7 +1482,7 @@ impl SimctlClient {
         udid: &str,
         permission: SimctlPermission,
         bundle_id: &str,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         simctl_run(&["privacy", udid, "grant", permission.as_str(), bundle_id]).await?;
         Ok(())
     }
@@ -1498,7 +1496,7 @@ impl SimctlClient {
         udid: &str,
         permission: SimctlPermission,
         bundle_id: &str,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         simctl_run(&["privacy", udid, "revoke", permission.as_str(), bundle_id]).await?;
         Ok(())
     }
@@ -1510,7 +1508,7 @@ impl SimctlClient {
         udid: &str,
         latitude: f64,
         longitude: f64,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         let coord = format!("{latitude},{longitude}");
         simctl_run(&["location", udid, "set", &coord]).await?;
         Ok(())
@@ -1525,9 +1523,9 @@ impl SimctlClient {
         udid: &str,
         points: &[(f64, f64)],
         speed_mps: Option<f64>,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         if points.len() < 2 {
-            return Err(SimctlError::Malformed {
+            return Err(DeviceControlError::Malformed {
                 subcommand: "location-start".into(),
                 detail: format!("requires ≥2 waypoints, got {}", points.len()),
             });
@@ -1546,7 +1544,7 @@ impl SimctlClient {
 
     /// `xcrun simctl location <udid> clear` — reset active location
     /// scenario.
-    pub async fn location_clear(&self, udid: &str) -> Result<(), SimctlError> {
+    pub async fn location_clear(&self, udid: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["location", udid, "clear"]).await?;
         Ok(())
     }
@@ -1554,9 +1552,9 @@ impl SimctlClient {
     /// `xcrun simctl addmedia <udid> <path>...` — add photos / videos /
     /// contacts to sim library. Mirrors maestro `addMedia` (scalar or
     /// array form already flattened on adapter side).
-    pub async fn add_media(&self, udid: &str, paths: &[String]) -> Result<(), SimctlError> {
+    pub async fn add_media(&self, udid: &str, paths: &[String]) -> Result<(), DeviceControlError> {
         if paths.is_empty() {
-            return Err(SimctlError::Malformed {
+            return Err(DeviceControlError::Malformed {
                 subcommand: "addmedia".into(),
                 detail: "no paths supplied".into(),
             });
@@ -1578,7 +1576,7 @@ impl SimctlClient {
         &self,
         udid: &str,
         path: &str,
-    ) -> Result<RecordingHandle, SimctlError> {
+    ) -> Result<RecordingHandle, DeviceControlError> {
         let child = tokio::process::Command::new("xcrun")
             .args(["simctl", "io", udid, "recordVideo", path])
             .stdin(std::process::Stdio::null())
@@ -1597,8 +1595,8 @@ impl SimctlClient {
     /// Stop a recording via SIGINT + wait (≤10s). SIGINT lets simctl
     /// trap and flush the mp4 trailer; SIGKILL would corrupt output.
     /// Timeout escalates to SIGKILL with explicit error mentioning truncation.
-    pub async fn record_video_stop(&self, mut handle: RecordingHandle) -> Result<(), SimctlError> {
-        let pid = handle.child.id().ok_or_else(|| SimctlError::Malformed {
+    pub async fn record_video_stop(&self, mut handle: RecordingHandle) -> Result<(), DeviceControlError> {
+        let pid = handle.child.id().ok_or_else(|| DeviceControlError::Malformed {
             subcommand: "recordVideo-stop".into(),
             detail: "child already reaped".into(),
         })?;
@@ -1606,7 +1604,7 @@ impl SimctlClient {
         // this Child instance (no race) and SIGINT is signal-safe.
         let rc = unsafe { libc::kill(pid as i32, libc::SIGINT) };
         if rc != 0 {
-            return Err(SimctlError::Malformed {
+            return Err(DeviceControlError::Malformed {
                 subcommand: "recordVideo-stop".into(),
                 detail: format!(
                     "kill SIGINT failed: errno={}",
@@ -1618,13 +1616,13 @@ impl SimctlClient {
             tokio::time::timeout(std::time::Duration::from_secs(10), handle.child.wait()).await;
         match wait_result {
             Ok(Ok(_status)) => Ok(()),
-            Ok(Err(e)) => Err(SimctlError::Malformed {
+            Ok(Err(e)) => Err(DeviceControlError::Malformed {
                 subcommand: "recordVideo-stop".into(),
                 detail: format!("wait failed: {e}"),
             }),
             Err(_timeout) => {
                 let _ = handle.child.kill().await;
-                Err(SimctlError::Malformed {
+                Err(DeviceControlError::Malformed {
                     subcommand: "recordVideo-stop".into(),
                     detail: "SIGINT timeout (10s) — escalated SIGKILL; output mp4 likely truncated. Inspect simctl recordVideo stderr.".into(),
                 })
@@ -1641,24 +1639,24 @@ impl SimctlClient {
         udid: &str,
         permission: SimctlPermission,
         bundle_id: &str,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         simctl_run(&["privacy", udid, "reset", permission.as_str(), bundle_id]).await?;
         Ok(())
     }
 
     /// `xcrun simctl keychain <udid> reset` — clear all keychain entries.
-    pub async fn keychain_reset(&self, udid: &str) -> Result<(), SimctlError> {
+    pub async fn keychain_reset(&self, udid: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["keychain", udid, "reset"]).await?;
         Ok(())
     }
 
     /// `xcrun simctl pbpaste <udid>` — read clipboard contents.
-    pub async fn pasteboard_get(&self, udid: &str) -> Result<String, SimctlError> {
+    pub async fn pasteboard_get(&self, udid: &str) -> Result<String, DeviceControlError> {
         simctl_run(&["pbpaste", udid]).await
     }
 
     /// `xcrun simctl pbcopy <udid>` — write clipboard contents (via piped stdin).
-    pub async fn pasteboard_set(&self, udid: &str, text: &str) -> Result<(), SimctlError> {
+    pub async fn pasteboard_set(&self, udid: &str, text: &str) -> Result<(), DeviceControlError> {
         // pbcopy reads stdin — we pipe via shell echo for simplicity.
         // Long-term: spawn with stdin pipe.
         use tokio::io::AsyncWriteExt;
@@ -1672,7 +1670,7 @@ impl SimctlClient {
         }
         let status = child.wait().await?;
         if !status.success() {
-            return Err(SimctlError::NonZeroExit {
+            return Err(DeviceControlError::NonZeroExit {
                 subcommand: "pbcopy".into(),
                 argv: vec!["pbcopy".to_string()],
                 code: status.code().unwrap_or(-1),
@@ -1684,7 +1682,7 @@ impl SimctlClient {
     }
 
     /// Toggle "Reduce Motion" accessibility setting via `defaults write`.
-    pub async fn set_reduce_motion(&self, udid: &str, enabled: bool) -> Result<(), SimctlError> {
+    pub async fn set_reduce_motion(&self, udid: &str, enabled: bool) -> Result<(), DeviceControlError> {
         let val = if enabled { "1" } else { "0" };
         // `defaults write` lives under spawn; routed via simctl spawn.
         simctl_run(&[
@@ -1717,7 +1715,7 @@ impl SimctlClient {
     /// before the first `IDAT`. Pixel data (IDAT bytes) is never
     /// decoded or modified. See [`ensure_srgb_chunk`] for the exact
     /// splice operation.
-    pub async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, SimctlError> {
+    pub async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, DeviceControlError> {
         // Pace + circuit-check before invoking simctl.
         let wait = {
             let mut pacer = self
@@ -1726,7 +1724,7 @@ impl SimctlClient {
                 .expect("screenshot pacer mutex must not be poisoned");
             pacer
                 .compute_wait()
-                .map_err(|retry_after| SimctlError::CaptureBackpressure { retry_after })?
+                .map_err(|retry_after| DeviceControlError::CaptureBackpressure { retry_after })?
         };
         if !wait.is_zero() {
             sleep(wait).await;
@@ -1738,7 +1736,7 @@ impl SimctlClient {
         let tmp_str = tmp.display().to_string();
         let result = simctl_capture(&["io", udid, "screenshot", &tmp_str]).await;
         let bytes = result.and_then(|_| {
-            std::fs::read(&tmp).map_err(|e| SimctlError::Malformed {
+            std::fs::read(&tmp).map_err(|e| DeviceControlError::Malformed {
                 subcommand: "screenshot".into(),
                 detail: format!("read {tmp_str}: {e}"),
             })
@@ -1757,7 +1755,7 @@ impl SimctlClient {
 
         let bytes = bytes?;
         if bytes.len() < 8 {
-            return Err(SimctlError::Malformed {
+            return Err(DeviceControlError::Malformed {
                 subcommand: "screenshot".into(),
                 detail: format!("screenshot file too short: {} bytes", bytes.len()),
             });
@@ -1771,13 +1769,13 @@ impl SimctlClient {
         name: &str,
         device_type: &str,
         runtime_id: &str,
-    ) -> Result<String, SimctlError> {
+    ) -> Result<String, DeviceControlError> {
         let out = simctl_run(&["create", name, device_type, runtime_id]).await?;
         Ok(out.trim().to_string())
     }
 
     /// `xcrun simctl delete <udid>` — delete a simulator device.
-    pub async fn delete_device(&self, udid: &str) -> Result<(), SimctlError> {
+    pub async fn delete_device(&self, udid: &str) -> Result<(), DeviceControlError> {
         simctl_run(&["delete", udid]).await?;
         Ok(())
     }

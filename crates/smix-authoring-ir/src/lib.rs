@@ -2,7 +2,7 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
-//! smix-recorder-ir — IRAction (intermediate representation) +
+//! smix-authoring-ir — IRAction (intermediate representation) +
 //! RecorderError + sort helper (stone, cold path).
 //!
 //! Each [`IRAction`] is one user-visible side-effecting step in a
@@ -16,7 +16,7 @@
 //! manually with smix watching" is a separate architecture — see
 //! docs/roadmap.md.
 
-#![doc(html_root_url = "https://docs.smix.dev/smix-recorder-ir")]
+#![doc(html_root_url = "https://docs.smix.dev/smix-authoring-ir")]
 
 use serde::{Deserialize, Serialize};
 use smix_input::{KeyName, SwipeDirection};

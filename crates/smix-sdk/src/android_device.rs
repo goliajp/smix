@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 
 use smix_adb::{AdbClient, AdbError};
 use smix_driver::Platform;
-use smix_simctl::SimctlError;
+use smix_simctl::DeviceControlError;
 
 use crate::PermissionAction;
 use crate::device_control::{DeviceControl, Permission};
@@ -99,17 +99,17 @@ impl AndroidDeviceControl {
 /// the Android detail in the message.
 ///
 /// The subcommand is prefixed with `adb` so the message names the tool that
-/// actually ran. `SimctlError` is shared by both platforms, and a reader
+/// actually ran. `DeviceControlError` is shared by both platforms, and a reader
 /// chasing an Android failure should not be pointed at Xcode.
-fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> SimctlError {
+fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> DeviceControlError {
     let subcommand = &format!("adb {subcommand}");
     match e {
-        AdbError::BinaryNotFound => SimctlError::non_zero_exit(
+        AdbError::BinaryNotFound => DeviceControlError::non_zero_exit(
             subcommand,
             -1,
             "adb binary not found in PATH; install Android SDK platform-tools",
         ),
-        AdbError::Spawn(io) => SimctlError::non_zero_exit(
+        AdbError::Spawn(io) => DeviceControlError::non_zero_exit(
             subcommand,
             -1,
             format!("adb spawn failed: {io}"),
@@ -119,7 +119,7 @@ fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> SimctlError {
             code,
             stderr,
             serial,
-        } => SimctlError::non_zero_exit(
+        } => DeviceControlError::non_zero_exit(
             match serial {
                 Some(s) => format!("adb -s {s} {sub}"),
                 None => format!("adb {sub}"),
@@ -130,7 +130,7 @@ fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> SimctlError {
         AdbError::Malformed {
             subcommand: sub,
             detail,
-        } => SimctlError::Malformed {
+        } => DeviceControlError::Malformed {
             subcommand: sub,
             detail,
         },
@@ -145,7 +145,7 @@ impl DeviceControl for AndroidDeviceControl {
 
     // === Lifecycle ===
 
-    async fn launch(&self, serial: &str, bundle_id: &str) -> Result<u32, SimctlError> {
+    async fn launch(&self, serial: &str, bundle_id: &str) -> Result<u32, DeviceControlError> {
         // AdbClient::start_activity itself builds `package/activity` for
         // `am start -n`. Pass the activity name RELATIVE to the package
         // (".MainActivity") so the wire ends up `<pkg>/.MainActivity`
@@ -162,7 +162,7 @@ impl DeviceControl for AndroidDeviceControl {
         serial: &str,
         bundle_id: &str,
         args: &[String],
-    ) -> Result<u32, SimctlError> {
+    ) -> Result<u32, DeviceControlError> {
         let extras: Vec<(String, String)> = args
             .chunks(2)
             .filter_map(|chunk| {
@@ -184,34 +184,34 @@ impl DeviceControl for AndroidDeviceControl {
         Ok(0)
     }
 
-    async fn terminate(&self, serial: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    async fn terminate(&self, serial: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         self.client
             .force_stop(serial, bundle_id)
             .await
             .map_err(|e| adb_to_simctl_err(e, "shell am force-stop"))
     }
 
-    async fn install(&self, serial: &str, app_path: &str) -> Result<(), SimctlError> {
+    async fn install(&self, serial: &str, app_path: &str) -> Result<(), DeviceControlError> {
         self.client
             .install(serial, Path::new(app_path))
             .await
             .map_err(|e| adb_to_simctl_err(e, "install"))
     }
 
-    async fn uninstall(&self, serial: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    async fn uninstall(&self, serial: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         self.client
             .uninstall(serial, bundle_id)
             .await
             .map_err(|e| adb_to_simctl_err(e, "uninstall"))
     }
 
-    async fn keychain_reset(&self, _serial: &str) -> Result<(), SimctlError> {
+    async fn keychain_reset(&self, _serial: &str) -> Result<(), DeviceControlError> {
         // This used to return Ok(()) and call itself a no-op "matching the
         // expectation that Android silently no-ops rather than crashing".
         // A flow that clears the keychain does it so the next step meets a
         // signed-out app; succeeding without doing it hands that step a
         // logged-in one and blames the step.
-        Err(SimctlError::non_zero_exit(
+        Err(DeviceControlError::non_zero_exit(
             "keychain_reset",
             -1,
             "clearKeychain has no Android equivalent: credentials live in each app's own \
@@ -220,7 +220,7 @@ impl DeviceControl for AndroidDeviceControl {
         ))
     }
 
-    async fn privacy_reset_all(&self, serial: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    async fn privacy_reset_all(&self, serial: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         // `pm reset-permissions` reverts every app on the device, including
         // whatever the runner was granted to do its job, so the grants are
         // read back and dropped one at a time.
@@ -238,7 +238,7 @@ impl DeviceControl for AndroidDeviceControl {
         Ok(())
     }
 
-    async fn clear_app_sandbox(&self, serial: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    async fn clear_app_sandbox(&self, serial: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         // App data is app-private, so the host's only way in is `pm clear`,
         // which also reverts the runtime permissions. iOS can wipe the
         // sandbox and leave privacy alone; here the two come together, and
@@ -251,7 +251,7 @@ impl DeviceControl for AndroidDeviceControl {
 
     // === Lifecycle ancillary ===
 
-    async fn open_url(&self, serial: &str, url: &str) -> Result<(), SimctlError> {
+    async fn open_url(&self, serial: &str, url: &str) -> Result<(), DeviceControlError> {
         self.client
             .shell(
                 serial,
@@ -267,15 +267,15 @@ impl DeviceControl for AndroidDeviceControl {
         _serial: &str,
         _bundle_id: &str,
         _apns_json_path: &str,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         // Android push = FCM not APNs. Cross-platform yaml `sendPush:` on
         // Android requires FCM credentials + Firebase project setup —
         // deferred. Surface an explicit error so yaml authors know it
         // is not silently no-op.
-        Err(SimctlError::non_zero_exit("send_push", -1, "Android FCM push not implemented (cross-platform yaml `sendPush:` is iOS APNs only)"))
+        Err(DeviceControlError::non_zero_exit("send_push", -1, "Android FCM push not implemented (cross-platform yaml `sendPush:` is iOS APNs only)"))
     }
 
-    async fn screenshot(&self, serial: &str) -> Result<Vec<u8>, SimctlError> {
+    async fn screenshot(&self, serial: &str) -> Result<Vec<u8>, DeviceControlError> {
         self.client
             .screenshot(serial)
             .await
@@ -305,8 +305,8 @@ impl DeviceControl for AndroidDeviceControl {
     //
     // So this is a platform limit, and the honest thing is to say so rather
     // than keep a skeleton that reads as unfinished work.
-    async fn pasteboard_set(&self, _serial: &str, _text: &str) -> Result<(), SimctlError> {
-        Err(SimctlError::non_zero_exit(
+    async fn pasteboard_set(&self, _serial: &str, _text: &str) -> Result<(), DeviceControlError> {
+        Err(DeviceControlError::non_zero_exit(
             "pasteboard_set",
             -1,
             "Android does not let a test runner write the clipboard: since Android 10 the \
@@ -315,8 +315,8 @@ impl DeviceControl for AndroidDeviceControl {
         ))
     }
 
-    async fn pasteboard_get(&self, _serial: &str) -> Result<String, SimctlError> {
-        Err(SimctlError::non_zero_exit(
+    async fn pasteboard_get(&self, _serial: &str) -> Result<String, DeviceControlError> {
+        Err(DeviceControlError::non_zero_exit(
             "pasteboard_get",
             -1,
             "Android does not let a test runner read the clipboard: since Android 10 the \
@@ -325,9 +325,9 @@ impl DeviceControl for AndroidDeviceControl {
         ))
     }
 
-    async fn add_media(&self, serial: &str, paths: &[String]) -> Result<(), SimctlError> {
+    async fn add_media(&self, serial: &str, paths: &[String]) -> Result<(), DeviceControlError> {
         if paths.is_empty() {
-            return Err(SimctlError::Malformed {
+            return Err(DeviceControlError::Malformed {
                 subcommand: "add_media".into(),
                 detail: "no paths supplied".into(),
             });
@@ -337,7 +337,7 @@ impl DeviceControl for AndroidDeviceControl {
             let name = local
                 .file_name()
                 .and_then(|n| n.to_str())
-                .ok_or_else(|| SimctlError::Malformed {
+                .ok_or_else(|| DeviceControlError::Malformed {
                     subcommand: "add_media".into(),
                     detail: format!("path has no file name: {p}"),
                 })?;
@@ -361,7 +361,7 @@ impl DeviceControl for AndroidDeviceControl {
         Ok(())
     }
 
-    async fn location_set(&self, serial: &str, lat: f64, lon: f64) -> Result<(), SimctlError> {
+    async fn location_set(&self, serial: &str, lat: f64, lon: f64) -> Result<(), DeviceControlError> {
         // The emulator console, not the device shell. This called
         // `shell(["emu", …])` and so ran `adb shell emu geo fix`, which asks
         // the device for a program named `emu` — `sh: emu: inaccessible or
@@ -379,7 +379,7 @@ impl DeviceControl for AndroidDeviceControl {
         serial: &str,
         points: &[(f64, f64)],
         speed_mps: Option<f64>,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         // The emulator console has no route: `geo` takes one position
         // (`fix`), an NMEA sentence, or a GNSS sentence — no waypoint list,
         // whatever a comment here once claimed about `geo gpx`. `automation
@@ -389,14 +389,14 @@ impl DeviceControl for AndroidDeviceControl {
         // instead, one `geo fix` per tick. Same contract as iOS: the route
         // starts and the call returns, so the loop outlives it.
         if points.len() < 2 {
-            return Err(SimctlError::Malformed {
+            return Err(DeviceControlError::Malformed {
                 subcommand: "location_start".into(),
                 detail: format!("requires ≥2 waypoints, got {}", points.len()),
             });
         }
         let speed = speed_mps.unwrap_or(SIMCTL_DEFAULT_SPEED_MPS);
         if !(speed.is_finite() && speed > 0.0) {
-            return Err(SimctlError::Malformed {
+            return Err(DeviceControlError::Malformed {
                 subcommand: "location_start".into(),
                 detail: format!("speed must be finite and positive, got {speed}"),
             });
@@ -453,7 +453,7 @@ impl DeviceControl for AndroidDeviceControl {
         bundle_id: &str,
         permission: Permission,
         action: PermissionAction,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         let Some(android_perm) = permission.to_android() else {
             // iOS-only permission on Android → no-op (cross-platform yaml
             // friendly; matches IosDeviceControl behavior for Storage on iOS).
@@ -495,10 +495,10 @@ impl DeviceControl for AndroidDeviceControl {
     /// that can be raised. `simctl recordVideo` has no such limit. Past the
     /// cap the recorder exits on its own, and stop_recording pulls whatever
     /// it managed to write.
-    async fn start_recording(&self, serial: &str, output_path: &Path) -> Result<(), SimctlError> {
+    async fn start_recording(&self, serial: &str, output_path: &Path) -> Result<(), DeviceControlError> {
         let mut guard = self.recording.lock().await;
         if guard.is_some() {
-            return Err(SimctlError::non_zero_exit(
+            return Err(DeviceControlError::non_zero_exit(
                 "screenrecord",
                 -1,
                 "a recording is already in progress (call stop_recording first)",
@@ -525,10 +525,10 @@ impl DeviceControl for AndroidDeviceControl {
         Ok(())
     }
 
-    async fn stop_recording(&self) -> Result<(), SimctlError> {
+    async fn stop_recording(&self) -> Result<(), DeviceControlError> {
         let mut guard = self.recording.lock().await;
         let mut rec = guard.take().ok_or_else(|| {
-            SimctlError::non_zero_exit(
+            DeviceControlError::non_zero_exit(
                 "screenrecord",
                 -1,
                 "no recording in progress (call start_recording first)",

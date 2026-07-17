@@ -40,12 +40,12 @@ fn simctl_client_default_constructable() {
     let _: SimctlClient = SimctlClient::new();
 }
 
-// Sanity: SimctlError variants reachable via Display impl. These don't
+// Sanity: DeviceControlError variants reachable via Display impl. These don't
 // actually invoke subprocess (constructing the variants directly is safe).
 #[test]
 fn simctl_error_display_includes_subcommand() {
-    use smix_simctl::SimctlError;
-    let e = SimctlError::NonZeroExit {
+    use smix_simctl::DeviceControlError;
+    let e = DeviceControlError::NonZeroExit {
         subcommand: "boot".into(),
         argv: vec!["boot".into(), "test-udid".into()],
         code: 5,
@@ -59,14 +59,14 @@ fn simctl_error_display_includes_subcommand() {
     assert!(s.contains("42ms"), "wall_ms should appear: {s}");
     assert!(s.contains("device not found"));
 
-    let e = SimctlError::Timeout {
+    let e = DeviceControlError::Timeout {
         subcommand: "boot".into(),
         ms: 60000,
     };
     let s = format!("{e}");
     assert!(s.contains("60000"));
 
-    let e = SimctlError::Malformed {
+    let e = DeviceControlError::Malformed {
         subcommand: "list".into(),
         detail: "bad json".into(),
     };

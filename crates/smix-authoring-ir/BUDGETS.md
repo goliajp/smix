@@ -1,4 +1,4 @@
-# smix-recorder-ir performance budgets
+# smix-authoring-ir performance budgets
 
 Regression-catch budgets enforced by `tests/perf_gate.rs`.
 
@@ -6,8 +6,8 @@ Per-action this is **warm** (one append per user-recorded action — but
 generators serialize the full session, and the sort merge runs every
 flush). Single-digit ns accessors keep generator scan cost negligible.
 
-Run `cargo test -p smix-recorder-ir --release --test perf_gate` to
-check. Run `cargo bench -p smix-recorder-ir --bench ir` for the full
+Run `cargo test -p smix-authoring-ir --release --test perf_gate` to
+check. Run `cargo bench -p smix-authoring-ir --bench ir` for the full
 criterion baseline.
 
 ## Budgets
