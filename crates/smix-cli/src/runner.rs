@@ -169,6 +169,37 @@ pub fn health_runner_version(port: u16) -> Option<String> {
     if v.is_empty() { None } else { Some(v.to_string()) }
 }
 
+/// The wire schemas the running runner says it speaks.
+///
+/// Empty when the runner predates the question or the read failed — which
+/// means "it did not say", not "it speaks none". The two are different and
+/// only one of them is a reason to stop.
+pub fn health_wire_schemas(port: u16) -> Vec<u32> {
+    let Ok((ok, body)) = read_health_bytes(port, 4096) else {
+        return Vec::new();
+    };
+    if !ok {
+        return Vec::new();
+    }
+    let Some(start) = body.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&body[start..]) else {
+        return Vec::new();
+    };
+    value
+        .get("wireSchema")
+        .and_then(|w| w.get("supports"))
+        .and_then(serde_json::Value::as_array)
+        .map(|xs| {
+            xs.iter()
+                .filter_map(serde_json::Value::as_u64)
+                .filter_map(|n| u32::try_from(n).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Shared HTTP GET /health primitive. Returns `(status_is_200, raw_response_bytes)`
 /// on connection success, `Err(())` on IO failure. Callers pick apart
 /// the byte buffer to answer specific questions.
@@ -600,6 +631,38 @@ pub fn up_with_options(
             // SMIX_RUNNER_PROJECT, stale supervisor cache), this check
             // catches it before the user runs into a mysterious 404.
             let cli_version = env!("CARGO_PKG_VERSION");
+            // Ask about the wire before asking about the version. A runner
+            // that has been up across a CLI upgrade is not a problem unless
+            // the shape between them moved, and demanding identical semvers
+            // called every such runner broken.
+            let theirs = health_wire_schemas(port);
+            if !theirs.is_empty() {
+                match smix_runner_wire::negotiate_wire_schema(
+                    smix_runner_wire::WIRE_SCHEMA_SUPPORTED,
+                    &theirs,
+                ) {
+                    Some(schema) => {
+                        let v = health_runner_version(port).unwrap_or_default();
+                        println!(
+                            "runner up: http://localhost:{port}/health = 200 \
+                             (runner v{v}, wire schema {schema})"
+                        );
+                        return Ok(());
+                    }
+                    None => {
+                        let _ = std::fs::remove_file(state_path(root));
+                        signal(pid, "-TERM");
+                        let ours = smix_runner_wire::WIRE_SCHEMA_SUPPORTED;
+                        return Err(format!(
+                            "no wire schema in common: this CLI speaks {ours:?} and the \
+                             running SmixRunner speaks {theirs:?}. Nothing they could say \
+                             to each other would mean the same thing. Fix: \
+                             `smix runner install --force` to re-extract the runner \
+                             sources this CLI ships with, then retry `smix runner up`."
+                        ));
+                    }
+                }
+            }
             match health_runner_version(port) {
                 Some(v) if v == cli_version => {
                     println!(
