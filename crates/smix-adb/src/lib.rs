@@ -313,17 +313,19 @@ impl AdbClient {
 
     /// `adb -s <serial> emu <cmd...>` — the emulator console, returns stdout.
     ///
-    /// A different channel from [`Self::shell`], and the distinction bites.
-    /// `adb shell emu geo fix …` looks plausible, answers
-    /// `sh: emu: inaccessible or not found`, and **still exits 0** — so the
-    /// caller reads success while the emulator never moved. `setLocation`
-    /// shipped that way.
+    /// A different channel from [`Self::shell`]. `adb shell emu geo fix …`
+    /// looks plausible but asks the device for a program named `emu` — it
+    /// answers `sh: emu: inaccessible or not found` and exits 127.
+    /// `setLocation` shipped that way, so it always failed.
     ///
-    /// The console also reports through stdout rather than the exit code: it
-    /// answers `OK`, or `KO: <reason>` and exits 0 regardless. Measured
-    /// against a live emulator — a bad argument gives
-    /// `KO: argument 'x' is not a number`, exit 0. So `KO` is translated into
-    /// an error here; nobody downstream would think to look for it.
+    /// The console reports differently from the shell, and that is why this
+    /// method exists rather than a call site. `adb shell` propagates the
+    /// device command's exit status (measured: `shell 'exit 42'` → 42), but
+    /// `adb emu` does **not** — it answers `OK`, or `KO: <reason>`, and exits
+    /// 0 either way (measured: a bad argument gives
+    /// `KO: argument 'x' is not a number`, exit 0). So the exit code carries
+    /// nothing here and stdout carries everything; `KO` is translated into an
+    /// error, because nobody downstream would think to look for it.
     ///
     /// Emulator-only, as the name says. A physical device has no console,
     /// which is no loss: smix is simulator-only by charter.
