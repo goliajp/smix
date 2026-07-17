@@ -219,13 +219,12 @@ impl DeviceControl for AndroidDeviceControl {
     }
 
     async fn location_set(&self, serial: &str, lat: f64, lon: f64) -> Result<(), SimctlError> {
-        // `adb emu geo fix <lon> <lat>` — emu console (note arg order:
-        // lon first, then lat).
+        // The emulator console, not the device shell — `adb shell emu …`
+        // answers `sh: emu: inaccessible or not found` and exits 0, so it
+        // read as success while the emulator never moved. Note the argument
+        // order: longitude first.
         self.client
-            .shell(
-                serial,
-                &["emu", "geo", "fix", &lon.to_string(), &lat.to_string()],
-            )
+            .emu(serial, &["geo", "fix", &lon.to_string(), &lat.to_string()])
             .await
             .map(|_| ())
             .map_err(|e| adb_to_simctl_err(e, "emu geo fix"))

@@ -24,3 +24,5 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+# A stub `adb` on disk, so the tests can assert the argv actually sent.
+tempfile.workspace = true

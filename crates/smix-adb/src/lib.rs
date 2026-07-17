@@ -302,8 +302,39 @@ impl AdbClient {
     }
 
     /// `adb -s <serial> shell <cmd...>` — generic shell exec, returns stdout.
+    ///
+    /// Runs *on the device*. For the emulator console — `geo`, `sms`,
+    /// `rotate` and friends — use [`Self::emu`]: those are adb's own
+    /// subcommands, and asking the device's shell for them finds nothing.
     pub async fn shell(&self, serial: &str, cmd: &[&str]) -> Result<String, AdbError> {
         let (stdout, _) = self.run_capture(Some(serial), "shell", cmd).await?;
+        Ok(stdout)
+    }
+
+    /// `adb -s <serial> emu <cmd...>` — the emulator console, returns stdout.
+    ///
+    /// A different channel from [`Self::shell`], and the distinction bites.
+    /// `adb shell emu geo fix …` looks plausible, answers
+    /// `sh: emu: inaccessible or not found`, and **still exits 0** — so the
+    /// caller reads success while the emulator never moved. `setLocation`
+    /// shipped that way.
+    ///
+    /// The console also reports through stdout rather than the exit code: it
+    /// answers `OK`, or `KO: <reason>` and exits 0 regardless. Measured
+    /// against a live emulator — a bad argument gives
+    /// `KO: argument 'x' is not a number`, exit 0. So `KO` is translated into
+    /// an error here; nobody downstream would think to look for it.
+    ///
+    /// Emulator-only, as the name says. A physical device has no console,
+    /// which is no loss: smix is simulator-only by charter.
+    pub async fn emu(&self, serial: &str, cmd: &[&str]) -> Result<String, AdbError> {
+        let (stdout, _) = self.run_capture(Some(serial), "emu", cmd).await?;
+        if stdout.trim_start().starts_with("KO") {
+            return Err(AdbError::Malformed {
+                subcommand: format!("emu {}", cmd.join(" ")),
+                detail: stdout.trim().to_string(),
+            });
+        }
         Ok(stdout)
     }
 
