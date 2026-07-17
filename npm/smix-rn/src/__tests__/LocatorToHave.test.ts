@@ -1,4 +1,4 @@
-// v7.6 c1 — Locator.toHaveCount + toHaveLabel mock-based vitest tests.
+// Locator.toHaveCount and toHaveLabel, over mocks.
 
 import { describe, expect, test } from 'vitest'
 import {

@@ -1,5 +1,5 @@
-// v7.10 c2 — demo flow: form validation. Exercises App.fill / app.tap /
-// Locator.toHaveLabel (v7.6 c1 wired) / Locator.toBeVisible.
+// Demo flow: form validation. Exercises App.fill / app.tap /
+// Locator.toHaveLabel / Locator.toBeVisible.
 //
 // Scenario: signup form with email + password. Invalid email shows
 // inline error label; valid email + short password shows different

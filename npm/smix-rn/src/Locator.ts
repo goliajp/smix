@@ -1,5 +1,3 @@
-// v7.5 c3 — Locator poll loop, mirror Kotlin v7.4 c3 + Swift v7.1 c3.
-//
 // 250ms tick over a millisecond deadline. On timeout, throws
 // ExpectationFailure with the last tree's first-20 visible elements
 // populated for AI agent diagnosis.
@@ -53,10 +51,9 @@ export class Locator {
   }
 
   /**
-   * v7.6 c1 — Resolve [selector] until at least one match exists AND
-   * that match's label equals [label]. Polls via standard resolver +
-   * findById path (label is on the snapshot node, not on FFI's labels
-   * resolver which is more useful for count-based assertions).
+   * Resolve [selector] until a match exists and its label equals
+   * [label]. Reads the label off the snapshot node rather than the
+   * labels resolver, which answers about the whole match set.
    */
   async toHaveLabel(label: string, opts: { timeoutMs?: number } = {}): Promise<void> {
     return this.pollUntil({
@@ -68,10 +65,9 @@ export class Locator {
   }
 
   /**
-   * v7.6 c1 — Resolve [selector] until the labels resolver returns
-   * exactly [n] matches. Uses dedicated `app.labelsResolver` (wraps
-   * Rust `resolve_selector_labels`) so count semantics skip index
-   * modifier per Playwright "match all" behavior.
+   * Resolve [selector] until the labels resolver returns exactly [n]
+   * matches. Goes through the labels resolver so the count ignores any
+   * index modifier — counting asks about all matches, as in Playwright.
    */
   async toHaveCount(n: number, opts: { timeoutMs?: number } = {}): Promise<void> {
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS

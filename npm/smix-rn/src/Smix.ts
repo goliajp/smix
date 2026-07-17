@@ -1,10 +1,6 @@
-// v7.5 c1 — Smix top-level entry. Mirror Kotlin / Swift Smix.launchApp.
-//
-// Per R-7.5-B HTTP-runtime decision, the default SelectorResolver for
-// production points at the smix-runner HTTP server (lands v7.5 c3 in
-// src/HttpRunner.ts). For c1 MVP, callers must pass an explicit
-// SelectorResolver (e.g. MockSelectorResolver in tests; HttpSelectorResolver
-// in c3 production).
+// The entry point. Resolution happens in the runner over HTTP, so callers
+// pass the SelectorResolver in: HttpSelectorResolver against a live
+// runner, MockSelectorResolver in tests.
 
 import { App } from './App.js'
 import { SmixNotImplementedError } from './Locator.js'

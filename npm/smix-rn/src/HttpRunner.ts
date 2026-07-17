@@ -1,34 +1,15 @@
-// v7.5 c3 — HTTP-based SmixSimRuntime + SelectorResolver implementations.
+// The HTTP-backed SmixSimRuntime and SelectorResolver: one POST per call
+// against a running smix-runner.
 //
-// Per R-7.5-B HTTP-runtime decision: TS SDK communicates with smix-runner
-// via fetch JSON-RPC-ish API (one POST per call). Default endpoint
-// matches existing smix-runner-client conventions; consumers override
-// via base URL constructor param.
-//
-// Wire contract (mirrors smix-runner-client v3+):
-//   POST /sim/launch         { bundleId }                                  → 200
-//   POST /sim/terminate      { bundleId }                                  → 200
-//   POST /sim/launch-fresh   { bundleId, clearState, clearKeychain, appPath? } → 200
-//   POST /sim/launch-from-path { appPath }                                 → 200
-//   POST /sim/screenshot     {}                                            → 200 { png: base64 }
-//   POST /sim/system-popups  {}                                            → 200 { nodes: A11yNode[] }
-//   POST /sim/open-url       { url }                                       → 200
-//   POST /a11y/snapshot      {}                                            → 200 { tree: A11yNode }
-//   POST /input/tap          { x, y }                                      → 200
-//   POST /input/tap-normalized { nx, ny }                                  → 200
-//   POST /input/swipe        { direction }                                 → 200
-//   POST /input/send-string  { text }                                      → 200
-//   POST /input/press-key    { key }                                       → 200
-//   POST /select/resolve     { treeJson, selectorJson }                    → 200 { ids: string[] }
-//
-// v7.7 c1 contract additions (server impl deferred):
-//   POST /select/resolve-count   { treeJson, selectorJson }                → 200 { count: u32 }
-//   POST /select/resolve-labels  { treeJson, selectorJson }                → 200 { labels: string[] }
-//
-// The exact endpoint shapes are negotiated with smix-runner-server in
-// follow-up Swift work; for v7.5-v7.7 c1 we wire the TS-side fetch +
-// decode and a MockHttpRunnerClient stub that lets vitest exercise the
-// runtime without booting a real server.
+// KNOWN DEFECT — the endpoints below are not the ones the runner serves.
+// Of the 16 called here only /select/resolve, /select/resolve-count and
+// /select/resolve-labels exist; the other 13 answer 404. The runner takes
+// /session/launch-app where this sends /sim/launch, /tree for
+// /a11y/snapshot, /tap for /input/tap, /swipe-once for /input/swipe, and
+// serves no screenshot route at all (screenshots are taken out of band).
+// Every test here injects a mock client, so nothing compared these strings
+// against the runner's route table. Correcting the wire is a v2 breaking
+// change, tracked with the rest of them.
 
 import { type A11yNode } from './A11yNode.js'
 import type {
@@ -62,10 +43,8 @@ export type HttpFetch = (
 export class HttpSimRuntime implements SmixSimRuntime {
   readonly resolver: SelectorResolver
   /**
-   * v7.7 c1 — labels resolver wrapping Rust `resolve_selector_labels`
-   * via smix-runner-server `/select/resolve-labels` endpoint. Used by
-   * `Locator.toHaveCount` (count = labels.length) + Locator.toHaveLabel.
-   * Pass directly to App constructor or Smix.launchApp.
+   * Backs toHaveCount (count = labels.length) and toHaveLabel. Pass it to
+   * the App constructor or to Smix.launchApp.
    */
   readonly labelsResolver: LabelsResolver
 
@@ -128,10 +107,8 @@ export class HttpSimRuntime implements SmixSimRuntime {
   }
 
   /**
-   * v7.7 c1 — direct match-count via dedicated FFI fn (avoid allocating
-   * the full ids list when callers only need count). Mirrors Rust
-   * `resolve_selector_count`. Locator.toHaveCount can prefer this over
-   * `labelsResolver` if it needs only count, not the labels themselves.
+   * Counts matches without building the id list, for callers that want a
+   * count and nothing else.
    */
   async resolveCount(treeJson: string, selectorJson: string): Promise<number> {
     const r = await this.post('/select/resolve-count', { treeJson, selectorJson })

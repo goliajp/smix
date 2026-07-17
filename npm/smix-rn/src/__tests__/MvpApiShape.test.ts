@@ -1,6 +1,4 @@
-// v7.5 c1 — MVP shape JVM vitest tests.
-//
-// Mirror Kotlin MvpApiShapeTest + Swift MvpApiShapeTests. Verifies
+// API-shape tests. Verifies
 // the SDK exposes the right TypeScript types + constructors and that
 // stub surface throws SmixNotImplementedError with explicit stage
 // markers.
@@ -88,11 +86,10 @@ describe('FailureCode', () => {
   })
 })
 
-// v7.6 c1 update: toHaveLabel + toHaveCount stubs replaced with real
-// wires via dedicated FFI resolve_selector_count / resolve_selector_labels.
-// All SDK API stubs from v7.5 c1 are now wired.
+// toHaveLabel and toHaveCount run against resolve_selector_labels and
+// resolve_selector_count; no API on this surface is a stub.
 
-describe('Smix.launchApp wire (v7.5 c1)', () => {
+describe('Smix.launchApp wire', () => {
   test('launchApp(.bundleId) calls runtime.launch', async () => {
     const runtime = new MockSimRuntime()
     await Smix.launchApp(bundleId('dev.smix.target'), runtime, new MockSelectorResolver().resolve)

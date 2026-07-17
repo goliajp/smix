@@ -1,4 +1,4 @@
-// v6.0 c3b — smix-android-runner app module.
+// The runner's app module.
 //
 // Android library carrying an instrumentation test runner. Pattern
 // mirrors mobile UI test frameworks (Maestro/Detox): a "test" APK
@@ -72,8 +72,7 @@ dependencies {
     // JSON
     androidTestImplementation("org.json:json:20240303")
 
-    // v6.3 c2 — Google ML Kit Text Recognition (Latin script).
-    // Free + on-device + ~3MB. Mirror Apple Vision text recognition
-    // used by IosDriver::find_text_by_ocr.
+    // Text recognition, Latin script. On-device, so OCR needs no network
+    // and no key — the counterpart to Apple's Vision on the iOS side.
     androidTestImplementation("com.google.mlkit:text-recognition:16.0.1")
 }

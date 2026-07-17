@@ -1,13 +1,7 @@
-// smix-ffi — v7.0 c2 MVP UDL. Single function `resolve_selector` per
-// spike #1 fixture #1 (empty tree + id selector → []).
-//
-// v7.0 c3+ 起按 D6 (Playwright-shape SDK surface mirror Rust smix-sdk)
-// 扩 ~10 runner async fn: tap / fill / press_key / swipe / screenshot /
-// tree / system_popups / open_url / launch_fresh / find.
-//
-// Cancellation gap workaround (per spike #4): 每 async endpoint 同时
-// export sibling `cancel_{op}(handle)` — c3 起加。c2 MVP 仅 sync
-// resolve_selector,不涉 async,cancellation N/A。
+// The Swift and Kotlin SDKs' view of the selector core. Everything here
+// is synchronous and pure: JSON tree plus JSON selector in, matched ids
+// out. Driving the device is not on this boundary — that goes over HTTP
+// to the runner, which keeps this one free of async and cancellation.
 
 namespace smix {
     // Resolve a Selector (JSON wire form) against an A11yNode tree
@@ -22,9 +16,9 @@ namespace smix {
     [Throws=FfiError]
     sequence<string> resolve_selector(string tree_json, string selector_json);
 
-    // v7.6 c1 — count + labels resolvers for Locator.toHaveCount /
-    // toHaveLabel. Both skip index modifier (per Playwright "find all"
-    // semantics — first/last/nth incompatible with "match every").
+    // Back Locator.toHaveCount and toHaveLabel. Both ignore any index
+    // modifier: first/last/nth pick one element, and asking "how many
+    // match" is a question about all of them, as in Playwright.
     //
     // resolve_selector_count: returns match count as u32.
     // resolve_selector_labels: returns Vec<String> of each match's
@@ -36,10 +30,9 @@ namespace smix {
     sequence<string> resolve_selector_labels(string tree_json, string selector_json);
 };
 
-// MVP error type — c2 only handles parse failure. c3+ 起扩 mirror
-// smix-error ExpectationFailure 全 FailureCode (NotFound / Ambiguous /
-// NotInteractable / Timeout / WrongState) + visible_elements +
-// suggestions (per design §9 #11 AI-readable contract).
+// Only the two ways this boundary can fail. A selector that matches
+// nothing is an empty sequence, not an error — the caller decides
+// whether that disappoints it.
 [Error]
 enum FfiError {
     "InvalidTreeJson",

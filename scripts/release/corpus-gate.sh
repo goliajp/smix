@@ -8,8 +8,7 @@
 # Corpus directory selection (in priority order):
 #   1. --corpus-dir=<path> CLI flag
 #   2. $SMIX_CORPUS_DIR env var
-#   3. crates/smix-cli/tests/fixtures/insight-bootstrap-corpus/
-#      (once insight opens the PR they promised)
+#   3. crates/smix-cli/tests/fixtures/bootstrap-corpus/
 #
 # The corpus is expected to be a flat directory of maestro-format
 # `.yaml` files. Each file runs as its own `smix run --script <path>`

@@ -1,6 +1,4 @@
-// v6.0 c3b — smix Android runner gradle settings.
-//
-// Mirrors swift sim-side smix-runner shape: a self-contained
+// Mirrors the iOS runner's shape: a self-contained
 // instrumentation test target that, when invoked via `adb shell am
 // instrument`, starts an embedded HTTP server on port 28080 and keeps
 // the process alive while serving routes (mirror /tree /find /tap

@@ -28,7 +28,6 @@ smix-annotate = { path = "../smix-annotate", version = "1.0.0" }
 # The AI-assertion tier. The runtime dispatches to it; the sense path must
 # not — see the fence test in crates/smix-ai-tier.
 smix-ai-tier = { path = "../smix-ai-tier", version = "1.0.0" }
-# v1.0.14 Cluster A — reset-app-data counter tracking.
 smix-simctl = { path = "../smix-simctl", version = "1.0.0" }
 dirs = "5"
 async-trait.workspace = true

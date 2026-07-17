@@ -7,10 +7,9 @@ import { getSims, startCapture, stopCapture } from '../lib/api'
 
 // /live — multi-sim live-capture observation panel. NOC wall: sharp corners,
 // 1px warm-tan rules, mono-uppercase metadata, accent pulse on LIVE markers.
-// web-v0.3 c4 introduced the chrome (left sim rail + right metadata sidebar
-// + dual-theme tokens) on a single-sim well; web-v0.4 c3 keeps the chrome
-// and swaps the center main into a grid mode (N path monitors share 1px
-// ruled edges, no gaps) ↔ single-detail mode (the v0.3 well, untouched).
+// The chrome (left sim rail, right metadata sidebar, dual-theme tokens)
+// stays put while the center swaps between a grid of monitors sharing 1px
+// ruled edges and a single-sim detail well.
 //
 // Default mode = grid when N>=2, single when N<=1. A grid cell click drops
 // into single mode focused on that sim. The mode-switch lets the operator
@@ -266,7 +265,7 @@ export function LiveView({ sims: injected }: { sims?: SimEntry[] }): JSX.Element
           <GridView sims={sims} selectedUdid={selected?.udid ?? null} onCellClick={onCellClick} />
         ) : (
           <>
-            {/* video well (single mode) — v0.3 c4 form, untouched */}
+            {/* video well (single mode) */}
             <div className="flex min-h-0 flex-1 items-center justify-center bg-[color:var(--bg-inset)] p-6">
               {selected == null ? (
                 <div className="font-mono text-[12px] tracking-[0.1em] text-[color:var(--fg-muted)] uppercase">

@@ -1,4 +1,4 @@
-// v7.8 c3 — TS perf baseline: Smix.launchApp + tap round-trip latency
+// Perf baseline: Smix.launchApp + tap round-trip latency
 // against MockSimRuntime + MockSelectorResolver. Writes results to
 // docs/perf/v7.8-baseline-ts.txt.
 //

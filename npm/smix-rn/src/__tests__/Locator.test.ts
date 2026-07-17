@@ -1,5 +1,4 @@
-// v7.5 c3 — Locator poll loop tests, mirror Kotlin LocatorMockTest +
-// Swift LocatorMockTests.
+// Locator poll-loop tests.
 
 import { describe, expect, test } from 'vitest'
 import {
@@ -124,5 +123,4 @@ describe('Locator.toContainText', () => {
   })
 })
 
-// v7.6 c1 update: toHaveLabel + toHaveCount stubs replaced — see
-// LocatorToHave.test.ts for the c1 replacement tests.
+// toHaveLabel and toHaveCount are covered in LocatorToHave.test.ts.

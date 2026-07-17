@@ -1,7 +1,5 @@
-// v7.5 c1 — App.tap mock-based unit tests.
-//
-// Mirror Kotlin AppTapMockTest + Swift AppTapMockTests. Verifies wire
-// pipeline (snapshot → SelectorResolver → tap synthesize) end-to-end
+// App.tap unit tests over mocks. Verifies the wire pipeline
+// (snapshot → SelectorResolver → tap synthesize) end-to-end
 // against MockSimRuntime + MockSelectorResolver.
 
 import { describe, expect, test } from 'vitest'

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- v6.0 c3b — smix-android-runner library module.
+    <!-- The runner's library module.
          No application tag — this is a pure library; the test APK
          (androidTest variant) carries the instrumentation runner. -->
 </manifest>

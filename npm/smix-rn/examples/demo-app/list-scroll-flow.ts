@@ -1,5 +1,5 @@
-// v7.10 c2 — demo flow: list scroll. Exercises App.swipe / Locator.toHaveCount
-// (v7.6 c1 wired) / fluent chaining (Selector.id().below()).
+// Demo flow: list scroll. Exercises App.swipe / Locator.toHaveCount /
+// fluent chaining (Selector.id().below()).
 //
 // Scenario: scrollable list of items;swipe up to reveal more;assert
 // total count + that specific item becomes visible after scroll.
