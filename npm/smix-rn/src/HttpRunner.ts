@@ -1,23 +1,10 @@
-// The HTTP-backed SmixSimRuntime and SelectorResolver: one POST per call
-// against a running smix-runner.
-//
-// KNOWN DEFECT — the endpoints below are not the ones the runner serves.
-// Of the 16 called here only /select/resolve, /select/resolve-count and
-// /select/resolve-labels exist; the other 13 answer 404. The runner takes
-// /session/launch-app where this sends /sim/launch, /tree for
-// /a11y/snapshot, /tap for /input/tap, /swipe-once for /input/swipe, and
-// serves no screenshot route at all (screenshots are taken out of band).
-// Every test here injects a mock client, so nothing compared these strings
-// against the runner's route table. Correcting the wire is a v2 breaking
-// change, tracked with the rest of them.
+// The HTTP-backed SelectorResolver + session client: one POST per call
+// against a running smix-runner. Every route it sends is one the runner
+// serves — /select/resolve{,-count,-labels} for resolution and /session/*
+// (driven by the Session class through this client's fetch + Session-Id
+// plumbing). Live driving and sense (launch / tap / snapshot) are not here;
+// they are pending the napi axis.
 
-import { type A11yNode } from './A11yNode.js'
-import type {
-  KeyName,
-  LaunchFreshCall,
-  SmixSimRuntime,
-  SwipeDirection,
-} from './SimRuntime.js'
 import type { LabelsResolver, SelectorResolver } from './SelectorResolver.js'
 
 /**
@@ -37,10 +24,12 @@ export type HttpFetch = (
 }>
 
 /**
- * SmixSimRuntime + SelectorResolver wrapper around the smix-runner HTTP
- * server. Used in production RN/Expo test targets via fetch.
+ * SelectorResolver + session client over the smix-runner HTTP server.
+ * Resolves selectors against a treeJson supplied by the caller and carries
+ * the `Session-Id` header for the {@link Session} lifecycle. Used in
+ * production RN/Expo test targets via fetch.
  */
-export class HttpSimRuntime implements SmixSimRuntime {
+export class HttpSimRuntime {
   readonly resolver: SelectorResolver
   /**
    * Backs toHaveCount (count = labels.length) and toHaveLabel. Pass it to
@@ -115,72 +104,6 @@ export class HttpSimRuntime implements SmixSimRuntime {
     return (r as { count: number }).count
   }
 
-  async launch(bundleId: string): Promise<void> {
-    await this.post('/sim/launch', { bundleId })
-  }
-
-  async terminate(bundleId: string): Promise<void> {
-    await this.post('/sim/terminate', { bundleId })
-  }
-
-  async snapshotTree(): Promise<A11yNode> {
-    const r = await this.post('/a11y/snapshot', {})
-    return (r as { tree: A11yNode }).tree
-  }
-
-  async synthesizeTap(x: number, y: number): Promise<void> {
-    await this.post('/input/tap', { x, y })
-  }
-
-  async sendString(text: string): Promise<void> {
-    await this.post('/input/send-string', { text })
-  }
-
-  async pressKey(key: KeyName): Promise<void> {
-    await this.post('/input/press-key', { key })
-  }
-
-  async swipe(direction: SwipeDirection): Promise<void> {
-    await this.post('/input/swipe', { direction })
-  }
-
-  async screenshot(): Promise<Uint8Array> {
-    const r = await this.post('/sim/screenshot', {}) as { png: string }
-    return base64ToBytes(r.png)
-  }
-
-  async systemPopups(): Promise<A11yNode[]> {
-    const r = await this.post('/sim/system-popups', {}) as { nodes: A11yNode[] }
-    return r.nodes
-  }
-
-  async openUrl(url: string): Promise<void> {
-    await this.post('/sim/open-url', { url })
-  }
-
-  async launchFresh(opts: {
-    bundleId: string
-    clearState: boolean
-    clearKeychain: boolean
-    appPath?: string | undefined
-  }): Promise<void> {
-    const payload: LaunchFreshCall = {
-      bundleId: opts.bundleId,
-      clearState: opts.clearState,
-      clearKeychain: opts.clearKeychain,
-      appPath: opts.appPath,
-    }
-    await this.post('/sim/launch-fresh', payload)
-  }
-
-  async launchFromPath(appPath: string): Promise<void> {
-    await this.post('/sim/launch-from-path', { appPath })
-  }
-
-  async synthesizeTapAtNormalized(nx: number, ny: number): Promise<void> {
-    await this.post('/input/tap-normalized', { nx, ny })
-  }
-
   private async post(path: string, body: unknown): Promise<unknown> {
     const url = `${this.baseUrl}${path}`
     const headers: Record<string, string> = {
@@ -224,14 +147,3 @@ export class HttpSimRuntime implements SmixSimRuntime {
 
 /** v1.0.4 §D7 — re-export from Session.ts so this file's use compiles. */
 export type SessionState = 'healthy' | 'degraded' | 'cycling' | 'dead'
-
-function base64ToBytes(b64: string): Uint8Array {
-  if (typeof globalThis.atob === 'function') {
-    const bin = globalThis.atob(b64)
-    const out = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
-    return out
-  }
-  // Node fallback
-  return Uint8Array.from(Buffer.from(b64, 'base64'))
-}

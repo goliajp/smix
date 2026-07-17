@@ -1,7 +1,7 @@
-// API-shape tests. Verifies
-// the SDK exposes the right TypeScript types + constructors and that
-// stub surface throws SmixNotImplementedError with explicit stage
-// markers.
+// API-shape tests. Verifies the SDK exposes the right TypeScript types +
+// constructors, and that the live driving / sense surface — pending the
+// napi axis — throws SmixNotImplementedError rather than posting to a
+// route the runner never served.
 
 import { describe, expect, test } from 'vitest'
 import {
@@ -10,11 +10,9 @@ import {
   FAILURE_CODES,
   literal,
   MockSelectorResolver,
-  MockSimRuntime,
   Selector,
   Smix,
   SmixNotImplementedError,
-  appPath,
   bundleId,
   type A11yRole,
   type FailureCode,
@@ -86,29 +84,26 @@ describe('FailureCode', () => {
   })
 })
 
-// toHaveLabel and toHaveCount run against resolve_selector_labels and
-// resolve_selector_count; no API on this surface is a stub.
-
-describe('Smix.launchApp wire', () => {
-  test('launchApp(.bundleId) calls runtime.launch', async () => {
-    const runtime = new MockSimRuntime()
-    await Smix.launchApp(bundleId('dev.smix.target'), runtime, new MockSelectorResolver().resolve)
-    expect(runtime.launchCalls).toEqual(['dev.smix.target'])
+describe('pending-napi surface throws SmixNotImplementedError', () => {
+  test('Smix.launchApp throws napi', async () => {
+    await expect(
+      Smix.launchApp(bundleId('dev.smix.target'), new MockSelectorResolver().resolve),
+    ).rejects.toBeInstanceOf(SmixNotImplementedError)
   })
 
-  test('launchApp(.appPath) dispatches to launchFromPath (mirror Swift v7.2 c5)', async () => {
-    const runtime = new MockSimRuntime()
-    const app = await Smix.launchApp(appPath('/tmp/Foo.apk'), runtime, new MockSelectorResolver().resolve)
-    expect(runtime.launchFromPathCalls).toEqual(['/tmp/Foo.apk'])
-    expect(runtime.launchCalls).toEqual([])
-    expect(app.bundleId).toBe('/tmp/Foo.apk')
+  test('App act + sense methods throw napi', async () => {
+    const app = new App('dev.smix.target', new MockSelectorResolver().resolve)
+    await expect(app.tap(Selector.id('x'))).rejects.toBeInstanceOf(SmixNotImplementedError)
+    await expect(app.fill(Selector.id('x'), 't')).rejects.toBeInstanceOf(SmixNotImplementedError)
+    await expect(app.snapshotTree()).rejects.toBeInstanceOf(SmixNotImplementedError)
+    await expect(app.tree()).rejects.toBeInstanceOf(SmixNotImplementedError)
+    await expect(app.systemPopups()).rejects.toBeInstanceOf(SmixNotImplementedError)
   })
 
-  test('relaunch issues terminate + launch', async () => {
-    const runtime = new MockSimRuntime()
-    const app = await Smix.launchApp(bundleId('dev.smix.target'), runtime, new MockSelectorResolver().resolve)
-    await app.relaunch()
-    expect(runtime.launchCalls).toEqual(['dev.smix.target', 'dev.smix.target'])
-    expect(runtime.terminateCalls).toEqual(['dev.smix.target'])
+  test('Locator assertions throw napi at the tree seam', async () => {
+    const app = new App('dev.smix.target', new MockSelectorResolver().resolve)
+    await expect(
+      app.find(Selector.id('x')).toBeVisible({ timeoutMs: 50 }),
+    ).rejects.toBeInstanceOf(SmixNotImplementedError)
   })
 })

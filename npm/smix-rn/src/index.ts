@@ -47,14 +47,6 @@ export {
 } from './Smix.js'
 
 export {
-  MockSimRuntime,
-  type KeyName,
-  type LaunchFreshCall,
-  type SmixSimRuntime,
-  type SwipeDirection,
-} from './SimRuntime.js'
-
-export {
   MockLabelsResolver,
   MockSelectorResolver,
   type LabelsResolver,

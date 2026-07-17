@@ -1,16 +1,18 @@
-import { type A11yNode, findById, flatten } from './A11yNode.js'
-import { ExpectationFailure } from './ExpectationFailure.js'
+// A handle to a running app. Live driving (tap/fill/swipe/...) and live
+// sense (snapshotTree) are pending the napi axis: the TS SDK has no FFI
+// path, so with the fictional HTTP wire deleted there is no way to reach a
+// simulator from here yet. These methods throw SmixNotImplementedError
+// rather than posting to a route the runner never served. What does work is
+// the resolver seam: given a treeJson, `resolver` / `labelsResolver` resolve
+// selectors against the runner's served /select/resolve* routes.
+
+import { type A11yNode } from './A11yNode.js'
 import { Locator, SmixNotImplementedError } from './Locator.js'
-import {
-  encodeSelectorJson,
-  type Selector,
-} from './Selector.js'
-import {
-  type KeyName,
-  type SmixSimRuntime,
-  type SwipeDirection,
-} from './SimRuntime.js'
+import { type Selector } from './Selector.js'
 import type { LabelsResolver, SelectorResolver } from './SelectorResolver.js'
+
+type KeyName = 'return' | 'delete' | 'space' | 'tab' | 'escape' | 'enter'
+type SwipeDirection = 'up' | 'down' | 'left' | 'right'
 
 /**
  * A handle to a running app on the simulator / emulator.
@@ -18,7 +20,6 @@ import type { LabelsResolver, SelectorResolver } from './SelectorResolver.js'
 export class App {
   constructor(
     public readonly bundleId: string,
-    public readonly runtime: SmixSimRuntime,
     public readonly resolver: SelectorResolver,
     /**
      * Wraps `resolve_selector_labels`, backing toHaveCount and
@@ -31,101 +32,47 @@ export class App {
     },
   ) {}
 
-  // ---- act methods --------------------------------------------------
+  // ---- act methods (pending napi) -----------------------------------
 
-  async tap(selector: Selector, _opts: { timeoutMs?: number } = {}): Promise<void> {
-    const tree = await this.runtime.snapshotTree()
-    const selectorJson = encodeSelectorJson(selector)
-    const treeJson = JSON.stringify(tree)
-
-    let matches: readonly string[]
-    try {
-      matches = await this.resolver(treeJson, selectorJson)
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      throw new ExpectationFailure({
-        code: 'unknown',
-        message: `FFI resolveSelector raised: ${msg}`,
-        selectorJson,
-      })
-    }
-
-    const firstId = matches[0]
-    const node = firstId !== undefined ? findById(tree, firstId) : null
-    if (node === null) {
-      throw new ExpectationFailure({
-        code: 'notFound',
-        message: 'no candidates after spatial + index filters',
-        selectorJson,
-        visibleElements: flatten(tree).slice(0, 20),
-        suggestions: [
-          'check `accessibilityIdentifier` is set on the target view',
-          'consider relaxing to text(...) if the label is more stable than the id',
-        ],
-      })
-    }
-
-    await this.runtime.synthesizeTap(
-      node.bounds.x + node.bounds.w / 2,
-      node.bounds.y + node.bounds.h / 2,
-    )
+  async tap(_selector: Selector, _opts: { timeoutMs?: number } = {}): Promise<void> {
+    throw new SmixNotImplementedError('napi', 'App.tap')
   }
 
-  /**
-   * Resolve [selector], tap to focus, then type [text].
-   */
-  async fill(selector: Selector, text: string): Promise<void> {
-    await this.tap(selector)
-    await this.runtime.sendString(text)
+  async fill(_selector: Selector, _text: string): Promise<void> {
+    throw new SmixNotImplementedError('napi', 'App.fill')
   }
 
-  async pressKey(key: KeyName): Promise<void> {
-    await this.runtime.pressKey(key)
+  async pressKey(_key: KeyName): Promise<void> {
+    throw new SmixNotImplementedError('napi', 'App.pressKey')
   }
 
-  async swipe(direction: SwipeDirection): Promise<void> {
-    await this.runtime.swipe(direction)
+  async swipe(_direction: SwipeDirection): Promise<void> {
+    throw new SmixNotImplementedError('napi', 'App.swipe')
   }
 
   async screenshot(): Promise<Uint8Array> {
-    return this.runtime.screenshot()
+    throw new SmixNotImplementedError('napi', 'App.screenshot')
   }
 
-  /**
-   * Tap at a normalized coordinate (0..1) — escape hatch per §9 #3.
-   * Out-of-range values throw ExpectationFailure code=wrongState.
-   */
-  async tapAtCoord(nx: number, ny: number): Promise<void> {
-    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) {
-      throw new ExpectationFailure({
-        code: 'wrongState',
-        message: `tapAtCoord arguments out of [0,1] range: nx=${nx}, ny=${ny}`,
-        suggestions: ['use normalized 0..1 — for raw points, divide by viewport size'],
-      })
-    }
-    await this.runtime.synthesizeTapAtNormalized(nx, ny)
+  /** Tap at a normalized coordinate (0..1) — escape hatch per §9 #3. */
+  async tapAtCoord(_nx: number, _ny: number): Promise<void> {
+    throw new SmixNotImplementedError('napi', 'App.tapAtCoord')
   }
 
   async terminate(): Promise<void> {
-    await this.runtime.terminate(this.bundleId)
+    throw new SmixNotImplementedError('napi', 'App.terminate')
   }
 
   async relaunch(): Promise<void> {
-    await this.runtime.terminate(this.bundleId)
-    await this.runtime.launch(this.bundleId)
+    throw new SmixNotImplementedError('napi', 'App.relaunch')
   }
 
-  async launchFresh(opts: {
+  async launchFresh(_opts: {
     clearState?: boolean
     clearKeychain?: boolean
     appPath?: string
   } = {}): Promise<void> {
-    await this.runtime.launchFresh({
-      bundleId: this.bundleId,
-      clearState: opts.clearState ?? false,
-      clearKeychain: opts.clearKeychain ?? false,
-      appPath: opts.appPath,
-    })
+    throw new SmixNotImplementedError('napi', 'App.launchFresh')
   }
 
   // ---- sense methods ------------------------------------------------
@@ -134,16 +81,24 @@ export class App {
     return new Locator(this, selector)
   }
 
+  /**
+   * The tree seam Locator polls. Pending napi: without an FFI path there is
+   * no live simulator to snapshot. Lands with the napi axis.
+   */
+  async snapshotTree(): Promise<A11yNode> {
+    throw new SmixNotImplementedError('napi', 'App.snapshotTree')
+  }
+
   async tree(): Promise<A11yNode> {
-    return this.runtime.snapshotTree()
+    return this.snapshotTree()
   }
 
   async systemPopups(): Promise<A11yNode[]> {
-    return this.runtime.systemPopups()
+    throw new SmixNotImplementedError('napi', 'App.systemPopups')
   }
 
-  async openUrl(url: string): Promise<void> {
-    await this.runtime.openUrl(url)
+  async openUrl(_url: string): Promise<void> {
+    throw new SmixNotImplementedError('napi', 'App.openUrl')
   }
 }
 

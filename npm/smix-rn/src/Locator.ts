@@ -76,7 +76,7 @@ export class Locator {
     let lastTree: A11yNode | null = null
     const selectorJson = encodeSelectorJson(this.selector)
     while (true) {
-      const tree = await this.app.runtime.snapshotTree()
+      const tree = await this.app.snapshotTree()
       lastTree = tree
       let labels: readonly string[]
       try {
@@ -126,7 +126,7 @@ export class Locator {
     let lastTree: A11yNode | null = null
 
     while (true) {
-      const tree = await this.app.runtime.snapshotTree()
+      const tree = await this.app.snapshotTree()
       lastTree = tree
       const selectorJson = encodeSelectorJson(this.selector)
       let matches: readonly string[]
