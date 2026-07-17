@@ -2978,6 +2978,7 @@ version = "1.0.27"
 dependencies = [
  "serde",
  "serde_json",
+ "smix-input",
  "smix-runner-client",
  "smix-screen",
  "smix-selector",

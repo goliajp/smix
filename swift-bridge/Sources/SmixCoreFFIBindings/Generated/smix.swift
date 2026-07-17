@@ -432,6 +432,22 @@ fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
+    typealias FfiType = Double
+    typealias SwiftType = Double
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
+        return try lift(readDouble(&buf))
+    }
+
+    public static func write(_ value: Double, into buf: inout [UInt8]) {
+        writeDouble(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -672,6 +688,12 @@ public protocol SmixDriverProtocol: AnyObject, Sendable {
     func cancelToken()  -> CancelToken
     
     /**
+     * The sessions the runner currently holds open, as JSON. For a caller
+     * reconciling its own handles with the runner's view.
+     */
+    func listSessions(cancel: CancelToken?) async throws  -> String
+    
+    /**
      * Open a session bound to `bundle_id`.
      *
      * Everything that acts on an app goes through one, because the runner's
@@ -763,6 +785,27 @@ open func cancelToken() -> CancelToken  {
     uniffi_smix_ffi_fn_method_smixdriver_cancel_token(self.uniffiClonePointer(),$0
     )
 })
+}
+    
+    /**
+     * The sessions the runner currently holds open, as JSON. For a caller
+     * reconciling its own handles with the runner's view.
+     */
+open func listSessions(cancel: CancelToken?)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixdriver_list_sessions(
+                    self.uniffiClonePointer(),
+                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_smix_ffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_smix_ffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
 }
     
     /**
@@ -877,14 +920,74 @@ public func FfiConverterTypeSmixDriver_lower(_ value: SmixDriver) -> UnsafeMutab
 public protocol SmixSessionProtocol: AnyObject, Sendable {
     
     /**
+     * Close the session, releasing the runner's cached app binding.
+     * Idempotent — closing an already-closed session is not an error.
+     */
+    func close(cancel: CancelToken?) async throws 
+    
+    /**
      * The runner's token for this session.
      */
     func id()  -> String
     
     /**
+     * Type into the focused element.
+     */
+    func inputText(text: String, cancel: CancelToken?) async throws 
+    
+    /**
      * Launch the session's app.
      */
     func launchApp(cancel: CancelToken?) async throws 
+    
+    /**
+     * Press a hardware-like key. `key` is a name the runner knows —
+     * "return", "delete", "arrowUp"; an unknown one is refused here, before
+     * any request, so the string boundary is not a way to send nonsense on.
+     */
+    func pressKey(key: String, cancel: CancelToken?) async throws 
+    
+    /**
+     * Relaunch the session's app.
+     *
+     * This is a plain relaunch. Clearing state before relaunch is
+     * launch-fresh orchestration, which lives on the host (simctl/adb) and
+     * not on this device-side boundary.
+     */
+    func relaunchApp(cancel: CancelToken?) async throws 
+    
+    /**
+     * Renew the session's activation, so the app stays foregrounded across a
+     * long-running flow.
+     */
+    func renewActivation(cancel: CancelToken?) async throws 
+    
+    /**
+     * Swipe so the named direction of content comes into view. `direction`
+     * is "up", "down", "left" or "right".
+     */
+    func swipeOnce(direction: String, cancel: CancelToken?) async throws 
+    
+    /**
+     * System alerts and permission dialogs currently on screen, as JSON.
+     */
+    func systemPopups(cancel: CancelToken?) async throws  -> String
+    
+    /**
+     * Tap at a normalized coordinate, both in `0.0..=1.0`. The escape
+     * hatch, for targets with no accessibility semantics to select on.
+     */
+    func tapAtNormCoord(nx: Double, ny: Double, cancel: CancelToken?) async throws 
+    
+    /**
+     * Tap the element with this accessibility id. Returns whether the
+     * runner found one to tap.
+     *
+     * This is how the SDKs tap: they resolve a selector to an id and pass
+     * it here, so no coordinate crosses the boundary. There is deliberately
+     * no absolute-pixel tap — the runner does not take one.
+     */
+    func tapById(id: String, cancel: CancelToken?) async throws  -> Bool
     
     /**
      * Terminate the session's app.
@@ -949,6 +1052,27 @@ open class SmixSession: SmixSessionProtocol, @unchecked Sendable {
 
     
     /**
+     * Close the session, releasing the runner's cached app binding.
+     * Idempotent — closing an already-closed session is not an error.
+     */
+open func close(cancel: CancelToken?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixsession_close(
+                    self.uniffiClonePointer(),
+                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_void,
+            completeFunc: ffi_smix_ffi_rust_future_complete_void,
+            freeFunc: ffi_smix_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
+}
+    
+    /**
      * The runner's token for this session.
      */
 open func id() -> String  {
@@ -956,6 +1080,26 @@ open func id() -> String  {
     uniffi_smix_ffi_fn_method_smixsession_id(self.uniffiClonePointer(),$0
     )
 })
+}
+    
+    /**
+     * Type into the focused element.
+     */
+open func inputText(text: String, cancel: CancelToken?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixsession_input_text(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(text),FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_void,
+            completeFunc: ffi_smix_ffi_rust_future_complete_void,
+            freeFunc: ffi_smix_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
 }
     
     /**
@@ -974,6 +1118,160 @@ open func launchApp(cancel: CancelToken?)async throws   {
             completeFunc: ffi_smix_ffi_rust_future_complete_void,
             freeFunc: ffi_smix_ffi_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
+}
+    
+    /**
+     * Press a hardware-like key. `key` is a name the runner knows —
+     * "return", "delete", "arrowUp"; an unknown one is refused here, before
+     * any request, so the string boundary is not a way to send nonsense on.
+     */
+open func pressKey(key: String, cancel: CancelToken?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixsession_press_key(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(key),FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_void,
+            completeFunc: ffi_smix_ffi_rust_future_complete_void,
+            freeFunc: ffi_smix_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
+}
+    
+    /**
+     * Relaunch the session's app.
+     *
+     * This is a plain relaunch. Clearing state before relaunch is
+     * launch-fresh orchestration, which lives on the host (simctl/adb) and
+     * not on this device-side boundary.
+     */
+open func relaunchApp(cancel: CancelToken?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixsession_relaunch_app(
+                    self.uniffiClonePointer(),
+                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_void,
+            completeFunc: ffi_smix_ffi_rust_future_complete_void,
+            freeFunc: ffi_smix_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
+}
+    
+    /**
+     * Renew the session's activation, so the app stays foregrounded across a
+     * long-running flow.
+     */
+open func renewActivation(cancel: CancelToken?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixsession_renew_activation(
+                    self.uniffiClonePointer(),
+                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_void,
+            completeFunc: ffi_smix_ffi_rust_future_complete_void,
+            freeFunc: ffi_smix_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
+}
+    
+    /**
+     * Swipe so the named direction of content comes into view. `direction`
+     * is "up", "down", "left" or "right".
+     */
+open func swipeOnce(direction: String, cancel: CancelToken?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixsession_swipe_once(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(direction),FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_void,
+            completeFunc: ffi_smix_ffi_rust_future_complete_void,
+            freeFunc: ffi_smix_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
+}
+    
+    /**
+     * System alerts and permission dialogs currently on screen, as JSON.
+     */
+open func systemPopups(cancel: CancelToken?)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixsession_system_popups(
+                    self.uniffiClonePointer(),
+                    FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_smix_ffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_smix_ffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
+}
+    
+    /**
+     * Tap at a normalized coordinate, both in `0.0..=1.0`. The escape
+     * hatch, for targets with no accessibility semantics to select on.
+     */
+open func tapAtNormCoord(nx: Double, ny: Double, cancel: CancelToken?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixsession_tap_at_norm_coord(
+                    self.uniffiClonePointer(),
+                    FfiConverterDouble.lower(nx),FfiConverterDouble.lower(ny),FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_void,
+            completeFunc: ffi_smix_ffi_rust_future_complete_void,
+            freeFunc: ffi_smix_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeDriveError_lift
+        )
+}
+    
+    /**
+     * Tap the element with this accessibility id. Returns whether the
+     * runner found one to tap.
+     *
+     * This is how the SDKs tap: they resolve a selector to an id and pass
+     * it here, so no coordinate crosses the boundary. There is deliberately
+     * no absolute-pixel tap — the runner does not take one.
+     */
+open func tapById(id: String, cancel: CancelToken?)async throws  -> Bool  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_smix_ffi_fn_method_smixsession_tap_by_id(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(id),FfiConverterOptionTypeCancelToken.lower(cancel)
+                )
+            },
+            pollFunc: ffi_smix_ffi_rust_future_poll_i8,
+            completeFunc: ffi_smix_ffi_rust_future_complete_i8,
+            freeFunc: ffi_smix_ffi_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
             errorHandler: FfiConverterTypeDriveError_lift
         )
 }
@@ -1383,16 +1681,46 @@ private let initializationResult: InitializationResult = {
     if (uniffi_smix_ffi_checksum_method_smixdriver_cancel_token() != 61093) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_smix_ffi_checksum_method_smixdriver_list_sessions() != 26254) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_smix_ffi_checksum_method_smixdriver_open_session() != 43029) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_smix_ffi_checksum_method_smixdriver_tree() != 61785) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_smix_ffi_checksum_method_smixsession_close() != 29830) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_smix_ffi_checksum_method_smixsession_id() != 57114) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_smix_ffi_checksum_method_smixsession_input_text() != 22972) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_smix_ffi_checksum_method_smixsession_launch_app() != 47408) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_smix_ffi_checksum_method_smixsession_press_key() != 16558) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_smix_ffi_checksum_method_smixsession_relaunch_app() != 5743) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_smix_ffi_checksum_method_smixsession_renew_activation() != 42618) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_smix_ffi_checksum_method_smixsession_swipe_once() != 4207) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_smix_ffi_checksum_method_smixsession_system_popups() != 819) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_smix_ffi_checksum_method_smixsession_tap_at_norm_coord() != 55480) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_smix_ffi_checksum_method_smixsession_tap_by_id() != 45712) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_smix_ffi_checksum_method_smixsession_terminate_app() != 29585) {
