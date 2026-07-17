@@ -52,9 +52,7 @@ trap 'rm -rf "$TMP"' EXIT
 run cargo build -p smix-ffi --release \
   || fail "cargo build -p smix-ffi failed — run with --verbose"
 
-# cargo names the cdylib after the crate; the Kotlin bindings load it as
-# libuniffi_smix, which the android build renames it to. The bindgen reads
-# whatever cargo produced.
+# cargo names the cdylib after the crate: libsmix_ffi.
 LIB=""
 for candidate in "$ROOT/target/release/libsmix_ffi.dylib" \
                  "$ROOT/target/release/libsmix_ffi.so"; do
@@ -70,8 +68,19 @@ run cargo run -q -p smix-ffi --features bindgen-cli --bin smix-bindgen-swift -- 
 # Library mode, not UDL. UDL mode reads only the .udl file, so anything
 # exported by proc-macro is silently absent from the Kotlin side while the
 # Swift side has it — a difference no error would announce.
+# The Kotlin bindings load the library by name, and library-mode bindgen
+# reads that name off the filename — so the bindgen has to see the name the
+# Android artifact ships under. Naming the crate `uniffi_smix` instead would
+# be tidier and does not work: uniffi maps a UDL-defined interface back to
+# its .udl by crate name, and renaming the lib breaks that lookup ("No path
+# known to UDL files for 'smix_ffi'"). So the rename is a step, and this is
+# the step, written down. It used to happen in someone's shell.
+UNIFFI_LIB="$TMP/lib/libuniffi_smix.${LIB##*.}"
+mkdir -p "$TMP/lib"
+cp "$LIB" "$UNIFFI_LIB" || fail "could not stage the library under its uniffi name"
+
 run cargo run -q -p smix-ffi --features bindgen-cli --bin smix-bindgen -- \
-  generate --library "$LIB" --language kotlin --out-dir "$TMP/kotlin" \
+  generate --library "$UNIFFI_LIB" --language kotlin --out-dir "$TMP/kotlin" \
   || fail "kotlin bindgen failed — run with --verbose"
 
 SWIFT_FRESH="$TMP/swift/smix.swift"

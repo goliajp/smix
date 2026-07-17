@@ -54,6 +54,15 @@ log "swift-bridge unit tests"
 ( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
   || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
 
+# --- ffi bindings -----------------------------------------------------
+# The Swift and Kotlin bindings are committed next to binary blobs, and
+# nothing regenerated them: the build scripts Package.swift and
+# build.gradle.kts name did not exist. Clean at the time this was added; here
+# so the boundary cannot drift away from the crate again.
+log "ffi bindings"
+"$ROOT/scripts/dev/ffi-bindings-fresh.sh" > /tmp/smix-ship-ffi-bindings.log 2>&1 \
+  || fail "FFI bindings are not what smix-ffi generates — see /tmp/smix-ship-ffi-bindings.log"
+
 # --- clippy -----------------------------------------------------------
 # `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
 # nothing ran clippy — so four lints sat in the tree, one of them a doc
