@@ -976,7 +976,7 @@ pub fn supervise(
 
         // Periodic health probe (see above).
         loop_ticks += 1;
-        if loop_ticks % health_probe_every == 0 {
+        if loop_ticks.is_multiple_of(health_probe_every) {
             if probe_health(port) {
                 health_consecutive_fails = 0;
             } else {
@@ -1076,15 +1076,13 @@ pub fn supervise(
                 continue;
             }
             let now = std::time::Instant::now();
-            if let Some(prev) = last_cycle_at {
-                if now.duration_since(prev) < cycle_cooldown {
-                    eprintln!(
-                        "supervise: interrupt hit within {:?} of last cycle — \
-                         skipping (cooldown)",
-                        cycle_cooldown
-                    );
-                    continue;
-                }
+            if last_cycle_at.is_some_and(|prev| now.duration_since(prev) < cycle_cooldown) {
+                eprintln!(
+                    "supervise: interrupt hit within {:?} of last cycle — \
+                     skipping (cooldown)",
+                    cycle_cooldown
+                );
+                continue;
             }
             // Storm check: prune expired timestamps, then check count.
             cycle_times.retain(|t| now.duration_since(*t) < storm_window);

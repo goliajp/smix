@@ -15,12 +15,27 @@ use smix_simctl::SimctlError;
 use crate::PermissionAction;
 use crate::device_control::{DeviceControl, Permission};
 
-/// Android `DeviceControl` impl. Wraps `smix_adb::AdbClient` + holds an
-/// active recording handle internally.
-///
-/// Some methods for operations not yet fully implemented surface
-/// `SimctlError::NonZeroExit` with a clear message; `smix-adb`
-/// translation lives in `adb_to_simctl_err`.
+/// What `simctl location start` uses when `--speed` is absent, per its own
+/// help text. Mirrored so a flow that omits the speed travels at the same
+/// rate on both platforms.
+const SIMCTL_DEFAULT_SPEED_MPS: f64 = 20.0;
+
+/// How often the waypoint loop posts a position. A GPS receiver reports at
+/// 1 Hz, and the emulator's own `mFixInterval` is 1000ms, so a faster tick
+/// would only queue fixes the framework reports at this rate anyway.
+const GEO_FIX_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Great-circle distance in metres. Used only to turn a leg into a
+/// duration, which is why the earth is a sphere here.
+fn haversine_metres(from: (f64, f64), to: (f64, f64)) -> f64 {
+    const EARTH_RADIUS_M: f64 = 6_371_000.0;
+    let (lat1, lat2) = (from.0.to_radians(), to.0.to_radians());
+    let d_lat = lat2 - lat1;
+    let d_lon = (to.1 - from.1).to_radians();
+    let a = (d_lat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (d_lon / 2.0).sin().powi(2);
+    2.0 * EARTH_RADIUS_M * a.sqrt().asin()
+}
+
 /// An `adb shell screenrecord` in flight.
 ///
 /// `stop_recording` takes no serial and no path — the trait shape assumes the
@@ -38,10 +53,19 @@ struct AndroidRecording {
     local_path: std::path::PathBuf,
 }
 
+/// Android `DeviceControl`, over `adb`.
+///
+/// Where a capability has no Android primitive, the method says so and
+/// names the alternative rather than succeeding quietly. `smix-adb`'s
+/// errors are translated by `adb_to_simctl_err`.
 pub struct AndroidDeviceControl {
     client: AdbClient,
     /// The `adb shell screenrecord` in flight, if any.
     recording: Mutex<Option<AndroidRecording>>,
+    /// The waypoint loop in flight, if any. iOS hands the route to
+    /// CoreSimulator and forgets it; here nothing on the device walks a
+    /// route, so this process does the walking.
+    travel: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Default for AndroidDeviceControl {
@@ -56,6 +80,7 @@ impl AndroidDeviceControl {
         AndroidDeviceControl {
             client: AdbClient::new(),
             recording: Mutex::new(None),
+            travel: Mutex::new(None),
         }
     }
 
@@ -65,14 +90,13 @@ impl AndroidDeviceControl {
         AndroidDeviceControl {
             client,
             recording: Mutex::new(None),
+            travel: Mutex::new(None),
         }
     }
 }
 
-/// Translate `AdbError` → `SimctlError` so the trait surface stays
-/// consistent (single error type across platforms — App layer maps to
-/// `ExpectationFailure`). Android-specific detail preserved in message.
-/// Translate an adb failure into the shared device-control error.
+/// Translate an adb failure into the shared device-control error, keeping
+/// the Android detail in the message.
 ///
 /// The subcommand is prefixed with `adb` so the message names the tool that
 /// actually ran. `SimctlError` is shared by both platforms, and a reader
@@ -313,13 +337,73 @@ impl DeviceControl for AndroidDeviceControl {
 
     async fn location_start(
         &self,
-        _serial: &str,
-        _points: &[(f64, f64)],
-        _speed_mps: Option<f64>,
+        serial: &str,
+        points: &[(f64, f64)],
+        speed_mps: Option<f64>,
     ) -> Result<(), SimctlError> {
-        // Multi-waypoint route requires Android emulator GPX/KML upload
-        // via emu console `geo gpx`.
-        Err(SimctlError::non_zero_exit("location_start", -1, "Android multi-waypoint route deferred to a future cycle"))
+        // The emulator console has no route: `geo` takes one position
+        // (`fix`), an NMEA sentence, or a GNSS sentence — no waypoint list,
+        // whatever a comment here once claimed about `geo gpx`. `automation
+        // play` replays a macro, but only one the emulator itself recorded.
+        //
+        // So the interpolation simctl does inside CoreSimulator happens here
+        // instead, one `geo fix` per tick. Same contract as iOS: the route
+        // starts and the call returns, so the loop outlives it.
+        if points.len() < 2 {
+            return Err(SimctlError::Malformed {
+                subcommand: "location_start".into(),
+                detail: format!("requires ≥2 waypoints, got {}", points.len()),
+            });
+        }
+        let speed = speed_mps.unwrap_or(SIMCTL_DEFAULT_SPEED_MPS);
+        if !(speed.is_finite() && speed > 0.0) {
+            return Err(SimctlError::Malformed {
+                subcommand: "location_start".into(),
+                detail: format!("speed must be finite and positive, got {speed}"),
+            });
+        }
+
+        let route: Vec<(f64, f64)> = points.to_vec();
+        let client = self.client.clone();
+        let serial = serial.to_string();
+
+        // Whoever asked last is where the device is going: stop the old walk
+        // before starting the new one, or the two take turns pointing the
+        // device at their own routes.
+        let mut slot = self.travel.lock().await;
+        if let Some(previous) = slot.take() {
+            previous.abort();
+        }
+        let handle = tokio::spawn(async move {
+            for pair in route.windows(2) {
+                let (from, to) = (pair[0], pair[1]);
+                let seconds = haversine_metres(from, to) / speed;
+                let ticks = (seconds / GEO_FIX_INTERVAL.as_secs_f64()).round() as u64;
+                for tick in 1..=ticks.max(1) {
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "a route long enough to lose f64 precision here would \
+                                  take longer to walk than the emulator stays up"
+                    )]
+                    let t = tick as f64 / ticks.max(1) as f64;
+                    let lat = from.0 + (to.0 - from.0) * t;
+                    let lon = from.1 + (to.1 - from.1) * t;
+                    if client
+                        .emu(&serial, &["geo", "fix", &lon.to_string(), &lat.to_string()])
+                        .await
+                        .is_err()
+                    {
+                        // The device is gone, or the console closed. There is
+                        // no one to tell — the caller returned long ago.
+                        return;
+                    }
+                    tokio::time::sleep(GEO_FIX_INTERVAL).await;
+                }
+            }
+        });
+
+        *slot = Some(handle);
+        Ok(())
     }
 
     // === Permissions ===
@@ -436,5 +520,71 @@ impl DeviceControl for AndroidDeviceControl {
             .shell(&rec.serial, &["rm", "-f", &rec.remote_path])
             .await;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Spans whose length follows from the sphere itself, so a wrong
+    /// formula cannot agree with them by construction.
+    #[test]
+    fn haversine_matches_the_geometry() {
+        let r = 6_371_000.0_f64;
+
+        // A degree of longitude on the equator: one 360th of the great
+        // circle.
+        let d = haversine_metres((0.0, 0.0), (0.0, 1.0));
+        assert!((d - r * std::f64::consts::PI / 180.0).abs() < 1.0, "{d}");
+
+        // Equator to pole: a quarter of the way round.
+        let d = haversine_metres((0.0, 0.0), (90.0, 0.0));
+        assert!((d - r * std::f64::consts::FRAC_PI_2).abs() < 1.0, "{d}");
+
+        // Antipodes: half. The far side is where a formula built on
+        // sin(Δ/2) rather than cos(Δ) keeps its accuracy.
+        let d = haversine_metres((0.0, 0.0), (0.0, 180.0));
+        assert!((d - r * std::f64::consts::PI).abs() < 1.0, "{d}");
+
+        // A meridian degree is a longitude degree on the equator, since
+        // both are the same great circle.
+        let d = haversine_metres((0.0, 0.0), (1.0, 0.0));
+        assert!((d - r * std::f64::consts::PI / 180.0).abs() < 1.0, "{d}");
+    }
+
+    /// One published distance, to catch a formula that is self-consistent
+    /// but not about the earth.
+    #[test]
+    fn haversine_matches_a_known_route() {
+        // Paris to New York, published as 5837 km.
+        let d = haversine_metres((48.856_614, 2.352_222), (40.712_776, -74.005_974));
+        assert!((d - 5_837_000.0).abs() < 20_000.0, "{d}");
+    }
+
+    #[test]
+    fn a_leg_of_no_length_takes_no_time() {
+        let here = (35.681_236, 139.767_125);
+        assert!(haversine_metres(here, here) < 0.001);
+    }
+
+    #[tokio::test]
+    async fn a_route_needs_somewhere_to_go() {
+        let device = AndroidDeviceControl::new();
+        let err = device
+            .location_start("emulator-5554", &[(35.0, 139.0)], None)
+            .await
+            .expect_err("one waypoint is not a route");
+        assert!(err.to_string().contains("≥2 waypoints"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_route_walked_at_zero_speed_never_arrives() {
+        let device = AndroidDeviceControl::new();
+        let err = device
+            .location_start("emulator-5554", &[(35.0, 139.0), (36.0, 140.0)], Some(0.0))
+            .await
+            .expect_err("zero speed would divide by zero and tick forever");
+        assert!(err.to_string().contains("positive"), "{err}");
     }
 }
