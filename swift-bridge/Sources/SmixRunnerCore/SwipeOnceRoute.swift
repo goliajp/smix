@@ -12,18 +12,10 @@ import Foundation
 // follows the same semantic as ScrollRoute (the SDK / driver maps content
 // scroll direction to swipe gesture direction inside the handler).
 public enum SwipeOnceRoute {
-  // left/right follow the XCUIElement primitives (swipeLeft/swipeRight) and
-  // the Kotlin runner's left/right impl: the value names the FINGER direction
-  // (swipeLeft = finger travels right to left, content follows the finger
-  // left, revealing right-side hidden content).
-  //
-  // NOTE: the up/down convention on this axis is INVERTED relative to that —
-  // "down" maps to swipeUp(), treating the value as the scroll/navigation
-  // direction ("scroll DOWN through content = swipe finger UP"). The two axes
-  // are therefore inconsistent, and so is up/down against the Kotlin runner,
-  // which reads up/down as a finger direction too. This reaches users through
-  // `App::swipe_once`. Aligning up/down is a behavior break for existing
-  // flows and is an open v2 decision, not a settled contract.
+  // All four name what content to SEE, not which way the finger moves —
+  // maestro's navigation convention, and the same on both platforms. The
+  // handler maps each to the inverse gesture ("down" → swipeUp), as does the
+  // Kotlin runner ("down" → finger 70%→30%).
   public enum Direction: String, Sendable {
     case up
     case down
