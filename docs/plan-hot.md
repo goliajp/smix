@@ -1,14 +1,10 @@
-# plan-hot — v2 到 C9：三个 SDK 改调 / 删虚构 wire
+# plan-hot — v2 到 C9：Swift SDK 改调 FFI 驱动面
 
 ## 目标 checkpoint
 
-C9：三个已发布 SDK 不再引用 runner 从不服务的 13 条虚构驱动 route。
+C9：Swift SDK(`SmixSDK`)删掉 `HttpSmixSimRuntime.swift`(那 307 行虚构 wire),App 改持 `SmixDriver`(拿树)+ `SmixSession`(动作)双 handle、驱动全走 C8 补齐的 FFI 边界。6 处公开 API break 逐条落地并记决策日志。
 
-- **Swift / Kotlin**：驱动 transport 从 `HttpSmixSimRuntime`(打 404 的自造 wire)换成 C8 补齐的 FFI 驱动面(`SmixDriver` + `SmixSession`)。selector resolver 早已走 FFI(`App.swift:67` / `App.kt:37` 的 `resolveSelector`),**不动**。App / Session / `Smix.launchApp` 的公开形状随之改变。
-- **TS**:无 FFI 通路(napi 未搭,C7/C8 已记),故删 `HttpRunner.ts` 里 13 条虚构驱动 route、保留被真正服务的 3-route resolver(`/select/resolve{,-count,-labels}`);动作级驱动移除并标注 pending napi 轴。
-- **测试**:三个 SDK 停止 mock wire —— 那正是虚构 wire 出厂的病根(`v2.md` 反复记)。删掉 mock-wire 测试后总数会降;**硬门是 0 failure,不是数目不减**。驱动正确性的真覆盖只有一处:Rust `smix-ffi/tests/driving.rs` 的 wiremock(C8 已建)。
-
-**做完的样子**:`python3 scripts/dev/route-conformance.py` → **rc=0**(今天 rc=1,13 route / 40 place / 3 SDK 文件),且三个 SDK 的测试套件 0 failure、Rust/clippy/hygiene/fence/bindings 无回归。**`route-conformance` rc=0 是本段唯一出口**(冷计划明记)。
+**只做 Swift。** Kotlin = C10、TS = C11(用户 2026-07-18 拍板拆三段)。`route-conformance` 在 C9 出口**仍红**(Kotlin/TS 还引着虚构 route),它的 rc=0 是 **C11** 的出口 —— 整个 SDK 手术的收口。
 
 ## 前置条件
 
@@ -73,7 +69,9 @@ cutover 后 `HttpSmixSimRuntime` 不复存在,注入式 mock transport **连编�
 - **TS**:删 `HttpRunner.test.ts` 的驱动 route mock,保留 resolver + `SelectorFullSchema` + `MvpApiShape`。
 - **SDK 测试总数会降 —— 门是 0 failure,不是数目不减**。不许为凑数留一个 mock-wire 测试(那是 gaming,`v2.md` C8 教训)。
 
-## 步骤（线性，无分叉；三步风险性质一致——都是发布物公开 API 的手术）
+## 步骤（线性，无分叉）
+
+> Kotlin(C10)/ TS(C11)已移出 —— 用户 2026-07-18 拍板拆三段。本段只做 Swift。
 
 > 判据同 C6/C7/C8 三次拆分(`v2.md`:拆的理由是**风险性质不同**,不是工作量)。本段三步(Swift/Kotlin/TS cutover)风险性质**一致**——都是发布物公开 API 的手术,故同属 C9。**但本段确实跨 3 语言 + 5-6 处 API break + 三套测试重写,是拆过之后仍偏大的一段**;是否再拆为 C9a/b/c 属 §10 用户权力,见文末,不内部消化。route-conformance rc=0 只在三步全落后达成(任一 route 只要还有一个 SDK 引用就仍报)。
 
@@ -95,58 +93,24 @@ cutover 后 `HttpSmixSimRuntime` 不复存在,注入式 mock transport **连编�
 **重构**
 - 无新增结构坏味则跳过。不"顺便"改 Kotlin/TS(§8.1)。
 
-### S2. Kotlin SDK 换 FFI 驱动面 + reshape App/Session/Smix.launchApp
-
-**红（写测试）**
-- 文件:`android-runner/sdk/src/test/kotlin/dev/smix/sdk/`
-- 断言:删 `AppTapMockTest` / `AppFillPressKeyMockTest` / `AppActSenseExtMockTest` / `LocatorMockTest` / `LocatorToHaveMockTest`(靠 `MockSelectorResolver`/mock runtime 驱动 wire 的),保留 `SelectorFullSchemaTest` / `MvpApiShapeTest` / `PerfBaselineTest`(FFI 之上纯逻辑)。当前红:`SmixSimRuntime` 删后旧测试不编译。
-
-**绿（实现）**
-- 删 `android-runner/sdk/src/main/kotlin/dev/smix/sdk/HttpSmixSimRuntime.kt`(240 行)、`SimRuntime.kt` 的 `SmixSimRuntime` interface。
-- `App.kt`:与 S1 逐项对应换 FFI(`uniffi.smix.SmixDriver`/`SmixSession`);移除 `screenshot`/`openUrl`/`launchFresh`,`AppTarget.AppPath` 破坏。
-- `Session.kt`:FFI `SmixSession` 顶替 HTTP Session;`stateFlow`(X-Sim-Health)丢失(同 ④)。
-- `Smix.kt`:`launchApp` 改经 FFI 构造。
-- 关键点:Kotlin 的 `resolver.resolve` 已走 `DefaultFfiResolver`(`App.kt:37`),不动;只换驱动 transport。
-
-**重构**
-- 跳过除非有明显坏味。
-
-### S3. TS SDK 删 13 虚构驱动 route,保留 3-route resolver,动作级驱动 pending napi
-
-**红（写测试）**
-- 文件:`npm/smix-rn/src/__tests__/HttpRunner.test.ts`
-- 断言:删除打 `/input/tap` 等虚构 route 的 mock 测试(`synthesizeTap → POST /input/tap`、`launch → POST /sim/launch` 等),保留 resolver 三条(`/select/resolve{,-count,-labels}`)测试。当前红:删掉 `HttpSimRuntime` 的驱动方法后,旧驱动测试引用不存在的方法。
-
-**绿（实现）**
-- `npm/smix-rn/src/HttpRunner.ts`:删 13 个驱动方法(`launch`/`terminate`/`snapshotTree`/`synthesizeTap`/`sendString`/`pressKey`/`swipe`/`screenshot`/`systemPopups`/`openUrl`/`launchFresh`/`launchFromPath`/`synthesizeTapAtNormalized`),**保留** `resolver`/`labelsResolver`/`resolveCount`(打 `/select/resolve*`,被服务)。
-- `App.ts`:动作级方法(`tap`/`fill`/`swipe`/`pressKey`/`screenshot`/`tapAtCoord`/`terminate`/`relaunch`/`launchFresh`/`openUrl`/`systemPopups`/`tree`)无 transport → 抛 `SmixNotImplementedError`(`Locator.ts` 已有),message 明写 "pending napi 轴";Locator 的 resolver-based 断言(`toBeVisible`/`toHaveCount`,走 resolver)保留。
-- 关键点:**不**把 TS 驱动接到真 route(如 `/tap-by-id`)—— 那是第二份 wire 实现,正是本 cycle 要消灭的 4× 重复病根(`v2.md` 2026-07-17 用户拍板"一份 wire client")。TS 的动作级驱动只能经 napi 调 Rust client,napi 未搭故 pending。
-
-**重构**
-- 跳过除非有明显坏味。
-
 ## Checkpoint C9 验收
 
 ```bash
-# 1. 唯一出口:route-conformance rc=0(13 虚构 route 从三个 SDK 全部消失)
-python3 scripts/dev/route-conformance.py >/tmp/c9route.out 2>&1; echo "route rc=$?"
-grep -E "clean|no runner serves" /tmp/c9route.out
-# 2. 三个 SDK 已不再引用任何虚构驱动 route(从源码数,不数记性)
-grep -rcE "/sim/launch|/a11y/snapshot|/input/tap|/input/swipe|/sim/screenshot|/sim/open-url|/sim/launch-fresh" \
-  npm/smix-rn/src/HttpRunner.ts \
-  android-runner/sdk/src/main/kotlin/dev/smix/sdk/HttpSmixSimRuntime.kt \
-  swift-bridge/Sources/SmixSDK/HttpSmixSimRuntime.swift 2>/dev/null || echo "runtime files deleted"
-# 3. Swift SDK 测试:0 failure(读 XCTest "Executed N" 行,不读 swift-testing 的 "0 tests" 行）
+# 1. Swift SDK 的虚构 wire 已删(从源码数,不数记性)
+test -e swift-bridge/Sources/SmixSDK/HttpSmixSimRuntime.swift && echo "STILL PRESENT" || echo "deleted"
+# 2. Swift App 真的走 FFI 驱动面(SmixDriver/SmixSession 引用出现在 App/Session/Smix)
+grep -rcE "SmixDriver|SmixSession" swift-bridge/Sources/SmixSDK/App.swift swift-bridge/Sources/SmixSDK/Smix.swift 2>/dev/null | grep -v ":0$"
+# 3. Swift SDK 只对 SDK 自己的路由说话:HttpSmixSimRuntime 删除后 SmixSDK 不再含任何虚构驱动 route
+grep -rcE "/sim/launch|/a11y/snapshot|/input/tap|/sim/screenshot|/sim/open-url" swift-bridge/Sources/SmixSDK/ 2>/dev/null | grep -v ":0$" || echo "SmixSDK: no fictional routes"
+# 4. Swift SDK 测试:0 failure(读 XCTest "Executed N" 行,不读 swift-testing 的 "0 tests" 行)
 ( cd swift-bridge && swift test >/tmp/c9sw.out 2>&1; echo "swift rc=$?"
   grep "Executed .* tests" /tmp/c9sw.out | tail -1 )
-# 4. Kotlin SDK 测试:强制重跑,数 XML,failures=0
-( cd android-runner && ./gradlew :sdk:test --rerun-tasks --console=plain >/dev/null 2>&1
-  find sdk -name "TEST-*.xml" | xargs grep -ho 'failures="[0-9]*"' | grep -o '[0-9]*' | paste -sd+ - | bc )
-# 5. TS 测试:vitest 0 failed
-( cd npm/smix-rn && bun x vitest run >/tmp/c9ts.out 2>&1; echo "vitest rc=$?"; tail -4 /tmp/c9ts.out )
+# 5. route-conformance 仍红(Kotlin/TS 未改 = C10/C11;rc=0 是 C11 出口,不是 C9)
+python3 scripts/dev/route-conformance.py >/tmp/c9route.out 2>&1; echo "route rc=$? (预期 1)"
+grep -oE "[0-9]+ route\(s\)" /tmp/c9route.out | head -1
 # 6. 无回归:Rust / clippy / hygiene / fence / bindings-fresh
 cargo test --workspace >/tmp/c9.out 2>&1; echo "cargo rc=$?"
-grep -c "^test result: ok" /tmp/c9.out; grep -c "test result: FAILED" /tmp/c9.out
+grep -c "^test result: ok" /tmp/c9.out; grep -c "^test result: FAILED" /tmp/c9.out
 cargo clippy --workspace --all-targets >/dev/null 2>&1; echo "clippy rc=$?"
 python3 scripts/dev/hygiene-scan.py --noise-only >/dev/null 2>&1; echo "hygiene rc=$?"
 bash scripts/dev/fence-check.sh >/dev/null 2>&1; echo "fence rc=$?"
@@ -155,34 +119,32 @@ bash scripts/dev/ffi-bindings-fresh.sh >/dev/null 2>&1; echo "bindings-fresh rc=
 
 期望，逐条:
 
-1. **`route rc=0`**,`/tmp/c9route.out` 含 `route-conformance: clean —`(不再有 `no runner serves`)。**这是 C9 唯一出口。**
-2. 三个 runtime 文件已删(或至少不含任何虚构驱动 route);TS 侧 `HttpRunner.ts` 只余 resolver 三条。
-3. **`swift rc=0`** 且 `Executed N tests … 0 failures`。**N 会低于 C8 的 360**(SmixSDKTests 的 mock-wire 测试已删);门是 **0 failures**,不是 N 不减(留 mock 测试凑数 = gaming)。
-4. Kotlin failures 求和 = **0**。同样测试数会降。
-5. **`vitest rc=0`**,`0 failed`。
-6. `cargo rc=0`;`test result: ok` ≥ **132**(Rust 不动,不回退)、`FAILED` **0**;clippy `rc=0`;hygiene `rc=0`;fence `rc=0`;**bindings-fresh `rc=0`**(本段不碰 `smix-ffi`,bindings 应逐字节不变)。
+1. `deleted`(307 行虚构 runtime 已删)。
+2. App.swift + Smix.swift 的 `SmixDriver|SmixSession` 引用计数 **≥1**(App 真持双 handle、驱动走 FFI)。
+3. `SmixSDK: no fictional routes`(整个 SmixSDK 源码树不再含任何 runner 不服务的驱动 route)。
+4. **`swift rc=0`** 且 `Executed N tests … 0 failures`。**N 会低于 C8 的 360**(SmixSDKTests 的 mock-wire 测试已删);门是 **0 failures**,不是 N 不减(留 mock 测试凑数 = gaming)。
+5. **`route rc=1`** —— 本段**只改 Swift**,Kotlin/TS 仍引虚构 route,route-conformance 仍报红。它的 rc=0 是 **C11**(TS)的出口,写在明处防止把 C10/C11 的工作偷进本段。
+6. `cargo rc=0`;`test result: ok` ≥ **132**(Rust 不动,不回退)、`FAILED` **0**;clippy `rc=0`;hygiene `rc=0`;fence `rc=0`;**bindings-fresh `rc=0`**(本段不碰 `smix-ffi`,bindings 逐字节不变)。
 
 **仪器纪律**（本 cycle 反复吃亏，下列本 session 已亲手复现）:
-- **测退出码不接管道** —— `cmd | head; echo $?` 量的是 `head`（`perf-decomposition-vs-polish.md` §1；本 cycle 已犯多次）。所有 rc 都 `>/dev/null 2>&1; echo "rc=$?"` 单独取,或落 `/tmp` 再 grep。
+- **测退出码不接管道** —— `cmd | head; echo $?` 量的是 `head`（`perf-decomposition-vs-polish.md` §1；本 cycle 已犯多次）。所有 rc `>/dev/null 2>&1; echo "rc=$?"` 单独取,或落 `/tmp` 再 grep。
 - `swift test` 同时打 swift-testing 的 `0 tests` 与 XCTest 的 `Executed N tests` —— grep 错行就是拿 0 个测试的绿冒充真身。
-- `./gradlew test` 的 `BUILD SUCCESSFUL` 可在零执行时打印 —— `--rerun-tasks` 强制重跑 + 数 XML。
 - **不在编译未完成时读测试输出**(C7 踩过 `exit=101 / 22 buckets` 假读数);落 `/tmp` 等命令整体结束再 grep。
 - **SDK 测试总数会降是预期的**,别把"数目下降"读成回归 —— 判据是 failures=0。
 
 **未被本 checkpoint 覆盖的**（写在明处,同 C3-C8 教训:mock 与 gate 证明不了真设备上的事）:
-1. **route-conformance 只证"不再引用不存在的 route",wiremock(C8)只证"FFI 真发 HTTP + cancel 真取消 + runner 收到 sessionId"** —— 都不证请求在真 sim / 真 emulator 上被正确应答。四 SDK 的真设备 smoke 属 C12 ship gate。
-2. **TS 动作级驱动 pending napi** —— 本段后 TS 无 live driving(连 sense 都依赖虚构的 `/a11y/snapshot`),只余类型 + resolver seam。napi 是独立 deliverable,不在本段。
-3. **X-Sim-Health session 健康状态流丢失**(起点 ④)—— FFI 不透传 HTTP 头,该特性无 FFI 家;重造它是 observability 独立特性,不塞进本段。
+1. **本段只做 Swift** —— Kotlin(C10)/ TS(C11)一行不改,route-conformance 因此仍红。这不是遗漏,是拆分边界。
+2. **驱动真覆盖在 C8 的 Rust wiremock,不在 Swift 侧** —— Swift SDK 测试只证 FFI 之上的逻辑(shape/selector/failure),停止 mock wire。
+3. **X-Sim-Health session 健康状态流丢失**(起点 ④)—— FFI 不透传 HTTP 头,该特性无 FFI 家;重造它是 observability 独立特性,不塞进本段。screenshot/openUrl/launchFresh 移除、走 CLI(用户 2026-07-18 拍板)。
 
 ## 完成后动作
 
 1. 归档此文件到 `docs/plan-history/v2-c9-hot.md`
-2. 调 sub-agent 生成新 `plan-hot.md`（到 C10:四个改名/合并 break —— #1 sessions 强制 · #3 `SMIX_*` 折进 config · #4 `Modifier(s)`+双 `open_url` 合并 · #5 `smix-recorder-ir`→`smix-authoring-ir` + `SimctlError` 改名),见 CLAUDE.md §6
+2. 调 sub-agent 生成新 `plan-hot.md`（到 C10:Kotlin SDK 改调 FFI 驱动面,同 C9 逐项对应),见 CLAUDE.md §6
 
 ## 与冷计划不符之处（必须先读，不要隐瞒）
 
-1. **"三个 SDK 改调唯一那份 wire client"隐含 Swift/Kotlin 只换到 `SmixSession` —— 实际要 `SmixDriver` + `SmixSession` 两个 handle**。`tree`/`list_sessions` 在 `SmixDriver` 上(`driving.rs:132,166`),acting 在 `SmixSession` 上,而 App 的一次 tap 同时用到两者(起点 ②)。冷计划/prompt 的 measured-fact 把驱动 handle 说成单个 session,不准。App 的 reshape 必须持双 handle。
-2. **prompt 列 5 处 API break,实际 6 处**:第 6 处是 Swift/Kotlin `Session` 的 **X-Sim-Health 状态流特性丢失**(起点 ④)——FFI 边界不透 HTTP 响应头,`DriveError` 只带 message。这不是"移一个方法",是一个可观测性特性无 FFI 家。记入 v2 决策日志。
-3. **"三个 SDK runtime 都删"对 TS 过强**:`HttpRunner.ts` 的 resolver 部分(`/select/resolve{,-count,-labels}`)是**被服务的**,必须**保留**;只删它的 13 个虚构驱动方法。Swift/Kotlin 的 runtime 才是整文件删。
-4. **TS 半段的诚实 scope**:仓库零 napi 基础(C7/C8 实测),本段**不交付 napi binding**;TS 动作级驱动移除、pending napi 轴(独立 deliverable,§13 非省工)。更深:TS 的 sense 也依赖虚构 route,故删驱动后 TS 无 live driving。
-5. **本段是拆过 C6/C7/C8 之后仍偏大的一段** —— 跨 3 语言 + 5-6 处公开 API break + 三套测试重写 + 两语言 App/Session/Smix reshape。**三步风险性质一致**(都是发布物公开 API 手术,非"修坏的 vs 改能用的"那种异质),按 `v2.md` 既有判据(拆的理由是风险性质不同,不是工作量)**不构成再拆的理由**;且 route-conformance rc=0 是一个只在三步全落后才成立的整体 gate,天然属一个 checkpoint。**但体量确实大,是否碎成 C9a/b/c 属 §10 用户权力,不内部消化 —— 提请用户拍板。**
+1. **驱动 handle 是两个,不是一个** —— `tree`/`list_sessions` 在 `SmixDriver`(`driving.rs:132,166`),acting 在 `SmixSession`,App 一次 tap 同时用到两者。冷计划说"换到 `SmixSession`"不准,**App 必须持双 handle**。
+2. **API break 是 6 处**(冷计划记 5):第 6 处 = `Session` 的 **X-Sim-Health 状态流丢失**(`Session.swift:38` 的 `stateStream`/`state`)——FFI 边界不透 HTTP 响应头,该特性无 FFI 家。用户 2026-07-18 拍板:screenshot/openUrl/launchFresh 一并移除、走 CLI(它们本就依赖从未工作过的虚构 wire)。
+3. **本段只做 Swift** —— 用户 2026-07-18 拍板拆三段(C9 Swift / C10 Kotlin / C11 TS)。route-conformance rc=0 是 C11 的整体收口,不是 C9 的出口。
+4. **驱动真覆盖不在 Swift 侧** —— 在 C8 的 Rust wiremock。Swift SDK 测试删 mock-wire(那正是虚构 wire 出厂的病因),只测 FFI 之上的逻辑。
