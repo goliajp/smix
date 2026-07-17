@@ -1,8 +1,12 @@
-# plan-hot — v2 到 C6：六项破坏性变更 + codemod 说真话 + wire v2 协商
+# plan-hot — v2 到 C6：让 wire 与 VERB_TABLE 说真话
 
 ## 目标 checkpoint
 
-C6：六项破坏性变更全部落地；`smix migrate` 的输出**保证能被 parser 收**，并给出 summary 而非一句 "done"；wire 由 `/health` 协商 schema 版本。通过后世界：**三张互相矛盾的表（SDK 的路由表 / VERB_TABLE / parser 的 dispatch）合成一张，且每一张的偏离都由 gate 机械挡住** —— 而不是靠谁手工枚举一遍。
+C6：break #2（wire schema-version 协商）与 break #6（VERB_TABLE freeze v2）落地；三个已发布 SDK 打的是 runner 真的服务的路由；`smix migrate` 的输出**保证能被 parser 收**，并给出 summary 而非一句 "done"。
+
+通过后世界：**三张互相矛盾的表（SDK 的路由表 / VERB_TABLE / parser 的 dispatch）合成一张，且每一张的偏离都由 gate 机械挡住** —— 而不是靠谁手工枚举一遍（手工枚举已在本 cycle 失败五次）。
+
+其余四项破坏性变更（#1 #3 #4 #5）+ `SimctlError` 改名 = C7。
 
 ## 前置条件
 
@@ -59,6 +63,8 @@ back:               → pressKey:          键 `back` 被丢掉（应为 `pressK
 **⑧ 其余 break 的落点已核**：`SimctlError` 定义在 `smix-simctl/src/lib.rs:43`，全仓 168 处 / 3 个 crate（smix-simctl 4 文件 · smix-sdk 4 · smix-cli 2）。`Modifier` / `Modifiers` 的重复**只在 Kotlin 与 Swift SDK**（`Modifier.kt` 9-case sealed interface + `Modifiers.kt` data class；Swift 同构）—— Rust 只有 `Modifiers`（`smix-selector/src/lib.rs:220`），TS 无此文件。`/health` 现在的 body 是 `{"ok":true,"runnerVersion":…}`（`HealthRoute.swift`），**无 `wireSchema` 字段**。
 
 ## 步骤（线性，无分叉）
+
+> S3（四个改名 break + `SimctlError` 改名）已移出本段，成为 C7 —— 见 v2.md 决策日志 2026-07-17「拍板·拆 C6」。
 
 ### S1. 让 wire 说真话：路由一致性 gate + 三个 SDK 接回真路由 + wire v2 协商（break #2）
 
@@ -122,26 +128,6 @@ back:               → pressKey:          键 `back` 被丢掉（应为 `pressK
 
 - `TABLE_ROWS_THE_PARSER_LACKS` 清空并连同 `the_known_gap_list_does_not_outlive_the_gaps` 一起删 —— 债还完，清单本身就该走。反向 gate 改问 `smix_name` 之后，这个 allowlist 没有存在理由。
 
-### S3. 四个改名 / 合并 break（#1 #3 #4 #5）+ `SimctlError` 改名
-
-**红（写测试）**
-
-- 文件：`crates/smix-runner-client/tests/session_mandatory.rs`（新）+ `crates/smix-cli/tests/config_env.rs`（新）+ `android-runner/sdk/src/test/kotlin/dev/smix/sdk/ModifierMergeTest.kt`（新）
-- 断言：(#1) 不带 `Session-Id` 的请求被**拒绝并给出可读理由**，`App-Activate` 头的语义已移除；(#3) `SMIX_*` 开关经 config 读取，且每个被具名 warn 后改写；(#4) 合并后的单一 modifier 模型 round-trip 出与 Rust `#[serde(flatten)]` 逐字节相同的 wire JSON；(#5) `smix_authoring_ir::` 可用。当前全红。
-
-**绿（实现）**
-
-- **#1 sessions 强制**：`crates/smix-runner-client/src/lib.rs`（`App-Activate` 在 `:195,359,493,618,626`）+ `crates/smix-cli/src/main.rs:323` + 四个 SDK 的 session handle。codemod 规则：`smix run flow.yaml` → `smix run --session $(smix session new) flow.yaml`。
-- **#3 `SMIX_*` 折进 config**：实测全仓 **39 个** `SMIX_*`（`SMIX_RUNNER_PORT` 44 处最重），**不是 roadmap 写的 3 个**。本 step 折进 config 的是 roadmap 点名的 escape hatch 语义那一类：`SMIX_LAUNCH_FRESH_FORCE_REINSTALL` · `SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE` · `SMIX_AUTO_OCR_FALLBACK` · `SMIX_ENABLE_AI_ASSERTIONS`（C2 决策日志 `v2.md:66` 记的「待落实」就是这里）。`SMIX_DEV_LOCK` **不实现** —— 它不存在（见文末）。其余（`SMIX_UDID` / `SMIX_RUNNER_PORT` / 测试专用的 `SMIX_APP_PATH_*` 等）是环境寻址与测试缝，不是 opt-out 开关，**留着**，并把这条判据写进 config 模块的 doc comment。
-- **#4 `Modifier(s)` + 双 `open_url` 合并**：只动 Kotlin 与 Swift SDK（`Modifier.kt` + `Modifiers.kt`；`Modifier.swift` + `Modifiers.swift`）—— Rust/TS 无此 dupe。以 Rust `smix-selector::Modifiers`（`lib.rs:220`）的 flatten 形状为准，**wire 字节不变**。`openLink: {link}` + `open_url` 双形 → 单模型（`parser.rs:1276,2315`）。
-- **#5 `smix-recorder-ir` → `smix-authoring-ir`**：整 crate 改名（`Cargo.toml` name/description/documentation + README + BUDGETS + CHANGELOG），下游 8 个 `.rs` 引用点 + `smix-recorder/Cargo.toml:22`。**不留 re-export shim** —— `v2.md:48` 已定「直发不设 runway」。
-- **`SimctlError` → `DeviceError`**：`smix-simctl/src/lib.rs:43` 定义 + 168 处调用点（3 crate）。C5 已把 Display 从硬编码 `xcrun simctl` 改成转述真实 argv（`v2.md:109`），**类型名是最后一处仍在说谎的地方** —— 它服务两个平台。
-- 关键点：#1 与 #5 都会波及四个 SDK 的公开面，**四 SDK lockstep 是 C8 的门禁**，本 step 只保证四家同时改完、同时绿。
-
-**重构**
-
-- 无。
-
 ## Checkpoint C6 验收
 
 ```bash
@@ -154,9 +140,7 @@ cargo test -p smix-adapter-maestro --test verb_table_gate 2>&1 | grep "^test res
 grep -c "TABLE_ROWS_THE_PARSER_LACKS" crates/smix-adapter-maestro/tests/verb_table_gate.rs
 # 4. wire v2 协商
 cargo test -p smix-runner-wire 2>&1 | grep "^test result:"
-# 5. 破坏性改名真的落了地（量代码，不量排版）
-grep -rn "SimctlError" crates/ --include='*.rs' | wc -l
-test -d crates/smix-authoring-ir && test ! -d crates/smix-recorder-ir && echo RENAME_OK
+# 5. 三个 SDK 真的接回了真路由（量代码，不量排版）
 grep -rn "sim/screenshot" npm/smix-rn/src android-runner/sdk/src/main swift-bridge/Sources/SmixSDK | wc -l
 # 6. 无回归
 cargo test --workspace 2>&1 | grep -c "^test result: ok"
@@ -178,7 +162,7 @@ python3 scripts/dev/hygiene-scan.py --noise-only ; echo "rc=$?"
 2. `test result: ok`，`0 failed`。
 3. `test result: ok`；`grep -c` 得 **0**（allowlist 连同它的守卫测试一起删）。
 4. `test result: ok`。
-5. `SimctlError` 计数 **0**；打印 `RENAME_OK`；`sim/screenshot` 计数 **0**。
+5. `sim/screenshot` 计数 **0**（三个 SDK 都不再打这条不存在的路由）。
 6. `test result: ok` 计数 **≥129**（本段基线实测 129，不回退）；clippy 计数 **0**；hygiene `rc=0`；swift 那行读作 `Executed 360 tests, with 2 tests skipped and 0 failures`（**≥360 且 0 failures**，本段实测 360）；android 两个数字为 **≥134** 与 **0**（本段实测 134 / 0）。
 
 **仪器纪律**（本 cycle 反复吃亏；下列每条都是本次热化**亲手复现**过的，不是转述）：
@@ -193,12 +177,12 @@ python3 scripts/dev/hygiene-scan.py --noise-only ; echo "rc=$?"
 ## 完成后动作
 
 1. 归档此文件到 `docs/plan-history/v2-c6-hot.md`
-2. 调 sub-agent 生成新 `plan-hot.md`（到 C7：docs 重构 + `llms.txt` + 宪法/roadmap 同步 + 死链清零），见 CLAUDE.md §6
-3. C7 必须承接本段记账的三条：roadmap.md:85 的 `SMIX_DEV_LOCK` 是幻影需删；roadmap.md:86 的 `Modifier`/`Modifiers` 描述需注明只在 Kotlin/Swift；`docs/v2.md:99-104` 记的「两个 SDK」需更正为三个。
+2. 调 sub-agent 生成新 `plan-hot.md`（到 C7：四个改名 / 合并 break #1/#3/#4/#5 + `SimctlError` 改名），见 CLAUDE.md §6
+3. C8（docs）必须承接本段记账的三条：roadmap.md:85 的 `SMIX_DEV_LOCK` 是幻影需删；roadmap.md:86 的 `Modifier`/`Modifiers` 描述需注明只在 Kotlin/Swift；`docs/v2.md` 记的「两个 SDK」**已更正为三个**（2026-07-17）。
 
 ## 与冷计划不符之处（必须先读，不要隐瞒）
 
 1. **冷计划 C6 的风险条「wire v2 协商破坏旧 runner」预设 SDK 现在说的是一套能用的 wire。它们不是** —— 四个 SDK 里三个的 13 个路由从来没被任何 runner 服务过。在 404 的路由上协商 schema 版本是在为不存在的东西谈判。故 S1 把**路由一致性排在协商之前**，顺序与冷计划的表述相反。
 2. **dossier 对 break #6 的表述已被 C1 做完了**。`architecture.html` §03 写 break #6 = 「注册 `clearUserDefaults` / `resetAppData` / `clearAppData` + 加 parser ⊆ table 测试」—— 这**正是 C1 已落地的内容**（`v2.md:149`）。C6 剩下的是**反方向**（表承诺而 parser 不认的 10 行）+ codemod 产物可用性，与 dossier 的字面描述不同。
 3. **roadmap.md:85 点名要删的 `SMIX_DEV_LOCK` 在全仓不存在** —— 只出现在 roadmap 那一行本身。break #3 的 3-var 表述是错的：真实是 39 个 `SMIX_*`，其中只有 4 个属「opt-out 开关」这一类。
-4. **C6 是本版本最大的一段**：8 项工作（6 breaks + 路由一致性 + codemod 契约）压进 3 个 step，S3 一步扛 4 个 break + 1 个改名。这不违反 §2 的「1-3 个 step」字面，但它逼近了「一个 checkpoint 反馈要紧」的初衷（§1）。**记在此处供拍板**：若要拆成 C6a（wire + verbs）/ C6b（四个 rename break），那是冷计划的改动，属用户权限，不在本段自行决定。
+4. **C6 原本是本版本最大的一段** —— 8 项工作压进 3 step。**已拆**：四个改名 break 移出为 C7，原 C7/C8 顺延为 C8/C9。理由见 v2.md 决策日志（风险性质不同：本段修的是已经坏掉的东西，改名改的是能用的东西）。
