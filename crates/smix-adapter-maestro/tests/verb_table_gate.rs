@@ -74,6 +74,33 @@ const ACCEPTED: &[&str] = &[
 /// maestro-specific APIs). See the tail note in `smix-verbs`.
 const EXCLUDED: &[&str] = &["runScript", "evalScript"];
 
+/// In VERB_TABLE, but the parser has no dispatch for them — so a flow that
+/// writes one gets `UnsupportedCommand` from a verb the table advertises.
+///
+/// This list exists to be emptied. It is here rather than absent because the
+/// membership check only ran one way: it caught a verb the parser accepted
+/// and the table forgot, and never a verb the table promised and the parser
+/// never learned. Eleven had accumulated behind that blind spot.
+///
+/// Each is one of two things, and both need a decision rather than silence:
+/// a native form reachable another way (`tapAtCoord` is `tapOn: {point}`,
+/// `ocrText` is a selector field), in which case the row's maestro name is
+/// misleading and should be corrected; or a genuine gap (`toggleAirplaneMode`
+/// has no Step variant at all), in which case it wants wiring or removal.
+const TABLE_ROWS_THE_PARSER_LACKS: &[&str] = &[
+    "anchorRelative",
+    "back",
+    "doubleTap",
+    "findTextByOcr",
+    "longPress",
+    "ocrText",
+    "swipeAtCoord",
+    "tapAtCoord",
+    "tapByCoord",
+    "tapById",
+    "toggleAirplaneMode",
+];
+
 #[test]
 fn parser_dispatch_verbs_are_in_verb_table() {
     let missing: Vec<&str> = ACCEPTED
@@ -84,6 +111,42 @@ fn parser_dispatch_verbs_are_in_verb_table() {
     assert!(
         missing.is_empty(),
         "parser dispatches these verbs but they are absent from VERB_TABLE: {missing:?}"
+    );
+}
+
+#[test]
+fn verb_table_rows_reach_the_parser() {
+    // The other direction. A row the parser never learned is a verb the table
+    // advertises and a flow cannot use.
+    let unreachable: Vec<&str> = smix_verbs::VERB_TABLE
+        .iter()
+        .map(|e| e.maestro_name)
+        .filter(|m| {
+            !ACCEPTED.contains(m)
+                && !EXCLUDED.contains(m)
+                && !TABLE_ROWS_THE_PARSER_LACKS.contains(m)
+        })
+        .collect();
+    assert!(
+        unreachable.is_empty(),
+        "VERB_TABLE advertises these but the parser has no dispatch, and they are not \
+         on the known-gap list: {unreachable:?}"
+    );
+}
+
+#[test]
+fn the_known_gap_list_does_not_outlive_the_gaps() {
+    // Wire one up and this fails, so the list shrinks when the debt is paid
+    // instead of quietly describing a problem that no longer exists — the
+    // failure mode that has cost this cycle four retractions already.
+    let stale: Vec<&str> = TABLE_ROWS_THE_PARSER_LACKS
+        .iter()
+        .copied()
+        .filter(|v| ACCEPTED.contains(v))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "the parser handles these now — take them off TABLE_ROWS_THE_PARSER_LACKS: {stale:?}"
     );
 }
 
