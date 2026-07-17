@@ -1,12 +1,13 @@
 //! The emulator console is not the device shell.
 //!
 //! `setLocation` shipped calling `adb shell emu geo fix …`, which asks the
-//! device for a program named `emu`. It answers `sh: emu: inaccessible or not
-//! found` on stderr — and exits 0. So the call read as success while the
-//! emulator never moved, for as long as the verb has existed.
+//! device for a program named `emu` — `sh: emu: inaccessible or not found`,
+//! exit 127. Loud, but the verb never once worked.
 //!
-//! These pin the two halves of that: which argv is sent, and that a console
-//! refusal is not mistaken for success.
+//! The console is the part that needs care. `adb shell` propagates the device
+//! command's exit status, but `adb emu` does not: it answers `OK` or
+//! `KO: <reason>` and exits 0 regardless. So these pin both halves — which
+//! argv is sent, and that a `KO` is not mistaken for success.
 
 use std::os::unix::fs::PermissionsExt;
 

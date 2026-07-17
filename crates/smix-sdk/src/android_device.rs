@@ -219,9 +219,10 @@ impl DeviceControl for AndroidDeviceControl {
     }
 
     async fn location_set(&self, serial: &str, lat: f64, lon: f64) -> Result<(), SimctlError> {
-        // The emulator console, not the device shell — `adb shell emu …`
-        // answers `sh: emu: inaccessible or not found` and exits 0, so it
-        // read as success while the emulator never moved. Note the argument
+        // The emulator console, not the device shell. This called
+        // `shell(["emu", …])` and so ran `adb shell emu geo fix`, which asks
+        // the device for a program named `emu` — `sh: emu: inaccessible or
+        // not found`, exit 127. The verb never worked. Note the argument
         // order: longitude first.
         self.client
             .emu(serial, &["geo", "fix", &lon.to_string(), &lat.to_string()])
