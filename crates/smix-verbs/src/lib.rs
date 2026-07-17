@@ -128,12 +128,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Tap,
         ArgShape::Selector,
     ),
-    v(
-        "tapByCoord",
-        "tapByCoord",
-        VerbCategory::Tap,
-        ArgShape::Coord,
-    ),
     // ----- Input family -----
     v(
         "inputText",
@@ -335,12 +329,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Device,
         ArgShape::BareString,
     ),
-    v(
-        "toggleAirplaneMode",
-        "toggleAirplaneMode",
-        VerbCategory::Device,
-        ArgShape::None,
-    ),
     // ----- smix-native extensions (parity with parser dispatch_step) -----
     v(
         "webview_eval",
@@ -357,54 +345,6 @@ pub static VERB_TABLE: &[VerbEntry] = &[
     v(
         "fixture",
         "fixture",
-        VerbCategory::SmixNative,
-        ArgShape::Mapping,
-    ),
-    v(
-        "tapById",
-        "tapById",
-        VerbCategory::SmixNative,
-        ArgShape::BareString,
-    ),
-    v(
-        "tapAtCoord",
-        "tapAtCoord",
-        VerbCategory::SmixNative,
-        ArgShape::Coord,
-    ),
-    v(
-        "swipeAtCoord",
-        "swipeAtCoord",
-        VerbCategory::SmixNative,
-        ArgShape::Coord,
-    ),
-    v(
-        "doubleTap",
-        "doubleTap",
-        VerbCategory::SmixNative,
-        ArgShape::Selector,
-    ),
-    v(
-        "longPress",
-        "longPress",
-        VerbCategory::SmixNative,
-        ArgShape::Selector,
-    ),
-    v(
-        "ocrText",
-        "ocrText",
-        VerbCategory::SmixNative,
-        ArgShape::BareString,
-    ),
-    v(
-        "anchorRelative",
-        "anchorRelative",
-        VerbCategory::SmixNative,
-        ArgShape::Mapping,
-    ),
-    v(
-        "findTextByOcr",
-        "findTextByOcr",
         VerbCategory::SmixNative,
         ArgShape::Mapping,
     ),

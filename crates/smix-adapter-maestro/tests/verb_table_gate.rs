@@ -18,6 +18,8 @@
 
 /// Every top-level verb the parser accepts (canonical, post-normalize),
 /// mirroring the `parse_step` dispatch. Excludes the two script verbs.
+use smix_verbs::VERB_TABLE;
+
 const ACCEPTED: &[&str] = &[
     "tapOn",
     "waitForAnimationToEnd",
@@ -77,29 +79,20 @@ const EXCLUDED: &[&str] = &["runScript", "evalScript"];
 /// In VERB_TABLE, but the parser has no dispatch for them — so a flow that
 /// writes one gets `UnsupportedCommand` from a verb the table advertises.
 ///
-/// This list exists to be emptied. It is here rather than absent because the
-/// membership check only ran one way: it caught a verb the parser accepted
-/// and the table forgot, and never a verb the table promised and the parser
-/// never learned. Eleven had accumulated behind that blind spot.
+/// This list exists to be emptied, and eleven had accumulated behind a
+/// membership check that only ran one way. Ten are gone: they were identity
+/// rows, claiming a verb whose maestro name and smix name were the same, and
+/// each named something that is not a verb — `ocrText` is a selector field,
+/// `tapAtCoord` is `tapOn: {point}`, `toggleAirplaneMode` was never
+/// implemented anywhere. Deleting them made `doubleTap` and `longPress`
+/// start working: an identity row shadows the alias in
+/// `normalize_verb_name`'s maestro-first lookup, so the name never reached
+/// the branch that would have mapped it to `doubleTapOn`.
 ///
-/// Each is one of two things, and both need a decision rather than silence:
-/// a native form reachable another way (`tapAtCoord` is `tapOn: {point}`,
-/// `ocrText` is a selector field), in which case the row's maestro name is
-/// misleading and should be corrected; or a genuine gap (`toggleAirplaneMode`
-/// has no Step variant at all), in which case it wants wiring or removal.
-const TABLE_ROWS_THE_PARSER_LACKS: &[&str] = &[
-    "anchorRelative",
-    "back",
-    "doubleTap",
-    "findTextByOcr",
-    "longPress",
-    "ocrText",
-    "swipeAtCoord",
-    "tapAtCoord",
-    "tapByCoord",
-    "tapById",
-    "toggleAirplaneMode",
-];
+/// `back` is the real remainder. The table maps maestro's `back` onto smix's
+/// `pressKey`, but the codemod drops the argument on the way, emitting a
+/// bare `pressKey` rather than `pressKey: back`.
+const TABLE_ROWS_THE_PARSER_LACKS: &[&str] = &["back"];
 
 #[test]
 fn parser_dispatch_verbs_are_in_verb_table() {
@@ -136,17 +129,29 @@ fn verb_table_rows_reach_the_parser() {
 
 #[test]
 fn the_known_gap_list_does_not_outlive_the_gaps() {
-    // Wire one up and this fails, so the list shrinks when the debt is paid
-    // instead of quietly describing a problem that no longer exists — the
-    // failure mode that has cost this cycle four retractions already.
-    let stale: Vec<&str> = TABLE_ROWS_THE_PARSER_LACKS
+    // A gap closes two ways: wire the parser up, or drop the row that
+    // promised the verb. This missed the second — ten rows were deleted and
+    // it still passed, leaving the list describing rows that no longer
+    // exist. Both count now, so the list cannot outlive the debt either way.
+    let wired: Vec<&str> = TABLE_ROWS_THE_PARSER_LACKS
         .iter()
         .copied()
         .filter(|v| ACCEPTED.contains(v))
         .collect();
     assert!(
-        stale.is_empty(),
-        "the parser handles these now — take them off TABLE_ROWS_THE_PARSER_LACKS: {stale:?}"
+        wired.is_empty(),
+        "the parser handles these now — take them off TABLE_ROWS_THE_PARSER_LACKS: {wired:?}"
+    );
+
+    let gone: Vec<&str> = TABLE_ROWS_THE_PARSER_LACKS
+        .iter()
+        .copied()
+        .filter(|v| !VERB_TABLE.iter().any(|e| e.maestro_name == *v))
+        .collect();
+    assert!(
+        gone.is_empty(),
+        "VERB_TABLE no longer promises these, so there is no gap to record — \
+         take them off TABLE_ROWS_THE_PARSER_LACKS: {gone:?}"
     );
 }
 
