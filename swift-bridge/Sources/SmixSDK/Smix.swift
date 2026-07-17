@@ -1,51 +1,50 @@
-// Smix top-level entry wires Smix.launchApp via SimRuntime.
-//
-// The SDK is XCTest-free; test author supplies a concrete SmixSimRuntime
-// impl (an XCUITest-backed runtime for real-sim runs; MockSimRuntime here
-// for unit tests).
+// Smix top-level entry — wires `Smix.launchApp` over the FFI driving
+// surface. Constructs an `SmixDriver` pointed at the local runner, opens
+// a session for the target bundle id, launches it, and hands back an
+// `App` holding both handles.
 
 import Foundation
+import SmixCoreFFIBindings
+import SmixRunnerCore
 
-/// Top-level entry to the smix SDK. Launches and attaches to iOS Simulator
-/// apps via the supplied [`SmixSimRuntime`].
+/// Top-level entry to the smix SDK. Launches and attaches to iOS
+/// Simulator apps over the FFI boundary to a running smix runner.
 public enum Smix {
-    /// Launch the target app on the simulator via `runtime` and return
-    /// an [`App`] handle.
+    /// Default local runner port (mirror `RunnerPortResolver.defaultPort`).
+    public static let defaultRunnerPort: UInt16 = RunnerPortResolver.defaultPort
+
+    /// Launch the target app on the simulator and return an [`App`]
+    /// handle.
+    ///
+    /// Constructs an [`SmixDriver`] on `port`, opens a session bound to
+    /// the target bundle id, launches the app, and returns an [`App`]
+    /// holding the driver (tree / list) and session (act).
     ///
     /// - Parameters:
-    ///   - target: bundle identifier or absolute `.app` path.
-    ///   - runtime: low-level simulator I/O runtime (real impl is an
-    ///     XCUITest-backed runtime in the consumer's XCUITest target;
-    ///     `MockSimRuntime` for unit tests).
+    ///   - target: bundle identifier to launch (must already be
+    ///     installed on the sim).
+    ///   - port: local runner port. Defaults to
+    ///     [`Smix.defaultRunnerPort`].
     /// - Returns: an [`App`] handle bound to the launched process.
-    /// - Throws: [`SmixError.notImplemented`] for surface not yet wired.
     public static func launchApp(
         _ target: AppTarget,
-        runtime: SmixSimRuntime
+        port: UInt16 = Smix.defaultRunnerPort
     ) async throws -> App {
         switch target {
         case let .bundleId(id):
-            try await runtime.launch(bundleId: id)
-            return App(bundleId: id, runtime: runtime)
-        case let .appPath(path):
-            try await runtime.launchFromPath(path)
-            // Note: bundleId is unknown until the app is installed and
-            // its Info.plist is parsed. The runtime impl is expected to
-            // resolve and return the bundleId via a follow-up call; for
-            // MVP we store the appPath as the SDK-side handle. Tests
-            // can inspect runtime.launchFromPathCalls to verify wire.
-            return App(bundleId: path, runtime: runtime)
+            let driver = SmixDriver(port: port)
+            let session = try await driver.openSession(bundleId: id, cancel: nil)
+            try await session.launchApp(cancel: nil)
+            return App(bundleId: id, driver: driver, session: session)
         }
     }
 }
 
-/// What to launch — either a registered bundle identifier or an absolute
-/// path to a built `.app` bundle.
+/// What to launch — a registered bundle identifier already installed on
+/// the sim.
 public enum AppTarget: Sendable, Equatable {
     /// e.g. `com.example.MyApp` — must already be installed on sim.
     case bundleId(String)
-    /// Absolute path to `MyApp.app` — used by smix CLI `--app-path`.
-    case appPath(String)
 }
 
 /// SDK error category used for compile-time-known unimplemented
