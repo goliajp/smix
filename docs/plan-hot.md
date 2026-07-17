@@ -66,7 +66,7 @@ back:               → pressKey:          键 `back` 被丢掉（应为 `pressK
 
 > S3（四个改名 break + `SimctlError` 改名）已移出本段，成为 C7 —— 见 v2.md 决策日志 2026-07-17「拍板·拆 C6」。
 
-### S1. 让 wire 说真话：路由一致性 gate + 三个 SDK 接回真路由 + wire v2 协商（break #2）
+### S1. 让 wire 说真话：路由一致性 gate ✅ + wire v2 协商（break #2）
 
 **红（写测试）**
 
@@ -80,17 +80,15 @@ back:               → pressKey:          键 `back` 被丢掉（应为 `pressK
 
 **绿（实现）**
 
-- 文件：`npm/smix-rn/src/HttpRunner.ts` · `android-runner/sdk/src/main/kotlin/dev/smix/sdk/HttpSmixSimRuntime.kt` · `swift-bridge/Sources/SmixSDK/HttpSmixSimRuntime.swift`
-- API：每个方法接回**真实路由**，逐一对照 `crates/smix-runner-client/src/lib.rs` —— **Rust client 是 wire 的参考实现（36/36 被服务），不是再发明一套**。`snapshot()` → `GET /tree`；`launch()` → `POST /session/launch-app`；`terminate()` → `POST /session/terminate-app`；`swipe()` → `POST /swipe-once`；`tapNormalized()` → `POST /tap-at-norm-coord`。
-- `screenshot()`：**删掉这个方法**，三个 SDK 都删。没有 `/sim/screenshot`，也不为它造一个 —— 截图走带外 simctl / `smix-screen`（`architecture.html` §04 明记）。这是 break，入 deprecation 表。
+- **gate 已落地**（`scripts/dev/route-conformance.py`，commit `7505a718`）：读两个 runner 的源码算注册表、文件集取自 git，故不可能漏掉某个 SDK。现报 13 路由 / 40 处 / 三个 SDK。
+- **三个 SDK 接回真路由已移出本段 → C7**（用户拍板：一份 wire client 经 FFI 暴露）。**故 route-conformance 在 C6 出口仍是红的** —— 这是记录在案的欠债，不是遗漏；C6 验收因此**只要求 gate 存在且报数正确**，不要求 rc=0。C7 出口才要求 rc=0。
 - 文件：`crates/smix-runner-wire/src/lib.rs` + `swift-bridge/Sources/SmixRunnerCore/HealthRoute.swift` + `crates/smix-runner-client/src/lib.rs`
 - 协商算法照 `architecture.html` §04：client 首次调用送 supported 列表 → runner 取最高公共版本 → runner 在 `GET /health` 回 `negotiated` → 双方对该 schema 定型 → 无公共版本则响亮失败 + `runner too old — smix runner install --force`。
 - 关键点：`HealthRoute.body()` 的 legacy 字节序列 `{"ok":true}` 是**故意稳定**的（有工具 jq 死解它），扩展字段只能追加；wireSchema 加在 `bodyDetail` 一侧。
-- 关键点：三个 SDK 的测试全部注入 mock（`MockHttpRunnerClient` / mock runtime），**它们验证的是 SDK 跟自己说话**。所以真正的证据是 gate，不是这些测试转绿。
 
 **重构**
 
-- 删掉 `HttpRunner.ts:4-12` 的 KNOWN DEFECT 注释块 —— 缺陷修完，注释就该走，否则它就是下一条陈旧注释（本 cycle 已因此撤回 4 次）。
+- `HttpRunner.ts` 顶部的 KNOWN DEFECT 注释块**留着** —— 缺陷到 C7 才修完，注释先于修复消失就是又一条假话。
 
 ### S2. 让 VERB_TABLE 说真话：freeze v2（break #6）+ codemod 往返 gate + summary 契约
 
@@ -140,8 +138,8 @@ cargo test -p smix-adapter-maestro --test verb_table_gate 2>&1 | grep "^test res
 grep -c "TABLE_ROWS_THE_PARSER_LACKS" crates/smix-adapter-maestro/tests/verb_table_gate.rs
 # 4. wire v2 协商
 cargo test -p smix-runner-wire 2>&1 | grep "^test result:"
-# 5. 三个 SDK 真的接回了真路由（量代码，不量排版）
-grep -rn "sim/screenshot" npm/smix-rn/src android-runner/sdk/src/main swift-bridge/Sources/SmixSDK | wc -l
+# 5. 路由 gate 存在且诚实报数（SDK 接回真路由 = C7，故此处仍红）
+python3 scripts/dev/route-conformance.py 2>&1 | grep -c "no runner serves"
 # 6. 无回归
 cargo test --workspace 2>&1 | grep -c "^test result: ok"
 cargo clippy --workspace --all-targets 2>&1 | grep -cE "^(error|warning): "
@@ -158,11 +156,11 @@ python3 scripts/dev/hygiene-scan.py --noise-only ; echo "rc=$?"
 
 期望，逐条：
 
-1. `rc=0`，且脚本打印每条 exclusion 的剩余命中数（0 violation）。
+1. `rc=1` 且报 **13 路由 / 40 处**（C6 内 gate 只需在岗报数；`rc=0` 是 C7 的出口条件）。
 2. `test result: ok`，`0 failed`。
 3. `test result: ok`；`grep -c` 得 **0**（allowlist 连同它的守卫测试一起删）。
 4. `test result: ok`。
-5. `sim/screenshot` 计数 **0**（三个 SDK 都不再打这条不存在的路由）。
+5. 计数 **1**（gate 仍报违规 —— 三个 SDK 的修复是 C7 的事，此处只验 gate 在岗且说真话）。
 6. `test result: ok` 计数 **≥129**（本段基线实测 129，不回退）；clippy 计数 **0**；hygiene `rc=0`；swift 那行读作 `Executed 360 tests, with 2 tests skipped and 0 failures`（**≥360 且 0 failures**，本段实测 360）；android 两个数字为 **≥134** 与 **0**（本段实测 134 / 0）。
 
 **仪器纪律**（本 cycle 反复吃亏；下列每条都是本次热化**亲手复现**过的，不是转述）：
@@ -177,7 +175,7 @@ python3 scripts/dev/hygiene-scan.py --noise-only ; echo "rc=$?"
 ## 完成后动作
 
 1. 归档此文件到 `docs/plan-history/v2-c6-hot.md`
-2. 调 sub-agent 生成新 `plan-hot.md`（到 C7：四个改名 / 合并 break #1/#3/#4/#5 + `SimctlError` 改名），见 CLAUDE.md §6
+2. 调 sub-agent 生成新 `plan-hot.md`（到 C7：SDK 手术 = 一份 wire client 经 FFI 暴露），见 CLAUDE.md §6
 3. C8（docs）必须承接本段记账的三条：roadmap.md:85 的 `SMIX_DEV_LOCK` 是幻影需删；roadmap.md:86 的 `Modifier`/`Modifiers` 描述需注明只在 Kotlin/Swift；`docs/v2.md` 记的「两个 SDK」**已更正为三个**（2026-07-17）。
 
 ## 与冷计划不符之处（必须先读，不要隐瞒）
