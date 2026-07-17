@@ -11,11 +11,14 @@ repo and follows it lands nowhere.
 Noise is version/checkpoint tags, internal plan-section refs, in-house
 consumer names, and CJK fragments — none of which mean anything outside.
 
-CJK is matched on comment prose only, with quoted spans removed first.
-The codebase legitimately contains CJK *data*: localizedText selector
-fixtures assert on real Japanese and Chinese strings, and the doc examples
-for that feature quote those same strings. Quoted CJK is the feature being
-documented; unquoted CJK prose is leftover dev chatter.
+Everything is matched on prose, with quoted spans removed first.
+
+Two reasons, both about telling data apart from chatter. The codebase
+legitimately contains CJK *data*: localizedText fixtures assert on real
+Japanese and Chinese strings, and the doc examples for that feature quote
+those same strings. And code that *checks* for noise necessarily contains
+the noise words — `assert!(!d.contains("insight"))` is the fix, not the
+defect. Quoted is data; unquoted is chatter.
 
 Usage:
     python3 scripts/dev/hygiene-scan.py [--verbose] [--noise-only]
@@ -126,8 +129,9 @@ def scan_noise(files):
             continue
         area = area_for(rel)
         for line in read_lines(rel):
+            unquoted = QUOTED_SPAN.sub("", line)
             for name, pattern in NOISE_PATTERNS.items():
-                hits = len(pattern.findall(line))
+                hits = len(pattern.findall(unquoted))
                 if hits:
                     per_area[area][name] += hits
                     per_file[rel] += hits

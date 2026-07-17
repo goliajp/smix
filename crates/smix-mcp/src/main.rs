@@ -50,12 +50,17 @@ struct SmixMcpService {
     tool_router: ToolRouter<Self>,
 }
 
+/// Typing needs two strings — which field, and what to put in it — so the
+/// selector is nested rather than flattened. Flattened, its `text` (find the
+/// field by its visible text) and the value to type collide on one key, and
+/// the only correct-looking call, `{id, text}`, gets rejected as naming two
+/// selectors.
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct FillParams {
     /// Which field to type into. Give exactly one of id / text / label /
-    /// role / ocrText.
-    #[serde(flatten)]
-    selector: SelectorParams,
+    /// role / ocrText — prefer id.
+    target: SelectorParams,
     /// The text to type.
     text: String,
 }
@@ -69,13 +74,14 @@ struct SwipeParams {
     direction: String,
 }
 
+/// Nested rather than flattened, to match `smix_fill` — the two tools that
+/// take a selector plus something else should read the same way.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct ScrollParams {
-    /// Which element to scroll into view. Give exactly one of id / text /
-    /// label / role / ocrText.
-    #[serde(flatten)]
-    selector: SelectorParams,
+    /// Which element to bring into view. Give exactly one of id / text /
+    /// label / role / ocrText — prefer id.
+    target: SelectorParams,
     /// Which way to travel through the content: up, down, left, or right.
     /// Names what you want to SEE, not the finger's direction. Defaults to
     /// "down".
@@ -173,7 +179,7 @@ impl SmixMcpService {
         &self,
         Parameters(params): Parameters<FillParams>,
     ) -> Result<CallToolResult, McpError> {
-        let sel = params.selector.to_selector()?;
+        let sel = params.target.to_selector()?;
         let app = self.app.lock().await;
         app.fill(&sel, &params.text)
             .await
@@ -210,7 +216,7 @@ impl SmixMcpService {
         &self,
         Parameters(params): Parameters<ScrollParams>,
     ) -> Result<CallToolResult, McpError> {
-        let sel = params.selector.to_selector()?;
+        let sel = params.target.to_selector()?;
         let dir = parse_direction(params.direction.as_deref().unwrap_or("down"))?;
         let app = self.app.lock().await;
         app.scroll(&sel, dir)
@@ -362,8 +368,18 @@ impl ServerHandler for SmixMcpService {
         info.protocol_version = ProtocolVersion::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info.server_info = impl_info;
+        // The first thing an agent reads. It named smix_find_text and
+        // smix_tap_text until those tools were generalized away — an
+        // introduction advertising tools that no longer exist.
         info.instructions = Some(
-            "smix — iOS Simulator automation. Use smix_describe to see the current screen, then smix_find_text / smix_tap_text / smix_press_key to interact. SMIX_UDID env var binds the server to a specific simulator; SMIX_RUNNER_PORT (default 22087) selects the SmixRunner endpoint."
+            "smix drives an iOS Simulator. Call smix_describe first to see what is on \
+             screen and learn the element ids, then smix_tap / smix_fill / smix_press_key \
+             to interact and smix_assert_visible to check. Name elements with exactly one \
+             of id / text / label / role / ocrText — prefer id, which survives copy edits \
+             and translation. Failures come back with near-miss suggestions and the \
+             elements that were on screen; read them rather than guessing again. \
+             SMIX_UDID binds this server to one simulator; SMIX_RUNNER_PORT (default \
+             22087) finds its runner."
                 .into(),
         );
         info

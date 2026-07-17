@@ -83,9 +83,13 @@ async fn describe_returns_visible_summaries() {
         .await;
     let d = driver_for(&server);
     let desc = d.describe().await.expect("describe");
-    // The root + the Login child are both enabled+visible.
-    assert_eq!(desc.elements.len(), 2);
-    assert_eq!(desc.elements[1].name.as_deref(), Some("Login"));
+    // Only Login. The fixture's root is an `application` with no label and no
+    // id, and `application` has no curated role — so it carries no identity a
+    // reader could use, and describe now leaves those out rather than spending
+    // the list on layout. (A real application node does have a label: on a
+    // stock Settings screen it comes through as "Settings".)
+    assert_eq!(desc.elements.len(), 1, "got {:?}", desc.elements);
+    assert_eq!(desc.elements[0].name.as_deref(), Some("Login"));
 }
 
 #[tokio::test]
