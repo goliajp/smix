@@ -162,18 +162,23 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
     };
     let app = configure(app);
 
-    // Session lifecycle. `smix run` opens a runner-side
-    // session at start-up and closes it on exit. Every request in
-    // between carries `Session-Id`, so the runner short-circuits
-    // per-request `.activate()` — eliminating the activation storm at
-    // the root without any yaml-side change.
+    // Session lifecycle. On iOS `smix run` opens a runner-side session at
+    // start-up and closes it on exit. Every request in between carries
+    // `Session-Id`, so the runner short-circuits per-request `.activate()`
+    // — eliminating the activation storm at the root without any yaml-side
+    // change.
     //
-    // Runners that don't implement `/session/open` return non-2xx;
-    // on that path we WARN + reconnect + continue with the legacy
-    // per-request rebind, which is itself rate-limited to 1 activate
-    // / 5 s / bundle-id, so it stays safe.
+    // A missing session on iOS is fatal (v2 break #1). It used to fall back
+    // to the legacy per-request path, which is the activation storm sessions
+    // exist to remove — keeping it behind a warning kept the thing the break
+    // removes. A runner that cannot open a session is out of date, and that
+    // is said loudly with the fix.
+    //
+    // Android is not on this path at all: its runner serves no `/session/*`
+    // route, so sessionless is its only way to drive, not an implicit one.
     enum AppHolder {
         Session(smix_sdk::Session),
+        // Android-only. iOS reaches a session or exits.
         Loose(smix_sdk::App),
     }
     impl AppHolder {
@@ -189,17 +194,12 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
             Ok(s) => AppHolder::Session(s),
             Err(e) => {
                 eprintln!(
-                    "WARN: /session/open failed ({e}); falling back to legacy \
-                     per-request path (rate-limited to 1 activate / 5 s / bundle-id)"
+                    "error: /session/open failed ({e}). smix v2 drives iOS through a \
+                     runner session; a runner too old to open one cannot be driven. \
+                     Fix: `smix runner install --force` to re-extract the runner this \
+                     CLI ships with, then retry."
                 );
-                let fresh = match App::connect_to_runner(args.runner_port).await {
-                    Ok(a) => configure(a),
-                    Err(e2) => {
-                        eprintln!("error: reconnect after session-open fail: {e2}");
-                        return ExitCode::from(6);
-                    }
-                };
-                AppHolder::Loose(fresh)
+                return ExitCode::from(6);
             }
         },
         FlowPlatform::Android => AppHolder::Loose(app),
