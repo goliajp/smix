@@ -21,13 +21,27 @@ use crate::device_control::{DeviceControl, Permission};
 /// Some methods for operations not yet fully implemented surface
 /// `SimctlError::NonZeroExit` with a clear message; `smix-adb`
 /// translation lives in `adb_to_simctl_err`.
+/// An `adb shell screenrecord` in flight.
+///
+/// `stop_recording` takes no serial and no path — the trait shape assumes the
+/// implementation remembers. iOS remembers a child process; here the child is
+/// on the *device*, writing to the device's filesystem, so stopping also means
+/// knowing where to pull the file from and where the caller wanted it.
+struct AndroidRecording {
+    /// The local `adb` child. Killing it sends SIGINT down to screenrecord,
+    /// which is what makes it flush a playable mp4.
+    child: tokio::process::Child,
+    serial: String,
+    /// Where screenrecord is writing, on the device.
+    remote_path: String,
+    /// Where the caller asked for the file, on this machine.
+    local_path: std::path::PathBuf,
+}
+
 pub struct AndroidDeviceControl {
     client: AdbClient,
-    /// Active `adb shell screenrecord` child handle (PID), if recording.
-    /// Placeholder; real recording wiring lands when Android video
-    /// capture becomes a requirement.
-    #[allow(dead_code)]
-    recording: Mutex<Option<u32>>,
+    /// The `adb shell screenrecord` in flight, if any.
+    recording: Mutex<Option<AndroidRecording>>,
 }
 
 impl Default for AndroidDeviceControl {
@@ -58,7 +72,13 @@ impl AndroidDeviceControl {
 /// Translate `AdbError` → `SimctlError` so the trait surface stays
 /// consistent (single error type across platforms — App layer maps to
 /// `ExpectationFailure`). Android-specific detail preserved in message.
+/// Translate an adb failure into the shared device-control error.
+///
+/// The subcommand is prefixed with `adb` so the message names the tool that
+/// actually ran. `SimctlError` is shared by both platforms, and a reader
+/// chasing an Android failure should not be pointed at Xcode.
 fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> SimctlError {
+    let subcommand = &format!("adb {subcommand}");
     match e {
         AdbError::BinaryNotFound => SimctlError::non_zero_exit(
             subcommand,
@@ -242,10 +262,40 @@ impl DeviceControl for AndroidDeviceControl {
         ))
     }
 
-    async fn add_media(&self, _serial: &str, _paths: &[String]) -> Result<(), SimctlError> {
-        // `adb push <local> /sdcard/Pictures/` then `am broadcast -a
-        // android.intent.action.MEDIA_SCANNER_SCAN_FILE`.
-        Err(SimctlError::non_zero_exit("add_media", -1, "Android media library push deferred to a future cycle"))
+    async fn add_media(&self, serial: &str, paths: &[String]) -> Result<(), SimctlError> {
+        if paths.is_empty() {
+            return Err(SimctlError::Malformed {
+                subcommand: "add_media".into(),
+                detail: "no paths supplied".into(),
+            });
+        }
+        for p in paths {
+            let local = Path::new(p);
+            let name = local
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| SimctlError::Malformed {
+                    subcommand: "add_media".into(),
+                    detail: format!("path has no file name: {p}"),
+                })?;
+            let remote = format!("/sdcard/Pictures/{name}");
+            self.client
+                .push(serial, local, &remote)
+                .await
+                .map_err(|e| adb_to_simctl_err(e, "push"))?;
+            // Landing the bytes is not enough: MediaStore indexes the gallery,
+            // and an unindexed file is invisible to the app under test. The
+            // scan broadcast is what makes it show up.
+            self.client
+                .broadcast(
+                    serial,
+                    "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+                    Some(&format!("file://{remote}")),
+                )
+                .await
+                .map_err(|e| adb_to_simctl_err(e, "media scan"))?;
+        }
+        Ok(())
     }
 
     async fn location_set(&self, serial: &str, lat: f64, lon: f64) -> Result<(), SimctlError> {
@@ -312,13 +362,79 @@ impl DeviceControl for AndroidDeviceControl {
 
     // === Recording ===
 
-    async fn start_recording(&self, _serial: &str, _output_path: &Path) -> Result<(), SimctlError> {
-        // `adb shell screenrecord /sdcard/sim.mp4` — runs on device,
-        // max 3min default.
-        Err(SimctlError::non_zero_exit("start_recording", -1, "Android screenrecord wiring deferred to a future cycle"))
+    /// Start `adb shell screenrecord`.
+    ///
+    /// Unlike iOS, the recorder runs on the device and writes there, so the
+    /// file only reaches `output_path` when [`Self::stop_recording`] pulls it.
+    ///
+    /// Android caps this at **180 seconds** — `screenrecord --time-limit`
+    /// documents 180 as "Default / maximum", a ceiling rather than a default
+    /// that can be raised. `simctl recordVideo` has no such limit. Past the
+    /// cap the recorder exits on its own, and stop_recording pulls whatever
+    /// it managed to write.
+    async fn start_recording(&self, serial: &str, output_path: &Path) -> Result<(), SimctlError> {
+        let mut guard = self.recording.lock().await;
+        if guard.is_some() {
+            return Err(SimctlError::non_zero_exit(
+                "screenrecord",
+                -1,
+                "a recording is already in progress (call stop_recording first)",
+            ));
+        }
+        let name = output_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("smix-recording.mp4");
+        let remote_path = format!("/sdcard/{name}");
+        // A leftover from a previous run would be pulled instead of this one
+        // if screenrecord failed to start.
+        let _ = self.client.shell(serial, &["rm", "-f", &remote_path]).await;
+        let child = self
+            .client
+            .spawn_shell(serial, &["screenrecord", &remote_path])
+            .map_err(|e| adb_to_simctl_err(e, "screenrecord"))?;
+        *guard = Some(AndroidRecording {
+            child,
+            serial: serial.to_string(),
+            remote_path,
+            local_path: output_path.to_path_buf(),
+        });
+        Ok(())
     }
 
     async fn stop_recording(&self) -> Result<(), SimctlError> {
-        Err(SimctlError::non_zero_exit("stop_recording", -1, "Android screenrecord wiring deferred to a future cycle"))
+        let mut guard = self.recording.lock().await;
+        let mut rec = guard.take().ok_or_else(|| {
+            SimctlError::non_zero_exit(
+                "screenrecord",
+                -1,
+                "no recording in progress (call start_recording first)",
+            )
+        })?;
+
+        // SIGINT, not kill: screenrecord writes the mp4's moov atom on
+        // interrupt, and without it the file is unplayable. Same reason
+        // simctl's recordVideo stop signals rather than terminates.
+        if let Some(pid) = rec.child.id() {
+            // SAFETY: a thin POSIX syscall wrapper. The pid belongs to this
+            // Child, so it cannot have been recycled, and SIGINT is
+            // signal-safe.
+            unsafe { libc::kill(pid as i32, libc::SIGINT) };
+        }
+        let _ = rec.child.wait().await;
+        // The device-side recorder receives the signal through adb and needs
+        // a moment to finish writing before the file is worth pulling.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        self.client
+            .pull(&rec.serial, &rec.remote_path, &rec.local_path)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "pull recording"))?;
+        // Best-effort: a leftover on the device must not fail the stop.
+        let _ = self
+            .client
+            .shell(&rec.serial, &["rm", "-f", &rec.remote_path])
+            .await;
+        Ok(())
     }
 }

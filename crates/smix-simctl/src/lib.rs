@@ -29,26 +29,38 @@ use thiserror::Error;
 use tokio::process::Command;
 use tokio::time::sleep;
 
-/// Failure variants for any `xcrun simctl` invocation.
+/// Failure variants for a device-control invocation.
+///
+/// Named for `xcrun simctl`, which is where it started, but
+/// `AndroidDeviceControl` raises it too — `DeviceControl` is one trait across
+/// both platforms and this is its error type. So the messages name the
+/// command that actually ran rather than assuming simctl; an Android failure
+/// claiming to come from `xcrun simctl` sends the reader to the wrong
+/// toolchain. (The type's own name is misleading and wants renaming, but that
+/// reaches every caller — it belongs with the v2 breaking changes.)
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum SimctlError {
-    /// Failed to spawn the `xcrun` process itself (PATH lookup / fork failure).
-    #[error("spawn xcrun simctl failed: {0}")]
+    /// Failed to spawn the device-control process (PATH lookup / fork failure).
+    #[error("spawn failed: {0}")]
     Spawn(#[from] io::Error),
-    /// `xcrun simctl <sub>` exited non-zero.
+    /// The device-control command exited non-zero.
     ///
     /// Carries the full `argv` and `wall_ms` so the `Display` impl
     /// surfaces every argument needed to reproduce the failure or file
     /// a precise upstream bug — the subcommand name alone (e.g.
-    /// `"spawn"`) does not say which binary or paths simctl was asked
-    /// to touch.
-    #[error("xcrun simctl {} exited {code} ({wall_ms}ms): {stderr}", .argv.join(" "))]
+    /// `"spawn"`) does not say which binary or paths were touched.
+    #[error("{} exited {code} ({wall_ms}ms): {stderr}", .argv.join(" "))]
     NonZeroExit {
         /// Subcommand name (e.g. `"boot"`, `"launch"`).
         subcommand: String,
-        /// Full argv passed to `xcrun simctl` (excludes the `xcrun
-        /// simctl` prefix itself; includes subcommand + all args).
+        /// The full command as invoked, binary first — `["xcrun", "simctl",
+        /// "boot", …]` from simctl, `["adb", …]` from the Android side.
+        ///
+        /// The binary belongs here rather than in the `Display` format
+        /// string: this error type serves both platforms, and hard-coding
+        /// `xcrun simctl` made every Android failure name a tool that never
+        /// ran, sending the reader to the wrong toolchain.
         ///
         /// Since smix 1.0.7.
         argv: Vec<String>,
@@ -63,7 +75,7 @@ pub enum SimctlError {
         wall_ms: u64,
     },
     /// `xcrun simctl <sub>` exited 0 but stdout didn't match the expected shape.
-    #[error("xcrun simctl {subcommand} returned malformed output: {detail}")]
+    #[error("{subcommand} returned malformed output: {detail}")]
     Malformed {
         /// Subcommand name.
         subcommand: String,
@@ -71,7 +83,7 @@ pub enum SimctlError {
         detail: String,
     },
     /// `xcrun simctl <sub>` did not complete within the deadline.
-    #[error("xcrun simctl {subcommand} timed out after {ms}ms")]
+    #[error("{subcommand} timed out after {ms}ms")]
     Timeout {
         /// Subcommand name.
         subcommand: String,
@@ -917,7 +929,10 @@ async fn simctl_capture_env(
     // Every simctl invocation records to the ring buffer regardless of
     // exit status.
     subprocess_ring::record(SubprocessRecord {
-        argv: args.iter().map(|s| s.to_string()).collect(),
+        argv: std::iter::once("xcrun".to_string())
+                .chain(std::iter::once("simctl".to_string()))
+                .chain(args.iter().map(|s| s.to_string()))
+                .collect(),
         exit_code: output.status.code(),
         wall_ms,
         stderr_head: {
@@ -932,7 +947,10 @@ async fn simctl_capture_env(
     if !output.status.success() {
         return Err(SimctlError::NonZeroExit {
             subcommand: args.first().map(|s| s.to_string()).unwrap_or_default(),
-            argv: args.iter().map(|s| s.to_string()).collect(),
+            argv: std::iter::once("xcrun".to_string())
+                .chain(std::iter::once("simctl".to_string()))
+                .chain(args.iter().map(|s| s.to_string()))
+                .collect(),
             code: output.status.code().unwrap_or(-1),
             stderr,
             wall_ms,

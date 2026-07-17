@@ -26,6 +26,9 @@ smix-driver = { path = "../smix-driver", version = "1.0.0" }
 smix-simctl = { path = "../smix-simctl", version = "1.0.0" }
 smix-adb = { path = "../smix-adb", version = "1.0.0" }
 tokio = { workspace = true, features = ["time", "macros"] }
+# SIGINT to the Android recorder — screenrecord only finalizes a playable mp4
+# on interrupt, so stopping it means signalling rather than killing.
+libc.workspace = true
 chrono = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true

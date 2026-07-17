@@ -3132,6 +3132,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "criterion",
+ "libc",
  "png 0.17.16",
  "serde",
  "serde_json",
