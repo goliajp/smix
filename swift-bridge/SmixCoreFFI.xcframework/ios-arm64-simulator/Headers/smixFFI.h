@@ -291,6 +291,11 @@ void*_Nonnull uniffi_smix_ffi_fn_constructor_smixdriver_new(uint16_t port, RustC
 void*_Nonnull uniffi_smix_ffi_fn_method_smixdriver_cancel_token(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXDRIVER_LIST_SESSIONS
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXDRIVER_LIST_SESSIONS
+uint64_t uniffi_smix_ffi_fn_method_smixdriver_list_sessions(void*_Nonnull ptr, RustBuffer cancel
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXDRIVER_OPEN_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXDRIVER_OPEN_SESSION
 uint64_t uniffi_smix_ffi_fn_method_smixdriver_open_session(void*_Nonnull ptr, RustBuffer bundle_id, RustBuffer cancel
@@ -311,14 +316,59 @@ void*_Nonnull uniffi_smix_ffi_fn_clone_smixsession(void*_Nonnull ptr, RustCallSt
 void uniffi_smix_ffi_fn_free_smixsession(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_CLOSE
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_CLOSE
+uint64_t uniffi_smix_ffi_fn_method_smixsession_close(void*_Nonnull ptr, RustBuffer cancel
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_ID
 #define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_ID
 RustBuffer uniffi_smix_ffi_fn_method_smixsession_id(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_INPUT_TEXT
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_INPUT_TEXT
+uint64_t uniffi_smix_ffi_fn_method_smixsession_input_text(void*_Nonnull ptr, RustBuffer text, RustBuffer cancel
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_LAUNCH_APP
 #define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_LAUNCH_APP
 uint64_t uniffi_smix_ffi_fn_method_smixsession_launch_app(void*_Nonnull ptr, RustBuffer cancel
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_PRESS_KEY
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_PRESS_KEY
+uint64_t uniffi_smix_ffi_fn_method_smixsession_press_key(void*_Nonnull ptr, RustBuffer key, RustBuffer cancel
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_RELAUNCH_APP
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_RELAUNCH_APP
+uint64_t uniffi_smix_ffi_fn_method_smixsession_relaunch_app(void*_Nonnull ptr, RustBuffer cancel
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_RENEW_ACTIVATION
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_RENEW_ACTIVATION
+uint64_t uniffi_smix_ffi_fn_method_smixsession_renew_activation(void*_Nonnull ptr, RustBuffer cancel
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_SWIPE_ONCE
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_SWIPE_ONCE
+uint64_t uniffi_smix_ffi_fn_method_smixsession_swipe_once(void*_Nonnull ptr, RustBuffer direction, RustBuffer cancel
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_SYSTEM_POPUPS
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_SYSTEM_POPUPS
+uint64_t uniffi_smix_ffi_fn_method_smixsession_system_popups(void*_Nonnull ptr, RustBuffer cancel
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_TAP_AT_NORM_COORD
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_TAP_AT_NORM_COORD
+uint64_t uniffi_smix_ffi_fn_method_smixsession_tap_at_norm_coord(void*_Nonnull ptr, double nx, double ny, RustBuffer cancel
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_TAP_BY_ID
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_TAP_BY_ID
+uint64_t uniffi_smix_ffi_fn_method_smixsession_tap_by_id(void*_Nonnull ptr, RustBuffer id, RustBuffer cancel
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_FN_METHOD_SMIXSESSION_TERMINATE_APP
@@ -657,6 +707,12 @@ uint16_t uniffi_smix_ffi_checksum_method_smixdriver_cancel_token(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXDRIVER_LIST_SESSIONS
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXDRIVER_LIST_SESSIONS
+uint16_t uniffi_smix_ffi_checksum_method_smixdriver_list_sessions(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXDRIVER_OPEN_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXDRIVER_OPEN_SESSION
 uint16_t uniffi_smix_ffi_checksum_method_smixdriver_open_session(void
@@ -669,15 +725,69 @@ uint16_t uniffi_smix_ffi_checksum_method_smixdriver_tree(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_CLOSE
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_CLOSE
+uint16_t uniffi_smix_ffi_checksum_method_smixsession_close(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_ID
 #define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_ID
 uint16_t uniffi_smix_ffi_checksum_method_smixsession_id(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_INPUT_TEXT
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_INPUT_TEXT
+uint16_t uniffi_smix_ffi_checksum_method_smixsession_input_text(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_LAUNCH_APP
 #define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_LAUNCH_APP
 uint16_t uniffi_smix_ffi_checksum_method_smixsession_launch_app(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_PRESS_KEY
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_PRESS_KEY
+uint16_t uniffi_smix_ffi_checksum_method_smixsession_press_key(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_RELAUNCH_APP
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_RELAUNCH_APP
+uint16_t uniffi_smix_ffi_checksum_method_smixsession_relaunch_app(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_RENEW_ACTIVATION
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_RENEW_ACTIVATION
+uint16_t uniffi_smix_ffi_checksum_method_smixsession_renew_activation(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_SWIPE_ONCE
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_SWIPE_ONCE
+uint16_t uniffi_smix_ffi_checksum_method_smixsession_swipe_once(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_SYSTEM_POPUPS
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_SYSTEM_POPUPS
+uint16_t uniffi_smix_ffi_checksum_method_smixsession_system_popups(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_TAP_AT_NORM_COORD
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_TAP_AT_NORM_COORD
+uint16_t uniffi_smix_ffi_checksum_method_smixsession_tap_at_norm_coord(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_TAP_BY_ID
+#define UNIFFI_FFIDEF_UNIFFI_SMIX_FFI_CHECKSUM_METHOD_SMIXSESSION_TAP_BY_ID
+uint16_t uniffi_smix_ffi_checksum_method_smixsession_tap_by_id(void
     
 );
 #endif

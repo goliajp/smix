@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use smix_runner_client::HttpRunnerClient;
 use smix_runner_client::{SessionAppLifecycleRequest, SessionOpenRequest};
+use smix_input::{KeyName, SwipeDirection};
 use tokio_util::sync::CancellationToken;
 
 /// What can go wrong driving the runner.
@@ -95,6 +96,16 @@ where
     }
 }
 
+/// Parse a wire enum from the name the SDK sent, using serde's own
+/// camelCase contract so there is no second copy of the mapping to drift.
+fn parse_wire_enum<T: serde::de::DeserializeOwned>(name: &str, what: &str) -> Result<T, DriveError> {
+    serde_json::from_value(serde_json::Value::String(name.to_string())).map_err(|_| {
+        DriveError::Transport {
+            message: format!("unknown {what}: {name:?}"),
+        }
+    })
+}
+
 #[uniffi::export(async_runtime = "tokio")]
 impl SmixDriver {
     /// Point at a runner on `port` of this machine.
@@ -149,6 +160,18 @@ impl SmixDriver {
             session_id: response.session_id,
         }))
     }
+
+    /// The sessions the runner currently holds open, as JSON. For a caller
+    /// reconciling its own handles with the runner's view.
+    pub async fn list_sessions(
+        &self,
+        cancel: Option<Arc<CancelToken>>,
+    ) -> Result<String, DriveError> {
+        let sessions = until_cancelled(cancel, self.client.list_sessions()).await?;
+        serde_json::to_string(&sessions).map_err(|e| DriveError::Transport {
+            message: format!("could not encode the sessions: {e}"),
+        })
+    }
 }
 
 /// An open session. Holds the id the runner's app routes require, so there
@@ -184,6 +207,115 @@ impl SmixSession {
             ..Default::default()
         };
         until_cancelled(cancel, self.client.terminate_session_app(&req)).await?;
+        Ok(())
+    }
+
+    /// Tap the element with this accessibility id. Returns whether the
+    /// runner found one to tap.
+    ///
+    /// This is how the SDKs tap: they resolve a selector to an id and pass
+    /// it here, so no coordinate crosses the boundary. There is deliberately
+    /// no absolute-pixel tap — the runner does not take one.
+    pub async fn tap_by_id(
+        &self,
+        id: String,
+        cancel: Option<Arc<CancelToken>>,
+    ) -> Result<bool, DriveError> {
+        until_cancelled(cancel, self.client.tap_by_id(&id)).await
+    }
+
+    /// Tap at a normalized coordinate, both in `0.0..=1.0`. The escape
+    /// hatch, for targets with no accessibility semantics to select on.
+    pub async fn tap_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+        cancel: Option<Arc<CancelToken>>,
+    ) -> Result<(), DriveError> {
+        until_cancelled(cancel, self.client.tap_at_norm_coord(nx, ny)).await
+    }
+
+    /// Type into the focused element.
+    pub async fn input_text(
+        &self,
+        text: String,
+        cancel: Option<Arc<CancelToken>>,
+    ) -> Result<(), DriveError> {
+        until_cancelled(cancel, self.client.input_text(&text)).await
+    }
+
+    /// Press a hardware-like key. `key` is a name the runner knows —
+    /// "return", "delete", "arrowUp"; an unknown one is refused here, before
+    /// any request, so the string boundary is not a way to send nonsense on.
+    pub async fn press_key(
+        &self,
+        key: String,
+        cancel: Option<Arc<CancelToken>>,
+    ) -> Result<(), DriveError> {
+        let key: KeyName = parse_wire_enum(&key, "key")?;
+        // The runner returns a post-keystroke tree snapshot and timings; the
+        // SDK's pressKey is fire-and-return, so that diagnostic payload is
+        // dropped here rather than widening the boundary for it.
+        until_cancelled(cancel, self.client.press_key(key))
+            .await
+            .map(|_result| ())
+    }
+
+    /// Swipe so the named direction of content comes into view. `direction`
+    /// is "up", "down", "left" or "right".
+    pub async fn swipe_once(
+        &self,
+        direction: String,
+        cancel: Option<Arc<CancelToken>>,
+    ) -> Result<(), DriveError> {
+        let direction: SwipeDirection = parse_wire_enum(&direction, "direction")?;
+        until_cancelled(cancel, self.client.swipe_once(direction)).await
+    }
+
+    /// System alerts and permission dialogs currently on screen, as JSON.
+    pub async fn system_popups(
+        &self,
+        cancel: Option<Arc<CancelToken>>,
+    ) -> Result<String, DriveError> {
+        let popups = until_cancelled(cancel, self.client.system_popups(None)).await?;
+        serde_json::to_string(&popups).map_err(|e| DriveError::Transport {
+            message: format!("could not encode the popups: {e}"),
+        })
+    }
+
+    /// Relaunch the session's app.
+    ///
+    /// This is a plain relaunch. Clearing state before relaunch is
+    /// launch-fresh orchestration, which lives on the host (simctl/adb) and
+    /// not on this device-side boundary.
+    pub async fn relaunch_app(&self, cancel: Option<Arc<CancelToken>>) -> Result<(), DriveError> {
+        let req = smix_runner_client::SessionRelaunchAppRequest {
+            session_id: self.session_id.clone(),
+        };
+        until_cancelled(cancel, self.client.relaunch_session_app(&req)).await?;
+        Ok(())
+    }
+
+    /// Renew the session's activation, so the app stays foregrounded across a
+    /// long-running flow.
+    pub async fn renew_activation(
+        &self,
+        cancel: Option<Arc<CancelToken>>,
+    ) -> Result<(), DriveError> {
+        let req = smix_runner_client::SessionRenewActivationRequest {
+            session_id: self.session_id.clone(),
+        };
+        until_cancelled(cancel, self.client.renew_session_activation(&req)).await?;
+        Ok(())
+    }
+
+    /// Close the session, releasing the runner's cached app binding.
+    /// Idempotent — closing an already-closed session is not an error.
+    pub async fn close(&self, cancel: Option<Arc<CancelToken>>) -> Result<(), DriveError> {
+        let req = smix_runner_client::SessionCloseRequest {
+            session_id: self.session_id.clone(),
+        };
+        until_cancelled(cancel, self.client.close_session(&req)).await?;
         Ok(())
     }
 }

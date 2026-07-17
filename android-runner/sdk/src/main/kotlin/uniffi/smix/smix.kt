@@ -749,6 +749,26 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -776,13 +796,33 @@ fun uniffi_smix_ffi_checksum_method_canceltoken_is_cancelled(
 ): Short
 fun uniffi_smix_ffi_checksum_method_smixdriver_cancel_token(
 ): Short
+fun uniffi_smix_ffi_checksum_method_smixdriver_list_sessions(
+): Short
 fun uniffi_smix_ffi_checksum_method_smixdriver_open_session(
 ): Short
 fun uniffi_smix_ffi_checksum_method_smixdriver_tree(
 ): Short
+fun uniffi_smix_ffi_checksum_method_smixsession_close(
+): Short
 fun uniffi_smix_ffi_checksum_method_smixsession_id(
 ): Short
+fun uniffi_smix_ffi_checksum_method_smixsession_input_text(
+): Short
 fun uniffi_smix_ffi_checksum_method_smixsession_launch_app(
+): Short
+fun uniffi_smix_ffi_checksum_method_smixsession_press_key(
+): Short
+fun uniffi_smix_ffi_checksum_method_smixsession_relaunch_app(
+): Short
+fun uniffi_smix_ffi_checksum_method_smixsession_renew_activation(
+): Short
+fun uniffi_smix_ffi_checksum_method_smixsession_swipe_once(
+): Short
+fun uniffi_smix_ffi_checksum_method_smixsession_system_popups(
+): Short
+fun uniffi_smix_ffi_checksum_method_smixsession_tap_at_norm_coord(
+): Short
+fun uniffi_smix_ffi_checksum_method_smixsession_tap_by_id(
 ): Short
 fun uniffi_smix_ffi_checksum_method_smixsession_terminate_app(
 ): Short
@@ -853,6 +893,8 @@ fun uniffi_smix_ffi_fn_constructor_smixdriver_new(`port`: Short,uniffi_out_err: 
 ): Pointer
 fun uniffi_smix_ffi_fn_method_smixdriver_cancel_token(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
+fun uniffi_smix_ffi_fn_method_smixdriver_list_sessions(`ptr`: Pointer,`cancel`: RustBuffer.ByValue,
+): Long
 fun uniffi_smix_ffi_fn_method_smixdriver_open_session(`ptr`: Pointer,`bundleId`: RustBuffer.ByValue,`cancel`: RustBuffer.ByValue,
 ): Long
 fun uniffi_smix_ffi_fn_method_smixdriver_tree(`ptr`: Pointer,`cancel`: RustBuffer.ByValue,
@@ -861,9 +903,27 @@ fun uniffi_smix_ffi_fn_clone_smixsession(`ptr`: Pointer,uniffi_out_err: UniffiRu
 ): Pointer
 fun uniffi_smix_ffi_fn_free_smixsession(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_smix_ffi_fn_method_smixsession_close(`ptr`: Pointer,`cancel`: RustBuffer.ByValue,
+): Long
 fun uniffi_smix_ffi_fn_method_smixsession_id(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_smix_ffi_fn_method_smixsession_input_text(`ptr`: Pointer,`text`: RustBuffer.ByValue,`cancel`: RustBuffer.ByValue,
+): Long
 fun uniffi_smix_ffi_fn_method_smixsession_launch_app(`ptr`: Pointer,`cancel`: RustBuffer.ByValue,
+): Long
+fun uniffi_smix_ffi_fn_method_smixsession_press_key(`ptr`: Pointer,`key`: RustBuffer.ByValue,`cancel`: RustBuffer.ByValue,
+): Long
+fun uniffi_smix_ffi_fn_method_smixsession_relaunch_app(`ptr`: Pointer,`cancel`: RustBuffer.ByValue,
+): Long
+fun uniffi_smix_ffi_fn_method_smixsession_renew_activation(`ptr`: Pointer,`cancel`: RustBuffer.ByValue,
+): Long
+fun uniffi_smix_ffi_fn_method_smixsession_swipe_once(`ptr`: Pointer,`direction`: RustBuffer.ByValue,`cancel`: RustBuffer.ByValue,
+): Long
+fun uniffi_smix_ffi_fn_method_smixsession_system_popups(`ptr`: Pointer,`cancel`: RustBuffer.ByValue,
+): Long
+fun uniffi_smix_ffi_fn_method_smixsession_tap_at_norm_coord(`ptr`: Pointer,`nx`: Double,`ny`: Double,`cancel`: RustBuffer.ByValue,
+): Long
+fun uniffi_smix_ffi_fn_method_smixsession_tap_by_id(`ptr`: Pointer,`id`: RustBuffer.ByValue,`cancel`: RustBuffer.ByValue,
 ): Long
 fun uniffi_smix_ffi_fn_method_smixsession_terminate_app(`ptr`: Pointer,`cancel`: RustBuffer.ByValue,
 ): Long
@@ -1017,16 +1077,46 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_smix_ffi_checksum_method_smixdriver_cancel_token() != 61093.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_smix_ffi_checksum_method_smixdriver_list_sessions() != 26254.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_smix_ffi_checksum_method_smixdriver_open_session() != 43029.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_smix_ffi_checksum_method_smixdriver_tree() != 61785.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_close() != 29830.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_smix_ffi_checksum_method_smixsession_id() != 57114.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_input_text() != 22972.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_smix_ffi_checksum_method_smixsession_launch_app() != 47408.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_press_key() != 16558.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_relaunch_app() != 5743.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_renew_activation() != 42618.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_swipe_once() != 4207.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_system_popups() != 819.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_tap_at_norm_coord() != 55480.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_tap_by_id() != 45712.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_smix_ffi_checksum_method_smixsession_terminate_app() != 29585.toShort()) {
@@ -1261,6 +1351,29 @@ public object FfiConverterUInt: FfiConverter<UInt, Int> {
 
     override fun write(value: UInt, buf: ByteBuffer) {
         buf.putInt(value.toInt())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterDouble: FfiConverter<Double, Double> {
+    override fun lift(value: Double): Double {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Double {
+        return buf.getDouble()
+    }
+
+    override fun lower(value: Double): Double {
+        return value
+    }
+
+    override fun allocationSize(value: Double) = 8UL
+
+    override fun write(value: Double, buf: ByteBuffer) {
+        buf.putDouble(value)
     }
 }
 
@@ -1737,6 +1850,12 @@ public interface SmixDriverInterface {
     fun `cancelToken`(): CancelToken
     
     /**
+     * The sessions the runner currently holds open, as JSON. For a caller
+     * reconciling its own handles with the runner's view.
+     */
+    suspend fun `listSessions`(`cancel`: CancelToken?): kotlin.String
+    
+    /**
      * Open a session bound to `bundle_id`.
      *
      * Everything that acts on an app goes through one, because the runner's
@@ -1865,6 +1984,31 @@ open class SmixDriver: Disposable, AutoCloseable, SmixDriverInterface
     )
     }
     
+
+    
+    /**
+     * The sessions the runner currently holds open, as JSON. For a caller
+     * reconciling its own handles with the runner's view.
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `listSessions`(`cancel`: CancelToken?) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixdriver_list_sessions(
+                thisPtr,
+                FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
 
     
     /**
@@ -2063,14 +2207,74 @@ public object FfiConverterTypeSmixDriver: FfiConverter<SmixDriver, Pointer> {
 public interface SmixSessionInterface {
     
     /**
+     * Close the session, releasing the runner's cached app binding.
+     * Idempotent — closing an already-closed session is not an error.
+     */
+    suspend fun `close`(`cancel`: CancelToken?)
+    
+    /**
      * The runner's token for this session.
      */
     fun `id`(): kotlin.String
     
     /**
+     * Type into the focused element.
+     */
+    suspend fun `inputText`(`text`: kotlin.String, `cancel`: CancelToken?)
+    
+    /**
      * Launch the session's app.
      */
     suspend fun `launchApp`(`cancel`: CancelToken?)
+    
+    /**
+     * Press a hardware-like key. `key` is a name the runner knows —
+     * "return", "delete", "arrowUp"; an unknown one is refused here, before
+     * any request, so the string boundary is not a way to send nonsense on.
+     */
+    suspend fun `pressKey`(`key`: kotlin.String, `cancel`: CancelToken?)
+    
+    /**
+     * Relaunch the session's app.
+     *
+     * This is a plain relaunch. Clearing state before relaunch is
+     * launch-fresh orchestration, which lives on the host (simctl/adb) and
+     * not on this device-side boundary.
+     */
+    suspend fun `relaunchApp`(`cancel`: CancelToken?)
+    
+    /**
+     * Renew the session's activation, so the app stays foregrounded across a
+     * long-running flow.
+     */
+    suspend fun `renewActivation`(`cancel`: CancelToken?)
+    
+    /**
+     * Swipe so the named direction of content comes into view. `direction`
+     * is "up", "down", "left" or "right".
+     */
+    suspend fun `swipeOnce`(`direction`: kotlin.String, `cancel`: CancelToken?)
+    
+    /**
+     * System alerts and permission dialogs currently on screen, as JSON.
+     */
+    suspend fun `systemPopups`(`cancel`: CancelToken?): kotlin.String
+    
+    /**
+     * Tap at a normalized coordinate, both in `0.0..=1.0`. The escape
+     * hatch, for targets with no accessibility semantics to select on.
+     */
+    suspend fun `tapAtNormCoord`(`nx`: kotlin.Double, `ny`: kotlin.Double, `cancel`: CancelToken?)
+    
+    /**
+     * Tap the element with this accessibility id. Returns whether the
+     * runner found one to tap.
+     *
+     * This is how the SDKs tap: they resolve a selector to an id and pass
+     * it here, so no coordinate crosses the boundary. There is deliberately
+     * no absolute-pixel tap — the runner does not take one.
+     */
+    suspend fun `tapById`(`id`: kotlin.String, `cancel`: CancelToken?): kotlin.Boolean
     
     /**
      * Terminate the session's app.
@@ -2168,6 +2372,32 @@ open class SmixSession: Disposable, AutoCloseable, SmixSessionInterface
 
     
     /**
+     * Close the session, releasing the runner's cached app binding.
+     * Idempotent — closing an already-closed session is not an error.
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `close`(`cancel`: CancelToken?) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixsession_close(
+                thisPtr,
+                FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
+
+    
+    /**
      * The runner's token for this session.
      */override fun `id`(): kotlin.String {
             return FfiConverterString.lift(
@@ -2180,6 +2410,31 @@ open class SmixSession: Disposable, AutoCloseable, SmixSessionInterface
     )
     }
     
+
+    
+    /**
+     * Type into the focused element.
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `inputText`(`text`: kotlin.String, `cancel`: CancelToken?) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixsession_input_text(
+                thisPtr,
+                FfiConverterString.lower(`text`),FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
 
     
     /**
@@ -2201,6 +2456,193 @@ open class SmixSession: Disposable, AutoCloseable, SmixSessionInterface
         // lift function
         { Unit },
         
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Press a hardware-like key. `key` is a name the runner knows —
+     * "return", "delete", "arrowUp"; an unknown one is refused here, before
+     * any request, so the string boundary is not a way to send nonsense on.
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `pressKey`(`key`: kotlin.String, `cancel`: CancelToken?) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixsession_press_key(
+                thisPtr,
+                FfiConverterString.lower(`key`),FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Relaunch the session's app.
+     *
+     * This is a plain relaunch. Clearing state before relaunch is
+     * launch-fresh orchestration, which lives on the host (simctl/adb) and
+     * not on this device-side boundary.
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `relaunchApp`(`cancel`: CancelToken?) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixsession_relaunch_app(
+                thisPtr,
+                FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Renew the session's activation, so the app stays foregrounded across a
+     * long-running flow.
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `renewActivation`(`cancel`: CancelToken?) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixsession_renew_activation(
+                thisPtr,
+                FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Swipe so the named direction of content comes into view. `direction`
+     * is "up", "down", "left" or "right".
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `swipeOnce`(`direction`: kotlin.String, `cancel`: CancelToken?) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixsession_swipe_once(
+                thisPtr,
+                FfiConverterString.lower(`direction`),FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * System alerts and permission dialogs currently on screen, as JSON.
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `systemPopups`(`cancel`: CancelToken?) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixsession_system_popups(
+                thisPtr,
+                FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Tap at a normalized coordinate, both in `0.0..=1.0`. The escape
+     * hatch, for targets with no accessibility semantics to select on.
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `tapAtNormCoord`(`nx`: kotlin.Double, `ny`: kotlin.Double, `cancel`: CancelToken?) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixsession_tap_at_norm_coord(
+                thisPtr,
+                FfiConverterDouble.lower(`nx`),FfiConverterDouble.lower(`ny`),FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        DriveException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Tap the element with this accessibility id. Returns whether the
+     * runner found one to tap.
+     *
+     * This is how the SDKs tap: they resolve a selector to an id and pass
+     * it here, so no coordinate crosses the boundary. There is deliberately
+     * no absolute-pixel tap — the runner does not take one.
+     */
+    @Throws(DriveException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `tapById`(`id`: kotlin.String, `cancel`: CancelToken?) : kotlin.Boolean {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_smix_ffi_fn_method_smixsession_tap_by_id(
+                thisPtr,
+                FfiConverterString.lower(`id`),FfiConverterOptionalTypeCancelToken.lower(`cancel`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_poll_i8(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_complete_i8(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_smix_ffi_rust_future_free_i8(future) },
+        // lift function
+        { FfiConverterBoolean.lift(it) },
         // Error FFI converter
         DriveException.ErrorHandler,
     )
