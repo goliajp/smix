@@ -1,4 +1,4 @@
-// App.fill / App.pressKey mock-based unit tests.
+// App.fill / App.pressKey orchestration unit tests over the driving seam.
 
 package dev.smix.sdk
 
@@ -9,7 +9,7 @@ import org.junit.Test
 class AppFillPressKeyMockTest {
 
     @Test
-    fun fillTapsThenSendsString() = runBlocking {
+    fun fillTapsByIdThenInputsText() = runBlocking {
         val field = A11yNode(
             rawType = "textField",
             role = A11yRole.TEXT_FIELD,
@@ -25,49 +25,36 @@ class AppFillPressKeyMockTest {
             visible = true,
             children = listOf(field),
         )
-        val runtime = MockSimRuntime(snapshotResult = tree)
-        val mockResolver = MockSelectorResolver().apply {
+        val session = MockSession()
+        val resolver = MockSelectorResolver().apply {
             registerHit("""{"id":"input-username"}""", "input-username")
         }
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val app = mockApp(tree = tree, session = session, resolver = resolver)
 
         app.fill(Selector.Id("input-username"), "alice")
 
-        // tap → exactly 1 tap synthesized at field center
-        assertEquals(1, runtime.tapCalls.size)
-        assertEquals(150.0, runtime.tapCalls[0].x, 0.01)
-        assertEquals(220.0, runtime.tapCalls[0].y, 0.01)
-        // sendString → exactly 1 string sent
-        assertEquals(listOf("alice"), runtime.sendStringCalls)
+        // tap-to-focus by resolved id, then a single inputText
+        assertEquals(listOf("input-username"), session.tapByIdCalls)
+        assertEquals(listOf("alice"), session.inputTextCalls)
     }
 
     @Test
-    fun pressKeyDelegatesToRuntime() = runBlocking {
-        val runtime = MockSimRuntime()
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            MockSelectorResolver(),
-        )
+    fun pressKeyDelegatesToSessionWithWireName() = runBlocking {
+        val session = MockSession()
+        val app = mockApp(session = session)
 
         app.pressKey(KeyName.RETURN)
         app.pressKey(KeyName.DELETE)
+        app.pressKey(KeyName.ENTER)
 
-        assertEquals(listOf(KeyName.RETURN, KeyName.DELETE), runtime.pressKeyCalls)
+        // wireName: camelCase, and ENTER maps to "return".
+        assertEquals(listOf("return", "delete", "return"), session.pressKeyCalls)
     }
 
     @Test
     fun fillFailureSurfacesAsExpectationFailure() = runBlocking {
-        val runtime = MockSimRuntime()  // empty tree
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            MockSelectorResolver(),  // returns []
-        )
+        val session = MockSession()
+        val app = mockApp(session = session, resolver = MockSelectorResolver())  // returns []
         try {
             app.fill(Selector.Id("missing"), "text")
             fail("fill with missing selector must throw ExpectationFailure.NOT_FOUND")
@@ -75,8 +62,12 @@ class AppFillPressKeyMockTest {
             assertEquals(FailureCode.NOT_FOUND, e.code)
         }
         assertTrue(
-            "sendString must NOT fire on tap failure",
-            runtime.sendStringCalls.isEmpty(),
+            "inputText must NOT fire on resolve failure",
+            session.inputTextCalls.isEmpty(),
+        )
+        assertTrue(
+            "tapById must NOT fire on resolve failure",
+            session.tapByIdCalls.isEmpty(),
         )
     }
 }

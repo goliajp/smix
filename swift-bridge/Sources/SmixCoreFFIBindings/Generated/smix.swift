@@ -1361,11 +1361,16 @@ public enum DriveError: Swift.Error {
     
     /**
      * The runner could not be reached, or answered with a failure.
+     *
+     * The field is `detail`, not `message`: uniffi's Kotlin bindings make an
+     * error variant's fields into properties, and a `message` property
+     * collides with `Throwable.message` — the generated Kotlin does not
+     * compile.
      */
     case Transport(
         /**
          * What the transport reported, verbatim.
-         */message: String
+         */detail: String
     )
     /**
      * The caller cancelled the call before the runner answered.
@@ -1388,7 +1393,7 @@ public struct FfiConverterTypeDriveError: FfiConverterRustBuffer {
 
         
         case 1: return .Transport(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 2: return .Cancelled
 
@@ -1403,9 +1408,9 @@ public struct FfiConverterTypeDriveError: FfiConverterRustBuffer {
 
         
         
-        case let .Transport(message):
+        case let .Transport(detail):
             writeInt(&buf, Int32(1))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
         case .Cancelled:

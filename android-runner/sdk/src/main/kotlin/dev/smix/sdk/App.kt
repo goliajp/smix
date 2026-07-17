@@ -1,7 +1,15 @@
-// App class mirrors Swift SmixSDK.App.
+// App class — drives the act/sense pipeline over the FFI driving
+// surface. A tap is: driver.tree() → resolveSelector → session.tapById.
+//
+// App holds both a `Driver` (tree / session list) and a `Session`
+// (act), injected through the driving seam (see Session.kt) so host
+// unit tests can supply in-memory mocks without loading the
+// Android-only `libuniffi_smix.so`.
 
 package dev.smix.sdk
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.builtins.ListSerializer
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -9,12 +17,14 @@ import kotlin.time.Duration.Companion.seconds
  * A handle to a running app on the emulator. All methods are suspend
  * to interop with Kotlin coroutines.
  *
- * Constructed via [Smix.launchApp]. Holds a reference to the underlying
- * [SmixSimRuntime] which performs the actual UiAutomator / JNI work.
+ * Constructed via [Smix.launchApp]. Holds a [Driver] (accessibility
+ * tree, session listing) and a [Session] (acting on the target app),
+ * both speaking to the smix runner over the FFI boundary.
  */
 class App internal constructor(
     val bundleId: String,
-    internal val runtime: SmixSimRuntime,
+    internal val driver: Driver,
+    internal val session: Session,
     internal val resolver: SelectorResolver = DefaultFfiResolver,
     internal val labelsResolver: LabelResolver = DefaultFfiLabelsResolver,
 ) {
@@ -22,41 +32,16 @@ class App internal constructor(
 
     /**
      * Tap on the first element matching [selector]. Captures an a11y
-     * snapshot, resolves the selector via the Rust FFI core, picks the
-     * first match, and synthesizes a tap at its bounds center.
+     * snapshot via the driver, resolves the selector via the Rust FFI
+     * core, picks the first match, and taps it by accessibility id.
      *
      * Throws [ExpectationFailure] with `code = NOT_FOUND` when the
      * resolver returns zero matches — populates `visibleElements` with
      * the first 20 nodes from the current tree for AI agent diagnosis.
      */
     suspend fun tap(selector: Selector, timeout: Duration = 5.seconds) {
-        val tree = runtime.snapshotTree()
-        val treeJson = encodeTreeJson(tree)
-        val selectorJson = encodeSelectorJson(selector)
-        val matches: List<String> = try {
-            resolver.resolve(treeJson, selectorJson)
-        } catch (e: Exception) {
-            throw ExpectationFailure(
-                code = FailureCode.UNKNOWN,
-                message = "FFI resolveSelector raised: ${e.message}",
-                selectorJson = selectorJson,
-            )
-        }
-        val firstId = matches.firstOrNull()
-        val node = firstId?.let { tree.findById(it) }
-        if (node == null) {
-            throw ExpectationFailure(
-                code = FailureCode.NOT_FOUND,
-                message = "no candidates after spatial + index filters",
-                selectorJson = selectorJson,
-                visibleElements = tree.flatten().take(20),
-                suggestions = listOf(
-                    "check `accessibilityIdentifier` is set on the target view",
-                    "consider relaxing to text(...) if the label is more stable than the id",
-                ),
-            )
-        }
-        runtime.synthesizeTap(x = node.bounds.centerX, y = node.bounds.centerY)
+        val id = resolveFirstOrThrow(selector)
+        session.tapById(id)
     }
 
     /**
@@ -64,19 +49,18 @@ class App internal constructor(
      * Swift `App.fill`.
      */
     suspend fun fill(selector: Selector, text: String) {
-        tap(selector)  // tap → focuses the field
-        runtime.sendString(text)
+        val id = resolveFirstOrThrow(selector)
+        session.tapById(id)
+        session.inputText(text)
     }
 
     suspend fun pressKey(key: KeyName) {
-        runtime.pressKey(key)
+        session.pressKey(key.wireName)
     }
 
     suspend fun swipe(direction: SwipeDirection) {
-        runtime.swipe(direction)
+        session.swipeOnce(direction.wireName)
     }
-
-    suspend fun screenshot(): ByteArray = runtime.screenshot()
 
     /**
      * Tap at a normalized coordinate (0..1) — the one coordinate
@@ -95,40 +79,94 @@ class App internal constructor(
                 ),
             )
         }
-        runtime.synthesizeTapAtNormalized(nx, ny)
+        session.tapAtNormCoord(nx, ny)
     }
 
     suspend fun terminate() {
-        runtime.terminate(bundleId)
+        session.terminateApp()
     }
 
     suspend fun relaunch() {
-        runtime.terminate(bundleId)
-        runtime.launch(bundleId)
+        session.relaunchApp()
     }
 
     /**
-     * Launch fresh with state clearing options. Mirrors Swift
-     * `App.launchFresh`.
+     * Shared snapshot + resolve + first-match-or-throw helper used by
+     * [tap] / [fill]. Returns the matched accessibility id.
+     *
+     * `driver.tree()` returns the tree already as a JSON string in the
+     * exact shape the resolver takes, so it is fed straight to the
+     * resolver with no re-encode; the tree is only decoded on the miss
+     * path, to populate `visibleElements`.
      */
-    suspend fun launchFresh(
-        clearState: Boolean = false,
-        clearKeychain: Boolean = false,
-        appPath: String? = null,
-    ) {
-        runtime.launchFresh(bundleId, clearState, clearKeychain, appPath)
+    internal suspend fun resolveFirstOrThrow(selector: Selector): String {
+        val treeJson = driver.tree()
+        val selectorJson = encodeSelectorJson(selector)
+        val matches: List<String> = try {
+            resolver.resolve(treeJson, selectorJson)
+        } catch (e: Exception) {
+            throw ExpectationFailure(
+                code = FailureCode.UNKNOWN,
+                message = "FFI resolveSelector raised: ${e.message}",
+                selectorJson = selectorJson,
+            )
+        }
+        val firstId = matches.firstOrNull()
+        if (firstId == null) {
+            val tree = decodeTree(treeJson)
+            throw ExpectationFailure(
+                code = FailureCode.NOT_FOUND,
+                message = "no candidates after spatial + index filters",
+                selectorJson = selectorJson,
+                visibleElements = tree.flatten().take(20),
+                suggestions = listOf(
+                    "check `accessibilityIdentifier` is set on the target view",
+                    "consider relaxing to text(...) if the label is more stable than the id",
+                ),
+            )
+        }
+        return firstId
+    }
+
+    /**
+     * Decode the driver's tree JSON string into an [A11yNode]. Throws
+     * [ExpectationFailure] with `code = UNKNOWN` on decode failure (a
+     * wire / SDK bug at the FFI boundary).
+     */
+    internal fun decodeTree(json: String): A11yNode = try {
+        treeJson.decodeFromString(A11yNode.serializer(), json)
+    } catch (e: Exception) {
+        throw ExpectationFailure(
+            code = FailureCode.UNKNOWN,
+            message = "tree JSON decode failed: ${e.message}",
+        )
     }
 
     // ---- sense methods ------------------------------------------------
 
     fun find(selector: Selector): Locator = Locator(this, selector)
 
-    suspend fun tree(): A11yNode = runtime.snapshotTree()
+    suspend fun tree(): A11yNode = decodeTree(driver.tree())
 
-    suspend fun systemPopups(): List<A11yNode> = runtime.systemPopups()
+    /** Internal helper used by [Locator] — snapshot + decode the tree. */
+    internal suspend fun runtimeSnapshot(): A11yNode = decodeTree(driver.tree())
 
-    suspend fun openUrl(url: String) {
-        runtime.openUrl(url)
+    /** Collect system popup windows (permission prompts / system alerts). */
+    suspend fun systemPopups(): List<SystemPopup> {
+        val json = session.systemPopups()
+        return try {
+            popupJson.decodeFromString(ListSerializer(SystemPopup.serializer()), json)
+        } catch (e: Exception) {
+            throw ExpectationFailure(
+                code = FailureCode.UNKNOWN,
+                message = "system-popups JSON decode failed: ${e.message}",
+            )
+        }
+    }
+
+    private companion object {
+        val treeJson = Json { ignoreUnknownKeys = true }
+        val popupJson = Json { ignoreUnknownKeys = true }
     }
 }
 
@@ -145,3 +183,28 @@ enum class KeyName {
 enum class SwipeDirection {
     UP, DOWN, LEFT, RIGHT,
 }
+
+// ---- wire name mappings ---------------------------------------------
+
+/**
+ * The name the runner knows this key by. The FFI `parse_wire_enum`
+ * takes camelCase names ("return", "delete", …) and there is no "enter"
+ * — `ENTER` maps to "return", the same keystroke.
+ */
+val KeyName.wireName: String
+    get() = when (this) {
+        KeyName.RETURN -> "return"
+        KeyName.DELETE -> "delete"
+        KeyName.SPACE -> "space"
+        KeyName.TAB -> "tab"
+        KeyName.ESCAPE -> "escape"
+        KeyName.ENTER -> "return"
+    }
+
+val SwipeDirection.wireName: String
+    get() = when (this) {
+        SwipeDirection.UP -> "up"
+        SwipeDirection.DOWN -> "down"
+        SwipeDirection.LEFT -> "left"
+        SwipeDirection.RIGHT -> "right"
+    }

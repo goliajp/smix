@@ -1,9 +1,9 @@
-// App.tap mock-based unit tests.
+// App.tap orchestration unit tests over the driving seam.
 //
-// Mirrors swift-bridge/Tests/SmixSDKTests/AppTapMockTests.swift.
-// Verifies wire pipeline (snapshot → SelectorResolver → tap synthesize)
-// end-to-end via MockSimRuntime + MockSelectorResolver. JVM-only —
-// no JNA init, no libuniffi_smix.so load.
+// Verifies App logic: driver.tree() → SelectorResolver → session.tapById,
+// plus the .notFound / resolver-error failure shapes. Injects in-memory
+// MockDriver/MockSession — JVM-only, no JNA init, no libuniffi_smix.so.
+// Driving-wire correctness is the C8 Rust wiremock's job.
 
 package dev.smix.sdk
 
@@ -17,14 +17,7 @@ class AppTapMockTest {
 
     @Test
     fun tapByIdEmptyTreeThrowsNotFound() = runBlocking {
-        val runtime = MockSimRuntime()  // default empty container
-        val mockResolver = MockSelectorResolver()  // returns [] for everything
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
-
+        val app = mockApp(resolver = MockSelectorResolver())  // returns [] for everything
         try {
             app.tap(Selector.Id("btn-missing"))
             fail("empty resolver result must yield NOT_FOUND")
@@ -37,14 +30,7 @@ class AppTapMockTest {
 
     @Test
     fun tapByTextAbsentThrowsNotFound() = runBlocking {
-        val runtime = MockSimRuntime()
-        val mockResolver = MockSelectorResolver()
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
-
+        val app = mockApp(resolver = MockSelectorResolver())
         try {
             app.tap(Selector.Text(Pattern.Literal("Nope")))
             fail("text miss must yield NOT_FOUND")
@@ -56,7 +42,7 @@ class AppTapMockTest {
     // MARK: - Hit path
 
     @Test
-    fun tapByIdHitSynthesizesAtBoundsCenter() = runBlocking {
+    fun tapByIdHitTapsById() = runBlocking {
         val button = A11yNode(
             rawType = "button",
             role = A11yRole.BUTTON,
@@ -73,25 +59,19 @@ class AppTapMockTest {
             visible = true,
             children = listOf(button),
         )
-        val runtime = MockSimRuntime(snapshotResult = root)
-        val mockResolver = MockSelectorResolver().apply {
+        val session = MockSession()
+        val resolver = MockSelectorResolver().apply {
             registerHit("""{"id":"btn-login"}""", "btn-login")
         }
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val app = mockApp(tree = root, session = session, resolver = resolver)
 
         app.tap(Selector.Id("btn-login"))
 
-        assertEquals("exactly one tap dispatched", 1, runtime.tapCalls.size)
-        assertEquals("center x = 100 + 80/2", 140.0, runtime.tapCalls[0].x, 0.01)
-        assertEquals("center y = 200 + 40/2", 220.0, runtime.tapCalls[0].y, 0.01)
+        assertEquals("resolved id tapped exactly once", listOf("btn-login"), session.tapByIdCalls)
     }
 
     @Test
-    fun tapByLabelHitSynthesizes() = runBlocking {
+    fun tapByLabelHitTapsById() = runBlocking {
         val button = A11yNode(
             rawType = "button",
             role = A11yRole.BUTTON,
@@ -108,43 +88,27 @@ class AppTapMockTest {
             visible = true,
             children = listOf(button),
         )
-        val runtime = MockSimRuntime(snapshotResult = root)
-        val mockResolver = MockSelectorResolver().apply {
+        val session = MockSession()
+        val resolver = MockSelectorResolver().apply {
             registerHit("""{"label":"Submit"}""", "btn-foo")
         }
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val app = mockApp(tree = root, session = session, resolver = resolver)
 
         app.tap(Selector.Label("Submit"))
-        assertEquals(1, runtime.tapCalls.size)
-        assertEquals(100.0, runtime.tapCalls[0].x, 0.01)
+        assertEquals(listOf("btn-foo"), session.tapByIdCalls)
     }
 
     @Test
     fun tapPassesEncodedSelectorJsonToResolver() = runBlocking {
-        val root = A11yNode(
-            rawType = "other",
-            bounds = Rect(0.0, 0.0, 393.0, 852.0),
-            visible = true,
-            children = emptyList(),
-        )
-        val runtime = MockSimRuntime(snapshotResult = root)
-        val mockResolver = MockSelectorResolver()  // returns []
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val resolver = MockSelectorResolver()  // returns []
+        val app = mockApp(resolver = resolver)
 
         try {
             app.tap(Selector.Id("btn-x"))
         } catch (_: ExpectationFailure) { /* expected */ }
 
-        assertEquals(1, mockResolver.calls.size)
-        val (_, sel) = mockResolver.calls[0]
+        assertEquals(1, resolver.calls.size)
+        val (_, sel) = resolver.calls[0]
         // selectorJson must equal what encodeSelectorJson produces — the
         // Rust-compatible untagged shape `{"id":"btn-x"}`.
         assertEquals("""{"id":"btn-x"}""", sel)
@@ -152,21 +116,10 @@ class AppTapMockTest {
 
     @Test
     fun tapResolverErrorYieldsUnknownCode() = runBlocking {
-        val root = A11yNode(
-            rawType = "other",
-            bounds = Rect(0.0, 0.0, 393.0, 852.0),
-            visible = true,
-            children = emptyList(),
-        )
-        val runtime = MockSimRuntime(snapshotResult = root)
-        val mockResolver = MockSelectorResolver().apply {
+        val resolver = MockSelectorResolver().apply {
             throwOnNext = RuntimeException("simulated FFI parse error")
         }
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val app = mockApp(resolver = resolver)
 
         try {
             app.tap(Selector.Id("anything"))
@@ -180,59 +133,33 @@ class AppTapMockTest {
     // MARK: - Lifecycle
 
     @Test
-    fun launchAppCallsRuntimeLaunch() = runBlocking {
-        val runtime = MockSimRuntime()
-        Smix.launchApp(
-            AppTarget.BundleId("dev.smix.target"),
-            runtime,
-            MockSelectorResolver(),
-        )
-        assertEquals(listOf("dev.smix.target"), runtime.launchCalls)
-    }
-
-    @Test
-    fun relaunchCallsTerminateAndLaunch() = runBlocking {
-        val runtime = MockSimRuntime()
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.target"),
-            runtime,
-            MockSelectorResolver(),
-        )
+    fun relaunchDelegatesToSession() = runBlocking {
+        val session = MockSession()
+        val app = mockApp(session = session)
         app.relaunch()
-        assertEquals(listOf("dev.smix.target", "dev.smix.target"), runtime.launchCalls)
-        assertEquals(listOf("dev.smix.target"), runtime.terminateCalls)
+        assertEquals(1, session.relaunchAppCalls)
     }
 
     @Test
-    fun terminateCallsRuntimeTerminate() = runBlocking {
-        val runtime = MockSimRuntime()
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.target"),
-            runtime,
-            MockSelectorResolver(),
-        )
+    fun terminateDelegatesToSession() = runBlocking {
+        val session = MockSession()
+        val app = mockApp(session = session)
         app.terminate()
-        assertEquals(listOf("dev.smix.target"), runtime.terminateCalls)
+        assertEquals(1, session.terminateAppCalls)
     }
-
-    // launchApp(.AppPath) is wired to runtime.launchFromPath; see
-    // AppActSenseExtMockTest.launchWithAppPathDispatchesToRuntime.
 
     // MARK: - tree() sense
 
     @Test
-    fun treeReturnsSnapshotFromRuntime() = runBlocking {
+    fun treeReturnsDecodedSnapshotFromDriver() = runBlocking {
         val snapshot = A11yNode(
             rawType = "other",
+            identifier = "root",
             bounds = Rect(0.0, 0.0, 1.0, 1.0),
+            visible = true,
             children = emptyList(),
         )
-        val runtime = MockSimRuntime(snapshotResult = snapshot)
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.target"),
-            runtime,
-            MockSelectorResolver(),
-        )
+        val app = mockApp(tree = snapshot)
         val tree = app.tree()
         assertEquals(snapshot, tree)
     }

@@ -1,22 +1,15 @@
-// Locator + App.fill / App.pressKey mock-based unit tests.
-//
-// Mirrors swift-bridge/Tests/SmixSDKTests/LocatorMockTests.swift +
-// AppFillPressKeyMockTests.swift. Verifies:
-//   - Locator.toBeVisible polls + returns on first visible match
-//   - Locator.toBeVisible throws .timeout when never visible
-//   - Locator.toBeVisible throws .wrongState when matched but not visible
-//   - Locator.toContainText polls until text contains needle
-//   - App.fill = tap-to-focus + sendString
-//   - App.pressKey delegates to runtime
+// Locator poll-loop unit tests over the driving seam. Verifies:
+//   - toBeVisible polls + returns on first visible match
+//   - toBeVisible throws .timeout when never visible
+//   - toBeVisible throws .wrongState when matched but not visible
+//   - toContainText polls until text contains needle
 
 package dev.smix.sdk
 
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 
 class LocatorMockTest {
 
@@ -38,15 +31,10 @@ class LocatorMockTest {
             visible = true,
             children = listOf(node),
         )
-        val runtime = MockSimRuntime(snapshotResult = tree)
-        val mockResolver = MockSelectorResolver().apply {
+        val resolver = MockSelectorResolver().apply {
             registerHit("""{"id":"btn-x"}""", "btn-x")
         }
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val app = mockApp(tree = tree, resolver = resolver)
         // toBeVisible should not throw
         app.find(Selector.Id("btn-x")).toBeVisible(timeout = 500.milliseconds)
     }
@@ -59,13 +47,8 @@ class LocatorMockTest {
             visible = true,
             children = emptyList(),
         )
-        val runtime = MockSimRuntime(snapshotResult = tree)
-        val mockResolver = MockSelectorResolver()  // no hits
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val resolver = MockSelectorResolver()  // no hits
+        val app = mockApp(tree = tree, resolver = resolver)
         try {
             app.find(Selector.Id("btn-missing")).toBeVisible(timeout = 500.milliseconds)
             fail("must throw .timeout")
@@ -91,15 +74,10 @@ class LocatorMockTest {
             visible = true,
             children = listOf(node),
         )
-        val runtime = MockSimRuntime(snapshotResult = tree)
-        val mockResolver = MockSelectorResolver().apply {
+        val resolver = MockSelectorResolver().apply {
             registerHit("""{"id":"btn-y"}""", "btn-y")
         }
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val app = mockApp(tree = tree, resolver = resolver)
         try {
             app.find(Selector.Id("btn-y")).toBeVisible(timeout = 200.milliseconds)
             fail("must throw .wrongState")
@@ -124,15 +102,10 @@ class LocatorMockTest {
             bounds = Rect(0.0, 0.0, 100.0, 100.0),
             children = listOf(node),
         )
-        val runtime = MockSimRuntime(snapshotResult = tree)
-        val mockResolver = MockSelectorResolver().apply {
+        val resolver = MockSelectorResolver().apply {
             registerHit("""{"id":"msg"}""", "msg")
         }
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val app = mockApp(tree = tree, resolver = resolver)
         app.find(Selector.Id("msg")).toContainText("Alice", timeout = 500.milliseconds)
     }
 
@@ -150,15 +123,10 @@ class LocatorMockTest {
             bounds = Rect(0.0, 0.0, 100.0, 100.0),
             children = listOf(node),
         )
-        val runtime = MockSimRuntime(snapshotResult = tree)
-        val mockResolver = MockSelectorResolver().apply {
+        val resolver = MockSelectorResolver().apply {
             registerHit("""{"id":"msg"}""", "msg")
         }
-        val app = Smix.launchApp(
-            AppTarget.BundleId("dev.smix.fixture"),
-            runtime,
-            mockResolver,
-        )
+        val app = mockApp(tree = tree, resolver = resolver)
         try {
             app.find(Selector.Id("msg")).toContainText("Goodbye", timeout = 200.milliseconds)
             fail("must throw .timeout")
@@ -166,7 +134,4 @@ class LocatorMockTest {
             assertEquals(FailureCode.TIMEOUT, e.code)
         }
     }
-
-    // toHaveLabel + toHaveCount are wired via the dedicated FFI
-    // resolve_selector_count / labels paths; see LocatorToHaveMockTest.
 }
