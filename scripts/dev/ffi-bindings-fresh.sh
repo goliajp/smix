@@ -103,7 +103,28 @@ rerun with --verbose, or regenerate with scripts/sdk/build-*.sh"
   fi
 done
 
+# The bindings can match while the xcframework does not: the Swift SDK links
+# against the checked-in .a, and regenerating the text without rebuilding the
+# binary leaves it calling symbols the library does not carry. So check that
+# every uniffi function the bindings name is a symbol the xcframework exports.
+XCF_LIB="$ROOT/swift-bridge/SmixCoreFFI.xcframework/macos-arm64/libsmix_ffi.a"
+if [[ -f "$XCF_LIB" ]]; then
+  missing=0
+  exported="$(nm "$XCF_LIB" 2>/dev/null)"
+  for fn in $(grep -oE "uniffi_smix_ffi_fn_[a-z0-9_]+" "$SWIFT_CHECKED" | sort -u); do
+    grep -qF "$fn" <<<"$exported" || { echo "    symbol absent from xcframework: $fn"; missing=$((missing+1)); }
+  done
+  if (( missing > 0 )); then
+    echo "ffi-bindings-fresh: $missing binding symbol(s) missing from the xcframework — \
+rebuild it with scripts/sdk/build-xcframework.sh"
+    status=1
+  fi
+else
+  echo "ffi-bindings-fresh: no xcframework at ${XCF_LIB#"$ROOT"/} — cannot check its symbols"
+  status=1
+fi
+
 if (( status == 0 )); then
-  echo "ffi-bindings-fresh: clean — the checked-in bindings are what smix-ffi generates"
+  echo "ffi-bindings-fresh: clean — the bindings are what smix-ffi generates, and the xcframework carries them"
 fi
 exit "$status"
