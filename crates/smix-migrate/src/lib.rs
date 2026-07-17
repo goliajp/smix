@@ -728,12 +728,17 @@ mod tests {
     }
 
     #[test]
-    fn native_smix_verbs_untouched() {
+    fn things_that_are_not_verbs_are_reported_rather_than_passed_through() {
+        // These were in VERB_TABLE, so this asserted the codemod carried them
+        // through in silence. Neither is a verb: `ocrText` is a selector
+        // field (`tapOn: {ocrText: "Sign In"}`) and `tapById` is written
+        // `tapOn: {id: submit}`. The parser rejects both, so passing them
+        // through quietly hands the author yaml that will not run.
         let yaml = "appId: com.example\n---\n- ocrText: Sign In\n- tapById: submit\n";
         let (out, report) = Migrator::default().migrate(yaml).unwrap();
-        assert!(out.contains("ocrText: Sign In"));
+        assert!(out.contains("ocrText: Sign In"), "unknown verbs stay verbatim");
         assert!(out.contains("tapById: submit"));
-        assert!(report.unknown_verbs.is_empty());
+        assert_eq!(report.unknown_verbs, vec!["ocrText", "tapById"]);
         assert!(report.renamed.is_empty());
     }
 
