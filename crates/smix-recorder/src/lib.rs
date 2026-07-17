@@ -32,4 +32,4 @@ pub use generator_rust::generate_rust;
 pub use session::{RecordSession, RecordingApp};
 
 // Re-export the upstream IRAction/RecorderError for convenience.
-pub use smix_recorder_ir::{IRAction, RecorderError, RecorderErrorReason};
+pub use smix_authoring_ir::{IRAction, RecorderError, RecorderErrorReason};

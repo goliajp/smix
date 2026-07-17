@@ -6,7 +6,7 @@
 //! accessors on every successfully-parsed batch.
 
 use libfuzzer_sys::fuzz_target;
-use smix_recorder_ir::{IRAction, sort_by_timestamp};
+use smix_authoring_ir::{IRAction, sort_by_timestamp};
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(action) = serde_json::from_slice::<IRAction>(data) {

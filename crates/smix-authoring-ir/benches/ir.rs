@@ -1,14 +1,14 @@
-//! Criterion bench for smix-recorder-ir.
+//! Criterion bench for smix-authoring-ir.
 //!
 //! IR is cold-ish (one append per user-recorded action) but generators
 //! parse/serialize the full session and recorders may merge 100+ events
 //! before flushing — keep accessor + sort + serde reasonably fast.
 //!
-//! Run: `cargo bench --bench ir -p smix-recorder-ir`
+//! Run: `cargo bench --bench ir -p smix-authoring-ir`
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use smix_input::{KeyName, SwipeDirection};
-use smix_recorder_ir::{IRAction, sort_by_timestamp};
+use smix_authoring_ir::{IRAction, sort_by_timestamp};
 use smix_selector::{Modifiers, Pattern, Selector};
 use std::hint::black_box;
 

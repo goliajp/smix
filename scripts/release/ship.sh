@@ -108,7 +108,7 @@ CRATES=(
   smix-screen smix-selector smix-input smix-error
   smix-verbs smix-metro-log smix-adb
   smix-runner-wire smix-selector-resolver smix-fixture
-  smix-annotate smix-migrate smix-recorder-ir
+  smix-annotate smix-migrate smix-authoring-ir
   smix-simctl smix-runner-client smix-driver
   smix-host-coord-resolver
   smix-sdk smix-mcp smix-adapter-maestro smix-recorder

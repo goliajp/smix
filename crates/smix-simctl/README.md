@@ -20,7 +20,7 @@ stdin-pipe edge case. `smix-simctl` does it once, cleanly typed.
 use smix_simctl::{Appearance, SimctlClient, SimctlPermission};
 use std::time::Duration;
 
-# async fn demo() -> Result<(), smix_simctl::SimctlError> {
+# async fn demo() -> Result<(), smix_simctl::DeviceControlError> {
 let simctl = SimctlClient::new();
 
 // 1. Inventory
@@ -75,7 +75,7 @@ assert_eq!(got, "hello clipboard");
 
 ## Scope
 
-- ✅ All async, returns typed `SimctlError` variants
+- ✅ All async, returns typed `DeviceControlError` variants
 - ✅ Uses `tokio::process::Command` for spawn
 - ✅ Parses JSON outputs (`list devices -j`, etc.) into typed structs
 - ✅ `screenshot` returns raw PNG bytes — no PNG parsing dep needed

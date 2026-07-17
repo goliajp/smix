@@ -11,7 +11,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use smix_input::KeyName;
 use smix_recorder::generator_rust::generate_rust;
-use smix_recorder_ir::IRAction;
+use smix_authoring_ir::IRAction;
 use smix_selector::{Modifiers, Pattern, Selector};
 use std::hint::black_box;
 

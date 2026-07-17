@@ -1,10 +1,10 @@
 #![cfg(not(debug_assertions))] // perf budgets are release-only + load-sensitive (test-optimize.md §2.4)
-//! Perf gate for smix-recorder-ir.
+//! Perf gate for smix-authoring-ir.
 //!
 //! Accessors + sort + serde encode/decode budgets.
 
 use smix_input::{KeyName, SwipeDirection};
-use smix_recorder_ir::{IRAction, sort_by_timestamp};
+use smix_authoring_ir::{IRAction, sort_by_timestamp};
 use smix_selector::{Modifiers, Pattern, Selector};
 use std::hint::black_box;
 use std::time::Instant;

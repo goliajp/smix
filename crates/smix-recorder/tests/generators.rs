@@ -2,7 +2,7 @@
 
 use smix_input::{KeyName, SwipeDirection};
 use smix_recorder::{RecordSession, generate_maestro_yaml, generate_rust};
-use smix_recorder_ir::{IRAction, RecorderErrorReason};
+use smix_authoring_ir::{IRAction, RecorderErrorReason};
 use smix_selector::{Modifiers, Pattern, Selector};
 
 fn text_sel(t: &str) -> Selector {

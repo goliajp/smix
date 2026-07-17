@@ -23,7 +23,7 @@ the relevant stone:
 | `xcrun simctl` wrapper | [`smix-simctl`](https://crates.io/crates/smix-simctl) |
 | Input enums (`KeyName` / `SwipeDirection`) | [`smix-input`](https://crates.io/crates/smix-input) |
 | AI-readable `ExpectationFailure` | [`smix-error`](https://crates.io/crates/smix-error) |
-| Recorder IR (`IRAction` enum) | [`smix-recorder-ir`](https://crates.io/crates/smix-recorder-ir) |
+| Recorder IR (`IRAction` enum) | [`smix-authoring-ir`](https://crates.io/crates/smix-authoring-ir) |
 | Runner HTTP wire types | [`smix-runner-wire`](https://crates.io/crates/smix-runner-wire) |
 | Runner HTTP async client | [`smix-runner-client`](https://crates.io/crates/smix-runner-client) (cement) |
 | Full driver with retry / implicit wait | [`smix-driver`](https://crates.io/crates/smix-driver) (cement) |

@@ -73,7 +73,7 @@ pub use smix_selector::{
     AnchorBox, IndexModifiers, Modifiers, Pattern, Selector, True, describe_selector, match_text,
     match_text_compiled,
 };
-pub use smix_simctl::{Appearance, LaunchResult, SimctlClient, SimctlError, SimctlPermission};
+pub use smix_simctl::{Appearance, LaunchResult, SimctlClient, DeviceControlError, SimctlPermission};
 
 /// Nucleus of `App::assert_screenshot`. Wraps fs IO + the dhash algorithm
 /// without any `App` dependency, so it can be exercised in host-side
@@ -1764,8 +1764,8 @@ impl App {
     /// no-op).
     pub async fn start_recording(&self, path: &str) -> Result<(), ExpectationFailure> {
         // Recording state owned by IosDeviceControl (was on App).
-        // Trait method returns Result<(), SimctlError>; double-start
-        // surfaces as SimctlError::NonZeroExit (mapped here to
+        // Trait method returns Result<(), DeviceControlError>; double-start
+        // surfaces as DeviceControlError::NonZeroExit (mapped here to
         // ExpectationFailure).
         let udid = self.require_udid()?;
         self.device
@@ -2010,26 +2010,26 @@ impl App {
 
 // -------------------- error mapping -----------------------------------
 
-fn simctl_to_failure(e: SimctlError) -> ExpectationFailure {
+fn simctl_to_failure(e: DeviceControlError) -> ExpectationFailure {
     let (code, hint) = match &e {
-        SimctlError::Spawn(_) => (
+        DeviceControlError::Spawn(_) => (
             FailureCode::DriverError,
             Some("xcrun not found — install Xcode command-line tools".into()),
         ),
-        SimctlError::NonZeroExit { .. } => (FailureCode::DriverError, None),
-        SimctlError::Malformed { .. } => (FailureCode::DriverError, None),
-        SimctlError::Timeout { ms, .. } => (
+        DeviceControlError::NonZeroExit { .. } => (FailureCode::DriverError, None),
+        DeviceControlError::Malformed { .. } => (FailureCode::DriverError, None),
+        DeviceControlError::Timeout { ms, .. } => (
             FailureCode::Timeout,
             Some(format!("subprocess timeout after {ms}ms")),
         ),
-        SimctlError::CaptureBackpressure { retry_after } => (
+        DeviceControlError::CaptureBackpressure { retry_after } => (
             FailureCode::DriverError,
             Some(format!(
                 "screenshot pacer circuit open — SimRenderServer under load; retry after {}ms",
                 retry_after.as_millis()
             )),
         ),
-        // SimctlError is #[non_exhaustive]; a new variant
+        // DeviceControlError is #[non_exhaustive]; a new variant
         // arriving from a future patch falls through here as a generic
         // driver error until we augment this map.
         _ => (FailureCode::DriverError, None),

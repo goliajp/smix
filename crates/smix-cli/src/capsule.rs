@@ -125,7 +125,7 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         .await
     {
         Ok(_) => {}
-        Err(smix_simctl::SimctlError::NonZeroExit { stderr, .. })
+        Err(smix_simctl::DeviceControlError::NonZeroExit { stderr, .. })
             if stderr.contains("current state: Booted") => {}
         Err(e) => return Err(format!("simctl boot {}: {e}", opts.udid)),
     }

@@ -1,7 +1,7 @@
 //! `RecordSession` + `RecordingApp` — host-side capture wrappers.
 
 use smix_input::{KeyName, SwipeDirection};
-use smix_recorder_ir::IRAction;
+use smix_authoring_ir::IRAction;
 use smix_sdk::{App, ExpectationFailure, Selector};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};

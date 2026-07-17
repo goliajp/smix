@@ -19,7 +19,7 @@ workspace = true
 [dependencies]
 smix-input = { path = "../smix-input", version = "1.0.0" }
 smix-selector = { path = "../smix-selector", version = "1.0.0" }
-smix-recorder-ir = { path = "../smix-recorder-ir", version = "1.0.0" }
+smix-authoring-ir = { path = "../smix-authoring-ir", version = "1.0.0" }
 smix-error = { path = "../smix-error", version = "1.0.0" }
 smix-sdk = { path = "../smix-sdk", version = "1.0.0" }
 serde.workspace = true

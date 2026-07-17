@@ -1,8 +1,8 @@
-# smix-recorder-ir
+# smix-authoring-ir
 
-[![Crates.io](https://img.shields.io/crates/v/smix-recorder-ir?style=flat-square&logo=rust)](https://crates.io/crates/smix-recorder-ir)
-[![docs.rs](https://img.shields.io/docsrs/smix-recorder-ir?style=flat-square&logo=docs.rs)](https://docs.rs/smix-recorder-ir)
-[![License](https://img.shields.io/crates/l/smix-recorder-ir?style=flat-square)](#license)
+[![Crates.io](https://img.shields.io/crates/v/smix-authoring-ir?style=flat-square&logo=rust)](https://crates.io/crates/smix-authoring-ir)
+[![docs.rs](https://img.shields.io/docsrs/smix-authoring-ir?style=flat-square&logo=docs.rs)](https://docs.rs/smix-authoring-ir)
+[![License](https://img.shields.io/crates/l/smix-authoring-ir?style=flat-square)](#license)
 
 Intermediate representation for recorded iOS-sim sessions: 8-variant
 `IRAction` enum, `RecorderError` with kebab-case reason codes, and a
@@ -14,7 +14,7 @@ fills it in and emits Rust / Maestro YAML.
 ## Quickstart
 
 ```rust
-use smix_recorder_ir::{IRAction, sort_by_timestamp};
+use smix_authoring_ir::{IRAction, sort_by_timestamp};
 use smix_selector::{Pattern, Selector, Modifiers};
 
 let actions = vec![
@@ -83,7 +83,7 @@ currently supported.
 
 | Use case | Pick |
 |---|---|
-| Want types only (build your own recorder/generator) | **smix-recorder-ir** |
+| Want types only (build your own recorder/generator) | **smix-authoring-ir** |
 | Want a working recorder + Rust/YAML code generation | [`smix-recorder`](https://crates.io/crates/smix-recorder) (consumes this) |
 | Want UI test scaffolding from scratch (no IR) | use [`smix-sdk`](https://crates.io/crates/smix-sdk) directly |
 

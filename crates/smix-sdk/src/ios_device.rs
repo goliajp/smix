@@ -9,7 +9,7 @@ use std::path::Path;
 use tokio::sync::Mutex;
 
 use smix_driver::Platform;
-use smix_simctl::{RecordingHandle, SimctlClient, SimctlError};
+use smix_simctl::{RecordingHandle, SimctlClient, DeviceControlError};
 
 use crate::PermissionAction;
 use crate::device_control::{DeviceControl, Permission};
@@ -67,7 +67,7 @@ impl DeviceControl for IosDeviceControl {
 
     // === Lifecycle ===
 
-    async fn launch(&self, udid: &str, bundle_id: &str) -> Result<u32, SimctlError> {
+    async fn launch(&self, udid: &str, bundle_id: &str) -> Result<u32, DeviceControlError> {
         self.client.launch(udid, bundle_id).await.map(|res| res.pid)
     }
 
@@ -76,39 +76,39 @@ impl DeviceControl for IosDeviceControl {
         udid: &str,
         bundle_id: &str,
         args: &[String],
-    ) -> Result<u32, SimctlError> {
+    ) -> Result<u32, DeviceControlError> {
         self.client
             .launch_with_args(udid, bundle_id, args)
             .await
             .map(|res| res.pid)
     }
 
-    async fn terminate(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    async fn terminate(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         self.client.terminate(udid, bundle_id).await
     }
 
-    async fn install(&self, udid: &str, app_path: &str) -> Result<(), SimctlError> {
+    async fn install(&self, udid: &str, app_path: &str) -> Result<(), DeviceControlError> {
         self.client.install(udid, app_path).await
     }
 
-    async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         self.client.uninstall(udid, bundle_id).await
     }
 
-    async fn keychain_reset(&self, udid: &str) -> Result<(), SimctlError> {
+    async fn keychain_reset(&self, udid: &str) -> Result<(), DeviceControlError> {
         self.client.keychain_reset(udid).await
     }
 
     /// Reset all privacy grants for the bundle via
     /// `simctl privacy <udid> reset all <bundle-id>`.
-    async fn privacy_reset_all(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    async fn privacy_reset_all(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         self.client.privacy_reset_all(udid, bundle_id).await
     }
 
     /// Wipe the app's sandbox (`Documents/`, `Library/`,
     /// `tmp/`) via `simctl spawn <udid> rm -rf` under the app's
     /// Containers/Data path. Preserves XCUITest binding.
-    async fn clear_app_sandbox(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError> {
+    async fn clear_app_sandbox(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
         self.client.clear_app_sandbox(udid, bundle_id).await
     }
 
@@ -119,13 +119,13 @@ impl DeviceControl for IosDeviceControl {
         udid: &str,
         bundle_id: &str,
         key: &str,
-    ) -> Result<bool, SimctlError> {
+    ) -> Result<bool, DeviceControlError> {
         self.client.user_defaults_delete(udid, bundle_id, key).await
     }
 
     // === Lifecycle ancillary ===
 
-    async fn open_url(&self, udid: &str, url: &str) -> Result<(), SimctlError> {
+    async fn open_url(&self, udid: &str, url: &str) -> Result<(), DeviceControlError> {
         self.client.open_url(udid, url).await
     }
 
@@ -134,29 +134,29 @@ impl DeviceControl for IosDeviceControl {
         udid: &str,
         bundle_id: &str,
         apns_json_path: &str,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         self.client.send_push(udid, bundle_id, apns_json_path).await
     }
 
-    async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, SimctlError> {
+    async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, DeviceControlError> {
         self.client.screenshot(udid).await
     }
 
     // === Clipboard / Media / Location ===
 
-    async fn pasteboard_set(&self, udid: &str, text: &str) -> Result<(), SimctlError> {
+    async fn pasteboard_set(&self, udid: &str, text: &str) -> Result<(), DeviceControlError> {
         self.client.pasteboard_set(udid, text).await
     }
 
-    async fn pasteboard_get(&self, udid: &str) -> Result<String, SimctlError> {
+    async fn pasteboard_get(&self, udid: &str) -> Result<String, DeviceControlError> {
         self.client.pasteboard_get(udid).await
     }
 
-    async fn add_media(&self, udid: &str, paths: &[String]) -> Result<(), SimctlError> {
+    async fn add_media(&self, udid: &str, paths: &[String]) -> Result<(), DeviceControlError> {
         self.client.add_media(udid, paths).await
     }
 
-    async fn location_set(&self, udid: &str, lat: f64, lon: f64) -> Result<(), SimctlError> {
+    async fn location_set(&self, udid: &str, lat: f64, lon: f64) -> Result<(), DeviceControlError> {
         self.client.location_set(udid, lat, lon).await
     }
 
@@ -165,7 +165,7 @@ impl DeviceControl for IosDeviceControl {
         udid: &str,
         points: &[(f64, f64)],
         speed_mps: Option<f64>,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         self.client.location_start(udid, points, speed_mps).await
     }
 
@@ -177,7 +177,7 @@ impl DeviceControl for IosDeviceControl {
         bundle_id: &str,
         permission: Permission,
         action: PermissionAction,
-    ) -> Result<(), SimctlError> {
+    ) -> Result<(), DeviceControlError> {
         let Some(simctl_perm) = permission.to_simctl() else {
             // Android-only permission on iOS → no-op (don't fail; matches
             // cross-platform yaml expectation that `Storage` on iOS does
@@ -205,12 +205,12 @@ impl DeviceControl for IosDeviceControl {
 
     // === Recording (state owned internally) ===
 
-    async fn start_recording(&self, udid: &str, output_path: &Path) -> Result<(), SimctlError> {
+    async fn start_recording(&self, udid: &str, output_path: &Path) -> Result<(), DeviceControlError> {
         let mut guard = self.recording.lock().await;
         if guard.is_some() {
-            // Caller must stop the existing one first; surface via SimctlError
+            // Caller must stop the existing one first; surface via DeviceControlError
             // (the App layer translates this to an ExpectationFailure with a hint).
-            return Err(SimctlError::non_zero_exit(
+            return Err(DeviceControlError::non_zero_exit(
                 "io recordVideo",
                 -1,
                 "a recording is already in progress (call stop_recording first)",
@@ -222,10 +222,10 @@ impl DeviceControl for IosDeviceControl {
         Ok(())
     }
 
-    async fn stop_recording(&self) -> Result<(), SimctlError> {
+    async fn stop_recording(&self) -> Result<(), DeviceControlError> {
         let mut guard = self.recording.lock().await;
         let handle = guard.take().ok_or_else(|| {
-            SimctlError::non_zero_exit(
+            DeviceControlError::non_zero_exit(
                 "io recordVideo",
                 -1,
                 "no recording in progress (call start_recording first)",

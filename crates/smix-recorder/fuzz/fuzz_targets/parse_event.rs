@@ -6,7 +6,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use smix_recorder::{generate_maestro_yaml, generate_rust};
-use smix_recorder_ir::IRAction;
+use smix_authoring_ir::IRAction;
 
 fuzz_target!(|data: &[u8]| {
     let Ok(actions) = serde_json::from_slice::<Vec<IRAction>>(data) else {

@@ -15,7 +15,7 @@ relevant leaf stone:
 | Selector → node resolution | [`smix-selector-resolver` BUDGETS.md](../smix-selector-resolver/BUDGETS.md) |
 | Selector → normalized coord | [`smix-host-coord-resolver` BUDGETS.md](../smix-host-coord-resolver/BUDGETS.md) |
 | AI-readable failure render | [`smix-error` BUDGETS.md](../smix-error/BUDGETS.md) |
-| Recorder IR accessors / sort / serde | [`smix-recorder-ir` BUDGETS.md](../smix-recorder-ir/BUDGETS.md) |
+| Recorder IR accessors / sort / serde | [`smix-authoring-ir` BUDGETS.md](../smix-authoring-ir/BUDGETS.md) |
 | Input enum primitives | [`smix-input` BUDGETS.md](../smix-input/BUDGETS.md) |
 | Runner wire serde | [`smix-runner-wire` BUDGETS.md](../smix-runner-wire/BUDGETS.md) |
 | `xcrun simctl` IO baseline | [`smix-simctl` BUDGETS.md](../smix-simctl/BUDGETS.md) |

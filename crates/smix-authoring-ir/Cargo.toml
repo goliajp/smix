@@ -1,14 +1,14 @@
 [package]
-name = "smix-recorder-ir"
+name = "smix-authoring-ir"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "smix-recorder-ir — IRAction enum + RecorderError + sort_by_timestamp (stone)."
+description = "smix-authoring-ir — IRAction enum + RecorderError + sort_by_timestamp (stone)."
 homepage.workspace = true
-documentation = "https://docs.rs/smix-recorder-ir"
+documentation = "https://docs.rs/smix-authoring-ir"
 readme = "README.md"
 keywords = ["recorder", "ir", "serialization", "test", "ios"]
 categories = ["development-tools::testing"]

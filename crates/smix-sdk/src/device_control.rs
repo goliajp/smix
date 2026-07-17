@@ -8,7 +8,7 @@
 //! Sense+act methods (tap/find/etc) live on [`smix_driver::Driver`].
 
 use async_trait::async_trait;
-use smix_simctl::{SimctlClient, SimctlError, SimctlPermission};
+use smix_simctl::{SimctlClient, DeviceControlError, SimctlPermission};
 use std::path::Path;
 
 pub use crate::PermissionAction;
@@ -131,7 +131,7 @@ impl Permission {
 /// Android impl wraps `adb`.
 ///
 /// Methods take `udid: &str` first (iOS terminology; Android maps this
-/// to the device serial). All return `Result<_, SimctlError>` — the
+/// to the device serial). All return `Result<_, DeviceControlError>` — the
 /// Android impl wraps adb errors into the same enum.
 #[async_trait]
 pub trait DeviceControl: Send + Sync {
@@ -146,17 +146,17 @@ pub trait DeviceControl: Send + Sync {
 
     // === Lifecycle ===
 
-    async fn launch(&self, udid: &str, bundle_id: &str) -> Result<u32, SimctlError>;
+    async fn launch(&self, udid: &str, bundle_id: &str) -> Result<u32, DeviceControlError>;
     async fn launch_with_args(
         &self,
         udid: &str,
         bundle_id: &str,
         args: &[String],
-    ) -> Result<u32, SimctlError>;
-    async fn terminate(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError>;
-    async fn install(&self, udid: &str, app_path: &str) -> Result<(), SimctlError>;
-    async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError>;
-    async fn keychain_reset(&self, udid: &str) -> Result<(), SimctlError>;
+    ) -> Result<u32, DeviceControlError>;
+    async fn terminate(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError>;
+    async fn install(&self, udid: &str, app_path: &str) -> Result<(), DeviceControlError>;
+    async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError>;
+    async fn keychain_reset(&self, udid: &str) -> Result<(), DeviceControlError>;
 
     /// Revoke every privacy permission the app has been granted.
     ///
@@ -169,13 +169,13 @@ pub trait DeviceControl: Send + Sync {
     /// `clearState: true` on Android reported success while clearing
     /// nothing — the planner emits this op whatever the platform. A device
     /// control that cannot do this has to say so out loud.
-    async fn privacy_reset_all(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError>;
+    async fn privacy_reset_all(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError>;
 
     /// Wipe the app's persisted data without uninstalling it, so the
     /// test binding survives.
     ///
     /// Required for the same reason as [`Self::privacy_reset_all`].
-    async fn clear_app_sandbox(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError>;
+    async fn clear_app_sandbox(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError>;
 
     /// Delete a single key from the target app's persisted
     /// user-defaults / preferences store. iOS: `simctl spawn defaults
@@ -194,8 +194,8 @@ pub trait DeviceControl: Send + Sync {
         _udid: &str,
         _bundle_id: &str,
         _key: &str,
-    ) -> Result<bool, SimctlError> {
-        Err(SimctlError::non_zero_exit(
+    ) -> Result<bool, DeviceControlError> {
+        Err(DeviceControlError::non_zero_exit(
             "user-defaults-delete",
             1,
             "clearUserDefaults is not supported on this platform (iOS simulator only — \
@@ -206,27 +206,27 @@ pub trait DeviceControl: Send + Sync {
 
     // === Lifecycle ancillary ===
 
-    async fn open_url(&self, udid: &str, url: &str) -> Result<(), SimctlError>;
+    async fn open_url(&self, udid: &str, url: &str) -> Result<(), DeviceControlError>;
     async fn send_push(
         &self,
         udid: &str,
         bundle_id: &str,
         apns_json_path: &str,
-    ) -> Result<(), SimctlError>;
-    async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, SimctlError>;
+    ) -> Result<(), DeviceControlError>;
+    async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, DeviceControlError>;
 
     // === Clipboard / Media / Location ===
 
-    async fn pasteboard_set(&self, udid: &str, text: &str) -> Result<(), SimctlError>;
-    async fn pasteboard_get(&self, udid: &str) -> Result<String, SimctlError>;
-    async fn add_media(&self, udid: &str, paths: &[String]) -> Result<(), SimctlError>;
-    async fn location_set(&self, udid: &str, lat: f64, lon: f64) -> Result<(), SimctlError>;
+    async fn pasteboard_set(&self, udid: &str, text: &str) -> Result<(), DeviceControlError>;
+    async fn pasteboard_get(&self, udid: &str) -> Result<String, DeviceControlError>;
+    async fn add_media(&self, udid: &str, paths: &[String]) -> Result<(), DeviceControlError>;
+    async fn location_set(&self, udid: &str, lat: f64, lon: f64) -> Result<(), DeviceControlError>;
     async fn location_start(
         &self,
         udid: &str,
         points: &[(f64, f64)],
         speed_mps: Option<f64>,
-    ) -> Result<(), SimctlError>;
+    ) -> Result<(), DeviceControlError>;
 
     // === Permissions (cross-platform `Permission` enum) ===
 
@@ -236,10 +236,10 @@ pub trait DeviceControl: Send + Sync {
         bundle_id: &str,
         permission: Permission,
         action: PermissionAction,
-    ) -> Result<(), SimctlError>;
+    ) -> Result<(), DeviceControlError>;
 
     // === Recording (state owned internally by impl, see IosDeviceControl) ===
 
-    async fn start_recording(&self, udid: &str, output_path: &Path) -> Result<(), SimctlError>;
-    async fn stop_recording(&self) -> Result<(), SimctlError>;
+    async fn start_recording(&self, udid: &str, output_path: &Path) -> Result<(), DeviceControlError>;
+    async fn stop_recording(&self) -> Result<(), DeviceControlError>;
 }

@@ -17,7 +17,7 @@ mod script;
 
 use clap::{Parser, Subcommand};
 use smix_simctl::registry::{self, RegistryError, SimRegistry};
-use smix_simctl::{Appearance, LaunchResult, SimctlClient, SimctlError};
+use smix_simctl::{Appearance, LaunchResult, SimctlClient, DeviceControlError};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -2353,13 +2353,13 @@ async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<(), CliError>
 
 #[derive(Debug)]
 enum CliError {
-    Simctl(SimctlError),
+    Simctl(DeviceControlError),
     Registry(RegistryError),
     Other(String),
 }
 
-impl From<SimctlError> for CliError {
-    fn from(e: SimctlError) -> Self {
+impl From<DeviceControlError> for CliError {
+    fn from(e: DeviceControlError) -> Self {
         CliError::Simctl(e)
     }
 }

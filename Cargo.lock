@@ -2897,6 +2897,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "smix-authoring-ir"
+version = "1.0.27"
+dependencies = [
+ "criterion",
+ "serde",
+ "serde_json",
+ "smix-input",
+ "smix-selector",
+]
+
+[[package]]
 name = "smix-cli"
 version = "1.0.27"
 dependencies = [
@@ -3070,24 +3081,13 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_norway",
+ "smix-authoring-ir",
  "smix-error",
  "smix-input",
- "smix-recorder-ir",
  "smix-sdk",
  "smix-selector",
  "thiserror 2.0.18",
  "tokio",
-]
-
-[[package]]
-name = "smix-recorder-ir"
-version = "1.0.27"
-dependencies = [
- "criterion",
- "serde",
- "serde_json",
- "smix-input",
- "smix-selector",
 ]
 
 [[package]]
