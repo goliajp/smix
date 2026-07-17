@@ -221,6 +221,69 @@ impl AdbClient {
         Ok(())
     }
 
+    /// Spawn `adb -s <serial> shell <cmd...>` and hand back the child rather
+    /// than waiting for it.
+    ///
+    /// For device commands that run until stopped — `screenrecord` is the
+    /// one. The caller owns the child, and how it ends matters: screenrecord
+    /// only finalizes a playable mp4 when it gets SIGINT, so killing the
+    /// child outright leaves a file with no moov atom.
+    pub fn spawn_shell(
+        &self,
+        serial: &str,
+        cmd: &[&str],
+    ) -> Result<tokio::process::Child, AdbError> {
+        let mut c = self.cmd();
+        c.args(["-s", serial, "shell"]);
+        for a in cmd {
+            c.arg(a);
+        }
+        c.stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped());
+        c.spawn().map_err(|e| {
+            if e.kind() == io::ErrorKind::NotFound {
+                AdbError::BinaryNotFound
+            } else {
+                AdbError::Spawn(e)
+            }
+        })
+    }
+
+    /// `adb -s <serial> pull <remote> <local>` — copy a file off the device.
+    pub async fn pull(&self, serial: &str, remote: &str, local: &Path) -> Result<(), AdbError> {
+        let local = local.to_string_lossy();
+        self.run_capture(Some(serial), "pull", &[remote, &local])
+            .await?;
+        Ok(())
+    }
+
+    /// `adb -s <serial> push <local> <remote>` — copy a file onto the device.
+    pub async fn push(&self, serial: &str, local: &Path, remote: &str) -> Result<(), AdbError> {
+        let local = local.to_string_lossy();
+        self.run_capture(Some(serial), "push", &[&local, remote])
+            .await?;
+        Ok(())
+    }
+
+    /// `adb -s <serial> shell am broadcast -a <action> [-d <data>]`.
+    ///
+    /// Note that `result=0` is the ordinary answer — it means the broadcast
+    /// was delivered and nothing set a result code, not that anything failed.
+    pub async fn broadcast(
+        &self,
+        serial: &str,
+        action: &str,
+        data: Option<&str>,
+    ) -> Result<(), AdbError> {
+        let mut args: Vec<&str> = vec!["am", "broadcast", "-a", action];
+        if let Some(d) = data {
+            args.push("-d");
+            args.push(d);
+        }
+        self.run_capture(Some(serial), "shell", &args).await?;
+        Ok(())
+    }
+
     /// `adb -s <serial> uninstall <pkg>` — uninstall a package.
     pub async fn uninstall(&self, serial: &str, package: &str) -> Result<(), AdbError> {
         self.run_capture(Some(serial), "uninstall", &[package])
