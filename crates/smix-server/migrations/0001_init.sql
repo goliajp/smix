@@ -1,4 +1,3 @@
--- web-v0.3 c2 — minimal stream-session registry.
 -- One row per sim whose live HLS stream is being served. PK = udid;
 -- stream_path is the HLS dir relative to SMIX_STREAM_ROOT (served under
 -- /streams/<stream_path>/index.m3u8). Segment index / access audit /

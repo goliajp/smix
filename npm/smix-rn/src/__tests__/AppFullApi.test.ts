@@ -1,5 +1,4 @@
-// v7.5 c3 — App act/sense full API wire tests, mirror Kotlin
-// AppActSenseExtMockTest + AppFillPressKeyMockTest + Swift v7.2 c1/c2/c5.
+// Wire tests for the full act/sense API.
 
 import { describe, expect, test } from 'vitest'
 import {

@@ -1,7 +1,8 @@
 appId: com.test.parity
 ---
-# while: "false" 直接 falsy 不进 loop; corpus_full 只验 parser+runtime
-# 走通,seeded output 测试在 mock_run_repeat_while_with_output.
+# "false" is falsy, so the loop body never runs: this fixture only has to
+# parse and execute. Seeded output is covered by
+# mock_run_repeat_while_with_output.
 - repeat:
     while: "false"
     commands:

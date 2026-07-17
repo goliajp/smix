@@ -1,5 +1,3 @@
-// v6.0 c3b — root build.gradle.kts for smix-android-runner.
-//
 // Root project — no module-level plugins applied here; app/ holds the
 // Android library + instrumentation runner.
 

@@ -1,6 +1,5 @@
-// v7.5 c1 — A11yNode + Rect mirror Rust smix-screen A11yNode +
-// Swift v7.2 + Kotlin v7.4 A11yNode. CamelCase wire keys match
-// Rust `#[serde(rename_all = "camelCase")]`.
+// The wire form of `smix-screen`'s types. The camelCase keys are the
+// contract with the runner, not a local style choice.
 
 export interface Rect {
   x: number

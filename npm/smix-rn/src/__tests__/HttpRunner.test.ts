@@ -1,4 +1,8 @@
-// v7.7 c1 — HttpSimRuntime fetch wire integration tests via injected mock.
+// HttpSimRuntime fetch tests over an injected mock client.
+//
+// These pass against a mock and say nothing about the real runner: the
+// routes asserted here are the ones this SDK sends, not the ones the
+// runner serves. See the defect noted at the top of HttpRunner.ts.
 //
 // Verifies:
 //   - resolver POSTs to /select/resolve with treeJson + selectorJson + decodes ids

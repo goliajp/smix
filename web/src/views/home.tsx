@@ -322,7 +322,7 @@ export function HomeView() {
               </li>
               <li>
                 Listen on <code>0.0.0.0</code> — the runner port is bound to <code>127.0.0.1</code>{' '}
-                only (compliance gate, v1.2 C1).
+                only.
               </li>
               <li>Expose xpath / pixel-coord selectors to the test DSL.</li>
             </ul>

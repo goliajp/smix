@@ -1,16 +1,13 @@
-// v7.5 c1 — Selector full 7-case + Modifiers flatten + Pattern + fluent.
+// The wire form of `smix-selector`'s untagged `Selector` enum, with
+// `Modifiers` flattened onto the Text/Id/Label/Role/LocalizedText bases.
+// Focused takes no modifiers; Anchor carries AnchorBox + IndexModifiers.
 //
-// Mirror Swift v7.2 c3 + Kotlin v7.4 c4 + Rust smix-selector
-// `#[serde(untagged)] enum Selector` with full `Modifiers` flatten on
-// Text/Id/Label/Role/LocalizedText bases. Focused has no modifiers.
-// Anchor uses AnchorBox + IndexModifiers.
-//
-// Class-based API (mirrors Kotlin sealed interface 1:1):
 //   sel.id('btn-login')
 //     .below(sel.text(literal('Sign In')))
 //     .nth(0)
 //
-// Each fluent method returns a NEW Selector (immutable copy semantics).
+// Each fluent method returns a NEW Selector, so a partly-built selector
+// can be shared and specialised without the branches affecting each other.
 
 import { type Pattern, patternFromJson, patternToJson } from './Pattern.js'
 

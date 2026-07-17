@@ -81,8 +81,8 @@ dependencies {
     // UniFFI Kotlin runtime depends on JNA for native fn loading.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
-    // v7.4 c1 — kotlinx.serialization-json for Selector / A11yNode
-    // wire encoding (matches Rust smix-selector untagged shape).
+    // Selector / A11yNode wire encoding. The untagged shapes it emits are
+    // the contract with the Rust core.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // JVM unit test deps. MVP shape tests run on JVM (no emulator

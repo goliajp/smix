@@ -1,5 +1,5 @@
-// v7.5 c1 — Pattern (literal vs regex) mirror Swift v7.2 c3 + Kotlin v7.4 c4
-// + Rust smix-selector `#[serde(untagged)] enum Pattern`.
+// The wire form of `smix-selector`'s untagged `Pattern` enum. Untagged
+// means the shape alone says which case it is, so these forms are exact:
 //
 // Wire JSON forms (untagged):
 //   Literal: bare string                   e.g. "hello"

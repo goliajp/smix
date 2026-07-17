@@ -1,7 +1,5 @@
-// v7.5 c1 — Selector full 7-case + Modifiers flatten + Pattern + fluent
-// chaining roundtrip + Rust-compatible wire shape tests.
-//
-// Mirror Kotlin SelectorFullSchemaTest + Swift SelectorFullSchemaTests.
+// Selector's seven cases, Modifiers flattening, Pattern, fluent chaining
+// roundtrip, and the wire shape the Rust core expects.
 
 import { describe, expect, test } from 'vitest'
 import {

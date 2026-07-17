@@ -1,4 +1,4 @@
-// v7.9 c3 — TypeScript conformance fixture runner.
+// TypeScript conformance fixture runner.
 //
 // Usage:
 //   bun npm/smix-rn/bin/ts-fixture-runner.ts <path-to-fixture.json>

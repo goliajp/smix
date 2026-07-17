@@ -1,4 +1,4 @@
-// v7.10 c2 — demo flow: multi-screen navigation. Exercises App.openUrl
+// Demo flow: multi-screen navigation. Exercises App.openUrl
 // (deep link) / app.tapAtCoord (§9 #3 escape hatch) / app.pressKey /
 // app.relaunch.
 //

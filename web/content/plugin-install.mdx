@@ -23,7 +23,7 @@ bun src/cli/index.ts doctor --json | jq '.compatibility.status'
 # expected: "supported"
 ```
 
-The 7 doctor checks include `hostHidReady` (sidecar ping + ReduceMotion preference) which was added in v1.1 C4. As of v1.2 the runner-port bind is also verified IPv4 loopback only.
+The 7 doctor checks include `hostHidReady` (sidecar ping + ReduceMotion preference). The runner-port bind is verified IPv4-loopback-only.
 
 ## 2. Local dev install
 

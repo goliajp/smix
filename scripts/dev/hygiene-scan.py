@@ -38,11 +38,29 @@ import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-# Areas whose comments are swept. Everything else ships without comment rules.
-SCAN_AREAS = [
-    ("crates", ".rs"),
-    ("swift-bridge", ".swift"),
-    ("android-runner", ".kt"),
+# Every shipped file is swept. Skipping one takes an entry here, with a
+# reason — the list is printed on every run, so narrowed coverage is stated
+# rather than assumed.
+#
+# The scope used to be an allowlist of directory-and-extension pairs, which
+# reported clean while 167 hits sat in plain sight: the whole npm SDK, the
+# Gradle scripts and Android manifest beside the Kotlin they configure, the
+# FFI interface definition beside the Rust, and a Cargo.toml that ships to
+# crates.io. An allowlist has to be told about each new file type; what a
+# reader sees does not wait for that.
+# Each entry's remaining hits are counted and printed, so an exclusion reads
+# as a debt with an owner rather than as ground that was never walked.
+EXCLUSIONS = [
+    ("docs/roadmap.md", "the version path is its subject"),
+    ("docs/plan-hot.md", "checkpoint tags are its subject"),
+    ("docs/v2.md", "checkpoint tags are its subject"),
+    ("docs/plan-cold/", "checkpoint tags are their subject"),
+    ("docs/plan-history/", "archived plans, kept as written"),
+    ("CHANGELOG.md", "release history written per consumer and per ask; "
+                     "editorial pass, not a sweep"),
+    (".claude/rfcs/", "design records written per consumer; editorial pass"),
+    (".gitignore", "names the consumer docs it ignores; the rule goes when "
+                   "they do"),
 ]
 
 # git already drops anything gitignored, which is what defines "shipped" —
@@ -119,30 +137,46 @@ def read_lines(rel):
         return []
 
 
+def noise_in(rel):
+    """Count each kind of noise in one file."""
+    found = collections.Counter()
+    for line in read_lines(rel):
+        unquoted = QUOTED_SPAN.sub("", line)
+        for name, pattern in NOISE_PATTERNS.items():
+            found[name] += len(pattern.findall(unquoted))
+        comment = comment_text(line)
+        if comment and CJK.search(QUOTED_SPAN.sub("", comment)):
+            found["cjk-comment"] += 1
+    return +found
+
+
+def excluded_by(rel):
+    for prefix, _ in EXCLUSIONS:
+        if rel.startswith(prefix):
+            return prefix
+    return None
+
+
 def scan_noise(files):
+    """Sweep every file, keeping the excluded ones' hits as a stated debt."""
     per_area = collections.defaultdict(collections.Counter)
     per_file = collections.Counter()
     totals = collections.Counter()
+    owed = collections.Counter()
 
     for rel in files:
-        if not any(rel.startswith(base) and rel.endswith(ext) for base, ext in SCAN_AREAS):
+        found = noise_in(rel)
+        if not found:
             continue
-        area = area_for(rel)
-        for line in read_lines(rel):
-            unquoted = QUOTED_SPAN.sub("", line)
-            for name, pattern in NOISE_PATTERNS.items():
-                hits = len(pattern.findall(unquoted))
-                if hits:
-                    per_area[area][name] += hits
-                    per_file[rel] += hits
-                    totals[name] += hits
-            comment = comment_text(line)
-            if comment and CJK.search(QUOTED_SPAN.sub("", comment)):
-                per_area[area]["cjk-comment"] += 1
-                per_file[rel] += 1
-                totals["cjk-comment"] += 1
+        prefix = excluded_by(rel)
+        if prefix is not None:
+            owed[prefix] += sum(found.values())
+            continue
+        per_area[area_for(rel)].update(found)
+        per_file[rel] += sum(found.values())
+        totals.update(found)
 
-    return per_area, per_file, totals
+    return per_area, per_file, totals, owed
 
 
 def scan_dead_pointers(files):
@@ -174,9 +208,12 @@ def main():
     verbose = "--verbose" in sys.argv
     noise_only = "--noise-only" in sys.argv
     files = shipped_files()
-    per_area, per_file, totals = scan_noise(files)
+    per_area, per_file, totals, owed = scan_noise(files)
     dead = [] if noise_only else scan_dead_pointers(files)
     grand = sum(totals.values())
+
+    for path, reason in EXCLUSIONS:
+        print(f"hygiene-scan: {owed[path]:4d} left in {path} — not swept ({reason})")
 
     if grand == 0 and not dead:
         scope = "no development noise" if noise_only else "no development noise, no dead doc pointers"

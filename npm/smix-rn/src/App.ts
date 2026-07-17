@@ -1,5 +1,3 @@
-// v7.5 c3 — App class full wire mirrors Kotlin v7.4 c5 / Swift v7.2.
-
 import { type A11yNode, findById, flatten } from './A11yNode.js'
 import { ExpectationFailure } from './ExpectationFailure.js'
 import { Locator, SmixNotImplementedError } from './Locator.js'
@@ -23,10 +21,10 @@ export class App {
     public readonly runtime: SmixSimRuntime,
     public readonly resolver: SelectorResolver,
     /**
-     * v7.6 c1 — wraps Rust `resolve_selector_labels` (each match's
-     * `.label`). Used by Locator.toHaveCount + toHaveLabel. Defaults
-     * to a stub that throws — tests + production should pass a real
-     * impl (HttpSimRuntime.labelsResolver or MockLabelsResolver.resolve).
+     * Wraps `resolve_selector_labels`, backing toHaveCount and
+     * toHaveLabel. The default throws rather than guessing: there is no
+     * sensible answer without a resolver, and a silent empty list would
+     * read as "no matches".
      */
     public readonly labelsResolver: LabelsResolver = async () => {
       throw new Error('labelsResolver not configured; pass one to Smix.launchApp or App constructor')
@@ -74,8 +72,7 @@ export class App {
   }
 
   /**
-   * Resolve [selector], tap to focus, then type [text]. Mirror
-   * Kotlin App.fill from v7.4 c3.
+   * Resolve [selector], tap to focus, then type [text].
    */
   async fill(selector: Selector, text: string): Promise<void> {
     await this.tap(selector)

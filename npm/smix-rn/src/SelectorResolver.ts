@@ -1,8 +1,6 @@
-// v7.5 c1 — SelectorResolver injection boundary.
-//
-// Mirror Kotlin v7.4 c2 R-Kotlin-A: real impl wraps Rust FFI core
-// (in TS via HTTP runner or future ffi-napi binding); mock impl for
-// vitest. Lambda-style fn interface keeps the abstraction minimal.
+// The seam where selector resolution is supplied: the real one wraps the
+// Rust core over the HTTP runner, the mock answers from a table. A bare
+// function type keeps that seam as small as it can be.
 
 export type SelectorResolver = (
   treeJson: string,
@@ -10,9 +8,8 @@ export type SelectorResolver = (
 ) => Promise<readonly string[]>
 
 /**
- * v7.6 c1 — labels resolver wrapping Rust `resolve_selector_labels`
- * (each match's `.label`; empty string when None). Used by
- * Locator.toHaveCount + Locator.toHaveLabel.
+ * Wraps `resolve_selector_labels`: each match's label, empty string where
+ * it has none.
  */
 export type LabelsResolver = (
   treeJson: string,
@@ -22,7 +19,6 @@ export type LabelsResolver = (
 /**
  * Mock resolver for vitest unit tests. Pre-registered selectorJson →
  * id list mappings; falls back to empty list for unknown selectors.
- * Mirrors Kotlin MockSelectorResolver from v7.4 c2.
  */
 export class MockSelectorResolver {
   readonly returnMap = new Map<string, readonly string[]>()
@@ -51,8 +47,8 @@ export class MockSelectorResolver {
 }
 
 /**
- * v7.6 c1 — Mock labels resolver for vitest tests. Pre-registered
- * selectorJson → label list mappings. Mirrors Kotlin MockLabelsResolver.
+ * Mock labels resolver for unit tests. Pre-registered selectorJson →
+ * label list mappings.
  */
 export class MockLabelsResolver {
   readonly returnMap = new Map<string, readonly string[]>()

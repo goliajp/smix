@@ -1,9 +1,8 @@
-// v7.5 c1 — ExpectationFailure + FailureCode mirror Swift v7.2 c4 +
-// Kotlin v7.4 c1 + Rust smix-error.
+// The wire form of `smix-error`'s failure surface.
 //
-// AI-readable JSON contract: toJson() emits sorted-keys, ISO-8601
-// timestamp single-line JSON matching Swift errorDescription contract
-// (per design.md §9 #11).
+// toJson() emits sorted keys and an ISO-8601 timestamp on one line. Every
+// SDK emits the same bytes for the same failure, so a reader — human or
+// model — sees one format whichever language raised it.
 
 import type { A11yNode } from './A11yNode.js'
 
