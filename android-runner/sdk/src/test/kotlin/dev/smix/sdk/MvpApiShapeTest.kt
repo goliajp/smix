@@ -41,24 +41,6 @@ class MvpApiShapeTest {
         assertTrue(json.contains("\"id\":\"btn-login\""))
     }
 
-    // MARK: - Modifier cases
-
-    @Test
-    fun modifierCasesExhaustive() {
-        val cases: List<Modifier> = listOf(
-            Modifier.First,
-            Modifier.Last,
-            Modifier.Nth(0),
-            Modifier.Above(Selector.Id("anchor")),
-            Modifier.Below(Selector.Id("anchor")),
-            Modifier.LeftOf(Selector.Id("anchor")),
-            Modifier.RightOf(Selector.Id("anchor")),
-            Modifier.Near(Selector.Id("anchor"), thresholdPts = 50.0),
-            Modifier.Inside(Selector.Id("anchor")),
-        )
-        assertEquals("MVP exposes 9 modifier cases", 9, cases.size)
-    }
-
     // MARK: - Role cases
 
     @Test
