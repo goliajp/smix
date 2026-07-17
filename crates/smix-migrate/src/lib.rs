@@ -58,7 +58,8 @@ pub struct MigrateReport {
     /// in the output. Consumers should see the `WARN:` line at the CLI
     /// layer.
     pub unknown_verbs: Vec<String>,
-    /// Number of top-level steps in the flow.
+    /// Number of top-level steps in the flow — every step, not only the
+    /// ones a rule matched.
     pub step_count: usize,
     /// Number of `runFlow` invocations discovered in the flow. Not
     /// migrated recursively (nested files are user's responsibility).
@@ -515,7 +516,11 @@ fn rewrite_step_line(
     report: &mut MigrateReport,
     idx: usize,
 ) -> RewrittenStep {
-    // Find rule for the maestro verb name.
+    // Counted before the rule lookup, not inside it. Steps whose verb no
+    // rule matches — a smix-native name, or one the codemod does not know —
+    // are still steps, and the field claims to hold the flow's step count.
+    report.step_count += 1;
+
     let rule = migrator.rules.iter().find(|r| r.from == info.verb_name);
     let Some(rule) = rule else {
         // Unknown verb — track and preserve verbatim.
@@ -560,7 +565,6 @@ fn rewrite_step_line(
     if rule.from == "runFlow" || rule.to == "runFlow" {
         report.subflow_refs += 1;
     }
-    report.step_count += 1;
     // If this verb has a transform_for arg-mapping renamer (i.e.
     // not id_transform), and it has a `:` (indicating either inline
     // arg or nested arg mapping), track pending arg lines.
@@ -752,6 +756,17 @@ mod tests {
         assert!(out.contains("runScript:"));
         assert!(out.contains("tap: X"));
         assert_eq!(report.unknown_verbs, vec!["runScript"]);
+    }
+
+    /// The count is the flow's, so a step the codemod had no rule for still
+    /// counts. It used to be incremented inside the rule branch, which made
+    /// an already-migrated file report zero steps while rewriting it.
+    #[test]
+    fn step_count_counts_steps_the_codemod_had_nothing_to_do_with() {
+        let yaml = "appId: com.example\n---\n- tap: Already\n- swipe: up\n";
+        let (_, report) = Migrator::default().migrate(yaml).unwrap();
+        assert!(report.renamed.is_empty(), "nothing to rename here");
+        assert_eq!(report.step_count, 2);
     }
 
     #[test]
