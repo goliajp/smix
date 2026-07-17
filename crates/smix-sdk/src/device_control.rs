@@ -158,24 +158,24 @@ pub trait DeviceControl: Send + Sync {
     async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError>;
     async fn keychain_reset(&self, udid: &str) -> Result<(), SimctlError>;
 
-    /// Reset all granted privacy permissions for a
-    /// bundle. Companion to `clear_app_sandbox`; together they form
-    /// the in-place `launchApp: clearState: true` replacement that
-    /// avoids `simctl uninstall + install` and its downstream
-    /// XCUITest binding loss + ReportCrash dialog.
-    /// Default impl no-ops so non-iOS device controls
-    /// (Android) keep compiling; iOS override supplies real behavior.
-    async fn privacy_reset_all(&self, _udid: &str, _bundle_id: &str) -> Result<(), SimctlError> {
-        Ok(())
-    }
+    /// Revoke every privacy permission the app has been granted.
+    ///
+    /// Companion to [`Self::clear_app_sandbox`]; together they are the
+    /// in-place replacement for `launchApp: clearState: true`, which avoids
+    /// uninstall-and-reinstall and the XCUITest binding loss that follows.
+    ///
+    /// Required, deliberately. This defaulted to `Ok(())` "so non-iOS
+    /// device controls keep compiling", and the result was that
+    /// `clearState: true` on Android reported success while clearing
+    /// nothing — the planner emits this op whatever the platform. A device
+    /// control that cannot do this has to say so out loud.
+    async fn privacy_reset_all(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError>;
 
-    /// Wipe an app's `Documents/`, `Library/`, `tmp/`
-    /// directories in the sim's Containers/Data root, without
-    /// uninstalling the app. Preserves the XCUITest binding.
-    /// Default impl no-ops; iOS override does the real wipe.
-    async fn clear_app_sandbox(&self, _udid: &str, _bundle_id: &str) -> Result<(), SimctlError> {
-        Ok(())
-    }
+    /// Wipe the app's persisted data without uninstalling it, so the
+    /// test binding survives.
+    ///
+    /// Required for the same reason as [`Self::privacy_reset_all`].
+    async fn clear_app_sandbox(&self, udid: &str, bundle_id: &str) -> Result<(), SimctlError>;
 
     /// Delete a single key from the target app's persisted
     /// user-defaults / preferences store. iOS: `simctl spawn defaults

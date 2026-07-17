@@ -31,9 +31,14 @@ pub enum AdbError {
     #[error("adb binary not found in PATH; install Android SDK platform-tools")]
     BinaryNotFound,
     /// `adb <sub>` exited non-zero.
-    #[error("adb {subcommand} (serial={serial:?}) exited {code}: {stderr}")]
+    ///
+    /// The message carries the whole command. Naming only the subcommand
+    /// makes every failure under `adb shell` — `pm clear`, `pm revoke`,
+    /// `screenrecord` — report itself as "shell", which tells a reader
+    /// nothing about what broke.
+    #[error("adb {subcommand} exited {code}: {stderr}")]
     NonZeroExit {
-        /// Subcommand name (e.g. `"install"`, `"shell"`).
+        /// The command as run, e.g. `"shell pm clear com.example"`.
         subcommand: String,
         /// Device serial if scoped to one (None for global like `devices`).
         serial: Option<String>,
@@ -150,6 +155,39 @@ pub struct AdbClient {
     binary: Option<String>,
 }
 
+/// Pull the granted names out of `dumpsys package`'s `runtime permissions:`
+/// section.
+///
+/// Each entry reads `<name>: granted=<bool>, flags=[...]`, indented under
+/// the heading. The section ends at the first line that does not parse as
+/// one, since dumpsys simply moves on to its next topic.
+fn parse_granted_runtime_permissions(dumpsys_stdout: &str) -> Vec<String> {
+    let mut granted = Vec::new();
+    let mut in_section = false;
+    for line in dumpsys_stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed == "runtime permissions:" {
+            in_section = true;
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        let Some((name, rest)) = trimmed.split_once(": ") else {
+            in_section = false;
+            continue;
+        };
+        if !name.contains('.') {
+            in_section = false;
+            continue;
+        }
+        if rest.starts_with("granted=true") {
+            granted.push(name.to_string());
+        }
+    }
+    granted
+}
+
 impl AdbClient {
     /// Default constructor — uses `adb` from PATH.
     #[must_use]
@@ -197,8 +235,13 @@ impl AdbClient {
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         if !output.status.success() {
+            let mut full = subcommand.to_string();
+            for a in args {
+                full.push(' ');
+                full.push_str(a);
+            }
             return Err(AdbError::NonZeroExit {
-                subcommand: subcommand.into(),
+                subcommand: full,
                 serial: serial.map(str::to_owned),
                 code: output.status.code().unwrap_or(-1),
                 stderr,
@@ -415,6 +458,42 @@ impl AdbClient {
         Ok(())
     }
 
+    /// `adb -s <serial> shell pm clear <pkg>` — wipe the app's data.
+    ///
+    /// Measured: this also reverts the package's runtime permissions to
+    /// their default. There is no host-side way to wipe the data alone, so
+    /// a caller who wants only the files loses the grants with them.
+    pub async fn pm_clear(&self, serial: &str, package: &str) -> Result<(), AdbError> {
+        // `pm clear` reports failure in its output, not its exit code.
+        let (stdout, _) = self
+            .run_capture(Some(serial), "shell", &["pm", "clear", package])
+            .await?;
+        if stdout.trim().starts_with("Success") {
+            Ok(())
+        } else {
+            Err(AdbError::Malformed {
+                subcommand: format!("shell pm clear {package}"),
+                detail: stdout.trim().to_string(),
+            })
+        }
+    }
+
+    /// The runtime permissions `<pkg>` currently holds.
+    ///
+    /// Read from `dumpsys package`, which is the only host-side view of
+    /// them: `pm reset-permissions` exists but reverts every app on the
+    /// device, including whatever the runner was granted to do its job.
+    pub async fn runtime_permissions_granted(
+        &self,
+        serial: &str,
+        package: &str,
+    ) -> Result<Vec<String>, AdbError> {
+        let (stdout, _) = self
+            .run_capture(Some(serial), "shell", &["dumpsys", "package", package])
+            .await?;
+        Ok(parse_granted_runtime_permissions(&stdout))
+    }
+
     /// `adb -s <serial> shell pm revoke <pkg> <android.permission.X>`.
     pub async fn pm_revoke(
         &self,
@@ -436,6 +515,50 @@ impl AdbClient {
 
 #[cfg(test)]
 mod tests {
+    /// Verbatim from `dumpsys package` on an API 33 emulator, including the
+    /// section that follows — the parser has to know where to stop, and a
+    /// sample written by hand would not have taught it that.
+    const DUMPSYS_REAL: &str = "\
+    requested permissions:
+      android.permission.INTERNET
+      android.permission.ACCESS_FINE_LOCATION
+    install permissions:
+      android.permission.INTERNET: granted=true
+    runtime permissions:
+      android.permission.POST_NOTIFICATIONS: granted=false, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+      android.permission.ACCESS_FINE_LOCATION: granted=true, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+      android.permission.ACCESS_COARSE_LOCATION: granted=false, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+      android.permission.CAMERA: granted=true, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+
+User 0: ceDataInode=1234 installed=true hidden=false
+";
+
+    #[test]
+    fn reads_only_the_granted_runtime_permissions() {
+        let granted = parse_granted_runtime_permissions(DUMPSYS_REAL);
+        assert_eq!(
+            granted,
+            vec![
+                "android.permission.ACCESS_FINE_LOCATION",
+                "android.permission.CAMERA"
+            ]
+        );
+    }
+
+    /// The install permissions above are also `granted=true`, and revoking
+    /// one is not something the runtime section asked for.
+    #[test]
+    fn stays_out_of_the_neighbouring_sections() {
+        assert!(!parse_granted_runtime_permissions(DUMPSYS_REAL)
+            .contains(&"android.permission.INTERNET".to_string()));
+    }
+
+    #[test]
+    fn an_app_holding_nothing_yields_nothing() {
+        assert!(parse_granted_runtime_permissions("runtime permissions:\n\nUser 0:").is_empty());
+        assert!(parse_granted_runtime_permissions("").is_empty());
+    }
+
     use super::*;
 
     #[test]

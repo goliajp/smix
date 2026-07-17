@@ -120,7 +120,10 @@ fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> SimctlError {
             stderr,
             serial,
         } => SimctlError::non_zero_exit(
-            format!("adb {sub} (serial={serial:?})"),
+            match serial {
+                Some(s) => format!("adb -s {s} {sub}"),
+                None => format!("adb {sub}"),
+            },
             code,
             stderr,
         ),
@@ -202,12 +205,48 @@ impl DeviceControl for AndroidDeviceControl {
             .map_err(|e| adb_to_simctl_err(e, "uninstall"))
     }
 
-    async fn keychain_reset(&self, _udid: &str) -> Result<(), SimctlError> {
-        // No direct Android analog; KeyChain/AccountManager require app-side
-        // intent or root. Surface as a platform no-op (matches the
-        // cross-platform yaml `clearKeychain: true` expectation that
-        // Android silently no-ops rather than crashing).
+    async fn keychain_reset(&self, _serial: &str) -> Result<(), SimctlError> {
+        // This used to return Ok(()) and call itself a no-op "matching the
+        // expectation that Android silently no-ops rather than crashing".
+        // A flow that clears the keychain does it so the next step meets a
+        // signed-out app; succeeding without doing it hands that step a
+        // logged-in one and blames the step.
+        Err(SimctlError::non_zero_exit(
+            "keychain_reset",
+            -1,
+            "clearKeychain has no Android equivalent: credentials live in each app's own \
+             KeyStore, which the host cannot reach. Use clearAppData to wipe the app's \
+             state, or have the app expose a sign-out path.",
+        ))
+    }
+
+    async fn privacy_reset_all(&self, serial: &str, bundle_id: &str) -> Result<(), SimctlError> {
+        // `pm reset-permissions` reverts every app on the device, including
+        // whatever the runner was granted to do its job, so the grants are
+        // read back and dropped one at a time.
+        let granted = self
+            .client
+            .runtime_permissions_granted(serial, bundle_id)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "shell dumpsys package"))?;
+        for permission in granted {
+            self.client
+                .pm_revoke(serial, bundle_id, &permission)
+                .await
+                .map_err(|e| adb_to_simctl_err(e, "shell pm revoke"))?;
+        }
         Ok(())
+    }
+
+    async fn clear_app_sandbox(&self, serial: &str, bundle_id: &str) -> Result<(), SimctlError> {
+        // App data is app-private, so the host's only way in is `pm clear`,
+        // which also reverts the runtime permissions. iOS can wipe the
+        // sandbox and leave privacy alone; here the two come together, and
+        // the launch-fresh plan resets privacy anyway.
+        self.client
+            .pm_clear(serial, bundle_id)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "shell pm clear"))
     }
 
     // === Lifecycle ancillary ===
