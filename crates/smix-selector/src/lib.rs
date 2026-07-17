@@ -59,6 +59,66 @@ use smix_screen::A11yNode;
 // next to the other wire types here.
 pub use smix_screen::Role;
 
+/// Read a role the way a person writes one.
+///
+/// Every surface a human or an agent types a role into — yaml, MCP — needs
+/// the same vocabulary, or the surfaces drift and `role: heading` starts
+/// working in one and failing in the other. So the vocabulary lives here,
+/// next to `Role` itself, and each surface wraps it in its own error type.
+///
+/// Distinct from [`smix_screen::role_from_raw_type`], which reads the wire's
+/// own `rawType` strings. This one reads what people write: case is ignored,
+/// separators are ignored (`text_field`, `textField`, `TextField`), and the
+/// aliases people reach for are accepted (`heading` → `StaticText`, since
+/// iOS has no header element type and heading semantics land on static text
+/// with a trait).
+///
+/// Returns `None` for anything not in the vocabulary; callers report it with
+/// [`ROLE_NAMES`] so the writer sees what was on offer.
+#[must_use]
+pub fn role_from_name(name: &str) -> Option<Role> {
+    let normalized: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    Some(match normalized.as_str() {
+        "button" => Role::Button,
+        "link" => Role::Link,
+        "textfield" => Role::TextField,
+        "securetextfield" => Role::SecureTextField,
+        "searchfield" => Role::SearchField,
+        "switch" => Role::Switch,
+        "toggle" => Role::Toggle,
+        "checkbox" => Role::CheckBox,
+        "radio" | "radiobutton" => Role::Radio,
+        "image" => Role::Image,
+        "heading" | "statictext" => Role::StaticText,
+        "tab" => Role::Tab,
+        "tabbar" => Role::TabBar,
+        "navigationbar" => Role::NavigationBar,
+        "cell" => Role::Cell,
+        "alert" => Role::Alert,
+        "dialog" => Role::Dialog,
+        "slider" => Role::Slider,
+        "progressbar" | "progressindicator" => Role::ProgressBar,
+        "picker" => Role::Picker,
+        "menu" => Role::Menu,
+        "menuitem" => Role::MenuItem,
+        "scrollview" => Role::ScrollView,
+        "segmentedcontrol" => Role::SegmentedControl,
+        "table" => Role::Table,
+        "collectionview" => Role::CollectionView,
+        "webview" => Role::WebView,
+        "keyboard" => Role::Keyboard,
+        _ => return None,
+    })
+}
+
+/// The role vocabulary, spelled the way docs spell it — for the "unknown
+/// role" message every surface owes its writer.
+pub const ROLE_NAMES: &str = "button, link, textField, secureTextField, searchField, switch, toggle, checkBox, radio, image, staticText (or heading), tab, tabBar, navigationBar, cell, alert, dialog, slider, progressBar, picker, menu, menuItem, scrollView, segmentedControl, table, collectionView, webView, keyboard";
+
 // -------------------- Pattern (string | regex wire form) -----------------
 
 /// String-or-regex pattern. Wire-compatible: plain JSON string ↔

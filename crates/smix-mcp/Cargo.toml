@@ -16,6 +16,10 @@ categories = ["development-tools::testing"]
 [lints]
 workspace = true
 
+[lib]
+name = "smix_mcp"
+path = "src/lib.rs"
+
 [[bin]]
 name = "smix-mcp"
 path = "src/main.rs"

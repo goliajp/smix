@@ -29,56 +29,16 @@ fn parse_role_yaml(v: &Value, ctx: &str) -> Result<Role, ParseError> {
         field: format!("{ctx}.role"),
         reason: format!("expected role name string, got {v:?}"),
     })?;
-    // Case-tolerant lookup. The wire is camelCase; docs are lowercase.
-    // Snake_case (`text_field`) is tolerated too.
-    let normalized: String = s
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .map(|c| c.to_ascii_lowercase())
-        .collect();
-    let role = match normalized.as_str() {
-        "button" => Role::Button,
-        "link" => Role::Link,
-        "textfield" => Role::TextField,
-        "securetextfield" => Role::SecureTextField,
-        "searchfield" => Role::SearchField,
-        "switch" => Role::Switch,
-        "toggle" => Role::Toggle,
-        "checkbox" => Role::CheckBox,
-        "radio" | "radiobutton" => Role::Radio,
-        "image" => Role::Image,
-        // Docs mention `heading` as an accepted role. iOS/SwiftUI has no
-        // `.header` XCUIElement type; heading semantics collapse to
-        // static text with a heading trait, which the resolver treats
-        // as `StaticText` since that is what the a11y tree emits.
-        "heading" | "statictext" => Role::StaticText,
-        "tab" => Role::Tab,
-        "tabbar" => Role::TabBar,
-        "navigationbar" => Role::NavigationBar,
-        "cell" => Role::Cell,
-        "alert" => Role::Alert,
-        "dialog" => Role::Dialog,
-        "slider" => Role::Slider,
-        "progressbar" | "progressindicator" => Role::ProgressBar,
-        "picker" => Role::Picker,
-        "menu" => Role::Menu,
-        "menuitem" => Role::MenuItem,
-        "scrollview" => Role::ScrollView,
-        "segmentedcontrol" => Role::SegmentedControl,
-        "table" => Role::Table,
-        "collectionview" => Role::CollectionView,
-        "webview" => Role::WebView,
-        "keyboard" => Role::Keyboard,
-        _ => {
-            return Err(ParseError::InvalidValue {
-                field: format!("{ctx}.role"),
-                reason: format!(
-                    "unknown role `{s}`; accepted: button, link, textField, secureTextField, searchField, switch, toggle, checkBox, radio, image, staticText (or heading), tab, tabBar, navigationBar, cell, alert, dialog, slider, progressBar, picker, menu, menuItem, scrollView, segmentedControl, table, collectionView, webView, keyboard"
-                ),
-            });
-        }
-    };
-    Ok(role)
+    // The vocabulary lives in smix-selector, next to Role, because yaml is
+    // not the only surface people write roles into — MCP takes them too, and
+    // two tables would drift.
+    smix_selector::role_from_name(s).ok_or_else(|| ParseError::InvalidValue {
+        field: format!("{ctx}.role"),
+        reason: format!(
+            "unknown role `{s}`; accepted: {}",
+            smix_selector::ROLE_NAMES
+        ),
+    })
 }
 
 // Env-var opt-in for the bare-string auto-OCR desugar.
