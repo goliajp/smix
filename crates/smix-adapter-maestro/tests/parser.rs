@@ -286,21 +286,17 @@ fn pattern_regex_inference_on_pipe() {
 
 #[test]
 fn unsupported_command_returns_error() {
-    // Probes for maestro commands that smix genuinely does not wire.
-    // `back` is Android-only and does not apply to the iOS simulator,
-    // so the parser must report UnsupportedCommand rather than
-    // silently no-op'ing.
-    let yaml = "appId: com.test.app\n---\n- back\n";
-    let err = parse_flow_yaml(yaml).expect_err("back (Android-only) must error");
-    match err {
-        ParseError::UnsupportedCommand(cmd) => {
-            assert_eq!(cmd, "back");
-        }
-        other => panic!("expected UnsupportedCommand back, got: {other:?}"),
-    }
-
-    // `inputRandomEmail` is a real maestro verb smix does not wire — a
-    // second probe, so the check isn't resting on one Android-only case.
+    // A maestro command smix does not wire must be reported, not quietly
+    // skipped.
+    //
+    // This used to probe with `back`, on the grounds that it "is Android-only
+    // and does not apply to the iOS simulator". It is not: the iOS runner
+    // serves POST /back and taps the navigation bar's back button, Android
+    // presses the hardware key, and the parity table has always listed it on
+    // both. The comment asserted a limitation the code does not have, and the
+    // assertion held `back` unparseable for as long as it stood.
+    //
+    // `inputRandomEmail` is a real maestro verb smix genuinely does not wire.
     // (`assertWithAI` is wired now, gated behind the AI tier's opt-in; its
     // refusal path is covered in tests/ai_verbs.rs.)
     let yaml = "appId: com.test.app\n---\n- inputRandomEmail\n";
