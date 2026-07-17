@@ -4,7 +4,6 @@
 // Verifies:
 //   - All 6 FailureCode cases roundtrip (encode → decode → equal)
 //   - errorDescription returns valid JSON with stable key set
-//   - visibleElements + suggestions populate via App.tap path
 //   - timestamp encoded as ISO-8601 (stable across locales)
 //   - selector field encoded with custom Codable matching the Selector schema
 //
@@ -111,62 +110,11 @@ final class ExpectationFailureContractTests: XCTestCase {
         }
     }
 
-    // MARK: - App.tap notFound path populates visibleElements
-
-    func testAppTapNotFoundPopulatesVisibleElements() async throws {
-        let root = A11yNode(
-            rawType: "other",
-            bounds: Rect(x: 0, y: 0, w: 393, h: 852),
-            children: [
-                A11yNode(rawType: "button", identifier: "btn-a",
-                         label: "A", bounds: Rect(x: 0, y: 0, w: 10, h: 10),
-                         visible: true),
-                A11yNode(rawType: "button", identifier: "btn-b",
-                         label: "B", bounds: Rect(x: 0, y: 20, w: 10, h: 10),
-                         visible: true),
-            ]
-        )
-        let runtime = MockSimRuntime(snapshotResult: root)
-        let app = try await Smix.launchApp(.bundleId("dev.smix.fixture"), runtime: runtime)
-
-        do {
-            try await app.tap(SmixSDK.Selector.id("btn-nonexistent"))
-            XCTFail("should throw .notFound")
-        } catch let failure as ExpectationFailure {
-            XCTAssertEqual(failure.code, .notFound)
-            XCTAssertGreaterThanOrEqual(failure.visibleElements.count, 1,
-                                        "visibleElements must include at least the tree root")
-            XCTAssertFalse(failure.suggestions.isEmpty,
-                           "suggestions must populate for AI agent")
-        }
-    }
-
-    // MARK: - Locator timeout path populates last tree
-
-    func testLocatorTimeoutPopulatesLastTree() async throws {
-        let root = A11yNode(
-            rawType: "other",
-            bounds: Rect(x: 0, y: 0, w: 393, h: 852),
-            visible: true,
-            children: [
-                A11yNode(rawType: "staticText", identifier: "label-existing",
-                         label: "Hello", bounds: Rect(x: 0, y: 0, w: 10, h: 10),
-                         visible: true)
-            ]
-        )
-        let runtime = MockSimRuntime(snapshotResult: root)
-        let app = try await Smix.launchApp(.bundleId("dev.smix.fixture"), runtime: runtime)
-
-        let loc = await app.find(SmixSDK.Selector.id("missing"))
-        do {
-            try await loc.toBeVisible(timeout: .milliseconds(200))
-            XCTFail("expected timeout")
-        } catch let failure as ExpectationFailure {
-            XCTAssertEqual(failure.code, .timeout)
-            XCTAssertFalse(failure.visibleElements.isEmpty,
-                           "last tree snapshot must populate visibleElements")
-        }
-    }
+    // Note: the App.tap notFound and Locator timeout paths that populate
+    // visibleElements are exercised end-to-end against the runner by the
+    // Rust wiremock driving suite (smix-ffi/tests/driving.rs). App now
+    // holds concrete FFI handles (no injectable mock), so those paths are
+    // no longer unit-testable here.
 
     // MARK: - errorDescription survives complex selector encoding
 

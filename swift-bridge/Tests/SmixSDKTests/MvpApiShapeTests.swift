@@ -179,10 +179,9 @@ final class MvpApiShapeTests: XCTestCase {
     // MARK: - App / Locator surface area
     //
     // tap / fill / pressKey / find / toBeVisible / toContainText /
-    // toHaveLabel / toHaveCount / terminate / relaunch / tree, plus swipe /
-    // screenshot / systemPopups / openUrl / tapAtCoord and
-    // Smix.launchApp(.appPath), are all wired through SmixSimRuntime.
-    // Their behaviour is covered by the mock suites — AppTapMockTests,
-    // AppFillPressKeyMockTests, LocatorMockTests, AppSwipeScreenshotMockTests,
-    // AppSenseExtMockTests, AppTapAtCoordAndAppPathMockTests.
+    // toHaveLabel / toHaveCount / terminate / relaunch / tree / swipe /
+    // systemPopups / tapAtCoord drive the FFI SmixDriver + SmixSession
+    // surface. Their driving behaviour is covered end-to-end against the
+    // runner by the Rust wiremock suite (smix-ffi/tests/driving.rs); App
+    // now holds concrete FFI handles, so it is not mock-injectable here.
 }
