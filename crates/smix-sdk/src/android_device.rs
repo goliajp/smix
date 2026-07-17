@@ -201,15 +201,45 @@ impl DeviceControl for AndroidDeviceControl {
 
     // === Clipboard / Media / Location ===
 
+    // The clipboard is out of reach on Android, and not for want of wiring.
+    //
+    // Since Android 10, ClipboardService serves only the focused app.
+    // Measured on SDK 33, from the runner's own instrumentation process:
+    //
+    //   E ClipboardService: Denying clipboard access to dev.smix.runner.test,
+    //   application is not in focus nor is it a system service for user 0
+    //
+    // The runner can never satisfy that. Being focused would make it the
+    // foreground app, and then it could not drive the app under test — which
+    // is the entire job. `appops set … READ_CLIPBOARD allow` does not lift it;
+    // the check is on focus, not on an app-op. adb is no better: `cmd
+    // clipboard` has no shell implementation on SDK 33, and shell is not
+    // focused either.
+    //
+    // iOS has no equivalent problem because `simctl pasteboard` is a host
+    // privilege the simulator grants from outside the device. Android's
+    // emulator offers nothing like it.
+    //
+    // So this is a platform limit, and the honest thing is to say so rather
+    // than keep a skeleton that reads as unfinished work.
     async fn pasteboard_set(&self, _serial: &str, _text: &str) -> Result<(), SimctlError> {
-        // Android clipboard via `cmd clipboard set-text` (API 29+) or
-        // `service call clipboard` (older). v6.x dedicated cycle; skeleton
-        // returns error to avoid silent failure.
-        Err(SimctlError::non_zero_exit("pasteboard_set", -1, "Android clipboard set wiring deferred to a future cycle"))
+        Err(SimctlError::non_zero_exit(
+            "pasteboard_set",
+            -1,
+            "Android does not let a test runner write the clipboard: since Android 10 the \
+             clipboard serves only the focused app, and the runner cannot be focused while \
+             driving your app. Pass the text via inputText, or have the app expose it another way.",
+        ))
     }
 
     async fn pasteboard_get(&self, _serial: &str) -> Result<String, SimctlError> {
-        Err(SimctlError::non_zero_exit("pasteboard_get", -1, "Android clipboard get wiring deferred to a future cycle"))
+        Err(SimctlError::non_zero_exit(
+            "pasteboard_get",
+            -1,
+            "Android does not let a test runner read the clipboard: since Android 10 the \
+             clipboard serves only the focused app, and the runner cannot be focused while \
+             driving your app. Assert on what the app renders instead.",
+        ))
     }
 
     async fn add_media(&self, _serial: &str, _paths: &[String]) -> Result<(), SimctlError> {
