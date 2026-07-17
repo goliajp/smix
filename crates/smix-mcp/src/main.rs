@@ -34,8 +34,9 @@ use rmcp::transport::stdio;
 use rmcp::{tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use smix_input::KeyName;
-use smix_sdk::{App, KeyName as SdkKeyName, Selector, text};
+use smix_input::{KeyName, SwipeDirection};
+use smix_mcp::SelectorParams;
+use smix_sdk::{App, KeyName as SdkKeyName};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -50,10 +51,43 @@ struct SmixMcpService {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-struct TextSelectorParams {
-    /// Literal text to match; case-insensitive, scanned across
-    /// label / title / value.
+struct FillParams {
+    /// Which field to type into. Give exactly one of id / text / label /
+    /// role / ocrText.
+    #[serde(flatten)]
+    selector: SelectorParams,
+    /// The text to type.
     text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct SwipeParams {
+    /// Which way to travel through the content: up, down, left, or right.
+    /// This names what you want to SEE — "down" reveals what is below,
+    /// whichever way the finger has to move to get there.
+    direction: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct ScrollParams {
+    /// Which element to scroll into view. Give exactly one of id / text /
+    /// label / role / ocrText.
+    #[serde(flatten)]
+    selector: SelectorParams,
+    /// Which way to travel through the content: up, down, left, or right.
+    /// Names what you want to SEE, not the finger's direction. Defaults to
+    /// "down".
+    #[serde(default)]
+    direction: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct BundleParams {
+    /// The app's bundle id, e.g. com.example.app.
+    bundle_id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -97,13 +131,13 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Check whether a text selector matches any element (boolean quick-probe)."
+        description = "Check whether an element is on screen, as a plain true/false. Use this to look before you act; use smix_assert_visible when absence should be a failure."
     )]
-    async fn smix_find_text(
+    async fn smix_find(
         &self,
-        Parameters(params): Parameters<TextSelectorParams>,
+        Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
-        let sel: Selector = text(&params.text);
+        let sel = params.to_selector()?;
         let app = self.app.lock().await;
         let exists = app
             .find(&sel)
@@ -115,20 +149,140 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Tap an element by text selector (host-side resolve + Apple native event chain)."
+        description = "Tap an element. Name it with exactly one of id / text / label / role / ocrText — prefer id, which survives copy changes and localization."
     )]
-    async fn smix_tap_text(
+    async fn smix_tap(
         &self,
-        Parameters(params): Parameters<TextSelectorParams>,
+        Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
-        let sel: Selector = text(&params.text);
+        let sel = params.to_selector()?;
         let app = self.app.lock().await;
         app.tap(&sel)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
         Ok(CallToolResult::success(vec![Content::text(format!(
             "tapped: {}",
+            smix_selector::describe_selector(&sel)
+        ))]))
+    }
+
+    #[tool(
+        description = "Type text into a field. Names the field the same way smix_tap does. Tap the field first if it is not already focused."
+    )]
+    async fn smix_fill(
+        &self,
+        Parameters(params): Parameters<FillParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let sel = params.selector.to_selector()?;
+        let app = self.app.lock().await;
+        app.fill(&sel, &params.text)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "filled {} with {:?}",
+            smix_selector::describe_selector(&sel),
             params.text
+        ))]))
+    }
+
+    #[tool(
+        description = "Swipe once through the content. `direction` names what you want to see (down reveals what is below), not which way the finger moves."
+    )]
+    async fn smix_swipe(
+        &self,
+        Parameters(params): Parameters<SwipeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = parse_direction(&params.direction)?;
+        let app = self.app.lock().await;
+        app.swipe_once(dir)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "swiped: {}",
+            params.direction
+        ))]))
+    }
+
+    #[tool(
+        description = "Swipe until an element comes into view, then stop. Use this rather than repeated swipes — it knows when to stop."
+    )]
+    async fn smix_scroll(
+        &self,
+        Parameters(params): Parameters<ScrollParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let sel = params.selector.to_selector()?;
+        let dir = parse_direction(params.direction.as_deref().unwrap_or("down"))?;
+        let app = self.app.lock().await;
+        app.scroll(&sel, dir)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "scrolled to: {}",
+            smix_selector::describe_selector(&sel)
+        ))]))
+    }
+
+    #[tool(description = "Launch an app by bundle id, or bring it to the front if it is running.")]
+    async fn smix_launch_app(
+        &self,
+        Parameters(params): Parameters<BundleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let app = self.app.lock().await;
+        app.launch(&params.bundle_id)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "launched: {}",
+            params.bundle_id
+        ))]))
+    }
+
+    #[tool(description = "Terminate an app by bundle id. Already-stopped is a no-op success.")]
+    async fn smix_stop_app(
+        &self,
+        Parameters(params): Parameters<BundleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let app = self.app.lock().await;
+        app.terminate(&params.bundle_id)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "stopped: {}",
+            params.bundle_id
+        ))]))
+    }
+
+    #[tool(
+        description = "Assert an element is on screen. Fails with the visible elements and near-miss suggestions when it is not — paste that failure back to yourself to see what the screen actually had."
+    )]
+    async fn smix_assert_visible(
+        &self,
+        Parameters(params): Parameters<SelectorParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let sel = params.to_selector()?;
+        let app = self.app.lock().await;
+        app.assert_visible(&sel)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "visible: {}",
+            smix_selector::describe_selector(&sel)
+        ))]))
+    }
+
+    #[tool(description = "Assert an element is NOT on screen.")]
+    async fn smix_assert_not_visible(
+        &self,
+        Parameters(params): Parameters<SelectorParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let sel = params.to_selector()?;
+        let app = self.app.lock().await;
+        app.assert_not_visible(&sel)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "not visible: {}",
+            smix_selector::describe_selector(&sel)
         ))]))
     }
 
@@ -159,6 +313,23 @@ impl SmixMcpService {
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
         let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
         Ok(CallToolResult::success(vec![Content::text(b64)]))
+    }
+}
+
+/// Read a swipe direction the way an agent writes one.
+///
+/// The value names what content to see, not the finger's path — both runners
+/// map it to the inverse gesture, which is why "down" reveals what is below.
+fn parse_direction(s: &str) -> Result<SwipeDirection, McpError> {
+    match s.to_ascii_lowercase().as_str() {
+        "up" => Ok(SwipeDirection::Up),
+        "down" => Ok(SwipeDirection::Down),
+        "left" => Ok(SwipeDirection::Left),
+        "right" => Ok(SwipeDirection::Right),
+        _ => Err(McpError::invalid_params(
+            format!("unknown direction `{s}`; accepted: up, down, left, right"),
+            None,
+        )),
     }
 }
 
