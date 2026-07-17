@@ -1,21 +1,34 @@
 # smix verb parity — cross-platform + tier
 
-> Auditor-facing table of smix YAML verb support across iOS Simulator + Android emulator. The canonical source is `smix_verbs::VERB_TABLE`.
+> What each smix YAML verb does on the iOS Simulator and on the Android
+> emulator. `smix_verbs::VERB_TABLE` lists the verbs; this page says what
+> they do, and each row was checked against the code that runs it.
 
 ## Tier legend
 
-- ✅ — fully supported
-- ⚠️ — supported with caveats (documented per-row)
-- ❌ — not supported on this platform in v1.0
+- ✅ — supported
+- ⚠️ — supported, with the caveat stated on the row
+- ❌ — not supported; the row says what to do instead
 
-Version at freeze: v1.0.26.
+A verb marked ❌ on a platform **returns an error there**. None of them
+succeed quietly: a flow that clears the keychain does it so the next step
+meets a signed-out app, and reporting success without doing it hands that
+step a signed-in one and blames the step.
+
+### Where the two platforms differ underneath
+
+Selectors resolve in different places. On iOS the runner resolves them and
+acts in one call (`/find`, `/tap`, `/fill`). On Android the host resolves
+against the tree and acts by coordinate (`/tap-at-norm-coord`,
+`/input-text`). The verbs behave the same; the route lists do not match, and
+that is why.
 
 ## Tap family
 
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
-| `doubleTapOn` / `doubleTap` | ✅ | ⚠️ | Android uses an IME long-press-then-release approximation |
+| `doubleTapOn` / `doubleTap` | ✅ | ✅ | Android dispatches two clicks 150 ms apart at the resolved point |
 | `longPressOn` / `longPress` | ✅ | ✅ | Duration = 700ms default; not configurable in v1.0 |
 | `tapByCoord` | ✅ | ✅ | Normalized [0, 1] coordinates; escape hatch for non-a11y-semantic tests |
 
@@ -25,9 +38,9 @@ Version at freeze: v1.0.26.
 |---|---|---|---|
 | `inputText` / `fill` | ✅ | ✅ | `--force-key-events` opt-in bypasses a11y-focus resolution for RN hidden-input patterns |
 | `eraseText` / `clear` | ✅ | ✅ | Chunked deletes N chars |
-| `pasteText` | ✅ | ⚠️ | Android uses `adb shell input keyevent PASTE`; per-app behavior varies |
-| `setClipboard` | ✅ | ✅ | |
-| `copyTextFrom` | ✅ | ⚠️ | Android limitation: reads via `copy_from_focused` API, some system fields blocked |
+| `pasteText` | ✅ | ❌ | Since Android 10 the clipboard serves only the focused app, and the runner cannot be focused while driving yours. Use `inputText` |
+| `setClipboard` | ✅ | ❌ | Same clipboard restriction as `pasteText` |
+| `copyTextFrom` | ✅ | ❌ | Same clipboard restriction as `pasteText`. Assert on what the app renders instead |
 
 ## Assert family
 
@@ -40,7 +53,7 @@ Version at freeze: v1.0.26.
 | `expect: { signals }` | ✅ | ✅ | Ordered / any-order variants |
 | `expectLogClean` | ✅ | ✅ | Allowlist multi-source merge |
 | `assertTrue` | ✅ | ✅ | Expression engine — `${output.name}`, `${env.NAME}`, arithmetic |
-| `assertScreenshot` | ✅ | ⚠️ | Android: dhash comparison works; region masking is limited |
+| `assertScreenshot` | ✅ | ✅ | 64-bit dhash over the PNG, so it behaves the same on both. There is no region masking on either platform |
 
 ## Control flow
 
@@ -60,8 +73,8 @@ Version at freeze: v1.0.26.
 | `launchApp` | ✅ | ✅ | `clearState`, `clearKeychain`, `arguments`, `permissions` |
 | `stopApp` / `terminate` | ✅ | ✅ | |
 | `killApp` | ✅ | ✅ | |
-| `clearState` / `reset` | ✅ | ✅ | |
-| `clearKeychain` / `resetKeychain` | ✅ | ⚠️ | Android has no keychain; no-op with warning |
+| `clearState` / `reset` | ✅ | ⚠️ | Android clears via `pm clear`, which also reverts the app's runtime permissions — app data is app-private, so the host has no way to wipe one without the other. iOS clears the sandbox and privacy separately |
+| `clearKeychain` / `resetKeychain` | ✅ | ❌ | Credentials live in each app's own KeyStore, out of the host's reach. Use `clearAppData`, or have the app expose a sign-out path |
 | `clearUserDefaults` | ✅ | ❌ | v1.0.27 — per-key NSUserDefaults deletion via `simctl spawn defaults delete`; Android SharedPreferences has no host-side per-key path (explicit error; use `clearAppData` for a full wipe) |
 
 ## Media
@@ -69,9 +82,9 @@ Version at freeze: v1.0.26.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `takeScreenshot` | ✅ | ✅ | Long form with `annotate: [...]` (5 primitives) + auto-mkdir + PNG ext inference |
-| `startRecording` | ✅ | ⚠️ | Android via `adb shell screenrecord`; 3-minute hard limit |
-| `stopRecording` | ✅ | ✅ | |
-| `addMedia` | ✅ | ⚠️ | iOS via Photos permission grant; Android via `am start` intent |
+| `startRecording` | ✅ | ⚠️ | Android records on the device with `screenrecord`, whose `--time-limit` help calls 180 s the maximum, not a default to raise. iOS has no such cap |
+| `stopRecording` | ✅ | ✅ | Android interrupts `screenrecord` rather than killing it — the mp4's moov atom is written on interrupt, and without it the file will not play — then pulls the file |
+| `addMedia` | ✅ | ✅ | Android pushes to `/sdcard/Pictures/` and fires a media-scan broadcast. Landing the bytes is not enough: a file MediaStore has not indexed is invisible to the app |
 
 ## Gesture
 
@@ -87,11 +100,11 @@ Version at freeze: v1.0.26.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `openLink` / `openUrl` | ✅ | ✅ | System URL handler |
-| `setLocation` | ✅ | ⚠️ | Android via `am start LocationSpoofer`; not all runtimes support |
-| `travel` | ✅ | ⚠️ | Same as `setLocation` with route |
-| `setPermissions` | ✅ | ⚠️ | Android per-permission; iOS via `simctl privacy` |
-| `setOrientation` | ✅ | ⚠️ | Android may fail silently on locked-orientation apps |
-| `toggleAirplaneMode` | ✅ | ⚠️ | Android needs system permission |
+| `setLocation` | ✅ | ✅ | Android sends `geo fix` on the emulator console. The fix persists and replays when an app starts listening, so setting it early is not a race |
+| `travel` | ✅ | ⚠️ | iOS hands the route to CoreSimulator. Android has no route primitive — the emulator console takes one position at a time — so smix walks it from the host, one `geo fix` a second. Both return immediately and travel in the background |
+| `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
+| `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure |
+| `toggleAirplaneMode` | ❌ | ❌ | Listed in `VERB_TABLE` but implemented nowhere: no parser, no step, no device call. It is a name, not a verb |
 
 ## smix-native extensions
 
@@ -110,15 +123,24 @@ Version at freeze: v1.0.26.
 
 | verb | iOS | Android | notes |
 |---|---|---|---|
-| `waitForAnimationToEnd` | ✅ | ✅ | Fixed sleep on BOTH platforms (bare = 400 ms; `: N` or `{ timeout: N }` = N ms). Not an animation-idle signal anywhere |
+| `waitForAnimationToEnd` | ✅ | ✅ | Bare form compares frames until the screen holds still. A screen that never settles — a spinner, a caret — is not a failure; the wait just ends at its ceiling. `: N` / `{ timeout: N }` sets that ceiling |
 | `evalScript` | ⚠️ | ⚠️ | JS eval via the app's debug bridge (consumer wires) |
 | `runScript` | ⚠️ | ⚠️ | Sibling of `evalScript` |
 
-## v1.0 non-goals
+## Names in the table that are not verbs
 
-Explicit — not supported in v1.0:
+`VERB_TABLE` has rows the parser never dispatches, so writing them in a flow
+is a parse error rather than the behaviour the name suggests:
+`toggleAirplaneMode`, `anchorRelative`, `back`, `doubleTap`, `findTextByOcr`,
+`longPress`, `ocrText`, `swipeAtCoord`, `tapAtCoord`, `tapByCoord`,
+`tapById` — the last several are reachable under their other names, listed
+above. A test in the adapter holds this list and fails when a name leaves
+it, so the gap cannot quietly grow or quietly close.
 
-- `fillAtCoord` — deferred to a future minor release
-- Real-device support (iOS simulator + Android emulator only)
-- Cross-platform log signal syntax unification (each platform's log tail is separate)
-- Full swc-based TS parser for fixture registry (the lightweight parser covers common cases)
+## Not supported
+
+- `fillAtCoord` — no coordinate escape hatch for typing; `tapAtCoord` is the
+  only one, by design
+- Real devices — the simulator and the emulator only
+- One log-signal syntax across platforms — each platform's log tail is read
+  on its own terms
