@@ -16,4 +16,4 @@ appId: com.example.app
 - scroll
 - terminate: com.example.app
 - clear: 5
-- pressKey
+- pressKey: back

@@ -389,6 +389,14 @@ struct Rule {
     to: &'static str,
     #[allow(dead_code)]
     transform: fn(&mut Value),
+    /// What to write after the new verb when the old one carried its
+    /// meaning in its name.
+    ///
+    /// maestro's `back` is smix's `pressKey: back` — rewriting the name
+    /// alone emits a bare `pressKey`, which the parser rejects for want of
+    /// a key to press. The argument is not in the source line to carry
+    /// over; it was the verb.
+    supplies_arg: Option<&'static str>,
 }
 
 #[allow(dead_code)]
@@ -528,10 +536,19 @@ fn rewrite_step_line(
     let new_verb = rule.to;
     let old_verb = &info.verb_name;
     // Splice the verb portion.
-    let mut rewritten = String::with_capacity(line.len() + 4);
+    let mut rewritten = String::with_capacity(line.len() + 8);
     rewritten.push_str(&line[..info.verb_start]);
     rewritten.push_str(new_verb);
-    rewritten.push_str(&line[info.verb_end..]);
+    match rule.supplies_arg {
+        // Only when the step carried no argument of its own; `back: true`
+        // is not a thing, but a line-based codemod should not assume.
+        Some(arg) if !info.has_colon => {
+            rewritten.push_str(": ");
+            rewritten.push_str(arg);
+            rewritten.push_str(&line[info.verb_end..]);
+        }
+        _ => rewritten.push_str(&line[info.verb_end..]),
+    }
     if new_verb != old_verb {
         report.renamed.push(Rename {
             from: rule.from,
@@ -606,6 +623,15 @@ fn verb_has_arg_transform(maestro_name: &str) -> bool {
 /// (currently unused since the line-based rewriter took over). Retained
 /// as reference for future fallback.
 #[allow(dead_code)]
+/// The argument a rewrite has to supply because the maestro verb encoded it
+/// in its own name.
+fn arg_supplied_by_rename(maestro_name: &str) -> Option<&'static str> {
+    match maestro_name {
+        "back" => Some("back"),
+        _ => None,
+    }
+}
+
 fn transform_for(maestro_name: &str) -> fn(&mut Value) {
     match maestro_name {
         "extendedWaitUntil" => transform_extended_wait_until,
@@ -627,6 +653,7 @@ fn default_rules() -> Vec<Rule> {
             from: e.maestro_name,
             to: e.smix_name,
             transform: transform_for(e.maestro_name),
+            supplies_arg: arg_supplied_by_rename(e.maestro_name),
         })
         .collect()
 }

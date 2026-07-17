@@ -20,56 +20,42 @@
 /// mirroring the `parse_step` dispatch. Excludes the two script verbs.
 use smix_verbs::VERB_TABLE;
 
-const ACCEPTED: &[&str] = &[
-    "tapOn",
-    "waitForAnimationToEnd",
-    "extendedWaitUntil",
-    "assertVisible",
-    "inputText",
-    "pressKey",
-    "runFlow",
-    "scrollUntilVisible",
-    "eraseText",
-    "swipe",
-    "launchApp",
-    "openLink",
-    "stopApp",
-    "clearAppData",
-    "resetAppData",
-    "clearUserDefaults",
-    "scroll",
-    "hideKeyboard",
-    "assertNotVisible",
-    "killApp",
-    "clearState",
-    "clearKeychain",
-    "takeScreenshot",
-    "setClipboard",
-    "pasteText",
-    "copyTextFrom",
-    "doubleTapOn",
-    "longPressOn",
-    "assertTrue",
-    "repeat",
-    "retry",
-    "webview_eval",
-    "webviewEval",
-    "setLocation",
-    "travel",
-    "setPermissions",
-    "addMedia",
-    "setOrientation",
-    "startRecording",
-    "stopRecording",
-    "assertScreenshot",
-    "assertCondition",
-    "assertWithAI",
-    "extractWithAI",
-    "extractTextWithAI",
-    "expect",
-    "expectLogClean",
-    "fixture",
-];
+/// Every top-level verb the parser dispatches, read out of `dispatch_step`
+/// rather than restated here.
+///
+/// This was a hand-copied list, and it under-reported the moment it was
+/// tested: a `back` arm went into the parser and the gate stayed green,
+/// because the gate was reading a copy of the dispatch instead of the
+/// dispatch. A list maintained beside the thing it describes drifts from it;
+/// that is the failure this whole file exists to catch, and it was in the
+/// file itself.
+fn accepted() -> Vec<String> {
+    let src = include_str!("../src/parser.rs");
+    let body = src
+        .split_once("fn dispatch_step(")
+        .expect("dispatch_step moved — this gate reads it by name")
+        .1;
+    let end = body.find("\nfn ").unwrap_or(body.len());
+    // `"a" => ...` and `"a" | "b" => ...` both count, and an arm names as
+    // many verbs as it lists.
+    let arm = regex::Regex::new(r#"(?m)^\s+("[a-zA-Z_]+"(?:\s*\|\s*"[a-zA-Z_]+")*) =>"#)
+        .expect("valid pattern");
+    let name = regex::Regex::new(r#""([a-zA-Z_]+)""#).expect("valid pattern");
+    let mut verbs: Vec<String> = Vec::new();
+    for caps in arm.captures_iter(&body[..end]) {
+        for m in name.captures_iter(&caps[1]) {
+            verbs.push(m[1].to_string());
+        }
+    }
+    assert!(
+        verbs.len() > 40,
+        "read only {} verbs out of dispatch_step — the shape changed and this \
+         gate would pass by knowing nothing",
+        verbs.len()
+    );
+    verbs
+}
+
 
 /// Deliberately absent from VERB_TABLE: `smix-migrate` warns corpus
 /// maintainers that porting requires manual review (script bodies carry
@@ -89,16 +75,20 @@ const EXCLUDED: &[&str] = &["runScript", "evalScript"];
 /// `normalize_verb_name`'s maestro-first lookup, so the name never reached
 /// the branch that would have mapped it to `doubleTapOn`.
 ///
-/// `back` is the real remainder. The table maps maestro's `back` onto smix's
-/// `pressKey`, but the codemod drops the argument on the way, emitting a
-/// bare `pressKey` rather than `pressKey: back`.
-const TABLE_ROWS_THE_PARSER_LACKS: &[&str] = &["back"];
+/// It is empty. `back` was the last: maestro writes the key into the verb,
+/// so the codemod emitted a bare `pressKey` and the parser had nothing to
+/// press. The codemod supplies the argument now, and the parser takes `back`
+/// directly — smix runs maestro flows as they are, not only after a migrate.
+const TABLE_ROWS_THE_PARSER_LACKS: &[&str] = &[];
 
 #[test]
 fn parser_dispatch_verbs_are_in_verb_table() {
-    let missing: Vec<&str> = ACCEPTED
+    let accepted = accepted();
+    let missing: Vec<&str> = accepted
         .iter()
-        .copied()
+        .map(String::as_str)
+        // The two the parser dispatches only to refuse them by name.
+        .filter(|v| !EXCLUDED.contains(v))
         .filter(|v| !smix_verbs::is_known_verb(v))
         .collect();
     assert!(
@@ -109,13 +99,14 @@ fn parser_dispatch_verbs_are_in_verb_table() {
 
 #[test]
 fn verb_table_rows_reach_the_parser() {
+    let accepted = accepted();
     // The other direction. A row the parser never learned is a verb the table
     // advertises and a flow cannot use.
     let unreachable: Vec<&str> = smix_verbs::VERB_TABLE
         .iter()
         .map(|e| e.maestro_name)
         .filter(|m| {
-            !ACCEPTED.contains(m)
+            !accepted.iter().any(|a| a == m)
                 && !EXCLUDED.contains(m)
                 && !TABLE_ROWS_THE_PARSER_LACKS.contains(m)
         })
@@ -136,7 +127,7 @@ fn the_known_gap_list_does_not_outlive_the_gaps() {
     let wired: Vec<&str> = TABLE_ROWS_THE_PARSER_LACKS
         .iter()
         .copied()
-        .filter(|v| ACCEPTED.contains(v))
+        .filter(|v| accepted().iter().any(|a| a == v))
         .collect();
     assert!(
         wired.is_empty(),

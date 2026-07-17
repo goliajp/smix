@@ -50,13 +50,21 @@ const MAESTRO_SPELLINGS: &[&str] = &[
     "back",
 ];
 
+/// `back` is written bare in maestro. Everything else in the list above takes
+/// a target, and the fixture gives it one.
+const BARE_SPELLINGS: &[&str] = &["back"];
+
 #[test]
 fn every_maestro_spelling_survives_the_codemod() {
     let migrator = Migrator::default();
     let mut broken = Vec::new();
 
     for verb in MAESTRO_SPELLINGS {
-        let before = flow_using(verb, "Selector");
+        let before = if BARE_SPELLINGS.contains(verb) {
+            flow_using(verb, "None")
+        } else {
+            flow_using(verb, "Selector")
+        };
         if !parses(&before) {
             // Not the codemod's fault, but the fixture would prove nothing.
             continue;
@@ -78,4 +86,28 @@ fn every_maestro_spelling_survives_the_codemod() {
         "the codemod rewrote parseable maestro flows into unparseable ones:\n  {}",
         broken.join("\n  ")
     );
+}
+
+/// The codemod's fixtures record what it should emit, and were checked only
+/// as text — so `expected-smix.yaml` sat there for releases saying the right
+/// answer was `- pressKey` with nothing to press, which the parser rejects.
+/// A fixture that cannot run is not an expectation, it is a typo with a test
+/// around it.
+#[test]
+fn the_codemod_fixtures_expect_yaml_that_runs() {
+    for (name, yaml) in [
+        (
+            "expected-smix.yaml",
+            include_str!("../../smix-migrate/tests/fixtures/expected-smix.yaml"),
+        ),
+        (
+            "expected-smix-with-comments.yaml",
+            include_str!("../../smix-migrate/tests/fixtures/expected-smix-with-comments.yaml"),
+        ),
+    ] {
+        assert!(
+            parses(yaml),
+            "{name} is the codemod's stated output and the parser rejects it"
+        );
+    }
 }

@@ -2307,6 +2307,11 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "assertVisible" => parse_assert_visible(value),
         "inputText" => parse_input_text(value),
         "pressKey" => parse_press_key(value),
+        // maestro writes the key into the verb. smix runs maestro flows as
+        // they are, so `- back` has to work here and not only after a
+        // migrate — VERB_TABLE renames it to pressKey, and the row is the
+        // only thing that said what it presses.
+        "back" => Ok(Step::PressKey("back".to_string())),
         "runFlow" => parse_run_flow(value),
         "scrollUntilVisible" => parse_scroll_until_visible(value),
         "eraseText" => parse_erase_text(value),

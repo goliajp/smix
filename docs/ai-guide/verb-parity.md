@@ -64,7 +64,7 @@ that is why.
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
 | `repeat` | ✅ | ✅ | |
 | `pressKey` | ✅ | ✅ | Names: enter, back, home, escape, delete, tab, etc. |
-| `back` | ✅ | ✅ | Alias for `pressKey: back` |
+| `back` | ✅ | ✅ | maestro writes the key into the verb; smix takes it either way, as `back` or as `pressKey: back` |
 
 ## Lifecycle
 
@@ -129,13 +129,21 @@ that is why.
 
 ## Names in the table that are not verbs
 
-`VERB_TABLE` has rows the parser never dispatches, so writing them in a flow
-is a parse error rather than the behaviour the name suggests:
-`toggleAirplaneMode`, `anchorRelative`, `back`, `doubleTap`, `findTextByOcr`,
-`longPress`, `ocrText`, `swipeAtCoord`, `tapAtCoord`, `tapByCoord`,
-`tapById` — the last several are reachable under their other names, listed
-above. A test in the adapter holds this list and fails when a name leaves
-it, so the gap cannot quietly grow or quietly close.
+There are none. Eleven rows in `VERB_TABLE` once named things the parser
+never dispatched, and every one is settled: ten were deleted — `ocrText` and
+`anchorRelative` are selector fields, `tapAtCoord` is `tapOn: {point}`,
+`tapById` is `tapOn: {id}`, `toggleAirplaneMode` was implemented nowhere —
+and `back` now parses directly.
+
+Deleting those rows is what made `doubleTap` and `longPress` start working:
+a row whose maestro and smix names are identical shadows the alias when the
+parser normalizes a verb, so the name never reached the lookup that would
+have mapped it onto `doubleTapOn`. The row promising the verb was what
+stopped it.
+
+A test in the adapter reads the parser's dispatch out of the source and
+compares it with the table in both directions, so neither can drift from the
+other in silence.
 
 ## Not supported
 
