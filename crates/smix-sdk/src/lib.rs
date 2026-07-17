@@ -58,8 +58,8 @@ fn now_ms() -> f64 {
 // -- re-exports for downstream user convenience ------------------------
 
 pub use smix_driver::{
-    HttpRunnerClient, IncludeScope, OcrFrame, RunnerScrollSelector, RunnerTransportError,
-    SimctlDriver, SystemPopup, TapMode,
+    AndroidDriver, HttpRunnerClient, IncludeScope, OcrFrame, RunnerScrollSelector,
+    RunnerTransportError, SimctlDriver, SystemPopup, TapMode,
 };
 pub use smix_error::{
     ExpectationFailure, FailureCode, FailureInit, build_suggestions, edit_distance, similarity,
@@ -753,6 +753,34 @@ impl App {
         self.driver.as_ios_driver().map(|ios| ios.runner())
     }
 
+    /// Driver access gated on the iOS session precondition (v2 break #1).
+    ///
+    /// iOS driving must go through a live runner session: without one the
+    /// request drops to the legacy per-request `resolveApp` + activate
+    /// path the session model exists to remove, so a missing session is a
+    /// named error, not a silent legacy fallback. Generalizes the
+    /// per-verb precedent that `clear_app_data_with_launch` already
+    /// carried onto every sense/act verb through this one chokepoint.
+    ///
+    /// iOS-only by construction: `http_runner_client()` is `Some` only for
+    /// the iOS driver. Android serves no `/session/*` route and has no
+    /// session concept — its `http_runner_client()` is `None`, so the
+    /// guard passes through and Android drives sessionless as before.
+    fn driving(&self) -> Result<&dyn smix_driver::Driver, ExpectationFailure> {
+        if let Some(runner) = self.http_runner_client()
+            && runner.session_id().is_none()
+        {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: "no session id on the client; run `smix run` (which \
+                          auto-opens a session) or call `App::open_session` first"
+                    .into(),
+                ..Default::default()
+            }));
+        }
+        Ok(self.driver.as_ref())
+    }
+
     /// Open a runner-side session bound to `bundle_id`.
     /// Subsequent requests via the returned [`Session`] send the
     /// `Session-Id` header and skip per-request activation entirely.
@@ -769,6 +797,38 @@ impl App {
         bundle_id: &str,
         activate: bool,
     ) -> Result<Session, ExpectationFailure> {
+        let state = self.open_session_inner(bundle_id, activate).await?;
+        let session_id = self
+            .http_runner_client()
+            .and_then(|r| r.session_id())
+            .map(str::to_string)
+            .expect("open_session_inner set the session id on the client");
+        Ok(Session {
+            app: Some(self),
+            session_id,
+            state,
+        })
+    }
+
+    /// Open a runner session in place, keeping ownership of the `App`.
+    /// Same wire call + client mutation as [`Self::open_session`], but
+    /// does not consume `self` into a [`Session`]. For long-lived shared
+    /// `App` holders (the MCP server, the real-sim harness) that drive
+    /// through `&App` and so cannot move into a `Session`. After this the
+    /// iOS session guard on every driving verb is satisfied (v2 break #1).
+    pub async fn open_session_in_place(
+        &mut self,
+        bundle_id: &str,
+        activate: bool,
+    ) -> Result<(), ExpectationFailure> {
+        self.open_session_inner(bundle_id, activate).await.map(|_| ())
+    }
+
+    async fn open_session_inner(
+        &mut self,
+        bundle_id: &str,
+        activate: bool,
+    ) -> Result<std::sync::Arc<std::sync::atomic::AtomicU8>, ExpectationFailure> {
         let runner = self.http_runner_client().ok_or_else(|| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
@@ -787,8 +847,7 @@ impl App {
                 ..Default::default()
             })
         })?;
-        let sid = resp.session_id.clone();
-        self.driver.set_session_id(Some(sid.clone()));
+        self.driver.set_session_id(Some(resp.session_id));
         // Hook the state atomic into the client so future
         // X-Sim-Health header transitions are visible to consumers via
         // Session::state(). Optimistic Healthy at open time.
@@ -798,11 +857,7 @@ impl App {
         if let Some(runner) = self.http_runner_client() {
             runner.attach_session_state(state.clone());
         }
-        Ok(Session {
-            app: Some(self),
-            session_id: sid,
-            state,
-        })
+        Ok(state)
     }
 
     /// Convenience: connect to a runner on `127.0.0.1:{port}` and probe
@@ -1294,14 +1349,14 @@ impl App {
     // ---- sense (driver-bound) -----------------------------------------
 
     pub async fn tree(&self) -> Result<A11yNode, ExpectationFailure> {
-        self.driver.tree(None).await
+        self.driving()?.tree(None).await
     }
 
     pub async fn describe(&self) -> Result<ScreenDescription, ExpectationFailure> {
         // describe() is App-layer aggregation (not on the Driver trait
         // per cross-platform design). Inlined: driver.tree() +
         // collect_visible_summaries.
-        let tree = self.driver.tree(None).await?;
+        let tree = self.driving()?.tree(None).await?;
         Ok(ScreenDescription {
             screenshot: None,
             elements: collect_visible_summaries(&tree, smix_screen::DEFAULT_VISIBLE_LIMIT),
@@ -1315,19 +1370,19 @@ impl App {
         &self,
         selector: &Selector,
     ) -> Result<Option<A11yNode>, ExpectationFailure> {
-        self.driver.find_one(selector, None).await
+        self.driving()?.find_one(selector, None).await
     }
 
     pub async fn find_all(&self, selector: &Selector) -> Result<Vec<A11yNode>, ExpectationFailure> {
-        self.driver.find_all(selector, None).await
+        self.driving()?.find_all(selector, None).await
     }
 
     pub async fn find(&self, selector: &Selector) -> Result<bool, ExpectationFailure> {
-        self.driver.find(selector, None).await
+        self.driving()?.find(selector, None).await
     }
 
     pub async fn system_popups(&self) -> Result<Vec<SystemPopup>, ExpectationFailure> {
-        self.driver.system_popups(None).await
+        self.driving()?.system_popups(None).await
     }
 
     /// Tap a button on a previously enumerated system popup. `popup_id`
@@ -1352,7 +1407,7 @@ impl App {
                 "system_popup_action(popup={popup_id} btn={button_id})"
             )),
         );
-        self.driver.system_popup_action(popup_id, button_id).await
+        self.driving()?.system_popup_action(popup_id, button_id).await
     }
 
     // ---- act (driver-bound) -------------------------------------------
@@ -1360,7 +1415,7 @@ impl App {
     pub async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         self.ledger
             .record_tap(now_ms(), Some(format!("{selector:?}")));
-        self.driver.tap(selector, None).await
+        self.driving()?.tap(selector, None).await
     }
 
     /// Tap a selector via an explicit dispatch mode. Use
@@ -1376,21 +1431,21 @@ impl App {
     ) -> Result<(), ExpectationFailure> {
         self.ledger
             .record_tap(now_ms(), Some(format!("{selector:?}")));
-        self.driver.tap_with_mode(selector, mode, None).await
+        self.driving()?.tap_with_mode(selector, mode, None).await
     }
 
     pub async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
         self.ledger
             .record_fill(now_ms(), Some(format!("{selector:?}")));
-        self.driver.fill(selector, text, None).await
+        self.driving()?.fill(selector, text, None).await
     }
 
     pub async fn clear(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
-        self.driver.clear(selector, None).await
+        self.driving()?.clear(selector, None).await
     }
 
     pub async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {
-        self.driver.press_key(key).await
+        self.driving()?.press_key(key).await
     }
 
     pub async fn scroll(
@@ -1398,19 +1453,19 @@ impl App {
         selector: &Selector,
         direction: SwipeDirection,
     ) -> Result<(), ExpectationFailure> {
-        self.driver.scroll(selector, direction).await
+        self.driving()?.scroll(selector, direction).await
     }
 
     pub async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
-        self.driver.swipe_once(direction).await
+        self.driving()?.swipe_once(direction).await
     }
 
     pub async fn hide_keyboard(&self) -> Result<(), ExpectationFailure> {
-        self.driver.hide_keyboard().await
+        self.driving()?.hide_keyboard().await
     }
 
     pub async fn go_back(&self) -> Result<(), ExpectationFailure> {
-        self.driver.back().await
+        self.driving()?.back().await
     }
 
     /// Tap at normalized (nx, ny) coordinates — escape hatch for
@@ -1427,7 +1482,7 @@ impl App {
     /// only for yaml-port edge cases (e.g. maestro `point: "X%,Y%"`).
     pub async fn tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
         self.ledger.record_tap_at_coord(now_ms(), nx, ny);
-        self.driver.tap_at_norm_coord(nx, ny).await
+        self.driving()?.tap_at_norm_coord(nx, ny).await
     }
 
     /// Tap via `XCUIElement.tap()` over the XCTest gesture-recognizer
@@ -1451,7 +1506,7 @@ impl App {
     pub async fn tap_xcui(&self, id: &str) -> Result<(), ExpectationFailure> {
         self.ledger
             .record_tap(now_ms(), Some(format!("tap_xcui id={id}")));
-        self.driver.tap_by_id(id).await
+        self.driving()?.tap_by_id(id).await
     }
 
     /// Apple Vision OCR find. Returns the matching text observation's
@@ -1467,13 +1522,13 @@ impl App {
         &self,
         selector: &Selector,
     ) -> Result<Option<(f64, f64)>, ExpectationFailure> {
-        self.driver.find_norm_coord(selector).await
+        self.driving()?.find_norm_coord(selector).await
     }
 
     /// Eval JS against the app-side WKWebView bridge. Returns the JS
     /// result as a JSON Value. Bridge must be running in the target app.
     pub async fn webview_eval(&self, js: &str) -> Result<serde_json::Value, ExpectationFailure> {
-        self.driver.webview_eval(js).await
+        self.driving()?.webview_eval(js).await
     }
 
     pub async fn find_by_text_ocr(
@@ -1488,7 +1543,7 @@ impl App {
         } else {
             locales
         };
-        self.driver
+        self.driving()?
             .find_text_by_ocr(text, locales_slice, "accurate")
             .await
     }
@@ -1538,7 +1593,7 @@ impl App {
         to: (f64, f64),
     ) -> Result<(), ExpectationFailure> {
         self.ledger.record_swipe_at_coord(now_ms(), from, to);
-        self.driver.swipe_at_norm_coord(from, to).await
+        self.driving()?.swipe_at_norm_coord(from, to).await
     }
 
     /// Viewport scroll one swipe in the given direction — no selector required.
@@ -1693,7 +1748,7 @@ impl App {
             now_ms(),
             Some(format!("double:{}", describe_selector(selector))),
         );
-        self.driver.double_tap(selector, None).await
+        self.driving()?.double_tap(selector, None).await
     }
 
     /// Long-press an element for `duration`. Maps to maestro yaml
@@ -1713,7 +1768,7 @@ impl App {
                 describe_selector(selector)
             )),
         );
-        self.driver.long_press(selector, duration, None).await
+        self.driving()?.long_press(selector, duration, None).await
     }
 
     /// Set sim location. Maestro `setLocation: { latitude, longitude }`.
@@ -1806,7 +1861,7 @@ impl App {
         &self,
         orientation: MaestroOrientation,
     ) -> Result<(), ExpectationFailure> {
-        self.driver.set_orientation(orientation.to_driver()).await
+        self.driving()?.set_orientation(orientation.to_driver()).await
     }
 
     /// Batch permission setter. Maestro `setPermissions: { camera:
@@ -1935,7 +1990,7 @@ impl App {
     }
 
     pub async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
-        self.driver.foreground(bundle_id).await
+        self.driving()?.foreground(bundle_id).await
     }
 
     pub async fn wait_for(
@@ -1943,7 +1998,7 @@ impl App {
         selector: &Selector,
         timeout: Duration,
     ) -> Result<A11yNode, ExpectationFailure> {
-        self.driver.wait_for(selector, timeout, None).await
+        self.driving()?.wait_for(selector, timeout, None).await
     }
 
     // ---- assertion matchers -------------------------------------------
@@ -1975,7 +2030,7 @@ impl App {
 
     /// Assert that the matched element has `enabled = true`.
     pub async fn assert_enabled(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
-        let node = self.driver.find_one(selector, None).await?.ok_or_else(|| {
+        let node = self.driving()?.find_one(selector, None).await?.ok_or_else(|| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::ElementNotFound),
                 message: format!(
