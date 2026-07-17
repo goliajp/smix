@@ -49,7 +49,7 @@ smix_launch_app { "bundleId": "com.example.app" }
 smix_describe                                        → what's on screen
 smix_tap        { "id": "tab-form" }
 smix_tap        { "id": "form-email-input" }
-smix_fill       { "id": "form-email-input", "text": "alice@example.com" }
+smix_fill       { "target": { "id": "form-email-input" }, "text": "alice@example.com" }
 smix_press_key  { "key": "return" }
 smix_assert_visible { "id": "form-submitted-label" }
 ```
@@ -75,6 +75,14 @@ Ids survive copy edits and translation. Text does not — a flow written against
 again in every other locale.
 
 Naming nothing, or naming two, is an error. smix will not pick for you.
+
+`smix_fill` and `smix_scroll` need a selector *and* something else, so theirs
+goes under `target`:
+
+```json
+{ "target": { "id": "form-email-input" }, "text": "alice@example.com" }
+{ "target": { "text": "Sign out" }, "direction": "down" }
+```
 
 ## Read the failures
 

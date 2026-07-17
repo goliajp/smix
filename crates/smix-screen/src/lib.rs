@@ -74,7 +74,8 @@ pub struct ElementSummary {
 }
 
 /// Aggregate screen description. `elements` is a DFS-collected ordered
-/// list of visible+enabled [`ElementSummary`] entries; `screenshot` is
+/// list of the visible+enabled [`ElementSummary`] entries a reader could
+/// name (anonymous layout containers are skipped); `screenshot` is
 /// an optional base64 PNG; `frontApp` / `summary` / `captured_at` are
 /// caller-populated metadata.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -83,7 +84,7 @@ pub struct ScreenDescription {
     /// Optional base64-encoded PNG screenshot of the screen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screenshot: Option<String>,
-    /// Visible+enabled elements in DFS pre-order.
+    /// Nameable visible+enabled elements in DFS pre-order.
     pub elements: Vec<ElementSummary>,
     /// Bundle id of the frontmost app at capture time.
     pub front_app: String,
@@ -93,8 +94,10 @@ pub struct ScreenDescription {
     pub captured_at: f64,
 }
 
-/// Collect up to `limit` visible+enabled nodes (DFS pre-order), projecting
-/// each via [`summarize_node`]. Default limit = 1000.
+/// Collect up to `limit` visible+enabled nodes a reader could name (DFS
+/// pre-order), projecting each via [`summarize_node`]. Default limit = 1000.
+///
+/// Anonymous layout scaffolding is skipped — see [`has_identity`].
 #[must_use]
 pub fn collect_visible_summaries(tree: &A11yNode, limit: usize) -> Vec<ElementSummary> {
     let mut out: Vec<ElementSummary> = Vec::new();
@@ -103,7 +106,10 @@ pub fn collect_visible_summaries(tree: &A11yNode, limit: usize) -> Vec<ElementSu
             return;
         }
         if n.enabled && n.visible {
-            out.push(summarize_node(n));
+            let s = summarize_node(n);
+            if has_identity(&s) {
+                out.push(s);
+            }
         }
         for c in &n.children {
             if out.len() >= limit {
@@ -114,6 +120,19 @@ pub fn collect_visible_summaries(tree: &A11yNode, limit: usize) -> Vec<ElementSu
     }
     walk(tree, limit, &mut out);
     out
+}
+
+/// Whether a summary tells a reader anything.
+///
+/// A node with no role, name, id, or text renders as the bare word "unknown"
+/// — it cannot be recognized or acted on. Real app trees are mostly these:
+/// on a stock Settings screen, 120 of 166 visible nodes are anonymous
+/// layout scaffolding, and they sit at the top in DFS order. A failure
+/// showing its ten "visible elements" would spend nine of them on
+/// `Application → Window → other → other …` and tell the reader nothing,
+/// which defeats the point of putting the screen in the failure at all.
+fn has_identity(s: &ElementSummary) -> bool {
+    s.role.is_some() || s.name.is_some() || s.id.is_some() || s.text.is_some()
 }
 
 /// Default visible-summary limit.
@@ -468,4 +487,87 @@ pub fn visible_area(node: &A11yNode, tree: &A11yNode) -> f64 {
         return 0.0;
     }
     (x2 - x1) * (y2 - y1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(raw_type: &str, id: Option<&str>, label: Option<&str>, children: Vec<A11yNode>) -> A11yNode {
+        A11yNode {
+            raw_type: raw_type.into(),
+            element_type_raw: 1,
+            role: role_from_raw_type(raw_type),
+            identifier: id.map(str::to_string),
+            label: label.map(str::to_string),
+            title: None,
+            placeholder_value: None,
+            value: None,
+            text: None,
+            bounds: Rect { x: 0.0, y: 0.0, w: 10.0, h: 10.0 },
+            enabled: true,
+            selected: false,
+            has_focus: false,
+            visible: true,
+            children,
+        }
+    }
+
+    /// A real app tree, in miniature: the button is buried under layers of
+    /// anonymous layout. Measured on a stock Settings screen, 120 of 166
+    /// visible nodes look like these wrappers.
+    fn scaffolded_tree() -> A11yNode {
+        node("application", Some("com.apple.Preferences"), Some("Settings"), vec![
+            node("window", None, None, vec![
+                node("other", None, None, vec![
+                    node("other", None, None, vec![
+                        node("other", None, None, vec![
+                            node("button", Some("com.apple.settings.general"), Some("General"), vec![]),
+                        ]),
+                    ]),
+                ]),
+            ]),
+        ])
+    }
+
+    #[test]
+    fn anonymous_scaffolding_does_not_take_up_the_reader_s_slots() {
+        // The failure surface asks for ten. Spending nine on `other → other →
+        // other` tells the reader nothing about the screen.
+        let got = collect_visible_summaries(&scaffolded_tree(), 10);
+        assert!(
+            got.iter().all(|s| s.role.is_some() || s.name.is_some() || s.id.is_some() || s.text.is_some()),
+            "every entry must be something a reader can recognize; got {got:?}"
+        );
+    }
+
+    #[test]
+    fn the_element_a_reader_wants_survives_a_small_limit() {
+        // Before the filter, a limit of 3 returned application + window +
+        // other, and the button — the thing you would tap — never appeared.
+        let got = collect_visible_summaries(&scaffolded_tree(), 3);
+        assert!(
+            got.iter().any(|s| s.id.as_deref() == Some("com.apple.settings.general")),
+            "the named button must reach a short list; got {got:?}"
+        );
+    }
+
+    #[test]
+    fn a_node_with_an_id_but_no_role_still_counts() {
+        // Role is None for uncurated types. An id alone is plenty to act on.
+        let tree = node("other", Some("qa-bubble"), None, vec![]);
+        let got = collect_visible_summaries(&tree, 10);
+        assert_eq!(got.len(), 1, "an id is identity enough; got {got:?}");
+    }
+
+    #[test]
+    fn invisible_and_disabled_nodes_stay_out() {
+        let mut hidden = node("button", Some("hidden-btn"), None, vec![]);
+        hidden.visible = false;
+        let mut off = node("button", Some("disabled-btn"), None, vec![]);
+        off.enabled = false;
+        let tree = node("application", Some("app"), None, vec![hidden, off]);
+        let got = collect_visible_summaries(&tree, 10);
+        assert_eq!(got.len(), 1, "only the app node is visible+enabled; got {got:?}");
+    }
 }
