@@ -47,12 +47,21 @@ else
 fi
 
 # --- swift-bridge unit tests ------------------------------------------
-# v1.0.27 — NOT bypassable. This suite was never in the gate and a
-# stale test (asserting the pre-v1.0.11 aliveCache omit-when-nil
-# contract) sat failing unnoticed for 15+ releases. ~18 s.
+# NOT bypassable. This suite sat outside the gate long enough for a test
+# asserting a two-release-old contract to fail unnoticed for 15+ releases.
+# ~18 s.
 log "swift-bridge unit tests"
 ( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
   || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
+
+# --- clippy -----------------------------------------------------------
+# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
+# nothing ran clippy — so four lints sat in the tree, one of them a doc
+# comment detached from the type it described in a stone crate. Clean at
+# the time this was added; here so it stays that way.
+log "clippy"
+( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
+  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
 
 # --- version match ---------------------------------------------------
 

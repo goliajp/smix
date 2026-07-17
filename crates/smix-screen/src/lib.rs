@@ -361,7 +361,13 @@ fn derive_roles_inner(node: &mut A11yNode, inside_tab_bar: bool) {
     }
 }
 
-/// Accessibility tree node.
+/// Older wire payloads predate the `elementTypeRaw` field; default to
+/// 1 (`.other`), which is the safest fallback and matches how Swift
+/// `elementTypeName` treats unknown raw values.
+fn default_element_type_raw() -> u64 { 1 }
+
+/// Accessibility tree node — a single-node snapshot as returned by `/tree`,
+/// mirroring the Swift-side `TreeRoute.nodeToDict` shape.
 ///
 /// `rawType` carries the underlying Apple `XCUIElement.ElementType` raw
 /// name (e.g. "any", "other", "staticText"); `role` is the curated semantic
@@ -373,14 +379,6 @@ fn derive_roles_inner(node: &mut A11yNode, inside_tab_bar: bool) {
 /// `#[serde(default)]` on the recursive `children: Vec<A11yNode>` allows
 /// terminal nodes in JSON to omit the field entirely (`/tree` route emits
 /// `"children":[]` consistently but we accept both for forward-compat).
-
-/// Older wire payloads predate the `elementTypeRaw` field; default to
-/// 1 (`.other`), which is the safest fallback and matches how Swift
-/// `elementTypeName` treats unknown raw values.
-fn default_element_type_raw() -> u64 { 1 }
-
-/// Single-node accessibility snapshot returned by `/tree`. Fields
-/// mirror the Swift-side `TreeRoute.nodeToDict` shape.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct A11yNode {
