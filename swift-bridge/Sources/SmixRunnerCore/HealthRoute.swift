@@ -7,6 +7,13 @@ import Foundation
 /// extended payload with liveness counters that the Rust client parses
 /// via `HttpRunnerClient::health_detail`.
 public enum HealthRoute {
+  /// The wire schemas this runner speaks.
+  ///
+  /// Kept equal to `smix_runner_wire::WIRE_SCHEMA_SUPPORTED`, which a test
+  /// on the Rust side enforces by reading this line — the runner ships
+  /// inside the CLI, so the two are one build and must agree.
+  public static let wireSchemaSupported: [UInt32] = [1, 2]
+
   /// Legacy body — stable byte sequence.
   public static func body() -> Data {
     return Data(#"{"ok":true}"#.utf8)
@@ -25,13 +32,18 @@ public enum HealthRoute {
   /// counters. Callers pass the currently-observed values; the JSON
   /// encode uses camelCase field names matching
   /// `smix_runner_wire::HealthResponse`.
+  /// - Parameter negotiated: the schema settled on with the client that
+  ///   asked, when it said what it speaks. Absent when nobody has.
   public static func bodyDetail(
     runnerVersion: String,
     uptimeMs: UInt64,
     lastRequestAtMs: UInt64,
     sessionsOpen: UInt32,
-    activationsTotal: UInt64
+    activationsTotal: UInt64,
+    negotiated: UInt32? = nil
   ) -> Data {
+    let supports = wireSchemaSupported.map(String.init).joined(separator: ",")
+    let negotiatedField = negotiated.map { ",\"negotiated\":\($0)" } ?? ""
     // Hand-serialize to keep the wire byte-stable across Swift JSON
     // encoder version drift. Legacy `{"ok":true}` remains a strict
     // prefix of the extended body's field list.
@@ -44,7 +56,8 @@ public enum HealthRoute {
       "uptimeMs":\(uptimeMs),\
       "lastRequestAtMs":\(lastRequestAtMs),\
       "sessionsOpen":\(sessionsOpen),\
-      "activationsTotal":\(activationsTotal)}
+      "activationsTotal":\(activationsTotal),\
+      "wireSchema":{"supports":[\(supports)]\(negotiatedField)}}
       """
     return Data(json.utf8)
   }

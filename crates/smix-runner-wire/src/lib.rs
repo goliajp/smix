@@ -516,6 +516,43 @@ pub struct SessionRenewActivationResponse {
 /// Extended `GET /health` response body.
 ///
 /// The body is purely additive over the legacy bare-200 response.
+/// Wire schema versions this build speaks.
+///
+/// The schema is versioned apart from the runner, because they are not the
+/// same thing. A runner that has been up since before a CLI upgrade, and an
+/// SDK released on its own cadence, both talk to a wire whose shape may not
+/// have moved at all. Tying them to the runner's semver made every version
+/// difference an error, including the ones that did not matter.
+///
+/// Add a version here when the shape changes, and keep the old one for as
+/// long as it is still spoken.
+pub const WIRE_SCHEMA_SUPPORTED: &[u32] = &[1, 2];
+
+/// The newest schema both ends speak, or `None` when they share none.
+///
+/// Highest-common rather than exact-match: two builds that both know schema
+/// 2 agree on schema 2, whatever their versions say.
+#[must_use]
+pub fn negotiate_wire_schema(ours: &[u32], theirs: &[u32]) -> Option<u32> {
+    ours.iter()
+        .filter(|v| theirs.contains(v))
+        .copied()
+        .max()
+}
+
+/// What a runner says about the wire it speaks.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WireSchemaInfo {
+    /// Every schema the runner speaks.
+    #[serde(default)]
+    pub supports: Vec<u32>,
+    /// The one it settled on with the client that asked, when the client
+    /// said what it speaks. Absent from a runner too old to have been asked.
+    #[serde(default)]
+    pub negotiated: Option<u32>,
+}
+
 /// Consumers that ignore the body get identical behavior; consumers
 /// that parse the JSON gain liveness observability.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -548,6 +585,10 @@ pub struct HealthResponse {
     /// (auto-restart on `** TEST INTERRUPTED **`).
     #[serde(default)]
     pub xcodebuild_test_host: HealthTestHostInfo,
+    /// The wire this runner speaks. Empty from a runner that predates the
+    /// question — which means "unknown", not "none".
+    #[serde(default)]
+    pub wire_schema: WireSchemaInfo,
 }
 
 /// Pid + alive flag for a watched process. Additive to
