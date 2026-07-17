@@ -1,7 +1,16 @@
-// The Swift and Kotlin SDKs' view of the selector core. Everything here
-// is synchronous and pure: JSON tree plus JSON selector in, matched ids
-// out. Driving the device is not on this boundary — that goes over HTTP
-// to the runner, which keeps this one free of async and cancellation.
+// The selector core, for the Swift and Kotlin SDKs. Everything declared
+// here is synchronous and pure: JSON tree plus JSON selector in, matched
+// ids out.
+//
+// Driving the runner is on this boundary too, but not in this file — see
+// `driving.rs`. UDL cannot carry it: scaffolding generated from a .udl
+// never wraps a future in a tokio Compat, so a reqwest call declared here
+// would be polled with no reactor and panic. Only
+// `#[uniffi::export(async_runtime = "tokio")]` supplies one.
+//
+// Cancellation over there is an explicit token rather than the caller's own
+// Task.cancel(), because uniffi 0.29.5 does not carry a foreign cancel into
+// Rust — it generates rust_future_cancel and no language backend calls it.
 
 namespace smix {
     // Resolve a Selector (JSON wire form) against an A11yNode tree
