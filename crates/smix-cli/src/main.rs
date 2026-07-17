@@ -1703,6 +1703,7 @@ async fn cmd_migrate(paths: Vec<PathBuf>, in_place: bool) -> Result<ExitCode, Cl
         }
     } else {
         let mut worst: u8 = 0;
+        let mut totals = Totals::default();
         for path in &paths {
             let input = match std::fs::read_to_string(path) {
                 Ok(s) => s,
@@ -1731,13 +1732,15 @@ async fn cmd_migrate(paths: Vec<PathBuf>, in_place: bool) -> Result<ExitCode, Cl
                             worst = worst.max(3);
                             continue;
                         }
-                        if paths.len() > 1 {
-                            eprintln!(
-                                "smix migrate: rewrote {} ({} renames)",
-                                path.display(),
-                                report.renamed.len()
-                            );
-                        }
+                        eprintln!(
+                            "smix migrate: rewrote {} — {}",
+                            path.display(),
+                            describe_changes(&report)
+                        );
+                        totals.files += 1;
+                        totals.renames += report.renamed.len();
+                        totals.unknown += report.unknown_verbs.len();
+                        totals.subflows += report.subflow_refs;
                     } else {
                         print!("{out}");
                         std::io::stdout().flush().ok();
@@ -1749,8 +1752,78 @@ async fn cmd_migrate(paths: Vec<PathBuf>, in_place: bool) -> Result<ExitCode, Cl
                 }
             }
         }
+        if in_place {
+            totals.report(paths.len());
+        }
         Ok(ExitCode::from(worst))
     }
+}
+
+/// What a migrate run did, across every file it touched.
+#[derive(Default)]
+struct Totals {
+    files: usize,
+    renames: usize,
+    unknown: usize,
+    subflows: usize,
+}
+
+impl Totals {
+    fn report(&self, asked_for: usize) {
+        if asked_for > 1 {
+            eprintln!(
+                "smix migrate: {} of {} file(s) rewritten, {} rename(s)",
+                self.files, asked_for, self.renames
+            );
+        }
+        // The two things a caller has to act on. Neither is a failure, and
+        // both are invisible once the command exits, so they are said out
+        // loud rather than left in the diff.
+        if self.unknown > 0 {
+            eprintln!(
+                "smix migrate: {} verb(s) had no smix equivalent and were left as they were \
+                 — the flow will not parse until you replace them",
+                self.unknown
+            );
+        }
+        if self.subflows > 0 {
+            eprintln!(
+                "smix migrate: {} runFlow reference(s) point at files this run did not open \
+                 — migrate those too",
+                self.subflows
+            );
+        }
+    }
+}
+
+/// One file's changes, for the line printed as it is rewritten.
+fn describe_changes(report: &smix_migrate::MigrateReport) -> String {
+    if report.renamed.is_empty() {
+        return format!("no changes, {} step(s)", report.step_count);
+    }
+    let mut counts: Vec<(&str, &str, usize)> = Vec::new();
+    for rename in &report.renamed {
+        match counts.iter_mut().find(|c| c.0 == rename.from) {
+            Some(c) => c.2 += 1,
+            None => counts.push((rename.from, rename.to, 1)),
+        }
+    }
+    let detail: Vec<String> = counts
+        .iter()
+        .map(|(from, to, n)| {
+            if *n == 1 {
+                format!("{from} → {to}")
+            } else {
+                format!("{from} → {to} ×{n}")
+            }
+        })
+        .collect();
+    format!(
+        "{} rename(s) in {} step(s): {}",
+        report.renamed.len(),
+        report.step_count,
+        detail.join(", ")
+    )
 }
 
 fn warn_unknown(unknown: &[String], src: &str) {
