@@ -66,8 +66,14 @@ cargo test --workspace 2>&1 | grep -c "^test result: ok"        # 期望 ≥128�
 cargo build --workspace 2>&1 | grep -c warning                  # 期望 0
 python3 scripts/dev/hygiene-scan.py --noise-only                 # 期望 clean
 cd android-runner && ./gradlew test                              # 期望 pass（**首次纳入本 cycle 的 gate**）
-# 门禁表逐行有定论：
-grep -c "C5.*parity\|C5.*re-tier" docs/v2.md                    # 期望 ≥12
+cargo clippy --workspace --all-targets 2>&1 | grep -cE "^(error|warning): "  # 期望 0（C5 新增：此前无人跑过）
+# 门禁表逐行有定论。原命令是 `grep -c "C5.*parity\|C5.*re-tier" docs/v2.md`，
+# 它数的是「C5 与 parity 出现在同一行」——量的是我的排版，不是我的工作：
+# 14 行判定确实记在 v2.md，只是「C5」写在小节标题上而非每行重复。
+# 改为量真物：verb-parity.md 是当前真值，每行两个平台列都必须有裁决。
+awk -F'|' '/^\| `/ && ($3 !~ /[✅⚠️❌]/ || $4 !~ /[✅⚠️❌]/)' \
+  docs/ai-guide/verb-parity.md | wc -l                          # 期望 0（54 行无空白）
+grep -c '^| `' docs/ai-guide/verb-parity.md                      # 期望 54
 ```
 期望：全部通过 + 门禁表 14 行各有一句记录在案的判定。
 
