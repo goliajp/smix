@@ -23,10 +23,15 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum DriveError {
     /// The runner could not be reached, or answered with a failure.
-    #[error("{message}")]
+    ///
+    /// The field is `detail`, not `message`: uniffi's Kotlin bindings make an
+    /// error variant's fields into properties, and a `message` property
+    /// collides with `Throwable.message` — the generated Kotlin does not
+    /// compile.
+    #[error("{detail}")]
     Transport {
         /// What the transport reported, verbatim.
-        message: String,
+        detail: String,
     },
     /// The caller cancelled the call before the runner answered.
     #[error("cancelled")]
@@ -36,7 +41,7 @@ pub enum DriveError {
 impl From<smix_runner_client::RunnerTransportError> for DriveError {
     fn from(e: smix_runner_client::RunnerTransportError) -> Self {
         DriveError::Transport {
-            message: e.to_string(),
+            detail: e.to_string(),
         }
     }
 }
@@ -101,7 +106,7 @@ where
 fn parse_wire_enum<T: serde::de::DeserializeOwned>(name: &str, what: &str) -> Result<T, DriveError> {
     serde_json::from_value(serde_json::Value::String(name.to_string())).map_err(|_| {
         DriveError::Transport {
-            message: format!("unknown {what}: {name:?}"),
+            detail: format!("unknown {what}: {name:?}"),
         }
     })
 }
@@ -132,7 +137,7 @@ impl SmixDriver {
     pub async fn tree(&self, cancel: Option<Arc<CancelToken>>) -> Result<String, DriveError> {
         let tree = until_cancelled(cancel, self.client.get_tree(None)).await?;
         serde_json::to_string(&tree).map_err(|e| DriveError::Transport {
-            message: format!("could not encode the tree: {e}"),
+            detail: format!("could not encode the tree: {e}"),
         })
     }
 
@@ -169,7 +174,7 @@ impl SmixDriver {
     ) -> Result<String, DriveError> {
         let sessions = until_cancelled(cancel, self.client.list_sessions()).await?;
         serde_json::to_string(&sessions).map_err(|e| DriveError::Transport {
-            message: format!("could not encode the sessions: {e}"),
+            detail: format!("could not encode the sessions: {e}"),
         })
     }
 }
@@ -279,7 +284,7 @@ impl SmixSession {
     ) -> Result<String, DriveError> {
         let popups = until_cancelled(cancel, self.client.system_popups(None)).await?;
         serde_json::to_string(&popups).map_err(|e| DriveError::Transport {
-            message: format!("could not encode the popups: {e}"),
+            detail: format!("could not encode the popups: {e}"),
         })
     }
 

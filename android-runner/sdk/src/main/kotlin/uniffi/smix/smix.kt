@@ -2720,16 +2720,21 @@ sealed class DriveException: kotlin.Exception() {
     
     /**
      * The runner could not be reached, or answered with a failure.
+     *
+     * The field is `detail`, not `message`: uniffi's Kotlin bindings make an
+     * error variant's fields into properties, and a `message` property
+     * collides with `Throwable.message` — the generated Kotlin does not
+     * compile.
      */
     class Transport(
         
         /**
          * What the transport reported, verbatim.
          */
-        val `message`: kotlin.String
+        val `detail`: kotlin.String
         ) : DriveException() {
         override val message
-            get() = "message=${ `message` }"
+            get() = "detail=${ `detail` }"
     }
     
     /**
@@ -2770,7 +2775,7 @@ public object FfiConverterTypeDriveError : FfiConverterRustBuffer<DriveException
             is DriveException.Transport -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
-                + FfiConverterString.allocationSize(value.`message`)
+                + FfiConverterString.allocationSize(value.`detail`)
             )
             is DriveException.Cancelled -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
@@ -2783,7 +2788,7 @@ public object FfiConverterTypeDriveError : FfiConverterRustBuffer<DriveException
         when(value) {
             is DriveException.Transport -> {
                 buf.putInt(1)
-                FfiConverterString.write(value.`message`, buf)
+                FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
             is DriveException.Cancelled -> {

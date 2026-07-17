@@ -1,7 +1,7 @@
-// Kotlin perf baseline. Measures Smix.launchApp + App.tap
-// round-trip against MockSimRuntime + MockSelectorResolver. Output to
-// stdout (capture via `./gradlew :sdk:testDebugUnitTest --tests
-// PerfBaselineTest -i 2>&1 | grep '^perf:'`).
+// Kotlin perf baseline. Measures App.tap round-trip against the
+// in-memory MockDriver / MockSession / MockSelectorResolver seams.
+// Output to stdout (capture via `./gradlew :sdk:testDebugUnitTest
+// --tests PerfBaselineTest -i 2>&1 | grep '^perf:'`).
 //
 // Gated by SMIX_PERF_BENCH=1 env var; skipped in regression suite.
 
@@ -39,17 +39,11 @@ class PerfBaselineTest {
             children = listOf(button),
         )
 
-        suspend fun setupApp(): App {
-            val runtime = MockSimRuntime(snapshotResult = tree)
+        fun setupApp(): App {
             val resolver = MockSelectorResolver().apply {
                 registerHit("""{"id":"btn-x"}""", "btn-x")
             }
-            return Smix.launchApp(
-                AppTarget.BundleId("dev.smix.bench"),
-                runtime,
-                resolver,
-                MockLabelsResolver(),
-            )
+            return mockApp(tree = tree, resolver = resolver)
         }
 
         // Warmup
@@ -77,7 +71,7 @@ class PerfBaselineTest {
         println("perf: # SmixSDK Kotlin perf baseline")
         println("perf: # Date: ${java.time.Instant.now()}")
         println("perf: # Operation: Smix.launchApp + App.tap(Selector.Id)")
-        println("perf: # Backend: MockSimRuntime + MockSelectorResolver (in-memory)")
+        println("perf: # Backend: MockDriver + MockSession + MockSelectorResolver (in-memory)")
         println("perf: # Iterations: $iterations (after $warmup warmup)")
         println("perf: ")
         println("perf: min:    ${"%.3f".format(minV)} ms")

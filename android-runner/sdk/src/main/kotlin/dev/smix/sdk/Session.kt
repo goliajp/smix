@@ -1,181 +1,123 @@
-// Session lifecycle guard for the Kotlin SDK.
+// Driving seam for the Kotlin SDK: `Driver` (sense + session lifecycle)
+// and `Session` (act) interfaces that `App` holds, plus their default
+// UniFFI-backed implementations.
 //
-// A Session is opened against a running smix-runner (via
-// HttpSmixSimRuntime) and drives POST /session/open|close|
-// renew-activation. While open, the runtime carries `Session-Id` on
-// every request so the runner short-circuits per-request activation
-// and reuses the cached UiAutomator binding.
+// App takes a Driver + Session in its constructor; the default impls
+// wrap the UniFFI Kotlin bindings `uniffi.smix.SmixDriver` /
+// `uniffi.smix.SmixSession`. JVM unit tests inject in-memory mocks so
+// they don't trigger JNA initialization (which can't load
+// `libuniffi_smix.so` on host macOS — that .so is Android-only). This
+// mirrors the SelectorResolver seam.
 //
-// Consumer flow:
-//
-//   val runtime = HttpSmixSimRuntime(
-//     baseUrl = "http://127.0.0.1:28080",
-//     bundleId = "com.example.app",
-//   )
-//   val session = Session.open(runtime, activate = true)
-//   try {
-//     val app = Smix.launchApp(AppTarget.BundleId("com.example.app"), runtime)
-//     app.tap(Selector.Id("btn-login"))
-//   } finally {
-//     session.close()
-//   }
+// The FFI methods take a trailing `CancelToken?`; the seam hides it and
+// the default impls pass `null` (mirror the Swift SDK passing
+// `cancel: nil`).
 
 package dev.smix.sdk
 
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
-
 /**
- * Session-scoped sim health classification, observed via the runner's
- * `X-Sim-Health` response header. Subscribe via [Session.stateFlow].
+ * Sensing + session-lifecycle surface: the accessibility tree, opening
+ * a session, and listing the runner's open sessions. Default impl wraps
+ * `uniffi.smix.SmixDriver`.
  */
-enum class SessionState {
-    HEALTHY,
-    DEGRADED,
-    CYCLING,
-    DEAD;
+interface Driver {
+    /** The accessibility tree as JSON — the exact shape the resolver takes. */
+    suspend fun tree(): String
 
-    companion object {
-        fun fromHeader(value: String): SessionState? = when (value.trim().lowercase()) {
-            "healthy" -> HEALTHY
-            "degraded" -> DEGRADED
-            "cycling" -> CYCLING
-            "dead" -> DEAD
-            else -> null
-        }
-    }
+    /** Open a session bound to [bundleId]. */
+    suspend fun openSession(bundleId: String): Session
+
+    /** The sessions the runner currently holds open, as JSON. */
+    suspend fun listSessions(): String
 }
 
 /**
- * Runner-side session guard.
- *
- * A Session corresponds to a single POST /session/open on the runner.
- * While it is open, the associated [HttpSmixSimRuntime] carries the
- * `Session-Id` header on every request, and the runner reuses the
- * session's cached binding — no per-request `.activate()` equivalents.
+ * Acting surface on an open session. Default impl wraps
+ * `uniffi.smix.SmixSession`.
  */
-class Session private constructor(
-    val sessionId: String,
-    val activatedOnce: Boolean,
-    val serverTimeMs: Long,
-    private val runtime: HttpSmixSimRuntime,
-) {
-    // Non-atomic close guard is fine: duplicate POST /session/close is
-    // idempotent on the runner side.
-    private var closed = false
+interface Session {
+    /** The runner's token for this session. */
+    fun id(): String
 
-    private val _stateFlow = MutableStateFlow(SessionState.HEALTHY)
+    /** Launch the session's app. */
+    suspend fun launchApp()
 
     /**
-     * Current sim-health classification. Updated automatically as the
-     * runtime parses `X-Sim-Health` headers.
+     * Tap the element with this accessibility id. Returns whether the
+     * runner found one to tap. This is how the SDK taps: it resolves a
+     * selector to an id and passes it here, so no coordinate crosses the
+     * boundary.
      */
-    val stateFlow: StateFlow<SessionState> get() = _stateFlow.asStateFlow()
+    suspend fun tapById(id: String): Boolean
 
-    /** Current state snapshot. */
-    val state: SessionState get() = _stateFlow.value
+    /** Tap at a normalized coordinate, both in `0.0..1.0`. */
+    suspend fun tapAtNormCoord(nx: Double, ny: Double)
 
-    internal fun updateState(next: SessionState) {
-        _stateFlow.value = next
-    }
+    /** Type into the focused element. */
+    suspend fun inputText(text: String)
 
-    /**
-     * Probe `/session/list` and return `true` iff this session's id is
-     * still known to the runner. Call this after a state transition to
-     * `CYCLING`/`DEAD` to decide whether to keep the session (it is
-     * persisted across `runner cycle`) or open a fresh one.
-     */
-    suspend fun stillValid(): Boolean {
-        check(!closed) { "session already closed" }
-        val obj = runtime.postJsonObject("/session/list", JsonObject(emptyMap()))
-        val arr = obj["sessions"] as? kotlinx.serialization.json.JsonArray ?: return false
-        return arr.any { element ->
-            val entry = element as? JsonObject ?: return@any false
-            entry["sessionId"]?.jsonPrimitive?.content == sessionId
-        }
-    }
+    /** Press a hardware-like key. [key] is a runner name ("return", "arrowUp"). */
+    suspend fun pressKey(key: String)
 
-    /**
-     * Instruct the runner to `terminate()` + `launch()` the session's
-     * cached UiAutomator binding IN PLACE, preserving this session id.
-     * Returns wall-clock milliseconds the cycle took.
-     */
-    suspend fun relaunchApp(): Long {
-        check(!closed) { "session already closed" }
-        val body = JsonObject(mapOf("sessionId" to JsonPrimitive(sessionId)))
-        val obj = runtime.postJsonObject("/session/relaunch-app", body)
-        return obj["wallMs"]?.jsonPrimitive?.longOrNull ?: 0L
-    }
+    /** Swipe so the named direction of content comes into view. */
+    suspend fun swipeOnce(direction: String)
 
-    /**
-     * Ask the runner to re-issue `.activate()` on the session's cached
-     * binding. Subject to a 2s per-session rate limit; when rate-
-     * limited, returns false (no-op, session still healthy).
-     */
-    suspend fun renewActivation(): Boolean {
-        check(!closed) { "session already closed" }
-        val body = JsonObject(mapOf("sessionId" to JsonPrimitive(sessionId)))
-        val obj = runtime.postJsonObject("/session/renew-activation", body)
-        return obj["activated"]?.jsonPrimitive?.booleanOrNull ?: false
-    }
+    /** System alerts / permission dialogs currently on screen, as JSON. */
+    suspend fun systemPopups(): String
 
-    /**
-     * Release the session — sends POST /session/close (idempotent),
-     * clears the `Session-Id` header from the runtime. Subsequent
-     * runtime requests fall through to the legacy per-request rebind
-     * path (rate-limited to 1 activate / 5s / bundle-id).
-     */
-    suspend fun close() {
-        if (closed) {
-            return
-        }
-        closed = true
-        try {
-            val body = JsonObject(mapOf("sessionId" to JsonPrimitive(sessionId)))
-            runtime.postVoid("/session/close", body)
-        } finally {
-            // Clear the client-side header regardless of runner outcome.
-            runtime.setSessionId(null)
-        }
-    }
+    /** Terminate the session's app. */
+    suspend fun terminateApp()
 
-    companion object {
-        /**
-         * Open a session against the runtime's runner. When
-         * [activate] is true, the runner calls `.activate()` on the
-         * target once at open time; when false, the runner opens a
-         * passive binding suitable when the caller has already ensured
-         * foreground state.
-         *
-         * The returned [sessionId] is stashed on the [runtime]; every
-         * subsequent request from that runtime carries the
-         * `Session-Id` header.
-         */
-        suspend fun open(
-            runtime: HttpSmixSimRuntime,
-            activate: Boolean = false,
-        ): Session {
-            val body = JsonObject(mapOf(
-                "bundleId" to JsonPrimitive(runtime.bundleId),
-                "activate" to JsonPrimitive(activate),
-            ))
-            val obj = runtime.postJsonObject("/session/open", body)
-            val sid = obj["sessionId"]?.jsonPrimitive?.content
-                ?: error("smix runner /session/open: missing sessionId field")
-            val activatedOnce = obj["activatedOnce"]?.jsonPrimitive?.booleanOrNull ?: false
-            val serverTimeMs = obj["serverTimeMs"]?.jsonPrimitive?.longOrNull ?: 0L
-            runtime.setSessionId(sid)
-            val session = Session(sid, activatedOnce, serverTimeMs, runtime)
-            // Wire the runtime's X-Sim-Health parse into this
-            // session's state machine.
-            runtime.attachSessionStateSetter { next -> session.updateState(next) }
-            return session
-        }
-    }
+    /** Relaunch the session's app in place. */
+    suspend fun relaunchApp()
+
+    /** Renew the session's activation so the app stays foregrounded. */
+    suspend fun renewActivation()
+
+    /** Close the session, releasing the runner's cached binding (idempotent). */
+    suspend fun close()
+}
+
+/**
+ * Default [Driver] — UniFFI-backed, pointing at a runner on [port] of
+ * this machine. Constructing this loads the UniFFI binding, so it is
+ * built only by [Smix.launchApp] on-device; host unit tests inject a
+ * mock instead.
+ */
+internal class FfiDriver(port: UShort) : Driver {
+    private val inner = uniffi.smix.SmixDriver(port)
+
+    override suspend fun tree(): String = inner.tree(null)
+
+    override suspend fun openSession(bundleId: String): Session =
+        FfiSession(inner.openSession(bundleId, null))
+
+    override suspend fun listSessions(): String = inner.listSessions(null)
+}
+
+/** Default [Session] — UniFFI-backed, wrapping an `uniffi.smix.SmixSession`. */
+internal class FfiSession(private val inner: uniffi.smix.SmixSession) : Session {
+    override fun id(): String = inner.id()
+
+    override suspend fun launchApp() = inner.launchApp(null)
+
+    override suspend fun tapById(id: String): Boolean = inner.tapById(id, null)
+
+    override suspend fun tapAtNormCoord(nx: Double, ny: Double) = inner.tapAtNormCoord(nx, ny, null)
+
+    override suspend fun inputText(text: String) = inner.inputText(text, null)
+
+    override suspend fun pressKey(key: String) = inner.pressKey(key, null)
+
+    override suspend fun swipeOnce(direction: String) = inner.swipeOnce(direction, null)
+
+    override suspend fun systemPopups(): String = inner.systemPopups(null)
+
+    override suspend fun terminateApp() = inner.terminateApp(null)
+
+    override suspend fun relaunchApp() = inner.relaunchApp(null)
+
+    override suspend fun renewActivation() = inner.renewActivation(null)
+
+    override suspend fun close() = inner.close(null)
 }

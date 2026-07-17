@@ -171,7 +171,7 @@ class MvpApiShapeTest {
     }
 
     // No stubbed surface remains — every act/sense method is wired
-    // through SmixSimRuntime. Behavioural coverage lives in the
-    // mock-based suites: AppTapMockTest, LocatorMockTest,
-    // AppActSenseExtMockTest, LocatorToHaveMockTest.
+    // through the FFI driving seam (Driver / Session). Behavioural
+    // coverage lives in the seam-injected suites: AppTapMockTest,
+    // LocatorMockTest, AppActSenseExtMockTest, LocatorToHaveMockTest.
 }

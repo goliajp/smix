@@ -93,7 +93,7 @@ class Locator internal constructor(
         var lastCount = 0
         var lastTree: A11yNode? = null
         while (true) {
-            val tree = app.runtime.snapshotTree()
+            val tree = app.runtimeSnapshot()
             lastTree = tree
             val labels = try {
                 app.labelsResolver.resolve(encodeTreeJson(tree), encodeSelectorJson(selector))
@@ -143,7 +143,7 @@ class Locator internal constructor(
         var lastTree: A11yNode? = null
 
         while (true) {
-            val tree = app.runtime.snapshotTree()
+            val tree = app.runtimeSnapshot()
             lastTree = tree
             val selectorJson = encodeSelectorJson(selector)
             val matches: List<String> = try {
