@@ -47,6 +47,12 @@ async fn real_sim_device_detail_end_to_end_pass() {
         app = app.with_udid(u);
     }
 
+    // iOS driving requires a live runner session (v2 break #1); bind one
+    // to the target bundle before any sense/act call.
+    app.open_session_in_place(&bundle_id, true)
+        .await
+        .expect("open session");
+
     app.foreground(&bundle_id).await.expect("foreground app");
 
     let flow = parse_flow_file(&flow_path).expect("parse flow yaml");

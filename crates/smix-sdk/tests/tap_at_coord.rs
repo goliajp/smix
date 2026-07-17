@@ -8,7 +8,9 @@ use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn mk_app_for(server: &MockServer) -> App {
-    let runner = HttpRunnerClient::with_base(server.uri());
+    let mut runner = HttpRunnerClient::with_base(server.uri());
+    // iOS driving requires a live session (v2 break #1).
+    runner.set_session_id("test-session");
     let driver = SimctlDriver::new(runner);
     App::new(driver, SimctlClient::new())
 }

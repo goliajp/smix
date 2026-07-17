@@ -228,13 +228,19 @@ impl SmixMcpService {
         ))]))
     }
 
-    #[tool(description = "Launch an app by bundle id, or bring it to the front if it is running.")]
+    #[tool(description = "Launch an app by bundle id, or bring it to the front if it is running. Opens the runner session the other tools drive through — call this before smix_describe / smix_tap / etc.")]
     async fn smix_launch_app(
         &self,
         Parameters(params): Parameters<BundleParams>,
     ) -> Result<CallToolResult, McpError> {
-        let app = self.app.lock().await;
+        let mut app = self.app.lock().await;
         app.launch(&params.bundle_id)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        // iOS driving requires a live runner session (v2 break #1). Bind
+        // one to the launched bundle so the sense/act tools below drive
+        // through it instead of the removed legacy per-request path.
+        app.open_session_in_place(&params.bundle_id, true)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
         Ok(CallToolResult::success(vec![Content::text(format!(
@@ -372,11 +378,13 @@ impl ServerHandler for SmixMcpService {
         // smix_tap_text until those tools were generalized away — an
         // introduction advertising tools that no longer exist.
         info.instructions = Some(
-            "smix drives an iOS Simulator. Call smix_describe first to see what is on \
-             screen and learn the element ids, then smix_tap / smix_fill / smix_press_key \
-             to interact and smix_assert_visible to check. Name elements with exactly one \
-             of id / text / label / role / ocrText — prefer id, which survives copy edits \
-             and translation. Failures come back with near-miss suggestions and the \
+            "smix drives an iOS Simulator. Call smix_launch_app first — it brings the \
+             app to the front and opens the runner session the other tools drive \
+             through. Then smix_describe to see what is on screen and learn the element \
+             ids, smix_tap / smix_fill / smix_press_key to interact, and \
+             smix_assert_visible to check. Name elements with exactly one of id / text / \
+             label / role / ocrText — prefer id, which survives copy edits and \
+             translation. Failures come back with near-miss suggestions and the \
              elements that were on screen; read them rather than guessing again. \
              SMIX_UDID binds this server to one simulator; SMIX_RUNNER_PORT (default \
              22087) finds its runner."

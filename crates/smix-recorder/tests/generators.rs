@@ -151,6 +151,8 @@ fn rust_emits_use_statements_and_tokio_test_attr() {
     assert!(rs.contains("#[tokio::test"));
     assert!(rs.contains("async fn login_flow()"));
     assert!(rs.contains("app.launch(\"com.example.app\")"));
+    assert!(rs.contains("app.open_session(\"com.example.app\", true)"));
+    assert!(rs.contains("let app = session.app();"));
 }
 
 #[test]
