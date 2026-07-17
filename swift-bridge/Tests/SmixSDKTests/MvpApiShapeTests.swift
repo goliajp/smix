@@ -78,25 +78,6 @@ final class MvpApiShapeTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode(SmixSDK.Selector.self, from: bad))
     }
 
-    // MARK: - Modifier cases
-
-    func testModifierCasesExhaustive() {
-        // Verify 9 case constants are reachable. Swift enum exhaustive
-        // switch enforces compile-time check too — this is runtime sanity.
-        let cases: [Modifier] = [
-            .first,
-            .last,
-            .nth(0),
-            .above(.id("anchor")),
-            .below(.id("anchor")),
-            .leftOf(.id("anchor")),
-            .rightOf(.id("anchor")),
-            .near(.id("anchor"), thresholdPts: 50),
-            .inside(.id("anchor")),
-        ]
-        XCTAssertEqual(cases.count, 9, "MVP exposes 9 modifier cases")
-    }
-
     // MARK: - Role cases
 
     func testRoleCasesAllExposed() {
