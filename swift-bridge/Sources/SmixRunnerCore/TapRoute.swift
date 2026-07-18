@@ -90,6 +90,14 @@ public enum TapRoute {
     return TapRequest(selector: .init(text: text), mode: mode)
   }
 
+  // The body shape is the Rust `smix_runner_wire::TapResult` contract:
+  // top-level camelCase fields, `Rect` always emitted with all four of
+  // x/y/w/h. The previous emission nested frame/appFrame under a
+  // "matched" object and wrote stages keys in snake_case; every
+  // `#[serde(default)]` on the Rust side made that parse "successfully"
+  // to all-None/zero, so the drift was invisible until probed. The shape
+  // here is now asserted against the Rust crate by
+  // crates/smix-runner-wire/tests/tap_route_shape.rs.
   public static func success(
     matchedLabel: String,
     stages: TapStages? = nil,
@@ -97,36 +105,35 @@ public enum TapRoute {
     appFrame: CGRect? = nil
   ) -> HTTPResponse {
     let label = jsonEscape(matchedLabel)
-    var matchedFields = #""label":"\#(label)""#
+    var fields = #""ok":true,"matchedLabel":"\#(label)""#
     if let f = frame {
-      let x = String(format: "%.2f", f.origin.x)
-      let y = String(format: "%.2f", f.origin.y)
-      let w = String(format: "%.2f", f.size.width)
-      let h = String(format: "%.2f", f.size.height)
-      matchedFields += #","frame":{"x":\#(x),"y":\#(y),"w":\#(w),"h":\#(h)}"#
+      fields += #","frame":\#(rectJson(f))"#
     }
     if let af = appFrame {
-      let w = String(format: "%.2f", af.size.width)
-      let h = String(format: "%.2f", af.size.height)
-      matchedFields += #","appFrame":{"w":\#(w),"h":\#(h)}"#
+      fields += #","appFrame":\#(rectJson(af))"#
     }
-    let body: Data
     if let s = stages {
       let r = String(format: "%.1f", s.resolveMs)
       let t = String(format: "%.1f", s.tapCallMs)
       let n = String(format: "%.1f", s.totalMs)
-      var stagesFields = #""resolve_ms":\#(r),"tap_call_ms":\#(t),"total_ms":\#(n)"#
+      var stagesFields = #""resolveMs":\#(r),"tapCallMs":\#(t),"totalMs":\#(n)"#
       if let w = s.waitExistenceMs {
-        stagesFields += #","wait_existence_ms":\#(String(format: "%.1f", w))"#
+        stagesFields += #","waitExistenceMs":\#(String(format: "%.1f", w))"#
       }
       if let f = s.frameReadMs {
-        stagesFields += #","frame_read_ms":\#(String(format: "%.1f", f))"#
+        stagesFields += #","frameReadMs":\#(String(format: "%.1f", f))"#
       }
-      body = Data(#"{"ok":true,"matched":{\#(matchedFields)},"stages":{\#(stagesFields)}}"#.utf8)
-    } else {
-      body = Data(#"{"ok":true,"matched":{\#(matchedFields)}}"#.utf8)
+      fields += #","stages":{\#(stagesFields)}"#
     }
-    return envelope(.ok, body)
+    return envelope(.ok, Data("{\(fields)}".utf8))
+  }
+
+  private static func rectJson(_ r: CGRect) -> String {
+    let x = String(format: "%.2f", r.origin.x)
+    let y = String(format: "%.2f", r.origin.y)
+    let w = String(format: "%.2f", r.size.width)
+    let h = String(format: "%.2f", r.size.height)
+    return #"{"x":\#(x),"y":\#(y),"w":\#(w),"h":\#(h)}"#
   }
 
   public static func notFound(selector: TapRequest.Selector) -> HTTPResponse {

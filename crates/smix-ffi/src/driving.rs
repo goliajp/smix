@@ -14,9 +14,9 @@
 
 use std::sync::Arc;
 
+use smix_input::{KeyName, SwipeDirection};
 use smix_runner_client::HttpRunnerClient;
 use smix_runner_client::{SessionAppLifecycleRequest, SessionOpenRequest};
-use smix_input::{KeyName, SwipeDirection};
 use tokio_util::sync::CancellationToken;
 
 /// What can go wrong driving the runner.
@@ -103,7 +103,10 @@ where
 
 /// Parse a wire enum from the name the SDK sent, using serde's own
 /// camelCase contract so there is no second copy of the mapping to drift.
-fn parse_wire_enum<T: serde::de::DeserializeOwned>(name: &str, what: &str) -> Result<T, DriveError> {
+fn parse_wire_enum<T: serde::de::DeserializeOwned>(
+    name: &str,
+    what: &str,
+) -> Result<T, DriveError> {
     serde_json::from_value(serde_json::Value::String(name.to_string())).map_err(|_| {
         DriveError::Transport {
             detail: format!("unknown {what}: {name:?}"),

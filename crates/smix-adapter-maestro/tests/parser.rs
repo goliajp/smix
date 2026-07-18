@@ -326,7 +326,9 @@ fn localized_text_basic_3_locale_table() {
     let flow = parse_flow_yaml(yaml).expect("parse ok");
     assert_eq!(flow.steps.len(), 1);
     match &flow.steps[0] {
-        Step::TapOn { selector, optional, .. } => {
+        Step::TapOn {
+            selector, optional, ..
+        } => {
             assert!(!optional);
             match selector {
                 Selector::LocalizedText {
@@ -414,7 +416,9 @@ fn localized_text_with_optional_flag() {
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse ok");
     match &flow.steps[0] {
-        Step::TapOn { selector, optional, .. } => {
+        Step::TapOn {
+            selector, optional, ..
+        } => {
             assert!(optional);
             match selector {
                 Selector::LocalizedText { localized_text, .. } => {
@@ -440,7 +444,9 @@ fn ocr_text_short_form_string() {
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse ok");
     match &flow.steps[0] {
-        Step::TapOn { selector, optional, .. } => {
+        Step::TapOn {
+            selector, optional, ..
+        } => {
             assert!(!optional);
             match selector {
                 Selector::OcrText {
@@ -560,7 +566,9 @@ fn anchored_basic_id_anchor() {
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse ok");
     match &flow.steps[0] {
-        Step::TapOn { selector, optional, .. } => {
+        Step::TapOn {
+            selector, optional, ..
+        } => {
             assert!(!optional);
             match selector {
                 Selector::AnchorRelative { anchor, dx, dy } => {
@@ -1073,7 +1081,10 @@ fn parse_clear_app_data_bare_yields_empty_options() {
     let yaml = "appId: com.test.app\n---\n- clearAppData\n";
     let flow = parse_flow_yaml(yaml).expect("parse bare clearAppData");
     match &flow.steps[0] {
-        Step::ClearAppData { launch_args, launch_env } => {
+        Step::ClearAppData {
+            launch_args,
+            launch_env,
+        } => {
             assert!(launch_args.is_empty());
             assert!(launch_env.is_empty());
         }
@@ -1094,10 +1105,18 @@ fn parse_clear_app_data_with_launch_args_and_env() {
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse clearAppData with args + env");
     match &flow.steps[0] {
-        Step::ClearAppData { launch_args, launch_env } => {
-            assert_eq!(launch_args, &vec!["-EXInternalMetroPort".to_string(), "8081".to_string()]);
+        Step::ClearAppData {
+            launch_args,
+            launch_env,
+        } => {
             assert_eq!(
-                launch_env.get("EX_DEV_CLIENT_METRO_URL").map(String::as_str),
+                launch_args,
+                &vec!["-EXInternalMetroPort".to_string(), "8081".to_string()]
+            );
+            assert_eq!(
+                launch_env
+                    .get("EX_DEV_CLIENT_METRO_URL")
+                    .map(String::as_str),
                 Some("http://localhost:8081")
             );
         }
@@ -1118,7 +1137,10 @@ fn parse_clear_app_data_accepts_short_args_and_env_aliases() {
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse clearAppData short form");
     match &flow.steps[0] {
-        Step::ClearAppData { launch_args, launch_env } => {
+        Step::ClearAppData {
+            launch_args,
+            launch_env,
+        } => {
             assert_eq!(launch_args, &vec!["-Foo".to_string()]);
             assert_eq!(launch_env.get("BAR").map(String::as_str), Some("baz"));
         }
@@ -1133,7 +1155,11 @@ fn parse_reset_app_data_short_form_url_string() {
     let yaml = "appId: com.test.app\n---\n- resetAppData: 'myapp://dev-mutate?action=reset'\n";
     let flow = parse_flow_yaml(yaml).expect("parse short-form resetAppData");
     match &flow.steps[0] {
-        Step::ResetAppData { url, wait_for, timeout_ms } => {
+        Step::ResetAppData {
+            url,
+            wait_for,
+            timeout_ms,
+        } => {
             assert_eq!(url, "myapp://dev-mutate?action=reset");
             assert!(wait_for.is_none());
             assert_eq!(*timeout_ms, 5000);
@@ -1156,7 +1182,11 @@ fn parse_reset_app_data_map_form_with_log_line_pattern() {
 "#;
     let flow = parse_flow_yaml(yaml).expect("parse map-form resetAppData");
     match &flow.steps[0] {
-        Step::ResetAppData { url, wait_for, timeout_ms } => {
+        Step::ResetAppData {
+            url,
+            wait_for,
+            timeout_ms,
+        } => {
             assert_eq!(url, "myapp://dev-mutate?action=reset");
             assert_eq!(*timeout_ms, 7000);
             match wait_for {
@@ -1249,7 +1279,12 @@ appId: com.test.app
     let flow = parse_flow_yaml(yaml).expect("visible:{role,name} must parse");
     match &flow.steps[0] {
         Step::ExtendedWaitUntil {
-            selector: Selector::Role { role, name: Some(Pattern::Text(t)), .. },
+            selector:
+                Selector::Role {
+                    role,
+                    name: Some(Pattern::Text(t)),
+                    ..
+                },
             timeout_ms: 5000,
             expect_visible: true,
         } => {
@@ -1288,7 +1323,12 @@ fn parse_tap_on_role_name() {
     let flow = parse_flow_yaml(yaml).expect("tapOn:{role,name} must parse");
     match &flow.steps[0] {
         Step::TapOn {
-            selector: Selector::Role { role, name: Some(Pattern::Text(t)), .. },
+            selector:
+                Selector::Role {
+                    role,
+                    name: Some(Pattern::Text(t)),
+                    ..
+                },
             ..
         } => {
             assert_eq!(*role, Role::Button);
@@ -1306,7 +1346,9 @@ fn parse_tap_on_role_lowercase_alias() {
     let flow = parse_flow_yaml(yaml).expect("lowercase `textfield` must alias to TextField");
     match &flow.steps[0] {
         Step::TapOn {
-            selector: Selector::Role { role, name: None, .. },
+            selector: Selector::Role {
+                role, name: None, ..
+            },
             ..
         } => assert_eq!(*role, Role::TextField),
         other => panic!("expected TapOn with Role::TextField, got: {other:?}"),
@@ -1319,7 +1361,10 @@ fn parse_tap_on_role_unknown_errors_actionably() {
     let err = parse_flow_yaml(yaml).expect_err("unknown role must error");
     let msg = format!("{err:?}");
     assert!(msg.contains("unknown role"), "err={msg}");
-    assert!(msg.contains("button"), "err message must list accepted roles: {msg}");
+    assert!(
+        msg.contains("button"),
+        "err message must list accepted roles: {msg}"
+    );
 }
 
 #[test]
@@ -1370,7 +1415,11 @@ appId: com.test.app
         let flow = parse_flow_yaml(yaml).expect("bare-string default parse");
         match &flow.steps[0] {
             Step::ExtendedWaitUntil {
-                selector: Selector::Text { text: Pattern::Text(t), .. },
+                selector:
+                    Selector::Text {
+                        text: Pattern::Text(t),
+                        ..
+                    },
                 ..
             } => assert_eq!(t, "Log in"),
             other => panic!("expected Text selector without env, got {other:?}"),
@@ -1396,11 +1445,16 @@ appId: com.test.app
             } => {
                 assert_eq!(fallback.len(), 2, "expected 2-layer fallback");
                 match &fallback[0] {
-                    Selector::Text { text: Pattern::Text(t), .. } => assert_eq!(t, "Log in"),
+                    Selector::Text {
+                        text: Pattern::Text(t),
+                        ..
+                    } => assert_eq!(t, "Log in"),
                     other => panic!("layer 0 should be Text, got {other:?}"),
                 }
                 match &fallback[1] {
-                    Selector::OcrText { ocr_text, locales, .. } => {
+                    Selector::OcrText {
+                        ocr_text, locales, ..
+                    } => {
                         assert_eq!(ocr_text, "Log in");
                         assert!(locales.is_empty());
                     }
@@ -1425,7 +1479,10 @@ appId: com.test.app
         let flow = parse_flow_yaml(yaml).expect("bare parse with env=true");
         assert!(matches!(
             &flow.steps[0],
-            Step::ExtendedWaitUntil { selector: Selector::Fallback { .. }, .. }
+            Step::ExtendedWaitUntil {
+                selector: Selector::Fallback { .. },
+                ..
+            }
         ));
     });
 }
@@ -1444,7 +1501,10 @@ appId: com.test.app
         let flow = parse_flow_yaml(yaml).expect("parse");
         assert!(matches!(
             &flow.steps[0],
-            Step::ExtendedWaitUntil { selector: Selector::Text { .. }, .. }
+            Step::ExtendedWaitUntil {
+                selector: Selector::Text { .. },
+                ..
+            }
         ));
     });
 }
@@ -1470,7 +1530,10 @@ fn parse_run_flow_conditional_when_not_visible() {
         } => {
             assert!(file.ends_with("enter-qa.yaml"));
             match sel {
-                Selector::Text { text: Pattern::Text(t), .. } => assert_eq!(t, "qa-bubble"),
+                Selector::Text {
+                    text: Pattern::Text(t),
+                    ..
+                } => assert_eq!(t, "qa-bubble"),
                 other => panic!("expected Text selector, got {other:?}"),
             }
         }
@@ -1517,7 +1580,10 @@ fn parse_run_flow_when_visible_and_not_visible_together_rejects() {
     );
     let err = parse_flow_yaml(yaml).expect_err("both visible + notVisible must error");
     let msg = format!("{err:?}");
-    assert!(msg.contains("mutually exclusive"), "err msg should say mutually exclusive: {msg}");
+    assert!(
+        msg.contains("mutually exclusive"),
+        "err msg should say mutually exclusive: {msg}"
+    );
 }
 
 // Regex-OR `A|B` auto-lift splits per alternative on OCR tier.
@@ -1539,9 +1605,17 @@ appId: com.test.app
                 ..
             } => {
                 // Expected: [Text(regex A|B), OcrText(A), OcrText(B)]
-                assert_eq!(fallback.len(), 3, "expected 3 tiers, got {}", fallback.len());
+                assert_eq!(
+                    fallback.len(),
+                    3,
+                    "expected 3 tiers, got {}",
+                    fallback.len()
+                );
                 match &fallback[0] {
-                    Selector::Text { text: Pattern::Regex { regex, .. }, .. } => {
+                    Selector::Text {
+                        text: Pattern::Regex { regex, .. },
+                        ..
+                    } => {
                         assert_eq!(regex, "Log in|Device");
                     }
                     other => panic!("tier 0 should be Text regex, got {other:?}"),
@@ -1579,7 +1653,10 @@ appId: com.test.app
             } => {
                 assert_eq!(fallback.len(), 2);
                 match &fallback[0] {
-                    Selector::Text { text: Pattern::Text(t), .. } => assert_eq!(t, "Sign In"),
+                    Selector::Text {
+                        text: Pattern::Text(t),
+                        ..
+                    } => assert_eq!(t, "Sign In"),
                     other => panic!("tier 0 should be Text literal, got {other:?}"),
                 }
                 match &fallback[1] {
@@ -1610,10 +1687,13 @@ appId: com.test.app
             } => {
                 // [Text(regex A|B|C), OcrText(A), OcrText(B), OcrText(C)]
                 assert_eq!(fallback.len(), 4);
-                let ocrs: Vec<&str> = fallback[1..].iter().map(|s| match s {
-                    Selector::OcrText { ocr_text, .. } => ocr_text.as_str(),
-                    _ => panic!("expected OcrText"),
-                }).collect();
+                let ocrs: Vec<&str> = fallback[1..]
+                    .iter()
+                    .map(|s| match s {
+                        Selector::OcrText { ocr_text, .. } => ocr_text.as_str(),
+                        _ => panic!("expected OcrText"),
+                    })
+                    .collect();
                 assert_eq!(ocrs, vec!["A", "B", "C"]);
             }
             other => panic!("expected Fallback, got {other:?}"),
@@ -1667,7 +1747,10 @@ fn parse_wait_for_animation_to_end_map_missing_timeout_rejects() {
     let yaml = "appId: com.test.app\n---\n- waitForAnimationToEnd:\n    seconds: 5\n";
     let err = parse_flow_yaml(yaml).expect_err("map without `timeout` key must error");
     let msg = format!("{err:?}");
-    assert!(msg.contains("timeout"), "err should name the expected key: {msg}");
+    assert!(
+        msg.contains("timeout"),
+        "err should name the expected key: {msg}"
+    );
 }
 
 // `tapOn: { dispatch: xcui | daemonProxy }` explicit
@@ -1694,7 +1777,10 @@ fn parse_tap_on_dispatch_daemon_proxy() {
     let flow = parse_flow_yaml(yaml).expect("dispatch: daemonProxy must parse");
     assert!(matches!(
         &flow.steps[0],
-        Step::TapOn { dispatch: Some(smix_adapter_maestro::TapDispatch::DaemonProxy), .. }
+        Step::TapOn {
+            dispatch: Some(smix_adapter_maestro::TapDispatch::DaemonProxy),
+            ..
+        }
     ));
 }
 
@@ -1703,7 +1789,10 @@ fn parse_tap_on_dispatch_unknown_rejects() {
     let yaml = "appId: com.t\n---\n- tapOn:\n    id: 'x'\n    dispatch: warp\n";
     let err = parse_flow_yaml(yaml).expect_err("unknown dispatch must error");
     let msg = format!("{err:?}");
-    assert!(msg.contains("xcui") && msg.contains("daemonProxy"), "err lists accepted: {msg}");
+    assert!(
+        msg.contains("xcui") && msg.contains("daemonProxy"),
+        "err lists accepted: {msg}"
+    );
 }
 
 #[test]
@@ -1752,7 +1841,10 @@ appId: com.t
 ";
     let flow = parse_flow_yaml(yaml).expect("clearUserDefaults must parse");
     match &flow.steps[0] {
-        Step::ClearUserDefaults { keys, bundle_id: None } => {
+        Step::ClearUserDefaults {
+            keys,
+            bundle_id: None,
+        } => {
             assert_eq!(keys.len(), 2);
             assert_eq!(keys[0], "expo.devlauncher.pendingDeepLink");
         }
@@ -1771,7 +1863,9 @@ appId: com.t
 ";
     let flow = parse_flow_yaml(yaml).expect("parse with bundleId");
     match &flow.steps[0] {
-        Step::ClearUserDefaults { bundle_id: Some(b), .. } => assert_eq!(b, "com.other.app"),
+        Step::ClearUserDefaults {
+            bundle_id: Some(b), ..
+        } => assert_eq!(b, "com.other.app"),
         other => panic!("expected bundle override, got: {other:?}"),
     }
 }
@@ -1780,12 +1874,18 @@ appId: com.t
 fn parse_clear_user_defaults_empty_keys_rejects() {
     let yaml = "appId: com.t\n---\n- clearUserDefaults:\n    keys: []\n";
     let err = parse_flow_yaml(yaml).expect_err("empty keys must error");
-    assert!(format!("{err:?}").contains("keys"), "err names keys: {err:?}");
+    assert!(
+        format!("{err:?}").contains("keys"),
+        "err names keys: {err:?}"
+    );
 }
 
 #[test]
 fn parse_clear_user_defaults_missing_keys_rejects() {
     let yaml = "appId: com.t\n---\n- clearUserDefaults:\n    bundleId: 'x'\n";
     let err = parse_flow_yaml(yaml).expect_err("missing keys must error");
-    assert!(format!("{err:?}").contains("keys"), "err names keys: {err:?}");
+    assert!(
+        format!("{err:?}").contains("keys"),
+        "err names keys: {err:?}"
+    );
 }

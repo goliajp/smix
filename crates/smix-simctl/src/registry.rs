@@ -6,7 +6,7 @@
 //! given input always resolves to the same device regardless of what
 //! happens to be booted on the machine.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -45,7 +45,7 @@ pub enum RegistryError {
 }
 
 /// One registered simulator (a row of `.smix/sims.json`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisteredSim {
     /// Human-chosen device name (also usable as an alias).
     #[serde(rename = "deviceName")]
@@ -62,7 +62,7 @@ pub struct RegisteredSim {
     /// `defaults write -g AppleLanguages + AppleLocale` and reboots the
     /// sim if the current locale differs. `None` (field absent) =
     /// honor whatever locale the sim boots with, no enforcement.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
     /// Desired runner port (SmixRunner FlyingFox HTTP port). When set,
     /// `smix runner up <alias>` binds the runner to this port instead
@@ -71,15 +71,27 @@ pub struct RegisteredSim {
     /// (e.g. `sim-a.runnerPort = 22087` + `sim-b.runnerPort = 22088`).
     /// Falls through to `--runner-port` flag or `SMIX_RUNNER_PORT` env
     /// when absent.
-    #[serde(default, rename = "runnerPort")]
+    #[serde(
+        default,
+        rename = "runnerPort",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub runner_port: Option<u16>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct RegistryFile {
-    #[allow(dead_code)]
     version: u32,
     sims: BTreeMap<String, RegisteredSim>,
+}
+
+/// What [`SimRegistry::register`] did with the alias.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegisterOutcome {
+    /// The alias did not exist; a new row was written.
+    Added,
+    /// The alias existed; its row was replaced.
+    Updated,
 }
 
 /// Loaded view of `.smix/sims.json`, keyed by alias.
@@ -115,6 +127,50 @@ pub fn is_udid(s: &str) -> bool {
 }
 
 impl SimRegistry {
+    /// Write `sim` into the registry at `path` under `alias`, creating
+    /// the file (and its `.smix/` directory) when absent. This is the
+    /// bootstrap for a fresh checkout: every alias-form device ref fails
+    /// until a registry exists, and nothing else creates one.
+    pub fn register(
+        path: &Path,
+        alias: &str,
+        sim: RegisteredSim,
+    ) -> Result<RegisterOutcome, RegistryError> {
+        let mut file = if path.is_file() {
+            let text = std::fs::read_to_string(path).map_err(|source| RegistryError::Io {
+                path: path.display().to_string(),
+                source,
+            })?;
+            serde_json::from_str(&text).map_err(|e| RegistryError::Malformed {
+                path: path.display().to_string(),
+                detail: e.to_string(),
+            })?
+        } else {
+            RegistryFile {
+                version: 1,
+                sims: BTreeMap::new(),
+            }
+        };
+        let outcome = if file.sims.insert(alias.to_string(), sim).is_some() {
+            RegisterOutcome::Updated
+        } else {
+            RegisterOutcome::Added
+        };
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|source| RegistryError::Io {
+                path: dir.display().to_string(),
+                source,
+            })?;
+        }
+        let mut text = serde_json::to_string_pretty(&file).expect("registry serializes");
+        text.push('\n');
+        std::fs::write(path, text).map_err(|source| RegistryError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+        Ok(outcome)
+    }
+
     /// Parse the registry file at `path`.
     pub fn load(path: &Path) -> Result<Self, RegistryError> {
         let text = std::fs::read_to_string(path).map_err(|source| RegistryError::Io {

@@ -68,13 +68,25 @@ fn login_tree() -> A11yNode {
 
 #[test]
 fn ergonomic_factories_build_correct_selector_variants() {
-    let _: smix_sdk::Selector = text("Login");
-    let _: smix_sdk::Selector = text_regex("^Lo");
-    let _: smix_sdk::Selector = id("btn-x");
-    let _: smix_sdk::Selector = label("Settings");
-    let _: smix_sdk::Selector = role(Role::Button);
-    let _: smix_sdk::Selector = role_named(Role::Button, "Submit");
-    let _: smix_sdk::Selector = focused();
+    // Asserted by the wire JSON each factory encodes to — the previous
+    // version was seven `let _:` bindings, i.e. a compile check wearing
+    // a test's name.
+    let cases: &[(smix_sdk::Selector, serde_json::Value)] = &[
+        (text("Login"), serde_json::json!({"text": "Login"})),
+        (id("btn-x"), serde_json::json!({"id": "btn-x"})),
+        (label("Settings"), serde_json::json!({"label": "Settings"})),
+        (role(Role::Button), serde_json::json!({"role": "button"})),
+        (
+            role_named(Role::Button, "Submit"),
+            serde_json::json!({"role": "button", "name": "Submit"}),
+        ),
+        (focused(), serde_json::json!({"focused": true})),
+    ];
+    for (sel, wire) in cases {
+        assert_eq!(&serde_json::to_value(sel).expect("encodes"), wire);
+    }
+    let regex_wire = serde_json::to_value(text_regex("^Lo")).expect("encodes");
+    assert_eq!(regex_wire["text"]["regex"], "^Lo");
 }
 
 // ---- App.tree / find_one / find ----------------------------------------
@@ -112,7 +124,7 @@ async fn app_find_quick_probe() {
     Mock::given(method("POST"))
         .and(path("/find"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "exists": true
+            "ok": true, "found": true
         })))
         .mount(&server)
         .await;

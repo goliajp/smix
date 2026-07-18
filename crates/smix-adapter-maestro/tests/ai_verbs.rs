@@ -77,9 +77,10 @@ fn ai_verbs_are_refused_without_opt_in() {
 #[test]
 fn extract_with_ai_is_refused_without_opt_in() {
     let _gate = AiGate::off();
-    let err =
-        parse_flow_yaml(&flow("- extractWithAI:\n    into: order\n    fields: ['total']\n"))
-            .unwrap_err();
+    let err = parse_flow_yaml(&flow(
+        "- extractWithAI:\n    into: order\n    fields: ['total']\n",
+    ))
+    .unwrap_err();
     assert!(err.to_string().contains("extractWithAI"));
 }
 
@@ -88,7 +89,10 @@ fn extract_with_ai_requires_into_and_fields() {
     let _gate = AiGate::on();
     let err = parse_flow_yaml(&flow("- extractWithAI:\n    fields: ['total']\n")).unwrap_err();
     assert!(
-        matches!(err, ParseError::MissingField(_) | ParseError::InvalidValue { .. }),
+        matches!(
+            err,
+            ParseError::MissingField(_) | ParseError::InvalidValue { .. }
+        ),
         "missing `into` should be a field error, got: {err:?}"
     );
 }

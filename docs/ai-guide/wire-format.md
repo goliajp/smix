@@ -28,8 +28,24 @@ Every route accepts these OPTIONAL headers; absent = default behavior
 
 ### `POST /tap`
 
-Body: `{ selector: Selector, include?: IncludeScope }`
-Response: `{ ok: bool, tapped: bool }` on success; standard error envelope on failure.
+Body: `{ selector: { text: string }, mode?: "resolve" | "resolveAndTap" | "daemonProxySynthesize" }`
+(scope via `?include=` query, same mechanism as `GET /tree`; `mode` defaults to `resolveAndTap`)
+
+Response on success (`TapResult` in `smix-runner-wire`; all fields beyond `ok` optional):
+
+```json
+{
+  "ok": true,
+  "matchedLabel": "Sign In",
+  "frame":    { "x": 20.0, "y": 118.5, "w": 353.0, "h": 44.0 },
+  "appFrame": { "x": 0.0,  "y": 0.0,   "w": 393.0, "h": 852.0 },
+  "stages":   { "resolveMs": 12.5, "tapCallMs": 870.0, "totalMs": 882.5 }
+}
+```
+
+`frame`/`appFrame` are returned by `mode: "resolve"` so the caller can
+inject the tap at the resolved coordinate; `resolveAndTap` performs the
+tap in-process and omits them. Miss → `404 { ok: false, error: "not_found", selector, visible: [] }`.
 
 ### `GET /tree?include=<scope>`
 

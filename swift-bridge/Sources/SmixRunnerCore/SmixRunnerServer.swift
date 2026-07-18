@@ -1792,10 +1792,12 @@ public actor SmixRunnerServer {
           return DoubleTapRoute.badRequest(reason: "\(error)")
         }
         return await Self.contextGuardedResponse(request: request,
-          fallback: DoubleTapRoute.success(ok: false)
+          fallback: DoubleTapRoute.notFound(selectorText: req.selectorText)
         ) {
           let ok = await doubleTapHandler(req.selectorText)
-          return DoubleTapRoute.success(ok: ok)
+          return ok
+            ? DoubleTapRoute.success()
+            : DoubleTapRoute.notFound(selectorText: req.selectorText)
         }
       }
     }
@@ -1819,10 +1821,12 @@ public actor SmixRunnerServer {
           return LongPressRoute.badRequest(reason: "\(error)")
         }
         return await Self.contextGuardedResponse(request: request,
-          fallback: LongPressRoute.success(ok: false)
+          fallback: LongPressRoute.notFound(selectorText: req.selectorText)
         ) {
           let ok = await longPressHandler(req.selectorText, req.durationMs)
-          return LongPressRoute.success(ok: ok)
+          return ok
+            ? LongPressRoute.success()
+            : LongPressRoute.notFound(selectorText: req.selectorText)
         }
       }
     }

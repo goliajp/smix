@@ -181,7 +181,10 @@ async fn assert_screenshot_strict_field_forces_driver_error() {
     let app = app_with_device(device).with_assert_screenshot_strict(Some(true));
     let err = app.assert_screenshot(&baseline, 5).await.unwrap_err();
     assert_eq!(err.code, smix_sdk::FailureCode::DriverError);
-    assert!(!baseline.exists(), "strict must NOT auto-record the baseline");
+    assert!(
+        !baseline.exists(),
+        "strict must NOT auto-record the baseline"
+    );
 }
 
 #[tokio::test]

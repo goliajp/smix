@@ -1,10 +1,13 @@
 import FlyingFox
 import Foundation
 
-// POST /long-press {selector: {text}, durationMs: N} → 200 {ok:true|false}.
-// Uses the public XCUIElement.press(forDuration:) API. `durationMs` is in
-// milliseconds and defaults to 500 — the maestro cli-2.2.0 default, which
-// also matches the XCUIElement standard press of 0.5s.
+// POST /long-press {selector: {text}, durationMs: N} → 200 {ok:true}
+// on a pressed element, 404 not_found on a miss (mirrors TapRoute; a
+// 200 {ok:false} miss used to deserialize into an empty TapResult on
+// the Rust side and report success end-to-end). Uses the public
+// XCUIElement.press(forDuration:) API. `durationMs` is in milliseconds
+// and defaults to 500 — the maestro cli-2.2.0 default, which also
+// matches the XCUIElement standard press of 0.5s.
 public enum LongPressRoute {
   public struct LongPressRequest: Equatable, Sendable {
     public let selectorText: String
@@ -52,9 +55,14 @@ public enum LongPressRoute {
     return LongPressRequest(selectorText: text, durationMs: durationMs)
   }
 
-  public static func success(ok: Bool) -> HTTPResponse {
-    let body = Data(#"{"ok":\#(ok)}"#.utf8)
-    return envelope(.ok, body)
+  public static func success() -> HTTPResponse {
+    envelope(.ok, Data(#"{"ok":true}"#.utf8))
+  }
+
+  public static func notFound(selectorText: String) -> HTTPResponse {
+    let text = jsonEscape(selectorText)
+    let body = Data(#"{"ok":false,"error":"not_found","selector":{"text":"\#(text)"}}"#.utf8)
+    return envelope(.notFound, body)
   }
 
   public static func badRequest(reason: String) -> HTTPResponse {

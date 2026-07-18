@@ -228,7 +228,9 @@ impl SmixMcpService {
         ))]))
     }
 
-    #[tool(description = "Launch an app by bundle id, or bring it to the front if it is running. Opens the runner session the other tools drive through — call this before smix_describe / smix_tap / etc.")]
+    #[tool(
+        description = "Launch an app by bundle id, or bring it to the front if it is running. Opens the runner session the other tools drive through — call this before smix_describe / smix_tap / etc."
+    )]
     async fn smix_launch_app(
         &self,
         Parameters(params): Parameters<BundleParams>,

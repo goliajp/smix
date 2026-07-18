@@ -73,7 +73,9 @@ pub use smix_selector::{
     AnchorBox, IndexModifiers, Modifiers, Pattern, Selector, True, describe_selector, match_text,
     match_text_compiled,
 };
-pub use smix_simctl::{Appearance, LaunchResult, SimctlClient, DeviceControlError, SimctlPermission};
+pub use smix_simctl::{
+    Appearance, DeviceControlError, LaunchResult, SimctlClient, SimctlPermission,
+};
 
 /// Nucleus of `App::assert_screenshot`. Wraps fs IO + the dhash algorithm
 /// without any `App` dependency, so it can be exercised in host-side
@@ -548,9 +550,7 @@ impl Session {
     /// itself succeeded); transitions to `Degraded` / `Cycling` / `Dead`
     /// as the runner emits them.
     pub fn state(&self) -> SessionState {
-        SessionState::from_u8(
-            self.state.load(std::sync::atomic::Ordering::Acquire),
-        )
+        SessionState::from_u8(self.state.load(std::sync::atomic::Ordering::Acquire))
     }
 
     /// Probe the runner's `/session/list` and return
@@ -577,7 +577,10 @@ impl Session {
                 ..Default::default()
             })
         })?;
-        Ok(resp.sessions.iter().any(|s| s.session_id == self.session_id))
+        Ok(resp
+            .sessions
+            .iter()
+            .any(|s| s.session_id == self.session_id))
     }
 
     /// Clear the session's target app data IN PLACE.
@@ -835,7 +838,9 @@ impl App {
         bundle_id: &str,
         activate: bool,
     ) -> Result<(), ExpectationFailure> {
-        self.open_session_inner(bundle_id, activate).await.map(|_| ())
+        self.open_session_inner(bundle_id, activate)
+            .await
+            .map(|_| ())
     }
 
     async fn open_session_inner(
@@ -1032,7 +1037,8 @@ impl App {
     /// host-side wipe). Android is not supported yet — Android's
     /// UiAutomator lifecycle differs and needs its own charter.
     pub async fn clear_app_data(&self) -> Result<u64, ExpectationFailure> {
-        self.clear_app_data_with_launch(&[], &std::collections::BTreeMap::new()).await
+        self.clear_app_data_with_launch(&[], &std::collections::BTreeMap::new())
+            .await
     }
 
     /// Same three-step orchestration as
@@ -1115,13 +1121,16 @@ impl App {
             wait_for_interactive_ms: Some(30_000),
         };
         // Step 1 — cooperative terminate on runner side.
-        runner.terminate_session_app(&terminate_req).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("clear_app_data terminate: {e}"),
-                ..Default::default()
-            })
-        })?;
+        runner
+            .terminate_session_app(&terminate_req)
+            .await
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("clear_app_data terminate: {e}"),
+                    ..Default::default()
+                })
+            })?;
         // Step 2 — host-side sandbox wipe. Safe now — the target app
         // was cooperatively terminated via testmanagerd; no
         // ReportCrash signal fired. Uses `simctl spawn <UDID> /bin/rm`
@@ -1202,12 +1211,8 @@ impl App {
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false)
         });
-        let (ops, warnings) = plan_launch_fresh_calls_v2(
-            clear_state,
-            clear_keychain,
-            app_path,
-            force_reinstall,
-        );
+        let (ops, warnings) =
+            plan_launch_fresh_calls_v2(clear_state, clear_keychain, app_path, force_reinstall);
         for op in &ops {
             match op {
                 LaunchFreshOp::Terminate => {
@@ -1451,7 +1456,9 @@ impl App {
                 "system_popup_action(popup={popup_id} btn={button_id})"
             )),
         );
-        self.driving()?.system_popup_action(popup_id, button_id).await
+        self.driving()?
+            .system_popup_action(popup_id, button_id)
+            .await
     }
 
     // ---- act (driver-bound) -------------------------------------------
@@ -1722,9 +1729,9 @@ impl App {
         // CLI-injected config wins; a non-CLI caller with no injection
         // falls back to the SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD env
         // presence check.
-        let strict = self.assert_screenshot_strict.unwrap_or_else(|| {
-            std::env::var_os("SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD").is_some()
-        });
+        let strict = self
+            .assert_screenshot_strict
+            .unwrap_or_else(|| std::env::var_os("SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD").is_some());
         assert_screenshot_inner(&png, baseline_path, max_hamming, strict)
     }
 
@@ -1910,7 +1917,9 @@ impl App {
         &self,
         orientation: MaestroOrientation,
     ) -> Result<(), ExpectationFailure> {
-        self.driving()?.set_orientation(orientation.to_driver()).await
+        self.driving()?
+            .set_orientation(orientation.to_driver())
+            .await
     }
 
     /// Batch permission setter. Maestro `setPermissions: { camera:
@@ -2079,17 +2088,21 @@ impl App {
 
     /// Assert that the matched element has `enabled = true`.
     pub async fn assert_enabled(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
-        let node = self.driving()?.find_one(selector, None).await?.ok_or_else(|| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::ElementNotFound),
-                message: format!(
-                    "expect.toBeEnabled: not found — {}",
-                    describe_selector(selector)
-                ),
-                selector: Some(selector.clone()),
-                ..Default::default()
-            })
-        })?;
+        let node = self
+            .driving()?
+            .find_one(selector, None)
+            .await?
+            .ok_or_else(|| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::ElementNotFound),
+                    message: format!(
+                        "expect.toBeEnabled: not found — {}",
+                        describe_selector(selector)
+                    ),
+                    selector: Some(selector.clone()),
+                    ..Default::default()
+                })
+            })?;
         if !node.enabled {
             return Err(ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::NotEnabled),

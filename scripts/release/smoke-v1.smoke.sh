@@ -95,7 +95,7 @@ log "verify /session/list after cycle (§D1)"
 smix runner list-sessions >"$OUT_DIR/list-after-cycle.log" 2>&1
 if grep -q "no open sessions" "$OUT_DIR/list-after-cycle.log"; then
   log "note: no persisted sessions after cycle. This can be the smoke's own"
-  log "      client having closed on `smix run` exit (§D15 safe-exit). OK."
+  log '      client having closed on `smix run` exit (safe-exit). OK.'
 else
   log "OK: /session/list returned rows after cycle"
 fi

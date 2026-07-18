@@ -99,7 +99,13 @@ fn the_agent_facing_spelling_is_camel_case() {
     // Matching the yaml docs an agent may have read. `ocr_text` would be a
     // second spelling for the same idea.
     let schema = schema_json::<SelectorParams>();
-    let props = schema.get("properties").and_then(|p| p.as_object()).unwrap();
+    let props = schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .unwrap();
     assert!(props.contains_key("ocrText"), "expected ocrText");
-    assert!(!props.contains_key("ocr_text"), "snake_case leaked into the schema");
+    assert!(
+        !props.contains_key("ocr_text"),
+        "snake_case leaked into the schema"
+    );
 }

@@ -43,6 +43,12 @@ android {
         targetSdk = 35
     }
 
+    sourceSets {
+        named("test") {
+            kotlin.srcDirs("src/test/kotlin")
+        }
+    }
+
     packaging {
         resources.excludes += setOf(
             "META-INF/AL2.0",
@@ -56,6 +62,11 @@ android {
 dependencies {
     // androidx core (AndroidManifest etc.)
     implementation("androidx.core:core-ktx:1.13.1")
+
+    // JVM unit tests for RunnerWire (pure wire logic). Real org.json on
+    // the test classpath overrides the mockable android.jar stubs.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 
     // UiAutomator2 — primary sense+act backend (mirror swift XCUITest).
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")

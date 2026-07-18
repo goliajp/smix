@@ -272,8 +272,7 @@ pub use expr::Value as ExprValue;
 
 pub use parser::{
     parse_flow_file, parse_flow_yaml, set_ai_assertions_override, set_auto_ocr_fallback_override,
-    text_to_pattern,
-    visible_to_selector,
+    text_to_pattern, visible_to_selector,
 };
 pub use runtime::{Adapter, AppLike, RunError, RunReport, RunStepReport, StepDebugRecord};
 

@@ -127,7 +127,7 @@ async fn find_quick_probe_passthrough() {
     Mock::given(method("POST"))
         .and(path("/find"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "exists": true
+            "ok": true, "found": true
         })))
         .mount(&server)
         .await;
@@ -143,18 +143,41 @@ async fn tap_resolves_then_tap_at_norm_coord() {
         .respond_with(ResponseTemplate::new(200).set_body_json(tree_with_login()))
         .mount(&server)
         .await;
+    // Login bounds (50,100,200,40), root (0,0,390,844):
+    // centroid (150, 120) → normalized (150/390, 120/844). The matcher
+    // checks the posted nx/ny against those values — the old
+    // `body_partial_json(json!({}))` matched every object, so a driver
+    // that tapped the wrong coordinate (or none) still passed.
+    struct NormCoordNear {
+        nx: f64,
+        ny: f64,
+    }
+    impl wiremock::Match for NormCoordNear {
+        fn matches(&self, request: &wiremock::Request) -> bool {
+            let Ok(v) = serde_json::from_slice::<serde_json::Value>(&request.body) else {
+                return false;
+            };
+            let (Some(nx), Some(ny)) = (v["nx"].as_f64(), v["ny"].as_f64()) else {
+                return false;
+            };
+            (nx - self.nx).abs() < 1e-6 && (ny - self.ny).abs() < 1e-6
+        }
+    }
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
-        // Login bounds (50,100,200,40), root (0,0,390,844).
-        // centroid = (150, 120), normalized = (~0.385, ~0.142)
-        .and(body_partial_json(serde_json::json!({})))
+        .and(NormCoordNear {
+            nx: 150.0 / 390.0,
+            ny: 120.0 / 844.0,
+        })
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "ok": true
         })))
+        .expect(1)
         .mount(&server)
         .await;
     let d = driver_for(&server);
     d.tap(&text_sel("Login"), None).await.expect("tap ok");
+    server.verify().await;
 }
 
 #[tokio::test]
@@ -623,7 +646,7 @@ async fn find_runner_route_retries_transient_find_500() {
         .and(path("/find"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({"exists": true, "ok": true})),
+                .set_body_json(serde_json::json!({"found": true, "ok": true})),
         )
         .mount(&server)
         .await;

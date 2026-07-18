@@ -162,7 +162,10 @@ final class MvpApiShapeTests: XCTestCase {
     // tap / fill / pressKey / find / toBeVisible / toContainText /
     // toHaveLabel / toHaveCount / terminate / relaunch / tree / swipe /
     // systemPopups / tapAtCoord drive the FFI SmixDriver + SmixSession
-    // surface. Their driving behaviour is covered end-to-end against the
-    // runner by the Rust wiremock suite (smix-ffi/tests/driving.rs); App
-    // now holds concrete FFI handles, so it is not mock-injectable here.
+    // surface. App holds concrete FFI handles, so it is not
+    // mock-injectable here; the Rust wiremock suite
+    // (smix-ffi/tests/driving.rs) covers the FFI client's own wire
+    // behaviour but does NOT cross this file's Swift-side logic — pure
+    // Swift mappings (e.g. KeyName.wireName) get their own direct tests
+    // in this target.
 }

@@ -13,6 +13,7 @@ use smix_selector::Pattern;
 fn synth_node(label_seed: &str) -> A11yNode {
     A11yNode {
         raw_type: "other".into(),
+        element_type_raw: 1,
         role: None,
         identifier: Some(label_seed.to_string()),
         label: Some(label_seed.to_string()),

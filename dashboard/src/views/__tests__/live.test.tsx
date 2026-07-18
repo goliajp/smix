@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { appRoutes } from '../docs/routes'
+import { appRoutes } from '../../routes'
 import { LiveView, type SimEntry } from '../live'
 
 const ONE_SIM: SimEntry[] = [
@@ -51,7 +51,7 @@ const FOUR_SIMS: SimEntry[] = [
   },
 ]
 
-describe('web v0.3 C4 — /live viewer', () => {
+describe('/live viewer', () => {
   it('renders sim metadata, capture controls, and a video container', () => {
     const { container } = render(
       <MemoryRouter>

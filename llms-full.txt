@@ -194,10 +194,15 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 
 - assertTrue: ${output.userCount > 0}    # JS expression eval (runs in evalScript context)
 
-- assertScreenshot:                      # visual regression (deferred — not yet shipped)
-    baseline: "home.png"
-    threshold: 0.05
+- assertScreenshot: "home.png"           # visual regression — full-frame 64-bit dhash
+- assertScreenshot:
+    path: "home.png"                     # baseline path, relative to the flow file
+    threshold: 5                         # max hamming distance (default 5)
 ```
+
+`assertScreenshot` auto-records the baseline on the first run and diffs
+against it afterwards. `mask:` regions are accepted but not yet applied
+(the dhash compares the full frame); a run warning says so.
 
 ### Tap / touch actions
 
@@ -1114,7 +1119,7 @@ smix sim exec <ALIAS|UDID> <verb> [args...]
 
 **Sim safety hook**: bare `xcrun simctl <verb>` is BLOCKED for mutating verbs. Read-only `simctl list` is allowed. To pass-through unmapped subcommands use `smix sim exec <ALIAS|UDID> <verb> ...` (this is accepted by the hook because the device id is explicit).
 
-`<ALIAS>` resolves via `.smix/sims.json` registry, which is populated by `smix selftest single/multi` or by hand. UDIDs always work.
+`<ALIAS>` resolves via the `.smix/sims.json` registry, which is created and populated by `smix sim register <alias> --udid <UDID>` (or by hand). UDIDs always work without a registry.
 
 ### Runner management
 
@@ -1179,14 +1184,39 @@ smix run-script script.yaml
 
 Use for matrix runs, repeated probes, anything that needs sequential CLI calls. Not for app UI flows — use `smix run` for that.
 
-### Selftest
+### Device registry
 
 ```bash
-smix selftest single           # one sim, full capability matrix
-smix selftest multi            # multiple sims concurrent, drift detection
+smix sim list                                # find the UDID
+smix sim register dev --udid <UDID>          # record it under an alias
+smix sim register jp --udid <UDID> --locale ja-JP --runner-port 22088
 ```
 
-Used by smix's own CI. Most external users will not run these.
+`register` creates `.smix/sims.json` when absent (walking up from the
+working directory; `SMIX_SIMS_JSON` overrides the location). Device
+name, runtime, and device type are read from `simctl`, so only the UDID
+and alias are yours to choose. After this, every command accepts the
+alias where it accepts a UDID.
+
+Registry file shape, for editing by hand:
+
+```json
+{
+  "version": 1,
+  "sims": {
+    "dev": {
+      "deviceName": "iPhone 17 Pro",
+      "udid": "47ACEAE5-36BA-4C62-811B-F09B397910D7",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+      "deviceType": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "locale": "ja-JP",
+      "runnerPort": 22088
+    }
+  }
+}
+```
+
+`locale` and `runnerPort` are optional.
 
 ## Common command recipes
 
@@ -2140,21 +2170,23 @@ If you skip `close()`, `Drop` clears the client-side `Session-Id` header on a be
 
 ## TypeScript SDK
 
+Session lifecycle is fully wired in the TypeScript package; driving
+(`Smix.launchApp` and the `App` act/sense methods) is not — those throw
+`SmixNotImplementedError` until the native transport lands. What works:
+
 ```ts
-import { Smix, Session, HttpSimRuntime, bundleId } from '@goliapkg/smix'
+import { Session, HttpSimRuntime } from '@goliapkg/smix'
 
 const runtime = new HttpSimRuntime('http://127.0.0.1:22087')
 const session = await Session.open(runtime, 'com.example.app', { activate: true })
 try {
-  const app = await Smix.launchApp(bundleId('com.example.app'), runtime, runtime.resolver)
-  await app.tap(Selector.id('btn-login'))
-  await app.find(Selector.text('Dashboard')).toBeVisible({ timeoutMs: 5000 })
+  await session.relaunchApp()
 } finally {
   await session.close()
 }
 ```
 
-The `HttpSimRuntime`'s internal `HttpRunnerClient` picks up the `Session-Id` header via `setSessionId` inside `Session.open` — the wiring is invisible to callers.
+The `HttpSimRuntime` picks up the `Session-Id` header via `setSessionId` inside `Session.open` — the wiring is invisible to callers.
 
 ## Swift SDK
 
@@ -2607,8 +2639,24 @@ Every route accepts these OPTIONAL headers; absent = default behavior
 
 ### `POST /tap`
 
-Body: `{ selector: Selector, include?: IncludeScope }`
-Response: `{ ok: bool, tapped: bool }` on success; standard error envelope on failure.
+Body: `{ selector: { text: string }, mode?: "resolve" | "resolveAndTap" | "daemonProxySynthesize" }`
+(scope via `?include=` query, same mechanism as `GET /tree`; `mode` defaults to `resolveAndTap`)
+
+Response on success (`TapResult` in `smix-runner-wire`; all fields beyond `ok` optional):
+
+```json
+{
+  "ok": true,
+  "matchedLabel": "Sign In",
+  "frame":    { "x": 20.0, "y": 118.5, "w": 353.0, "h": 44.0 },
+  "appFrame": { "x": 0.0,  "y": 0.0,   "w": 393.0, "h": 852.0 },
+  "stages":   { "resolveMs": 12.5, "tapCallMs": 870.0, "totalMs": 882.5 }
+}
+```
+
+`frame`/`appFrame` are returned by `mode: "resolve"` so the caller can
+inject the tap at the resolved coordinate; `resolveAndTap` performs the
+tap in-process and omits them. Miss → `404 { ok: false, error: "not_found", selector, visible: [] }`.
 
 ### `GET /tree?include=<scope>`
 

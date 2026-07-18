@@ -92,9 +92,10 @@ public enum KeyboardRoute {
   }
 
   /// Success with stage timing (focus_ms = element resolve + focus
-  /// tap latency; daemon_send_ms = `_XCT_sendString:` round-trip). Mirrors
-  /// TapRoute.TapStages wire convention so SDK-side recordStageLine consumes
-  /// both paths uniformly.
+  /// tap latency; daemon_send_ms = `_XCT_sendString:` round-trip).
+  /// Diagnostic-only: no Rust-side consumer reads these keys today, so
+  /// they stay snake_case; a consumer would have to adopt this exact
+  /// shape or change it here first.
   public static func successWithStages(focusMs: UInt32, daemonSendMs: UInt32) -> HTTPResponse {
     let body = Data(
       #"{"ok":true,"stages":{"daemon_send_ms":\#(daemonSendMs),"focus_ms":\#(focusMs)}}"#.utf8

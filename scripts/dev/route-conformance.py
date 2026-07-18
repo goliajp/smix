@@ -42,7 +42,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # run with its hit count, so a narrowed scope is stated rather than assumed.
 EXCLUDED_AREAS = [
     ("crates/smix-server/", "the live-stream server, which has its own HTTP API"),
-    ("web/", "the web app's client-side routes"),
+    ("dashboard/", "the dashboard SPA's client-side routes"),
+    ("web/", "the marketing site's client-side routes"),
     (
         "swift-bridge/Tests/SmixIndigoHIDTests/",
         "dlsym fixtures name absolute paths that look like routes",

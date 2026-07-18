@@ -233,15 +233,11 @@ impl SimHealthMonitor {
         // holding the guard; the monitor's business is aggregating
         // observations, so a panic upstream should not silently drop
         // the whole health signal. We surface the last-known state.
-        self.inner
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        self.inner.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn classify_screenshot(cfg: &SimHealthConfig, st: &MonitorState) -> HealthReason {
-        if st.screenshot_failed.iter().rev().take(3).all(|f| *f)
-            && st.screenshot_failed.len() >= 3
+        if st.screenshot_failed.iter().rev().take(3).all(|f| *f) && st.screenshot_failed.len() >= 3
         {
             return HealthReason::ScreenshotFailed;
         }
@@ -347,10 +343,9 @@ fn compute_target(
             SimHealthState::Degraded,
             HealthReason::ScreenshotSlow { p95_ms: *p95_ms },
         )),
-        HealthReason::ScreenshotFailed => Some((
-            SimHealthState::Degraded,
-            HealthReason::ScreenshotFailed,
-        )),
+        HealthReason::ScreenshotFailed => {
+            Some((SimHealthState::Degraded, HealthReason::ScreenshotFailed))
+        }
         _ => None,
     };
 

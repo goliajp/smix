@@ -79,17 +79,23 @@ final class TapRouteTests: XCTestCase {
   }
 
   // -- response builders --
+  //
+  // The success body is the Rust `TapResult` contract: top-level
+  // camelCase keys ("matchedLabel", "frame", "appFrame", "stages"). The
+  // old emission nested frame/appFrame under "matched" and wrote stages
+  // in snake_case — the Rust side deserialized that to all-None/zero
+  // without erroring, so these tests assert the exact keys, not just
+  // "contains a stages object".
 
-  func test_success_matchedLabel_200WithMatchedField() async throws {
+  func test_success_matchedLabel_200TopLevelCamelCase() async throws {
     let resp = TapRoute.success(matchedLabel: "General")
     XCTAssertEqual(resp.statusCode, .ok)
     let body = try await String(decoding: resp.bodyData, as: UTF8.self)
-    XCTAssertTrue(body.contains(#""ok":true"#), body)
-    XCTAssertTrue(body.contains(#""matched":{"label":"General"}"#), body)
+    XCTAssertEqual(body, #"{"ok":true,"matchedLabel":"General"}"#)
   }
 
   // stages field is opt-in; default nil leaves the body shape unchanged.
-  func test_success_includesStages() async throws {
+  func test_success_includesStagesCamelCase() async throws {
     let resp = TapRoute.success(
       matchedLabel: "About",
       stages: TapRoute.TapStages(resolveMs: 12.5, tapCallMs: 870.0, totalMs: 882.5)
@@ -97,23 +103,23 @@ final class TapRouteTests: XCTestCase {
     XCTAssertEqual(resp.statusCode, .ok)
     let body = try await String(decoding: resp.bodyData, as: UTF8.self)
     XCTAssertTrue(body.contains(#""ok":true"#), body)
-    XCTAssertTrue(body.contains(#""matched":{"label":"About"}"#), body)
+    XCTAssertTrue(body.contains(#""matchedLabel":"About""#), body)
     XCTAssertTrue(
-      body.contains(#""stages":{"resolve_ms":12.5,"tap_call_ms":870.0,"total_ms":882.5}"#),
+      body.contains(#""stages":{"resolveMs":12.5,"tapCallMs":870.0,"totalMs":882.5}"#),
       body
     )
+    XCTAssertFalse(body.contains("resolve_ms"), body)
   }
 
-  func test_success_withoutStages_staysCompat() async throws {
+  func test_success_withoutStages_omitsStages() async throws {
     let resp = TapRoute.success(matchedLabel: "About")
     let body = try await String(decoding: resp.bodyData, as: UTF8.self)
     XCTAssertFalse(body.contains(#""stages""#), body)
   }
 
-  // frame + appFrame are optional fields on the success body.
-  // Both nil → wire shape identical to before (legacy tapViaRunner reads must
-  // still parse). Both provided → matched object gains "frame" and "appFrame"
-  // so the SDK can normalize sim-internal coords for host-HID injection.
+  // frame + appFrame are optional top-level fields on the success body,
+  // each a full x/y/w/h rect (Rust `Rect` has no field defaults — a
+  // w/h-only rect would fail the whole-body parse).
 
   func test_success_includesFrameAndAppFrameWhenProvided() async throws {
     let resp = TapRoute.success(
@@ -124,17 +130,17 @@ final class TapRouteTests: XCTestCase {
     )
     XCTAssertEqual(resp.statusCode, .ok)
     let body = try await String(decoding: resp.bodyData, as: UTF8.self)
-    XCTAssertTrue(body.contains(#""matched":{"label":"General","frame":{"x":20.00,"y":118.50,"w":353.00,"h":44.00},"appFrame":{"w":393.00,"h":852.00}}"#), body)
+    XCTAssertTrue(body.contains(#""matchedLabel":"General""#), body)
+    XCTAssertTrue(body.contains(#""frame":{"x":20.00,"y":118.50,"w":353.00,"h":44.00}"#), body)
+    XCTAssertTrue(body.contains(#""appFrame":{"x":0.00,"y":0.00,"w":393.00,"h":852.00}"#), body)
     XCTAssertTrue(
-      body.contains(#""stages":{"resolve_ms":1050.0,"tap_call_ms":0.0,"total_ms":1050.0}"#),
+      body.contains(#""stages":{"resolveMs":1050.0,"tapCallMs":0.0,"totalMs":1050.0}"#),
       body
     )
+    XCTAssertFalse(body.contains(#""matched":{"#), body)
   }
 
   func test_success_omitsFrameAndAppFrameWhenNil() async throws {
-    // Legacy tapViaRunner path: mode=resolveAndTap, no frame/appFrame on response.
-    // Body shape must equal the no-frame baseline so tapViaRunner readers
-    // don't need a change.
     let resp = TapRoute.success(
       matchedLabel: "About",
       stages: TapRoute.TapStages(resolveMs: 12.5, tapCallMs: 870.0, totalMs: 882.5),
@@ -144,7 +150,7 @@ final class TapRouteTests: XCTestCase {
     let body = try await String(decoding: resp.bodyData, as: UTF8.self)
     XCTAssertFalse(body.contains(#""frame""#), body)
     XCTAssertFalse(body.contains(#""appFrame""#), body)
-    XCTAssertTrue(body.contains(#""matched":{"label":"About"}"#), body)
+    XCTAssertTrue(body.contains(#""matchedLabel":"About""#), body)
   }
 
   func test_notFound_includesEchoSelectorAndVisibleEmptyArray() async throws {

@@ -8,7 +8,7 @@
 //! Sense+act methods (tap/find/etc) live on [`smix_driver::Driver`].
 
 use async_trait::async_trait;
-use smix_simctl::{SimctlClient, DeviceControlError, SimctlPermission};
+use smix_simctl::{DeviceControlError, SimctlClient, SimctlPermission};
 use std::path::Path;
 
 pub use crate::PermissionAction;
@@ -169,13 +169,21 @@ pub trait DeviceControl: Send + Sync {
     /// `clearState: true` on Android reported success while clearing
     /// nothing — the planner emits this op whatever the platform. A device
     /// control that cannot do this has to say so out loud.
-    async fn privacy_reset_all(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError>;
+    async fn privacy_reset_all(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+    ) -> Result<(), DeviceControlError>;
 
     /// Wipe the app's persisted data without uninstalling it, so the
     /// test binding survives.
     ///
     /// Required for the same reason as [`Self::privacy_reset_all`].
-    async fn clear_app_sandbox(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError>;
+    async fn clear_app_sandbox(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+    ) -> Result<(), DeviceControlError>;
 
     /// Delete a single key from the target app's persisted
     /// user-defaults / preferences store. iOS: `simctl spawn defaults
@@ -240,6 +248,10 @@ pub trait DeviceControl: Send + Sync {
 
     // === Recording (state owned internally by impl, see IosDeviceControl) ===
 
-    async fn start_recording(&self, udid: &str, output_path: &Path) -> Result<(), DeviceControlError>;
+    async fn start_recording(
+        &self,
+        udid: &str,
+        output_path: &Path,
+    ) -> Result<(), DeviceControlError>;
     async fn stop_recording(&self) -> Result<(), DeviceControlError>;
 }

@@ -109,11 +109,9 @@ fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> DeviceControlError {
             -1,
             "adb binary not found in PATH; install Android SDK platform-tools",
         ),
-        AdbError::Spawn(io) => DeviceControlError::non_zero_exit(
-            subcommand,
-            -1,
-            format!("adb spawn failed: {io}"),
-        ),
+        AdbError::Spawn(io) => {
+            DeviceControlError::non_zero_exit(subcommand, -1, format!("adb spawn failed: {io}"))
+        }
         AdbError::NonZeroExit {
             subcommand: sub,
             code,
@@ -220,7 +218,11 @@ impl DeviceControl for AndroidDeviceControl {
         ))
     }
 
-    async fn privacy_reset_all(&self, serial: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
+    async fn privacy_reset_all(
+        &self,
+        serial: &str,
+        bundle_id: &str,
+    ) -> Result<(), DeviceControlError> {
         // `pm reset-permissions` reverts every app on the device, including
         // whatever the runner was granted to do its job, so the grants are
         // read back and dropped one at a time.
@@ -238,7 +240,11 @@ impl DeviceControl for AndroidDeviceControl {
         Ok(())
     }
 
-    async fn clear_app_sandbox(&self, serial: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
+    async fn clear_app_sandbox(
+        &self,
+        serial: &str,
+        bundle_id: &str,
+    ) -> Result<(), DeviceControlError> {
         // App data is app-private, so the host's only way in is `pm clear`,
         // which also reverts the runtime permissions. iOS can wipe the
         // sandbox and leave privacy alone; here the two come together, and
@@ -272,7 +278,11 @@ impl DeviceControl for AndroidDeviceControl {
         // Android requires FCM credentials + Firebase project setup —
         // deferred. Surface an explicit error so yaml authors know it
         // is not silently no-op.
-        Err(DeviceControlError::non_zero_exit("send_push", -1, "Android FCM push not implemented (cross-platform yaml `sendPush:` is iOS APNs only)"))
+        Err(DeviceControlError::non_zero_exit(
+            "send_push",
+            -1,
+            "Android FCM push not implemented (cross-platform yaml `sendPush:` is iOS APNs only)",
+        ))
     }
 
     async fn screenshot(&self, serial: &str) -> Result<Vec<u8>, DeviceControlError> {
@@ -334,13 +344,12 @@ impl DeviceControl for AndroidDeviceControl {
         }
         for p in paths {
             let local = Path::new(p);
-            let name = local
-                .file_name()
-                .and_then(|n| n.to_str())
-                .ok_or_else(|| DeviceControlError::Malformed {
+            let name = local.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
+                DeviceControlError::Malformed {
                     subcommand: "add_media".into(),
                     detail: format!("path has no file name: {p}"),
-                })?;
+                }
+            })?;
             let remote = format!("/sdcard/Pictures/{name}");
             self.client
                 .push(serial, local, &remote)
@@ -361,7 +370,12 @@ impl DeviceControl for AndroidDeviceControl {
         Ok(())
     }
 
-    async fn location_set(&self, serial: &str, lat: f64, lon: f64) -> Result<(), DeviceControlError> {
+    async fn location_set(
+        &self,
+        serial: &str,
+        lat: f64,
+        lon: f64,
+    ) -> Result<(), DeviceControlError> {
         // The emulator console, not the device shell. This called
         // `shell(["emu", …])` and so ran `adb shell emu geo fix`, which asks
         // the device for a program named `emu` — `sh: emu: inaccessible or
@@ -495,7 +509,11 @@ impl DeviceControl for AndroidDeviceControl {
     /// that can be raised. `simctl recordVideo` has no such limit. Past the
     /// cap the recorder exits on its own, and stop_recording pulls whatever
     /// it managed to write.
-    async fn start_recording(&self, serial: &str, output_path: &Path) -> Result<(), DeviceControlError> {
+    async fn start_recording(
+        &self,
+        serial: &str,
+        output_path: &Path,
+    ) -> Result<(), DeviceControlError> {
         let mut guard = self.recording.lock().await;
         if guard.is_some() {
             return Err(DeviceControlError::non_zero_exit(

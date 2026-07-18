@@ -178,7 +178,10 @@ fn split_top_level_pipe(s: &str) -> Vec<&str> {
 // Parse `name:` sub-key (companion to `role:`) into an
 // optional [`Pattern`]. Accepts a scalar string (plain literal OR
 // pipe-alternation regex, same rules as `text_to_pattern`).
-fn parse_role_name_yaml(map: &serde_norway::Mapping, ctx: &str) -> Result<Option<Pattern>, ParseError> {
+fn parse_role_name_yaml(
+    map: &serde_norway::Mapping,
+    ctx: &str,
+) -> Result<Option<Pattern>, ParseError> {
     let raw = match map.get(Value::String("name".into())) {
         Some(v) => v,
         None => return Ok(None),
@@ -532,7 +535,7 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
                 text: text_to_pattern(s),
                 modifiers: Modifiers::default(),
             })
-        },
+        }
         Value::Mapping(map) => {
             if let Some(text) = map
                 .get(Value::String("text".into()))
@@ -636,9 +639,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                         })?;
                         match s {
                             "xcui" => Some(crate::TapDispatch::Xcui),
-                            "daemonProxy" | "daemonproxy" => {
-                                Some(crate::TapDispatch::DaemonProxy)
-                            }
+                            "daemonProxy" | "daemonproxy" => Some(crate::TapDispatch::DaemonProxy),
                             other => {
                                 return Err(ParseError::InvalidValue {
                                     field: "tapOn.dispatch".into(),
@@ -1018,9 +1019,16 @@ fn parse_press_key(v: &Value) -> Result<Step, ParseError> {
 }
 
 fn parse_erase_text(v: &Value) -> Result<Step, ParseError> {
+    // Bare `- eraseText` is maestro's own spelling: erase 50 characters
+    // (maestro's documented default). Only the explicit-count form
+    // parsed here until the codemod roundtrip stopped skipping
+    // spellings the parser rejects.
+    if v.is_null() {
+        return Ok(Step::EraseText(50));
+    }
     let n = v.as_u64().ok_or_else(|| ParseError::InvalidValue {
         field: "eraseText".into(),
-        reason: "expected an unsigned integer".into(),
+        reason: "expected an unsigned integer or the bare form".into(),
     })?;
     Ok(Step::EraseText(n as u32))
 }
@@ -1320,13 +1328,16 @@ fn parse_clear_app_data(v: &Value) -> Result<Step, ParseError> {
         Value::Null => {}
         Value::Mapping(_) => {
             let map = v.as_mapping().expect("just matched");
-            if let Some(args_v) = map.get(Value::String("launchArgs".into()))
+            if let Some(args_v) = map
+                .get(Value::String("launchArgs".into()))
                 .or_else(|| map.get(Value::String("args".into())))
             {
-                let arr = args_v.as_sequence().ok_or_else(|| ParseError::InvalidValue {
-                    field: "clearAppData.launchArgs".into(),
-                    reason: format!("expected sequence, got {args_v:?}"),
-                })?;
+                let arr = args_v
+                    .as_sequence()
+                    .ok_or_else(|| ParseError::InvalidValue {
+                        field: "clearAppData.launchArgs".into(),
+                        reason: format!("expected sequence, got {args_v:?}"),
+                    })?;
                 for item in arr {
                     let s = item.as_str().ok_or_else(|| ParseError::InvalidValue {
                         field: "clearAppData.launchArgs[]".into(),
@@ -1335,7 +1346,8 @@ fn parse_clear_app_data(v: &Value) -> Result<Step, ParseError> {
                     launch_args.push(s.to_string());
                 }
             }
-            if let Some(env_v) = map.get(Value::String("launchEnv".into()))
+            if let Some(env_v) = map
+                .get(Value::String("launchEnv".into()))
                 .or_else(|| map.get(Value::String("env".into())))
             {
                 let em = env_v.as_mapping().ok_or_else(|| ParseError::InvalidValue {

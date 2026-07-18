@@ -9,7 +9,7 @@ use std::path::Path;
 use tokio::sync::Mutex;
 
 use smix_driver::Platform;
-use smix_simctl::{RecordingHandle, SimctlClient, DeviceControlError};
+use smix_simctl::{DeviceControlError, RecordingHandle, SimctlClient};
 
 use crate::PermissionAction;
 use crate::device_control::{DeviceControl, Permission};
@@ -101,14 +101,22 @@ impl DeviceControl for IosDeviceControl {
 
     /// Reset all privacy grants for the bundle via
     /// `simctl privacy <udid> reset all <bundle-id>`.
-    async fn privacy_reset_all(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
+    async fn privacy_reset_all(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+    ) -> Result<(), DeviceControlError> {
         self.client.privacy_reset_all(udid, bundle_id).await
     }
 
     /// Wipe the app's sandbox (`Documents/`, `Library/`,
     /// `tmp/`) via `simctl spawn <udid> rm -rf` under the app's
     /// Containers/Data path. Preserves XCUITest binding.
-    async fn clear_app_sandbox(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError> {
+    async fn clear_app_sandbox(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+    ) -> Result<(), DeviceControlError> {
         self.client.clear_app_sandbox(udid, bundle_id).await
     }
 
@@ -205,7 +213,11 @@ impl DeviceControl for IosDeviceControl {
 
     // === Recording (state owned internally) ===
 
-    async fn start_recording(&self, udid: &str, output_path: &Path) -> Result<(), DeviceControlError> {
+    async fn start_recording(
+        &self,
+        udid: &str,
+        output_path: &Path,
+    ) -> Result<(), DeviceControlError> {
         let mut guard = self.recording.lock().await;
         if guard.is_some() {
             // Caller must stop the existing one first; surface via DeviceControlError

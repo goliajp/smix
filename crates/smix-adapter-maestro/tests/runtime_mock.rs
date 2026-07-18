@@ -997,6 +997,24 @@ async fn mock_run_unknown_press_key_returns_error() {
     }
 }
 
+/// Maestro's bare `- eraseText` erases 50 characters (its documented
+/// default). smix rejected the bare form outright, so maestro flows
+/// using it could not migrate — caught when the codemod roundtrip
+/// stopped skipping spellings the parser rejects.
+#[tokio::test]
+async fn mock_run_bare_erase_text_defaults_to_50_deletes() {
+    let flow = parse_inline("appId: x\n---\n- eraseText\n");
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("run ok");
+    assert_eq!(app.calls().len(), 50);
+    assert!(
+        app.calls()
+            .iter()
+            .all(|c| *c == MockCall::PressKey(KeyName::Delete))
+    );
+}
+
 #[tokio::test]
 async fn mock_run_erase_text_3_emits_3_deletes() {
     let flow = parse_inline("appId: x\n---\n- eraseText: 3\n");
@@ -1208,10 +1226,7 @@ async fn mock_run_swipe_at_coord() {
     let flow = parse_flow_file(&path).expect("parse_flow_file swipe_only");
     let app = MockApp::new();
     let mut adapter = Adapter::new(&app, fixtures_dir());
-    let report = adapter
-        .run(&flow)
-        .await
-        .expect("swipe should dispatch");
+    let report = adapter.run(&flow).await.expect("swipe should dispatch");
     assert_eq!(report.steps.len(), 1);
     assert!(
         matches!(report.steps[0], RunStepReport::Ok),
@@ -2757,9 +2772,8 @@ async fn undefined_env_var_errors_with_name() {
 
 #[tokio::test]
 async fn tapon_dispatch_xcui_routes_through_tap_xcui() {
-    let flow = parse_inline(
-        "appId: x\n---\n- tapOn:\n    id: \"my-modal-dismiss\"\n    dispatch: xcui\n",
-    );
+    let flow =
+        parse_inline("appId: x\n---\n- tapOn:\n    id: \"my-modal-dismiss\"\n    dispatch: xcui\n");
     let app = MockApp::new();
     let mut adapter = Adapter::new(&app, fixtures_dir());
     let report = adapter.run(&flow).await.expect("run ok");
@@ -2774,9 +2788,8 @@ async fn tapon_dispatch_xcui_routes_through_tap_xcui() {
 
 #[tokio::test]
 async fn tapon_dispatch_daemon_proxy_routes_through_tap_with_mode() {
-    let flow = parse_inline(
-        "appId: x\n---\n- tapOn:\n    id: \"btn-login\"\n    dispatch: daemonProxy\n",
-    );
+    let flow =
+        parse_inline("appId: x\n---\n- tapOn:\n    id: \"btn-login\"\n    dispatch: daemonProxy\n");
     let app = MockApp::new();
     let mut adapter = Adapter::new(&app, fixtures_dir());
     let report = adapter.run(&flow).await.expect("run ok");
@@ -2795,9 +2808,7 @@ async fn tapon_dispatch_xcui_non_id_selector_errors() {
     // `dispatch: xcui` resolves by accessibilityIdentifier; a text
     // selector can't route there — explicit DriverError, not a silent
     // fallback to the default path.
-    let flow = parse_inline(
-        "appId: x\n---\n- tapOn:\n    text: \"Dismiss\"\n    dispatch: xcui\n",
-    );
+    let flow = parse_inline("appId: x\n---\n- tapOn:\n    text: \"Dismiss\"\n    dispatch: xcui\n");
     let app = MockApp::new();
     let mut adapter = Adapter::new(&app, fixtures_dir());
     let err = adapter.run(&flow).await.expect_err("must error");
@@ -2809,9 +2820,8 @@ async fn tapon_dispatch_xcui_non_id_selector_errors() {
 
 #[tokio::test]
 async fn clear_user_defaults_uses_flow_app_id_by_default() {
-    let flow = parse_inline(
-        "appId: com.flow.app\n---\n- clearUserDefaults:\n    keys: ['k1', 'k2']\n",
-    );
+    let flow =
+        parse_inline("appId: com.flow.app\n---\n- clearUserDefaults:\n    keys: ['k1', 'k2']\n");
     let app = MockApp::new();
     let mut adapter = Adapter::new(&app, fixtures_dir());
     let report = adapter.run(&flow).await.expect("run ok");
@@ -2887,7 +2897,10 @@ async fn wait_for_animation_gives_up_at_the_ceiling_and_says_so() {
     let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd: 200\n").unwrap();
 
     let mut adapter = Adapter::new(&app, fixtures_dir());
-    let report = adapter.run(&flow).await.expect("hitting the ceiling is not a failure");
+    let report = adapter
+        .run(&flow)
+        .await
+        .expect("hitting the ceiling is not a failure");
 
     assert!(matches!(report.steps[0], RunStepReport::Ok));
     assert!(
@@ -2952,14 +2965,14 @@ async fn wait_for_animation_beats_a_large_ceiling_by_a_wide_margin() {
 #[tokio::test]
 async fn wait_for_animation_surfaces_an_undecodable_frame() {
     // A frame we cannot compare means a broken toolchain, not a still screen.
-    let app = MockApp::new()
-        .with_screenshot_frames(vec![mock_png(10), b"not a png at all".to_vec()]);
+    let app =
+        MockApp::new().with_screenshot_frames(vec![mock_png(10), b"not a png at all".to_vec()]);
     let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd\n").unwrap();
 
     let mut adapter = Adapter::new(&app, fixtures_dir());
-    let err = adapter.run(&flow).await.expect_err("a broken frame must surface");
-    assert!(
-        format!("{err:?}").contains("PNG decode"),
-        "got: {err:?}"
-    );
+    let err = adapter
+        .run(&flow)
+        .await
+        .expect_err("a broken frame must surface");
+    assert!(format!("{err:?}").contains("PNG decode"), "got: {err:?}");
 }

@@ -791,9 +791,7 @@ fn annotate_timeout_error(err: RunError, capture_hint: Option<String>) -> RunErr
     };
     match err {
         RunError::Sdk(mut f) => {
-            let capture_line = format!(
-                "timeout capture: {hint_suffix}"
-            );
+            let capture_line = format!("timeout capture: {hint_suffix}");
             f.hint = Some(match f.hint.take() {
                 Some(existing) => format!("{existing}\n{capture_line}"),
                 None => capture_line,
@@ -1104,22 +1102,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             let wall_ms = step_start.elapsed().as_millis() as u64;
             let debug_record = match &outcome_result {
                 Ok(outcome) => {
-                    self.write_step_debug(
-                        idx,
-                        &step_summary,
-                        StepOutcome::Ok(outcome),
-                        wall_ms,
-                    )
-                    .await
+                    self.write_step_debug(idx, &step_summary, StepOutcome::Ok(outcome), wall_ms)
+                        .await
                 }
                 Err(e) => {
-                    self.write_step_debug(
-                        idx,
-                        &step_summary,
-                        StepOutcome::Failed(e),
-                        wall_ms,
-                    )
-                    .await
+                    self.write_step_debug(idx, &step_summary, StepOutcome::Failed(e), wall_ms)
+                        .await
                 }
             };
             if let Some(rec) = debug_record {
@@ -1185,10 +1173,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             StepOutcome::Ok(rep) => {
                 let (verdict_str, outcome_val) = match rep {
                     RunStepReport::Ok => ("ok", serde_json::json!("ok")),
-                    RunStepReport::Skipped { reason } => (
-                        "skipped",
-                        serde_json::json!({ "skipped": reason }),
-                    ),
+                    RunStepReport::Skipped { reason } => {
+                        ("skipped", serde_json::json!({ "skipped": reason }))
+                    }
                     RunStepReport::ExpandedSubflow { path, .. } => (
                         "expanded-subflow",
                         serde_json::json!({ "expandedSubflow": path.display().to_string() }),
@@ -1282,11 +1269,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         let tree_bytes = serde_json::to_vec_pretty(&tree).unwrap_or_default();
                         let mut warns: Vec<String> = Vec::new();
                         match crate::output::write_yaml_output_lenient(
-                            &tree_path, &tree_bytes, &mut warns,
+                            &tree_path,
+                            &tree_bytes,
+                            &mut warns,
                         ) {
                             Some(written) => {
-                                fail["treePath"] =
-                                    serde_json::json!(written.display().to_string());
+                                fail["treePath"] = serde_json::json!(written.display().to_string());
                                 tree_path_rec = Some(written);
                             }
                             None => {
@@ -1421,8 +1409,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         let Selector::Id { id, .. } = desugared.as_ref() else {
                             return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
                                 code: Some(FailureCode::DriverError),
-                                message: "tapOn dispatch: xcui requires an `id:` selector"
-                                    .into(),
+                                message: "tapOn dispatch: xcui requires an `id:` selector".into(),
                                 selector: Some(selector.clone()),
                                 hint: Some(
                                     "XCUIElement-anchored dispatch resolves by \
@@ -1449,10 +1436,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         let desugared = self.desugar_localized_text(selector);
                         match self
                             .app
-                            .tap_with_mode(
-                                &desugared,
-                                smix_sdk::TapMode::DaemonProxySynthesize,
-                            )
+                            .tap_with_mode(&desugared, smix_sdk::TapMode::DaemonProxySynthesize)
                             .await
                         {
                             Ok(()) => Ok(RunStepReport::Ok),
@@ -1549,9 +1533,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     Ok(_) => Ok(RunStepReport::Ok),
                     Err(err) => {
                         if is_timeout_error(&err) {
-                            let hint = self
-                                .capture_timeout_dump("extendedWaitUntil")
-                                .await;
+                            let hint = self.capture_timeout_dump("extendedWaitUntil").await;
                             Err(annotate_timeout_error(err, hint))
                         } else {
                             Err(err)
@@ -1611,8 +1593,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 // hit stops. Perf caveat: OCR costs ~500ms per
                 // iteration on top of the ~250ms each swipe takes.
                 if self.selector_contains_ocr(selector) {
-                    self.scroll_until_visible_with_ocr(selector, dir)
-                        .await?;
+                    self.scroll_until_visible_with_ocr(selector, dir).await?;
                 } else {
                     self.app.scroll(selector, dir).await?;
                 }
@@ -1644,7 +1625,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.terminate(app_id).await?;
                 Ok(RunStepReport::Ok)
             }
-            Step::ClearAppData { launch_args, launch_env } => {
+            Step::ClearAppData {
+                launch_args,
+                launch_env,
+            } => {
                 // Session-scoped in-place data clear.
                 // Orchestrates: runner cooperative
                 // terminate + host sandbox wipe + runner cooperative
@@ -1668,8 +1652,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 // deep-link replay. Bundle resolution: explicit
                 // `bundleId:` wins, else the flow's resolved app id
                 // (seeded into last_bundle at run start).
-                let Some(bundle) = bundle_id.clone().or_else(|| self.last_bundle.clone())
-                else {
+                let Some(bundle) = bundle_id.clone().or_else(|| self.last_bundle.clone()) else {
                     return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
                         code: Some(FailureCode::DriverError),
                         message: "clearUserDefaults: no target bundle id".into(),
@@ -1684,7 +1667,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.clear_user_defaults(&bundle, keys).await?;
                 Ok(RunStepReport::Ok)
             }
-            Step::ResetAppData { url, wait_for, timeout_ms } => {
+            Step::ResetAppData {
+                url,
+                wait_for,
+                timeout_ms,
+            } => {
                 // URL-scheme JS-wipe. Fires
                 // `simctl openurl <UDID> <url>` on host side (no
                 // runner HTTP round-trip), then optionally waits for
@@ -2361,10 +2348,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         when_not_visible: Option<&Selector>,
     ) -> (bool, String) {
         if let Some(sel) = when_visible {
-            let visible = self
-                .check_selector_visible(sel)
-                .await
-                .unwrap_or(false);
+            let visible = self.check_selector_visible(sel).await.unwrap_or(false);
             let reason = format!(
                 "when.visible={} ({})",
                 visible,
@@ -2373,10 +2357,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             return (visible, reason);
         }
         if let Some(sel) = when_not_visible {
-            let visible = self
-                .check_selector_visible(sel)
-                .await
-                .unwrap_or(false);
+            let visible = self.check_selector_visible(sel).await.unwrap_or(false);
             let reason = format!(
                 "when.notVisible visible={} ({})",
                 visible,
@@ -2776,11 +2757,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         .iter()
                         .enumerate()
                         .map(|(i, s)| {
-                            format!(
-                                "L{} {}: MISS",
-                                i + 1,
-                                smix_sdk::describe_selector(s)
-                            )
+                            format!("L{} {}: MISS", i + 1, smix_sdk::describe_selector(s))
                         })
                         .collect::<Vec<_>>()
                         .join("; ")
@@ -2844,9 +2821,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             local.or(home)?
         };
         if let Err(e) = std::fs::create_dir_all(&dir) {
-            eprintln!(
-                "WARN: timeout capture: mkdir {dir:?} failed: {e}"
-            );
+            eprintln!("WARN: timeout capture: mkdir {dir:?} failed: {e}");
             return None;
         }
         let png_path = dir.join(format!("{base_name}.png"));
@@ -2857,9 +2832,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             Ok(bytes) => match std::fs::write(&png_path, &bytes) {
                 Ok(_) => segments.push(format!("screenshot={}", png_path.display())),
                 Err(e) => {
-                    eprintln!(
-                        "WARN: v1.0.22 timeout capture: write {png_path:?} failed: {e}"
-                    );
+                    eprintln!("WARN: v1.0.22 timeout capture: write {png_path:?} failed: {e}");
                 }
             },
             Err(e) => {
@@ -2870,13 +2843,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             Ok(tree) => match serde_json::to_vec_pretty(&tree) {
                 Ok(bytes) => match std::fs::write(&tree_path, &bytes) {
                     Ok(_) => segments.push(format!("tree={}", tree_path.display())),
-                    Err(e) => eprintln!(
-                        "WARN: v1.0.22 timeout capture: write {tree_path:?} failed: {e}"
-                    ),
+                    Err(e) => {
+                        eprintln!("WARN: v1.0.22 timeout capture: write {tree_path:?} failed: {e}")
+                    }
                 },
-                Err(e) => eprintln!(
-                    "WARN: v1.0.22 timeout capture: tree serialize failed: {e}"
-                ),
+                Err(e) => eprintln!("WARN: v1.0.22 timeout capture: tree serialize failed: {e}"),
             },
             Err(e) => {
                 eprintln!("WARN: v1.0.22 timeout capture: tree failed: {e}");
@@ -2968,10 +2939,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// selector matches on the current screen (via tree or OCR). Used
     /// by tapOn poll + scrollUntilVisible poll. Uses `App::find` for
     /// tree-based subs and `App::find_by_text_ocr` for OcrText subs.
-    async fn check_selector_visible(
-        &mut self,
-        sel: &Selector,
-    ) -> Result<bool, RunError> {
+    async fn check_selector_visible(&mut self, sel: &Selector) -> Result<bool, RunError> {
         match sel {
             Selector::OcrText {
                 ocr_text, locales, ..
@@ -3080,8 +3048,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     // sub-selector handles its own miss; we treat
                     // ElementNotFound as "this layer missed, try next" but
                     // propagate other errors immediately.
-                    let sub_result =
-                        Box::pin(self.run_tap(sub, true /* optional */)).await;
+                    let sub_result = Box::pin(self.run_tap(sub, true /* optional */)).await;
                     match sub_result {
                         Ok(RunStepReport::Ok) => {
                             return Ok(RunStepReport::Ok);

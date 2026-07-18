@@ -1,7 +1,7 @@
 //! Unit tests for smix-authoring-ir.
 
-use smix_input::{KeyName, SwipeDirection};
 use smix_authoring_ir::{IRAction, RecorderError, RecorderErrorReason, sort_by_timestamp};
+use smix_input::{KeyName, SwipeDirection};
 use smix_selector::{Modifiers, Pattern, Selector};
 
 fn text_sel(t: &str) -> Selector {

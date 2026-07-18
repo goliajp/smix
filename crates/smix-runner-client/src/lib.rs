@@ -272,14 +272,14 @@ impl OcrFrame {
 // should depend on smix-runner-wire directly.
 
 pub use smix_runner_wire::{
-    FindRequest, FindResponse, HealthProcessInfo, HealthResponse, HealthTestHostInfo, IncludeScope,
-    KeyboardStages, RecordEventsResponse, RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult,
-    RunnerScrollSelector, ScrollResponse, SessionAppLifecycleRequest,
-    SessionAppLifecycleResponse, SessionCloseAllResponse, SessionCloseRequest,
-    SessionCloseResponse, SessionListResponse, SessionOpenRequest, SessionOpenResponse,
-    SessionRelaunchAppRequest, SessionRelaunchAppResponse, SessionRenewActivationRequest,
-    SessionRenewActivationResponse, SessionSummary, SimHealthWireState,
-    DiagnosticDumpResponse, SubprocessRecord as WireSubprocessRecord, SystemPopup,
+    DiagnosticDumpResponse, FindRequest, FindResponse, HealthProcessInfo, HealthResponse,
+    HealthTestHostInfo, IncludeScope, KeyboardStages, RecordEventsResponse, RecordedEvent,
+    RunnerIncludeOpts, RunnerKeyboardResult, RunnerScrollSelector, ScrollResponse,
+    SessionAppLifecycleRequest, SessionAppLifecycleResponse, SessionCloseAllResponse,
+    SessionCloseRequest, SessionCloseResponse, SessionListResponse, SessionOpenRequest,
+    SessionOpenResponse, SessionRelaunchAppRequest, SessionRelaunchAppResponse,
+    SessionRenewActivationRequest, SessionRenewActivationResponse, SessionSummary,
+    SimHealthWireState, SubprocessRecord as WireSubprocessRecord, SystemPopup,
     SystemPopupActionRequest, SystemPopupActionResponse, SystemPopupButton, SystemPopupsResponse,
     TapAtNormCoordRequest, TapMode, TapRequest, TapResult, TapStages,
 };
@@ -439,10 +439,7 @@ impl HttpRunnerClient {
     /// client updates it on every response by parsing `X-Sim-Health`.
     /// Called by `App::open_session`. External callers rarely need
     /// this directly.
-    pub fn attach_session_state(
-        &self,
-        state: Arc<std::sync::atomic::AtomicU8>,
-    ) {
+    pub fn attach_session_state(&self, state: Arc<std::sync::atomic::AtomicU8>) {
         let mut guard = self
             .session_state
             .lock()

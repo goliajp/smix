@@ -14,7 +14,6 @@ package dev.smix.runner
 
 import android.app.UiAutomation
 import android.graphics.Rect
-import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.google.mlkit.vision.common.InputImage
@@ -118,21 +117,16 @@ class SmixHttpServer(
                 else -> serveNotImplemented(uri, session.method.name)
             }
         } catch (e: Throwable) {
-            val body = JSONObject()
-                .put("error", "internal_error")
-                .put("message", e.message ?: e.javaClass.simpleName)
-                .put("class", e.javaClass.name)
-                .toString()
+            val body = RunnerWire.internalErrorBody(
+                e.message ?: e.javaClass.simpleName,
+                e.javaClass.name,
+            )
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", body)
         }
     }
 
     private fun serveHealth(): Response {
-        val body = JSONObject()
-            .put("status", "ok")
-            .put("runner", "smix-android-runner")
-            .put("version", SmixRunner.VERSION)
-            .toString()
+        val body = RunnerWire.healthBody(SmixRunner.VERSION)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -169,96 +163,53 @@ class SmixHttpServer(
     }
 
     private fun serveTapAtNormCoord(session: IHTTPSession): Response {
-        val files = HashMap<String, String>()
-        session.parseBody(files)
-        val payload = files["postData"] ?: session.queryParameterString ?: "{}"
-        val req = JSONObject(payload)
-        val nx = req.getDouble("nx")
-        val ny = req.getDouble("ny")
+        val req = RunnerWire.decodeNormCoord(readBodyString(session))
         val w = device.displayWidth
         val h = device.displayHeight
-        val px = (nx * w).toInt().coerceIn(0, w - 1)
-        val py = (ny * h).toInt().coerceIn(0, h - 1)
+        val px = RunnerWire.normToPixel(req.nx, w)
+        val py = RunnerWire.normToPixel(req.ny, h)
         val ok = device.click(px, py)
         // Give the dispatched IO event time to render before /tree probes
         // observe the post-tap UI state.
         device.waitForIdle(500)
-        val body = JSONObject()
-            .put("status", if (ok) "ok" else "click_returned_false")
-            .put("displayWidth", w)
-            .put("displayHeight", h)
-            .put("x", px)
-            .put("y", py)
-            .toString()
+        val body = RunnerWire.tapAtNormCoordBody(ok, w, h, px, py)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveSwipeAtNormCoord(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val fromNx = req.getDouble("fromNx")
-        val fromNy = req.getDouble("fromNy")
-        val toNx = req.getDouble("toNx")
-        val toNy = req.getDouble("toNy")
+        val req = RunnerWire.decodeSwipeAtNormCoord(readBodyString(session))
         val w = device.displayWidth
         val h = device.displayHeight
-        val x1 = (fromNx * w).toInt().coerceIn(0, w - 1)
-        val y1 = (fromNy * h).toInt().coerceIn(0, h - 1)
-        val x2 = (toNx * w).toInt().coerceIn(0, w - 1)
-        val y2 = (toNy * h).toInt().coerceIn(0, h - 1)
+        val q = RunnerWire.SwipeQuad(
+            RunnerWire.normToPixel(req.fromNx, w),
+            RunnerWire.normToPixel(req.fromNy, h),
+            RunnerWire.normToPixel(req.toNx, w),
+            RunnerWire.normToPixel(req.toNy, h),
+        )
         // 50 steps ≈ 500ms — enough to register as fling/scroll, not so
         // fast it's interpreted as a tap.
-        val ok = device.swipe(x1, y1, x2, y2, 50)
+        val ok = device.swipe(q.x1, q.y1, q.x2, q.y2, 50)
         device.waitForIdle(500)
-        val body = JSONObject()
-            .put("status", if (ok) "ok" else "swipe_returned_false")
-            .put("from", JSONObject().put("x", x1).put("y", y1))
-            .put("to", JSONObject().put("x", x2).put("y", y2))
-            .toString()
+        val body = RunnerWire.swipeAtNormCoordBody(ok, q)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveSwipeOnce(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val direction = req.getString("direction")
-        val w = device.displayWidth
-        val h = device.displayHeight
-        // Use 30%-70% of the screen along the swipe axis. Cross-axis fixed
-        // at midline.
-        //
-        // Maestro navigation convention (`SwipeDirection` enum docstring):
-        // the wire "direction" names what content to SEE, not the finger
-        // gesture direction. `down` = "navigate down" = "see below" =
-        // content moves up = finger gestures up (start at y=70%, end at
-        // y=30%).
-        val (x1, y1, x2, y2) = when (direction) {
-            // see above ← finger gestures down
-            "up" -> intArrayOf(w / 2, (h * 0.3).toInt(), w / 2, (h * 0.7).toInt())
-            // see below ← finger gestures up
-            "down" -> intArrayOf(w / 2, (h * 0.7).toInt(), w / 2, (h * 0.3).toInt())
-            // see left  ← finger gestures right
-            "left" -> intArrayOf((w * 0.3).toInt(), h / 2, (w * 0.7).toInt(), h / 2)
-            // see right ← finger gestures left
-            "right" -> intArrayOf((w * 0.7).toInt(), h / 2, (w * 0.3).toInt(), h / 2)
-            else -> return errorJson(
+        val direction = RunnerWire.decodeSwipeOnce(readBodyString(session))
+        val q = RunnerWire.swipeOnceCoords(direction, device.displayWidth, device.displayHeight)
+            ?: return errorJson(
                 Response.Status.BAD_REQUEST,
                 "bad_direction",
                 "expected one of up/down/left/right, got '$direction'",
             )
-        }.let { arr -> IntQuad(arr[0], arr[1], arr[2], arr[3]) }
-        val ok = device.swipe(x1, y1, x2, y2, 50)
+        val ok = device.swipe(q.x1, q.y1, q.x2, q.y2, 50)
         device.waitForIdle(500)
-        val body = JSONObject()
-            .put("status", if (ok) "ok" else "swipe_returned_false")
-            .put("direction", direction)
-            .put("from", JSONObject().put("x", x1).put("y", y1))
-            .put("to", JSONObject().put("x", x2).put("y", y2))
-            .toString()
+        val body = RunnerWire.swipeOnceBody(ok, direction, q)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun servePressKey(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val key = req.getString("key")
+        val key = RunnerWire.decodePressKey(readBodyString(session))
         val code = KeyMap.androidKeyCode(key) ?: return errorJson(
             Response.Status.BAD_REQUEST,
             "unknown_key",
@@ -266,20 +217,14 @@ class SmixHttpServer(
         )
         device.pressKeyCode(code)
         device.waitForIdle(500)
-        val body = JSONObject()
-            .put("status", "ok")
-            .put("key", key)
-            .put("keyCode", code)
-            .toString()
+        val body = RunnerWire.pressKeyBody(key, code)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveBack(): Response {
         val ok = device.pressBack()
         device.waitForIdle(500)
-        val body = JSONObject()
-            .put("status", if (ok) "ok" else "press_back_returned_false")
-            .toString()
+        val body = RunnerWire.backBody(ok)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -289,13 +234,12 @@ class SmixHttpServer(
         // semantics (no harm if no keyboard is up).
         device.pressBack()
         device.waitForIdle(500)
-        val body = JSONObject().put("status", "ok").toString()
+        val body = RunnerWire.statusOkBody()
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveSetOrientation(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val orientation = req.getString("orientation")
+        val orientation = RunnerWire.decodeSetOrientation(readBodyString(session))
         when (orientation) {
             "portrait" -> device.setOrientationNatural()
             "landscapeLeft" -> device.setOrientationLeft()
@@ -312,16 +256,12 @@ class SmixHttpServer(
             )
         }
         device.waitForIdle(800)
-        val body = JSONObject()
-            .put("status", "ok")
-            .put("orientation", orientation)
-            .toString()
+        val body = RunnerWire.setOrientationBody(orientation)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveTapById(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val id = req.getString("id")
+        val id = RunnerWire.decodeTapById(readBodyString(session))
         // Prefer AccessibilityNodeInfo.performAction(ACTION_CLICK) over
         // UiObject2.click() because Compose Button onClick fires
         // reliably through the a11y action path even when a sibling
@@ -379,13 +319,7 @@ class SmixHttpServer(
             }
         }
         device.waitForIdle(500)
-        val body = JSONObject()
-            .put("ok", clicked)
-            .put("id", id)
-            .put("path", path)
-            .put("saw_node", sawNode)
-            .put("saw_action_click", sawActionClick)
-            .toString()
+        val body = RunnerWire.tapByIdBody(clicked, id, path, sawNode, sawActionClick)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -503,13 +437,9 @@ class SmixHttpServer(
     }
 
     private fun serveDoubleTapAtNormCoord(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val nx = req.getDouble("nx")
-        val ny = req.getDouble("ny")
-        val w = device.displayWidth
-        val h = device.displayHeight
-        val px = (nx * w).toInt().coerceIn(0, w - 1)
-        val py = (ny * h).toInt().coerceIn(0, h - 1)
+        val req = RunnerWire.decodeNormCoord(readBodyString(session))
+        val px = RunnerWire.normToPixel(req.nx, device.displayWidth)
+        val py = RunnerWire.normToPixel(req.ny, device.displayHeight)
         device.click(px, py)
         // Standard double-tap inter-tap window — 150ms is below most
         // systems' DOUBLE_TAP_TIMEOUT (300ms) so events register as a
@@ -517,55 +447,47 @@ class SmixHttpServer(
         Thread.sleep(150)
         device.click(px, py)
         device.waitForIdle(500)
-        val body = JSONObject()
-            .put("status", "ok")
-            .put("x", px)
-            .put("y", py)
-            .toString()
+        val body = RunnerWire.doubleTapBody(px, py)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveLongPressAtNormCoord(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val nx = req.getDouble("nx")
-        val ny = req.getDouble("ny")
-        val durationMs = req.optLong("durationMs", 500L)
-        val w = device.displayWidth
-        val h = device.displayHeight
-        val px = (nx * w).toInt().coerceIn(0, w - 1)
-        val py = (ny * h).toInt().coerceIn(0, h - 1)
-        // UiDevice.swipe(x, y, x, y, steps) — same start/end coord with
-        // explicit step count approximates a long press; each step adds
-        // ~5ms, so steps = duration / 5 ms.
-        val steps = (durationMs / 5).toInt().coerceAtLeast(1)
-        device.swipe(px, py, px, py, steps)
+        val req = RunnerWire.decodeLongPressAtNormCoord(readBodyString(session))
+        val px = RunnerWire.normToPixel(req.nx, device.displayWidth)
+        val py = RunnerWire.normToPixel(req.ny, device.displayHeight)
+        device.swipe(px, py, px, py, RunnerWire.longPressSteps(req.durationMs))
         device.waitForIdle(500)
-        val body = JSONObject()
-            .put("status", "ok")
-            .put("x", px)
-            .put("y", py)
-            .put("durationMs", durationMs)
-            .toString()
+        val body = RunnerWire.longPressBody(px, py, req.durationMs)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveInputText(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val text = req.getString("text")
+        val text = RunnerWire.decodeInputText(readBodyString(session))
         // `adb shell input text` (mirrored via Instrumentation
         // executeShellCommand) types into whichever field is currently
         // focused. Caller must have tapped to focus first (AndroidDriver
         // orchestrates host-resolve → tap → input-text).
-        //
-        // Android `input text` interprets unescaped spaces as separators.
-        // UiAutomation.executeShellCommand does NOT run through `sh -c`;
-        // it splits on whitespace + execs directly, so quote characters
-        // are typed literally. Use bare `input text` + escape spaces to
-        // `%s` (input cmd convention).
-        val escaped = text
-            .replace("\\", "\\\\")
-            .replace(" ", "%s")
-        val cmd = "input text $escaped"
+        runShellCommand(RunnerWire.inputTextCommand(text))
+        device.waitForIdle(500)
+        val body = RunnerWire.inputTextBody(text)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun serveForeground(session: IHTTPSession): Response {
+        // smix wire (HttpRunnerClient.foreground) sends {bundleId} per
+        // iOS swift /foreground convention. Mirror that shape.
+        val bundleId = RunnerWire.decodeForeground(readBodyString(session))
+        // Android equivalent: `am start --activity-single-top -n
+        // pkg/.MainActivity`. This brings the app to foreground without
+        // launching a new instance (matches the iOS XCUIDevice activate
+        // semantic).
+        runShellCommand(RunnerWire.foregroundCommand(bundleId))
+        device.waitForIdle(500)
+        val body = RunnerWire.foregroundBody(bundleId)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun runShellCommand(cmd: String) {
         val pfd = instrumentation.uiAutomation.executeShellCommand(cmd)
         try {
             // Drain so the shell command completes before we return.
@@ -575,53 +497,16 @@ class SmixHttpServer(
         } finally {
             pfd.close()
         }
-        device.waitForIdle(500)
-        val body = JSONObject()
-            .put("status", "ok")
-            .put("text", text)
-            .toString()
-        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
-    }
-
-    private fun serveForeground(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        // smix wire (HttpRunnerClient.foreground) sends {bundleId} per
-        // iOS swift /foreground convention. Mirror that shape.
-        val bundleId = req.getString("bundleId")
-        // Android equivalent: `am start --activity-single-top -n
-        // pkg/.MainActivity`. This brings the app to foreground without
-        // launching a new instance (matches the iOS XCUIDevice activate
-        // semantic).
-        val cmd = "am start --activity-single-top -n $bundleId/.MainActivity"
-        val pfd = instrumentation.uiAutomation.executeShellCommand(cmd)
-        try {
-            val buf = ByteArray(256)
-            val input = java.io.FileInputStream(pfd.fileDescriptor)
-            while (input.read(buf) >= 0) { /* drain */ }
-        } finally {
-            pfd.close()
-        }
-        device.waitForIdle(500)
-        val body = JSONObject()
-            .put("status", "ok")
-            .put("bundleId", bundleId)
-            .toString()
-        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveFindTextByOcr(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val target = req.getString("text")
         // locales + recognition_level are iOS-specific Apple Vision args;
         // the ML Kit Latin script package handles ASCII/Latin universally
-        // so we read but ignore them here. Dedicated CJK packages can be
-        // added when the app under test needs them
+        // so they are accepted but ignored here. Dedicated CJK packages
+        // can be added when the app under test needs them
         // (text-recognition-chinese / japanese / korean / devanagari
         // packages add ~10MB each).
-        @Suppress("UNUSED_VARIABLE")
-        val locales = req.optJSONArray("locales")
-        @Suppress("UNUSED_VARIABLE")
-        val level = req.optString("recognition_level", "accurate")
+        val target = RunnerWire.decodeOcrTarget(readBodyString(session))
 
         val bitmap = instrumentation.uiAutomation.takeScreenshot()
             ?: return errorJson(
@@ -676,19 +561,9 @@ class SmixHttpServer(
 
         val rect = matchedRect
         val body = if (rect != null && width > 0 && height > 0) {
-            val nx = rect.left.toDouble() / width
-            val ny = rect.top.toDouble() / height
-            val w = (rect.right - rect.left).toDouble() / width
-            val h = (rect.bottom - rect.top).toDouble() / height
-            // Wire shape matches iOS swift /find-text-by-ocr response:
-            // {found: bool, frame: [nx, ny, w, h]} per HttpRunnerClient
-            // deserialization.
-            JSONObject()
-                .put("found", true)
-                .put("frame", JSONArray().put(nx).put(ny).put(w).put(h))
-                .toString()
+            RunnerWire.ocrFoundBody(rect.left, rect.top, rect.right, rect.bottom, width, height)
         } else {
-            JSONObject().put("found", false).toString()
+            RunnerWire.ocrNotFoundBody()
         }
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
@@ -714,26 +589,24 @@ class SmixHttpServer(
                 val popupId = "android-popup-$idx"
                 idx += 1
                 popupsArr.put(
-                    JSONObject()
-                        .put("id", popupId)
-                        .put("type", "alert")
-                        .put("source", root.packageName?.toString() ?: "")
-                        .put("title", title ?: "")
-                        .put("body", body ?: "")
-                        .put("buttons", buttons),
+                    PopupWire.popupEntry(
+                        popupId,
+                        root.packageName?.toString() ?: "",
+                        title,
+                        body,
+                        buttons,
+                    ),
                 )
             } finally {
                 root.recycle()
             }
         }
-        val body = JSONObject().put("popups", popupsArr).toString()
+        val body = RunnerWire.popupsBody(popupsArr)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveSystemPopupAction(session: IHTTPSession): Response {
-        val req = readJsonBody(session)
-        val popupId = req.getString("popup_id")
-        val buttonId = req.getString("button_id")
+        val (popupId, buttonId) = RunnerWire.decodeSystemPopupAction(readBodyString(session))
         // Re-walk to find the popup + button (mirror swift smix-runner
         // re-resolve semantics — stale ids surface as ok:false).
         val automation = instrumentation.uiAutomation
@@ -765,11 +638,7 @@ class SmixHttpServer(
                 root.recycle()
             }
         }
-        val body = JSONObject()
-            .put("ok", clicked)
-            .put("popupId", popupId)
-            .put("buttonId", buttonId)
-            .toString()
+        val body = RunnerWire.popupActionBody(clicked, popupId, buttonId)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -801,38 +670,24 @@ class SmixHttpServer(
             }
             newFixedLengthResponse(statusEnum, "application/json", body)
         } catch (e: Throwable) {
-            val body = JSONObject()
-                .put("error", "proxy_failed")
-                .put("message", e.message ?: e.javaClass.simpleName)
-                .put("hint", "ensure the app's WebViewEvalServer is up on :28081")
-                .toString()
+            val body = RunnerWire.proxyFailedBody(e.message ?: e.javaClass.simpleName)
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", body)
         }
     }
 
-    private fun readJsonBody(session: IHTTPSession): JSONObject {
+    private fun readBodyString(session: IHTTPSession): String {
         val files = HashMap<String, String>()
         session.parseBody(files)
-        val payload = files["postData"] ?: session.queryParameterString ?: "{}"
-        return JSONObject(payload)
+        return files["postData"] ?: session.queryParameterString ?: "{}"
     }
 
     private fun errorJson(status: Response.Status, kind: String, message: String): Response {
-        val body = JSONObject()
-            .put("error", kind)
-            .put("message", message)
-            .toString()
+        val body = RunnerWire.errorBody(kind, message)
         return newFixedLengthResponse(status, "application/json", body)
     }
 
-    private data class IntQuad(val a: Int, val b: Int, val c: Int, val d: Int)
-
     private fun serveNotImplemented(uri: String, method: String): Response {
-        val body = JSONObject()
-            .put("error", "not_implemented")
-            .put("route", uri)
-            .put("method", method)
-            .toString()
+        val body = RunnerWire.notImplementedBody(uri, method)
         return newFixedLengthResponse(
             Response.Status.NOT_IMPLEMENTED,
             "application/json",
@@ -949,20 +804,9 @@ object PopupClassifier {
                 ?: labelFromDesc.takeIf { it.isNotEmpty() }
                 ?: labelFromSibling
                 ?: ""
-            val id = short.takeIf { it.isNotEmpty() } ?: label.lowercase()
-            val role = when {
-                id.contains("cancel", ignoreCase = true) -> "cancel"
-                id.contains("destruct", ignoreCase = true) ||
-                    label.equals("Delete", ignoreCase = true) -> "destructive"
-                else -> "default"
-            }
-            arr.put(
-                JSONObject()
-                    .put("id", id)
-                    .put("label", label)
-                    .put("role", role)
-                    .put("destructive", role == "destructive"),
-            )
+            val id = PopupWire.buttonId(short, label)
+            val role = PopupWire.buttonRole(id, label)
+            arr.put(PopupWire.buttonEntry(id, label, role))
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
@@ -1052,14 +896,7 @@ object TreeBuilder {
                 node.recycle()
             }
         }
-        return JSONObject()
-            .put("rawType", "android.view.WindowRoot")
-            .put("bounds", JSONObject().put("x", 0).put("y", 0).put("w", maxW).put("h", maxH))
-            .put("enabled", true)
-            .put("selected", false)
-            .put("hasFocus", false)
-            .put("visible", true)
-            .put("children", rootChildren)
+        return TreeWire.windowRootJson(maxW, maxH, rootChildren)
     }
 
     private fun nodeToJson(node: AccessibilityNodeInfo): JSONObject {
@@ -1071,40 +908,8 @@ object TreeBuilder {
         // rendered. Refreshing per-node forces the framework to re-sync
         // each child with current Compose semantics.
         node.refresh()
-        val obj = JSONObject()
-        val cls = node.className?.toString() ?: ""
-        obj.put("rawType", cls)
-        deriveRole(cls)?.let { obj.put("role", it) }
-
-        node.viewIdResourceName?.takeIf { it.isNotEmpty() }?.let {
-            // Match TreeXmlParser convention: strip "<pkg>:id/" prefix so
-            // tests can match short id literally.
-            val short = it.substringAfter(":id/", it)
-            obj.put("identifier", short)
-        }
-        node.contentDescription?.toString()?.takeIf { it.isNotEmpty() }?.let {
-            obj.put("label", it)
-        }
-        node.text?.toString()?.takeIf { it.isNotEmpty() }?.let {
-            obj.put("text", it)
-        }
-
         val rect = Rect()
         node.getBoundsInScreen(rect)
-        obj.put(
-            "bounds",
-            JSONObject()
-                .put("x", rect.left)
-                .put("y", rect.top)
-                .put("w", (rect.right - rect.left).coerceAtLeast(0))
-                .put("h", (rect.bottom - rect.top).coerceAtLeast(0)),
-        )
-
-        obj.put("enabled", node.isEnabled)
-        obj.put("selected", node.isSelected)
-        obj.put("hasFocus", node.isFocused)
-        obj.put("visible", node.isVisibleToUser || (rect.width() > 0 && rect.height() > 0))
-
         val childArr = JSONArray()
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
@@ -1114,43 +919,21 @@ object TreeBuilder {
                 child.recycle()
             }
         }
-        obj.put("children", childArr)
-        return obj
-    }
-
-    private fun deriveRole(cls: String): String? {
-        val tail = cls.substringAfterLast('.')
-        return when {
-            tail == "Button" || tail == "ImageButton" || tail.endsWith("Button") -> "button"
-            tail == "EditText" || tail.endsWith("EditText") -> "textField"
-            tail == "ImageView" -> "image"
-            tail == "Switch" || tail == "SwitchCompat" -> "switch"
-            tail == "CheckBox" -> "checkBox"
-            tail == "RadioButton" -> "radio"
-            tail == "TextView" || tail.endsWith("TextView") -> "staticText"
-            tail.contains("RecyclerView") || tail.contains("ListView") -> "scrollView"
-            tail.contains("TabLayout") || tail == "TabHost" -> "tabBar"
-            tail.contains("Toolbar") || tail.contains("ActionBar") -> "navigationBar"
-            tail == "WebView" -> "webView"
-            else -> null
-        }
-    }
-}
-
-/// Map smix KeyName camelCase (per `smix_input::KeyName` serde rename) →
-/// Android KeyEvent.KEYCODE_*. Returns null when no clean mapping.
-object KeyMap {
-    fun androidKeyCode(name: String): Int? = when (name) {
-        "return" -> KeyEvent.KEYCODE_ENTER
-        "delete" -> KeyEvent.KEYCODE_DEL
-        "tab" -> KeyEvent.KEYCODE_TAB
-        "space" -> KeyEvent.KEYCODE_SPACE
-        "escape" -> KeyEvent.KEYCODE_ESCAPE
-        "arrowUp" -> KeyEvent.KEYCODE_DPAD_UP
-        "arrowDown" -> KeyEvent.KEYCODE_DPAD_DOWN
-        "arrowLeft" -> KeyEvent.KEYCODE_DPAD_LEFT
-        "arrowRight" -> KeyEvent.KEYCODE_DPAD_RIGHT
-        else -> null
+        return TreeWire.nodeJson(
+            rawType = node.className?.toString() ?: "",
+            identifier = node.viewIdResourceName,
+            label = node.contentDescription?.toString(),
+            text = node.text?.toString(),
+            x = rect.left,
+            y = rect.top,
+            w = rect.right - rect.left,
+            h = rect.bottom - rect.top,
+            enabled = node.isEnabled,
+            selected = node.isSelected,
+            hasFocus = node.isFocused,
+            visible = node.isVisibleToUser || (rect.width() > 0 && rect.height() > 0),
+            children = childArr,
+        )
     }
 }
 
@@ -1191,14 +974,11 @@ object TreeXmlParser {
                         val obj = JSONObject()
                         val cls = parser.getAttributeValue(null, "class") ?: ""
                         obj.put("rawType", cls)
-                        deriveRole(cls)?.let { obj.put("role", it) }
+                        TreeWire.deriveRole(cls)?.let { obj.put("role", it) }
 
                         parser.getAttributeValue(null, "resource-id")
                             ?.takeIf { it.isNotEmpty() }
-                            ?.let {
-                                val short = it.substringAfter(":id/", it)
-                                obj.put("identifier", short)
-                            }
+                            ?.let { obj.put("identifier", TreeWire.shortResourceId(it)) }
                         parser.getAttributeValue(null, "content-desc")
                             ?.takeIf { it.isNotEmpty() }
                             ?.let { obj.put("label", it) }
@@ -1269,26 +1049,5 @@ object TreeXmlParser {
                 .put("h", (iy2 - iy1).coerceAtLeast(0))
         }
         return JSONObject().put("x", 0).put("y", 0).put("w", 0).put("h", 0)
-    }
-
-    /// Map android widget class → smix Role camelCase string. Returns null
-    /// when no clean mapping (caller omits the role field). Matches the
-    /// curated Role enum in smix-screen.
-    private fun deriveRole(cls: String): String? {
-        val tail = cls.substringAfterLast('.')
-        return when {
-            tail == "Button" || tail == "ImageButton" || tail.endsWith("Button") -> "button"
-            tail == "EditText" || tail.endsWith("EditText") -> "textField"
-            tail == "ImageView" -> "image"
-            tail == "Switch" || tail == "SwitchCompat" -> "switch"
-            tail == "CheckBox" -> "checkBox"
-            tail == "RadioButton" -> "radio"
-            tail == "TextView" || tail.endsWith("TextView") -> "staticText"
-            tail.contains("RecyclerView") || tail.contains("ListView") -> "scrollView"
-            tail.contains("TabLayout") || tail == "TabHost" -> "tabBar"
-            tail.contains("Toolbar") || tail.contains("ActionBar") -> "navigationBar"
-            tail == "WebView" -> "webView"
-            else -> null
-        }
     }
 }

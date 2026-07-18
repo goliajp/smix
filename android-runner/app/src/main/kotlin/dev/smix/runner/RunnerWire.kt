@@ -1,0 +1,413 @@
+// Pure wire logic for the Android runner HTTP surface: request-body
+// decode + response-body encode for the SmixHttpServer routes in
+// RunnerTest.kt (androidTest).
+//
+// Deliberately free of android.* imports so the whole file runs as a
+// plain JVM unit test (`:app:testDebugUnitTest`). org.json comes from
+// the Android framework at runtime and from the org.json:json test
+// dependency on the JVM.
+//
+// Decode functions throw org.json.JSONException on malformed bodies;
+// SmixHttpServer.serve's catch-all converts that to the 500
+// internal_error envelope.
+
+package dev.smix.runner
+
+import org.json.JSONArray
+import org.json.JSONObject
+
+object RunnerWire {
+    // ---- request decode ----
+
+    data class NormCoord(val nx: Double, val ny: Double)
+
+    fun decodeNormCoord(payload: String): NormCoord {
+        val req = JSONObject(payload)
+        return NormCoord(req.getDouble("nx"), req.getDouble("ny"))
+    }
+
+    data class SwipeCoords(
+        val fromNx: Double,
+        val fromNy: Double,
+        val toNx: Double,
+        val toNy: Double,
+    )
+
+    fun decodeSwipeAtNormCoord(payload: String): SwipeCoords {
+        val req = JSONObject(payload)
+        return SwipeCoords(
+            req.getDouble("fromNx"),
+            req.getDouble("fromNy"),
+            req.getDouble("toNx"),
+            req.getDouble("toNy"),
+        )
+    }
+
+    fun decodeSwipeOnce(payload: String): String =
+        JSONObject(payload).getString("direction")
+
+    fun decodePressKey(payload: String): String =
+        JSONObject(payload).getString("key")
+
+    fun decodeSetOrientation(payload: String): String =
+        JSONObject(payload).getString("orientation")
+
+    fun decodeTapById(payload: String): String =
+        JSONObject(payload).getString("id")
+
+    data class LongPressReq(val nx: Double, val ny: Double, val durationMs: Long)
+
+    fun decodeLongPressAtNormCoord(payload: String): LongPressReq {
+        val req = JSONObject(payload)
+        return LongPressReq(
+            req.getDouble("nx"),
+            req.getDouble("ny"),
+            req.optLong("durationMs", 500L),
+        )
+    }
+
+    fun decodeInputText(payload: String): String =
+        JSONObject(payload).getString("text")
+
+    fun decodeForeground(payload: String): String =
+        JSONObject(payload).getString("bundleId")
+
+    fun decodeOcrTarget(payload: String): String =
+        JSONObject(payload).getString("text")
+
+    data class PopupActionReq(val popupId: String, val buttonId: String)
+
+    // Keys are the Rust contract (SystemPopupActionRequest, camelCase).
+    // This read used snake_case for as long as the route existed, so the
+    // real client always got a 500 and popup-button taps never worked on
+    // Android.
+    fun decodeSystemPopupAction(payload: String): PopupActionReq {
+        val req = JSONObject(payload)
+        return PopupActionReq(req.getString("popupId"), req.getString("buttonId"))
+    }
+
+    // ---- pure transforms ----
+
+    fun normToPixel(n: Double, extent: Int): Int =
+        (n * extent).toInt().coerceIn(0, extent - 1)
+
+    data class SwipeQuad(val x1: Int, val y1: Int, val x2: Int, val y2: Int)
+
+    // Maestro navigation convention (`SwipeDirection` enum docstring):
+    // the wire "direction" names what content to SEE, not the finger
+    // gesture direction. `down` = "navigate down" = "see below" =
+    // content moves up = finger gestures up (start at y=70%, end at
+    // y=30%). 30%-70% of the screen along the swipe axis; cross-axis
+    // fixed at midline.
+    fun swipeOnceCoords(direction: String, w: Int, h: Int): SwipeQuad? = when (direction) {
+        // see above ← finger gestures down
+        "up" -> SwipeQuad(w / 2, (h * 0.3).toInt(), w / 2, (h * 0.7).toInt())
+        // see below ← finger gestures up
+        "down" -> SwipeQuad(w / 2, (h * 0.7).toInt(), w / 2, (h * 0.3).toInt())
+        // see left  ← finger gestures right
+        "left" -> SwipeQuad((w * 0.3).toInt(), h / 2, (w * 0.7).toInt(), h / 2)
+        // see right ← finger gestures left
+        "right" -> SwipeQuad((w * 0.7).toInt(), h / 2, (w * 0.3).toInt(), h / 2)
+        else -> null
+    }
+
+    // UiDevice.swipe(x, y, x, y, steps) — same start/end coord with
+    // explicit step count approximates a long press; each step adds
+    // ~5ms, so steps = duration / 5 ms.
+    fun longPressSteps(durationMs: Long): Int =
+        (durationMs / 5).toInt().coerceAtLeast(1)
+
+    // Android `input text` interprets unescaped spaces as separators.
+    // UiAutomation.executeShellCommand does NOT run through `sh -c`; it
+    // splits on whitespace + execs directly, so quote characters are
+    // typed literally. Use bare `input text` + escape spaces to `%s`
+    // (input cmd convention).
+    fun escapeForInputText(text: String): String =
+        text.replace("\\", "\\\\").replace(" ", "%s")
+
+    fun inputTextCommand(text: String): String =
+        "input text ${escapeForInputText(text)}"
+
+    fun foregroundCommand(bundleId: String): String =
+        "am start --activity-single-top -n $bundleId/.MainActivity"
+
+    // ---- response encode ----
+
+    // `ok` + `runnerVersion` are what the Rust HealthResponse reads;
+    // `status`/`runner`/`version` stay for existing shell probes.
+    fun healthBody(version: String): String = JSONObject()
+        .put("ok", true)
+        .put("status", "ok")
+        .put("runner", "smix-android-runner")
+        .put("version", version)
+        .put("runnerVersion", version)
+        .toString()
+
+    fun tapAtNormCoordBody(ok: Boolean, displayWidth: Int, displayHeight: Int, x: Int, y: Int): String =
+        JSONObject()
+            .put("status", if (ok) "ok" else "click_returned_false")
+            .put("displayWidth", displayWidth)
+            .put("displayHeight", displayHeight)
+            .put("x", x)
+            .put("y", y)
+            .toString()
+
+    fun swipeAtNormCoordBody(ok: Boolean, q: SwipeQuad): String = JSONObject()
+        .put("status", if (ok) "ok" else "swipe_returned_false")
+        .put("from", JSONObject().put("x", q.x1).put("y", q.y1))
+        .put("to", JSONObject().put("x", q.x2).put("y", q.y2))
+        .toString()
+
+    fun swipeOnceBody(ok: Boolean, direction: String, q: SwipeQuad): String = JSONObject()
+        .put("status", if (ok) "ok" else "swipe_returned_false")
+        .put("direction", direction)
+        .put("from", JSONObject().put("x", q.x1).put("y", q.y1))
+        .put("to", JSONObject().put("x", q.x2).put("y", q.y2))
+        .toString()
+
+    fun pressKeyBody(key: String, keyCode: Int): String = JSONObject()
+        .put("status", "ok")
+        .put("key", key)
+        .put("keyCode", keyCode)
+        .toString()
+
+    fun backBody(ok: Boolean): String = JSONObject()
+        .put("status", if (ok) "ok" else "press_back_returned_false")
+        .toString()
+
+    fun statusOkBody(): String = JSONObject().put("status", "ok").toString()
+
+    fun setOrientationBody(orientation: String): String = JSONObject()
+        .put("status", "ok")
+        .put("orientation", orientation)
+        .toString()
+
+    fun tapByIdBody(
+        ok: Boolean,
+        id: String,
+        path: String,
+        sawNode: Boolean,
+        sawActionClick: Boolean,
+    ): String = JSONObject()
+        .put("ok", ok)
+        .put("id", id)
+        .put("path", path)
+        .put("saw_node", sawNode)
+        .put("saw_action_click", sawActionClick)
+        .toString()
+
+    fun doubleTapBody(x: Int, y: Int): String = JSONObject()
+        .put("status", "ok")
+        .put("x", x)
+        .put("y", y)
+        .toString()
+
+    fun longPressBody(x: Int, y: Int, durationMs: Long): String = JSONObject()
+        .put("status", "ok")
+        .put("x", x)
+        .put("y", y)
+        .put("durationMs", durationMs)
+        .toString()
+
+    fun inputTextBody(text: String): String = JSONObject()
+        .put("status", "ok")
+        .put("text", text)
+        .toString()
+
+    fun foregroundBody(bundleId: String): String = JSONObject()
+        .put("status", "ok")
+        .put("bundleId", bundleId)
+        .toString()
+
+    // Wire shape matches iOS swift /find-text-by-ocr response:
+    // {found: bool, frame: [nx, ny, w, h]} per HttpRunnerClient
+    // deserialization.
+    fun ocrFoundBody(left: Int, top: Int, right: Int, bottom: Int, imageWidth: Int, imageHeight: Int): String {
+        val nx = left.toDouble() / imageWidth
+        val ny = top.toDouble() / imageHeight
+        val w = (right - left).toDouble() / imageWidth
+        val h = (bottom - top).toDouble() / imageHeight
+        return JSONObject()
+            .put("found", true)
+            .put("frame", JSONArray().put(nx).put(ny).put(w).put(h))
+            .toString()
+    }
+
+    fun ocrNotFoundBody(): String = JSONObject().put("found", false).toString()
+
+    fun popupsBody(popups: JSONArray): String =
+        JSONObject().put("popups", popups).toString()
+
+    fun popupActionBody(ok: Boolean, popupId: String, buttonId: String): String = JSONObject()
+        .put("ok", ok)
+        .put("popupId", popupId)
+        .put("buttonId", buttonId)
+        .toString()
+
+    fun errorBody(kind: String, message: String): String = JSONObject()
+        .put("error", kind)
+        .put("message", message)
+        .toString()
+
+    fun internalErrorBody(message: String, className: String): String = JSONObject()
+        .put("error", "internal_error")
+        .put("message", message)
+        .put("class", className)
+        .toString()
+
+    fun notImplementedBody(route: String, method: String): String = JSONObject()
+        .put("error", "not_implemented")
+        .put("route", route)
+        .put("method", method)
+        .toString()
+
+    fun proxyFailedBody(message: String): String = JSONObject()
+        .put("error", "proxy_failed")
+        .put("message", message)
+        .put("hint", "ensure the app's WebViewEvalServer is up on :28081")
+        .toString()
+}
+
+/// Map smix KeyName camelCase (per `smix_input::KeyName` serde rename) →
+/// Android KeyEvent.KEYCODE_*. Returns null when no clean mapping.
+///
+/// Literal keycodes instead of android.view.KeyEvent constants keep this
+/// file android.*-free; KeyMapTest cross-checks every literal against the
+/// real KeyEvent constants.
+object KeyMap {
+    fun androidKeyCode(name: String): Int? = when (name) {
+        "return" -> 66 // KeyEvent.KEYCODE_ENTER
+        "delete" -> 67 // KeyEvent.KEYCODE_DEL
+        "tab" -> 61 // KeyEvent.KEYCODE_TAB
+        "space" -> 62 // KeyEvent.KEYCODE_SPACE
+        "escape" -> 111 // KeyEvent.KEYCODE_ESCAPE
+        "arrowUp" -> 19 // KeyEvent.KEYCODE_DPAD_UP
+        "arrowDown" -> 20 // KeyEvent.KEYCODE_DPAD_DOWN
+        "arrowLeft" -> 21 // KeyEvent.KEYCODE_DPAD_LEFT
+        "arrowRight" -> 22 // KeyEvent.KEYCODE_DPAD_RIGHT
+        "home" -> 3 // KeyEvent.KEYCODE_HOME
+        "lock" -> 26 // KeyEvent.KEYCODE_POWER
+        "volumeUp" -> 24 // KeyEvent.KEYCODE_VOLUME_UP
+        "volumeDown" -> 25 // KeyEvent.KEYCODE_VOLUME_DOWN
+        else -> null
+    }
+}
+
+/// Pure JSON assembly for /system-popups + /system-popup-action.
+/// The a11y-tree walking stays in PopupClassifier (androidTest).
+object PopupWire {
+    fun buttonId(shortId: String, label: String): String =
+        shortId.takeIf { it.isNotEmpty() } ?: label.lowercase()
+
+    fun buttonRole(id: String, label: String): String = when {
+        id.contains("cancel", ignoreCase = true) -> "cancel"
+        id.contains("destruct", ignoreCase = true) ||
+            label.equals("Delete", ignoreCase = true) -> "destructive"
+        else -> "default"
+    }
+
+    // Known wire mismatch, kept byte-identical during extraction: the
+    // `dangerous` is the key both the Rust SystemPopupButton struct and
+    // the iOS runner use; this emitted `destructive` for as long as the
+    // route existed, so the flag was silently dropped by every client.
+    fun buttonEntry(id: String, label: String, role: String): JSONObject = JSONObject()
+        .put("id", id)
+        .put("label", label)
+        .put("role", role)
+        .put("dangerous", role == "destructive")
+
+    fun popupEntry(
+        id: String,
+        source: String,
+        title: String?,
+        body: String?,
+        buttons: JSONArray,
+    ): JSONObject = JSONObject()
+        .put("id", id)
+        .put("type", "alert")
+        .put("source", source)
+        .put("title", title ?: "")
+        .put("body", body ?: "")
+        .put("buttons", buttons)
+}
+
+/// Pure JSON assembly for /tree A11yNode payloads. The
+/// AccessibilityNodeInfo walking stays in TreeBuilder (androidTest).
+object TreeWire {
+    /// Strip "<pkg>:id/" prefix so consumers match short ids literally.
+    fun shortResourceId(vid: String): String = vid.substringAfter(":id/", vid)
+
+    /// Map android widget class → smix Role camelCase string. Returns
+    /// null when no clean mapping (caller omits the role field). Matches
+    /// the curated Role enum in smix-screen.
+    fun deriveRole(cls: String): String? {
+        val tail = cls.substringAfterLast('.')
+        return when {
+            // Specific *Button subclasses must precede the endsWith
+            // catch-all: with the order reversed, RadioButton (and
+            // Toggle/CompoundButton) matched "button" and the radio
+            // branch was dead — Selector::Role(radio) never matched on
+            // Android.
+            tail == "RadioButton" -> "radio"
+            tail == "ToggleButton" || tail == "CompoundButton" -> "switch"
+            tail == "Button" || tail == "ImageButton" || tail.endsWith("Button") -> "button"
+            tail == "EditText" || tail.endsWith("EditText") -> "textField"
+            tail == "ImageView" -> "image"
+            tail == "Switch" || tail == "SwitchCompat" -> "switch"
+            tail == "CheckBox" -> "checkBox"
+            tail == "TextView" || tail.endsWith("TextView") -> "staticText"
+            tail.contains("RecyclerView") || tail.contains("ListView") -> "scrollView"
+            tail.contains("TabLayout") || tail == "TabHost" -> "tabBar"
+            tail.contains("Toolbar") || tail.contains("ActionBar") -> "navigationBar"
+            tail == "WebView" -> "webView"
+            else -> null
+        }
+    }
+
+    fun nodeJson(
+        rawType: String,
+        identifier: String?,
+        label: String?,
+        text: String?,
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+        enabled: Boolean,
+        selected: Boolean,
+        hasFocus: Boolean,
+        visible: Boolean,
+        children: JSONArray,
+    ): JSONObject {
+        val obj = JSONObject()
+        obj.put("rawType", rawType)
+        deriveRole(rawType)?.let { obj.put("role", it) }
+        identifier?.takeIf { it.isNotEmpty() }?.let { obj.put("identifier", shortResourceId(it)) }
+        label?.takeIf { it.isNotEmpty() }?.let { obj.put("label", it) }
+        text?.takeIf { it.isNotEmpty() }?.let { obj.put("text", it) }
+        obj.put(
+            "bounds",
+            JSONObject()
+                .put("x", x)
+                .put("y", y)
+                .put("w", w.coerceAtLeast(0))
+                .put("h", h.coerceAtLeast(0)),
+        )
+        obj.put("enabled", enabled)
+        obj.put("selected", selected)
+        obj.put("hasFocus", hasFocus)
+        obj.put("visible", visible)
+        obj.put("children", children)
+        return obj
+    }
+
+    /// Virtual root merging all attached windows into a single dump.
+    fun windowRootJson(maxW: Int, maxH: Int, children: JSONArray): JSONObject = JSONObject()
+        .put("rawType", "android.view.WindowRoot")
+        .put("bounds", JSONObject().put("x", 0).put("y", 0).put("w", maxW).put("h", maxH))
+        .put("enabled", true)
+        .put("selected", false)
+        .put("hasFocus", false)
+        .put("visible", true)
+        .put("children", children)
+}

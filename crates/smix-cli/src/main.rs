@@ -17,7 +17,7 @@ mod script;
 
 use clap::{Parser, Subcommand};
 use smix_simctl::registry::{self, RegistryError, SimRegistry};
-use smix_simctl::{Appearance, LaunchResult, SimctlClient, DeviceControlError};
+use smix_simctl::{Appearance, DeviceControlError, LaunchResult, SimctlClient};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -209,6 +209,15 @@ enum Cmd {
     SystemPopups {
         #[arg(long)]
         json: bool,
+        #[arg(long)]
+        port: Option<u16>,
+    },
+    /// Press a button on a SpringBoard system popup. Both ids come from
+    /// `smix system-popups` output (popup `id` + one of its buttons'
+    /// `id`). Errors when the popup or button no longer exists.
+    SystemPopupAction {
+        popup_id: String,
+        button_id: String,
         #[arg(long)]
         port: Option<u16>,
     },
@@ -656,6 +665,22 @@ enum SimAction {
     },
     /// Print the UDID a device ref resolves to.
     Resolve { device: String },
+    /// Record a simulator in `.smix/sims.json` under an alias, creating
+    /// the registry when absent. This is the bootstrap: alias-form
+    /// device refs fail on a fresh checkout until a registry exists.
+    /// Device name / runtime / device type are read from `simctl list`,
+    /// so only the UDID and alias are needed.
+    Register {
+        alias: String,
+        #[arg(long)]
+        udid: String,
+        /// BCP 47 locale to enforce at boot (e.g. `ja-JP`). Optional.
+        #[arg(long)]
+        locale: Option<String>,
+        /// Dedicated runner port for this sim. Optional.
+        #[arg(long = "runner-port")]
+        runner_port: Option<u16>,
+    },
     /// Boot a simulator.
     Boot { device: String },
     /// Shutdown a simulator.
@@ -842,6 +867,55 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             SimAction::Resolve { device } => {
                 println!("{}", resolve_device(&device)?);
             }
+            SimAction::Register {
+                alias,
+                udid,
+                locale,
+                runner_port,
+            } => {
+                let udid = udid.to_ascii_uppercase();
+                if !registry::is_udid(&udid) {
+                    return Err(CliError::Other(format!(
+                        "--udid {udid:?} is not UDID-form (8-4-4-4-12 hex); \
+                         find it via `smix sim list`"
+                    )));
+                }
+                let devices = simctl.list_devices().await?;
+                let device = devices
+                    .iter()
+                    .find(|d| d.udid.eq_ignore_ascii_case(&udid))
+                    .ok_or_else(|| {
+                        CliError::Other(format!(
+                            "simctl knows no device {udid} — check `smix sim list`"
+                        ))
+                    })?;
+                // Env override, discovered registry, else a fresh
+                // `.smix/sims.json` in cwd — register is the one verb
+                // that must work before the file exists.
+                let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+                let outcome = SimRegistry::register(
+                    &path,
+                    &alias,
+                    smix_simctl::registry::RegisteredSim {
+                        device_name: device.name.clone(),
+                        udid: device.udid.to_ascii_uppercase(),
+                        runtime: device.runtime_identifier.clone(),
+                        device_type: device.device_type_identifier.clone(),
+                        locale,
+                        runner_port,
+                    },
+                )?;
+                let verb = match outcome {
+                    smix_simctl::registry::RegisterOutcome::Added => "registered",
+                    smix_simctl::registry::RegisterOutcome::Updated => "updated",
+                };
+                println!(
+                    "{verb}: {alias} → {} ({}) in {}",
+                    device.udid,
+                    device.name,
+                    path.display()
+                );
+            }
             SimAction::Boot { device } => {
                 let udid = resolve_device(&device)?;
                 simctl.boot(&udid).await?;
@@ -1022,18 +1096,16 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         .map_err(CliError::Other)?;
                 }
                 RunnerAction::Supervise { runner_project } => {
-                    runner::supervise(&root, runner_project.as_deref())
-                        .map_err(CliError::Other)?;
+                    runner::supervise(&root, runner_project.as_deref()).map_err(CliError::Other)?;
                 }
                 RunnerAction::ListSessions => {
                     let port = runner_port();
                     let client = smix_runner_client::HttpRunnerClient::new(port);
-                    let rt = tokio::runtime::Runtime::new().map_err(|e| {
-                        CliError::Other(format!("tokio runtime: {e}"))
-                    })?;
-                    let resp = rt.block_on(client.list_sessions()).map_err(|e| {
-                        CliError::Other(format!("/session/list: {e}"))
-                    })?;
+                    let rt = tokio::runtime::Runtime::new()
+                        .map_err(|e| CliError::Other(format!("tokio runtime: {e}")))?;
+                    let resp = rt
+                        .block_on(client.list_sessions())
+                        .map_err(|e| CliError::Other(format!("/session/list: {e}")))?;
                     if resp.sessions.is_empty() {
                         println!("(no open sessions)");
                     } else {
@@ -1044,19 +1116,15 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         for s in &resp.sessions {
                             println!(
                                 "{:<38} {:<40} {:<17} {}",
-                                s.session_id,
-                                s.bundle_id,
-                                s.opened_at_ms,
-                                s.last_activated_at_ms,
+                                s.session_id, s.bundle_id, s.opened_at_ms, s.last_activated_at_ms,
                             );
                         }
                     }
                 }
                 RunnerAction::Install { path, force } => {
                     let target = path.unwrap_or_else(|| {
-                        runner::installed_runner_dir().unwrap_or_else(|| {
-                            PathBuf::from("~/.local/share/smix/runner")
-                        })
+                        runner::installed_runner_dir()
+                            .unwrap_or_else(|| PathBuf::from("~/.local/share/smix/runner"))
                     });
                     if !force {
                         // Delegate to the same auto-sync used inside
@@ -1093,7 +1161,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 let backup_note = report
                                     .backup
                                     .as_ref()
-                                    .map(|b| format!(" (previous tree backed up to {})", b.display()))
+                                    .map(|b| {
+                                        format!(" (previous tree backed up to {})", b.display())
+                                    })
                                     .unwrap_or_default();
                                 println!(
                                     "runner install: extracted {} files at v{} into {}{}.",
@@ -1221,6 +1291,16 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
+        Cmd::SystemPopupAction {
+            popup_id,
+            button_id,
+            port,
+        } => {
+            let p = port.unwrap_or_else(act::runner_port_from_env);
+            act::cmd_system_popup_action(&popup_id, &button_id, p)
+                .await
+                .map_err(|e| CliError::Other(e.to_string()))?;
+        }
         Cmd::RunScript { path, port } => {
             let p = port.unwrap_or_else(act::runner_port_from_env);
             script::cmd_run_script(&path, p)
@@ -1264,10 +1344,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             let switches = runner::load_switches();
             let sw_auto_ocr =
                 runner::resolve_switch(switches.auto_ocr_fallback, "SMIX_AUTO_OCR_FALLBACK");
-            let sw_ai_assertions = runner::resolve_switch(
-                switches.enable_ai_assertions,
-                "SMIX_ENABLE_AI_ASSERTIONS",
-            );
+            let sw_ai_assertions =
+                runner::resolve_switch(switches.enable_ai_assertions, "SMIX_ENABLE_AI_ASSERTIONS");
             let sw_assert_no_autorecord = runner::resolve_switch(
                 switches.assert_screenshot_no_autorecord,
                 "SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD",
@@ -1319,10 +1397,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             }
                         },
                         Err(e) => {
-                            eprintln!(
-                                "smix run: parse FAIL {}: read: {e}",
-                                flow_path.display()
-                            );
+                            eprintln!("smix run: parse FAIL {}: read: {e}", flow_path.display());
                             fail = 2;
                         }
                     }
@@ -1419,9 +1494,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 let mut final_code: u8 = 1;
                 for attempt_index in 0..max_attempts {
                     if attempt_index > 0 {
-                        eprintln!(
-                            "smix run: retry #{attempt_index} for flow {flow_name}"
-                        );
+                        eprintln!("smix run: retry #{attempt_index} for flow {flow_name}");
                     }
                     let ips_before = ips_snapshot(Some(bundle.as_str()));
                     let started = std::time::Instant::now();
@@ -1455,19 +1528,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     let wall_ms = started.elapsed().as_millis() as u64;
                     let code = exit_code_to_u8(exit);
                     let ips_after = ips_snapshot(Some(bundle.as_str()));
-                    let new_ips: Option<String> = ips_after
-                        .iter()
-                        .find(|p| !ips_before.contains(*p))
-                        .cloned();
+                    let new_ips: Option<String> =
+                        ips_after.iter().find(|p| !ips_before.contains(*p)).cloned();
                     let (status, error_class) = match code {
                         0 => ("ok".to_string(), None),
                         1 => ("error".to_string(), Some("EXPECTATION_FAILURE".to_string())),
                         2 => ("timeout".to_string(), Some("TIMEOUT".to_string())),
                         5 => ("error".to_string(), Some("DRIVER_ERROR".to_string())),
-                        6 => (
-                            "error".to_string(),
-                            Some("RUNNER_UNREACHABLE".to_string()),
-                        ),
+                        6 => ("error".to_string(), Some("RUNNER_UNREACHABLE".to_string())),
                         n => ("error".to_string(), Some(format!("EXIT_{n}"))),
                     };
                     let mut a = smix_runner_wire::FlowAttempt::default();
@@ -1488,15 +1556,21 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 // shape here (thin adapter).
                 struct AttemptView<'a>(&'a smix_runner_wire::FlowAttempt);
                 impl<'a> smix_simctl::FlowAttemptShape for AttemptView<'a> {
-                    fn attempt_index(&self) -> u32 { self.0.attempt_index }
-                    fn status(&self) -> &str { &self.0.status }
+                    fn attempt_index(&self) -> u32 {
+                        self.0.attempt_index
+                    }
+                    fn status(&self) -> &str {
+                        &self.0.status
+                    }
                     fn error_class(&self) -> Option<&str> {
                         self.0.error_class.as_deref()
                     }
                     fn ips_generated(&self) -> Option<&str> {
                         self.0.ips_generated.as_deref()
                     }
-                    fn wall_ms(&self) -> u64 { self.0.wall_ms }
+                    fn wall_ms(&self) -> u64 {
+                        self.0.wall_ms
+                    }
                 }
                 let views: Vec<AttemptView> = attempts.iter().map(AttemptView).collect();
                 smix_simctl::record_flow_attempts(&flow_name, &views);
@@ -2139,8 +2213,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
             // for these fields arrive as 0; we merge from the
             // CLI-persisted store.
             let reset_counters = smix_simctl::reset_app_data_counters_snapshot();
-            resp.session_counters.reset_app_data_total =
-                reset_counters.reset_app_data_total;
+            resp.session_counters.reset_app_data_total = reset_counters.reset_app_data_total;
             resp.session_counters.reset_app_data_timed_out =
                 reset_counters.reset_app_data_timed_out;
             // Overlay per-flow retry attribution from the
@@ -2183,7 +2256,10 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                             .map(|d| d.as_millis() as u64).unwrap_or(0),
                     })).collect::<Vec<_>>(),
                 });
-                println!("{}", serde_json::to_string_pretty(&payload).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&payload).unwrap_or_default()
+                );
                 return Ok(());
             }
 
@@ -2237,24 +2313,20 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
             );
             println!(
                 "  terminate: viaXCUIApplication={} viaFallback={}  # fallback>0 = cooperative terminate failed → potential .ips writes",
-                sc.terminate_app_via_xcuiapplication,
-                sc.terminate_app_via_fallback,
+                sc.terminate_app_via_xcuiapplication, sc.terminate_app_via_fallback,
             );
             println!(
                 "  launch:    reachedForeground={} timedOutBeforeForeground={}  # timedOut>0 → next call may fire during launch → bug_type 309",
-                sc.launch_app_reached_foreground,
-                sc.launch_app_timed_out_before_foreground,
+                sc.launch_app_reached_foreground, sc.launch_app_timed_out_before_foreground,
             );
             // resetAppData + interactive fingerprint.
             println!(
                 "  resetAppData: total={} timedOut={}  # timedOut>0 → URL scheme fired but reset-complete log-line never arrived",
-                sc.reset_app_data_total,
-                sc.reset_app_data_timed_out,
+                sc.reset_app_data_total, sc.reset_app_data_timed_out,
             );
             println!(
                 "  interactive: reachedInteractive={} timedOutBeforeInteractive={}  # timedOut>0 → process foreground but a11y tree unusable (splash / dev-launcher / sparse annotation)",
-                sc.launch_app_reached_interactive,
-                sc.launch_app_timed_out_before_interactive,
+                sc.launch_app_reached_interactive, sc.launch_app_timed_out_before_interactive,
             );
             // Top-level lastInteractiveNamedIds sample.
             if !resp.last_interactive_named_ids.is_empty() {
@@ -2300,11 +2372,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                             .unwrap_or_default();
                         println!(
                             "    attempt #{} status={} wallMs={}{}{}",
-                            attempt.attempt_index,
-                            attempt.status,
-                            attempt.wall_ms,
-                            err,
-                            ips,
+                            attempt.attempt_index, attempt.status, attempt.wall_ms, err, ips,
                         );
                     }
                 }
@@ -2316,7 +2384,10 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 resp.recent_subprocesses.len(),
             );
             for r in resp.recent_subprocesses.iter().rev().take(20) {
-                let code = r.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "-".into());
+                let code = r
+                    .exit_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "-".into());
                 let head = if r.stderr_head.is_empty() {
                     String::new()
                 } else {
@@ -2337,7 +2408,10 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
                 client_side.len(),
             );
             for r in client_side.iter().rev().take(20) {
-                let code = r.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "-".into());
+                let code = r
+                    .exit_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "-".into());
                 let head = if r.stderr_head.is_empty() {
                     String::new()
                 } else {

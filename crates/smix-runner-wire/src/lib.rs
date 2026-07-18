@@ -164,9 +164,19 @@ pub struct TapStages {
 }
 
 /// `POST /tap` response body.
+///
+/// This struct is the wire contract; the Swift emitter
+/// (`TapRoute.success`) is gated against it by
+/// `tests/tap_route_shape.rs`, which failed to exist long enough for the
+/// runner to ship a nested-`matched` + snake_case body that this struct
+/// silently deserialized to all-`None`/zero.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TapResult {
+    /// Matched element's accessibility label (selector text echoed when
+    /// the label is empty).
+    #[serde(rename = "matchedLabel", default)]
+    pub matched_label: Option<String>,
     /// Per-stage timing breakdown.
     #[serde(default)]
     pub stages: Option<TapStages>,
@@ -534,10 +544,7 @@ pub const WIRE_SCHEMA_SUPPORTED: &[u32] = &[1, 2];
 /// 2 agree on schema 2, whatever their versions say.
 #[must_use]
 pub fn negotiate_wire_schema(ours: &[u32], theirs: &[u32]) -> Option<u32> {
-    ours.iter()
-        .filter(|v| theirs.contains(v))
-        .copied()
-        .max()
+    ours.iter().filter(|v| theirs.contains(v)).copied().max()
 }
 
 /// What a runner says about the wire it speaks.
@@ -776,6 +783,12 @@ pub struct SessionSummary {
     /// by the idle-close sweep.
     #[serde(default)]
     pub last_activated_at_ms: u64,
+    /// Last non-empty interactive-probe sample of named accessibility
+    /// ids seen for this session's app. The runner sent this on every
+    /// list/diagnostic entry (and this crate's own docs referenced it)
+    /// while the struct lacked the field, so serde silently dropped it.
+    #[serde(default)]
+    pub interactive_named_ids: Vec<String>,
 }
 
 /// `POST /session/list` response body.
