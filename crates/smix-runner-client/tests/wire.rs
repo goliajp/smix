@@ -613,3 +613,28 @@ async fn sim_health_accessor_returns_none_by_default() {
     // Without a monitor, /health still works — no feed, no crash.
     assert!(client.health().await);
 }
+
+/// A 200 body carrying `ok:false` is a refusal, not a success — eleven
+/// act routes discarded the body entirely, so a tap whose terminal
+/// synthesis failed (or whose handler crashed into the guarded
+/// fallback) reported Ok end-to-end.
+#[tokio::test]
+async fn a_200_ok_false_body_is_an_error_not_a_success() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/tap-at-norm-coord"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": false
+        })))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let err = client
+        .tap_at_norm_coord(0.5, 0.5)
+        .await
+        .expect_err("ok:false must surface");
+    assert!(
+        format!("{err}").contains("ok:false"),
+        "refusal must say what happened: {err}"
+    );
+}

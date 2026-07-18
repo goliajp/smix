@@ -167,6 +167,9 @@ impl AppLike for SilentMockApp {
     async fn double_tap(&self, _: &Selector) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn go_back(&self) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn long_press(&self, _: &Selector, _: Duration) -> Result<(), ExpectationFailure> {
         Ok(())
     }

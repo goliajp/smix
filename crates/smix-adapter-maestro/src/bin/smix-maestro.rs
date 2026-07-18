@@ -46,9 +46,10 @@ pub(crate) enum Cmd {
         /// Device UDID or registry alias.
         #[arg(long, env = "SMIX_UDID")]
         udid: Option<String>,
-        /// Bundle id of the app under test.
-        #[arg(long, env = "SMIX_BUNDLE_ID", default_value = "com.example.app")]
-        bundle_id: String,
+        /// Bundle id of the app under test. Absent = the flow's own
+        /// `appId:` header.
+        #[arg(long, env = "SMIX_BUNDLE_ID")]
+        bundle_id: Option<String>,
         /// Runner HTTP port.
         #[arg(long, env = "SMIX_RUNNER_PORT", default_value = "22087")]
         runner_port: u16,

@@ -55,3 +55,6 @@ png.workspace = true
 [[bench]]
 name = "perf_gate"
 harness = false
+
+[dev-dependencies.wiremock]
+version = "0.6"

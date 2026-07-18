@@ -67,6 +67,14 @@ pub enum RunnerTransportError {
     MalformedBody { endpoint: String, detail: String },
     #[error("runner {endpoint} unreachable: {message}")]
     Unreachable { endpoint: String, message: String },
+    /// The runner answered HTTP 200 with `{"ok":false}` — the handler
+    /// ran and reports the action failed (element synthesis failed,
+    /// unknown orientation, in-handler exception fallback, …). Eleven
+    /// act routes used to discard the body as `serde_json::Value`, so
+    /// this signal was invisible: a tap whose terminal synthesis failed
+    /// reported success all the way up.
+    #[error("runner {endpoint} answered ok:false — the action did not happen")]
+    Refused { endpoint: String },
     /// The runner returned
     /// `{"ok":false,"error":"snapshot_unavailable"}` (or the enriched
     /// body with `target`/`reason` fields). This is not a network
@@ -406,6 +414,26 @@ impl InputDispatchMode {
             InputDispatchMode::KeyEvents => "key-events",
             InputDispatchMode::Auto => "auto",
         }
+    }
+}
+
+/// 200-with-`{"ok":bool}` envelope shared by the act routes. Absent
+/// `ok` passes (shapes that never carried it stay compatible); explicit
+/// `false` is a refusal the caller must see.
+#[derive(Deserialize)]
+struct OkEnvelope {
+    #[serde(default)]
+    ok: Option<bool>,
+}
+
+impl OkEnvelope {
+    fn require_ok(self, endpoint: &str) -> Result<(), RunnerTransportError> {
+        if self.ok == Some(false) {
+            return Err(RunnerTransportError::Refused {
+                endpoint: endpoint.to_string(),
+            });
+        }
+        Ok(())
     }
 }
 
@@ -1128,9 +1156,10 @@ impl HttpRunnerClient {
             nx: f64,
             ny: f64,
         }
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post("/tap-at-norm-coord", &Req { nx, ny }, None)
             .await?;
+        body.require_ok("/tap-at-norm-coord")?;
         Ok(())
     }
 
@@ -1149,9 +1178,10 @@ impl HttpRunnerClient {
             nx: f64,
             ny: f64,
         }
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post("/double-tap-at-norm-coord", &Req { nx, ny }, None)
             .await?;
+        body.require_ok("/double-tap-at-norm-coord")?;
         Ok(())
     }
 
@@ -1170,7 +1200,7 @@ impl HttpRunnerClient {
             #[serde(rename = "durationMs")]
             duration_ms: u64,
         }
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post(
                 "/long-press-at-norm-coord",
                 &Req {
@@ -1181,6 +1211,7 @@ impl HttpRunnerClient {
                 None,
             )
             .await?;
+        body.require_ok("/long-press-at-norm-coord")?;
         Ok(())
     }
 
@@ -1192,7 +1223,8 @@ impl HttpRunnerClient {
         struct Req<'a> {
             text: &'a str,
         }
-        let _: serde_json::Value = self.json_post("/input-text", &Req { text }, None).await?;
+        let body: OkEnvelope = self.json_post("/input-text", &Req { text }, None).await?;
+        body.require_ok("/input-text")?;
         Ok(())
     }
 
@@ -1358,9 +1390,10 @@ impl HttpRunnerClient {
         struct Req<'a> {
             orientation: &'a str,
         }
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post("/set-orientation", &Req { orientation }, None)
             .await?;
+        body.require_ok("/set-orientation")?;
         Ok(())
     }
 
@@ -1383,7 +1416,7 @@ impl HttpRunnerClient {
             #[serde(rename = "toNy")]
             to_ny: f64,
         }
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post(
                 "/swipe-at-norm-coord",
                 &Req {
@@ -1395,6 +1428,7 @@ impl HttpRunnerClient {
                 None,
             )
             .await?;
+        body.require_ok("/swipe-at-norm-coord")?;
         Ok(())
     }
 
@@ -1562,9 +1596,10 @@ impl HttpRunnerClient {
         struct Req {
             direction: SwipeDirection,
         }
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post("/swipe-once", &Req { direction }, None)
             .await?;
+        body.require_ok("/swipe-once")?;
         Ok(())
     }
 
@@ -1575,25 +1610,28 @@ impl HttpRunnerClient {
             #[serde(rename = "bundleId")]
             bundle_id: &'a str,
         }
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post("/foreground", &Req { bundle_id }, None)
             .await?;
+        body.require_ok("/foreground")?;
         Ok(())
     }
 
     /// `POST /hide-keyboard`.
     pub async fn hide_keyboard(&self) -> Result<(), RunnerTransportError> {
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post("/hide-keyboard", &serde_json::json!({}), None)
             .await?;
+        body.require_ok("/hide-keyboard")?;
         Ok(())
     }
 
     /// `POST /back` — back gesture.
     pub async fn back(&self) -> Result<(), RunnerTransportError> {
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post("/back", &serde_json::json!({}), None)
             .await?;
+        body.require_ok("/back")?;
         Ok(())
     }
 
@@ -1601,9 +1639,10 @@ impl HttpRunnerClient {
 
     /// `POST /record/start` — begin recording.
     pub async fn start_record(&self) -> Result<(), RunnerTransportError> {
-        let _: serde_json::Value = self
+        let body: OkEnvelope = self
             .json_post("/record/start", &serde_json::json!({}), None)
             .await?;
+        body.require_ok("/record/start")?;
         Ok(())
     }
 

@@ -74,8 +74,8 @@ that is why.
 | `stopApp` / `terminate` | ✅ | ✅ | |
 | `killApp` | ✅ | ✅ | |
 | `clearState` / `reset` | ✅ | ⚠️ | Android clears via `pm clear`, which also reverts the app's runtime permissions — app data is app-private, so the host has no way to wipe one without the other. iOS clears the sandbox and privacy separately |
-| `clearKeychain` / `resetKeychain` | ✅ | ❌ | Credentials live in each app's own KeyStore, out of the host's reach. Use `clearAppData`, or have the app expose a sign-out path |
-| `clearUserDefaults` | ✅ | ❌ | v1.0.27 — per-key NSUserDefaults deletion via `simctl spawn defaults delete`; Android SharedPreferences has no host-side per-key path (explicit error; use `clearAppData` for a full wipe) |
+| `clearKeychain` / `resetKeychain` | ✅ | ❌ | Credentials live in each app's own KeyStore, out of the host's reach. Use `clearState` (a full `pm clear`), or have the app expose a sign-out path — `clearAppData` also errors on Android |
+| `clearUserDefaults` | ✅ | ❌ | v1.0.27 — per-key NSUserDefaults deletion via `simctl spawn defaults delete`; Android SharedPreferences has no host-side per-key path (explicit error; use `clearState` for a full wipe — `clearAppData` is iOS-only) |
 
 ## Media
 
@@ -104,7 +104,6 @@ that is why.
 | `travel` | ✅ | ⚠️ | iOS hands the route to CoreSimulator. Android has no route primitive — the emulator console takes one position at a time — so smix walks it from the host, one `geo fix` a second. Both return immediately and travel in the background |
 | `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
 | `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure |
-| `toggleAirplaneMode` | ❌ | ❌ | Listed in `VERB_TABLE` but implemented nowhere: no parser, no step, no device call. It is a name, not a verb |
 
 ## smix-native extensions
 
@@ -124,8 +123,12 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `waitForAnimationToEnd` | ✅ | ✅ | Bare form compares frames until the screen holds still. A screen that never settles — a spinner, a caret — is not a failure; the wait just ends at its ceiling. `: N` / `{ timeout: N }` sets that ceiling |
-| `evalScript` | ⚠️ | ⚠️ | JS eval via the app's debug bridge (consumer wires) |
-| `runScript` | ⚠️ | ⚠️ | Sibling of `evalScript` |
+| `evalScript` | ❌ | ❌ | Errors unconditionally on both platforms ("a complete JS runtime is not supported") with an `assertTrue` pointer. No debug-bridge path exists |
+| `runScript` | ❌ | ❌ | Sibling of `evalScript`; same unconditional error |
+| `clearAppData` | ✅ | ❌ | iOS session-scoped in-place wipe (cooperative terminate → sandbox rm → relaunch). Android errors — use `clearState` |
+| `resetAppData` | ✅ | ✅ | App-owned URL-scheme wipe via `openurl` / `am start VIEW`; `waitFor.logLinePattern` needs `--metro-log` on both |
+| `assertCondition` | ✅ | ✅ | Host-side AI judge over a screenshot (local `claude` CLI); platform-independent |
+| `extractWithAI` | ✅ | ✅ | Same host-side AI lane, writes into `output.*` |
 
 ## Names in the table that are not verbs
 
