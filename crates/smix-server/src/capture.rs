@@ -75,7 +75,27 @@ enum CaptureMode {
     },
 }
 
+impl CaptureMode {
+    /// Wire name for the pipeline actually in use. `start` falls back
+    /// from direct to rolling silently; both used to answer with a
+    /// byte-identical `{"status":"started"}`, so a 30fps IOSurface
+    /// stream and a 15fps recordVideo rotation were indistinguishable
+    /// to every client.
+    fn label(&self) -> &'static str {
+        match self {
+            CaptureMode::Direct { .. } => "direct",
+            CaptureMode::RollingRecord { .. } => "rolling-record",
+        }
+    }
+}
+
 impl CaptureHandle {
+    /// Which pipeline this capture is actually running.
+    #[must_use]
+    pub fn mode_label(&self) -> &'static str {
+        self.mode.label()
+    }
+
     pub fn udid(&self) -> &str {
         &self.udid
     }
@@ -781,15 +801,31 @@ pub async fn start_capture(
     if udid.is_empty() {
         return Err(Error::BadRequest("udid is required".into()));
     }
+    // Claim the slot before the long bring-up, so a concurrent start for
+    // the same udid loses here rather than building a second pipeline.
     {
-        let captures = st.captures.lock().await;
+        let mut captures = st.captures.lock().await;
         if captures.contains_key(udid) {
             return Ok(Json(json!({ "status": "already_started", "udid": udid })));
         }
+        captures.insert(udid.to_string(), None);
     }
-    let handle = start(udid, Path::new(&st.cfg.stream_root), st.valkey.clone()).await?;
-    st.captures.lock().await.insert(udid.to_string(), handle);
-    Ok(Json(json!({ "status": "started", "udid": udid })))
+    let started = start(udid, Path::new(&st.cfg.stream_root), st.valkey.clone()).await;
+    let mut captures = st.captures.lock().await;
+    match started {
+        Ok(handle) => {
+            let mode = handle.mode_label();
+            captures.insert(udid.to_string(), Some(handle));
+            Ok(Json(
+                json!({ "status": "started", "udid": udid, "mode": mode }),
+            ))
+        }
+        Err(e) => {
+            // Release the claim, or the device is wedged until restart.
+            captures.remove(udid);
+            Err(e)
+        }
+    }
 }
 
 pub async fn stop_capture(
@@ -800,12 +836,27 @@ pub async fn stop_capture(
     if udid.is_empty() {
         return Err(Error::BadRequest("udid is required".into()));
     }
-    let handle = st.captures.lock().await.remove(udid);
-    match handle {
-        Some(h) => {
-            h.stop().await?;
-            Ok(Json(json!({ "status": "stopped", "udid": udid })))
-        }
+    // Stop BEFORE removing: the old order removed first, so a stop()
+    // that failed part-way (e.g. the valkey `srem`) dropped the handle
+    // on the floor — pipeline still running, udid still in the
+    // capturing set, and a retry answering 404.
+    let mut captures = st.captures.lock().await;
+    match captures.get_mut(udid) {
+        Some(slot) => match slot.take() {
+            Some(h) => match h.stop().await {
+                Ok(()) => {
+                    captures.remove(udid);
+                    Ok(Json(json!({ "status": "stopped", "udid": udid })))
+                }
+                Err(e) => {
+                    // Keep the slot claimed so a retry reaches this arm
+                    // again instead of starting a second pipeline.
+                    Err(e)
+                }
+            },
+            // Slot claimed but the bring-up has not finished yet.
+            None => Err(Error::BadRequest("capture is still starting".into())),
+        },
         None => Err(Error::NotFound("not capturing".into())),
     }
 }

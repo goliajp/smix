@@ -131,8 +131,9 @@ final class MvpApiShapeTests: XCTestCase {
 
     func testFailureCodeCasesAllExposed() {
         let expected: Set<String> = [
-            "notFound", "ambiguous", "notInteractable",
-            "timeout", "wrongState", "unknown",
+            "ELEMENT_NOT_FOUND", "NOT_VISIBLE", "NOT_ENABLED",
+            "AMBIGUOUS", "TIMEOUT", "ASSERTION_FAILED",
+            "APP_NOT_RUNNING", "SIMULATOR_NOT_BOOTED", "DRIVER_ERROR",
         ]
         let actual = Set(FailureCode.allCases.map { $0.rawValue })
         XCTAssertEqual(actual, expected)
@@ -140,7 +141,7 @@ final class MvpApiShapeTests: XCTestCase {
 
     func testExpectationFailureErrorDescriptionIsJson() {
         let failure = ExpectationFailure(
-            code: .notFound,
+            code: .elementNotFound,
             message: "no candidates after filter",
             selector: .id("btn-missing"),
             visibleElements: [],
@@ -151,7 +152,7 @@ final class MvpApiShapeTests: XCTestCase {
             XCTFail("errorDescription must produce JSON")
             return
         }
-        XCTAssertTrue(desc.contains("\"code\":\"notFound\""), "missing code field: \(desc)")
+        XCTAssertTrue(desc.contains("\"code\":\"ELEMENT_NOT_FOUND\""), "missing code field: \(desc)")
         XCTAssertTrue(desc.contains("\"message\":\"no candidates after filter\""))
         XCTAssertTrue(desc.contains("\"suggestions\""))
         XCTAssertTrue(desc.contains("\"visibleElements\""))

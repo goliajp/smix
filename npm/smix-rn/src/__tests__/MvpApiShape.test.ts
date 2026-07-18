@@ -62,18 +62,22 @@ describe('A11yRole', () => {
 })
 
 describe('FailureCode', () => {
-  test('6 cases exposed', () => {
-    expect(FAILURE_CODES.length).toBe(6)
+  // The vocabulary is Rust's — smix_error::FailureCode. Rust is the
+  // source; crates/smix-error/tests/sdk_failure_code_parity.rs reads
+  // this SDK's declaration and fails if the two ever diverge.
+  test('9 cases exposed, matching the Rust wire vocabulary', () => {
+    expect(FAILURE_CODES.length).toBe(9)
     const expected = new Set<FailureCode>([
-      'notFound', 'ambiguous', 'notInteractable',
-      'timeout', 'wrongState', 'unknown',
+      'ELEMENT_NOT_FOUND', 'NOT_VISIBLE', 'NOT_ENABLED',
+      'AMBIGUOUS', 'TIMEOUT', 'ASSERTION_FAILED',
+      'APP_NOT_RUNNING', 'SIMULATOR_NOT_BOOTED', 'DRIVER_ERROR',
     ])
     expect(new Set(FAILURE_CODES)).toEqual(expected)
   })
 
   test('toJson() emits stable keys', () => {
     const failure = new ExpectationFailure({
-      code: 'notFound',
+      code: 'ELEMENT_NOT_FOUND',
       message: 'no candidates',
       selectorJson: '{"id":"btn"}',
       suggestions: ['check id'],
@@ -86,7 +90,7 @@ describe('FailureCode', () => {
     }
   })
 
-  test('toJson() camelCase FailureCode raw value', () => {
+  test('toJson() emits the Rust wire FailureCode value', () => {
     for (const code of FAILURE_CODES) {
       const f = new ExpectationFailure({ code, message: '' })
       expect(f.toJson()).toContain(`"${code}"`)

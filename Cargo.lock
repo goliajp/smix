@@ -3082,6 +3082,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_norway",
+ "smix-adapter-maestro",
  "smix-authoring-ir",
  "smix-error",
  "smix-input",

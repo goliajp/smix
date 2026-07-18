@@ -66,6 +66,16 @@ impl Color {
 }
 
 fn parse_hex(hex: &str) -> Result<Color, ColorParseError> {
+    // The pair-slicing below indexes by byte, so anything that is not an
+    // even number of ASCII hex digits has to be rejected BEFORE it runs:
+    // an odd length slices past the end and a multibyte char slices
+    // mid-boundary, and both panic. `BadHex` was already the right
+    // answer, it just came after the slice. The yaml path treats a colour
+    // parse failure as "warn and use the default", so a panic there took
+    // the whole flow down.
+    if !hex.len().is_multiple_of(2) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(ColorParseError::BadHex(hex.to_string()));
+    }
     let bytes: Result<Vec<u8>, _> = (0..hex.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))

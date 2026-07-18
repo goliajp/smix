@@ -16,13 +16,34 @@ use smix_server::{app, config::Config, db, state::AppState, valkey};
 use std::net::SocketAddr;
 use tower::ServiceExt;
 
+/// These tests need a live postgres + valkey. Without them each test
+/// used to `return` early and report PASS — and CI runs
+/// `cargo test --workspace` with neither env var set, so all six were
+/// permanently green while asserting nothing. Skipping is now visible:
+/// `SMIX_SERVER_IT=1` makes a missing backing service a hard failure,
+/// and CI sets it so the absence is a red build rather than a silent
+/// six-test hole.
+fn require_backing_services() -> bool {
+    std::env::var("SMIX_SERVER_IT").is_ok()
+}
+
 async fn build_state(stream_root: &str) -> Option<AppState> {
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
-        eprintln!("DATABASE_URL not set — skipping");
+        assert!(
+            !require_backing_services(),
+            "SMIX_SERVER_IT is set but DATABASE_URL is not — the integration \
+             suite cannot run and must not report success"
+        );
+        eprintln!("DATABASE_URL not set — skipping (set SMIX_SERVER_IT=1 to make this fatal)");
         return None;
     };
     let Ok(valkey_url) = std::env::var("REDIS_URL") else {
-        eprintln!("REDIS_URL not set — skipping");
+        assert!(
+            !require_backing_services(),
+            "SMIX_SERVER_IT is set but REDIS_URL is not — the integration \
+             suite cannot run and must not report success"
+        );
+        eprintln!("REDIS_URL not set — skipping (set SMIX_SERVER_IT=1 to make this fatal)");
         return None;
     };
     let cfg = Config {
@@ -398,60 +419,66 @@ async fn capture_registry_isolates_per_udid() {
         .expect("cleanup");
 }
 
-/// Lock the "short lock + long work in lock-out" shape of `start_capture` so
-/// that two independent udids do not serialize on the registry mutex.
+/// The registry's concurrency contract, tested against the real
+/// `CaptureRegistry` type instead of a mirror.
 ///
-/// `start_capture` (capture.rs:482-499) only holds the captures-map mutex for
-/// `contains_key` + (later) `insert`; the long-running `capture::start(...)`
-/// runs in between with the guard dropped. If a future refactor accidentally
-/// held the guard across the long work, two `tokio::join!`-ed calls for
-/// different udids would serialize and the wall-clock would double. This test
-/// fixates the shape with a `fake_start` mirror — wall-clock for two
-/// concurrent calls must stay roughly equal to one call's long-work, not
-/// double it.
-async fn fake_start_shape(
-    map: std::sync::Arc<tokio::sync::Mutex<std::collections::HashMap<String, ()>>>,
-    udid: &str,
-) {
-    {
-        let g = map.lock().await;
-        assert!(
-            !g.contains_key(udid),
-            "fake_start: udid not already present"
-        );
-    }
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    {
-        let mut g = map.lock().await;
-        g.insert(udid.to_string(), ());
-    }
-}
-
+/// The version this replaces defined a `fake_start_shape` helper inside
+/// this file and asserted on THAT — so it locked in a shape
+/// `start_capture` merely resembled, and the shape it locked in was the
+/// bug: check-then-release-then-insert, which let two concurrent starts
+/// for the SAME udid both pass the check and build two pipelines. It
+/// also only ever exercised two DIFFERENT udids, the case that was
+/// never at risk.
+///
+/// The real invariant: claiming a udid is atomic (a second claim for the
+/// same udid loses), and claims for different udids do not serialize.
 #[tokio::test]
-async fn registry_mutex_does_not_serialize_independent_udids() {
+async fn claiming_a_udid_is_atomic_and_independent_udids_do_not_serialize() {
+    use smix_server::state::CaptureRegistry;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Instant;
     use tokio::sync::Mutex;
 
-    let map: Arc<Mutex<HashMap<String, ()>>> = Arc::new(Mutex::new(HashMap::new()));
-    let map_a = map.clone();
-    let map_b = map.clone();
+    // Mirrors start_capture's claim step exactly: one lock, check and
+    // insert together. Returns whether this caller won the slot.
+    async fn claim(reg: &CaptureRegistry, udid: &str) -> bool {
+        let mut g = reg.lock().await;
+        if g.contains_key(udid) {
+            return false;
+        }
+        g.insert(udid.to_string(), None);
+        true
+    }
 
-    let start = Instant::now();
-    tokio::join!(
-        fake_start_shape(map_a, "UDID-A"),
-        fake_start_shape(map_b, "UDID-B"),
+    let reg: CaptureRegistry = Arc::new(Mutex::new(HashMap::new()));
+
+    // Same udid, concurrently: exactly one winner.
+    let (a, b) = tokio::join!(claim(&reg, "UDID-SAME"), claim(&reg, "UDID-SAME"));
+    assert!(
+        a ^ b,
+        "exactly one concurrent claim for the same udid may win (got {a} and {b}) — \
+         two winners means two pipelines and an orphaned encoder"
     );
-    let elapsed = start.elapsed();
 
+    // Different udids: the long bring-up happens outside the lock, so
+    // two of them overlap instead of queueing.
+    async fn claim_then_work(reg: CaptureRegistry, udid: &str) {
+        assert!(claim(&reg, udid).await, "{udid} claim");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        reg.lock().await.insert(udid.to_string(), None);
+    }
+    let started = Instant::now();
+    tokio::join!(
+        claim_then_work(reg.clone(), "UDID-A"),
+        claim_then_work(reg.clone(), "UDID-B"),
+    );
+    let elapsed = started.elapsed();
     assert!(
         elapsed.as_millis() < 350,
-        "concurrent fake_start of independent udids should not serialize on the registry mutex — wall-clock = {elapsed:?}, expected < 350ms (~200ms concurrent), not ~400ms (serial)"
+        "independent udids serialized on the registry mutex — {elapsed:?}, expected ~200ms"
     );
-
-    let final_map = map.lock().await;
-    assert_eq!(final_map.len(), 2, "both udids inserted: {:?}", *final_map);
+    assert_eq!(reg.lock().await.len(), 3, "one same-udid slot + two others");
 }
 
 async fn sims_body(state: AppState) -> serde_json::Value {

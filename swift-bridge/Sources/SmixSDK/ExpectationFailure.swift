@@ -54,20 +54,27 @@ public struct ExpectationFailure: Error, LocalizedError, Codable, Sendable, Equa
     }
 }
 
-/// Machine-readable failure category. Mirror Rust smix-error FailureCode.
+/// Machine-readable failure category. The case names are Swift-idiomatic
+/// but the raw values are Rust `smix_error::FailureCode`'s wire strings
+/// verbatim — `crates/smix-error/tests/sdk_failure_code_parity.rs` reads
+/// this declaration and fails if the two sets ever diverge.
 public enum FailureCode: String, Sendable, Codable, Equatable, CaseIterable {
-    /// Resolver returned 0 candidates after spatial + index filters.
-    case notFound
-    /// Resolver returned >1 candidate after filters; explicit `.first`
-    /// / `.last` / `.nth(...)` modifier required to disambiguate.
-    case ambiguous
-    /// Element exists but is not enabled / hittable / interactable.
-    case notInteractable
-    /// `timeout` parameter expired before condition was met.
-    case timeout
-    /// Element exists but its state contradicts the assertion (e.g.
-    /// `toHaveLabel` mismatch).
-    case wrongState
-    /// Catch-all for runner / wire errors.
-    case unknown
+    /// Selector matched zero elements in the visible tree.
+    case elementNotFound = "ELEMENT_NOT_FOUND"
+    /// Element matched but failed the visibility filter.
+    case notVisible = "NOT_VISIBLE"
+    /// Element matched but `enabled = false`.
+    case notEnabled = "NOT_ENABLED"
+    /// Selector matched multiple elements (when uniqueness was required).
+    case ambiguous = "AMBIGUOUS"
+    /// Operation exceeded the implicit-wait budget.
+    case timeout = "TIMEOUT"
+    /// `expect` assertion (e.g. `toHaveLabel`) did not hold.
+    case assertionFailed = "ASSERTION_FAILED"
+    /// Target app exited or never launched.
+    case appNotRunning = "APP_NOT_RUNNING"
+    /// Simulator device is not booted.
+    case simulatorNotBooted = "SIMULATOR_NOT_BOOTED"
+    /// Catch-all for runner / driver / IO failures.
+    case driverError = "DRIVER_ERROR"
 }

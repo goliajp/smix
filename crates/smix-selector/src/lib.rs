@@ -262,6 +262,7 @@ pub struct Modifiers {
 /// IndexModifiers separately).
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct AnchorBox {
     /// Anchor sub-selector — see [`Modifiers::near`].
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -281,6 +282,13 @@ pub struct AnchorBox {
     /// Anchor sub-selector — see [`Modifiers::inside`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inside: Option<Box<Selector>>,
+    /// Anchor sub-selector — see [`Modifiers::ancestor`]. The top-level
+    /// `Modifiers` has carried this since the resolver learned structural
+    /// containment; the anchor form did not, so all three SDKs (which do
+    /// expose it on their AnchorBox) had it silently dropped by serde and
+    /// got a wider candidate set than they asked for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ancestor: Option<Box<Selector>>,
 }
 
 /// IndexModifiers — the subset BaseAnchor can stack. Kept separate from
@@ -576,6 +584,9 @@ pub fn describe_selector(s: &Selector) -> String {
             }
             if let Some(v) = anchor.inside.as_deref() {
                 parts.push(format!("anchor.inside=({})", describe_selector(v)));
+            }
+            if let Some(v) = anchor.ancestor.as_deref() {
+                parts.push(format!("anchor.ancestor=({})", describe_selector(v)));
             }
             if parts.is_empty() {
                 parts.push("anchor.empty".into());

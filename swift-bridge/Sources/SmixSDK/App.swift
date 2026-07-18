@@ -35,7 +35,7 @@ public actor App {
     /// snapshot via the driver, resolves the selector via the Rust FFI
     /// core, picks the first match, and taps it by accessibility id.
     ///
-    /// Throws [`ExpectationFailure`] with `code: .notFound` when the
+    /// Throws [`ExpectationFailure`] with `code: .elementNotFound` when the
     /// resolver returns zero matches — populates `visibleElements`
     /// with the first 20 nodes from the current tree for AI agent
     /// diagnosis.
@@ -60,7 +60,7 @@ public actor App {
 
     /// Shared snapshot + resolve + first-match-or-throw helper used by
     /// `tap` / `fill`. Returns the matched accessibility id. Throws
-    /// [`ExpectationFailure`] with `code: .notFound` populated with
+    /// [`ExpectationFailure`] with `code: .elementNotFound` populated with
     /// `visibleElements` on miss.
     ///
     /// `driver.tree()` returns the tree already as a JSON string in the
@@ -75,7 +75,7 @@ public actor App {
             matches = try resolveSelector(treeJson: treeJson, selectorJson: selectorJson)
         } catch {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "FFI resolveSelector raised: \(error)",
                 selector: selector
             )
@@ -83,7 +83,7 @@ public actor App {
         guard let firstId = matches.first else {
             let tree = try decodeTree(treeJson, selector: selector)
             throw ExpectationFailure(
-                code: .notFound,
+                code: .elementNotFound,
                 message: "no candidates after spatial + index filters",
                 selector: selector,
                 visibleElements: tree.flatten().prefix(20).map { $0 },
@@ -97,7 +97,7 @@ public actor App {
     }
 
     /// Internal helper — encode a selector to a JSON string for the FFI
-    /// boundary. Throws ExpectationFailure(.unknown) on encode failure
+    /// boundary. Throws ExpectationFailure(.driverError) on encode failure
     /// (which would be an SDK bug, not a test author issue).
     internal func encodeSelector(_ selector: Selector) throws -> String {
         let selData: Data
@@ -105,14 +105,14 @@ public actor App {
             selData = try JSONEncoder().encode(selector)
         } catch {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "JSON encode failed before FFI dispatch: \(error)",
                 selector: selector
             )
         }
         guard let selStr = String(data: selData, encoding: .utf8) else {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "JSON bytes not UTF-8 — SDK bug",
                 selector: selector
             )
@@ -129,14 +129,14 @@ public actor App {
             treeData = try JSONEncoder().encode(tree)
         } catch {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "JSON encode failed before FFI dispatch: \(error)",
                 selector: selector
             )
         }
         guard let treeStr = String(data: treeData, encoding: .utf8) else {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "JSON bytes not UTF-8 — SDK bug",
                 selector: selector
             )
@@ -145,12 +145,12 @@ public actor App {
     }
 
     /// Internal helper — decode the driver's tree JSON string into an
-    /// `A11yNode`. Throws ExpectationFailure(.unknown) on decode failure
+    /// `A11yNode`. Throws ExpectationFailure(.driverError) on decode failure
     /// (a wire / SDK bug at the FFI boundary).
     internal func decodeTree(_ json: String, selector: Selector? = nil) throws -> A11yNode {
         guard let data = json.data(using: .utf8) else {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "tree JSON not UTF-8 — SDK bug",
                 selector: selector
             )
@@ -159,7 +159,7 @@ public actor App {
             return try JSONDecoder().decode(A11yNode.self, from: data)
         } catch {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "tree JSON decode failed: \(error)",
                 selector: selector
             )
@@ -176,11 +176,11 @@ public actor App {
     ///
     /// Both `nx` and `ny` must be in `[0.0, 1.0]` (normalized to the
     /// device's logical viewport). Out-of-range values throw
-    /// [`ExpectationFailure`] with code `.wrongState`.
+    /// [`ExpectationFailure`] with code `.assertionFailed`.
     public func tapAtCoord(_ nx: Double, _ ny: Double) async throws {
         guard nx >= 0.0, nx <= 1.0, ny >= 0.0, ny <= 1.0 else {
             throw ExpectationFailure(
-                code: .wrongState,
+                code: .assertionFailed,
                 message: "tapAtCoord arguments out of [0,1] range: nx=\(nx), ny=\(ny)",
                 suggestions: ["use normalized 0..1 — for raw points, divide by viewport size"]
             )
@@ -221,7 +221,7 @@ public actor App {
         let json = try await session.systemPopups(cancel: nil)
         guard let data = json.data(using: .utf8) else {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "system-popups JSON not UTF-8 — SDK bug"
             )
         }
@@ -229,7 +229,7 @@ public actor App {
             return try JSONDecoder().decode([SystemPopup].self, from: data)
         } catch {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "system-popups JSON decode failed: \(error)"
             )
         }

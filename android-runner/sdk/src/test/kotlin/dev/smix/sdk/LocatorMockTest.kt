@@ -1,7 +1,7 @@
 // Locator poll-loop unit tests over the driving seam. Verifies:
 //   - toBeVisible polls + returns on first visible match
 //   - toBeVisible throws .timeout when never visible
-//   - toBeVisible throws .wrongState when matched but not visible
+//   - toBeVisible throws NOT_VISIBLE when matched but not visible
 //   - toContainText polls until text contains needle
 
 package dev.smix.sdk
@@ -80,9 +80,9 @@ class LocatorMockTest {
         val app = mockApp(tree = tree, resolver = resolver)
         try {
             app.find(Selector.Id("btn-y")).toBeVisible(timeout = 200.milliseconds)
-            fail("must throw .wrongState")
+            fail("must throw NOT_VISIBLE")
         } catch (e: ExpectationFailure) {
-            assertEquals(FailureCode.WRONG_STATE, e.code)
+            assertEquals(FailureCode.NOT_VISIBLE, e.code)
         }
     }
 

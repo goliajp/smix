@@ -76,5 +76,14 @@ jobs:
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan
         run: python3 scripts/dev/fact-scan.py
+      - name: smix-server integration suite is skipped, not passing
+        # The six wiring tests need postgres + valkey. CI has neither, so
+        # they skip — this states that out loud instead of letting six
+        # green results imply coverage that did not run.
+        run: |
+          echo "NOTE: crates/smix-server/tests/wiring.rs skips without"
+          echo "DATABASE_URL + REDIS_URL. Six tests report pass without"
+          echo "asserting. Run with SMIX_SERVER_IT=1 and both services to"
+          echo "make their absence fatal."
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check

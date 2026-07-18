@@ -35,7 +35,7 @@ class App internal constructor(
      * snapshot via the driver, resolves the selector via the Rust FFI
      * core, picks the first match, and taps it by accessibility id.
      *
-     * Throws [ExpectationFailure] with `code = NOT_FOUND` when the
+     * Throws [ExpectationFailure] with `code = ELEMENT_NOT_FOUND` when the
      * resolver returns zero matches — populates `visibleElements` with
      * the first 20 nodes from the current tree for AI agent diagnosis.
      */
@@ -67,12 +67,12 @@ class App internal constructor(
      * escape hatch on the API surface.
      *
      * Both [nx] and [ny] must be in `[0.0, 1.0]`. Out-of-range values
-     * throw [ExpectationFailure] with code `WRONG_STATE`.
+     * throw [ExpectationFailure] with code `ASSERTION_FAILED`.
      */
     suspend fun tapAtCoord(nx: Double, ny: Double) {
         if (nx !in 0.0..1.0 || ny !in 0.0..1.0) {
             throw ExpectationFailure(
-                code = FailureCode.WRONG_STATE,
+                code = FailureCode.ASSERTION_FAILED,
                 message = "tapAtCoord arguments out of [0,1] range: nx=$nx, ny=$ny",
                 suggestions = listOf(
                     "use normalized 0..1 — for raw points, divide by viewport size",
@@ -106,7 +106,7 @@ class App internal constructor(
             resolver.resolve(treeJson, selectorJson)
         } catch (e: Exception) {
             throw ExpectationFailure(
-                code = FailureCode.UNKNOWN,
+                code = FailureCode.DRIVER_ERROR,
                 message = "FFI resolveSelector raised: ${e.message}",
                 selectorJson = selectorJson,
             )
@@ -115,7 +115,7 @@ class App internal constructor(
         if (firstId == null) {
             val tree = decodeTree(treeJson)
             throw ExpectationFailure(
-                code = FailureCode.NOT_FOUND,
+                code = FailureCode.ELEMENT_NOT_FOUND,
                 message = "no candidates after spatial + index filters",
                 selectorJson = selectorJson,
                 visibleElements = tree.flatten().take(20),
@@ -130,14 +130,14 @@ class App internal constructor(
 
     /**
      * Decode the driver's tree JSON string into an [A11yNode]. Throws
-     * [ExpectationFailure] with `code = UNKNOWN` on decode failure (a
+     * [ExpectationFailure] with `code = DRIVER_ERROR` on decode failure (a
      * wire / SDK bug at the FFI boundary).
      */
     internal fun decodeTree(json: String): A11yNode = try {
         treeJson.decodeFromString(A11yNode.serializer(), json)
     } catch (e: Exception) {
         throw ExpectationFailure(
-            code = FailureCode.UNKNOWN,
+            code = FailureCode.DRIVER_ERROR,
             message = "tree JSON decode failed: ${e.message}",
         )
     }
@@ -158,7 +158,7 @@ class App internal constructor(
             popupJson.decodeFromString(ListSerializer(SystemPopup.serializer()), json)
         } catch (e: Exception) {
             throw ExpectationFailure(
-                code = FailureCode.UNKNOWN,
+                code = FailureCode.DRIVER_ERROR,
                 message = "system-popups JSON decode failed: ${e.message}",
             )
         }

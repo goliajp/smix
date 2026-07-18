@@ -57,9 +57,9 @@ class AppFillPressKeyMockTest {
         val app = mockApp(session = session, resolver = MockSelectorResolver())  // returns []
         try {
             app.fill(Selector.Id("missing"), "text")
-            fail("fill with missing selector must throw ExpectationFailure.NOT_FOUND")
+            fail("fill with missing selector must throw ExpectationFailure.ELEMENT_NOT_FOUND")
         } catch (e: ExpectationFailure) {
-            assertEquals(FailureCode.NOT_FOUND, e.code)
+            assertEquals(FailureCode.ELEMENT_NOT_FOUND, e.code)
         }
         assertTrue(
             "inputText must NOT fire on resolve failure",

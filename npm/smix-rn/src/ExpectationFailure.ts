@@ -6,17 +6,26 @@
 
 import type { A11yNode } from './A11yNode.js'
 
+/**
+ * Rust `smix_error::FailureCode`'s wire strings verbatim —
+ * `crates/smix-error/tests/sdk_failure_code_parity.rs` reads this
+ * declaration and fails if the two sets ever diverge.
+ */
 export type FailureCode =
-  | 'notFound'
-  | 'ambiguous'
-  | 'notInteractable'
-  | 'timeout'
-  | 'wrongState'
-  | 'unknown'
+  | 'ELEMENT_NOT_FOUND'
+  | 'NOT_VISIBLE'
+  | 'NOT_ENABLED'
+  | 'AMBIGUOUS'
+  | 'TIMEOUT'
+  | 'ASSERTION_FAILED'
+  | 'APP_NOT_RUNNING'
+  | 'SIMULATOR_NOT_BOOTED'
+  | 'DRIVER_ERROR'
 
 export const FAILURE_CODES: readonly FailureCode[] = [
-  'notFound', 'ambiguous', 'notInteractable',
-  'timeout', 'wrongState', 'unknown',
+  'ELEMENT_NOT_FOUND', 'NOT_VISIBLE', 'NOT_ENABLED',
+  'AMBIGUOUS', 'TIMEOUT', 'ASSERTION_FAILED',
+  'APP_NOT_RUNNING', 'SIMULATOR_NOT_BOOTED', 'DRIVER_ERROR',
 ] as const
 
 /**
