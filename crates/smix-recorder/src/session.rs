@@ -156,7 +156,7 @@ impl<'a> RecordingApp<'a> {
             from: Some(from.clone()),
             timestamp_ms: now_ms(),
         });
-        self.app.swipe_once(direction).await
+        self.app.swipe_from(direction, from).await
     }
 
     pub async fn go_back(&self) -> Result<(), ExpectationFailure> {

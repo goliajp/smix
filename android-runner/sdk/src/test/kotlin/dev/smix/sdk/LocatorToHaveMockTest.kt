@@ -41,9 +41,9 @@ class LocatorToHaveMockTest {
         val app = mockApp(tree = tree, resolver = MockSelectorResolver(), labelsResolver = labelsResolver)
         try {
             app.find(Selector.Label("Item")).toHaveCount(3, timeout = 200.milliseconds)
-            fail("must throw wrongState")
+            fail("must throw ASSERTION_FAILED")
         } catch (e: ExpectationFailure) {
-            assertEquals(FailureCode.WRONG_STATE, e.code)
+            assertEquals(FailureCode.ASSERTION_FAILED, e.code)
             assertTrue("message must include actual count", e.message.contains("saw 1"))
         }
     }

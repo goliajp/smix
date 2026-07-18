@@ -84,7 +84,7 @@ export class Locator {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         throw new ExpectationFailure({
-          code: 'unknown',
+          code: 'DRIVER_ERROR',
           message: `FFI resolveSelectorLabels raised during poll: ${msg}`,
           selectorJson,
         })
@@ -95,7 +95,7 @@ export class Locator {
       await delay(POLL_INTERVAL_MS)
     }
     throw new ExpectationFailure({
-      code: 'wrongState',
+      code: 'ASSERTION_FAILED',
       message: `expected ${n} matches, last poll saw ${lastCount}`,
       selectorJson,
       visibleElements: lastTree !== null ? flatten(lastTree).slice(0, 20) : [],
@@ -111,7 +111,7 @@ export class Locator {
    * app's runtime + resolver, then check predicates.
    *
    * - [successPredicate] returns true → return immediately
-   * - [wrongStatePredicate] returns true → throw wrongState
+   * - [wrongStatePredicate] returns true → throw NOT_VISIBLE
    * - Otherwise, continue polling.
    *
    * On timeout, throws timeout with the last tree's first-20 nodes.
@@ -135,7 +135,7 @@ export class Locator {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         throw new ExpectationFailure({
-          code: 'unknown',
+          code: 'DRIVER_ERROR',
           message: `FFI resolveSelector raised during poll: ${msg}`,
           selectorJson,
         })
@@ -145,7 +145,10 @@ export class Locator {
 
       if (opts.wrongStatePredicate(node)) {
         throw new ExpectationFailure({
-          code: 'wrongState',
+          // toBeVisible is the only caller that supplies a firing
+          // wrongStatePredicate, so this branch always means
+          // "matched, but not visible".
+          code: 'NOT_VISIBLE',
           message: 'element matched but predicate failed (e.g. not visible)',
           selectorJson,
           visibleElements: node !== null ? [node, ...flatten(tree).slice(0, 19)] : flatten(tree).slice(0, 20),
@@ -158,7 +161,7 @@ export class Locator {
     }
 
     throw new ExpectationFailure({
-      code: 'timeout',
+      code: 'TIMEOUT',
       message: opts.timeoutMessage,
       selectorJson: encodeSelectorJson(this.selector),
       visibleElements: lastTree !== null ? flatten(lastTree).slice(0, 20) : [],

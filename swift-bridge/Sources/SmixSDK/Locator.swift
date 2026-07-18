@@ -4,7 +4,7 @@
 // Each `.toBe…(...)` call polls the runtime snapshot at 250ms tick
 // until either the predicate succeeds or the timeout deadline is hit.
 // On timeout, throws [`ExpectationFailure`] with code = `.timeout` or
-// `.notFound` populated with the last seen tree's visibleElements.
+// `.elementNotFound` populated with the last seen tree's visibleElements.
 
 import Foundation
 import SmixCoreFFIBindings
@@ -72,7 +72,7 @@ public actor Locator {
             lastTree = try await app.snapshotForLocator()
         }
         throw ExpectationFailure(
-            code: .wrongState,
+            code: .assertionFailed,
             message: "expected \(n) matches, last poll saw \(lastCount)",
             selector: selector,
             visibleElements: lastTree.flatten().prefix(20).map { $0 },
@@ -157,7 +157,7 @@ extension App {
             matches = try resolveSelector(treeJson: treeJson, selectorJson: selectorJson)
         } catch {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "FFI resolveSelector raised: \(error)",
                 selector: selector
             )
@@ -179,7 +179,7 @@ extension App {
             count = try resolveSelectorCount(treeJson: treeJson, selectorJson: selectorJson)
         } catch {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "FFI resolveSelectorCount raised: \(error)",
                 selector: selector
             )
@@ -199,7 +199,7 @@ extension App {
             return try resolveSelectorLabels(treeJson: treeJson, selectorJson: selectorJson)
         } catch {
             throw ExpectationFailure(
-                code: .unknown,
+                code: .driverError,
                 message: "FFI resolveSelectorLabels raised: \(error)",
                 selector: selector
             )

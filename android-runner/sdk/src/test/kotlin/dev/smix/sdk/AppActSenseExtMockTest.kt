@@ -95,9 +95,9 @@ class AppActSenseExtMockTest {
         val app = mockApp(session = session)
         try {
             app.tapAtCoord(1.5, 0.5)
-            fail("nx > 1.0 must throw WRONG_STATE")
+            fail("nx > 1.0 must throw ASSERTION_FAILED")
         } catch (e: ExpectationFailure) {
-            assertEquals(FailureCode.WRONG_STATE, e.code)
+            assertEquals(FailureCode.ASSERTION_FAILED, e.code)
             assertTrue(e.message.contains("out of [0,1]"))
         }
         assertTrue(
@@ -112,9 +112,9 @@ class AppActSenseExtMockTest {
         val app = mockApp(session = session)
         try {
             app.tapAtCoord(0.5, -0.1)
-            fail("ny < 0.0 must throw WRONG_STATE")
+            fail("ny < 0.0 must throw ASSERTION_FAILED")
         } catch (e: ExpectationFailure) {
-            assertEquals(FailureCode.WRONG_STATE, e.code)
+            assertEquals(FailureCode.ASSERTION_FAILED, e.code)
         }
     }
 }

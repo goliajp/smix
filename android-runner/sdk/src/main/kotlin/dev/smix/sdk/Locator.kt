@@ -33,7 +33,7 @@ class Locator internal constructor(
         pollUntil(
             timeout = timeout,
             wrongStatePredicate = { node ->
-                // Found a match but it's not visible → .wrongState
+                // Found a match but it's not visible → NOT_VISIBLE
                 node != null && !node.visible
             },
             successPredicate = { node ->
@@ -99,7 +99,7 @@ class Locator internal constructor(
                 app.labelsResolver.resolve(encodeTreeJson(tree), encodeSelectorJson(selector))
             } catch (e: Exception) {
                 throw ExpectationFailure(
-                    code = FailureCode.UNKNOWN,
+                    code = FailureCode.DRIVER_ERROR,
                     message = "FFI resolveSelectorLabels raised during poll: ${e.message}",
                     selectorJson = encodeSelectorJson(selector),
                 )
@@ -110,7 +110,7 @@ class Locator internal constructor(
             kotlinx.coroutines.delay(250.milliseconds)
         }
         throw ExpectationFailure(
-            code = FailureCode.WRONG_STATE,
+            code = FailureCode.ASSERTION_FAILED,
             message = "expected $n matches, last poll saw $lastCount",
             selectorJson = encodeSelectorJson(selector),
             visibleElements = (lastTree?.flatten()?.take(20)) ?: emptyList(),
@@ -126,7 +126,7 @@ class Locator internal constructor(
      * the app's runtime + resolver, then check predicates.
      *
      * - [successPredicate] returns true → return immediately.
-     * - [wrongStatePredicate] returns true → throw .wrongState with
+     * - [wrongStatePredicate] returns true → throw NOT_VISIBLE with
      *   the matched node included in visibleElements.
      * - Otherwise, continue polling.
      *
@@ -150,7 +150,7 @@ class Locator internal constructor(
                 app.resolver.resolve(encodeTreeJson(tree), selectorJson)
             } catch (e: Exception) {
                 throw ExpectationFailure(
-                    code = FailureCode.UNKNOWN,
+                    code = FailureCode.DRIVER_ERROR,
                     message = "FFI resolveSelector raised during poll: ${e.message}",
                     selectorJson = selectorJson,
                 )
@@ -159,7 +159,10 @@ class Locator internal constructor(
 
             if (wrongStatePredicate(node)) {
                 throw ExpectationFailure(
-                    code = FailureCode.WRONG_STATE,
+                    // toBeVisible is the only caller that supplies a
+                    // firing wrongStatePredicate, so this branch always
+                    // means "matched, but not visible".
+                    code = FailureCode.NOT_VISIBLE,
                     message = "element matched but predicate failed (e.g. not visible)",
                     selectorJson = selectorJson,
                     visibleElements = listOfNotNull(node) + tree.flatten().take(19),

@@ -55,6 +55,29 @@ fn now_ms() -> f64 {
     chrono::Utc::now().timestamp_millis() as f64
 }
 
+/// Travel of one swipe gesture, in viewport-normalized units.
+const SWIPE_AMPLITUDE: f64 = 0.4;
+
+/// Endpoint of a one-gesture swipe starting at `start`.
+///
+/// `direction` is the navigation convention shared by the iOS and Kotlin
+/// runners (`Down` advances the content downward, so the finger travels
+/// upward), not the finger-travel convention. Clamped because an anchor
+/// near an edge would otherwise land the endpoint outside the viewport,
+/// which the runners reject.
+fn swipe_endpoint(start: (f64, f64), direction: SwipeDirection) -> (f64, f64) {
+    let (dx, dy) = match direction {
+        SwipeDirection::Down => (0.0, -SWIPE_AMPLITUDE),
+        SwipeDirection::Up => (0.0, SWIPE_AMPLITUDE),
+        SwipeDirection::Left => (-SWIPE_AMPLITUDE, 0.0),
+        SwipeDirection::Right => (SWIPE_AMPLITUDE, 0.0),
+    };
+    (
+        (start.0 + dx).clamp(0.0, 1.0),
+        (start.1 + dy).clamp(0.0, 1.0),
+    )
+}
+
 // -- re-exports for downstream user convenience ------------------------
 
 pub use smix_driver::{
@@ -1677,6 +1700,41 @@ impl App {
         self.driving()?.swipe_at_norm_coord(from, to).await
     }
 
+    /// Swipe one gesture anchored at an element: the gesture starts from
+    /// the selector's resolved centroid instead of the viewport centre.
+    ///
+    /// Composite of [`Self::find_norm_coord`] + [`Self::swipe_at_coord`].
+    /// [`Self::swipe_once`] and [`Self::scroll_screen`] always start at
+    /// the viewport centre, so a caller holding an anchor element had no
+    /// way to express "drag this row" — that gap is what this closes.
+    ///
+    /// `direction` follows the same navigation convention as
+    /// [`Self::swipe_once`] / [`Self::scroll_screen`]: `Down` advances the
+    /// content downward, so the finger travels upward.
+    pub async fn swipe_from(
+        &self,
+        direction: SwipeDirection,
+        from: &Selector,
+    ) -> Result<(), ExpectationFailure> {
+        let Some(start) = self.find_norm_coord(from).await? else {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::ElementNotFound),
+                message: format!(
+                    "swipe_from({direction}): anchor selector resolved no element with a frame"
+                ),
+                selector: Some(from.clone()),
+                hint: Some(
+                    "the anchor must be on screen and have a non-empty frame; \
+                     use swipe_once() for a viewport-centred swipe"
+                        .into(),
+                ),
+                ..Default::default()
+            }));
+        };
+        self.swipe_at_coord(start, swipe_endpoint(start, direction))
+            .await
+    }
+
     /// Viewport scroll one swipe in the given direction — no selector required.
     /// Maps to maestro yaml `scroll:` (bare, no args, defaults to down).
     ///
@@ -1685,13 +1743,14 @@ impl App {
     /// scroll-until-visible composite and is orthogonal; `scroll_screen`
     /// is a pure act primitive.
     pub async fn scroll_screen(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
-        let (from, to) = match direction {
-            SwipeDirection::Down => ((0.5, 0.7), (0.5, 0.3)),
-            SwipeDirection::Up => ((0.5, 0.3), (0.5, 0.7)),
-            SwipeDirection::Left => ((0.7, 0.5), (0.3, 0.5)),
-            SwipeDirection::Right => ((0.3, 0.5), (0.7, 0.5)),
+        let from = match direction {
+            SwipeDirection::Down => (0.5, 0.7),
+            SwipeDirection::Up => (0.5, 0.3),
+            SwipeDirection::Left => (0.7, 0.5),
+            SwipeDirection::Right => (0.3, 0.5),
         };
-        self.swipe_at_coord(from, to).await
+        self.swipe_at_coord(from, swipe_endpoint(from, direction))
+            .await
     }
 
     /// Assert that the selector is NOT visible. Dual of

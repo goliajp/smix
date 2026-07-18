@@ -13,7 +13,7 @@ const DEFAULT_WAIT_TIMEOUT_MS: u64 = 5000;
 /// - fill → `tapOn` + `inputText`
 /// - clear → `eraseText: 100`
 /// - press_key → `pressKey: <CapitalizedName>` (same convention as the maestro docs)
-/// - swipe → `swipeOnce: { direction: UP|DOWN|LEFT|RIGHT }`
+/// - swipe → `swipe: { direction: UP|DOWN|LEFT|RIGHT }`
 /// - go_back → `back`
 /// - wait_for → `extendedWaitUntil: { visible: <sel>, timeout: 5000 }`
 /// - hide_keyboard → `hideKeyboard`
@@ -29,6 +29,18 @@ pub fn generate_maestro_yaml(actions: &[IRAction], app_id: &str) -> Result<Strin
     }
     let mut steps: Vec<serde_norway::Value> = Vec::with_capacity(actions.len() + 4);
     for a in actions {
+        if let Some(selector) = action_selector(a)
+            && let Some(form) = maestro_unsupported(selector)
+        {
+            return Err(RecorderError::new(
+                RecorderErrorReason::MalformedAction,
+                format!(
+                    "recorded {} uses a `{form}` selector, which maestro yaml cannot express; \
+                     generate Rust instead",
+                    a.kind()
+                ),
+            ));
+        }
         append_step(&mut steps, a);
     }
 
@@ -55,6 +67,34 @@ pub fn generate_maestro_yaml(actions: &[IRAction], app_id: &str) -> Result<Strin
     let body = body.trim_end();
 
     Ok(format!("{header_str}\n---\n{body}\n"))
+}
+
+/// The selector a step will serialize, if it serializes one. Exhaustive
+/// so a new `IRAction` carrying a selector cannot skip the gate below.
+fn action_selector(action: &IRAction) -> Option<&Selector> {
+    match action {
+        IRAction::Tap { selector, .. }
+        | IRAction::Fill { selector, .. }
+        | IRAction::WaitFor { selector, .. } => Some(selector),
+        // Clear emits `eraseText: <count>` and Swipe emits a direction;
+        // neither puts its selector on the wire.
+        IRAction::Clear { .. }
+        | IRAction::Swipe { .. }
+        | IRAction::PressKey { .. }
+        | IRAction::GoBack { .. }
+        | IRAction::HideKeyboard { .. } => None,
+    }
+}
+
+/// Selector forms maestro yaml has no spelling for. Emitting the flow
+/// anyway hands the caller yaml that dies on that step — the exact
+/// failure this generator already shipped once with `swipeOnce`.
+fn maestro_unsupported(selector: &Selector) -> Option<&'static str> {
+    match selector {
+        Selector::Focused { .. } => Some("focused"),
+        Selector::Fallback { fallback } => fallback.iter().find_map(maestro_unsupported),
+        _ => None,
+    }
 }
 
 fn append_step(steps: &mut Vec<serde_norway::Value>, action: &IRAction) {
@@ -97,13 +137,21 @@ fn append_step(steps: &mut Vec<serde_norway::Value>, action: &IRAction) {
             steps.push(Value::Mapping(m));
         }
         IRAction::Swipe { direction, .. } => {
+            // `swipe`, not `swipeOnce`: the latter is in no verb table and
+            // the maestro parser has never dispatched it, so every flow
+            // recorded with a swipe in it died on UnsupportedCommand.
+            //
+            // A captured `from` anchor is dropped here — maestro's swipe
+            // takes a direction or a coordinate pair, never an element,
+            // and the coordinates are only known at replay time. The Rust
+            // generator keeps the anchor; the yaml one cannot.
             let mut inner = Mapping::new();
             inner.insert(
                 Value::String("direction".into()),
                 Value::String(swipe_to_maestro(*direction).into()),
             );
             let mut m = Mapping::new();
-            m.insert(Value::String("swipeOnce".into()), Value::Mapping(inner));
+            m.insert(Value::String("swipe".into()), Value::Mapping(inner));
             steps.push(Value::Mapping(m));
         }
         IRAction::GoBack { .. } => {
@@ -160,15 +208,18 @@ fn swipe_to_maestro(d: SwipeDirection) -> &'static str {
 fn serialize_selector(selector: &Selector) -> serde_norway::Value {
     use serde_norway::{Mapping, Value};
     match selector {
+        // Both patterns emit a bare string. maestro yaml has no
+        // `{regex: ...}` selector form — `text:` takes a string and the
+        // parser infers a regex from it (`|` alternation) via
+        // `text_to_pattern`. The map form this used to emit parsed
+        // nowhere, so any recorded regex selector killed the flow.
+        //
+        // Lossy on purpose for a regex without `|`: it re-reads as a
+        // literal, because maestro cannot say otherwise. The Rust
+        // generator keeps the distinction.
         Selector::Text { text, modifiers } if is_empty_modifiers(modifiers) => match text {
             Pattern::Text(s) => Value::String(s.clone()),
-            Pattern::Regex { regex, .. } => {
-                let mut inner = Mapping::new();
-                inner.insert(Value::String("regex".into()), Value::String(regex.clone()));
-                let mut outer = Mapping::new();
-                outer.insert(Value::String("text".into()), Value::Mapping(inner));
-                Value::Mapping(outer)
-            }
+            Pattern::Regex { regex, .. } => Value::String(regex.clone()),
         },
         Selector::Id { id, .. } => {
             let mut m = Mapping::new();

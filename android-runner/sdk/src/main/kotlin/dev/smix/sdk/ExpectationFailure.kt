@@ -56,15 +56,20 @@ private data class ErrorJsonPayload(
 )
 
 /**
- * Machine-readable failure category. Mirror Rust smix-error
- * FailureCode + Swift SmixSDK.FailureCode.
+ * Machine-readable failure category. The @SerialName values are Rust
+ * `smix_error::FailureCode`'s wire strings verbatim —
+ * `crates/smix-error/tests/sdk_failure_code_parity.rs` reads this
+ * declaration and fails if the two sets ever diverge.
  */
 @Serializable
 enum class FailureCode {
-    @SerialName("notFound") NOT_FOUND,
-    @SerialName("ambiguous") AMBIGUOUS,
-    @SerialName("notInteractable") NOT_INTERACTABLE,
-    @SerialName("timeout") TIMEOUT,
-    @SerialName("wrongState") WRONG_STATE,
-    @SerialName("unknown") UNKNOWN,
+    @SerialName("ELEMENT_NOT_FOUND") ELEMENT_NOT_FOUND,
+    @SerialName("NOT_VISIBLE") NOT_VISIBLE,
+    @SerialName("NOT_ENABLED") NOT_ENABLED,
+    @SerialName("AMBIGUOUS") AMBIGUOUS,
+    @SerialName("TIMEOUT") TIMEOUT,
+    @SerialName("ASSERTION_FAILED") ASSERTION_FAILED,
+    @SerialName("APP_NOT_RUNNING") APP_NOT_RUNNING,
+    @SerialName("SIMULATOR_NOT_BOOTED") SIMULATOR_NOT_BOOTED,
+    @SerialName("DRIVER_ERROR") DRIVER_ERROR,
 }

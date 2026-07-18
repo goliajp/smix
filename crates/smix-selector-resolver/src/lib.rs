@@ -534,11 +534,12 @@ fn apply_ancestor_filter<'tree>(
         | Selector::Role { modifiers, .. }
         | Selector::LocalizedText { modifiers, .. }
         | Selector::OcrText { modifiers, .. } => modifiers.ancestor.as_deref(),
+        // The anchor form carries its own ancestor sub-selector.
+        Selector::Anchor { anchor, .. } => anchor.ancestor.as_deref(),
         // AnchorRelative has no Modifiers (the anchor sub-selector carries
         // its own); the adapter dispatches directly, so ancestor is n/a.
         // Point + Fallback carry no Modifiers either.
-        Selector::Anchor { .. }
-        | Selector::Focused { .. }
+        Selector::Focused { .. }
         | Selector::AnchorRelative { .. }
         | Selector::Point { .. }
         | Selector::Fallback { .. } => None,

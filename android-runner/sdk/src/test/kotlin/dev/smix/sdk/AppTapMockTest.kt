@@ -20,9 +20,9 @@ class AppTapMockTest {
         val app = mockApp(resolver = MockSelectorResolver())  // returns [] for everything
         try {
             app.tap(Selector.Id("btn-missing"))
-            fail("empty resolver result must yield NOT_FOUND")
+            fail("empty resolver result must yield ELEMENT_NOT_FOUND")
         } catch (e: ExpectationFailure) {
-            assertEquals(FailureCode.NOT_FOUND, e.code)
+            assertEquals(FailureCode.ELEMENT_NOT_FOUND, e.code)
             assertFalse("suggestions must populate for AI agent", e.suggestions.isEmpty())
             assertFalse(e.visibleElements.isEmpty())
         }
@@ -33,9 +33,9 @@ class AppTapMockTest {
         val app = mockApp(resolver = MockSelectorResolver())
         try {
             app.tap(Selector.Text(Pattern.Literal("Nope")))
-            fail("text miss must yield NOT_FOUND")
+            fail("text miss must yield ELEMENT_NOT_FOUND")
         } catch (e: ExpectationFailure) {
-            assertEquals(FailureCode.NOT_FOUND, e.code)
+            assertEquals(FailureCode.ELEMENT_NOT_FOUND, e.code)
         }
     }
 
@@ -125,7 +125,7 @@ class AppTapMockTest {
             app.tap(Selector.Id("anything"))
             fail("resolver raise must surface as ExpectationFailure")
         } catch (e: ExpectationFailure) {
-            assertEquals(FailureCode.UNKNOWN, e.code)
+            assertEquals(FailureCode.DRIVER_ERROR, e.code)
             assertTrue("message must include resolver error", e.message.contains("simulated FFI parse error"))
         }
     }

@@ -2,7 +2,7 @@
 // hardening tests.
 //
 // Verifies:
-//   - All 6 FailureCode cases roundtrip (encode → decode → equal)
+//   - All 9 FailureCode cases roundtrip (encode → decode → equal)
 //   - errorDescription returns valid JSON with stable key set
 //   - timestamp encoded as ISO-8601 (stable across locales)
 //   - selector field encoded with custom Codable matching the Selector schema
@@ -37,16 +37,25 @@ final class ExpectationFailureContractTests: XCTestCase {
         }
     }
 
-    func testFailureCodeCountIs6() {
-        XCTAssertEqual(FailureCode.allCases.count, 6,
-                       "spec: 6 codes (notFound/ambiguous/notInteractable/timeout/wrongState/unknown). Extend the UDL if Rust adds more.")
+    /// The vocabulary is Rust's — `smix_error::FailureCode`. Rust is the
+    /// source; `crates/smix-error/tests/sdk_failure_code_parity.rs` reads
+    /// this SDK's declaration and fails if the two ever diverge, so this
+    /// assertion is the Swift-side echo of that contract.
+    func testFailureCodeVocabularyMatchesRust() {
+        let expected: Set<String> = [
+            "ELEMENT_NOT_FOUND", "NOT_VISIBLE", "NOT_ENABLED",
+            "AMBIGUOUS", "TIMEOUT", "ASSERTION_FAILED",
+            "APP_NOT_RUNNING", "SIMULATOR_NOT_BOOTED", "DRIVER_ERROR",
+        ]
+        XCTAssertEqual(Set(FailureCode.allCases.map { $0.rawValue }), expected)
+        XCTAssertEqual(FailureCode.allCases.count, 9)
     }
 
     // MARK: - AI-readable JSON contract
 
     func testErrorDescriptionEmitsStableJsonKeys() {
         let failure = ExpectationFailure(
-            code: .notFound,
+            code: .elementNotFound,
             message: "no candidates",
             selector: .id("btn"),
             visibleElements: [
@@ -90,16 +99,9 @@ final class ExpectationFailureContractTests: XCTestCase {
         XCTAssertTrue(parsed is [String: Any])
     }
 
-    func testErrorDescriptionEmitsCamelCaseFailureCode() {
-        let cases: [(FailureCode, String)] = [
-            (.notFound, "notFound"),
-            (.ambiguous, "ambiguous"),
-            (.notInteractable, "notInteractable"),
-            (.timeout, "timeout"),
-            (.wrongState, "wrongState"),
-            (.unknown, "unknown"),
-        ]
-        for (code, expectedRaw) in cases {
+    func testErrorDescriptionEmitsRustWireFailureCode() {
+        for code in FailureCode.allCases {
+            let expectedRaw = code.rawValue
             let f = ExpectationFailure(code: code, message: "")
             guard let json = f.errorDescription else {
                 XCTFail("nil errorDescription")
@@ -110,7 +112,7 @@ final class ExpectationFailureContractTests: XCTestCase {
         }
     }
 
-    // Note: the App.tap notFound and Locator timeout paths that populate
+    // Note: the App.tap elementNotFound and Locator timeout paths that populate
     // visibleElements are exercised end-to-end against the runner by the
     // Rust wiremock driving suite (smix-ffi/tests/driving.rs). App now
     // holds concrete FFI handles (no injectable mock), so those paths are

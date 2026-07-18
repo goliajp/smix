@@ -6,7 +6,16 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-pub type CaptureRegistry = Arc<Mutex<HashMap<String, CaptureHandle>>>;
+/// A slot is claimed (`None`) for the whole duration of the pipeline
+/// bring-up, then filled with the handle. Holding the udid's key from
+/// the moment the request is accepted is what makes a concurrent start
+/// for the same device see "already_started" instead of racing: the
+/// bring-up is seconds long (recording probe + ffprobe + fifo
+/// handshake), and `CaptureHandle`'s own docs say dropping it does NOT
+/// stop the pipeline — so the loser of that race used to leave an
+/// ffmpeg encoder and a rolling recordVideo loop orphaned, holding
+/// simctl's host-recording lock against the device forever.
+pub type CaptureRegistry = Arc<Mutex<HashMap<String, Option<CaptureHandle>>>>;
 
 #[derive(Clone)]
 pub struct AppState {

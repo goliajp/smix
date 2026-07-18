@@ -295,7 +295,7 @@ impl Migrator {
         // list is reported.
         if map.len() == 1
             && let Some((Value::String(key), _)) = map.iter().next()
-            && !is_known_verb(key)
+            && !smix_verbs::is_known_verb(key)
             && !is_ignored_key(key)
             && !report.unknown_verbs.iter().any(|v| v == key)
         {
@@ -662,46 +662,6 @@ fn default_rules() -> Vec<Rule> {
         .collect()
 }
 
-/// Verbs smix natively recognizes — used by the unknown-verb detector.
-/// Any single-key top-level map whose key is NOT here + NOT in the
-/// rename table → `WARN` line.
-#[allow(dead_code)]
-fn is_known_verb(v: &str) -> bool {
-    matches!(
-        v,
-        // smix canonical + maestro-canonical that stays verbatim
-        "tap" | "tapOn"
-        | "expect" | "expectNotVisible" | "assertVisible" | "assertNotVisible"
-        | "extendedWaitUntil"
-        | "fill" | "inputText" | "clear" | "eraseText"
-        | "reset" | "clearState"
-        | "resetKeychain" | "clearKeychain"
-        | "runFlow"
-        | "launchApp" | "terminate" | "stopApp" | "killApp"
-        | "openUrl" | "openLink"
-        | "pressKey" | "back"
-        | "hideKeyboard"
-        | "scroll" | "scrollUntilVisible"
-        | "swipe" | "swipeOnce"
-        | "retry"
-        | "takeScreenshot" | "screenshot"
-        | "setClipboard" | "readClipboard"
-        | "waitForAnimationToEnd"
-        | "assertTrue" | "assertFalse" | "assertNotEqual" | "assertEqual"
-        | "toggleAirplaneMode" | "travel"
-        | "setLocation" | "startRecording" | "stopRecording"
-        | "addMedia" | "assertWithAI"
-        | "when"
-        // smix-native
-        | "ocrText" | "anchorRelative" | "tapById" | "tapAtCoord"
-        | "swipeAtCoord" | "doubleTap" | "longPress"
-        | "setOrientation" | "findTextByOcr"
-    )
-}
-
-/// Non-verb keys we ignore for unknown-verb reporting (e.g. `when`
-/// nested inside a runFlow inline).
-#[allow(dead_code)]
 fn is_ignored_key(v: &str) -> bool {
     matches!(v, "when" | "file" | "commands" | "label" | "config")
 }

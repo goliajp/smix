@@ -6,7 +6,7 @@
 //   - Modifier 9 case constructible
 //   - A11yRole 28 case exposed
 //   - A11yNode roundtrip + camelCase wire keys
-//   - FailureCode 6 case
+//   - FailureCode 9 case
 //   - ExpectationFailure errorJson() AI-readable contract
 //   - Smix.launchApp / App.tap / Locator.toBeVisible stubs throw NotImplemented
 
@@ -109,18 +109,23 @@ class MvpApiShapeTest {
     @Test
     fun failureCodeCasesAllExposed() {
         val expected = setOf(
-            "NOT_FOUND", "AMBIGUOUS", "NOT_INTERACTABLE",
-            "TIMEOUT", "WRONG_STATE", "UNKNOWN",
+            "ELEMENT_NOT_FOUND", "NOT_VISIBLE", "NOT_ENABLED",
+            "AMBIGUOUS", "TIMEOUT", "ASSERTION_FAILED",
+            "APP_NOT_RUNNING", "SIMULATOR_NOT_BOOTED", "DRIVER_ERROR",
         )
         val actual = FailureCode.entries.map { it.name }.toSet()
         assertEquals(expected, actual)
-        assertEquals(6, FailureCode.entries.size)
+        assertEquals(9, FailureCode.entries.size)
     }
 
     @Test
-    fun failureCodeSerializesAsCamelCase() {
-        assertEquals("\"notFound\"", Json.encodeToString(FailureCode.serializer(), FailureCode.NOT_FOUND))
-        assertEquals("\"notInteractable\"", Json.encodeToString(FailureCode.serializer(), FailureCode.NOT_INTERACTABLE))
+    fun failureCodeSerializesAsRustWireValue() {
+        for (code in FailureCode.entries) {
+            assertEquals(
+                "\"${code.name}\"",
+                Json.encodeToString(FailureCode.serializer(), code),
+            )
+        }
     }
 
     // MARK: - ExpectationFailure
@@ -128,7 +133,7 @@ class MvpApiShapeTest {
     @Test
     fun expectationFailureErrorJsonHasStableKeys() {
         val failure = ExpectationFailure(
-            code = FailureCode.NOT_FOUND,
+            code = FailureCode.ELEMENT_NOT_FOUND,
             message = "no candidates",
             selectorJson = "{\"id\":\"btn\"}",
             suggestions = listOf("check id"),
@@ -143,13 +148,13 @@ class MvpApiShapeTest {
     }
 
     @Test
-    fun expectationFailureErrorJsonContainsCamelCaseFailureCode() {
+    fun expectationFailureErrorJsonContainsRustWireFailureCode() {
         val failure = ExpectationFailure(
-            code = FailureCode.WRONG_STATE,
+            code = FailureCode.ASSERTION_FAILED,
             message = "x",
         )
         val json = failure.errorJson()
-        assertTrue("must contain wrongState rawValue", json.contains("\"wrongState\""))
+        assertTrue("must contain ASSERTION_FAILED wire value", json.contains("\"ASSERTION_FAILED\""))
     }
 
     // No stubbed surface remains — every act/sense method is wired

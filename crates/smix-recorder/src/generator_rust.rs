@@ -93,15 +93,11 @@ fn emit_action(out: &mut String, action: &IRAction) {
         IRAction::Swipe {
             direction, from, ..
         } => match from {
-            // smix_sdk.App API currently exposes `swipe_once(direction)`
-            // without an explicit `from`. If the captured action carries
-            // a `from` selector, surface it as a comment for the AI
-            // cleanup pass to consider — but emit only the basic call.
             Some(from_sel) => {
                 out.push_str(&format!(
-                    "    // captured swipe from: {} — App.swipe_once does not accept a from selector;\n    // adjust the test manually or open an issue.\n    app.swipe_once({}).await?;\n",
-                    emit_selector(from_sel),
+                    "    app.swipe_from({}, &{}).await?;\n",
                     emit_swipe(*direction),
+                    emit_selector(from_sel),
                 ));
             }
             None => {
