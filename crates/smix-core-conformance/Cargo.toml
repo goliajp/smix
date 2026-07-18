@@ -17,7 +17,7 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-ffi = { path = "../smix-ffi", version = "1.0.0" }
+smix-ffi = { path = "../smix-ffi", version = "2.0.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

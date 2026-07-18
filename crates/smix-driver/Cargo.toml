@@ -17,13 +17,13 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-screen = { path = "../smix-screen", version = "1.0.0" }
-smix-selector = { path = "../smix-selector", version = "1.0.0" }
-smix-selector-resolver = { path = "../smix-selector-resolver", version = "1.0.0" }
-smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "1.0.0" }
-smix-input = { path = "../smix-input", version = "1.0.0" }
-smix-error = { path = "../smix-error", version = "1.0.0" }
-smix-runner-client = { path = "../smix-runner-client", version = "1.0.0" }
+smix-screen = { path = "../smix-screen", version = "2.0.0" }
+smix-selector = { path = "../smix-selector", version = "2.0.0" }
+smix-selector-resolver = { path = "../smix-selector-resolver", version = "2.0.0" }
+smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "2.0.0" }
+smix-input = { path = "../smix-input", version = "2.0.0" }
+smix-error = { path = "../smix-error", version = "2.0.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "2.0.0" }
 tokio = { workspace = true, features = ["time", "macros"] }
 tracing.workspace = true
 serde_json.workspace = true

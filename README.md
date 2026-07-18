@@ -33,7 +33,7 @@ npm install @goliapkg/smix
 # add https://github.com/goliajp/smix (product: Smix, from: "1.0.0" — resolves latest 1.x)
 
 # Gradle / Maven (Kotlin / Java) — current release:
-# implementation("jp.golia.smix:smix-sdk:1.0.27")
+# implementation("jp.golia.smix:smix-sdk:2.0.0")
 ```
 
 Prerequisites: macOS with Xcode + Simulator (iOS testing); Android SDK with an emulator image (Android testing).
