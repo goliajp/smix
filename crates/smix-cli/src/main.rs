@@ -364,10 +364,10 @@ Documentation: docs/AI_GUIDE.md
         /// Append an implicit `expectLogClean` step to the end of each
         /// flow. Emits an ExpectationFailure if any non-allowlisted log
         /// entry has been observed during the run (allowlist from
-        /// `.smix/config.json` `metroLog.allowlist`).
+        /// `.smix/config.yaml` `metroLog.allowlist`).
         #[arg(long = "expect-log-clean", default_value_t = false)]
         expect_log_clean: bool,
-        /// Metro log source URL, overrides `.smix/config.json`
+        /// Metro log source URL, overrides `.smix/config.yaml`
         /// `metroLog.url`. Format: `ws://127.0.0.1:8081/logs` for
         /// expo/metro WebSocket, or `file:///path/to/log` for on-disk
         /// tail fallback.
@@ -1252,7 +1252,50 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             no_fail_annotate,
             check,
         } => {
+            // v2 break #3: resolve the four behavior switches once, here
+            // at the CLI edge. Priority: `.smix/config.yaml switches.*` >
+            // `SMIX_*` env > default(false). This resolver is the ONLY
+            // place these four env names carry weight on the `smix run` /
+            // `--check` path; reading one (env source) earns a named
+            // deprecation warn. The resolved values are injected into the
+            // parser (via FlowArgs → thread-local override) and the sdk
+            // (via FlowArgs → App builder) — parser/sdk keep their own env
+            // reads solely as the non-CLI fallback.
+            let switches = runner::load_switches();
+            let sw_auto_ocr =
+                runner::resolve_switch(switches.auto_ocr_fallback, "SMIX_AUTO_OCR_FALLBACK");
+            let sw_ai_assertions = runner::resolve_switch(
+                switches.enable_ai_assertions,
+                "SMIX_ENABLE_AI_ASSERTIONS",
+            );
+            let sw_assert_no_autorecord = runner::resolve_switch(
+                switches.assert_screenshot_no_autorecord,
+                "SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD",
+            );
+            let sw_launch_reinstall = runner::resolve_switch(
+                switches.launch_fresh_force_reinstall,
+                "SMIX_LAUNCH_FRESH_FORCE_REINSTALL",
+            );
+            let warn_if_env = |r: &runner::ResolvedSwitch, env_name: &str, key: &str| {
+                if r.source == runner::SwitchSource::Env {
+                    eprintln!(
+                        "warning: {env_name} is deprecated; use .smix/config.yaml switches.{key}"
+                    );
+                }
+            };
             if check {
+                // `--check` only parses, so only the two parse-time
+                // switches matter here. Warn for those, then pin them on
+                // the parser override seam right before parse_flow_yaml —
+                // synchronous, no tokio, so no thread-migration concern.
+                warn_if_env(&sw_auto_ocr, "SMIX_AUTO_OCR_FALLBACK", "autoOcrFallback");
+                warn_if_env(
+                    &sw_ai_assertions,
+                    "SMIX_ENABLE_AI_ASSERTIONS",
+                    "enableAiAssertions",
+                );
+                smix_adapter_maestro::set_auto_ocr_fallback_override(Some(sw_auto_ocr.value));
+                smix_adapter_maestro::set_ai_assertions_override(Some(sw_ai_assertions.value));
                 // Invoked via either `--check` or its `--dry-run`
                 // alias; render prefix neutrally so the output reads
                 // correctly for both.
@@ -1310,6 +1353,25 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             let port = runner_port.unwrap_or(22087);
             let plat = platform.to_flow();
             let out_fmt = format.to_adapter();
+            // The run path consumes all four switches. Warn once for any
+            // sourced from a deprecated env var, then inject Some(value)
+            // into every flow's FlowArgs below.
+            warn_if_env(&sw_auto_ocr, "SMIX_AUTO_OCR_FALLBACK", "autoOcrFallback");
+            warn_if_env(
+                &sw_ai_assertions,
+                "SMIX_ENABLE_AI_ASSERTIONS",
+                "enableAiAssertions",
+            );
+            warn_if_env(
+                &sw_assert_no_autorecord,
+                "SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD",
+                "assertScreenshotNoAutorecord",
+            );
+            warn_if_env(
+                &sw_launch_reinstall,
+                "SMIX_LAUNCH_FRESH_FORCE_REINSTALL",
+                "launchFreshForceReinstall",
+            );
 
             // Batch invocation. When N flows are listed, iterate;
             // exit = max(per-flow codes). Per-flow debug-output subdir
@@ -1384,6 +1446,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         fixture_registry: fixture_registry.clone(),
                         force_key_events,
                         no_fail_annotate,
+                        auto_ocr_fallback: Some(sw_auto_ocr.value),
+                        ai_assertions: Some(sw_ai_assertions.value),
+                        assert_screenshot_no_autorecord: Some(sw_assert_no_autorecord.value),
+                        launch_fresh_force_reinstall: Some(sw_launch_reinstall.value),
                     })
                     .await;
                     let wall_ms = started.elapsed().as_millis() as u64;

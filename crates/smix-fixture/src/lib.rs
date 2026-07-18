@@ -11,7 +11,7 @@
 //! - `timeoutMs` — how long to wait for the signal
 //!
 //! smix reads the registry once per run from a path resolved via
-//! `.smix/config.json` `fixturesRegistry` field.
+//! `.smix/config.yaml` `fixturesRegistry` field.
 //!
 //! # Format
 //!

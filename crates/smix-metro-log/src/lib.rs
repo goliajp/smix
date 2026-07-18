@@ -246,7 +246,7 @@ impl MetroLogTail {
 
     /// Layer additional patterns onto the existing allowlist.
     /// Consumers can compose a per-scope allowlist on top of a base
-    /// (.smix/config.json + per-scope + inline yaml).
+    /// (.smix/config.yaml + per-scope + inline yaml).
     ///
     /// Layer merge semantics: append. A log entry that matches ANY
     /// layer's pattern is allowlisted. To reset, call

@@ -62,10 +62,13 @@ std::thread_local! {
         const { std::cell::Cell::new(None) };
 }
 
-/// Test seam — pin the auto-OCR-fallback decision for the current
-/// thread (bypasses the `SMIX_AUTO_OCR_FALLBACK` env read). Pass
-/// `None` to restore env-driven behaviour. Not part of the public API
-/// surface; production code paths never call this.
+/// Pin the auto-OCR-fallback decision for the current thread (bypasses
+/// the `SMIX_AUTO_OCR_FALLBACK` env read). Pass `None` to restore
+/// env-driven behaviour. Also the injection seam `run_flow` uses to feed
+/// the CLI-resolved `.smix/config.yaml switches.autoOcrFallback` value in
+/// production — set immediately before parse with no intervening await,
+/// so the thread-local lands on the parsing thread. Not part of the
+/// stable public API surface.
 #[doc(hidden)]
 pub fn set_auto_ocr_fallback_override(v: Option<bool>) {
     AUTO_OCR_FALLBACK_OVERRIDE.with(|c| c.set(v));
@@ -93,10 +96,12 @@ std::thread_local! {
         const { std::cell::Cell::new(None) };
 }
 
-/// Test seam — pin the AI-assertion gate for the current thread (bypasses the
-/// `SMIX_ENABLE_AI_ASSERTIONS` env read). Pass `None` to restore env-driven
-/// behaviour. Not part of the public API surface; production paths never call
-/// this.
+/// Pin the AI-assertion gate for the current thread (bypasses the
+/// `SMIX_ENABLE_AI_ASSERTIONS` env read). Pass `None` to restore
+/// env-driven behaviour. Also the injection seam `run_flow` uses to feed
+/// the CLI-resolved `.smix/config.yaml switches.enableAiAssertions` value
+/// in production — set immediately before parse with no intervening
+/// await. Not part of the stable public API surface.
 #[doc(hidden)]
 pub fn set_ai_assertions_override(v: Option<bool>) {
     AI_ASSERTIONS_OVERRIDE.with(|c| c.set(v));

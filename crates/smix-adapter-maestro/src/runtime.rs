@@ -854,7 +854,7 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// runtime dispatches [`Step::ExpectSignal`] / [`Step::ExpectSignals`]
     /// / [`Step::ExpectLogClean`] via [`smix_metro_log::MetroLogTail`].
     /// None → those verbs fail immediately with an actionable hint to
-    /// configure `.smix/config.json` `metroLog` section.
+    /// configure `.smix/config.yaml` `metroLog` section.
     metro_tail: Option<smix_metro_log::MetroLogTail>,
     /// Step-end `ms_since_start` cursors. Populated at
     /// the end of each step execution; the [`SignalWindow::SinceStep`]
@@ -865,7 +865,7 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// Attached fixture registry. When Some, the
     /// runtime dispatches [`Step::Fixture`] by looking up the yaml
     /// `id:` in this registry. None → the verb fails with an
-    /// actionable hint to configure `.smix/config.json`.
+    /// actionable hint to configure `.smix/config.yaml`.
     fixture_registry: Option<smix_fixture::FixtureRegistry>,
     /// When true, `write_step_debug`'s fail-PNG output
     /// stays raw (no annotation overlay). Opt-out via `smix run
@@ -2408,7 +2408,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 code: Some(smix_sdk::FailureCode::DriverError),
                 message: format!("fixture `{id}` used but no fixture registry attached"),
                 hint: Some(
-                    "set `.smix/config.json` `fixturesRegistry` to the JSON registry path".into(),
+                    "set `.smix/config.yaml` `fixturesRegistry` to the JSON registry path".into(),
                 ),
                 ..Default::default()
             }))
@@ -2424,7 +2424,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             RunError::Sdk(smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
                 code: Some(smix_sdk::FailureCode::DriverError),
                 message: format!(
-                    "fixture `{id}` requires metro tail to await its signal — configure `.smix/config.json` `metroLog` or pass `--metro-log-url`"
+                    "fixture `{id}` requires metro tail to await its signal — configure `.smix/config.yaml` `metroLog` or pass `--metro-log-url`"
                 ),
                 ..Default::default()
             }))
@@ -2494,7 +2494,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         let tail = self.metro_tail.as_ref().ok_or_else(|| RunError::Sdk(
             smix_sdk::ExpectationFailure::new(smix_sdk::FailureInit {
                 code: Some(smix_sdk::FailureCode::DriverError),
-                message: "expect.signal used but no metro log tail attached — add `metroLog` block to .smix/config.json or pass `--metro-log-url`".into(),
+                message: "expect.signal used but no metro log tail attached — add `metroLog` block to .smix/config.yaml or pass `--metro-log-url`".into(),
                 ..Default::default()
             })
         ))?;
