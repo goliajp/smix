@@ -2,13 +2,16 @@ name: deploy
 
 # smix project website: smix.golia.jp
 #
-# Build artifact lives in web/dist/ — produced locally by:
-#     cd web && bun install && bun run build
+# Build artifact lives in dashboard/dist/ — produced locally by:
+#     cd dashboard && bun install && bun run build
 # Then trigger deploy from the smix repo root:
 #     devops deploy smix
 #
-# The web/ sub-project is a Vite SPA (React + GDS); served as static
-# files on t01 by Caddy, HTTPS via ACME.
+# The dashboard/ sub-project (live-sim observation panel) is a Vite SPA
+# (React + GDS), served as static files on t01 by Caddy, HTTPS via ACME.
+#
+# NOTE: still served at the apex smix.golia.jp until the marketing site under
+# web/ is ready to take the apex; the dashboard then moves to a sub-path/domain.
 
 jobs:
   web:
@@ -16,10 +19,10 @@ jobs:
     steps:
       - uses: upload
         with:
-          src: ./web/dist/
-          dest: /var/lib/smix-web/
+          src: ./dashboard/dist/
+          dest: /var/lib/smix-dashboard/
       - uses: caddy
         with:
           domains: [smix.golia.jp]
-          root: /var/lib/smix-web
+          root: /var/lib/smix-dashboard
           spa: true
