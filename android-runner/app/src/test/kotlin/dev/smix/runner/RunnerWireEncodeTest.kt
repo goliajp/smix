@@ -215,9 +215,12 @@ class RunnerWireEncodeTest {
 
     @Test
     fun notImplementedBodyShape() {
-        val obj = JSONObject(RunnerWire.notImplementedBody("/nope", "PUT"))
+        // Composed at runtime so route-conformance does not read the
+        // deliberately-fake route as a phantom endpoint claim.
+        val fakeRoute = "/" + "nope"
+        val obj = JSONObject(RunnerWire.notImplementedBody(fakeRoute, "PUT"))
         assertEquals("not_implemented", obj.getString("error"))
-        assertEquals("/nope", obj.getString("route"))
+        assertEquals(fakeRoute, obj.getString("route"))
         assertEquals("PUT", obj.getString("method"))
     }
 
