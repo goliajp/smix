@@ -93,8 +93,17 @@ MD_BARE = re.compile(r"`([A-Za-z0-9_.\-/]+\.md)`")
 POINTER_EXTS = (".rs", ".swift", ".kt", ".md")
 
 # Planning docs name deliverables that do not exist yet — that is their
-# job. An unresolved name there is a plan, not a dead pointer.
-POINTER_SKIP = ("docs/roadmap.md", "docs/plan-hot.md", "docs/v2.md", "docs/plan-cold/")
+# job. An unresolved name there is a plan, not a dead pointer. Archived
+# plans under "plan-history/" are read the same way: each was written
+# pointing at the hot plan it would become, or the next segment's, and is
+# kept as written — the noise scan already excludes it for the same reason.
+POINTER_SKIP = (
+    "docs/roadmap.md",
+    "docs/plan-hot.md",
+    "docs/v2.md",
+    "docs/plan-cold/",
+    "docs/plan-history/",
+)
 
 
 def shipped_files():
