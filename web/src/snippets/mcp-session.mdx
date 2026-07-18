@@ -1,0 +1,10 @@
+{/* Verbatim from docs/ai-guide/11-mcp.md — "A session". */}
+
+```text
+smix_launch_app { "bundleId": "com.example.app" }
+smix_describe                        → what's on screen
+smix_tap          { "id": "tab-form" }
+smix_fill         { "target": { "id": "form-email-input" }, "text": "alice@example.com" }
+smix_press_key    { "key": "return" }
+smix_assert_visible { "id": "form-submitted-label" }
+```

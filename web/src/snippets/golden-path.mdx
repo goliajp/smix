@@ -1,0 +1,12 @@
+{/* The parse-check golden path — from examples/hello.yaml's own header
+    comment and docs/ai-guide. No device required. */}
+
+```bash
+# Parse-check the flow — no simulator needed
+smix run --check examples/hello.yaml
+
+# Boot a simulator and run it for real
+smix sim boot ios-17
+smix runner up ios-17
+smix run examples/hello.yaml --device ios-17
+```
