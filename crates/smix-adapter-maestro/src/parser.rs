@@ -252,7 +252,8 @@ fn parse_fallback_element(v: &Value, field: &str) -> Result<Selector, ParseError
         });
     }
     if let Some(loc_map) = map
-        .get(Value::String("localized_text".into()))
+        .get(Value::String("localizedText".into()))
+        .or_else(|| map.get(Value::String("localized_text".into())))
         .and_then(Value::as_mapping)
     {
         let table = parse_localized_table(loc_map, &format!("{field}.localized_text"))?;
@@ -579,7 +580,8 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
                 });
             }
             if let Some(loc_map) = map
-                .get(Value::String("localized_text".into()))
+                .get(Value::String("localizedText".into()))
+                .or_else(|| map.get(Value::String("localized_text".into())))
                 .and_then(Value::as_mapping)
             {
                 let table = parse_localized_table(loc_map, "visible.localized_text")?;
@@ -594,7 +596,7 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
             }
             Err(ParseError::InvalidValue {
                 field: "visible".into(),
-                reason: "expected one of `text`, `id`, `label`, `role`, `ocrText`, `localized_text`, `fallback` keys".into(),
+                reason: "expected one of `text`, `id`, `label`, `role`, `ocrText`, `localizedText`, `fallback` keys".into(),
             })
         }
         other => Err(ParseError::InvalidValue {
@@ -698,7 +700,8 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
             // per-locale text table. Adapter desugars to Selector::Text
             // before dispatch based on last_locale state.
             if let Some(loc_map) = map
-                .get(Value::String("localized_text".into()))
+                .get(Value::String("localizedText".into()))
+                .or_else(|| map.get(Value::String("localized_text".into())))
                 .and_then(Value::as_mapping)
             {
                 let table = parse_localized_table(loc_map, "tapOn.localized_text")?;
@@ -1058,13 +1061,42 @@ fn parse_swipe(v: &Value) -> Result<Step, ParseError> {
         field: "swipe".into(),
         reason: "expected a mapping".into(),
     })?;
+    // maestro's directional form: `swipe: { direction: UP }` is a
+    // finger swipe across the middle 40% of the screen. Desugared to
+    // the same from/to coordinates maestro uses, so both forms ride
+    // one Step. This form used to be rejected with MissingField
+    // ("swipe.from") — a maestro-parity gap.
+    if let Some(dir) = map
+        .get(Value::String("direction".into()))
+        .and_then(Value::as_str)
+    {
+        let (from, to) = match dir.to_ascii_lowercase().as_str() {
+            "up" => ((0.5, 0.7), (0.5, 0.3)),
+            "down" => ((0.5, 0.3), (0.5, 0.7)),
+            "left" => ((0.7, 0.5), (0.3, 0.5)),
+            "right" => ((0.3, 0.5), (0.7, 0.5)),
+            other => {
+                return Err(ParseError::InvalidValue {
+                    field: "swipe.direction".into(),
+                    reason: format!("unknown direction {other:?} — UP/DOWN/LEFT/RIGHT"),
+                });
+            }
+        };
+        return Ok(Step::Swipe { from, to });
+    }
+    // `start`/`end` are the spelling the yaml reference documents;
+    // `from`/`to` is what the parser has always accepted. Both work —
+    // the doc and the code disagreed, and the doc's form was the one
+    // that failed.
     let from = parse_xy(
         map.get(Value::String("from".into()))
+            .or_else(|| map.get(Value::String("start".into())))
             .ok_or_else(|| ParseError::MissingField("swipe.from".into()))?,
         "swipe.from",
     )?;
     let to = parse_xy(
         map.get(Value::String("to".into()))
+            .or_else(|| map.get(Value::String("end".into())))
             .ok_or_else(|| ParseError::MissingField("swipe.to".into()))?,
         "swipe.to",
     )?;

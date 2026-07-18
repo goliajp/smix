@@ -257,7 +257,7 @@ mod output;
 mod parser;
 mod runtime;
 
-pub use entry::{FlowArgs, FlowPlatform, OutputFormat, run_flow};
+pub use entry::{FlowArgs, FlowPlatform, OutputFormat, run_flow, run_flow_code};
 
 pub use apps_config::{
     AndroidApp, AppEntry, AppsConfig, IosApp, ResolveError, ResolvedApp, resolve_app_into_flow,

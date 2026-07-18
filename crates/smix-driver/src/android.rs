@@ -540,11 +540,12 @@ impl Driver for AndroidDriver {
     }
 
     async fn webview_eval(&self, js: &str) -> Result<serde_json::Value, ExpectationFailure> {
-        // Runner /webview-eval proxies HTTP to fixture's shim
-        // server (WebViewEvalServer on :28081, started by MainActivity
-        // onCreate). evaluateJavascript callback result is a JSON-encoded
-        // string (e.g. "null", "\"hello\"", "42") passed verbatim.
-        self.runner.webview_eval(js).await.map_err(|e| {
+        // The Kotlin runner's /webview-eval proxies to the app's shim on
+        // :28081 — the emulator's loopback is not the host's, so the
+        // direct-bridge method (which dials 127.0.0.1:28080 on the HOST)
+        // could never reach an Android app. This comment used to claim
+        // the proxy while the code dialed the host port.
+        self.runner.webview_eval_via_runner(js).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
                 message: format!("AndroidDriver::webview_eval: {e}"),

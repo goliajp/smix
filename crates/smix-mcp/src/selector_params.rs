@@ -45,6 +45,22 @@ pub struct SelectorParams {
     pub ocr_text: Option<String>,
 }
 
+/// The OCR needle, when the selector is the OCR path.
+///
+/// The tree resolver's `matches_base` returns `false` for `OcrText` by
+/// design — OCR is a live-vision op, not a tree predicate — so a selector
+/// that reaches `App::find` / `App::tap` as `OcrText` can never match.
+/// Every MCP tool splits dispatch on this answer: `Some` goes to
+/// `App::find_by_text_ocr` (and its tap companion), `None` to the tree
+/// path. Top-level match only: [`SelectorParams::to_selector`] never
+/// builds a `Fallback` chain.
+pub fn ocr_text_of(selector: &Selector) -> Option<&str> {
+    match selector {
+        Selector::OcrText { ocr_text, .. } => Some(ocr_text),
+        _ => None,
+    }
+}
+
 impl SelectorParams {
     /// Turn what the agent wrote into a selector.
     ///

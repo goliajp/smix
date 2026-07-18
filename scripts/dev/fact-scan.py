@@ -17,12 +17,20 @@ Checks:
   3. User-facing string noise — the hygiene noise patterns, run WITHOUT
      quote-stripping, over the surfaces whose quoted strings are the
      product (web/, dashboard/ sources).
+  4. Installability — the DEPLOYED site tells visitors to install the
+     workspace version. If no release tag for it exists, the site is
+     promising a package the registries do not serve, so the page must
+     say so. Checks 1-3 all passed while smix.golia.jp shipped
+     "npm install @goliapkg/smix@2.0.0" against a registry whose latest
+     was 1.0.27: matching the workspace version is not the same as being
+     installable.
 
 Exit non-zero on any mismatch, so it can gate a release.
 """
 
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -81,6 +89,23 @@ TOOL_CLAIM_SURFACES = [
 ]
 
 
+def release_tag_exists(version):
+    """Is there a tag for this version? Tagging is what publishes."""
+    result = subprocess.run(
+        ["git", "tag", "--list", f"v{version}", f"swift-v{version}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return bool(result.stdout.strip())
+
+
+# Wording that tells a visitor the version is not out yet. The deployed
+# site must carry one of these while the tag is missing.
+UNRELEASED_MARKERS = ("not published yet", "unreleased", "pre-release")
+
+
 def mcp_tool_count():
     return read("crates/smix-mcp/src/main.rs").count("#[tool(")
 
@@ -136,6 +161,15 @@ def main():
             for name, pattern in NOISE.items():
                 if pattern.search(line):
                     failures.append(f"{rel}:{lineno}: {name} in user-facing copy")
+
+    if not release_tag_exists(version):
+        site = "\n".join(read(rel) for rel in iter_surface_files() if rel.startswith("web/"))
+        if not any(marker in site.lower() for marker in UNRELEASED_MARKERS):
+            failures.append(
+                f"web/: the site states {version} install coordinates, no release "
+                f"tag for {version} exists, and no copy says so — visitors are "
+                f"told to install a version the registries do not serve"
+            )
 
     if failures:
         print(f"fact-scan: {len(failures)} falsehood(s) on user-facing surfaces")

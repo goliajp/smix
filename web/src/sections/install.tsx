@@ -17,6 +17,16 @@ export function Install() {
           for iOS, or the Android SDK with an emulator image for Android.
         </p>
 
+        <p className="mt-5 max-w-[68ch] border border-accent bg-bg-elev px-4 py-3 text-[13px] text-fg-muted">
+          <span className="font-mono font-600 text-fg">{VERSION} is not published yet.</span>{' '}
+          The coordinates below are what {VERSION} will be; the registries currently serve 1.0.27.
+          Until the release lands, install the 1.x line — or build from{' '}
+          <a href={LINKS.repo} target="_blank" rel="noreferrer">
+            source
+          </a>
+          .
+        </p>
+
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           {SDKS.map((sdk) => (
             <div key={sdk.id} className="flex flex-col border border-border bg-bg-elev">

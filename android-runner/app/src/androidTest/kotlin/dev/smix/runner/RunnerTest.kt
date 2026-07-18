@@ -114,6 +114,22 @@ class SmixHttpServer(
                     serveSystemPopupAction(session)
                 uri == "/webview-eval" && session.method == Method.POST ->
                     serveWebViewEvalProxy(session)
+                uri == "/session/open" && session.method == Method.POST ->
+                    serveSessionOpen(session)
+                uri == "/session/close" && session.method == Method.POST ->
+                    serveSessionClose(session)
+                uri == "/session/close-all" && session.method == Method.POST ->
+                    serveSessionCloseAll()
+                uri == "/session/list" && session.method == Method.POST ->
+                    serveSessionList()
+                uri == "/session/renew-activation" && session.method == Method.POST ->
+                    serveSessionRenewActivation(session)
+                uri == "/session/launch-app" && session.method == Method.POST ->
+                    serveSessionAppLifecycle(session, terminate = false)
+                uri == "/session/terminate-app" && session.method == Method.POST ->
+                    serveSessionAppLifecycle(session, terminate = true)
+                uri == "/session/relaunch-app" && session.method == Method.POST ->
+                    serveSessionRelaunchApp(session)
                 else -> serveNotImplemented(uri, session.method.name)
             }
         } catch (e: Throwable) {
@@ -486,6 +502,148 @@ class SmixHttpServer(
         val body = RunnerWire.foregroundBody(bundleId)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
+
+    // ---- /session/* ------------------------------------------------------
+    //
+    // Minimal session surface so the Kotlin SDK (driving through the FFI
+    // session API → smix-runner-client) can talk to the Android runner.
+    // Sessions on iOS cache an XCUIApplication binding to kill the
+    // activation storm; Android has no per-request activation to
+    // suppress, so a session here is pure bookkeeping: an id ↔ bundleId
+    // binding that the lifecycle routes (launch/terminate/relaunch) act
+    // on via the same shell-exec pathway /foreground uses.
+
+    private val sessions = SessionTable()
+
+    private fun serveSessionOpen(session: IHTTPSession): Response {
+        val req = RunnerWire.decodeSessionOpen(readBodyString(session))
+        if (req.bundleId.isEmpty()) {
+            return sessionError(
+                Response.Status.BAD_REQUEST,
+                RunnerWire.sessionBadRequestBody("bundleId must be a non-empty string"),
+            )
+        }
+        // iOS semantics: activate:true → foreground the target once,
+        // synchronously, before returning; activatedOnce mirrors it.
+        if (req.activate) {
+            runShellCommand(RunnerWire.foregroundCommand(req.bundleId))
+            device.waitForIdle(500)
+        }
+        val entry = sessions.open(req.bundleId, activated = req.activate)
+        val body = RunnerWire.sessionOpenBody(entry.sessionId, req.activate, entry.openedAtMs)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    private fun serveSessionClose(session: IHTTPSession): Response {
+        val sid = RunnerWire.decodeSessionId(readBodyString(session))
+        if (sid.isEmpty()) {
+            return sessionError(
+                Response.Status.BAD_REQUEST,
+                RunnerWire.sessionBadRequestBody("sessionId must be a non-empty string"),
+            )
+        }
+        sessions.close(sid)
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            RunnerWire.sessionCloseBody(),
+        )
+    }
+
+    private fun serveSessionCloseAll(): Response {
+        val closed = sessions.closeAll()
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            RunnerWire.sessionCloseAllBody(closed),
+        )
+    }
+
+    private fun serveSessionList(): Response {
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            RunnerWire.sessionListBody(sessions.list()),
+        )
+    }
+
+    private fun serveSessionRenewActivation(session: IHTTPSession): Response {
+        val sid = RunnerWire.decodeSessionId(readBodyString(session))
+        if (sid.isEmpty()) {
+            return sessionError(
+                Response.Status.BAD_REQUEST,
+                RunnerWire.sessionBadRequestBody("sessionId must be a non-empty string"),
+            )
+        }
+        val entry = sessions.renewActivation(sid) ?: return sessionError(
+            Response.Status.NOT_FOUND,
+            RunnerWire.sessionNotFoundBody("unknown session id"),
+        )
+        runShellCommand(RunnerWire.foregroundCommand(entry.bundleId))
+        device.waitForIdle(500)
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            RunnerWire.sessionRenewBody(activated = true),
+        )
+    }
+
+    private fun serveSessionAppLifecycle(session: IHTTPSession, terminate: Boolean): Response {
+        // Body carries sessionId (+ args/env/waitFor*Ms, accepted and
+        // ignored — XCUITest launch-injection has no `am` equivalent).
+        val sid = RunnerWire.decodeSessionId(readBodyString(session))
+        if (sid.isEmpty()) {
+            return sessionError(
+                Response.Status.BAD_REQUEST,
+                RunnerWire.sessionBadRequestBody("sessionId must be a non-empty string"),
+            )
+        }
+        val entry = sessions.get(sid) ?: return sessionError(
+            Response.Status.NOT_FOUND,
+            RunnerWire.sessionNotFoundBody("unknown session id"),
+        )
+        val start = System.currentTimeMillis()
+        val cmd = if (terminate) {
+            RunnerWire.terminateAppCommand(entry.bundleId)
+        } else {
+            RunnerWire.foregroundCommand(entry.bundleId)
+        }
+        runShellCommand(cmd)
+        device.waitForIdle(500)
+        val wallMs = System.currentTimeMillis() - start
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            RunnerWire.sessionLifecycleBody(true, wallMs),
+        )
+    }
+
+    private fun serveSessionRelaunchApp(session: IHTTPSession): Response {
+        val sid = RunnerWire.decodeSessionId(readBodyString(session))
+        if (sid.isEmpty()) {
+            return sessionError(
+                Response.Status.BAD_REQUEST,
+                RunnerWire.sessionBadRequestBody("sessionId must be a non-empty string"),
+            )
+        }
+        val entry = sessions.get(sid) ?: return sessionError(
+            Response.Status.NOT_FOUND,
+            RunnerWire.sessionNotFoundBody("unknown session id"),
+        )
+        val start = System.currentTimeMillis()
+        runShellCommand(RunnerWire.terminateAppCommand(entry.bundleId))
+        runShellCommand(RunnerWire.foregroundCommand(entry.bundleId))
+        device.waitForIdle(500)
+        val wallMs = System.currentTimeMillis() - start
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            RunnerWire.sessionRelaunchBody(true, wallMs),
+        )
+    }
+
+    private fun sessionError(status: Response.Status, body: String): Response =
+        newFixedLengthResponse(status, "application/json", body)
 
     private fun runShellCommand(cmd: String) {
         val pfd = instrumentation.uiAutomation.executeShellCommand(cmd)

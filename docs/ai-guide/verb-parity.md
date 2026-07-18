@@ -63,8 +63,8 @@ that is why.
 | `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when.visible` / `when.notVisible` gates (mutually exclusive); OCR fires when the gate selector contains `ocrText`; skips emit `SKIPPED: <reason>` to stderr |
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
 | `repeat` | ✅ | ✅ | |
-| `pressKey` | ✅ | ✅ | Names: enter, back, home, escape, delete, tab, etc. |
-| `back` | ✅ | ✅ | maestro writes the key into the verb; smix takes it either way, as `back` or as `pressKey: back` |
+| `pressKey` | ✅ | ✅ | enter/return, delete, tab, space, escape, and the four arrows on both. home / lock / volumeUp / volumeDown reach Android; on the iOS simulator they report an explicit Skipped (Apple exposes no simulator path) |
+| `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. Not a keystroke: `pressKey: back` is not a spelling of it |
 
 ## Lifecycle
 
@@ -92,7 +92,7 @@ that is why.
 |---|---|---|---|
 | `scroll` | ✅ | ✅ | |
 | `scrollUntilVisible` | ✅ | ✅ | Polls a11y tree between scrolls; selectors containing `ocrText` also probe OCR per stroke |
-| `swipe` | ✅ | ✅ | Absolute + relative coord shapes |
+| `swipe` (`direction:` or `start:`/`end:` or `from:`/`to:`) | ✅ | ✅ | Absolute + relative coord shapes |
 | `hideKeyboard` | ✅ | ✅ | |
 
 ## Device

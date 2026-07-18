@@ -197,8 +197,8 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
     },
-    /// Print the runner's high-level ScreenDescription
-    /// (title / interactive elements / status bar / etc.).
+    /// Print the runner's high-level ScreenDescription: the visible
+    /// interactive elements aggregated from the current a11y tree.
     Describe {
         #[arg(long)]
         json: bool,
@@ -444,9 +444,9 @@ Documentation: docs/AI_GUIDE.md
     ///
     /// Examples:
     ///   smix annotate in.png out.png \\
-    ///     --annotate "circle,at:100,100,color:red,radius:40" \\
-    ///     --annotate "arrow,from:10,10,to:200,200,color:blue" \\
-    ///     --annotate "text,at:50,50,content:hello,color:green,size:24"
+    ///     --annotate "circle,at:100_100,color:red,radius:40" \\
+    ///     --annotate "arrow,from:10_10,to:200_200,color:blue" \\
+    ///     --annotate "text,at:50_50,content:hello,color:green,size:24"
     ///     --font /path/to/font.ttf
     Annotate {
         /// Input PNG path.
@@ -478,7 +478,6 @@ enum AuthoringAction {
     /// Suggest selectors matching a partial spec against the current
     /// sim state. Runs against a live runner on `--port`. Examples:
     ///   smix authoring suggest 'id: qa-*'
-    ///   smix authoring suggest 'text: /Sign.*/'
     ///   smix authoring suggest 'Sign In'
     Suggest {
         /// Partial selector spec.
@@ -588,8 +587,10 @@ enum RunnerAction {
     /// Start the runner on a device; blocks until /health answers.
     Up {
         device: String,
-        /// Bundle id the runner binds its XCUIApplication to (default:
-        /// the runner's built-in default, com.apple.Preferences).
+        /// Bundle id the runner binds its XCUIApplication to.
+        /// Required: `runner up` refuses to start without one (the
+        /// help used to claim a com.apple.Preferences default that the
+        /// implementation rejects).
         #[arg(long)]
         bundle: Option<String>,
         /// Explicit path to `SmixRunner.xcodeproj`. Wins over
@@ -1436,7 +1437,18 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             // undriveable. `attribution_bundle` below is best-effort for
             // .ips crash attribution only.
             let bundle = bundle_id.clone();
-            let port = runner_port.unwrap_or(22087);
+            // Same priority chain as `runner up`: flag/env → the
+            // registry's per-sim runnerPort → 22087. `smix run` used to
+            // skip the registry, so a sim registered on a dedicated port
+            // got its runner bound there and then dialed on 22087.
+            let port = runner_port
+                .or_else(|| {
+                    device
+                        .as_deref()
+                        .and_then(lookup_registered)
+                        .and_then(|sim| sim.runner_port)
+                })
+                .unwrap_or(22087);
             let plat = platform.to_flow();
             let out_fmt = format.to_adapter();
             // The run path consumes all four switches. Warn once for any
@@ -1515,44 +1527,52 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     }
                     let ips_before = ips_snapshot(attribution_bundle.as_deref());
                     let started = std::time::Instant::now();
-                    let exit = smix_adapter_maestro::run_flow(smix_adapter_maestro::FlowArgs {
-                        flow: flow_path.clone(),
-                        udid: udid.clone(),
-                        bundle_id: bundle.clone(),
-                        runner_port: port,
-                        no_launch,
-                        platform: plat,
-                        apps_config: apps_config.clone(),
-                        env_vars: env.clone(),
-                        debug_output: per_flow_debug.clone(),
-                        verbose,
-                        format: out_fmt,
-                        auto_activate: activate,
-                        metro_log_url: metro_log_url.clone(),
-                        await_signal: await_signal.clone(),
-                        gate_signal: gate_signal.clone(),
-                        gate_signal_timeout_ms,
-                        expect_log_clean,
-                        fixture_registry: fixture_registry.clone(),
-                        force_key_events,
-                        no_fail_annotate,
-                        auto_ocr_fallback: Some(sw_auto_ocr.value),
-                        ai_assertions: Some(sw_ai_assertions.value),
-                        assert_screenshot_no_autorecord: Some(sw_assert_no_autorecord.value),
-                        launch_fresh_force_reinstall: Some(sw_launch_reinstall.value),
-                    })
-                    .await;
+                    let code =
+                        smix_adapter_maestro::run_flow_code(smix_adapter_maestro::FlowArgs {
+                            flow: flow_path.clone(),
+                            udid: udid.clone(),
+                            bundle_id: bundle.clone(),
+                            runner_port: port,
+                            no_launch,
+                            platform: plat,
+                            apps_config: apps_config.clone(),
+                            env_vars: env.clone(),
+                            debug_output: per_flow_debug.clone(),
+                            verbose,
+                            format: out_fmt,
+                            auto_activate: activate,
+                            metro_log_url: metro_log_url.clone(),
+                            await_signal: await_signal.clone(),
+                            gate_signal: gate_signal.clone(),
+                            gate_signal_timeout_ms,
+                            expect_log_clean,
+                            fixture_registry: fixture_registry.clone(),
+                            force_key_events,
+                            no_fail_annotate,
+                            auto_ocr_fallback: Some(sw_auto_ocr.value),
+                            ai_assertions: Some(sw_ai_assertions.value),
+                            assert_screenshot_no_autorecord: Some(sw_assert_no_autorecord.value),
+                            launch_fresh_force_reinstall: Some(sw_launch_reinstall.value),
+                        })
+                        .await;
                     let wall_ms = started.elapsed().as_millis() as u64;
-                    let code = exit_code_to_u8(exit);
                     let ips_after = ips_snapshot(attribution_bundle.as_deref());
                     let new_ips: Option<String> =
                         ips_after.iter().find(|p| !ips_before.contains(*p)).cloned();
+                    // The adapter's real exit-code table (entry.rs
+                    // run_error_to_exit): 2 parse, 3 expectation/SDK,
+                    // 4 unknown verb, 5 cycle/IO, 6 unreachable. The old
+                    // mapping here invented 1=expectation and 2=timeout,
+                    // so parse errors were attributed as timeouts and
+                    // real expectation failures as bare EXIT_3.
                     let (status, error_class) = match code {
                         0 => ("ok".to_string(), None),
-                        1 => ("error".to_string(), Some("EXPECTATION_FAILURE".to_string())),
-                        2 => ("timeout".to_string(), Some("TIMEOUT".to_string())),
-                        5 => ("error".to_string(), Some("DRIVER_ERROR".to_string())),
+                        2 => ("error".to_string(), Some("PARSE_ERROR".to_string())),
+                        3 => ("error".to_string(), Some("EXPECTATION_FAILURE".to_string())),
+                        4 => ("error".to_string(), Some("UNKNOWN_VERB".to_string())),
+                        5 => ("error".to_string(), Some("FLOW_IO_ERROR".to_string())),
                         6 => ("error".to_string(), Some("RUNNER_UNREACHABLE".to_string())),
+                        130 | 143 => ("interrupted".to_string(), Some("SIGNAL".to_string())),
                         n => ("error".to_string(), Some(format!("EXIT_{n}"))),
                     };
                     let mut a = smix_runner_wire::FlowAttempt::default();
@@ -2008,14 +2028,6 @@ fn runner_port() -> u16 {
 /// For the batch-invocation path we only need to compare codes; the parsed u8
 /// is fed straight into `ExitCode::from(u8)` for the process exit. Success
 /// (Debug "ExitCode(unix_exit_status(0))") maps to 0.
-fn exit_code_to_u8(code: std::process::ExitCode) -> u8 {
-    let dbg = format!("{code:?}");
-    // e.g. "ExitCode(unix_exit_status(3))"
-    dbg.rsplit_once('(')
-        .and_then(|(_, tail)| tail.trim_end_matches("))").parse::<u8>().ok())
-        .unwrap_or(0)
-}
-
 /// smix workspace root = nearest ancestor with a `.smix/` dir (env
 /// SMIX_WORKSPACE overrides discovery).
 fn smix_workspace_root() -> Result<PathBuf, CliError> {

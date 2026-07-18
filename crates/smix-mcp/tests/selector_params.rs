@@ -5,7 +5,7 @@
 //! Zero or several is an error rather than a guess — an agent that meant `id`
 //! and typed `text` should be told, not quietly obeyed.
 
-use smix_mcp::SelectorParams;
+use smix_mcp::{SelectorParams, ocr_text_of};
 use smix_selector::{Pattern, Selector};
 
 fn params(json: &str) -> SelectorParams {
@@ -118,6 +118,30 @@ fn the_wire_spelling_is_the_yaml_spelling() {
     // None and the call came back "you named nothing" — a spelling mismatch
     // wearing the costume of a usage error.
     assert!(params(r#"{"ocrText": "Submit"}"#).to_selector().is_ok());
+}
+
+#[test]
+fn ocr_text_of_names_the_ocr_needle() {
+    // The tree resolver never matches OcrText (OCR is a live-vision op, not
+    // a tree predicate), so every MCP tool must split dispatch on this
+    // answer or the ocrText it advertises is dead: find always false,
+    // assert_not_visible a false green, tap always NotFound.
+    let s = params(r#"{"ocrText": "Submit"}"#).to_selector().unwrap();
+    assert_eq!(ocr_text_of(&s), Some("Submit"));
+}
+
+#[test]
+fn ocr_text_of_is_none_for_every_tree_selector() {
+    for json in [
+        r#"{"id": "form-submit-btn"}"#,
+        r#"{"text": "Submit"}"#,
+        r#"{"label": "Close"}"#,
+        r#"{"role": "button"}"#,
+        r#"{"role": "button", "name": "Reload"}"#,
+    ] {
+        let s = params(json).to_selector().unwrap();
+        assert_eq!(ocr_text_of(&s), None, "tree selector from {json}");
+    }
 }
 
 #[test]

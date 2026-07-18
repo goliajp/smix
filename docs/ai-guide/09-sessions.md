@@ -44,6 +44,14 @@ let _app = session.close().await?;
 
 If you skip `close()`, `Drop` clears the client-side `Session-Id` header on a best-effort basis. It cannot `await` a network call, so the runner-side entry is only cleaned up on runner restart. Prefer explicit `close()`.
 
+## Android
+
+The Kotlin runner serves the same `/session/*` surface (open / close /
+close-all / list / launch-app / terminate-app / relaunch-app /
+renew-activation), backed by an in-memory table and `am` commands.
+`smix run` still drives Android sessionlessly — the session surface is
+there for the SDKs that open one explicitly.
+
 ## TypeScript SDK
 
 Session lifecycle is fully wired in the TypeScript package; driving

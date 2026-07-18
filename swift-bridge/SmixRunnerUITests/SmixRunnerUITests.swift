@@ -1701,13 +1701,20 @@ final class SmixRunnerUITests: XCTestCase {
           return .notFound
         default: break
         }
-        // keyboard-event path (return / delete / tab / space / escape)
+        // keyboard-event path (return / delete / tab / space / escape /
+        // arrows). Arrow keys ride the same XCUIKeyboardKey rawValue →
+        // `_XCT_sendString` mechanism as the original five; wire names
+        // match the Rust KeyName camelCase serialization (smix-input).
         let mapping: [String: String] = [
           "return": XCUIKeyboardKey.return.rawValue,
           "delete": XCUIKeyboardKey.delete.rawValue,
           "tab":    XCUIKeyboardKey.tab.rawValue,
           "space":  XCUIKeyboardKey.space.rawValue,
           "escape": XCUIKeyboardKey.escape.rawValue,
+          "arrowUp":    XCUIKeyboardKey.upArrow.rawValue,
+          "arrowDown":  XCUIKeyboardKey.downArrow.rawValue,
+          "arrowLeft":  XCUIKeyboardKey.leftArrow.rawValue,
+          "arrowRight": XCUIKeyboardKey.rightArrow.rawValue,
         ]
         guard let raw = mapping[key] else { return .notFound }
         let t1 = DispatchTime.now()
@@ -2052,6 +2059,21 @@ final class SmixRunnerUITests: XCTestCase {
           return !app.keyboards.firstMatch.exists
         }
         return outcome ?? false
+      },
+      // POST /input-text handler. Submits the text to whatever element
+      // currently has keyboard focus via the daemon fast path — the exact
+      // `_XCT_sendString` route fillHandler takes after its focus-tap. No
+      // selector / no focus-tap here: the caller focused the field first
+      // (FFI App.fill taps the element, then posts /input-text), mirroring
+      // the Android runner's /input-text contract.
+      inputTextHandler: { text in
+        do {
+          try await DaemonKeyboard.shared.sendString(text, typingFrequency: 200)
+          // typeText APPENDS to existing field content — same cache
+          // bookkeeping as fillHandler so clear's hot path stays accurate.
+          KeyboardCache.shared.appendFill(text)
+          return true
+        } catch { return false }
       },
       // POST /tap-at-norm-coord handler. Uses the daemonProxy
       // `_XCT_synthesizeEvent:completion:` private path (the same one

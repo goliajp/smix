@@ -35,9 +35,10 @@ use rmcp::{tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use smix_input::{KeyName, SwipeDirection};
-use smix_mcp::SelectorParams;
+use smix_mcp::{SelectorParams, ocr_text_of};
 use smix_sdk::{App, KeyName as SdkKeyName};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -103,6 +104,17 @@ struct PressKeyParams {
     key: String,
 }
 
+/// The SDK's own no-UDID failure tells the caller to use `.with_udid(...)`
+/// — a Rust API an MCP caller cannot reach. Say the thing they can do.
+fn missing_udid_error() -> McpError {
+    McpError::invalid_params(
+        "SMIX_UDID is not set — set the SMIX_UDID env var in this MCP server's \
+         config to the target simulator's UDID (find it with `xcrun simctl list \
+         devices`), then restart the server",
+        None,
+    )
+}
+
 #[tool_router]
 impl SmixMcpService {
     fn new(app: App) -> Self {
@@ -113,7 +125,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Get a structured description of the current screen — visible elements + bounds."
+        description = "Get a structured description of the current screen — visible elements + bounds. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_describe(&self) -> Result<CallToolResult, McpError> {
         let app = self.app.lock().await;
@@ -125,7 +137,9 @@ impl SmixMcpService {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-    #[tool(description = "Get the raw A11yNode tree of the current screen.")]
+    #[tool(
+        description = "Get the raw A11yNode tree of the current screen. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+    )]
     async fn smix_tree(&self) -> Result<CallToolResult, McpError> {
         let app = self.app.lock().await;
         let tree = app
@@ -137,7 +151,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Check whether an element is on screen, as a plain true/false. Use this to look before you act; use smix_assert_visible when absence should be a failure."
+        description = "Check whether an element is on screen, as a plain true/false. Use this to look before you act; use smix_assert_visible when absence should be a failure. An ocrText selector runs an Apple Vision OCR pass. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_find(
         &self,
@@ -145,17 +159,28 @@ impl SmixMcpService {
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
         let app = self.app.lock().await;
-        let exists = app
-            .find(&sel)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        // The tree resolver never matches OcrText (live-vision op, not a
+        // tree predicate) — routed through `app.find` an ocrText selector
+        // is always false. Dispatch it to the OCR path instead, as the
+        // maestro adapter does.
+        let exists = match ocr_text_of(&sel) {
+            Some(needle) => app
+                .find_by_text_ocr(needle, &[])
+                .await
+                .map_err(|e| McpError::internal_error(e.to_prompt(), None))?
+                .is_some(),
+            None => app
+                .find(&sel)
+                .await
+                .map_err(|e| McpError::internal_error(e.to_prompt(), None))?,
+        };
         Ok(CallToolResult::success(vec![Content::text(
             if exists { "true" } else { "false" }.to_string(),
         )]))
     }
 
     #[tool(
-        description = "Tap an element. Name it with exactly one of id / text / label / role / ocrText — prefer id, which survives copy changes and localization."
+        description = "Tap an element. Name it with exactly one of id / text / label / role / ocrText — prefer id, which survives copy changes and localization. An ocrText selector OCRs the screen and taps the matched text's center. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_tap(
         &self,
@@ -163,9 +188,14 @@ impl SmixMcpService {
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
         let app = self.app.lock().await;
-        app.tap(&sel)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        // OcrText bypasses the tree resolver: find the text's frame via
+        // Apple Vision OCR and tap its normalized center (IOHID
+        // synthesize), the same dispatch the maestro adapter uses.
+        match ocr_text_of(&sel) {
+            Some(needle) => app.tap_by_text_ocr(needle, &[]).await,
+            None => app.tap(&sel).await,
+        }
+        .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
         Ok(CallToolResult::success(vec![Content::text(format!(
             "tapped: {}",
             smix_selector::describe_selector(&sel)
@@ -173,13 +203,23 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Type text into a field. Names the field the same way smix_tap does. Tap the field first if it is not already focused."
+        description = "Type text into a field. Names the field like smix_tap, except ocrText — an OCR hit is a text frame, not a focusable element. Tap the field first if it is not already focused. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_fill(
         &self,
         Parameters(params): Parameters<FillParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.target.to_selector()?;
+        if ocr_text_of(&sel).is_some() {
+            return Err(McpError::invalid_params(
+                "ocrText cannot name a fill target — an OCR hit is a text frame on \
+                 the screen, not a focusable accessibility element, so there is \
+                 nothing to type into. Name the field with id / text / label / role; \
+                 if the field is invisible to the accessibility tree, smix_tap it via \
+                 ocrText to focus it, then smix_fill the field the tree does expose",
+                None,
+            ));
+        }
         let app = self.app.lock().await;
         app.fill(&sel, &params.text)
             .await
@@ -192,7 +232,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Swipe once through the content. `direction` names what you want to see (down reveals what is below), not which way the finger moves."
+        description = "Swipe once through the content. `direction` names what you want to see (down reveals what is below), not which way the finger moves. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_swipe(
         &self,
@@ -210,13 +250,22 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Swipe until an element comes into view, then stop. Use this rather than repeated swipes — it knows when to stop."
+        description = "Swipe until an element comes into view, then stop. Use this rather than repeated swipes — it knows when to stop. Not for ocrText — swipe with smix_swipe and check with smix_find between swipes instead. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_scroll(
         &self,
         Parameters(params): Parameters<ScrollParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.target.to_selector()?;
+        if ocr_text_of(&sel).is_some() {
+            return Err(McpError::invalid_params(
+                "ocrText cannot drive smix_scroll — its stop condition resolves \
+                 against the accessibility tree, which never matches OCR text. \
+                 Use smix_swipe to move through the content and smix_find with \
+                 ocrText between swipes to know when to stop",
+                None,
+            ));
+        }
         let dir = parse_direction(params.direction.as_deref().unwrap_or("down"))?;
         let app = self.app.lock().await;
         app.scroll(&sel, dir)
@@ -229,13 +278,16 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Launch an app by bundle id, or bring it to the front if it is running. Opens the runner session the other tools drive through — call this before smix_describe / smix_tap / etc."
+        description = "Launch an app by bundle id, or bring it to the front if it is running. Opens the runner session the other tools drive through — call this before smix_describe / smix_tap / etc. Requires the SMIX_UDID env var (set it in the MCP server config)."
     )]
     async fn smix_launch_app(
         &self,
         Parameters(params): Parameters<BundleParams>,
     ) -> Result<CallToolResult, McpError> {
         let mut app = self.app.lock().await;
+        if app.udid().is_none() {
+            return Err(missing_udid_error());
+        }
         app.launch(&params.bundle_id)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
@@ -251,23 +303,36 @@ impl SmixMcpService {
         ))]))
     }
 
-    #[tool(description = "Terminate an app by bundle id. Already-stopped is a no-op success.")]
+    #[tool(
+        description = "Terminate an app by bundle id. Already-stopped is a no-op success. Requires the SMIX_UDID env var (set it in the MCP server config)."
+    )]
     async fn smix_stop_app(
         &self,
         Parameters(params): Parameters<BundleParams>,
     ) -> Result<CallToolResult, McpError> {
         let app = self.app.lock().await;
-        app.terminate(&params.bundle_id)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "stopped: {}",
-            params.bundle_id
-        ))]))
+        if app.udid().is_none() {
+            return Err(missing_udid_error());
+        }
+        // `simctl terminate` exits non-zero when the app is not running,
+        // which would break the already-stopped-is-a-no-op promise above.
+        // Tolerate the failure the way the SDK's own launch paths do
+        // (`launch_app_with_options`: "terminate failure is tolerated —
+        // the app may already be dead").
+        match app.terminate(&params.bundle_id).await {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text(format!(
+                "stopped: {}",
+                params.bundle_id
+            ))])),
+            Err(_) => Ok(CallToolResult::success(vec![Content::text(format!(
+                "stopped: {} (was not running — no-op)",
+                params.bundle_id
+            ))])),
+        }
     }
 
     #[tool(
-        description = "Assert an element is on screen. Fails with the visible elements and near-miss suggestions when it is not — paste that failure back to yourself to see what the screen actually had."
+        description = "Assert an element is on screen, waiting up to 5s. Fails with the visible elements and near-miss suggestions when it is not — paste that failure back to yourself to see what the screen actually had. An ocrText selector polls Apple Vision OCR on the same 5s budget. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_assert_visible(
         &self,
@@ -275,32 +340,90 @@ impl SmixMcpService {
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
         let app = self.app.lock().await;
-        app.assert_visible(&sel)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        match ocr_text_of(&sel) {
+            // Same budget and cadence as the tree path: `App::assert_visible`
+            // waits 5 s at the driver's 250 ms poll interval.
+            Some(needle) => {
+                let timeout = Duration::from_secs(5);
+                let start = std::time::Instant::now();
+                loop {
+                    let hit = app
+                        .find_by_text_ocr(needle, &[])
+                        .await
+                        .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+                    if hit.is_some() {
+                        break;
+                    }
+                    if start.elapsed() >= timeout {
+                        return Err(McpError::internal_error(
+                            format!(
+                                "expect.toBeVisible: not visible — {} (Apple Vision OCR \
+                                 found no match within {}ms; check spelling / recognition \
+                                 language / surface contrast)",
+                                smix_selector::describe_selector(&sel),
+                                timeout.as_millis()
+                            ),
+                            None,
+                        ));
+                    }
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+            }
+            None => {
+                app.assert_visible(&sel)
+                    .await
+                    .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+            }
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "visible: {}",
             smix_selector::describe_selector(&sel)
         ))]))
     }
 
-    #[tool(description = "Assert an element is NOT on screen.")]
+    #[tool(
+        description = "Assert an element is NOT on screen (single probe, no waiting). An ocrText selector checks with one Apple Vision OCR pass. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+    )]
     async fn smix_assert_not_visible(
         &self,
         Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
         let app = self.app.lock().await;
-        app.assert_not_visible(&sel)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        match ocr_text_of(&sel) {
+            // A tree-routed OcrText never matches, so this assert used to
+            // pass vacuously — a false green. Probe OCR once, mirroring the
+            // tree path's single non-waiting `find`.
+            Some(needle) => {
+                let hit = app
+                    .find_by_text_ocr(needle, &[])
+                    .await
+                    .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+                if hit.is_some() {
+                    return Err(McpError::internal_error(
+                        format!(
+                            "expect.toNotBeVisible: element is visible — {}",
+                            smix_selector::describe_selector(&sel)
+                        ),
+                        None,
+                    ));
+                }
+            }
+            None => {
+                app.assert_not_visible(&sel)
+                    .await
+                    .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+            }
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "not visible: {}",
             smix_selector::describe_selector(&sel)
         ))]))
     }
 
-    #[tool(description = "Press a named key (Return/Delete/Tab/Space/Escape/arrow keys).")]
+    #[tool(
+        description = "Press a named key (Return/Delete/Tab/Space/Escape/arrow keys). Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+    )]
     async fn smix_press_key(
         &self,
         Parameters(params): Parameters<PressKeyParams>,
@@ -317,10 +440,13 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Capture a base64-PNG screenshot of the current screen (requires SMIX_UDID)."
+        description = "Capture a base64-PNG screenshot of the current screen. Requires the SMIX_UDID env var (set it in the MCP server config)."
     )]
     async fn smix_screenshot(&self) -> Result<CallToolResult, McpError> {
         let app = self.app.lock().await;
+        if app.udid().is_none() {
+            return Err(missing_udid_error());
+        }
         let png = app
             .screenshot()
             .await
@@ -388,8 +514,10 @@ impl ServerHandler for SmixMcpService {
              label / role / ocrText — prefer id, which survives copy edits and \
              translation. Failures come back with near-miss suggestions and the \
              elements that were on screen; read them rather than guessing again. \
-             SMIX_UDID binds this server to one simulator; SMIX_RUNNER_PORT (default \
-             22087) finds its runner."
+             The SMIX_UDID env var binds this server to one simulator and is \
+             required — smix_launch_app and the session every other tool drives \
+             through depend on it; set it in the MCP server config. \
+             SMIX_RUNNER_PORT (default 22087) finds its runner."
                 .into(),
         );
         info

@@ -13,7 +13,8 @@
 //!
 //! ```yaml
 //! steps:
-//!   - cmd: launch          # via smix-sdk simctl client (uses --bundle-id)
+//!   - cmd: launch          # via smix-sdk simctl client
+//!     udid: <UDID>          # required for lifecycle steps
 //!     bundle-id: com.example.app
 //!   - cmd: wait-for
 //!     selector: id:btn-login
