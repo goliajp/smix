@@ -17,11 +17,11 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-input = { path = "../smix-input", version = "1.0.0" }
-smix-selector = { path = "../smix-selector", version = "1.0.0" }
-smix-authoring-ir = { path = "../smix-authoring-ir", version = "1.0.0" }
-smix-error = { path = "../smix-error", version = "1.0.0" }
-smix-sdk = { path = "../smix-sdk", version = "1.0.0" }
+smix-input = { path = "../smix-input", version = "2.0.0" }
+smix-selector = { path = "../smix-selector", version = "2.0.0" }
+smix-authoring-ir = { path = "../smix-authoring-ir", version = "2.0.0" }
+smix-error = { path = "../smix-error", version = "2.0.0" }
+smix-sdk = { path = "../smix-sdk", version = "2.0.0" }
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true

@@ -21,20 +21,20 @@ name = "smix"
 path = "src/main.rs"
 
 [dependencies]
-smix-error = { path = "../smix-error", version = "1.0.0" }
-smix-simctl = { path = "../smix-simctl", version = "1.0.0" }
-smix-sdk = { path = "../smix-sdk", version = "1.0.0" }
-smix-runner-client = { path = "../smix-runner-client", version = "1.0.0" }
-smix-runner-sources = { path = "../smix-runner-sources", version = "1.0.0" }
-smix-runner-wire = { path = "../smix-runner-wire", version = "1.0.0" }
-smix-driver = { path = "../smix-driver", version = "1.0.0" }
-smix-adapter-maestro = { path = "../smix-adapter-maestro", version = "1.0.0" }
-smix-migrate = { path = "../smix-migrate", version = "1.0.0" }
-smix-annotate = { path = "../smix-annotate", version = "1.0.0" }
-smix-input = { path = "../smix-input", version = "1.0.0" }
+smix-error = { path = "../smix-error", version = "2.0.0" }
+smix-simctl = { path = "../smix-simctl", version = "2.0.0" }
+smix-sdk = { path = "../smix-sdk", version = "2.0.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "2.0.0" }
+smix-runner-sources = { path = "../smix-runner-sources", version = "2.0.0" }
+smix-runner-wire = { path = "../smix-runner-wire", version = "2.0.0" }
+smix-driver = { path = "../smix-driver", version = "2.0.0" }
+smix-adapter-maestro = { path = "../smix-adapter-maestro", version = "2.0.0" }
+smix-migrate = { path = "../smix-migrate", version = "2.0.0" }
+smix-annotate = { path = "../smix-annotate", version = "2.0.0" }
+smix-input = { path = "../smix-input", version = "2.0.0" }
 serde_norway.workspace = true
-smix-selector = { path = "../smix-selector", version = "1.0.0" }
-smix-screen = { path = "../smix-screen", version = "1.0.0" }
+smix-selector = { path = "../smix-selector", version = "2.0.0" }
+smix-screen = { path = "../smix-screen", version = "2.0.0" }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 clap = { workspace = true, features = ["env"] }
 serde.workspace = true
