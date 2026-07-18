@@ -376,6 +376,7 @@ pub enum Selector {
         /// subtag (e.g. "en", "ja", "es"), matching the `(xx)` form
         /// inside `-AppleLanguages "(xx)"`. BTreeMap for stable iteration
         /// + deterministic debug / test output.
+        #[serde(rename = "localizedText", alias = "localized_text")]
         localized_text: BTreeMap<String, String>,
         /// Stacked spatial + index modifiers.
         #[serde(flatten)]
@@ -394,6 +395,7 @@ pub enum Selector {
         /// Substring keyword to OCR-match against text observations.
         /// Case-insensitive substring match on `topCandidates(1)` of each
         /// `VNRecognizedTextObservation`.
+        #[serde(rename = "ocrText", alias = "ocr_text")]
         ocr_text: String,
         /// BCP-47 language subtags for Apple Vision `recognitionLanguages`
         /// (e.g. `["en"]` / `["ja"]`). Empty = adapter fills from

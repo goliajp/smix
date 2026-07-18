@@ -2096,7 +2096,7 @@ impl App {
     /// failure code.
     pub async fn assert_visible(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         match self
-            .driver
+            .driving()?
             .wait_for(selector, Duration::from_secs(5), None)
             .await
         {

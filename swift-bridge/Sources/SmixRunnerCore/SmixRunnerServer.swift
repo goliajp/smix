@@ -574,6 +574,14 @@ public actor SmixRunnerServer {
   // already-dismissed), `ok:false` when smixGuarded caught an NSException.
   public typealias HideKeyboardHandler = @Sendable () async -> Bool
 
+  // POST /input-text handler. Types the given text into the
+  // CURRENTLY FOCUSED element (no selector, no focus-tap — the caller
+  // focused the field first; FFI App.fill taps then posts /input-text).
+  // Same wire contract as the Android runner's /input-text. Returns
+  // `true` when the daemon send succeeded, `false` on send failure
+  // (surfaces as `ok:false` = refusal to the Rust OkEnvelope).
+  public typealias InputTextHandler = @Sendable (_ text: String) async -> Bool
+
   // POST /system-popup-action {popupId, buttonId} — the act side.
   // Companion to SystemPopupsHandler (sense side). The handler walks the
   // same enumerate scan order — SpringBoard alerts → SpringBoard sheets
@@ -1142,6 +1150,7 @@ public actor SmixRunnerServer {
     backHandler: BackHandler? = nil,
     swipeOnceHandler: SwipeOnceHandler? = nil,
     hideKeyboardHandler: HideKeyboardHandler? = nil,
+    inputTextHandler: InputTextHandler? = nil,
     tapAtCoordHandler: TapAtCoordHandler? = nil,
     tapByIdHandler: TapByIdHandler? = nil,
     findTextByOcrHandler: FindTextByOcrHandler? = nil,
@@ -1885,6 +1894,37 @@ public actor SmixRunnerServer {
         ) {
           let ok = await hideKeyboardHandler()
           return HideKeyboardRoute.success(ok: ok)
+        }
+      }
+    }
+
+    // POST /input-text. Decodes InputTextRequest ({"text": <string>},
+    // same body the Kotlin runner accepts), calls inputTextHandler, wraps
+    // the result in {ok:<bool>}. Guarded so an NSException inside the
+    // handler surfaces as `ok:false` instead of escaping the closure. No
+    // `?include=` query — typing targets the focused element, not a
+    // selector-resolved one.
+    if let inputTextHandler {
+      await server.appendRoute("POST /input-text") { request in
+        let body: Data
+        do {
+          body = try await request.bodyData
+        } catch {
+          return InputTextRoute.badRequest(reason: "failed to read body: \(error)")
+        }
+        let req: InputTextRoute.InputTextRequest
+        do {
+          req = try InputTextRoute.decode(body)
+        } catch let e as InputTextRoute.DecodeError {
+          return InputTextRoute.badRequest(reason: "\(e)")
+        } catch {
+          return InputTextRoute.badRequest(reason: "\(error)")
+        }
+        return await Self.contextGuardedResponse(request: request,
+          fallback: InputTextRoute.success(ok: false)
+        ) {
+          let ok = await inputTextHandler(req.text)
+          return InputTextRoute.success(ok: ok)
         }
       }
     }

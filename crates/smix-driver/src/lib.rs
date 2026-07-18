@@ -474,6 +474,7 @@ impl IosDriver {
         mode: TapMode,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
+        require_plain_text_selector(selector, "/tap")?;
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
 
@@ -481,7 +482,16 @@ impl IosDriver {
             match self.runner.tap(selector, mode, include).await {
                 Ok(_result) => return Ok(()),
                 Err(e) => {
-                    if start.elapsed() > timeout {
+                    // 4xx is the runner refusing the request shape — it
+                    // will refuse it identically on every retry, so the
+                    // 5s budget bought nothing but latency.
+                    let permanent = matches!(
+                        &e,
+                        smix_runner_client::RunnerTransportError::NonSuccessStatus {
+                            status, ..
+                        } if (400..500).contains(status) && *status != 404
+                    );
+                    if permanent || start.elapsed() > timeout {
                         return Err(transport_to_failure(e));
                     }
                     sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
@@ -499,13 +509,23 @@ impl IosDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
+        require_plain_text_selector(selector, "/double-tap")?;
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
         loop {
             match self.runner.double_tap(selector, include).await {
                 Ok(_result) => return Ok(()),
                 Err(e) => {
-                    if start.elapsed() > timeout {
+                    // 4xx is the runner refusing the request shape — it
+                    // will refuse it identically on every retry, so the
+                    // 5s budget bought nothing but latency.
+                    let permanent = matches!(
+                        &e,
+                        smix_runner_client::RunnerTransportError::NonSuccessStatus {
+                            status, ..
+                        } if (400..500).contains(status) && *status != 404
+                    );
+                    if permanent || start.elapsed() > timeout {
                         return Err(transport_to_failure(e));
                     }
                     sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
@@ -524,6 +544,7 @@ impl IosDriver {
         duration: Duration,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
+        require_plain_text_selector(selector, "/long-press")?;
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
         let duration_ms = duration.as_millis().min(u64::MAX as u128) as u64;
@@ -531,7 +552,16 @@ impl IosDriver {
             match self.runner.long_press(selector, duration_ms, include).await {
                 Ok(_result) => return Ok(()),
                 Err(e) => {
-                    if start.elapsed() > timeout {
+                    // 4xx is the runner refusing the request shape — it
+                    // will refuse it identically on every retry, so the
+                    // 5s budget bought nothing but latency.
+                    let permanent = matches!(
+                        &e,
+                        smix_runner_client::RunnerTransportError::NonSuccessStatus {
+                            status, ..
+                        } if (400..500).contains(status) && *status != 404
+                    );
+                    if permanent || start.elapsed() > timeout {
                         return Err(transport_to_failure(e));
                     }
                     sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
@@ -982,6 +1012,31 @@ impl IosDriver {
     pub async fn dispose(&self) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+}
+
+/// The /tap, /double-tap and /long-press routes decode ONLY a plain
+/// literal `selector.text` — the Swift side has no resolver for id /
+/// label / role / regex forms, and silently drops modifiers. Reject
+/// those here, before the wire: they used to go out anyway, 400, and
+/// then burn the full 5s transport-retry budget before surfacing an
+/// unrelated-looking error (or, for a modifier, tap the wrong element).
+fn require_plain_text_selector(selector: &Selector, route: &str) -> Result<(), ExpectationFailure> {
+    if let Selector::Text { text, modifiers } = selector
+        && matches!(text, smix_selector::Pattern::Text(_))
+        && *modifiers == smix_selector::Modifiers::default()
+    {
+        return Ok(());
+    }
+    Err(ExpectationFailure::new(FailureInit {
+        code: Some(FailureCode::DriverError),
+        message: format!(
+            "{route} takes only a plain literal text selector (no id/label/\
+             role/regex, no spatial or index modifiers) — the runner-side \
+             route resolves by label text alone. Use the default tap \
+             (host-side resolve) for richer selectors."
+        ),
+        ..Default::default()
+    }))
 }
 
 fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {

@@ -1340,6 +1340,34 @@ impl HttpRunnerClient {
         Ok(body.result)
     }
 
+    /// Eval JS via the RUNNER's `/webview-eval` proxy (Android: the
+    /// Kotlin runner forwards to the app's shim on :28081, because the
+    /// emulator's loopback is not the host's). Same `{js}` request and
+    /// `{result, error}` response contract as the direct iOS bridge.
+    pub async fn webview_eval_via_runner(
+        &self,
+        js: &str,
+    ) -> Result<serde_json::Value, RunnerTransportError> {
+        #[derive(Serialize)]
+        struct Req<'a> {
+            js: &'a str,
+        }
+        #[derive(Deserialize)]
+        struct Resp {
+            #[serde(default)]
+            result: serde_json::Value,
+            #[serde(default)]
+            error: String,
+        }
+        let resp: Resp = self.json_post("/webview-eval", &Req { js }, None).await?;
+        if !resp.error.is_empty() {
+            return Err(RunnerTransportError::Refused {
+                endpoint: "/webview-eval".to_string(),
+            });
+        }
+        Ok(resp.result)
+    }
+
     /// `POST /double-tap` — XCUIElement.doubleTap() public API.
     /// Mirrors `/tap` envelope but issues two-tap gesture on the resolved
     /// element. Same as Maestro `doubleTapOn`.

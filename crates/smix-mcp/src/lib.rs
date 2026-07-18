@@ -9,4 +9,4 @@
 
 mod selector_params;
 
-pub use selector_params::SelectorParams;
+pub use selector_params::{SelectorParams, ocr_text_of};

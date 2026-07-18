@@ -75,6 +75,31 @@ object RunnerWire {
     fun decodeOcrTarget(payload: String): String =
         JSONObject(payload).getString("text")
 
+    // Keys are the Rust contract (SessionOpenRequest, camelCase).
+    // `bundleId` / `activate` both carry #[serde(default)] on the Rust
+    // side, so absent keys decode to ""/false rather than erroring; the
+    // handler turns an empty bundleId into the 400 bad_request envelope
+    // (mirrors the iOS SessionRoute.decodeOpen emptyBundleId path).
+    data class SessionOpenReq(val bundleId: String, val activate: Boolean)
+
+    fun decodeSessionOpen(payload: String): SessionOpenReq {
+        val req = JSONObject(payload)
+        return SessionOpenReq(
+            req.optString("bundleId", ""),
+            req.optBoolean("activate", false),
+        )
+    }
+
+    // Shared by /session/close, /session/renew-activation,
+    // /session/relaunch-app, /session/terminate-app, /session/launch-app
+    // — every Rust Session*Request carries `sessionId` (camelCase). The
+    // lifecycle routes additionally send args/env/waitForForegroundMs/
+    // waitForInteractiveMs (XCUITest-specific launch injection); Android
+    // accepts and ignores them. Missing/empty sessionId decodes to ""
+    // and the handler emits the 400 bad_request envelope.
+    fun decodeSessionId(payload: String): String =
+        JSONObject(payload).optString("sessionId", "")
+
     data class PopupActionReq(val popupId: String, val buttonId: String)
 
     // Keys are the Rust contract (SystemPopupActionRequest, camelCase).
@@ -130,6 +155,13 @@ object RunnerWire {
 
     fun foregroundCommand(bundleId: String): String =
         "am start --activity-single-top -n $bundleId/.MainActivity"
+
+    // /session/launch-app + /session/relaunch-app reuse the /foreground
+    // `.MainActivity` convention (same launch semantics, same
+    // limitation: apps whose launcher activity isn't `.MainActivity`
+    // need the convention extended, not a per-route fork).
+    fun terminateAppCommand(bundleId: String): String =
+        "am force-stop $bundleId"
 
     // ---- response encode ----
 
@@ -242,6 +274,92 @@ object RunnerWire {
         .put("ok", ok)
         .put("popupId", popupId)
         .put("buttonId", buttonId)
+        .toString()
+
+    // ---- /session/* response encode ----
+    //
+    // Key names lock to the Rust smix-runner-wire structs
+    // (SessionOpenResponse / SessionCloseResponse /
+    // SessionCloseAllResponse / SessionRenewActivationResponse /
+    // SessionListResponse+SessionSummary / SessionAppLifecycleResponse /
+    // SessionRelaunchAppResponse — all camelCase), same contract the iOS
+    // SessionRoute emitters are gated against in SessionRouteTests.
+
+    // `ok` is not in the Rust SessionOpenResponse (serde ignores it);
+    // kept for shell-probe symmetry with the other Android bodies.
+    fun sessionOpenBody(sessionId: String, activatedOnce: Boolean, serverTimeMs: Long): String =
+        JSONObject()
+            .put("ok", true)
+            .put("sessionId", sessionId)
+            .put("activatedOnce", activatedOnce)
+            .put("serverTimeMs", serverTimeMs)
+            .toString()
+
+    // Idempotent — closing an unknown/already-closed session is
+    // `ok:true`, per the SessionCloseRequest contract. NOT the
+    // not-found envelope (that's renew/lifecycle/relaunch only).
+    fun sessionCloseBody(): String = JSONObject().put("ok", true).toString()
+
+    fun sessionCloseAllBody(closed: Int): String = JSONObject()
+        .put("ok", true)
+        .put("closed", closed)
+        .toString()
+
+    fun sessionRenewBody(activated: Boolean): String = JSONObject()
+        .put("ok", true)
+        .put("activated", activated)
+        .toString()
+
+    fun sessionListBody(sessions: List<SessionTable.Entry>): String {
+        val arr = JSONArray()
+        for (e in sessions) {
+            arr.put(
+                JSONObject()
+                    .put("sessionId", e.sessionId)
+                    .put("bundleId", e.bundleId)
+                    .put("openedAtMs", e.openedAtMs)
+                    .put("lastActivatedAtMs", e.lastActivatedAtMs)
+                    // Interactive-probe is XCUITest-side machinery the
+                    // Android runner doesn't implement; empty array is
+                    // the contract-legal "no sample" value.
+                    .put("interactiveNamedIds", JSONArray()),
+            )
+        }
+        return JSONObject().put("sessions", arr).toString()
+    }
+
+    // /session/terminate-app + /session/launch-app. waitedMs /
+    // terminalState / terminatedCooperatively / reachedInteractive are
+    // XCUIApplication.state semantics with no `am` equivalent — emitted
+    // as their Rust serde-default values for byte-shape parity with the
+    // iOS appLifecycleResponse.
+    fun sessionLifecycleBody(ok: Boolean, wallMs: Long): String = JSONObject()
+        .put("ok", ok)
+        .put("wallMs", wallMs)
+        .put("waitedMs", 0)
+        .put("terminalState", 0)
+        .put("terminatedCooperatively", false)
+        .put("reachedInteractive", false)
+        .put("interactiveNamedIds", JSONArray())
+        .toString()
+
+    fun sessionRelaunchBody(ok: Boolean, wallMs: Long): String = JSONObject()
+        .put("ok", ok)
+        .put("wallMs", wallMs)
+        .toString()
+
+    // 404/400 envelopes — same shape the iOS SessionRoute.notFound /
+    // .badRequest emit: {"ok":false,"error":kind,"reason":reason}.
+    fun sessionNotFoundBody(reason: String): String = JSONObject()
+        .put("ok", false)
+        .put("error", "not_found")
+        .put("reason", reason)
+        .toString()
+
+    fun sessionBadRequestBody(reason: String): String = JSONObject()
+        .put("ok", false)
+        .put("error", "bad_request")
+        .put("reason", reason)
         .toString()
 
     fun errorBody(kind: String, message: String): String = JSONObject()

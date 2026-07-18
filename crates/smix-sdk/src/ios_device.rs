@@ -187,9 +187,12 @@ impl DeviceControl for IosDeviceControl {
         action: PermissionAction,
     ) -> Result<(), DeviceControlError> {
         let Some(simctl_perm) = permission.to_simctl() else {
-            // Android-only permission on iOS → no-op (don't fail; matches
-            // cross-platform yaml expectation that `Storage` on iOS does
-            // nothing rather than crashes the test).
+            // Android-only permission on iOS → no-op by design (a
+            // cross-platform yaml's `Storage` should not crash an iOS
+            // run) — but SAY so: this used to skip in total silence.
+            eprintln!(
+                "setPermissions: {permission:?} has no iOS mapping — skipped ({action:?} not applied)"
+            );
             return Ok(());
         };
         match action {

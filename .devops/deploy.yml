@@ -1,28 +1,21 @@
-name: deploy
-
-# smix project website: smix.golia.jp
+# smix public site: smix.golia.jp  (LIVE since 2026-07-19)
 #
-# Build artifact lives in dashboard/dist/ — produced locally by:
-#     cd dashboard && bun install && bun run build
-# Then trigger deploy from the smix repo root:
-#     devops deploy smix
+# The apex serves the marketing site (web/). There is no `devops deploy
+# smix` service — an earlier version of this file described that flow
+# and it never existed. The real deploy is rsync + the CaddyStore-managed
+# vhost (site id `smix-golia-jp`, imported 2026-07-19):
 #
-# The dashboard/ sub-project (live-sim observation panel) is a Vite SPA
-# (React + GDS), served as static files on t01 by Caddy, HTTPS via ACME.
+#     cd web && bun install && bun run build
+#     rsync -az --delete web/dist/ t01:/var/lib/smix-web/
 #
-# NOTE: still served at the apex smix.golia.jp until the marketing site under
-# web/ is ready to take the apex; the dashboard then moves to a sub-path/domain.
-
-jobs:
-  web:
-    runs-on: t01
-    steps:
-      - uses: upload
-        with:
-          src: ./dashboard/dist/
-          dest: /var/lib/smix-dashboard/
-      - uses: caddy
-        with:
-          domains: [smix.golia.jp]
-          root: /var/lib/smix-dashboard
-          spa: true
+# Caddy block (managed via `devops caddy list|drift|deploy`, device t01):
+#     smix.golia.jp {
+#         encode gzip
+#         root * /var/lib/smix-web
+#         try_files {path} /index.html
+#         file_server
+#     }
+#
+# The dashboard/ sub-project (live-sim observation panel) is built
+# separately (cd dashboard && bun run build) and will get its own
+# address; it does not hold the apex.

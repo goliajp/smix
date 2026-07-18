@@ -1889,3 +1889,25 @@ fn parse_clear_user_defaults_missing_keys_rejects() {
         "err names keys: {err:?}"
     );
 }
+
+/// maestro's directional swipe form parses and desugars to the finger
+/// coordinates maestro documents — it used to be rejected with
+/// MissingField("swipe.from").
+#[test]
+fn swipe_direction_form_desugars_to_finger_coords() {
+    let flow =
+        smix_adapter_maestro::parse_flow_yaml("appId: x\n---\n- swipe:\n    direction: UP\n")
+            .expect("direction form parses");
+    match &flow.steps[0] {
+        smix_adapter_maestro::Step::Swipe { from, to } => {
+            assert_eq!(*from, (0.5, 0.7));
+            assert_eq!(*to, (0.5, 0.3));
+        }
+        other => panic!("expected Swipe, got {other:?}"),
+    }
+    assert!(
+        smix_adapter_maestro::parse_flow_yaml("appId: x\n---\n- swipe:\n    direction: sideways\n")
+            .is_err(),
+        "unknown direction must be rejected"
+    );
+}

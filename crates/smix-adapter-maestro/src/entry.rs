@@ -145,6 +145,14 @@ pub struct FlowArgs {
 /// - 5  runFlow cycle / file IO
 /// - 6  runner unreachable
 pub async fn run_flow(args: FlowArgs) -> ExitCode {
+    ExitCode::from(run_flow_code(args).await)
+}
+
+/// [`run_flow`] returning the raw exit code. `ExitCode` deliberately
+/// exposes no accessor, and the CLI needed the number for retry
+/// attribution — it used to parse the Debug string, with parse failure
+/// mapping to 0, i.e. "success".
+pub async fn run_flow_code(args: FlowArgs) -> u8 {
     // 1. parse yaml — BEFORE any wire traffic, because the flow's own
     // `appId:` is the default app to open the session for. The session
     // used to open first, on the CLI-supplied bundle alone, which made
@@ -162,7 +170,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
         Ok(f) => f,
         Err(e) => {
             eprintln!("error: parse {}: {e}", args.flow.display());
-            return ExitCode::from(2);
+            return 2;
         }
     };
 
@@ -205,12 +213,12 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("error: apps-config {}: {e}", config_path.display());
-                return ExitCode::from(2);
+                return 2;
             }
         };
         if let Err(e) = crate::resolve_app_into_flow(&mut flow, &cfg, args.platform.to_driver()) {
             eprintln!("error: resolve app: {e}");
-            return ExitCode::from(2);
+            return 2;
         }
     }
 
@@ -226,7 +234,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
                  given — there is no app to open the session for",
                 args.flow.display()
             );
-            return ExitCode::from(2);
+            return 2;
         }
     };
 
@@ -242,7 +250,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
                 "error: connect_to_runner({}, platform={:?}) failed: {e}",
                 args.runner_port, args.platform
             );
-            return ExitCode::from(6);
+            return 6;
         }
     };
     let configure = |app: smix_sdk::App| -> smix_sdk::App {
@@ -310,7 +318,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
                      Fix: `smix runner install --force` to re-extract the runner this \
                      CLI ships with, then retry."
                 );
-                return ExitCode::from(6);
+                return 6;
             }
         },
         FlowPlatform::Android => AppHolder::Loose(app),
@@ -323,7 +331,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
         && let Err(e) = holder.app().foreground(&bundle_id).await
     {
         eprintln!("error: foreground({}) failed: {e}", bundle_id);
-        return ExitCode::from(3);
+        return 3;
     }
 
     // Dispatch every step. Per-step progress to stderr.
@@ -497,7 +505,7 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
                 OutputFormat::Junit => emit_junit(&args.flow, Ok(&report)),
                 OutputFormat::Human => print_summary(&report),
             }
-            ExitCode::SUCCESS
+            0
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -509,8 +517,8 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
             // POSIX-conventional exit codes for signal
             // interrupts override the RunError-based classification.
             match interrupted_by {
-                Some("SIGINT") => ExitCode::from(130),
-                Some("SIGTERM") => ExitCode::from(143),
+                Some("SIGINT") => 130,
+                Some("SIGTERM") => 143,
                 _ => run_error_to_exit(&e),
             }
         }
@@ -655,12 +663,12 @@ fn emit_json_failure(flow: &Path, err: &crate::RunError) {
     println!("{}", serde_json::to_string(&payload).unwrap_or_default());
 }
 
-fn run_error_to_exit(e: &RunError) -> ExitCode {
+fn run_error_to_exit(e: &RunError) -> u8 {
     match e {
-        RunError::Parse(_) => ExitCode::from(2),
-        RunError::Sdk(_) => ExitCode::from(3),
-        RunError::UnknownKey(_) | RunError::UnknownDirection(_) => ExitCode::from(4),
-        RunError::RunFlowCycle(_) | RunError::Io(_) => ExitCode::from(5),
+        RunError::Parse(_) => 2,
+        RunError::Sdk(_) => 3,
+        RunError::UnknownKey(_) | RunError::UnknownDirection(_) => 4,
+        RunError::RunFlowCycle(_) | RunError::Io(_) => 5,
     }
 }
 
