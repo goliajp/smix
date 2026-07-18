@@ -54,6 +54,17 @@ log "swift-bridge unit tests"
 ( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
   || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
 
+# --- SmixRunner UITest compile ----------------------------------------
+# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
+# the XCUITest body that ships in the runner sources and is what actually
+# drives a device. It went uncompiled by any gate. build-for-testing on a
+# generic simulator destination compiles it without booting a simulator.
+log "SmixRunner UITest build"
+( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
+    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
+    > /tmp/smix-ship-uitest-build.log 2>&1 \
+  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
+
 # --- ffi bindings -----------------------------------------------------
 # The Swift and Kotlin bindings are committed next to binary blobs, and
 # nothing regenerated them: the build scripts Package.swift and
@@ -79,6 +90,21 @@ python3 "$ROOT/scripts/dev/gen-llms.py" --check > /tmp/smix-ship-llms.log 2>&1 \
 log "clippy"
 ( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
   || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
+
+# --- cargo-semver-checks ----------------------------------------------
+# Confirms the crates' API changes are the major break the 2.0.0 bump
+# claims. Runs when the tool is installed; a ship must have it. It is blind
+# to crate renames (recorder-ir → authoring-ir has no old-name baseline) and
+# to brand-new crates — it validates in-place breaks like SimctlError →
+# DeviceControlError, not the renames, which the version bump covers.
+if command -v cargo-semver-checks >/dev/null 2>&1; then
+  log "cargo-semver-checks"
+  ( cd "$ROOT" && cargo semver-checks check-release --workspace ) \
+      > /tmp/smix-ship-semver.log 2>&1 \
+    || fail "cargo-semver-checks FAILED — see /tmp/smix-ship-semver.log"
+else
+  fail "cargo-semver-checks not installed — cargo install cargo-semver-checks (required for a 2.0.0 ship)"
+fi
 
 # --- version match ---------------------------------------------------
 
