@@ -13,5 +13,5 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
     let _ = generate_maestro_yaml(&actions, "com.example.app");
-    let _ = generate_rust(&actions, "com.example.app");
+    let _ = generate_rust(&actions, "fuzz_case", "com.example.app");
 });

@@ -11,16 +11,25 @@
 //! flows it exists to carry across.
 
 use smix_migrate::Migrator;
+use smix_verbs::{ArgShape, VERB_TABLE};
 
-/// A one-step flow using `verb`, with an argument shaped the way the table
-/// says the verb takes one.
-fn flow_using(verb: &str, arg_shape: &str) -> String {
-    let step = match arg_shape {
-        "None" => format!("- {verb}"),
-        "Selector" | "String" => format!("- {verb}: Item"),
-        "Bool" => format!("- {verb}: true"),
-        "Int" => format!("- {verb}: 1"),
-        _ => format!("- {verb}: Item"),
+/// A one-step flow using `verb`, with an argument shaped the way the
+/// verb table says the verb takes one. The shape comes from the table
+/// row, not a copy here — a hand-copied shape map once gave `eraseText`
+/// a selector argument, so the fixture never parsed and the whole
+/// roundtrip for that verb was silently skipped.
+fn flow_using(verb: &str) -> String {
+    let row = VERB_TABLE
+        .iter()
+        .find(|v| v.maestro_name == verb)
+        .unwrap_or_else(|| panic!("{verb} is not in VERB_TABLE — the list here has drifted"));
+    let step = match row.arg_shape {
+        ArgShape::None => format!("- {verb}"),
+        ArgShape::Integer => format!("- {verb}: 5"),
+        ArgShape::BareString | ArgShape::Selector => format!("- {verb}: Item"),
+        ArgShape::Path => format!("- {verb}: fixtures/x.png"),
+        ArgShape::Coord => format!("- {verb}: {{ point: \"50%,50%\" }}"),
+        ArgShape::Mapping => format!("- {verb}: {{}}"),
     };
     format!("appId: com.test.roundtrip\n---\n{step}\n")
 }
@@ -50,37 +59,36 @@ const MAESTRO_SPELLINGS: &[&str] = &[
     "back",
 ];
 
-/// `back` is written bare in maestro. Everything else in the list above takes
-/// a target, and the fixture gives it one.
-const BARE_SPELLINGS: &[&str] = &["back"];
-
 #[test]
 fn every_maestro_spelling_survives_the_codemod() {
     let migrator = Migrator::default();
+    let mut unparseable_before = Vec::new();
     let mut broken = Vec::new();
 
     for verb in MAESTRO_SPELLINGS {
-        let before = if BARE_SPELLINGS.contains(verb) {
-            flow_using(verb, "None")
-        } else {
-            flow_using(verb, "Selector")
-        };
+        let before = flow_using(verb);
         if !parses(&before) {
-            // Not the codemod's fault, but the fixture would prove nothing.
+            // This used to `continue` — which silently excused the exact
+            // regression the list exists to catch: when `back` stopped
+            // parsing, its roundtrip stopped being checked and the test
+            // stayed green. A spelling in MAESTRO_SPELLINGS that the
+            // parser rejects is a failure of the parser, not a fixture
+            // to skip.
+            unparseable_before.push(*verb);
             continue;
         }
         let (after, _report) = migrator.migrate(&before).expect("codemod ran");
         if !parses(&after) {
-            let emitted = after
-                .lines()
-                .last()
-                .unwrap_or_default()
-                .trim()
-                .to_string();
+            let emitted = after.lines().last().unwrap_or_default().trim().to_string();
             broken.push(format!("{verb} → {emitted}"));
         }
     }
 
+    assert!(
+        unparseable_before.is_empty(),
+        "maestro spellings the parser itself rejects (their roundtrip was \
+         never checked): {unparseable_before:?}"
+    );
     assert!(
         broken.is_empty(),
         "the codemod rewrote parseable maestro flows into unparseable ones:\n  {}",

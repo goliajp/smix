@@ -1,0 +1,80 @@
+# smix CI — the ship.sh gates, run on every push instead of only when a
+# human remembers. ship.sh remains the release path; this exists so the
+# suites cannot sit unexecuted between releases (834 Rust tests had no
+# automated trigger at all before this file).
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-and-swift:
+    # macOS because the workspace is inseparable from the Swift runner:
+    # tap_route_shape.rs / schema_negotiation.rs include_str! the Swift
+    # sources, and the runner suite itself is swift-test.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets
+      - name: cargo test
+        run: cargo test --workspace
+      - name: swift test
+        working-directory: swift-bridge
+        run: swift test
+      - name: SmixRunner UITest build
+        # Compiles the XCUITest body that actually drives a device —
+        # `swift test` covers only the SwiftPM library targets.
+        working-directory: swift-bridge
+        run: |
+          xcodebuild build-for-testing -scheme SmixRunner \
+            -destination 'generic/platform=iOS Simulator'
+
+  ts-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: install
+        working-directory: npm/smix-rn
+        run: bun install --frozen-lockfile
+      - name: typecheck
+        working-directory: npm/smix-rn
+        run: bun run typecheck
+      - name: vitest
+        working-directory: npm/smix-rn
+        run: bun run test
+
+  kotlin-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: sdk unit tests (compiles kotlin bindings)
+        working-directory: android-runner
+        run: ./gradlew :sdk:testDebugUnitTest --console=plain
+
+  source-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: hygiene scan
+        run: python3 scripts/dev/hygiene-scan.py
+      - name: route conformance
+        run: python3 scripts/dev/route-conformance.py
+      - name: fact scan
+        run: python3 scripts/dev/fact-scan.py
+      - name: llms.txt freshness
+        run: python3 scripts/dev/gen-llms.py --check

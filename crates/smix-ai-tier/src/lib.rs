@@ -148,29 +148,28 @@ async fn ask(prompt: String, cfg: &AiTierConfig) -> Result<String, ExpectationFa
         // running, outliving the step that gave up on it.
         .kill_on_drop(true);
 
-    let output = match tokio::time::timeout(Duration::from_secs(cfg.timeout_secs), cmd.output())
-        .await
-    {
-        Err(_) => {
-            return Err(driver_error(
-                format!("ai-tier: the judge timed out after {}s", cfg.timeout_secs),
-                Some("raise timeout_secs, or narrow the condition".into()),
-            ));
-        }
-        Ok(Err(e)) => {
-            return Err(driver_error(
-                format!(
-                    "ai-tier: could not run the claude CLI at `{}`: {e}",
-                    cfg.claude_bin
-                ),
-                Some(format!(
-                    "install the claude CLI, or point claude_bin at it (currently `{}`)",
-                    cfg.claude_bin
-                )),
-            ));
-        }
-        Ok(Ok(output)) => output,
-    };
+    let output =
+        match tokio::time::timeout(Duration::from_secs(cfg.timeout_secs), cmd.output()).await {
+            Err(_) => {
+                return Err(driver_error(
+                    format!("ai-tier: the judge timed out after {}s", cfg.timeout_secs),
+                    Some("raise timeout_secs, or narrow the condition".into()),
+                ));
+            }
+            Ok(Err(e)) => {
+                return Err(driver_error(
+                    format!(
+                        "ai-tier: could not run the claude CLI at `{}`: {e}",
+                        cfg.claude_bin
+                    ),
+                    Some(format!(
+                        "install the claude CLI, or point claude_bin at it (currently `{}`)",
+                        cfg.claude_bin
+                    )),
+                ));
+            }
+            Ok(Ok(output)) => output,
+        };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();

@@ -10,8 +10,6 @@
 !.claude/rfcs/**
 .DS_Store
 
-# Non-public draft docs and internal patch notes.
-docs/ai-guide/patches/
 
 .env
 .env.local
@@ -49,9 +47,12 @@ target/
 .swiftpm/
 docs/ai-guide/insight-*.md
 docs/ai-guide/gol-611-*.md
-docs/ai-guide/patches/
 .smoke-passed-at
 
 # Python bytecode from dev scripts
 __pycache__/
 *.pyc
+
+# cargo-fuzz run artifacts — regenerated on every fuzz-smoke run
+crates/*/fuzz/corpus/
+crates/*/fuzz/artifacts/

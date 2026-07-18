@@ -70,7 +70,7 @@ smix sim exec <ALIAS|UDID> <verb> [args...]
 
 **Sim safety hook**: bare `xcrun simctl <verb>` is BLOCKED for mutating verbs. Read-only `simctl list` is allowed. To pass-through unmapped subcommands use `smix sim exec <ALIAS|UDID> <verb> ...` (this is accepted by the hook because the device id is explicit).
 
-`<ALIAS>` resolves via `.smix/sims.json` registry, which is populated by `smix selftest single/multi` or by hand. UDIDs always work.
+`<ALIAS>` resolves via the `.smix/sims.json` registry, which is created and populated by `smix sim register <alias> --udid <UDID>` (or by hand). UDIDs always work without a registry.
 
 ### Runner management
 
@@ -135,14 +135,39 @@ smix run-script script.yaml
 
 Use for matrix runs, repeated probes, anything that needs sequential CLI calls. Not for app UI flows — use `smix run` for that.
 
-### Selftest
+### Device registry
 
 ```bash
-smix selftest single           # one sim, full capability matrix
-smix selftest multi            # multiple sims concurrent, drift detection
+smix sim list                                # find the UDID
+smix sim register dev --udid <UDID>          # record it under an alias
+smix sim register jp --udid <UDID> --locale ja-JP --runner-port 22088
 ```
 
-Used by smix's own CI. Most external users will not run these.
+`register` creates `.smix/sims.json` when absent (walking up from the
+working directory; `SMIX_SIMS_JSON` overrides the location). Device
+name, runtime, and device type are read from `simctl`, so only the UDID
+and alias are yours to choose. After this, every command accepts the
+alias where it accepts a UDID.
+
+Registry file shape, for editing by hand:
+
+```json
+{
+  "version": 1,
+  "sims": {
+    "dev": {
+      "deviceName": "iPhone 17 Pro",
+      "udid": "47ACEAE5-36BA-4C62-811B-F09B397910D7",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+      "deviceType": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "locale": "ja-JP",
+      "runnerPort": 22088
+    }
+  }
+}
+```
+
+`locale` and `runnerPort` are optional.
 
 ## Common command recipes
 

@@ -3,7 +3,7 @@
 use std::fs;
 
 use smix_runner_sources::{
-    extract_to, read_installed_version, ExtractError, SOURCES_VERSION, VERSION_FILE,
+    ExtractError, SOURCES_VERSION, VERSION_FILE, extract_to, read_installed_version,
 };
 
 #[test]
@@ -12,8 +12,15 @@ fn extract_writes_expected_landmark_files() {
     let report = extract_to(dir.path(), false).expect("extract");
 
     assert_eq!(report.destination, dir.path());
-    assert!(report.file_count > 100, "expected many files, got {}", report.file_count);
-    assert!(report.backup.is_none(), "empty target should not trigger backup");
+    assert!(
+        report.file_count > 100,
+        "expected many files, got {}",
+        report.file_count
+    );
+    assert!(
+        report.backup.is_none(),
+        "empty target should not trigger backup"
+    );
     assert_eq!(report.version_written, SOURCES_VERSION);
 
     // Landmark files that MUST exist for xcodebuild to succeed. If any
@@ -44,7 +51,10 @@ fn extract_writes_version_file_matching_crate_version() {
 fn read_installed_version_returns_none_for_missing_file() {
     let dir = tempfile::tempdir().expect("tempdir");
     let observed = read_installed_version(dir.path()).expect("read");
-    assert!(observed.is_none(), "unexpected version in empty dir: {observed:?}");
+    assert!(
+        observed.is_none(),
+        "unexpected version in empty dir: {observed:?}"
+    );
 }
 
 #[test]
@@ -83,8 +93,14 @@ fn extract_with_force_backs_up_existing_contents() {
     let backed_up = fs::read_to_string(backup.join("stale.txt")).expect("read backup");
     assert_eq!(backed_up, "stale content");
     // Destination now contains the fresh extract, not the stale file.
-    assert!(!dst.join("stale.txt").exists(), "stale file must not leak into fresh extract");
-    assert!(dst.join("Package.swift").exists(), "fresh extract must land");
+    assert!(
+        !dst.join("stale.txt").exists(),
+        "stale file must not leak into fresh extract"
+    );
+    assert!(
+        dst.join("Package.swift").exists(),
+        "fresh extract must land"
+    );
 }
 
 #[test]
@@ -111,18 +127,34 @@ fn extract_carries_over_xcframework_from_backup() {
     .expect("seed xcf leaf");
 
     let report = smix_runner_sources::extract_to(&dst, true).expect("extract");
-    assert!(report.carried_xcframework_from.is_some(), "must carry xcframework");
+    assert!(
+        report.carried_xcframework_from.is_some(),
+        "must carry xcframework"
+    );
     let carried = dst.join("SmixCoreFFI.xcframework");
-    assert!(carried.exists(), "xcframework directory must be in new tree");
-    assert!(carried.join("Info.plist").exists(), "xcframework Info.plist must survive");
+    assert!(
+        carried.exists(),
+        "xcframework directory must be in new tree"
+    );
+    assert!(
+        carried.join("Info.plist").exists(),
+        "xcframework Info.plist must survive"
+    );
     let leaf = carried.join("ios-arm64-simulator/marker.bin");
-    assert!(leaf.exists(), "xcframework leaf file must survive: {}", leaf.display());
+    assert!(
+        leaf.exists(),
+        "xcframework leaf file must survive: {}",
+        leaf.display()
+    );
     assert_eq!(
         fs::read(&leaf).unwrap(),
         b"binary-artifact-marker",
         "carried xcframework must be byte-identical"
     );
-    assert!(dst.join("Package.swift").exists(), "fresh tarball contents must still land");
+    assert!(
+        dst.join("Package.swift").exists(),
+        "fresh tarball contents must still land"
+    );
 }
 
 #[test]

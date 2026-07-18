@@ -46,11 +46,7 @@ impl AppLike for SilentMockApp {
     ) -> Result<(), ExpectationFailure> {
         Ok(())
     }
-    async fn clear_user_defaults(
-        &self,
-        _: &str,
-        _: &[String],
-    ) -> Result<(), ExpectationFailure> {
+    async fn clear_user_defaults(&self, _: &str, _: &[String]) -> Result<(), ExpectationFailure> {
         Ok(())
     }
     async fn find_by_text_ocr(

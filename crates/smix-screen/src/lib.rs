@@ -364,7 +364,9 @@ fn derive_roles_inner(node: &mut A11yNode, inside_tab_bar: bool) {
 /// Older wire payloads predate the `elementTypeRaw` field; default to
 /// 1 (`.other`), which is the safest fallback and matches how Swift
 /// `elementTypeName` treats unknown raw values.
-fn default_element_type_raw() -> u64 { 1 }
+fn default_element_type_raw() -> u64 {
+    1
+}
 
 /// Accessibility tree node — a single-node snapshot as returned by `/tree`,
 /// mirroring the Swift-side `TreeRoute.nodeToDict` shape.
@@ -491,7 +493,12 @@ pub fn visible_area(node: &A11yNode, tree: &A11yNode) -> f64 {
 mod tests {
     use super::*;
 
-    fn node(raw_type: &str, id: Option<&str>, label: Option<&str>, children: Vec<A11yNode>) -> A11yNode {
+    fn node(
+        raw_type: &str,
+        id: Option<&str>,
+        label: Option<&str>,
+        children: Vec<A11yNode>,
+    ) -> A11yNode {
         A11yNode {
             raw_type: raw_type.into(),
             element_type_raw: 1,
@@ -502,7 +509,12 @@ mod tests {
             placeholder_value: None,
             value: None,
             text: None,
-            bounds: Rect { x: 0.0, y: 0.0, w: 10.0, h: 10.0 },
+            bounds: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 10.0,
+                h: 10.0,
+            },
             enabled: true,
             selected: false,
             has_focus: false,
@@ -515,17 +527,37 @@ mod tests {
     /// anonymous layout. Measured on a stock Settings screen, 120 of 166
     /// visible nodes look like these wrappers.
     fn scaffolded_tree() -> A11yNode {
-        node("application", Some("com.apple.Preferences"), Some("Settings"), vec![
-            node("window", None, None, vec![
-                node("other", None, None, vec![
-                    node("other", None, None, vec![
-                        node("other", None, None, vec![
-                            node("button", Some("com.apple.settings.general"), Some("General"), vec![]),
-                        ]),
-                    ]),
-                ]),
-            ]),
-        ])
+        node(
+            "application",
+            Some("com.apple.Preferences"),
+            Some("Settings"),
+            vec![node(
+                "window",
+                None,
+                None,
+                vec![node(
+                    "other",
+                    None,
+                    None,
+                    vec![node(
+                        "other",
+                        None,
+                        None,
+                        vec![node(
+                            "other",
+                            None,
+                            None,
+                            vec![node(
+                                "button",
+                                Some("com.apple.settings.general"),
+                                Some("General"),
+                                vec![],
+                            )],
+                        )],
+                    )],
+                )],
+            )],
+        )
     }
 
     #[test]
@@ -534,7 +566,10 @@ mod tests {
         // other` tells the reader nothing about the screen.
         let got = collect_visible_summaries(&scaffolded_tree(), 10);
         assert!(
-            got.iter().all(|s| s.role.is_some() || s.name.is_some() || s.id.is_some() || s.text.is_some()),
+            got.iter().all(|s| s.role.is_some()
+                || s.name.is_some()
+                || s.id.is_some()
+                || s.text.is_some()),
             "every entry must be something a reader can recognize; got {got:?}"
         );
     }
@@ -545,7 +580,8 @@ mod tests {
         // other, and the button — the thing you would tap — never appeared.
         let got = collect_visible_summaries(&scaffolded_tree(), 3);
         assert!(
-            got.iter().any(|s| s.id.as_deref() == Some("com.apple.settings.general")),
+            got.iter()
+                .any(|s| s.id.as_deref() == Some("com.apple.settings.general")),
             "the named button must reach a short list; got {got:?}"
         );
     }
@@ -566,6 +602,10 @@ mod tests {
         off.enabled = false;
         let tree = node("application", Some("app"), None, vec![hidden, off]);
         let got = collect_visible_summaries(&tree, 10);
-        assert_eq!(got.len(), 1, "only the app node is visible+enabled; got {got:?}");
+        assert_eq!(
+            got.len(),
+            1,
+            "only the app node is visible+enabled; got {got:?}"
+        );
     }
 }

@@ -56,7 +56,6 @@ fn accepted() -> Vec<String> {
     verbs
 }
 
-
 /// Deliberately absent from VERB_TABLE: `smix-migrate` warns corpus
 /// maintainers that porting requires manual review (script bodies carry
 /// maestro-specific APIs). See the tail note in `smix-verbs`.

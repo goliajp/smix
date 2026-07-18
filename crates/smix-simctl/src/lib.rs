@@ -429,8 +429,7 @@ mod subprocess_ring {
 
     impl PersistedRecord {
         fn into_record(self) -> SubprocessRecord {
-            let timestamp =
-                UNIX_EPOCH + Duration::from_millis(self.timestamp_ms);
+            let timestamp = UNIX_EPOCH + Duration::from_millis(self.timestamp_ms);
             SubprocessRecord {
                 argv: self.argv,
                 exit_code: self.exit_code,
@@ -928,9 +927,9 @@ async fn simctl_capture_env(
     // exit status.
     subprocess_ring::record(SubprocessRecord {
         argv: std::iter::once("xcrun".to_string())
-                .chain(std::iter::once("simctl".to_string()))
-                .chain(args.iter().map(|s| s.to_string()))
-                .collect(),
+            .chain(std::iter::once("simctl".to_string()))
+            .chain(args.iter().map(|s| s.to_string()))
+            .collect(),
         exit_code: output.status.code(),
         wall_ms,
         stderr_head: {
@@ -965,7 +964,10 @@ async fn simctl_run(args: &[&str]) -> Result<String, DeviceControlError> {
 /// Like [`simctl_run`] but injects `child_env` envp on the spawned
 /// process. Used by the env-aware launch path so the launched app can
 /// read deploy-time secrets / endpoints via `ProcessInfo`.
-async fn simctl_run_env(args: &[&str], env: &[(String, String)]) -> Result<String, DeviceControlError> {
+async fn simctl_run_env(
+    args: &[&str],
+    env: &[(String, String)],
+) -> Result<String, DeviceControlError> {
     let (stdout, _) = simctl_capture_env(args, env).await?;
     Ok(String::from_utf8_lossy(&stdout).into_owned())
 }
@@ -1163,14 +1165,22 @@ impl SimctlClient {
     /// stdout looks like `"(\n    \"en-US\"\n)\n"`; we extract the first
     /// quoted token.
     pub async fn current_locale(&self, udid: &str) -> Result<Option<String>, DeviceControlError> {
-        let out =
-            match simctl_run(&["spawn", udid, "/usr/bin/defaults", "read", "-g", "AppleLanguages"]).await {
-                Ok(s) => s,
-                // `defaults read` returns non-zero when the key is unset; that
-                // is a legitimate "no opinion" state, not an error.
-                Err(DeviceControlError::NonZeroExit { .. }) => return Ok(None),
-                Err(e) => return Err(e),
-            };
+        let out = match simctl_run(&[
+            "spawn",
+            udid,
+            "/usr/bin/defaults",
+            "read",
+            "-g",
+            "AppleLanguages",
+        ])
+        .await
+        {
+            Ok(s) => s,
+            // `defaults read` returns non-zero when the key is unset; that
+            // is a legitimate "no opinion" state, not an error.
+            Err(DeviceControlError::NonZeroExit { .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
         // First quoted substring.
         if let Some(start) = out.find('"') {
             let rest = &out[start + 1..];
@@ -1207,16 +1217,7 @@ impl SimctlClient {
         bundle_id: &str,
         key: &str,
     ) -> Result<bool, DeviceControlError> {
-        match simctl_run(&[
-            "spawn",
-            udid,
-            "/usr/bin/defaults",
-            "delete",
-            bundle_id,
-            key,
-        ])
-        .await
-        {
+        match simctl_run(&["spawn", udid, "/usr/bin/defaults", "delete", bundle_id, key]).await {
             Ok(_) => Ok(true),
             // `defaults delete` exits non-zero with "does not exist"
             // on stderr for both a missing key and a missing domain.
@@ -1266,7 +1267,11 @@ impl SimctlClient {
     /// 500 ms until success or `timeout_ms` elapses. Idempotent on
     /// already-booted devices (`xcrun simctl boot` returns non-zero when
     /// the device is already booted; we swallow that).
-    pub async fn boot_and_wait(&self, udid: &str, timeout: Duration) -> Result<(), DeviceControlError> {
+    pub async fn boot_and_wait(
+        &self,
+        udid: &str,
+        timeout: Duration,
+    ) -> Result<(), DeviceControlError> {
         // Issue boot; ignore already-booted error (the only friendly path).
         let _ = simctl_run(&["boot", udid]).await;
         let start = std::time::Instant::now();
@@ -1313,7 +1318,11 @@ impl SimctlClient {
     }
 
     /// `xcrun simctl launch <udid> <bundleId>` → parse `"<bundle>: <pid>"`.
-    pub async fn launch(&self, udid: &str, bundle_id: &str) -> Result<LaunchResult, DeviceControlError> {
+    pub async fn launch(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+    ) -> Result<LaunchResult, DeviceControlError> {
         self.launch_with_args(udid, bundle_id, &[]).await
     }
 
@@ -1418,10 +1427,7 @@ impl SimctlClient {
         //
         // Best-effort: any missing subdir is fine (fresh app that never
         // wrote to that path). `rm -rf` treats absent targets as no-ops.
-        simctl_run(&[
-            "spawn", udid, "/bin/rm", "-rf", &documents, &library, &tmp,
-        ])
-        .await?;
+        simctl_run(&["spawn", udid, "/bin/rm", "-rf", &documents, &library, &tmp]).await?;
         Ok(())
     }
 
@@ -1453,7 +1459,6 @@ pub fn openurl_argv(udid: &str, url: &str) -> [String; 3] {
 }
 
 impl SimctlClient {
-
     /// `xcrun simctl push <udid> <bundle-id> <apns-json-path>`.
     /// Deliver an APNS payload to a sim-installed app. The payload file is
     /// a JSON document whose top-level dictionary mirrors what an APNS
@@ -1471,7 +1476,11 @@ impl SimctlClient {
     }
 
     /// `xcrun simctl ui <udid> appearance <light|dark>` — set UI appearance.
-    pub async fn set_appearance(&self, udid: &str, mode: Appearance) -> Result<(), DeviceControlError> {
+    pub async fn set_appearance(
+        &self,
+        udid: &str,
+        mode: Appearance,
+    ) -> Result<(), DeviceControlError> {
         simctl_run(&["ui", udid, "appearance", mode.as_str()]).await?;
         Ok(())
     }
@@ -1595,11 +1604,17 @@ impl SimctlClient {
     /// Stop a recording via SIGINT + wait (≤10s). SIGINT lets simctl
     /// trap and flush the mp4 trailer; SIGKILL would corrupt output.
     /// Timeout escalates to SIGKILL with explicit error mentioning truncation.
-    pub async fn record_video_stop(&self, mut handle: RecordingHandle) -> Result<(), DeviceControlError> {
-        let pid = handle.child.id().ok_or_else(|| DeviceControlError::Malformed {
-            subcommand: "recordVideo-stop".into(),
-            detail: "child already reaped".into(),
-        })?;
+    pub async fn record_video_stop(
+        &self,
+        mut handle: RecordingHandle,
+    ) -> Result<(), DeviceControlError> {
+        let pid = handle
+            .child
+            .id()
+            .ok_or_else(|| DeviceControlError::Malformed {
+                subcommand: "recordVideo-stop".into(),
+                detail: "child already reaped".into(),
+            })?;
         // SAFETY: libc::kill is a thin POSIX syscall wrapper; pid is owned by
         // this Child instance (no race) and SIGINT is signal-safe.
         let rc = unsafe { libc::kill(pid as i32, libc::SIGINT) };
@@ -1682,7 +1697,11 @@ impl SimctlClient {
     }
 
     /// Toggle "Reduce Motion" accessibility setting via `defaults write`.
-    pub async fn set_reduce_motion(&self, udid: &str, enabled: bool) -> Result<(), DeviceControlError> {
+    pub async fn set_reduce_motion(
+        &self,
+        udid: &str,
+        enabled: bool,
+    ) -> Result<(), DeviceControlError> {
         let val = if enabled { "1" } else { "0" };
         // `defaults write` lives under spawn; routed via simctl spawn.
         simctl_run(&[

@@ -97,6 +97,7 @@ fn bench_tap_request(c: &mut Criterion) {
 
 fn bench_tap_result(c: &mut Criterion) {
     let r = TapResult {
+        matched_label: Some("Sign In".to_string()),
         stages: Some(TapStages {
             resolve_ms: 12.3,
             tap_call_ms: 4.5,

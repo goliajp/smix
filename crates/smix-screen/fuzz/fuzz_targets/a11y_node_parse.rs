@@ -13,5 +13,5 @@ fuzz_target!(|data: &[u8]| {
     };
     let _ = is_visible_enough(&tree, &tree);
     let _ = summarize_node(&tree);
-    let _ = collect_visible_summaries(&tree);
+    let _ = collect_visible_summaries(&tree, 20);
 });

@@ -90,9 +90,7 @@ async fn resolve_with_implicit_wait(
 fn defer_err(method: &str) -> ExpectationFailure {
     ExpectationFailure::new(FailureInit {
         code: Some(FailureCode::DriverError),
-        message: format!(
-            "AndroidDriver::{method}: not implemented by the Kotlin runner"
-        ),
+        message: format!("AndroidDriver::{method}: not implemented by the Kotlin runner"),
         ..Default::default()
     })
 }

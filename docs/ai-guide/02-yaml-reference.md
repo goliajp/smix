@@ -69,10 +69,15 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 
 - assertTrue: ${output.userCount > 0}    # JS expression eval (runs in evalScript context)
 
-- assertScreenshot:                      # visual regression (deferred — not yet shipped)
-    baseline: "home.png"
-    threshold: 0.05
+- assertScreenshot: "home.png"           # visual regression — full-frame 64-bit dhash
+- assertScreenshot:
+    path: "home.png"                     # baseline path, relative to the flow file
+    threshold: 5                         # max hamming distance (default 5)
 ```
+
+`assertScreenshot` auto-records the baseline on the first run and diffs
+against it afterwards. `mask:` regions are accepted but not yet applied
+(the dhash compares the full frame); a run warning says so.
 
 ### Tap / touch actions
 

@@ -58,17 +58,15 @@ final class TapRouteG8FixTests: XCTestCase {
 
     // -- response wire-compat --
     //
-    // The new mode is request-only; the response wire shape is unchanged
-    // (matched.label only, no extra fields). This test re-checks the
-    // existing `success` builder still
-    // returns the same envelope when called from any mode path.
+    // The mode is request-only; the response is the same top-level
+    // `TapResult` envelope (`matchedLabel` + optional frame/appFrame/
+    // stages) whichever mode path produced it.
 
     func test_success_matchedLabel_envelopeUnchanged() async throws {
         let resp = TapRoute.success(matchedLabel: "Sign In")
         XCTAssertEqual(resp.statusCode, .ok)
         let bodyStr = try await String(decoding: resp.bodyData, as: UTF8.self)
         XCTAssertTrue(bodyStr.contains(#""ok":true"#), bodyStr)
-        XCTAssertTrue(bodyStr.contains(#""matched""#), bodyStr)
-        XCTAssertTrue(bodyStr.contains(#""label":"Sign In""#), bodyStr)
+        XCTAssertTrue(bodyStr.contains(#""matchedLabel":"Sign In""#), bodyStr)
     }
 }

@@ -77,10 +77,7 @@ pub fn runner_env(bundle: Option<&str>, record_enabled: bool, port: u16) -> Vec<
     // Missing config → env unset → Swift falls back to bundled
     // defaults.
     if let Some(json) = load_interactive_probe_env() {
-        env.push((
-            "TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON".to_string(),
-            json,
-        ));
+        env.push(("TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON".to_string(), json));
     }
     env
 }
@@ -264,7 +261,11 @@ pub fn health_runner_version(port: u16) -> Option<String> {
     let json_bytes = &body[body_start..];
     let value: serde_json::Value = serde_json::from_slice(json_bytes).ok()?;
     let v = value.get("runnerVersion")?.as_str()?;
-    if v.is_empty() { None } else { Some(v.to_string()) }
+    if v.is_empty() {
+        None
+    } else {
+        Some(v.to_string())
+    }
 }
 
 /// The wire schemas the running runner says it speaks.
@@ -279,7 +280,11 @@ pub fn health_wire_schemas(port: u16) -> Vec<u32> {
     if !ok {
         return Vec::new();
     }
-    let Some(start) = body.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4) else {
+    let Some(start) = body
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|i| i + 4)
+    else {
         return Vec::new();
     };
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(&body[start..]) else {
@@ -419,7 +424,9 @@ pub fn resolve_runner_project(
     if let Some(installed_dir) = installed_runner_dir() {
         match ensure_installed_runner_synced(&installed_dir) {
             Ok(SyncOutcome::AlreadyCurrent) => {}
-            Ok(SyncOutcome::Extracted { previous_version, .. }) => {
+            Ok(SyncOutcome::Extracted {
+                previous_version, ..
+            }) => {
                 let from = previous_version.as_deref().unwrap_or("<none>");
                 eprintln!(
                     "smix-runner: synced runner sources → {} (was {}) at {}",
@@ -552,7 +559,15 @@ pub fn up(
     record_enabled: bool,
     runner_project: Option<&Path>,
 ) -> Result<(), String> {
-    up_with_options(root, udid, port, bundle, record_enabled, runner_project, false)
+    up_with_options(
+        root,
+        udid,
+        port,
+        bundle,
+        record_enabled,
+        runner_project,
+        false,
+    )
 }
 
 /// [`up`] extended with the `--supervise` sidecar flag. When
@@ -586,8 +601,7 @@ pub fn up_with_options(
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
             if !bypass {
-                return Err(
-                    "no --bundle passed; the runner would latch to the \
+                return Err("no --bundle passed; the runner would latch to the \
                      built-in default (com.apple.Preferences) and every \
                      subsequent /tree call would report Preferences as the \
                      app.\n\n\
@@ -597,8 +611,7 @@ pub fn up_with_options(
                        SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1\n\
                      — but expect empty a11y trees until you re-attach a \
                      real target."
-                        .to_string(),
-                );
+                    .to_string());
             }
             eprintln!(
                 "[runner] warning: no --bundle passed and \
@@ -763,9 +776,7 @@ pub fn up_with_options(
             }
             match health_runner_version(port) {
                 Some(v) if v == cli_version => {
-                    println!(
-                        "runner up: http://localhost:{port}/health = 200 (runner v{v})"
-                    );
+                    println!("runner up: http://localhost:{port}/health = 200 (runner v{v})");
                 }
                 Some(v) => {
                     let _ = std::fs::remove_file(state_path(root));
@@ -807,8 +818,7 @@ pub fn up_with_options(
                             current.supervisor_pid = Some(sup_pid);
                             let _ = std::fs::write(
                                 state_path(root),
-                                serde_json::to_string_pretty(&current)
-                                    .expect("state serializes"),
+                                serde_json::to_string_pretty(&current).expect("state serializes"),
                             );
                             println!(
                                 "runner supervise: spawned pid={sup_pid} \
@@ -940,11 +950,7 @@ pub fn down(root: &Path, port: u16) -> Result<(), String> {
 ///
 /// Errors if no state.json exists — cycle only cycles known runners;
 /// use `smix runner up` for a cold start.
-pub fn cycle(
-    root: &Path,
-    port: u16,
-    runner_project: Option<&Path>,
-) -> Result<(), String> {
+pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<(), String> {
     let st = read_state(root).ok_or_else(|| {
         "no runner state.json — cycle only cycles a known runner; \
          run `smix runner up <device> [--bundle <id>]` for a cold start"
@@ -964,9 +970,7 @@ pub fn cycle(
              cycling on state.json's {cycle_port}"
         );
     }
-    println!(
-        "cycling runner: udid={udid} port={cycle_port} bundle={bundle:?}"
-    );
+    println!("cycling runner: udid={udid} port={cycle_port} bundle={bundle:?}");
     down(root, cycle_port)?;
     up_with_options(
         root,
@@ -985,11 +989,7 @@ pub fn cycle(
 /// trigger + read). Emitted inside the supervisor's `RunnerCycled` JSON
 /// event so callers get cycle-cascade classification data without
 /// needing a separate `grep` pass.
-fn collect_log_context(
-    log_path: &Path,
-    match_line: &str,
-    context_size: usize,
-) -> Vec<String> {
+fn collect_log_context(log_path: &Path, match_line: &str, context_size: usize) -> Vec<String> {
     let Ok(text) = std::fs::read_to_string(log_path) else {
         return Vec::new();
     };
@@ -1015,14 +1015,13 @@ fn spawn_supervisor(root: &Path, runner_project: Option<&Path>) -> Result<u32, S
     let runner_dir = root.join(".smix/runner");
     std::fs::create_dir_all(&runner_dir).map_err(|e| format!("mkdir .smix/runner: {e}"))?;
     let log = runner_dir.join(format!("supervise-{udid}.log"));
-    let log_file = std::fs::File::create(&log)
-        .map_err(|e| format!("create {}: {e}", log.display()))?;
+    let log_file =
+        std::fs::File::create(&log).map_err(|e| format!("create {}: {e}", log.display()))?;
     let log_err = log_file
         .try_clone()
         .map_err(|e| format!("clone supervise log handle: {e}"))?;
 
-    let self_exe = std::env::current_exe()
-        .map_err(|e| format!("current_exe: {e}"))?;
+    let self_exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let mut cmd = std::process::Command::new(&self_exe);
     cmd.arg("runner").arg("supervise");
     if let Some(p) = runner_project {
@@ -1055,10 +1054,7 @@ fn spawn_supervisor(root: &Path, runner_project: Option<&Path>) -> Result<u32, S
 /// Runs foreground; SIGINT / SIGTERM to the supervisor cleanly shuts
 /// it down. `smix runner down` invoked separately still tears the
 /// runner itself down.
-pub fn supervise(
-    root: &Path,
-    runner_project: Option<&Path>,
-) -> Result<(), String> {
+pub fn supervise(root: &Path, runner_project: Option<&Path>) -> Result<(), String> {
     let st = read_state(root).ok_or_else(|| {
         "no runner state.json — supervise attaches to a known runner; \
          run `smix runner up <device> --bundle <id>` first"
@@ -1073,9 +1069,7 @@ pub fn supervise(
         log_path.display()
     );
 
-    let mut position: u64 = std::fs::metadata(&log_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let mut position: u64 = std::fs::metadata(&log_path).map(|m| m.len()).unwrap_or(0);
     let mut last_cycle_at: Option<std::time::Instant> = None;
     let mut cycle_times: Vec<std::time::Instant> = Vec::new();
     let interrupt_patterns: &[&str] = &[
@@ -1230,7 +1224,11 @@ pub fn supervise(
         // If the last line doesn't end with \n the current position may
         // land mid-line — keep it as carry for the next iter.
         let keep_last = !carry.ends_with('\n');
-        let tail = if keep_last { lines.pop().unwrap_or("").to_string() } else { String::new() };
+        let tail = if keep_last {
+            lines.pop().unwrap_or("").to_string()
+        } else {
+            String::new()
+        };
         for line in &lines {
             let matched = interrupt_patterns.iter().any(|p| line.contains(p));
             if !matched {
@@ -1383,7 +1381,8 @@ mod tests {
         let env = runner_env(None, false, 22087);
         let map: std::collections::HashMap<String, String> = env.into_iter().collect();
         assert_eq!(
-            map.get("TEST_RUNNER_SMIX_RUNNER_VERSION").map(String::as_str),
+            map.get("TEST_RUNNER_SMIX_RUNNER_VERSION")
+                .map(String::as_str),
             Some(env!("CARGO_PKG_VERSION"))
         );
     }
@@ -1413,15 +1412,23 @@ mod tests {
     fn ensure_installed_runner_synced_extracts_on_missing_version_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let outcome = ensure_installed_runner_synced(dir.path()).expect("sync");
-        matches!(outcome, SyncOutcome::Extracted { previous_version: None, .. })
-            .then_some(())
-            .expect("expected first-run extract with no previous version");
+        matches!(
+            outcome,
+            SyncOutcome::Extracted {
+                previous_version: None,
+                ..
+            }
+        )
+        .then_some(())
+        .expect("expected first-run extract with no previous version");
         assert!(
             dir.path().join(".smix-runner-version").exists(),
             "version file must be written"
         );
         assert!(
-            dir.path().join("SmixRunner.xcodeproj/project.pbxproj").exists(),
+            dir.path()
+                .join("SmixRunner.xcodeproj/project.pbxproj")
+                .exists(),
             "xcodeproj must land on disk after sync"
         );
     }
@@ -1434,8 +1441,7 @@ mod tests {
         // survive the sync call.
         fs::write(dir.path().join(".smix-runner-version"), "0.0.0-stale\n")
             .expect("seed stale version");
-        fs::write(dir.path().join("stale-marker.txt"), b"old contents")
-            .expect("seed stale marker");
+        fs::write(dir.path().join("stale-marker.txt"), b"old contents").expect("seed stale marker");
 
         let outcome = ensure_installed_runner_synced(dir.path()).expect("sync");
         match outcome {

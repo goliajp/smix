@@ -105,7 +105,9 @@ async fn launching_goes_through_a_session_and_the_runner_sees_it() {
         .await;
     Mock::given(method("POST"))
         .and(path("/session/launch-app"))
-        .and(wiremock::matchers::body_string_contains(r#""sessionId":"s-42""#))
+        .and(wiremock::matchers::body_string_contains(
+            r#""sessionId":"s-42""#,
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
         .mount(&server)
         .await;
@@ -122,7 +124,6 @@ async fn launching_goes_through_a_session_and_the_runner_sees_it() {
         .expect("launch carries the session the runner asked for");
 }
 
-
 /// tap_by_id, the replacement for the old absolute-pixel tap: the SDK
 /// resolves a selector to an id and taps that, with no coordinate leaving
 /// the process.
@@ -131,7 +132,9 @@ async fn tap_by_id_hits_the_runner() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/tap-by-id"))
-        .and(wiremock::matchers::body_string_contains(r#""id":"btn-login""#))
+        .and(wiremock::matchers::body_string_contains(
+            r#""id":"btn-login""#,
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
         .mount(&server)
         .await;
@@ -149,7 +152,12 @@ async fn tap_by_id_hits_the_runner() {
 #[tokio::test]
 async fn the_acting_methods_reach_their_routes() {
     let server = MockServer::start().await;
-    for route in ["/tap-at-norm-coord", "/input-text", "/press-key", "/swipe-once"] {
+    for route in [
+        "/tap-at-norm-coord",
+        "/input-text",
+        "/press-key",
+        "/swipe-once",
+    ] {
         Mock::given(method("POST"))
             .and(path(route))
             .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"ok":true}"#))
@@ -158,14 +166,32 @@ async fn the_acting_methods_reach_their_routes() {
     }
 
     let session = open_session(&server).await;
-    session.tap_at_norm_coord(0.5, 0.5, None).await.expect("tap-at-coord");
-    session.input_text("hello".to_string(), None).await.expect("input-text");
-    session.press_key("return".to_string(), None).await.expect("press-key");
-    session.swipe_once("up".to_string(), None).await.expect("swipe-once");
+    session
+        .tap_at_norm_coord(0.5, 0.5, None)
+        .await
+        .expect("tap-at-coord");
+    session
+        .input_text("hello".to_string(), None)
+        .await
+        .expect("input-text");
+    session
+        .press_key("return".to_string(), None)
+        .await
+        .expect("press-key");
+    session
+        .swipe_once("up".to_string(), None)
+        .await
+        .expect("swipe-once");
 }
 
 /// A key name the runner does not know is rejected here, before any HTTP —
 /// the string boundary does not become a way to send nonsense downstream.
+///
+/// "Before any HTTP" is proven, not narrated: no `/press-key` mock is
+/// mounted and the mock server verifies zero unexpected requests on
+/// drop, so a version of `press_key` that POSTs first fails this test.
+/// The error text is asserted too — a 404-shaped Transport error here
+/// used to be indistinguishable from the local refusal.
 #[tokio::test]
 async fn an_unknown_key_is_refused_locally() {
     let server = MockServer::start().await;
@@ -174,17 +200,27 @@ async fn an_unknown_key_is_refused_locally() {
         .press_key("banana".to_string(), None)
         .await
         .expect_err("no such key");
+    let DriveError::Transport { detail } = &err else {
+        panic!("expected Transport, got {err:?}");
+    };
     assert!(
-        matches!(err, DriveError::Transport { .. }),
-        "got {err:?}"
+        detail.contains("banana"),
+        "refusal must name the bad key so the caller can fix it: {detail}"
     );
+    assert!(
+        !detail.contains("404") && !detail.contains("status"),
+        "refusal happened over HTTP, not locally: {detail}"
+    );
+    server.verify().await;
 }
 
 /// Shared helper: open a session against a server that answers /session/open.
 async fn open_session(server: &MockServer) -> Arc<smix_ffi::driving::SmixSession> {
     Mock::given(method("POST"))
         .and(path("/session/open"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"sessionId":"s-1","ok":true}"#))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(r#"{"sessionId":"s-1","ok":true}"#),
+        )
         .mount(server)
         .await;
     SmixDriver::new(server.address().port())

@@ -59,8 +59,7 @@ fn plan_some_path_clear_state_and_keychain_default_is_in_place() {
 
 #[test]
 fn plan_force_reinstall_v2_still_does_uninstall_and_install() {
-    let (ops, warnings) =
-        plan_launch_fresh_calls_v2(true, false, Some("/tmp/X.app"), true);
+    let (ops, warnings) = plan_launch_fresh_calls_v2(true, false, Some("/tmp/X.app"), true);
     assert_eq!(
         ops,
         vec![

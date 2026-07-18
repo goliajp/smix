@@ -9,9 +9,9 @@
 //! Run: `cargo bench --bench perf_gate -p smix-recorder`
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use smix_authoring_ir::IRAction;
 use smix_input::KeyName;
 use smix_recorder::generator_rust::generate_rust;
-use smix_authoring_ir::IRAction;
 use smix_selector::{Modifiers, Pattern, Selector};
 use std::hint::black_box;
 

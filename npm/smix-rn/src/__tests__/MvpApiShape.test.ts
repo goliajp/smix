@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   App,
+  encodeSelectorJson,
   ExpectationFailure,
   FAILURE_CODES,
   literal,
@@ -19,15 +20,20 @@ import {
 } from '../index.js'
 
 describe('Selector base cases', () => {
-  test('selector base cases exhaustive', () => {
-    const cases: Selector[] = [
-      Selector.id('btn-login'),
-      Selector.text(literal('Sign In')),
-      Selector.label('Settings'),
-      Selector.role('button'),
-      Selector.role('button', literal('Submit')),
+  // Each constructor is asserted by the wire JSON it encodes to — a
+  // previous version built the five selectors and asserted the array
+  // had five elements, which a broken encoder passes.
+  test('every base constructor encodes its wire discriminator', () => {
+    const byWire: Array<[Selector, Record<string, unknown>]> = [
+      [Selector.id('btn-login'), { id: 'btn-login' }],
+      [Selector.text(literal('Sign In')), { text: 'Sign In' }],
+      [Selector.label('Settings'), { label: 'Settings' }],
+      [Selector.role('button'), { role: 'button' }],
+      [Selector.role('button', literal('Submit')), { role: 'button', name: 'Submit' }],
     ]
-    expect(cases.length).toBe(5)
+    for (const [sel, wire] of byWire) {
+      expect(JSON.parse(encodeSelectorJson(sel))).toEqual(wire)
+    }
   })
 
   test('Selector.id encodes as {"id":...}', () => {
@@ -47,7 +53,11 @@ describe('A11yRole', () => {
       'scrollView', 'segmentedControl', 'table', 'collectionView',
       'webView', 'keyboard',
     ]
-    expect(roles.length).toBe(28)
+    // The list's value is the type annotation above — each string must
+    // typecheck as A11yRole. The runtime assertion is only that the
+    // fixture has no duplicate entries; asserting its length proved
+    // nothing (the old `toBe(28)` passed with 28 wrong strings).
+    expect(new Set(roles).size).toBe(roles.length)
   })
 })
 

@@ -778,7 +778,10 @@ mod tests {
         // through quietly hands the author yaml that will not run.
         let yaml = "appId: com.example\n---\n- ocrText: Sign In\n- tapById: submit\n";
         let (out, report) = Migrator::default().migrate(yaml).unwrap();
-        assert!(out.contains("ocrText: Sign In"), "unknown verbs stay verbatim");
+        assert!(
+            out.contains("ocrText: Sign In"),
+            "unknown verbs stay verbatim"
+        );
         assert!(out.contains("tapById: submit"));
         assert_eq!(report.unknown_verbs, vec!["ocrText", "tapById"]);
         assert!(report.renamed.is_empty());

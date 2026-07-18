@@ -2,13 +2,35 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [2.0.0] — Unreleased
+
+The first major release: the v1 accretions are consolidated into one deliberate surface. Breaking; `smix migrate` rewrites v1 flow yaml, and the runner keeps answering wire schema 1 so v1.x clients still negotiate.
+
+### Breaking
+
+- **Sessions are mandatory** — the iOS driving surface always operates inside a runner session; the loose per-request app binding is gone.
+- **Wire schema negotiation** — the runner reports the schema versions it speaks on `/health` (`[1, 2]`); clients negotiate the newest shared version instead of assuming one.
+- **`SMIX_*` escape-hatch env vars removed** — behaviour that was env-toggled is now the default or a config field; unknown `SMIX_*` vars warn by name.
+- **Selector model merged** — the `Modifier`/`Modifiers` split and the dual `open_url` forms collapse into the single selector model the resolver actually implements.
+- **`smix-recorder-ir` renamed to `smix-authoring-ir`** — the crate name now matches what it holds.
+- **YAML verb table frozen at v2** — verb renames land through `smix migrate`; identity rows that shadowed maestro aliases (`doubleTapOn`, `longPressOn`) are gone, so canonical maestro spellings survive the codemod.
+
+### Added
+
+- `smix sim register <alias> --udid <UDID>` — creates and populates the `.smix/sims.json` device registry (previously there was no bootstrap for alias-form device refs).
+- `smix system-popup-action <popup-id> <button-id>` — CLI verb for the runner's `/system-popup-action` route.
+- Bare `- eraseText` parses with maestro's default of 50 characters.
+- `POST /tap` returns the matched element's label, frame, app frame, and per-stage timings at the top level (`TapResult`); the previous nested emission deserialized to empty and the resolve mode's frame never actually arrived.
+- FFI driving surface (`SmixDriver` / `SmixSession` / `CancelToken`) — the Swift and Kotlin SDKs drive through one Rust wire client instead of three per-language HTTP clients.
+- `llms.txt` / `llms-full.txt`, generated from the verb table and guides, gated for freshness at ship.
+
 ## [1.0.27] — 2026-07-13
 
 Two issues that flows had been working around at the yaml level move to the runner level where they belong: per-key user-defaults deletion (deep-link replay-state neutralization) and live on-screen visibility confirmation.
 
-### D1 (Ask 12) — `clearUserDefaults` verb: per-key NSUserDefaults deletion
+### `clearUserDefaults` verb: per-key NSUserDefaults deletion
 
-expo-dev-launcher persists the most recent custom-scheme deep link and re-delivers it after EVERY JS bundle load — always AFTER any URL the flow sends post-relaunch, so flow-side neutralizer URLs and post-relaunch closes all lose the ordering race (insight burned 5 batches on it). App-side replay gates misclassified legit deep links and failed whole batches.
+expo-dev-launcher persists the most recent custom-scheme deep link and re-delivers it after EVERY JS bundle load — always AFTER any URL the flow sends post-relaunch, so flow-side neutralizer URLs and post-relaunch closes all lose the ordering race. App-side replay gates misclassified legit deep links and failed whole batches.
 
 New verb — surgical, host-side, ordering-race-free (runs between terminate and relaunch, no app cooperation needed):
 
@@ -26,7 +48,7 @@ New verb — surgical, host-side, ordering-race-free (runs between terminate and
 - Android: explicit unsupported error (SharedPreferences has no host-side per-key path; `clearAppData` remains the whole-store option).
 - The generic decision split per the three-layer model: smix owns the deletion capability; WHICH keys encode replay state is app knowledge that stays with the test author.
 
-### D2 (Ask 13) — tree-tier visibility agrees with tapOn (live on-screen confirmation)
+### Tree-tier visibility agrees with tapOn (live on-screen confirmation)
 
 Under iOS 26.5 + RN 0.86 Fabric, XCUITest SNAPSHOTS report below-the-fold elements with drifted in-viewport frames and `visible=true`. The resolver's frame∩viewport filter passes them, so `extendedWaitUntil` false-greened, `scrollUntilVisible` returned without scrolling, and `tapOn` then honestly failed on the same selector — three verbs, two answers.
 
@@ -40,13 +62,13 @@ Fix — live on-screen confirmation at the driver layer:
 - The live `/find` fast path (simple literal Text selectors) now also requires on-screen, so `find`-based paths agree without a second round-trip.
 - Android untouched: its tree is live per-node-refreshed (`AccessibilityNodeInfo.refresh()`), so snapshot drift doesn't arise.
 
-### D2 bonus — regex Text selectors no longer burn the live-route budget
+### Regex Text selectors no longer burn the live-route budget
 
-Found while wiring D2: `can_use_find_route` admitted regex-pattern Text selectors, but `Pattern::Regex` serializes as an object the runner's `/find` decode rejects with 400 — a regex Text selector dispatched there would burn the full transport-retry budget (~8 s) and fail with a DriverError instead of evaluating. Regex patterns now host-resolve like other complex shapes.
+Found while wiring the live-confirmation work: `can_use_find_route` admitted regex-pattern Text selectors, but `Pattern::Regex` serializes as an object the runner's `/find` decode rejects with 400 — a regex Text selector dispatched there would burn the full transport-retry budget (~8 s) and fail with a DriverError instead of evaluating. Regex patterns now host-resolve like other complex shapes.
 
-### D3 — supervisor health-unreachable auto-cycle
+### Supervisor health-unreachable auto-cycle
 
-Insight's b24 observed a runner death with no `** TEST INTERRUPTED **` banner (warm derived-data reuse after a downgrade sync) — the log-marker supervisor sat through it. `smix runner supervise` now also probes `GET /health` every ~10 s; 3 consecutive failures (~30 s unreachable) triggers a cycle through the same cooldown + storm accounting as the log markers, emitting `{"event":"RunnerCycled","reasonMatched":"health-unreachable x3", …}`.
+A dogfood batch observed a runner death with no `** TEST INTERRUPTED **` banner (warm derived-data reuse after a downgrade sync) — the log-marker supervisor sat through it. `smix runner supervise` now also probes `GET /health` every ~10 s; 3 consecutive failures (~30 s unreachable) triggers a cycle through the same cooldown + storm accounting as the log markers, emitting `{"event":"RunnerCycled","reasonMatched":"health-unreachable x3", …}`.
 
 ### Wire compatibility
 
@@ -72,7 +94,7 @@ Insight's b24 observed a runner death with no `** TEST INTERRUPTED **` banner (w
 
 ### iOS/Android parity
 
-- **Android runner `/tree` snapshot-freshness headers** — `X-Tree-Snapshot-Refresh-Count` + `X-Tree-Snapshot-Wall-Ms` now emitted by the Kotlin runner (v1.0.23 D3 shipped iOS-only).
+- **Android runner `/tree` snapshot-freshness headers** — `X-Tree-Snapshot-Refresh-Count` + `X-Tree-Snapshot-Wall-Ms` now emitted by the Kotlin runner (v1.0.23 shipped them iOS-only).
 - **Android runner version string** — `SmixRunner.VERSION` had frozen at an old build id (`v6.0-c3b`) for multiple releases while the workspace advanced; `/health` lied about the running version. Now tracks the workspace version, and `scripts/release/ship.sh` gates on BOTH the Kotlin `VERSION` and the gradle `mavenCentralVersion` matching the ship version — the drift class is mechanically closed.
 - **`elementTypeRaw` documented as iOS-only** (`wire-format.md`): Android has no `XCUIElement.ElementType` numeric; payloads omit the field and deserialize to the default `1`. Android's equivalent triage signal is the full a11y class name in `rawType` plus the runner-emitted `role`.
 
@@ -107,13 +129,13 @@ Insight's b24 observed a runner death with no `** TEST INTERRUPTED **` banner (w
 
 Two follow-up fixes to the v1.0.24 D1/D2 OCR-visibility work, from validating a conditional-gate ceremony (`runFlow when.notVisible: qa-bubble file: qa-gate-passcode.yaml`) on a real batch:
 
-### D1 — `SMIX_AUTO_OCR_FALLBACK` splits regex-OR strings per alternative on OCR tier
+### `SMIX_AUTO_OCR_FALLBACK` splits regex-OR strings per alternative on OCR tier
 
-Pre-v1.0.25, bare-string `visible: 'A|B'` under D4 auto-lifted to:
+Pre-v1.0.25, bare-string `visible: 'A|B'` under the v1.0.23 auto-lift became:
 ```
 fallback: [text: /A|B/i, ocrText: 'A|B']
 ```
-Text tier's regex worked; OCR tier's literal `"A|B"` was never on screen — Apple Vision doesn't interpret pipes. Insight round-4 Ask 11: `launch-warm.yaml` used `visible: 'Log in to Insight|Device'` (legacy regex OR), auto-lift silently misfired OCR, launch-chain timeout at 45 s.
+Text tier's regex worked; OCR tier's literal `"A|B"` was never on screen — Apple Vision doesn't interpret pipes. Observed in the field: a launch flow used `visible: 'Log in to MyApp|Device'` (legacy regex OR), the auto-lift silently misfired OCR, and the launch chain timed out at 45 s.
 
 Fix: split on top-level `|` and emit one `OcrText` tier per alternative AFTER the single regex text tier:
 ```
@@ -126,26 +148,26 @@ Tree tier still covers "either A or B" in one probe (cheap); OCR now has real st
 
 4 new parser tests locked (`parse_visible_bare_string_regex_or_splits_ocr_per_alternative`, `..._no_pipe_unchanged`, `..._three_alternatives`, `..._empty_alternatives_filtered`).
 
-### D2 — Skipped diagnostic emitted to stderr per step
+### Skipped diagnostic emitted to stderr per step
 
-v1.0.24 D3 improved the `RunStepReport::Skipped { reason }` string to include the selector + evaluation outcome, but the reason only surfaced in `--debug-output/step-N.json`. Under `stdio: inherit` consumers (insight's qa-sim runner uses `spawnSync(SMIX_BIN, ..., { stdio: 'inherit' })`) the diagnostic was invisible.
+v1.0.24 improved the `RunStepReport::Skipped { reason }` string to include the selector + evaluation outcome, but the reason only surfaced in `--debug-output/step-N.json`. Under `stdio: inherit` consumers (a harness invoking `spawnSync(SMIX_BIN, ..., { stdio: 'inherit' })`) the diagnostic was invisible.
 
 Fix: emit `STEP N: <verb-summary> → SKIPPED: <reason>` to stderr after each Skipped step. Non-Skipped outcomes stay quiet — no noise for the happy path.
 
-Under insight's flow-2-through-12 (each with `runFlow when.notVisible: qa-bubble` short-circuiting), consumers now see:
+For a batch of flows each short-circuiting on `runFlow when.notVisible: qa-bubble`, consumers now see:
 ```
 STEP 3: runFlow qa-gate-passcode.yaml (conditional) → SKIPPED: runFlow when.notVisible visible=true ({ id="qa-bubble" }); skipped subflow qa-gate-passcode.yaml
 ```
 
 ### Wire compatibility
 
-- D1 auto-lift shape change only affects yaml parsed under `SMIX_AUTO_OCR_FALLBACK=1`. Pre-v1.0.25 (and OCR-off) parses unchanged.
-- D2 emits stderr lines only when a Skipped outcome occurs. Silent for Ok / ExpandedSubflow / errored outcomes.
+- The auto-lift shape change only affects yaml parsed under `SMIX_AUTO_OCR_FALLBACK=1`. Pre-v1.0.25 (and OCR-off) parses unchanged.
+- Stderr lines are emitted only when a Skipped outcome occurs. Silent for Ok / ExpandedSubflow / errored outcomes.
 - CLI / Rust wire types / other subsystems byte-identical to v1.0.24.
 
 ### Ship gate
 
-- 70 total parser tests green (+4 D1 tests, Mutex-serialized env-touching helper reused).
+- 70 total parser tests green (+4 new tests, Mutex-serialized env-touching helper reused).
 - 119 workspace test-result-ok buckets green (unchanged bucket count).
 - CLI smoke on `visible: 'Log in|Device'` under `SMIX_AUTO_OCR_FALLBACK=1` — dry-run parses to 3-tier fallback as spec.
 
@@ -153,11 +175,11 @@ STEP 3: runFlow qa-gate-passcode.yaml (conditional) → SKIPPED: runFlow when.no
 
 **`runFlow.when.visible` + `inputText` silently no-op — fixed.** Root cause: the tree-only visibility check in `runFlow.when.visible` silently drops `Selector::OcrText` at the tree resolver, so a `fallback: [text, ocrText]` gate under iOS 26.5 + RN 0.86 Fabric a11y drop returns false and the whole conditional body is skipped without any signal. `inputText` never fires because the conditional never enters. 3 fixes land:
 
-### D1 — `runFlow.when.visible` fires OCR when selector contains OcrText
+### `runFlow.when.visible` fires OCR when selector contains OcrText
 
-Runtime dispatch for `Step::RunFlowInline` and `Step::RunFlowConditional` now goes through `check_selector_visible` (introduced in v1.0.23 D2/D1 as the shared "probe once via tree + OCR" primitive) instead of tree-only `App::find`. When the gate selector contains any `OcrText` sub-selector, OCR fires; when it doesn't, tree resolver runs unchanged. Fast path preserved for OCR-free gates.
+Runtime dispatch for `Step::RunFlowInline` and `Step::RunFlowConditional` now goes through `check_selector_visible` (introduced in v1.0.23 as the shared "probe once via tree + OCR" primitive) instead of tree-only `App::find`. When the gate selector contains any `OcrText` sub-selector, OCR fires; when it doesn't, tree resolver runs unchanged. Fast path preserved for OCR-free gates.
 
-Insight round-3 concrete scenario:
+Concrete scenario from the field:
 ```yaml
 - runFlow:
     when:
@@ -173,7 +195,7 @@ Pre-v1.0.24: `text:` misses under Fabric drop → OCR silently skipped → gate 
 
 Post-v1.0.24: OCR fires on the `ocrText` layer → gate returns true → body runs → `tapOn` + `inputText` deliver as expected.
 
-### D2 — `runFlow.when.notVisible` inverse gate
+### `runFlow.when.notVisible` inverse gate
 
 Idempotency pattern: "only enter the conditional if the target state hasn't been reached." Enables:
 ```yaml
@@ -184,11 +206,11 @@ Idempotency pattern: "only enter the conditional if the target state hasn't been
     file: enter-qa-mode.yaml
 ```
 - Runtime: fires the conditional when the selector is NOT visible.
-- Same OCR-aware `check_selector_visible` under the hood — no wire divergence from D1.
+- Same OCR-aware `check_selector_visible` under the hood — no wire divergence from the `visible` gate.
 - Mutually exclusive with `when.visible` at parse time (both Some → parse error with clear message).
 - Same `#[serde(default, skip_serializing_if = "Option::is_none")]` treatment — additive on the enum.
 
-### D3 — better `runFlow` Skipped diagnostic
+### Better `runFlow` Skipped diagnostic
 
 Pre-v1.0.24 message: `runFlow when.visible=false; skipped inline body (5 steps)`. Told consumers nothing about WHAT was checked. Now the reason includes the selector's `describe_selector` form:
 ```
@@ -199,10 +221,6 @@ For `notVisible`:
 runFlow when.notVisible visible=true ({ id="qa-bubble" }); skipped subflow enter-qa-mode.yaml
 ```
 Consumers get selector shape + evaluation outcome in one line — sufficient to grep the runner log + know if the gate misfired.
-
-### Ask 9 (blank Landing after Skip) + Ask 10 (M/N chip navigation) — insight-side
-
-Both flagged as app-side, not smix. Insight noted v1.0.22 D2 auto-capture made these one-turn diagnoses vs prior 3-5 turns — no smix action needed.
 
 ### Wire compatibility
 
@@ -216,40 +234,40 @@ Both flagged as app-side, not smix. Insight noted v1.0.22 D2 auto-capture made t
 
 - 3 new parser tests: `parse_run_flow_conditional_when_not_visible`, `parse_run_flow_inline_when_not_visible`, `parse_run_flow_when_visible_and_not_visible_together_rejects`. 66 total parser tests green (+3 new).
 - Full workspace `cargo check` + `cargo test` green (119 test-result-ok buckets, unchanged bucket count).
-- Real-sim empirical validation pending on insight's next batch — they have the failing case (the qa-gate ceremony wrapped in `runFlow.when.visible` with `fallback: [text, ocrText]`) ready to test.
+- Real-sim empirical validation pending on the next dogfood batch — the failing case (a qa-gate ceremony wrapped in `runFlow.when.visible` with `fallback: [text, ocrText]`) is ready to test.
 
 ## [1.0.23] — 2026-07-12
 
 **4 new fixes extending the v1.0.22 OCR-runtime work** to `tapOn` / `scrollUntilVisible`, plus a snapshot-freshness diagnostic and an ergonomic bare-string auto-OCR opt-in. The v1.0.22 OCR-fallback path was validated on real workload (a bootstrap batch that passed 3/3 on v1.0.22 vs 0/3 on v1.0.21 with the same yaml), and the auto-captured `.smix/timeouts/*.png` cut triage-per-failure from 4-5 turns down to 1.
 
-### D1 — `tapOn: fallback` implicit poll window when OcrText present
+### `tapOn: fallback` implicit poll window when OcrText present
 
-Pre-v1.0.23 `run_tap` fallback was one-shot: try every sub-selector once, exit. On iOS 26.5 + RN 0.86 Fabric the tap moment often races the app's post-transition mount — OCR misses because Vision snapshots BEFORE the target text is visible, not because it isn't there. Insight round-2 §Ask 4.
+Pre-v1.0.23 `run_tap` fallback was one-shot: try every sub-selector once, exit. On iOS 26.5 + RN 0.86 Fabric the tap moment often races the app's post-transition mount — OCR misses because Vision snapshots BEFORE the target text is visible, not because it isn't there.
 
 Fix: when the fallback contains any `OcrText` sub-selector, the whole chain is now polled within `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) at 250 ms cadence. First hit wins. Fast path (no OCR anywhere) unchanged: single pass, no poll — pre-v1.0.23 semantics preserved for tree-only selectors.
 
 The failure hint now names the poll budget for consumer visibility: `v1.0.23 poll budget (SMIX_TAP_OCR_POLL_MS, default 3000 ms) activates automatically when Fallback contains OCR — bump it if your post-transition mount is slower than 3 s.`
 
-### D2 — `scrollUntilVisible` fires OCR between scroll strokes
+### `scrollUntilVisible` fires OCR between scroll strokes
 
-Pre-v1.0.23 `Step::ScrollUntilVisible` delegated to `driver.scroll`, whose tree-only resolver couldn't see off-screen targets in degraded a11y trees (RN 0.86 Fabric LazyColumn/LazyRow drops off-screen items on iOS 26.5). Insight round-2 §Ask 5.
+Pre-v1.0.23 `Step::ScrollUntilVisible` delegated to `driver.scroll`, whose tree-only resolver couldn't see off-screen targets in degraded a11y trees (RN 0.86 Fabric LazyColumn/LazyRow drops off-screen items on iOS 26.5).
 
 Fix: new adapter path `scroll_until_visible_with_ocr` — activates when the selector contains any `OcrText`. Per iteration: probe via `App::find` (tree) AND `App::find_by_text_ocr` (OCR); first hit stops the scroll. `scroll_screen(direction)` swipes between iterations. 30-swipe budget + 20 s wall (matches driver's `driver.scroll`). Fast path (no OCR anywhere) unchanged.
 
-Shared helper `check_selector_visible` used by D1 tapOn poll and D2 scroll poll — single implementation of "probe this selector once via tree + OCR".
+Shared helper `check_selector_visible` used by both the tapOn poll and the scroll poll — single implementation of "probe this selector once via tree + OCR".
 
-### D3 — `X-Tree-Snapshot-Refresh-Count` + `X-Tree-Snapshot-Wall-Ms` response headers on /tree
+### `X-Tree-Snapshot-Refresh-Count` + `X-Tree-Snapshot-Wall-Ms` response headers on /tree
 
-Insight round-2 §Ask 6: consumers debugging `--all` batch snapshot drift want a signal that the runner is (or isn't) doing fresh work. Fix — two additive headers, wire body byte-identical:
+Consumers debugging `--all` batch snapshot drift want a signal that the runner is (or isn't) doing fresh work. Fix — two additive headers, wire body byte-identical:
 
 - `X-Tree-Snapshot-Refresh-Count` — cumulative /tree successful serves since runner boot (monotonic UInt64). Consumers subtracting between calls detect stalls.
 - `X-Tree-Snapshot-Wall-Ms` — how long THIS `snapshotHandler` invocation took end-to-end. Trending upward across a batch = XCUITest bogging down under sustained JS reload pressure.
 
-Insight's original proposal was to add `snapshotAgeMs` / `snapshotRefreshCount` to the JSON body under a wrapping `root` field. Wire body wrap would break every existing consumer that parses the top-level as an A11yNode. Headers are additive — pre-v1.0.23 consumers see zero change; new consumers add a single header read.
+An alternative proposal — adding `snapshotAgeMs` / `snapshotRefreshCount` to the JSON body under a wrapping `root` field — was rejected: a wire body wrap would break every existing consumer that parses the top-level as an A11yNode. Headers are additive — pre-v1.0.23 consumers see zero change; new consumers add a single header read.
 
-### D4 — `SMIX_AUTO_OCR_FALLBACK=1` bare-string auto-lift
+### `SMIX_AUTO_OCR_FALLBACK=1` bare-string auto-lift
 
-Insight round-2 §Ask 7: every one of their 12 flows spelled out the 3-line `visible: fallback: [text, ocrText]` form. Fix — env-opt-in `SMIX_AUTO_OCR_FALLBACK=1` lifts bare-string `visible: 'X'` to `visible: fallback: [text: X, ocrText: X]` at parse time. Reduces yaml boilerplate ~40% for degraded-tree callers; portable back down to versions with less-degraded trees (bare form still parses without the env).
+In a real consumer corpus, every flow spelled out the 3-line `visible: fallback: [text, ocrText]` form. Fix — env-opt-in `SMIX_AUTO_OCR_FALLBACK=1` lifts bare-string `visible: 'X'` to `visible: fallback: [text: X, ocrText: X]` at parse time. Reduces yaml boilerplate ~40% for degraded-tree callers; portable back down to versions with less-degraded trees (bare form still parses without the env).
 
 Accepted truthy values: `1`, `true`, `TRUE`, `yes`. Anything else (including unset) leaves bare strings as `Selector::Text` — pre-v1.0.23 semantics preserved.
 
@@ -266,15 +284,15 @@ Reading the env at PARSE time (not RUN time) keeps the emitted Selector shape st
 
 ### Ship gate
 
-- 119 test-result-ok buckets across the workspace green (63 parser + 56 elsewhere; +4 new parser tests for D4).
+- 119 test-result-ok buckets across the workspace green (63 parser + 56 elsewhere; +4 new parser tests for the auto-lift).
 - Full workspace `cargo check` green + Swift build green.
-- Real-sim empirical validation pending on insight's next batch — they have the failing case for tapOn OCR (force-update Skip flake) + scrollUntilVisible OCR (M/N deeplink panel) ready.
+- Real-sim empirical validation pending on the next dogfood batch — failing cases for both tapOn OCR (a force-update Skip flake) and scrollUntilVisible OCR (an off-screen deeplink panel) are ready.
 
 ## [1.0.22] — 2026-07-12
 
 **iOS 26.5 + RN 0.86 Fabric tree-degradation triage upgrade.** On Xcode 26.6 + iOS 26.5 sim + RN 0.86 New Arch (Fabric), `GET /tree` returns every child under the app root with empty `identifier` and empty `label` — nodes visibly showing (e.g.) a login button that carries JSX `testID` + `accessibilityLabel` + `accessibilityRole="button"` + `accessible={true}`. Bootstrap flows time out on the first `extendedWaitUntil` regardless of resetAppData / clearAppData choice, and the `fallback: [ocrText]` last resort silently never fires. Three fixes land:
 
-### D1 — `extendedWaitUntil.visible.fallback: [ocrText: ...]` now actually calls OCR
+### `extendedWaitUntil.visible.fallback: [ocrText: ...]` now actually calls OCR
 
 Parser accepted `ocrText` in fallback since v1.0.20, but the runtime dispatched every selector through `App::wait_for` which uses the tree resolver — the tree resolver skips `Selector::OcrText` (correct behavior in isolation; OCR is meant to be dispatched at the adapter layer). Consumers who spelled `fallback: [id, text, ocrText]` got 45 s of pure `/tree` polls and never a single Vision call.
 
@@ -287,7 +305,7 @@ New adapter method `wait_for_visible_with_ocr` splits the fallback per poll iter
 
 Timeout emits a per-layer trace: `L1 id=btn-…: MISS; L2 text=Log in: MISS; L3 ocrText=Log in: MISS`.
 
-### D2 — Screenshot + tree JSON always captured on `extendedWaitUntil` timeout
+### Screenshot + tree JSON always captured on `extendedWaitUntil` timeout
 
 Pre-v1.0.22 required `--debug-output <dir>` to get a fail PNG + tree snapshot. Consumers debugging a tree-degradation regression in CI didn't have that wired; every timeout left them blind. Now every `extendedWaitUntil` timeout auto-captures both.
 
@@ -300,15 +318,15 @@ File names: `timeout-extendedWaitUntil-<epoch-ms>.png` + `.tree.json`. The writt
 
 Best-effort: any screenshot / tree / I/O error is logged to stderr and does not affect the failure verdict.
 
-### D3 — `A11yNode.elementTypeRaw` numeric on wire (partial fix for RN Fabric tree gap)
+### `A11yNode.elementTypeRaw` numeric on wire (partial fix for RN Fabric tree gap)
 
-Insight's root-cause diagnosis is right — iOS 26.5 XCUITest returns empty `identifier` and empty `label` for RN 0.86 Fabric-mounted views despite the JSX setting `testID` and `accessibilityLabel`. That's an app-side (RN → UIAccessibility bridge) issue, not a smix serializer bug. But smix consumers had no way to see that from the wire: `rawType` was the only exposed type info, and the numeric `XCUIElement.ElementType.rawValue` was lost.
+The root-cause diagnosis: iOS 26.5 XCUITest returns empty `identifier` and empty `label` for RN 0.86 Fabric-mounted views despite the JSX setting `testID` and `accessibilityLabel`. That's an app-side (RN → UIAccessibility bridge) issue, not a smix serializer bug. But smix consumers had no way to see that from the wire: `rawType` was the only exposed type info, and the numeric `XCUIElement.ElementType.rawValue` was lost.
 
 Now `A11yNode.elementTypeRaw: u64` ships on every wire payload. Consumer client-side triage:
 - `elementTypeRaw != 1 && identifier == "" && label == ""` ⇒ iOS types this as a real element (`.button`, `.textField`, `.staticText`, ...) but the a11y bridge dropped its name — app-side fix needed (RN 0.86 Fabric accessibility bridge on iOS 26.5).
 - `elementTypeRaw == 1` (`.other`) ⇒ plain wrapper view, expected to be nameless.
 
-Insight can now distinguish "smix bug" from "RN bridge dropped the name" in one field lookup.
+Consumers can now distinguish "smix bug" from "RN bridge dropped the name" in one field lookup.
 
 Additive on the A11yNode wire; `#[serde(default = "default_element_type_raw")]` returns 1 (`.other`) for pre-v1.0.22 payloads.
 
@@ -323,13 +341,13 @@ Additive on the A11yNode wire; `#[serde(default = "default_element_type_raw")]` 
 
 - 119 test-result-ok buckets across the workspace (all pre-existing + new); no regressions.
 - Full workspace `cargo check` green.
-- Real-sim empirical validation pending on insight's next batch: they have the failing case with `fallback: [id, text, ocrText]` yaml + a screen where the a11y tree is degraded. If OCR fires and the tree-JSON capture surfaces at timeout, D1 + D2 are proved. D3 informs their next round's app-side fix or their choice to fall through to OCR.
+- Real-sim empirical validation pending on the next dogfood batch: the failing case — `fallback: [id, text, ocrText]` yaml + a screen where the a11y tree is degraded — is ready. If OCR fires and the tree-JSON capture surfaces at timeout, the first two fixes are proved. The numeric type field informs the app-side fix or the choice to fall through to OCR.
 
 ## [1.0.21] — 2026-07-12
 
-**iOS 26.5 UIAlertController button role mapping fixed.** Insight round-6 addendum reported `tapOn: { role: button, name: 'Reload' }` (newly-parsing in v1.0.20) regressed 3/3 flows on iOS 26.5 sim — the wire and parser are correct, but iOS 26.5 XCUITest now exposes `UIAlertController` action buttons with `elementType == .other` (rawValue 1) instead of `.button` (rawValue 9). Same failure mode expected for SwiftUI `.confirmationDialog`, `.actionSheet`, keyboard `return`/`done` bar buttons on iOS 26+.
+**iOS 26.5 UIAlertController button role mapping fixed.** Dogfooding reported `tapOn: { role: button, name: 'Reload' }` (newly-parsing in v1.0.20) regressed 3/3 flows on iOS 26.5 sim — the wire and parser are correct, but iOS 26.5 XCUITest now exposes `UIAlertController` action buttons with `elementType == .other` (rawValue 1) instead of `.button` (rawValue 9). Same failure mode expected for SwiftUI `.confirmationDialog`, `.actionSheet`, keyboard `return`/`done` bar buttons on iOS 26+.
 
-### D1 — Swift-side action-container button promotion
+### Swift-side action-container button promotion
 
 Fixed at the perception layer (`swift-bridge/Sources/SmixRunnerCore/TreeRoute.swift`, `nodeToDict`). When emitting a tree snapshot, if a node is inside an `.alert` / `.dialog` / `.sheet` ancestor at any depth AND has a non-empty label AND its own elementType is `.other` (1) or `.staticText` (48), the wire `rawType` is promoted to `"button"`. This preserves `role: button` semantics across iOS versions without requiring per-consumer yaml patches.
 
@@ -348,19 +366,19 @@ Fixed at the perception layer (`swift-bridge/Sources/SmixRunnerCore/TreeRoute.sw
 ### Ship gate
 
 - 7 new Swift unit tests in `TreeRouteTests` (`test_serialize_alertOtherChildWithLabel_promotedToButton`, `..._alertStaticTextChildWithLabel_...`, `..._dialogNestedButton_...`, `..._alertOtherChildNoLabel_notPromoted`, `..._otherOutsideActionContainer_notPromoted`, `..._realButtonUnderAlert_stillButton`, `..._sheetOtherChild_...`) — 26 TreeRoute tests total, all green.
-- Real-sim empirical verification pending on insight's next batch (they have the failing 3/3 case ready — an alert-button `role: button, name: 'Reload'` yaml — that will confirm v1.0.21 resolves it).
+- Real-sim empirical verification pending on the next dogfood batch (the failing 3/3 case — an alert-button `role: button, name: 'Reload'` yaml — is ready and will confirm v1.0.21 resolves it).
 
 ## [1.0.20] — 2026-07-12
 
 **3 docs/impl gaps closed.** The v1.0.19 observability wins (`lastInteractiveNamedIds` at top-level + `AppUnavailableReason` disambiguation) held up on real workload — bootstrap batch flow completion reached 2/3 passing, with the remaining failure isolated to a downstream app-side native race (`expo::setProperty` / `ConstantDefinition.buildDescriptor`), not smix.
 
-### D1 — `extendedWaitUntil.visible` accepts every selector key `tapOn` does
+### `extendedWaitUntil.visible` accepts every selector key `tapOn` does
 
 `docs/ai-guide/03-selectors.md` promised `ocrText:` as a first-class selector everywhere. Reality: `visible_to_selector` in `crates/smix-adapter-maestro/src/parser.rs` only accepted `text` and `id`. Fixed — now accepts every base selector form: `text`, `id`, `label`, `role` (+ optional `name`), `ocrText`, `localized_text`, `fallback`.
 
 All 8 verbs that route through `visible_to_selector` benefit at once: `extendedWaitUntil.visible/.notVisible`, `assertVisible`, `assertNotVisible`, `scrollUntilVisible`, `copyTextFrom`, `runFlow.when.visible`, `tapOn.anchored.anchor`.
 
-### D2 — `tapOn: {role, name}` + `tapOn: {label}` parse
+### `tapOn: {role, name}` + `tapOn: {label}` parse
 
 `Selector::Role` wire type exists (since v5.x); the yaml parser just wasn't wiring it. Fixed — `parse_tap_on` now accepts:
 
@@ -375,9 +393,9 @@ All 8 verbs that route through `visible_to_selector` benefit at once: `extendedW
 
 Role parser tolerates docs-friendly aliases: `role: textfield` → `Role::TextField`; `role: checkbox` → `Role::CheckBox`; `role: heading` → `Role::StaticText` (nearest wire equivalent since iOS/SwiftUI has no `.header` XCUIElement type). Unknown roles emit an actionable error listing every accepted variant.
 
-### D3 — `smix run --dry-run` alias for `--check`
+### `smix run --dry-run` alias for `--check`
 
-`--check` already existed with the exact "parse-only, no runner, no simulator" semantics insight asked for, but `--dry-run` is the idiomatic name in most CLI tools. Added `--dry-run` as a clap alias for `--check`; output prefix changed to neutral `smix run: parse OK/FAIL <path> (N steps)` so it reads correctly under either name. Also appends a summary line: `smix run: parse OK — N flow(s), M total step(s)`.
+`--check` already existed with the exact "parse-only, no runner, no simulator" semantics consumers asked for, but `--dry-run` is the idiomatic name in most CLI tools. Added `--dry-run` as a clap alias for `--check`; output prefix changed to neutral `smix run: parse OK/FAIL <path> (N steps)` so it reads correctly under either name. Also appends a summary line: `smix run: parse OK — N flow(s), M total step(s)`.
 
 ### Wire compatibility
 
@@ -398,9 +416,9 @@ Role parser tolerates docs-friendly aliases: `role: textfield` → `Role::TextFi
 - **`.ips` growth 36→36 across 5 consecutive batches** — native cold-boot crash chain closed decisively (v1.0.14 → v1.0.18).
 - Flow depth advanced 6–8 steps in every case; remaining stalls all on target-screen `waitFor { text: … }` (downstream RN Fabric a11y-label propagation, not smix).
 
-### D1 — top-level `lastInteractiveNamedIds` on `/diagnostic/dump`
+### Top-level `lastInteractiveNamedIds` on `/diagnostic/dump`
 
-Insight round-4 §Ask (nice-to-have): per-session `interactiveNamedIds` (v1.0.18) goes with the session when `close-all` teardown fires. Post-batch triage often runs AFTER teardown, so the sample vanishes right when consumers want it.
+Per-session `interactiveNamedIds` (v1.0.18) goes with the session when `close-all` teardown fires. Post-batch triage often runs AFTER teardown, so the sample vanishes right when consumers want it.
 
 Wire additions (all `#[serde(default)]`, backward-compat):
 - `DiagnosticDumpResponse.last_interactive_named_ids: Vec<String>` — most-recent non-empty sample across all `launchApp` completions since runner boot. Survives session close.
@@ -415,10 +433,10 @@ Per-session `sessions[n].interactiveNamedIds` from v1.0.18 remains — this new 
 - `DiagnosticDumpResponse.last_interactive_named_ids` is `#[serde(default)]` + on a `#[non_exhaustive]` struct — pre-v1.0.19 consumers ignoring it see zero behaviour change.
 - No new HTTP routes. No CLI flag changes. No yaml schema changes.
 
-### Ship gate (real-sim, `sim-insight` iOS 26.5 Preferences)
+### Ship gate (real-sim, iOS 26.5 Preferences)
 
 - Baseline v1.0.18 behaviour unchanged; every previous assertion still holds.
-- **D1 verified**: after 1 launch of Preferences, `curl -s -X POST /diagnostic/dump | jq '.lastInteractiveNamedIds'` returns the same 8-name sample as `sessions[0].interactiveNamedIds` and as the launch-app response. After closing that session via `/session/close-all`, `sessions` becomes empty but `lastInteractiveNamedIds` still holds the 8-name sample.
+- **Verified**: after 1 launch of Preferences, `curl -s -X POST /diagnostic/dump | jq '.lastInteractiveNamedIds'` returns the same 8-name sample as `sessions[0].interactiveNamedIds` and as the launch-app response. After closing that session via `/session/close-all`, `sessions` becomes empty but `lastInteractiveNamedIds` still holds the 8-name sample.
 
 ## [1.0.18] — 2026-07-12
 
@@ -428,18 +446,18 @@ Per-session `sessions[n].interactiveNamedIds` from v1.0.18 remains — this new 
 - `.ips` growth 36→36 — native crash triple stays fully closed
 - Remaining flow failures **not a smix bug** — RN Fabric a11y-exposure lag during animation (post-tapOn transitions); downstream timeouts + testIDs + `waitForAnimationToEnd` are the knobs
 
-### D1 — per-session `interactiveNamedIds` in `session/list` + `/diagnostic/dump`
+### Per-session `interactiveNamedIds` in `session/list` + `/diagnostic/dump`
 
-Previously only surfaced on `/session/launch-app` response body. Insight round-4 §"Smix ask" bullet 1: the counter alone doesn't tell "probe fired on dev-bubble" from "probe fired on splash-screen artifacts."
+Previously only surfaced on `/session/launch-app` response body. The counter alone doesn't tell "probe fired on dev-bubble" from "probe fired on splash-screen artifacts."
 
 Wire additions (all `#[serde(default)]`, backward-compat):
 - Swift `SessionRoute.SessionSummary.interactiveNamedIds: [String]` (default empty).
 - Swift `SessionEntry.lastInteractiveNamedIds: [String]` on the session table — updated on every `launchApp` completion.
 - `session/list` + `/diagnostic/dump` JSON both now include `sessions[n].interactiveNamedIds`.
 
-### D2 — `waitForAnimationToEnd` numeric override + doc
+### `waitForAnimationToEnd` numeric override + doc
 
-Insight round-4 §"Smix ask" bullet 2: they weren't sure if `waitForAnimationToEnd` was a no-op under `SmixQuiescenceSwizzle.m`. Reality: it never went through XCTest idle-wait in the first place — it's always been a fixed 400 ms `tokio::time::sleep`. Undocumented.
+Consumers weren't sure if `waitForAnimationToEnd` was a no-op under `SmixQuiescenceSwizzle.m`. Reality: it never went through XCTest idle-wait in the first place — it's always been a fixed 400 ms `tokio::time::sleep`. Undocumented.
 
 Fix:
 - yaml accepts `- waitForAnimationToEnd: 500` (integer = ms sleep). Bare form still parses to 400 ms default (maestro-compat).
@@ -455,10 +473,10 @@ Fix:
 - `Step::WaitForAnimationToEnd` variant became `{ duration_ms }` — consumers of the yaml wire (yaml → Step conversion, not `Step` construction in user code) unaffected. Test fixtures using struct literal `Step::WaitForAnimationToEnd` updated.
 - No runner-side HTTP surface changes.
 
-### Ship gate (real-sim, `sim-insight` iOS 26.5 Preferences)
+### Ship gate (real-sim, iOS 26.5 Preferences)
 
 - Baseline: `POST /session/launch-app` still returns `reachedInteractive:true` + 8 sample ax-ids as v1.0.17.
-- **D1 verified**: after launch, `session/list` and `/diagnostic/dump` both surface `sessions[0].interactiveNamedIds: ["Settings","AdditionalDimmingOverlay","com.apple.settings.primaryAppleAccount",…8]`. Same 8-name sample as the launch-app response.
+- **Verified**: after launch, `session/list` and `/diagnostic/dump` both surface `sessions[0].interactiveNamedIds: ["Settings","AdditionalDimmingOverlay","com.apple.settings.primaryAppleAccount",…8]`. Same 8-name sample as the launch-app response.
 
 682 workspace cargo tests (+2 new parser tests for D2) + all pre-existing green. No wire regressions.
 
@@ -468,7 +486,7 @@ Fix:
 
 **Before this crash surfaced, the v1.0.16 snapshot-refresh DID help** — `force-update.yaml` reached STEP 47/47 vs the previous max of 34, and `.ips` growth stayed at 36 → 36 (native crash triple stays fully closed).
 
-### D1 — walk frozen `XCUIElementSnapshot` instead of live-query enumeration
+### Walk frozen `XCUIElementSnapshot` instead of live-query enumeration
 
 Replaces:
 ```swift
@@ -490,10 +508,10 @@ collectInteractiveIds(snap.dictionaryRepresentation, ignore, ids, ...)
 - `snapshot()` itself still forces XCUITest to re-scrape the a11y hierarchy from scratch (v1.0.16 fix for the Fabric mount-item-drain race). The walk over the returned snapshot is safe against any subsequent tree mutation.
 - Pathological-tree stall guard: walk stops at 200 enumerated nodes (guards against runaway lists).
 
-### Ship gate (real-sim, `sim-insight` iOS 26.5 Preferences)
+### Ship gate (real-sim, iOS 26.5 Preferences)
 
 - Baseline: `POST /session/launch-app waitForInteractiveMs:15000` → `HTTP 200, reachedInteractive:true, interactiveNamedIds:["Settings","AdditionalDimmingOverlay",…8]`. Snapshot-walk yields the same result as v1.0.15/v1.0.16 on the working Preferences case.
-- **Stress test — 3 rapid terminate + launch cycles** to trigger the tree-shrink race pattern insight observed. Every cycle returned `reachedInteractive:true` and runner stayed reachable after all cycles. `/health` still returning 200. v1.0.16 in the same scenario would have crashed after 1-2 cycles.
+- **Stress test — 3 rapid terminate + launch cycles** to trigger the tree-shrink race pattern observed in the field. Every cycle returned `reachedInteractive:true` and runner stayed reachable after all cycles. `/health` still returning 200. v1.0.16 in the same scenario would have crashed after 1-2 cycles.
 
 ### Wire compatibility
 
@@ -506,19 +524,19 @@ collectInteractiveIds(snap.dictionaryRepresentation, ignore, ids, ...)
 
 **Hotfix: v1.0.15's interactive polling had a stale-snapshot bug on RN Fabric + iOS 26.5 sim.** The exact race: RN 0.86 Fabric New Arch populates the a11y tree via `RCTMountItemProtocol` as mount items drain, NOT during layout. XCUITest's snapshot cache holds the sparse pre-drain tree, and `descendants(matching:)` returned the same cached snapshot every poll iteration.
 
-### D1 — Swift snapshot-refresh in interactive polling
+### Swift snapshot-refresh in interactive polling
 
 - `launchApp` handler now calls `_ = try? entry.app.snapshot()` on every polling iteration before reading `descendants(matching:)`. Forces XCUITest to re-scrape the a11y hierarchy from scratch, catching mount-item-drain updates.
 - No `waitForQuiescenceIncludingAnimations` call — smix's existing `SmixQuiescenceSwizzle.m` already no-ops that private XCTest daemon idle-wait for performance. Snapshot alone forces the invalidation.
 - `.smix/config.yaml interactiveProbe:` schema unchanged. Config-driven ignore-list and minIdentifierCount still work as v1.0.15 shipped.
 
-### D2 — yaml `launchApp: { waitForInteractiveMs }` marker
+### yaml `launchApp: { waitForInteractiveMs }` marker
 
 - Parser accepts the new field on the map form of `launchApp:`.
 - `Step::LaunchApp.wait_for_interactive_ms: Option<u64>` — additive; `#[serde(default)]`.
 - Runtime: emits a warning (non-fatal) explaining the SDK launch pathway (`simctl launch --args`) is host-side and can't route to `/session/launch-app`. Consumers who want interactive gating use the `clearAppData` yaml verb instead — its SDK path defaults `wait_for_interactive_ms: Some(30_000)` since v1.0.15. Full first-class routing lands in a follow-up release that unifies the two launch pathways.
 
-### Ship gate (real-sim, `sim-insight` iOS 26.5 Preferences)
+### Ship gate (real-sim, iOS 26.5 Preferences)
 
 - Baseline reproducibility check — the v1.0.16 snapshot-refresh doesn't regress the working Preferences case that v1.0.15 shipped on:
 
@@ -530,7 +548,7 @@ POST /session/launch-app  {sessionId, waitForForegroundMs:15000, waitForInteract
                        "com.apple.settings.primaryAppleAccount", …8]
 ```
 
-Real-world validation (insight bootstrap batch on RN Fabric + iOS 26.5) is theirs — they migrate `launch-fresh.yaml` to `clearAppData` (which gets the interactive probe with v1.0.15's default and now v1.0.16's snapshot-refresh) and rerun.
+Real-world validation (a consumer bootstrap batch on RN Fabric + iOS 26.5) happens downstream — launch-fresh flows migrate to `clearAppData` (which gets the interactive probe with v1.0.15's default and now v1.0.16's snapshot-refresh) and rerun.
 
 ### Wire compatibility
 
@@ -541,18 +559,18 @@ Real-world validation (insight bootstrap batch on RN Fabric + iOS 26.5) is their
 
 ## [1.0.15] — 2026-07-11
 
-**Cluster C interactive polling + reason disambiguation + §6 retry attribution — the v1.0.14 deferred work.** Wire scaffolding from v1.0.14 now populated with the Swift + CLI implementation. RFC `.claude/rfcs/1.0.15-cluster-c-plus-retry.md`.
+**Interactive-probe polling + app-unavailable reason disambiguation + retry attribution — the v1.0.14 deferred work.** Wire scaffolding from v1.0.14 now populated with the Swift + CLI implementation.
 
-### D1 — Cluster C interactive polling (Swift-side)
+### Interactive-probe polling (Swift-side)
 
 - Wire: `SessionAppLifecycleRequest.wait_for_interactive_ms: Option<u64>` (additive; `#[serde(default)]`).
 - Wire response: `SessionAppLifecycleResponse.reached_interactive: bool` + `interactive_named_ids: Vec<String>` (up to 8 sample ax-ids captured at fire moment).
-- Runner: after `.state == .runningForeground` is observed, the `launchApp` handler polls `entry.app.descendants(matching: .any)` at 500 ms cadence, counts descendants with non-empty `accessibilityIdentifier` NOT in the ignore-list, fires `reachedInteractive` on ≥ `minIdentifierCount`, or times out and increments `launchAppTimedOutBeforeInteractive` per Q8 answer (a).
-- Config file: `.smix/config.yaml interactiveProbe: { minIdentifierCount: 3, ignore: [SplashScreenLogo, com.focusai.app.mobile] }`. CLI reads via `serde_norway`, JSON-encodes, forwards to runner as `TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON`. Runner falls back to bundled defaults when absent per insight Q7 answer.
+- Runner: after `.state == .runningForeground` is observed, the `launchApp` handler polls `entry.app.descendants(matching: .any)` at 500 ms cadence, counts descendants with non-empty `accessibilityIdentifier` NOT in the ignore-list, fires `reachedInteractive` on ≥ `minIdentifierCount`, or times out and increments `launchAppTimedOutBeforeInteractive`.
+- Config file: `.smix/config.yaml interactiveProbe: { minIdentifierCount: 3, ignore: [SplashScreenLogo, com.example.app] }`. CLI reads via `serde_norway`, JSON-encodes, forwards to runner as `TEST_RUNNER_SMIX_INTERACTIVE_PROBE_JSON`. Runner falls back to bundled defaults when absent.
 - SDK: `App::clear_app_data_with_launch` defaults `wait_for_interactive_ms: Some(30_000)` — consumers using yaml `clearAppData` automatically see `launchAppReachedInteractive` counter delta with zero yaml migration.
 - Counter fields `launch_app_reached_interactive` + `launch_app_timed_out_before_interactive` in `SessionLifecycleCounters` are now populated by the runner (were 0 in v1.0.14 wire-scaffold).
 
-### D2 — Cluster C `AppUnavailableReason` enum + hint field on `/tree` unavailable envelope
+### `AppUnavailableReason` enum + hint field on `/tree` unavailable envelope
 
 - Swift `TreeRoute.unavailable(reason:hint:)` variant emits enriched `{"ok":false,"error":"snapshot_unavailable","reason":"alive-but-tree-empty","hint":"…"}` body. Legacy `TreeRoute.unavailable()` still present for compat.
 - Swift `AppUnavailableReason` enum: `crashedDuringInit` / `aliveButTreeEmpty` / `aliveButTreeStale` / `driverDisconnected` / `unknown`. Each carries a `defaultHint: String` steering downstream tooling.
@@ -563,7 +581,7 @@ Real-world validation (insight bootstrap batch on RN Fabric + iOS 26.5) is their
 - Wire in `smix-runner-client`: `RunnerTransportError::AppUnavailable` gains `category: Option<String>` + `hint: Option<String>` fields. `classify_error_body` discriminates v1.0.15 category values (`crashed-during-init` etc.) from legacy free-form `reason` strings; both populate cleanly for backward compat.
 - Pre-v1.0.15 runners emitting legacy `{"ok":false,"error":"snapshot_unavailable"}` land in `category: None, hint: None` — the consumer's error message stays functional either way.
 
-### D3 — §6 `smix run --retry N` + per-flow attempt attribution
+### `smix run --retry N` + per-flow attempt attribution
 
 - CLI: new `--retry <N>` flag on `smix run` (default 1 = pre-v1.0.15 behaviour).
 - Runtime: each flow wrapped in an attempt loop; retries only fire on non-zero exit; first success short-circuits.
@@ -581,7 +599,7 @@ Real-world validation (insight bootstrap batch on RN Fabric + iOS 26.5) is their
 - `SessionLifecycleCounters.launch_app_reached_interactive` + `launch_app_timed_out_before_interactive` — already in v1.0.14 wire; v1.0.15 populates.
 - `DiagnosticDumpResponse.recent_flows` — already in v1.0.14 wire; v1.0.15 populates via CLI overlay.
 
-### Ship gate (real-sim, `sim-insight` iOS 26.5)
+### Ship gate (real-sim, iOS 26.5)
 
 ```
 $ smix --version                                     → smix 1.0.15
@@ -604,16 +622,14 @@ $ /diagnostic/dump payload sessionCounters
 
 680 workspace tests + all pre-existing tests green. `smix run --retry` mechanism not exercised in real-sim gate (needs a yaml with flaky expectations to fail-then-retry, out of scope for Preferences smoke); implementation locked by static tests.
 
-Insight-side canary post-publish: same discipline as v1.0.10-v1.0.14. Docker testbed image (§C.4 offer, Q9 in v1.0.12 open questions) still pending on their side.
-
 
 ## [1.0.14] — 2026-07-11
 
-**resetAppData verb (URL-scheme JS-wipe) + external metro log tail (`--metro-log <path>`) + verb-selection guide.** RFC `.claude/rfcs/1.0.14-cluster-a-b-c-plus-retry.md`; verb-selection guide at `.claude/rfcs/verb-selection-guide.md`.
+**resetAppData verb (URL-scheme JS-wipe) + external metro log tail (`--metro-log <path>`) + verb-selection guide.**
 
-Version jump 1.0.11 → 1.0.14 (no interim v1.0.12 or v1.0.13 published) per user directive `以 1.0.14 为目标 autorun，中途不 ship`.
+Version jump 1.0.11 → 1.0.14 (no interim v1.0.12 or v1.0.13 published).
 
-### Cluster A — `resetAppData` verb (URL-scheme JS-wipe)
+### `resetAppData` verb (URL-scheme JS-wipe)
 
 Fixes the "dev-fixture ceremony cost" problem: every prior `clearAppData` wiped the app's container INCLUDING expo-dev-client's persisted metro URL + Metro bundle cache + dev-tools state — replaying a 15-30 s dev-client cold-boot ceremony every launch.
 
@@ -623,14 +639,14 @@ yaml shapes:
 
 ```yaml
 # short form
-- resetAppData: 'insight://dev-mutate?action=reset'
+- resetAppData: 'myapp://dev-mutate?action=reset'
 
 # map form
 - resetAppData:
     via: url-scheme            # only 'url-scheme' today; extensible
-    url: 'insight://dev-mutate?action=reset'
+    url: 'myapp://dev-mutate?action=reset'
     waitFor:
-      logLinePattern: '\[insight-dev\] reset-complete token='
+      logLinePattern: '\[myapp-dev\] reset-complete token='
       # OR: sleepMs: 500 (best-effort fallback when --metro-log unset)
     timeoutMs: 5000
 ```
@@ -642,13 +658,13 @@ yaml shapes:
 
 Wire counter fields in `SessionLifecycleCounters`: `reset_app_data_total`, `reset_app_data_timed_out`. CLI-side populated (host-side dispatch, no runner HTTP round-trip for the reset itself).
 
-### Cluster B — external metro log tail (`--metro-log <path>` on `smix diagnostic dump`)
+### External metro log tail (`--metro-log <path>` on `smix diagnostic dump`)
 
 Fixes the "log gate skipped — metro was already running externally" problem: consumers who spawn metro externally (`nohup bun dev > /tmp/metro.log`) couldn't see JS-side log signal when a flow stalled.
 
 - New CLI flags on `smix diagnostic dump`:
   - `--metro-log <path>` — tail the last N lines from this file at dump time.
-  - `--metro-log-tail-lines <N>` — default 200 per insight Q6.
+  - `--metro-log-tail-lines <N>` — default 200.
 - New `tail_lines(path, n)` helper — seeks from EOF in 8 KB chunks, splits on `\n`, handles UTF-8 split across chunk boundaries, files smaller than one chunk, files with no trailing newline. 6 unit tests locked.
 - New wire field `DiagnosticDumpResponse.metro_log_tail: Vec<String>` — CLI-side populated at dump time (not runner). Backward-compat additive.
 - CLI display gains a `=== metro log tail (last N of file) ===` section when populated.
@@ -656,28 +672,27 @@ Fixes the "log gate skipped — metro was already running externally" problem: c
 
 For runtime tail during `smix run` (used by v1.0.14's `resetAppData waitFor: { logLinePattern }` and pre-existing `expect.signal` verbs), the existing `smix-metro-log FileTailSubscriber` + `MetroLogTail` continue to serve — no new subscriber design required.
 
-### Cluster D — verb-selection guide + shipping-doc format
+### Verb-selection guide
 
-- `.claude/rfcs/verb-selection-guide.md` — decision tree + comparison matrix for `clearAppData` vs `resetAppData` vs `clearState + clearKeychain`. Migration crib from pre-v1.0.14 yaml to the split baseline + fast-path pattern.
-- v1.0.14 shipping doc (this release's) gains: 3-line TL;DR at top; `[see prior-doc §X]` cross-doc back-links.
+- A verb-selection guide — decision tree + comparison matrix for `clearAppData` vs `resetAppData` vs `clearState + clearKeychain`, plus a migration crib from pre-v1.0.14 yaml to the split baseline + fast-path pattern.
 
-### Forward-compat wire scaffolding (Cluster C + §6 land in v1.0.15)
+### Forward-compat wire scaffolding (populated in v1.0.15)
 
-Wire types added in v1.0.14, Swift/impl side deferred to v1.0.15 so consumers get a coherent Cluster C release rather than a half-populated one:
+Wire types added in v1.0.14, Swift/impl side deferred to v1.0.15 so consumers get a coherent interactive-probe release rather than a half-populated one:
 
-- `SessionLifecycleCounters.launch_app_reached_interactive` + `launch_app_timed_out_before_interactive` (Cluster C D3 counters; Swift-side polling not yet wired — always 0).
-- `FlowAttemptRecord` + `FlowAttempt` types + `DiagnosticDumpResponse.recent_flows: Vec<FlowAttemptRecord>` (§6 retry attribution; --retry N mechanism not yet wired — always empty).
+- `SessionLifecycleCounters.launch_app_reached_interactive` + `launch_app_timed_out_before_interactive` (interactive-probe counters; Swift-side polling not yet wired — always 0).
+- `FlowAttemptRecord` + `FlowAttempt` types + `DiagnosticDumpResponse.recent_flows: Vec<FlowAttemptRecord>` (retry attribution; --retry N mechanism not yet wired — always empty).
 - All `#[serde(default)]` — a v1.0.14 consumer ignoring the fields sees zero behaviour change; v1.0.15 populates the same fields without a wire migration.
 
 ### Wire compatibility
 
 - New request/response fields carry `#[serde(default)]` everywhere.
 - `Step::ResetAppData` is a new parser entry — pre-v1.0.14 yaml unaffected.
-- `SessionLifecycleCounters` gains 4 fields (2 Cluster A populated, 2 Cluster C scaffolded).
+- `SessionLifecycleCounters` gains 4 fields (2 populated by `resetAppData`, 2 scaffolded for the interactive probe).
 - `DiagnosticDumpResponse` gains 2 fields (`metroLogTail` populated CLI-side, `recentFlows` scaffolded).
 - No route path changes; no HTTP method changes; no runner-side behaviour change (all v1.0.14 work is on the CLI + host side).
 
-### Ship gate observations (real-sim, `sim-insight` iOS 26.5)
+### Ship gate observations (real-sim, iOS 26.5)
 
 ```
 $ smix --version                                                              # → smix 1.0.14
@@ -703,18 +718,16 @@ $ smix diagnostic dump | head
 
 680 workspace cargo tests + 3 new clearAppData parser tests + 3 new resetAppData parser tests + 6 new `tail_lines` unit tests + 1 new reset-app-data-counters roundtrip test green.
 
-Insight-side canary (post-publish, per Q9): ship on Preferences smoke as historical, insight runs bootstrap batch same-day. Docker testbed image (§C.4 offer) still pending on their side; when it lands we wire `scripts/release/corpus-gate.sh` and no v1.0.15+ ships without it.
-
 
 ## [1.0.11] — 2026-07-11
 
-**launchApp launchArgs/launchEnv + wait-for-foreground + always-emit aliveCache + terminate-outcome counters.** RFC `.claude/rfcs/1.0.11-launch-lifecycle-and-observability-under-load.md`; the standalone a11y-cache invariant note lives at `.claude/rfcs/appalive-cache-invariant.md`.
+**launchApp launchArgs/launchEnv + wait-for-foreground + always-emit aliveCache + terminate-outcome counters.**
 
 ### The three v1.0.10 followup gaps closed
 
-- **`aliveCache: null` in `/diagnostic/dump` (§A2).** Root cause: `SessionHandlers.diagnostic` closure read `SmixRunnerServer.currentAppAliveCache` (task-local); FlyingFox's per-request task spawn wasn't propagating the `withValue` scope around `server.run()`. Fix: `test_runForever()` now extracts `AppAliveCache` to a named local `localAppAliveCache` and the diagnostic handler closure captures the reference directly (not via task-local). The dump payload always emits `aliveCache` with a `wired: bool` sentinel + all-zero counters when unwired, so consumers can distinguish "runner has no cache" from "cache present, workload didn't fire".
-- **Expo SDK 57 dev-launcher server picker blocking business flow (§B).** `clearAppData` wipes the dev-client's persisted metro URL, next launch shows the picker, SDK 57 URL scheme no longer auto-navigates. Fix: `launchApp` HTTP endpoint (and yaml `clearAppData` step) accept optional `launchArgs: []` and `launchEnv: {}` fields; forwarded to `XCUIApplication.launchArguments` / `.launchEnvironment` before launch. Consumers steer the picker via `-EXInternalMetroPort` launchArg or `EX_DEV_CLIENT_METRO_URL` launchEnv (fixture57 accepts both).
-- **`bug_type: 309 exec_terminated_before_ready` `.ips` writes during clearAppData (§A1).** Diagnosis: `XCUIApplication.launch()` returns after launch is dispatched, not when the app has signalled launchd ready. Caller's next step (or a batch retry firing another clearAppData) hits terminate mid-launch → XCUIApplication times out cooperative-terminate → falls back to hard kill → launchd catches `exec_terminated_before_ready` → `.ips`. Fix: `launchApp` endpoint accepts `waitForForegroundMs: Option<u64>`. When set, the runner polls `XCUIApplication.state` every 250 ms until `.runningForeground` or the deadline. `App::clear_app_data` defaults to 15 s. Response body carries `waitedMs` + `terminalState` (0 unknown / 1 notRunning / 2 runningBackgroundSuspended / 3 runningBackground / 4 runningForeground) so `/diagnostic/dump` can surface `launchAppReachedForeground` vs `launchAppTimedOutBeforeForeground` counters.
+- **`aliveCache: null` in `/diagnostic/dump`.** Root cause: `SessionHandlers.diagnostic` closure read `SmixRunnerServer.currentAppAliveCache` (task-local); FlyingFox's per-request task spawn wasn't propagating the `withValue` scope around `server.run()`. Fix: `test_runForever()` now extracts `AppAliveCache` to a named local `localAppAliveCache` and the diagnostic handler closure captures the reference directly (not via task-local). The dump payload always emits `aliveCache` with a `wired: bool` sentinel + all-zero counters when unwired, so consumers can distinguish "runner has no cache" from "cache present, workload didn't fire".
+- **Expo SDK 57 dev-launcher server picker blocking business flow.** `clearAppData` wipes the dev-client's persisted metro URL, next launch shows the picker, SDK 57 URL scheme no longer auto-navigates. Fix: `launchApp` HTTP endpoint (and yaml `clearAppData` step) accept optional `launchArgs: []` and `launchEnv: {}` fields; forwarded to `XCUIApplication.launchArguments` / `.launchEnvironment` before launch. Consumers steer the picker via `-EXInternalMetroPort` launchArg or `EX_DEV_CLIENT_METRO_URL` launchEnv (fixture57 accepts both).
+- **`bug_type: 309 exec_terminated_before_ready` `.ips` writes during clearAppData.** Diagnosis: `XCUIApplication.launch()` returns after launch is dispatched, not when the app has signalled launchd ready. Caller's next step (or a batch retry firing another clearAppData) hits terminate mid-launch → XCUIApplication times out cooperative-terminate → falls back to hard kill → launchd catches `exec_terminated_before_ready` → `.ips`. Fix: `launchApp` endpoint accepts `waitForForegroundMs: Option<u64>`. When set, the runner polls `XCUIApplication.state` every 250 ms until `.runningForeground` or the deadline. `App::clear_app_data` defaults to 15 s. Response body carries `waitedMs` + `terminalState` (0 unknown / 1 notRunning / 2 runningBackgroundSuspended / 3 runningBackground / 4 runningForeground) so `/diagnostic/dump` can surface `launchAppReachedForeground` vs `launchAppTimedOutBeforeForeground` counters.
 
 ### CLI (Rust)
 
@@ -725,10 +738,10 @@ Insight-side canary (post-publish, per Q9): ship on Preferences smoke as histori
 
 ### Runner-side (Swift)
 
-- **§D1** — `SessionRoute.AliveCacheCounters.wired: Bool` sentinel; `SessionRoute.DiagnosticSnapshot.aliveCache` is non-Optional and always emitted; `SessionLifecycleCounters` embedded alongside.
-- **§D2** — `SessionRoute.AppLifecycleRequest` decoder accepts `args`, `env`, `waitForForegroundMs`; falls back to pre-v1.0.11 shape (bare `sessionId`) so older clients still work.
-- **§D3** — `launchApp` handler applies `entry.app.launchArguments = req.args` + `.launchEnvironment = req.env` before `.launch()`, then polls `.state` for `.runningForeground` up to `req.waitForForegroundMs` (250 ms cadence). Reports `waitedMs`, `terminalState`, `terminatedCooperatively` (always false on launch) in outcome.
-- **§D5** — `terminateApp` handler observes `app.state == .notRunning` after `.terminate()` returns; sets `terminatedCooperatively` accordingly. `terminateAppViaXCUIApplication` counter advances when cooperative; `terminateAppViaFallback` advances when XCUIApplication timed out and fell back. `> 0 fallback` is the smoking-gun for insight's `.ips` diagnosis.
+- `SessionRoute.AliveCacheCounters.wired: Bool` sentinel; `SessionRoute.DiagnosticSnapshot.aliveCache` is non-Optional and always emitted; `SessionLifecycleCounters` embedded alongside.
+- `SessionRoute.AppLifecycleRequest` decoder accepts `args`, `env`, `waitForForegroundMs`; falls back to pre-v1.0.11 shape (bare `sessionId`) so older clients still work.
+- `launchApp` handler applies `entry.app.launchArguments = req.args` + `.launchEnvironment = req.env` before `.launch()`, then polls `.state` for `.runningForeground` up to `req.waitForForegroundMs` (250 ms cadence). Reports `waitedMs`, `terminalState`, `terminatedCooperatively` (always false on launch) in outcome.
+- `terminateApp` handler observes `app.state == .notRunning` after `.terminate()` returns; sets `terminatedCooperatively` accordingly. `terminateAppViaXCUIApplication` counter advances when cooperative; `terminateAppViaFallback` advances when XCUIApplication timed out and fell back. `> 0 fallback` is the smoking-gun for the `.ips` diagnosis.
 - Cumulative `LifecycleCounters` local (class + NSLock, no actor overhead for the sync mutations) advanced on every `open`, `close`, `relaunchApp`, `terminateApp`, `launchApp`; snapshotted into every diagnostic response.
 
 ### Wire compatibility
@@ -739,12 +752,11 @@ Insight-side canary (post-publish, per Q9): ship on Preferences smoke as histori
 
 ### Documentation
 
-- `.claude/rfcs/appalive-cache-invariant.md` — standing note explaining what `AppAliveCache` protects, what `unknown` descendants mean, and how to distinguish "app dead + retry-spam broken by cache" from "app alive but a11y sparse" (the case that hit insight on Expo SDK 57 dev-launcher).
-- `.scratch/v1.4-rn-spike/rn-fixture57/` — scaffold for local Expo SDK 57 fixture with `probe.yaml` exercising the `clearAppData: { launchArgs, launchEnv }` path. Full sim install + xcodebuild deferred to a follow-up cycle when the docker testbed image (insight offer, §C.4) lands.
+- A standing note explaining what `AppAliveCache` protects, what `unknown` descendants mean, and how to distinguish "app dead + retry-spam broken by cache" from "app alive but a11y sparse" (the case observed on Expo SDK 57 dev-launcher).
 
 ### Ship gate
 
-D8 real-sim observations on `sim-insight` (iOS 26.5) at v1.0.11:
+Real-sim observations (iOS 26.5) at v1.0.11:
 
 ```
 POST /session/launch-app  {sessionId, args: ["-AppleLanguages","(en)"], env: {SMIX_TEST_ENV:"hello"}, waitForForegroundMs: 15000}
@@ -758,18 +770,18 @@ POST /diagnostic/dump
 → sessionCounters: {openedTotal: 1, terminateAppTotal: 1, terminateAppViaXCUIApplication: 1, terminateAppViaFallback: 0, launchAppTotal: 1, launchAppReachedForeground: 1, launchAppTimedOutBeforeForeground: 0, ...}
 ```
 
-`terminatedCooperatively: true` + `terminateAppViaFallback: 0` — the cooperative pathway went through cleanly on Preferences. Insight's real-app validation (Expo 57 dev-launcher bypass) is on their end after they upgrade CLI + regenerate their runner sources via the v1.0.10 auto-sync path.
+`terminatedCooperatively: true` + `terminateAppViaFallback: 0` — the cooperative pathway went through cleanly on Preferences. Consumer real-app validation (Expo 57 dev-launcher bypass) happens downstream after upgrading the CLI + regenerating runner sources via the v1.0.10 auto-sync path.
 
-667 workspace cargo tests + 6 Swift SmixRunnerCore tests + 3 new clearAppData parser tests green. Corpus gate infrastructure landed v1.0.10; docker testbed image acceptance still pending insight's PR (offered §C.4 in the v1.0.10 followup).
+667 workspace cargo tests + 6 Swift SmixRunnerCore tests + 3 new clearAppData parser tests green. Corpus gate infrastructure landed in v1.0.10.
 
 
 ## [1.0.10] — 2026-07-11
 
-**Systemic fix for the CLI-vs-runner distribution drift that made v1.0.4–v1.0.9 patches silently no-op on stale on-disk runner sources.** RFC `.claude/rfcs/1.0.10-runner-source-sync-and-observability.md`.
+**Systemic fix for the CLI-vs-runner distribution drift that made v1.0.4–v1.0.9 patches silently no-op on stale on-disk runner sources.**
 
-### Root cause (Phase A — confirmed with hard evidence)
+### Root cause (confirmed with hard evidence)
 
-`cargo install smix` used to ship only the Rust binary; the Swift `SmixRunner.xcodeproj` + `Sources/SmixRunnerCore/` + `SmixRunnerUITests/` sources were obtained separately at consumer install time, never version-synced afterward. Insight's on-disk `~/.local/share/smix/runner/SmixRunnerUITests/SmixRunnerUITests.swift` was 2212 lines with zero references to `sessionHandlers` / `/session/open` / `SessionHandlers` while the current repo file was 2669 lines (v1.0.9) with them present. That's why 6 consecutive CLI patches (v1.0.4–v1.0.9) shipped session lifecycle + observability + crash-dialog fixes but insight's runner stayed frozen at a pre-v1.0.3 revision — `/session/open` 404 100% of the time, `clearAppData` unusable, a11y-cache re-probe log line never emitted.
+`cargo install smix` used to ship only the Rust binary; the Swift `SmixRunner.xcodeproj` + `Sources/SmixRunnerCore/` + `SmixRunnerUITests/` sources were obtained separately at consumer install time, never version-synced afterward. A consumer's on-disk `~/.local/share/smix/runner/SmixRunnerUITests/SmixRunnerUITests.swift` was 2212 lines with zero references to `sessionHandlers` / `/session/open` / `SessionHandlers` while the current repo file was 2669 lines (v1.0.9) with them present. That's why 6 consecutive CLI patches (v1.0.4–v1.0.9) shipped session lifecycle + observability + crash-dialog fixes but that consumer's runner stayed frozen at a pre-v1.0.3 revision — `/session/open` 404 100% of the time, `clearAppData` unusable, a11y-cache re-probe log line never emitted.
 
 Secondary root cause: `GET /health` route always called `HealthRoute.response()` (legacy `{"ok":true}` since v0.x). The `runnerVersion` field CHANGELOG v1.0.2 claimed was never emitted, so version drift has been invisible client-side across every prior release.
 
@@ -782,18 +794,18 @@ Secondary root cause: `GET /health` route always called `HealthRoute.response()`
 
 ### CLI (Rust)
 
-- **§D2 Runner project auto-sync.** `resolve_runner_project` (called by every `smix runner up`) now reads `~/.local/share/smix/runner/.smix-runner-version` before dispatching xcodebuild. On drift OR missing, the embedded tarball extracts in place, backing up any prior tree to `~/.local/share/smix/runner.bak-<ts>/`. Zero user migration on upgrade. First-run consumers get sources populated transparently.
-- **§D2 `smix runner install [--force] [--path <dir>]` verb.** Explicit sync for troubleshooting, first-time-setup, or `--force` re-extract when the tree has been hand-edited. Idempotent when already current.
-- **§D3 CLI forwards `TEST_RUNNER_SMIX_RUNNER_VERSION=<CARGO_PKG_VERSION>` env.** Xcode strips the `TEST_RUNNER_` prefix; runner reads `SMIX_RUNNER_VERSION` via `ProcessInfo`.
-- **§D4 Client-side version-mismatch gate at `runner up`.** After `/health` returns 200, parses `runnerVersion` field; refuses boot with actionable message ("run `smix runner install --force`") on mismatch. Legacy-body runners (pre-v1.0.10) get a warning but no refusal so existing consumers aren't broken by the upgrade.
-- **§D6 Subprocess-ring persistence.** `smix-simctl::set_subprocess_ring_persist_path` (called at CLI startup with `~/.local/share/smix/subprocess-ring.json`) writes-through every simctl invocation record atomically. Insight's v1.0.7 `diagnostic dump` empty payload after supervisor cycles is closed — the file survives cycles; post-mortem tools read the file, not in-memory state.
+- **Runner project auto-sync.** `resolve_runner_project` (called by every `smix runner up`) now reads `~/.local/share/smix/runner/.smix-runner-version` before dispatching xcodebuild. On drift OR missing, the embedded tarball extracts in place, backing up any prior tree to `~/.local/share/smix/runner.bak-<ts>/`. Zero user migration on upgrade. First-run consumers get sources populated transparently.
+- **`smix runner install [--force] [--path <dir>]` verb.** Explicit sync for troubleshooting, first-time-setup, or `--force` re-extract when the tree has been hand-edited. Idempotent when already current.
+- **CLI forwards `TEST_RUNNER_SMIX_RUNNER_VERSION=<CARGO_PKG_VERSION>` env.** Xcode strips the `TEST_RUNNER_` prefix; runner reads `SMIX_RUNNER_VERSION` via `ProcessInfo`.
+- **Client-side version-mismatch gate at `runner up`.** After `/health` returns 200, parses `runnerVersion` field; refuses boot with actionable message ("run `smix runner install --force`") on mismatch. Legacy-body runners (pre-v1.0.10) get a warning but no refusal so existing consumers aren't broken by the upgrade.
+- **Subprocess-ring persistence.** `smix-simctl::set_subprocess_ring_persist_path` (called at CLI startup with `~/.local/share/smix/subprocess-ring.json`) writes-through every simctl invocation record atomically. The v1.0.7 empty-`diagnostic dump`-payload-after-supervisor-cycles gap is closed — the file survives cycles; post-mortem tools read the file, not in-memory state.
 
 ### Runner-side (Swift)
 
-- **§D3 `/health` route wires `HealthRoute.responseDetail`.** Returns `{ok, runnerVersion, uptimeMs, lastRequestAtMs, sessionsOpen, activationsTotal}`. `runnerVersion` sourced from `SMIX_RUNNER_VERSION` env (fallback `"unknown"`).
-- **§D5 `AppAliveCache` observability counters.** `markDeadTotal`, `markAliveTotal`, `suppressHitTotal`, `suppressMissTotal`, `reprobeAttemptedTotal`, `reprobeSucceededTotal`, `reprobeInvalidatedEarly`, `reprobeExhaustedWindow`. Every mutation on the actor advances the paired counter.
-- **§D5 Re-probe path wired to counters.** The v1.0.9 §D4 background Task now calls `noteReprobeAttempted` at spawn, `noteReprobeSucceeded` on invalidate-alive, `noteReprobeInvalidatedEarly` when external `markAlive` beat the probe, `noteReprobeExhaustedWindow` on the 6-iteration exhaustion path. Insight's grep-for-log-line problem is now a numeric check on `/diagnostic/dump` counter deltas.
-- **§D5 `/diagnostic/dump` extended.** `DiagnosticSnapshot.aliveCache: AliveCacheCounters?` — `nil` when the runner opted out; JSON body omits the field to preserve wire compatibility.
+- **`/health` route wires `HealthRoute.responseDetail`.** Returns `{ok, runnerVersion, uptimeMs, lastRequestAtMs, sessionsOpen, activationsTotal}`. `runnerVersion` sourced from `SMIX_RUNNER_VERSION` env (fallback `"unknown"`).
+- **`AppAliveCache` observability counters.** `markDeadTotal`, `markAliveTotal`, `suppressHitTotal`, `suppressMissTotal`, `reprobeAttemptedTotal`, `reprobeSucceededTotal`, `reprobeInvalidatedEarly`, `reprobeExhaustedWindow`. Every mutation on the actor advances the paired counter.
+- **Re-probe path wired to counters.** The v1.0.9 background Task now calls `noteReprobeAttempted` at spawn, `noteReprobeSucceeded` on invalidate-alive, `noteReprobeInvalidatedEarly` when external `markAlive` beat the probe, `noteReprobeExhaustedWindow` on the 6-iteration exhaustion path. The grep-for-log-line problem is now a numeric check on `/diagnostic/dump` counter deltas.
+- **`/diagnostic/dump` extended.** `DiagnosticSnapshot.aliveCache: AliveCacheCounters?` — `nil` when the runner opted out; JSON body omits the field to preserve wire compatibility.
 
 ### Wire
 
@@ -802,7 +814,7 @@ Secondary root cause: `GET /health` route always called `HealthRoute.response()`
 
 ### Infrastructure
 
-- **§D7 `scripts/release/corpus-gate.sh`.** Runs every yaml under `SMIX_CORPUS_DIR` (defaults to `crates/smix-cli/tests/fixtures/insight-bootstrap-corpus/` — accepting insight's promised PR at that path). Fails the release on any yaml failure. Dumps `smix diagnostic dump --json` on teardown into `.tmp/release-gate/<ts>/`.
+- **`scripts/release/corpus-gate.sh`.** Runs every yaml under `SMIX_CORPUS_DIR` (defaults to a bootstrap-corpus fixture directory under `crates/smix-cli/tests/fixtures/`). Fails the release on any yaml failure. Dumps `smix diagnostic dump --json` on teardown into `.tmp/release-gate/<ts>/`.
 
 ### Tests
 
@@ -811,7 +823,7 @@ Secondary root cause: `GET /health` route always called `HealthRoute.response()`
 - `smix-simctl::subprocess_ring`: 1 persist round-trip test simulating supervisor cycle.
 - Swift `AppAliveCacheCountersTests`: 6 tests covering mutation counters + diagnostic JSON serialisation + null-cache omission.
 
-### Ship-gate observations (D8 real-sim, `sim-insight` on iOS 26.5 booted at UDID `FFC57DAE-…`)
+### Ship-gate observations (real-sim, iOS 26.5)
 
 Observations satisfying the RFC's real-sim gate:
 
@@ -820,21 +832,21 @@ Observations satisfying the RFC's real-sim gate:
 3. `POST /session/open` (bundleId `com.apple.Preferences`, activate=false) — HTTP 200 + `{"sessionId":"6F7C4A73-…","activatedOnce":false,"serverTimeMs":1783746973931}`. **The chronic 404 that spanned v1.0.4-v1.0.9 is permanently closed.**
 4. `POST /diagnostic/dump` — `aliveCache:{"markDeadTotal":0,"markAliveTotal":1,…}` — counters wire end-to-end (markAliveTotal:1 came from the /session/open handler's `cache.markAlive` per D2 §"successful open re-establishes the target").
 
-Insight's app was not installed on the validation sim (unrelated to smix), so the corpus gate against `.devtools/qa/sim/subflows/` remains for a follow-up validation with the insight app installed. The systemic fix itself — the CLI-vs-runner drift closure — was observed working on real sim before publish.
+The consumer app was not installed on the validation sim (unrelated to smix), so the corpus gate remains for a follow-up validation with a real consumer app installed. The systemic fix itself — the CLI-vs-runner drift closure — was observed working on real sim before publish.
 
 
 ## [1.0.9] — 2026-07-11
 
-App-alive cache adaptive re-probe + supervisor RunnerCycled log context. Closes the two named v1.0.8 deferrals. RFC `.claude/rfcs/1.0.8-crash-dialog-elimination-and-a11y-cache.md` §D4 + §D5.
+App-alive cache adaptive re-probe + supervisor RunnerCycled log context. Closes the two named v1.0.8 deferrals.
 
 ### Runner-side (Swift)
 
-- **App-alive cache adaptive re-probe (§D4).** When an XCTIssue "Application X is not running" is observed, the cache still marks the bundle dead for 20 s. Now the runner spawns a background `Task` that polls `XCUIApplication.state` every 3 s during the window; on the first observation of a non-`.notRunning` state, calls `markAlive` immediately + emits `smix-runner: app-alive cache re-probe hit <bundle> state=<n>; early invalidate` on stderr. Fixes insight's `pinning-failure.yaml` failure mode where slow-bootstrap apps sat blocked for the full 20 s while they were actually alive again.
+- **App-alive cache adaptive re-probe.** When an XCTIssue "Application X is not running" is observed, the cache still marks the bundle dead for 20 s. Now the runner spawns a background `Task` that polls `XCUIApplication.state` every 3 s during the window; on the first observation of a non-`.notRunning` state, calls `markAlive` immediately + emits `smix-runner: app-alive cache re-probe hit <bundle> state=<n>; early invalidate` on stderr. Fixes a reported failure mode where slow-bootstrap apps sat blocked for the full 20 s while they were actually alive again.
 - Bounded to 6 iterations (18 s) — matches the cache window minus one probe interval for slack. If the app is still `.notRunning` after 6 probes the cache expires naturally.
 
 ### CLI (Rust)
 
-- **Supervisor `RunnerCycled` event with log context (§D5).** The JSON emitted on every cycle now carries a `context` field with ±5 lines around the matched trigger:
+- **Supervisor `RunnerCycled` event with log context.** The JSON emitted on every cycle now carries a `context` field with ±5 lines around the matched trigger:
   ```json
   {"event":"RunnerCycled","reasonMatched":"** TEST INTERRUPTED **","context":["2026-07-11 …", "…"],"atMs":1720689124321}
   ```
@@ -849,15 +861,15 @@ App-alive cache adaptive re-probe + supervisor RunnerCycled log context. Closes 
 
 ### Deferred (still)
 
-- **`launchApp: clearState: true` deprecation + auto-expand** — waiting on insight to migrate `.devtools/qa/sim/subflows/` to `clearAppData`. Once they confirm the batch PR merged, v1.0.10 will emit the WARN + auto-expand.
+- **`launchApp: clearState: true` deprecation + auto-expand** — waiting on downstream corpora to migrate to `clearAppData` first. Once migration is confirmed, v1.0.10 will emit the WARN + auto-expand.
 
 
 
-Eliminate the "app quit unexpectedly" ReportCrash system dialog that fired during in-place data clears. RFC `.claude/rfcs/1.0.8-crash-dialog-elimination-and-a11y-cache.md`.
+Eliminate the "app quit unexpectedly" ReportCrash system dialog that fired during in-place data clears.
 
 ### Root cause revisited
 
-v1.0.4 §D12 replaced `simctl uninstall + install` with an in-place clear (`Terminate + PrivacyResetAll + SandboxClearInPlace + Launch`). Insight reported the dialog STILL fired. Diagnosis: even without the uninstall, `simctl terminate` sends SIGKILL to the target, which `com.apple.ReportCrash` on iOS 26.5 sim treats as a crash. The whole `simctl` termination pathway is what triggers the dialog — not just the uninstall.
+v1.0.4 replaced `simctl uninstall + install` with an in-place clear (`Terminate + PrivacyResetAll + SandboxClearInPlace + Launch`). Dogfooding reported the dialog STILL fired. Diagnosis: even without the uninstall, `simctl terminate` sends SIGKILL to the target, which `com.apple.ReportCrash` on iOS 26.5 sim treats as a crash. The whole `simctl` termination pathway is what triggers the dialog — not just the uninstall.
 
 The systemic answer: move termination + launch INSIDE the XCUITest runner process via `XCUIApplication.terminate()` / `.launch()` (cooperative via `testmanagerd`; does NOT signal ReportCrash). The sandbox wipe stays on the host via `SimctlClient::clear_app_sandbox` but ONLY after the cooperative terminate, so ReportCrash was never signalled.
 
@@ -881,9 +893,9 @@ The systemic answer: move termination + launch INSIDE the XCUITest runner proces
 
 ### Deferred to v1.0.9
 
-- **Adaptive app-alive cache re-probe** (originally D4 of this RFC; parked because the crash-dialog fix is enough to unblock insight's gate and the a11y-cache work has its own testing surface).
-- **Supervisor `RunnerCycled` reason with log context** (D5).
-- **Deprecation of `launchApp: clearState: true`** — emit WARN + auto-expand to `clearAppData + launchApp: {}`. Deferred because the deprecation needs a full-corpus consumer migration and we want insight to migrate their subflows first on their own timeline.
+- **Adaptive app-alive cache re-probe** (parked because the crash-dialog fix is enough to unblock downstream gates and the a11y-cache work has its own testing surface).
+- **Supervisor `RunnerCycled` reason with log context.**
+- **Deprecation of `launchApp: clearState: true`** — emit WARN + auto-expand to `clearAppData + launchApp: {}`. Deferred because the deprecation needs a full-corpus consumer migration, and consumers should migrate their subflows first on their own timeline.
 
 ### Wire + ABI compatibility
 
@@ -892,32 +904,32 @@ The systemic answer: move termination + launch INSIDE the XCUITest runner proces
 
 
 
-Systemic observability + subprocess integrity. RFC `.claude/rfcs/1.0.7-observability-layer.md`. Three reported symptoms shared one root cause: smix was opaque about its own runtime.
+Systemic observability + subprocess integrity. Three reported symptoms shared one root cause: smix was opaque about its own runtime.
 
-### Subprocess integrity (RFC §D1 + D2)
+### Subprocess integrity
 
-- **`SimctlClient::clear_app_sandbox` uses `/bin/rm`** (not `"rm"`). `xcrun simctl spawn <UDID> <cmd>` uses `posix_spawn` inside the sim; PATH resolution is NOT run, so a bare command name fails `NSPOSIXErrorDomain code 2: No such file or directory` on iOS 17+ sims. This is the direct root cause of insight's v1.0.5 §B ENOENT failure on `launchApp: clearState: true` mid-flow. `current_locale` + `set_locale` similarly use `/usr/bin/defaults`.
+- **`SimctlClient::clear_app_sandbox` uses `/bin/rm`** (not `"rm"`). `xcrun simctl spawn <UDID> <cmd>` uses `posix_spawn` inside the sim; PATH resolution is NOT run, so a bare command name fails `NSPOSIXErrorDomain code 2: No such file or directory` on iOS 17+ sims. This was the direct root cause of a reported ENOENT failure on `launchApp: clearState: true` mid-flow. `current_locale` + `set_locale` similarly use `/usr/bin/defaults`.
 - **`SimctlError::NonZeroExit` extended with `argv: Vec<String>` + `wall_ms: u64`**. Display impl now surfaces every arg simctl was asked to run — `xcrun simctl spawn <UDID> /bin/rm -rf /Users/.../Documents ... exited 2 (312ms): ...` — instead of just the subcommand name. Consumers reading the error know exactly what smix asked simctl to do.
 - `SimctlError` marked `#[non_exhaustive]`; `SimctlError::non_zero_exit(sub, code, stderr)` helper for callers translating foreign errors.
 
-### Observability surface (RFC §D3 + D4 + D5)
+### Observability surface
 
 - **Ring buffer of recent `simctl` invocations** (capped 128; oldest evicted). Public accessor `smix_simctl::recent_subprocesses() -> Vec<SubprocessRecord>` — `argv`, `exit_code`, `wall_ms`, `stderr_head` (first 256 bytes), `timestamp`.
 - **`POST /diagnostic/dump`** runner-side route — snapshot of `{ sessions, simHealth, supervisorPid, uptimeMs, recentSubprocesses }`.
 - **`smix diagnostic dump [--json]`** CLI verb — calls `/diagnostic/dump` on the runner, merges with the client-side ring, pretty-prints a runtime post-mortem view. `--json` for CI consumption. Legacy runners (v1.0.6-) return 404; CLI degrades gracefully to client-side ring only.
 - `HttpRunnerClient::diagnostic_dump()` Rust client method.
 
-### Streaming discipline (RFC §D6)
+### Streaming discipline
 
-- **`smix runner supervise` flushes stdout after every `RunnerCycled` JSON event**. Fixes insight §D.3 — supervisor events reach the consumer's parser even when the outer flow crashes fast right after a cycle.
+- **`smix runner supervise` flushes stdout after every `RunnerCycled` JSON event**. Supervisor events now reach the consumer's parser even when the outer flow crashes fast right after a cycle.
 
-### Cold-rebuild progress banner (RFC §D7)
+### Cold-rebuild progress banner
 
-- **`smix runner up` prints an explicit cold vs warm banner**. Detects warm by checking `.smix/runner/derived-data-<UDID>/` presence + populated. Cold path prints `COLD REBUILD expected up to 10 minutes` and emits a `xcodebuild still working (Ns elapsed)` heartbeat every 30 s. Warm path prints `warm rebuild ~3 s expected`. Fixes insight §A (their `spawnSync` timeout=300s tripped during cold recompile after version bump; they bumped to 600 s but had no visible progress signal).
+- **`smix runner up` prints an explicit cold vs warm banner**. Detects warm by checking `.smix/runner/derived-data-<UDID>/` presence + populated. Cold path prints `COLD REBUILD expected up to 10 minutes` and emits a `xcodebuild still working (Ns elapsed)` heartbeat every 30 s. Warm path prints `warm rebuild ~3 s expected`. Fixes the reported case where a consumer harness's `spawnSync` timeout (300 s) tripped during cold recompile after a version bump with no visible progress signal.
 
 ### Related regression fix
 
-- `smix-sdk/tests/launch_fresh_plan.rs` was pre-v1.0.4; asserted `Uninstall+Install` on the default clear_state path. v1.0.4 §D12 flipped the default to in-place (`Terminate + PrivacyResetAll + SandboxClearInPlace + Launch`); tests updated to match shipping behaviour. Force-reinstall path exercised via `plan_launch_fresh_calls_v2(true)`.
+- `smix-sdk/tests/launch_fresh_plan.rs` was pre-v1.0.4; asserted `Uninstall+Install` on the default clear_state path. v1.0.4 flipped the default to in-place (`Terminate + PrivacyResetAll + SandboxClearInPlace + Launch`); tests updated to match shipping behaviour. Force-reinstall path exercised via `plan_launch_fresh_calls_v2(true)`.
 
 ### Wire + ABI compatibility
 
@@ -926,7 +938,7 @@ Systemic observability + subprocess integrity. RFC `.claude/rfcs/1.0.7-observabi
 
 
 
-Sidecar supervise + symmetric down-cascade + rust 1.97 baseline. Follow-up to v1.0.5 folding the supervisor's spawn-and-teardown into the runner lifecycle so consumers who want automatic `TEST INTERRUPTED` recovery just add `--supervise` to their existing `smix runner up`. RFC `.claude/rfcs/1.0.6-supervise-sidecar-and-runner-down-cascade.md`.
+Sidecar supervise + symmetric down-cascade + rust 1.97 baseline. Follow-up to v1.0.5 folding the supervisor's spawn-and-teardown into the runner lifecycle so consumers who want automatic `TEST INTERRUPTED` recovery just add `--supervise` to their existing `smix runner up`.
 
 ### CLI (Rust)
 
@@ -948,7 +960,7 @@ Sidecar supervise + symmetric down-cascade + rust 1.97 baseline. Follow-up to v1
 
 ### Deferred (v1.0.7+)
 
-- **Opportunistic 1.97 idiom cleanups.** RFC §D3 flagged a handful of nested `if let` sites that collapse under 1.97's chain stabilizations. Not a functional change; queued as a hygiene sweep for a slow release cycle.
+- **Opportunistic 1.97 idiom cleanups.** A handful of nested `if let` sites collapse under 1.97's chain stabilizations. Not a functional change; queued as a hygiene sweep for a slow release cycle.
 
 ### Wire + ABI compatibility
 
@@ -958,23 +970,23 @@ Sidecar supervise + symmetric down-cascade + rust 1.97 baseline. Follow-up to v1
 
 
 
-Session persistence across XCTest lifecycle, host-side XCTest supervisor daemon, runner idle-close sweep, and the release smoke gate script. RFC `.claude/rfcs/1.0.5-supervisor-and-persistence.md`. Closes the three v1.0.4 deferrals + the "shipped on build-green only" gap.
+Session persistence across XCTest lifecycle, host-side XCTest supervisor daemon, runner idle-close sweep, and the release smoke gate script. Closes the three v1.0.4 deferrals + the "shipped on build-green only" gap.
 
-### Added — session persistence (RFC §D1)
+### Added — session persistence
 
 - **`POST /session/list`** → `{sessions: [{sessionId, bundleId, openedAtMs, lastActivatedAtMs}]}`. Rust: `HttpRunnerClient::list_sessions()`. CLI: `smix runner list-sessions` (pretty-printed table).
 - **`Session::still_valid()` on all 4 SDKs** — probes `/session/list` and returns `true` iff the runner still knows this session id. Consumers wire it after a `Session::state` transition to `Cycling` or `Dead` to decide whether to keep using the session (§D1 preserves them across cycles) or reopen.
 - **Runner-side persistence** — session table serializes to `~/Documents/smix-sessions.json` inside the sim on every mutation via `Data.write(.atomic)` (atomic-rename write). Boot rehydrates whatever's there, rebuilding each `XCUIApplication(bundleIdentifier:)` fresh (no `.activate()` call — the client's next request drives that). `smix runner cycle` preserves the file, so consumer `Session-Id` survives the cycle transparently.
 
-### Added — supervisor daemon (RFC §D2)
+### Added — supervisor daemon
 
-- **`smix runner supervise [--runner-project <path>]`** — foreground process that tails `.smix/runner/runner-<UDID>.log`, matches interrupt patterns (`** TEST INTERRUPTED **`, `SchemeActionResultOperation started unexpectedly`), and auto-invokes `runner::cycle()` on hit. Backoff: 60 s per-cycle cooldown. Circuit breaker: 5 cycles in 10 minutes → exit non-zero so a monitoring layer can escalate. Emits `{"event":"RunnerCycled","reasonMatched":"...","atMs":N}` JSON on stdout per cycle. Fulfills feedback §E ask 1.
+- **`smix runner supervise [--runner-project <path>]`** — foreground process that tails `.smix/runner/runner-<UDID>.log`, matches interrupt patterns (`** TEST INTERRUPTED **`, `SchemeActionResultOperation started unexpectedly`), and auto-invokes `runner::cycle()` on hit. Backoff: 60 s per-cycle cooldown. Circuit breaker: 5 cycles in 10 minutes → exit non-zero so a monitoring layer can escalate. Emits `{"event":"RunnerCycled","reasonMatched":"...","atMs":N}` JSON on stdout per cycle.
 
-### Added — idle-close sweep (RFC §D3)
+### Added — idle-close sweep
 
 - **Runner-side session idle-close** — `SessionEntry` gains `lastAccessedAt`; `resolveApp()` refreshes it on every `Session-Id` hit. Detached `Task.detached` in `test_runForever` reaps sessions whose `lastAccessedAt` is older than 60 s every 15 s. Half-orphaned client sessions (SIGKILL wipes client without close) vanish within 60-75 s instead of accumulating until runner restart. Emits a stderr line on non-zero reap for operator visibility.
 
-### Added — release smoke gate + ship script (RFC §D4)
+### Added — release smoke gate + ship script
 
 - **`scripts/release/smoke-v1.smoke.sh` + `.smoke.yaml`** — real-sim gate exercising every net-new v1.0.4/v1.0.5 code path: pacer floor (`takeScreenshot × 10`), `--debug-output` `fail.tree.json` emit on a deliberate `assertVisible` fail, `runner cycle` + `/session/list` persistence, supervisor 5 s alive check. Requires jq + a booted sim.
 - **`scripts/release/ship.sh <version> [--i-know-what-im-doing]`** — DAG-ordered 4-ecosystem publisher, refuses to run unless the smoke gate has passed in the last hour. Bypass flag is an audit-visible knob, not a silent default.
@@ -987,54 +999,54 @@ Session persistence across XCTest lifecycle, host-side XCTest supervisor daemon,
 
 
 
-Studio protection + gate-hardening. Motivation: a downstream gate loop running against a v1.0.3 runner triggered a `SimRenderServer` `brk 1` assertion inside the `com.apple.display.captureservice` dispatch queue, cascading into shutdown_stall and forced macOS restarts. This release closes the full gate-hardening ask (§A–§I) plus the SimRenderServer stress fix, plus lifecycle-safe-exit primitives.
+Studio protection + gate-hardening. Motivation: a downstream gate loop running against a v1.0.3 runner triggered a `SimRenderServer` `brk 1` assertion inside the `com.apple.display.captureservice` dispatch queue, cascading into shutdown_stall and forced macOS restarts. This release closes the full gate-hardening feedback plus the SimRenderServer stress fix, plus lifecycle-safe-exit primitives.
 
-### Added — sense layer (RFC 1.0.4 §D1)
+### Added — sense layer
 
 - **`smix-sim-health` — new stone crate.** Watches SimRenderServer + xcodebuild pids + `/health` age + rolling screenshot wall times. State machine `Healthy | Degraded | Dead`; transitions broadcast on a `tokio::sync::broadcast` channel. Business-unaware; SDK-facing state is exposed via `Session::state` (below), driver-side auto-cycle policies live per driver.
 - **`HttpRunnerClient::with_sim_health(monitor)`** — `/health` outcomes feed `SimHealthMonitor::record_health_ok`/`record_health_fail`. `HttpRunnerClient::sim_health()` accessor.
 
-### Added — act layer (RFC 1.0.4 §D3)
+### Added — act layer
 
 - **`smix-simctl` screenshot pacer.** Adaptive interval floor: 100 ms in the fast path (recent wall < 800 ms), 1500 ms in the slow path (recent wall ≥ 800 ms). Circuit breaker: any recent wall ≥ 1500 ms or any failure trips a 3 s hold that surfaces the new typed error `SimctlError::CaptureBackpressure { retry_after }`. Consumers whose gates already screenshot at ≥ 200 ms cadence are unaffected; tight loops slow to the pacer floor. This is the direct fix for the `SimRenderServer` `brk 1` triggering pattern on iOS 26.5.2 (25F84).
 - **`SimctlClient::with_screenshot_pacer(cfg)`** builder + **`SimctlClient::with_sim_health(monitor)`** builder — wire the pacer's observations back to the sim-health monitor for global state classification.
 
-### Added — CLI (feedback §A / §B / §E ask 3 / D8, D9, D5)
+### Added — CLI
 
-- **`smix runner cycle`** — new verb. Reads the current runner state, tears down (SIGINT + wait, preserves per-udid `derived-data-<udid>/`), brings up on the same device + port + bundle. Warm re-up in ~3 s vs cold ~15 s. Errors if no `state.json` exists (`runner up` for a cold start). Fulfills feedback §E ask 3.
-- **`smix runner up` bundle validation** — refuses to boot without `--bundle`, prints a clear error + example. `SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1` bypasses the guard (opts back into the legacy Preferences default with an explicit warning). With `--bundle` set, logs `[runner] target bundle-id: <id>` at boot. Fulfills feedback §A preference (3).
-- **`smix run --gate-signal <regex>` + `--gate-signal-timeout <ms>`** — prepends an implicit `expect.signal { regex, timeoutMs }` step at the START of the flow (index 0), blocking until the regex is observed in the metro log tail. Requires `--metro-log-url` also set. Symmetric to the existing `--await-signal` end-of-flow gate. Default timeout 60 s; zero disables. Replaces insight's `wait-metro-signal.ts` node-side helper. Fulfills feedback §B preference (1).
+- **`smix runner cycle`** — new verb. Reads the current runner state, tears down (SIGINT + wait, preserves per-udid `derived-data-<udid>/`), brings up on the same device + port + bundle. Warm re-up in ~3 s vs cold ~15 s. Errors if no `state.json` exists (`runner up` for a cold start).
+- **`smix runner up` bundle validation** — refuses to boot without `--bundle`, prints a clear error + example. `SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1` bypasses the guard (opts back into the legacy Preferences default with an explicit warning). With `--bundle` set, logs `[runner] target bundle-id: <id>` at boot.
+- **`smix run --gate-signal <regex>` + `--gate-signal-timeout <ms>`** — prepends an implicit `expect.signal { regex, timeoutMs }` step at the START of the flow (index 0), blocking until the regex is observed in the metro log tail. Requires `--metro-log-url` also set. Symmetric to the existing `--await-signal` end-of-flow gate. Default timeout 60 s; zero disables. Replaces the node-side wait-for-metro-signal helper consumers had to write.
 
-### Added — debug output (feedback §I / D11)
+### Added — debug output
 
 - **`--debug-output <dir>/step-<N>-<verb>.tree.json`** — on step failure, alongside the fail PNG the adapter now writes a full a11y-tree snapshot captured at the moment the step's expectation was evaluated. Turns "screenshot shows the text but assertVisible failed" mysteries into "here's exactly what the runner saw."
 - **`run-summary.json` per-step trace** — the summary now carries `steps: [{n, verb, verdict, wallMs, jsonPath, pngPath?, treePath?, failureKind?, failureMessage?}]`. Populated for both success and failure runs (partial trace on failure preserved via a snapshot taken before the `?`-return early-exit).
 
-### Added — session lifecycle (RFC 1.0.4 §D5 / D14 / D7)
+### Added — session lifecycle
 
 - **`POST /session/close-all`** — closes every open session on the runner. Idempotent (`{ok, closed:N}`). Rust: `HttpRunnerClient::close_all_sessions()`.
 - **`POST /session/relaunch-app {sessionId}`** — runner does `terminate() + launch()` on the session's cached `XCUIApplication` binding IN PLACE, preserving the session id and XCUITest binding. Returns `{ok, wallMs}`. Recovers from a downstream app crash without cycling the runner. Rust: `HttpRunnerClient::relaunch_session_app(&req)`; SDK: `Session::relaunch_app()` (Rust), `session.relaunchApp()` (TS / Swift / Kotlin).
-- **`Session::state` + state stream/flow/event across all 4 SDKs (RFC 1.0.4 §D7).** The runner emits `X-Sim-Health: healthy|degraded|cycling|dead` on every response; SDKs parse it and surface transitions to consumers:
+- **`Session::state` + state stream/flow/event across all 4 SDKs.** The runner emits `X-Sim-Health: healthy|degraded|cycling|dead` on every response; SDKs parse it and surface transitions to consumers:
   - Rust — `Session::state() -> SessionState`.
   - TypeScript — `session.state` + `session.on('state', listener)`.
   - Swift — `session.state` + `session.stateStream: AsyncStream<SessionState>`.
   - Kotlin — `session.state` + `session.stateFlow: StateFlow<SessionState>`.
 
-### Added — extended health (RFC 1.0.4 §D1)
+### Added — extended health
 
 - **Extended `GET /health` body** now includes `simRenderServer: {alive, pid}` and `xcodebuildTestHost: {alive, pid, restartCount}`. Legacy clients that only read `{ok:true}` continue to work.
 
-### Added — safe-exit cascade (RFC 1.0.4 §D15 / lifecycle)
+### Added — safe-exit cascade
 
 - **`smix run` SIGINT / SIGTERM handling.** `tokio::signal::ctrl_c()` and SIGTERM race against the flow execution; on signal the CLI aborts the in-flight flow, runs a best-effort `/session/close` under a 2 s timeout, prints `interrupted (SIGINT|SIGTERM) — running session-close cascade` on stderr, and exits with POSIX-conventional 130 (SIGINT) / 143 (SIGTERM). The Rust adapter's `--debug-output` partial-trace file still fires on interrupt so the last-attempted step is captured. Solves the "ctrl-C leaves a session hanging until runner idle-close fires" complaint.
 
-### Fixed — `openLink` URL preservation (feedback §G / D13)
+### Fixed — `openLink` URL preservation
 
-- **`SimctlClient::open_url` argv preservation** — verified byte-identical URL passthrough (`openurl_argv` test helper + 3 unit tests covering percent-encoded schemes, query params with `&`/`#`, unicode). The dev-launcher picker behavior insight reported on `expo-dev-client 57.0.5` is upstream (not smix); the finding lives on expo-dev-client's side and is documented for the record.
+- **`SimctlClient::open_url` argv preservation** — verified byte-identical URL passthrough (`openurl_argv` test helper + 3 unit tests covering percent-encoded schemes, query params with `&`/`#`, unicode). The dev-launcher picker behavior reported on `expo-dev-client 57.0.5` is upstream (not smix); the finding lives on expo-dev-client's side and is documented for the record.
 
-### Documented — feedback §D auto-resolution
+### Documented — `--activate` per-request cost auto-resolution
 
-- **`--activate` per-request cost** is auto-resolved for consumers who upgrade to v1.0.3 sessions (via `smix run` auto-session or explicit `Session.open`). The runner short-circuits `App-Activate: true` when a `Session-Id` header is present, so the "50-100 ms per request main-actor hop" feedback §D described no longer applies for session-mode flows. No code change needed; documented here so consumers know to prefer `--activate` inside a session rather than passing it per-request.
+- **`--activate` per-request cost** is auto-resolved for consumers who upgrade to v1.0.3 sessions (via `smix run` auto-session or explicit `Session.open`). The runner short-circuits `App-Activate: true` when a `Session-Id` header is present, so the 50-100 ms per-request main-actor hop described in earlier feedback no longer applies for session-mode flows. No code change needed; documented here so consumers know to prefer `--activate` inside a session rather than passing it per-request.
 
 ### Wire + ABI compatibility
 
@@ -1051,9 +1063,9 @@ Studio protection + gate-hardening. Motivation: a downstream gate loop running a
 
 ### Deferred to v1.0.5 (independent charters)
 
-- **§E ask 2 — session-persistence across XCTest lifecycle.** Needs a separate design for state serialization.
-- **§D6 host-side XCTest supervisor** — auto-cycle-on-`TEST INTERRUPTED`. v1.0.4 provides the manual escape hatch (`smix runner cycle` verb) plus the programmatic detection surface (`Session::state` transitions via `X-Sim-Health` + `AppAliveCache` markDead from parsed XCTIssues); a fully-automatic supervisor daemon is v1.0.5 material.
-- **Runner-side idle-close 120 s → 60 s tightening** — deferred; the client-side `smix run` SIGINT / SIGTERM cascade (§D15) already covers the primary orphaned-session case.
+- **Session-persistence across XCTest lifecycle.** Needs a separate design for state serialization.
+- **Host-side XCTest supervisor** — auto-cycle-on-`TEST INTERRUPTED`. v1.0.4 provides the manual escape hatch (`smix runner cycle` verb) plus the programmatic detection surface (`Session::state` transitions via `X-Sim-Health` + `AppAliveCache` markDead from parsed XCTIssues); a fully-automatic supervisor daemon is v1.0.5 material.
+- **Runner-side idle-close 120 s → 60 s tightening** — deferred; the client-side `smix run` SIGINT / SIGTERM cascade already covers the primary orphaned-session case.
 
 
 

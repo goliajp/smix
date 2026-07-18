@@ -129,7 +129,7 @@ async fn find_exists_true_serializes_selector_text() {
             "selector": {"text": "Login"}
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "exists": true
+            "ok": true, "found": true
         })))
         .mount(&server)
         .await;
@@ -159,19 +159,35 @@ async fn tap_at_norm_coord_posts_nx_ny() {
 #[tokio::test]
 async fn tap_posts_selector_and_mode_resolve_camel_case() {
     let server = MockServer::start().await;
-    // mode serializes as camelCase "resolve" / "resolveAndTap".
+    // The request body is asserted exactly (mode serializes camelCase),
+    // and the response is the shape TapRoute.success emits — the
+    // previous version of this test carried "camel_case" in its name
+    // while asserting neither, and mocked a hand-flattened all-null
+    // body no runner ever sent.
     Mock::given(method("POST"))
         .and(path("/tap"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "stages": null, "frame": null, "appFrame": null
+        .and(body_json(serde_json::json!({
+            "selector": {"text": "OK"},
+            "mode": "resolve"
         })))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"ok":true,"matchedLabel":"OK","frame":{"x":20.00,"y":118.50,"w":353.00,"h":44.00},"appFrame":{"x":0.00,"y":0.00,"w":393.00,"h":852.00},"stages":{"resolveMs":12.5,"tapCallMs":0.0,"totalMs":12.5}}"#,
+        ))
         .mount(&server)
         .await;
     let client = HttpRunnerClient::with_base(server.uri());
-    let _ = client
+    let result = client
         .tap(&text_sel("OK"), TapMode::Resolve, None)
         .await
         .expect("tap ok");
+    // The whole point of mode=resolve is the frame coming back — assert
+    // it survives the parse instead of being defaulted away.
+    let frame = result.frame.expect("frame populated");
+    assert_eq!((frame.x, frame.y), (20.0, 118.5));
+    assert!(result.app_frame.is_some(), "appFrame lost");
+    let stages = result.stages.expect("stages populated");
+    assert!(stages.resolve_ms > 0.0, "resolveMs defaulted to zero");
+    assert_eq!(result.matched_label.as_deref(), Some("OK"));
 }
 
 // ---- press_key ----------------------------------------------------------
@@ -377,7 +393,7 @@ async fn client_with_session_id_sends_session_header_on_every_request() {
         .and(path("/find"))
         .and(header("session-id", "sess-xyz"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "exists": true,
+            "ok": true, "found": true,
         })))
         .mount(&server)
         .await;
@@ -390,25 +406,64 @@ async fn client_with_session_id_sends_session_header_on_every_request() {
     assert!(ok);
 }
 
+/// Matches only requests that do NOT carry the named header. wiremock
+/// has no absence matcher, and without one the clear-session test below
+/// passed no matter what the client sent.
+struct NoHeader(&'static str);
+
+impl wiremock::Match for NoHeader {
+    fn matches(&self, request: &wiremock::Request) -> bool {
+        !request.headers.contains_key(self.0)
+    }
+}
+
 #[tokio::test]
 async fn client_clear_session_id_stops_sending_header() {
     let server = MockServer::start().await;
-    // Request must NOT carry Session-Id after clear.
+    // The mock matches ONLY a request without Session-Id, and .expect(1)
+    // makes the match mandatory — a client that keeps sending the header
+    // matches nothing and fails verification on drop. The old version
+    // discarded the result with `let _ =`, so it passed even when
+    // clear_session_id was a no-op.
     Mock::given(method("POST"))
         .and(path("/find"))
         .and(header("app-bundle-id", "com.example.app"))
+        .and(NoHeader("session-id"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "exists": false,
+            "ok": true, "found": false,
         })))
+        .expect(1)
         .mount(&server)
         .await;
     let mut client =
         HttpRunnerClient::with_base(server.uri()).with_target_bundle_id("com.example.app");
     client.set_session_id("sess-xyz");
     client.clear_session_id();
-    // If the mock rejects the request (session-id present when we don't
-    // expect it), this errors. Passing means no session-id was sent.
-    let _ = client.find(&text_sel("X"), None).await;
+    let found = client
+        .find(&text_sel("X"), None)
+        .await
+        .expect("request without session-id reaches the mock");
+    assert!(!found);
+    server.verify().await;
+}
+
+/// `exists` is a legacy alias no current runner emits (iOS sends
+/// `found`; the Android runner serves no /find at all). The client
+/// still accepts it; this is the one test that says so, so the alias's
+/// only coverage is labeled as what it is instead of impersonating the
+/// production field in every mock.
+#[tokio::test]
+async fn find_accepts_legacy_exists_alias() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/find"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "exists": true
+        })))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    assert!(client.find(&text_sel("Old"), None).await.unwrap());
 }
 
 #[tokio::test]

@@ -3,27 +3,16 @@ import { Link, Outlet, useLocation } from 'react-router'
 import { ThemeToggle } from './components/theme-toggle'
 
 // Top horizontal nav, editorial style.
-//   GOLIA / SMIX  ·  QUICK-START · PLUGIN · AUTHORING · TOOLS · EXAMPLES  ·  GITHUB
+//   GOLIA / SMIX  ·  LIVE  ·  GITHUB
 // All-caps mono, fine baseline rule, accent on hover + active.
 
-type NavItem = { slug: string; label: string; soon?: boolean; to?: string }
+type NavItem = { slug: string; label: string; to: string }
 
-const NAV: NavItem[] = [
-  { slug: 'quick-start', label: 'Quick start' },
-  { slug: 'plugin-install', label: 'Plugin' },
-  { slug: 'authoring', label: 'Authoring' },
-  { slug: 'tools', label: 'Tools' },
-  { slug: 'examples', label: 'Examples' },
-  { slug: 'live', label: 'Live', to: '/live' },
-]
+const NAV: NavItem[] = [{ slug: 'live', label: 'Live', to: '/live' }]
 
 export function AppLayout() {
   const { pathname } = useLocation()
-  const activeSlug = pathname.startsWith('/docs/')
-    ? pathname.slice('/docs/'.length).split('/')[0]
-    : pathname === '/live'
-      ? 'live'
-      : null
+  const activeSlug = pathname === '/live' ? 'live' : null
 
   return (
     <div className="flex h-full flex-col bg-[color:var(--bg)] text-[color:var(--fg)]">
@@ -53,12 +42,9 @@ export function AppLayout() {
                       : 'text-[color:var(--fg-muted)] hover:text-[color:var(--fg)]')
                   }
                   key={n.slug}
-                  to={n.to ?? `/docs/${n.slug}`}
+                  to={n.to}
                 >
                   {n.label}
-                  {n.soon ? (
-                    <span className="ml-1.5 text-[10px] text-[color:var(--fg-dim)]">soon</span>
-                  ) : null}
                 </Link>
               )
             })}
@@ -85,12 +71,8 @@ export function AppLayout() {
 
       <footer className="border-t border-[color:var(--border)] px-8 py-3">
         <div className="mx-auto flex max-w-[1400px] items-baseline justify-between font-mono text-[11px] tracking-[0.16em] text-[color:var(--fg-dim)] uppercase">
-          <span>smix · v1.2.4 · MIT</span>
-          <span>
-            <span className="text-[color:var(--fg-muted)]">smix</span>{' '}
-            <span className="text-[color:var(--accent)]">6.73×</span>{' '}
-            <span className="text-[color:var(--fg-muted)]">maestro 2.2.0</span>
-          </span>
+          <span>smix · MIT</span>
+          <span className="text-[color:var(--fg-muted)]">live simulator observation panel</span>
         </div>
       </footer>
     </div>

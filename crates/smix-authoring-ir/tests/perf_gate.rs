@@ -3,8 +3,8 @@
 //!
 //! Accessors + sort + serde encode/decode budgets.
 
-use smix_input::{KeyName, SwipeDirection};
 use smix_authoring_ir::{IRAction, sort_by_timestamp};
+use smix_input::{KeyName, SwipeDirection};
 use smix_selector::{Modifiers, Pattern, Selector};
 use std::hint::black_box;
 use std::time::Instant;

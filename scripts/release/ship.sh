@@ -65,6 +65,53 @@ log "SmixRunner UITest build"
     > /tmp/smix-ship-uitest-build.log 2>&1 \
   || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
 
+# --- rust workspace tests ---------------------------------------------
+# The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
+# + lints while `cargo test` was left to whoever remembered. That is how
+# /tap shipped a response body the wire crate deserialized to all-None
+# without one red test. Non-bypassable, like the swift suite above.
+log "cargo test --workspace"
+( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1 \
+  || fail "cargo test FAILED — see /tmp/smix-ship-cargo-test.log"
+
+# --- TS SDK tests ------------------------------------------------------
+log "npm/smix-rn typecheck + vitest"
+( cd "$ROOT/npm/smix-rn" && bun run typecheck && bun run test ) \
+    > /tmp/smix-ship-ts-test.log 2>&1 \
+  || fail "TS SDK tests FAILED — see /tmp/smix-ship-ts-test.log"
+
+# --- Kotlin SDK unit tests --------------------------------------------
+# Compiles the generated Kotlin bindings AND runs the sdk unit suite.
+# The bindings previously first compiled during `gradlew :sdk:publish` —
+# publish-time was the first compile, which is exactly how the
+# DriveError field/Throwable.message collision reached a release branch.
+log "android sdk unit tests (compiles kotlin bindings)"
+( cd "$ROOT/android-runner" && ./gradlew :sdk:testDebugUnitTest --console=plain ) \
+    > /tmp/smix-ship-kotlin-test.log 2>&1 \
+  || fail "Kotlin sdk tests FAILED — see /tmp/smix-ship-kotlin-test.log"
+
+# --- route conformance ------------------------------------------------
+# Derives the served-route list from both runner sources and sweeps every
+# shipped file for phantom endpoints. It caught 13 fictional routes in
+# review, then sat unwired while ship.sh ran everything except it.
+log "route conformance"
+python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&1 \
+  || fail "route conformance FAILED — see /tmp/smix-ship-routes.log"
+
+# --- corpus gate (real sim) -------------------------------------------
+# Runs the bootstrap corpus end-to-end on a simulator. Device selection
+# mirrors the smoke: explicit env first, else the first booted sim.
+if [[ -z "${SMIX_CORPUS_SIM:-}" ]]; then
+  SMIX_CORPUS_SIM="$(xcrun simctl list devices booted -j 2>/dev/null \
+    | jq -r '[.devices | to_entries[] | .value[]] | .[0].udid // empty')"
+fi
+[[ -n "$SMIX_CORPUS_SIM" ]] \
+  || fail "corpus gate needs SMIX_CORPUS_SIM or a booted sim"
+log "corpus gate on $SMIX_CORPUS_SIM"
+SMIX_CORPUS_SIM="$SMIX_CORPUS_SIM" "$ROOT/scripts/release/corpus-gate.sh" \
+    > /tmp/smix-ship-corpus.log 2>&1 \
+  || fail "corpus gate FAILED — see /tmp/smix-ship-corpus.log"
+
 # --- ffi bindings -----------------------------------------------------
 # The Swift and Kotlin bindings are committed next to binary blobs, and
 # nothing regenerated them: the build scripts Package.swift and
@@ -73,6 +120,23 @@ log "SmixRunner UITest build"
 log "ffi bindings"
 "$ROOT/scripts/dev/ffi-bindings-fresh.sh" > /tmp/smix-ship-ffi-bindings.log 2>&1 \
   || fail "FFI bindings are not what smix-ffi generates — see /tmp/smix-ship-ffi-bindings.log"
+
+# --- fuzz smoke -------------------------------------------------------
+# 15 fuzz targets existed with nothing running them; two had bit-rotted
+# to the point of not compiling. A short budget per target keeps them
+# honest — longer soaks stay manual.
+log "fuzz smoke"
+"$ROOT/scripts/dev/fuzz-smoke.sh" > /tmp/smix-ship-fuzz.log 2>&1 \
+  || fail "fuzz smoke FAILED — see /tmp/smix-ship-fuzz.log"
+
+# --- fact scan --------------------------------------------------------
+# hygiene-scan asks "does it read as internal?"; fact-scan asks "is it
+# true?" — install coordinates vs the workspace version, tool-count
+# claims vs #[tool(] registrations, and noise inside the quoted strings
+# hygiene-scan structurally cannot see.
+log "fact scan"
+python3 "$ROOT/scripts/dev/fact-scan.py" > /tmp/smix-ship-facts.log 2>&1 \
+  || fail "fact-scan FAILED — a user-facing surface states something untrue (see /tmp/smix-ship-facts.log)"
 
 # --- llms.txt freshness ----------------------------------------------
 # llms.txt / llms-full.txt are a projection of VERB_TABLE + the Selector

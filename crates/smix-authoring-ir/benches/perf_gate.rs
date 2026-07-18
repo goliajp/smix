@@ -11,8 +11,8 @@
 //! Run: `cargo bench --bench perf_gate -p smix-authoring-ir`
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use smix_input::{KeyName, SwipeDirection};
 use smix_authoring_ir::{IRAction, RecorderErrorReason, sort_by_timestamp};
+use smix_input::{KeyName, SwipeDirection};
 use smix_selector::{Modifiers, Pattern, Selector};
 use std::hint::black_box;
 

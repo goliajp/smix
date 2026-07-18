@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 
 import { preMountApplyTheme } from './components/theme-bootstrap'
-import { appRoutes } from './views/docs/routes'
+import { appRoutes } from './routes'
 
 // Pre-paint persisted theme before React mounts to avoid FOUC.
 preMountApplyTheme()

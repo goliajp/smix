@@ -16,7 +16,9 @@ fn params(json: &str) -> SelectorParams {
 fn an_id_is_the_robust_path_and_mcp_can_finally_take_one() {
     // The gap this step exists to close: MCP could only tap by text, while
     // 03-selectors.md calls ids the most robust selector.
-    let s = params(r#"{"id": "form-submit-btn"}"#).to_selector().unwrap();
+    let s = params(r#"{"id": "form-submit-btn"}"#)
+        .to_selector()
+        .unwrap();
     match s {
         Selector::Id { id, .. } => assert_eq!(id, "form-submit-btn"),
         other => panic!("expected Id, got {other:?}"),

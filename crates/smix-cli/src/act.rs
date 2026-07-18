@@ -276,6 +276,30 @@ pub async fn cmd_system_popups(json: bool, port: u16) -> Result<(), ActError> {
     Ok(())
 }
 
+/// `smix system-popup-action` — press a named button on a SpringBoard
+/// popup. Both ids come from `smix system-popups` output. Exit is an
+/// error when the runner reports no such popup/button (404), so shell
+/// callers can branch on it.
+pub async fn cmd_system_popup_action(
+    popup_id: &str,
+    button_id: &str,
+    port: u16,
+) -> Result<(), ActError> {
+    let d = driver(port);
+    let pressed = d
+        .system_popup_action(popup_id, button_id)
+        .await
+        .map_err(|e| ActError::Transport(format!("{e}")))?;
+    if !pressed {
+        return Err(ActError::Transport(format!(
+            "no popup {popup_id:?} with button {button_id:?} — list current \
+             popups via `smix system-popups`"
+        )));
+    }
+    println!("pressed: {button_id} on {popup_id}");
+    Ok(())
+}
+
 /// `smix hide-keyboard` — dismiss the soft keyboard if visible.
 pub async fn cmd_hide_keyboard(port: u16) -> Result<(), ActError> {
     let d = driver(port);

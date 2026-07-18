@@ -9,8 +9,8 @@
 //! No 1:1 TS port — this is a from-scratch generator for the Rust SDK
 //! target. Spirit follows TS `generator-smix-ts.ts`.
 
-use smix_input::{KeyName, SwipeDirection};
 use smix_authoring_ir::{IRAction, RecorderError, RecorderErrorReason};
+use smix_input::{KeyName, SwipeDirection};
 use smix_selector::{Modifiers, Pattern, Selector};
 
 /// Emit a Rust async test body that replays the captured action stream.

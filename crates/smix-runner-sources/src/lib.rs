@@ -99,10 +99,7 @@ pub fn read_installed_version(dst: &Path) -> Result<Option<String>, ExtractError
     match std::fs::read_to_string(&path) {
         Ok(s) => Ok(Some(s.trim().to_string())),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(ExtractError::io(
-            format!("reading {}", path.display()),
-            e,
-        )),
+        Err(e) => Err(ExtractError::io(format!("reading {}", path.display()), e)),
     }
 }
 
@@ -121,7 +118,8 @@ pub fn read_installed_version(dst: &Path) -> Result<Option<String>, ExtractError
 pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError> {
     let dst_exists = dst.exists();
     let is_empty = if dst_exists {
-        is_directory_empty(dst).map_err(|e| ExtractError::io(format!("scanning {}", dst.display()), e))?
+        is_directory_empty(dst)
+            .map_err(|e| ExtractError::io(format!("scanning {}", dst.display()), e))?
     } else {
         true
     };
@@ -165,11 +163,7 @@ pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError
                 if std::fs::rename(&src, &dst_path).is_err() {
                     copy_dir_recursive(&src, &dst_path).map_err(|e| {
                         ExtractError::io(
-                            format!(
-                                "copying {} to {}",
-                                src.display(),
-                                dst_path.display()
-                            ),
+                            format!("copying {} to {}", src.display(), dst_path.display()),
                             e,
                         )
                     })?;
@@ -191,8 +185,7 @@ pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError
         .entries()
         .map_err(|e| ExtractError::io("reading tar entries", e))?
     {
-        let mut entry =
-            entry.map_err(|e| ExtractError::io("reading tar entry", e))?;
+        let mut entry = entry.map_err(|e| ExtractError::io("reading tar entry", e))?;
         let is_file = entry.header().entry_type().is_file();
         entry.unpack_in(dst).map_err(|e| {
             ExtractError::io(
@@ -212,9 +205,8 @@ pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError
     }
 
     let version_path = dst.join(VERSION_FILE);
-    std::fs::write(&version_path, format!("{SOURCES_VERSION}\n")).map_err(|e| {
-        ExtractError::io(format!("writing {}", version_path.display()), e)
-    })?;
+    std::fs::write(&version_path, format!("{SOURCES_VERSION}\n"))
+        .map_err(|e| ExtractError::io(format!("writing {}", version_path.display()), e))?;
 
     Ok(ExtractReport {
         destination: dst.to_path_buf(),
@@ -259,6 +251,9 @@ fn timestamped_backup_path(dst: &Path) -> PathBuf {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let parent = dst.parent().unwrap_or_else(|| Path::new("."));
-    let base = dst.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "runner".to_string());
+    let base = dst
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "runner".to_string());
     parent.join(format!("{base}.bak-{now}"))
 }

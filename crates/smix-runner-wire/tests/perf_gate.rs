@@ -112,6 +112,7 @@ fn perf_gate_tap_request_encode_under_2us() {
 #[test]
 fn perf_gate_tap_result_decode_under_5us() {
     let r = TapResult {
+        matched_label: Some("Sign In".to_string()),
         stages: Some(TapStages {
             resolve_ms: 12.3,
             tap_call_ms: 4.5,

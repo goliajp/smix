@@ -47,7 +47,15 @@ async fn emu_goes_to_the_console_not_the_device_shell() {
     let got = argv(dir.path());
     assert_eq!(
         got,
-        vec!["-s", "emulator-5554", "emu", "geo", "fix", "139.6917", "35.6895"],
+        vec![
+            "-s",
+            "emulator-5554",
+            "emu",
+            "geo",
+            "fix",
+            "139.6917",
+            "35.6895"
+        ],
         "the console command must not be wrapped in `shell`"
     );
     assert!(
@@ -61,7 +69,10 @@ async fn a_console_refusal_is_not_success() {
     // Measured against a real emulator: the console answers `KO: <reason>`
     // and exits 0. Reading stdout is the only way a caller ever finds out.
     let dir = tempfile::tempdir().unwrap();
-    let c = stub_adb(dir.path(), "echo \"KO: argument 'notanumber' is not a number\"");
+    let c = stub_adb(
+        dir.path(),
+        "echo \"KO: argument 'notanumber' is not a number\"",
+    );
     let err = c
         .emu("emulator-5554", &["geo", "fix", "notanumber"])
         .await
@@ -76,7 +87,10 @@ async fn a_console_refusal_is_not_success() {
 async fn a_console_ok_is_success() {
     let dir = tempfile::tempdir().unwrap();
     let c = stub_adb(dir.path(), "echo OK");
-    let out = c.emu("emulator-5554", &["geo", "fix", "1", "2"]).await.unwrap();
+    let out = c
+        .emu("emulator-5554", &["geo", "fix", "1", "2"])
+        .await
+        .unwrap();
     assert!(out.contains("OK"), "got: {out}");
 }
 

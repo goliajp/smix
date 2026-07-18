@@ -686,10 +686,18 @@ fn summarize_step(step: &Step) -> String {
         Step::StopApp => "stopApp".into(),
         Step::ClearAppData { .. } => "clearAppData".into(),
         Step::ResetAppData { .. } => "resetAppData".into(),
-        Step::ClearUserDefaults { keys, .. } => format!("clearUserDefaults ({} key{})", keys.len(), if keys.len() == 1 { "" } else { "s" }),
+        Step::ClearUserDefaults { keys, .. } => format!(
+            "clearUserDefaults ({} key{})",
+            keys.len(),
+            if keys.len() == 1 { "" } else { "s" }
+        ),
         Step::AssertCondition { condition } => format!("assertCondition {condition:?} [AI]"),
         Step::ExtractWithAI { into, fields } => {
-            format!("extractWithAI → {into} ({} field{}) [AI]", fields.len(), if fields.len() == 1 { "" } else { "s" })
+            format!(
+                "extractWithAI → {into} ({} field{}) [AI]",
+                fields.len(),
+                if fields.len() == 1 { "" } else { "s" }
+            )
         }
         Step::Scroll => "scroll".into(),
         Step::HideKeyboard => "hideKeyboard".into(),

@@ -168,3 +168,68 @@ fn lookup_by_alias_device_name_and_udid() {
     );
     assert!(reg.lookup("ghost-sim").is_none());
 }
+
+// -- register (write path) -----------------------------------------------
+//
+// `smix sim register` is the bootstrap: a fresh clone has no
+// `.smix/sims.json`, no template, and every alias-form command fails
+// until this file exists. The write path creates it.
+
+fn registered(udid: &str, name: &str) -> smix_simctl::registry::RegisteredSim {
+    smix_simctl::registry::RegisteredSim {
+        device_name: name.to_string(),
+        udid: udid.to_string(),
+        runtime: "com.apple.CoreSimulator.SimRuntime.iOS-26-5".to_string(),
+        device_type: "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro".to_string(),
+        locale: None,
+        runner_port: None,
+    }
+}
+
+#[test]
+fn register_creates_the_file_and_the_alias_resolves() {
+    let dir = tmpdir("register-fresh");
+    let path = dir.join(".smix/sims.json");
+    assert!(!path.exists(), "fixture leaked");
+
+    let outcome = SimRegistry::register(&path, "dev", registered(UDID_02, "ios-sim-dev")).unwrap();
+    assert_eq!(outcome, smix_simctl::registry::RegisterOutcome::Added);
+
+    let reg = SimRegistry::load(&path).unwrap();
+    assert_eq!(reg.resolve("dev").unwrap(), UDID_02);
+    assert_eq!(reg.resolve("ios-sim-dev").unwrap(), UDID_02);
+}
+
+#[test]
+fn register_into_existing_file_preserves_other_rows() {
+    let dir = tmpdir("register-append");
+    let path = write_fixture(&dir);
+
+    SimRegistry::register(
+        &path,
+        "dev",
+        registered("A0000000-0000-4000-8000-000000000001", "ios-sim-dev"),
+    )
+    .unwrap();
+
+    let reg = SimRegistry::load(&path).unwrap();
+    assert_eq!(reg.resolve("02").unwrap(), UDID_02, "pre-existing row lost");
+    assert_eq!(reg.resolve("03").unwrap(), UDID_03, "pre-existing row lost");
+    assert_eq!(
+        reg.resolve("dev").unwrap(),
+        "A0000000-0000-4000-8000-000000000001"
+    );
+}
+
+#[test]
+fn register_same_alias_updates_in_place() {
+    let dir = tmpdir("register-update");
+    let path = write_fixture(&dir);
+
+    let outcome = SimRegistry::register(&path, "02", registered(UDID_03, "ios-sim-02b")).unwrap();
+    assert_eq!(outcome, smix_simctl::registry::RegisterOutcome::Updated);
+
+    let reg = SimRegistry::load(&path).unwrap();
+    assert_eq!(reg.resolve("02").unwrap(), UDID_03);
+    assert_eq!(reg.sims().len(), 2, "update must not add a row");
+}

@@ -1,12 +1,10 @@
-//! Assert `DeviceControl` trait is dyn-compatible.
+//! Compile-time assertion that `DeviceControl` stays dyn-compatible
+//! (`Box<dyn DeviceControl>` must remain a valid type). The check IS
+//! this file compiling; the previous version wrapped it in a `#[test]`
+//! that could never fail at runtime, which read as coverage it wasn't.
 
 use smix_sdk::DeviceControl;
 
-fn _dyn_compat() {
+const _: fn() = || {
     let _: Option<Box<dyn DeviceControl>> = None;
-}
-
-#[test]
-fn device_control_trait_dyn_compatible() {
-    _dyn_compat();
-}
+};

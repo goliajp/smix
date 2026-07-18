@@ -57,8 +57,6 @@ EXCLUSIONS = [
     ("docs/plan-cold/", "checkpoint tags are their subject"),
     ("docs/plan-history/", "archived plans, kept as written"),
     ("docs/dogfood-archive/", "archived consumer correspondence, kept as written"),
-    ("CHANGELOG.md", "release history written per consumer and per ask; "
-                     "editorial pass, not a sweep"),
     (".claude/rfcs/", "design records written per consumer; editorial pass"),
     (".gitignore", "names the consumer docs it ignores; the rule goes when "
                    "they do"),

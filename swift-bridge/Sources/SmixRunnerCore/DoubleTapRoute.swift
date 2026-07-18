@@ -1,11 +1,17 @@
 import FlyingFox
 import Foundation
 
-// POST /double-tap {selector: {text}} → 200 {ok:true|false}.
-// Uses the public XCUIElement.doubleTap() API.
+// POST /double-tap {selector: {text}} → 200 {ok:true} on a tapped
+// element, 404 not_found on a miss (mirrors TapRoute). Uses the public
+// XCUIElement.doubleTap() API.
 //
-// Envelope shape matches BackRoute / TapAtCoordRoute 1:1. Body must carry
-// selector.text; missing / non-string → 400 bad_request.
+// A miss used to be 200 {ok:false} — and the Rust client parses this
+// body into TapResult, which has no `ok` field, so every miss
+// deserialized to an empty success and a double-tap on a non-existent
+// element reported Ok end-to-end. Misses are 404 now so the client's
+// error path engages.
+//
+// Body must carry selector.text; missing / non-string → 400 bad_request.
 public enum DoubleTapRoute {
   public struct DoubleTapRequest: Equatable, Sendable {
     public let selectorText: String
@@ -39,9 +45,14 @@ public enum DoubleTapRoute {
     return DoubleTapRequest(selectorText: text)
   }
 
-  public static func success(ok: Bool) -> HTTPResponse {
-    let body = Data(#"{"ok":\#(ok)}"#.utf8)
-    return envelope(.ok, body)
+  public static func success() -> HTTPResponse {
+    envelope(.ok, Data(#"{"ok":true}"#.utf8))
+  }
+
+  public static func notFound(selectorText: String) -> HTTPResponse {
+    let text = jsonEscape(selectorText)
+    let body = Data(#"{"ok":false,"error":"not_found","selector":{"text":"\#(text)"}}"#.utf8)
+    return envelope(.notFound, body)
   }
 
   public static func badRequest(reason: String) -> HTTPResponse {

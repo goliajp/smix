@@ -46,21 +46,23 @@ If you skip `close()`, `Drop` clears the client-side `Session-Id` header on a be
 
 ## TypeScript SDK
 
+Session lifecycle is fully wired in the TypeScript package; driving
+(`Smix.launchApp` and the `App` act/sense methods) is not — those throw
+`SmixNotImplementedError` until the native transport lands. What works:
+
 ```ts
-import { Smix, Session, HttpSimRuntime, bundleId } from '@goliapkg/smix'
+import { Session, HttpSimRuntime } from '@goliapkg/smix'
 
 const runtime = new HttpSimRuntime('http://127.0.0.1:22087')
 const session = await Session.open(runtime, 'com.example.app', { activate: true })
 try {
-  const app = await Smix.launchApp(bundleId('com.example.app'), runtime, runtime.resolver)
-  await app.tap(Selector.id('btn-login'))
-  await app.find(Selector.text('Dashboard')).toBeVisible({ timeoutMs: 5000 })
+  await session.relaunchApp()
 } finally {
   await session.close()
 }
 ```
 
-The `HttpSimRuntime`'s internal `HttpRunnerClient` picks up the `Session-Id` header via `setSessionId` inside `Session.open` — the wiring is invisible to callers.
+The `HttpSimRuntime` picks up the `Session-Id` header via `setSessionId` inside `Session.open` — the wiring is invisible to callers.
 
 ## Swift SDK
 

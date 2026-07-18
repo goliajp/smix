@@ -252,9 +252,7 @@ mod tests {
     #[test]
     fn monitor_receives_observations() {
         let mut p = ScreenshotPacer::new(small_cfg());
-        let m = smix_sim_health::SimHealthMonitor::new(
-            smix_sim_health::SimHealthConfig::default(),
-        );
+        let m = smix_sim_health::SimHealthMonitor::new(smix_sim_health::SimHealthConfig::default());
         p.set_monitor(m.clone());
         // Baseline health so the monitor is not pushed off by
         // HealthFailedNoBaseline before we start.

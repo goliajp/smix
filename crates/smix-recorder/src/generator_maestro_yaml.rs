@@ -1,7 +1,7 @@
 //! `IRAction[]` → maestro yaml flow.
 
-use smix_input::SwipeDirection;
 use smix_authoring_ir::{IRAction, RecorderError, RecorderErrorReason};
+use smix_input::SwipeDirection;
 use smix_selector::{Modifiers, Pattern, Selector};
 
 const DEFAULT_WAIT_TIMEOUT_MS: u64 = 5000;

@@ -549,8 +549,10 @@ User 0: ceDataInode=1234 installed=true hidden=false
     /// one is not something the runtime section asked for.
     #[test]
     fn stays_out_of_the_neighbouring_sections() {
-        assert!(!parse_granted_runtime_permissions(DUMPSYS_REAL)
-            .contains(&"android.permission.INTERNET".to_string()));
+        assert!(
+            !parse_granted_runtime_permissions(DUMPSYS_REAL)
+                .contains(&"android.permission.INTERNET".to_string())
+        );
     }
 
     #[test]
