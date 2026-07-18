@@ -56,6 +56,7 @@ EXCLUSIONS = [
     ("docs/v2.md", "checkpoint tags are its subject"),
     ("docs/plan-cold/", "checkpoint tags are their subject"),
     ("docs/plan-history/", "archived plans, kept as written"),
+    ("docs/dogfood-archive/", "archived consumer correspondence, kept as written"),
     ("CHANGELOG.md", "release history written per consumer and per ask; "
                      "editorial pass, not a sweep"),
     (".claude/rfcs/", "design records written per consumer; editorial pass"),
@@ -103,6 +104,7 @@ POINTER_SKIP = (
     "docs/v2.md",
     "docs/plan-cold/",
     "docs/plan-history/",
+    "docs/dogfood-archive/",
 )
 
 
