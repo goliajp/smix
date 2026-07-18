@@ -1,0 +1,22 @@
+@import 'tailwindcss';
+@import './theme.css';
+
+@theme {
+  --color-bg: var(--bg);
+  --color-bg-elev: var(--bg-elev);
+  --color-bg-inset: var(--bg-inset);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-dim: var(--fg-dim);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-grid: var(--grid);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-sense: var(--sense);
+  --color-decide: var(--decide);
+  --color-act: var(--act);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+}

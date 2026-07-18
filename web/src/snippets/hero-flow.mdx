@@ -1,0 +1,11 @@
+{/* Verbatim from examples/hello.yaml — the golden-path smoke flow. */}
+
+```yaml
+appId: com.example.app
+---
+- launchApp: { clearState: true }
+- tapOn: { id: "tab-home" }
+- assertVisible: { id: "home-counter-label" }
+- tapOn: { id: "home-increment-btn" }
+- assertVisible: { id: "home-counter-label", text: "1" }
+```
