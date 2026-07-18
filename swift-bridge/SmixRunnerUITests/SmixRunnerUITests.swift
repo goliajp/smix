@@ -1970,13 +1970,46 @@ final class SmixRunnerUITests: XCTestCase {
         //   Modal screens off the nav stack when the modal has
         //   `gestureEnabled: true`.
         let outcome: Bool? = smixGuarded("back") {
-          // Strategy 1: navigation bar back button
+          // The navigation bar's identifier is the screen title, so a
+          // change in it IS the "did navigate" signal. Both strategies
+          // watch it instead of sleeping a fixed 0.5s and reporting
+          // success unconditionally: measured on Settings, navigation
+          // lands ~100ms after the tap returns, so the fixed sleep was a
+          // ~5x overpay AND told the caller nothing about whether the
+          // screen actually changed. Same shape as the scroll settle
+          // poll below.
           let navBars = app.navigationBars
+          let beforeTitle = (try? navBars.firstMatch.snapshot())?.identifier
+
+          // A screen with no navigation bar offers no identity to watch,
+          // so that case keeps the old fixed settle and the old
+          // optimistic answer rather than inventing a signal. When there
+          // IS a bar, only an observed change counts: a snapshot that
+          // throws mid-gesture means "no reading", not "navigated" — an
+          // earlier version of this returned true on the throw and so
+          // reported success on a root screen with nowhere to go.
+          func navigated(from previous: String?) -> Bool {
+            guard let previous else {
+              Thread.sleep(forTimeInterval: 0.5)
+              return true
+            }
+            let deadline = Date().addingTimeInterval(2.0)
+            while Date() < deadline {
+              Thread.sleep(forTimeInterval: 0.05)
+              let bar = app.navigationBars.firstMatch
+              if !bar.exists { return true }
+              if let now = (try? bar.snapshot())?.identifier, now != previous {
+                return true
+              }
+            }
+            return false
+          }
+
+          // Strategy 1: navigation bar back button
           let firstButton = navBars.buttons.firstMatch
           if firstButton.exists {
             firstButton.tap()
-            Thread.sleep(forTimeInterval: 0.5)
-            return true
+            if navigated(from: beforeTitle) { return true }
           }
           // Strategy 2: iOS interactive pop gesture (swipe right from left
           // edge). RN screens with `gestureEnabled:true` (default for stack
@@ -1984,12 +2017,11 @@ final class SmixRunnerUITests: XCTestCase {
           let leftEdge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
           let rightTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
           leftEdge.press(forDuration: 0.1, thenDragTo: rightTarget)
-          Thread.sleep(forTimeInterval: 0.5)
-          // Best-effort: assume gesture worked if it didn't raise NSException.
-          // No "did navigate" sense check — fire-and-forget act (same as
-          // Strategy 1 firstButton.tap). Caller verifies post-navigation
-          // state via subsequent expect/waitFor.
-          return true
+          if navigated(from: beforeTitle) { return true }
+          // Neither strategy moved the screen. `false` reaches the caller
+          // as a 404-shaped refusal, which is the honest answer — the old
+          // code returned true here without looking.
+          return false
         }
         return outcome ?? false
       },
@@ -2039,24 +2071,34 @@ final class SmixRunnerUITests: XCTestCase {
         // the keyboard is actually dismissed after each strategy.
         let outcome: Bool? = smixGuarded("hide-keyboard") {
           guard app.keyboards.firstMatch.exists else { return true }
+          // Each strategy already knew how to check its own work — it
+          // just slept a flat 0.5s first and then looked exactly once.
+          // Polling the same check returns as soon as the keyboard is
+          // actually gone (and gives a slow dismissal more than 0.5s,
+          // which the old shape would have called a failure).
+          func keyboardGone() -> Bool {
+            let deadline = Date().addingTimeInterval(1.0)
+            while Date() < deadline {
+              Thread.sleep(forTimeInterval: 0.05)
+              if !app.keyboards.firstMatch.exists { return true }
+            }
+            return false
+          }
           // Strategy 1: tap Return/Done/Continue/Search/Go key on keyboard
           for keyName in ["Return", "Done", "Continue", "Search", "Go", "Next", "Enter"] {
             let key = app.keyboards.buttons[keyName]
             if key.exists {
               key.tap()
-              Thread.sleep(forTimeInterval: 0.5)
-              if !app.keyboards.firstMatch.exists { return true }
+              if keyboardGone() { return true }
             }
           }
           // Strategy 2: tap above keyboard (RN Keyboard.dismiss responds to outside touch)
           let above = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
           above.tap()
-          Thread.sleep(forTimeInterval: 0.5)
-          if !app.keyboards.firstMatch.exists { return true }
+          if keyboardGone() { return true }
           // Strategy 3: swipeDown (fallback)
           app.keyboards.firstMatch.swipeDown()
-          Thread.sleep(forTimeInterval: 0.5)
-          return !app.keyboards.firstMatch.exists
+          return keyboardGone()
         }
         return outcome ?? false
       },
