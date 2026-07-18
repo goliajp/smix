@@ -96,11 +96,109 @@ pub fn runner_env(bundle: Option<&str>, record_enabled: bool, port: u16) -> Vec<
 /// smix-cli needing an update.
 fn load_interactive_probe_env() -> Option<String> {
     let root = workspace_root(&std::env::current_dir().ok()?)?;
-    let config_path = root.join(".smix/config.yaml");
-    let text = std::fs::read_to_string(&config_path).ok()?;
-    let root_value: serde_json::Value = serde_norway::from_str(&text).ok()?;
+    let root_value = read_config_yaml(&root)?;
     let probe = root_value.get("interactiveProbe")?;
     serde_json::to_string(probe).ok()
+}
+
+/// Read `.smix/config.yaml` under `root` as a schemaless
+/// `serde_json::Value`. `None` when the file is absent OR unreadable OR
+/// not valid yaml. Deliberately no explicit schema so the config can
+/// grow keys without smix-cli needing an update — `interactiveProbe`
+/// and `switches` both read their slice off the same parsed value.
+fn read_config_yaml(root: &Path) -> Option<serde_json::Value> {
+    let text = std::fs::read_to_string(root.join(".smix/config.yaml")).ok()?;
+    serde_norway::from_str(&text).ok()
+}
+
+/// The four v2 behavior switches as declared under `.smix/config.yaml`'s
+/// `switches:` block. Each is `None` when the key is absent (schemaless:
+/// a missing block or missing/non-bool key leaves the field `None`).
+/// `None` means "config said nothing" — the CLI resolver then falls
+/// through to the `SMIX_*` env var, then to the default.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchesConfig {
+    pub auto_ocr_fallback: Option<bool>,
+    pub enable_ai_assertions: Option<bool>,
+    pub assert_screenshot_no_autorecord: Option<bool>,
+    pub launch_fresh_force_reinstall: Option<bool>,
+}
+
+/// Read `.smix/config.yaml`'s `switches:` block from the workspace root
+/// anchored at the current dir. A missing file / missing block yields an
+/// all-`None` [`SwitchesConfig`].
+pub fn load_switches() -> SwitchesConfig {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| workspace_root(&cwd))
+        .and_then(|root| read_config_yaml(&root))
+        .map(|v| switches_from_value(&v))
+        .unwrap_or_default()
+}
+
+/// Pull the `switches:` block off an already-parsed config value.
+/// Schemaless: each key is read via `Value::as_bool`, so a non-bool or
+/// absent key stays `None`.
+fn switches_from_value(root: &serde_json::Value) -> SwitchesConfig {
+    let block = root.get("switches");
+    let get = |key: &str| {
+        block
+            .and_then(|b| b.get(key))
+            .and_then(serde_json::Value::as_bool)
+    };
+    SwitchesConfig {
+        auto_ocr_fallback: get("autoOcrFallback"),
+        enable_ai_assertions: get("enableAiAssertions"),
+        assert_screenshot_no_autorecord: get("assertScreenshotNoAutorecord"),
+        launch_fresh_force_reinstall: get("launchFreshForceReinstall"),
+    }
+}
+
+/// Where a resolved switch value came from. Drives the CLI's named
+/// deprecation warn: only `Env` warns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SwitchSource {
+    /// `.smix/config.yaml switches.*` supplied the value.
+    Config,
+    /// The legacy `SMIX_*` env var supplied it (deprecated → CLI warns).
+    Env,
+    /// Neither config nor env set it; fell through to the default.
+    Default,
+}
+
+/// A resolved switch: the effective `bool` plus where it came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedSwitch {
+    pub value: bool,
+    pub source: SwitchSource,
+}
+
+/// Resolve one switch with priority `config > SMIX_* env > default(false)`.
+///
+/// `config` is the `switches.*` value (from [`load_switches`]); `Some`
+/// wins outright. Otherwise the legacy `env_name` is consulted — present
+/// (any value) resolves to its truthiness and marks the source `Env` so
+/// the CLI can emit a named deprecation warn. Absent env resolves to
+/// `false`/`Default`. This resolver is the ONLY place the four `SMIX_*`
+/// names are read on the `smix run` / `--check` path; parser and sdk keep
+/// their own env reads solely as the non-CLI (`None`-injection) fallback.
+pub fn resolve_switch(config: Option<bool>, env_name: &str) -> ResolvedSwitch {
+    if let Some(value) = config {
+        return ResolvedSwitch {
+            value,
+            source: SwitchSource::Config,
+        };
+    }
+    match std::env::var(env_name) {
+        Ok(raw) => ResolvedSwitch {
+            value: matches!(raw.as_str(), "1" | "true" | "TRUE" | "yes"),
+            source: SwitchSource::Env,
+        },
+        Err(_) => ResolvedSwitch {
+            value: false,
+            source: SwitchSource::Default,
+        },
+    }
 }
 
 /// Walk up from `start` to the directory containing `.smix/` — the smix
@@ -1208,8 +1306,14 @@ pub fn supervise(
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::Mutex;
 
     const UDID: &str = "5D087114-ECB3-443C-8DDB-40EEF9CFB90C";
+
+    /// Serialize the resolver tests that mutate process-global env. Each
+    /// uses a test-only var name, but `set_var`/`remove_var` still churn
+    /// the shared environ table, so they hold this lock while doing so.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn xcodebuild_argv_targets_explicit_udid() {
@@ -1369,6 +1473,63 @@ mod tests {
         matches!(outcome, SyncOutcome::AlreadyCurrent)
             .then_some(())
             .expect("second call must be AlreadyCurrent, not Extracted");
+    }
+
+    #[test]
+    fn switches_from_value_reads_only_present_keys() {
+        // Schemaless read: only `autoOcrFallback` is set → the other
+        // three stay `None`.
+        let yaml = "switches:\n  autoOcrFallback: true\n";
+        let value: serde_json::Value = serde_norway::from_str(yaml).unwrap();
+        let sw = switches_from_value(&value);
+        assert_eq!(sw.auto_ocr_fallback, Some(true));
+        assert_eq!(sw.enable_ai_assertions, None);
+        assert_eq!(sw.assert_screenshot_no_autorecord, None);
+        assert_eq!(sw.launch_fresh_force_reinstall, None);
+    }
+
+    #[test]
+    fn switches_from_value_empty_when_no_block() {
+        let value: serde_json::Value =
+            serde_norway::from_str("interactiveProbe:\n  minIdentifierCount: 3\n").unwrap();
+        assert_eq!(switches_from_value(&value), SwitchesConfig::default());
+    }
+
+    #[test]
+    fn resolve_switch_config_wins_over_env() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let name = "SMIX_TEST_RESOLVE_CONFIG_WINS";
+        // SAFETY: ENV_LOCK serializes env churn; the var name is unique
+        // to this test.
+        unsafe { std::env::set_var(name, "1") };
+        // config=Some(false) must beat env=1, source Config, no warn.
+        let r = resolve_switch(Some(false), name);
+        assert!(!r.value);
+        assert_eq!(r.source, SwitchSource::Config);
+        unsafe { std::env::remove_var(name) };
+    }
+
+    #[test]
+    fn resolve_switch_env_used_when_no_config() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let name = "SMIX_TEST_RESOLVE_ENV_USED";
+        // SAFETY: as above.
+        unsafe { std::env::set_var(name, "1") };
+        let r = resolve_switch(None, name);
+        assert!(r.value);
+        assert_eq!(r.source, SwitchSource::Env);
+        unsafe { std::env::remove_var(name) };
+    }
+
+    #[test]
+    fn resolve_switch_default_when_neither() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let name = "SMIX_TEST_RESOLVE_DEFAULT";
+        // SAFETY: as above — ensure the var is unset for this thread.
+        unsafe { std::env::remove_var(name) };
+        let r = resolve_switch(None, name);
+        assert!(!r.value);
+        assert_eq!(r.source, SwitchSource::Default);
     }
 
     #[test]

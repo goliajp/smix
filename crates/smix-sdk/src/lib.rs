@@ -716,6 +716,16 @@ pub struct App {
     /// which is reconciled against EventRecorder 1018 focus-change events.
     /// Capacity LRU 1024.
     ledger: IssuedLedger,
+    /// v2 break #3: `assert_screenshot` strict-mode override, injected by
+    /// the CLI from `.smix/config.yaml switches.assertScreenshotNoAutorecord`.
+    /// `Some` wins; `None` (non-CLI callers) falls back to the
+    /// `SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD` env read.
+    assert_screenshot_strict: Option<bool>,
+    /// v2 break #3: `launch_fresh` force-reinstall override, injected by
+    /// the CLI from `.smix/config.yaml switches.launchFreshForceReinstall`.
+    /// `Some` wins; `None` falls back to the
+    /// `SMIX_LAUNCH_FRESH_FORCE_REINSTALL` env read.
+    launch_fresh_force_reinstall: Option<bool>,
 }
 
 impl App {
@@ -731,6 +741,8 @@ impl App {
             device: Box::new(IosDeviceControl::with_client(simctl)),
             udid: None,
             ledger: IssuedLedger::new(),
+            assert_screenshot_strict: None,
+            launch_fresh_force_reinstall: None,
         }
     }
 
@@ -742,6 +754,8 @@ impl App {
             device,
             udid: None,
             ledger: IssuedLedger::new(),
+            assert_screenshot_strict: None,
+            launch_fresh_force_reinstall: None,
         }
     }
 
@@ -877,6 +891,8 @@ impl App {
             device: Box::new(IosDeviceControl::new()),
             udid: None,
             ledger: IssuedLedger::new(),
+            assert_screenshot_strict: None,
+            launch_fresh_force_reinstall: None,
         })
     }
 
@@ -902,6 +918,8 @@ impl App {
             device: Box::new(AndroidDeviceControl::new()),
             udid: None,
             ledger: IssuedLedger::new(),
+            assert_screenshot_strict: None,
+            launch_fresh_force_reinstall: None,
         })
     }
 
@@ -939,6 +957,28 @@ impl App {
     #[must_use]
     pub fn with_force_key_events(mut self, force: bool) -> Self {
         self.driver.set_force_key_events(force);
+        self
+    }
+
+    /// Inject the `assert_screenshot` strict-mode decision (v2 break #3).
+    /// `Some(true)` = missing baseline is a `DriverError`; `Some(false)` =
+    /// auto-record. `None` leaves the method on its
+    /// `SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD` env fallback. `smix run`
+    /// always injects `Some(resolved)` from `.smix/config.yaml`.
+    #[must_use]
+    pub fn with_assert_screenshot_strict(mut self, strict: Option<bool>) -> Self {
+        self.assert_screenshot_strict = strict;
+        self
+    }
+
+    /// Inject the `launch_fresh` force-reinstall decision (v2 break #3).
+    /// `Some(true)` = uninstall+install path; `Some(false)` = in-place
+    /// clear. `None` leaves the method on its
+    /// `SMIX_LAUNCH_FRESH_FORCE_REINSTALL` env fallback. `smix run` always
+    /// injects `Some(resolved)` from `.smix/config.yaml`.
+    #[must_use]
+    pub fn with_launch_fresh_force_reinstall(mut self, force: Option<bool>) -> Self {
+        self.launch_fresh_force_reinstall = force;
         self
     }
 
@@ -1152,12 +1192,16 @@ impl App {
         launch_arguments: &[String],
     ) -> Result<Vec<String>, ExpectationFailure> {
         let udid = self.require_udid()?;
-        // Probe SMIX_LAUNCH_FRESH_FORCE_REINSTALL env for the
-        // uninstall+install path. Default is the in-place clear, which
-        // preserves the XCUITest binding and does not trip ReportCrash.
-        let force_reinstall = std::env::var("SMIX_LAUNCH_FRESH_FORCE_REINSTALL")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+        // Force the uninstall+install path? CLI-injected config wins; a
+        // non-CLI caller with no injection falls back to the
+        // SMIX_LAUNCH_FRESH_FORCE_REINSTALL env probe. Default is the
+        // in-place clear, which preserves the XCUITest binding and does
+        // not trip ReportCrash.
+        let force_reinstall = self.launch_fresh_force_reinstall.unwrap_or_else(|| {
+            std::env::var("SMIX_LAUNCH_FRESH_FORCE_REINSTALL")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+        });
         let (ops, warnings) = plan_launch_fresh_calls_v2(
             clear_state,
             clear_keychain,
@@ -1675,7 +1719,12 @@ impl App {
         max_hamming: u32,
     ) -> Result<AssertScreenshotOutcome, ExpectationFailure> {
         let png = self.screenshot().await?;
-        let strict = std::env::var_os("SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD").is_some();
+        // CLI-injected config wins; a non-CLI caller with no injection
+        // falls back to the SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD env
+        // presence check.
+        let strict = self.assert_screenshot_strict.unwrap_or_else(|| {
+            std::env::var_os("SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD").is_some()
+        });
         assert_screenshot_inner(&png, baseline_path, max_hamming, strict)
     }
 

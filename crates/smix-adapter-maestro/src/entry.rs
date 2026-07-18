@@ -111,6 +111,22 @@ pub struct FlowArgs {
     /// Disable auto-annotate on the `--debug-output` fail-PNG. Default
     /// false = annotate. Opt-out via `smix run --no-fail-annotate`.
     pub no_fail_annotate: bool,
+    /// v2 break #3 switch injection. Each `Some` is a CLI-resolved value
+    /// from `.smix/config.yaml switches.*` (config > `SMIX_*` env >
+    /// default); `None` leaves the consumer on its own env fallback (the
+    /// legacy `smix-maestro` binary passes `None`). `auto_ocr_fallback`
+    /// and `ai_assertions` are set on the parser's thread-local override
+    /// seam immediately before parse; the other two ride the App builder.
+    pub auto_ocr_fallback: Option<bool>,
+    /// See [`Self::auto_ocr_fallback`]. Injected onto the AI-assertion
+    /// gate override seam.
+    pub ai_assertions: Option<bool>,
+    /// See [`Self::auto_ocr_fallback`]. Injected onto the App via
+    /// `with_assert_screenshot_strict`.
+    pub assert_screenshot_no_autorecord: Option<bool>,
+    /// See [`Self::auto_ocr_fallback`]. Injected onto the App via
+    /// `with_launch_fresh_force_reinstall`.
+    pub launch_fresh_force_reinstall: Option<bool>,
 }
 
 /// Run a flow file end-to-end. Async because runner / sdk calls are
@@ -154,11 +170,16 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
         } else {
             app
         };
-        if args.force_key_events {
+        let app = if args.force_key_events {
             app.with_force_key_events(true)
         } else {
             app
-        }
+        };
+        // v2 break #3: inject the two run-time switches the CLI resolved
+        // from `.smix/config.yaml`. `None` = no injection → the sdk method
+        // keeps its own `SMIX_*` env fallback (non-CLI callers).
+        app.with_assert_screenshot_strict(args.assert_screenshot_no_autorecord)
+            .with_launch_fresh_force_reinstall(args.launch_fresh_force_reinstall)
     };
     let app = configure(app);
 
@@ -216,6 +237,16 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
     }
 
     // 3. parse yaml.
+    //
+    // v2 break #3: inject the two parse-time switches the CLI resolved
+    // from `.smix/config.yaml` onto the parser's thread-local override
+    // seam. This MUST happen with NO `.await` between the two `set_*`
+    // calls and `parse_flow_file` below: `run_flow` runs on a
+    // multi-thread tokio runtime, so an await could migrate this task to
+    // another worker thread and orphan the thread-local. `None` restores
+    // the parser's own `SMIX_*` env read (non-CLI callers).
+    crate::set_auto_ocr_fallback_override(args.auto_ocr_fallback);
+    crate::set_ai_assertions_override(args.ai_assertions);
     let mut flow = match parse_flow_file(&args.flow) {
         Ok(f) => f,
         Err(e) => {
