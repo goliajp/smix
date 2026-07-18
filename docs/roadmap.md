@@ -18,38 +18,17 @@ Wire and ABI stability guarantees in [`docs/ai-guide/wire-format.md`](./ai-guide
 - **v1.0.1 — 2026-07-09** — Parser fix for `expect: { visible: ... }` shorthand; `smix run --check` parse-only gate.
 - **v1.0.2 — 2026-07-09** — Runner activation storm fix; PNG sRGB metadata splice; liveness observability.
 - **v1.0.3 — 2026-07-09** — Session lifecycle across all 4 SDKs; runner idempotent close.
-- **v1.0.4 — 2026-07-11** — Studio-protection release. `smix-sim-health` sense stone + screenshot pacer + `/system-popups` 500ms floor + app-alive cache. `Session::state` + `Session::relaunch_app` across 4 SDKs. `launchApp: clearState: true` rewrite (§F+§H). CLI `runner cycle` + `--gate-signal` + safe-exit cascade. Closed all 9 §A-§I of the 2026-07-10 gate-hardening feedback. RFC `.claude/rfcs/1.0.4-sim-health-and-backpressure.md`.
+- **v1.0.4 — 2026-07-11** — Studio-protection release. `smix-sim-health` sense stone + screenshot pacer + `/system-popups` 500ms floor + app-alive cache. `Session::state` + `Session::relaunch_app` across 4 SDKs. `launchApp: clearState: true` rewrite (§F+§H). CLI `runner cycle` + `--gate-signal` + safe-exit cascade. Closed the full 9-point gate-hardening ask (§A–§I). RFC `.claude/rfcs/1.0.4-sim-health-and-backpressure.md`.
+- **v1.0.5 → v1.0.27 — 2026-07-11 to 2026-07-13** — Feedback-driven patch arc, all additive-wire + additive-ABI. In order of the problem each solved: session persistence + host-side supervisor daemon (`smix runner supervise`); a systemic CLI-vs-runner source-sync fix (the CLI now ships the Swift runner sources and re-syncs on `runner up`, ending six releases of silently-frozen runner code); a runtime observability layer (`smix diagnostic dump`, subprocess ring, lifecycle counters); crash-dialog elimination via cooperative in-runner terminate/launch; and the iOS 26.5 + RN 0.86 Fabric tree-degradation triage stack — OCR-in-verbs, auto-capture on timeout, live on-screen visibility confirmation, per-key user-defaults deletion. Per-release detail lives in `CHANGELOG.md`; the roadmap does not replay it.
+- **v2.0.0 — 2026-07 (first formal public release)** — Wire- and ABI-breaking. smix's capability surface now exceeds maestro, with iOS + Android parity as a ship gate. The release carries the fenced AI-assertion tier (`assertCondition` / `extractWithAI` — screenshot to a local `claude` CLI, back as a structured verdict, firewalled off the resolver path), the full external-agent MCP driving surface, true animation-idle (frame-diff, not fixed sleep), and a code/docs hygiene pass (comment de-noising across 26+ crates, a machine-checked `hygiene-scan` gate, and this script-generated `llms.txt` / `llms-full.txt` index). It lands two structural pieces:
+  - **Six breaking changes** (each with a `smix migrate` codemod path): (1) sessions mandatory — the implicit no-session rebind path is gone, `Session-Id` required; (2) wire schema-version negotiation at `/health` — the runner and client agree a schema instead of assuming v1, which also lets v2 add routes; (3) `SMIX_*` env switches folded into `.smix/config.yaml switches:` (env still honored with a named deprecation warn); (4) the dead `Modifier` (singular) SDK type removed (`Modifiers` was always the real selector-modifier model); (5) `smix-recorder-ir` → `smix-authoring-ir` (stone-crate rename = semver break); (6) `VERB_TABLE` frozen as the single source of truth, with a parser-dispatch ⊆ table test gate. Alongside them, `SimctlError` → `DeviceControlError` (the old name made every Android failure call itself an iOS tool).
+  - **SDK re-architecture — one wire client, reached through FFI.** The three SDKs had each shipped against a fictional wire (13 driver routes no runner served — they mock-tested themselves into agreement). v2 collapses this to a single wire client (the Rust client), reached through the `smix-ffi` boundary by the Swift and Kotlin SDKs; the TypeScript SDK's fictional routes are deleted (host-side/driver methods now throw an explicit `not-implemented (lands napi)` rather than 404-ing), keeping only its genuinely-served resolver routes. A `route-conformance` gate holds the line at zero unserved routes.
 
 ---
 
-## Next patch — v1.0.5 (target 2 weeks from v1.0.4)
+## Next minor — v2.1 (post-v2, additive)
 
-RFC: [`.claude/rfcs/1.0.5-supervisor-and-persistence.md`](../.claude/rfcs/1.0.5-supervisor-and-persistence.md)
-
-- **§E ask 2 — Session persistence across XCTest lifecycle.** Session table persists to `.smix/runner/sessions-<UDID>.json` + reloads on test-host boot. `POST /session/list` + `Session::still_valid()` on all 4 SDKs.
-- **§D6 — Host-side XCTest supervisor daemon.** `smix runner supervise` or `smix runner up --supervise`; auto-cycles on `** TEST INTERRUPTED **` / `SchemeActionResultOperation` log matches.
-- **Runner idle-close 120s → 60s.** Half-orphaned sessions vanish within 1 minute instead of 2.
-- **Real-sim smoke gate.** `scripts/release/smoke-v1.smoke.sh` — hard gate on the ship script; every net-new v1.0.4/v1.0.5 code path is exercised before publish.
-
-Cadence: no RC — the smoke gate replaces it.
-
----
-
-## Later patches — v1.0.6 onward (feedback-driven)
-
-Not planned in advance. Each accepted patch charter is triggered by:
-
-- A named insight feedback item that survives the "does this fold into an existing charter?" check.
-- A downstream consumer regression discovered post-v1.0.5.
-- A CVE or upstream Apple/JetBrains toolchain change that shifts behaviour under smix's feet.
-
-Patch releases stay additive-wire + additive-ABI. Anything requiring wire or ABI break goes to v1.1 or v2 accordingly.
-
----
-
-## Next minor — v1.1 (target Q3 2026, still additive)
-
-Charter previews (not yet in an RFC — will get one when planning starts):
+Charter previews carried forward from the pre-v2 v1.1 horizon — additive-wire + additive-ABI candidates, not yet in an RFC:
 
 ### Runtime performance
 
@@ -72,36 +51,24 @@ Charter previews (not yet in an RFC — will get one when planning starts):
 - **AI-authoring guide.** A comprehensive `docs/ai-guide/authoring.md` covering how to write flows against the Locator API from an LLM (Claude, GPT, whichever). Recipe-driven; not a formal API doc.
 - **Session state playbook.** Each `SessionState` transition → recommended consumer response (pause / retry / cycle / bail). Turns v1.0.4's raw signal into an operator runbook.
 
-Wire and ABI additions in v1.1 remain additive — anything that would break v1.0.x consumers slides to v2.
+Wire and ABI additions in v2.1 remain additive — anything that would break v2.0.x consumers slides to the next major (v3).
 
----
-
-## Next major — v2.0 (target Q4 2026 to Q1 2027, semver break)
-
-Only entries here are wire-breaking or ABI-breaking. Every entry has a deprecation runway that must ship in a v1.x patch before v2 lands.
-
-- **Sessions become mandatory.** Retire the legacy per-request rebind path; remove `App-Activate: true` header semantics; require `Session-Id`. Consumer runway: v1.x deprecation warning printed by the CLI when it detects a request without a session.
-- **Wire schema version negotiation.** Runner + client exchange a version header at `/health`; unrecognized combinations are refused with a diagnostic instead of the current permissive "extra fields ignored". Locks the wire contract explicitly.
-- **`SMIX_*` escape hatch removal.** `SMIX_LAUNCH_FRESH_FORCE_REINSTALL`, `SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE`, `SMIX_DEV_LOCK` — bake the safe defaults; remove the opt-out env vars. Runway: v1.x prints a WARN when any of them is set.
-- **Selector model consolidation.** Merge the `Modifier` and `Modifiers` types (accumulated dupes across 6-7 minor releases); collapse the two `open_url` shapes; remove the deprecated positional args accepted since v0.3.
-- **`smix-recorder-ir` → `smix-authoring-ir`** rename. Aligns the crate name with what the tier actually is (authoring, not just recording). Runway: v1.x re-export shim.
-- **YAML verb table freeze v2.** Any verb marked `@deprecated` in the v1.x table gets removed. Runway: `smix migrate` bumps + a codemod that rewrites deprecated shapes to v2 shapes.
-
-v2 will NOT drop:
-- CLI verb names shipped in v1.0.
-- The core sense/act/decide three-layer contract.
-- The four-SDK parity guarantee.
-- The `Session::relaunch_app` / `Session::state` surface (v1.0.4 additions).
+What v2.x will NOT drop, carried as a standing guarantee:
+- CLI verb names shipped in v1.0 / v2.0.
+- The core sense / act / decide three-layer contract.
+- The four-SDK parity guarantee (TS reaches driving parity when the napi axis lands).
+- The `Session::relaunch_app` / `Session::state` surface.
 
 ---
 
 ## Beyond v2 — speculative
 
+- **TypeScript driving via napi.** Close the one remaining SDK gap: a cross-triple prebuilt `.node` binding so the TS SDK drives through the same Rust wire client as Swift/Kotlin, retiring the `not-implemented (lands napi)` stubs. Independent distribution-engineering deliverable.
 - Cross-platform recorder that speaks XCTest + UIAutomator + web (Playwright bridge) uniformly.
-- LLM-in-the-loop authoring where the smix runtime observes flow execution and proposes improvements (backed by Claude API).
+- LLM-in-the-loop authoring where the smix runtime observes flow execution and proposes improvements (backed by the Claude API).
 - Distributed run federation: N smix runners on N machines coordinated by a central scheduler, each running its own sim/emulator, results merged for CI.
 
-None of these are committed; they're the horizon we're aiming toward and inform how we design the v1.1 → v2 additive-vs-breaking boundary.
+None of these are committed; they're the horizon we're aiming toward and inform how we design the v2.x additive-vs-breaking boundary.
 
 ---
 

@@ -27,4 +27,4 @@ Write an RFC when the release scope has any of:
 
 Skip the RFC when the release is a straight bug-fix or a mechanical bump that CHANGELOG can carry alone.
 
-See [`docs/roadmap.md`](../roadmap.md) for the version cadence.
+See [`docs/roadmap.md`](../../docs/roadmap.md) for the version cadence.
