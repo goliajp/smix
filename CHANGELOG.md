@@ -4,7 +4,7 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [1.0.27] — 2026-07-13
 
-**Insight round-5 (`smix-feedback-2026-07-13-replay-and-tree-visibility.md`)** — their `--all` batch reached **12/12 + log gate 7/7 clean, zero retries** (b32) with flow-side workarounds for both issues below; this release moves the fixes to the runner level where they belong.
+Two issues that flows had been working around at the yaml level move to the runner level where they belong: per-key user-defaults deletion (deep-link replay-state neutralization) and live on-screen visibility confirmation.
 
 ### D1 (Ask 12) — `clearUserDefaults` verb: per-key NSUserDefaults deletion
 
@@ -105,7 +105,7 @@ Insight's b24 observed a runner death with no `** TEST INTERRUPTED **` banner (w
 
 ## [1.0.25] — 2026-07-13
 
-**Insight round-4 (`smix-feedback-2026-07-13.md`) empirical validation of v1.0.24 D1/D2** — qa-gate ceremony restored via `runFlow when.notVisible: qa-bubble file: qa-gate-passcode.yaml`, `--all` batch 7/12 → 8/12 with real gate coverage. Two follow-up fixes:
+Two follow-up fixes to the v1.0.24 D1/D2 OCR-visibility work, from validating a conditional-gate ceremony (`runFlow when.notVisible: qa-bubble file: qa-gate-passcode.yaml`) on a real batch:
 
 ### D1 — `SMIX_AUTO_OCR_FALLBACK` splits regex-OR strings per alternative on OCR tier
 
@@ -151,7 +151,7 @@ STEP 3: runFlow qa-gate-passcode.yaml (conditional) → SKIPPED: runFlow when.no
 
 ## [1.0.24] — 2026-07-12
 
-**Insight round-3 (`smix-feedback-2026-07-12-round-3.md`) Ask 8 — `runFlow.when.visible` + `inputText` silently no-op.** Empirical: `--all` batch **0/12 → 7/12** on v1.0.23 with URL-scheme bypass; native (D1/D2 tapOn/scroll OCR poll) confirmed working. Root cause of Ask 8 traced to the tree-only visibility check in `runFlow.when.visible`: `Selector::OcrText` is silently dropped by the tree resolver, so a `fallback: [text, ocrText]` gate under iOS 26.5 + RN 0.86 Fabric a11y drop returns false and the whole conditional body is skipped without any signal. `inputText` never fires because the conditional never enters. 3 fixes land:
+**`runFlow.when.visible` + `inputText` silently no-op — fixed.** Root cause: the tree-only visibility check in `runFlow.when.visible` silently drops `Selector::OcrText` at the tree resolver, so a `fallback: [text, ocrText]` gate under iOS 26.5 + RN 0.86 Fabric a11y drop returns false and the whole conditional body is skipped without any signal. `inputText` never fires because the conditional never enters. 3 fixes land:
 
 ### D1 — `runFlow.when.visible` fires OCR when selector contains OcrText
 
@@ -220,7 +220,7 @@ Both flagged as app-side, not smix. Insight noted v1.0.22 D2 auto-capture made t
 
 ## [1.0.23] — 2026-07-12
 
-**Insight round-2 (`smix-feedback-2026-07-12-round-2.md`) empirical validation of v1.0.22 + 4 new asks.** Real-world impact confirmed: bootstrap 3/3 pass on v1.0.22 + OCR fallback yaml vs 0/3 on v1.0.21 same yaml. `.smix/timeouts/*.png` cut triage-per-failure from 4-5 turns down to 1 turn. 4 new fixes for the same OCR-runtime pattern in tapOn / scrollUntilVisible + snapshot freshness diagnostic + ergonomic bare-string auto-OCR opt-in.
+**4 new fixes extending the v1.0.22 OCR-runtime work** to `tapOn` / `scrollUntilVisible`, plus a snapshot-freshness diagnostic and an ergonomic bare-string auto-OCR opt-in. The v1.0.22 OCR-fallback path was validated on real workload (a bootstrap batch that passed 3/3 on v1.0.22 vs 0/3 on v1.0.21 with the same yaml), and the auto-captured `.smix/timeouts/*.png` cut triage-per-failure from 4-5 turns down to 1.
 
 ### D1 — `tapOn: fallback` implicit poll window when OcrText present
 
@@ -272,7 +272,7 @@ Reading the env at PARSE time (not RUN time) keeps the emitted Selector shape st
 
 ## [1.0.22] — 2026-07-12
 
-**iOS 26.5 + RN 0.86 Fabric tree-degradation triage upgrade.** Insight round-7 (`smix-feedback-2026-07-12.md`) hit a wall: on Xcode 26.6 + iOS 26.5 sim + RN 0.86 New Arch (Fabric), `GET /tree` returns every child under the app root with empty `identifier` and empty `label` — 10 "unknown" nodes visibly showing a `Log in to Insight` button that has JSX `testID="btn-log-in-to-insight"` + `accessibilityLabel` + `accessibilityRole="button"` + `accessible={true}`. Every bootstrap flow times out on the first `extendedWaitUntil` regardless of resetAppData / clearAppData choice, and the `fallback: [ocrText]` last resort silently never fires. Three fixes land:
+**iOS 26.5 + RN 0.86 Fabric tree-degradation triage upgrade.** On Xcode 26.6 + iOS 26.5 sim + RN 0.86 New Arch (Fabric), `GET /tree` returns every child under the app root with empty `identifier` and empty `label` — nodes visibly showing (e.g.) a login button that carries JSX `testID` + `accessibilityLabel` + `accessibilityRole="button"` + `accessible={true}`. Bootstrap flows time out on the first `extendedWaitUntil` regardless of resetAppData / clearAppData choice, and the `fallback: [ocrText]` last resort silently never fires. Three fixes land:
 
 ### D1 — `extendedWaitUntil.visible.fallback: [ocrText: ...]` now actually calls OCR
 
@@ -352,7 +352,7 @@ Fixed at the perception layer (`swift-bridge/Sources/SmixRunnerCore/TreeRoute.sw
 
 ## [1.0.20] — 2026-07-12
 
-**3 docs/impl gaps closed** from insight round-5 (`smix-feedback-2026-07-12-v1.0.19-flow-progress.md`). Insight reported bootstrap batch flow completion is now **2/3 passing** (`force-update` + `pinning-failure` green; `launch-chain` fails on their own QA staging role-assignment). `v1.0.19` wins (`lastInteractiveNamedIds` at top-level + `AppUnavailableReason` disambiguation) both delivered exactly the observability they asked for — steered them to find a 4th latent native race in `expo::setProperty` / `ConstantDefinition.buildDescriptor`.
+**3 docs/impl gaps closed.** The v1.0.19 observability wins (`lastInteractiveNamedIds` at top-level + `AppUnavailableReason` disambiguation) held up on real workload — bootstrap batch flow completion reached 2/3 passing, with the remaining failure isolated to a downstream app-side native race (`expo::setProperty` / `ConstantDefinition.buildDescriptor`), not smix.
 
 ### D1 — `extendedWaitUntil.visible` accepts every selector key `tapOn` does
 
@@ -393,11 +393,10 @@ Role parser tolerates docs-friendly aliases: `role: textfield` → `Role::TextFi
 
 ## [1.0.19] — 2026-07-12
 
-**Post-mortem triage QoL from insight round-4** (`smix-feedback-2026-07-12-v1.0.18-round-4.md`). Their v1.0.18 batch results confirmed:
-- Both v1.0.18 wins (D1 per-session `interactiveNamedIds` + D2 `waitForAnimationToEnd: N`) landed cleanly on real workload.
+**Post-mortem triage QoL.** Real-workload validation of v1.0.18 confirmed:
+- Both v1.0.18 wins (D1 per-session `interactiveNamedIds` + D2 `waitForAnimationToEnd: N`) landed cleanly.
 - **`.ips` growth 36→36 across 5 consecutive batches** — native cold-boot crash chain closed decisively (v1.0.14 → v1.0.18).
-- Flow depth advanced 6–8 steps in every case; remaining stalls all on target-screen `waitFor { text: … }` (insight-side RN Fabric a11y-label propagation, not smix).
-- Insight's `bugfix/GOL-611-native-cold-boot-crash` branch is **ready to merge to develop**.
+- Flow depth advanced 6–8 steps in every case; remaining stalls all on target-screen `waitFor { text: … }` (downstream RN Fabric a11y-label propagation, not smix).
 
 ### D1 — top-level `lastInteractiveNamedIds` on `/diagnostic/dump`
 
@@ -423,11 +422,11 @@ Per-session `sessions[n].interactiveNamedIds` from v1.0.18 remains — this new 
 
 ## [1.0.18] — 2026-07-12
 
-**Two QoL asks from insight round-4** (`smix-feedback-2026-07-12-v1.0.17-results.md`) landed. Their v1.0.17 batch results:
+**Two QoL additions**, landed alongside real-workload validation of v1.0.17:
 - v1.0.17 crash fix confirmed working (0 test_runForever failures, 0 "Failed to get matching snapshot" entries)
 - `launchAppReachedInteractive: 6/6` — every launch reached probeable tree
 - `.ips` growth 36→36 — native crash triple stays fully closed
-- Remaining 3/3 flow failures **not a smix bug** — RN Fabric a11y-exposure lag during animation (post-tapOn transitions); insight-side timeouts + testIDs + `waitForAnimationToEnd` are the knobs
+- Remaining flow failures **not a smix bug** — RN Fabric a11y-exposure lag during animation (post-tapOn transitions); downstream timeouts + testIDs + `waitForAnimationToEnd` are the knobs
 
 ### D1 — per-session `interactiveNamedIds` in `session/list` + `/diagnostic/dump`
 
@@ -465,9 +464,9 @@ Fix:
 
 ## [1.0.17] — 2026-07-12
 
-**Hotfix: v1.0.16 introduced a hard-crash mode in the interactive polling loop.** Insight round-3 investigation in `smix-feedback-2026-07-12-v1.0.16-runner-crash.md` diagnosed: `descendants(matching:).element(boundBy: i)` is XCTest-lazy — the element resolves at access time against the CURRENT tree. When the tree shrunk mid-iteration (their `stopApp + openLink dev-launcher` between test phases), XCTest raised an unrecoverable assertion "No matches found for Element at index N" that killed `test_runForever` and the runner process, taking subsequent flows down with it.
+**Hotfix: v1.0.16 introduced a hard-crash mode in the interactive polling loop.** Root cause: `descendants(matching:).element(boundBy: i)` is XCTest-lazy — the element resolves at access time against the CURRENT tree. When the tree shrunk mid-iteration (a `stopApp + openLink dev-launcher` between test phases), XCTest raised an unrecoverable assertion "No matches found for Element at index N" that killed `test_runForever` and the runner process, taking subsequent flows down with it.
 
-**Good news from their round-3 report before naming the crash:** v1.0.16 snapshot-refresh DID help — Flow 1 (`force-update.yaml`) reached STEP 47/47 vs the previous max of 34. `.ips` growth stayed at 36 → 36 (native crash triple stays fully closed).
+**Before this crash surfaced, the v1.0.16 snapshot-refresh DID help** — `force-update.yaml` reached STEP 47/47 vs the previous max of 34, and `.ips` growth stayed at 36 → 36 (native crash triple stays fully closed).
 
 ### D1 — walk frozen `XCUIElementSnapshot` instead of live-query enumeration
 
@@ -505,7 +504,7 @@ collectInteractiveIds(snap.dictionaryRepresentation, ignore, ids, ...)
 
 ## [1.0.16] — 2026-07-12
 
-**Hotfix: v1.0.15's interactive polling had a stale-snapshot bug on RN Fabric + iOS 26.5 sim.** Insight's round-2 investigation in `smix-feedback-2026-07-11-round-2-status.md` diagnosed the exact race: RN 0.86 Fabric New Arch populates the a11y tree via `RCTMountItemProtocol` as mount items drain, NOT during layout. XCUITest's snapshot cache holds the sparse pre-drain tree, and `descendants(matching:)` returned the same cached snapshot every poll iteration.
+**Hotfix: v1.0.15's interactive polling had a stale-snapshot bug on RN Fabric + iOS 26.5 sim.** The exact race: RN 0.86 Fabric New Arch populates the a11y tree via `RCTMountItemProtocol` as mount items drain, NOT during layout. XCUITest's snapshot cache holds the sparse pre-drain tree, and `descendants(matching:)` returned the same cached snapshot every poll iteration.
 
 ### D1 — Swift snapshot-refresh in interactive polling
 
@@ -610,13 +609,13 @@ Insight-side canary post-publish: same discipline as v1.0.10-v1.0.14. Docker tes
 
 ## [1.0.14] — 2026-07-11
 
-**resetAppData verb (URL-scheme JS-wipe) + external metro log tail (`--metro-log <path>`) + verb-selection guide.** Response to `smix-feedback-2026-07-11-post-native-fix.md` + insight Q&A in `smix-feedback-2026-07-11-v1.0.12-answers.md`. RFC `.claude/rfcs/1.0.14-cluster-a-b-c-plus-retry.md`; verb-selection guide at `.claude/rfcs/verb-selection-guide.md`.
+**resetAppData verb (URL-scheme JS-wipe) + external metro log tail (`--metro-log <path>`) + verb-selection guide.** RFC `.claude/rfcs/1.0.14-cluster-a-b-c-plus-retry.md`; verb-selection guide at `.claude/rfcs/verb-selection-guide.md`.
 
 Version jump 1.0.11 → 1.0.14 (no interim v1.0.12 or v1.0.13 published) per user directive `以 1.0.14 为目标 autorun，中途不 ship`.
 
 ### Cluster A — `resetAppData` verb (URL-scheme JS-wipe)
 
-Fixes the "dev-fixture ceremony cost" problem in insight's `smix-feedback-2026-07-11-post-native-fix.md` §1. Every prior `clearAppData` wiped the app's container INCLUDING expo-dev-client's persisted metro URL + Metro bundle cache + dev-tools state — replaying a 15-30 s dev-client cold-boot ceremony every launch.
+Fixes the "dev-fixture ceremony cost" problem: every prior `clearAppData` wiped the app's container INCLUDING expo-dev-client's persisted metro URL + Metro bundle cache + dev-tools state — replaying a 15-30 s dev-client cold-boot ceremony every launch.
 
 New verb: `resetAppData` fires an app-owned URL scheme on the host (`simctl openurl <UDID> <url>`), optionally waits for a completion signal on the external metro log tail, then returns. No container tear. Consumer app decides scope (typically `mmkv.clearAll()` + `console.log('[dev] reset-complete token=<uuid>')`).
 
@@ -645,7 +644,7 @@ Wire counter fields in `SessionLifecycleCounters`: `reset_app_data_total`, `rese
 
 ### Cluster B — external metro log tail (`--metro-log <path>` on `smix diagnostic dump`)
 
-Fixes insight's "log gate skipped — metro was already running externally" problem in `smix-feedback-2026-07-11-post-native-fix.md` §2 + §5. Consumers who spawn metro externally (`nohup bun dev > /tmp/metro.log`) couldn't see JS-side log signal when a flow stalled.
+Fixes the "log gate skipped — metro was already running externally" problem: consumers who spawn metro externally (`nohup bun dev > /tmp/metro.log`) couldn't see JS-side log signal when a flow stalled.
 
 - New CLI flags on `smix diagnostic dump`:
   - `--metro-log <path>` — tail the last N lines from this file at dump time.
@@ -658,8 +657,6 @@ Fixes insight's "log gate skipped — metro was already running externally" prob
 For runtime tail during `smix run` (used by v1.0.14's `resetAppData waitFor: { logLinePattern }` and pre-existing `expect.signal` verbs), the existing `smix-metro-log FileTailSubscriber` + `MetroLogTail` continue to serve — no new subscriber design required.
 
 ### Cluster D — verb-selection guide + shipping-doc format
-
-Insight `smix-feedback-2026-07-11-v1.0.12-answers.md` Q10 ask.
 
 - `.claude/rfcs/verb-selection-guide.md` — decision tree + comparison matrix for `clearAppData` vs `resetAppData` vs `clearState + clearKeychain`. Migration crib from pre-v1.0.14 yaml to the split baseline + fast-path pattern.
 - v1.0.14 shipping doc (this release's) gains: 3-line TL;DR at top; `[see prior-doc §X]` cross-doc back-links.
@@ -711,7 +708,7 @@ Insight-side canary (post-publish, per Q9): ship on Preferences smoke as histori
 
 ## [1.0.11] — 2026-07-11
 
-**launchApp launchArgs/launchEnv + wait-for-foreground + always-emit aliveCache + terminate-outcome counters.** Response to `smix-feedback-2026-07-11-v1.0.10-observations.md`. RFC `.claude/rfcs/1.0.11-launch-lifecycle-and-observability-under-load.md`; the standalone a11y-cache invariant note lives at `.claude/rfcs/appalive-cache-invariant.md`.
+**launchApp launchArgs/launchEnv + wait-for-foreground + always-emit aliveCache + terminate-outcome counters.** RFC `.claude/rfcs/1.0.11-launch-lifecycle-and-observability-under-load.md`; the standalone a11y-cache invariant note lives at `.claude/rfcs/appalive-cache-invariant.md`.
 
 ### The three v1.0.10 followup gaps closed
 
@@ -768,7 +765,7 @@ POST /diagnostic/dump
 
 ## [1.0.10] — 2026-07-11
 
-**Systemic fix for the CLI-vs-runner distribution drift that made v1.0.4–v1.0.9 patches silently no-op on stale on-disk runner sources.** Response to `smix-feedback-2026-07-11-systemic-pause.md`. RFC `.claude/rfcs/1.0.10-runner-source-sync-and-observability.md`.
+**Systemic fix for the CLI-vs-runner distribution drift that made v1.0.4–v1.0.9 patches silently no-op on stale on-disk runner sources.** RFC `.claude/rfcs/1.0.10-runner-source-sync-and-observability.md`.
 
 ### Root cause (Phase A — confirmed with hard evidence)
 
@@ -856,7 +853,7 @@ App-alive cache adaptive re-probe + supervisor RunnerCycled log context. Closes 
 
 
 
-Eliminate the "Insight quit unexpectedly" ReportCrash system dialog. Response to `smix-feedback-2026-07-11-blocking-crash-dialog.md` — escalated hard-requirement. RFC `.claude/rfcs/1.0.8-crash-dialog-elimination-and-a11y-cache.md`.
+Eliminate the "app quit unexpectedly" ReportCrash system dialog that fired during in-place data clears. RFC `.claude/rfcs/1.0.8-crash-dialog-elimination-and-a11y-cache.md`.
 
 ### Root cause revisited
 
@@ -895,7 +892,7 @@ The systemic answer: move termination + launch INSIDE the XCUITest runner proces
 
 
 
-Systemic observability + subprocess integrity. RFC `.claude/rfcs/1.0.7-observability-layer.md`. Response to `smix-feedback-2026-07-11-v1.0.5-followup.md` items A, B, D.3 — three feedback points share one root cause: smix is opaque about its own runtime.
+Systemic observability + subprocess integrity. RFC `.claude/rfcs/1.0.7-observability-layer.md`. Three reported symptoms shared one root cause: smix was opaque about its own runtime.
 
 ### Subprocess integrity (RFC §D1 + D2)
 
@@ -990,7 +987,7 @@ Session persistence across XCTest lifecycle, host-side XCTest supervisor daemon,
 
 
 
-Studio protection + full-scope insight feedback response. Motivation: a downstream `insight` gate loop running against a v1.0.3 runner triggered `SimRenderServer` `brk 1` assertion inside the `com.apple.display.captureservice` dispatch queue, cascading into shutdown_stall and forced macOS restarts. Forensic evidence + response plan in `docs/ai-guide/insight-v1.0.3-studio-crash-2026-07-10.md` (gitignored). This release closes every ask in `insight/.claude/state/gol-611/smix-feedback-2026-07-10-gate-hardening.md` (§A–§I) plus the SimRenderServer stress fix, plus lifecycle-safe-exit primitives.
+Studio protection + gate-hardening. Motivation: a downstream gate loop running against a v1.0.3 runner triggered a `SimRenderServer` `brk 1` assertion inside the `com.apple.display.captureservice` dispatch queue, cascading into shutdown_stall and forced macOS restarts. This release closes the full gate-hardening ask (§A–§I) plus the SimRenderServer stress fix, plus lifecycle-safe-exit primitives.
 
 ### Added — sense layer (RFC 1.0.4 §D1)
 

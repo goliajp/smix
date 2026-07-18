@@ -2,7 +2,7 @@
 
 Written: 2026-07-11 (v1.0.14 Cluster D)
 Location: `.claude/rfcs/verb-selection-guide.md`
-Insight ask: `smix-feedback-2026-07-11-v1.0.12-answers.md` implicit — "the last several shipping docs have leaned on wire-format specifics; consumer-side 'when should I reach for X vs Y' is more useful".
+Insight ask (from their v1.0.12 answers, implicit): "the last several shipping docs have leaned on wire-format specifics; consumer-side 'when should I reach for X vs Y' is more useful".
 
 Three verbs today wipe or reset app state. They're not interchangeable. Which one to reach for depends on **whether you want to preserve dev-fixture state**, and **whether the app itself can signal reset completion**.
 
@@ -91,7 +91,7 @@ and every launch pays the 15-30 s dev-client ceremony cost, refactor to:
 
 Requires:
 - `smix run --metro-log /tmp/metro.log` (for `waitFor.logLinePattern` — otherwise use `waitFor: { sleepMs: 500 }` as a soft fallback).
-- App-side URL scheme + `[dev] reset-complete token=<uuid>` log line (10-line consumer-side change, see insight's Q1 answer in `smix-feedback-2026-07-11-v1.0.12-answers.md`).
+- App-side URL scheme + `[dev] reset-complete token=<uuid>` log line (10-line consumer-side change, see insight's Q1 answer in their v1.0.12 answers).
 
 ## Anti-patterns
 

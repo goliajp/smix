@@ -63,6 +63,14 @@ log "ffi bindings"
 "$ROOT/scripts/dev/ffi-bindings-fresh.sh" > /tmp/smix-ship-ffi-bindings.log 2>&1 \
   || fail "FFI bindings are not what smix-ffi generates — see /tmp/smix-ship-ffi-bindings.log"
 
+# --- llms.txt freshness ----------------------------------------------
+# llms.txt / llms-full.txt are a projection of VERB_TABLE + the Selector
+# enum + the workspace version. Gate them like the FFI bindings so the
+# AI-facing index can't drift from the sources it mirrors.
+log "llms.txt freshness"
+python3 "$ROOT/scripts/dev/gen-llms.py" --check > /tmp/smix-ship-llms.log 2>&1 \
+  || fail "llms.txt/llms-full.txt are stale — run scripts/dev/gen-llms.py and commit (see /tmp/smix-ship-llms.log)"
+
 # --- clippy -----------------------------------------------------------
 # `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
 # nothing ran clippy — so four lints sat in the tree, one of them a doc
