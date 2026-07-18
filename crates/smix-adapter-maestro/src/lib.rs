@@ -416,6 +416,9 @@ pub enum Step {
     InputText(String),
     /// Press a hardware / IME key. Maps to `App::press_key`.
     PressKey(String),
+    /// Navigation back (maestro `back`): iOS navbar-back / edge swipe,
+    /// Android KEYCODE_BACK. Not a keyboard key.
+    Back,
     /// Recursively run a referenced yaml. The parser keeps the raw
     /// (potentially relative) path string here; [`parse_flow_file`]
     /// resolves it against the invoking yaml's directory and expands

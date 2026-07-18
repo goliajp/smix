@@ -51,9 +51,14 @@ pub struct FlowArgs {
     /// Optional device UDID (iOS) or device id (Android, e.g. `emulator-5554`).
     /// If `None`, falls back to platform default (env / auto-pick).
     pub udid: Option<String>,
-    /// Default bundle id / Android package. Yaml header `appId:` /
-    /// `app:` overrides per flow.
-    pub bundle_id: String,
+    /// Bundle id / Android package override. `None` = use the flow's
+    /// own `appId:` (or `app:` via apps-config). The doc here used to
+    /// claim the yaml header overrides this field while the session
+    /// opened before the yaml was even parsed — combined with the CLI
+    /// defaulting this to a literal `com.example.app`, the quickstart
+    /// form (`smix run flow.yaml --device X`) could not drive any real
+    /// app.
+    pub bundle_id: Option<String>,
     /// Runner HTTP port.
     pub runner_port: u16,
     /// Skip the initial `App::foreground` call. Use when the app is
@@ -140,104 +145,10 @@ pub struct FlowArgs {
 /// - 5  runFlow cycle / file IO
 /// - 6  runner unreachable
 pub async fn run_flow(args: FlowArgs) -> ExitCode {
-    // 1. connect runner — iOS swift smix-runner OR Android Kotlin runner.
-    let app = match args.platform {
-        FlowPlatform::Ios => App::connect_to_runner(args.runner_port).await,
-        FlowPlatform::Android => App::connect_to_runner_android(args.runner_port).await,
-    };
-    let app = match app {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!(
-                "error: connect_to_runner({}, platform={:?}) failed: {e}",
-                args.runner_port, args.platform
-            );
-            return ExitCode::from(6);
-        }
-    };
-    let configure = |app: smix_sdk::App| -> smix_sdk::App {
-        let app = if let Some(u) = args.udid.as_deref() {
-            app.with_udid(u)
-        } else {
-            app
-        };
-        // Thread bundle_id + auto_activate through the driver so every
-        // runner request carries `App-Bundle-Id` / `App-Activate` /
-        // `Session-Id` headers.
-        let app = app.with_bundle_id(&args.bundle_id);
-        let app = if args.auto_activate {
-            app.with_auto_activate(true)
-        } else {
-            app
-        };
-        let app = if args.force_key_events {
-            app.with_force_key_events(true)
-        } else {
-            app
-        };
-        // v2 break #3: inject the two run-time switches the CLI resolved
-        // from `.smix/config.yaml`. `None` = no injection → the sdk method
-        // keeps its own `SMIX_*` env fallback (non-CLI callers).
-        app.with_assert_screenshot_strict(args.assert_screenshot_no_autorecord)
-            .with_launch_fresh_force_reinstall(args.launch_fresh_force_reinstall)
-    };
-    let app = configure(app);
-
-    // Session lifecycle. On iOS `smix run` opens a runner-side session at
-    // start-up and closes it on exit. Every request in between carries
-    // `Session-Id`, so the runner short-circuits per-request `.activate()`
-    // — eliminating the activation storm at the root without any yaml-side
-    // change.
-    //
-    // A missing session on iOS is fatal (v2 break #1). It used to fall back
-    // to the legacy per-request path, which is the activation storm sessions
-    // exist to remove — keeping it behind a warning kept the thing the break
-    // removes. A runner that cannot open a session is out of date, and that
-    // is said loudly with the fix.
-    //
-    // Android is not on this path at all: its runner serves no `/session/*`
-    // route, so sessionless is its only way to drive, not an implicit one.
-    enum AppHolder {
-        Session(smix_sdk::Session),
-        // Android-only. iOS reaches a session or exits.
-        Loose(smix_sdk::App),
-    }
-    impl AppHolder {
-        fn app(&self) -> &smix_sdk::App {
-            match self {
-                AppHolder::Session(s) => s.app(),
-                AppHolder::Loose(a) => a,
-            }
-        }
-    }
-    let holder = match args.platform {
-        FlowPlatform::Ios => match app.open_session(&args.bundle_id, args.auto_activate).await {
-            Ok(s) => AppHolder::Session(s),
-            Err(e) => {
-                eprintln!(
-                    "error: /session/open failed ({e}). smix v2 drives iOS through a \
-                     runner session; a runner too old to open one cannot be driven. \
-                     Fix: `smix runner install --force` to re-extract the runner this \
-                     CLI ships with, then retry."
-                );
-                return ExitCode::from(6);
-            }
-        },
-        FlowPlatform::Android => AppHolder::Loose(app),
-    };
-
-    // 2. foreground unless --no-launch (iOS only; Android brings app
-    // to foreground via launchApp step).
-    if !args.no_launch
-        && args.platform == FlowPlatform::Ios
-        && let Err(e) = holder.app().foreground(&args.bundle_id).await
-    {
-        eprintln!("error: foreground({}) failed: {e}", args.bundle_id);
-        return ExitCode::from(3);
-    }
-
-    // 3. parse yaml.
-    //
+    // 1. parse yaml — BEFORE any wire traffic, because the flow's own
+    // `appId:` is the default app to open the session for. The session
+    // used to open first, on the CLI-supplied bundle alone, which made
+    // the yaml header's appId decorative.
     // v2 break #3: inject the two parse-time switches the CLI resolved
     // from `.smix/config.yaml` onto the parser's thread-local override
     // seam. This MUST happen with NO `.await` between the two `set_*`
@@ -301,6 +212,118 @@ pub async fn run_flow(args: FlowArgs) -> ExitCode {
             eprintln!("error: resolve app: {e}");
             return ExitCode::from(2);
         }
+    }
+
+    // The app under test: an explicit --bundle-id wins; otherwise the
+    // flow's own appId (which apps-config resolution above may have
+    // filled from the logical `app:` key).
+    let bundle_id = match args.bundle_id.clone().filter(|b| !b.is_empty()) {
+        Some(b) => b,
+        None if !flow.app_id.is_empty() => flow.app_id.clone(),
+        None => {
+            eprintln!(
+                "error: {} declares no appId (or app:) and no --bundle-id was \
+                 given — there is no app to open the session for",
+                args.flow.display()
+            );
+            return ExitCode::from(2);
+        }
+    };
+
+    // 2. connect runner — iOS swift smix-runner OR Android Kotlin runner.
+    let app = match args.platform {
+        FlowPlatform::Ios => App::connect_to_runner(args.runner_port).await,
+        FlowPlatform::Android => App::connect_to_runner_android(args.runner_port).await,
+    };
+    let app = match app {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!(
+                "error: connect_to_runner({}, platform={:?}) failed: {e}",
+                args.runner_port, args.platform
+            );
+            return ExitCode::from(6);
+        }
+    };
+    let configure = |app: smix_sdk::App| -> smix_sdk::App {
+        let app = if let Some(u) = args.udid.as_deref() {
+            app.with_udid(u)
+        } else {
+            app
+        };
+        // Thread bundle_id + auto_activate through the driver so every
+        // runner request carries `App-Bundle-Id` / `App-Activate` /
+        // `Session-Id` headers.
+        let app = app.with_bundle_id(&bundle_id);
+        let app = if args.auto_activate {
+            app.with_auto_activate(true)
+        } else {
+            app
+        };
+        let app = if args.force_key_events {
+            app.with_force_key_events(true)
+        } else {
+            app
+        };
+        // v2 break #3: inject the two run-time switches the CLI resolved
+        // from `.smix/config.yaml`. `None` = no injection → the sdk method
+        // keeps its own `SMIX_*` env fallback (non-CLI callers).
+        app.with_assert_screenshot_strict(args.assert_screenshot_no_autorecord)
+            .with_launch_fresh_force_reinstall(args.launch_fresh_force_reinstall)
+    };
+    let app = configure(app);
+
+    // Session lifecycle. On iOS `smix run` opens a runner-side session at
+    // start-up and closes it on exit. Every request in between carries
+    // `Session-Id`, so the runner short-circuits per-request `.activate()`
+    // — eliminating the activation storm at the root without any yaml-side
+    // change.
+    //
+    // A missing session on iOS is fatal (v2 break #1). It used to fall back
+    // to the legacy per-request path, which is the activation storm sessions
+    // exist to remove — keeping it behind a warning kept the thing the break
+    // removes. A runner that cannot open a session is out of date, and that
+    // is said loudly with the fix.
+    //
+    // Android is not on this path at all: its runner serves no `/session/*`
+    // route, so sessionless is its only way to drive, not an implicit one.
+    enum AppHolder {
+        Session(smix_sdk::Session),
+        // Android-only. iOS reaches a session or exits.
+        Loose(smix_sdk::App),
+    }
+    impl AppHolder {
+        fn app(&self) -> &smix_sdk::App {
+            match self {
+                AppHolder::Session(s) => s.app(),
+                AppHolder::Loose(a) => a,
+            }
+        }
+    }
+    let holder = match args.platform {
+        FlowPlatform::Ios => match app.open_session(&bundle_id, args.auto_activate).await {
+            Ok(s) => AppHolder::Session(s),
+            Err(e) => {
+                eprintln!(
+                    "error: /session/open failed ({e}). smix v2 drives iOS through a \
+                     runner session; a runner too old to open one cannot be driven. \
+                     Fix: `smix runner install --force` to re-extract the runner this \
+                     CLI ships with, then retry."
+                );
+                return ExitCode::from(6);
+            }
+        },
+        FlowPlatform::Android => AppHolder::Loose(app),
+    };
+
+    // 3. foreground unless --no-launch (iOS only; Android brings app
+    // to foreground via launchApp step).
+    if !args.no_launch
+        && args.platform == FlowPlatform::Ios
+        && let Err(e) = holder.app().foreground(&bundle_id).await
+    {
+        eprintln!("error: foreground({}) failed: {e}", bundle_id);
+        return ExitCode::from(3);
     }
 
     // Dispatch every step. Per-step progress to stderr.
@@ -702,6 +725,7 @@ fn summarize_step(step: &Step) -> String {
         Step::Scroll => "scroll".into(),
         Step::HideKeyboard => "hideKeyboard".into(),
         Step::AssertNotVisible { .. } => "assertNotVisible".into(),
+        Step::Back => "back".to_string(),
         Step::KillApp { app_id } => format!("killApp {app_id}"),
         Step::ClearState { app_id } => format!("clearState {app_id}"),
         Step::ClearKeychain => "clearKeychain".into(),

@@ -7,7 +7,7 @@ use smix_adapter_maestro::{Flow, ParseError, Step};
 fn step_enum_compiles() {
     let _ = Step::WaitForAnimationToEnd { ceiling_ms: 400 };
     let _ = Step::InputText("test".to_string());
-    let _ = Step::PressKey("back".to_string());
+    let _ = Step::Back;
 }
 
 #[test]

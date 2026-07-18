@@ -2328,7 +2328,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         // they are, so `- back` has to work here and not only after a
         // migrate — VERB_TABLE renames it to pressKey, and the row is the
         // only thing that said what it presses.
-        "back" => Ok(Step::PressKey("back".to_string())),
+        "back" => Ok(Step::Back),
         "runFlow" => parse_run_flow(value),
         "scrollUntilVisible" => parse_scroll_until_visible(value),
         "eraseText" => parse_erase_text(value),

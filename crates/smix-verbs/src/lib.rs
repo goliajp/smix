@@ -75,7 +75,7 @@ pub enum VerbCategory {
     /// swipeOnce, hideKeyboard).
     Gesture,
     /// Device-level control (openLink / openUrl, setLocation,
-    /// travel, setPermissions, setOrientation, toggleAirplaneMode).
+    /// travel, setPermissions, setOrientation).
     Device,
     /// smix-native extensions (ocrText, anchorRelative, tapById,
     /// fixture, webviewEval).

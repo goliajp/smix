@@ -1903,7 +1903,7 @@ public actor SmixRunnerServer {
         catch let e as RecordRoute.DecodeError { return RecordRoute.badRequest(reason: "\(e)") }
         catch { return RecordRoute.badRequest(reason: "\(error)") }
         return await Self.contextGuardedResponse(request: request,
-          fallback: RecordRoute.startSuccess()
+          fallback: RecordRoute.handlerCrashed()
         ) {
           await recordHandlers.start()
           return RecordRoute.startSuccess()
@@ -1918,7 +1918,7 @@ public actor SmixRunnerServer {
         catch let e as RecordRoute.DecodeError { return RecordRoute.badRequest(reason: "\(e)") }
         catch { return RecordRoute.badRequest(reason: "\(error)") }
         return await Self.contextGuardedResponse(request: request,
-          fallback: RecordRoute.stopSuccess(events: [])
+          fallback: RecordRoute.handlerCrashed()
         ) {
           let events = await recordHandlers.stop()
           return RecordRoute.stopSuccess(events: events)
@@ -1927,7 +1927,7 @@ public actor SmixRunnerServer {
       await server.appendRoute("GET /record/poll") { _ in
         // /record/poll doesn't touch the target app — bare guardedResponse.
         return await Self.guardedResponse(
-          fallback: RecordRoute.pollSuccess(events: [])
+          fallback: RecordRoute.handlerCrashed()
         ) {
           let events = await recordHandlers.poll()
           return RecordRoute.pollSuccess(events: events)

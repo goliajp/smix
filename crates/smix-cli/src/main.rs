@@ -562,6 +562,11 @@ enum CapsuleAction {
     /// Bring up sim + start capture + start runner in record mode.
     Up {
         device: String,
+        /// Bundle id the runner binds to. Required — `capsule up` runs
+        /// `runner up`, which refuses to start without a target bundle,
+        /// so a capsule without this flag could never complete.
+        #[arg(long)]
+        bundle: String,
         /// Allow the "soft capsule" fallback when the Simulator UI is
         /// open (otherwise the guard rejects the boot to avoid
         /// contention with a user-visible Simulator session).
@@ -1197,6 +1202,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             match action {
                 CapsuleAction::Up {
                     device,
+                    bundle,
                     soft,
                     no_capture,
                 } => {
@@ -1206,7 +1212,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         udid: &udid,
                         runner_port: port,
                         capture_endpoint: &capture_endpoint,
-                        bundle: None,
+                        bundle: Some(&bundle),
                         soft,
                         no_capture,
                     })
@@ -1424,7 +1430,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             let udid = device
                 .as_deref()
                 .map(|d| resolve_device(d).unwrap_or_else(|_| d.to_string()));
-            let bundle = bundle_id.unwrap_or_else(|| "com.example.app".to_string());
+            // No placeholder default: run_flow resolves the app from the
+            // flow's own appId when the flag is absent. The literal
+            // com.example.app default here once made the quickstart form
+            // undriveable. `attribution_bundle` below is best-effort for
+            // .ips crash attribution only.
+            let bundle = bundle_id.clone();
             let port = runner_port.unwrap_or(22087);
             let plat = platform.to_flow();
             let out_fmt = format.to_adapter();
@@ -1484,6 +1495,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 // attempt start and end. `flow-attempts.json` persistence
                 // + `smix diagnostic dump` overlay surface the attribution
                 // table.
+                let attribution_bundle: Option<String> = bundle.clone().or_else(|| {
+                    smix_adapter_maestro::parse_flow_file(flow_path)
+                        .ok()
+                        .map(|f| f.app_id)
+                        .filter(|a| !a.is_empty())
+                });
                 let max_attempts = retry.max(1);
                 let mut attempts: Vec<smix_runner_wire::FlowAttempt> = Vec::new();
                 let flow_name = flow_path
@@ -1496,7 +1513,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     if attempt_index > 0 {
                         eprintln!("smix run: retry #{attempt_index} for flow {flow_name}");
                     }
-                    let ips_before = ips_snapshot(Some(bundle.as_str()));
+                    let ips_before = ips_snapshot(attribution_bundle.as_deref());
                     let started = std::time::Instant::now();
                     let exit = smix_adapter_maestro::run_flow(smix_adapter_maestro::FlowArgs {
                         flow: flow_path.clone(),
@@ -1527,7 +1544,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     .await;
                     let wall_ms = started.elapsed().as_millis() as u64;
                     let code = exit_code_to_u8(exit);
-                    let ips_after = ips_snapshot(Some(bundle.as_str()));
+                    let ips_after = ips_snapshot(attribution_bundle.as_deref());
                     let new_ips: Option<String> =
                         ips_after.iter().find(|p| !ips_before.contains(*p)).cloned();
                     let (status, error_class) = match code {

@@ -75,6 +75,18 @@ public enum RecordRoute {
     return envelope(.ok, body)
   }
 
+  // The guarded-crash fallback: the handler died mid-request. This used
+  // to be the SUCCESS shape, making a crashed recorder byte-identical to
+  // a healthy empty one on the wire.
+  public static func handlerCrashed() -> HTTPResponse {
+    let body = Data(#"{"ok":false,"error":"handler_crashed"}"#.utf8)
+    return HTTPResponse(
+      statusCode: .internalServerError,
+      headers: [.contentType: "application/json"],
+      body: body
+    )
+  }
+
   public static func badRequest(reason: String) -> HTTPResponse {
     let r = jsonEscape(reason)
     let body = Data(#"{"ok":false,"error":"bad_request","reason":"\#(r)"}"#.utf8)

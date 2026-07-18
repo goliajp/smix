@@ -631,17 +631,25 @@ impl Session {
         let req = smix_runner_client::SessionRelaunchAppRequest {
             session_id: self.session_id.clone(),
         };
-        runner
-            .relaunch_session_app(&req)
-            .await
-            .map(|r| r.wall_ms)
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("session relaunch_app: {e}"),
-                    ..Default::default()
-                })
+        let resp = runner.relaunch_session_app(&req).await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("session relaunch_app: {e}"),
+                ..Default::default()
             })
+        })?;
+        // `ok` went unread here too — a crash-guard fallback is 200 +
+        // ok:false and used to report the relaunch as done.
+        if !resp.ok {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: "session relaunch_app: runner reported ok:false — \
+                          the app did not relaunch"
+                    .into(),
+                ..Default::default()
+            }));
+        }
+        Ok(resp.wall_ms)
     }
 
     /// Ask the runner to re-issue `.activate()` on the session's
@@ -1121,7 +1129,7 @@ impl App {
             wait_for_interactive_ms: Some(30_000),
         };
         // Step 1 — cooperative terminate on runner side.
-        runner
+        let term = runner
             .terminate_session_app(&terminate_req)
             .await
             .map_err(|e| {
@@ -1131,6 +1139,19 @@ impl App {
                     ..Default::default()
                 })
             })?;
+        // The response's `ok` went unread — a failed cooperative
+        // terminate (crash fallback answers 200 + ok:false) proceeded
+        // straight to the sandbox rm and reported success.
+        if !term.ok {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: "clear_app_data: the runner reported the cooperative \
+                          terminate did not happen (ok:false); refusing to wipe \
+                          the sandbox under a live app"
+                    .into(),
+                ..Default::default()
+            }));
+        }
         // Step 2 — host-side sandbox wipe. Safe now — the target app
         // was cooperatively terminated via testmanagerd; no
         // ReportCrash signal fired. Uses `simctl spawn <UDID> /bin/rm`
@@ -1141,13 +1162,22 @@ impl App {
             .map_err(simctl_to_failure)?;
         // Step 3 — cooperative launch on runner side. Fresh app
         // instance sees the cleaned sandbox.
-        runner.launch_session_app(&launch_req).await.map_err(|e| {
+        let launched = runner.launch_session_app(&launch_req).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
                 message: format!("clear_app_data launch: {e}"),
                 ..Default::default()
             })
         })?;
+        if !launched.ok {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: "clear_app_data: the runner reported the relaunch did \
+                          not happen (ok:false) — the app is not running"
+                    .into(),
+                ..Default::default()
+            }));
+        }
         Ok(start.elapsed().as_millis() as u64)
     }
 

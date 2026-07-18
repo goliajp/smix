@@ -335,6 +335,10 @@ pub trait AppLike: Send + Sync {
     async fn copy_text_from(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
     /// Double-tap an element. Mirrors [`App::double_tap`].
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
+
+    /// Navigation back — iOS navbar back / edge swipe, Android
+    /// KEYCODE_BACK. Distinct from any keyboard key.
+    async fn go_back(&self) -> Result<(), ExpectationFailure>;
     /// Long-press for `duration`. Mirrors [`App::long_press`].
     async fn long_press(
         &self,
@@ -546,6 +550,9 @@ impl AppLike for App {
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         App::double_tap(self, selector).await
     }
+    async fn go_back(&self) -> Result<(), ExpectationFailure> {
+        App::go_back(self).await
+    }
     async fn long_press(
         &self,
         selector: &Selector,
@@ -724,6 +731,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::ClearKeychain => "clearKeychain",
         Step::HideKeyboard => "hideKeyboard",
         Step::PressKey(_) => "pressKey",
+        Step::Back => "back",
         Step::Scroll => "scroll",
         Step::ScrollUntilVisible { .. } => "scrollUntilVisible",
         Step::Swipe { .. } => "swipe",
@@ -1552,6 +1560,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.fill(&smix_sdk::focused(), &expanded).await?;
                 Ok(RunStepReport::Ok)
             }
+            Step::Back => {
+                self.app.go_back().await?;
+                Ok(RunStepReport::Ok)
+            }
             Step::PressKey(s) => {
                 let key = parse_key_name(s)?;
                 // iOS Simulator hardware-button restrictions:
@@ -1701,10 +1713,16 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     Some(smix_sdk::ResetAppDataWaitFor::LogLinePattern(pattern)) => {
                         let Some(tail) = self.metro_tail.as_ref() else {
                             // Best-effort: no metro log wired.
-                            // Sleep 500 ms so the URL propagates,
-                            // don't count as timeout — the caller
-                            // knew it hadn't set --metro-log.
+                            // Sleep 500 ms so the URL propagates —
+                            // but say so in the RunReport: "the
+                            // caller knew" left no trace that the
+                            // completion signal was never awaited.
                             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                            warnings.push(format!(
+                                "resetAppData: waitFor.logLinePattern {pattern:?} \
+                                 requires --metro-log, which is not configured — \
+                                 waited a blind 500ms instead of the signal"
+                            ));
                             return Ok(RunStepReport::Ok);
                         };
                         let matcher = smix_metro_log::SignalMatcher::new(pattern, None)
@@ -3381,7 +3399,10 @@ fn parse_simctl_permission(name: &str) -> Result<SimctlPermission, ParseError> {
 fn parse_key_name(s: &str) -> Result<KeyName, RunError> {
     match s.trim().to_ascii_lowercase().as_str() {
         "enter" | "return" => Ok(KeyName::Return),
-        "delete" | "backspace" | "back" => Ok(KeyName::Delete),
+        // "back" is deliberately NOT an alias: maestro's `back` is
+        // navigation, and aliasing it to Delete once turned every
+        // `- back` step into a silent backspace that reported success.
+        "delete" | "backspace" => Ok(KeyName::Delete),
         "tab" => Ok(KeyName::Tab),
         "space" => Ok(KeyName::Space),
         "escape" | "esc" => Ok(KeyName::Escape),

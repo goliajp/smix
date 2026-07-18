@@ -53,7 +53,8 @@ fn parses_test_subcommand_with_positional_flow() {
         } => {
             assert_eq!(flow, PathBuf::from("flow.yaml"));
             assert_eq!(udid, None);
-            assert_eq!(bundle_id, "com.example.app");
+            // No placeholder default any more — the flow's appId takes over.
+            assert_eq!(bundle_id, None);
             assert_eq!(runner_port, 22087);
             assert!(!no_launch);
         }
@@ -88,7 +89,7 @@ fn parses_all_flags() {
         } => {
             assert_eq!(flow, PathBuf::from("/abs/path/flow.yaml"));
             assert_eq!(udid.as_deref(), Some("ABCD-1234"));
-            assert_eq!(bundle_id, "com.test.app");
+            assert_eq!(bundle_id.as_deref(), Some("com.test.app"));
             assert_eq!(runner_port, 33333);
             assert!(no_launch);
         }
@@ -114,7 +115,7 @@ fn env_vars_default_when_no_flag() {
             ..
         } => {
             assert_eq!(udid.as_deref(), Some("DEFG-5678"));
-            assert_eq!(bundle_id, "com.env.test");
+            assert_eq!(bundle_id.as_deref(), Some("com.env.test"));
             assert_eq!(runner_port, 12345);
         }
     }

@@ -44,6 +44,8 @@ enum MockCall {
     FindNormCoord(Selector),
     /// `App::webview_eval(js)` (Option A debug bridge).
     WebViewEval(String),
+    /// `App::go_back` — navigation back, NOT a keystroke.
+    GoBack,
     TapAtCoord(f64, f64),
     Fill(Selector, String),
     PressKey(KeyName),
@@ -417,6 +419,10 @@ impl AppLike for MockApp {
     }
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::PressKey(key));
+        Ok(())
+    }
+    async fn go_back(&self) -> Result<(), ExpectationFailure> {
+        self.calls.lock().unwrap().push(MockCall::GoBack);
         Ok(())
     }
     async fn scroll(
@@ -995,6 +1001,20 @@ async fn mock_run_unknown_press_key_returns_error() {
         RunError::UnknownKey(k) => assert_eq!(k, "F19"),
         other => panic!("expected RunError::UnknownKey, got {other:?}"),
     }
+}
+
+/// Maestro's `- back` is a navigation back. It parsed into a
+/// backspace keystroke (`parse_key_name` aliased "back" to Delete),
+/// which pressed a key into whatever had focus and reported success —
+/// live-verified on a simulator: two `- back` steps left Settings
+/// sitting on the About screen while the flow stayed green.
+#[tokio::test]
+async fn mock_run_back_emits_navigation_back_not_a_keystroke() {
+    let flow = parse_inline("appId: x\n---\n- back\n");
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("run ok");
+    assert_eq!(app.calls(), vec![MockCall::GoBack]);
 }
 
 /// Maestro's bare `- eraseText` erases 50 characters (its documented
