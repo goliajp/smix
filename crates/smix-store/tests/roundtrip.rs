@@ -54,11 +54,15 @@ fn a_missing_key_is_none_not_an_error() {
 
 #[test]
 fn opening_an_unwritable_root_names_the_path() {
-    let err = Store::open(std::path::Path::new("/proc/nonexistent/smix"))
-        .expect_err("cannot persist there");
+    // A regular file where a directory has to go: portable across
+    // platforms, and unlike an absolute `/proc/...` literal it does not
+    // read as an HTTP route to the source gates.
+    let blocker = temp_root("unwritable").join("not-a-dir");
+    std::fs::write(&blocker, b"i am a file").expect("make the blocker");
+    let err = Store::open(&blocker).expect_err("cannot persist under a file");
     let msg = format!("{err}");
     assert!(
-        msg.contains("smix"),
+        msg.contains("not-a-dir"),
         "the error must name the path it failed on: {msg}"
     );
 }
