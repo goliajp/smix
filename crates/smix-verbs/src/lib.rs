@@ -36,6 +36,54 @@
 
 #![forbid(unsafe_code)]
 
+/// Keys a selector mapping may carry in yaml.
+///
+/// The parser refuses anything else, and `smix migrate` warns about it
+/// before a user discovers the refusal at run time — so the two must
+/// read one list. They did not: the parser owned it privately, migrate
+/// knew only about verbs, and a flow with `enabled:` migrated cleanly,
+/// exited 0, and then failed to parse.
+///
+/// Covers the selector discriminators, the spatial modifiers, and the
+/// per-verb options that ride in the same mapping.
+pub const SELECTOR_KEYS: &[&str] = &[
+    // discriminators
+    "text",
+    "id",
+    "label",
+    "role",
+    "name",
+    "point",
+    "localized_text",
+    "localizedText",
+    "ocrText",
+    "anchored",
+    "anchorRelative",
+    "fallback",
+    "focused",
+    // spatial + positional modifiers
+    "near",
+    "below",
+    "above",
+    "leftOf",
+    "rightOf",
+    "inside",
+    "ancestor",
+    "nth",
+    "index",
+    "first",
+    "last",
+    // per-verb options sharing the mapping
+    "optional",
+    "dispatch",
+    "pattern",
+    "recognition_level",
+    "locales",
+    "timeout",
+    "requireOnScreen",
+    "duration",
+];
+
 /// One verb in the canonical table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VerbEntry {

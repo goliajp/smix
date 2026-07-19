@@ -64,7 +64,99 @@ pub struct MigrateReport {
     /// Number of `runFlow` invocations discovered in the flow. Not
     /// migrated recursively (nested files are user's responsibility).
     pub subflow_refs: usize,
+    /// Keys found inside selector mappings that v2's parser refuses.
+    ///
+    /// Migration used to end at verbs, so a flow carrying `enabled:` —
+    /// documented for a filter smix never implemented — migrated
+    /// cleanly, exited 0, and failed at parse time. Reported here so
+    /// the CLI can warn while the user is still holding the file.
+    pub unknown_selector_keys: Vec<String>,
 }
+
+/// Collect selector-mapping keys the v2 parser will refuse.
+///
+/// Line-based, like the rest of this migrator: an indented `key:` under
+/// a step is a candidate, and anything `smix_verbs::SELECTOR_KEYS` does
+/// not list is reported. Reading the same list the parser reads is the
+/// point — a second copy here would drift from the refusal it predicts.
+fn scan_selector_keys(yaml: &str, report: &mut MigrateReport) {
+    for line in yaml.lines() {
+        let trimmed = line.trim_start();
+        // Indented `key:` — a bare `- verb:` at step level is a verb,
+        // handled by the verb pass.
+        if trimmed.starts_with('-') || line.starts_with(|c: char| !c.is_whitespace()) {
+            continue;
+        }
+        let Some((key, _)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            continue;
+        }
+        // Verb-level argument keys (`appId`, `commands`, `keys`, ...)
+        // are not selector keys; only flag what looks like a selector
+        // mapping member and is refused.
+        if smix_verbs::SELECTOR_KEYS.contains(&key) || VERB_ARGUMENT_KEYS.contains(&key) {
+            continue;
+        }
+        if !report.unknown_selector_keys.iter().any(|k| k == key) {
+            report.unknown_selector_keys.push(key.to_string());
+        }
+    }
+}
+
+/// Keys that belong to a verb's own argument mapping rather than to a
+/// selector, and so are not the parser's business to refuse here.
+const VERB_ARGUMENT_KEYS: &[&str] = &[
+    "appId",
+    "app",
+    "commands",
+    "when",
+    "visible",
+    "notVisible",
+    "keys",
+    "bundleId",
+    "clearState",
+    "clearKeychain",
+    "arguments",
+    "launchArgs",
+    "launchEnv",
+    "link",
+    "browser",
+    "maxRetries",
+    "times",
+    "while",
+    "whileNotVisible",
+    "direction",
+    "from",
+    "to",
+    "start",
+    "end",
+    "path",
+    "file",
+    "label",
+    "value",
+    "env",
+    "tags",
+    "state",
+    "permissions",
+    "speed",
+    "latitude",
+    "longitude",
+    "url",
+    "pattern",
+    "timeoutMs",
+    "logLinePattern",
+    "nx",
+    "ny",
+    "dx",
+    "dy",
+    "anchor",
+    "condition",
+    "output",
+    "prompt",
+];
 
 /// One verb rename recorded during a migration pass.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,6 +236,7 @@ impl Migrator {
         }
         let mut report = MigrateReport::default();
         let out = self.migrate_lines(yaml, &mut report);
+        scan_selector_keys(yaml, &mut report);
         Ok((out, report))
     }
 
