@@ -22,6 +22,9 @@ use std::path::{Path, PathBuf};
 
 use kevy_embedded::{Config, Store as KevyStore};
 
+mod import;
+pub use import::import_legacy_records;
+
 /// Key prefixes. One namespace per kind of thing smix remembers.
 ///
 /// These strings are the on-disk contract: renaming one orphans every
@@ -34,6 +37,8 @@ mod prefix {
     pub const RUNNERS: &str = "runner:";
     /// Flow attempt records, keyed by flow identity.
     pub const ATTEMPTS: &str = "attempt:";
+    /// Values that exist once: read whole, written whole.
+    pub const SINGLETON: &str = "one:";
 }
 
 /// What can go wrong touching the store.
@@ -204,6 +209,20 @@ impl Store {
         })
     }
 
+    /// A value there is exactly one of.
+    ///
+    /// The subprocess ring is a capped list read and written in full;
+    /// the reset-app-data counters are a single pair. Neither is a
+    /// record among others, and putting them in a [`Namespace`] would
+    /// leave a fake id in `list()` for a caller to iterate.
+    ///
+    /// Trimming a capped list stays with the caller — the store has no
+    /// business knowing whose list is capped at what.
+    #[must_use]
+    pub fn singleton(&self, name: &'static str) -> Singleton<'_> {
+        Singleton { store: self, name }
+    }
+
     /// Every key in the store, prefixes included. The schema test reads
     /// this to hold the on-disk contract still.
     #[must_use]
@@ -321,5 +340,75 @@ impl Namespace<'_> {
                 s.strip_prefix(self.prefix).map(str::to_string)
             })
             .collect()
+    }
+}
+
+/// A value the store holds exactly one of.
+pub struct Singleton<'a> {
+    store: &'a Store,
+    name: &'static str,
+}
+
+impl Singleton<'_> {
+    fn key(&self) -> String {
+        format!("{}{}", prefix::SINGLETON, self.name)
+    }
+
+    /// Read and parse it. `Ok(None)` means never written; bytes that do
+    /// not parse are [`StoreError::Corrupt`], never silence.
+    pub fn get_json<T: serde::de::DeserializeOwned>(&self) -> Result<Option<T>, StoreError> {
+        let key = self.key();
+        let raw = self
+            .store
+            .inner
+            .get(key.as_bytes())
+            .map_err(|source| StoreError::Op {
+                op: "get",
+                key: key.clone(),
+                source,
+            })?;
+        let Some(bytes) = raw else {
+            return Ok(None);
+        };
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| StoreError::Corrupt {
+                key,
+                expected: "JSON",
+                detail: e.to_string(),
+            })
+    }
+
+    /// Replace it.
+    pub fn put_json<T: serde::Serialize>(&self, value: &T) -> Result<(), StoreError> {
+        let key = self.key();
+        let bytes = serde_json::to_vec(value).map_err(|e| StoreError::Corrupt {
+            key: key.clone(),
+            expected: "serializable value",
+            detail: e.to_string(),
+        })?;
+        self.store
+            .inner
+            .set(key.as_bytes(), &bytes)
+            .map(|_| ())
+            .map_err(|source| StoreError::Op {
+                op: "put",
+                key,
+                source,
+            })
+    }
+
+    /// Remove it. Removing what is not there succeeds.
+    pub fn delete(&self) -> Result<(), StoreError> {
+        let key = self.key();
+        self.store
+            .inner
+            .del(&[key.as_bytes()])
+            .map(|_| ())
+            .map_err(|source| StoreError::Op {
+                op: "delete",
+                key,
+                source,
+            })
     }
 }
