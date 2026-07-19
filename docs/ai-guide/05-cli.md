@@ -74,13 +74,57 @@ smix sim exec <ALIAS|UDID> <verb> [args...]
 
 ### Runner management
 
+The runner is the on-device server smix drives. `runner up` blocks until
+its `/health` answers, so when the command returns you can run a flow.
+
+**iOS** — drives `xcodebuild` against the XCUITest runner:
+
 ```bash
-smix runner up <UDID>          # start XCUITest server + block until /health
-smix runner up <UDID> --port 22087 --soft --no-capture
-smix runner down <UDID>        # stop & cleanup
+smix runner up <ALIAS|UDID> --bundle com.example.app
+smix runner up <ALIAS|UDID> --bundle com.example.app --supervise
+smix runner down
 ```
 
-`--soft` skips shutdown when the sim is already booted. `--no-capture` skips background screen recording (faster startup).
+`--bundle` is required: it binds the runner's `XCUIApplication`, and
+without it every `/tree` reads the wrong app. `--supervise` attaches a
+sidecar that re-cycles the runner if it dies; `runner down` cascades to
+it. Port comes from `--runner-port`, else the alias's `runnerPort` in
+`.smix/sims.json`, else 22087.
+
+**Android** — installs the instrumentation APK, forwards the port, and
+`am instrument`s the Kotlin runner:
+
+```bash
+cd android-runner && ./gradlew :app:assembleDebugAndroidTest   # once, to build it
+smix runner up emulator-5554 --platform android
+smix runner down --platform android --device emulator-5554
+```
+
+The device is the adb serial — there is no registry indirection on this
+path. Default port is 28080. `runner up` is idempotent: if `/health`
+already answers on that port it says so and returns rather than stacking
+a second instrumentation onto it.
+
+`runner down --platform android` requires `--device`, because an adb
+command without a serial acts on whichever device happens to be
+attached — and a developer's own phone is often plugged in next to the
+emulator. Every adb call smix makes names its device explicitly for the
+same reason; note that `gradlew install*` does **not**, so prefer these
+commands over gradle install tasks.
+
+Bringing the Android runner up by hand, if you need to:
+
+```bash
+adb -s emulator-5554 install -r -t \
+  android-runner/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5554 forward tcp:28080 tcp:28080
+adb -s emulator-5554 shell am instrument -w \
+  -e class dev.smix.runner.RunnerTest#runServerForever \
+  dev.smix.runner.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+A typo in any of those three coordinates produces `OK (0 tests)` — a
+silent no-op that reads as success.
 
 ### Doctor (housekeeping)
 
@@ -95,23 +139,26 @@ If XCUITest / xcodebuild processes remain after teardown, use `pgrep -fl xctrunn
 
 These act on the runner's currently-active sim. Used for ad-hoc debugging without writing YAML.
 
+The selector is a positional argument in `<kind>:<value>` shorthand —
+`id:` / `text:` / `label:` / `role:`.
+
 ```bash
-smix tap --selector-id home-increment-btn
-smix tap --selector-text "Submit"
-smix tap --selector-coord 0.5,0.8
+smix tap id:home-increment-btn
+smix tap "text:Submit"
 
-smix find --selector-id home-counter-label      # exit 0 if found, non-zero otherwise
-smix wait-for --selector-id loading-spinner --timeout 5000 --until-absent
+smix find id:home-counter-label            # prints exists=<bool>
+smix wait-for id:loading-spinner --timeout 5    # seconds, not ms
 
-smix fill --selector-id form-email-input --text alice@example.com
-smix press-key --key ENTER
-smix scroll --selector-text "Row #5000" --direction DOWN
+smix fill id:form-email-input --text alice@example.com
+smix press-key return                      # positional key name
+smix scroll "text:Row #5000" --direction down
 smix hide-keyboard
 
-smix tree --json | jq .                   # full a11y tree
+smix tree --json | jq .                    # full a11y tree
 smix tree                                  # human-readable outline
-smix describe                              # high-level ScreenDescription
-smix system-popups                         # list active popups (camera permission, etc.)
+smix describe                              # visible interactive elements
+smix system-popups                         # list active popups
+smix system-popup-action <popup-id> <button-id>
 ```
 
 ### Run-script driver (sequential YAML of `smix` subcommands)
@@ -123,10 +170,10 @@ smix system-popups                         # list active popups (camera permissi
   args: [<device>]
 - name: runner
   cmd: runner up
-  args: [{from: outputs.boot.udid}, --soft, --no-capture]
+  args: [{from: outputs.boot.udid}, --bundle, com.example.app]
 - name: tap-home
   cmd: tap
-  args: [--selector-id, tab-home]
+  args: ["id:tab-home"]
 ```
 
 ```bash
@@ -174,7 +221,7 @@ Registry file shape, for editing by hand:
 ### Smoke test the running sim quickly
 
 ```bash
-smix find --selector-text "Welcome" || echo "not on welcome screen"
+smix find "text:Welcome" || echo "not on welcome screen"
 smix tree | head -50   # see what's on screen right now
 smix system-popups     # check for blocking system alerts
 ```
@@ -185,7 +232,7 @@ smix system-popups     # check for blocking system alerts
 smix sim exec <device> terminate com.example.app
 smix sim exec <device> launch com.example.app
 sleep 2
-smix find --selector-id home-container   # confirm fresh launch
+smix find id:home-container   # confirm fresh launch
 ```
 
 ### Capture per-step screenshot (debug aid)

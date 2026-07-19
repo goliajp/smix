@@ -13,6 +13,7 @@ mod authoring;
 mod capsule;
 mod down;
 mod runner;
+mod runner_android;
 mod script;
 
 use clap::{Parser, Subcommand};
@@ -587,6 +588,11 @@ enum RunnerAction {
     /// Start the runner on a device; blocks until /health answers.
     Up {
         device: String,
+        /// Which runner to bring up. `ios` drives xcodebuild + the
+        /// XCUITest runner; `android` installs the instrumentation APK,
+        /// forwards the port, and `am instrument`s the Kotlin runner.
+        #[arg(long, value_enum, default_value_t = RunPlatform::Ios)]
+        platform: RunPlatform,
         /// Bundle id the runner binds its XCUIApplication to.
         /// Required: `runner up` refuses to start without one (the
         /// help used to claim a com.apple.Preferences default that the
@@ -615,7 +621,16 @@ enum RunnerAction {
         supervise: bool,
     },
     /// Stop the runner (SIGINT-first to avoid the crash-report dialog).
-    Down,
+    Down {
+        /// Which runner to stop. `android` needs `--device` too: adb
+        /// commands must name their device, or they act on whichever
+        /// one happens to be attached.
+        #[arg(long, value_enum, default_value_t = RunPlatform::Ios)]
+        platform: RunPlatform,
+        /// Android only: the adb serial (e.g. `emulator-5554`).
+        #[arg(long)]
+        device: Option<String>,
+    },
     /// Cycle the runner: down + up on the same device/port/bundle.
     /// Preserves the per-udid derived-data directory so the warm re-up
     /// finishes in ~3 s. Errors if no runner state.json exists — use
@@ -1066,11 +1081,19 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             match action {
                 RunnerAction::Up {
                     device,
+                    platform,
                     bundle,
                     runner_project,
                     runner_port: port_flag,
                     supervise,
                 } => {
+                    if platform == RunPlatform::Android {
+                        let port = port_flag.unwrap_or(runner_android::DEFAULT_ANDROID_PORT);
+                        // The adb serial IS the device id — there is no
+                        // registry indirection on this path.
+                        runner_android::up(&root, &device, port, 180).map_err(CliError::Other)?;
+                        return Ok(std::process::ExitCode::SUCCESS);
+                    }
                     // Port priority chain:
                     //   1. `--runner-port` flag / SMIX_RUNNER_PORT env
                     //   2. `.smix/sims.json` `runnerPort` field for this alias
@@ -1092,7 +1115,23 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     )
                     .map_err(CliError::Other)?;
                 }
-                RunnerAction::Down => {
+                RunnerAction::Down { platform, device } => {
+                    if platform == RunPlatform::Android {
+                        let serial = device.ok_or_else(|| {
+                            CliError::Other(
+                                "runner down --platform android needs --device \
+                                 <adb-serial>: an adb command without one acts on \
+                                 whichever device is attached"
+                                    .to_string(),
+                            )
+                        })?;
+                        let port = std::env::var("SMIX_RUNNER_PORT")
+                            .ok()
+                            .and_then(|p| p.parse().ok())
+                            .unwrap_or(runner_android::DEFAULT_ANDROID_PORT);
+                        runner_android::down(&root, &serial, port).map_err(CliError::Other)?;
+                        return Ok(std::process::ExitCode::SUCCESS);
+                    }
                     let port = runner_port();
                     runner::down(&root, port).map_err(CliError::Other)?;
                 }

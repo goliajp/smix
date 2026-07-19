@@ -33,7 +33,7 @@ smix sim boot <device>
 # → booted: 5D087114-ECB3-443C-...
 
 # 3. Bring up the smix runner (XCUITest server)
-smix runner up 5D087114-ECB3-443C-... --soft --no-capture
+smix runner up 5D087114-ECB3-443C-... --bundle com.example.YourApp
 # → runner up: http://localhost:22087/health = 200
 
 # 4. Install your app under test (build it with your usual toolchain first)

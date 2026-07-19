@@ -18,7 +18,7 @@ Two pieces: the runner drives the simulator, the MCP server talks to the
 runner. Bring the runner up first — the server does not start it.
 
 ```bash
-smix runner up <udid> --soft
+smix runner up <udid> --bundle com.example.app
 ```
 
 Then point your MCP client at `smix-mcp`:
