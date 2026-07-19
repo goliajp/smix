@@ -17,6 +17,7 @@ categories = ["development-tools::testing", "command-line-utilities"]
 workspace = true
 
 [dependencies]
+smix-store = { path = "../smix-store", version = "2.0.0" }
 smix-error = { path = "../smix-error", version = "2.0.0" }
 smix-sim-health = { path = "../smix-sim-health", version = "2.0.0" }
 serde.workspace = true

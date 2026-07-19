@@ -98,11 +98,49 @@ fn resolve_unknown_lists_known_aliases() {
 
 #[test]
 fn discover_walks_up_to_find_registry() {
+    // discover now yields the `.smix` directory that holds the
+    // registry, not the legacy file inside it — the file is one of two
+    // things that can be there, and a machine that has only ever run
+    // the store has none.
     let dir = tmpdir("discover");
     let path = write_fixture(&dir);
     let nested = dir.join("a/b/c");
     fs::create_dir_all(&nested).unwrap();
-    assert_eq!(SimRegistry::discover(&nested).unwrap(), path);
+    assert_eq!(
+        SimRegistry::discover(&nested).unwrap(),
+        path.parent().unwrap()
+    );
+}
+
+#[test]
+fn discover_finds_a_store_with_no_legacy_file() {
+    // What every new install looks like: a store, and no sims.json to
+    // walk up to. Discovery that only knew the old filename would
+    // return None here and every alias-form device ref would fail.
+    let dir = tmpdir("discover-store-only");
+    let smix = dir.join(".smix");
+    fs::create_dir_all(&smix).unwrap();
+    SimRegistry::register(
+        &smix,
+        "fresh",
+        smix_simctl::registry::RegisteredSim {
+            device_name: "iPhone 16 Pro".into(),
+            udid: "STORE-ONLY-UDID".into(),
+            runtime: "iOS 26.5".into(),
+            device_type: "iPhone 16 Pro".into(),
+            locale: None,
+            runner_port: None,
+        },
+    )
+    .expect("registers");
+    assert!(
+        !smix.join("sims.json").exists(),
+        "no legacy file was created"
+    );
+
+    let nested = dir.join("x/y");
+    fs::create_dir_all(&nested).unwrap();
+    assert_eq!(SimRegistry::discover(&nested).unwrap(), smix);
 }
 
 #[test]

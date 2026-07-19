@@ -86,12 +86,31 @@ pub enum StoreError {
 
 /// smix's persistent state.
 ///
+/// # One process at a time
+///
+/// `kevy-embedded` is an in-process store: it assumes whoever opened
+/// the directory owns it, and it takes no cross-process lock. smix
+/// breaks that assumption routinely — a flow runs for minutes while
+/// someone registers a simulator in another terminal — and two
+/// instances appending to one AOF lose each other's writes. Measured,
+/// not assumed: a concurrent-register test failed two runs in five
+/// before this lock existed.
+///
+/// So opening the store takes an exclusive advisory lock on the root
+/// and holds it until the `Store` is dropped. Callers open for an
+/// operation and drop; a `Store` kept alive for the length of a flow
+/// would block every other smix command on that directory.
+///
 /// `Debug` prints the root, never the contents: a store may hold a
 /// user's device registry, and a panic message is not where that
 /// belongs.
 pub struct Store {
     inner: KevyStore,
     root: PathBuf,
+    /// Held for the lifetime of the store. Dropping the file releases
+    /// the lock, and the kernel does it too if this process dies —
+    /// which a lockfile of our own would not.
+    _lock: std::fs::File,
 }
 
 impl std::fmt::Debug for Store {
@@ -107,6 +126,31 @@ impl Store {
     /// project-local state, the user data dir for cross-project state.
     /// The store lives in `root/kv`.
     pub fn open(root: &Path) -> Result<Self, StoreError> {
+        std::fs::create_dir_all(root).map_err(|source| StoreError::Open {
+            path: root.to_path_buf(),
+            source,
+        })?;
+        let lock_path = root.join("store.lock");
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .map_err(|source| StoreError::Open {
+                path: lock_path.clone(),
+                source,
+            })?;
+        // Blocking, not try_lock: a second smix waits its turn rather
+        // than failing, which is what a user expects from two commands
+        // in two terminals. `File::lock` is std's own since 1.89 — an
+        // added crate for this would have been a dependency for
+        // something the standard library already does.
+        lock.lock().map_err(|source| StoreError::Open {
+            path: lock_path,
+            source,
+        })?;
+
         let dir = root.join("kv");
         let inner = KevyStore::open(Config::default().with_persist(&dir)).map_err(|source| {
             StoreError::Open {
@@ -117,6 +161,7 @@ impl Store {
         Ok(Store {
             inner,
             root: root.to_path_buf(),
+            _lock: lock,
         })
     }
 
