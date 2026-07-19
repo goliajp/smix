@@ -290,3 +290,57 @@ fn an_uninstalled_app_reads_as_app_not_installed_not_a_subprocess_error() {
         "must say what to type next: {prompt}"
     );
 }
+
+/// The MCP server used to die at spawn when the runner was not up yet —
+/// but MCP clients launch their servers at client startup, long before
+/// anyone has typed `smix runner up`, so the documented Claude Code
+/// config produced a dead server for the whole session. Lazy
+/// construction defers the probe to the first real call, which already
+/// reports unreachable with an actionable hint.
+#[tokio::test]
+async fn a_lazily_connected_app_works_once_the_runner_exists() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/find"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true, "found": true
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/session/open"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true, "sessionId": "sess-lazy", "activatedOnce": false, "serverTimeMs": 0
+        })))
+        .mount(&server)
+        .await;
+    // Mirror the MCP server's real order: construct lazily, then the
+    // first tool call (launch_app) opens the session, then sense works.
+    let mut app = smix_sdk::App::connect_to_runner_lazy(server.address().port());
+    app.open_session_in_place("com.example.app", false)
+        .await
+        .expect("session opens once the runner exists");
+    assert!(app.find(&text("Login")).await.unwrap());
+}
+
+#[tokio::test]
+async fn a_lazily_connected_app_reports_unreachable_on_first_use_not_at_birth() {
+    // Port 1 answers nothing. Construction must succeed; the first
+    // real call — session open, same as MCP's launch_app — must fail
+    // with the runner-unreachable story.
+    let mut app = smix_sdk::App::connect_to_runner_lazy(1);
+    let err = app
+        .open_session_in_place("com.example.app", false)
+        .await
+        .expect_err("no runner");
+    let prompt = err.to_prompt();
+    assert!(
+        prompt.contains("unreachable") || prompt.contains("not reachable"),
+        "first use must tell the runner story: {prompt}"
+    );
+}
