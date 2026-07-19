@@ -265,3 +265,28 @@ async fn app_launch_requires_udid() {
     assert_eq!(err.code, FailureCode::DriverError);
     assert!(err.message.contains("UDID"));
 }
+
+/// The quickstart's own final step used to die here with a raw
+/// `xcrun simctl get_app_container ... exited 2 ... No such file or
+/// directory` — a bare subprocess error for the single most common
+/// new-user mistake (running a flow whose appId names an app that is
+/// not installed). The failure must say what is wrong and what to type
+/// next, in the AI-readable shape everything else uses.
+#[test]
+fn an_uninstalled_app_reads_as_app_not_installed_not_a_subprocess_error() {
+    let e = smix_simctl::DeviceControlError::AppNotInstalled {
+        bundle_id: "com.example.app".into(),
+        udid: "5D087114-ECB3-443C-8DDB-40EEF9CFB90C".into(),
+    };
+    let f = smix_sdk::simctl_to_failure(e);
+    assert_eq!(f.code, smix_sdk::FailureCode::AppNotRunning);
+    let prompt = f.to_prompt();
+    assert!(
+        prompt.contains("com.example.app") && prompt.contains("not installed"),
+        "must name the bundle and the condition: {prompt}"
+    );
+    assert!(
+        prompt.contains("smix sim install"),
+        "must say what to type next: {prompt}"
+    );
+}
