@@ -17,7 +17,11 @@ you're exploring, drive it over MCP.
 Two pieces: the runner drives the simulator, the MCP server talks to the
 runner. Bring the runner up first — the server does not start it.
 
+`smix-mcp` is its own binary — `cargo install smix-cli` does **not**
+include it:
+
 ```bash
+cargo install smix-mcp
 smix runner up <udid> --bundle com.example.app
 ```
 

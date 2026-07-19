@@ -932,6 +932,28 @@ impl App {
         })
     }
 
+    /// Like [`Self::connect_to_runner`] but WITHOUT the startup health
+    /// probe: construction always succeeds, and a runner that is not up
+    /// yet is reported by the first real call instead (every request
+    /// path already tells the unreachable story with an actionable
+    /// hint, and the client memoizes the probe).
+    ///
+    /// This exists for hosts whose own lifecycle starts before the
+    /// runner's — the MCP server is launched by the MCP client at
+    /// client startup, and dying there left a permanently dead server
+    /// in every session where `smix runner up` came second.
+    #[must_use]
+    pub fn connect_to_runner_lazy(port: u16) -> Self {
+        App {
+            driver: Box::new(SimctlDriver::new(HttpRunnerClient::new(port))),
+            device: Box::new(IosDeviceControl::new()),
+            udid: None,
+            ledger: IssuedLedger::new(),
+            assert_screenshot_strict: None,
+            launch_fresh_force_reinstall: None,
+        }
+    }
+
     /// Connect to an Android Kotlin runner on `127.0.0.1:{port}`
     /// (the host-forwarded port that proxies to the device-side
     /// runner instrumentation). Returns App ready for cross-platform

@@ -531,9 +531,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(22087);
 
-    let mut app = App::connect_to_runner(port)
-        .await
-        .map_err(|e| format!("connect to runner on port {port} failed: {}", e.to_prompt()))?;
+    // Lazy on purpose: the MCP client launches this server at ITS
+    // startup, usually before anyone has run `smix runner up`. Dying
+    // here left a dead server for the whole client session; now the
+    // first tool call reports the runner story instead.
+    let mut app = App::connect_to_runner_lazy(port);
 
     if let Ok(udid) = std::env::var("SMIX_UDID") {
         app = app.with_udid(udid);

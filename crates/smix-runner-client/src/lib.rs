@@ -795,6 +795,20 @@ impl HttpRunnerClient {
                 state.last_error = err_str.to_string();
             }
         }
+        // "Died mid-session" is only true of a runner we ever saw
+        // alive. last_seen_ms == 0 means no request has EVER succeeded —
+        // the honest story there is "not reachable; is the runner up?",
+        // and telling a first-time user their runner "died" sent them
+        // hunting for a crash that never happened.
+        if last_seen_ms == 0 {
+            return Some(RunnerTransportError::Unreachable {
+                endpoint: endpoint.to_string(),
+                message: format!(
+                    "SmixRunner never answered at {} — start it with `smix runner up` ({err_str})",
+                    self.base
+                ),
+            });
+        }
         Some(RunnerTransportError::RunnerDied {
             last_seen_ms,
             last_error: err_str.to_string(),
