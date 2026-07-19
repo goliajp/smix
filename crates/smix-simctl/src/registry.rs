@@ -1,4 +1,8 @@
-//! `.smix/sims.json` device registry — deterministic device addressing.
+//! The device registry — deterministic device addressing.
+//!
+//! Records live in the `smix-store` under `.smix/`. A pre-store
+//! `sims.json` sitting beside it is imported on open and then left
+//! alone; smix never writes that file again.
 //!
 //! Every smix device operation targets either an explicit UDID or an
 //! alias recorded in this file. Resolution never consults the live
@@ -44,7 +48,7 @@ pub enum RegistryError {
     },
 }
 
-/// One registered simulator (a row of `.smix/sims.json`).
+/// One registered simulator.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisteredSim {
     /// Human-chosen device name (also usable as an alias).
@@ -79,12 +83,6 @@ pub struct RegisteredSim {
     pub runner_port: Option<u16>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct RegistryFile {
-    version: u32,
-    sims: BTreeMap<String, RegisteredSim>,
-}
-
 /// What [`SimRegistry::register`] did with the alias.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegisterOutcome {
@@ -94,7 +92,7 @@ pub enum RegisterOutcome {
     Updated,
 }
 
-/// Loaded view of `.smix/sims.json`, keyed by alias.
+/// Loaded view of the registry, keyed by alias.
 #[derive(Debug)]
 pub struct SimRegistry {
     sims: BTreeMap<String, RegisteredSim>,
@@ -126,72 +124,122 @@ pub fn is_udid(s: &str) -> bool {
     true
 }
 
+/// Resolve a caller-supplied path to the `.smix` directory holding the
+/// store.
+///
+/// Callers pass either form: `SMIX_SIMS_JSON` documents a file, while
+/// discovery yields a directory. Accepting both is also what lets the
+/// pre-store test suite keep exercising the legacy import path
+/// unchanged, instead of being rewritten into agreement with the code
+/// it is supposed to check.
+pub fn store_dir(path: &Path) -> PathBuf {
+    smix_dir(path)
+}
+
+fn smix_dir(path: &Path) -> PathBuf {
+    if path.extension().is_some_and(|e| e == "json") {
+        path.parent().unwrap_or(path).to_path_buf()
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Open the store under `path` and fold in any legacy `sims.json`
+/// sitting beside it.
+///
+/// The legacy file is read, never written and never removed: a user who
+/// has to go back to a pre-store smix must still find their registry.
+fn open_store(path: &Path) -> Result<smix_store::Store, RegistryError> {
+    let dir = smix_dir(path);
+    std::fs::create_dir_all(&dir).map_err(|source| RegistryError::Io {
+        path: dir.display().to_string(),
+        source,
+    })?;
+    let store = smix_store::Store::open(&dir).map_err(|e| RegistryError::Io {
+        path: dir.display().to_string(),
+        source: std::io::Error::other(e.to_string()),
+    })?;
+    let legacy = dir.join("sims.json");
+    smix_store::import_legacy_records(&store.sims(), &legacy, "sims").map_err(|e| {
+        RegistryError::Malformed {
+            path: legacy.display().to_string(),
+            detail: e.to_string(),
+        }
+    })?;
+    Ok(store)
+}
+
 impl SimRegistry {
-    /// Write `sim` into the registry at `path` under `alias`, creating
-    /// the file (and its `.smix/` directory) when absent. This is the
-    /// bootstrap for a fresh checkout: every alias-form device ref fails
-    /// until a registry exists, and nothing else creates one.
+    /// Write `sim` into the registry under `alias`.
+    ///
+    /// One key, not a whole file. The read-modify-write this replaces
+    /// lost an alias whenever two processes registered at once — each
+    /// read the file, each inserted its own row, and the second write
+    /// erased the first, with no error on either side.
     pub fn register(
         path: &Path,
         alias: &str,
         sim: RegisteredSim,
     ) -> Result<RegisterOutcome, RegistryError> {
-        let mut file = if path.is_file() {
-            let text = std::fs::read_to_string(path).map_err(|source| RegistryError::Io {
-                path: path.display().to_string(),
-                source,
-            })?;
-            serde_json::from_str(&text).map_err(|e| RegistryError::Malformed {
+        let store = open_store(path)?;
+        let existed = store
+            .sims()
+            .get(alias)
+            .map_err(|e| RegistryError::Malformed {
                 path: path.display().to_string(),
                 detail: e.to_string(),
             })?
-        } else {
-            RegistryFile {
-                version: 1,
-                sims: BTreeMap::new(),
-            }
-        };
-        let outcome = if file.sims.insert(alias.to_string(), sim).is_some() {
+            .is_some();
+        store
+            .sims()
+            .put_json(alias, &sim)
+            .map_err(|e| RegistryError::Io {
+                path: path.display().to_string(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
+        store.sync().map_err(|e| RegistryError::Io {
+            path: path.display().to_string(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
+        Ok(if existed {
             RegisterOutcome::Updated
         } else {
             RegisterOutcome::Added
-        };
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|source| RegistryError::Io {
-                path: dir.display().to_string(),
-                source,
-            })?;
-        }
-        let mut text = serde_json::to_string_pretty(&file).expect("registry serializes");
-        text.push('\n');
-        std::fs::write(path, text).map_err(|source| RegistryError::Io {
-            path: path.display().to_string(),
-            source,
-        })?;
-        Ok(outcome)
+        })
     }
 
-    /// Parse the registry file at `path`.
+    /// Read every registered sim.
+    ///
+    /// `path` may be the `.smix` directory or a legacy `sims.json`
+    /// inside it; both land on the same store.
     pub fn load(path: &Path) -> Result<Self, RegistryError> {
-        let text = std::fs::read_to_string(path).map_err(|source| RegistryError::Io {
-            path: path.display().to_string(),
-            source,
-        })?;
-        let file: RegistryFile =
-            serde_json::from_str(&text).map_err(|e| RegistryError::Malformed {
-                path: path.display().to_string(),
-                detail: e.to_string(),
-            })?;
-        Ok(Self { sims: file.sims })
+        let store = open_store(path)?;
+        let mut sims = BTreeMap::new();
+        for alias in store.sims().list() {
+            let sim: RegisteredSim = store
+                .sims()
+                .get_json(&alias)
+                .map_err(|e| RegistryError::Malformed {
+                    path: path.display().to_string(),
+                    detail: e.to_string(),
+                })?
+                .ok_or_else(|| RegistryError::Malformed {
+                    path: path.display().to_string(),
+                    detail: format!("`{alias}` vanished between listing and reading"),
+                })?;
+            sims.insert(alias, sim);
+        }
+        Ok(Self { sims })
     }
 
-    /// Walk up from `start` looking for `.smix/sims.json`.
+    /// Walk up from `start` looking for a `.smix` that holds a
+    /// registry — either the store or a legacy `sims.json`.
     pub fn discover(start: &Path) -> Option<PathBuf> {
         let mut dir = Some(start);
         while let Some(d) = dir {
-            let candidate = d.join(".smix/sims.json");
-            if candidate.is_file() {
-                return Some(candidate);
+            let smix = d.join(".smix");
+            if smix.join("sims.json").is_file() || smix.join("kv").is_dir() {
+                return Some(smix);
             }
             dir = d.parent();
         }

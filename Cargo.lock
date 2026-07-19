@@ -3341,6 +3341,7 @@ dependencies = [
  "serde_json",
  "smix-error",
  "smix-sim-health",
+ "smix-store",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

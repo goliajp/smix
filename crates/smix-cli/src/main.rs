@@ -930,11 +930,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     smix_simctl::registry::RegisterOutcome::Added => "registered",
                     smix_simctl::registry::RegisterOutcome::Updated => "updated",
                 };
+                // The store, not `sims.json` — the file this used to
+                // name is no longer written, and pointing a user at it
+                // sends them to look at stale bytes or nothing at all.
                 println!(
                     "{verb}: {alias} → {} ({}) in {}",
                     device.udid,
                     device.name,
-                    path.display()
+                    smix_simctl::registry::store_dir(&path).display()
                 );
             }
             SimAction::Boot { device } => {
