@@ -42,6 +42,23 @@ pub enum DeviceControlError {
     /// Failed to spawn the device-control process (PATH lookup / fork failure).
     #[error("spawn failed: {0}")]
     Spawn(#[from] io::Error),
+    /// The bundle is not installed on the device. `simctl
+    /// get_app_container` exiting non-zero is the canonical signal —
+    /// surfaced as its own variant because "run a flow whose appId
+    /// names an app you have not installed yet" is the single most
+    /// common first-run mistake, and it used to read as a bare
+    /// subprocess error.
+    #[error(
+        "app {bundle_id} is not installed on {udid} — install it \
+         (`smix sim install <device> /path/to/YourApp.app`) or check the \
+         flow's `appId:` matches what is actually installed"
+    )]
+    AppNotInstalled {
+        /// The bundle the caller asked about.
+        bundle_id: String,
+        /// The device it is missing from.
+        udid: String,
+    },
     /// The device-control command exited non-zero.
     ///
     /// Carries the full `argv` and `wall_ms` so the `Display` impl
@@ -1408,7 +1425,18 @@ impl SimctlClient {
         udid: &str,
         bundle_id: &str,
     ) -> Result<(), DeviceControlError> {
-        let raw = simctl_run(&["get_app_container", udid, bundle_id, "data"]).await?;
+        let raw = simctl_run(&["get_app_container", udid, bundle_id, "data"])
+            .await
+            .map_err(|e| match e {
+                // get_app_container failing IS "not installed" — the
+                // subprocess text (`NSPOSIXErrorDomain code=2`) says
+                // nothing a flow author can act on.
+                DeviceControlError::NonZeroExit { .. } => DeviceControlError::AppNotInstalled {
+                    bundle_id: bundle_id.to_string(),
+                    udid: udid.to_string(),
+                },
+                other => other,
+            })?;
         let container = raw.trim();
         if container.is_empty() {
             return Err(DeviceControlError::Malformed {

@@ -33,7 +33,7 @@ One binary, one product: `smix`. All subcommands (boot, runner, run a flow, low-
 
 ```bash
 # 1. Discover or pick a simulator UDID
-smix sim list   # prints registry aliases + boot state
+smix sim list   # UDID / name / state / runtime for every sim
 
 # 2. Boot it (alias or UDID both work)
 smix sim boot <device>
@@ -52,10 +52,10 @@ smix run \
   --device 5D087114-ECB3-443C-... \
   --runner-port 22087 \
   --no-launch \
-  flows/00_smoke.yaml
+  examples/hello.yaml
 
 # 6. Teardown
-smix runner down 5D087114-ECB3-443C-...
+smix runner down
 ```
 
 If XCUITest processes remain after teardown, kill any residual `xctrunner` / `xcodebuild` processes before starting a new run.
@@ -74,17 +74,13 @@ until adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | grep -
 # 2. Build + install the app under test
 adb -s emulator-5554 install -r /path/to/app-debug.apk
 
-# 3. Install + start the smix-android-runner instrumentation
-adb -s emulator-5554 install -r /path/to/smix-runner-androidTest.apk
-adb -s emulator-5554 forward tcp:28080 tcp:28080
-adb -s emulator-5554 forward tcp:28081 tcp:28081   # only if you use the WebView eval bridge
-adb -s emulator-5554 shell am instrument -w -e debug false \
-  -e class com.example.runner.RunnerTest \
-  com.example.runner/androidx.test.runner.AndroidJUnitRunner \
-  > /tmp/smix-runner-instrument.log 2>&1 &
+# 3. Build + start the smix runner (installs, forwards, instruments,
+#    and blocks until /health answers)
+(cd android-runner && ./gradlew :app:assembleDebugAndroidTest)
+smix runner up emulator-5554 --platform android
 
-# Wait for runner /health
-until curl -sf http://127.0.0.1:28080/health >/dev/null; do sleep 1; done
+# Only if you use the WebView eval bridge:
+adb -s emulator-5554 forward tcp:28081 tcp:28081
 
 # 4. Launch the app under test
 adb -s emulator-5554 shell am start -n com.example.app/.MainActivity
@@ -96,11 +92,11 @@ smix run \
   --device emulator-5554 \
   --runner-port 28080 \
   --no-launch \
-  flows/01_home_counter.yaml
+  examples/hello.yaml
 
 # 6. Teardown
+smix runner down --platform android --device emulator-5554
 adb -s emulator-5554 shell am force-stop com.example.app
-adb -s emulator-5554 shell am force-stop com.example.runner
 adb -s emulator-5554 emu kill
 ```
 

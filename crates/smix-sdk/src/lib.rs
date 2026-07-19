@@ -2216,8 +2216,19 @@ impl App {
 
 // -------------------- error mapping -----------------------------------
 
-fn simctl_to_failure(e: DeviceControlError) -> ExpectationFailure {
+/// Map a device-control failure into the AI-readable failure shape.
+/// Public because it IS the contract between the simctl layer's typed
+/// errors and what a flow author sees.
+pub fn simctl_to_failure(e: DeviceControlError) -> ExpectationFailure {
     let (code, hint) = match &e {
+        DeviceControlError::AppNotInstalled { .. } => (
+            FailureCode::AppNotRunning,
+            Some(
+                "install the app first: `smix sim install <device> \
+                 /path/to/YourApp.app` — or fix the flow's `appId:`"
+                    .into(),
+            ),
+        ),
         DeviceControlError::Spawn(_) => (
             FailureCode::DriverError,
             Some("xcrun not found — install Xcode command-line tools".into()),

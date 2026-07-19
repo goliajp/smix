@@ -72,3 +72,28 @@ fn simctl_error_display_includes_subcommand() {
     };
     assert!(format!("{e}").contains("malformed"));
 }
+
+/// A bundle that is not installed is the first error a reader of the
+/// quickstart hits — they have not built and installed their app yet,
+/// or they typed the id wrong. It used to surface as the raw simctl
+/// text (`NSPOSIXErrorDomain code 2: No such file or directory`), which
+/// names neither the app nor the fix. This project's premise is
+/// AI-readable failures; that message is the opposite of one.
+#[test]
+fn a_missing_app_is_named_not_dumped() {
+    let err = smix_simctl::DeviceControlError::AppNotInstalled {
+        bundle_id: "com.example.app".into(),
+        udid: "5D087114-ECB3-443C-8DDB-40EEF9CFB90C".into(),
+    };
+    let msg = err.to_string();
+    assert!(msg.contains("com.example.app"), "must name the app: {msg}");
+    assert!(
+        msg.contains("not installed"),
+        "must say what is wrong in words: {msg}"
+    );
+    assert!(msg.contains("install"), "must point at the fix: {msg}");
+    assert!(
+        !msg.contains("NSPOSIXErrorDomain"),
+        "must not leak the raw simctl dump: {msg}"
+    );
+}
