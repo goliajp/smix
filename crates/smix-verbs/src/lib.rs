@@ -336,6 +336,14 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::SmixNative,
         ArgShape::BareString,
     ),
+    // The spelling three of four guides use — WebView camelized as one
+    // word. Same canonical name; the parser accepts all three.
+    v(
+        "webViewEval",
+        "webviewEval",
+        VerbCategory::SmixNative,
+        ArgShape::BareString,
+    ),
     v(
         "webviewEval",
         "webviewEval",

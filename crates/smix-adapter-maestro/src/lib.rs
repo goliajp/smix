@@ -414,6 +414,15 @@ pub enum Step {
     },
     /// Type literal text into the focused field. Maps to `App::fill` (chunked).
     InputText(String),
+    /// Type into a specific field: yaml `inputText: { id, text }`.
+    /// Maps to `App::fill(selector, text)` — targeted where
+    /// [`Step::InputText`] types into whatever holds focus.
+    InputTextInto {
+        /// The field to fill.
+        selector: Selector,
+        /// What to type.
+        text: String,
+    },
     /// Press a hardware / IME key. Maps to `App::press_key`.
     PressKey(String),
     /// Navigation back (maestro `back`): iOS navbar-back / edge swipe,
@@ -627,15 +636,17 @@ pub enum Step {
     /// maestro `killApp: "com.x"` (independent from launchApp). Maps to
     /// `App::terminate`.
     KillApp {
-        /// Bundle id to terminate.
-        app_id: String,
+        /// Bundle id to terminate; `None` (bare `- killApp`) means the
+        /// current app, resolved from the last launched bundle.
+        app_id: Option<String>,
     },
     /// Wipe an app's MMKV / NSUserDefaults / file storage
     /// independent of launchApp. maestro `clearState: { appId }`.
     /// Maps to `App::launch_fresh(_, clear_state: true, clear_keychain: false, _)`.
     ClearState {
-        /// Bundle id to wipe.
-        app_id: String,
+        /// Bundle id to wipe; `None` (bare `- clearState`) means the
+        /// current app, resolved from the last launched bundle.
+        app_id: Option<String>,
     },
     /// Wipe the Keychain entries for the last launched app
     /// (or top-of-flow appId). maestro `clearKeychain` (bare, no args).

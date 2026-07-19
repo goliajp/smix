@@ -209,7 +209,7 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
     appId: com.example.app
     clearState: true
     clearKeychain: true
-    arguments: [["--debug-mode"]]
+    arguments: ["--debug-mode"]
 
 - killApp                  # current
 - killApp: com.acme.other  # named
@@ -251,7 +251,6 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
 - openLink: "myapp://home/details/42"
 - openLink:
     link: "https://example.com"
-    browser: true      # force open in default browser (not target app)
 ```
 
 - iOS: `xcrun simctl openurl`.

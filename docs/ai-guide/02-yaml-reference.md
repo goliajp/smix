@@ -29,7 +29,7 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
     appId: com.acme.app                  # override yaml-level appId
     clearState: true                     # wipe NSUserDefaults / shared prefs
     clearKeychain: true                  # iOS keychain wipe
-    arguments: [["--debug"], ["--env=prod"]]   # launch args
+    arguments: ["--debug", "--env=prod"]      # launch args
 
 - killApp                                # force-quit current app
 - killApp: com.acme.other               # force-quit specific
@@ -99,7 +99,6 @@ against it afterwards. `mask:` regions are accepted but not yet applied
     id: "list-row-3"
     duration: 1500                       # ms
 
-- tapAtPoint: "50%,50%"                  # legacy verb, prefer `tapOn: { point: ... }`
 ```
 
 ### Text input
@@ -174,8 +173,6 @@ against it afterwards. `mask:` regions are accepted but not yet applied
 - openLink: "myapp://home/details/42"
 - openLink:
     link: "https://example.com"
-    autoVerify: true
-    browser: true                        # force open in browser instead of app
 ```
 
 ### Recording (video output)
@@ -200,14 +197,15 @@ against it afterwards. `mask:` regions are accepted but not yet applied
     while:
       visible: "Loading..."
     commands:
-      - wait: 500
+      - waitForAnimationToEnd: 500
 
 # Repeat while NOT visible (poll for appearance)
 - repeat:
-    whileNotVisible:
-      id: "home-result-label"
+    while:
+      notVisible:
+        id: "home-result-label"
     commands:
-      - wait: 200
+      - waitForAnimationToEnd: 200
 
 # Retry on failure
 - retry:

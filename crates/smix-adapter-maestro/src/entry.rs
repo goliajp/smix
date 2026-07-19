@@ -692,6 +692,12 @@ fn summarize_step(step: &Step) -> String {
         }
         Step::AssertVisible { .. } => "assertVisible".into(),
         Step::InputText(s) => format!("inputText ({} chars)", s.chars().count()),
+        Step::InputTextInto { selector, text } => {
+            format!(
+                "inputText into {selector:?} ({} chars)",
+                text.chars().count()
+            )
+        }
         Step::PressKey(k) => format!("pressKey {k}"),
         Step::RunFlow(p) => format!("runFlow {p}"),
         Step::RunFlowConditional { file, .. } => format!("runFlow {file} (conditional)"),
@@ -734,8 +740,14 @@ fn summarize_step(step: &Step) -> String {
         Step::HideKeyboard => "hideKeyboard".into(),
         Step::AssertNotVisible { .. } => "assertNotVisible".into(),
         Step::Back => "back".to_string(),
-        Step::KillApp { app_id } => format!("killApp {app_id}"),
-        Step::ClearState { app_id } => format!("clearState {app_id}"),
+        Step::KillApp { app_id } => match app_id {
+            Some(id) => format!("killApp {id}"),
+            None => "killApp (current)".to_string(),
+        },
+        Step::ClearState { app_id } => match app_id {
+            Some(id) => format!("clearState {id}"),
+            None => "clearState (current)".to_string(),
+        },
         Step::ClearKeychain => "clearKeychain".into(),
         Step::TakeScreenshot { path, annotations } => match (path, annotations.is_empty()) {
             (Some(p), true) => format!("takeScreenshot {p}"),

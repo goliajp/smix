@@ -1006,9 +1006,47 @@ fn parse_input_text(v: &Value) -> Result<Step, ParseError> {
         Value::String(s) => Ok(Step::InputText(s.clone())),
         // yaml `inputText: 12345` — coerce non-string scalars
         Value::Number(n) => Ok(Step::InputText(n.to_string())),
+        // Targeted form: `inputText: { id: <target>, text: <input> }`.
+        // The SDK's fill(selector) predates this wiring — the guides
+        // documented the form long before the parser accepted it.
+        Value::Mapping(map) => {
+            let text = map
+                .get(Value::String("text".into()))
+                .and_then(Value::as_str)
+                .ok_or_else(|| ParseError::InvalidValue {
+                    field: "inputText".into(),
+                    reason: "mapping form requires `text:` (what to type)".into(),
+                })?;
+            let id = map
+                .get(Value::String("id".into()))
+                .and_then(Value::as_str)
+                .ok_or_else(|| ParseError::InvalidValue {
+                    field: "inputText".into(),
+                    reason: "mapping form requires `id:` (the target field); \
+                             for the focused field use the scalar form"
+                        .into(),
+                })?;
+            for key in map.keys() {
+                if let Some(k) = key.as_str() {
+                    if k != "id" && k != "text" {
+                        return Err(ParseError::InvalidValue {
+                            field: "inputText".into(),
+                            reason: format!("unknown key `{k}`; accepted: id, text"),
+                        });
+                    }
+                }
+            }
+            Ok(Step::InputTextInto {
+                selector: Selector::Id {
+                    id: id.to_string(),
+                    modifiers: Modifiers::default(),
+                },
+                text: text.to_string(),
+            })
+        }
         other => Err(ParseError::InvalidValue {
             field: "inputText".into(),
-            reason: format!("expected scalar, got {other:?}"),
+            reason: format!("expected scalar or {{id, text}} mapping, got {other:?}"),
         }),
     }
 }
@@ -1317,11 +1355,40 @@ fn parse_wait_for_animation_to_end(v: &Value) -> Result<Step, ParseError> {
 }
 
 fn parse_open_link(v: &Value) -> Result<Step, ParseError> {
-    let s = v.as_str().ok_or_else(|| ParseError::InvalidValue {
-        field: "openLink".into(),
-        reason: "expected a string url".into(),
-    })?;
-    Ok(Step::OpenLink(s.to_string()))
+    match v {
+        Value::String(s) => Ok(Step::OpenLink(s.to_string())),
+        // `openLink: { link: <url> }` — the mapping spelling the guides
+        // use. maestro's `browser:` / `autoVerify:` options are NOT
+        // implemented; refusing them loudly beats silently opening the
+        // link some other way than the flow asked for.
+        Value::Mapping(map) => {
+            let link = map
+                .get(Value::String("link".into()))
+                .and_then(Value::as_str)
+                .ok_or_else(|| ParseError::InvalidValue {
+                    field: "openLink".into(),
+                    reason: "mapping form requires `link:`".into(),
+                })?;
+            for key in map.keys() {
+                if let Some(k) = key.as_str() {
+                    if k != "link" {
+                        return Err(ParseError::InvalidValue {
+                            field: "openLink".into(),
+                            reason: format!(
+                                "`{k}` is not supported; only `link:` — use the plain \
+                                 string form for a bare url"
+                            ),
+                        });
+                    }
+                }
+            }
+            Ok(Step::OpenLink(link.to_string()))
+        }
+        other => Err(ParseError::InvalidValue {
+            field: "openLink".into(),
+            reason: format!("expected a string url or {{link}} mapping, got {other:?}"),
+        }),
+    }
 }
 
 // AssertNotVisible accepts the same selector shapes as
@@ -1580,7 +1647,11 @@ fn parse_reset_app_data(v: &Value) -> Result<Step, ParseError> {
 
 fn parse_kill_app(v: &Value) -> Result<Step, ParseError> {
     match v {
-        Value::String(s) => Ok(Step::KillApp { app_id: s.clone() }),
+        // bare `- killApp` — the current app.
+        Value::Null => Ok(Step::KillApp { app_id: None }),
+        Value::String(s) => Ok(Step::KillApp {
+            app_id: Some(s.clone()),
+        }),
         Value::Mapping(_) => {
             let map = v.as_mapping().expect("just matched");
             let app_id = map
@@ -1588,7 +1659,9 @@ fn parse_kill_app(v: &Value) -> Result<Step, ParseError> {
                 .and_then(Value::as_str)
                 .ok_or_else(|| ParseError::MissingField("killApp.appId".into()))?
                 .to_string();
-            Ok(Step::KillApp { app_id })
+            Ok(Step::KillApp {
+                app_id: Some(app_id),
+            })
         }
         other => Err(ParseError::InvalidValue {
             field: "killApp".into(),
@@ -1603,16 +1676,22 @@ fn parse_kill_app(v: &Value) -> Result<Step, ParseError> {
 // `launchApp` (handled by parse_launch_app); the top-level form requires
 // the appId.
 fn parse_clear_state(v: &Value) -> Result<Step, ParseError> {
+    // bare `- clearState` — the current app.
+    if v.is_null() {
+        return Ok(Step::ClearState { app_id: None });
+    }
     let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
         field: "clearState".into(),
-        reason: "expected a mapping with `appId`".into(),
+        reason: "expected bare form or a mapping with `appId`".into(),
     })?;
     let app_id = map
         .get(Value::String("appId".into()))
         .and_then(Value::as_str)
         .ok_or_else(|| ParseError::MissingField("clearState.appId".into()))?
         .to_string();
-    Ok(Step::ClearState { app_id })
+    Ok(Step::ClearState {
+        app_id: Some(app_id),
+    })
 }
 
 // SetClipboard accepts a string literal, which may contain `${expr}`
@@ -2405,7 +2484,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "runScript" => parse_run_script(value),
         "evalScript" => parse_eval_script(value),
         // Webview JS eval via fixture-side debug bridge.
-        "webview_eval" | "webviewEval" => parse_webview_eval(value),
+        "webview_eval" | "webviewEval" | "webViewEval" => parse_webview_eval(value),
         // Device + Media gap.
         "setLocation" => parse_set_location(value),
         "travel" => parse_travel(value),
