@@ -211,7 +211,7 @@ cat /tmp/smix-runner-instrument.log
 ### Sanity check the testid you expect exists
 
 ```bash
-smix find --selector-id home-increment-btn && echo "yes" || echo "no"
+smix find id:home-increment-btn && echo "yes" || echo "no"
 ```
 
 ### Verify the YAML schema independently

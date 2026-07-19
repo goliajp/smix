@@ -299,15 +299,15 @@ The first `smix run` on a freshly-up runner pays ~2s of XCUITest cold start. Sub
 ```bash
 # WRONG (slow):
 for f in *.yaml; do
-  smix runner up <udid> --soft --no-capture
+  smix runner up <udid> --bundle com.example.app
   smix run "$f"
-  smix runner down <udid>
+  smix runner down
 done
 
 # RIGHT (fast):
-smix runner up <udid> --soft --no-capture
+smix runner up <udid> --bundle com.example.app
 for f in *.yaml; do smix run "$f"; done
-smix runner down <udid>
+smix runner down
 ```
 
 ## testid naming for a new screen
