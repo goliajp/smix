@@ -88,3 +88,72 @@ fn the_runner_and_the_wire_crate_claim_the_same_schemas() {
         "the runner says it speaks {declared:?} and this crate says {WIRE_SCHEMA_SUPPORTED:?}"
     );
 }
+
+/// The README's stability section is a promise to users about this
+/// crate's constant, so it is held to it.
+///
+/// `WIRE_SCHEMA_SUPPORTED` says "add a version here when the shape
+/// changes". The README states the list as prose — "currently `[1, 2]`"
+/// — and the day schema 3 lands, that sentence becomes a promise the
+/// runner no longer keeps, in the one section a reader consults before
+/// committing to a major version.
+#[test]
+fn the_readme_states_the_schema_versions_this_build_speaks() {
+    const README: &str = include_str!("../../../README.md");
+    let stated: Vec<u32> = README
+        .lines()
+        .find(|l| l.contains("schema versions it speaks"))
+        .and_then(|l| {
+            let open = l.find('[')?;
+            let close = l[open..].find(']')? + open;
+            Some(
+                l[open + 1..close]
+                    .split(',')
+                    .filter_map(|t| t.trim().trim_matches('`').parse().ok())
+                    .collect(),
+            )
+        })
+        .unwrap_or_default();
+    assert!(
+        !stated.is_empty(),
+        "the README no longer states a schema version list where this test \
+         looks — it read the sentence with `schema versions it speaks`. \
+         Point this at the new wording rather than deleting the check."
+    );
+    assert_eq!(
+        stated,
+        smix_runner_wire::WIRE_SCHEMA_SUPPORTED,
+        "README promises schemas {stated:?}, this build speaks {:?}",
+        smix_runner_wire::WIRE_SCHEMA_SUPPORTED
+    );
+}
+
+/// Every crate the README calls ABI-stable must be a crate that exists.
+#[test]
+fn the_readme_abi_stable_crates_all_exist() {
+    const README: &str = include_str!("../../../README.md");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("workspace root");
+    let line = README
+        .lines()
+        .find(|l| l.contains("ABI-stable within"))
+        .expect("the README states an ABI-stable crate list");
+    let named: Vec<&str> = line.split('`').filter(|t| t.starts_with("smix-")).collect();
+    assert!(
+        named.len() >= 5,
+        "extracted only {named:?} from the ABI-stable sentence — the \
+         extraction stopped matching and this check would pass by \
+         knowing nothing"
+    );
+    let missing: Vec<&&str> = named
+        .iter()
+        .filter(|c| !root.join("crates").join(c).is_dir())
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "the README promises ABI stability for crates that do not exist: \
+         {missing:?}"
+    );
+}
