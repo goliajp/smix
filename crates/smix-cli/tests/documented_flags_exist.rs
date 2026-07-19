@@ -212,9 +212,27 @@ fn every_repo_path_the_guides_name_exists() {
         "dashboard/",
     ];
 
+    // The path check reads a wider corpus than the flag check: README
+    // and the reference guides cite repo files too, and more corpus is
+    // what keeps the extraction floor meaningful.
+    const PATH_DOCS: &[(&str, &str)] = &[
+        ("README", include_str!("../../../README.md")),
+        (
+            "03-selectors",
+            include_str!("../../../docs/ai-guide/03-selectors.md"),
+        ),
+        (
+            "07-errors",
+            include_str!("../../../docs/ai-guide/07-errors.md"),
+        ),
+        (
+            "09-sessions",
+            include_str!("../../../docs/ai-guide/09-sessions.md"),
+        ),
+    ];
     let mut checked = 0usize;
     let mut missing: Vec<String> = Vec::new();
-    for (name, doc) in GUIDES {
+    for (name, doc) in GUIDES.iter().chain(PATH_DOCS) {
         for raw in doc.split(|c: char| c.is_whitespace() || c == '`' || c == '(' || c == ')') {
             let tok = raw.trim_matches(|c: char| matches!(c, ',' | '.' | ':' | ';' | '"' | '\''));
             if tok.contains('<') || tok.contains('*') || tok.contains('$') {
@@ -225,6 +243,18 @@ fn every_repo_path_the_guides_name_exists() {
             }
             // Only claims that name a file (have an extension).
             if !tok.rsplit('/').next().is_some_and(|f| f.contains('.')) {
+                continue;
+            }
+            // Build artifacts are outputs of a command the same guide
+            // gives; they exist after that command runs, not in a fresh
+            // checkout. Demanding them tracked would fail every CI run
+            // — which is exactly how this arm was added: the gate's
+            // first CI run flagged the gradle APK path the Android
+            // section correctly documents as a build product.
+            if tok
+                .split('/')
+                .any(|seg| matches!(seg, "build" | "target" | "dist" | "outputs"))
+            {
                 continue;
             }
             checked += 1;
