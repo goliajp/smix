@@ -19,6 +19,13 @@ use std::collections::BTreeSet;
 const SWIFT_README: &str = include_str!("../../../swift-bridge/README.md");
 const KOTLIN_README: &str = include_str!("../../../android-runner/sdk/README.md");
 
+/// The sessions guide names SDK API in both languages, and carried the
+/// same fiction the READMEs did: `HttpSmixSimRuntime` in four places, a
+/// `Session.open(runtime, activate:)` neither language offers, and
+/// `stateStream` / `stateFlow` for a state machine that exists only in
+/// Rust. Checked against both source sets, since it speaks for both.
+const SESSIONS_GUIDE: &str = include_str!("../../../docs/ai-guide/09-sessions.md");
+
 const SWIFT_SOURCES: &[(&str, &str)] = &[
     (
         "App.swift",
@@ -167,6 +174,10 @@ fn declared_anywhere(sources: &[(&str, &str)], symbol: &str) -> bool {
     sources.iter().any(|(_, src)| {
         src.contains(&format!("func {symbol}"))
             || src.contains(&format!("fun {symbol}"))
+            // Rust. Absent until the sessions guide — whose Rust
+            // examples are most of its code — was brought in, and its
+            // absence read as "the guide names API no SDK has".
+            || src.contains(&format!("fn {symbol}"))
             || src.contains(&format!("class {symbol}"))
             || src.contains(&format!("struct {symbol}"))
             || src.contains(&format!("enum {symbol}"))
@@ -202,6 +213,38 @@ fn check(lang: &str, readme: &str, sources: &[(&str, &str)]) -> Vec<String> {
         }
     }
     missing
+}
+
+#[test]
+fn the_sessions_guide_only_names_api_that_exists() {
+    // A symbol the guide names must exist in the SDK it is talking
+    // about; checked against each in turn, and reported only when it is
+    // in neither, so a Swift-only symbol is not flagged as missing from
+    // Kotlin.
+    // The guide speaks for all four SDKs in one page, so a symbol is
+    // fine if ANY of them declares it: `open_session` is Rust's,
+    // `on('state', …)` is TypeScript's. Reporting per-language here
+    // would flag every example for the three languages it is not about.
+    const RUST_SDK: &str = include_str!("../../smix-sdk/src/lib.rs");
+    const TS_SDK: &str = include_str!("../../../npm/smix-rn/src/Session.ts");
+    // SmixNotImplementedError is declared here, not in Session.ts.
+    const TS_LOCATOR: &str = include_str!("../../../npm/smix-rn/src/Locator.ts");
+    let everywhere: Vec<(&str, &str)> = SWIFT_SOURCES
+        .iter()
+        .chain(KOTLIN_SOURCES)
+        .copied()
+        .chain([
+            ("lib.rs", RUST_SDK),
+            ("Session.ts", TS_SDK),
+            ("Locator.ts", TS_LOCATOR),
+        ])
+        .collect();
+    let missing = check("sdks", SESSIONS_GUIDE, &everywhere);
+    assert!(
+        missing.is_empty(),
+        "the sessions guide names API no SDK has:\n  {}",
+        missing.join("\n  ")
+    );
 }
 
 #[test]
