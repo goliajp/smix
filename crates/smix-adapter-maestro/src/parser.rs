@@ -460,6 +460,111 @@ pub fn text_to_pattern(s: &str) -> Pattern {
         Pattern::Text(s.to_string())
     }
 }
+/// Read the spatial / positional modifiers that may sit beside a
+/// selector key in a mapping.
+///
+/// Every arm of [`visible_to_selector`] built `Modifiers::default()`,
+/// and `parse_tap_on` read one modifier under a spelling the guide does
+/// not use, so a documented `below:` parsed cleanly and resolved as if
+/// absent — widening the match instead of narrowing it, which cannot
+/// fail loudly. One reader, used by both paths.
+fn modifiers_from(map: &serde_norway::Mapping, field: &str) -> Result<Modifiers, ParseError> {
+    let anchor = |key: &str| -> Result<Option<Box<Selector>>, ParseError> {
+        match map.get(Value::String(key.into())) {
+            None => Ok(None),
+            Some(raw) => visible_to_selector(raw)
+                .map(|sel| Some(Box::new(sel)))
+                .map_err(|e| match e {
+                    ParseError::InvalidValue { field: f, reason } => ParseError::InvalidValue {
+                        field: format!("{field}.{key}.{f}"),
+                        reason,
+                    },
+                    other => other,
+                }),
+        }
+    };
+    let flag = |key: &str| map.get(Value::String(key.into())).and_then(Value::as_bool);
+    // `nth` is the guide's spelling; `index` is what the parser has
+    // always read, and flows were written against the code.
+    let nth = map
+        .get(Value::String("nth".into()))
+        .or_else(|| map.get(Value::String("index".into())))
+        .and_then(Value::as_u64)
+        .map(|n| n as usize);
+    Ok(Modifiers {
+        near: anchor("near")?,
+        below: anchor("below")?,
+        above: anchor("above")?,
+        left_of: anchor("leftOf")?,
+        right_of: anchor("rightOf")?,
+        inside: anchor("inside")?,
+        ancestor: anchor("ancestor")?,
+        nth,
+        first: flag("first"),
+        last: flag("last"),
+    })
+}
+
+/// Keys a selector mapping may carry: the selector discriminators, the
+/// modifiers, and the per-verb options. Anything else is refused —
+/// an unread key is indistinguishable from an honoured one, which is
+/// exactly how the modifiers went missing without a single failure.
+const SELECTOR_KEYS: &[&str] = &[
+    "text",
+    "id",
+    "label",
+    "role",
+    "name",
+    "point",
+    "localized_text",
+    "localizedText",
+    "ocrText",
+    "anchored",
+    "anchorRelative",
+    "fallback",
+    "focused",
+    "near",
+    "below",
+    "above",
+    "leftOf",
+    "rightOf",
+    "inside",
+    "ancestor",
+    "nth",
+    "index",
+    "first",
+    "last",
+    "optional",
+    "dispatch",
+    "pattern",
+    "recognition_level",
+    "locales",
+    "timeout",
+    "requireOnScreen",
+    // Per-verb options that ride in the same mapping as the selector.
+    // `duration` is longPressOn's; the corpus found it the moment this
+    // list started refusing what it did not recognise, which is the
+    // behaviour that makes the list safe to keep by hand.
+    "duration",
+];
+
+fn reject_unknown_selector_keys(
+    map: &serde_norway::Mapping,
+    field: &str,
+) -> Result<(), ParseError> {
+    for key in map.keys() {
+        if let Some(k) = key.as_str().filter(|k| !SELECTOR_KEYS.contains(k)) {
+            return Err(ParseError::InvalidValue {
+                field: field.into(),
+                reason: format!(
+                    "unknown key `{k}`; selector keys are {}",
+                    SELECTOR_KEYS.join(", ")
+                ),
+            });
+        }
+    }
+    Ok(())
+}
 
 /// Convert a `visible:` value (scalar string or map with a selector
 /// sub-key) into a [`Selector`].
@@ -538,19 +643,21 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
             })
         }
         Value::Mapping(map) => {
+            reject_unknown_selector_keys(map, "selector")?;
+            let modifiers = modifiers_from(map, "selector")?;
             if let Some(text) = map
                 .get(Value::String("text".into()))
                 .and_then(Value::as_str)
             {
                 return Ok(Selector::Text {
                     text: text_to_pattern(text),
-                    modifiers: Modifiers::default(),
+                    modifiers: modifiers.clone(),
                 });
             }
             if let Some(id) = map.get(Value::String("id".into())).and_then(Value::as_str) {
                 return Ok(Selector::Id {
                     id: id.to_string(),
-                    modifiers: Modifiers::default(),
+                    modifiers: modifiers.clone(),
                 });
             }
             if let Some(label) = map
@@ -559,7 +666,7 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
             {
                 return Ok(Selector::Label {
                     label: label.to_string(),
-                    modifiers: Modifiers::default(),
+                    modifiers: modifiers.clone(),
                 });
             }
             if let Some(role_raw) = map.get(Value::String("role".into())) {
@@ -568,7 +675,7 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
                 return Ok(Selector::Role {
                     role,
                     name,
-                    modifiers: Modifiers::default(),
+                    modifiers: modifiers.clone(),
                 });
             }
             if let Some(raw) = map.get(Value::String("ocrText".into())) {
@@ -576,7 +683,7 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
                 return Ok(Selector::OcrText {
                     ocr_text: text,
                     locales,
-                    modifiers: Modifiers::default(),
+                    modifiers: modifiers.clone(),
                 });
             }
             if let Some(loc_map) = map
@@ -587,7 +694,7 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
                 let table = parse_localized_table(loc_map, "visible.localized_text")?;
                 return Ok(Selector::LocalizedText {
                     localized_text: table,
-                    modifiers: Modifiers::default(),
+                    modifiers: modifiers.clone(),
                 });
             }
             if let Some(raw) = map.get(Value::String("fallback".into())) {
@@ -654,10 +761,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                     }
                 };
 
-            let index = map
-                .get(Value::String("index".into()))
-                .and_then(Value::as_u64)
-                .map(|n| n as usize);
+            reject_unknown_selector_keys(map, "tapOn")?;
 
             // point form is escape hatch — independent variant
             if let Some(point) = map
@@ -668,10 +772,7 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                 return Ok(Step::TapAtPoint { nx, ny });
             }
 
-            let modifiers = Modifiers {
-                nth: index,
-                ..Modifiers::default()
-            };
+            let modifiers = modifiers_from(map, "tapOn")?;
 
             if let Some(text) = map
                 .get(Value::String("text".into()))

@@ -178,9 +178,6 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 - assertVisible:
     id: "home-counter-label"             # accessibility identifier
 - assertVisible:
-    text: "Submit"
-    enabled: true                        # element must be enabled
-- assertVisible:
     text: "Error"
     optional: true                       # if absent, step is "skipped" not "failed"
 
@@ -569,9 +566,7 @@ worst (escape hatch — fragile, breaks on layout change)
 ### 5. Focused
 
 ```yaml
-- inputText:
-    focused: true
-    text: "hello"
+- inputText: "hello"      # the scalar form types into the focused field
 
 - pressKey: ENTER     # often used after focused: true to submit
 ```
@@ -583,8 +578,15 @@ worst (escape hatch — fragile, breaks on layout change)
 
 ```yaml
 - tapOn:
-    anchor: "Settings"
-    below: 1          # 1st element below anchor (0-indexed in spatial order)
+    text: "Edit"
+    below: { text: "Settings" }   # the Edit below the Settings row
+
+# Pixel-offset form — anchor plus a dx/dy nudge, all three required:
+- tapOn:
+    anchored:
+      anchor: { text: "Settings" }
+      dx: 0.0
+      dy: 40.0
 ```
 
 - `anchor` finds a stable reference element by text or id.
@@ -639,9 +641,6 @@ worst (escape hatch — fragile, breaks on layout change)
 ```yaml
 - tapOn:
     point: "50%,80%"        # X%,Y% of viewport
-
-- tapOn:
-    point: { nx: 0.5, ny: 0.8 }   # equivalent JSON form
 ```
 
 - nx/ny are normalized [0, 1] of viewport.

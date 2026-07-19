@@ -57,9 +57,6 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 - assertVisible:
     id: "home-counter-label"             # accessibility identifier
 - assertVisible:
-    text: "Submit"
-    enabled: true                        # element must be enabled
-- assertVisible:
     text: "Error"
     optional: true                       # if absent, step is "skipped" not "failed"
 
