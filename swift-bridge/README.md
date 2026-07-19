@@ -21,21 +21,16 @@ targets: [
 
 ## Quick start
 
+The SDK talks to a running smix runner over HTTP — bring one up first
+(`smix runner up <udid> --bundle com.example.MyApp`), then:
+
 ```swift
 import XCTest
 import SmixSDK
 
 final class LoginFlowTests: XCTestCase {
     func testLoginFlow() async throws {
-        // The SDK ships with MockSimRuntime (deterministic in-memory tree,
-        // used by SmixSDKTests in this repo). For real-sim runs, provide a
-        // concrete `SmixSimRuntime` impl (e.g. an XCUITest-backed runtime
-        // wrapping XCUIApplication + IOHID synthesis via SmixRunnerCore).
-        let runtime = MockSimRuntime(snapshotResult: /* ... */)
-        let app = try await Smix.launchApp(
-            .bundleId("com.example.MyApp"),
-            runtime: runtime,
-        )
+        let app = try await Smix.launchApp(.bundleId("com.example.MyApp"))
 
         try await app.tap(.id("btn-login"))
         try await app.fill(.id("input-username"), "alice")
@@ -47,6 +42,10 @@ final class LoginFlowTests: XCTestCase {
     }
 }
 ```
+
+`launchApp` takes the runner port as a second argument
+(`port: UInt16 = Smix.defaultRunnerPort`) when the runner is not on the
+default one.
 
 ## API surface
 
@@ -80,24 +79,26 @@ Wire JSON (untagged + flatten — byte-identical to Rust smix-selector):
 ### App (act)
 
 ```swift
-try await app.tap(_ selector: Selector, timeout: Duration = .seconds(5))
-try await app.fill(_ selector: Selector, _ text: String)
-try await app.pressKey(_ key: KeyName)  // .return / .delete / .space / .tab / .escape / .enter
-try await app.swipe(_ direction: SwipeDirection)  // .up / .down / .left / .right
-try await app.tapAtCoord(_ nx: Double, _ ny: Double)  // 0..1, throws if out-of-range
+try await app.tap(.id("btn-login"))                 // timeout: Duration = .seconds(5)
+try await app.fill(.id("input-username"), "alice")
+try await app.pressKey(.return)                     // .return / .delete / .space / .tab / .escape
+try await app.swipe(.up)                            // .up / .down / .left / .right
+try await app.tapAtCoord(0.5, 0.8)                  // 0..1, throws if out-of-range
 try await app.terminate()
 try await app.relaunch()
-try await app.launchFresh(clearState: true, clearKeychain: true)
 ```
 
 ### App (sense)
 
 ```swift
-let png: Data = try await app.screenshot()
-let tree: A11yNode = try await app.tree()
-let popups: [A11yNode] = try await app.systemPopups()
-try await app.openUrl(URL(string: "myapp://deep/link")!)
+let tree: A11yNode = try await app.tree()           // scope: TreeScope = .focused (.all / .systemPopups)
+let popups = try await app.systemPopups()
 ```
+
+Screenshots, deep links and fresh-launch state wiping are CLI and
+YAML-level capabilities (`smix screenshot`, `openLink:`, `launchApp:
+{ clearState: true }`); the Swift surface is sense + act against a
+session the runner already holds.
 
 ### Locator (assertions)
 
@@ -150,10 +151,10 @@ API.
 - **Swift SDK** (`Sources/SmixSDK/`): Playwright-style facade —
   `Smix` / `App` / `Selector` / `Modifiers` / `Locator` /
   `ExpectationFailure`. Type-safe enum API; fluent modifier chaining.
-- **Runtime abstraction** (`SmixSimRuntime` protocol): pluggable
-  backend for simulator I/O (launch / snapshot / tap / synthesize).
-  Test code uses `MockSimRuntime` (in-memory, deterministic); real-sim
-  runs plug in an XCUITest-backed runtime.
+- **Transport** (`SmixDriver`, from the UniFFI-generated bindings):
+  opens a session against a running smix runner and carries every
+  sense / act call over its HTTP surface. The SDK holds no simulator
+  I/O of its own — the runner owns the XCUITest + IOHID chain.
 
 ## Test-target-only
 

@@ -24,26 +24,19 @@ This module is intended for test targets only
 bundled into a production app release variant via gradle build variant +
 `consumer-rules.pro`.
 
-## Quick start (MockSimRuntime — JVM unit tests)
+## Quick start
+
+The SDK talks to a running smix runner over HTTP — bring one up first
+(`smix runner up <serial> --platform android`), then:
 
 ```kotlin
 import dev.smix.sdk.*
+import kotlin.time.Duration.Companion.seconds
 
 class LoginFlowTest {
     @Test
     fun testLoginFlow() = runBlocking {
-        val runtime = MockSimRuntime(snapshotResult = /* A11yNode tree */)
-        val resolver = MockSelectorResolver().apply {
-            registerHit("""{"id":"btn-login"}""", "btn-login")
-        }
-        val labels = MockLabelsResolver()
-
-        val app = Smix.launchApp(
-            AppTarget.BundleId("com.example.MyApp"),
-            runtime,
-            resolver,
-            labels,
-        )
+        val app = Smix.launchApp(AppTarget.BundleId("com.example.MyApp"))
 
         app.tap(Selector.Id("btn-login"))
         app.fill(Selector.Id("input-username"), "alice")
@@ -54,18 +47,9 @@ class LoginFlowTest {
 }
 ```
 
-## Production: UiAutomator-backed runtime
-
-A real instrumentation backend wraps UiAutomator2 + the smix-android-runner
-HTTP server. Test authors either provide a concrete `SmixSimRuntime` impl
-that talks to that HTTP surface, or use `MockSimRuntime` for JVM unit
-testing.
-
-```kotlin
-val runtime = HttpSimRuntime(/* runner endpoint */)
-val app = Smix.launchApp(AppTarget.BundleId("com.example.MyApp"), runtime)
-// ... rest identical to Mock-based example
-```
+`launchApp` also takes `port: UShort = Smix.defaultRunnerPort` when the
+runner is not on the default, and `resolver` / `labelsResolver` for
+tests that want to substitute the FFI selector resolver.
 
 ## API surface
 
@@ -99,24 +83,26 @@ Wire JSON (untagged + flatten — byte-identical to Rust smix-selector):
 ### App (act)
 
 ```kotlin
-app.tap(selector: Selector, timeout: Duration = 5.seconds)
-app.fill(selector: Selector, text: String)
-app.pressKey(key: KeyName)  // RETURN / DELETE / SPACE / TAB / ESCAPE / ENTER
-app.swipe(direction: SwipeDirection)  // UP / DOWN / LEFT / RIGHT
-app.tapAtCoord(nx: Double, ny: Double)  // 0..1, throws if out-of-range
+app.tap(selector, timeout = 5.seconds)
+app.fill(selector, "alice")
+app.pressKey(KeyName.RETURN)      // RETURN / DELETE / SPACE / TAB / ESCAPE
+app.swipe(SwipeDirection.UP)      // UP / DOWN / LEFT / RIGHT
+app.tapAtCoord(0.5, 0.8)          // 0..1, throws if out-of-range
 app.terminate()
 app.relaunch()
-app.launchFresh(clearState = true, clearKeychain = true)
 ```
 
 ### App (sense)
 
 ```kotlin
-val png: ByteArray = app.screenshot()
 val tree: A11yNode = app.tree()
-val popups: List<A11yNode> = app.systemPopups()
-app.openUrl("myapp://deep/link")
+val popups: List<SystemPopup> = app.systemPopups()
 ```
+
+Screenshots, deep links and fresh-launch state wiping are CLI and
+YAML-level capabilities (`smix screenshot`, `openLink:`, `launchApp:
+{ clearState: true }`); the Kotlin surface is sense + act against a
+session the runner already holds.
 
 ### Locator (assertions)
 
@@ -145,21 +131,29 @@ try {
 
 ## Architecture: lazy lambda capture injection
 
-The Kotlin SDK uses **SelectorResolver injection** (default lazy-lambda
-wraps `uniffi.smix.resolveSelector`) so JVM unit tests can pass
-`MockSelectorResolver` without triggering JNA initialization.
+The Kotlin SDK uses **SelectorResolver injection** (the default wraps
+`uniffi.smix.resolveSelector` behind a lazy lambda) so a JVM unit test
+can substitute its own resolver without triggering JNA initialization.
 `libuniffi_smix.so` is Android-arch and unloadable on the host JVM;
-lazy lambda capture defers `SmixKt` class load to `.resolve()` invocation,
-which is JNA-safe for JVM tests since tests never invoke the default.
+deferring the class load to `.resolve()` keeps the default JNA-safe for
+JVM tests, which never invoke it.
+
+`SelectorResolver` is a `fun interface` — one method, so a lambda is a
+complete implementation. No mock types ship with the SDK; supply your
+own.
 
 ```kotlin
-// Production path (Android instrumentation):
-val app = Smix.launchApp(AppTarget.BundleId("..."), runtime)
-// Uses DefaultFfiResolver -> loads uniffi.smix.SmixKt -> JNA loads libuniffi_smix.so
+// Production path (Android instrumentation) — resolver defaults to
+// DefaultFfiResolver, which loads uniffi.smix.SmixKt via JNA:
+val app = Smix.launchApp(AppTarget.BundleId("com.example.MyApp"))
 
-// Test path (JVM unit test):
-val app = Smix.launchApp(AppTarget.BundleId("..."), runtime, MockSelectorResolver(), MockLabelsResolver())
-// Mock provided -> DefaultFfiResolver never invoked -> SmixKt never loaded -> no JNA needed
+// Test path (JVM unit test) — a lambda stands in, so the FFI default
+// is never invoked and the .so is never loaded:
+val app = Smix.launchApp(
+    AppTarget.BundleId("com.example.MyApp"),
+    resolver = { _, _ -> listOf("btn-login") },
+    labelsResolver = { _, _ -> listOf("Sign In") },
+)
 ```
 
 ## Conformance
