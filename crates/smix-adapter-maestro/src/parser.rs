@@ -1027,13 +1027,11 @@ fn parse_input_text(v: &Value) -> Result<Step, ParseError> {
                         .into(),
                 })?;
             for key in map.keys() {
-                if let Some(k) = key.as_str() {
-                    if k != "id" && k != "text" {
-                        return Err(ParseError::InvalidValue {
-                            field: "inputText".into(),
-                            reason: format!("unknown key `{k}`; accepted: id, text"),
-                        });
-                    }
+                if let Some(k) = key.as_str().filter(|k| *k != "id" && *k != "text") {
+                    return Err(ParseError::InvalidValue {
+                        field: "inputText".into(),
+                        reason: format!("unknown key `{k}`; accepted: id, text"),
+                    });
                 }
             }
             Ok(Step::InputTextInto {
@@ -1370,16 +1368,14 @@ fn parse_open_link(v: &Value) -> Result<Step, ParseError> {
                     reason: "mapping form requires `link:`".into(),
                 })?;
             for key in map.keys() {
-                if let Some(k) = key.as_str() {
-                    if k != "link" {
-                        return Err(ParseError::InvalidValue {
-                            field: "openLink".into(),
-                            reason: format!(
-                                "`{k}` is not supported; only `link:` — use the plain \
-                                 string form for a bare url"
-                            ),
-                        });
-                    }
+                if let Some(k) = key.as_str().filter(|k| *k != "link") {
+                    return Err(ParseError::InvalidValue {
+                        field: "openLink".into(),
+                        reason: format!(
+                            "`{k}` is not supported; only `link:` — use the plain \
+                             string form for a bare url"
+                        ),
+                    });
                 }
             }
             Ok(Step::OpenLink(link.to_string()))
