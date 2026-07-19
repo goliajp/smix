@@ -2948,8 +2948,8 @@ that is why.
 |---|---|---|---|
 | `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
 | `doubleTapOn` / `doubleTap` | ✅ | ✅ | Android dispatches two clicks 150 ms apart at the resolved point |
-| `longPressOn` / `longPress` | ✅ | ✅ | Duration = 700ms default; not configurable in v1.0 |
-| `tapByCoord` | ✅ | ✅ | Normalized [0, 1] coordinates; escape hatch for non-a11y-semantic tests |
+| `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s, and XCUIElement's press convention); `{ duration: N }` sets it |
+| `tapOn: { point: "X%,Y%" }` | ✅ | ✅ | Normalized [0, 1] coordinates; the escape hatch for screens with no a11y semantics. Not a verb of its own — there is no `tapByCoord` |
 
 ## Input family
 
@@ -3026,16 +3026,35 @@ that is why.
 
 ## smix-native extensions
 
+These are verbs — write them in a flow.
+
 | verb | iOS | Android | notes |
 |---|---|---|---|
-| `tapById` | ✅ | ✅ | Fast path — no OCR / a11y walk |
-| `tapAtCoord` | ✅ | ✅ | Normalized coords |
-| `swipeAtCoord` | ✅ | ✅ | |
-| `ocrText` | ✅ | ✅ | Vision framework (iOS) / ML Kit (Android) |
-| `anchorRelative` | ✅ | ✅ | Selector-relative anchoring |
-| `findTextByOcr` | ✅ | ✅ | |
 | `fixture` | ✅ | ✅ | JSON registry OR TS registry |
-| `webview_eval` / `webviewEval` | ✅ | ✅ | RN WebView / native WebView bridge |
+| `webview_eval` / `webviewEval` / `webViewEval` | ✅ | ✅ | RN WebView / native WebView bridge |
+
+### Coordinates and OCR are not verbs
+
+Coordinate taps, coordinate swipes and OCR are capabilities, reached
+through the verbs and selectors that already exist. They were listed
+here as verbs once; a flow that wrote `tapById:` or `tapAtCoord:` got
+`unsupported command`.
+
+| capability | iOS | Android | how you write it |
+|---|---|---|---|
+| tap by id | ✅ | ✅ | `tapOn: { id: "btn" }` — the id path skips OCR and the a11y walk |
+| tap at a coordinate | ✅ | ✅ | `tapOn: { point: "50%,80%" }` — normalized 0..1 |
+| swipe between coordinates | ✅ | ✅ | `swipe: { from: …, to: … }`; `{ direction: UP }` desugars to the same pair |
+| find text by OCR | ✅ | ✅ | the `ocrText` selector, below — the `find_text_by_ocr` wire route has no verb of its own |
+
+### Selector forms
+
+Written inside a selector, not as a step.
+
+| form | iOS | Android | notes |
+|---|---|---|---|
+| `ocrText` | ✅ | ✅ | Vision framework (iOS) / ML Kit (Android) |
+| `anchored` (alias `anchorRelative`) | ✅ | ✅ | Selector-relative anchoring |
 
 ## Utility
 

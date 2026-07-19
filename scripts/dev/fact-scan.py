@@ -133,7 +133,10 @@ def spm_products():
 # documented constant without pinning it cannot pass quietly. That is
 # the property the hand-listed VERSION_COORDINATES lacked.
 CONSTANT_CLAIM = re.compile(
-    r"(polls?|default|bare form:|first)\s+(\d+)\s*(ms|nodes|seconds|s)\b", re.I
+    r"(polls?|default|bare form:|first)\s+(\d+)\s*(ms|nodes|seconds|s)\b"
+    r"|(\d+)\s*(ms)\s+(apart)"
+    r"|(\d+)\s*(ms)\s+(by default)",
+    re.I,
 )
 
 PINS = [
@@ -163,6 +166,20 @@ PINS = [
         "ms",
         "crates/smix-adapter-maestro/src/runtime.rs",
         r"unwrap_or\((\d+)\)",
+    ),
+    # The parity page said long-press was 700 ms and not configurable;
+    # it is 500 and takes `{ duration: N }`.
+    (
+        "by default",
+        "ms",
+        "crates/smix-adapter-maestro/src/parser.rs",
+        r"LONG_PRESS_DEFAULT_MS: u64 = (\d+)",
+    ),
+    (
+        "apart",
+        "ms",
+        "android-runner/app/src/androidTest/kotlin/dev/smix/runner/RunnerTest.kt",
+        r"(\d+)ms is below most",
     ),
 ]
 
@@ -343,7 +360,16 @@ def main():
         except (OSError, UnicodeDecodeError):
             continue
         for lineno, line in enumerate(text.splitlines(), 1):
-            for keyword, number, unit in CONSTANT_CLAIM.findall(line):
+            for groups in CONSTANT_CLAIM.findall(line):
+                # One regex, three alternations: whichever matched
+                # leaves its three groups filled and the rest empty.
+                filled = [g for g in groups if g]
+                if len(filled) != 3:
+                    continue
+                if filled[0].isdigit():
+                    number, unit, keyword = filled
+                else:
+                    keyword, number, unit = filled
                 keyword = keyword.lower()
                 unit = unit.lower()
                 unit = "s" if unit == "seconds" else unit
