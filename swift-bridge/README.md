@@ -115,7 +115,7 @@ try await loc.toHaveCount(3)                       // exact match count
 do {
     try await app.tap(.id("btn-missing"))
 } catch let failure as ExpectationFailure {
-    failure.code              // .notFound / .ambiguous / .notInteractable / .timeout / .wrongState / .unknown
+    failure.code              // .elementNotFound / .notVisible / .notEnabled / .ambiguous / .timeout / .assertionFailed / .appNotRunning / .simulatorNotBooted / .driverError
     failure.message           // human-readable
     failure.selector          // original Selector (preserves chain)
     failure.visibleElements   // [A11yNode] — first 20 nodes from current tree

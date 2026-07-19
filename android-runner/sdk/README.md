@@ -9,7 +9,7 @@ to Kotlin via UniFFI 0.29 bindings + a lazy lambda injection pattern.
 ```kotlin
 // android-runner/app/build.gradle.kts (consumer side)
 dependencies {
-    androidTestImplementation("jp.golia.smix:smix-sdk:0.1.0")
+    androidTestImplementation("jp.golia.smix:smix-sdk:2.0.0")
 }
 ```
 
@@ -134,7 +134,7 @@ loc.toHaveCount(3, timeout = 5.seconds)
 try {
     app.tap(Selector.Id("btn-missing"))
 } catch (e: ExpectationFailure) {
-    e.code              // NOT_FOUND / AMBIGUOUS / NOT_INTERACTABLE / TIMEOUT / WRONG_STATE / UNKNOWN
+    e.code              // ELEMENT_NOT_FOUND / NOT_VISIBLE / NOT_ENABLED / AMBIGUOUS / TIMEOUT / ASSERTION_FAILED / APP_NOT_RUNNING / SIMULATOR_NOT_BOOTED / DRIVER_ERROR
     e.message           // human-readable
     e.selectorJson      // original Selector encoded as JSON
     e.visibleElements   // List<A11yNode> — first 20 nodes from current tree
