@@ -78,14 +78,14 @@ The `Selector` taxonomy (11 variants) — the target language for every find / t
 ## Install
 
 ```bash
-# Rust CLI + SDK (installs the latest 1.x)
+# Rust CLI + SDK
 cargo install smix-cli --locked
 
 # TypeScript / Node / Bun
 npm install @goliapkg/smix
 
 # Swift Package Manager
-# add https://github.com/goliajp/smix (product: Smix, from: "1.0.0")
+# add https://github.com/goliajp/smix (product: SmixSDK, from: "2.0.0")
 
 # Gradle / Maven (Kotlin / Java) — current release:
 # implementation("jp.golia.smix:smix-sdk:2.0.0")
