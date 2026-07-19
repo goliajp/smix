@@ -81,7 +81,7 @@ try {
   // a driving call, once the native transport lands
 } catch (e) {
   if (e instanceof ExpectationFailure) {
-    e.code            // 'notFound' | 'ambiguous' | 'timeout' | ...
+    e.code            // 'ELEMENT_NOT_FOUND' | 'AMBIGUOUS' | 'TIMEOUT' | ...
     e.visibleElements // A11yNode[] — context for AI diagnosis
     e.suggestions     // string[]
     e.toJson()        // single-line JSON for agent consumption
