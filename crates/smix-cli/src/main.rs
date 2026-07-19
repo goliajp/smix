@@ -1908,6 +1908,7 @@ async fn cmd_migrate(paths: Vec<PathBuf>, in_place: bool) -> Result<ExitCode, Cl
         match migrator.migrate(&buf) {
             Ok((out, report)) => {
                 warn_unknown(&report.unknown_verbs, "<stdin>");
+                warn_unknown_selector_keys(&report.unknown_selector_keys, "<stdin>");
                 print!("{out}");
                 std::io::stdout().flush().ok();
                 Ok(ExitCode::SUCCESS)
@@ -1932,6 +1933,10 @@ async fn cmd_migrate(paths: Vec<PathBuf>, in_place: bool) -> Result<ExitCode, Cl
             match migrator.migrate(&input) {
                 Ok((out, report)) => {
                     warn_unknown(&report.unknown_verbs, &path.display().to_string());
+                    warn_unknown_selector_keys(
+                        &report.unknown_selector_keys,
+                        &path.display().to_string(),
+                    );
                     if in_place {
                         // Atomic-ish rewrite. Write to sibling
                         // `.smix-migrate.tmp` then rename, so a process
@@ -2048,6 +2053,21 @@ fn warn_unknown(unknown: &[String], src: &str) {
             "smix migrate: WARN {}: unknown verb(s) preserved verbatim: {}",
             src,
             unknown.join(", ")
+        );
+    }
+}
+
+/// Selector keys v2 refuses. Distinct from unknown verbs: those are
+/// preserved and may still be smix-native, while these WILL fail to
+/// parse — so the wording says so rather than "preserved verbatim".
+fn warn_unknown_selector_keys(keys: &[String], src: &str) {
+    if !keys.is_empty() {
+        eprintln!(
+            "smix migrate: WARN {}: selector key(s) v2 does not accept: {} \
+             — flows using them fail to parse; remove them or use a \
+             supported selector",
+            src,
+            keys.join(", ")
         );
     }
 }

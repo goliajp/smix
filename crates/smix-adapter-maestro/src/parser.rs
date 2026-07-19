@@ -505,60 +505,20 @@ fn modifiers_from(map: &serde_norway::Mapping, field: &str) -> Result<Modifiers,
     })
 }
 
-/// Keys a selector mapping may carry: the selector discriminators, the
-/// modifiers, and the per-verb options. Anything else is refused —
-/// an unread key is indistinguishable from an honoured one, which is
-/// exactly how the modifiers went missing without a single failure.
-const SELECTOR_KEYS: &[&str] = &[
-    "text",
-    "id",
-    "label",
-    "role",
-    "name",
-    "point",
-    "localized_text",
-    "localizedText",
-    "ocrText",
-    "anchored",
-    "anchorRelative",
-    "fallback",
-    "focused",
-    "near",
-    "below",
-    "above",
-    "leftOf",
-    "rightOf",
-    "inside",
-    "ancestor",
-    "nth",
-    "index",
-    "first",
-    "last",
-    "optional",
-    "dispatch",
-    "pattern",
-    "recognition_level",
-    "locales",
-    "timeout",
-    "requireOnScreen",
-    // Per-verb options that ride in the same mapping as the selector.
-    // `duration` is longPressOn's; the corpus found it the moment this
-    // list started refusing what it did not recognise, which is the
-    // behaviour that makes the list safe to keep by hand.
-    "duration",
-];
-
 fn reject_unknown_selector_keys(
     map: &serde_norway::Mapping,
     field: &str,
 ) -> Result<(), ParseError> {
     for key in map.keys() {
-        if let Some(k) = key.as_str().filter(|k| !SELECTOR_KEYS.contains(k)) {
+        if let Some(k) = key
+            .as_str()
+            .filter(|k| !smix_verbs::SELECTOR_KEYS.contains(k))
+        {
             return Err(ParseError::InvalidValue {
                 field: field.into(),
                 reason: format!(
                     "unknown key `{k}`; selector keys are {}",
-                    SELECTOR_KEYS.join(", ")
+                    smix_verbs::SELECTOR_KEYS.join(", ")
                 ),
             });
         }

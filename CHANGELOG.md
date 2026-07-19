@@ -13,6 +13,7 @@ The first major release: the v1 accretions are consolidated into one deliberate 
 - **`SMIX_*` escape-hatch env vars removed** — behaviour that was env-toggled is now the default or a config field; unknown `SMIX_*` vars warn by name.
 - **Selector model merged** — the `Modifier`/`Modifiers` split and the dual `open_url` forms collapse into the single selector model the resolver actually implements.
 - **`smix-recorder-ir` renamed to `smix-authoring-ir`** — the crate name now matches what it holds.
+- **Unknown keys in a selector mapping are refused.** They used to be read past in silence, which is how every spatial modifier could be dropped without a single flow failing. A flow carrying a key smix does not implement — `enabled:` was one, documented and never wired — now fails to parse, naming the key and listing the legal set.
 - **YAML verb table frozen at v2** — verb renames land through `smix migrate`; identity rows that shadowed maestro aliases (`doubleTapOn`, `longPressOn`) are gone, so canonical maestro spellings survive the codemod.
 
 ### Added
@@ -32,6 +33,7 @@ The first major release: the v1 accretions are consolidated into one deliberate 
 
 ### Fixed
 
+- **Spatial selector modifiers reach the resolver.** `near`, `below`, `above`, `leftOf`, `rightOf`, `inside`, `ancestor`, `nth`, `first` and `last` are implemented in `Modifiers`, honoured by the resolver and documented in the selector guide, and the yaml parser read none of them — every arm built `Modifiers::default()`, and `tapOn` honoured one, spelled `index:`. A dropped modifier cannot fail, it only widens the match, so a flow written to disambiguate silently resolved against everything. `nth:` (the documented spelling) and `index:` both work.
 - **A flow's own `appId:` opens its session.** `run_flow` opened the session and foregrounded before parsing the yaml, using only the CLI bundle — which defaulted to the placeholder `com.example.app`. The README's own quickstart form, `smix run flow.yaml --device X` with no `--bundle-id`, could not drive a real app at all.
 - **Running a flow against an app that is not installed** reports `APP_NOT_RUNNING` naming the bundle and what to type next, instead of a raw `xcrun simctl get_app_container … NSPOSIXErrorDomain code=2`.
 - **The MCP server survives a runner that is not up yet.** MCP clients launch their server at client startup, almost always before `smix runner up`; it died there, leaving a dead server for the whole session. It now connects on first use and reports the runner state then.
