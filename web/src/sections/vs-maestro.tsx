@@ -40,7 +40,7 @@ const EXTENSIONS: { title: string; detail: string }[] = [
   },
   {
     title: 'iOS + Android parity',
-    detail: 'Cross-platform parity is a v2 release gate, verified per verb.',
+    detail: 'Every verb states its iOS and Android status, gated against the verb table.',
   },
 ]
 
