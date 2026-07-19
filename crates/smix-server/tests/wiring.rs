@@ -501,3 +501,85 @@ fn find_entry<'a>(body: &'a serde_json::Value, udid: &str) -> Option<&'a serde_j
         .iter()
         .find(|e| e["udid"] == serde_json::Value::String(udid.to_string()))
 }
+
+/// The registry has to be written by the thing that creates streams.
+///
+/// `stream_sessions` had no production writer at all: the table was
+/// created, `/api/sims` SELECTed it, and only tests ever INSERTed. So a
+/// real deployment served an empty sim list forever — capture could be
+/// started for any udid and that udid would never appear in the list the
+/// dashboard's live view reads. The two capabilities were not wired to
+/// each other.
+#[tokio::test]
+async fn starting_a_capture_registers_the_sim_for_the_live_view() {
+    let Some(state) = build_state("/tmp/smix-it-register").await else {
+        return;
+    };
+    let udid = format!("IT-REG-{}", uuid::Uuid::new_v4());
+    sqlx::query("DELETE FROM stream_sessions WHERE udid = $1")
+        .bind(&udid)
+        .execute(&state.pg)
+        .await
+        .expect("clean");
+
+    assert!(
+        !sims_body(state.clone())
+            .await
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["udid"] == udid.as_str()),
+        "fixture leaked"
+    );
+
+    smix_server::stream::register_session(
+        &state.pg,
+        &udid,
+        "iPhone 17 Pro",
+        "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+        &udid,
+    )
+    .await
+    .expect("register");
+
+    let listed = sims_body(state.clone()).await;
+    let row = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["udid"] == udid.as_str())
+        .unwrap_or_else(|| panic!("the registered sim is missing from /api/sims: {listed}"));
+    assert_eq!(row["device_name"], "iPhone 17 Pro");
+    assert_eq!(
+        row["runtime"],
+        "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
+    );
+    assert_eq!(row["stream_path"], udid.as_str());
+
+    // Re-registering the same device updates it in place — PK is the
+    // udid, so a sim that is captured twice must not double up.
+    smix_server::stream::register_session(
+        &state.pg,
+        &udid,
+        "iPhone 17 Pro Max",
+        "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+        &udid,
+    )
+    .await
+    .expect("re-register");
+    let listed = sims_body(state.clone()).await;
+    let rows: Vec<_> = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["udid"] == udid.as_str())
+        .collect();
+    assert_eq!(rows.len(), 1, "re-register duplicated the row: {listed}");
+    assert_eq!(rows[0]["device_name"], "iPhone 17 Pro Max");
+
+    sqlx::query("DELETE FROM stream_sessions WHERE udid = $1")
+        .bind(&udid)
+        .execute(&state.pg)
+        .await
+        .expect("cleanup");
+}
