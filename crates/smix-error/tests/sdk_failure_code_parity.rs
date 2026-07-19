@@ -301,3 +301,27 @@ fn every_failure_code_an_sdk_readme_names_is_real() {
         bogus.join("\n  ")
     );
 }
+
+/// The errors guide must document every code, not merely avoid naming
+/// fake ones. A variant added to `FailureCode` that no guide mentions
+/// is a failure mode users meet with no page to read.
+#[test]
+fn the_errors_guide_documents_every_variant() {
+    const ERRORS_GUIDE: &str = include_str!("../../../docs/ai-guide/07-errors.md");
+    let undocumented: Vec<String> = all_variants()
+        .iter()
+        .map(|c| {
+            serde_json::to_value(c)
+                .expect("serializes")
+                .as_str()
+                .expect("string")
+                .to_string()
+        })
+        .filter(|wire| !ERRORS_GUIDE.contains(wire.as_str()))
+        .collect();
+    assert!(
+        undocumented.is_empty(),
+        "docs/ai-guide/07-errors.md never mentions {undocumented:?} — a \
+         code a user can receive with no page explaining it"
+    );
+}
