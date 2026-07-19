@@ -23,6 +23,21 @@ The first major release: the v1 accretions are consolidated into one deliberate 
 - `POST /tap` returns the matched element's label, frame, app frame, and per-stage timings at the top level (`TapResult`); the previous nested emission deserialized to empty and the resolve mode's frame never actually arrived.
 - FFI driving surface (`SmixDriver` / `SmixSession` / `CancelToken`) — the Swift and Kotlin SDKs drive through one Rust wire client instead of three per-language HTTP clients.
 - `llms.txt` / `llms-full.txt`, generated from the verb table and guides, gated for freshness at ship.
+- `inputText: { id, text }` types into a named field, not just the focused one — the SDK's targeted fill existed all along; only the yaml wiring was missing.
+- `openLink: { link: <url> }` mapping form. maestro's `browser:` / `autoVerify:` options are refused loudly rather than accepted and ignored.
+- `webViewEval` is accepted alongside `webviewEval` / `webview_eval`.
+- Bare `- killApp` and bare `- clearState` act on the current app, resolved from the last launched bundle.
+- `App::connect_to_runner_lazy` — build a client without a startup health probe, for hosts whose lifecycle starts before the runner's.
+- `smix runner up --platform android` / `smix runner down --platform android` bring the Kotlin runner up and down: install the instrumentation APK, forward the port, start the server, wait for `/health`. Every adb call names its device with `-s`.
+
+### Fixed
+
+- **A flow's own `appId:` opens its session.** `run_flow` opened the session and foregrounded before parsing the yaml, using only the CLI bundle — which defaulted to the placeholder `com.example.app`. The README's own quickstart form, `smix run flow.yaml --device X` with no `--bundle-id`, could not drive a real app at all.
+- **Running a flow against an app that is not installed** reports `APP_NOT_RUNNING` naming the bundle and what to type next, instead of a raw `xcrun simctl get_app_container … NSPOSIXErrorDomain code=2`.
+- **The MCP server survives a runner that is not up yet.** MCP clients launch their server at client startup, almost always before `smix runner up`; it died there, leaving a dead server for the whole session. It now connects on first use and reports the runner state then.
+- **A runner that was never reached is reported unreachable, not dead.** `last_seen_ms = 0` produced "runner died mid-session", sending first-time users after a crash that never happened.
+- **`back` waits for the navigation bar to change** instead of sleeping a fixed 500 ms and reporting success unconditionally; an end-to-end flow measured 1811 ms → 1433 ms.
+- **The Android runner reads the whole request body.** Unread POST bytes prefixed the next request line on a keep-alive connection, producing `HTTP verb {}GET unhandled`.
 
 ## [1.0.27] — 2026-07-13
 
