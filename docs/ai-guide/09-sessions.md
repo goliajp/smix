@@ -9,15 +9,15 @@ With a session:
 - No per-request activation regardless of what `App-Activate` says.
 - The runner exposes an explicit `POST /session/renew-activation` escape hatch for drift recovery, rate-limited to at most one activation per 2 s per session.
 
-Available since v1.0.3. The legacy per-request rebind path stays as a fallback (rate-limited to at most one activation per 5 s per bundle-id since v1.0.2), so v1.0.x consumers keep working against v1.0.3 runners and vice versa.
+Sessions are mandatory on iOS in v2 — the legacy per-request rebind path is gone. Driving without a session is a named error (`no session id on the client`), never a silent fall-back to the path the session model exists to remove. Android has no session concept and drives sessionless.
 
 ## When to use
 
 - **`smix run`** — the CLI opens a session for you automatically at start, closes on exit. Zero yaml changes.
 - **Rust SDK** — call `App::open_session(bundle_id, activate)` at the top of your flow, use `session.app()` for all subsequent calls, `session.close().await` at the end.
 - **TypeScript SDK** — `Session.open(runner, bundleId, { activate: true })`, pair with `try / finally { await session.close() }`.
-- **Swift SDK** — `HttpSmixSimRuntime` + `Session.open(runtime, activate:)` (both new in v1.0.3). Pair with `defer { Task { try? await session.close() } }`.
-- **Kotlin SDK** — `HttpSmixSimRuntime` + `Session.open(runtime, activate = true)` (both new in v1.0.3). Pair with `try { ... } finally { session.close() }`.
+- **Swift SDK** — `Session.open(driver, bundleId:)` on a `SmixDriver`. Pair with `defer { Task { try? await session.close() } }`.
+- **Kotlin SDK** — no public session handle; `Smix.launchApp` opens one and owns it. Pair with `try { ... } finally { app.terminate() }`.
 
 ## Rust SDK
 
@@ -77,17 +77,12 @@ The `HttpSimRuntime` picks up the `Session-Id` header via `setSessionId` inside 
 ```swift
 import SmixSDK
 
-let runtime = HttpSmixSimRuntime(
-    baseURL: URL(string: "http://127.0.0.1:22087")!,
-    bundleId: "com.example.app"
-)
-let session = try await Session.open(runtime, activate: true)
+// Smix.launchApp opens the session for you; open one directly only
+// when you want the handle before launching.
+let driver = SmixDriver(port: Smix.defaultRunnerPort)
+let session = try await Session.open(driver, bundleId: "com.example.app")
 do {
-    let app = try await Smix.launchApp(
-        .bundleId("com.example.app"),
-        runtime,
-        runtime.selectorResolver
-    )
+    let app = try await Smix.launchApp(.bundleId("com.example.app"))
     try await app.tap(.text("Sign In"))
     try await session.close()
 } catch {
@@ -96,31 +91,29 @@ do {
 }
 ```
 
-`HttpSmixSimRuntime` implements the full `SmixSimRuntime` protocol; consumers can pass it anywhere a `SmixSimRuntime` is accepted (the mock runtime is used only for unit tests).
+`SmixDriver` comes from the UniFFI-generated bindings and carries every sense / act call over the runner's HTTP surface. The Swift SDK holds no simulator I/O of its own.
 
 ## Kotlin SDK
 
 ```kotlin
 import dev.smix.sdk.*
 
-val runtime = HttpSmixSimRuntime(
-    baseUrl = "http://127.0.0.1:28080",
-    bundleId = "com.example.app"
-)
-val session = Session.open(runtime, activate = true)
+// Kotlin has no public session handle: Driver's implementation and
+// App's session field are both `internal`. Smix.launchApp opens a
+// session and owns it for the App's lifetime.
 try {
-    val app = Smix.launchApp(AppTarget.BundleId("com.example.app"), runtime)
+    val app = Smix.launchApp(AppTarget.BundleId("com.example.app"))
     app.tap(Selector.Id("btn-login"))
 } finally {
-    session.close()
+    app.terminate()
 }
 ```
 
-The Kotlin `HttpSmixSimRuntime` uses `java.net.HttpURLConnection` — no additional HTTP-library dependency. Thread-safe on the session-id field via `AtomicReference`.
+Kotlin's driver wraps the same UniFFI-generated core the Swift SDK uses, so both languages speak one Rust wire client rather than a per-language HTTP client. It is `internal` on purpose — `Smix.launchApp` is the supported entry.
 
-## v1.0.4 — Session state + relaunch-app
+## Session state + relaunch-app
 
-Since v1.0.4, sessions expose a `state` classification driven by the runner's `X-Sim-Health` response header, and a `relaunch_app()` primitive for in-place app-crash recovery.
+Sessions expose a `state` classification driven by the runner's `X-Sim-Health` response header, and a `relaunch_app()` primitive for in-place app-crash recovery.
 
 ### State
 
@@ -152,29 +145,12 @@ session.on('state', (state) => {
 })
 ```
 
-```swift
-// Swift
-for await state in session.stateStream {
-    switch state {
-    case .healthy: break
-    case .degraded: pauseGate()
-    case .cycling: await waitForHealthy(session)
-    case .dead: throw GateError.runnerDead
-    }
-}
-```
+State observation exists in Rust (`session.state()`) and TypeScript
+(`session.on('state', …)`, fed by `HttpSimRuntime.attachSessionState`).
+The `SmixDriver`-backed Swift and Kotlin sessions carry no state
+stream — poll `GET /health`, or watch the supervisor, for the same
+signal there.
 
-```kotlin
-// Kotlin
-session.stateFlow.collect { state ->
-    when (state) {
-        SessionState.HEALTHY -> {}
-        SessionState.DEGRADED -> pauseGate()
-        SessionState.CYCLING -> waitForHealthy(session)
-        SessionState.DEAD -> throw GateException("runner dead")
-    }
-}
-```
 
 ### Relaunch app
 
@@ -214,7 +190,7 @@ Behind the scenes:
 2. Every subsequent request in the flow carries `Session-Id`.
 3. On exit, CLI POSTs `/session/close`.
 
-If the runner returns a non-2xx from `/session/open` (older v1.0.x runner without session support), the CLI logs a WARN and falls through to the legacy per-request rebind path. This is safe — the legacy path has been rate-limited to 1 activate / 5 s / bundle-id since v1.0.2, so it doesn't storm.
+If `/session/open` returns a non-2xx — a runner too old to open one — `smix run` prints the reason and exits 6. There is nothing to fall through to: v2 drives iOS through a session or not at all. Re-extract the runner this CLI ships with (`smix runner install --force`) and retry.
 
 ## Wire
 
