@@ -86,3 +86,37 @@ fn every_verb_the_parity_page_lists_parses_as_a_verb() {
         unsupported.join("\n  ")
     );
 }
+
+/// Every verb in `VERB_TABLE` must carry a stated iOS and Android
+/// status on the parity page.
+///
+/// This is the half of "verified per verb" that is real: coverage. The
+/// site claimed the stronger thing — a release gate verifying each
+/// verb's behaviour on both platforms — which no gate and no CI job
+/// did. Coverage is checkable here and now, so it is checked here and
+/// now; the behavioural gate needs a booted simulator and an emulator
+/// in CI, and is recorded as the open item it is.
+#[test]
+fn every_verb_in_the_table_has_a_row_on_the_parity_page() {
+    let mut absent: Vec<String> = Vec::new();
+    for verb in smix_verbs::VERB_TABLE {
+        let spelled = format!("`{}`", verb.maestro_name);
+        let canonical = format!("`{}`", verb.smix_name);
+        if !PARITY.contains(&spelled) && !PARITY.contains(&canonical) {
+            absent.push(format!(
+                "{} (canonical {})",
+                verb.maestro_name, verb.smix_name
+            ));
+        }
+    }
+    assert!(
+        !smix_verbs::VERB_TABLE.is_empty(),
+        "VERB_TABLE is empty — this check would pass by knowing nothing"
+    );
+    assert!(
+        absent.is_empty(),
+        "these verbs exist but the parity page states no iOS/Android \
+         status for them:\n  {}",
+        absent.join("\n  ")
+    );
+}
