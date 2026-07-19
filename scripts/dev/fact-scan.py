@@ -25,6 +25,16 @@ Checks:
      was 1.0.27: matching the workspace version is not the same as being
      installable.
 
+  5. Swept coordinates — checks 1's patterns, found across the tree
+     rather than read off a hand-written file list. The list is how the
+     Kotlin SDK README kept telling readers to depend on
+     jp.golia.smix:smix-sdk:0.1.0 from 1.x into 2.0: nobody added that
+     file to it. Paths exempt from the sweep must say why, out loud.
+  6. Swift product names — a coordinate can name the wrong THING as
+     easily as the wrong version. llms.txt, the file agents read, spent
+     two minor lines pointing at `product: Smix`, which Package.swift
+     has never offered.
+
 Exit non-zero on any mismatch, so it can gate a release.
 """
 
@@ -73,10 +83,16 @@ VERSION_COORDINATES = [
 # into 2.0, while the root README beside it said 2.0.0 and every check
 # passed. So these patterns are swept across the tree instead, and any
 # file that is NOT to be swept has to say why, out loud, below.
+# One pattern per coordinate form the root README's Install block
+# offers. Adding a form there without adding it here is the same hole
+# one level up: the Swift Package coordinate went stale at 0.1.0 while
+# the swept Maven and npm ones beside it were correct.
 DISCOVERED_COORDINATE_PATTERNS = [
     r"jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)",
     r"@goliapkg/smix@([0-9][0-9a-zA-Z.\-]*)",
     r"smix-cli --version ([0-9][0-9a-zA-Z.\-]*)",
+    r'from: "([0-9][0-9a-zA-Z.\-]*)"',  # Swift Package Manager
+    r'\.exact\("([0-9][0-9a-zA-Z.\-]*)"\)',  # SPM pinned
 ]
 
 # Paths whose version coordinates are HISTORY and must not be rewritten:
@@ -90,6 +106,19 @@ COORDINATE_EXEMPT = [
     (".claude/rfcs/", "design records dated to the version they targeted"),
     ("CHANGELOG.md", "every release's coordinates, by definition"),
 ]
+
+# Check 6 — a coordinate can name the wrong THING, not just the wrong
+# version. llms.txt, which is the file agents read, told them to depend
+# on `product: Smix` for two minor lines; Package.swift has never
+# offered a product by that name. Wrong-version and wrong-product fail
+# a build identically, so they are checked identically.
+SPM_PRODUCT_CLAIM = re.compile(r"product:\s*\"?([A-Za-z][A-Za-z0-9_]*)\"?")
+
+
+def spm_products():
+    """Product names Package.swift actually declares."""
+    return set(re.findall(r'\.library\(name:\s*"([^"]+)"', read("Package.swift")))
+
 
 TOOL_COUNT_CLAIM = re.compile(r"\b(\d+)\s+(?:MCP\s+)?tools\b", re.I)
 
@@ -221,6 +250,35 @@ def main():
         )
     for prefix, why in COORDINATE_EXEMPT:
         print(f"fact-scan: {prefix} — coordinates not swept ({why})")
+
+    # Check 6 — SPM product names.
+    products = spm_products()
+    if not products:
+        failures.append("Package.swift: no .library products found — extraction broke")
+    product_claims = 0
+    for rel in tracked:
+        if any(rel.startswith(pre) for pre, _ in COORDINATE_EXEMPT):
+            continue
+        try:
+            text = read(rel)
+        except (OSError, UnicodeDecodeError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            # Only claims about THIS package's products.
+            if "goliajp/smix" not in line and "package: \"smix\"" not in line:
+                continue
+            for claimed in SPM_PRODUCT_CLAIM.findall(line):
+                product_claims += 1
+                if products and claimed not in products:
+                    failures.append(
+                        f"{rel}:{lineno}: names Swift product `{claimed}`, "
+                        f"Package.swift declares {sorted(products)}"
+                    )
+    if product_claims == 0:
+        failures.append(
+            "no Swift product claims found on any surface — the pattern "
+            "stopped matching and this check would pass by knowing nothing"
+        )
 
     if not release_tag_exists(version):
         site = "\n".join(read(rel) for rel in iter_surface_files() if rel.startswith("web/"))

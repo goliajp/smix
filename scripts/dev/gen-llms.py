@@ -193,14 +193,16 @@ def gen_llms():
     out.append("## Install")
     out.append("")
     out.append("```bash")
-    out.append("# Rust CLI + SDK (installs the latest 1.x)")
+    out.append("# Rust CLI + SDK")
     out.append("cargo install smix-cli --locked")
     out.append("")
     out.append("# TypeScript / Node / Bun")
     out.append("npm install @goliapkg/smix")
     out.append("")
     out.append("# Swift Package Manager")
-    out.append("# add https://github.com/goliajp/smix (product: Smix, from: \"1.0.0\")")
+    out.append(
+        "# add https://github.com/goliajp/smix "
+        f'(product: SmixSDK, from: "{version}")')
     out.append("")
     out.append("# Gradle / Maven (Kotlin / Java) — current release:")
     out.append(f'# implementation("jp.golia.smix:smix-sdk:{version}")')
