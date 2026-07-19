@@ -141,7 +141,7 @@ Some Compose Button `onClick` lambdas don't fire reliably when a heavy `AndroidV
 
 Known flake when the WebView shim hasn't been initialized yet.
 
-**Workaround**: navigate to the WebView-hosting screen at least once before exercising `webviewEval` to warm up the bridge. Re-running the flow usually passes the second time.
+**Workaround**: navigate to the WebView-hosting screen at least once before exercising `webViewEval` to warm up the bridge. Re-running the flow usually passes the second time.
 
 ### Tap on tab bar misses (Android LazyRow)
 

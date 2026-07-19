@@ -726,6 +726,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::DoubleTapOn { .. } => "doubleTapOn",
         Step::LongPressOn { .. } => "longPressOn",
         Step::InputText(_) => "inputText",
+        Step::InputTextInto { .. } => "inputText",
         Step::EraseText(_) => "eraseText",
         Step::ClearState { .. } => "clearState",
         Step::ClearKeychain => "clearKeychain",
@@ -1560,6 +1561,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.fill(&smix_sdk::focused(), &expanded).await?;
                 Ok(RunStepReport::Ok)
             }
+            Step::InputTextInto { selector, text } => {
+                let expanded = self.expand_template(text)?;
+                self.app.fill(selector, &expanded).await?;
+                Ok(RunStepReport::Ok)
+            }
             Step::Back => {
                 self.app.go_back().await?;
                 Ok(RunStepReport::Ok)
@@ -1634,7 +1640,17 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::KillApp { app_id } => {
-                self.app.terminate(app_id).await?;
+                let Some(bundle) = app_id.clone().or_else(|| self.last_bundle.clone()) else {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message: "killApp: no app launched yet and no appId given".into(),
+                        hint: Some(
+                            "launchApp first, or name the bundle: `killApp: com.acme.app`".into(),
+                        ),
+                        ..Default::default()
+                    })));
+                };
+                self.app.terminate(&bundle).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::ClearAppData {
@@ -1761,13 +1777,24 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::ClearState { app_id } => {
-                let app_path = launch_fresh_app_path_from_env(app_id);
+                let Some(bundle) = app_id.clone().or_else(|| self.last_bundle.clone()) else {
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::DriverError),
+                        message: "clearState: no app launched yet and no appId given".into(),
+                        hint: Some(
+                            "launchApp first, or name the bundle:                              `clearState: { appId: com.acme.app }`"
+                                .into(),
+                        ),
+                        ..Default::default()
+                    })));
+                };
+                let app_path = launch_fresh_app_path_from_env(&bundle);
                 let extra = self
                     .app
-                    .launch_fresh(app_id, true, false, app_path.as_deref(), &[])
+                    .launch_fresh(&bundle, true, false, app_path.as_deref(), &[])
                     .await?;
                 warnings.extend(extra);
-                self.last_bundle = Some(app_id.clone());
+                self.last_bundle = Some(bundle);
                 Ok(RunStepReport::Ok)
             }
             Step::ClearKeychain => match self.last_bundle.clone() {

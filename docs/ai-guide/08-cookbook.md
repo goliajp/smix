@@ -260,7 +260,6 @@ main YAML:
 ```yaml
 - runFlow: ./subflows/launch-fresh.yaml
 - tapOn: { id: "tab-home" }
-- ...
 ```
 
 ## iOS-only / Android-only sections
