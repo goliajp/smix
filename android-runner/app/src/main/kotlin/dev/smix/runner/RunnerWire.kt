@@ -203,7 +203,17 @@ object RunnerWire {
         .put("keyCode", keyCode)
         .toString()
 
+    // `ok` is the field the Rust client reads on every act route
+    // (OkEnvelope) and the shape the iOS runner emits. These two used to
+    // answer with a `status` string, so their success and failure looked
+    // identical to the host. `status` stays alongside for shell probes.
     fun backBody(ok: Boolean): String = JSONObject()
+        .put("ok", ok)
+        .put("status", if (ok) "ok" else "press_back_returned_false")
+        .toString()
+
+    fun hideKeyboardBody(ok: Boolean): String = JSONObject()
+        .put("ok", ok)
         .put("status", if (ok) "ok" else "press_back_returned_false")
         .toString()
 

@@ -231,4 +231,25 @@ class RunnerWireEncodeTest {
         assertEquals("Connection refused", obj.getString("message"))
         assertTrue(obj.getString("hint").contains("28081"))
     }
+
+    // The Rust client reads `ok` on every act route (OkEnvelope). These
+    // two answered with a `status` string instead — the same route, a
+    // different shape from the iOS runner's `{"ok":bool}`, so success
+    // and failure were indistinguishable to the host. Caught by running
+    // a flow on an emulator, where /back reported ok while it had in
+    // fact backgrounded the app.
+    @Test
+    fun backBodyCarriesTheOkFieldTheClientReads() {
+        val ok = JSONObject(RunnerWire.backBody(true))
+        assertEquals(true, ok.getBoolean("ok"))
+        val bad = JSONObject(RunnerWire.backBody(false))
+        assertEquals(false, bad.getBoolean("ok"))
+    }
+
+    @Test
+    fun hideKeyboardBodyCarriesTheOkFieldTheClientReads() {
+        val obj = JSONObject(RunnerWire.hideKeyboardBody(true))
+        assertEquals(true, obj.getBoolean("ok"))
+        assertEquals(false, JSONObject(RunnerWire.hideKeyboardBody(false)).getBoolean("ok"))
+    }
 }
