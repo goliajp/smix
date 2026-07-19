@@ -76,14 +76,38 @@ jobs:
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan
         run: python3 scripts/dev/fact-scan.py
-      - name: smix-server integration suite is skipped, not passing
-        # The six wiring tests need postgres + valkey. CI has neither, so
-        # they skip — this states that out loud instead of letting six
-        # green results imply coverage that did not run.
-        run: |
-          echo "NOTE: crates/smix-server/tests/wiring.rs skips without"
-          echo "DATABASE_URL + REDIS_URL. Six tests report pass without"
-          echo "asserting. Run with SMIX_SERVER_IT=1 and both services to"
-          echo "make their absence fatal."
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check
+
+  server-integration:
+    # The wiring suite needs postgres + valkey. Without them each test
+    # returns early and reports PASS, so for its whole existence it was
+    # seven permanently-green tests asserting nothing. SMIX_SERVER_IT
+    # makes a missing service fatal, and these services make it runnable.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: smix
+          POSTGRES_PASSWORD: smix
+          POSTGRES_DB: smix_it
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U smix"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://smix:smix@127.0.0.1:5432/smix_it
+      REDIS_URL: redis://127.0.0.1:6379
+      SMIX_SERVER_IT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: smix-server wiring suite
+        run: cargo test -p smix-server

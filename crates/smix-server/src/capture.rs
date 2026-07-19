@@ -173,7 +173,7 @@ pub async fn start(
     stream_root: &Path,
     mut valkey: ConnectionManager,
 ) -> Result<CaptureHandle> {
-    ensure_booted(udid).await?;
+    booted_device(udid).await?;
 
     let dir = stream_root.join(udid);
     tokio::fs::create_dir_all(&dir)
@@ -737,18 +737,31 @@ async fn mov_geometry(mov: &Path) -> Result<(u32, u32)> {
     Ok((w, h))
 }
 
-async fn ensure_booted(udid: &str) -> Result<()> {
-    let out = Command::new("xcrun")
-        .args(["simctl", "list", "devices", "booted"])
-        .output()
+/// Confirm the sim is booted AND return what the registry needs to
+/// describe it. Two things at once because both come from one
+/// `simctl list`, and because the caller has to write a
+/// `stream_sessions` row naming the device.
+///
+/// This used to substring-match the udid against the whole text of
+/// `simctl list devices booted`; the typed client parses the JSON and
+/// compares the udid field, so a udid appearing anywhere in the blob
+/// (a device name, another column) can no longer read as "booted".
+pub(crate) async fn booted_device(udid: &str) -> Result<smix_simctl::SimctlDevice> {
+    let devices = smix_simctl::SimctlClient::new()
+        .list_devices()
         .await
-        .map_err(|e| Error::Internal(anyhow::Error::new(e).context("simctl list booted")))?;
-    let booted = String::from_utf8_lossy(&out.stdout);
-    if booted.contains(udid) {
-        Ok(())
-    } else {
-        Err(Error::Internal(anyhow::anyhow!("sim not booted: {udid}")))
+        .map_err(|e| Error::Internal(anyhow::Error::new(e).context("simctl list devices")))?;
+    let device = devices
+        .into_iter()
+        .find(|d| d.udid.eq_ignore_ascii_case(udid))
+        .ok_or_else(|| Error::Internal(anyhow::anyhow!("no such sim: {udid}")))?;
+    if device.state != "Booted" {
+        return Err(Error::Internal(anyhow::anyhow!(
+            "sim not booted: {udid} (state={})",
+            device.state
+        )));
     }
+    Ok(device)
 }
 
 fn make_fifo(path: &Path) -> Result<()> {
@@ -815,7 +828,38 @@ pub async fn start_capture(
     match started {
         Ok(handle) => {
             let mode = handle.mode_label();
+            let stream_path = handle
+                .dir()
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(udid)
+                .to_string();
             captures.insert(udid.to_string(), Some(handle));
+            drop(captures);
+            // The stream exists now, so the registry the dashboard reads
+            // has to learn about it — nothing wrote that table before,
+            // which is why /api/sims was empty in every real deployment
+            // while capture ran fine. A failure here does not tear the
+            // pipeline down (the capture is live and watchable by path)
+            // but it is logged at error, because the symptom is a sim
+            // that streams and never appears in the list.
+            let device = booted_device(udid).await?;
+            if let Err(e) = crate::stream::register_session(
+                &st.pg,
+                udid,
+                &device.name,
+                &device.runtime_identifier,
+                &stream_path,
+            )
+            .await
+            {
+                tracing::error!(
+                    udid = %udid,
+                    error = %e,
+                    "capture started but the sim could not be registered — it will \
+                     stream without appearing in /api/sims"
+                );
+            }
             Ok(Json(
                 json!({ "status": "started", "udid": udid, "mode": mode }),
             ))
