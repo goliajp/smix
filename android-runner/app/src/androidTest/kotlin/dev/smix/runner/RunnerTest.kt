@@ -82,8 +82,39 @@ class SmixHttpServer(
     // header (parity with the iOS runner).
     private val treeServeCounter = java.util.concurrent.atomic.AtomicLong(0)
 
+    // NanoHTTPD serves each connection on its own thread, so the body
+    // drained in `serve` reaches that request's handler and no other.
+    private val drainedBody = ThreadLocal<String>()
+
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
+        // Drain the request body before routing, always.
+        //
+        // NanoHTTPD keeps the connection alive and does NOT consume an
+        // unread body, so the leftover bytes become the front of the next
+        // request line on the same socket. Four handlers took no session
+        // and so never read theirs (/back, /hide-keyboard,
+        // /session/close-all, /session/list) — every one of them is
+        // POSTed with `{}`, and the request that followed died with
+        // `HTTP verb {}GET unhandled`. Found by running a flow on an
+        // emulator; no unit test can see it, because the defect is in
+        // the connection's state rather than in any one message.
+        //
+        // Draining here rather than in each handler makes it structural:
+        // a new POST route cannot forget.
+        drainedBody.remove()
+        if (session.method == Method.POST || session.method == Method.PUT) {
+            val files = HashMap<String, String>()
+            try {
+                session.parseBody(files)
+                drainedBody.set(files["postData"] ?: "")
+            } catch (_: Throwable) {
+                // A malformed body is the route's problem to report, not
+                // a reason to fail before dispatch. It is consumed either
+                // way, which is all this block is for.
+                drainedBody.set("")
+            }
+        }
         return try {
             when {
                 uri == "/health" && session.method == Method.GET -> serveHealth()
@@ -248,9 +279,9 @@ class SmixHttpServer(
         // No first-class UiAutomator2 hide-keyboard; closest is pressBack
         // (closes IME without dismissing app). Mirror iOS swift handler
         // semantics (no harm if no keyboard is up).
-        device.pressBack()
+        val ok = device.pressBack()
         device.waitForIdle(500)
-        val body = RunnerWire.statusOkBody()
+        val body = RunnerWire.hideKeyboardBody(ok)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -833,10 +864,13 @@ class SmixHttpServer(
         }
     }
 
+    // The body was already consumed at the top of `serve` — NanoHTTPD
+    // can only parse it once, and it MUST be consumed there so the next
+    // request on this keep-alive connection is not prefixed with it.
     private fun readBodyString(session: IHTTPSession): String {
-        val files = HashMap<String, String>()
-        session.parseBody(files)
-        return files["postData"] ?: session.queryParameterString ?: "{}"
+        val body = drainedBody.get()
+        if (!body.isNullOrEmpty()) return body
+        return session.queryParameterString ?: "{}"
     }
 
     private fun errorJson(status: Response.Status, kind: String, message: String): Response {
