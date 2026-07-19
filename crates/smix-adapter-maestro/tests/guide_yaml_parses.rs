@@ -26,6 +26,10 @@ const GUIDES: &[(&str, &str)] = &[
         "08-cookbook",
         include_str!("../../../docs/ai-guide/08-cookbook.md"),
     ),
+    (
+        "03-selectors",
+        include_str!("../../../docs/ai-guide/03-selectors.md"),
+    ),
 ];
 
 fn yaml_blocks(doc: &str) -> Vec<String> {
