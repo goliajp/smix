@@ -120,6 +120,57 @@ def spm_products():
     return set(re.findall(r'\.library\(name:\s*"([^"]+)"', read("Package.swift")))
 
 
+# Check 7 — documented constants.
+#
+# Every "polls 250ms" / "default 3000 ms" / "first 20 nodes" in the
+# docs is a number a reader will plan around, and each one lives
+# somewhere in the source as a literal. All four claims happen to be
+# true; nothing was keeping them that way.
+#
+# PINS maps a claim to the file whose literal decides it. It is a
+# hand-written mapping — but an INCOMPLETE one fails: any numeric claim
+# the scanner finds that no pin covers is an error, so adding a
+# documented constant without pinning it cannot pass quietly. That is
+# the property the hand-listed VERSION_COORDINATES lacked.
+CONSTANT_CLAIM = re.compile(
+    r"(polls?|default|bare form:|first)\s+(\d+)\s*(ms|nodes|seconds|s)\b", re.I
+)
+
+PINS = [
+    # (claim keyword, unit, source file, regex that must contain the number)
+    ("polls", "ms", "swift-bridge/Sources/SmixSDK/Locator.swift", r"milliseconds\((\d+)\)"),
+    (
+        "polls",
+        "ms",
+        "android-runner/sdk/src/main/kotlin/dev/smix/sdk/Locator.kt",
+        r"(\d+)\.milliseconds",
+    ),
+    ("first", "nodes", "swift-bridge/Sources/SmixSDK/App.swift", r"prefix\((\d+)\)"),
+    (
+        "first",
+        "nodes",
+        "android-runner/sdk/src/main/kotlin/dev/smix/sdk/App.kt",
+        r"take\((\d+)\)",
+    ),
+    (
+        "bare form:",
+        "ms",
+        "crates/smix-adapter-maestro/src/parser.rs",
+        r"ceiling_ms: (\d+)",
+    ),
+    (
+        "default",
+        "ms",
+        "crates/smix-adapter-maestro/src/runtime.rs",
+        r"unwrap_or\((\d+)\)",
+    ),
+]
+
+# Markdown surfaces whose numbers are promises to a reader.
+CONSTANT_SURFACES = ("docs/ai-guide/", "swift-bridge/README.md",
+                     "android-runner/sdk/README.md", "npm/smix-rn/README.md",
+                     "README.md")
+
 TOOL_COUNT_CLAIM = re.compile(r"\b(\d+)\s+(?:MCP\s+)?tools\b", re.I)
 
 # Surfaces whose quoted strings are user-visible copy. Checked raw.
@@ -278,6 +329,47 @@ def main():
         failures.append(
             "no Swift product claims found on any surface — the pattern "
             "stopped matching and this check would pass by knowing nothing"
+        )
+
+    # Check 7 — documented constants.
+    constant_claims = 0
+    for rel in tracked:
+        if not rel.endswith(".md") or not rel.startswith(CONSTANT_SURFACES):
+            continue
+        if any(rel.startswith(pre) for pre, _ in COORDINATE_EXEMPT):
+            continue
+        try:
+            text = read(rel)
+        except (OSError, UnicodeDecodeError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for keyword, number, unit in CONSTANT_CLAIM.findall(line):
+                keyword = keyword.lower()
+                unit = unit.lower()
+                unit = "s" if unit == "seconds" else unit
+                # Exact (keyword, unit): a looser match let "first N
+                # seconds" borrow the pin for "first N nodes" and report
+                # a drift where the real answer is "nothing pins this".
+                pins = [p for p in PINS if p[0] == keyword and p[1] == unit]
+                if not pins:
+                    failures.append(
+                        f"{rel}:{lineno}: states `{keyword} {number} {unit}` and no "
+                        f"pin says which source literal decides it — add one to PINS "
+                        f"so the number cannot drift unnoticed"
+                    )
+                    continue
+                constant_claims += 1
+                for _, _, src_rel, src_pattern in pins:
+                    literals = re.findall(src_pattern, read(src_rel))
+                    if number not in literals:
+                        failures.append(
+                            f"{rel}:{lineno}: states `{keyword} {number} {unit}`, "
+                            f"{src_rel} says {literals or 'nothing matching'}"
+                        )
+    if constant_claims == 0:
+        failures.append(
+            "no documented constants found — the claim pattern stopped "
+            "matching and this check would pass by knowing nothing"
         )
 
     if not release_tag_exists(version):
