@@ -65,6 +65,32 @@ VERSION_COORDINATES = [
     ("llms.txt", r'jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)'),
 ]
 
+# Check 5 — the same coordinates, found rather than listed.
+#
+# The list above is a list, and a stale coordinate in a file nobody
+# added to it is invisible: android-runner/sdk/README.md told readers to
+# depend on jp.golia.smix:smix-sdk:0.1.0 through the whole 1.x line and
+# into 2.0, while the root README beside it said 2.0.0 and every check
+# passed. So these patterns are swept across the tree instead, and any
+# file that is NOT to be swept has to say why, out loud, below.
+DISCOVERED_COORDINATE_PATTERNS = [
+    r"jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)",
+    r"@goliapkg/smix@([0-9][0-9a-zA-Z.\-]*)",
+    r"smix-cli --version ([0-9][0-9a-zA-Z.\-]*)",
+]
+
+# Paths whose version coordinates are HISTORY and must not be rewritten:
+# shipped-version notes to a consumer, and design records, are true as
+# of their date. Reported like hygiene-scan's exemptions so a directory
+# cannot be quietly excused.
+COORDINATE_EXEMPT = [
+    ("docs/dogfood-archive/", "shipping notes, true as of the version they announce"),
+    ("docs/plan-history/", "archived plans, kept as written"),
+    ("docs/v2.md", "decision log; quotes the coordinates it discusses"),
+    (".claude/rfcs/", "design records dated to the version they targeted"),
+    ("CHANGELOG.md", "every release's coordinates, by definition"),
+]
+
 TOOL_COUNT_CLAIM = re.compile(r"\b(\d+)\s+(?:MCP\s+)?tools\b", re.I)
 
 # Surfaces whose quoted strings are user-visible copy. Checked raw.
@@ -161,6 +187,40 @@ def main():
             for name, pattern in NOISE.items():
                 if pattern.search(line):
                     failures.append(f"{rel}:{lineno}: {name} in user-facing copy")
+
+    # Check 5 — swept coordinates.
+    tracked = subprocess.run(
+        ["git", "ls-files", "*.md", "*.ts", "*.tsx", "*.kts", "*.txt"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    swept = 0
+    for rel in tracked:
+        exempt = next((why for pre, why in COORDINATE_EXEMPT if rel.startswith(pre)), None)
+        if exempt:
+            continue
+        try:
+            text = read(rel)
+        except (OSError, UnicodeDecodeError):
+            continue
+        for pattern in DISCOVERED_COORDINATE_PATTERNS:
+            for lineno, line in enumerate(text.splitlines(), 1):
+                for stated in re.findall(pattern, line):
+                    swept += 1
+                    if stated != version:
+                        failures.append(
+                            f"{rel}:{lineno}: install coordinate says {stated}, "
+                            f"workspace is {version}"
+                        )
+    if swept < len(VERSION_COORDINATES) // 2:
+        failures.append(
+            f"coordinate sweep found only {swept} coordinates — the patterns "
+            f"stopped matching and this check would pass by knowing nothing"
+        )
+    for prefix, why in COORDINATE_EXEMPT:
+        print(f"fact-scan: {prefix} — coordinates not swept ({why})")
 
     if not release_tag_exists(version):
         site = "\n".join(read(rel) for rel in iter_surface_files() if rel.startswith("web/"))

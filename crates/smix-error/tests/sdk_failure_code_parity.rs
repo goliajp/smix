@@ -195,3 +195,109 @@ fn an_emptied_declaration_is_caught() {
         "a declaration with no codes in it must fail the parity check"
     );
 }
+
+/// The three SDK READMEs, which document the vocabulary for readers.
+///
+/// The source-level checks above caught the drift in code; the pages
+/// that TELL people which codes to catch went on teaching the retired
+/// camelCase six — `.notFound`, `.notInteractable`, `.wrongState`,
+/// `.unknown` — long after the sources were corrected. A reader who
+/// copies a code from a README gets a comparison that is never true.
+const SDK_READMES: &[(&str, &str)] = &[
+    (
+        "swift-bridge/README.md",
+        include_str!("../../../swift-bridge/README.md"),
+    ),
+    (
+        "android-runner/sdk/README.md",
+        include_str!("../../../android-runner/sdk/README.md"),
+    ),
+    (
+        "npm/smix-rn/README.md",
+        include_str!("../../../npm/smix-rn/README.md"),
+    ),
+];
+
+/// Codes the retired vocabulary used that the real one never had. A
+/// README naming any of them is teaching a value that cannot occur.
+const RETIRED_SPELLINGS: &[&str] = &[
+    "notFound",
+    "NOT_FOUND",
+    "notInteractable",
+    "NOT_INTERACTABLE",
+    "wrongState",
+    "WRONG_STATE",
+];
+
+#[test]
+fn no_sdk_readme_documents_a_retired_failure_code() {
+    let mut found: Vec<String> = Vec::new();
+    for (name, text) in SDK_READMES {
+        for (lineno, line) in text.lines().enumerate() {
+            for retired in RETIRED_SPELLINGS {
+                // `ELEMENT_NOT_FOUND` legitimately contains `NOT_FOUND`.
+                if line.contains(retired) && !line.contains("ELEMENT_NOT_FOUND") {
+                    found.push(format!("{name}:{}: `{retired}`", lineno + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "SDK READMEs document failure codes that do not exist:\n  {}\n\
+         The real vocabulary is {:?}",
+        found.join("\n  "),
+        all_variants()
+            .iter()
+            .map(|c| serde_json::to_value(c).expect("serializes"))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Every SCREAMING_SNAKE token a README presents as a failure code must
+/// be one Rust actually emits.
+#[test]
+fn every_failure_code_an_sdk_readme_names_is_real() {
+    let real: BTreeSet<String> = all_variants()
+        .iter()
+        .map(|c| {
+            serde_json::to_value(c)
+                .expect("serializes")
+                .as_str()
+                .expect("string")
+                .to_string()
+        })
+        .collect();
+
+    let mut checked = 0usize;
+    let mut bogus: Vec<String> = Vec::new();
+    for (name, text) in SDK_READMES {
+        for (lineno, line) in text.lines().enumerate() {
+            // Only lines presenting the code field, so prose about e.g.
+            // HTTP verbs is not mistaken for a vocabulary claim.
+            if !line.contains("code") {
+                continue;
+            }
+            for token in line.split(|c: char| !(c.is_ascii_uppercase() || c == '_')) {
+                if token.len() < 5 || !token.contains('_') {
+                    continue;
+                }
+                checked += 1;
+                if !real.contains(token) {
+                    bogus.push(format!("{name}:{}: `{token}`", lineno + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        checked >= 3,
+        "found only {checked} code-shaped tokens across the SDK READMEs — \
+         the extraction stopped matching and this check would pass by \
+         knowing nothing"
+    );
+    assert!(
+        bogus.is_empty(),
+        "SDK READMEs name failure codes Rust never emits:\n  {}",
+        bogus.join("\n  ")
+    );
+}
