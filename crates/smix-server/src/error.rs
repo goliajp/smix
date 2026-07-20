@@ -17,12 +17,6 @@ impl From<sqlx::Error> for Error {
     }
 }
 
-impl From<redis::RedisError> for Error {
-    fn from(e: redis::RedisError) -> Self {
-        Self::Internal(e.into())
-    }
-}
-
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let (status, msg) = match &self {

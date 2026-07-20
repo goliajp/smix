@@ -1,5 +1,5 @@
 use anyhow::Context;
-use smix_server::{app, config::Config, db, state::AppState, valkey};
+use smix_server::{app, config::Config, db, state::AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,14 +26,17 @@ async fn main() -> anyhow::Result<()> {
         .context("connect postgres")?;
     db::run_migrations(&pg).await.context("run migrations")?;
 
-    let valkey_mgr = valkey::connect(&cfg.valkey_url)
-        .await
-        .context("connect valkey")?;
+    // The capturing set lives in the embedded store — no valkey to
+    // connect to, and nothing to be up before this process can start.
+    let store = std::sync::Arc::new(
+        smix_store::Store::open(std::path::Path::new(&cfg.store_root))
+            .context("open smix-server store")?,
+    );
 
     let state = AppState {
         cfg: cfg.clone(),
         pg,
-        valkey: valkey_mgr,
+        store,
         captures: Default::default(),
     };
 

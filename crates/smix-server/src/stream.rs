@@ -6,7 +6,7 @@
 //! Future capabilities (metrics, control API) attach to the same server as
 //! sibling modules — hence the generic crate name, not `-stream-server`.
 
-use crate::{capture::CAPTURING_SET, error::Result, state::AppState, valkey};
+use crate::{error::Result, state::AppState};
 use axum::{Json, extract::State};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -60,7 +60,7 @@ pub async fn register_session(
     Ok(())
 }
 
-pub async fn list_sims(State(mut st): State<AppState>) -> Result<Json<Vec<SimEntry>>> {
+pub async fn list_sims(State(st): State<AppState>) -> Result<Json<Vec<SimEntry>>> {
     let mut rows = sqlx::query_as::<_, SimEntry>(
         "SELECT udid, device_name, runtime, stream_path, started_at \
          FROM stream_sessions ORDER BY started_at DESC",
@@ -68,9 +68,8 @@ pub async fn list_sims(State(mut st): State<AppState>) -> Result<Json<Vec<SimEnt
     .fetch_all(&st.pg)
     .await?;
 
-    let capturing = valkey::smembers(&mut st.valkey, CAPTURING_SET)
-        .await
-        .map_err(crate::error::Error::Internal)?;
+    let capturing = crate::capturing::members(&st.store)
+        .map_err(|e| crate::error::Error::Internal(e.into()))?;
     for row in &mut rows {
         row.capturing = capturing.iter().any(|u| u == &row.udid);
     }

@@ -3,16 +3,16 @@
 //! `app(state)` builds the full axum `Router` without binding a listener,
 //! so integration tests in `tests/` drive it via `tower::ServiceExt::oneshot`.
 //! The binary entrypoint (`src/main.rs`) is a thin wire that loads config,
-//! connects pg + valkey, runs migrations, then serves `app(state)`.
+//! connects pg, runs migrations, then serves `app(state)`.
 
 pub mod capture;
+pub mod capturing;
 pub mod config;
 pub mod db;
 pub mod error;
 pub mod routes;
 pub mod state;
 pub mod stream;
-pub mod valkey;
 
 use axum::Router;
 use state::AppState;

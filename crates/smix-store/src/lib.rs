@@ -41,6 +41,8 @@ mod prefix {
     pub const SINGLETON: &str = "one:";
     /// Capsule records, keyed by device UDID.
     pub const CAPSULES: &str = "capsule:";
+    /// Sets — membership, not records.
+    pub const SETS: &str = "set:";
 }
 
 /// What can go wrong touching the store.
@@ -312,6 +314,19 @@ impl Store {
         }
     }
 
+    /// A set of strings.
+    ///
+    /// Membership, not records: "which sims are capturing right now" is
+    /// a question about the set, and asking a [`Namespace`] would mean
+    /// storing a value per member that nobody reads.
+    ///
+    /// Reached through here rather than by handing callers the kevy
+    /// handle: one crate opens kevy, and that stays true.
+    #[must_use]
+    pub fn set(&self, name: &'static str) -> Set<'_> {
+        Set { store: self, name }
+    }
+
     /// A value there is exactly one of.
     ///
     /// The subprocess ring is a capped list read and written in full;
@@ -513,5 +528,64 @@ impl Singleton<'_> {
                 key,
                 source,
             })
+    }
+}
+
+/// A set of strings in the store.
+pub struct Set<'a> {
+    store: &'a Store,
+    name: &'static str,
+}
+
+impl Set<'_> {
+    fn key(&self) -> String {
+        format!("{}{}", prefix::SETS, self.name)
+    }
+
+    /// Add a member. Adding one twice leaves one.
+    pub fn add(&self, member: &str) -> Result<(), StoreError> {
+        let key = self.key();
+        self.store
+            .inner
+            .sadd(key.as_bytes(), &[member.as_bytes()])
+            .map(|_| ())
+            .map_err(|source| StoreError::Op {
+                op: "sadd",
+                key,
+                source,
+            })
+    }
+
+    /// Remove a member. Removing an absent one succeeds.
+    pub fn remove(&self, member: &str) -> Result<(), StoreError> {
+        let key = self.key();
+        self.store
+            .inner
+            .srem(key.as_bytes(), &[member.as_bytes()])
+            .map(|_| ())
+            .map_err(|source| StoreError::Op {
+                op: "srem",
+                key,
+                source,
+            })
+    }
+
+    /// Every member. Unordered — a set has no order, and a caller that
+    /// depends on one is depending on an accident.
+    pub fn members(&self) -> Result<Vec<String>, StoreError> {
+        let key = self.key();
+        let raw = self
+            .store
+            .inner
+            .smembers(key.as_bytes())
+            .map_err(|source| StoreError::Op {
+                op: "smembers",
+                key,
+                source,
+            })?;
+        Ok(raw
+            .into_iter()
+            .map(|m| String::from_utf8_lossy(&m).into_owned())
+            .collect())
     }
 }

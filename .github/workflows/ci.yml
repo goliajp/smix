@@ -80,7 +80,7 @@ jobs:
         run: python3 scripts/dev/gen-llms.py --check
 
   server-integration:
-    # The wiring suite needs postgres + valkey. Without them each test
+    # The wiring suite needs postgres. Without it each test
     # returns early and reports PASS, so for its whole existence it was
     # seven permanently-green tests asserting nothing. SMIX_SERVER_IT
     # makes a missing service fatal, and these services make it runnable.
@@ -96,15 +96,8 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U smix"
           --health-interval 5s --health-timeout 5s --health-retries 10
-      valkey:
-        image: valkey/valkey:8-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "valkey-cli ping"
-          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://smix:smix@127.0.0.1:5432/smix_it
-      REDIS_URL: redis://127.0.0.1:6379
       SMIX_SERVER_IT: "1"
     steps:
       - uses: actions/checkout@v4

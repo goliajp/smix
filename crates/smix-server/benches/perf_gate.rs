@@ -1,6 +1,7 @@
 //! Explicit no-op perf gate.
 //!
-//! `smix-server` is an axum/sqlx/redis httpapi server, fully async with
+//! `smix-server` is an axum/sqlx httpapi server with an embedded kevy
+//! store, fully async with
 //! outer network io; it has no pure synchronous hot path to gate at the
 //! per-fn level.
 //!

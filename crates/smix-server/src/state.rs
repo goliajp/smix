@@ -1,6 +1,5 @@
 use crate::capture::CaptureHandle;
 use crate::config::Config;
-use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,6 +20,8 @@ pub type CaptureRegistry = Arc<Mutex<HashMap<String, Option<CaptureHandle>>>>;
 pub struct AppState {
     pub cfg: Config,
     pub pg: PgPool,
-    pub valkey: ConnectionManager,
+    /// Where the server keeps what it must remember. Embedded: there
+    /// is no separate process to start before smix-server can run.
+    pub store: std::sync::Arc<smix_store::Store>,
     pub captures: CaptureRegistry,
 }

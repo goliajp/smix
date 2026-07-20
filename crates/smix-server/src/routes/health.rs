@@ -1,14 +1,15 @@
-use crate::{error::Result, state::AppState, valkey};
+use crate::{error::Result, state::AppState};
 use axum::{Json, extract::State};
 use serde_json::{Value, json};
 
-pub async fn health(State(mut st): State<AppState>) -> Result<Json<Value>> {
+pub async fn health(State(st): State<AppState>) -> Result<Json<Value>> {
     sqlx::query_scalar::<_, i32>("SELECT 1")
         .fetch_one(&st.pg)
         .await?;
-    valkey::ping(&mut st.valkey)
-        .await
-        .map_err(crate::error::Error::Internal)?;
+    // The store replaces the valkey PING: reading the capturing set
+    // proves the same thing the ping did — that the place this server
+    // keeps its state answers.
+    crate::capturing::members(&st.store).map_err(|e| crate::error::Error::Internal(e.into()))?;
     Ok(Json(json!({
         "status": "ok",
         "service": "smix-server",

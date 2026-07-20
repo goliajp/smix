@@ -1,22 +1,21 @@
 //! Integration test for smix-server wiring: boots `app(state)` against the
-//! real compose-dev pg(5432) + valkey(6379) and drives it via tower oneshot
+//! real compose-dev pg(5432) and drives it via tower oneshot
 //! (no listener bind). Requires `DATABASE_URL` + `REDIS_URL` to be set; the
 //! whole file is skipped (early-return) when they are not, so a bare
 //! `cargo test` without backends does not spuriously fail.
 //!
 //! Run:
 //!   DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres \
-//!   REDIS_URL=redis://localhost:6379 \
 //!     cargo test -p smix-server --test wiring -- --nocapture
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
-use smix_server::{app, config::Config, db, state::AppState, valkey};
+use smix_server::{app, config::Config, db, state::AppState};
 use std::net::SocketAddr;
 use tower::ServiceExt;
 
-/// These tests need a live postgres + valkey. Without them each test
+/// These tests need a live postgres. Without it each test
 /// used to `return` early and report PASS — and CI runs
 /// `cargo test --workspace` with neither env var set, so all six were
 /// permanently green while asserting nothing. Skipping is now visible:
@@ -37,30 +36,25 @@ async fn build_state(stream_root: &str) -> Option<AppState> {
         eprintln!("DATABASE_URL not set — skipping (set SMIX_SERVER_IT=1 to make this fatal)");
         return None;
     };
-    let Ok(valkey_url) = std::env::var("REDIS_URL") else {
-        assert!(
-            !require_backing_services(),
-            "SMIX_SERVER_IT is set but REDIS_URL is not — the integration \
-             suite cannot run and must not report success"
-        );
-        eprintln!("REDIS_URL not set — skipping (set SMIX_SERVER_IT=1 to make this fatal)");
-        return None;
-    };
     let cfg = Config {
         bind: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
         database_url,
-        valkey_url,
         stream_root: stream_root.to_string(),
+        // Each test gets its own store directory: the store takes an
+        // exclusive lock on its root, so a shared one would serialize
+        // the suite and, worse, let one test see another's capturing
+        // set.
+        store_root: format!("{stream_root}/store"),
     };
     let pg = db::connect(&cfg.database_url).await.expect("connect pg");
     db::run_migrations(&pg).await.expect("run migrations");
-    let valkey_mgr = valkey::connect(&cfg.valkey_url)
-        .await
-        .expect("connect valkey");
+    let store = std::sync::Arc::new(
+        smix_store::Store::open(std::path::Path::new(&cfg.store_root)).expect("open store"),
+    );
     Some(AppState {
         cfg,
         pg,
-        valkey: valkey_mgr,
+        store,
         captures: Default::default(),
     })
 }
@@ -193,24 +187,19 @@ async fn sims_reflects_capturing_state() {
         .await
         .expect("insert row");
 
-    // mark capturing in valkey directly
-    let mut vk = state.valkey.clone();
-    smix_server::valkey::sadd(&mut vk, smix_server::capture::CAPTURING_SET, &udid)
-        .await
-        .expect("sadd");
+    // mark capturing in the store directly
+    smix_server::capturing::add(&state.store, &udid).expect("add");
 
     let body = sims_body(state.clone()).await;
     let entry = find_entry(&body, &udid).expect("udid present after insert");
     assert_eq!(
         entry["capturing"],
         serde_json::Value::Bool(true),
-        "capturing=true after SADD: {body}"
+        "capturing=true after add: {body}"
     );
 
     // remove → capturing should flip to false
-    smix_server::valkey::srem(&mut vk, smix_server::capture::CAPTURING_SET, &udid)
-        .await
-        .expect("srem");
+    smix_server::capturing::remove(&state.store, &udid).expect("remove");
 
     let body = sims_body(state.clone()).await;
     let entry = find_entry(&body, &udid).expect("udid still present");
@@ -367,14 +356,8 @@ async fn capture_registry_isolates_per_udid() {
         .execute(&state.pg)
         .await
         .expect("insert B");
-
-    let mut vk = state.valkey.clone();
-    smix_server::valkey::sadd(&mut vk, smix_server::capture::CAPTURING_SET, &udid_a)
-        .await
-        .expect("sadd A");
-    smix_server::valkey::sadd(&mut vk, smix_server::capture::CAPTURING_SET, &udid_b)
-        .await
-        .expect("sadd B");
+    smix_server::capturing::add(&state.store, &udid_a).expect("add");
+    smix_server::capturing::add(&state.store, &udid_b).expect("add");
 
     let body = sims_body(state.clone()).await;
     let a = find_entry(&body, &udid_a).expect("A present after insert");
@@ -390,9 +373,7 @@ async fn capture_registry_isolates_per_udid() {
         "B capturing=true after SADD: {body}"
     );
 
-    smix_server::valkey::srem(&mut vk, smix_server::capture::CAPTURING_SET, &udid_a)
-        .await
-        .expect("srem A");
+    smix_server::capturing::remove(&state.store, &udid_a).expect("remove");
 
     let body = sims_body(state.clone()).await;
     let a = find_entry(&body, &udid_a).expect("A still in pg");
@@ -408,9 +389,7 @@ async fn capture_registry_isolates_per_udid() {
         "B capturing=true unaffected by A's SREM: {body}"
     );
 
-    smix_server::valkey::srem(&mut vk, smix_server::capture::CAPTURING_SET, &udid_b)
-        .await
-        .expect("srem B");
+    smix_server::capturing::remove(&state.store, &udid_b).expect("remove");
     sqlx::query("DELETE FROM stream_sessions WHERE udid IN ($1, $2)")
         .bind(&udid_a)
         .bind(&udid_b)
