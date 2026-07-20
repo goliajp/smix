@@ -333,13 +333,26 @@ fn read_health_bytes(port: u16, cap: usize) -> Result<(bool, Vec<u8>), ()> {
     Ok((status_ok, buf))
 }
 
-fn state_path(root: &Path) -> PathBuf {
-    root.join(".smix/runner/state.json")
+/// Forget the iOS runner record. Reported rather than discarded: a
+/// stale record makes the next `up` believe a runner is already there.
+fn clear_state(root: &Path) {
+    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Ios) {
+        eprintln!("runner: {e}");
+    }
 }
 
+/// The iOS runner's record. `None` is "no runner"; a record that
+/// cannot be read is reported, not swallowed — the `.ok()?` this
+/// replaces turned a damaged record into "no runner", and `up` would
+/// then start a second one beside the first.
 fn read_state(root: &Path) -> Option<RunnerState> {
-    let text = std::fs::read_to_string(state_path(root)).ok()?;
-    serde_json::from_str(&text).ok()
+    match crate::runner_state::read(root, crate::runner_state::Platform::Ios) {
+        Ok(state) => state,
+        Err(e) => {
+            eprintln!("runner: {e}");
+            None
+        }
+    }
 }
 
 /// `ps -p <pid> -o command=` — None if the pid is gone.
@@ -676,11 +689,7 @@ pub fn up_with_options(
         bundle: bundle.map(str::to_string),
         supervisor_pid: None,
     };
-    std::fs::write(
-        state_path(root),
-        serde_json::to_string_pretty(&st).expect("state serializes"),
-    )
-    .map_err(|e| format!("write state.json: {e}"))?;
+    crate::runner_state::write(root, crate::runner_state::Platform::Ios, &st)?;
 
     let timeout_secs: u64 = std::env::var("SMIX_RUNNER_UP_TIMEOUT_SECS")
         .ok()
@@ -726,7 +735,7 @@ pub fn up_with_options(
             last_heartbeat = std::time::Instant::now();
         }
         if let Ok(Some(status)) = child.try_wait() {
-            let _ = std::fs::remove_file(state_path(root));
+            clear_state(root);
             return Err(format!(
                 "xcodebuild exited early ({status}) — log tail:\n{}",
                 tail_log(&log, 25)
@@ -761,7 +770,7 @@ pub fn up_with_options(
                         return Ok(());
                     }
                     None => {
-                        let _ = std::fs::remove_file(state_path(root));
+                        clear_state(root);
                         signal(pid, "-TERM");
                         let ours = smix_runner_wire::WIRE_SCHEMA_SUPPORTED;
                         return Err(format!(
@@ -779,7 +788,7 @@ pub fn up_with_options(
                     println!("runner up: http://localhost:{port}/health = 200 (runner v{v})");
                 }
                 Some(v) => {
-                    let _ = std::fs::remove_file(state_path(root));
+                    clear_state(root);
                     signal(pid, "-TERM");
                     return Err(format!(
                         "runner version mismatch: CLI is v{cli_version} but the \
@@ -816,10 +825,17 @@ pub fn up_with_options(
                         // Rewrite state.json with the supervisor pid.
                         if let Some(mut current) = read_state(root) {
                             current.supervisor_pid = Some(sup_pid);
-                            let _ = std::fs::write(
-                                state_path(root),
-                                serde_json::to_string_pretty(&current).expect("state serializes"),
-                            );
+                            // Not discarded: losing the supervisor pid
+                            // means `runner down` never cascades SIGTERM
+                            // to the sidecar, and the sidecar outlives
+                            // the runner it was watching.
+                            if let Err(e) = crate::runner_state::write(
+                                root,
+                                crate::runner_state::Platform::Ios,
+                                &current,
+                            ) {
+                                eprintln!("runner supervise: {e}");
+                            }
                             println!(
                                 "runner supervise: spawned pid={sup_pid} \
                                  (log: .smix/runner/supervise-{udid}.log)"
@@ -839,7 +855,7 @@ pub fn up_with_options(
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
     signal(pid, "-INT");
-    let _ = std::fs::remove_file(state_path(root));
+    clear_state(root);
     Err(format!(
         "runner did not become healthy within {timeout_secs}s — sent SIGINT; log tail:\n{}",
         tail_log(&log, 25)
@@ -906,7 +922,7 @@ pub fn down(root: &Path, port: u16) -> Result<(), String> {
                 println!("runner pid {} already gone — dropping stale handle", st.pid);
             }
         }
-        let _ = std::fs::remove_file(state_path(root));
+        clear_state(root);
     }
 
     // Fallback: sessions started outside `smix runner up` (no handle).
