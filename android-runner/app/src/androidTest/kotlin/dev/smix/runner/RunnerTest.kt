@@ -309,6 +309,8 @@ class SmixHttpServer(
 
     private fun serveTapById(session: IHTTPSession): Response {
         val id = RunnerWire.decodeTapById(readBodyString(session))
+        // NanoHTTPD lowercases header names.
+        val targetPackage = session.headers["app-bundle-id"]
         // Prefer AccessibilityNodeInfo.performAction(ACTION_CLICK) over
         // UiObject2.click() because Compose Button onClick fires
         // reliably through the a11y action path even when a sibling
@@ -331,7 +333,7 @@ class SmixHttpServer(
         var sawNode = false
         var sawActionClick = false
         while (System.currentTimeMillis() < pollDeadlineMs && !clicked) {
-            val targetNode = findNodeByViewId(id)
+            val targetNode = findNodeByViewId(id, targetPackage)
             if (targetNode != null) {
                 sawNode = true
                 val actions = targetNode.actionList
@@ -390,17 +392,11 @@ class SmixHttpServer(
     /// the app content and forces touch-fallback for every tap. Multi-
     /// window matches what the caller sees in /tree, which is the
     /// consistent surface they expect to address by id.
-    private fun findNodeByViewId(shortId: String): AccessibilityNodeInfo? {
-        // Compose `testTagsAsResourceId = true` emits the bare short
-        // string (no `<pkg>:id/` prefix) on some layouts (e.g. FlowRow)
-        // and `<pkg>:id/<short>` on others (older LazyRow). Try bare
-        // first (common case), then package-qualified (SUT + runner
-        // test process) for each window.
-        val candidates = buildList {
-            add(shortId)
-            add("com.example.app:id/$shortId")
-            add("dev.smix.runner.test:id/$shortId")
-        }
+    private fun findNodeByViewId(
+        shortId: String,
+        targetPackage: String?,
+    ): AccessibilityNodeInfo? {
+        val candidates = RunnerWire.viewIdCandidates(shortId, targetPackage)
         for (window in instrumentation.uiAutomation.windows) {
             val root = window.root ?: continue
             for (cand in candidates) {

@@ -394,6 +394,31 @@ object RunnerWire {
         .put("message", message)
         .put("hint", "ensure the app's WebViewEvalServer is up on :28081")
         .toString()
+
+    /// Resource-id spellings to try for a short id, most likely first.
+    ///
+    /// Compose with `testTagsAsResourceId = true` emits the bare short
+    /// string on some layouts (FlowRow) and `<pkg>:id/<short>` on others
+    /// (older LazyRow), so both spellings have to be attempted.
+    ///
+    /// The package-qualified form needs the package of the app under
+    /// test, which only the caller knows — it arrives on the
+    /// `App-Bundle-Id` header. Until that was wired, this list carried
+    /// the literal `com.example.app`, which is the README's placeholder
+    /// and not any real app: the qualified spelling could only ever
+    /// match a reader who had copied the example verbatim. Every real
+    /// app fell through to the manual walk, slower and by a different
+    /// code path than the one the comment described.
+    ///
+    /// The runner's own test process stays in the list: it addresses
+    /// its fixtures by id in the self-tests.
+    fun viewIdCandidates(shortId: String, targetPackage: String?): List<String> = buildList {
+        add(shortId)
+        if (!targetPackage.isNullOrBlank()) {
+            add("$targetPackage:id/$shortId")
+        }
+        add("dev.smix.runner.test:id/$shortId")
+    }
 }
 
 /// Map smix KeyName camelCase (per `smix_input::KeyName` serde rename) →
