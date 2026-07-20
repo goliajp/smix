@@ -648,9 +648,9 @@ pub fn up_with_options(
             }
             None => {
                 return Err(format!(
-                    "port {port} already serves /health but no \
-                     .smix/runner/state.json records it — not killing blindly; \
-                     investigate (pgrep -fl xcodebuild), then `smix runner down`"
+                    "port {port} already serves /health but the store has no \
+                     record of that runner — not killing blindly; investigate \
+                     (pgrep -fl xcodebuild), then `smix runner down`"
                 ));
             }
         }
@@ -968,7 +968,7 @@ pub fn down(root: &Path, port: u16) -> Result<(), String> {
 /// use `smix runner up` for a cold start.
 pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<(), String> {
     let st = read_state(root).ok_or_else(|| {
-        "no runner state.json — cycle only cycles a known runner; \
+        "no runner recorded — cycle only cycles a known runner; \
          run `smix runner up <device> [--bundle <id>]` for a cold start"
             .to_string()
     })?;
@@ -982,7 +982,7 @@ pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<()
     let had_supervisor = st.supervisor_pid.is_some();
     if cycle_port != port {
         eprintln!(
-            "note: state.json port {cycle_port} differs from --runner-port {port}; \
+            "note: the recorded port {cycle_port} differs from --runner-port {port}; \
              cycling on state.json's {cycle_port}"
         );
     }
@@ -1072,7 +1072,7 @@ fn spawn_supervisor(root: &Path, runner_project: Option<&Path>) -> Result<u32, S
 /// runner itself down.
 pub fn supervise(root: &Path, runner_project: Option<&Path>) -> Result<(), String> {
     let st = read_state(root).ok_or_else(|| {
-        "no runner state.json — supervise attaches to a known runner; \
+        "no runner recorded — supervise attaches to a known runner; \
          run `smix runner up <device> --bundle <id>` first"
             .to_string()
     })?;

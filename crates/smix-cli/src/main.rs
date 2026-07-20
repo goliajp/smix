@@ -829,7 +829,7 @@ fn registry_path() -> Result<PathBuf, CliError> {
         .map_err(|e| CliError::Other(format!("cannot determine cwd: {e}")))?;
     SimRegistry::discover(&cwd).ok_or_else(|| {
         CliError::Other(format!(
-            "no .smix/sims.json was found upward from {} — pass an explicit \
+            "no .smix registry was found upward from {} — pass an explicit \
              UDID or set SMIX_SIMS_JSON",
             cwd.display()
         ))
