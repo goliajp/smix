@@ -41,7 +41,12 @@ fn stub_cli(dir: &std::path::Path, body: &str) -> AiTierConfig {
     std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
     AiTierConfig {
         claude_bin: bin.to_string_lossy().into_owned(),
-        timeout_secs: 10,
+        // Generous on purpose. These stubs exit immediately, so the
+        // ceiling is scaffolding rather than the subject — and a tight
+        // one turns "the CI runner was slow to spawn a shell" into a
+        // red build about `claude` failing. The one test where the
+        // timeout IS the subject sets its own, short.
+        timeout_secs: 120,
     }
 }
 
@@ -58,7 +63,10 @@ fn missing_cli_reports_driver_error_with_an_install_hint() {
     rt().block_on(async {
         let cfg = AiTierConfig {
             claude_bin: "/nonexistent/definitely-not-claude".into(),
-            timeout_secs: 10,
+            // Also scaffolding: this asserts what a failed spawn
+            // reports, and a spawn that cannot happen never reaches a
+            // timeout anyway.
+            timeout_secs: 120,
         };
         let err = judge(PNG, CONDITION, &cfg).await.unwrap_err();
         assert_eq!(err.code, FailureCode::DriverError);
