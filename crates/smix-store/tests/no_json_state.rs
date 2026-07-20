@@ -99,6 +99,27 @@ fn no_production_source_writes_a_retired_state_file() {
             if trimmed.starts_with("//") || trimmed.starts_with("///") {
                 continue;
             }
+            // A user-facing message naming a retired file sends someone
+            // to look at a path that no longer exists. Found by running
+            // `runner up` on a busy port and being told to check
+            // `.smix/runner/state.json`, which nothing writes.
+            //
+            // Line-by-line was not enough: these messages wrap, and the
+            // `format!` sat three lines above the filename. The first
+            // version of this check missed exactly the bug that
+            // prompted it, which is what testing a gate against a real
+            // injection is for.
+            if trimmed.starts_with('"') || trimmed.starts_with("     ") {
+                for name in RETIRED_FILES {
+                    if line.contains(name) {
+                        offenders.push(format!(
+                            "{}:{}: a message names a retired file",
+                            path.strip_prefix(&root).unwrap_or(path).display(),
+                            lineno + 1
+                        ));
+                    }
+                }
+            }
             for name in RETIRED_FILES {
                 // Reading counts too. The first version of this check
                 // only looked for writes, and missed `smix down` gating
