@@ -158,3 +158,66 @@ fn no_production_source_reaches_for_a_retired_store() {
         offenders.join("\n  ")
     );
 }
+
+/// User-facing docs must not teach a file smix stopped writing.
+///
+/// Seven places — the README's quickstart among them — still told
+/// readers that `smix sim register` creates `.smix/sims.json` after it
+/// had stopped doing so. Nothing failed: the code was right and the
+/// pages were wrong, which is the shape of every doc bug this release
+/// spent a week on.
+///
+/// Naming the file as history is fine ("a pre-2.1 sims.json is
+/// imported"); naming it as what happens now is not.
+#[test]
+fn no_guide_says_smix_writes_a_retired_state_file() {
+    const DOCS: &[(&str, &str)] = &[
+        ("README", include_str!("../../../README.md")),
+        ("05-cli", include_str!("../../../docs/ai-guide/05-cli.md")),
+        (
+            "wire-format",
+            include_str!("../../../docs/ai-guide/wire-format.md"),
+        ),
+        (
+            "activate-header-lifetime",
+            include_str!("../../../docs/ai-guide/activate-header-lifetime.md"),
+        ),
+    ];
+    // Present-tense verbs. A sentence about importing or about what a
+    // pre-2.1 install has is describing history, not behaviour.
+    const PRESENT_TENSE: &[&str] = &["creates", "writes", "resolves via", "stored in", "saved to"];
+
+    let mut checked = 0usize;
+    let mut wrong: Vec<String> = Vec::new();
+    for (name, doc) in DOCS {
+        for (lineno, line) in doc.lines().enumerate() {
+            for file in RETIRED_FILES {
+                if !line.contains(file) {
+                    continue;
+                }
+                checked += 1;
+                let historical = line.contains("pre-2.1")
+                    || line.contains("imported")
+                    || line.contains("legacy")
+                    || line.contains("SMIX_SIMS_JSON");
+                if historical {
+                    continue;
+                }
+                if PRESENT_TENSE.iter().any(|v| line.contains(v)) {
+                    wrong.push(format!("{name}:{}: {}", lineno + 1, line.trim()));
+                }
+            }
+        }
+    }
+    assert!(
+        checked >= 1,
+        "no mention of a retired file anywhere in the guides — the \
+         extraction stopped matching and this check would pass by \
+         knowing nothing"
+    );
+    assert!(
+        wrong.is_empty(),
+        "the guides say smix still writes files it does not:\n  {}",
+        wrong.join("\n  ")
+    );
+}

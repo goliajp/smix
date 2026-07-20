@@ -70,7 +70,7 @@ smix sim exec <ALIAS|UDID> <verb> [args...]
 
 **Sim safety hook**: bare `xcrun simctl <verb>` is BLOCKED for mutating verbs. Read-only `simctl list` is allowed. To pass-through unmapped subcommands use `smix sim exec <ALIAS|UDID> <verb> ...` (this is accepted by the hook because the device id is explicit).
 
-`<ALIAS>` resolves via the `.smix/sims.json` registry, which is created and populated by `smix sim register <alias> --udid <UDID>` (or by hand). UDIDs always work without a registry.
+`<ALIAS>` resolves via the workspace's `.smix/` registry, created and populated by `smix sim register <alias> --udid <UDID>`. UDIDs always work without a registry. (A pre-2.1 `.smix/sims.json` is imported on first use and left on disk.)
 
 ### Runner management
 
@@ -89,7 +89,7 @@ smix runner down
 without it every `/tree` reads the wrong app. `--supervise` attaches a
 sidecar that re-cycles the runner if it dies; `runner down` cascades to
 it. Port comes from `--runner-port`, else the alias's `runnerPort` in
-`.smix/sims.json`, else 22087.
+the registry, else 22087.
 
 **Android** — installs the instrumentation APK, forwards the port, and
 `am instrument`s the Kotlin runner:
@@ -190,7 +190,7 @@ smix sim register dev --udid <UDID>          # record it under an alias
 smix sim register jp --udid <UDID> --locale ja-JP --runner-port 22088
 ```
 
-`register` creates `.smix/sims.json` when absent (walking up from the
+`register` creates the `.smix/` registry when absent (walking up from the
 working directory; `SMIX_SIMS_JSON` overrides the location). Device
 name, runtime, and device type are read from `simctl`, so only the UDID
 and alias are yours to choose. After this, every command accepts the
@@ -258,6 +258,6 @@ smix run --device emulator-5554 --platform android \
 ```
 1. Explicit CLI flag (highest)
 2. ENV var (e.g. SMIX_UDID)
-3. .smix/sims.json registry (for aliases)
+3. the .smix/ registry (for aliases)
 4. Hardcoded default in code (lowest)
 ```

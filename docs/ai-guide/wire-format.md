@@ -9,7 +9,7 @@
 ## HTTP transport
 
 Base URL: `http://127.0.0.1:<port>` — port default `22087`, overridable
-via `.smix/sims.json` `runnerPort` or the `--runner-port` flag.
+via the registry's `runnerPort` or the `--runner-port` flag.
 
 All requests use a JSON body; all responses return JSON.
 

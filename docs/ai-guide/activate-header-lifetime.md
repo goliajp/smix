@@ -79,7 +79,7 @@ restart is needed.
 Not supported in v1.0 — one runner serves one target at a time
 because XCUITest's synthesize-event dispatch is process-global.
 Use two separate `smix runner up <deviceA>` + `<deviceB>` instances
-with different `runnerPort` values in `.smix/sims.json`.
+with different `runnerPort` values in the `.smix/` registry.
 
 ## Anti-patterns
 
