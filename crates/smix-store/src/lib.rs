@@ -167,6 +167,50 @@ impl Store {
         })
     }
 
+    /// Open the store only if nobody else holds it.
+    ///
+    /// [`Self::open`] blocks, which is right for a command the user is
+    /// waiting on. It is wrong on a hot path: the subprocess ring
+    /// persists after *every* `xcrun simctl` invocation, and blocking
+    /// there would stall real work behind an unrelated smix process for
+    /// the sake of a diagnostic record.
+    ///
+    /// `Ok(None)` means the store is busy. Callers who get it should do
+    /// what they already do when a best-effort write fails — carry on,
+    /// and let the next attempt persist.
+    pub fn try_open(root: &Path) -> Result<Option<Self>, StoreError> {
+        std::fs::create_dir_all(root).map_err(|source| StoreError::Open {
+            path: root.to_path_buf(),
+            source,
+        })?;
+        let lock_path = root.join("store.lock");
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .map_err(|source| StoreError::Open {
+                path: lock_path.clone(),
+                source,
+            })?;
+        if lock.try_lock().is_err() {
+            return Ok(None);
+        }
+        let dir = root.join("kv");
+        let inner = KevyStore::open(Config::default().with_persist(&dir)).map_err(|source| {
+            StoreError::Open {
+                path: dir.clone(),
+                source,
+            }
+        })?;
+        Ok(Some(Store {
+            inner,
+            root: root.to_path_buf(),
+            _lock: lock,
+        }))
+    }
+
     /// Where this store persists. Useful in errors and diagnostics.
     #[must_use]
     pub fn root(&self) -> &Path {
