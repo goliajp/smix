@@ -765,3 +765,44 @@ async fn system_popup_action_returns_false_on_runner_404_not_found() {
         .expect("system_popup_action 404 surfaces as Ok(false)");
     assert!(!ok);
 }
+
+/// `dispatch:` on Android must say what the guide says it says.
+///
+/// 04-actions promises "an explicit unsupported message (native
+/// synthesize is already the Android default — the override is never
+/// needed there)". The message was "not implemented by the Kotlin
+/// runner", which invites a user to wait for a feature that is not
+/// coming and is not needed.
+#[tokio::test]
+async fn android_dispatch_override_explains_itself() {
+    use smix_driver::AndroidDriver;
+    use smix_runner_client::{HttpRunnerClient, TapMode};
+    use smix_selector::Selector;
+
+    let driver = AndroidDriver::new(HttpRunnerClient::new(1));
+    let err = smix_driver::Driver::tap_with_mode(
+        &driver,
+        &Selector::Id {
+            id: "x".into(),
+            modifiers: Default::default(),
+        },
+        TapMode::Resolve,
+        None,
+    )
+    .await
+    .expect_err("dispatch has no meaning on Android");
+
+    let text = format!("{} {}", err.message, err.hint.clone().unwrap_or_default());
+    assert!(
+        text.contains("iOS") && text.contains("dispatch"),
+        "the error must name what the key is and where it belongs: {text}"
+    );
+    assert!(
+        !text.contains("not implemented"),
+        "reads as a missing feature rather than an inapplicable one: {text}"
+    );
+    assert!(
+        text.contains("remove"),
+        "an AI-readable failure says what to do next: {text}"
+    );
+}
