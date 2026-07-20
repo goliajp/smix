@@ -157,3 +157,80 @@ fn the_readme_abi_stable_crates_all_exist() {
          {missing:?}"
     );
 }
+
+/// Every type the ABI table promises stability for must exist.
+///
+/// `abi-stability.md` names them one by one — `ExpectationFailure`,
+/// `Modifiers`, `VERB_TABLE`, and twenty more — and that table is what
+/// a consumer reads before depending on a 2.x crate. A renamed or
+/// removed type leaves the promise pointing at nothing, and the README
+/// gate only checks the crate names, one level up.
+#[test]
+fn every_type_the_abi_table_promises_exists() {
+    const ABI: &str = include_str!("../../../docs/ai-guide/abi-stability.md");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root");
+
+    let mut rows = 0usize;
+    let mut missing: Vec<String> = Vec::new();
+    for line in ABI.lines().filter(|l| l.starts_with("| `smix-")) {
+        let cells: Vec<&str> = line.trim_matches('|').split('|').map(str::trim).collect();
+        let Some(crate_name) = cells.first().map(|c| c.trim_matches('`')) else {
+            continue;
+        };
+        let Some(types_cell) = cells.get(1) else {
+            continue;
+        };
+        rows += 1;
+
+        let src = root.join("crates").join(crate_name).join("src");
+        if !src.is_dir() {
+            missing.push(format!("{crate_name}: the crate itself is gone"));
+            continue;
+        }
+        let mut body = String::new();
+        collect_rs_text(&src, &mut body);
+
+        for name in types_cell.split('`').skip(1).step_by(2) {
+            let name = name.trim();
+            if name.is_empty() {
+                continue;
+            }
+            let declared = ["struct", "enum", "trait", "type", "const", "static", "fn"]
+                .iter()
+                .any(|kw| body.contains(&format!("{kw} {name}")));
+            if !declared {
+                missing.push(format!("{crate_name}: `{name}`"));
+            }
+        }
+    }
+
+    assert!(
+        rows >= 8,
+        "read only {rows} crate rows out of the ABI table — the parse \
+         stopped matching and this check would pass by knowing nothing"
+    );
+    assert!(
+        missing.is_empty(),
+        "the ABI table promises stability for things that do not exist:\n  {}",
+        missing.join("\n  ")
+    );
+}
+
+fn collect_rs_text(dir: &std::path::Path, out: &mut String) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            collect_rs_text(&p, out);
+        } else if p.extension().is_some_and(|e| e == "rs")
+            && let Ok(text) = std::fs::read_to_string(&p)
+        {
+            out.push_str(&text);
+        }
+    }
+}
