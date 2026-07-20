@@ -1552,10 +1552,16 @@ final class SmixRunnerUITests: XCTestCase {
       // through the test target's main thread). For a non-`_focused_`
       // selector, the handler first taps the matching typable element to
       // give it focus, then submits the string to the daemon.
-      fillHandler: { selectorText, text, scope in
+      fillHandler: { selectorText, text, scope, dispatch in
         let app = await resolveApp()  // Per-request target-app rebind.
         let t0 = DispatchTime.now()
-        if !selectorText.isEmpty && selectorText != "_focused_" {
+        // `key-events` skips focus resolution and types into whatever
+        // holds focus. That is the whole point of the mode: it is for
+        // fields the a11y tree cannot address, so resolving through the
+        // a11y tree first would fail for exactly the callers who asked
+        // for it.
+        let resolveFocus = dispatch != .keyEvents
+        if resolveFocus && !selectorText.isEmpty && selectorText != "_focused_" {
           // Focus-tap can hit a vanished element (same
           // root cause as tapHandler). Guard the resolve+tap span; a
           // caught failure leaves the field unfocused and the daemon

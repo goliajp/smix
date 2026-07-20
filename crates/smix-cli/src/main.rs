@@ -389,12 +389,10 @@ Documentation: docs/AI_GUIDE.md
         /// `- fixture: <id>` yaml verb.
         #[arg(long = "fixture-registry")]
         fixture_registry: Option<PathBuf>,
-        /// NOT IMPLEMENTED — sends an `Input-Dispatch-Mode: key-events`
-        /// header that no runner reads, so text dispatch is unchanged.
-        /// It was meant for RN apps whose hidden `<TextInput>` defeats
-        /// a11y-focus lookup; until a runner honours the header, reach
-        /// the field with `tapOn: { point: "X%,Y%" }` and then the
-        /// scalar `inputText`, which types into whatever holds focus.
+        /// Type into whatever holds focus, skipping a11y-focus
+        /// resolution, for `inputText` / `fill`. For RN apps whose
+        /// hidden `<TextInput>` the a11y tree cannot address — the
+        /// case where the default path finds nothing to tap.
         #[arg(long = "force-key-events", default_value_t = false)]
         force_key_events: bool,
         /// Disable auto-annotate on `--debug-output` fail-PNG (default:

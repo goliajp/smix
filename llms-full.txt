@@ -2700,17 +2700,14 @@ All requests use a JSON body; all responses return JSON.
 
 ## Request-context headers
 
-Every route accepts these OPTIONAL headers; absent = default behavior.
-
-`Input-Dispatch-Mode` used to be listed here. The client sends it and
-`--force-key-events` sets it, but no runner has ever read it — see the
-note under `POST /fill`.
+Every route accepts these OPTIONAL headers; absent = default behavior
 (runner-boot target, no activate, a11y-anchored dispatch):
 
 | Header | Semantics |
 |---|---|
 | `App-Bundle-Id: <bundle>` | Per-request `XCUIApplication` rebind target |
 | `App-Activate: true` | Runner calls `.activate()` on the resolved target before the operation (main-actor hop) |
+| `Input-Dispatch-Mode: a11y \| key-events \| auto` | How `/fill` puts text in. `a11y` (default) resolves the field and taps it to take focus; `key-events` skips resolution and types into whatever holds focus, for fields the tree cannot address. An unknown value degrades to `auto` rather than failing the step. |
 
 
 ## Routes
@@ -2765,15 +2762,14 @@ Response: `{ found: bool, exists: bool }` (both fields present; consumers may OR
 ### `POST /fill`
 
 Body: `{ selector: Selector | "_focused_", text: string, include?: IncludeScope }`
+Header: `Input-Dispatch-Mode`
 Response: `{ ok: bool, focusMs?: u64, daemonSendMs?: u64 }`
 
-> **`Input-Dispatch-Mode` is not implemented.** The client sends the
-> header and `smix run --force-key-events` sets it, but neither runner
-> reads it, so the flag does not change how text is dispatched. It was
-> meant for RN apps whose hidden `<TextInput>` defeats a11y-focus
-> lookup; until a runner honours it, reach the field by coordinate
-> (`tapOn: { point: "X%,Y%" }`) and then use the scalar `inputText`,
-> which types into whatever holds focus.
+`key-events` is for RN apps whose hidden `<TextInput>` defeats
+a11y-focus lookup. On iOS the header reaches the runner, which skips
+its focus-tap; on Android there is no header to send — `/input-text`
+already types into the focused field — so the host driver honours the
+mode by not resolving. Different mechanics, same guarantee.
 
 ### `POST /clear`
 

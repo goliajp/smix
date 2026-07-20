@@ -411,8 +411,35 @@ public actor SmixRunnerServer {
   // masked by a native modal is still focus-tappable). Same `?include=`
   // query mechanism as /tree.
   public typealias FillHandler = @Sendable (
-    _ selector: String, _ text: String, _ scope: String?
+    _ selector: String, _ text: String, _ scope: String?, _ dispatch: InputDispatchMode
   ) async -> KeyboardOutcome
+
+  /// How `/fill` puts text into the app.
+  ///
+  /// The wire format has documented this header since v1, the client
+  /// sends it, and `smix run --force-key-events` sets it — while no
+  /// runner read it, so the flag changed nothing. It exists for RN
+  /// apps whose hidden `<TextInput>` defeats a11y-focus lookup, which
+  /// means the callers reaching for it are the ones for whom the
+  /// default already failed.
+  public enum InputDispatchMode: String, Sendable {
+    /// Resolve the field through the accessibility tree and tap it to
+    /// take focus, then type. The default.
+    case a11y
+    /// Skip focus resolution entirely and type into whatever holds
+    /// focus now. For fields the a11y tree cannot address.
+    case keyEvents = "key-events"
+    /// Same as `a11y` today; reserved for a runner-side decision.
+    case auto
+
+    /// Parse the header. An unknown value is `auto` rather than an
+    /// error: a client from a future version naming a mode this runner
+    /// does not have should degrade, not fail the step.
+    public static func parse(_ raw: String?) -> InputDispatchMode {
+      guard let raw, !raw.isEmpty else { return .a11y }
+      return InputDispatchMode(rawValue: raw) ?? .auto
+    }
+  }
   public typealias ClearHandler = @Sendable (
     _ selector: String, _ scope: String?
   ) async -> KeyboardOutcome
@@ -1387,8 +1414,10 @@ public actor SmixRunnerServer {
         do { req = try KeyboardRoute.decodeFill(body) }
         catch let e as KeyboardRoute.DecodeError { return KeyboardRoute.badRequest(reason: "\(e)") }
         catch { return KeyboardRoute.badRequest(reason: "\(error)") }
+        let dispatch = InputDispatchMode.parse(
+          request.headers[HTTPHeader("Input-Dispatch-Mode")])
         let outcome = await fillHandler(
-          req.selector.text, req.text, request.query["include"])
+          req.selector.text, req.text, request.query["include"], dispatch)
         return successFor(outcome) ?? KeyboardRoute.notFound(selector: req.selector)
       }
     }
