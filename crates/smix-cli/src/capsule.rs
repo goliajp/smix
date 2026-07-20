@@ -168,11 +168,7 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         None,
     )?;
 
-    // 6. Write state.json (atomic write+rename).
-    let path = state_path(opts.root, opts.udid);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
-    }
+    // 6. Record the capsule.
     let state = CapsuleState {
         mode,
         udid: opts.udid.to_string(),
@@ -182,11 +178,70 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         simulator_app_was_running: sim_running,
         no_capture: opts.no_capture,
     };
-    let json = serde_json::to_string_pretty(&state).map_err(|e| format!("serialize state: {e}"))?;
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, json).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
+    write_state(opts.root, opts.udid, &state)?;
     Ok(())
+}
+
+/// Open the store for capsule records.
+fn open_store(root: &Path) -> Result<smix_store::Store, String> {
+    smix_store::Store::open(&root.join(".smix"))
+        .map_err(|e| format!("open capsule store under {}: {e}", root.display()))
+}
+
+/// Read one device's capsule record.
+///
+/// `Ok(None)` is "no capsule here"; a record that exists but cannot be
+/// read is an error naming the device, so a damaged record is never
+/// mistaken for an absent one and torn down as if nothing were running.
+fn read_state(root: &Path, udid: &str) -> Result<Option<CapsuleState>, String> {
+    let store = open_store(root)?;
+    if let Some(state) = store
+        .capsules()
+        .get_json::<CapsuleState>(udid)
+        .map_err(|e| format!("read capsule {udid}: {e}"))?
+    {
+        return Ok(Some(state));
+    }
+    // A capsule brought up before the store still has its file.
+    let legacy = state_path(root, udid);
+    let json = match std::fs::read_to_string(&legacy) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("read {}: {e}", legacy.display())),
+    };
+    serde_json::from_str(&json)
+        .map(Some)
+        .map_err(|e| format!("deserialize {}: {e}", legacy.display()))
+}
+
+/// Write one device's capsule record.
+///
+/// The file this replaces was the one atomic, fully error-checked
+/// writer in the tree (tmp + rename, every step mapped). Nothing here
+/// may be quieter than that: every failure is returned, and the record
+/// is on disk before this returns, because the capsule it describes
+/// outlives the process.
+fn write_state(root: &Path, udid: &str, state: &CapsuleState) -> Result<(), String> {
+    let store = open_store(root)?;
+    store
+        .capsules()
+        .put_json(udid, state)
+        .map_err(|e| format!("write capsule {udid}: {e}"))?;
+    store
+        .sync()
+        .map_err(|e| format!("persist capsule {udid}: {e}"))
+}
+
+/// Forget one device's capsule record.
+fn clear_state(root: &Path, udid: &str) -> Result<(), String> {
+    let store = open_store(root)?;
+    store
+        .capsules()
+        .delete(udid)
+        .map_err(|e| format!("clear capsule {udid}: {e}"))?;
+    store
+        .sync()
+        .map_err(|e| format!("persist capsule {udid}: {e}"))
 }
 
 /// Reverse `capsule up`: read state.json → runner down → capture stop
@@ -196,16 +251,14 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
 ///
 /// Async fn for the same reason as [`up`].
 pub async fn down(root: &Path, udid: &str) -> Result<(), String> {
-    let path = state_path(root, udid);
-    if !path.exists() {
-        // Idempotent: no state.json => noop.
-        eprintln!("capsule down: {} not active (no state.json)", udid);
+    // Idempotent: nothing recorded => noop. A record that exists but
+    // cannot be read is an error rather than a noop — tearing down as
+    // if nothing were running would leave the runner and the capture
+    // behind.
+    let Some(state) = read_state(root, udid)? else {
+        eprintln!("capsule down: {udid} not active");
         return Ok(());
-    }
-    let json =
-        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let state: CapsuleState =
-        serde_json::from_str(&json).map_err(|e| format!("deserialize {}: {e}", path.display()))?;
+    };
 
     let mut errors: Vec<String> = Vec::new();
     if let Err(e) = crate::runner::down(root, state.runner_port) {
@@ -231,8 +284,8 @@ pub async fn down(root: &Path, udid: &str) -> Result<(), String> {
         errors.push(format!("shutdown: {e}"));
     }
 
-    if let Err(e) = std::fs::remove_file(&path) {
-        eprintln!("capsule down: remove {}: {e}", path.display());
+    if let Err(e) = clear_state(root, udid) {
+        eprintln!("capsule down: {e}");
         errors.push(format!("rm state: {e}"));
     }
 
@@ -409,5 +462,108 @@ mod tests {
         }"#;
         let r: CapsuleState = serde_json::from_str(legacy).unwrap();
         assert!(!r.no_capture);
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    fn temp_root(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("smix-capsule-store-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp root");
+        dir
+    }
+
+    fn sample(udid: &str, port: u16) -> CapsuleState {
+        CapsuleState {
+            mode: CapsuleMode::Hard,
+            udid: udid.to_string(),
+            started_at: "2026-07-20T00:00:00Z".to_string(),
+            runner_port: port,
+            capture_endpoint: "http://127.0.0.1:9000".to_string(),
+            simulator_app_was_running: false,
+            no_capture: false,
+        }
+    }
+
+    #[test]
+    fn state_round_trips_through_the_store() {
+        let root = temp_root("roundtrip");
+        write_state(&root, "UDID-1", &sample("UDID-1", 22087)).expect("write");
+        let back = read_state(&root, "UDID-1").expect("read").expect("present");
+        assert_eq!(back.udid, "UDID-1");
+        assert_eq!(back.runner_port, 22087);
+    }
+
+    #[test]
+    fn the_legacy_state_file_is_not_written() {
+        let root = temp_root("no-file");
+        write_state(&root, "UDID-1", &sample("UDID-1", 22087)).expect("write");
+        assert!(
+            !state_path(&root, "UDID-1").exists(),
+            "the legacy per-udid state.json is still being written"
+        );
+    }
+
+    #[test]
+    fn two_devices_keep_their_own_capsule() {
+        // Capsule state has always been per-udid. That must survive the
+        // move: two sims under one workspace are the normal case.
+        let root = temp_root("two-devices");
+        write_state(&root, "A", &sample("A", 22087)).expect("write a");
+        write_state(&root, "B", &sample("B", 22088)).expect("write b");
+        assert_eq!(
+            read_state(&root, "A")
+                .expect("read")
+                .expect("present")
+                .runner_port,
+            22087
+        );
+        assert_eq!(
+            read_state(&root, "B")
+                .expect("read")
+                .expect("present")
+                .runner_port,
+            22088
+        );
+    }
+
+    #[test]
+    fn clearing_one_device_leaves_the_other() {
+        let root = temp_root("clear");
+        write_state(&root, "A", &sample("A", 22087)).expect("write a");
+        write_state(&root, "B", &sample("B", 22088)).expect("write b");
+        clear_state(&root, "A").expect("clear");
+        assert!(read_state(&root, "A").expect("read").is_none());
+        assert!(read_state(&root, "B").expect("read").is_some());
+    }
+
+    #[test]
+    fn a_pre_store_capsule_is_still_found() {
+        let root = temp_root("legacy");
+        let path = state_path(&root, "LEGACY");
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
+        std::fs::write(
+            &path,
+            serde_json::to_string(&sample("LEGACY", 22087)).expect("json"),
+        )
+        .expect("write legacy");
+
+        let back = read_state(&root, "LEGACY").expect("read").expect("present");
+        assert_eq!(back.udid, "LEGACY");
+        assert!(path.exists(), "the legacy file must be left where it is");
+    }
+
+    #[test]
+    fn a_corrupt_record_is_named_not_treated_as_absent() {
+        let root = temp_root("corrupt");
+        {
+            let store = smix_store::Store::open(&root.join(".smix")).expect("open");
+            store.capsules().put("BAD", b"{not a capsule").expect("put");
+        }
+        let err = read_state(&root, "BAD").expect_err("corrupt must not read as absent");
+        assert!(err.contains("BAD"), "the error must name the device: {err}");
     }
 }

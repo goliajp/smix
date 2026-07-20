@@ -39,6 +39,8 @@ mod prefix {
     pub const ATTEMPTS: &str = "attempt:";
     /// Values that exist once: read whole, written whole.
     pub const SINGLETON: &str = "one:";
+    /// Capsule records, keyed by device UDID.
+    pub const CAPSULES: &str = "capsule:";
 }
 
 /// What can go wrong touching the store.
@@ -252,6 +254,18 @@ impl Store {
                 detail: e.to_string(),
             }
         })
+    }
+
+    /// Capsule records, one per device.
+    ///
+    /// Per-udid, unlike the runner record: two simulators under one
+    /// workspace each hold their own capsule, and always have.
+    #[must_use]
+    pub fn capsules(&self) -> Namespace<'_> {
+        Namespace {
+            store: self,
+            prefix: prefix::CAPSULES,
+        }
     }
 
     /// A value there is exactly one of.
