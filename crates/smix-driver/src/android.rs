@@ -33,12 +33,20 @@ use crate::traits::{Driver, Platform};
 /// via `AndroidDriver::new(port)`).
 pub struct AndroidDriver {
     runner: HttpRunnerClient,
+    /// Skip host-side focus resolution and type into whatever holds
+    /// focus. Android has no runner-side dispatch switch to send —
+    /// `/input-text` already types into the focused field — so the
+    /// mode is honoured here, by not resolving.
+    force_key_events: bool,
 }
 
 impl AndroidDriver {
     #[must_use]
     pub fn new(runner: HttpRunnerClient) -> Self {
-        AndroidDriver { runner }
+        AndroidDriver {
+            runner,
+            force_key_events: false,
+        }
     }
 
     pub fn runner(&self) -> &HttpRunnerClient {
@@ -383,12 +391,36 @@ impl Driver for AndroidDriver {
             })
     }
 
+    /// Android honours `key-events` by skipping focus resolution.
+    ///
+    /// The iOS driver sends `Input-Dispatch-Mode` to its runner; there
+    /// is nothing to send here, because `/input-text` types into the
+    /// focused field either way. What the mode changes is whether this
+    /// driver resolves and taps the field first — and resolving is
+    /// exactly what fails for the callers who ask for this mode.
+    fn set_force_key_events(&mut self, force: bool) {
+        self.force_key_events = force;
+    }
+
     async fn fill(
         &self,
         selector: &Selector,
         text: &str,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
+        if self.force_key_events {
+            // No resolve, no focus tap: type where focus already is.
+            // That is the whole mode — it exists for fields the tree
+            // cannot address, so resolving first would fail for exactly
+            // the callers who asked for it.
+            return self.runner.input_text(text).await.map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("AndroidDriver::fill (key-events): {e}"),
+                    ..Default::default()
+                })
+            });
+        }
         // Host-resolve → tap to focus → /input-text. Mirror
         // of swift FlyingFox /fill semantics (selector resolves; client
         // types text into focused field).

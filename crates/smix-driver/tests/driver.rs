@@ -806,3 +806,52 @@ async fn android_dispatch_override_explains_itself() {
         "an AI-readable failure says what to do next: {text}"
     );
 }
+
+/// `--force-key-events` must actually change what Android does.
+///
+/// The flag set a header for iOS and nothing at all for Android:
+/// `set_force_key_events` had an empty default on the trait and
+/// AndroidDriver never overrode it. So on Android the flag was inert
+/// twice over — no header to send, and no behaviour to change.
+///
+/// What it means here is skipping host-side focus resolution, since
+/// `/input-text` already types into the focused field. Resolving is
+/// precisely what fails for the callers who reach for this mode.
+#[tokio::test]
+async fn android_key_events_mode_skips_focus_resolution() {
+    use smix_driver::{AndroidDriver, Driver};
+    use smix_runner_client::HttpRunnerClient;
+    use smix_selector::Selector;
+
+    // Port 1 answers nothing. With resolution ON, fill fails while
+    // resolving the selector; with it OFF, it fails at input_text.
+    // The two errors name different stages, which is the observable
+    // difference between the modes without a device.
+    let selector = Selector::Id {
+        id: "hidden-input".into(),
+        modifiers: Default::default(),
+    };
+
+    let resolving = AndroidDriver::new(HttpRunnerClient::new(1));
+    let resolved_err = resolving
+        .fill(&selector, "hello", None)
+        .await
+        .expect_err("no runner");
+
+    let mut key_events = AndroidDriver::new(HttpRunnerClient::new(1));
+    key_events.set_force_key_events(true);
+    let key_err = key_events
+        .fill(&selector, "hello", None)
+        .await
+        .expect_err("no runner");
+
+    assert!(
+        key_err.message.contains("key-events"),
+        "key-events mode must take its own path: {}",
+        key_err.message
+    );
+    assert_ne!(
+        resolved_err.message, key_err.message,
+        "the flag changed nothing — both modes failed at the same stage"
+    );
+}
