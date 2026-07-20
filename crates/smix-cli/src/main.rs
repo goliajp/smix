@@ -107,8 +107,9 @@ enum Cmd {
         #[command(subcommand)]
         action: DiagnosticAction,
     },
-    /// Manage simulators. `<DEVICE>` = explicit UDID, or an alias / deviceName
-    /// recorded in .smix/sims.json (env SMIX_SIMS_JSON overrides discovery).
+    /// Manage simulators. `<DEVICE>` = explicit UDID, or an alias /
+    /// deviceName in the workspace's `.smix` registry (env SMIX_SIMS_JSON
+    /// overrides discovery).
     Sim {
         #[command(subcommand)]
         action: SimAction,
@@ -865,19 +866,21 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
     {
-        let subprocess_ring_path = dir.join("smix/subprocess-ring.json");
-        smix_simctl::set_subprocess_ring_persist_path(subprocess_ring_path);
+        // One store directory for all three. They used to be three JSON
+        // files here; passing the old filenames still worked (the store
+        // resolves a `.json` path to its parent) but it read as though
+        // smix still wrote them.
+        let diag_root = dir.join("smix");
+        smix_simctl::set_subprocess_ring_persist_path(diag_root.clone());
         // resetAppData counter persistence so
         // `smix diagnostic dump` (later, separate process) sees the
         // count from any prior `smix run` invocations.
-        let reset_counters_path = dir.join("smix/reset-app-data-counters.json");
-        smix_simctl::set_reset_app_data_counters_persist_path(reset_counters_path);
+        smix_simctl::set_reset_app_data_counters_persist_path(diag_root.clone());
         // Flow-attempts persistence for retry
         // attribution. `smix run` records per-flow attempts here,
         // `smix diagnostic dump` reads back for the `recent flows`
         // section.
-        let flow_attempts_path = dir.join("smix/flow-attempts.json");
-        smix_simctl::set_flow_attempts_persist_path(flow_attempts_path);
+        smix_simctl::set_flow_attempts_persist_path(diag_root);
     }
 
     let simctl = SimctlClient::new();
@@ -2146,6 +2149,18 @@ async fn cmd_sim_exec(device: &str, verb: &str, args: &[String]) -> Result<ExitC
 
 #[derive(Subcommand, Debug)]
 enum DiagnosticAction {
+    /// Print everything smix has persisted, as JSON.
+    ///
+    /// The state used to be JSON files you could `cat`; it is an
+    /// embedded store now, and this is what keeps it as readable as it
+    /// was. A value that is not valid JSON is shown as hex rather than
+    /// stopping the dump — this is what you run when something is
+    /// already wrong.
+    Store {
+        /// Which store: the workspace's `.smix`, or another path.
+        #[arg(long, default_value = ".smix")]
+        root: PathBuf,
+    },
     /// Pretty-print the runner's runtime observability snapshot:
     /// recent subprocess argvs + exit codes + timings, open sessions,
     /// sim-health state, supervisor pid, uptime. Calls
@@ -2262,6 +2277,14 @@ fn tail_lines(path: &Path, n: usize) -> std::io::Result<Vec<String>> {
 
 async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
     match action {
+        DiagnosticAction::Store { root } => {
+            let store = smix_store::Store::open(&root)
+                .map_err(|e| CliError::Other(format!("open store at {}: {e}", root.display())))?;
+            let dumped = store
+                .dump_json()
+                .map_err(|e| CliError::Other(format!("dump store: {e}")))?;
+            println!("{dumped}");
+        }
         DiagnosticAction::Dump {
             json,
             metro_log,
