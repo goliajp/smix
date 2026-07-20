@@ -5,8 +5,10 @@ use std::net::SocketAddr;
 pub struct Config {
     pub bind: SocketAddr,
     pub database_url: String,
-    pub valkey_url: String,
     pub stream_root: String,
+    /// Where the embedded store persists. Replaces the valkey
+    /// connection that used to hold the capturing set.
+    pub store_root: String,
 }
 
 impl Config {
@@ -16,14 +18,26 @@ impl Config {
             .parse()
             .context("parse SMIX_SERVER_BIND")?;
         let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL required")?;
-        let valkey_url = std::env::var("REDIS_URL").context("REDIS_URL required")?;
+        // Said out loud rather than ignored. A deployment that still
+        // sets REDIS_URL is describing an architecture this server no
+        // longer has, and silently accepting it would leave someone
+        // maintaining a valkey nothing talks to.
+        if std::env::var("REDIS_URL").is_ok() {
+            eprintln!(
+                "smix-server: REDIS_URL is set but no longer used — the capturing \
+                 set moved into the embedded store (SMIX_SERVER_STORE_ROOT). \
+                 The valkey it points at can be retired."
+            );
+        }
         let stream_root =
             std::env::var("SMIX_STREAM_ROOT").unwrap_or_else(|_| ".smix/stream".to_string());
+        let store_root =
+            std::env::var("SMIX_SERVER_STORE_ROOT").unwrap_or_else(|_| ".smix/server".to_string());
         Ok(Self {
             bind,
             database_url,
-            valkey_url,
             stream_root,
+            store_root,
         })
     }
 

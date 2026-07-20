@@ -16,9 +16,8 @@
 //! timestamps each time. Here every recorded round is decoded to raw frames
 //! and fed into the *same* encoder, so the HLS timeline stays continuous.
 
-use crate::{error::Error, error::Result, state::AppState, valkey};
+use crate::{error::Error, error::Result, state::AppState};
 use axum::{Json, extract::State};
-use redis::aio::ConnectionManager;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -56,7 +55,7 @@ fn yuv420p_frame_bytes(w: u32, h: u32) -> usize {
 pub struct CaptureHandle {
     udid: String,
     dir: PathBuf,
-    valkey: ConnectionManager,
+    store: std::sync::Arc<smix_store::Store>,
     encoder: Child,
     mode: CaptureMode,
 }
@@ -156,9 +155,7 @@ impl CaptureHandle {
             }
         }
 
-        valkey::srem(&mut self.valkey, CAPTURING_SET, &self.udid)
-            .await
-            .map_err(Error::Internal)?;
+        crate::capturing::remove(&self.store, &self.udid).map_err(|e| Error::Internal(e.into()))?;
         Ok(())
     }
 }
@@ -171,7 +168,7 @@ impl CaptureHandle {
 pub async fn start(
     udid: &str,
     stream_root: &Path,
-    mut valkey: ConnectionManager,
+    store: std::sync::Arc<smix_store::Store>,
 ) -> Result<CaptureHandle> {
     booted_device(udid).await?;
 
@@ -182,7 +179,7 @@ pub async fn start(
     // Fresh start: clear any stale playlist/segments from a previous run.
     clean_dir(&dir).await;
 
-    match try_start_direct(udid, &dir, &mut valkey).await {
+    match try_start_direct(udid, &dir, &store).await {
         Ok(handle) => Ok(handle),
         Err(reason) => {
             tracing::warn!(
@@ -193,7 +190,7 @@ pub async fn start(
             // dropped a stub playlist before being killed); fresh-up again so
             // the fallback path starts from a clean dir.
             clean_dir(&dir).await;
-            start_via_record_video(udid, &dir, valkey).await
+            start_via_record_video(udid, &dir, store).await
         }
     }
 }
@@ -210,7 +207,7 @@ fn parse_geometry_line(s: &str) -> Option<(u32, u32)> {
 async fn try_start_direct(
     udid: &str,
     dir: &Path,
-    valkey: &mut ConnectionManager,
+    store: &std::sync::Arc<smix_store::Store>,
 ) -> std::result::Result<CaptureHandle, String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -285,14 +282,12 @@ async fn try_start_direct(
         let _ = tokio::io::copy(&mut host_stdout, &mut encoder_stdin).await;
     });
 
-    valkey::sadd(valkey, CAPTURING_SET, udid)
-        .await
-        .map_err(|e| format!("valkey sadd: {e}"))?;
+    crate::capturing::add(store, udid).map_err(|e| format!("record capturing: {e}"))?;
 
     Ok(CaptureHandle {
         udid: udid.to_string(),
         dir: dir.to_path_buf(),
-        valkey: valkey.clone(),
+        store: store.clone(),
         encoder,
         mode: CaptureMode::Direct { host, pump },
     })
@@ -304,7 +299,7 @@ async fn try_start_direct(
 async fn start_via_record_video(
     udid: &str,
     dir: &Path,
-    mut valkey: ConnectionManager,
+    store: std::sync::Arc<smix_store::Store>,
 ) -> Result<CaptureHandle> {
     let fifo = dir.join("raw.fifo");
     make_fifo(&fifo)?;
@@ -356,14 +351,12 @@ async fn start_via_record_video(
         yuv420p_frame_bytes(w, h),
     ));
 
-    valkey::sadd(&mut valkey, CAPTURING_SET, udid)
-        .await
-        .map_err(Error::Internal)?;
+    crate::capturing::add(&store, udid).map_err(|e| Error::Internal(e.into()))?;
 
     Ok(CaptureHandle {
         udid: udid.to_string(),
         dir: dir.to_path_buf(),
-        valkey,
+        store,
         encoder,
         mode: CaptureMode::RollingRecord { stop_tx, rolling },
     })
@@ -823,7 +816,7 @@ pub async fn start_capture(
         }
         captures.insert(udid.to_string(), None);
     }
-    let started = start(udid, Path::new(&st.cfg.stream_root), st.valkey.clone()).await;
+    let started = start(udid, Path::new(&st.cfg.stream_root), st.store.clone()).await;
     let mut captures = st.captures.lock().await;
     match started {
         Ok(handle) => {
