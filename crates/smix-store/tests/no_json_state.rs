@@ -74,6 +74,72 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Shell scripts and CI carry user-visible text too.
+///
+/// `sim-guard.sh` told anyone it blocked to "see .smix/sims.json" —
+/// a deny message pointing at a file that no longer exists, which is
+/// the least helpful moment to be misdirected. The Rust checks never
+/// looked outside `crates/`.
+#[test]
+fn no_script_points_at_a_retired_state_file() {
+    let root = workspace_root();
+    let mut offenders: Vec<String> = Vec::new();
+    let mut checked = 0usize;
+
+    let mut scripts: Vec<PathBuf> = Vec::new();
+    collect_ext(&root.join("scripts"), "sh", &mut scripts);
+    collect_ext(&root.join(".github"), "yml", &mut scripts);
+    assert!(
+        scripts.len() >= 3,
+        "found only {} scripts — the walk stopped matching",
+        scripts.len()
+    );
+
+    for path in &scripts {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        for (lineno, line) in text.lines().enumerate() {
+            for name in RETIRED_FILES {
+                if !line.contains(name) {
+                    continue;
+                }
+                checked += 1;
+                // History is fine; directions are not.
+                if line.contains("used to") || line.contains("pre-2.1") {
+                    continue;
+                }
+                offenders.push(format!(
+                    "{}:{}: {}",
+                    path.strip_prefix(&root).unwrap_or(path).display(),
+                    lineno + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    let _ = checked;
+    assert!(
+        offenders.is_empty(),
+        "scripts send readers to files that no longer exist:\n  {}",
+        offenders.join("\n  ")
+    );
+}
+
+fn collect_ext(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            collect_ext(&p, ext, out);
+        } else if p.extension().is_some_and(|e| e == ext) {
+            out.push(p);
+        }
+    }
+}
+
 #[test]
 fn no_production_source_writes_a_retired_state_file() {
     let root = workspace_root();
