@@ -126,10 +126,26 @@ impl Driver for AndroidDriver {
 
     // No as_ios_driver override — uses default `None` from trait.
 
+    /// Android impl: send the package of the app under test as
+    /// `App-Bundle-Id` on every request.
+    ///
+    /// It does not pin the runner to one app the way the iOS header
+    /// does — Android's `/tree` walks every attached window and there
+    /// is no `XCUIApplication` to rebind. What needs it is id lookup:
+    /// Compose emits `<pkg>:id/<tag>` on some layouts, and the runner
+    /// cannot construct that spelling without knowing the package.
+    fn set_target_bundle_id(&mut self, bundle: &str) {
+        self.runner.set_target_bundle_id(bundle);
+    }
+
     /// Android impl: attach / clear the `Session-Id` header on every
-    /// subsequent request. Header-only: the Kotlin runner serves no
-    /// `/session/*` routes and keeps no session table — it ignores the
-    /// header, which is why Android drives sessionless.
+    /// subsequent request.
+    ///
+    /// The Kotlin runner does serve the `/session/*` routes and keeps a
+    /// `SessionTable`; sessions are optional there rather than absent,
+    /// which is what "Android drives sessionless" is shorthand for. A
+    /// flow that never opens one still works, because every action
+    /// route resolves without consulting the table.
     fn set_session_id(&mut self, id: Option<String>) {
         match id {
             Some(sid) => self.runner.set_session_id(sid),

@@ -988,10 +988,15 @@ impl App {
     }
 
     /// Thread the target bundle id down to the driver, which forwards
-    /// it to the runner via the `App-Bundle-Id` HTTP header. The iOS
-    /// runner rebinds `XCUIApplication(bundleIdentifier:)` per request
-    /// so calls stay pinned to the right app even when something else
-    /// briefly claims foreground.
+    /// it to the runner via the `App-Bundle-Id` HTTP header.
+    ///
+    /// The two platforms use it for different things. iOS rebinds
+    /// `XCUIApplication(bundleIdentifier:)` per request, so calls stay
+    /// pinned to the right app even when something else briefly claims
+    /// foreground. Android has nothing to rebind — `/tree` walks every
+    /// attached window — and uses the package to spell the
+    /// `<pkg>:id/<tag>` resource ids that Compose emits on some
+    /// layouts.
     #[must_use]
     pub fn with_bundle_id<S: Into<String>>(mut self, bundle: S) -> Self {
         let s: String = bundle.into();
@@ -999,9 +1004,14 @@ impl App {
         self
     }
 
-    /// Enable auto-activate on every request. Runner side
+    /// Enable auto-activate on every request. The iOS runner
     /// `.activate()`s the resolved target before operating. Costs one
     /// XCUITest activate call per request (~50-100ms); opt-in.
+    ///
+    /// **iOS only.** Android has no per-request activation to enable —
+    /// foregrounding there is a `am start` shell command, which is what
+    /// `open_session(.., activate: true)` and `foreground()` issue
+    /// once, deliberately, rather than on every request.
     #[must_use]
     pub fn with_auto_activate(mut self, activate: bool) -> Self {
         self.driver.set_auto_activate(activate);

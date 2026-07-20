@@ -52,16 +52,20 @@ pub trait Driver: Send + Sync {
         None
     }
 
-    /// Set the target bundle id sent to the runner. For iOS this
-    /// becomes the `App-Bundle-Id` header on every request so the
-    /// runner's `resolveApp()` rebinds
-    /// `XCUIApplication(bundleIdentifier:)` per request. Default no-op
-    /// — only iOS currently uses this; Android path stays unaffected.
+    /// Set the target bundle id sent to the runner as the
+    /// `App-Bundle-Id` header on every request. iOS rebinds
+    /// `XCUIApplication(bundleIdentifier:)` per request with it;
+    /// Android spells `<pkg>:id/<tag>` resource ids with it. Both
+    /// override; the default no-op is for impls that talk to neither.
     fn set_target_bundle_id(&mut self, _bundle: &str) {}
 
     /// Enable `App-Activate: true` header on every request so the iOS
     /// runner calls `.activate()` on the resolved target before
-    /// operating. Default no-op.
+    /// operating.
+    ///
+    /// iOS-only by design, not by omission: Android foregrounds with an
+    /// `am start` shell command, which is a once-per-session action
+    /// rather than something to repeat on every request.
     fn set_auto_activate(&mut self, _activate: bool) {}
 
     /// Force key-event dispatch for text input, bypassing a11y-focus

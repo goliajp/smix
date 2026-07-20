@@ -855,3 +855,46 @@ async fn android_key_events_mode_skips_focus_resolution() {
         "the flag changed nothing — both modes failed at the same stage"
     );
 }
+
+/// The package of the app under test has to reach the Android runner.
+///
+/// `set_target_bundle_id` was an empty default on the trait that only
+/// iOS overrode, so on Android the package never left the host. The
+/// runner needs it: Compose emits `<pkg>:id/<tag>` on some layouts, and
+/// without the package it cannot spell that. It had been compensating
+/// with a hardcoded `com.example.app` — the README's placeholder — so
+/// the qualified lookup matched nobody's app and every real one fell
+/// through to the manual walk.
+#[tokio::test]
+async fn android_sends_the_target_package_to_the_runner() {
+    use smix_driver::{AndroidDriver, Driver};
+    use smix_runner_client::HttpRunnerClient;
+    use std::io::Read;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+
+    // One request is enough; the driver's error afterwards is irrelevant.
+    let recorder = std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().expect("accept");
+        let mut buf = [0u8; 4096];
+        let n = sock.read(&mut buf).unwrap_or(0);
+        String::from_utf8_lossy(&buf[..n]).to_string()
+    });
+
+    let mut driver = AndroidDriver::new(HttpRunnerClient::new(port));
+    driver.set_target_bundle_id("jp.golia.app");
+    let _ = driver.tap_by_id("submit").await;
+
+    let request = recorder.join().expect("recorder");
+    let header = request
+        .lines()
+        .find(|l| l.to_ascii_lowercase().starts_with("app-bundle-id:"))
+        .unwrap_or_else(|| {
+            panic!("no App-Bundle-Id header reached the runner:\n{request}")
+        });
+    assert!(
+        header.contains("jp.golia.app"),
+        "the header carried the wrong package: {header}"
+    );
+}
