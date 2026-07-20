@@ -295,11 +295,82 @@ pub struct SubprocessRecord {
     pub timestamp: std::time::SystemTime,
 }
 
+/// The three diagnostic records smix keeps between runs.
+///
+/// All three were the same shape and the same two bugs: a write of
+/// `let _ = write_json_atomic(...)`, which could not tell a full disk
+/// from a success, and a read of `let Ok(x) = .. else { return }`,
+/// which read a damaged file as an empty one and then overwrote it.
+///
+/// The swallowing had half a reason — persisting a diagnostic must not
+/// break the `xcrun simctl` call the user actually asked for. That
+/// reason survives here: failures are reported, never propagated. What
+/// does not survive is the silence.
+mod diag_store {
+    use std::path::Path;
+
+    /// Resolve a caller-supplied path to the store root.
+    ///
+    /// Callers pass what used to be a JSON file path. Keeping their
+    /// signatures means the CLI wiring in `main.rs` does not move.
+    pub(super) fn root_of(path: &Path) -> std::path::PathBuf {
+        if path.extension().is_some_and(|e| e == "json") {
+            path.parent().unwrap_or(path).to_path_buf()
+        } else {
+            path.to_path_buf()
+        }
+    }
+
+    /// Read one diagnostic singleton.
+    ///
+    /// A value that will not parse is reported and treated as absent —
+    /// the caller has nothing better to do with it — but it is reported,
+    /// where before it vanished.
+    pub(super) fn load<T: serde::de::DeserializeOwned>(
+        path: &Path,
+        name: &'static str,
+    ) -> Option<T> {
+        let store = match smix_store::Store::open(&root_of(path)) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("smix: read {name}: {e}");
+                return None;
+            }
+        };
+        match store.singleton(name).get_json::<T>() {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("smix: read {name}: {e}");
+                None
+            }
+        }
+    }
+
+    /// Write one diagnostic singleton, without making the caller wait.
+    ///
+    /// `try_open` rather than `open`: this runs after every simctl
+    /// invocation, and a diagnostic must never queue behind another
+    /// smix process. Busy means skip — the next call persists, which is
+    /// what the best-effort comment here always promised.
+    pub(super) fn store<T: serde::Serialize>(path: &Path, name: &'static str, value: &T) {
+        match smix_store::Store::try_open(&root_of(path)) {
+            Ok(None) => {}
+            Ok(Some(store)) => {
+                if let Err(e) = store.singleton(name).put_json(value) {
+                    eprintln!("smix: persist {name}: {e}");
+                } else if let Err(e) = store.sync() {
+                    eprintln!("smix: persist {name}: {e}");
+                }
+            }
+            Err(e) => eprintln!("smix: persist {name}: {e}"),
+        }
+    }
+}
+
 mod subprocess_ring {
     use super::SubprocessRecord;
     use std::collections::VecDeque;
-    use std::io::Write;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::{Mutex, OnceLock};
     use std::time::{Duration, UNIX_EPOCH};
 
@@ -357,11 +428,11 @@ mod subprocess_ring {
             g.push_back(entry);
         }
         if let Some(path) = persist_path_copy() {
-            let snapshot = snapshot();
-            // Best-effort. Failure to persist must never affect the
-            // caller of `xcrun simctl` — we swallow errors here and
-            // let the next `record()` retry.
-            let _ = write_json_atomic(&path, &snapshot);
+            let snapshot: Vec<PersistedRecord> = snapshot().into_iter().map(Into::into).collect();
+            // Best-effort in the sense that matters: failure never
+            // affects the caller of `xcrun simctl`. It is no longer
+            // best-effort in the sense of being invisible.
+            super::diag_store::store(&path, "subprocess-ring", &snapshot);
         }
     }
 
@@ -383,10 +454,9 @@ mod subprocess_ring {
         let Some(path) = persist_path_copy() else {
             return;
         };
-        let Ok(bytes) = std::fs::read(&path) else {
-            return;
-        };
-        let Ok(records) = serde_json::from_slice::<Vec<PersistedRecord>>(&bytes) else {
+        let Some(records) =
+            super::diag_store::load::<Vec<PersistedRecord>>(&path, "subprocess-ring")
+        else {
             return;
         };
         let mut g = match cell().lock() {
@@ -396,22 +466,6 @@ mod subprocess_ring {
         for r in records.into_iter().rev().take(128).rev() {
             g.push_back(r.into_record());
         }
-    }
-
-    fn write_json_atomic(path: &Path, records: &[SubprocessRecord]) -> std::io::Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let tmp = path.with_extension("json.tmp");
-        {
-            let payload: Vec<PersistedRecord> = records.iter().cloned().map(Into::into).collect();
-            let serialized = serde_json::to_vec(&payload)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            let mut f = std::fs::File::create(&tmp)?;
-            f.write_all(&serialized)?;
-            f.sync_all()?;
-        }
-        std::fs::rename(&tmp, path)
     }
 
     /// On-disk representation. Kept separate from
@@ -475,7 +529,9 @@ mod subprocess_ring {
                 stderr_head: String::new(),
                 timestamp: SystemTime::now(),
             });
-            assert!(path.exists(), "persist file must exist after record");
+            // The property that matters is survival across a restart,
+            // not which file holds it — asserting the filename made this
+            // test a check on the implementation the record moved out of.
 
             // Simulate supervisor cycle: clear in-memory then load.
             {
@@ -514,7 +570,7 @@ pub fn set_subprocess_ring_persist_path(path: std::path::PathBuf) {
 //
 // Public API mirrors [`subprocess_ring`] shape for consistency.
 mod reset_app_data_counters {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::{Mutex, OnceLock};
 
     fn cell() -> &'static Mutex<Counters> {
@@ -552,10 +608,8 @@ mod reset_app_data_counters {
         let Some(path) = persist_path_copy() else {
             return;
         };
-        let Ok(bytes) = std::fs::read(&path) else {
-            return;
-        };
-        let Ok(loaded) = serde_json::from_slice::<Counters>(&bytes) else {
+        let Some(loaded) = super::diag_store::load::<Counters>(&path, "reset-app-data-counters")
+        else {
             return;
         };
         let mut g = match cell().lock() {
@@ -600,23 +654,7 @@ mod reset_app_data_counters {
             return;
         };
         let snapshot = snapshot();
-        let _ = write_json_atomic(&path, &snapshot);
-    }
-
-    fn write_json_atomic(path: &Path, counters: &Counters) -> std::io::Result<()> {
-        use std::io::Write;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let tmp = path.with_extension("json.tmp");
-        let bytes = serde_json::to_vec(counters)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        {
-            let mut f = std::fs::File::create(&tmp)?;
-            f.write_all(&bytes)?;
-            f.sync_all()?;
-        }
-        std::fs::rename(&tmp, path)
+        super::diag_store::store(&path, "reset-app-data-counters", &snapshot);
     }
 
     #[cfg(test)]
@@ -636,9 +674,15 @@ mod reset_app_data_counters {
             increment_total();
             increment_total();
             increment_timed_out();
-            assert!(path.exists());
-            let raw = std::fs::read_to_string(&path).unwrap();
-            let loaded: Counters = serde_json::from_str(&raw).unwrap();
+            // Read it back the way a restarted process would, rather
+            // than by opening a file whose path is no longer the
+            // contract.
+            {
+                let mut g = cell().lock().unwrap();
+                *g = Counters::default();
+            }
+            load_persisted();
+            let loaded = snapshot();
             assert_eq!(loaded.reset_app_data_total, 2);
             assert_eq!(loaded.reset_app_data_timed_out, 1);
         }
@@ -701,7 +745,7 @@ pub fn reset_app_data_counters_snapshot() -> ResetAppDataCounters {
 // keeping the dump snapshot cheap to serialize.
 mod flow_attempts {
     use serde::{Deserialize, Serialize};
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::{Mutex, OnceLock};
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -748,10 +792,8 @@ mod flow_attempts {
         let Some(path) = persist_path_copy() else {
             return;
         };
-        let Ok(bytes) = std::fs::read(&path) else {
-            return;
-        };
-        let Ok(loaded) = serde_json::from_slice::<Vec<PersistedFlow>>(&bytes) else {
+        let Some(loaded) = super::diag_store::load::<Vec<PersistedFlow>>(&path, "flow-attempts")
+        else {
             return;
         };
         let mut g = match cell().lock() {
@@ -792,23 +834,7 @@ mod flow_attempts {
             return;
         };
         let flows = snapshot();
-        let _ = write_json_atomic(&path, &flows);
-    }
-
-    fn write_json_atomic(path: &Path, flows: &[PersistedFlow]) -> std::io::Result<()> {
-        use std::io::Write;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let tmp = path.with_extension("json.tmp");
-        let bytes = serde_json::to_vec(flows)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        {
-            let mut f = std::fs::File::create(&tmp)?;
-            f.write_all(&bytes)?;
-            f.sync_all()?;
-        }
-        std::fs::rename(&tmp, path)
+        super::diag_store::store(&path, "flow-attempts", &flows);
     }
 }
 

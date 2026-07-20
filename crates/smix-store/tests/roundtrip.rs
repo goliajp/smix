@@ -83,3 +83,20 @@ fn sync_makes_durable_and_does_not_erase() {
         "sync must not empty the store"
     );
 }
+
+/// `try_open` must not wait. The subprocess ring persists after every
+/// simctl call; blocking there would put real work behind an unrelated
+/// smix process for the sake of a diagnostic.
+#[test]
+fn try_open_yields_none_while_another_holder_has_it() {
+    let root = temp_root("try-open");
+    let held = Store::open(&root).expect("first holder");
+    let busy = Store::try_open(&root).expect("no error");
+    assert!(busy.is_none(), "try_open waited instead of giving up");
+    drop(held);
+    let free = Store::try_open(&root).expect("no error");
+    assert!(
+        free.is_some(),
+        "try_open still refuses after the lock went away"
+    );
+}
