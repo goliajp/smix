@@ -30,6 +30,10 @@ const GUIDES: &[(&str, &str)] = &[
         "03-selectors",
         include_str!("../../../docs/ai-guide/03-selectors.md"),
     ),
+    (
+        "10-ai-assertions",
+        include_str!("../../../docs/ai-guide/10-ai-assertions.md"),
+    ),
 ];
 
 fn yaml_blocks(doc: &str) -> Vec<String> {
@@ -84,7 +88,18 @@ fn every_yaml_block_in_the_guides_parses() {
                 continue;
             }
             checked += 1;
-            if let Err(e) = parse_flow_yaml(&as_flow(block)) {
+            // The AI-assertion verbs refuse to parse unless the tier is
+            // deliberately enabled — which is itself a promise
+            // 10-ai-assertions makes ("fails at parse time, before the
+            // device is touched"). Its examples are written for a
+            // reader who has turned it on, so the gate turns it on to
+            // read them, and `the_ai_tier_refuses_when_off` covers the
+            // other half.
+            let ai = *name == "10-ai-assertions";
+            smix_adapter_maestro::set_ai_assertions_override(Some(ai));
+            let parsed = parse_flow_yaml(&as_flow(block));
+            smix_adapter_maestro::set_ai_assertions_override(None);
+            if let Err(e) = parsed {
                 bad.push(format!("{name} block #{}:\n{block}\n  → {e}", i + 1));
             }
         }
@@ -101,4 +116,26 @@ fn every_yaml_block_in_the_guides_parses() {
         bad.len(),
         bad.join("\n\n")
     );
+}
+
+/// The guide promises these verbs fail at parse time when the tier is
+/// off, "before the device is touched". That refusal is the feature —
+/// a flow must not reach a non-reproducible model call by accident —
+/// so it is tested rather than assumed.
+#[test]
+fn the_ai_tier_refuses_when_off() {
+    for verb in [
+        "- assertCondition: \"a toast is visible\"\n",
+        "- extractWithAI:\n    total: \"the cart total\"\n",
+    ] {
+        let yaml = format!("appId: com.example.app\n---\n{verb}");
+        smix_adapter_maestro::set_ai_assertions_override(Some(false));
+        let err = parse_flow_yaml(&yaml).expect_err("must refuse while the tier is off");
+        smix_adapter_maestro::set_ai_assertions_override(None);
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("SMIX_ENABLE_AI_ASSERTIONS"),
+            "the refusal must say how to turn it on: {msg}"
+        );
+    }
 }
