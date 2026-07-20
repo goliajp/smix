@@ -11,7 +11,7 @@
 #      `erase all`, `delete all` — blast radius beyond the project's
 #      own sims), or
 #   3. addresses a device by NAME (names are not stable; the registry
-#      `.smix/sims.json` maps names → UDIDs, resolve there first).
+#      the `.smix` registry maps names → UDIDs, resolve there first).
 #
 # Everything else passes (exit 0). Non-simctl commands are never
 # touched. Keep this file committed — the hook config referencing it
@@ -42,7 +42,7 @@ esac
 
 deny() {
   echo "sim-guard: $1" >&2
-  echo "sim-guard: use an explicit UDID (see .smix/sims.json registry); never 'booted' / 'all' / device names" >&2
+  echo "sim-guard: use an explicit UDID (see the .smix registry: smix sim list); never 'booted' / 'all' / device names" >&2
   exit 2
 }
 
@@ -60,7 +60,7 @@ fi
 #    contain a space = a human-readable name, not a UDID). UDIDs are
 #    hex-and-dash tokens; anything quoted with spaces is a name.
 if printf '%s' "$command" | grep -qE "simctl[[:space:]]+(boot|shutdown|erase|terminate|launch|openurl|install|uninstall|io|spawn|privacy)[[:space:]]+[\"'][^\"']*[[:space:]][^\"']*[\"']"; then
-  deny "device addressed by name — names are unstable; resolve to a UDID via .smix/sims.json"
+  deny "device addressed by name — names are unstable; resolve to a UDID via the .smix registry"
 fi
 
 exit 0
