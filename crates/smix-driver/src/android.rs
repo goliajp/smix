@@ -87,10 +87,25 @@ async fn resolve_with_implicit_wait(
     }
 }
 
-fn defer_err(method: &str) -> ExpectationFailure {
+/// `dispatch:` overrides are an iOS-runner mechanism.
+///
+/// The guide says this "errors with an explicit unsupported message";
+/// what it actually said was "not implemented by the Kotlin runner",
+/// which reads as a missing feature someone should wait for. There is
+/// nothing to wait for: Android's default tap already IS native event
+/// synthesis, which is what the override buys on iOS. The fix is to
+/// drop the key, so the error says that.
+fn dispatch_unsupported_err() -> ExpectationFailure {
     ExpectationFailure::new(FailureInit {
         code: Some(FailureCode::DriverError),
-        message: format!("AndroidDriver::{method}: not implemented by the Kotlin runner"),
+        message: "tapOn `dispatch:` is an iOS-runner mechanism and has no \
+                  meaning on Android"
+            .to_string(),
+        hint: Some(
+            "remove `dispatch:` from this step — Android taps already use \
+             native event synthesis, which is what the override selects on iOS"
+                .to_string(),
+        ),
         ..Default::default()
     })
 }
@@ -291,7 +306,7 @@ impl Driver for AndroidDriver {
         _mode: TapMode,
         _include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        Err(defer_err("tap_with_mode"))
+        Err(dispatch_unsupported_err())
     }
 
     async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
