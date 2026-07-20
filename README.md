@@ -44,7 +44,7 @@ Register a simulator under an alias, boot it, start the runner, run a YAML flow:
 
 ```bash
 smix sim list                                  # find the UDID
-smix sim register dev --udid <UDID>            # creates .smix/sims.json
+smix sim register dev --udid <UDID>            # creates the .smix/ registry
 smix sim boot dev
 smix runner up dev --bundle com.example.app
 smix run examples/hello.yaml --device dev
