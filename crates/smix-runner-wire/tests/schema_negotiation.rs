@@ -234,3 +234,74 @@ fn collect_rs_text(dir: &std::path::Path, out: &mut String) {
         }
     }
 }
+
+/// Request headers the wire format documents must be read by a runner.
+///
+/// `Input-Dispatch-Mode` was documented as accepted by "every route",
+/// the client sends it on every request, and `--force-key-events`
+/// exists to set it — while neither runner reads it. The flag's whole
+/// promise (bypass a11y-focus for RN hidden inputs) went nowhere, and
+/// nothing failed, because a header nobody reads looks exactly like a
+/// header that worked.
+#[test]
+fn every_documented_request_header_is_read_by_a_runner() {
+    const WIRE: &str = include_str!("../../../docs/ai-guide/wire-format.md");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root");
+
+    let mut swift = String::new();
+    collect_rs_text_ext(&root.join("swift-bridge/Sources"), "swift", &mut swift);
+    let mut kotlin = String::new();
+    collect_rs_text_ext(&root.join("android-runner/app/src"), "kt", &mut kotlin);
+    assert!(
+        swift.len() > 10_000 && kotlin.len() > 1_000,
+        "runner sources did not load — this check would pass by knowing nothing"
+    );
+
+    let mut checked = 0usize;
+    let mut unread: Vec<String> = Vec::new();
+    for line in WIRE.lines() {
+        // Header rows look like: | `Name: value` | semantics |
+        let Some(name) = line
+            .strip_prefix("| `")
+            .and_then(|r| r.split(&[':', '`'][..]).next())
+        else {
+            continue;
+        };
+        if !name.contains('-') || name.contains(' ') {
+            continue;
+        }
+        checked += 1;
+        if !swift.contains(name) && !kotlin.contains(name) {
+            unread.push(name.to_string());
+        }
+    }
+
+    assert!(
+        checked >= 4,
+        "found only {checked} header rows — the table parse stopped matching"
+    );
+    assert!(
+        unread.is_empty(),
+        "the wire format documents headers no runner reads: {unread:?}\n\
+         A header nobody reads is indistinguishable from one that works."
+    );
+}
+
+fn collect_rs_text_ext(dir: &std::path::Path, ext: &str, out: &mut String) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            collect_rs_text_ext(&p, ext, out);
+        } else if p.extension().is_some_and(|e| e == ext)
+            && let Ok(text) = std::fs::read_to_string(&p)
+        {
+            out.push_str(&text);
+        }
+    }
+}

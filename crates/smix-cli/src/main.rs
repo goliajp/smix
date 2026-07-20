@@ -389,12 +389,12 @@ Documentation: docs/AI_GUIDE.md
         /// `- fixture: <id>` yaml verb.
         #[arg(long = "fixture-registry")]
         fixture_registry: Option<PathBuf>,
-        /// Force key-event dispatch mode for `inputText`/`fill` verbs.
-        /// Bypasses a11y-focus resolution; sends
-        /// `Input-Dispatch-Mode: key-events` header. Use for RN apps
-        /// with hidden-input patterns where a11y-focus lookup returns
-        /// nothing (e.g. offscreen `<TextInput>` behind a visible cell
-        /// wrapper).
+        /// NOT IMPLEMENTED — sends an `Input-Dispatch-Mode: key-events`
+        /// header that no runner reads, so text dispatch is unchanged.
+        /// It was meant for RN apps whose hidden `<TextInput>` defeats
+        /// a11y-focus lookup; until a runner honours the header, reach
+        /// the field with `tapOn: { point: "X%,Y%" }` and then the
+        /// scalar `inputText`, which types into whatever holds focus.
         #[arg(long = "force-key-events", default_value_t = false)]
         force_key_events: bool,
         /// Disable auto-annotate on `--debug-output` fail-PNG (default:
