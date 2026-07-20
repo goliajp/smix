@@ -1,5 +1,5 @@
 use anyhow::Context;
-use smix_server::{app, config::Config, db, state::AppState};
+use smix_server::{app, config::Config, state::AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -16,18 +16,13 @@ async fn main() -> anyhow::Result<()> {
     let cfg = Config::from_env().context("load config")?;
     tracing::info!(
         bind = %cfg.bind,
-        db = %cfg.database_url_redacted(),
+        store = %cfg.store_root,
         stream_root = %cfg.stream_root,
         "starting smix-server"
     );
 
-    let pg = db::connect(&cfg.database_url)
-        .await
-        .context("connect postgres")?;
-    db::run_migrations(&pg).await.context("run migrations")?;
-
-    // The capturing set lives in the embedded store — no valkey to
-    // connect to, and nothing to be up before this process can start.
+    // Everything the server remembers is in here: the capturing set and
+    // the stream sessions. No database and no valkey to be up first.
     let store = std::sync::Arc::new(
         smix_store::Store::open(std::path::Path::new(&cfg.store_root))
             .context("open smix-server store")?,
@@ -35,7 +30,6 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         cfg: cfg.clone(),
-        pg,
         store,
         captures: Default::default(),
     };

@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "smix-server — smix's general-purpose httpapi server. Fixed httpapi stack (axum/sqlx-postgres, embedded kevy store). First feature module `mod stream`: serves per-sim live HLS (tower-http ServeDir) + REST sim registry."
+description = "smix-server — smix's general-purpose httpapi server. Fixed httpapi stack (axum + an embedded kevy store). First feature module `mod stream`: serves per-sim live HLS (tower-http ServeDir) + REST sim registry."
 homepage.workspace = true
 readme = "README.md"
 keywords = ["ios", "simulator", "http", "stream", "hls"]
@@ -28,7 +28,6 @@ smix-store = { path = "../smix-store", version = "2.0.0" }
 smix-simctl = { path = "../smix-simctl", version = "2.0.0" }
 axum.workspace = true
 tower-http.workspace = true
-sqlx.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 serde.workspace = true

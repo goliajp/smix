@@ -1,59 +1,37 @@
-//! Integration test for smix-server wiring: boots `app(state)` against the
-//! real compose-dev pg(5432) and drives it via tower oneshot
-//! (no listener bind). Requires `DATABASE_URL` + `REDIS_URL` to be set; the
-//! whole file is skipped (early-return) when they are not, so a bare
-//! `cargo test` without backends does not spuriously fail.
+//! Integration test for smix-server wiring: boots `app(state)` and drives
+//! it via tower oneshot (no listener bind).
+//!
+//! It needs no backing services at all now. It used to need a postgres
+//! and a valkey, and without them every test returned early and
+//! reported PASS — six permanently green tests asserting nothing, which
+//! is why `SMIX_SERVER_IT` existed to turn the absence into a failure.
+//! With both stores embedded there is nothing to be missing, so the
+//! gate is gone and the suite simply runs.
 //!
 //! Run:
-//!   DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres \
-//!     cargo test -p smix-server --test wiring -- --nocapture
+//!   cargo test -p smix-server --test wiring -- --nocapture
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
-use smix_server::{app, config::Config, db, state::AppState};
+use smix_server::{app, config::Config, state::AppState};
 use std::net::SocketAddr;
 use tower::ServiceExt;
 
-/// These tests need a live postgres. Without it each test
-/// used to `return` early and report PASS — and CI runs
-/// `cargo test --workspace` with neither env var set, so all six were
-/// permanently green while asserting nothing. Skipping is now visible:
-/// `SMIX_SERVER_IT=1` makes a missing backing service a hard failure,
-/// and CI sets it so the absence is a red build rather than a silent
-/// six-test hole.
-fn require_backing_services() -> bool {
-    std::env::var("SMIX_SERVER_IT").is_ok()
-}
-
 async fn build_state(stream_root: &str) -> Option<AppState> {
-    let Ok(database_url) = std::env::var("DATABASE_URL") else {
-        assert!(
-            !require_backing_services(),
-            "SMIX_SERVER_IT is set but DATABASE_URL is not — the integration \
-             suite cannot run and must not report success"
-        );
-        eprintln!("DATABASE_URL not set — skipping (set SMIX_SERVER_IT=1 to make this fatal)");
-        return None;
-    };
     let cfg = Config {
         bind: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
-        database_url,
         stream_root: stream_root.to_string(),
         // Each test gets its own store directory: the store takes an
         // exclusive lock on its root, so a shared one would serialize
-        // the suite and, worse, let one test see another's capturing
-        // set.
+        // the suite and, worse, let one test see another's state.
         store_root: format!("{stream_root}/store"),
     };
-    let pg = db::connect(&cfg.database_url).await.expect("connect pg");
-    db::run_migrations(&pg).await.expect("run migrations");
     let store = std::sync::Arc::new(
         smix_store::Store::open(std::path::Path::new(&cfg.store_root)).expect("open store"),
     );
     Some(AppState {
         cfg,
-        pg,
         store,
         captures: Default::default(),
     })
@@ -103,14 +81,8 @@ async fn sims_empty_then_listed() {
     assert!(!body.contains(&udid), "udid not present before insert");
 
     // insert one stream_sessions row
-    sqlx::query("INSERT INTO stream_sessions(udid, device_name, runtime, stream_path) VALUES ($1, $2, $3, $4)")
-        .bind(&udid)
-        .bind("iPhone 16")
-        .bind("iOS 26.5")
-        .bind(&udid)
-        .execute(&state.pg)
-        .await
-        .expect("insert row");
+    smix_server::sessions::register(&state.store, &udid, "iPhone 16", "iOS 26.5", &udid)
+        .expect("register");
 
     // now /api/sims includes it
     let resp = app(state.clone())
@@ -131,11 +103,7 @@ async fn sims_empty_then_listed() {
     assert!(body.contains("iPhone 16"), "device_name present: {body}");
 
     // cleanup
-    sqlx::query("DELETE FROM stream_sessions WHERE udid = $1")
-        .bind(&udid)
-        .execute(&state.pg)
-        .await
-        .expect("cleanup");
+    state.store.sessions().delete(&udid).expect("cleanup");
 }
 
 #[tokio::test]
@@ -178,14 +146,8 @@ async fn sims_reflects_capturing_state() {
     let udid = format!("TEST-S2-CAP-{}", uuid::Uuid::new_v4());
 
     // pg row for this udid (so it appears in /api/sims)
-    sqlx::query("INSERT INTO stream_sessions(udid, device_name, runtime, stream_path) VALUES ($1, $2, $3, $4)")
-        .bind(&udid)
-        .bind("iPhone 16")
-        .bind("iOS 26.5")
-        .bind(&udid)
-        .execute(&state.pg)
-        .await
-        .expect("insert row");
+    smix_server::sessions::register(&state.store, &udid, "iPhone 16", "iOS 26.5", &udid)
+        .expect("register");
 
     // mark capturing in the store directly
     smix_server::capturing::add(&state.store, &udid).expect("add");
@@ -209,11 +171,7 @@ async fn sims_reflects_capturing_state() {
         "capturing=false after SREM: {body}"
     );
 
-    sqlx::query("DELETE FROM stream_sessions WHERE udid = $1")
-        .bind(&udid)
-        .execute(&state.pg)
-        .await
-        .expect("cleanup");
+    state.store.sessions().delete(&udid).expect("cleanup");
 }
 
 #[tokio::test]
@@ -340,22 +298,10 @@ async fn capture_registry_isolates_per_udid() {
         "B m3u8 must NOT contain udid_a (cross-pollution): {body}"
     );
 
-    sqlx::query("INSERT INTO stream_sessions(udid, device_name, runtime, stream_path) VALUES ($1, $2, $3, $4)")
-        .bind(&udid_a)
-        .bind("iPhone A")
-        .bind("iOS 26.5")
-        .bind(&udid_a)
-        .execute(&state.pg)
-        .await
-        .expect("insert A");
-    sqlx::query("INSERT INTO stream_sessions(udid, device_name, runtime, stream_path) VALUES ($1, $2, $3, $4)")
-        .bind(&udid_b)
-        .bind("iPhone B")
-        .bind("iOS 26.5")
-        .bind(&udid_b)
-        .execute(&state.pg)
-        .await
-        .expect("insert B");
+    smix_server::sessions::register(&state.store, &udid_a, "iPhone A", "iOS 26.5", &udid_a)
+        .expect("register");
+    smix_server::sessions::register(&state.store, &udid_b, "iPhone B", "iOS 26.5", &udid_b)
+        .expect("register");
     smix_server::capturing::add(&state.store, &udid_a).expect("add");
     smix_server::capturing::add(&state.store, &udid_b).expect("add");
 
@@ -390,12 +336,8 @@ async fn capture_registry_isolates_per_udid() {
     );
 
     smix_server::capturing::remove(&state.store, &udid_b).expect("remove");
-    sqlx::query("DELETE FROM stream_sessions WHERE udid IN ($1, $2)")
-        .bind(&udid_a)
-        .bind(&udid_b)
-        .execute(&state.pg)
-        .await
-        .expect("cleanup");
+    state.store.sessions().delete(&udid_a).expect("cleanup");
+    state.store.sessions().delete(&udid_b).expect("cleanup");
 }
 
 /// The registry's concurrency contract, tested against the real
@@ -495,11 +437,7 @@ async fn starting_a_capture_registers_the_sim_for_the_live_view() {
         return;
     };
     let udid = format!("IT-REG-{}", uuid::Uuid::new_v4());
-    sqlx::query("DELETE FROM stream_sessions WHERE udid = $1")
-        .bind(&udid)
-        .execute(&state.pg)
-        .await
-        .expect("clean");
+    state.store.sessions().delete(&udid).expect("cleanup");
 
     assert!(
         !sims_body(state.clone())
@@ -512,13 +450,12 @@ async fn starting_a_capture_registers_the_sim_for_the_live_view() {
     );
 
     smix_server::stream::register_session(
-        &state.pg,
+        &state.store,
         &udid,
         "iPhone 17 Pro",
         "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
         &udid,
     )
-    .await
     .expect("register");
 
     let listed = sims_body(state.clone()).await;
@@ -538,13 +475,12 @@ async fn starting_a_capture_registers_the_sim_for_the_live_view() {
     // Re-registering the same device updates it in place — PK is the
     // udid, so a sim that is captured twice must not double up.
     smix_server::stream::register_session(
-        &state.pg,
+        &state.store,
         &udid,
         "iPhone 17 Pro Max",
         "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
         &udid,
     )
-    .await
     .expect("re-register");
     let listed = sims_body(state.clone()).await;
     let rows: Vec<_> = listed
@@ -556,9 +492,5 @@ async fn starting_a_capture_registers_the_sim_for_the_live_view() {
     assert_eq!(rows.len(), 1, "re-register duplicated the row: {listed}");
     assert_eq!(rows[0]["device_name"], "iPhone 17 Pro Max");
 
-    sqlx::query("DELETE FROM stream_sessions WHERE udid = $1")
-        .bind(&udid)
-        .execute(&state.pg)
-        .await
-        .expect("cleanup");
+    state.store.sessions().delete(&udid).expect("cleanup");
 }
