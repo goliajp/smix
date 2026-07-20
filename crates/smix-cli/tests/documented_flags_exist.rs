@@ -277,3 +277,65 @@ fn every_repo_path_the_guides_name_exists() {
         missing.join("\n  ")
     );
 }
+
+/// Every command the binary offers must appear in the CLI reference.
+///
+/// The existing checks run docs → CLI: they catch a guide naming a flag
+/// the parser lacks. Nothing ran CLI → docs, so a command could ship
+/// with no page at all and every gate stayed green. Four had:
+/// `annotate`, `authoring`, `capsule` and `migrate` — and `migrate` is
+/// the supported path off maestro yaml, which made it the worst one to
+/// leave undocumented. A fifth appeared the moment I added
+/// `diagnostic store` and did not write it down.
+///
+/// A command a user cannot find is a command that does not exist to
+/// them.
+#[test]
+fn every_command_the_cli_offers_is_in_the_reference() {
+    const CLI_GUIDE: &str = include_str!("../../../docs/ai-guide/05-cli.md");
+
+    let exe = env!("CARGO_BIN_EXE_smix");
+    let out = Command::new(exe)
+        .arg("--help")
+        .output()
+        .expect("smix --help runs");
+    let help = String::from_utf8_lossy(&out.stdout);
+
+    let mut in_commands = false;
+    let mut commands: Vec<String> = Vec::new();
+    for line in help.lines() {
+        if line.starts_with("Commands:") {
+            in_commands = true;
+            continue;
+        }
+        if in_commands {
+            if line.trim().is_empty() || line.starts_with(|c: char| !c.is_whitespace()) {
+                break;
+            }
+            if let Some(name) = line.split_whitespace().next()
+                && name.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+            {
+                commands.push(name.to_string());
+            }
+        }
+    }
+
+    assert!(
+        commands.len() >= 10,
+        "found only {commands:?} in --help — the parse stopped matching and \
+         this check would pass by knowing nothing"
+    );
+
+    let undocumented: Vec<&String> = commands
+        .iter()
+        // clap's own; there is no page to write for it.
+        .filter(|c| *c != "help")
+        .filter(|c| !CLI_GUIDE.contains(&format!("smix {c}")))
+        .collect();
+
+    assert!(
+        undocumented.is_empty(),
+        "the CLI offers commands the reference never mentions: {undocumented:?}\n\
+         A command a user cannot find is one that does not exist to them."
+    );
+}
