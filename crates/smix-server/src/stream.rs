@@ -8,66 +8,31 @@
 
 use crate::{error::Result, state::AppState};
 use axum::{Json, extract::State};
-use chrono::{DateTime, Utc};
-use serde::Serialize;
 
-#[derive(Serialize, sqlx::FromRow)]
-pub struct SimEntry {
-    pub udid: String,
-    pub device_name: String,
-    pub runtime: String,
-    pub stream_path: String,
-    pub started_at: DateTime<Utc>,
-    // Live capture state from valkey (not a pg column): true iff this udid is
-    // currently a member of the `smix:capturing` set.
-    #[sqlx(default)]
-    pub capturing: bool,
-}
+pub use crate::sessions::SimEntry;
 
-/// Record a sim as having a live stream. Called when a capture starts,
-/// which is the only moment a stream comes into existence — nothing
-/// wrote this table before, so `list_sims` returned an empty list in
-/// every real deployment while capture happily ran.
+/// Record a sim as having a live stream.
 ///
-/// Keyed on udid, so re-capturing a device refreshes its row instead of
-/// accumulating one per run. The row outlives `stop_capture` on
-/// purpose: stopping finalizes the HLS playlist and leaves it on disk,
-/// so the stream stays watchable — `capturing` (the valkey set) is what
-/// says whether it is live *right now*.
-pub async fn register_session(
-    pg: &sqlx::PgPool,
+/// Called when a capture starts, which is the only moment a stream
+/// comes into existence — nothing wrote this before, so `list_sims`
+/// returned an empty list in every real deployment while capture
+/// happily ran.
+pub fn register_session(
+    store: &smix_store::Store,
     udid: &str,
     device_name: &str,
     runtime: &str,
     stream_path: &str,
 ) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO stream_sessions (udid, device_name, runtime, stream_path, started_at, updated_at) \
-         VALUES ($1, $2, $3, $4, now(), now()) \
-         ON CONFLICT (udid) DO UPDATE SET \
-           device_name = EXCLUDED.device_name, \
-           runtime = EXCLUDED.runtime, \
-           stream_path = EXCLUDED.stream_path, \
-           started_at = now(), \
-           updated_at = now()",
-    )
-    .bind(udid)
-    .bind(device_name)
-    .bind(runtime)
-    .bind(stream_path)
-    .execute(pg)
-    .await?;
-    Ok(())
+    crate::sessions::register(store, udid, device_name, runtime, stream_path)
+        .map_err(|e| crate::error::Error::Internal(e.into()))
 }
 
+/// The live view: every recorded stream, newest first, each marked with
+/// whether it is capturing right now.
 pub async fn list_sims(State(st): State<AppState>) -> Result<Json<Vec<SimEntry>>> {
-    let mut rows = sqlx::query_as::<_, SimEntry>(
-        "SELECT udid, device_name, runtime, stream_path, started_at \
-         FROM stream_sessions ORDER BY started_at DESC",
-    )
-    .fetch_all(&st.pg)
-    .await?;
-
+    let mut rows =
+        crate::sessions::list(&st.store).map_err(|e| crate::error::Error::Internal(e.into()))?;
     let capturing = crate::capturing::members(&st.store)
         .map_err(|e| crate::error::Error::Internal(e.into()))?;
     for row in &mut rows {

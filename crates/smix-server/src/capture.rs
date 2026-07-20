@@ -838,14 +838,12 @@ pub async fn start_capture(
             // that streams and never appears in the list.
             let device = booted_device(udid).await?;
             if let Err(e) = crate::stream::register_session(
-                &st.pg,
+                &st.store,
                 udid,
                 &device.name,
                 &device.runtime_identifier,
                 &stream_path,
-            )
-            .await
-            {
+            ) {
                 tracing::error!(
                     udid = %udid,
                     error = %e,

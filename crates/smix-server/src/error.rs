@@ -11,12 +11,6 @@ pub enum Error {
     NotFound(String),
 }
 
-impl From<sqlx::Error> for Error {
-    fn from(e: sqlx::Error) -> Self {
-        Self::Internal(e.into())
-    }
-}
-
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let (status, msg) = match &self {

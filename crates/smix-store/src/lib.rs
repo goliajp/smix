@@ -43,6 +43,8 @@ mod prefix {
     pub const CAPSULES: &str = "capsule:";
     /// Sets — membership, not records.
     pub const SETS: &str = "set:";
+    /// Live-stream session records, keyed by device UDID.
+    pub const SESSIONS: &str = "session:";
 }
 
 /// What can go wrong touching the store.
@@ -311,6 +313,15 @@ impl Store {
         Namespace {
             store: self,
             prefix: prefix::CAPSULES,
+        }
+    }
+
+    /// Live-stream session records, one per device.
+    #[must_use]
+    pub fn sessions(&self) -> Namespace<'_> {
+        Namespace {
+            store: self,
+            prefix: prefix::SESSIONS,
         }
     }
 
