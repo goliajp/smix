@@ -216,6 +216,54 @@ Registry file shape, for editing by hand:
 
 `locale` and `runnerPort` are optional.
 
+## Migration and authoring
+
+### `smix migrate` — maestro yaml to smix
+
+```bash
+smix migrate flow.yaml              # rewritten yaml to stdout
+smix migrate flows/                 # every .yaml under a directory
+```
+
+Renames verbs to their smix spellings (`tapOn` → `tap`,
+`extendedWaitUntil` → `expect` + `timeoutMs`, `retry.max` →
+`retry.maxRetries`) and drops deprecated argument forms. A verb it does
+not recognise is passed through unchanged with a `WARN:` line on
+stderr — migrate never silently drops a step it cannot translate.
+
+It also warns about selector keys v2 refuses (`enabled:` is one), since
+those fail at parse time and it is better to hear it here than on the
+next run.
+
+### `smix authoring` — compose against a live sim
+
+Suggest selectors matching a partial spec, and capture or diff
+accessibility-tree baselines for visual gates. Requires a runner.
+
+### `smix annotate` — draw on a screenshot
+
+Circle, arrow, text, box and line primitives over a PNG, for failure
+reports a human or an agent has to read.
+
+### `smix capsule` — one-command bring-up and teardown
+
+Headless boot, capture and runner start together (`up`), and the
+reverse (`down`). The guard rejects a windowed session by default;
+`--soft` accepts the soft-capsule fallback.
+
+### `smix diagnostic store` — read the persisted state
+
+```bash
+smix diagnostic store               # this workspace's .smix
+smix diagnostic store --root PATH   # another store
+```
+
+Prints everything smix has persisted, as JSON: the device registry,
+runner handles, capsule records and the diagnostic buffers. State used
+to be JSON files you could `cat`; this is what replaces that. A value
+that is not valid JSON is shown as hex rather than stopping the dump,
+because this is what you run when something is already wrong.
+
 ## Common command recipes
 
 ### Smoke test the running sim quickly
