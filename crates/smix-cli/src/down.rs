@@ -2,7 +2,7 @@
 //!
 //! Scope discipline: kills only processes identifiable as smix's by
 //! command text, and shuts down only sims registered in
-//! `.smix/sims.json`, one UDID at a time — never a global verb that
+//! the registered devices, one UDID at a time — never a global verb that
 //! would hit sims other projects are using.
 
 use smix_simctl::SimctlClient;
@@ -31,9 +31,13 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     pkill("-TERM", "smix/web/node_modules/.bin/vite", "vite");
     pkill("-TERM", "smix-demo-target/debug/smix-server", "smix-server");
 
-    let registry_path = root.join(".smix/sims.json");
-    let reg = if registry_path.is_file() {
-        Some(SimRegistry::load(&registry_path).map_err(|e| e.to_string())?)
+    // Gated on the store, not on a legacy file. Checking for
+    // `.smix/sims.json` meant a machine that had only ever run the
+    // store looked like it had no registered devices, and the
+    // orphan-cleanup pass below silently did nothing.
+    let smix_dir = root.join(".smix");
+    let reg = if smix_dir.is_dir() {
+        Some(SimRegistry::load(&smix_dir).map_err(|e| e.to_string())?)
     } else {
         None
     };
@@ -73,7 +77,10 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
             }
         }
     } else {
-        println!("  no {} — skipping sim shutdown", registry_path.display());
+        println!(
+            "  no registry at {} — skipping sim shutdown",
+            smix_dir.display()
+        );
     }
 
     println!("=== 5. residue report ===");
