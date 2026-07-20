@@ -3035,6 +3035,7 @@ dependencies = [
  "smix-sdk",
  "smix-selector",
  "smix-simctl",
+ "smix-store",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

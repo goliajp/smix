@@ -38,10 +38,6 @@ fn adb(serial: &str) -> Command {
     c
 }
 
-fn state_path(root: &Path) -> PathBuf {
-    root.join(".smix/runner/state.json")
-}
-
 /// Locate the instrumentation APK. Built by
 /// `./gradlew :app:assembleDebugAndroidTest` in `android-runner/`.
 fn find_test_apk(root: &Path) -> Option<PathBuf> {
@@ -145,10 +141,14 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
         bundle: None,
         supervisor_pid: None,
     };
-    let _ = std::fs::write(
-        state_path(root),
-        serde_json::to_string_pretty(&state).expect("state serializes"),
-    );
+    // Not discarded, and not the iOS slot. Both halves were wrong
+    // before: this wrote the same file `runner.rs` wrote, so an Android
+    // runner replaced the iOS record — and `let _ =` meant a failed
+    // write said nothing at all.
+    if let Err(e) = crate::runner_state::write(root, crate::runner_state::Platform::Android, &state)
+    {
+        eprintln!("runner: {e}");
+    }
 
     println!(
         "runner starting: device={serial} port={port} pid={pid} — log: {}",
@@ -163,7 +163,9 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
-    let _ = std::fs::remove_file(state_path(root));
+    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
+        eprintln!("runner: {e}");
+    }
     Err(format!(
         "runner did not become healthy within {timeout_secs}s. Log tail:\n{}",
         std::fs::read_to_string(&log)
@@ -190,7 +192,9 @@ pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
     let _ = adb(serial)
         .args(["forward", "--remove", &format!("tcp:{port}")])
         .output();
-    let _ = std::fs::remove_file(state_path(root));
+    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
+        eprintln!("runner: {e}");
+    }
     println!("runner down: device={serial} port {port} closed");
     Ok(())
 }
