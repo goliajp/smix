@@ -147,6 +147,16 @@ log "android gate scan"
 python3 "$ROOT/scripts/dev/android-gate-scan.py" > /tmp/smix-ship-android-gate.log 2>&1 \
   || fail "android gate scan FAILED — an Android test task is outside the gates (see /tmp/smix-ship-android-gate.log)"
 
+# --- audit ledger ------------------------------------------------------
+# Re-evaluates every citation in docs/audit-ledger.md. That table records
+# which known defects are still live, and its predecessor drifted badly
+# enough that three of five sampled entries had been fixed while still
+# reading as open. Shipping against a stale account of what is broken is
+# how a defect reaches users with a note saying someone already knew.
+log "audit ledger"
+python3 "$ROOT/scripts/dev/audit-ledger-scan.py" > /tmp/smix-ship-ledger.log 2>&1 \
+  || fail "audit ledger scan FAILED — a citation no longer holds; re-verify that row (see /tmp/smix-ship-ledger.log)"
+
 # --- corpus gate (real sim) -------------------------------------------
 # Runs the bootstrap corpus end-to-end on a simulator. Device selection
 # mirrors the smoke: explicit env first, else the first booted sim.
