@@ -593,10 +593,12 @@ enum RunnerAction {
         /// forwards the port, and `am instrument`s the Kotlin runner.
         #[arg(long, value_enum, default_value_t = RunPlatform::Ios)]
         platform: RunPlatform,
-        /// Bundle id the runner binds its XCUIApplication to.
-        /// Required: `runner up` refuses to start without one (the
-        /// help used to claim a com.apple.Preferences default that the
-        /// implementation rejects).
+        /// Bundle id the runner binds its XCUIApplication to. iOS only,
+        /// and required there: `runner up` refuses to start without one
+        /// (the help used to claim a com.apple.Preferences default that
+        /// the implementation rejects). On Android it is refused rather
+        /// than ignored — that runner takes its target from the
+        /// App-Bundle-Id header per request, not at startup.
         #[arg(long)]
         bundle: Option<String>,
         /// Explicit path to `SmixRunner.xcodeproj`. Wins over
@@ -1093,6 +1095,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     supervise,
                 } => {
                     if platform == RunPlatform::Android {
+                        reject_ios_only_up_flags(
+                            bundle.is_some(),
+                            runner_project.is_some(),
+                            supervise,
+                        )
+                        .map_err(CliError::Other)?;
                         let port = port_flag.unwrap_or(runner_android::DEFAULT_ANDROID_PORT);
                         // The adb serial IS the device id — there is no
                         // registry indirection on this path.
@@ -2635,6 +2643,54 @@ impl std::fmt::Display for CliError {
 
 impl std::error::Error for CliError {}
 
+/// Refuse `runner up` flags that only the iOS path implements.
+///
+/// The Android branch reads `--runner-port` and nothing else. It used to
+/// accept the other three silently: `--bundle` went nowhere (the Android
+/// runner is `am instrument`-hosted and learns its target from the
+/// `App-Bundle-Id` header on each request, not at startup), so its help
+/// text — "Required: `runner up` refuses to start without one" — was
+/// false on this platform; `--runner-project` points at an .xcodeproj;
+/// and `--supervise` promises a sidecar that `runner supervise` has no
+/// Android path for at all, which is the worst of the three, because a
+/// user who asked for supervision and got none is told nothing.
+///
+/// Same species as the four defects fixed the same week — a parameter
+/// accepted and dropped — but one branch deep, where a scan for "clap
+/// fields nobody reads" cannot see it: every one of these IS read, on
+/// the other platform.
+fn reject_ios_only_up_flags(
+    bundle: bool,
+    runner_project: bool,
+    supervise: bool,
+) -> Result<(), String> {
+    let offenders: Vec<&str> = [
+        (bundle, "--bundle"),
+        (runner_project, "--runner-project"),
+        (supervise, "--supervise"),
+    ]
+    .into_iter()
+    .filter_map(|(given, name)| given.then_some(name))
+    .collect();
+
+    if offenders.is_empty() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "runner up --platform android does not implement {}: {} iOS-only. \
+         Drop the flag — the Android runner takes its target app from the \
+         App-Bundle-Id header per request, builds no Xcode project, and has \
+         no supervise sidecar. Only --runner-port applies on this platform.",
+        offenders.join(" / "),
+        if offenders.len() == 1 {
+            "it is"
+        } else {
+            "they are"
+        },
+    ))
+}
+
 // ---- tests --------------------------------------------------------------
 
 #[cfg(test)]
@@ -2914,5 +2970,35 @@ mod tests {
         ] {
             Cli::try_parse_from(&argv).unwrap_or_else(|e| panic!("{argv:?} failed to parse: {e}"));
         }
+    }
+
+    #[test]
+    fn android_runner_up_takes_only_the_port_flag() {
+        assert!(reject_ios_only_up_flags(false, false, false).is_ok());
+
+        for (bundle, project, supervise, expected) in [
+            (true, false, false, "--bundle"),
+            (false, true, false, "--runner-project"),
+            (false, false, true, "--supervise"),
+        ] {
+            let err = reject_ios_only_up_flags(bundle, project, supervise)
+                .expect_err("an iOS-only flag must be refused, not dropped");
+            assert!(err.contains(expected), "{expected} unnamed in: {err}");
+            assert!(
+                err.contains("--runner-port"),
+                "the refusal must say what DOES work: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_dropped_flag_is_named_at_once() {
+        // One flag per run would make a user re-run three times to
+        // discover three problems.
+        let err = reject_ios_only_up_flags(true, true, true).expect_err("all three are iOS-only");
+        for flag in ["--bundle", "--runner-project", "--supervise"] {
+            assert!(err.contains(flag), "{flag} unnamed in: {err}");
+        }
+        assert!(err.contains("they are"), "plural form expected in: {err}");
     }
 }

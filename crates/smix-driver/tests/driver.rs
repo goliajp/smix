@@ -890,9 +890,7 @@ async fn android_sends_the_target_package_to_the_runner() {
     let header = request
         .lines()
         .find(|l| l.to_ascii_lowercase().starts_with("app-bundle-id:"))
-        .unwrap_or_else(|| {
-            panic!("no App-Bundle-Id header reached the runner:\n{request}")
-        });
+        .unwrap_or_else(|| panic!("no App-Bundle-Id header reached the runner:\n{request}"));
     assert!(
         header.contains("jp.golia.app"),
         "the header carried the wrong package: {header}"
