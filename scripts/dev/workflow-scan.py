@@ -37,6 +37,12 @@ Checks:
      commands and refused an append to the decision log for mentioning
      `simctl shutdown all`. A guard's own judgement needs testing as
      much as anything it judges.
+  5. No script calls a GNU tool macOS does not ship. corpus-gate.sh
+     called `timeout`, which is coreutils and absent on a stock Mac, so
+     the shell answered "command not found" for every yaml in the
+     corpus. Every one was recorded FAIL, the gate was permanently RED,
+     and ship.sh could not finish on the machine smix is developed on —
+     a missing tool reading as a product that fails all of its tests.
 
 Exit non-zero on any failure.
 """
@@ -142,6 +148,39 @@ def check_guards_wired(settings, failures):
             )
 
 
+# Commands that exist on GNU/Linux and not on a stock macOS, mapped to
+# what to reach for instead. Only tools that have actually bitten are
+# listed — a speculative list would be noise, and the point is that each
+# entry names a real outage.
+GNU_ONLY = {
+    "timeout": "scripts/dev/run-with-timeout.py (same exit codes)",
+}
+
+# `word` at the start of a command position: line start, after a pipe,
+# after && / || / ; , or after `if` / `then` / `else` / `do`.
+def gnu_tool_pattern(tool):
+    return re.compile(
+        r"(?:^|\||&&|\|\||;|\bif\s|\bthen\s|\belse\s|\bdo\s)\s*" + re.escape(tool) + r"\s",
+        re.M,
+    )
+
+
+def check_no_gnu_only_tools(failures):
+    for path in sorted(glob.glob(os.path.join(ROOT, "scripts/**/*.sh"), recursive=True)):
+        rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+        with open(path, encoding="utf-8") as f:
+            body = "\n".join(
+                line for line in f.read().splitlines() if not line.lstrip().startswith("#")
+            )
+        for tool, alternative in GNU_ONLY.items():
+            if gnu_tool_pattern(tool).search(body):
+                failures.append(
+                    f"{rel} invokes `{tool}`, which macOS does not ship — on a "
+                    f"stock Mac that is 'command not found' for every call, not "
+                    f"a timeout. Use {alternative}."
+                )
+
+
 def check_guards_tested(failures):
     for path in sorted(glob.glob(os.path.join(ROOT, "scripts/dev/*-guard.sh"))):
         harness = path[: -len(".sh")] + ".test.sh"
@@ -158,6 +197,7 @@ def main():
     failures = []
     check_contract_tracked(failures)
     check_guards_tested(failures)
+    check_no_gnu_only_tools(failures)
 
     settings_path = os.path.join(ROOT, SETTINGS)
     if os.path.isfile(settings_path):

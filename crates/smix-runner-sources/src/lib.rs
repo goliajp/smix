@@ -51,6 +51,9 @@ pub struct ExtractReport {
     /// carried over (fresh install; caller should fetch/build the
     /// xcframework separately).
     pub carried_xcframework_from: Option<PathBuf>,
+    /// Older backup trees removed by the rotation, oldest first. Empty
+    /// when there was nothing beyond [`BACKUPS_KEPT`] to remove.
+    pub pruned_backups: Vec<PathBuf>,
 }
 
 /// Subdirectory names within the extract tree that must be preserved
@@ -58,6 +61,20 @@ pub struct ExtractReport {
 /// excluded from the shipped tarball (fetched or built separately). If
 /// found in the pre-extract tree, they are moved back into the new
 /// tree after extract completes.
+/// How many `<dst>.bak-<ts>` trees survive a sync, newest first.
+///
+/// The backup exists so a bad sync can be walked back, and one is
+/// enough for that. Two is the smallest number that still covers "the
+/// sync I want to undo is the one before last" — which happens when a
+/// re-sync is the thing that revealed the problem.
+///
+/// It had no bound at all until this was added. A developer machine
+/// running smix daily accumulated 48 of them across nine days, 1.8 MB
+/// each, holding a share directory at 190 MB. Nothing announced them,
+/// nothing removed them, and the tree they protect is 1.8 MB — so the
+/// unbounded history cost a hundred times what it insured.
+pub const BACKUPS_KEPT: usize = 2;
+
 const CARRIED_ARTEFACTS: &[&str] = &[
     "SmixCoreFFI.xcframework",
     "SmixCoreFFI.xcframework.zip",
@@ -208,12 +225,28 @@ pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError
     std::fs::write(&version_path, format!("{SOURCES_VERSION}\n"))
         .map_err(|e| ExtractError::io(format!("writing {}", version_path.display()), e))?;
 
+    // Last, so a rotation failure cannot cost the tree that was just
+    // extracted. The message has to say that outright: by this point
+    // the runner IS installed, and an error that reads like "install
+    // failed" would send someone to re-run a sync that worked.
+    let pruned = prune_backups(dst, BACKUPS_KEPT).map_err(|e| {
+        ExtractError::io(
+            format!(
+                "runner sources extracted to {} successfully, but pruning old \
+                 backups beside it failed",
+                dst.display()
+            ),
+            e,
+        )
+    })?;
+
     Ok(ExtractReport {
         destination: dst.to_path_buf(),
         file_count,
         backup,
         version_written: SOURCES_VERSION,
         carried_xcframework_from,
+        pruned_backups: pruned,
     })
 }
 
@@ -243,6 +276,56 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
 fn is_directory_empty(p: &Path) -> io::Result<bool> {
     let mut iter = std::fs::read_dir(p)?;
     Ok(iter.next().is_none())
+}
+
+/// Existing `<dst>.bak-<ts>` trees, oldest first.
+///
+/// Ordered by the timestamp in the name rather than by mtime: the name
+/// is what the backup was called at creation, while an mtime can be
+/// changed by anything that touches the tree afterwards. A directory
+/// whose suffix is not a number is not one of ours and is left alone.
+fn existing_backups(dst: &Path) -> io::Result<Vec<(u64, PathBuf)>> {
+    let parent = dst.parent().unwrap_or_else(|| Path::new("."));
+    let base = dst
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "runner".to_string());
+    let prefix = format!("{base}.bak-");
+
+    let mut found = Vec::new();
+    let entries = match std::fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(found),
+        Err(e) => return Err(e),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Some(suffix) = name.strip_prefix(&prefix) else {
+            continue;
+        };
+        let Ok(stamp) = suffix.parse::<u64>() else {
+            continue;
+        };
+        if entry.path().is_dir() {
+            found.push((stamp, entry.path()));
+        }
+    }
+    found.sort_by_key(|(stamp, _)| *stamp);
+    Ok(found)
+}
+
+/// Delete all but the newest `keep` backup trees. Returns what went,
+/// oldest first.
+fn prune_backups(dst: &Path, keep: usize) -> io::Result<Vec<PathBuf>> {
+    let backups = existing_backups(dst)?;
+    let excess = backups.len().saturating_sub(keep);
+    let mut removed = Vec::new();
+    for (_, path) in backups.into_iter().take(excess) {
+        std::fs::remove_dir_all(&path)?;
+        removed.push(path);
+    }
+    Ok(removed)
 }
 
 fn timestamped_backup_path(dst: &Path) -> PathBuf {

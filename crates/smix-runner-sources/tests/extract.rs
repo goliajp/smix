@@ -170,3 +170,88 @@ fn extract_excludes_xcframework_binary() {
          must be fetched separately at consumer install time)"
     );
 }
+
+/// A sync used to leave every previous tree behind. Nine days of daily
+/// use on one machine meant 48 of them at 1.8 MB each — 190 MB of
+/// insurance on a 1.8 MB asset, with nothing naming them and nothing
+/// removing them.
+#[test]
+fn syncing_keeps_only_the_newest_backups() {
+    let parent = tempfile::tempdir().expect("tempdir");
+    let dst = parent.path().join("runner");
+
+    // Stand-ins for backups from earlier syncs. The suffix is what
+    // orders them, so these are deliberately out of creation order.
+    for stamp in ["1000", "3000", "2000"] {
+        let bak = parent.path().join(format!("runner.bak-{stamp}"));
+        fs::create_dir_all(&bak).expect("mkdir bak");
+        fs::write(bak.join("marker"), stamp).expect("marker");
+    }
+    // Something that merely looks similar must survive untouched.
+    let bystander = parent.path().join("runner.bak-notanumber");
+    fs::create_dir_all(&bystander).expect("mkdir bystander");
+
+    fs::create_dir_all(&dst).expect("mkdir dst");
+    fs::write(dst.join("stale"), "previous tree").expect("stale file");
+
+    let report = extract_to(&dst, true).expect("extract with force");
+
+    // This sync made a fourth backup, so two of the three old ones go.
+    assert_eq!(
+        report.pruned_backups.len(),
+        2,
+        "expected the two oldest to be pruned, got {:?}",
+        report.pruned_backups
+    );
+    for stamp in ["1000", "2000"] {
+        assert!(
+            !parent.path().join(format!("runner.bak-{stamp}")).exists(),
+            "backup {stamp} should have been pruned"
+        );
+    }
+    assert!(
+        parent.path().join("runner.bak-3000").exists(),
+        "the newest pre-existing backup must survive"
+    );
+    assert!(
+        report
+            .backup
+            .as_ref()
+            .expect("this sync backed up")
+            .exists(),
+        "the backup this sync just made must survive"
+    );
+    assert!(
+        bystander.exists(),
+        "a directory whose suffix is not a timestamp is not ours to delete"
+    );
+}
+
+/// Ordering comes from the name, not the filesystem. Touching an old
+/// backup must not promote it past a newer one.
+#[test]
+fn a_touched_old_backup_is_still_old() {
+    let parent = tempfile::tempdir().expect("tempdir");
+    let dst = parent.path().join("runner");
+
+    for stamp in ["1000", "2000", "3000"] {
+        let bak = parent.path().join(format!("runner.bak-{stamp}"));
+        fs::create_dir_all(&bak).expect("mkdir bak");
+    }
+    // Make the oldest the most recently modified.
+    fs::write(parent.path().join("runner.bak-1000/touched"), "now").expect("touch");
+
+    fs::create_dir_all(&dst).expect("mkdir dst");
+    fs::write(dst.join("stale"), "previous tree").expect("stale file");
+
+    extract_to(&dst, true).expect("extract with force");
+
+    assert!(
+        !parent.path().join("runner.bak-1000").exists(),
+        "mtime must not rescue the oldest backup"
+    );
+    assert!(
+        parent.path().join("runner.bak-3000").exists(),
+        "the newest by name must survive"
+    );
+}

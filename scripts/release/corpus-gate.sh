@@ -111,9 +111,15 @@ for yaml in "${YAMLS[@]}"; do
   name="$(basename "$yaml" .yaml)"
   echo "corpus gate: [$name] running..."
   yaml_log="$LOG_DIR/${name}.log"
-  # Pipe through a hard timeout so a single hanging yaml doesn't stall
-  # the whole gate. `timeout` returns 124 on timeout — treated as fail.
-  if timeout "$SMIX_CORPUS_TIMEOUT_S" \
+  # Hard limit per yaml so one hang does not stall the gate. 124 on
+  # timeout, as GNU timeout does — treated as fail either way.
+  #
+  # NOT `timeout` itself: that is GNU coreutils and macOS does not ship
+  # it, so on a stock Mac this line was "command not found" for every
+  # yaml, every one was recorded FAIL, and the gate could never be
+  # anything but RED. A missing tool has to read as a missing tool, not
+  # as a product failing all of its tests.
+  if python3 "$REPO_ROOT/scripts/dev/run-with-timeout.py" "$SMIX_CORPUS_TIMEOUT_S" \
        "$SMIX_BIN" run --script "$yaml" \
        >"$yaml_log" 2>&1; then
     echo "corpus gate: [$name] PASS"
