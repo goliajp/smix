@@ -1,0 +1,24 @@
+# Proves --force-key-events reaches the device, by naming a field that
+# is not there.
+#
+# On Android the flag is not a header the runner reads: AndroidDriver
+# skips resolution entirely and types into whatever holds focus. So the
+# id below is deliberately absent from the tree. With the flag, the step
+# succeeds because nothing is resolved; without it, resolution runs and
+# must fail. Whether this flow passes is decided by the flag and nothing
+# else — which is what makes it falsifiable rather than just another
+# green run.
+#
+# WHAT THIS DOES NOT ASSERT: that the characters arrived in the field.
+# An earlier version ended with assertVisible on the typed string and
+# was flaky — when the search page is opened cold the IME is still
+# coming up and `input text` loses the leading characters, or all of
+# them. That is a property of the keyboard's startup, not of the flag,
+# and a release gate that fails on it would be reporting the wrong
+# thing. Whether text reaches a focused field is /input-text's contract;
+# what this flow isolates is whether the flag changed the driver's path.
+appId: com.android.settings
+---
+- tapOn: { id: "search_action_bar" }
+- extendedWaitUntil: { visible: { id: "search_src_text" }, timeout: 8000 }
+- inputText: { id: "smix-c4-no-such-field", text: "smixkeyevents" }

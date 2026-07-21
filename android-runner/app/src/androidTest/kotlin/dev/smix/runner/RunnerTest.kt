@@ -332,8 +332,14 @@ class SmixHttpServer(
         var path = "none"
         var sawNode = false
         var sawActionClick = false
+        var matchedSpelling: String? = null
+        var sawStrictHit = false
         while (System.currentTimeMillis() < pollDeadlineMs && !clicked) {
-            val targetNode = findNodeByViewId(id, targetPackage)
+            val (targetNode, matched) = findNodeByViewId(id, targetPackage)
+            if (matched != null) {
+                matchedSpelling = matched
+                sawStrictHit = true
+            }
             if (targetNode != null) {
                 sawNode = true
                 val actions = targetNode.actionList
@@ -369,12 +375,32 @@ class SmixHttpServer(
         }
         device.waitForIdle(500)
         val body = RunnerWire.tapByIdBody(clicked, id, path, sawNode, sawActionClick)
-        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+        val response = newFixedLengthResponse(Response.Status.OK, "application/json", body)
+        // A header, not a body field. v1.0.23 settled the same question
+        // for the tree-snapshot counters: the body of this route has a
+        // Rust-side parser reading its five fields, so adding one is a
+        // wire-contract change while adding a header is not.
+        //
+        // "miss" is distinct from "walk": the walk answering is a
+        // different fact from nothing answering at all.
+        val kind = if (!sawNode && !sawStrictHit) {
+            "miss"
+        } else {
+            RunnerWire.viewIdMatchKind(matchedSpelling, id, targetPackage)
+        }
+        response.addHeader("X-View-Id-Match", kind)
+        return response
     }
 
-    /// Find first node matching `viewIdResourceName`. Tries common
-    /// package prefixes (`com.example.app` / `dev.smix.runner.test`)
-    /// before short-id strict. Caller owns the returned node and MUST
+    /// Find first node matching `viewIdResourceName`, returning it
+    /// alongside the spelling that hit (null when the manual walk
+    /// answered instead). Candidates come from
+    /// `RunnerWire.viewIdCandidates`: the bare id, the app under test
+    /// qualified by the App-Bundle-Id header, then the runner's own
+    /// test package. This comment used to name `com.example.app` among
+    /// them — that placeholder was removed from the candidate list, and
+    /// saying otherwise here outlived the code by a day.
+    /// Caller owns the returned node and MUST
     /// recycle.
     ///
     /// Manual AccessibilityNodeInfo recycling during tree traversal
@@ -395,7 +421,7 @@ class SmixHttpServer(
     private fun findNodeByViewId(
         shortId: String,
         targetPackage: String?,
-    ): AccessibilityNodeInfo? {
+    ): Pair<AccessibilityNodeInfo?, String?> {
         val candidates = RunnerWire.viewIdCandidates(shortId, targetPackage)
         for (window in instrumentation.uiAutomation.windows) {
             val root = window.root ?: continue
@@ -404,7 +430,11 @@ class SmixHttpServer(
                 if (hits.isNotEmpty()) {
                     val node = hits[0]
                     hits.drop(1).forEach { it.recycle() }
-                    return node
+                    // The spelling travels with the node. Without it the
+                    // caller cannot tell a strict hit from the walk
+                    // below, and those two returning the same node is
+                    // exactly how a placeholder package survived here.
+                    return node to cand
                 }
             }
         }
@@ -440,9 +470,9 @@ class SmixHttpServer(
             val root = window.root ?: continue
             root.refresh()
             val found = walkFindByViewIdNoRecycle(root, shortId)
-            if (found != null) return found
+            if (found != null) return found to null
         }
-        return null
+        return null to null
     }
 
     /// Recursive walk matching `viewIdResourceName` short suffix
