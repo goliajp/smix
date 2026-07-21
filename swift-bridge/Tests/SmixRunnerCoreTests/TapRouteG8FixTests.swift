@@ -32,7 +32,7 @@ final class TapRouteG8FixTests: XCTestCase {
         let body = Data(#"{"selector":{"text":"Sign In"},"mode":"daemonProxySynthesize"}"#.utf8)
         let req = try TapRoute.decode(body)
         XCTAssertEqual(req.mode, .daemonProxySynthesize)
-        XCTAssertEqual(req.selector.text, "Sign In")
+        XCTAssertEqual(req.selector.raw, "Sign In")
     }
 
     func test_decode_modeDaemonProxySynthesize_rawValueRoundTrip() {

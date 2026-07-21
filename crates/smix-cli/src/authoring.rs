@@ -75,8 +75,15 @@ fn bounds_tuple(n: &A11yNode) -> (f64, f64, f64, f64) {
     (n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h)
 }
 
-/// Parse `partial` as `field: pattern` (e.g. `id: qa-*`) or fall back
-/// to text search.
+/// Parse `partial` as `field: pattern` (e.g. `id: qa-*`), or fall back
+/// to searching every readable string on the node.
+///
+/// The fallback used to mean the `text` field alone. On a real iOS tree
+/// that is nearly always empty: a capture of Settings has 33 nodes
+/// carrying a label, two carrying a value, and zero carrying text or
+/// title. So the bare form the help prints — `smix authoring suggest
+/// 'Sign In'` — structurally could not match anything, which is what
+/// "verify the example against a live runner" turned out to mean.
 fn parse_partial(partial: &str) -> (&'static str, &str) {
     if let Some((k, v)) = partial.split_once(':') {
         let k = k.trim();
@@ -85,25 +92,42 @@ fn parse_partial(partial: &str) -> (&'static str, &str) {
             "id" => ("id", v),
             "text" => ("text", v),
             "label" => ("label", v),
-            _ => ("text", partial),
+            _ => ("any", partial),
         }
     } else {
-        ("text", partial)
+        ("any", partial)
     }
 }
 
 fn matches_partial(node: &A11yNode, field: &str, pattern: &str) -> bool {
-    let hay: Option<&str> = match field {
-        "id" => node.identifier.as_deref(),
-        "text" => node
-            .text
-            .as_deref()
-            .or(node.value.as_deref())
-            .or(node.title.as_deref()),
-        "label" => node.label.as_deref(),
-        _ => None,
+    // `any` is the bare form: every readable string, label included.
+    // Restricting it to `text` made the documented example impossible
+    // to satisfy on iOS, where the readable string is the label.
+    let candidates: [Option<&str>; 5] = match field {
+        "id" => [node.identifier.as_deref(), None, None, None, None],
+        "text" => [
+            node.text.as_deref(),
+            node.value.as_deref(),
+            node.title.as_deref(),
+            None,
+            None,
+        ],
+        "label" => [node.label.as_deref(), None, None, None, None],
+        _ => [
+            node.label.as_deref(),
+            node.text.as_deref(),
+            node.value.as_deref(),
+            node.title.as_deref(),
+            node.identifier.as_deref(),
+        ],
     };
-    let Some(hay) = hay else { return false };
+    candidates
+        .iter()
+        .flatten()
+        .any(|hay| matches_one(hay, pattern))
+}
+
+fn matches_one(hay: &str, pattern: &str) -> bool {
     // Support `*` wildcard + case-insensitive substring.
     if pattern == "*" {
         return true;
@@ -440,5 +464,54 @@ mod tests {
         assert_eq!(diff.drifted.len(), 1);
         assert_eq!(diff.drifted[0].baseline, "hi");
         assert_eq!(diff.drifted[0].current, "hello");
+    }
+}
+
+#[cfg(test)]
+mod authoring_live_tree_tests {
+    use super::*;
+
+    /// A tree a real device produced, captured once and committed.
+    ///
+    /// The ledger recorded `authoring suggest` as needing a live runner
+    /// to verify. Running it produced an answer nobody had: the bare
+    /// spec form the help prints matched nothing, because it searched
+    /// only `text` while every readable string on an iOS node lives on
+    /// `label`. This capture is what makes that checkable from now on
+    /// without a simulator.
+    const LIVE_TREE: &str = include_str!("../tests/fixtures/live-tree-preferences-2026-07-22.json");
+
+    fn live_tree() -> A11yNode {
+        serde_json::from_str(LIVE_TREE).expect("captured tree deserializes into A11yNode")
+    }
+
+    #[test]
+    fn authoring_live_tree_deserializes_into_a11y_node() {
+        assert!(
+            !live_tree().children.is_empty(),
+            "a captured Settings tree with no children means the capture is wrong, not the parser"
+        );
+    }
+
+    /// The wildcard form from the help. Preferences carries no `qa-`
+    /// prefix, so the assertion is that the form survives a real tree —
+    /// not that it hits.
+    #[test]
+    fn authoring_live_tree_suggest_id_wildcard_runs() {
+        let _ = suggest_selectors(&live_tree(), "id: qa-*").len();
+    }
+
+    /// The bare form from the help, against a label the capture
+    /// contains. This is the assertion that was failing on a device
+    /// before the bare form learned to look at labels; without it the
+    /// test above passes vacuously.
+    #[test]
+    fn authoring_live_tree_suggest_bare_string_finds_label() {
+        let hits = suggest_selectors(&live_tree(), "General");
+        assert!(
+            !hits.is_empty(),
+            "the bare spec form found nothing for a label the capture contains — \
+             on iOS the readable string is the label, and 0 of 33 nodes here carry `text`"
+        );
     }
 }

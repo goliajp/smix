@@ -12,7 +12,7 @@ final class TapRouteTests: XCTestCase {
   func test_decode_validTextSelector_returnsRequest() throws {
     let body = Data(#"{"selector":{"text":"General"}}"#.utf8)
     let req = try TapRoute.decode(body)
-    XCTAssertEqual(req, TapRoute.TapRequest(selector: .init(text: "General"), mode: .resolveAndTap))
+    XCTAssertEqual(req, TapRoute.TapRequest(selector: .text("General"), mode: .resolveAndTap))
   }
 
   // The mode field controls whether the runner calls element.tap() or
@@ -22,7 +22,7 @@ final class TapRouteTests: XCTestCase {
     let body = Data(#"{"selector":{"text":"General"},"mode":"resolve"}"#.utf8)
     let req = try TapRoute.decode(body)
     XCTAssertEqual(req.mode, .resolve)
-    XCTAssertEqual(req.selector.text, "General")
+    XCTAssertEqual(req.selector.raw, "General")
   }
 
   func test_decode_modeMissing_defaultsToResolveAndTap() throws {
@@ -66,7 +66,7 @@ final class TapRouteTests: XCTestCase {
   func test_decode_selectorWithoutText_throwsMissingText() {
     let body = Data(#"{"selector":{}}"#.utf8)
     XCTAssertThrowsError(try TapRoute.decode(body)) { err in
-      XCTAssertEqual(err as? TapRoute.DecodeError, .missingText)
+      XCTAssertEqual(err as? TapRoute.DecodeError, .unsupportedSelectorForm)
     }
   }
 
@@ -154,7 +154,7 @@ final class TapRouteTests: XCTestCase {
   }
 
   func test_notFound_includesEchoSelectorAndVisibleEmptyArray() async throws {
-    let resp = TapRoute.notFound(selector: .init(text: "ZZZ"))
+    let resp = TapRoute.notFound(selector: .text("ZZZ"))
     XCTAssertEqual(resp.statusCode, .notFound)
     let body = try await String(decoding: resp.bodyData, as: UTF8.self)
     XCTAssertTrue(body.contains(#""ok":false"#), body)
@@ -171,4 +171,13 @@ final class TapRouteTests: XCTestCase {
     XCTAssertTrue(body.contains(#""error":"bad_request""#), body)
     XCTAssertTrue(body.contains(#""reason":"bad json""#), body)
   }
+  /// The form `dispatch: daemonProxy` exists for: an RN testID, which
+  /// a text selector cannot reach. Refused by the Rust guard until now,
+  /// and undecodable here before that.
+  func test_decode_idForm() throws {
+    let body = Data(#"{"selector":{"id":"btn-login"}}"#.utf8)
+    let req = try TapRoute.decode(body)
+    XCTAssertEqual(req.selector, .id("btn-login"))
+  }
+
 }

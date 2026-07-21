@@ -10,10 +10,10 @@ import Foundation
 // matches the XCUIElement standard press of 0.5s.
 public enum LongPressRoute {
   public struct LongPressRequest: Equatable, Sendable {
-    public let selectorText: String
+    public let selector: RouteSelector
     public let durationMs: UInt32
-    public init(selectorText: String, durationMs: UInt32) {
-      self.selectorText = selectorText
+    public init(selector: RouteSelector, durationMs: UInt32) {
+      self.selector = selector
       self.durationMs = durationMs
     }
   }
@@ -21,7 +21,8 @@ public enum LongPressRoute {
   public enum DecodeError: Error, Equatable {
     case invalidJSON
     case missingSelector
-    case missingText
+    /// No recognised selector key, or a form this route does not take.
+    case unsupportedSelectorForm
     case missingDuration
     case wrongType(String)
   }
@@ -37,10 +38,10 @@ public enum LongPressRoute {
     guard let selectorObj = selector as? [String: Any] else {
       throw DecodeError.wrongType("selector not object")
     }
-    guard let rawText = selectorObj["text"] else { throw DecodeError.missingText }
-    guard let text = rawText as? String else {
-      throw DecodeError.wrongType("selector.text not string")
-    }
+    let sel: RouteSelector
+    do { sel = try RouteSelector.decode(from: selectorObj) }
+    catch RouteSelector.Failure.wrongType(let what) { throw DecodeError.wrongType(what) }
+    catch { throw DecodeError.unsupportedSelectorForm }
     guard let rawDuration = root["durationMs"] else { throw DecodeError.missingDuration }
     let durationMs: UInt32
     if let n = rawDuration as? UInt32 {
@@ -52,16 +53,18 @@ public enum LongPressRoute {
     } else {
       throw DecodeError.wrongType("durationMs not unsigned int")
     }
-    return LongPressRequest(selectorText: text, durationMs: durationMs)
+    return LongPressRequest(selector: sel, durationMs: durationMs)
   }
 
   public static func success() -> HTTPResponse {
     envelope(.ok, Data(#"{"ok":true}"#.utf8))
   }
 
-  public static func notFound(selectorText: String) -> HTTPResponse {
-    let text = jsonEscape(selectorText)
-    let body = Data(#"{"ok":false,"error":"not_found","selector":{"text":"\#(text)"}}"#.utf8)
+  /// Names the key the caller sent rather than always saying `text`.
+  public static func notFound(selector: RouteSelector) -> HTTPResponse {
+    let raw = jsonEscape(selector.raw)
+    let key = selector.wireKey
+    let body = Data(#"{"ok":false,"error":"not_found","selector":{"\#(key)":"\#(raw)"}}"#.utf8)
     return envelope(.notFound, body)
   }
 
