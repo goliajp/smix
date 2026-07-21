@@ -1068,6 +1068,7 @@ Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 
 | Env | Default | Description |
 |---|---|---|
+| `SMIX_WEBVIEW_BRIDGE_PORT` | `28080` | Port of the in-app `SmixWebViewBridge` that `webviewEval` posts to on iOS. Infrastructure port like `SMIX_RUNNER_PORT`, not one of the behaviour switches below — it has no `.smix/config.yaml` equivalent |
 | `SMIX_AUTO_OCR_FALLBACK` | (off) | `1`/`true`/`yes` — auto-lift bare-string selectors to `fallback: [text, ocrText]` at parse time; `A\|B` regex-OR strings split per alternative on the OCR tiers |
 | `SMIX_TAP_OCR_POLL_MS` | `3000` | Poll budget for `tapOn` fallback chains that contain `ocrText` (250 ms cadence) |
 

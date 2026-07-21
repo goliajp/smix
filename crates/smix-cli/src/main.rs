@@ -1507,14 +1507,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             // registry's per-sim runnerPort → 22087. `smix run` used to
             // skip the registry, so a sim registered on a dedicated port
             // got its runner bound there and then dialed on 22087.
-            let port = runner_port
-                .or_else(|| {
-                    device
-                        .as_deref()
-                        .and_then(lookup_registered)
-                        .and_then(|sim| sim.runner_port)
-                })
-                .unwrap_or(22087);
+            let port = run_port(runner_port, || {
+                device
+                    .as_deref()
+                    .and_then(lookup_registered)
+                    .and_then(|sim| sim.runner_port)
+            });
             let plat = platform.to_flow();
             let out_fmt = format.to_adapter();
             // The run path consumes all four switches. Warn once for any
@@ -2657,6 +2655,22 @@ impl std::fmt::Display for CliError {
 
 impl std::error::Error for CliError {}
 
+/// The port `smix run` dials: explicit flag (or SMIX_RUNNER_PORT via
+/// clap's env binding), else the registry's per-sim `runnerPort`, else
+/// the convention.
+///
+/// A function rather than an inline chain so the priority can be
+/// asserted. `smix run` used to skip the registry entirely, so a sim
+/// registered on a dedicated port had its runner bound there and then
+/// dialled on 22087; the chain has been right since that was fixed and
+/// unwatched ever since.
+///
+/// The registry lookup is a closure because reading it is a disk touch
+/// worth skipping when the caller already said which port to use.
+fn run_port(flag: Option<u16>, registered: impl FnOnce() -> Option<u16>) -> u16 {
+    flag.or_else(registered).unwrap_or(22087)
+}
+
 /// Refuse `runner up` flags that only the iOS path implements.
 ///
 /// The Android branch reads `--runner-port` and nothing else. It used to
@@ -3014,5 +3028,41 @@ mod tests {
             assert!(err.contains(flag), "{flag} unnamed in: {err}");
         }
         assert!(err.contains("they are"), "plural form expected in: {err}");
+    }
+    /// The port `smix run` dials, in priority order.
+    ///
+    /// Extracted so the chain can be asserted rather than only read.
+    /// It was already correct — and recorded as broken for three days,
+    /// because nothing anywhere would have gone red either way.
+    #[test]
+    fn run_port_flag_wins() {
+        assert_eq!(run_port(Some(22099), || Some(23000)), 22099);
+    }
+
+    #[test]
+    fn run_port_falls_back_to_registry() {
+        assert_eq!(run_port(None, || Some(22099)), 22099);
+    }
+
+    #[test]
+    fn run_port_defaults_to_22087() {
+        assert_eq!(run_port(None, || None), 22087);
+    }
+
+    /// Laziness is behaviour, not an implementation detail: with an
+    /// explicit port there is no reason to read the registry off disk.
+    /// A refactor to something eager would be invisible without this.
+    #[test]
+    fn run_port_skips_registry_lookup_when_flag_present() {
+        let consulted = std::cell::Cell::new(false);
+        let port = run_port(Some(22099), || {
+            consulted.set(true);
+            Some(23000)
+        });
+        assert_eq!(port, 22099);
+        assert!(
+            !consulted.get(),
+            "registry was read despite an explicit port"
+        );
     }
 }

@@ -391,6 +391,43 @@ pub struct HttpRunnerClient {
     /// (values `healthy` | `degraded` | `cycling` | `dead`). Unknown /
     /// missing header leaves the state unchanged.
     session_state: Arc<std::sync::Mutex<Option<Arc<std::sync::atomic::AtomicU8>>>>,
+    /// Port of the in-app `SmixWebViewBridge` that `webview_eval`
+    /// reaches on iOS. Read once from `SMIX_WEBVIEW_BRIDGE_PORT` at
+    /// construction; see [`with_webview_bridge_port`] to set it
+    /// directly.
+    ///
+    /// [`with_webview_bridge_port`]: Self::with_webview_bridge_port
+    webview_bridge_port: u16,
+}
+
+/// Port the iOS in-app webview bridge listens on when nothing says
+/// otherwise.
+pub const DEFAULT_WEBVIEW_BRIDGE_PORT: u16 = 28080;
+
+/// Resolve the bridge port from a raw string, falling back to the
+/// default when absent or unparseable.
+///
+/// Takes the value rather than reading the environment so it can be
+/// tested without mutating process state — a suite that sets env vars
+/// to exercise them cannot be run in parallel with itself.
+///
+/// Falling back rather than erroring matches `runner_port_from_env`,
+/// which SMIX_RUNNER_PORT has always used. Same convention, stated
+/// rather than reinvented.
+#[must_use]
+pub fn webview_bridge_port_from(raw: Option<&str>) -> u16 {
+    raw.and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(DEFAULT_WEBVIEW_BRIDGE_PORT)
+}
+
+/// The bridge endpoint for a given port.
+///
+/// The host stays 127.0.0.1: the simulator shares the host loopback,
+/// which is why this route can reach an in-app server at all. That is a
+/// decision on record, not an oversight to parameterise.
+#[must_use]
+pub fn webview_bridge_url(port: u16) -> String {
+    format!("http://127.0.0.1:{port}/eval")
 }
 
 /// Input dispatch mode for the `Input-Dispatch-Mode` header.
@@ -460,7 +497,17 @@ impl HttpRunnerClient {
             liveness: Arc::new(std::sync::Mutex::new(None)),
             sim_health: None,
             session_state: Arc::new(std::sync::Mutex::new(None)),
+            webview_bridge_port: webview_bridge_port_from(
+                std::env::var("SMIX_WEBVIEW_BRIDGE_PORT").ok().as_deref(),
+            ),
         }
+    }
+
+    /// Point `webview_eval` at a different in-app bridge port.
+    #[must_use]
+    pub fn with_webview_bridge_port(mut self, port: u16) -> Self {
+        self.webview_bridge_port = port;
+        self
     }
 
     /// Attach the SDK Session's state atomic so the
@@ -1312,11 +1359,17 @@ impl HttpRunnerClient {
 
     /// Eval JS against app-side WKWebView bridge. Does NOT use the
     /// XCUITest runner — POSTs directly to the app-side debug bridge on
-    /// `127.0.0.1:28080/eval` (iOS sim shares host loopback). Returns
-    /// the JS eval result as JSON Value or runtime error from the bridge.
+    /// the host loopback the simulator shares. Returns the JS eval
+    /// result as JSON Value or runtime error from the bridge.
     ///
     /// **Scope**: works for any app that exposes the
-    /// `SmixWebViewBridge`. Bridge port is fixed at 28080 today.
+    /// `SmixWebViewBridge`. The port defaults to
+    /// [`DEFAULT_WEBVIEW_BRIDGE_PORT`] and is overridable via
+    /// `SMIX_WEBVIEW_BRIDGE_PORT` or
+    /// [`with_webview_bridge_port`]; it used to be a literal, which
+    /// meant a bridge on any other port was unreachable.
+    ///
+    /// [`with_webview_bridge_port`]: Self::with_webview_bridge_port
     pub async fn webview_eval(&self, js: &str) -> Result<serde_json::Value, RunnerTransportError> {
         #[derive(Serialize)]
         struct Req<'a> {
@@ -1327,7 +1380,7 @@ impl HttpRunnerClient {
             result: serde_json::Value,
             error: String,
         }
-        let url = "http://127.0.0.1:28080/eval";
+        let url = webview_bridge_url(self.webview_bridge_port);
         let resp = reqwest::Client::new()
             .post(url)
             .json(&Req { js })
