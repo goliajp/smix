@@ -54,7 +54,11 @@ jobs:
         working-directory: npm/smix-rn
         run: bun run test
 
-  android-unit:
+  # Named for its boundary, not its contents: everything Android that
+  # needs no device. Calling it "unit" invited the reading that unit
+  # tests are all Android has. Instrumentation runs at ship, on a pinned
+  # emulator — android-gate-scan prints that downgrade on every run.
+  android-no-device:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,12 +66,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      # Bare task name, so a module added later arrives inside the gate
+      # Bare task names, so a module added later arrives inside the gate
       # instead of waiting for someone to remember this line.
       # android-gate-scan reports it if that stops being true.
-      - name: unit tests (sdk + app)
+      - name: unit tests + androidTest compile (no device — instrumentation runs at ship)
         working-directory: android-runner
-        run: ./gradlew testDebugUnitTest --console=plain
+        run: ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain
 
   source-gates:
     runs-on: ubuntu-latest

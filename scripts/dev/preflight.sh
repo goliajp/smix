@@ -55,7 +55,7 @@ else
     cargo test -j 4 $ARGS
 fi
 
-echo "--- android unit tests"
+echo "--- android: unit tests + androidTest compile"
 # Unconditional, unlike the crate steps above. Those narrow by git diff
 # because a whole-workspace clippy is too slow to be a habit; this is a
 # second or two against a warm daemon, and narrowing it by changes under
@@ -64,8 +64,18 @@ echo "--- android unit tests"
 # — a header sent from Rust that the Kotlin side never read — so the
 # edit that breaks the Android assertion lands in crates/.
 #
-# Bare task name: a module added later is inside the gate on arrival.
-( cd android-runner && ./gradlew testDebugUnitTest --console=plain )
+# assembleDebugAndroidTest compiles both androidTest source sets without
+# running either. :app's is the runner body that ships to users, and no
+# gate compiled it until now — the same species iOS logged twice as "the
+# ship gate never compiles the runner it distributes".
+#
+# Compile only, and that is a DOWNGRADE with a name: instrumentation
+# needs a device, preflight runs dozens of times a day, and booting an
+# emulator here would contend with whatever the developer is doing. The
+# device layer lives in ship.sh via android-instrumentation-gate.sh.
+#
+# Bare task names: a module added later is inside the gate on arrival.
+( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
 for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan; do

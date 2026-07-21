@@ -38,6 +38,7 @@ Checks:
 Exit non-zero on any failure.
 """
 
+import glob
 import os
 import re
 import sys
@@ -58,27 +59,41 @@ GATES = (
 UNIT_TASK = "testDebugUnitTest"
 INSTRUMENTATION_TASK = "connectedDebugAndroidTest"
 
-# androidTest source sets no gate runs, each with where that is decided.
-#
-# The two are not the same kind of thing, and saying so here is the point
-# of the entry being prose rather than a boolean. :sdk holds assertions.
-# :app holds the runner itself — one @Test that starts the HTTP server
-# and blocks forever, which is what `smix runner up --platform android`
-# is running. Demanding connectedDebugAndroidTest of it would not fail;
-# it would never return, and a release script would hang.
-DEFERRED = {
-    ":app": "connectedDebugAndroidTest is the WRONG VERB here, measured in C2: "
-            "the task ran 3m40s at 'Tests 0/1 completed' while the port served "
-            "200, so it does not fail — it never returns, and in ship.sh that "
-            "is a hung release. C3 must pick another form; "
-            "docs/plan-cold/v2.2-android-behavioural-gate.md",
-    ":sdk": "ran clean in C2 (4 tests, 0 failures) — C3 gates it; "
-            "docs/plan-cold/v2.2-android-behavioural-gate.md",
+COMPILE_TASK = "assembleDebugAndroidTest"
+
+# Where the CLI names the test it launches on the device. That string has
+# to match a @Test that exists on disk; when it stops matching, the
+# instrumentation reports `OK (0 tests)` — a silent no-op that reads like
+# success. Nothing checked the pair until this gate.
+SERVER_ENTRY_SOURCE = "crates/smix-cli/src/runner_android.rs"
+
+# ship.sh does not run the device suite inline; it calls this. So ship's
+# coverage is read as ship.sh plus the delegates it names by path. A
+# delegate nobody calls is caught separately.
+SHIP_DELEGATES = {
+    "scripts/release/android-instrumentation-gate.sh": "device selection and the "
+    "deadline do not belong in ship.sh's body, and an adb call inside a script is "
+    "invisible to the PreToolUse guard — so the delegate carries the same "
+    "emulator-only rule itself",
 }
+
+# A DEFERRED table stood here while the previous two checkpoints landed:
+# an androidTest source set no gate ran yet, with a note on where its
+# fate would be decided. Both entries are settled, so the table is gone
+# rather than left empty — an empty one would suggest that "add it to
+# DEFERRED" is a legitimate way to dispose of a new source set. Kind is
+# derived from disk below instead.
 
 # Task names that need no separate demand, and why. Stated rather than
 # silently skipped: a reader must be able to tell "covered elsewhere"
 # from "never considered".
+#
+# NOTHING READS THIS. It documents a judgement rather than enforcing it —
+# the checks below demand specific tasks instead of ruling others out, so
+# no code path consults this table. It is left because the reasoning is
+# worth keeping, and labelled because a constant that looks like a
+# criterion while taking no part in any decision is the exact shape this
+# repository keeps getting caught by.
 EXEMPT = {
     "testReleaseUnitTest": "same src/test/ sources as the debug variant",
     "test": "aggregate over both variants; the debug variant is demanded",
@@ -112,11 +127,50 @@ def read(rel):
     return "\n".join(line for line in lines if not line.lstrip().startswith("#"))
 
 
+TEST_FN = re.compile(r"@Test\b(?:\s*\([^)]*\))?\s*(?:@\w+\s*)*fun\s+(\w+)", re.S)
+PACKAGE = re.compile(r"^\s*package\s+([\w.]+)", re.M)
+CLASS = re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s*)*class\s+(\w+)", re.M)
+
+
+def module_dir(name):
+    return os.path.join(ANDROID, name.lstrip(":").replace(":", os.sep))
+
+
+def test_names(module_name):
+    """Fully-qualified `pkg.Class#fun` for every @Test in androidTest.
+
+    Read from disk so the classification below is evidence rather than a
+    constant someone has to remember to update.
+    """
+    root = os.path.join(module_dir(module_name), "src", "androidTest")
+    names = []
+    for path in glob.glob(os.path.join(root, "**", "*.kt"), recursive=True):
+        with open(path, encoding="utf-8") as f:
+            body = f.read()
+        package = PACKAGE.search(body)
+        klass = CLASS.search(body)
+        if not package or not klass:
+            continue
+        for fn in TEST_FN.findall(body):
+            names.append(f"{package.group(1)}.{klass.group(1)}#{fn}")
+    return names
+
+
+def server_entry():
+    """The test name the CLI launches on the device."""
+    with open(os.path.join(ROOT, SERVER_ENTRY_SOURCE), encoding="utf-8") as f:
+        body = f.read()
+    match = re.search(r'SERVER_ENTRY:\s*&str\s*=\s*"([^"]+)"', body)
+    if not match:
+        return None
+    return match.group(1)
+
+
 def modules():
     """Modules declared in settings.gradle.kts, with their source sets."""
     found = {}
     for name in INCLUDE.findall(read(SETTINGS)):
-        path = os.path.join(ANDROID, name.lstrip(":").replace(":", os.sep))
+        path = module_dir(name)
         found[name] = {
             "unit": os.path.isdir(os.path.join(path, "src", "test")),
             "instrumentation": os.path.isdir(os.path.join(path, "src", "androidTest")),
@@ -164,16 +218,70 @@ def main():
                     f"module is covered, or name this one explicitly."
                 )
 
+        # Compilation is demanded of every androidTest source set,
+        # everywhere. It is the counterpart of the iOS build-for-testing
+        # step: compile the body that ships, without starting a device.
         if sets["instrumentation"]:
-            missing = [
-                g for g in GATES
-                if not covers(gates[g], module, INSTRUMENTATION_TASK)
-            ]
-            if missing and module not in DEFERRED:
+            missing = [g for g in GATES if not covers(gates[g], module, COMPILE_TASK)]
+            if missing:
                 failures.append(
-                    f"{module} has src/androidTest/ that no gate runs, and no "
-                    f"DEFERRED entry says when it will. Add it to DEFERRED with "
-                    f"the checkpoint, or wire {module}:{INSTRUMENTATION_TASK}."
+                    f"{module} has src/androidTest/ that {', '.join(missing)} never "
+                    f"compiles. Add the bare {COMPILE_TASK} there — :app's source "
+                    f"set is the runner body users receive, and it went uncompiled "
+                    f"by any gate until this check existed."
+                )
+
+    # --- kind, derived from disk --------------------------------------
+    entry = server_entry()
+    if entry is None:
+        failures.append(
+            f"{SERVER_ENTRY_SOURCE}: no SERVER_ENTRY constant found — this scan "
+            f"cannot tell the runner body from an assertion suite without it."
+        )
+    else:
+        by_module = {m: test_names(m) for m, s in found.items() if s["instrumentation"]}
+        hosts = [m for m, names in by_module.items() if entry in names]
+        if len(hosts) != 1:
+            failures.append(
+                f"SERVER_ENTRY is {entry!r} but that names a @Test in {len(hosts)} "
+                f"module(s) {hosts}. It must match exactly one on disk: when it "
+                f"matches none, the device launch reports 'OK (0 tests)' and reads "
+                f"like a pass. Checked in {SERVER_ENTRY_SOURCE}."
+            )
+        else:
+            runner_body = hosts[0]
+            if len(by_module[runner_body]) != 1:
+                failures.append(
+                    f"{runner_body} is the runner body (it holds SERVER_ENTRY) but "
+                    f"declares {len(by_module[runner_body])} @Test: "
+                    f"{by_module[runner_body]}. It must hold exactly that one. An "
+                    f"assertion parked here invites someone to demand a connected "
+                    f"task of this module — which does not fail, it never returns."
+                )
+            for module, names in sorted(by_module.items()):
+                if module == runner_body:
+                    continue
+                if not names:
+                    failures.append(
+                        f"{module} has src/androidTest/ with no @Test in it — an "
+                        f"empty source set is unfinished work, not a kind."
+                    )
+                    continue
+                ship_text = gates["scripts/release/ship.sh"] + "\n".join(
+                    read(d) for d in SHIP_DELEGATES if os.path.isfile(os.path.join(ROOT, d))
+                )
+                if not covers(ship_text, module, INSTRUMENTATION_TASK):
+                    failures.append(
+                        f"{module} holds {len(names)} assertion(s) that the release "
+                        f"path never runs on a device. Wire "
+                        f"{module}:{INSTRUMENTATION_TASK} into scripts/release/ship.sh "
+                        f"or a delegate it names."
+                    )
+        for delegate in SHIP_DELEGATES:
+            if delegate not in gates["scripts/release/ship.sh"]:
+                failures.append(
+                    f"{delegate} is treated as part of ship's coverage but ship.sh "
+                    f"does not call it — the coverage would be imaginary."
                 )
 
     for gate in GATES:
@@ -189,8 +297,26 @@ def main():
             print(f"  - {failure}", file=sys.stderr)
         return 1
 
-    deferred = ", ".join(f"{m}:{INSTRUMENTATION_TASK}" for m in sorted(DEFERRED))
-    print(f"android-gate-scan: clean — {len(found)} modules; deferred: {deferred}")
+    # The downgrade is named on every run. CI compiles and does not
+    # execute; if that only lived in a plan document, a green CI would
+    # keep reading as "Android behaviour is covered".
+    assertions = sorted(
+        m
+        for m, s in found.items()
+        if s["instrumentation"] and entry not in test_names(m)
+    )
+    detail = "; ".join(f"{m} ({len(test_names(m))} tests)" for m in assertions)
+    body = next(
+        (m for m, s in found.items() if s["instrumentation"] and entry in test_names(m)),
+        "?",
+    )
+    print(
+        f"android-gate-scan: clean — {len(found)} modules; "
+        f"androidTest compile: preflight+CI+ship; "
+        f"instrumentation: ship only — {detail} on a pinned emulator; "
+        f"CI has no emulator; "
+        f"{body} is the runner body ({entry}), never a connected task"
+    )
     return 0
 
 
