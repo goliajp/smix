@@ -80,15 +80,20 @@ log "npm/smix-rn typecheck + vitest"
     > /tmp/smix-ship-ts-test.log 2>&1 \
   || fail "TS SDK tests FAILED — see /tmp/smix-ship-ts-test.log"
 
-# --- Kotlin SDK unit tests --------------------------------------------
-# Compiles the generated Kotlin bindings AND runs the sdk unit suite.
+# --- Android unit tests ------------------------------------------------
+# Compiles the generated Kotlin bindings AND runs the unit suites.
 # The bindings previously first compiled during `gradlew :sdk:publish` —
 # publish-time was the first compile, which is exactly how the
 # DriveError field/Throwable.message collision reached a release branch.
-log "android sdk unit tests (compiles kotlin bindings)"
-( cd "$ROOT/android-runner" && ./gradlew :sdk:testDebugUnitTest --console=plain ) \
+#
+# The task name is bare rather than `:sdk:`-qualified because it used to
+# be qualified, and the app module's eight test files were consequently
+# run by nothing at all — including the ones written to cover the empty
+# set_target_bundle_id and the placeholder package in the view-id lookup.
+log "android unit tests (sdk + app; compiles kotlin bindings)"
+( cd "$ROOT/android-runner" && ./gradlew testDebugUnitTest --console=plain ) \
     > /tmp/smix-ship-kotlin-test.log 2>&1 \
-  || fail "Kotlin sdk tests FAILED — see /tmp/smix-ship-kotlin-test.log"
+  || fail "Android unit tests FAILED — see /tmp/smix-ship-kotlin-test.log"
 
 # --- route conformance ------------------------------------------------
 # Derives the served-route list from both runner sources and sweeps every
@@ -97,6 +102,15 @@ log "android sdk unit tests (compiles kotlin bindings)"
 log "route conformance"
 python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&1 \
   || fail "route conformance FAILED — see /tmp/smix-ship-routes.log"
+
+# --- android gate scan -------------------------------------------------
+# Re-derives the Android modules and checks each one's test tasks are run
+# by preflight, CI and this script. The app module's unit tests were
+# outside all three for the whole of v1 and v2, which is how a header
+# nobody read and a placeholder package both shipped.
+log "android gate scan"
+python3 "$ROOT/scripts/dev/android-gate-scan.py" > /tmp/smix-ship-android-gate.log 2>&1 \
+  || fail "android gate scan FAILED — an Android test task is outside the gates (see /tmp/smix-ship-android-gate.log)"
 
 # --- corpus gate (real sim) -------------------------------------------
 # Runs the bootstrap corpus end-to-end on a simulator. Device selection
