@@ -4,13 +4,24 @@
 // through Kotlin SDK + uniffi.smix.resolveSelector + writes per-fixture
 // JSON result to /sdcard/Android/data/<pkg>/cache/conformance-<id>.json.
 //
-// Output then pulled to host via scripts/sdk/pull-android-conformance.sh,
-// fed into scripts/sdk/run-cross-binary-harness.sh as the Kotlin 4th
-// backend for byte-identical diff against Rust + Swift + TS.
+// The host side of that comparison is NOT built. This comment used to
+// name scripts/sdk/pull-android-conformance.sh for retrieving the output
+// and scripts/sdk/sync-conformance-fixtures-to-android-assets.sh for
+// keeping the assets in step; neither has ever existed. scripts/sdk/
+// holds build-android-aar.sh, build-xcframework.sh, regenerate-bindings.sh
+// and run-cross-binary-harness.sh, and the last of those has no Kotlin
+// backend wired into it.
 //
-// Fixtures must be bundled as Android assets at android-runner/sdk/src/
-// androidTest/assets/conformance/*.json (mirror of crates/smix-core-conformance/
-// fixtures/). Sync via scripts/sdk/sync-conformance-fixtures-to-android-assets.sh.
+// So this emits and nothing reads it, which is why the class is documented
+// below as always passing. Until the pull and the diff exist, a green run
+// means the fixtures were processed without throwing — not that Kotlin
+// agrees byte-for-byte with Rust and Swift.
+//
+// Fixtures are bundled as Android assets at android-runner/sdk/src/
+// androidTest/assets/conformance/*.json, mirroring
+// crates/smix-core-conformance/fixtures/. Both hold the same 24 files
+// (verified by diff; the assets side additionally has a .gitkeep), and
+// keeping them in step is currently a manual copy.
 
 package dev.smix.sdk
 

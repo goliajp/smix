@@ -67,9 +67,12 @@ INSTRUMENTATION_TASK = "connectedDebugAndroidTest"
 # is running. Demanding connectedDebugAndroidTest of it would not fail;
 # it would never return, and a release script would hang.
 DEFERRED = {
-    ":app": "runner host, not a suite — whether it belongs in a gate at all "
-            "is C3's call; docs/plan-cold/v2.2-android-behavioural-gate.md",
-    ":sdk": "C2 runs it, C3 gates it — "
+    ":app": "connectedDebugAndroidTest is the WRONG VERB here, measured in C2: "
+            "the task ran 3m40s at 'Tests 0/1 completed' while the port served "
+            "200, so it does not fail — it never returns, and in ship.sh that "
+            "is a hung release. C3 must pick another form; "
+            "docs/plan-cold/v2.2-android-behavioural-gate.md",
+    ":sdk": "ran clean in C2 (4 tests, 0 failures) — C3 gates it; "
             "docs/plan-cold/v2.2-android-behavioural-gate.md",
 }
 
