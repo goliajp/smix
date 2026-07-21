@@ -80,7 +80,7 @@ log "npm/smix-rn typecheck + vitest"
     > /tmp/smix-ship-ts-test.log 2>&1 \
   || fail "TS SDK tests FAILED — see /tmp/smix-ship-ts-test.log"
 
-# --- Android unit tests ------------------------------------------------
+# --- Android unit tests + androidTest compile --------------------------
 # Compiles the generated Kotlin bindings AND runs the unit suites.
 # The bindings previously first compiled during `gradlew :sdk:publish` —
 # publish-time was the first compile, which is exactly how the
@@ -90,10 +90,32 @@ log "npm/smix-rn typecheck + vitest"
 # be qualified, and the app module's eight test files were consequently
 # run by nothing at all — including the ones written to cover the empty
 # set_target_bundle_id and the placeholder package in the view-id lookup.
-log "android unit tests (sdk + app; compiles kotlin bindings)"
-( cd "$ROOT/android-runner" && ./gradlew testDebugUnitTest --console=plain ) \
+#
+# assembleDebugAndroidTest is the Android counterpart of the
+# `xcodebuild build-for-testing` step above: it compiles the runner body
+# that ships to users without starting a device.
+#
+# :app's connectedDebugAndroidTest is NOT here and will not be. It was
+# measured sitting at "Tests 0/1 completed" for three minutes forty
+# while /health answered 200: it does not fail, it never returns, and in
+# a release script that is a hang. :sdk's runs below, via the delegate.
+log "android unit tests + androidTest compile (sdk + app; compiles kotlin bindings)"
+( cd "$ROOT/android-runner" && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain ) \
     > /tmp/smix-ship-kotlin-test.log 2>&1 \
-  || fail "Android unit tests FAILED — see /tmp/smix-ship-kotlin-test.log"
+  || fail "Android unit tests / androidTest compile FAILED — see /tmp/smix-ship-kotlin-test.log"
+
+# --- android instrumentation (device) ----------------------------------
+# The :sdk assertion suite on a pinned emulator. Placed early — before
+# fuzz, clippy, semver and anything that publishes — so a missing
+# emulator costs seconds rather than being discovered after the long
+# work. Device selection and the deadline live in the delegate, not
+# here: keeping them inline would put an adb call in a script the
+# PreToolUse guard can no longer read, and the delegate carries the same
+# emulator-only rule the guard enforces.
+log "android instrumentation (device)"
+bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
+  || fail "android instrumentation gate FAILED — see the verdict above; start an emulator with \
+\"\$ANDROID_HOME/emulator/emulator\" -avd sim-smix-android-01 -port 5554 -no-snapshot-save &"
 
 # --- route conformance ------------------------------------------------
 # Derives the served-route list from both runner sources and sweeps every
