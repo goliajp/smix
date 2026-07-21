@@ -66,6 +66,11 @@ EXCLUSIONS = [
     ("docs/audit-ledger.md", "internal defect accounting — the language it is "
                              "worked in, and the circled numerals are its join "
                              "key to the decision log, not stray version tags"),
+    ("docs/scope-evidence.md", "internal scope accounting, same language and "
+                               "same reason as the defect ledger"),
+    ("docs/scope-decisions-pending.md", "decision material awaiting the "
+                                        "owner's call; it quotes the scope "
+                                        "text it is about, tags included"),
     (".gitignore", "names the consumer docs it ignores; the rule goes when "
                    "they do"),
 ]
