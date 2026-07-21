@@ -55,8 +55,20 @@ else
     cargo test -j 4 $ARGS
 fi
 
+echo "--- android unit tests"
+# Unconditional, unlike the crate steps above. Those narrow by git diff
+# because a whole-workspace clippy is too slow to be a habit; this is a
+# second or two against a warm daemon, and narrowing it by changes under
+# android-runner/ would reproduce the hole it was added to close. The
+# three defects this gate exists for were cross-language contract breaks
+# — a header sent from Rust that the Kotlin side never read — so the
+# edit that breaks the Android assertion lands in crates/.
+#
+# Bare task name: a module added later is inside the gate on arrival.
+( cd android-runner && ./gradlew testDebugUnitTest --console=plain )
+
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan; do
     python3 "scripts/dev/$gate.py"
 done
 
