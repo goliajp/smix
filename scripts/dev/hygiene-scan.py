@@ -63,6 +63,9 @@ EXCLUSIONS = [
                           "plan-hot.md are structural (that file exists only "
                           "between checkpoints)"),
     (".claude/rule/", "project rule cards, same charter and same language"),
+    ("docs/audit-ledger.md", "internal defect accounting — the language it is "
+                             "worked in, and the circled numerals are its join "
+                             "key to the decision log, not stray version tags"),
     (".gitignore", "names the consumer docs it ignores; the rule goes when "
                    "they do"),
 ]
