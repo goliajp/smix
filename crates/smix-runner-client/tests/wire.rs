@@ -638,3 +638,50 @@ async fn a_200_ok_false_body_is_an_error_not_a_success() {
         "refusal must say what happened: {err}"
     );
 }
+
+// The webview bridge port stopped being a literal.
+//
+// `webview_eval` reaches an in-app bridge on the simulator's shared
+// loopback — that host is the design, recorded when the Android half
+// moved to the runner's proxy. The port was not: 28080 was written into
+// the URL with nothing anywhere letting a user change it, so a runner
+// on any other port could not be reached at all.
+//
+// Parsing takes an Option<&str> rather than reading the environment, so
+// these run without mutating process state. A suite that sets env vars
+// to test them is a suite that fails when run in parallel with itself.
+
+#[test]
+fn webview_bridge_port_defaults_to_28080() {
+    assert_eq!(
+        smix_runner_client::webview_bridge_port_from(None),
+        smix_runner_client::DEFAULT_WEBVIEW_BRIDGE_PORT
+    );
+}
+
+#[test]
+fn webview_bridge_port_reads_override() {
+    assert_eq!(
+        smix_runner_client::webview_bridge_port_from(Some("29999")),
+        29999
+    );
+}
+
+/// Unparseable falls back rather than failing the call: the same shape
+/// `runner_port_from_env` already uses for SMIX_RUNNER_PORT. Pinned here
+/// so it reads as the convention it is, not as an accident.
+#[test]
+fn webview_bridge_port_ignores_unparseable() {
+    assert_eq!(
+        smix_runner_client::webview_bridge_port_from(Some("nonsense")),
+        smix_runner_client::DEFAULT_WEBVIEW_BRIDGE_PORT
+    );
+}
+
+#[test]
+fn webview_bridge_url_uses_given_port() {
+    assert_eq!(
+        smix_runner_client::webview_bridge_url(29999),
+        "http://127.0.0.1:29999/eval"
+    );
+}
