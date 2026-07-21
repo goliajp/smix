@@ -176,6 +176,15 @@ log "workflow scan"
 python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 \
   || fail "workflow scan FAILED — see /tmp/smix-ship-workflow.log"
 
+# --- scope promise scan ------------------------------------------------
+# Every promise in the scope file still matches what exists. `--stable`
+# was promised, never built, never withdrawn, and agreed with by four
+# documents — three of them gitignored — for seven months. A shipped
+# promise may not cite a document as evidence it was implemented.
+log "scope promise scan"
+python3 "$ROOT/scripts/dev/scope-promise-scan.py" > /tmp/smix-ship-scope.log 2>&1 \
+  || fail "scope promise scan FAILED — the scope file and the tree disagree (see /tmp/smix-ship-scope.log)"
+
 # --- corpus gate (real sim) -------------------------------------------
 # Runs the bootstrap corpus end-to-end on a simulator. Device selection
 # mirrors the smoke: explicit env first, else the first booted sim.
