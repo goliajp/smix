@@ -54,6 +54,17 @@ feed $ALLOW "adb logcat -d"
 feed $ALLOW "cargo test -p smix-driver"
 feed $ALLOW "git status"
 
+# --- heredoc bodies: data vs code ---
+# Writing prose that mentions an install command is not running one.
+# This shape is what refused an append to the decision log.
+feed $ALLOW "$(printf 'cat >> docs/v2.md <<%s\nadb install -r app.apk fans out to every device\nEOF\n' "'EOF'")"
+feed $ALLOW "$(printf 'tee /tmp/notes <<%s\nadb -s R5CT52DF07D install app.apk\nNOTE\n' "'NOTE'")"
+# ...but a shell reading its body IS running it, so the body still counts.
+feed $BLOCK "$(printf 'bash <<%s\nadb install -r app.apk\nEOF\n' "'EOF'")"
+feed $BLOCK "$(printf 'python3 - <<%s\n# adb install -r app.apk\nPY\n' "'PY'")"
+# The line opening an inert heredoc is itself still judged.
+feed $BLOCK "$(printf 'adb install -r app.apk && cat <<%s\nharmless\nEOF\n' "'EOF'")"
+
 if [ "$fails" -eq 0 ]; then
   echo "adb-guard: all cases pass"
   exit 0

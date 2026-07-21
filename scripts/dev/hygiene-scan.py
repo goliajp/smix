@@ -58,6 +58,11 @@ EXCLUSIONS = [
     ("docs/plan-history/", "archived plans, kept as written"),
     ("docs/dogfood-archive/", "archived consumer correspondence, kept as written"),
     (".claude/rfcs/", "design records written per consumer; editorial pass"),
+    (".claude/CLAUDE.md", "the development charter — written in the language "
+                          "its readers work in, and its references to "
+                          "plan-hot.md are structural (that file exists only "
+                          "between checkpoints)"),
+    (".claude/rule/", "project rule cards, same charter and same language"),
     (".gitignore", "names the consumer docs it ignores; the rule goes when "
                    "they do"),
 ]
@@ -96,7 +101,13 @@ POINTER_EXTS = (".rs", ".swift", ".kt", ".md")
 # plans under "plan-history/" are read the same way: each was written
 # pointing at the hot plan it would become, or the next segment's, and is
 # kept as written — the noise scan already excludes it for the same reason.
+#
+# CLAUDE.md sits one level above those: it is the spec the planning docs
+# are written against, so it names `docs/plan-hot.md` (which exists only
+# between checkpoints, by design) and `plan-cold/v0.X.md` (a shape, not a
+# path). Reading either as a citation gets the direction backwards.
 POINTER_SKIP = (
+    ".claude/CLAUDE.md",
     "docs/roadmap.md",
     "docs/plan-hot.md",
     "docs/v2.md",
