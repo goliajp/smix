@@ -1,0 +1,328 @@
+# plan-hot — v2.3 到 C1:14 条待办的状态变成可执行的判据,而不是一段读起来像事实的散文
+
+## 目标 checkpoint
+
+C1:`docs/v2.md` 2026-07-19 那条「待办(按严重度,未修)」里的 **14 条,每一条都有一行带判据的记账**,
+判据是**机器每次都会重新求值**的 —— 不是"我核实过了"的记录,是"现在还成不成立"的检查。
+
+做完的样子:
+
+- 新文件 `docs/audit-ledger.md`:14 行,每行 = 缺陷一句话 + 状态(`fixed` / `present` / `moot`)
+  + **可执行判据**(`at <仓库路径>:<行号> "<字面量>"` 或 `none "<字面量>" in <glob>`)
+  + 可达性/理由 + 修它要动哪几层 + 核验日。
+- 新闸门 `scripts/dev/audit-ledger-scan.py`:每次运行**重新求值全部 14 条判据**,并把 ledger 的
+  行号集合与 `docs/v2.md` 那条待办里的圈号集合对账。接进 preflight / CI / ship 三处。
+- 五次红向注入当场演示它会因为什么变红。
+- **产品代码零改动** —— 这一条是机器判定的(见验收第 5 条),不是承诺。
+
+**这一段要消灭的东西**:一份清单在写下时是真的,三天后其中 3/5 已经不真,而**没有任何东西在盯着它**。
+再放一份没人验的清单进去,就是把同一个物种养第二遍。所以 C1 的产出不是"一张更准的表",
+是**一张会自己报警的表**。
+
+---
+
+## 前置条件
+
+```bash
+cd /Users/doracawl/workspace/goliajp/smix
+
+git status --short          # 期望:只有 `?? docs/plan-cold/v2.3-release-truth.md` 与本文件
+                            #        (冷计划与热计划都是本段刚写的,尚未提交)
+pgrep -fl 'cargo|xcodebuild|gradle'   # 进 S1 前先看用户是否在编译(见下方记账)
+bash scripts/dev/preflight.sh         # 期望末行:preflight: clean
+```
+
+**热化前已完成的本机探测(后面按它写,不按冷计划的假设写)**:
+
+- **preflight 在热化时没有跑** —— 探测发现另一个会话正在 `goliajp/kevy` 跑
+  `cargo check --workspace --all-targets`(pid 44989)。preflight 会对 4 个 crate 跑 clippy + test
+  外加 gradle,与用户的活动 build 抢核。冷计划的入口条件因此**只验到 `git status`**(干净,除两份新计划)。
+  **S1 起手第一件事是重跑 `pgrep` 与 preflight**,不要把这条当已完成。
+
+- `git diff --name-only origin/develop...HEAD -- 'crates/*'` = **7 个文件 / 4 个 crate**
+  (`smix-cli` / `smix-driver` / `smix-runner-sources` / `smix-simctl`)。所以 preflight
+  **不会**打印 "no crate changes",它会真跑这 4 个 crate 的 fmt/clippy/test —— 验收里不能拿那句话
+  当"没碰产品代码"的证据,得另立判据(见验收第 5 条)。
+- `docs/v2.md` **第 362 行**是那条待办,`待办(按严重度,未修)` 在全文件**只此一处**;该行含**恰好 14 个**
+  圈号 `①..⑭`。但圈号在全文件另有 **18 行**在用(矛盾①、v2-break 账①②③…),所以闸门**必须**先按锚句
+  定位到唯一那一行再取圈号,**不能**全文件扫 —— 这是承重的,写死在闸门里。
+- **iOS runner 的 Swift 源在仓里是 `swift-bridge/Sources/SmixRunnerCore/`**;
+  `~/.local/share/smix/runner/` 是 `smix runner install` 装出来的**派生副本**。上一轮抽验里 ④⑤
+  两条钉的是派生副本的路径 —— **本段一律改钉仓库路径**,理由见 S2 的判据规则第 4 条。
+- 抽验的 ⑤ 在仓库副本里同样成立:`swift-bridge/Sources/SmixRunnerCore/TapRoute.swift:80`
+  即 `guard let text = rawText as? String else { throw DecodeError.wrongType("selector.text not string") }`。
+- **两条抽验结论需要在 S1 重新收窄,不能照抄**:
+  - ②:`crates/smix-runner-client/src/lib.rs:1330` 的硬编码**确实还在**,但
+    `crates/smix-driver/src/android.rs:605-606` 已经改调 `webview_eval_via_runner`(走 runner 的
+    `/webview-eval` 代理)。原待办说的是"Android 上路径端口双错",那一半可能已经不成立,
+    剩下的是 iOS 直连 app 内 bridge 的那条路。**"字面量还在"不等于"缺陷还可达"** —— S1 必须走完调用链。
+  - ⑤:07-19 那条记账说的修法是"**上 wire 前拒绝** + 4xx 不再重试"(Rust 侧),不是"Swift 侧补解析"。
+    所以原待办的两个半句(Swift 只解 text / 非 text 选择器烧 5s)状态可能不同。**拆行处置**,见 S2 的
+    `⑤a` / `⑤b` 规则。
+
+---
+
+## 步骤(线性,无分叉)
+
+### S1. ⑥-⑭ 逐条重验到与抽验同一标准,⑤② 两条收窄,产出 14 条的(状态,判据)
+
+**这一步不写任何新文件,不改任何代码**(冷计划「TDD 要点」明写 C1 是纯核实;红绿三段式由 S2/S3
+的闸门承担 —— 不给纯核实步骤编一个假的红相)。
+
+**判据规则(执行期不得再判断,以下三条是全部,没有第四类)**:
+
+1. **`fixed`** —— 判据必须钉在**实现修复的那一行代码**上,并且「可达性」栏要写清**缺陷路径现在为什么
+   走不到**。仅有注释说修了 = 不成立(`comments_are_claims_code_is_truth`:注释是断言,代码才是事实)。
+   仅有测试通过也不成立 —— 测试可能测的是另一条路(07-19 记账里"测试自身的假"一整段就是这个)。
+2. **`present`** —— 判据钉在缺陷代码行,「可达性」栏必须给出**从用户够得到的入口到这一行的调用链**,
+   一跳一跳点名(yaml verb / CLI flag / SDK 方法 / MCP tool 是入口)。**够不到就不是 present**:
+   若入口已被移除、或那段代码只剩测试在调,状态是 `moot` 而不是 `present`。
+3. **`moot`(不再适用)** —— 待办描述所依赖的构造已不在树里。判据必须是 `none` 形式
+   (那个字面量在指定范围内 0 命中),「理由」栏写清描述为什么不再适用。
+
+**拆行规则**:一条待办含两个半句、而两半状态不同的,拆成 `⑤a` / `⑤b` 两行。编号写作圈号 + 一个
+ASCII 小写字母;闸门做覆盖对账时按**去掉尾部字母的前缀**匹配,所以拆行不破坏与 v2.md 的一一对应。
+**只在两半状态真的不同时才拆** —— 状态相同就一行写完,拆行不是为了显得细。
+
+**修法体量**栏(冷计划「已知风险」第二条要的):`present` 行必须填,取值是**要动的层**,
+词表固定为 `parser` / `rust-client` / `driver` / `sdk` / `mcp` / `cli` / `swift-runner` /
+`kotlin-runner` / `docs`,多层用 `+` 连。它是给 C3 排序用的,不是估工时。
+
+**14 条的重验清单与已知起点**(起点是热化时 grep 到的,S1 要从这里往下走完调用链,不是照抄):
+
+| # | 待办原文摘要 | 热化时的起点 | S1 要回答的问题 |
+|---|---|---|---|
+| ① | `localizedText` wire 键三端不一致 | `crates/smix-selector/src/lib.rs:387` 有 `rename`/`alias` | 两个 SDK 发的 camelCase 现在真能被解出来吗(不是只看 rename 在不在) |
+| ② | `webview_eval` 硬编码 `127.0.0.1:28080/eval` | `crates/smix-runner-client/src/lib.rs:1330`;`crates/smix-driver/src/android.rs:605` 已改走代理 | Android 半是否已 `fixed`;iOS 半是设计如此(→ `moot`)还是仍是缺陷(→ `present`) |
+| ③ | MCP `ocrText` 恒失败 / `assert_not_visible` 恒假绿 | `crates/smix-mcp/src/main.rs:162` 起 `ocr_text_of` | find / tap / assert 三处都分发了吗,还是只有一处 |
+| ④ | iOS runner 无 `/input-text` | `swift-bridge/Sources/SmixRunnerCore/InputTextRoute.swift`(**仓库路径,不是 ~/.local**) | 路由注册进 server 了吗(文件存在 ≠ 接线) |
+| ⑤ | `/tap` 只解 `selector.text`;非 text 选择器 400 后烧 5s | Swift:`TapRoute.swift:80`;Rust 侧的"上 wire 前拒绝 + 4xx 不重试" | 拆 `⑤a`(Swift 解析面)/ `⑤b`(5s 烧掉的那个后果) |
+| ⑥ | iOS pressKey 方向键 404,键映射仅 5 键 | `swift-bridge/Sources/SmixSDK/App.swift:251`;`SmixCoreFFIBindings/Generated/smix.swift:945` 注释称支持 `arrowUp` | runner 侧真正做映射的那张表在哪个文件,现在几个键 |
+| ⑦ | `--retry` errorClass 映射与 adapter 退出码表不符 | `crates/smix-cli/src/main.rs:1634` 的 `match code`;`crates/smix-adapter-maestro/src/entry.rs:155` `run_flow_code` | 两张表逐码对齐了吗(2=parse/3=SDK/4=unknown verb/5=IO/6=unreachable) |
+| ⑧ | `smix run` 不读注册表 `runnerPort` | `crates/smix-cli/src/main.rs:611` 是 `runner up` 的文档;`smix run` 的端口来源另查 | `run` 这条路径上 sims.json 的 `runnerPort` 参与决策了吗 |
+| ⑨ | `annotate` / `authoring suggest` 帮助示例与实现不符 | `crates/smix-annotate`、`crates/smix-authoring-ir` + `main.rs` 的 clap 帮助文本 | 帮助里的示例现在能原样跑通吗 |
+| ⑩ | `smix describe` 承诺字段恒空 | `crates/smix-cli/src/act.rs:236-242` `cmd_describe` | 承诺的哪几个字段、现在还空吗 |
+| ⑪ | setPermissions iOS 无映射权限静默 Ok | `crates/smix-sdk/src/ios_device.rs:194` 已有 "no iOS mapping — skipped" 文案 | 这行真的会被打出来吗,还是只在一条不走的分支里 |
+| ⑫ | `swipe: {direction:}` maestro 形态缺口 | `crates/smix-adapter-maestro/src/parser.rs:1156` 起 `parse_swipe` 已认 `direction` | 四个方向的脱糖坐标与 maestro 一致吗;`start:/end:` 那一半呢 |
+| ⑬ | MCP:SMIX_UDID 要求不一致 / stop_app / assert_visible 守卫 | `crates/smix-mcp/src/main.rs` 13 个 tool 描述均含 SMIX_UDID;307 行称 already-stopped 是 no-op 成功 | 三个子项分别什么状态(07-19 已判第三子项为**误报**,要复核这个判定本身) |
+| ⑭ | `exit_code_to_u8` 解析 Debug 字符串,失败映射为 0 | `crates/smix-adapter-maestro/src/entry.rs:148/155`;`exit_code_to_u8` 全仓已无命中 | 是 `fixed` 还是 `moot`(函数整个没了)—— 两者判据形式不同 |
+
+**过程约束**:
+
+- 否定式结论(X 不存在 / 没人调它)在 **grep 模式够宽之前不成立** —— 07-21 那次
+  `impl FlowAttemptShape` 空结果的教训:调用方写的是带路径前缀的 `impl smix_simctl::FlowAttemptShape`。
+  凡要写 `moot` 或"够不到",至少换两种模式(带前缀 / 只取符号名)各查一次。
+- **发现新缺陷只记录,不修**(冷计划已知风险第一条)。新缺陷记在本文件 S1 记账段的「本段新发现」小节,
+  **不进 ledger**(ledger 的行集合由 v2.md 那条待办的圈号定义,擅自加行会让覆盖检查失去锚)。
+  它们的去处由 C3/C4 时用户定夺。
+- **不起模拟器 / emulator**。任何"要跑一下才知道"的条目,状态一律记 `present` 并在可达性栏写明
+  "静态可达,设备复验留 C3" —— **不允许**因为没跑就记 `fixed`。
+
+**记账(S1 完成后把 14 行的三元组写回此处,原样进 plan-history 作审计痕迹)**
+
+> *(执行期填写:每行 `# | 状态 | 判据 | 可达性/理由 | 层`;外加「本段新发现」小节)*
+
+**重构**
+
+- 无。本步只产生事实,不改任何文件。
+
+---
+
+### S2. 闸门先行:`audit-ledger-scan.py` 在 ledger 还不存在时必须是红的
+
+**为什么闸门写在表之前**:表是被检查的对象,闸门是检查。先有表再补闸门,闸门就会被写成"能让这张表过"
+的形状 —— 那正是"一致 ≠ 为真"(07-19 站点那条教训)。先写闸门、看它对着空气变红,再让表去满足它。
+
+**红(判据先于实现)**
+
+```bash
+python3 scripts/dev/audit-ledger-scan.py; echo "exit=$?"
+```
+
+期望 **exit=1**,且失败消息里同时出现两条:
+- `docs/audit-ledger.md` 不存在;
+- 本脚本未被 `scripts/dev/preflight.sh` / `.github/workflows/ci.yml` / `scripts/release/ship.sh` 调用。
+
+第二条是自指检查:**adb-guard 就是死在这里的 —— 脚本提交了,让它运行的那一行没提交**
+(`workflow-scan.py` 检查 3 的同一条理由)。所以它在 S2 阶段就得是红的,不能等接完线才第一次跑。
+
+**绿(实现)**
+
+- 新文件:`scripts/dev/audit-ledger-scan.py`
+- **docstring 按本仓惯例写它防的是哪一次事故**:2026-07-22 的自我验收抽验 5 条,3 条已修却仍标"未修",
+  9 条状态未知;那份清单是"v2 还差什么"的主要依据。**写下时为真、后来不为真、没有任何东西盯着** ——
+  这是本周反复出现的物种在记账层的版本。docstring 里同时写明**它检查不到什么**:
+  它验证的是"引文还成立",不是"引文的意思和你写的一样";闸门校验内部一致性时,外部事实仍可能相反。
+
+**ledger 的行文法(闸门与写表两边都按这一份,不在执行期另议)**
+
+`docs/audit-ledger.md` 里恰好一张表,表头固定:
+
+```
+| # | 缺陷 | 状态 | 判据 | 可达性 / 理由 | 层 | 核验日 |
+```
+
+判据只有两种形式,写在反引号里:
+
+- `` `at <仓库相对路径>:<行号> "<字面量>"` `` —— 该字面量必须**出现在该文件的该行**
+- `` `none "<字面量>" in <glob>` `` —— 该字面量在该 glob 下**零命中**
+
+示例行(① 与 ②a 的形状,实际内容以 S1 为准):
+
+```
+| ① | localizedText wire 键三端不一致,两 SDK 的该选择器全 verb 死 | fixed | `at crates/smix-selector/src/lib.rs:387 "rename = \"localizedText\""` | 三端现在同发 camelCase,旧 snake 拼写走 alias,两条都进得来 | — | 2026-07-22 |
+```
+
+**闸门的检查项(七条,逐条给出它防的是什么)**
+
+1. **表结构**:恰好一张表、七列、状态 ∈ `{fixed, present, moot}`、核验日是 ISO 日期且不在未来。
+   封闭词表的理由:`done` / `partial` / `大概修了` 这类词一旦允许,状态栏就退回散文。
+2. **覆盖对账**:在 `docs/v2.md` 里按锚句 `待办(按严重度,未修)` 定位**唯一**一行(0 行或 ≥2 行都判红),
+   取该行的圈号集合;ledger 的 `#` 列去掉尾部 ASCII 字母后必须**恰好覆盖**这个集合,不多不少。
+   **不写死 14** —— 将来那条待办若被补记第 15 项,ledger 当场变红要求补行(`android-gate-scan`
+   把期望值从磁盘导出的同一手法)。
+3. **行数下限**:少于 10 行视为**表解析坏了**而不是清单变短了,直接红。
+   一个把表读成 0 行的正则错误,会让后面每一条检查空洞地通过(`MIN_MODULES` 的同一条理由)。
+4. **判据可执行**:逐条求值。`at` 形式:文件必须存在、字面量必须**在该行**;失败时
+   **打印该字面量在该文件里的真实行号**,让修法是一次改数字而不是一次重新调查;一处都没有时明说
+   "字面量已不在该文件 —— 这一行的状态很可能已经变了,重新核实,并把核验日改成今天"。
+5. **引文必须是 git 追踪的路径**:`git ls-files` 里没有的路径直接红。理由是承重的 ——
+   上一轮抽验里 ④⑤ 钉的是 `~/.local/share/smix/runner/`,那是 `smix runner install` 装出来的派生副本:
+   clone 之后不存在,且**可能与树不同步**(v1.0.10 整版就是在修这个)。钉派生副本 = 钉一份可能撒谎的证据。
+6. **判据不得钉在注释行**:该行 strip 后以 `//`、`/*`、`* `、`<!--`、`# `(井号加空格)开头的,判红。
+   理由:`comments_are_claims_code_is_truth`。**`#[` 不算注释**(Rust 属性行,① 的证据正是这种形状)——
+   这条例外写进代码注释,否则下一个人会"顺手修正"这个判断。
+7. **自指**:本脚本必须被 preflight / CI / ship **三处**调用。三处不是一处:preflight 是本地习惯,
+   CI 是分支,ship 是发布;单缺 ship 那一处,漏的正好是通向用户的那条路。
+
+**另有两条按状态分的必填检查**(它们把"判据规则"的三条钉成机器可判):
+
+- `present` 行:「可达性」与「层」两栏都非空,`层` 的每个词必须在固定词表里
+- `fixed` / `moot` 行:「可达性 / 理由」非空,`层` 必须是 `—`
+
+**不做的检查,以及为什么**(写进 docstring —— 一个说不出自己不查什么的闸门会被读成全知):
+
+- **不查"引文所在文件最后一次提交是否晚于核验日"**。它能多抓一种极窄的情形(改动没挪动引文行却改了它的
+  意思),代价是任何无关改动都让整表变红,而人会学会无脑改日期 —— 训练出的恰好是本段要消灭的那个反射。
+- **不查"状态词是否与判据的语义相符"**。闸门看不出一条引文钉的是修复还是缺陷。这是 §13 意义上的
+  诚实标注,不是遗漏:它守的是"引文还成立",判断仍需人做。
+
+**重构**
+
+- 不把这条检查并进 `hygiene-scan` 或 `fact-scan`。三者问的是不同的问题(读起来像内部吗 / 对外说的是真的吗 /
+  自家记账还成立吗),合并会让失败消息说不清是哪一层(C4 拒绝合并两个 Android 闸门的同一条理由)。
+
+---
+
+### S3. 表落地、接线、五次红向注入
+
+**绿(表落地)**
+
+- 新文件:`docs/audit-ledger.md`,内容 = S1 记账段的 14 行,按 S2 的行文法。
+  文件开头三段(不超过 15 行):它是什么(2026-07-19 那条待办的实证状态)、
+  **判据栏是可执行的、由 `scripts/dev/audit-ledger-scan.py` 每次重新求值**、
+  以及改一行时要同时改核验日。
+- **为什么是独立文件,不是别的地方**(把选择写死,不在执行期挑):
+  - 放回 `docs/v2.md` 决策日志:那是 append-only 的历史,同一条待办会同时存在两处日期不同的说法,
+    读者无从知道哪条当真;闸门还要在 600+ 行里靠脆弱的锚点找一张表。**v2.md 原文一字不动** ——
+    历史就该是写下时的样子,收尾只在 §10 追加一行指向 ledger。
+  - 放冷计划 / 热计划:两者都会随 checkpoint 归档,而这张表要活得比版本长。
+  - 独立文件:唯一的解析目标、长期存在、可被闸门直接盯住。
+- `docs/audit-ledger.md` 是中文为主的**内部记账**,会命中 `hygiene-scan` 的 CJK 与记号规则。
+  处置**预先定死**:在 `hygiene-scan.py` 的 `EXCLUSIONS` 加一条
+  `("docs/audit-ledger.md", "internal audit ledger; the item text is its subject")` ——
+  与 `docs/v2.md`、`docs/plan-cold/` 同源同形,且该列表每次运行都把豁免连同剩余命中数打出来
+  (豁免是有主的债,不是没走过的地)。**若 `fact-scan` 也报,一律先改措辞;确需豁免才加带理由的条目 ——
+  改闸门就范是最后手段。**
+- **但 `POINTER_SKIP`(死指针豁免那张表)不加**。噪声豁免和死指针豁免是两回事:ledger 里的每个路径
+  正是本段要让它**保持活着**的东西,豁免掉死指针检查等于亲手关掉第二道盯梢。hygiene-scan 若在
+  ledger 上报死指针,那是**真信号**,改路径不改闸门。
+
+**绿(接线,三处)**
+
+- `scripts/dev/preflight.sh`:加进第 81 行那个 `for gate in …` 列表
+- `.github/workflows/ci.yml`:`source-gates` job 里加一步,与 `workflow scan` 并列
+- `scripts/release/ship.sh`:紧跟 `--- fact scan` 段之后新增 `--- audit ledger scan` 段,
+  **非 bypass**,日志落 `/tmp/smix-ship-audit-ledger.log`。放这里的理由:它与 fact-scan 是同一族问题
+  (fact-scan 问"对外说的是不是真的",它问"自家记账是不是还成立"),相邻能让读 ship 输出的人一眼看出这两问
+
+**红向注入(五次,每次看到红再还原;还原一律走 `cp` 备份,禁止 `git checkout <file>` —— 07-21 用它抹掉过未提交的改动)**
+
+| # | 注入 | 期望的红 |
+|---|---|---|
+| R1 | 把某行判据的行号 +1 | 点名该行,并**打印该字面量的真实行号** |
+| R2 | 某行状态 `fixed` → `done` | 状态词不在封闭词表里 |
+| R3 | 删掉 ⑦ 那一行 | `v2.md` 的待办列了 ⑦,ledger 没有 |
+| R4 | 把某条 `present` 的判据字面量改成树里不存在的串 | 该字面量在该文件里一处都没有 → 状态很可能已变 |
+| R5 | 从 `preflight.sh` 删掉调用 | 本脚本未被三处全部调用(自指检查) |
+
+R4 是承重的:没有它,闸门可能只在检查"文件存在",而**文件存在是最不会失效的那部分**。
+R1 与 R4 合起来才证明字面量真的被搜过、且真的锚在那一行。
+
+**重构**
+
+- ledger 里不加"责任人"/"目标版本"栏。它们不可机器判定,会变成又一处静默过期的散文
+  (`EXCLUSIONS` 那个"看起来像判据、其实不参与任何判断的常量"是同一个坑)。
+- 不动 `docs/v2.md` 的历史条目文字。
+
+---
+
+## Checkpoint C1 验收
+
+```bash
+cd /Users/doracawl/workspace/goliajp/smix
+
+# 1. 闸门本身绿,且真的把 14 条判据重新求了值
+python3 scripts/dev/audit-ledger-scan.py
+
+# 2. 三处接线都在(缺 ship 那处 = 漏掉通向用户的那条路)
+grep -q 'audit-ledger-scan' scripts/dev/preflight.sh
+grep -q 'audit-ledger-scan' .github/workflows/ci.yml
+grep -q 'audit-ledger-scan' scripts/release/ship.sh
+
+# 3. 表在仓库里,不是只在磁盘上
+git ls-files --cached --others --exclude-standard -- docs/audit-ledger.md | grep -q .
+
+# 4. 既有闸门没被本段破坏
+python3 scripts/dev/workflow-scan.py
+python3 scripts/dev/hygiene-scan.py
+bash scripts/dev/preflight.sh
+
+# 5. C1 没修任何东西:产品目录的改动集必须与热化时逐字节相同
+git status --porcelain -- crates swift-bridge android-runner npm web dashboard examples | wc -l | tr -d ' '
+git diff --name-only origin/develop...HEAD -- crates swift-bridge android-runner npm web dashboard examples \
+  | shasum | cut -c1-40
+```
+
+期望:
+
+- 第 1 条 exit 0,末行形如
+  `audit-ledger-scan: clean — 14 rows (N fixed / M present / K moot), 14 judgements re-evaluated`
+- 第 2、3 条 exit 0(`grep -q` 静默)
+- 第 4 条:`workflow-scan: clean`、`hygiene-scan` exit 0、preflight 末行 `preflight: clean`
+- 第 5 条第一行输出 **`0`**(工作树里产品目录零改动);第二行输出
+  **`dee33a5cbb88761428587d60571c7f2422bb9b5f`** —— 这是**热化时实测**的那份改动文件名单
+  (11 个文件:`android-runner/` 4 个来自 v2.2-C3/C4,`crates/` 7 个)的 sha1。多一个文件、少一个文件、
+  改一个文件名,这串就变。**不用 `grep -v` 排除已知路径** —— 那又是一份手工维护的清单,
+  正是本段在治的病;哈希把它变成从磁盘导出的判据。若 C1 期间 `origin/develop` 前进导致基线合法变化,
+  **重新取一次哈希并在此处改写,同时在收尾记账里写明为什么变** —— 不允许口头解释后放行。
+
+外加**已在 S2/S3 内完成并记录**的验证(它们要改工作树,不放进复跑命令):
+
+- S2 红:ledger 不存在 + 未接线时,闸门 exit 1 且两条消息都出现
+- S3 的 R1–R5 五次注入各自变红一次,失败消息与上表逐条对上;还原走 `cp` 备份
+
+---
+
+## 完成后动作
+
+1. 归档此文件到 `docs/plan-history/v2.3-c1-hot.md`
+2. `docs/v2.md` 决策日志追加(§10):
+   - 14 条重验的结论(fixed / present / moot 各几条,以及**哪几条与 07-19 的记账相反**);
+   - `docs/audit-ledger.md` + `audit-ledger-scan.py` 立起来了,**以及这个闸门查不到什么**
+     (状态词与判据语义是否相符,它看不出来);
+   - S1 的「本段新发现」逐条列出,标明**未修、未进 ledger、去处待 C3/C4 定夺**;
+   - **追加时注意**:正文若写到被 sim-guard / adb-guard 拦的命令形状,heredoc 正文会被 guard 当命令读
+     (07-21 已发生过一次)—— 改措辞或改用编辑工具写入,**不改 guard**。
+3. 按 §7 收尾 task 状态(S1/S2/S3 三个 task 全 `completed`)。
+4. **不自行热化 C2**(§6):把 C1 的状态表结论 + 新发现报给用户,由用户说"开始 C2"。
