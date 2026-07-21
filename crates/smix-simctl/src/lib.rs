@@ -307,7 +307,49 @@ pub struct SubprocessRecord {
 /// reason survives here: failures are reported, never propagated. What
 /// does not survive is the silence.
 mod diag_store {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
+
+    /// Read a singleton from disk the first time someone needs it.
+    ///
+    /// The three diagnostic singletons used to load at startup: every
+    /// smix command called all three `set_*_persist_path` functions,
+    /// and each one read its value immediately. Measured with a
+    /// backtrace probe on `Store::open`, a plain `smix sim list` opened
+    /// the store four times — three eager loads plus the one write the
+    /// command actually needed. Two of those three were for state that
+    /// command never touches: it runs no flow and resets no app data.
+    ///
+    /// Each open replays the AOF and takes the store's *blocking*
+    /// advisory lock, so the cost is not only work — it is three extra
+    /// chances to queue behind another smix process for nothing.
+    ///
+    /// The flag is only latched once a path exists. A read that happens
+    /// before `set_persist_path` must leave it alone: latching there
+    /// would mean the path, once set, is never read at all — the load
+    /// would be permanently skipped rather than merely deferred.
+    pub(super) fn ensure_loaded(
+        flag: &'static OnceLock<Mutex<bool>>,
+        persist: &'static Mutex<Option<PathBuf>>,
+        load: fn(),
+    ) {
+        let mut done = match flag.get_or_init(|| Mutex::new(false)).lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if *done {
+            return;
+        }
+        let has_path = match persist.lock() {
+            Ok(g) => g.is_some(),
+            Err(poisoned) => poisoned.into_inner().is_some(),
+        };
+        if !has_path {
+            return;
+        }
+        load();
+        *done = true;
+    }
 
     /// Resolve a caller-supplied path to the store root.
     ///
@@ -393,15 +435,24 @@ mod subprocess_ring {
         INSTANCE.get_or_init(|| Mutex::new(None))
     }
 
-    /// Install a persist path. Callers should also call
-    /// [`load_persisted`] once after this so the in-memory ring starts
-    /// pre-populated with the last-known state.
+    /// Install a persist path. The stored value is read on first use,
+    /// not here — see [`super::diag_store::ensure_loaded`] for why the
+    /// eager version cost every command three store opens.
     pub fn set_persist_path(path: PathBuf) {
         let mut g = match persist_cell().lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
         *g = Some(path);
+    }
+
+    fn loaded_flag() -> &'static OnceLock<Mutex<bool>> {
+        static INSTANCE: OnceLock<Mutex<bool>> = OnceLock::new();
+        &INSTANCE
+    }
+
+    fn ensure_loaded() {
+        super::diag_store::ensure_loaded(loaded_flag(), persist_cell(), load_persisted);
     }
 
     fn persist_path_copy() -> Option<PathBuf> {
@@ -417,6 +468,7 @@ mod subprocess_ring {
     /// active, atomically writes the buffer to disk after the mutation
     /// so a subsequent supervisor-cycle doesn't lose the observation.
     pub(super) fn record(entry: SubprocessRecord) {
+        ensure_loaded();
         {
             let mut g = match cell().lock() {
                 Ok(g) => g,
@@ -438,6 +490,7 @@ mod subprocess_ring {
 
     /// Snapshot the current ring buffer. Ordered oldest → newest.
     pub fn snapshot() -> Vec<SubprocessRecord> {
+        ensure_loaded();
         let g = match cell().lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -556,7 +609,10 @@ mod subprocess_ring {
 /// without this call the ring stays in-memory only.
 pub fn set_subprocess_ring_persist_path(path: std::path::PathBuf) {
     subprocess_ring::set_persist_path(path);
-    subprocess_ring::load_persisted();
+    // No eager read here: the value is loaded the first time
+    // something actually uses it. Loading all three at startup cost
+    // every command three store opens, each one an AOF replay and a
+    // blocking lock, for state most commands never touch.
 }
 
 // CLI-side resetAppData counter tracking.
@@ -596,6 +652,15 @@ mod reset_app_data_counters {
         *g = Some(path);
     }
 
+    fn loaded_flag() -> &'static OnceLock<Mutex<bool>> {
+        static INSTANCE: OnceLock<Mutex<bool>> = OnceLock::new();
+        &INSTANCE
+    }
+
+    fn ensure_loaded() {
+        super::diag_store::ensure_loaded(loaded_flag(), persist_cell(), load_persisted);
+    }
+
     fn persist_path_copy() -> Option<PathBuf> {
         let g = match persist_cell().lock() {
             Ok(g) => g,
@@ -620,6 +685,7 @@ mod reset_app_data_counters {
     }
 
     pub fn increment_total() {
+        ensure_loaded();
         {
             let mut g = match cell().lock() {
                 Ok(g) => g,
@@ -631,6 +697,7 @@ mod reset_app_data_counters {
     }
 
     pub fn increment_timed_out() {
+        ensure_loaded();
         {
             let mut g = match cell().lock() {
                 Ok(g) => g,
@@ -642,6 +709,7 @@ mod reset_app_data_counters {
     }
 
     pub fn snapshot() -> Counters {
+        ensure_loaded();
         let g = match cell().lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -709,7 +777,10 @@ pub struct ResetAppDataCounters {
 /// dump` invocations.
 pub fn set_reset_app_data_counters_persist_path(path: std::path::PathBuf) {
     reset_app_data_counters::set_persist_path(path);
-    reset_app_data_counters::load_persisted();
+    // No eager read here: the value is loaded the first time
+    // something actually uses it. Loading all three at startup cost
+    // every command three store opens, each one an AOF replay and a
+    // blocking lock, for state most commands never touch.
 }
 
 /// Advance the resetAppData total counter.
@@ -788,6 +859,15 @@ mod flow_attempts {
         g.clone()
     }
 
+    fn loaded_flag() -> &'static OnceLock<Mutex<bool>> {
+        static INSTANCE: OnceLock<Mutex<bool>> = OnceLock::new();
+        &INSTANCE
+    }
+
+    fn ensure_loaded() {
+        super::diag_store::ensure_loaded(loaded_flag(), persist_cell(), load_persisted);
+    }
+
     pub fn load_persisted() {
         let Some(path) = persist_path_copy() else {
             return;
@@ -804,6 +884,7 @@ mod flow_attempts {
     }
 
     pub fn record(flow_name: &str, attempts: &[PersistedAttempt]) {
+        ensure_loaded();
         {
             let mut g = match cell().lock() {
                 Ok(g) => g,
@@ -822,6 +903,7 @@ mod flow_attempts {
     }
 
     pub fn snapshot() -> Vec<PersistedFlow> {
+        ensure_loaded();
         let g = match cell().lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
@@ -844,7 +926,10 @@ mod flow_attempts {
 /// dump` invocations.
 pub fn set_flow_attempts_persist_path(path: std::path::PathBuf) {
     flow_attempts::set_persist_path(path);
-    flow_attempts::load_persisted();
+    // No eager read here: the value is loaded the first time
+    // something actually uses it. Loading all three at startup cost
+    // every command three store opens, each one an AOF replay and a
+    // blocking lock, for state most commands never touch.
 }
 
 /// Public accessor with just the fields needed by callers.
