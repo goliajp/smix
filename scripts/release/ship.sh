@@ -157,6 +157,25 @@ log "audit ledger"
 python3 "$ROOT/scripts/dev/audit-ledger-scan.py" > /tmp/smix-ship-ledger.log 2>&1 \
   || fail "audit ledger scan FAILED — a citation no longer holds; re-verify that row (see /tmp/smix-ship-ledger.log)"
 
+# --- hygiene scan ------------------------------------------------------
+# Development noise and dead doc pointers in everything a reader outside
+# this repo can see. Its own docstring says it exits non-zero "so it can
+# gate a release" — and until now this script mentioned it only in the
+# two comments below, never calling it. preflight ran it, CI ran it, the
+# release did not.
+log "hygiene scan"
+python3 "$ROOT/scripts/dev/hygiene-scan.py" > /tmp/smix-ship-hygiene.log 2>&1 \
+  || fail "hygiene scan FAILED — shipped sources carry development noise or dead doc pointers (see /tmp/smix-ship-hygiene.log)"
+
+# --- workflow scan -----------------------------------------------------
+# The development contract survives a clone: charter and rule cards
+# tracked, hook scripts present and wired, guards tested, no GNU-only
+# tools, and every source gate running in all three places. That last
+# check is what found this script missing two gates.
+log "workflow scan"
+python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 \
+  || fail "workflow scan FAILED — see /tmp/smix-ship-workflow.log"
+
 # --- corpus gate (real sim) -------------------------------------------
 # Runs the bootstrap corpus end-to-end on a simulator. Device selection
 # mirrors the smoke: explicit env first, else the first booted sim.

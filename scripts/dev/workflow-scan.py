@@ -43,8 +43,25 @@ Checks:
      corpus. Every one was recorded FAIL, the gate was permanently RED,
      and ship.sh could not finish on the machine smix is developed on —
      a missing tool reading as a product that fails all of its tests.
+  6. Every source gate runs in all three places. hygiene-scan's own
+     docstring says it exits non-zero "so it can gate a release", and
+     ship.sh mentioned it only in two comments. workflow-scan was absent
+     from ship as well: preflight and CI each ran six source gates while
+     ship ran four, and the missing one is the path to users. Same
+     sentence as check 3, with hooks swapped for release paths.
 
 Exit non-zero on any failure.
+
+What this file cannot see, said plainly so it is not read as omniscient:
+
+  * Check 6 verifies a gate is NAMED in non-comment text, not that it
+    runs. `[[ -n "$SKIP" ]] || python3 scripts/dev/x.py` counts. Proving
+    execution means running ship, and running ship publishes.
+  * Check 6's set is preflight's gate loop plus scripts/dev/*-scan.py.
+    Things invoked outside that loop — gen-llms.py --check, the
+    *-guard.test.sh round — are not in it. Guards are covered by checks
+    3 and 4; gen-llms --check is in all three places today and watched
+    by nothing. That hole is recorded rather than papered over.
 """
 
 import glob
@@ -181,6 +198,79 @@ def check_no_gnu_only_tools(failures):
                 )
 
 
+def read_without_comments(rel):
+    """File contents with whole-line comments removed.
+
+    Shell and YAML both comment with `#`. Naming a command in a comment
+    is not invoking it, and the difference is the entire point of check
+    6 — ship.sh mentions hygiene-scan twice in prose while calling it
+    never.
+    """
+    with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    return "\n".join(l for l in lines if not l.lstrip().startswith("#"))
+
+
+SOURCE_GATE_LOOP = re.compile(r"^\s*for gate in (.+?);\s*do", re.M)
+PREFLIGHT = "scripts/dev/preflight.sh"
+DOWNSTREAM = (".github/workflows/ci.yml", "scripts/release/ship.sh")
+
+# Below this, assume the loop failed to parse rather than that the
+# project runs fewer gates. A regex reading zero names would let every
+# later comparison pass on an empty set.
+MIN_SOURCE_GATES = 4
+
+
+def check_source_gates_wired(failures):
+    """Every source gate named in preflight also runs in CI and at ship.
+
+    Matched against comment-stripped text, and that is the load-bearing
+    part rather than tidiness: ship.sh names hygiene-scan in two
+    comments while never calling it. A plain substring search would find
+    those and pass — the checker would be committing the same fault it
+    is here to catch. `read()` drops whole-line comments; do not
+    "simplify" this back to matching raw text.
+    """
+    loop = SOURCE_GATE_LOOP.search(read_without_comments(PREFLIGHT))
+    if not loop:
+        failures.append(
+            f"{PREFLIGHT}: could not find the `for gate in …; do` loop that "
+            f"defines the source-gate set. Without it this check compares "
+            f"against nothing."
+        )
+        return
+
+    names = [n for n in loop.group(1).split() if n and not n.startswith("$")]
+    if len(names) < MIN_SOURCE_GATES:
+        failures.append(
+            f"{PREFLIGHT}: parsed {len(names)} source gates from the loop, "
+            f"expected at least {MIN_SOURCE_GATES}. Treating this as a broken "
+            f"parse rather than a shorter list — a set read as empty makes "
+            f"every comparison below vacuous."
+        )
+        return
+
+    # Disk → preflight: a scan nobody lists cannot be checked downstream.
+    for path in sorted(glob.glob(os.path.join(ROOT, "scripts/dev/*-scan.py"))):
+        stem = os.path.basename(path)[: -len(".py")]
+        if stem not in names:
+            failures.append(
+                f"{stem} exists but {PREFLIGHT}'s gate loop does not list it, so "
+                f"nothing checks where else it runs. Add it to the loop."
+            )
+
+    # preflight → CI and ship, in text that is not a comment.
+    for name in names:
+        for gate in DOWNSTREAM:
+            if f"scripts/dev/{name}.py" not in read_without_comments(gate):
+                failures.append(
+                    f"{gate} does not invoke {name}, which {PREFLIGHT} runs. "
+                    f"Three places, not two: preflight is the local habit, CI is "
+                    f"the branch, ship is the release — and the one most often "
+                    f"missing is the only one on the path to users."
+                )
+
+
 def check_guards_tested(failures):
     for path in sorted(glob.glob(os.path.join(ROOT, "scripts/dev/*-guard.sh"))):
         harness = path[: -len(".sh")] + ".test.sh"
@@ -198,6 +288,7 @@ def main():
     check_contract_tracked(failures)
     check_guards_tested(failures)
     check_no_gnu_only_tools(failures)
+    check_source_gates_wired(failures)
 
     settings_path = os.path.join(ROOT, SETTINGS)
     if os.path.isfile(settings_path):
