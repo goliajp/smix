@@ -1,13 +1,24 @@
-# .claude/ is a process/dev-workflow directory (agent memory, RFC drafts,
-# session logs). Two-line pattern: first ignore everything under it, then
-# unignore the .claude/rfcs/ subtree (the exception) as the versioned
-# design-decision record. `.claude/` alone (trailing-slash form) makes
-# every path inside untrackable — including negated exceptions — because
-# git skips the whole subtree. Use `.claude/*` + a re-include of `rfcs/`
-# so the negation for individual files under it actually applies.
+# .claude/ mixes two kinds of file: process residue (agent memory, session
+# logs, scratch worktrees) and project contract (the development charter,
+# the rule cards, the hook wiring, the design record). Only the residue is
+# ignorable. The contract is what the next checkout has to arrive with —
+# CLAUDE.md calls itself the file every agent must read first, and it lived
+# outside version control long enough for a hook wiring to be lost with a
+# session; sim-guard.sh records the same fate for its own earlier self.
+#
+# Pattern: ignore everything under it, then re-include the contract. Note
+# `.claude/*` and not `.claude/` — the trailing-slash form makes every path
+# inside untrackable, negations included, because git skips the subtree
+# without ever reading the exceptions.
+#
+# settings.local.json stays ignored on purpose: personal overrides.
 .claude/*
 !.claude/rfcs/
 !.claude/rfcs/**
+!.claude/CLAUDE.md
+!.claude/rule/
+!.claude/rule/**
+!.claude/settings.json
 .DS_Store
 
 

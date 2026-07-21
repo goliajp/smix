@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/sim-guard.sh\"",
+            "timeout": 10,
+            "statusMessage": "sim-guard: checking simulator authorization"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/adb-guard.sh\"",
+            "timeout": 10,
+            "statusMessage": "adb-guard: checking emulator authorization"
+          }
+        ]
+      }
+    ]
+  }
+}

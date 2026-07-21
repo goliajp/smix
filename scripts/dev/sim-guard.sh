@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # sim-guard — PreToolUse Bash hook enforcing explicit-UDID simulator
-# addressing. Wired from `.claude/settings.json`; receives the hook
-# JSON on stdin, inspects `tool_input.command`, and BLOCKS (exit 2)
-# any `simctl` invocation that:
+# addressing. Wired from `.claude/settings.json`; receives the hook JSON
+# on stdin, reads the executable part of it through hook-command.py
+# (which drops heredoc bodies that are written rather than run), and
+# BLOCKS (exit 2) any `simctl` invocation that:
 #
 #   1. uses the `booted` placeholder (ambiguous when >1 sim is booted;
 #      has hit the wrong device in past sessions), or
@@ -24,15 +25,7 @@
 
 set -euo pipefail
 
-payload="$(cat)"
-
-command="$(printf '%s' "$payload" | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("tool_input", {}).get("command", ""))
-except Exception:
-    print("")
-' 2>/dev/null || true)"
+command="$(python3 "$(dirname "$0")/hook-command.py" 2>/dev/null || true)"
 
 # Fast path: nothing simctl-shaped → allow.
 case "$command" in

@@ -56,8 +56,14 @@ else
 fi
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan; do
     python3 "scripts/dev/$gate.py"
+done
+
+# The device guards decide what may touch a simulator or a phone. Their
+# own judgement is source too.
+for harness in scripts/dev/*-guard.test.sh; do
+    bash "$harness"
 done
 python3 scripts/dev/gen-llms.py --check
 

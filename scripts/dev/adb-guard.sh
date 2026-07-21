@@ -27,18 +27,14 @@
 # serial is anything else. Requiring the emulator form (rather than
 # denylisting one known phone) means a newly-plugged phone is safe by
 # default — the same stance sim-guard takes with UDIDs.
+#
+# The command under judgement comes from hook-command.py, which drops
+# heredoc bodies that are written rather than run — writing a paragraph
+# about an install command is not performing one.
 
 set -euo pipefail
 
-payload="$(cat)"
-
-command="$(printf '%s' "$payload" | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("tool_input", {}).get("command", ""))
-except Exception:
-    print("")
-' 2>/dev/null || true)"
+command="$(python3 "$(dirname "$0")/hook-command.py" 2>/dev/null || true)"
 
 # Fast path: nothing that could mutate an Android device → allow.
 case "$command" in
