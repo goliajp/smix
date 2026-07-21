@@ -1,0 +1,366 @@
+# plan-hot — v2.2 到 C4:三个 Android 修复各有一条会红的断言
+
+## 目标 checkpoint
+
+C4:07-20/21 的三个 Android 修复在**真设备上**各有一条断言证明其生效,而每条断言的
+**可证伪性是当场演示过的** —— 把对应修复装回缺陷版本,那一条(且只有那一条)变红。
+
+三条断言与各自的观察面:
+
+| # | 修复 | 断言 | 观察面 | 装回缺陷后怎么红 |
+|---|---|---|---|---|
+| A1 | `--force-key-events` 生效(Android 是 **driver 不解析焦点**,没有头可送) | 一条 yaml,`inputText` 的目标 id **在树里不存在**;带 flag 通过,不带 flag 失败 | `smix run` 退出码 + `assertVisible` | 删掉 `AndroidDriver::set_force_key_events` 覆盖 → 带 flag 也解析 → 找不到该 id → 非零 |
+| A2 | 真实包名进得去(`set_target_bundle_id` → `App-Bundle-Id` 头) | 同一次真 flow 的**每一条** runner 请求都带 `App-Bundle-Id: <yaml 的 appId>` | 录制代理的 JSONL | 删掉 `AndroidDriver::set_target_bundle_id` 覆盖 → 该头 0 条 → 红 |
+| A3 | view-id 候选命中真实应用(`<pkg>:id/<tag>`,不是 `com.example.app`) | 对真实应用的真实 id 打 `/tap-by-id`,响应头 `X-View-Id-Match: qualified` | 新增的响应头(S2 建) | `viewIdCandidates` 改回硬编码 `com.example.app` → 头变 `walk` → 红 |
+
+**A2 与 A3 必须合起来读,单独任何一条都不是完整证明**:A3 的 curl 里那个头是我手写的,
+它只证明"runner 拿到真实包名后拼出的拼法命中了真实应用";"这个头确实是 driver 发出来的"
+由 A2 承担。这句话要写进闸门脚本的注释,否则下一个人会以为 A3 一条就够。
+
+C4 的产出不是一次"跑通了",是一个**自带反向对照**的闸门脚本
+`scripts/release/android-behaviour-gate.sh`:它内部**必须看到不带 flag 的那次运行失败**,
+否则自己判红。一个不会因为"修复被撤销"而变红的 smoke,就是本版本要消灭的东西本身。
+
+---
+
+### 热化前的本机实测(后面的步骤按它写,不按冷计划的假设写)
+
+- `pgrep -fl 'emulator|mobilegate'` **空**(C3 已回收 emulator);`adb devices` 只列
+  `R5CT52DF07D` 与它的无线镜像 —— **物理手机在场是事实**,本段每一条钉 emulator 的写法
+  都是承重的;`smix --version` = **`smix 2.0.0`**(C2 踩过 PATH 上是 1.0.27 的坑,现已对齐,
+  所以本段可以用裸 `smix`,但每次进场仍要先看这一行)。
+- **仓库里没有 Android 被测应用**。`selftest-fixture/` 只有 `SelftestFixture.xcodeproj`(iOS);
+  `git log --all -- '*selftest-android*'` **无任何提交**(memory 里的 `selftest-android-fixture`
+  不在这棵树上);全仓 `find -name '*.apk'`(排除 build 产物)**零命中**。
+  → C4 的被测应用取 **emulator 自带的 AOSP 应用 `com.android.settings`**,理由与替代方案见 S1。
+- **`launchApp` 对 AOSP 应用不成立**:`RunnerWire.foregroundCommand` 硬编码
+  `am start --activity-single-top -n $bundleId/.MainActivity`(`RunnerWire.kt:156-157`),
+  而 Settings 的启动 Activity 不是 `.MainActivity`。所以 flow 用 **`--no-launch`**,
+  前台化由 S1/闸门脚本用 `adb -s emulator-5554 shell am start -a android.settings.SETTINGS` 完成。
+  这条限制**记账,不在本段修**(§8.1):它是"启动约定只认一个 Activity 名"的产品缺口,
+  与本段要守的三个修复无关。
+- **yaml 触不到 `/tap-by-id`**:`runtime.rs:3264 / 3291` 只在 id 命中
+  `is_swiftui_modal_dismiss_id`(`v2-modal-*…-btn`)或 `is_swiftui_navigation_or_tab_id`
+  (`v2-tab-*`)时才走 `tap_xcui` → `/tap-by-id`;真实 Android 应用的 id 不在这两个命名空间里。
+  所以 A3 只能用 **curl 直打 wire**,而 A2 用真 flow —— 上表那句"合起来读"就是从这里来的。
+- **A3 现在没有任何观察面,这是 S2 存在的唯一理由**:`findNodeByViewId`
+  (`RunnerTest.kt:394-444`)严格查找失败后会退回 `walkFindByViewIdNoRecycle`,后者按
+  **`:id/` 之后的短后缀**匹配(`RunnerTest.kt:466-468`)—— 于是"候选拼法命中"与"退回手动遍历"
+  **结果完全相同**,只是更慢、走的是另一条路。这正是决策日志写的"什么都没失败,所以它活了下来"。
+  不给 runner 一个说出"我是怎么找到的"的地方,A3 就不可能可证伪。
+- **A1 的对照怎么造出来**:`inputText: { id: X, text: Y }` 解析为 `Step::InputTextInto`
+  (`parser.rs:1098`)→ `app.fill(Selector::Id{X}, Y)`(`runtime.rs:1564`);
+  `AndroidDriver::fill`(`android.rs:427-440`)在 `force_key_events` 为真时**完全跳过解析**
+  直接打 `/input-text`。所以把 X 取成**树里绝不存在的 id**,带 flag 通过、不带 flag 失败,
+  这个差别只由那个 flag 决定。
+- `/input-text` 在 runner 侧是 `input text …` shell(`RunnerWire.kt:153`),打进当前焦点,
+  不需要 IME 适配。
+
+---
+
+## 前置条件
+
+```bash
+cd /Users/doracawl/workspace/goliajp/smix
+
+# 0) 用的是这棵树构建出来的那个 smix(C2 在这里翻过车)
+smix --version                              # 期望:smix 2.0.0
+
+# 1) 护栏与闸门就位(C3 之后的形态)
+bash scripts/dev/adb-guard.test.sh          # 期望:all cases pass
+python3 scripts/dev/android-gate-scan.py    # 期望:android-gate-scan: clean —(含 ship only / no emulator 两段)
+python3 scripts/dev/workflow-scan.py        # 期望:workflow-scan: clean
+
+# 2) 没人在用 Android 工具链 / 没人在跑活动 batch
+pgrep -fl 'emulator|mobilegate'                              # 期望:空
+pgrep -fl 'runner.ts|smix run|supervise'                     # 期望:空(memory: runner 操作前必查 batch 占有者)
+( cd android-runner && ./gradlew --status --console=plain )  # 期望:无 BUSY daemon(IDLE 是常态,别用 pgrep gradle 判占用)
+
+# 3) 看清楚现在连着什么
+adb devices
+```
+
+起 emulator(本段唯一长驻进程,按 pid-registry 落 handle 再进 S1):
+
+```bash
+"$ANDROID_HOME/emulator/emulator" -avd sim-smix-android-01 -port 5554 -no-snapshot-save &
+adb -s emulator-5554 wait-for-device
+adb -s emulator-5554 shell getprop sys.boot_completed   # 期望输出 1
+```
+
+`ANDROID_SERIAL=emulator-5554` / `-s emulator-5554` 必须是**命令行内联**:adb-guard 判的是
+这一条命令的文本(`scripts/dev/adb-guard.sh:73-77`),`export` 在另一条命令里它看不见。
+被拦时**改命令,不改 guard**。
+
+---
+
+## 步骤(线性,无分叉)
+
+### S1. 钉住被测应用与被测 id,并当场证实"真实应用确实发 `<pkg>:id/<short>`"
+
+A3 的整个前提是"真实应用的 a11y 节点带包名限定的 resource-id"。这件事**没有被任何人在这台
+镜像上验证过** —— 决策日志说的是"Compose 在部分布局上发出 `<pkg>:id/<tag>`",那是对 Compose
+的观察,不是对 AOSP Settings 的观察。前提不成立,后面两步都白做,所以它单独成一步。
+
+**被测应用为什么是 `com.android.settings`**(把选择写死,不在执行期挑):
+
+- 仓库里没有 Android fixture(见上文实测),现造一个 View 版 fixture 模块是新工程,
+  超出 v2.2「Android 侧的断言必须有地方失败」的边界(§8.1);
+- Settings 是 AOSP 系统镜像必带的应用,不依赖 GMS,`sim-smix-android-01`(android-33 /
+  default / arm64-v8a)上一定在;
+- 它是 **View 体系**而非 Compose,resource-id 由 aapt 生成、注册进框架资源表 ——
+  正是 `findAccessibilityNodeInfosByViewId` 能严格命中的那一类,也就是 A3 要证明的那条路径。
+- 它不是 `dev.smix.runner.test`。这一条是承重的:runner 自己的包名**永远**在候选表里
+  (`RunnerWire.kt:419`),用它做被测应用,带不带 `App-Bundle-Id` 都会命中,A3 就没有对照了。
+
+**动作**
+
+```bash
+# 前台化 Settings。用 adb 而不是 flow 的 launchApp —— 见上文 .MainActivity 记账。
+adb -s emulator-5554 shell am start -a android.settings.SETTINGS
+adb -s emulator-5554 shell uiautomator dump /sdcard/smix-c4-dump.xml
+adb -s emulator-5554 shell cat /sdcard/smix-c4-dump.xml > /tmp/smix-c4-dump.xml
+grep -o 'resource-id="com\.android\.settings:id/[^"]*"' /tmp/smix-c4-dump.xml | sort -u
+```
+
+**这一步必须在 `smix runner up` 之前做**:`uiautomator dump` 与 runner 的 instrumentation
+争同一个 UiAutomation 连接,runner 在跑时它会失败。顺序是承重的,不是习惯。
+
+**判据与记账(把实际输出写回本文件此处)**
+
+- 至少一行 `resource-id="com.android.settings:id/<short>"` → 前提成立。**一行都没有 = 停下报告**:
+  A3 的前提在这台镜像上不成立,该由用户定夺换镜像还是造 fixture,不自行换招(§13)。
+- 从命中里选**一个** id 钉进后续两步,判据固定:优先 short 名含 `search` 的可点击节点
+  (它既是 A3 的探针目标,又是 A1 的"把焦点送进文本框"的那一下);没有含 `search` 的
+  就取排序后第一个 `clickable="true"` 的。选中的 `<short>` 与它在 dump 里的整行证据写回此处。
+- 同时记下 `com.android.settings` 在 dump 里的窗口 package,确认树里确实是它而不是
+  `com.android.systemui` 独占屏幕。
+
+> **实测记账(执行时填写)**
+>
+> - dump 中 `com.android.settings:id/` 命中数:__
+> - 选中 id:`__`,证据行:`__`
+> - 前台窗口 package:`__`
+
+**重构**
+
+- 无。本步只产生事实,不改任何文件。
+
+---
+
+### S2. 给 runner 一个说出"我是怎么找到这个 id 的"的地方:`X-View-Id-Match` 响应头
+
+**红(先证明现在没有任何观察面 —— 这一条是 S2 的存在理由,不是仪式)**
+
+```bash
+smix runner up emulator-5554 --platform android
+ID='<S1 选中的 short id>'
+
+curl -sS -X POST http://localhost:28080/tap-by-id \
+  -H 'App-Bundle-Id: com.android.settings' \
+  -d "{\"id\":\"$ID\"}" > /tmp/smix-c4-with-header.json
+adb -s emulator-5554 shell am start -a android.settings.SETTINGS   # 复位屏幕
+curl -sS -X POST http://localhost:28080/tap-by-id \
+  -d "{\"id\":\"$ID\"}" > /tmp/smix-c4-without-header.json
+
+diff /tmp/smix-c4-with-header.json /tmp/smix-c4-without-header.json; echo "exit=$?"
+```
+
+- 期望 **exit=0(两份逐字节相同)**:带包名与不带包名走了两条不同的代码路径,却给出**一模一样**
+  的回答。这就是 `com.example.app` 能活下来的机制,当场复现。
+- 若两份**不同**,说明已经存在观察面 → **停下报告**,由用户定夺是否仍加这个头(不自行改判据)。
+
+**红(判据先于实现:纯函数的单测,`:app` 的 JVM 单测自 C1 起在闸门内)**
+
+- 新文件:`android-runner/app/src/test/kotlin/dev/smix/runner/ViewIdMatchTest.kt`
+- 断言 `RunnerWire.viewIdMatchKind(matched, shortId, targetPackage)` 的取值:
+  1. 命中 `"<pkg>:id/<short>"` 且 `pkg == targetPackage` → `"qualified"`
+  2. 命中裸 `"<short>"` → `"bare"`
+  3. 命中 `"dev.smix.runner.test:id/<short>"` → `"runner-test"`
+  4. `matched == null`(严格查找全落空,由手动遍历接手)→ `"walk"`
+  5. 手动遍历也没找到 → `"miss"`
+- 先跑 `( cd android-runner && ./gradlew :app:testDebugUnitTest --console=plain )` → 期望**红**
+  (符号不存在,编译不过)。
+
+**绿(实现)**
+
+- 文件:`android-runner/app/src/main/kotlin/dev/smix/runner/RunnerWire.kt`
+  - 加纯函数 `viewIdMatchKind(...)`,与 `viewIdCandidates` 挨着放:一个决定"试哪些拼法",
+    一个决定"怎么说出试中了哪个",它们必须一起被读。
+  - 头注释按本仓惯例写**它防的是哪一次事故**:占位符 `com.example.app` 在生产代码里活了
+    很久,不是因为没人看,是因为命中与退回遍历**给出同一个回答**;没有观察面的修复等于
+    没有闸门的断言。
+- 文件:`android-runner/app/src/androidTest/kotlin/dev/smix/runner/RunnerTest.kt`
+  - `findNodeByViewId` 返回时一并给出命中的拼法(严格查找命中哪条 / 落到手动遍历 / 全落空);
+  - `serveTapById` 把 `viewIdMatchKind(...)` 的结果作为**响应头** `X-View-Id-Match` 加上。
+  - **为什么是头不是 body**:v1.0.23 已就同一问题拍过板 —— `X-Tree-Snapshot-*` 选头而非
+    包 body,因为 body 变形会打断所有既有消费方。这里同理:`tapByIdBody` 的 5 个字段有
+    Rust 端在解析(`smix-runner-client/src/lib.rs:1253-1262`),加字段是动 wire 契约,
+    加头不是。这条理由写在改动处。
+- 复跑:`:app:testDebugUnitTest` 绿;`assembleDebugAndroidTest` 绿;
+  重装 runner 后复跑上面那两条 curl,**带头得 `qualified`,不带头得 `walk`** ——
+  观察面到此存在。
+
+**重构**
+
+- 不动 `viewIdCandidates` 的候选顺序与内容(它已有 5 个 JVM 单测,是 C4 要证明的对象,
+  不是要改的对象)。
+- 不动手动遍历的"不 recycle"设计:那是 Compose 缓存约束,与本段无关(§8.1)。
+
+---
+
+### S3. 三条断言各成立一次、各证伪一次,并固化成自带反向对照的闸门
+
+**观察仪器先建**(A2 需要看到 driver 真实发出的头,而 `smix run` 不会把 wire 打给你看):
+
+- 新文件:`scripts/dev/android-wire-record.py`
+  - 监听 28090,转发到 28080;每条请求追加一行 JSONL:`method` / `path` /
+    `App-Bundle-Id` / `Input-Dispatch-Mode`,以及响应的 `X-View-Id-Match`。
+  - 它是**观测仪器,不是产品代码**:放 `scripts/dev/`,不进 `crates/`。
+  - flow 侧用 `smix run … --runner-port 28090` 走它。
+
+**A1 — `--force-key-events` 生效**
+
+- 新文件:`scripts/release/android-behaviour/force-key-events.yaml`
+
+  ```yaml
+  appId: com.android.settings
+  ---
+  - tapOn: { id: "<S1 选中的 id>" }
+  - inputText: { id: "smix-c4-no-such-field", text: "smixkeyevents" }
+  - assertVisible: { text: "smixkeyevents" }
+  ```
+
+  第 2 步的 id **故意不存在**:带 flag 时 driver 不解析、直接往焦点打字;不带 flag 时
+  解析必然失败。这条 yaml 的通过与否**只由那个 flag 决定**,这就是它的可证伪性。
+
+- 成立:
+  `smix run --platform android --no-launch --runner-port 28090 --force-key-events scripts/release/android-behaviour/force-key-events.yaml; echo "exit=$?"`
+  → 期望 **exit=0**
+- **反向对照(同一条 yaml,去掉 flag)** → 期望**非零**,消息点名 `smix-c4-no-such-field`
+- **装回缺陷**:`cp` 备份 `crates/smix-driver/src/android.rs`,删掉 `set_force_key_events`
+  覆盖(退回 trait 空默认,`traits.rs:74`)→ `cargo build -p smix-cli --bin smix` →
+  带 flag 再跑 → 期望**非零**。还原走备份 `cp`,**禁止 `git checkout <file>`**
+  (07-21 用它抹掉过未提交的 `viewIdCandidates`)。
+
+**A2 — 真实包名进得去**
+
+- 成立:A1 那次通过的运行所产生的 JSONL 里,**每一条**请求都带
+  `App-Bundle-Id: com.android.settings`(条数 > 0 且不带该头的条数 == 0)
+- **装回缺陷**:`cp` 备份后删掉 `AndroidDriver::set_target_bundle_id` 覆盖
+  (`android.rs:137-139`)→ 重建 → 重跑 → 期望该头**一条都没有** → 红。`cp` 还原。
+
+**A3 — view-id 候选命中真实应用**
+
+- 成立:
+  `curl -sS -D- -o /dev/null -X POST http://localhost:28090/tap-by-id -H 'App-Bundle-Id: com.android.settings' -d '{"id":"<S1 的 id>"}'`
+  → 响应头含 **`X-View-Id-Match: qualified`**
+- **装回缺陷**:`cp` 备份 `RunnerWire.kt`,把 `viewIdCandidates` 的包名限定项改回硬编码
+  `com.example.app:id/$shortId` → `smix runner down` → `./gradlew :app:assembleDebugAndroidTest`
+  → `smix runner up emulator-5554 --platform android`(它自己做 install)→ 同一条 curl →
+  期望 **`X-View-Id-Match: walk`** → 红。`cp` 还原并重装。
+
+**固化(闸门脚本)**
+
+- 新文件:`scripts/release/android-behaviour-gate.sh`,形态照抄 C3 的
+  `android-instrumentation-gate.sh`(它已经把这两件事做对了,不重新发明):
+  - **设备选择在脚本内**:`SMIX_ANDROID_SERIAL` → 否则取第一个 `emulator-*`;
+    非 `emulator-[0-9]+` 一律拒绝,且**在发出任何 adb 命令之前**。理由与 C3 同一条:
+    脚本一旦被 `bash scripts/…` 包起来,adb-guard 就看不见里面的命令文本了,
+    **把判断藏进脚本等于绕过 guard,除非脚本自带同一份判断**。
+  - **截止时间**:本机无 `timeout` / `gtimeout`,沿用 C3 的后台进程 + `kill -0` 轮询,
+    默认 `SMIX_ANDROID_GATE_TIMEOUT_S=600`。**一个发布闸门允许失败,不允许挂起。**
+  - 流程:选设备 → `am start` 前台化 Settings → `smix runner up` → 起录制代理 →
+    **带 flag 跑一次(必须 0)** → **不带 flag 跑一次(必须非零)** → 判 JSONL 的
+    `App-Bundle-Id` → 判 curl 的 `X-View-Id-Match` → `smix runner down` + 收代理。
+  - **反向对照写进闸门本体**:第二次运行若通过,闸门判**红**并说明"这条 yaml 不带
+    `--force-key-events` 也过了 —— 它不再证明那个 flag 生效"。没有这一条,它就会退化成
+    又一次"跑通了"。
+  - 头注释写它防的是哪三次事故(07-20/21 的三个缺陷),以及**A2 与 A3 必须合起来读**
+    的那句话。
+  - 被测 id 作为脚本顶部常量,注释说明它来自 S1 的 `uiautomator dump`,以及镜像换了要重取;
+    找不到该 id 时的失败消息直接给出重取的那条 dump 命令。
+  - 成功打印一行:`android behaviour gate: 3/3 assertions on emulator-5554 (com.android.settings)`
+- 接线:`scripts/release/ship.sh`,**紧接 `--- android instrumentation (device)` 段之后**
+  新增 `--- android behaviour (device)` 段,非 bypass。放这里的理由:两段共用同一台 emulator,
+  相邻可以让"没有 emulator"在同一个位置尽早失败;且都在任何 publish 之前。
+
+**重构**
+
+- 不把 `android-behaviour-gate.sh` 与 `android-instrumentation-gate.sh` 合并成一个脚本。
+  它们判的是两种东西(套件跑没跑 vs 行为成不成立),合并会让失败消息说不清是哪一层
+  (§8.1;C1 记过一次的"不统一三处闸门手写清单"是同一条理由)。
+- `android-gate-scan.py` **不动**:它按 gradle 模块的 `src/androidTest/` 枚举测试任务覆盖,
+  而本段新增的是一个非 gradle 的行为闸门,不改变任何模块的种类判定。验收里复跑它一次
+  确认仍 clean,不改它的判据。
+
+---
+
+## Checkpoint C4 验收
+
+```bash
+cd /Users/doracawl/workspace/goliajp/smix
+
+# 0. 用的是这棵树的 smix,且钉住的 emulator 在
+smix --version
+adb -s emulator-5554 shell getprop sys.boot_completed
+
+# 1. 行为闸门整条跑通(内含不带 flag 必须失败的反向对照)
+SMIX_ANDROID_SERIAL=emulator-5554 bash scripts/release/android-behaviour-gate.sh
+
+# 2. ship 真的调它
+grep -q 'android-behaviour-gate.sh' scripts/release/ship.sh
+
+# 3. 观察面的纯函数有单测,且单测在闸门内(C1 接的那条)
+( cd android-runner && ./gradlew :app:testDebugUnitTest --console=plain )
+test -f android-runner/app/src/test/kotlin/dev/smix/runner/ViewIdMatchTest.kt
+
+# 4. C3 立的闸门没被本段破坏
+python3 scripts/dev/android-gate-scan.py
+python3 scripts/dev/workflow-scan.py
+bash scripts/dev/adb-guard.test.sh
+
+# 5. 全套本地闸门
+bash scripts/dev/preflight.sh
+```
+
+期望:**每条命令 exit 0**。具体输出判据:
+
+- 第 0 条:`smix 2.0.0`;`1`
+- 第 1 条末行 `android behaviour gate: 3/3 assertions on emulator-5554 (com.android.settings)`,
+  且过程输出里能看到**不带 flag 的那次运行以非零退出**(它是通过条件之一,不是噪音)
+- 第 3 条含 `> Task :app:testDebugUnitTest` 与 `BUILD SUCCESSFUL`
+- 第 4 条:`android-gate-scan: clean`(仍含 `instrumentation: ship only` 与
+  `CI has no emulator` 两段)、`workflow-scan: clean`、`all cases pass`
+- 第 5 条末行 `preflight: clean`
+
+外加**已在 S1/S2/S3 内完成并记录**的验证(它们改工作树 / 需要重建二进制,不放进复跑命令):
+
+- S1:`uiautomator dump` 里 `com.android.settings:id/` 的命中数与选中的 id(证据行原文)
+- S2:加头之前,带 / 不带 `App-Bundle-Id` 的两份 `/tap-by-id` 响应体 `diff` **无差异**;
+  加头之后,同两次分别得 `qualified` / `walk`
+- S3-A1:删掉 `set_force_key_events` 覆盖 → 带 flag 仍非零
+- S3-A2:删掉 `set_target_bundle_id` 覆盖 → JSONL 里 `App-Bundle-Id` 零条
+- S3-A3:`viewIdCandidates` 改回 `com.example.app` 并重装 runner → `X-View-Id-Match: walk`
+- 三次注入的还原一律走 `cp` 备份,**不走 `git checkout <file>`**
+
+---
+
+## 完成后动作
+
+1. 归档此文件到 `docs/plan-history/v2.2-c4-hot.md`
+2. `docs/v2.md` 决策日志追加(§10):
+   - 三个 Android 修复各自的设备级断言与**各自的证伪证据**(装回缺陷时哪一条变红);
+   - 新增 `X-View-Id-Match` 响应头,以及"为什么是头不是 body"(v1.0.23 的同一条理由);
+   - **A2 与 A3 合起来才是完整证明**这条读法;
+   - 记账两条产品缺口,**本段未修**:`RunnerWire.foregroundCommand` 硬编码 `.MainActivity`
+     导致 `launchApp` 对启动 Activity 不叫这个名字的应用无效;yaml 触不到 `/tap-by-id`
+     (只有 `v2-modal-*` / `v2-tab-*` 命名空间会路由过去),于是 Android 上 view-id 直取
+     能力只有 SDK 调用方够得到。
+   - **追加时注意**:决策正文若写到被 adb-guard 拦的命令形状,heredoc 正文会被 guard
+     当命令读(07-21 已发生过一次)—— 用不含那些形状的措辞,或改用编辑工具写入,**不改 guard**
+3. 回收 emulator:`adb -s emulator-5554 emu kill`,清掉 pid-registry 里的 handle;
+   删掉 `/sdcard/smix-c4-dump.xml` 与 `/tmp/smix-c4-*`
+4. C4 是 `docs/plan-cold/v2.2-android-behavioural-gate.md` 的**最后一个 checkpoint**。
+   跑该冷计划的「出口验收」两条命令,把结果连同上面两条产品缺口一起报给用户,
+   由用户决定下一段(是否开新 minor 冷计划、是否把那两条缺口收进去)。**不自行热化下一段**(§6)。
