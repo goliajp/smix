@@ -1223,12 +1223,26 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                         format!(" (previous tree backed up to {})", b.display())
                                     })
                                     .unwrap_or_default();
+                                // Said out loud rather than done quietly:
+                                // deleting a directory the user never
+                                // asked about should not be something
+                                // they discover from `du`.
+                                let pruned_note = if report.pruned_backups.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(
+                                        " Removed {} older backup tree(s), keeping the newest {}.",
+                                        report.pruned_backups.len(),
+                                        smix_runner_sources::BACKUPS_KEPT
+                                    )
+                                };
                                 println!(
-                                    "runner install: extracted {} files at v{} into {}{}.",
+                                    "runner install: extracted {} files at v{} into {}{}.{}",
                                     report.file_count,
                                     report.version_written,
                                     target.display(),
-                                    backup_note
+                                    backup_note,
+                                    pruned_note
                                 );
                             }
                             Err(e) => {
