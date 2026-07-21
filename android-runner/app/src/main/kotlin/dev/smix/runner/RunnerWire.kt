@@ -419,6 +419,30 @@ object RunnerWire {
         }
         add("dev.smix.runner.test:id/$shortId")
     }
+
+    /// Name the spelling that actually found the node.
+    ///
+    /// Reads beside viewIdCandidates on purpose: one decides which
+    /// spellings to try, this one decides how to say which was tried
+    /// successfully, and neither is complete without the other.
+    ///
+    /// It exists because the strict lookup and the manual walk return
+    /// the same node. That is how `com.example.app` — a documentation
+    /// placeholder sitting in the candidate list as though it were a
+    /// real package — lasted through releases: every real app missed
+    /// the qualified spelling and fell through to the walk, which
+    /// answered identically. Nothing failed, so nothing was noticed.
+    ///
+    /// `matched` is the candidate the framework lookup hit, or null
+    /// when all of them missed and the walk took over.
+    fun viewIdMatchKind(matched: String?, shortId: String, targetPackage: String?): String =
+        when {
+            matched == null -> "walk"
+            matched == shortId -> "bare"
+            !targetPackage.isNullOrBlank() && matched == "$targetPackage:id/$shortId" -> "qualified"
+            matched == "dev.smix.runner.test:id/$shortId" -> "runner-test"
+            else -> "other-package"
+        }
 }
 
 /// Map smix KeyName camelCase (per `smix_input::KeyName` serde rename) →

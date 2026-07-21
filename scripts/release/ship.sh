@@ -117,6 +117,19 @@ bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
   || fail "android instrumentation gate FAILED — see the verdict above; start an emulator with \
 \"\$ANDROID_HOME/emulator/emulator\" -avd sim-smix-android-01 -port 5554 -no-snapshot-save &"
 
+# --- android behaviour (device) ----------------------------------------
+# Three assertions that each go red when their fix is reverted: the
+# key-events flag actually changing the driver's path, every driving
+# request carrying the app under test, and the qualified view-id
+# spelling being what found the node. All three shipped broken once
+# without failing anything.
+#
+# Adjacent to the instrumentation gate because they share the emulator:
+# a missing device should fail once, in one place, early.
+log "android behaviour (device)"
+bash "$ROOT/scripts/release/android-behaviour-gate.sh" \
+  || fail "android behaviour gate FAILED — see the verdict above"
+
 # --- route conformance ------------------------------------------------
 # Derives the served-route list from both runner sources and sweeps every
 # shipped file for phantom endpoints. It caught 13 fictional routes in
