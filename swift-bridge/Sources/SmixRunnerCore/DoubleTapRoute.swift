@@ -14,16 +14,17 @@ import Foundation
 // Body must carry selector.text; missing / non-string → 400 bad_request.
 public enum DoubleTapRoute {
   public struct DoubleTapRequest: Equatable, Sendable {
-    public let selectorText: String
-    public init(selectorText: String) {
-      self.selectorText = selectorText
+    public let selector: RouteSelector
+    public init(selector: RouteSelector) {
+      self.selector = selector
     }
   }
 
   public enum DecodeError: Error, Equatable {
     case invalidJSON
     case missingSelector
-    case missingText
+    /// No recognised selector key, or a form this route does not take.
+    case unsupportedSelectorForm
     case wrongType(String)
   }
 
@@ -38,20 +39,22 @@ public enum DoubleTapRoute {
     guard let selectorObj = selector as? [String: Any] else {
       throw DecodeError.wrongType("selector not object")
     }
-    guard let rawText = selectorObj["text"] else { throw DecodeError.missingText }
-    guard let text = rawText as? String else {
-      throw DecodeError.wrongType("selector.text not string")
-    }
-    return DoubleTapRequest(selectorText: text)
+    let sel: RouteSelector
+    do { sel = try RouteSelector.decode(from: selectorObj) }
+    catch RouteSelector.Failure.wrongType(let what) { throw DecodeError.wrongType(what) }
+    catch { throw DecodeError.unsupportedSelectorForm }
+    return DoubleTapRequest(selector: sel)
   }
 
   public static func success() -> HTTPResponse {
     envelope(.ok, Data(#"{"ok":true}"#.utf8))
   }
 
-  public static func notFound(selectorText: String) -> HTTPResponse {
-    let text = jsonEscape(selectorText)
-    let body = Data(#"{"ok":false,"error":"not_found","selector":{"text":"\#(text)"}}"#.utf8)
+  /// Names the key the caller sent rather than always saying `text`.
+  public static func notFound(selector: RouteSelector) -> HTTPResponse {
+    let raw = jsonEscape(selector.raw)
+    let key = selector.wireKey
+    let body = Data(#"{"ok":false,"error":"not_found","selector":{"\#(key)":"\#(raw)"}}"#.utf8)
     return envelope(.notFound, body)
   }
 

@@ -17,7 +17,7 @@ final class DoubleTapRouteTests: XCTestCase {
   func test_decode_validBody_returnsRequest() throws {
     let body = Data(#"{"selector":{"text":"General"}}"#.utf8)
     let req = try DoubleTapRoute.decode(body)
-    XCTAssertEqual(req, DoubleTapRoute.DoubleTapRequest(selectorText: "General"))
+    XCTAssertEqual(req, DoubleTapRoute.DoubleTapRequest(selector: .text("General")))
   }
 
   func test_decode_emptyBody_throwsInvalidJSON() {
@@ -57,7 +57,7 @@ final class DoubleTapRouteTests: XCTestCase {
   func test_decode_selectorWithoutText_throwsMissingText() {
     let body = Data(#"{"selector":{}}"#.utf8)
     XCTAssertThrowsError(try DoubleTapRoute.decode(body)) { err in
-      XCTAssertEqual(err as? DoubleTapRoute.DecodeError, .missingText)
+      XCTAssertEqual(err as? DoubleTapRoute.DecodeError, .unsupportedSelectorForm)
     }
   }
 
@@ -82,4 +82,10 @@ final class DoubleTapRouteTests: XCTestCase {
     let body = try await String(decoding: resp.bodyData, as: UTF8.self)
     XCTAssertEqual(body, #"{"ok":false,"error":"bad_request","reason":"he\"llo\nx"}"#)
   }
+  func test_decode_idForm() throws {
+    let body = Data(#"{"selector":{"id":"btn-login"}}"#.utf8)
+    let req = try DoubleTapRoute.decode(body)
+    XCTAssertEqual(req.selector, .id("btn-login"))
+  }
+
 }

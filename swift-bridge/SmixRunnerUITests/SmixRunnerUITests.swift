@@ -338,15 +338,23 @@ private func smixGuarded<T>(_ label: String, _ body: () -> T) -> T? {
 // caller's `smixGuarded` span (the main-thread ObjC trampoline) so a
 // vanished element during enumeration maps to the existing not-found wire
 // shape, never a runner kill.
+/// `selector` rather than a bare string: the flat enumeration has to
+/// apply the same form-to-match rule as the NSPredicate path, or the
+/// all-windows scope would answer a different question than the default
+/// one for the same request.
 private func firstSeeThroughMatch(
-  app: XCUIApplication, text: String
+  app: XCUIApplication, selector: RouteSelector
 ) -> XCUIElement? {
   func matches(_ el: XCUIElement) -> Bool {
     // `.exists` is required before `.label`/`.identifier`; a stale handle
     // from a prior enumeration frame can otherwise throw. Mirrors the
     // `guard el.exists` in buildAllWindowsSnapshot.
     guard el.exists else { return false }
-    return el.label == text || el.identifier == text
+    switch selector {
+    case .text(let v): return el.label == v || el.identifier == v
+    case .id(let v): return el.identifier == v
+    case .label(let v): return el.label == v
+    }
   }
   // 1. Flat fallback first: the layer that reaches content masked out of
   //    BOTH the app snapshot AND the per-window snapshots (content behind
@@ -750,6 +758,25 @@ private func findAndTapSystemPopupButton(
 // The test method `test_runForever` intentionally never returns — `runForever()`
 // blocks on FlyingFox `server.run()` until xcodebuild cancels the runner.
 final class SmixRunnerUITests: XCTestCase {
+  /// The predicate for a selector form.
+  ///
+  /// `text` keeps the historical `label OR identifier` shape byte for
+  /// byte: it is what callers have been getting, and narrowing it here
+  /// would break flows that (knowingly or not) rely on a text selector
+  /// landing on an identifier. The new forms are exact, which is the
+  /// point — an id selector that matched a label would be the same
+  /// confusion in the other direction.
+  static func predicate(for selector: RouteSelector) -> NSPredicate {
+    switch selector {
+    case .text(let v):
+      return NSPredicate(format: "label == %@ OR identifier == %@", v, v)
+    case .id(let v):
+      return NSPredicate(format: "identifier == %@", v)
+    case .label(let v):
+      return NSPredicate(format: "label == %@", v)
+    }
+  }
+
   // `continueAfterFailure = true` (which is what maestro sets) was tried
   // and measured as a regression (2/5). XCTest's internal swallow has side
   // effects that destabilize it in combination with the `record(_:)`
@@ -1313,10 +1340,7 @@ final class SmixRunnerUITests: XCTestCase {
         // frame_read_ms) emitted only for .resolve mode to attribute the
         // measured P50 gap from the theoretical floor.
         let t0 = Date()
-        let predicate = NSPredicate(
-          format: "label == %@ OR identifier == %@",
-          req.selector.text, req.selector.text
-        )
+        let predicate = Self.predicate(for: req.selector)
         // nil scope: default resolution (`query.firstMatch`, resolved
         // OUTSIDE the guard; the SDK posts /tap with no `?include=`).
         // "all-windows": defer resolution INTO the guard via
@@ -1352,7 +1376,7 @@ final class SmixRunnerUITests: XCTestCase {
             // waitForExistence cycle is needed (and none would help — the
             // masked element never enters the live single-app tree
             // waitForExistence polls).
-            guard let m = firstSeeThroughMatch(app: app, text: req.selector.text)
+            guard let m = firstSeeThroughMatch(app: app, selector: req.selector)
             else { return SmixRunnerServer.TapOutcome.notFound }
             element = m
           } else {
@@ -1467,7 +1491,7 @@ final class SmixRunnerUITests: XCTestCase {
             frameReadMs: tAfterFrameRead.timeIntervalSince(tResolveEnd) * 1000
           )
           return SmixRunnerServer.TapOutcome.matched(
-            label: label.isEmpty ? req.selector.text : label,
+            label: label.isEmpty ? req.selector.raw : label,
             stages: stages,
             frame: elementFrame,
             appFrame: cachedAppFrame
@@ -1531,7 +1555,17 @@ final class SmixRunnerUITests: XCTestCase {
         // snapshot doesn't carry one — keeps `TreeRoute.serialize` purely
         // mechanical and host-side smoke gates can assert on
         // `.identifier == "com.apple.Preferences"`.
-        let root = convertSnapshot(snap, rootIdentifierOverride: bundleId, focusHint: focusHint)
+        // The bundle THIS request resolved to, not the one the runner
+        // booted with. `resolveApp()` rebinds per request off the
+        // App-Bundle-Id header, so a client driving a second app got a
+        // snapshot of that app carrying the launch-time id at its root
+        // — right nearly always, wrong exactly when it matters.
+        //
+        // Same fallback shape as `frameFor` above, and for the same
+        // reason: XCUIApplication does not expose its bundle id, so the
+        // request context is the only place to read it from.
+        let resolvedBundle = SmixRunnerServer.currentContext.bundleId ?? bundleId
+        let root = convertSnapshot(snap, rootIdentifierOverride: resolvedBundle, focusHint: focusHint)
         // Reuse cachedAppFrame (the same invariance the tapHandler
         // optimization relies on). app.frame access internally triggers a
         // light snapshot (~50-150ms); Settings is portrait-only and the
@@ -1587,7 +1621,7 @@ final class SmixRunnerUITests: XCTestCase {
             if element.exists {
               if !element.hasFocus { element.tap() }
             } else if scope == "all-windows",
-                      let m = firstSeeThroughMatch(app: app, text: selectorText) {
+                      let m = firstSeeThroughMatch(app: app, selector: .text(selectorText)) {
               if !m.hasFocus { m.tap() }
             }
             return true
@@ -1629,7 +1663,7 @@ final class SmixRunnerUITests: XCTestCase {
             }
             if element.exists && !element.hasFocus { element.tap() }
             else if !element.exists, scope == "all-windows",
-                    let m = firstSeeThroughMatch(app: app, text: selectorText) {
+                    let m = firstSeeThroughMatch(app: app, selector: .text(selectorText)) {
               if !m.hasFocus { m.tap() }
             }
             return true
@@ -1755,7 +1789,7 @@ final class SmixRunnerUITests: XCTestCase {
         // the truthful answer instead of a masked false.
         if scope == "all-windows" {
           return smixGuarded("find-all-windows") { () -> Bool in
-            firstSeeThroughMatch(app: app, text: selectorText) != nil
+            firstSeeThroughMatch(app: app, selector: .text(selectorText)) != nil
           } ?? false
         }
         return smixGuarded("find") { () -> Bool in
@@ -1880,7 +1914,7 @@ final class SmixRunnerUITests: XCTestCase {
           var swipes = 0
           // Probe first — element might already be on-screen at swipe=0.
           if seeThrough, let _ = sText,
-             firstSeeThroughMatch(app: app, text: sText!) != nil
+             firstSeeThroughMatch(app: app, selector: .text(sText!)) != nil
           {
             return (matched: true, swipes: 0)
           }
@@ -1916,7 +1950,7 @@ final class SmixRunnerUITests: XCTestCase {
             swipes += 1
             // Post-swipe probe.
             if seeThrough, let t = sText,
-               firstSeeThroughMatch(app: app, text: t) != nil
+               firstSeeThroughMatch(app: app, selector: .text(t)) != nil
             {
               return (matched: true, swipes: swipes)
             }
@@ -2423,19 +2457,16 @@ final class SmixRunnerUITests: XCTestCase {
       // see-through is a tap-specific path. Double-tap is single-armed —
       // NSPredicate descendants match → first hit. Not found ⇒ stderr +
       // false (notFound).
-      doubleTapHandler: { selectorText in
+      doubleTapHandler: { selector in
         let app = await resolveApp()  // Per-request target-app rebind.
         return smixGuarded("double-tap") { () -> Bool in
-          let predicate = NSPredicate(
-            format: "label == %@ OR identifier == %@",
-            selectorText, selectorText
-          )
+          let predicate = Self.predicate(for: selector)
           let element = app.descendants(matching: .any)
             .matching(predicate)
             .firstMatch
           if !element.exists {
             FileHandle.standardError.write(
-              Data("smix-runner: double-tap: element not found for selector=\(selectorText)\n".utf8))
+              Data("smix-runner: double-tap: element not found for \(selector.wireKey)=\(selector.raw)\n".utf8))
             return false
           }
           element.doubleTap()
@@ -2444,19 +2475,16 @@ final class SmixRunnerUITests: XCTestCase {
       },
       // POST /long-press handler. XCUIElement.press(forDuration:) public
       // API; duration is converted from ms to seconds (TimeInterval).
-      longPressHandler: { selectorText, durationMs in
+      longPressHandler: { selector, durationMs in
         let app = await resolveApp()  // Per-request target-app rebind.
         return smixGuarded("long-press") { () -> Bool in
-          let predicate = NSPredicate(
-            format: "label == %@ OR identifier == %@",
-            selectorText, selectorText
-          )
+          let predicate = Self.predicate(for: selector)
           let element = app.descendants(matching: .any)
             .matching(predicate)
             .firstMatch
           if !element.exists {
             FileHandle.standardError.write(
-              Data("smix-runner: long-press: element not found for selector=\(selectorText)\n".utf8))
+              Data("smix-runner: long-press: element not found for \(selector.wireKey)=\(selector.raw)\n".utf8))
             return false
           }
           element.press(forDuration: TimeInterval(durationMs) / 1000.0)
@@ -3255,7 +3283,7 @@ private func buildAllWindowsSnapshot(
 
   let synthetic = TreeRoute.A11ySnapshotData(
     elementTypeRawValue: 2, // application
-    identifier: bundleId,
+    identifier: SmixRunnerServer.currentContext.bundleId ?? bundleId,
     label: "",
     value: nil,
     frame: appFrame,

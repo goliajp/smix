@@ -17,13 +17,9 @@ public enum TapRoute {
   }
 
   public struct TapRequest: Equatable, Sendable {
-    public struct Selector: Equatable, Sendable {
-      public let text: String
-      public init(text: String) { self.text = text }
-    }
-    public let selector: Selector
+    public let selector: RouteSelector
     public let mode: TapMode
-    public init(selector: Selector, mode: TapMode = .resolveAndTap) {
+    public init(selector: RouteSelector, mode: TapMode = .resolveAndTap) {
       self.selector = selector
       self.mode = mode
     }
@@ -61,8 +57,8 @@ public enum TapRoute {
   public enum DecodeError: Error, Equatable {
     case invalidJSON
     case missingSelector
+    /// No recognised selector key, or a form this route does not take.
     case unsupportedSelectorForm
-    case missingText
     case wrongType(String)
   }
 
@@ -76,8 +72,10 @@ public enum TapRoute {
     guard let root = json as? [String: Any] else { throw DecodeError.wrongType("root not object") }
     guard let selector = root["selector"] else { throw DecodeError.missingSelector }
     guard let selectorObj = selector as? [String: Any] else { throw DecodeError.wrongType("selector not object") }
-    guard let rawText = selectorObj["text"] else { throw DecodeError.missingText }
-    guard let text = rawText as? String else { throw DecodeError.wrongType("selector.text not string") }
+    let sel: RouteSelector
+    do { sel = try RouteSelector.decode(from: selectorObj) }
+    catch RouteSelector.Failure.wrongType(let what) { throw DecodeError.wrongType(what) }
+    catch { throw DecodeError.unsupportedSelectorForm }
     let mode: TapMode
     if let rawMode = root["mode"] {
       guard let modeStr = rawMode as? String, let parsed = TapMode(rawValue: modeStr) else {
@@ -87,7 +85,7 @@ public enum TapRoute {
     } else {
       mode = .resolveAndTap
     }
-    return TapRequest(selector: .init(text: text), mode: mode)
+    return TapRequest(selector: sel, mode: mode)
   }
 
   // The body shape is the Rust `smix_runner_wire::TapResult` contract:
@@ -136,9 +134,13 @@ public enum TapRoute {
     return #"{"x":\#(x),"y":\#(y),"w":\#(w),"h":\#(h)}"#
   }
 
-  public static func notFound(selector: TapRequest.Selector) -> HTTPResponse {
-    let text = jsonEscape(selector.text)
-    let body = Data(#"{"ok":false,"error":"not_found","selector":{"text":"\#(text)"},"visible":[]}"#.utf8)
+  /// Reports the miss under the key the caller actually sent, rather
+  /// than always claiming `text`. The Rust client treats this body as
+  /// an opaque string, so widening it breaks no parser.
+  public static func notFound(selector: RouteSelector) -> HTTPResponse {
+    let raw = jsonEscape(selector.raw)
+    let key = selector.wireKey
+    let body = Data(#"{"ok":false,"error":"not_found","selector":{"\#(key)":"\#(raw)"},"visible":[]}"#.utf8)
     return envelope(.notFound, body)
   }
 

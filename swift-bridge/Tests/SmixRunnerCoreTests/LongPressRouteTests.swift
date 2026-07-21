@@ -18,7 +18,7 @@ final class LongPressRouteTests: XCTestCase {
     let body = Data(#"{"selector":{"text":"General"},"durationMs":750}"#.utf8)
     let req = try LongPressRoute.decode(body)
     XCTAssertEqual(
-      req, LongPressRoute.LongPressRequest(selectorText: "General", durationMs: 750))
+      req, LongPressRoute.LongPressRequest(selector: .text("General"), durationMs: 750))
   }
 
   func test_decode_emptyBody_throwsInvalidJSON() {
@@ -58,7 +58,7 @@ final class LongPressRouteTests: XCTestCase {
   func test_decode_selectorWithoutText_throwsMissingText() {
     let body = Data(#"{"selector":{},"durationMs":500}"#.utf8)
     XCTAssertThrowsError(try LongPressRoute.decode(body)) { err in
-      XCTAssertEqual(err as? LongPressRoute.DecodeError, .missingText)
+      XCTAssertEqual(err as? LongPressRoute.DecodeError, .unsupportedSelectorForm)
     }
   }
 
@@ -97,4 +97,10 @@ final class LongPressRouteTests: XCTestCase {
     let body = try await String(decoding: resp.bodyData, as: UTF8.self)
     XCTAssertEqual(body, #"{"ok":false,"error":"bad_request","reason":"he\"llo\nx"}"#)
   }
+  func test_decode_idForm() throws {
+    let body = Data(#"{"selector":{"id":"btn-login"},"durationMs":800}"#.utf8)
+    let req = try LongPressRoute.decode(body)
+    XCTAssertEqual(req.selector, .id("btn-login"))
+  }
+
 }

@@ -574,14 +574,14 @@ public actor SmixRunnerServer {
   /// Returns true on double-tap dispatched; false on smixGuarded NSException
   /// or element-not-found.
   public typealias DoubleTapHandler = @Sendable (
-    _ selectorText: String
+    _ selector: RouteSelector
   ) async -> Bool
 
   /// POST /long-press handler. XCUIElement.press(forDuration:)
   /// public API. `durationMs` is in milliseconds; the caller is
   /// responsible for the ms → seconds conversion.
   public typealias LongPressHandler = @Sendable (
-    _ selectorText: String, _ durationMs: UInt32
+    _ selector: RouteSelector, _ durationMs: UInt32
   ) async -> Bool
 
   /// POST /set-orientation handler. XCUIDevice.shared.orientation is a
@@ -1830,12 +1830,12 @@ public actor SmixRunnerServer {
           return DoubleTapRoute.badRequest(reason: "\(error)")
         }
         return await Self.contextGuardedResponse(request: request,
-          fallback: DoubleTapRoute.notFound(selectorText: req.selectorText)
+          fallback: DoubleTapRoute.notFound(selector: req.selector)
         ) {
-          let ok = await doubleTapHandler(req.selectorText)
+          let ok = await doubleTapHandler(req.selector)
           return ok
             ? DoubleTapRoute.success()
-            : DoubleTapRoute.notFound(selectorText: req.selectorText)
+            : DoubleTapRoute.notFound(selector: req.selector)
         }
       }
     }
@@ -1859,12 +1859,12 @@ public actor SmixRunnerServer {
           return LongPressRoute.badRequest(reason: "\(error)")
         }
         return await Self.contextGuardedResponse(request: request,
-          fallback: LongPressRoute.notFound(selectorText: req.selectorText)
+          fallback: LongPressRoute.notFound(selector: req.selector)
         ) {
-          let ok = await longPressHandler(req.selectorText, req.durationMs)
+          let ok = await longPressHandler(req.selector, req.durationMs)
           return ok
             ? LongPressRoute.success()
-            : LongPressRoute.notFound(selectorText: req.selectorText)
+            : LongPressRoute.notFound(selector: req.selector)
         }
       }
     }

@@ -2715,7 +2715,13 @@ Every route accepts these OPTIONAL headers; absent = default behavior
 
 ### `POST /tap`
 
-Body: `{ selector: { text: string }, mode?: "resolve" | "resolveAndTap" | "daemonProxySynthesize" }`
+Body: `{ selector: { text | id | label: string }, mode?: "resolve" | "resolveAndTap" | "daemonProxySynthesize" }`
+
+Exactly one selector key. `text` matches label or identifier (the historical
+behaviour); `id` matches identifier only; `label` matches label only. Regex
+patterns, roles and spatial/index modifiers are not accepted here — they need
+the full tree and resolve host-side, which is what the default tap path does.
+`/double-tap` and `/long-press` take the same selector shape.
 (scope via `?include=` query, same mechanism as `GET /tree`; `mode` defaults to `resolveAndTap`)
 
 Response on success (`TapResult` in `smix-runner-wire`; all fields beyond `ok` optional):

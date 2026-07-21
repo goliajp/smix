@@ -233,9 +233,14 @@ fn print_tree_outline(node: &smix_screen::A11yNode, depth: usize) {
     }
 }
 
-/// `smix describe [--json]` — print the runner's high-level ScreenDescription
-/// (title / interactive elements / status bar / etc.). `--json` emits the
-/// wire JSON; default emits a pretty-printed Debug summary.
+/// `smix describe [--json]` — print the runner's ScreenDescription: the
+/// nameable visible elements, the bundle id the description was taken
+/// from, and the capture timestamp. `--json` emits the wire JSON;
+/// default emits a pretty-printed Debug summary.
+///
+/// It used to promise a title and a status bar. Neither exists anywhere
+/// in the tree, and two of the three metadata fields were empty on top
+/// of that — the help described a richer thing than the code produced.
 pub async fn cmd_describe(json: bool, port: u16) -> Result<(), ActError> {
     let d = driver(port);
     let desc = d

@@ -75,9 +75,13 @@ pub struct ElementSummary {
 
 /// Aggregate screen description. `elements` is a DFS-collected ordered
 /// list of the visible+enabled [`ElementSummary`] entries a reader could
-/// name (anonymous layout containers are skipped); `screenshot` is
-/// an optional base64 PNG; `frontApp` / `summary` / `captured_at` are
-/// caller-populated metadata.
+/// name (anonymous layout containers are skipped); `screenshot` is an
+/// optional base64 PNG.
+///
+/// `frontApp` and `capturedAt` are filled at capture. Only `summary` is
+/// caller-populated. This comment used to call all three of them that,
+/// which is how two fields stayed unconditionally empty while a CLI
+/// help string promised a title and a status bar.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenDescription {
@@ -86,9 +90,17 @@ pub struct ScreenDescription {
     pub screenshot: Option<String>,
     /// Nameable visible+enabled elements in DFS pre-order.
     pub elements: Vec<ElementSummary>,
-    /// Bundle id of the frontmost app at capture time.
-    pub front_app: String,
-    /// Free-form one-line summary (caller-populated).
+    /// Bundle id of the app this description was taken from, read from
+    /// the a11y tree root's identifier.
+    ///
+    /// Deliberately not called "frontmost": the runner reports the app
+    /// it resolved for the request, which is what a caller can act on.
+    /// `None` when the root carried no identifier — distinct from an
+    /// empty string, which would claim knowledge of an empty answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub front_app: Option<String>,
+    /// Free-form one-line summary. The caller writes this; nothing in
+    /// smix produces it.
     pub summary: String,
     /// Wall-clock capture timestamp (Unix epoch milliseconds).
     pub captured_at: f64,

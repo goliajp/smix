@@ -1494,9 +1494,15 @@ impl App {
         Ok(ScreenDescription {
             screenshot: None,
             elements: collect_visible_summaries(&tree, smix_screen::DEFAULT_VISIBLE_LIMIT),
-            front_app: String::new(),
+            // Same two sources as the driver's describe(). Two
+            // constructors for one aggregate is how the fields drifted
+            // to empty here while nobody noticed.
+            front_app: smix_driver::front_app_of(&tree),
             summary: String::new(),
-            captured_at: 0.0,
+            captured_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as f64)
+                .unwrap_or(0.0),
         })
     }
 

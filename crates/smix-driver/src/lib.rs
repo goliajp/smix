@@ -134,9 +134,13 @@ impl IosDriver {
         Ok(ScreenDescription {
             screenshot: None,
             elements: collect_visible_summaries(&tree, DEFAULT_VISIBLE_LIMIT),
-            front_app: String::new(),
+            front_app: front_app_of(&tree),
+            // `summary` stays empty by contract: the field docs say the
+            // caller writes it, and there is no single honest source
+            // for it here. The other two used to be empty for no
+            // reason at all.
             summary: String::new(),
-            captured_at: 0.0,
+            captured_at: captured_at_unix_millis(),
         })
     }
 
@@ -474,7 +478,7 @@ impl IosDriver {
         mode: TapMode,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        require_plain_text_selector(selector, "/tap")?;
+        require_runner_resolvable_selector(selector, "/tap")?;
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
 
@@ -509,7 +513,7 @@ impl IosDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        require_plain_text_selector(selector, "/double-tap")?;
+        require_runner_resolvable_selector(selector, "/double-tap")?;
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
         loop {
@@ -544,7 +548,7 @@ impl IosDriver {
         duration: Duration,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        require_plain_text_selector(selector, "/long-press")?;
+        require_runner_resolvable_selector(selector, "/long-press")?;
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
         let duration_ms = duration.as_millis().min(u64::MAX as u128) as u64;
@@ -1020,20 +1024,42 @@ impl IosDriver {
 /// those here, before the wire: they used to go out anyway, 400, and
 /// then burn the full 5s transport-retry budget before surfacing an
 /// unrelated-looking error (or, for a modifier, tap the wrong element).
-fn require_plain_text_selector(selector: &Selector, route: &str) -> Result<(), ExpectationFailure> {
-    if let Selector::Text { text, modifiers } = selector
-        && matches!(text, smix_selector::Pattern::Text(_))
-        && *modifiers == smix_selector::Modifiers::default()
-    {
+/// Forms the runner-side routes can resolve on their own.
+///
+/// Named for what it admits rather than what it refuses: the old name
+/// said "plain text" while the set was always narrower than that
+/// phrase and is now wider. text / id / label are exactly what the
+/// runner's NSPredicate expresses directly.
+///
+/// Everything else stays host-side deliberately. Regex needs the
+/// pattern semantics, roles need the rawType→Role table, and spatial
+/// or index modifiers need the tree walk — putting any of them behind
+/// this wire would mean one contract with two implementations, one of
+/// them inside XCUITest where it cannot be tested the same way.
+fn require_runner_resolvable_selector(
+    selector: &Selector,
+    route: &str,
+) -> Result<(), ExpectationFailure> {
+    let default_modifiers = smix_selector::Modifiers::default();
+    let ok = match selector {
+        Selector::Text { text, modifiers } => {
+            matches!(text, smix_selector::Pattern::Text(_)) && *modifiers == default_modifiers
+        }
+        Selector::Id { modifiers, .. } | Selector::Label { modifiers, .. } => {
+            *modifiers == default_modifiers
+        }
+        _ => false,
+    };
+    if ok {
         return Ok(());
     }
     Err(ExpectationFailure::new(FailureInit {
         code: Some(FailureCode::DriverError),
         message: format!(
-            "{route} takes only a plain literal text selector (no id/label/\
-             role/regex, no spatial or index modifiers) — the runner-side \
-             route resolves by label text alone. Use the default tap \
-             (host-side resolve) for richer selectors."
+            "{route} resolves text, id and label selectors runner-side; it \
+             does not take regex patterns, roles, or spatial/index modifiers. \
+             Those resolve against the full tree, which only the host has — \
+             use the default tap (host-side resolve) for them."
         ),
         ..Default::default()
     }))
@@ -1177,7 +1203,181 @@ mod traits;
 pub use android::AndroidDriver;
 pub use traits::{Driver, Platform};
 
+/// The bundle id this description was taken from, read off the a11y
+/// tree's root identifier.
+///
+/// The runner writes the app it resolved into that identifier, so the
+/// value is already on the wire; nothing new has to be fetched. An
+/// empty identifier becomes `None` rather than `Some("")` — an empty
+/// string is "I don't know" wearing the costume of "I know", and this
+/// field was previously an unconditional empty string for exactly that
+/// reason.
+#[must_use]
+pub fn front_app_of(tree: &A11yNode) -> Option<String> {
+    tree.identifier
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// Wall-clock milliseconds at capture. Milliseconds, matching the
+/// field's documented unit — a seconds clock here would be wrong by
+/// three orders of magnitude and still look plausible.
+fn captured_at_unix_millis() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as f64)
+        .unwrap_or(0.0)
+}
+
 /// Back-compat alias. `SimctlDriver` was renamed to `IosDriver` for
 /// cross-platform naming; this alias keeps existing imports
 /// `use smix_driver::SimctlDriver` compiling.
 pub type SimctlDriver = IosDriver;
+
+#[cfg(test)]
+mod runner_resolvable_tests {
+    use super::*;
+    use smix_selector::{Modifiers, Pattern, Selector};
+
+    /// The three forms a runner-side route can match directly.
+    ///
+    /// The guard used to accept only plain text, which is why
+    /// `dispatch: daemonProxy` could never address an RN testID — the
+    /// one thing that escape hatch exists for. The actions guide has
+    /// documented that pairing since it was written.
+    #[test]
+    fn runner_resolvable_accepts_plain_text() {
+        let sel = Selector::Text {
+            text: Pattern::Text("Sign In".into()),
+            modifiers: Modifiers::default(),
+        };
+        assert!(require_runner_resolvable_selector(&sel, "/tap").is_ok());
+    }
+
+    #[test]
+    fn runner_resolvable_accepts_id() {
+        let sel = Selector::Id {
+            id: "btn-login".into(),
+            modifiers: Modifiers::default(),
+        };
+        assert!(require_runner_resolvable_selector(&sel, "/tap").is_ok());
+    }
+
+    #[test]
+    fn runner_resolvable_accepts_label() {
+        let sel = Selector::Label {
+            label: "Sign In".into(),
+            modifiers: Modifiers::default(),
+        };
+        assert!(require_runner_resolvable_selector(&sel, "/tap").is_ok());
+    }
+
+    /// Regex needs the host's pattern semantics. Accepting it here
+    /// would mean a second implementation inside XCUITest.
+    #[test]
+    fn runner_resolvable_rejects_regex_text() {
+        let sel = Selector::Text {
+            text: Pattern::Regex {
+                regex: "^Sign".into(),
+                flags: "i".into(),
+            },
+            modifiers: Modifiers::default(),
+        };
+        assert!(require_runner_resolvable_selector(&sel, "/tap").is_err());
+    }
+
+    /// Roles need the rawType→Role table, which lives host-side.
+    #[test]
+    fn runner_resolvable_rejects_role() {
+        let sel = Selector::Role {
+            role: smix_selector::Role::Button,
+            name: None,
+            modifiers: Modifiers::default(),
+        };
+        assert!(require_runner_resolvable_selector(&sel, "/tap").is_err());
+    }
+
+    /// Modifiers need the whole tree walk; an accepted form with a
+    /// modifier attached would silently drop the modifier.
+    #[test]
+    fn runner_resolvable_rejects_index_modifier() {
+        let sel = Selector::Id {
+            id: "row".into(),
+            modifiers: Modifiers {
+                nth: Some(2),
+                ..Modifiers::default()
+            },
+        };
+        assert!(require_runner_resolvable_selector(&sel, "/tap").is_err());
+    }
+}
+
+#[cfg(test)]
+mod describe_meta_tests {
+    use super::*;
+    use smix_screen::A11yNode;
+
+    fn node_with_identifier(id: Option<&str>) -> A11yNode {
+        A11yNode {
+            raw_type: "application".into(),
+            element_type_raw: 1,
+            role: None,
+            identifier: id.map(str::to_string),
+            label: None,
+            title: None,
+            placeholder_value: None,
+            value: None,
+            text: None,
+            bounds: smix_screen::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 390.0,
+                h: 844.0,
+            },
+            enabled: true,
+            selected: false,
+            has_focus: false,
+            visible: true,
+            children: vec![],
+        }
+    }
+
+    /// The bundle id has been on the wire all along: the runner sets it
+    /// as the tree root's identifier so host-side smoke can assert on
+    /// it. The ledger recorded this field as having no honest source
+    /// outside the runner, which was wrong.
+    #[test]
+    fn describe_meta_front_app_reads_tree_root_identifier() {
+        let tree = node_with_identifier(Some("com.apple.Preferences"));
+        assert_eq!(
+            front_app_of(&tree).as_deref(),
+            Some("com.apple.Preferences")
+        );
+    }
+
+    /// None, not "". An empty string is "I don't know" wearing the
+    /// costume of "I know" — the exact confusion this segment exists to
+    /// remove.
+    #[test]
+    fn describe_meta_front_app_is_none_without_root_identifier() {
+        assert_eq!(front_app_of(&node_with_identifier(None)), None);
+        assert_eq!(front_app_of(&node_with_identifier(Some(""))), None);
+    }
+
+    #[test]
+    fn describe_meta_captured_at_is_unix_millis() {
+        // 2026-01-01T00:00:00Z in ms. A seconds-based clock would be
+        // ~1000x smaller and fail here rather than silently mislabel.
+        assert!(captured_at_unix_millis() > 1_767_225_600_000.0);
+    }
+
+    /// describe() does not own `summary`; the field docs say the caller
+    /// fills it. Pinned so "it's empty" reads as the contract rather
+    /// than as the same omission the other two fields had.
+    #[test]
+    fn describe_meta_summary_is_not_produced_here() {
+        assert_eq!(smix_screen::ScreenDescription::default().summary, "");
+    }
+}
