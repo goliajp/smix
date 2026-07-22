@@ -355,6 +355,12 @@ fn classify_error_body(endpoint: &str, status: u16, body: &str) -> RunnerTranspo
 /// HTTP client to the swift-side SmixRunnerCore. Async (tokio-based).
 /// Constructed once per Cell; `ensure_reachable` memoizes a successful
 /// `/health` probe so subsequent calls don't re-probe.
+/// A burst of one is an ordinary tap, and says so by leaving the field
+/// off the wire entirely.
+fn is_one(n: &u32) -> bool {
+    *n == 1
+}
+
 #[derive(Debug)]
 pub struct HttpRunnerClient {
     base: String,
@@ -1227,10 +1233,42 @@ impl HttpRunnerClient {
         nx: f64,
         ny: f64,
     ) -> Result<TapAtCoordResult, RunnerTransportError> {
+        self.tap_at_norm_coord_burst(nx, ny, 1, None, None).await
+    }
+
+    /// `POST /tap-at-norm-coord` with several touches at one point.
+    ///
+    /// One request, one synthesise, `times` touches spaced by
+    /// `interval_ms` on the event timeline. Sending them one at a time
+    /// costs a round trip each — measured at ~400 ms on iOS 26.5 — and
+    /// leaves the spacing as whatever that round trip happened to be,
+    /// which is why a gesture gated on a 500 ms inter-tap window could
+    /// not be driven: a flow could not tell a slow harness from a
+    /// broken app.
+    ///
+    /// `None` for either timing takes the runner's default.
+    pub async fn tap_at_norm_coord_burst(
+        &self,
+        nx: f64,
+        ny: f64,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+    ) -> Result<TapAtCoordResult, RunnerTransportError> {
         #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
         struct Req {
             nx: f64,
             ny: f64,
+            // Omitted for an ordinary tap, so the common case puts
+            // exactly the bytes on the wire it always did — including
+            // for a runner that has never heard of a burst.
+            #[serde(skip_serializing_if = "is_one")]
+            times: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            interval_ms: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            hold_ms: Option<u32>,
         }
         #[derive(Deserialize)]
         struct Resp {
@@ -1240,7 +1278,17 @@ impl HttpRunnerClient {
             result: TapAtCoordResult,
         }
         let body: Resp = self
-            .json_post("/tap-at-norm-coord", &Req { nx, ny }, None)
+            .json_post(
+                "/tap-at-norm-coord",
+                &Req {
+                    nx,
+                    ny,
+                    times,
+                    interval_ms,
+                    hold_ms,
+                },
+                None,
+            )
             .await?;
         OkEnvelope { ok: body.ok }.require_ok("/tap-at-norm-coord")?;
         Ok(body.result)

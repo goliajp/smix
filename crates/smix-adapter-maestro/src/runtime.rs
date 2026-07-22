@@ -335,6 +335,14 @@ pub trait AppLike: Send + Sync {
     async fn copy_text_from(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
     /// Double-tap an element. Mirrors [`App::double_tap`].
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
+    /// Tap one element several times, spaced on the event timeline.
+    async fn tap_burst(
+        &self,
+        selector: &Selector,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+    ) -> Result<(), ExpectationFailure>;
 
     /// Navigation back — iOS navbar back / edge swipe, Android
     /// KEYCODE_BACK. Distinct from any keyboard key.
@@ -554,6 +562,15 @@ impl AppLike for App {
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         App::double_tap(self, selector).await
     }
+    async fn tap_burst(
+        &self,
+        selector: &Selector,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+    ) -> Result<(), ExpectationFailure> {
+        App::tap_burst(self, selector, times, interval_ms, hold_ms).await
+    }
     async fn go_back(&self) -> Result<(), ExpectationFailure> {
         App::go_back(self).await
     }
@@ -728,6 +745,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::TapOn { .. } => "tapOn",
         Step::TapAtPoint { .. } => "tapAtPoint",
         Step::DoubleTapOn { .. } => "doubleTapOn",
+        Step::RepeatTap { .. } => "repeatTap",
         Step::LongPressOn { .. } => "longPressOn",
         Step::InputText(_) => "inputText",
         Step::InputTextInto { .. } => "inputText",
@@ -1885,6 +1903,17 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::DoubleTapOn { selector } => {
                 self.app.double_tap(selector).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::RepeatTap {
+                selector,
+                times,
+                interval_ms,
+                hold_ms,
+            } => {
+                self.app
+                    .tap_burst(selector, *times, *interval_ms, *hold_ms)
+                    .await?;
                 Ok(RunStepReport::Ok)
             }
             Step::LongPressOn {

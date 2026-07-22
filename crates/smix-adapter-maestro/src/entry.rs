@@ -699,6 +699,7 @@ fn run_error_to_exit(e: &RunError) -> u8 {
 
 fn summarize_step(step: &Step) -> String {
     match step {
+        Step::RepeatTap { times, .. } => format!("repeatTap x{times}"),
         Step::TapOn { optional, .. } => {
             if *optional {
                 "tapOn (optional)".into()

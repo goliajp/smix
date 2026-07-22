@@ -15,9 +15,29 @@ public enum TapAtCoordRoute {
   public struct TapAtCoordRequest: Equatable, Sendable {
     public let nx: Double
     public let ny: Double
-    public init(nx: Double, ny: Double) {
+    /// How many touches to deliver. Absent or 1 is an ordinary tap.
+    ///
+    /// A burst is one synthesise carrying several pointer paths, so the
+    /// gap between touches is the stated interval rather than a round
+    /// trip — which at ~400 ms each is what made a rapid-tap gesture
+    /// undriveable.
+    public let times: Int
+    /// Milliseconds between touches in a burst.
+    public let intervalMs: Int
+    /// Milliseconds each touch stays down.
+    public let holdMs: Int
+
+    public init(
+      nx: Double, ny: Double,
+      times: Int = 1,
+      intervalMs: Int = TouchTimeline.defaultIntervalMs,
+      holdMs: Int = TouchTimeline.defaultHoldMs
+    ) {
       self.nx = nx
       self.ny = ny
+      self.times = times
+      self.intervalMs = intervalMs
+      self.holdMs = holdMs
     }
   }
 
@@ -43,7 +63,12 @@ public enum TapAtCoordRoute {
     let ny = try num("ny")
     if nx < 0 || nx > 1 { throw DecodeError.outOfRange("nx", nx) }
     if ny < 0 || ny > 1 { throw DecodeError.outOfRange("ny", ny) }
-    return TapAtCoordRequest(nx: nx, ny: ny)
+    let times = (root["times"] as? NSNumber)?.intValue ?? 1
+    let intervalMs =
+      (root["intervalMs"] as? NSNumber)?.intValue ?? TouchTimeline.defaultIntervalMs
+    let holdMs = (root["holdMs"] as? NSNumber)?.intValue ?? TouchTimeline.defaultHoldMs
+    return TapAtCoordRequest(
+      nx: nx, ny: ny, times: times, intervalMs: intervalMs, holdMs: holdMs)
   }
 
   public static func success(ok: Bool) -> HTTPResponse {

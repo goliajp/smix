@@ -154,6 +154,31 @@ async fn tap_at_norm_coord_posts_nx_ny() {
     client.tap_at_norm_coord(0.5, 0.25).await.unwrap();
 }
 
+/// A burst names its count and cadence; an ordinary tap does not.
+///
+/// The test above passes unchanged, which is the point: adding bursts
+/// left the bytes an ordinary tap puts on the wire exactly as they
+/// were, so a runner that has never heard of one is unaffected.
+#[tokio::test]
+async fn tap_at_norm_coord_burst_posts_its_cadence() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/tap-at-norm-coord"))
+        .and(body_json(serde_json::json!({
+            "nx": 0.5, "ny": 0.25, "times": 10, "intervalMs": 80
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true
+        })))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    client
+        .tap_at_norm_coord_burst(0.5, 0.25, 10, Some(80), None)
+        .await
+        .unwrap();
+}
+
 // ---- tap (selector + mode) ---------------------------------------------
 
 #[tokio::test]

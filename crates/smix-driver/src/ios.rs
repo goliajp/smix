@@ -141,6 +141,17 @@ impl Driver for IosDriver {
         IosDriver::tap(self, selector, include).await
     }
 
+    async fn tap_burst(
+        &self,
+        selector: &Selector,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+        include: Option<IncludeScope>,
+    ) -> Result<(), ExpectationFailure> {
+        IosDriver::tap_burst(self, selector, times, interval_ms, hold_ms, include).await
+    }
+
     async fn tap_with_mode(
         &self,
         selector: &Selector,

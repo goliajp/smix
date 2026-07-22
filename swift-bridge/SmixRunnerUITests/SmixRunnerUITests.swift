@@ -2168,7 +2168,7 @@ final class SmixRunnerUITests: XCTestCase {
       // event carries XCUIElement-owner metadata that stops RN list
       // rendering from triggering its data fetch — the list sits on a
       // skeleton loader for 30 s instead of populating.
-      tapAtCoordHandler: { nx, ny in
+      tapAtCoordHandler: { nx, ny, times, intervalMs, holdMs in
         let app = await resolveApp()  // Per-request target-app rebind.
         // Compute the physical point (nx × app.frame.width + frame.origin)
         // on the main thread.
@@ -2187,7 +2187,11 @@ final class SmixRunnerUITests: XCTestCase {
             Data("smix-runner: tap-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
           return (ok: false, chain: [])
         }
-        let pathAdded = record.addPointerTouchEvent(at: CGPoint(x: px, y: py))
+        // One record, N paths. The interval rides the event timeline
+        // rather than being whatever a per-tap round trip cost.
+        let pathAdded = record.addPointerTapBurst(
+          at: CGPoint(x: px, y: py), times: times, intervalMs: intervalMs,
+          holdMs: holdMs)
         guard pathAdded else {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: XCPointerEventPath unavailable\n".utf8))

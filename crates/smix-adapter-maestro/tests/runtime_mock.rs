@@ -88,6 +88,8 @@ enum MockCall {
     CopyTextFrom(Selector),
     /// `App::double_tap(selector)`.
     DoubleTap(Selector),
+    /// `App::tap_burst(selector, times, intervalMs, holdMs)`.
+    TapBurst(Selector, u32, Option<u32>, Option<u32>),
     /// `App::long_press(selector, duration)`.
     LongPress(Selector, Duration),
     /// `App::set_location(lat, lng)`.
@@ -677,6 +679,22 @@ impl AppLike for MockApp {
             .push(MockCall::CopyTextFrom(selector.clone()));
         Ok(())
     }
+    async fn tap_burst(
+        &self,
+        selector: &Selector,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+    ) -> Result<(), ExpectationFailure> {
+        self.calls.lock().unwrap().push(MockCall::TapBurst(
+            selector.clone(),
+            times,
+            interval_ms,
+            hold_ms,
+        ));
+        Ok(())
+    }
+
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         self.calls
             .lock()

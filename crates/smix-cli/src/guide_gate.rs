@@ -148,6 +148,16 @@ impl AppLike for MockApp {
         self.record(MockCall::TapWithMode(selector.clone(), mode));
         Ok(())
     }
+    async fn tap_burst(
+        &self,
+        _selector: &Selector,
+        _times: u32,
+        _interval_ms: Option<u32>,
+        _hold_ms: Option<u32>,
+    ) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
+
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         self.record(MockCall::DoubleTap(selector.clone()));
         Ok(())

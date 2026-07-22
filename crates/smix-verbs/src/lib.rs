@@ -82,6 +82,10 @@ pub const SELECTOR_KEYS: &[&str] = &[
     "timeout",
     "requireOnScreen",
     "duration",
+    // repeatTap
+    "times",
+    "intervalMs",
+    "holdMs",
 ];
 
 /// One verb in the canonical table.
@@ -175,6 +179,15 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         "longPress",
         VerbCategory::Tap,
         ArgShape::Selector,
+    ),
+    // No maestro counterpart: maestro drives repeated taps with
+    // `repeat`, which sends one request per tap. That is the thing this
+    // exists to stop doing.
+    v(
+        "repeatTap",
+        "repeatTap",
+        VerbCategory::Tap,
+        ArgShape::Mapping,
     ),
     // ----- Input family -----
     v(

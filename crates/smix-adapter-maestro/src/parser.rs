@@ -2360,6 +2360,40 @@ fn parse_double_tap_on(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::DoubleTapOn { selector })
 }
 
+/// `repeatTap: { <selector>, times, intervalMs?, holdMs? }`.
+///
+/// A mapping only: a bare selector would be a tap, and `times` is the
+/// whole point. Selector keys are read by the same
+/// [`visible_to_selector`] every other verb uses, so `id` / `text` /
+/// `label` / `fallback` all work here without a second vocabulary.
+fn parse_repeat_tap(v: &Value) -> Result<Step, ParseError> {
+    let Value::Mapping(map) = v else {
+        return Err(ParseError::InvalidValue {
+            field: "repeatTap".into(),
+            reason: format!("expected a map with a selector and `times`, got {v:?}"),
+        });
+    };
+    let selector = visible_to_selector(v)?;
+    let times = map
+        .get(Value::String("times".into()))
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ParseError::InvalidValue {
+            field: "repeatTap.times".into(),
+            reason: "required: how many touches to send".into(),
+        })? as u32;
+    let num = |k: &str| {
+        map.get(Value::String(k.into()))
+            .and_then(Value::as_u64)
+            .map(|n| n as u32)
+    };
+    Ok(Step::RepeatTap {
+        selector,
+        times,
+        interval_ms: num("intervalMs"),
+        hold_ms: num("holdMs"),
+    })
+}
+
 // LongPressOn has two forms: scalar (default duration) or mapping
 // (selector fields + optional `duration: <ms>`). maestro documents
 // the field name as `duration`, in milliseconds.
@@ -2570,6 +2604,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "pasteText" => parse_paste_text(value),
         "copyTextFrom" => parse_copy_text_from(value),
         "doubleTapOn" => parse_double_tap_on(value),
+        "repeatTap" => parse_repeat_tap(value),
         "longPressOn" => parse_long_press_on(value),
         // Flow gap.
         "assertTrue" => parse_assert_true(value),

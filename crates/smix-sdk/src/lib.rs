@@ -1603,6 +1603,30 @@ impl App {
         self.driving()?.tap(selector, None).await
     }
 
+    /// Tap a selector `times` times in a row.
+    ///
+    /// One resolve and one synthesise, with the touches spaced by
+    /// `interval_ms` on the event timeline. `repeat` around `tapOn`
+    /// sends each tap as its own request, which at ~400 ms per
+    /// synthesise makes a rapid-tap gesture undriveable — and leaves
+    /// the interval as whatever the round trip cost, so a flow cannot
+    /// tell a slow harness from a broken app.
+    ///
+    /// `None` for either timing takes the runner's default.
+    pub async fn tap_burst(
+        &self,
+        selector: &Selector,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+    ) -> Result<(), ExpectationFailure> {
+        self.ledger
+            .record_tap(now_ms(), Some(format!("{selector:?} x{times}")));
+        self.driving()?
+            .tap_burst(selector, times, interval_ms, hold_ms, None)
+            .await
+    }
+
     /// Tap a selector via an explicit dispatch mode. Use
     /// `TapMode::DaemonProxySynthesize` for RN Pressable buttons that
     /// don't fire `onPress` with the default `tap()` Apple-native-event

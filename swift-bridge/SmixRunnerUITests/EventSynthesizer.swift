@@ -18,6 +18,7 @@
 // pattern as the existing `DaemonKeyboard.sendString`.
 
 import Foundation
+import SmixRunnerCore
 import ObjectiveC
 import UIKit
 
@@ -120,6 +121,36 @@ final class SmixEventRecord {
     typealias Method = @convention(c) (NSObject, Selector, NSObject) -> Void
     let method = unsafeBitCast(imp, to: Method.self)
     method(record, selector, path.path)
+    return true
+  }
+
+  /// Add `times` touches at one point, spaced by `intervalMs`.
+  ///
+  /// One record, several paths, one synthesise. The alternative — a
+  /// request per tap — costs a ~400 ms round trip each (measured on
+  /// iOS 26.5) and leaves the interval as whatever that round trip
+  /// happened to be, which is why a flow could not drive a gesture
+  /// gated on a 500 ms window: it could not tell a slow harness from a
+  /// broken app.
+  ///
+  /// Here the spacing is a number the caller states, carried on the
+  /// event timeline itself.
+  func addPointerTapBurst(
+    at point: CGPoint, times: Int, intervalMs: Int, holdMs: Int
+  ) -> Bool {
+    let downs = TouchTimeline.downOffsets(times: times, intervalMs: intervalMs)
+    let selector = NSSelectorFromString("addPointerEventPath:")
+    for down in downs {
+      guard let path = SmixPointerEventPath.forTouch(at: point, offset: down) else {
+        return false
+      }
+      path.offset = TouchTimeline.upOffset(downOffset: down, holdMs: holdMs)
+      path.liftUp()
+      let imp = record.method(for: selector)
+      typealias Method = @convention(c) (NSObject, Selector, NSObject) -> Void
+      let method = unsafeBitCast(imp, to: Method.self)
+      method(record, selector, path.path)
+    }
     return true
   }
 
