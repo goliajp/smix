@@ -133,10 +133,38 @@ pub async fn cmd_tap(selector_str: String, port: u16) -> Result<(), ActError> {
     let selector =
         parse_selector(&selector_str).ok_or_else(|| ActError::BadSelector(selector_str.clone()))?;
     let d = driver(port);
-    d.tap(&selector, None)
+    let outcome = d
+        .tap(&selector, None)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
+    // Say what the touch landed on, not just that one was sent.
+    //
+    // A consumer hit "the step is green and the app did nothing" three
+    // times in one effort, and all three times the touch HAD arrived —
+    // the fault was downstream, in a counter, a no-op navigate, and an
+    // inter-tap window. Each time the green step was read as "smix did
+    // not deliver it" and sent them upstream first, ~13 rounds in
+    // total. A pass that shows its evidence points the other way.
     println!("tapped {selector_str}");
+    if !outcome.observed.is_empty() {
+        let inside: Vec<String> = outcome
+            .observed
+            .iter()
+            .map(|e| {
+                if !e.identifier.is_empty() {
+                    e.identifier.clone()
+                } else if !e.label.is_empty() {
+                    format!("{:?}", e.label)
+                } else {
+                    "<unnamed>".to_string()
+                }
+            })
+            .collect();
+        println!("  landed inside: {}", inside.join(" < "));
+    }
+    if let smix_driver::ActVerdict::Unconfirmable(why) = &outcome.verdict {
+        println!("  not verified: {why}");
+    }
     Ok(())
 }
 
