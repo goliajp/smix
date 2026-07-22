@@ -1369,7 +1369,7 @@ impl SimctlClient {
         simctl_run(&[
             "spawn",
             udid,
-            "defaults",
+            "/usr/bin/defaults",
             "write",
             "-g",
             "AppleLanguages",
@@ -1381,7 +1381,7 @@ impl SimctlClient {
         simctl_run(&[
             "spawn",
             udid,
-            "defaults",
+            "/usr/bin/defaults",
             "write",
             "-g",
             "AppleLocale",
@@ -1864,12 +1864,22 @@ impl SimctlClient {
         udid: &str,
         enabled: bool,
     ) -> Result<(), DeviceControlError> {
-        let val = if enabled { "1" } else { "0" };
-        // `defaults write` lives under spawn; routed via simctl spawn.
+        // `true`/`false`, not `1`/`0`. `defaults` accepts
+        // `-bool (true | false | yes | no)` and answers anything else
+        // by printing its usage and exiting 255 — which is what this
+        // did from the day it was written. It had no callers until the
+        // animation switch, so nothing ever ran it.
+        let val = if enabled { "true" } else { "false" };
+        // Absolute path, not `defaults`. `simctl spawn` does not run a
+        // login shell inside the simulator, so a bare name exits 255
+        // with no stderr — which is exactly what it did the first time
+        // an animation-quietening run met a device. The same lesson was
+        // learned in v1.0.7 for `rm`; the reader below and
+        // `current_locale` already spell it out.
         simctl_run(&[
             "spawn",
             udid,
-            "defaults",
+            "/usr/bin/defaults",
             "write",
             "com.apple.UIKit",
             "UIAccessibilityReduceMotionEnabled",

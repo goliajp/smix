@@ -97,38 +97,37 @@ impl DeviceControl for IosDeviceControl {
         self.client.uninstall(udid, bundle_id).await
     }
 
-    /// Reduce Motion, which is as far as smix can push iOS on its own.
+    /// Nothing, on iOS, and the docs say so rather than implying
+    /// otherwise.
     ///
-    /// Not "animations off": XCUITest runs in a separate process from
-    /// the app under test, so `UIView.setAnimationsEnabled(false)`
-    /// cannot reach it. Reduce Motion is a system accessibility setting
-    /// UIKit honours inside the app, and it is the strongest lever
-    /// available without asking the app to cooperate — which is the
-    /// dependency that stalled the original `--stable` design.
+    /// There is no host-side lever. Measured on iOS 26.5:
+    ///
+    /// * `simctl ui <device>` offers `appearance`, `increase_contrast`
+    ///   and `content_size` — no motion option.
+    /// * `simctl spawn <device> defaults write <any domain> …` answers
+    ///   `Could not write domain …; exiting`. Not a permissions detail
+    ///   of one domain: `com.apple.UIKit` and `com.apple.Accessibility`
+    ///   both refuse.
+    /// * XCUITest runs in its own process, so
+    ///   `UIView.setAnimationsEnabled(false)` cannot reach the app.
+    ///
+    /// This was written as "Reduce Motion, the strongest lever smix can
+    /// pull on its own" and shipped without a device behind it. The
+    /// first run against one aborted, because `set_reduce_motion` had
+    /// passed `-bool 1` since the day it was written — `defaults` takes
+    /// `true`/`false` and answers anything else with its usage text and
+    /// exit 255 — and it had no callers, so nothing had ever run it.
+    ///
+    /// Returning `Ok` rather than an error is deliberate: a platform
+    /// that cannot be quietened is not a failed run. What is not
+    /// deliberate is pretending it was quietened, which is why this
+    /// says so here, in the guide, and in the changelog.
     async fn set_animations_quiet(
         &self,
-        udid: &str,
-        quiet: bool,
+        _udid: &str,
+        _quiet: bool,
     ) -> Result<(), DeviceControlError> {
-        self.client.set_reduce_motion(udid, quiet).await?;
-        if !quiet {
-            return Ok(());
-        }
-        let read_back = self.client.reduce_motion(udid).await?.unwrap_or_default();
-        crate::animation_settings_verified(&[(
-            "UIAccessibilityReduceMotionEnabled",
-            read_back.as_str(),
-        )])
-        .map_err(|bad| {
-            DeviceControlError::non_zero_exit(
-                "spawn defaults read",
-                1,
-                format!(
-                    "Reduce Motion was not established on {udid}: {}",
-                    bad.join("; ")
-                ),
-            )
-        })
+        Ok(())
     }
 
     async fn keychain_reset(&self, udid: &str) -> Result<(), DeviceControlError> {

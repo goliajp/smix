@@ -261,13 +261,12 @@ one that stops.
 # internal idle-wait for performance (SmixQuiescenceSwizzle); this verb
 # has always been a bounded pause at the runtime layer.
 #
-# A run quietens the device's animations before it starts, so there is
-# usually less to wait for than there used to be. How much less depends
-# on the platform: on Android the animation scales are zero and this
-# verb has little left to do; on iOS it is Reduce Motion, which shortens
-# and simplifies transitions without removing them, so the wait still
-# earns its place. `--animations` restores the device's own settings and
-# with them the original reason for this verb.
+# On Android a run zeroes the animation scales before it starts, so
+# this verb has little left to wait for; `--animations` restores the
+# device's own settings and with them the original reason for it.
+#
+# On iOS nothing is quietened — no host-side lever exists — so this
+# verb keeps its full value there.
 - waitForAnimationToEnd                  # bare form: 400 ms (maestro-compat)
 - waitForAnimationToEnd: 500             # integer: sleep N ms
 - waitForAnimationToEnd:
