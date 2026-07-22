@@ -1018,6 +1018,114 @@ impl IosDriver {
     }
 }
 
+/// One element as two sides describe it: what the host aimed at, and
+/// what the runner found under the tapped point.
+///
+/// Deliberately three fields and not a whole `A11yNode`. The question
+/// is "same element?", and every extra field is another thing two
+/// truthful descriptions can differ on for reasons that are not the
+/// answer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HitElement {
+    /// Accessibility identifier, empty when the element has none.
+    pub identifier: String,
+    /// Accessibility label, empty when the element has none.
+    pub label: String,
+    /// `(x, y, w, h)` in the app's coordinate space.
+    pub frame: (f64, f64, f64, f64),
+}
+
+/// What a tap turned out to have done.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TapHitVerdict {
+    /// The point held the element that was aimed at.
+    Confirmed,
+    /// It held something else, or nothing.
+    Missed(String),
+    /// Neither description carried anything comparable.
+    ///
+    /// Its own verdict rather than a pass, because "I could not tell"
+    /// and "it hit" are different facts and only one of them is what
+    /// `tapOn` claims. Folding this into `Confirmed` would rebuild the
+    /// defect this check exists to remove.
+    Unconfirmable(String),
+}
+
+/// Tolerance, in points, for comparing frames.
+///
+/// A frame makes a round trip — the host normalises the centre against
+/// the app frame, the runner multiplies it back — so exact equality
+/// would fail on arithmetic rather than on aim.
+const FRAME_TOLERANCE_PT: f64 = 1.0;
+
+/// Are these two descriptions the same element?
+///
+/// Compared by the strongest field both sides carry: identifier, then
+/// label, then geometry. Not by "is the point inside the frame" — that
+/// is true of an overlay covering the whole screen, and an overlay
+/// swallowing the touch is one of the things this exists to catch.
+///
+/// `hit == None` means the runner found nothing at the point.
+pub fn tap_hit_verdict(aimed: &HitElement, hit: Option<&HitElement>) -> TapHitVerdict {
+    let Some(hit) = hit else {
+        return TapHitVerdict::Missed(format!(
+            "aimed at {} but the tapped point held nothing — the element \
+             moved between the tree fetch and the tap, or its frame was \
+             stale",
+            describe_hit(aimed)
+        ));
+    };
+    if !aimed.identifier.is_empty() && !hit.identifier.is_empty() {
+        return same_or_missed(aimed.identifier == hit.identifier, aimed, hit, "identifier");
+    }
+    if !aimed.label.is_empty() && !hit.label.is_empty() {
+        return same_or_missed(aimed.label == hit.label, aimed, hit, "label");
+    }
+    let close = |a: f64, b: f64| (a - b).abs() <= FRAME_TOLERANCE_PT;
+    let degenerate = aimed.frame.2 <= 0.0 && aimed.frame.3 <= 0.0;
+    if degenerate {
+        return TapHitVerdict::Unconfirmable(format!(
+            "neither the element aimed at nor the one at the tapped point \
+             carries an identifier or a label, and the frame is empty, so \
+             there is nothing to compare them by"
+        ));
+    }
+    same_or_missed(
+        close(aimed.frame.0, hit.frame.0)
+            && close(aimed.frame.1, hit.frame.1)
+            && close(aimed.frame.2, hit.frame.2)
+            && close(aimed.frame.3, hit.frame.3),
+        aimed,
+        hit,
+        "frame",
+    )
+}
+
+fn same_or_missed(same: bool, aimed: &HitElement, hit: &HitElement, by: &str) -> TapHitVerdict {
+    if same {
+        TapHitVerdict::Confirmed
+    } else {
+        TapHitVerdict::Missed(format!(
+            "aimed at {} but the tapped point held {} (compared by {by})",
+            describe_hit(aimed),
+            describe_hit(hit)
+        ))
+    }
+}
+
+fn describe_hit(e: &HitElement) -> String {
+    if !e.identifier.is_empty() {
+        format!("id={}", e.identifier)
+    } else if !e.label.is_empty() {
+        format!("label={:?}", e.label)
+    } else {
+        format!(
+            "an unnamed element at ({:.0},{:.0} {:.0}x{:.0})",
+            e.frame.0, e.frame.1, e.frame.2, e.frame.3
+        )
+    }
+}
+
 /// The /tap, /double-tap and /long-press routes decode ONLY a plain
 /// literal `selector.text` — the Swift side has no resolver for id /
 /// label / role / regex forms, and silently drops modifiers. Reject
