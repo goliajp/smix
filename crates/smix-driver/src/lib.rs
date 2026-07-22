@@ -1084,11 +1084,12 @@ pub fn tap_hit_verdict(aimed: &HitElement, hit: Option<&HitElement>) -> TapHitVe
     let close = |a: f64, b: f64| (a - b).abs() <= FRAME_TOLERANCE_PT;
     let degenerate = aimed.frame.2 <= 0.0 && aimed.frame.3 <= 0.0;
     if degenerate {
-        return TapHitVerdict::Unconfirmable(format!(
+        return TapHitVerdict::Unconfirmable(
             "neither the element aimed at nor the one at the tapped point \
              carries an identifier or a label, and the frame is empty, so \
              there is nothing to compare them by"
-        ));
+                .to_string(),
+        );
     }
     same_or_missed(
         close(aimed.frame.0, hit.frame.0)
