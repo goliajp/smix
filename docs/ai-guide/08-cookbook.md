@@ -280,8 +280,8 @@ For YAMLs that primarily run cross-platform but have a few platform-specific bit
     link: "myapp://home/details/42"
 - assertVisible: { id: "deeplink-target-label", text: ".*home/details/42.*" }
 
-# Android-only — back key
-- pressKey: BACK
+# Android-only — back navigation (its own verb, not a key press)
+- back
 ```
 
 ## Performance: skip launchApp for fast iteration

@@ -3441,10 +3441,15 @@ fn parse_key_name(s: &str) -> Result<KeyName, RunError> {
         "tab" => Ok(KeyName::Tab),
         "space" => Ok(KeyName::Space),
         "escape" | "esc" => Ok(KeyName::Escape),
-        "arrowup" | "up" => Ok(KeyName::ArrowUp),
-        "arrowdown" | "down" => Ok(KeyName::ArrowDown),
-        "arrowleft" | "left" => Ok(KeyName::ArrowLeft),
-        "arrowright" | "right" => Ok(KeyName::ArrowRight),
+        // The underscored spellings exist for the same reason the
+        // volume ones do: the guides write key names in SCREAMING_SNAKE
+        // (`VOLUME_UP`), `to_ascii_lowercase` leaves the underscore, and
+        // a reader following that convention for the arrows landed on
+        // "unknown key".
+        "arrowup" | "arrow_up" | "up" => Ok(KeyName::ArrowUp),
+        "arrowdown" | "arrow_down" | "down" => Ok(KeyName::ArrowDown),
+        "arrowleft" | "arrow_left" | "left" => Ok(KeyName::ArrowLeft),
+        "arrowright" | "arrow_right" | "right" => Ok(KeyName::ArrowRight),
         // iOS hardware keys (full maestro yaml key coverage):
         // home / lock go through
         // XCUIDevice.shared.perform(.homeButton/.lockButton); volume

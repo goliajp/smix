@@ -577,75 +577,36 @@ fn remove_artifacts(flow: &smix_adapter_maestro::Flow) {
     }
 }
 
-/// Examples that do not reach a route, and why.
+/// Examples this gate cannot judge, and why.
 ///
-/// A gate that simply went red would have to stay unwired until the
-/// last entry was fixed, which is how a red gate becomes a gate nobody
-/// runs. Listing them keeps it wired and keeps the list honest in both
-/// directions: an unlisted break fails, and so does a listed one that
-/// starts working, so closing a finding forces its line out of here.
+/// It used to hold two kinds: guides printing something the code
+/// refuses, and examples whose outcome depends on what is on screen.
+/// The first kind is empty now — every documented example that could
+/// be judged, runs — so what remains is the second, and the type says
+/// so rather than keeping a distinction nothing uses. A future defect
+/// that has to be listed here re-introduces it deliberately.
 ///
-/// Two reasons appear, and they call for opposite responses:
-///
-/// * `Defect` — the guide prints something the code refuses. Someone
-///   has to change one of the two.
-/// * `NeedsDevice` — the example is fine and the *gate* cannot judge
-///   it, because how it ends depends on what is on screen. Nothing to
-///   fix; it is here so the count is not quietly wrong.
-#[derive(PartialEq)]
-enum Reason {
-    Defect,
-    NeedsDevice,
-}
-
-const KNOWN_BROKEN: &[(&str, usize, Reason, &str)] = &[
-    (
-        "02-yaml-reference",
-        3,
-        Reason::Defect,
-        "assertTrue: ${output.userCount > 0} — the expression grammar \
-         (expr.rs) has no relational operators at all; eq is the \
-         tightest comparison it parses. v2.4 finding N6.",
-    ),
-    (
-        "02-yaml-reference",
-        7,
-        Reason::Defect,
-        "pressKey: POWER. v2.4 finding N5.",
-    ),
+/// Listing rather than simply going red keeps the gate wired: a red
+/// gate that has to stay red until the last finding closes is a gate
+/// nobody runs. The list stays honest in both directions — an unlisted
+/// break fails, and so does a listed example that starts working.
+const KNOWN_BROKEN: &[(&str, usize, &str)] = &[
     (
         "02-yaml-reference",
         11,
-        Reason::NeedsDevice,
         "repeat.while.visible loops until the element leaves the screen; \
          a mock that always says visible never exits, and one that said \
          otherwise would be inventing a screen.",
     ),
     (
-        "04-actions",
-        13,
-        Reason::Defect,
-        "documents pressKey BACK / POWER / SCREEN_LOCK; KeyName has none \
-         of the three, and `back` is deliberately not an alias for \
-         Delete (runtime.rs parse_key_name). v2.4 finding N5.",
-    ),
-    (
-        "08-cookbook",
-        17,
-        Reason::Defect,
-        "same pressKey BACK, in the Android-only section. v2.4 finding N5.",
-    ),
-    (
         "10-ai-assertions",
         1,
-        Reason::NeedsDevice,
         "assertCondition asks a vision model about the screen. The judge \
          runs; it is looking at a 1x1 pixel.",
     ),
     (
         "10-ai-assertions",
         2,
-        Reason::NeedsDevice,
         "extractWithAI reads fields off the screen, then asserts on what \
          it read. Same 1x1 pixel.",
     ),
@@ -654,32 +615,23 @@ const KNOWN_BROKEN: &[(&str, usize, Reason, &str)] = &[
 fn known_broken(page: &str, block: usize) -> Option<&'static str> {
     KNOWN_BROKEN
         .iter()
-        .find(|(p, b, _, _)| *p == page && *b == block)
-        .map(|(_, _, _, why)| *why)
+        .find(|(p, b, _)| *p == page && *b == block)
+        .map(|(_, _, why)| *why)
 }
 
 /// The list is a claim about how much of the corpus this gate really
-/// judges, so it has to be small enough to be worth having.
+/// judges, so it has to stay small enough to be worth having.
 ///
-/// Not a round number picked to pass: seven is what it is today, and a
-/// ceiling one above it means adding an eighth is a deliberate act
-/// rather than a quiet one.
+/// Three today, all of them examples whose ending depends on a screen.
+/// The ceiling is one above, so a fourth is a deliberate act rather
+/// than a quiet one.
 #[test]
 fn the_unjudged_list_stays_short() {
     assert!(
-        KNOWN_BROKEN.len() <= 8,
+        KNOWN_BROKEN.len() <= 4,
         "{} examples the gate does not judge — at some point the list \
          is the finding",
         KNOWN_BROKEN.len()
-    );
-    let device = KNOWN_BROKEN
-        .iter()
-        .filter(|(_, _, r, _)| *r == Reason::NeedsDevice)
-        .count();
-    assert!(
-        device <= 3,
-        "{device} examples excused as needing a device — each one is a \
-         piece of the corpus nothing checks"
     );
 }
 
@@ -995,15 +947,24 @@ fn a_configured_launch_activity_reaches_the_device() {
     );
 }
 
-/// N3 — 04-actions says the default tap goes through `/tap-by-id` when
-/// the element has an identifier. It does not.
+/// N3 — the route 04-actions names for the default tap is the route it
+/// takes.
 ///
-/// `IosDriver::tap` fetches the tree, resolves host-side, and calls
-/// `/tap-at-norm-coord`; `/tap-by-id` is reached only by
-/// `dispatch: xcui` and by the runtime's modal/tab id whitelist. The
-/// trace says which, with no reading of prose required.
+/// The page used to describe this backwards in three ways at once: that
+/// the default tap goes through `/tap-by-id` when the element has an
+/// identifier, that `/tap-by-id` dispatches via IOHID
+/// `_XCT_synthesizeEvent`, and that there is a Path A / Path B fallback
+/// between them. `IosDriver::tap` fetches the tree, resolves host-side
+/// and calls `/tap-at-norm-coord`, which is `coordinate(…).tap()` — the
+/// Apple native event chain. `/tap-by-id` is `XCUIElement.tap()`, the
+/// XCTest gesture-recogniser chain, and is reached only by
+/// `dispatch: xcui` and the runtime's modal/tab id whitelist.
+/// `_XCT_synthesizeEvent` belongs to `dispatch: daemonProxy`.
+///
+/// Two halves, because either alone can drift: the trace says which
+/// route the example takes, and the page has to name that one.
 #[test]
-fn the_default_tap_still_misses_the_route_its_page_names() {
+fn the_default_tap_takes_the_route_its_page_names() {
     let block = block_containing("04-actions", "home-increment-btn");
     let Verdict::Reached(calls) = run_example("04-actions", &block) else {
         panic!("the default-tap example no longer reaches a route at all");
@@ -1013,9 +974,30 @@ fn the_default_tap_still_misses_the_route_its_page_names() {
         .any(|c| matches!(c, MockCall::TapXcui(_) | MockCall::TapWithMode(..)));
     assert!(
         !by_id,
-        "the default tap now takes a runner-side route — N3 is fixed \
-         and its row must move to `runs`. Trace: {:?}",
+        "the default tap took a runner-side route — the page describes \
+         a host-side resolve. Trace: {:?}",
         calls.iter().map(MockCall::describe).collect::<Vec<_>>()
+    );
+
+    let page = guide_pages()["04-actions"];
+    let section = page
+        .split("### Tap with explicit dispatch")
+        .next()
+        .expect("04-actions still opens with the default-tap section");
+    assert!(
+        section.contains("/tap-at-norm-coord"),
+        "04-actions describes the default tap without naming the route \
+         it takes"
+    );
+    assert!(
+        !section.contains("_XCT_synthesizeEvent"),
+        "04-actions still attributes IOHID synthesis to the default \
+         tap; that is `dispatch: daemonProxy`"
+    );
+    assert!(
+        !section.contains("Path A") && !section.contains("Path B"),
+        "04-actions still describes a Path A / Path B fallback between \
+         the two routes; there is no fallback, `/tap-by-id` is opt-in"
     );
 }
 
@@ -1205,10 +1187,11 @@ fn the_list_and_the_probes_agree() {
     for name in [
         "every_runner_dialling_command_can_reach_the_registry",
         "a_configured_launch_activity_reaches_the_device",
-        "the_default_tap_still_misses_the_route_its_page_names",
+        "the_default_tap_takes_the_route_its_page_names",
         "the_daemon_proxy_id_example_is_admissible",
         "the_bare_string_form_matches_a_real_tree",
-        "the_documented_regex_examples_are_still_literals",
+        "the_documented_regex_examples_are_patterns",
+        "every_documented_key_name_parses",
     ] {
         assert!(
             SELF.contains(&format!("fn {name}(")),
@@ -1270,60 +1253,132 @@ fn summary() {
     let count = |s: &str| rows.iter().filter(|r| r.status == s).count();
     println!(
         "guide-executability: {} claims ({} runs / {} broken / {} unjudged) \
-         · {judged} yaml blocks judged · {} examples not judged ({} of them \
-         needing a device)",
+         · {judged} yaml blocks judged · {} examples not judged, all \
+         needing a device",
         rows.len(),
         count("runs"),
         count("broken"),
         count("unjudged"),
         KNOWN_BROKEN.len(),
-        KNOWN_BROKEN
-            .iter()
-            .filter(|(_, _, r, _)| *r == Reason::NeedsDevice)
-            .count(),
     );
 }
 
-/// N7 — 03-selectors says a string with regex meta characters becomes a
-/// pattern. Only `|` does.
+/// N7 — every regex 03-selectors prints is a regex.
 ///
-/// The page's own examples are `^Help$` and `Row #[0-9]+`; both come out
-/// of `text_to_pattern` as literals, and a literal is matched with
-/// `eq_ignore_ascii_case`, so each matches exactly the element whose
-/// label is that string with the punctuation in it. Nothing errors —
-/// the selector simply finds nothing, which is the failure mode the
-/// whole segment is about.
+/// The page said a string with regex meta characters becomes a pattern,
+/// and only `|` ever did. Its own examples, `^Help$` and
+/// `Row #[0-9]+`, came out of `text_to_pattern` as literals and were
+/// matched with `eq_ignore_ascii_case` — no error, just an element that
+/// is never found.
 ///
-/// Asked of the two examples the page prints, not of invented ones: if
-/// someone changes what the page shows, this should be re-read rather
-/// than keep passing on strings nobody documents.
+/// Widening the detection would have been worse: `Delete?` and `3.5`
+/// are ordinary labels, and turning them into patterns silently
+/// broadens what they match. The tagged form the wire type already
+/// defined is now reachable from yaml instead, and the page shows it.
+///
+/// Read from the page's own examples, so changing what it prints means
+/// re-reading this rather than passing on strings nobody documents.
 #[test]
-fn the_documented_regex_examples_are_still_literals() {
+fn the_documented_regex_examples_are_patterns() {
     use smix_selector::Pattern;
     let page = guide_pages()["03-selectors"];
+    let blocks = yaml_blocks(page);
+    let regex_section = blocks
+        .iter()
+        .find(|b| b.contains("regex:"))
+        .expect("03-selectors no longer prints an explicit regex example");
     for shown in ["^Help$", "Row #[0-9]+"] {
         assert!(
-            page.contains(shown),
-            "03-selectors no longer prints {shown:?} as a regex example \
-             — re-read the page before trusting this"
-        );
-        assert!(
-            matches!(
-                smix_adapter_maestro::text_to_pattern(shown),
-                Pattern::Text(_)
-            ),
-            "{shown:?} is a pattern now — N7 is fixed and its row must \
-             move to `runs`"
+            regex_section.contains(shown),
+            "03-selectors stopped printing {shown:?} as a regex example"
         );
     }
-    // The contrast: `|` is what actually triggers detection, which is
-    // why the negative control at the top of this file uses one.
+    let flow = smix_adapter_maestro::parse_flow_yaml(&as_flow(regex_section))
+        .expect("the documented regex block parses");
+    // The block also carries the literal example, deliberately — it is
+    // the contrast the section is built around. Judge the two the page
+    // presents as regexes, by the source they were written from.
+    let patterns: Vec<Pattern> = flow
+        .steps
+        .iter()
+        .filter_map(|s| match s {
+            smix_adapter_maestro::Step::TapOn {
+                selector: smix_selector::Selector::Text { text, .. },
+                ..
+            } => Some(text.clone()),
+            _ => None,
+        })
+        .filter(|p| match p {
+            Pattern::Text(t) => t.contains('[') || t.starts_with('^'),
+            Pattern::Regex { regex, .. } => regex.contains('[') || regex.starts_with('^'),
+        })
+        .collect();
+    assert_eq!(
+        patterns.len(),
+        2,
+        "expected the two regex examples out of the block, got {patterns:?}"
+    );
+    for p in &patterns {
+        assert!(
+            matches!(p, Pattern::Regex { .. }),
+            "a documented regex example parses as a literal: {p:?}"
+        );
+    }
+
+    // The contrast, and the reason detection was not widened: a label
+    // with punctuation in it stays a label.
     assert!(
         matches!(
-            smix_adapter_maestro::text_to_pattern("Sign In|Log In"),
-            Pattern::Regex { .. }
+            smix_adapter_maestro::text_to_pattern("Delete?"),
+            Pattern::Text(_)
         ),
-        "alternation stopped being detected too — the finding changed \
-         shape"
+        "meta-character detection widened — an ordinary label is a \
+         pattern now, and matches more than it says"
+    );
+}
+
+/// N5 — every key 04-actions lists as available parses.
+///
+/// The page listed `BACK`, `POWER` and `SCREEN_LOCK`, and `KeyName` has
+/// none of the three. `back` is deliberately not an alias: it was one
+/// once, for Delete, and turned every `- back` step into a silent
+/// backspace that reported success — navigation and keystrokes are
+/// different things, and `- back` is the verb for the first.
+///
+/// Read from the page's own list rather than from a copy here, so
+/// adding a key to the sentence without adding it to the enum fails.
+#[test]
+fn every_documented_key_name_parses() {
+    let page = guide_pages()["04-actions"];
+    let line = page
+        .lines()
+        .find(|l| l.starts_with("- Available keys:"))
+        .expect("04-actions still lists the available keys");
+    let keys: Vec<&str> = line
+        .trim_start_matches("- Available keys:")
+        .split('/')
+        .map(str::trim)
+        .map(|k| k.trim_end_matches('.'))
+        .filter(|k| !k.is_empty())
+        .collect();
+    assert!(
+        keys.len() >= 6,
+        "only {} keys read out of the sentence — the list changed shape \
+         and this would pass by knowing nothing",
+        keys.len()
+    );
+    let mut rejected = Vec::new();
+    for key in &keys {
+        // The runtime parses the key name, not the parser, so the
+        // question has to be asked by running a step.
+        if let Verdict::Refused(why) = run_example("synthetic", &format!("- pressKey: {key}\n")) {
+            rejected.push(format!("{key}: {why}"));
+        }
+    }
+    assert!(
+        rejected.is_empty(),
+        "04-actions lists {} keys that do not exist:\n  {}",
+        rejected.len(),
+        rejected.join("\n  ")
     );
 }

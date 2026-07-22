@@ -64,7 +64,7 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 - assertNotVisible:
     id: "modal-overlay"
 
-- assertTrue: ${output.userCount > 0}    # JS expression eval (runs in evalScript context)
+- assertTrue: ${1 > 0}                   # ==, !=, <, <=, >, >=, &&, ||, !, .contains()
 
 - assertScreenshot: "home.png"           # visual regression — full-frame 64-bit dhash
 - assertScreenshot:
@@ -75,6 +75,15 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 `assertScreenshot` auto-records the baseline on the first run and diffs
 against it afterwards. `mask:` regions are accepted but not yet applied
 (the dhash compares the full frame); a run warning says so.
+
+`assertTrue` reads `${…}` with a small expression engine, not a JS
+runtime — comparison, boolean operators, parentheses and `.contains()`,
+and nothing else. It can read `output.*`, which is written by
+`extractWithAI` and by `runFlow: {as: name}`; both store **strings**, so
+`${output.total > "100"}` compares text, not numbers. Comparing a
+string to a number is refused rather than converted, because an
+assertion that answers on a reading you did not intend is worse than
+one that stops.
 
 ### Tap / touch actions
 
@@ -140,10 +149,10 @@ against it afterwards. `mask:` regions are accepted but not yet applied
 ### Keyboard / hardware keys
 
 ```yaml
-- pressKey: ENTER                        # ENTER / BACK / TAB / SPACE / etc.
+- pressKey: ENTER                        # ENTER / TAB / SPACE / DELETE / ESCAPE
 - pressKey: HOME                         # iOS home button
-- pressKey: VOLUME_UP                    # Android hardware
-- pressKey: POWER
+- pressKey: VOLUME_UP                    # skipped on the iOS simulator
+- back                                   # navigation back — not a key press
 ```
 
 ### System / device controls

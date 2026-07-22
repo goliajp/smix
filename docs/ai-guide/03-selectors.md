@@ -44,18 +44,24 @@ worst (escape hatch — fragile, breaks on layout change)
 - tapOn:
     text: "Submit"
 
-# Regex (auto-detected if string contains regex meta chars,
-# OR explicitly enabled via Maestro's `enabled` regex syntax)
+# Regex — say so. A plain string is matched literally unless it
+# contains `|`, which is the one character that promotes it.
 - tapOn:
-    text: "Row #[0-9]+"
+    text: { regex: "Row #[0-9]+" }
 
 # Common pattern: anchored ^...$
 - tapOn:
-    text: "^Help$"   # exclude "Help Center" etc
+    text: { regex: "^Help$" }   # exclude "Help Center" etc
 ```
 
 - Matches displayed text (label, attributed string, button title, accessible label).
 - Regex syntax = NSRegularExpression on iOS, java.util.regex.Pattern on Android.
+- `flags` defaults to `"i"`; matching is case-insensitive either way.
+- A bare string is **not** scanned for metacharacters. `Delete?` and
+  `3.5` are ordinary labels, and treating them as patterns would
+  silently widen what they match — the failure that does not announce
+  itself. The one exception is `|`, which has meant alternation here
+  since before the explicit form existed.
 
 ### 3. Label (accessibility label)
 

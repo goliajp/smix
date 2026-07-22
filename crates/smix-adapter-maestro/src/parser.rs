@@ -242,12 +242,11 @@ fn parse_fallback_element(v: &Value, field: &str) -> Result<Selector, ParseError
             modifiers: Modifiers::default(),
         });
     }
-    if let Some(text) = map
-        .get(Value::String("text".into()))
-        .and_then(Value::as_str)
+    if let Some(raw) = map.get(Value::String("text".into()))
+        && let Some(pattern) = text_pattern_from(raw, "text")
     {
         return Ok(Selector::Text {
-            text: text_to_pattern(text),
+            text: pattern?,
             modifiers: Modifiers::default(),
         });
     }
@@ -443,6 +442,46 @@ fn parse_localized_table(
 }
 
 // -------------------- Pattern / Selector helpers -------------------------
+/// Read a `text:` value as a pattern.
+///
+/// Two forms. A plain string goes through [`text_to_pattern`], which
+/// promotes it to a regex only when it contains `|`. A mapping
+/// `{regex, flags}` — the shape `smix_selector::Pattern` has always
+/// serialized to — says so explicitly.
+///
+/// The explicit form exists because there was no way to ask for a
+/// regex on purpose: 03-selectors documented meta-character detection
+/// that only `|` ever triggered, so `^Help$` was matched as the literal
+/// eight characters and found nothing, silently. Widening the
+/// detection instead would have made `Delete?` and `3.5` into patterns,
+/// which fails in the direction that does not announce itself.
+///
+/// `None` means the key is absent or not one of the two forms, which
+/// leaves the caller's other selector arms to try.
+fn text_pattern_from(raw: &Value, field: &str) -> Option<Result<Pattern, ParseError>> {
+    match raw {
+        Value::String(s) => Some(Ok(text_to_pattern(s))),
+        Value::Mapping(m) => {
+            let regex = m.get(Value::String("regex".into()))?;
+            let Some(regex) = regex.as_str() else {
+                return Some(Err(ParseError::InvalidValue {
+                    field: format!("{field}.regex"),
+                    reason: "regex must be a string".into(),
+                }));
+            };
+            let flags = m
+                .get(Value::String("flags".into()))
+                .and_then(Value::as_str)
+                .unwrap_or("i")
+                .to_string();
+            Some(Ok(Pattern::Regex {
+                regex: regex.to_string(),
+                flags,
+            }))
+        }
+        _ => None,
+    }
+}
 
 /// Infer a [`Pattern`] from a text body. Maestro treats `|` as regex
 /// alternation (mirrors maestro Kotlin `TestRunner.kt` / `XPathSelector.kt`
@@ -605,12 +644,11 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
         Value::Mapping(map) => {
             reject_unknown_selector_keys(map, "selector")?;
             let modifiers = modifiers_from(map, "selector")?;
-            if let Some(text) = map
-                .get(Value::String("text".into()))
-                .and_then(Value::as_str)
+            if let Some(raw) = map.get(Value::String("text".into()))
+                && let Some(pattern) = text_pattern_from(raw, "selector.text")
             {
                 return Ok(Selector::Text {
-                    text: text_to_pattern(text),
+                    text: pattern?,
                     modifiers: modifiers.clone(),
                 });
             }
@@ -734,13 +772,12 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
 
             let modifiers = modifiers_from(map, "tapOn")?;
 
-            if let Some(text) = map
-                .get(Value::String("text".into()))
-                .and_then(Value::as_str)
+            if let Some(raw) = map.get(Value::String("text".into()))
+                && let Some(pattern) = text_pattern_from(raw, "tapOn.text")
             {
                 return Ok(Step::TapOn {
                     selector: Selector::Text {
-                        text: text_to_pattern(text),
+                        text: pattern?,
                         modifiers,
                     },
                     optional,
