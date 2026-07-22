@@ -244,15 +244,84 @@ log "clippy"
 
 # --- cargo-semver-checks ----------------------------------------------
 # Confirms the crates' API changes are the major break the 2.0.0 bump
-# claims. Runs when the tool is installed; a ship must have it. It is blind
-# to crate renames (recorder-ir → authoring-ir has no old-name baseline) and
-# to brand-new crates — it validates in-place breaks like SimctlError →
-# DeviceControlError, not the renames, which the version bump covers.
+# claims. Runs when the tool is installed; a ship must have it. It
+# validates in-place breaks like SimctlError → DeviceControlError, not
+# renames, which the version bump covers.
+#
+# A crate with no published baseline is EXCLUDED, not tolerated. The
+# comment here used to say the tool was "blind to brand-new crates" —
+# it is not. It stops:
+#
+#     error: failed to retrieve index of crate versions from registry
+#     Caused by: smix-ai-tier not found in registry (crates.io)
+#
+# and exits 1, which this step reads as a failed gate. Nobody had run it
+# with a new crate in the workspace, so the sentence went unchallenged
+# until the ship it would have blocked.
+#
+# Which crates those are is asked, not listed: a hand-kept list of
+# exceptions is the thing that goes stale. The skipped set is logged,
+# because a gate that quietly checks three fewer crates reads exactly
+# like one that checked them all.
 if command -v cargo-semver-checks >/dev/null 2>&1; then
   log "cargo-semver-checks"
-  ( cd "$ROOT" && cargo semver-checks check-release --workspace ) \
-      > /tmp/smix-ship-semver.log 2>&1 \
-    || fail "cargo-semver-checks FAILED — see /tmp/smix-ship-semver.log"
+  # Some crates cannot be checked at all, and the tool ABORTS THE WHOLE
+  # RUN rather than skipping them. Two shapes seen here:
+  #
+  #   error: ... smix-ai-tier not found in registry (crates.io)
+  #   error: failed to build rustdoc for crate smix-mcp v1.0.27
+  #        (its 1.0.27 baseline was bin-only; it gained a lib in v2)
+  #
+  # The comment here used to call the tool "blind to brand-new crates".
+  # It is not blind, it stops — and nobody had run it with a new crate
+  # in the workspace, so the sentence stood until the ship it would have
+  # blocked.
+  #
+  # Rather than keep a list of exceptions (the thing that goes stale) or
+  # guess the reason from metadata (the current version's targets do not
+  # predict the baseline's), run it and let its own error name the crate
+  # it cannot handle, exclude that one, and go again. Every exclusion is
+  # logged with the reason the tool gave, because a gate that quietly
+  # checks fewer crates reads exactly like one that checked them all.
+  SEMVER_EXCLUDE=()
+  SEMVER_SKIPPED=()
+  SEMVER_LOG=/tmp/smix-ship-semver.log
+  SEMVER_ATTEMPTS=0
+  SEMVER_MAX=$(cd "$ROOT" && cargo metadata --no-deps --format-version 1 |
+      python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))')
+  while :; do
+      SEMVER_ATTEMPTS=$((SEMVER_ATTEMPTS + 1))
+      if ( cd "$ROOT" && cargo semver-checks check-release --workspace \
+              "${SEMVER_EXCLUDE[@]}" ) > "$SEMVER_LOG" 2>&1; then
+          break
+      fi
+      if [ "$SEMVER_ATTEMPTS" -gt "$SEMVER_MAX" ]; then
+          fail "cargo-semver-checks kept failing after $SEMVER_ATTEMPTS attempts — see $SEMVER_LOG"
+      fi
+      # Both patterns are taken from real output, not guessed: the
+      # registry one is a `Caused by:` continuation line, indented and
+      # with no colon before the name.
+      UNCHECKABLE="$(sed -n 's/.*failed to build rustdoc for crate \([^ ]*\) .*/\1/p;
+                             s/^[[:space:]]*\([a-z0-9._-]*\) not found in registry.*/\1/p' \
+                         "$SEMVER_LOG" | head -1)"
+      if [ -z "$UNCHECKABLE" ]; then
+          fail "cargo-semver-checks FAILED — see $SEMVER_LOG"
+      fi
+      SEMVER_EXCLUDE+=(--exclude "$UNCHECKABLE")
+      SEMVER_SKIPPED+=("$UNCHECKABLE")
+  done
+  # Report coverage from the run's own output, not from the exclusion
+  # count. The tool also skips crates silently — anything with
+  # `publish = false` or no library target — so "4 excluded" would have
+  # read as "26 checked" when 21 were. The number that matters is how
+  # many it actually looked at.
+  SEMVER_CHECKED=$(grep -c '^ *Checking ' "$SEMVER_LOG" || true)
+  SEMVER_TOTAL=$(cd "$ROOT" && cargo metadata --no-deps --format-version 1 |
+      python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))')
+  log "semver-checks: $SEMVER_CHECKED of $SEMVER_TOTAL crates checked"
+  if [ ${#SEMVER_SKIPPED[@]} -gt 0 ]; then
+      log "semver-checks: excluded by name after the tool refused them: ${SEMVER_SKIPPED[*]}"
+  fi
 else
   fail "cargo-semver-checks not installed — cargo install cargo-semver-checks (required for a 2.0.0 ship)"
 fi
@@ -294,8 +363,8 @@ CRATES=(
   smix-verbs smix-metro-log smix-adb smix-ai-tier
   smix-runner-wire smix-selector-resolver smix-fixture
   smix-annotate smix-migrate smix-authoring-ir
-  smix-simctl smix-runner-client smix-driver
-  smix-host-coord-resolver
+  smix-store smix-simctl smix-runner-client
+  smix-host-coord-resolver smix-driver
   smix-sdk smix-mcp smix-adapter-maestro smix-recorder
   smix-cli
 )

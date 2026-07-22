@@ -12,6 +12,11 @@ documentation = "https://docs.rs/smix-ffi"
 readme = "README.md"
 keywords = ["ffi", "uniffi", "ios", "android", "smix"]
 categories = ["development-tools::testing", "external-ffi-bindings"]
+# Not published. The criterion is dependency, not intent: a cdylib the four SDKs consume as a binary artifact, never through crates.io.
+# `cargo publish` reads this, so it is the only place the decision has
+# to live — a second list of exceptions would be a second thing to
+# forget.
+publish = false
 
 [lints]
 workspace = true
