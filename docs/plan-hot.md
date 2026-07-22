@@ -1,145 +1,141 @@
-# plan-hot — v2.6 到 C1:动画默认就是关的,而且分平台说实话
+# plan-hot — v2.7 到 C1:tap 说出它打中了什么
 
 ## 目标 checkpoint
 
-**C1**:一次 `smix run` 在两个平台上都先把动画压到该平台能压到的最低,**回读校验**,
-默认如此;`--animations` 恢复;`--stable` 这个名字不存在;
-破坏性变更 #10 进表进 CHANGELOG(由 v2.5 的闸门强制两处一致)。
+**C1**:`tapOn` 的成功含义从「我派发了一次触摸」变成「我打中了我匹配的那个元素」。
+打中别的东西 → 失败,并说出**瞄的是谁、打中的是谁**。
 
 ## 前置条件
 
 ```bash
 git status --short                     # 期望:空
-grep -rc "set_reduce_motion" crates/smix-simctl/src/lib.rs   # 期望:1(定义,零调用方)
-grep -rc "window_animation_scale" crates/ android-runner/    # 期望:全 0
-grep -c "waitForAnimationToEnd" docs/ai-guide/02-yaml-reference.md  # 期望:6
-pgrep -fl 'runner.ts|smix run|supervise'                     # 期望:空
+bash scripts/dev/preflight.sh          # 期望:preflight: clean
+grep -c "OkEnvelope" crates/smix-runner-client/src/lib.rs   # tap 仍收空信封
+pgrep -fl 'runner.ts|smix run|supervise'                    # 期望:空
 ```
 
 ---
 
 ## 本段预先定死的四个口径(执行期不得再议)
 
-### 口径 1 — 两个平台压到的程度不同,名字和文档都必须反映这件事
+### 口径 1 — 判据是「同一个元素」,不是「坐标落在框里」
 
-| 平台 | 机制 | 强度 | 能回读吗 |
-|---|---|---|---|
-| Android | `settings put global window_animation_scale 0`(+ `transition_animation_scale` / `animator_duration_scale`) | **真归零** | 能,`settings get global …` |
-| iOS | `simctl spawn <udid> defaults write com.apple.UIKit UIAccessibilityReduceMotionEnabled -bool 1` | **减弱,不归零** | 能,`defaults read` |
+主机已经解析出一个元素(有 identifier / label / frame)。runner 派发后回报**那一点上的元素**。
+判据是两者**是同一个**,不是「坐标在框内」——后者对被遮挡的情况恒真,
+而遮挡正是 #4 报的现象之一。
 
-iOS 拿不到「关」:XCUITest 在独立进程,`UIView.setAnimationsEnabled(false)` 够不到被测 app。
-Reduce Motion 是 smix 单方面能给的最强杠杆。
+比对顺序,预先定死:
+1. 两边都有非空 `identifier` → 比 identifier
+2. 否则两边都有非空 `label` → 比 label
+3. 否则比 frame(容差 1pt,浮点)
+4. 以上都无法比 → **判为「无法确认」而不是「通过」**,并在失败文本里说明为什么无法比
 
-**因此**:面向用户的一句话是「smix 默认把动画压到该平台能压到的最低」,
-**不是**「smix 关掉动画」。后者在 iOS 上是假的。
+第 4 条是这条设计的重点:**不能比就不叫通过**。
 
-### 口径 2 — 设了就要回读,读不到就报错
+### 口径 2 — 语义先看设备再定死
 
-`simctl ui appearance` 名义 per-sim 实际全局(memory 有案),所以「设置类」的操作
-在这个项目里默认不可信。每个设置写完**立刻读回来比对**,不一致就 `ExpectationFailure`,
-**不静默降级** —— 静默降级正是这个开关最容易骗人的地方(它声称压了,其实没压)。
+「那一点上最深的元素」与「那一点上真正接收事件的元素」不是一回事。
+XCUITest 没有公开的 hitTest,能拿到的是快照树的几何包含关系。
 
-### 口径 3 — 开关叫 `--animations`,默认 false;`--stable` 不存在
+因此 **C1 先在设备上把「最深包含者」取出来看它跟实际响应者差多少**,再决定
+`tapOn` 拿哪个当判据。**不允许先按想象实现再去验证** —— 这一段的风险表就写着这条。
 
-- 默认(不传):压到最低
-- `--animations`:保持系统原样,一个设置都不动
+### 口径 3 — 换判据是破坏性变更,并且要有过渡
 
-名字说的是机制(动画在不在),不是结果(稳不稳)。**不给 `--stable` 留别名** ——
-留着就是继续承诺一个 smix 验证不了的结果。
+今天报成功的流,明天可能报失败 —— **那正是要的效果**,但不能一声不响地换。
 
-**只加在 `smix run` 上。** 单点 verb(`smix tap` 等)不加:它们是对一个已经在跑的
-runner 打一枪,谁在管设备状态不由它们决定。
+- 默认:不一致 → 失败
+- `SMIX_TAP_HIT_MISMATCH=warn`:降级为警告,给存量流一个过渡窗口
+- 进破坏性变更表(#11)+ CHANGELOG,由 v2.5 的闸门强制两处一致
 
-### 口径 4 — 17 处文档分平台改,`waitForAnimationToEnd` 不删
+**不做**「默认警告、以后再改成失败」——那是把这次改动的价值推给下一次。
 
-`waitForAnimationToEnd` 在 **iOS 上仍然有用**(Reduce Motion ≠ 零时长),
-在 Android 上才近似空操作。改文档时**不许写成「这个 verb 没用了」**。
+### 口径 4 — 比对逻辑是纯函数,住在 driver
+
+判据可能错;错了要能被红。所以「瞄的是 A、打中的是 B,该不该判失败,失败怎么说」
+必须是一个不碰网络、不碰设备的函数,单测钉住。runner 侧只负责**如实回报那一点上是谁**。
 
 ---
 
 ## 步骤(线性,3 个)
 
-### S1. 两个平台各自把动画压下去,并回读校验
+### S1. 比对判据先有,并且能红
 
 **红(写测试)**
 
-- 文件:`crates/smix-sdk/tests/animation_scale_parse.rs`(新)
-- 纯函数先行:`smix_sdk::animation_settings_verified(read_back: &[(&str, &str)]) -> Result<(), Vec<String>>`
-  —— 给一组「设置名 → 读回来的值」,判断是否全部压到位;不一致的列出来
-- 三条:全 `0` 通过;有一个是 `1` 报错并点名;读回空字符串(设置不存在)报错并点名
+- 文件:`crates/smix-driver/tests/tap_hit_verdict.rs`(新)
+- 纯函数 `smix_driver::tap_hit_verdict(aimed: &HitElement, hit: Option<&HitElement>) -> TapHitVerdict`
+- 用例(每条对应口径 1 的一行):
+  - identifier 相同 → `Confirmed`
+  - identifier 不同 → `Missed`,失败文本同时含两个 identifier
+  - 双方 identifier 空、label 相同 → `Confirmed`
+  - 双方 identifier 与 label 都空、frame 在 1pt 内 → `Confirmed`
+  - 双方全空且 frame 差 20pt → `Missed`
+  - `hit == None`(runner 说那一点上没有元素)→ `Missed`,文本说「那一点上什么都没有」
+  - **双方都无可比字段** → `Unconfirmable`,**不是 `Confirmed`**
 - 跑:红
 
 **绿(实现)**
 
-- 文件:`crates/smix-sdk/src/android_device.rs` —— `set_animation_scales(serial, enabled)`:
-  三个 `settings put global`,再三个 `settings get global` 回读,交给上面那个纯函数判
-- 文件:`crates/smix-sdk/src/ios_device.rs` —— `set_reduce_motion(udid, enabled)` 接上
-  已存在的 simctl 调用,同样回读(`simctl spawn … defaults read`)
-- 两者挂到 `DeviceControl` 上,加一个方法 `prepare_animations(&self, id, enabled)`,
-  iOS / Android 各自实现;**这是第 11 条破坏性变更还是并进 #10?** ——
-  并进 #10,理由与 v2.5-C1 口径 3 同源:一次能力改动的多个面,用户要知道的是「这件事变了」
+- 文件:`crates/smix-driver/src/lib.rs` —— `HitElement` / `TapHitVerdict` + 判据函数
 - 跑:S1 转绿
 
-### S2. 接进 run 流程,默认生效
+### S2. 让 runner 如实回报那一点上是谁
 
 **红(写测试)**
 
-- 文件:`crates/smix-cli/src/guide_gate.rs` 的 MockApp 之外,新建
-  `crates/smix-adapter-maestro/tests/animations_default.rs`
-- 用既有的 `runtime_mock.rs` 同款 MockApp 手法,断言:
-  不传 `--animations` 时 `prepare_animations(_, false)` 被调过一次;传了则一次都不调
+- 文件:`swift-bridge/Tests/SmixRunnerCoreTests/HitAtPointTests.swift`(新)
+- `SmixRunnerCore` 侧加纯函数:给一棵已有的快照节点树 + 一个点,返回**最深的包含者**
+  (与 `TreeRoute` 的 `nodeToDict` 用同一份节点结构,不另造一棵树)
+- 三条:命中最深子节点;点在父节点内但不在任何子节点内 → 返回父;点在树外 → nil
+- 跑:`swift test`,红
+
+**绿(实现)**
+
+- `SmixRunnerCore` 实现该函数;`SmixRunnerUITests` 的 `tapAtCoordHandler`
+  在 synthesize 之后调用它,把结果放进响应
+- 文件:`crates/smix-runner-wire` —— `/tap-at-norm-coord` 的响应从空信封变成带
+  `hit: Option<HitElement>`;`smix-runner-client` 的 `tap_at_norm_coord` 返回它
+- 跑:`swift test` 绿 + `cargo check` 绿
+
+### S3. 接进 driver,记录,过渡开关
+
+**红(写测试)**
+
+- `crates/smix-driver` 的单测:`IosDriver::tap` 在 `hit` 与 aimed 不一致时返回
+  `ExpectationFailure`,文本含两个元素;设 `SMIX_TAP_HIT_MISMATCH=warn` 时不失败
 - 跑:红
 
 **绿(实现)**
 
-- 文件:`crates/smix-adapter-maestro/src/entry.rs` —— 在第 3 步 foreground **之前**插入,
-  两平台都走(现在那一步是 iOS-only,动画准备不是)
-- 文件:`crates/smix-cli/src/main.rs` —— `smix run` 加 `--animations`,默认 false;
-  `FlowArgs` 加字段
-- 跑:S2 转绿
-
-### S3. 记录、文档、破坏性变更表
-
-**红(写测试)**
-
-- v2.5 的 `release_record` 闸门会因为表和 CHANGELOG 不一致而红 —— 那就是这一步的红
-- 另加:`docs/ai-guide/` 里不许再出现 `--stable`(文本断言,防止它被写回去)
-
-**绿(实现)**
-
-- `docs/v2.md` 破坏性变更表加第 10 行,`changelog` 列填新条目的加粗短语
-- `CHANGELOG.md` `### Breaking` 加对应条目,内容含:默认变了、两平台强度不同、
-  `assertScreenshot` 既有 baseline 可能失配、`--animations` 是恢复开关
-- `docs/ai-guide/` 17 处 `waitForAnimationToEnd` 分平台改写;
-  in-scope #4 措辞改为「animation-idle(已交付)+ 动画默认压低」,**删掉时钟那半**
-- `docs/v2.md` 决策日志按 §10 追加:为什么废掉 `--stable` 这个名字、
-  为什么 iOS 只能到 Reduce Motion、回读校验为什么是硬要求
+- `IosDriver::tap` 接上判据;失败走 `ExpectationFailure`,`code` 用既有的
+  `ElementNotFound` 还是新码 —— **新码**,因为「找不到」与「找到了但没打中」
+  对读的人是两件事
+- 破坏性变更 #11 进 `docs/v2.md` 表 + CHANGELOG(闸门强制)
+- `docs/ai-guide/04-actions.md` §Default tap 补一段:tapOn 成功的含义是什么
+- `docs/v2.md` 决策日志按 §10 记:口径 1 第 4 条(不能比就不叫通过)、口径 3(为什么不默认警告)
 - 跑:`bash scripts/dev/preflight.sh`
 
-**设备核实**(不进 checkpoint 判据,但必须做并记进决策日志):
-Android 与 iOS 各起一次,确认回读校验真的通过;Android 侧每条 adb 显式 `-s emulator-NNNN`
+**设备核实**(不进 checkpoint 判据,写进决策日志):
+口径 2 的语义对照 —— 最深包含者 vs 实际响应者;
+以及用 EXT1 报的那个现象复现一次(tap 报成功而应用没收到)
 
 ---
 
 ## Checkpoint C1 验收
 
 ```bash
-cargo test -p smix-adapter-maestro --test animations_default
-cargo test -p smix-sdk --test animation_scale_parse
+cargo test -p smix-driver --test tap_hit_verdict
+cd swift-bridge && swift test --filter HitAtPoint
 cargo test -p smix-cli --bin smix release_record -- --nocapture 2>&1 | grep 'release-record:'
-grep -rc -- "--stable" docs/ai-guide/ crates/ | grep -v ':0' || echo "no --stable anywhere"
 bash scripts/dev/preflight.sh
 ```
 
-期望:
-
-1. 前两条 `test result: ok. … 0 failed`
-2. 第三条读作 `10 breaking changes, both lists agree · 8 behaviour changes …`
-3. 第四条输出 `no --stable anywhere`
-4. `preflight: clean`
+期望:前两条 `0 failed`;第三条读作 `11 breaking changes, both lists agree`;
+第四条 `preflight: clean`。
 
 ## 完成后动作
 
-1. `mv docs/plan-hot.md docs/plan-history/v2.6-c1-hot.md`
-2. 生成 C2 热计划(MCP `smix_diagnose` + 撤回 session 工具 + 错误恢复契约),
-   附加 context:`smix-mcp` 13 个 tool 的错误全部走 `e.to_prompt()`,落点已在
+1. `mv docs/plan-hot.md docs/plan-history/v2.7-c1-hot.md`
+2. 生成 C2 热计划(#2 / #3 —— 过程中观察),附加 context:
+   **#3 的 428ms 要自己复量一次**,不照抄消费方的测量
