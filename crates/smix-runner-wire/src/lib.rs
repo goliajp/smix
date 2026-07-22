@@ -25,7 +25,7 @@
 //! - `GET /system-popups?include=…` → `Vec<`[`SystemPopup`]`>`
 //! - `POST /system-popup-action` `{popupId, buttonId}` → [`SystemPopupActionResponse`]
 //! - `POST /tap` → [`TapResult`]
-//! - `POST /tap-at-norm-coord` `{nx, ny}` → 200/`{ok}`
+//! - `POST /tap-at-norm-coord` `{nx, ny}` → [`TapAtCoordResult`]
 //! - `POST /find` `{selector}` → `{exists}` or `{ok}`
 //! - `POST /fill` `{selector, text}` → [`RunnerKeyboardResult`]
 //! - `POST /clear` `{selector}` → [`RunnerKeyboardResult`]
@@ -186,6 +186,51 @@ pub struct TapResult {
     /// Application window frame (for normalizing the matched frame).
     #[serde(rename = "appFrame", default)]
     pub app_frame: Option<smix_screen::Rect>,
+}
+
+/// One named element containing the tapped point.
+///
+/// Named only: the same point sits inside dozens of anonymous
+/// full-screen layout containers, and the host matches selectors by
+/// identifier and label, so an unnamed container is something it can
+/// neither act on nor tell apart from the next one.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HitChainEntry {
+    /// Accessibility identifier; empty when the element has none.
+    #[serde(default)]
+    pub identifier: String,
+    /// Accessibility label; empty when the element has none.
+    #[serde(default)]
+    pub label: String,
+    /// The element's frame in the app's coordinate space.
+    pub frame: smix_screen::Rect,
+}
+
+/// `POST /tap-at-norm-coord` response.
+///
+/// The route used to answer with a bare `{ok}`, which meant "a touch
+/// was synthesised at that coordinate" and was read as "the element was
+/// tapped". Those are different claims, and a consumer watching taps
+/// succeed against a button whose counter never moved found out which
+/// one they were getting.
+///
+/// `chain` is every named element containing the point after the touch,
+/// innermost first — not one element, because the innermost thing at a
+/// button's centre is usually the button's own label. See
+/// `smix_driver::tap_landed_within` for what the host does with it and,
+/// more importantly, for what it still cannot see.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TapAtCoordResult {
+    /// Named elements containing the tapped point, innermost first.
+    ///
+    /// Empty when the runner is older than this field or when the point
+    /// landed outside every named element. The host cannot tell those
+    /// apart from the wire alone, which is why an empty chain is a
+    /// verdict of its own rather than a silent pass.
+    #[serde(default)]
+    pub chain: Vec<HitChainEntry>,
 }
 
 /// `POST /tap` request body.

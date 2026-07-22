@@ -104,6 +104,35 @@ Read **`code`** first to triage. Read **`hint`** + **`suggestions`** to know the
 
 **Fix**: `smix sim boot <udid>` then retry.
 
+### TAP_MISSED
+
+**Trigger**: the touch was synthesised, and the point it landed on was
+not inside the element the selector matched.
+
+`tapOn` resolves a selector against the a11y tree, takes the matched
+element's centre, and synthesises a touch there. Between those two
+steps the screen can move — a list settles, a banner appears, a sheet
+finishes presenting — and the coordinate then belongs to something
+else. The tap still happened; it happened somewhere you did not mean.
+
+The message names both sides: what was aimed at, and what the point
+turned out to be inside.
+
+**Fixes**:
+- Wait for the screen before tapping (`extendedWaitUntil`, or
+  `waitForAnimationToEnd` if you are running with `--animations`)
+- If it reproduces on a still screen, the element's frame is wrong
+  rather than stale — capture `smix tree --json` and check the frame
+
+**Escape hatch**: `SMIX_TAP_HIT_MISMATCH=warn` downgrades this to a
+warning for a whole run. It exists so an existing suite can be moved
+over gradually; a run under it reports success for taps that missed.
+
+**What this does NOT catch**: an element covered by something
+transparent to the a11y tree. A scrim over your button contains the
+tapped point too, so the check passes and the touch still may not reach
+the button. See "tap returns `ok: true` but state doesn't change".
+
 ### DRIVER_ERROR
 
 **Trigger**: catch-all for runner-side / IO / unexpected failures. Read the `message` for specifics.
@@ -133,7 +162,24 @@ Generate UUIDs via `openssl rand -hex 12 | tr a-f A-F`.
 
 ### tap returns `ok: true` but state doesn't change
 
-Some Compose Button `onClick` lambdas don't fire reliably when a heavy `AndroidView` interop component (MapView, PreviewView) is in the same composition. The engine dispatches but the lambda is not invoked.
+First check whether you got `TAP_MISSED` — since v2.0.0 a tap that
+lands outside the element it aimed at says so. If the tap is reported
+as landing correctly and the app still did nothing, the cause is one of
+these:
+
+**The element is covered.** smix cannot see this: the a11y snapshot
+carries no z-order, so a scrim over your button contains the tapped
+point exactly as the button does. `smix tree --json` shows both; the
+one drawn later wins and the tree does not say which that is.
+
+**The element is not a touch responder.** An image or a label inside a
+button is in the tree and takes no touches. Aim at the ancestor that
+handles the gesture.
+
+**Compose interop.** Some Compose `Button` `onClick` lambdas don't fire
+reliably when a heavy `AndroidView` interop component (MapView,
+PreviewView) is in the same composition. The engine dispatches but the
+lambda is not invoked.
 
 **Workaround**: extract heavy `AndroidView` into a separate Composable holder.
 

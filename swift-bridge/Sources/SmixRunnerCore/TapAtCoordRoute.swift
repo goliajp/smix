@@ -47,7 +47,30 @@ public enum TapAtCoordRoute {
   }
 
   public static func success(ok: Bool) -> HTTPResponse {
-    let body = Data(#"{"ok":\#(ok)}"#.utf8)
+    success(ok: ok, chain: [])
+  }
+
+  /// Success, carrying what the tapped point turned out to be inside.
+  ///
+  /// The route answered `{"ok":true}` and nothing else, which meant "a
+  /// touch was synthesised at that coordinate" and was read as "the
+  /// element was tapped". A consumer watched taps succeed against a
+  /// button whose counter never moved and found out which one they
+  /// were getting.
+  ///
+  /// `chain` is every named element containing the point, innermost
+  /// first — not one element, because the innermost thing at a button's
+  /// centre is usually the button's own label. An older host ignores
+  /// the extra key.
+  public static func success(ok: Bool, chain: [HitChainEntry]) -> HTTPResponse {
+    let entries = chain.map { e in
+      let id = jsonEscape(e.identifier)
+      let label = jsonEscape(e.label)
+      return #"{"identifier":"\#(id)","label":"\#(label)","frame":"#
+        + #"{"x":\#(e.frame.origin.x),"y":\#(e.frame.origin.y),"#
+        + #""w":\#(e.frame.size.width),"h":\#(e.frame.size.height)}}"#
+    }
+    let body = Data(#"{"ok":\#(ok),"chain":[\#(entries.joined(separator: ","))]}"#.utf8)
     return envelope(.ok, body)
   }
 

@@ -240,7 +240,13 @@ impl SmixSession {
         ny: f64,
         cancel: Option<Arc<CancelToken>>,
     ) -> Result<(), DriveError> {
-        until_cancelled(cancel, self.client.tap_at_norm_coord(nx, ny)).await
+        // The chain the route now returns is dropped here on purpose:
+        // the FFI surface has no outcome type yet, and inventing one
+        // for a single verb would put a second shape next to the one
+        // `ActOutcome` is becoming.
+        until_cancelled(cancel, self.client.tap_at_norm_coord(nx, ny))
+            .await
+            .map(|_| ())
     }
 
     /// Type into the focused element.

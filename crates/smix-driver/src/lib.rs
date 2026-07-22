@@ -373,13 +373,24 @@ impl IosDriver {
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
 
-        let (nx, ny) = loop {
+        let (nx, ny, aimed) = loop {
             // Transport retry parity with wait_for / find. Tree fetch
             // transient transport drops (runner socket refusal /
             // concurrent-handling hiccup) are re-tried in-loop.
             let tree = self.tree_with_retry(include).await?;
             match resolve_to_norm_coord(&tree, selector) {
-                Ok(coord) => break coord,
+                // The matched node is kept, not just its centre: the
+                // runner reports what the tapped point turned out to be
+                // inside, and that is only worth anything next to what
+                // was aimed at.
+                Ok(coord) => {
+                    let aimed = resolve_selector(&tree, selector).map(|n| HitElement {
+                        identifier: n.identifier.clone().unwrap_or_default(),
+                        label: n.label.clone().unwrap_or_default(),
+                        frame: (n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h),
+                    });
+                    break (coord.0, coord.1, aimed);
+                }
                 Err(HostResolveError::NotFound) => {
                     if start.elapsed() > timeout {
                         let visible = collect_visible_summaries(&tree, 10);
@@ -452,10 +463,47 @@ impl IosDriver {
             }
         };
 
-        self.runner
+        let landed = self
+            .runner
             .tap_at_norm_coord(nx, ny)
             .await
             .map_err(transport_to_failure)?;
+        if let Some(aimed) = aimed {
+            let chain: Vec<HitElement> = landed
+                .chain
+                .iter()
+                .map(|e| HitElement {
+                    identifier: e.identifier.clone(),
+                    label: e.label.clone(),
+                    frame: (e.frame.x, e.frame.y, e.frame.w, e.frame.h),
+                })
+                .collect();
+            // An empty chain is the one case that is NOT judged. A
+            // runner older than the field answers without it, and that
+            // is indistinguishable on the wire from a point that landed
+            // outside everything — failing both would break every flow
+            // driving an older runner.
+            if !chain.is_empty()
+                && let ActVerdict::Missed(why) = tap_landed_within(&aimed, &chain)
+            {
+                if tap_mismatch_is_fatal() {
+                    return Err(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::TapMissed),
+                        message: format!("tap did not land where it aimed: {why}"),
+                        selector: Some(selector.clone()),
+                        hint: Some(
+                            "the screen moved between the tree fetch and the tap; \
+                             wait for it to settle first. Set \
+                             SMIX_TAP_HIT_MISMATCH=warn to downgrade this to a \
+                             warning while migrating a suite."
+                                .into(),
+                        ),
+                        ..Default::default()
+                    }));
+                }
+                eprintln!("smix: warning: tap did not land where it aimed: {why}");
+            }
+        }
         Ok(())
     }
 
@@ -1016,6 +1064,23 @@ impl IosDriver {
     pub async fn dispose(&self) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+}
+
+/// Does a tap that landed outside its target fail the step?
+///
+/// Yes, by default: reporting success for a touch that went somewhere
+/// else is the thing this check exists to stop. `SMIX_TAP_HIT_MISMATCH
+/// =warn` downgrades it, so a suite written before the check can be
+/// moved over a flow at a time rather than all at once.
+///
+/// Deliberately not the other way round. Shipping it as a warning and
+/// promising to make it fail later hands the value of the change to the
+/// next release, and the release after that inherits a suite that has
+/// been green through every miss.
+fn tap_mismatch_is_fatal() -> bool {
+    !std::env::var("SMIX_TAP_HIT_MISMATCH")
+        .map(|v| v.eq_ignore_ascii_case("warn"))
+        .unwrap_or(false)
 }
 
 /// One element, as either side describes it.

@@ -39,6 +39,18 @@ what `dispatch: xcui` reaches, mirroring the iOS route of that name.
 The two other routes exist because two specific runtimes need them, and
 both are opt-in — see the next section.
 
+**What a successful `tapOn` means.** The runner reports every named
+element containing the point it touched, and the step fails with
+`TAP_MISSED` if the element you aimed at is not among them. So success
+means the touch landed inside your target, not merely that a touch was
+synthesised somewhere — which is what it used to mean.
+
+It does **not** mean the target received the touch. Something drawn
+over your element contains the same point, and the a11y snapshot
+carries no z-order, so smix cannot tell which one is on top. If a tap
+reports success and nothing happens, see `07-errors.md` →
+"tap returns `ok: true` but state doesn't change".
+
 ### Tap with explicit dispatch (v1.0.26)
 
 The default tap path (host-resolve → IOHID native-event synthesize) fires SwiftUI `onTap` and RN Pressable `onPress` reliably. Two runtime-specific cases need a different mechanism — declare it per tap:

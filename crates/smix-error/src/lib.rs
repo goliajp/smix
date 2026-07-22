@@ -43,6 +43,15 @@ pub enum FailureCode {
     AppNotRunning,
     /// Simulator device is not booted.
     SimulatorNotBooted,
+    /// The touch was synthesised, and it did not land inside the
+    /// element the selector matched.
+    ///
+    /// Distinct from `ElementNotFound` because the two send a reader
+    /// somewhere different: not-found means fix the selector, missed
+    /// means the element was there and the touch went elsewhere — a
+    /// stale frame, or something moved between the tree fetch and the
+    /// tap.
+    TapMissed,
     /// Catch-all for runner / driver / IO failures.
     DriverError,
 }
@@ -195,6 +204,7 @@ fn format_code(c: FailureCode) -> &'static str {
         FailureCode::AssertionFailed => "ASSERTION_FAILED",
         FailureCode::AppNotRunning => "APP_NOT_RUNNING",
         FailureCode::SimulatorNotBooted => "SIMULATOR_NOT_BOOTED",
+        FailureCode::TapMissed => "TAP_MISSED",
         FailureCode::DriverError => "DRIVER_ERROR",
     }
 }

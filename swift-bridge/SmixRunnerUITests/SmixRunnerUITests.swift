@@ -2180,27 +2180,43 @@ final class SmixRunnerUITests: XCTestCase {
           py = frame.origin.y + frame.size.height * CGFloat(ny)
           return true
         }
-        guard setupOk == true else { return false }
+        guard setupOk == true else { return (ok: false, chain: []) }
 
         guard let record = SmixEventRecord(orientation: .portrait) else {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
-          return false
+          return (ok: false, chain: [])
         }
         let pathAdded = record.addPointerTouchEvent(at: CGPoint(x: px, y: py))
         guard pathAdded else {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: XCPointerEventPath unavailable\n".utf8))
-          return false
+          return (ok: false, chain: [])
         }
         do {
           try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
-          return true
         } catch {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: synthesize error: \(error)\n".utf8))
-          return false
+          return (ok: false, chain: [])
         }
+        // What the point turned out to be inside. Taken after the
+        // touch, from a fresh snapshot, because the question is what
+        // was there when it landed — the host's own tree is from
+        // before, and comparing against that would only confirm the
+        // arithmetic it already did.
+        //
+        // A failure to snapshot yields an empty chain rather than a
+        // failed tap: the touch did happen, and the host reads an empty
+        // chain as "could not be judged" rather than as a pass.
+        var chain: [HitChainEntry] = []
+        _ = smixGuarded("tap-at-norm-coord-chain") { () -> Bool in
+          guard let snap = try? app.snapshot() else { return false }
+          chain = HitChain.at(
+            point: CGPoint(x: px, y: py), in: convertSnapshot(snap))
+          return true
+        }
+        return (ok: true, chain: chain)
       },
       // POST /tap-by-id handler. XCUIElement.tap() via the XCTest
       // gesture-recognizer chain for SwiftUI .sheet / .alert /
