@@ -1,203 +1,143 @@
-# plan-hot — v2.4 到 C4:清单清零
+# plan-hot — v2.5 到 C1:两份「破坏性变更」清单必须是同一份
 
 ## 目标 checkpoint
 
-**C4**:`docs/guide-executability.md` 里 **8 行全部 `runs`**,每一条都能在装回缺陷时重新变红。
-`guide-executability` 摘要行读作 `8 claims (8 runs / 0 broken / 0 unjudged)`。
+**C1**:`docs/v2.md` 的破坏性变更表与 `CHANGELOG.md` `## [2.0.0]` 的 `### Breaking` 一一对应,
+由闸门 `crates/smix-cli/src/release_record.rs` 每次运行重新对账;
+v2.1–v2.4 引入的三条破坏性变更在两处都有;每条都能在删掉时让闸门变红。
 
 ## 前置条件
 
 ```bash
-git status --short
-# 期望:空(C3 已提交)
-
-cargo test -p smix-cli --bin smix guide_gate -- --nocapture 2>&1 | grep 'guide-executability:'
-# 期望:8 claims (4 runs / 4 broken / 0 unjudged) · 69 yaml blocks judged
-
-bash scripts/dev/preflight.sh
-# 期望:最后一行 preflight: clean
+git status --short                       # 期望:空(v2.4 已提交)
+test -f docs/plan-cold/v2.5-release-record.md   # 期望:成立
+bash scripts/dev/preflight.sh            # 期望:preflight: clean
 ```
 
 ---
 
-## 四条的处置,已按 §12.2 逐条判过,执行期不得再议
+## 本段预先定死的三个口径(执行期不得再议)
 
-判据统一是「**这是 core 能力缺位,还是页面写错了**」。两条各占一半。
+### 口径 1 — 闸门判「两份一致」,不判「这条算不算破坏性」
 
-### N3 —— 页面把两条路由的机制说反了。**改文档。**
+「加一个 `pub` 字段算不算破坏」取决于结构体是不是 `non_exhaustive`、调用方是不是用字面量构造它。
+**这是判断,不是可机械求值的事实。** 闸门若去判它,就会得出一个自己编的答案。
 
-`04-actions.md` §Default tap 现在写着:元素有 `accessibilityIdentifier` 时默认 tap 走
-swift `/tap-by-id`,而 `/tap-by-id` 用 IOHID `_XCT_synthesizeEvent`;否则回退 XCUI
-`element.tap()`。**三句话三处不对**,依据是两个 handler 自己的文档
-(`SmixRunnerServer.swift:531` 与 `:539`):
+因此判据只有一条:**两份清单的条目集合必须相等**。谁进清单是人决定的;
+一旦进了,两处都得有。这与 `audit-ledger-scan` 的定位同源 ——
+它验「引文还成立」,不验「引文的意思与状态相符」,并且把这件事写在 docstring 里。
 
-| 页面说 | 实际 |
-|---|---|
-| 默认 tap 走 `/tap-by-id` | 默认走 `/tap-at-norm-coord`(`IosDriver::tap` 主机侧解树 → 归一化坐标) |
-| `/tap-by-id` 是 IOHID synthesize | `/tap-by-id` 是 `XCUIElement.tap()`,即 XCTest 手势识别链 |
-| Path A / Path B 二选一回退 | 没有这个回退。`/tap-by-id` 只由 `dispatch: xcui` 显式进入 |
+### 口径 2 — 连接键是**编号**,不是措辞
 
-`/tap-at-norm-coord` 是 `coordinate(withNormalizedOffset:).tap()` —— **Apple 原生事件链**,
-它才是能触发 RN Pressable 的那条;`_XCT_synthesizeEvent` 属于 `dispatch: daemonProxy`。
-页面顶部 §Action mental model 的那张图同错,一并改。
+`v2.md` 的表有 `#` 列(1–6);CHANGELOG 的 `Breaking` 是无序列表。
+两边措辞注定不同(一个是给自己看的中文计划,一个是给用户看的英文发布说明),
+**拿文字相似度对账等于制造一个永远在抖的闸门**。
 
-**没有能力缺位**:三条机制都在,只是页面把名字和用途对错了位。
+做法:CHANGELOG 每条 `Breaking` 结尾加一个不可见于渲染的锚 —— 不行,HTML 注释在
+`hygiene-scan` 眼里是开发噪音,而且用户读源码时会看见。
 
-### N5 —— 三个键名里两个有真名、一个没有对应物。**改文档。**
+**定死的做法**:`v2.md` 表加一列 `changelog`,取值是该条在 CHANGELOG `Breaking` 里
+**第一个加粗短语**(`**…**` 之间那段,英文原文)。闸门:
+- 表里每一行的 `changelog` 值必须在 CHANGELOG 的 `Breaking` 段里作为加粗短语出现
+- CHANGELOG `Breaking` 段里每一个加粗短语必须被表里某一行引用
+两向都查,于是任一边加条目而另一边不加 = 红。
 
-`pressKey` 的「Available keys」列了 `BACK` / `POWER` / `SCREEN_LOCK`,`KeyName` 三个都没有。
-逐个问「core 缺这格能力吗」:
+**一个例外要预先处理**:CHANGELOG 现有 8 条里,有一条(`SMIX_*` escape-hatch env vars removed)
+的加粗短语里含反引号与星号,抽取时要按「`**` 到下一个 `**`」逐字取,不做任何规整。
 
-- **BACK** —— 不缺。返回导航是 **`- back`** 这个动词(`parser.rs:2499` → `App::go_back`)。
-  `parse_key_name` 里那条注释写明了 `back` **故意**不做 `pressKey` 别名的理由:
-  曾经的别名把每个 `- back` 变成静默退格并报成功。**按键与导航是两件事,不合并**,
-  页面改成指向 `- back`
-- **SCREEN_LOCK** —— 不缺,真名是 **`LOCK`**(`KeyName::Lock` → `XCUIDevice.perform(.lockButton)`)
-- **POWER** —— 没有对应物,iOS 的公开 API 里也没有。**从列表里删**,不发明
+### 口径 3 — 三条新破坏性变更的措辞与归属,现在定
 
-另外页面这一节还漏了一件读者会撞上的事:`pressKey: VOLUME_UP` / `VOLUME_DOWN` 在
-**iOS 模拟器上是 skip 不是执行**(Apple 的 XCUIDevice.Button 限制,`runtime.rs` 那段注释
-写着 maestro 同样受限)。补一句。
+| # | v2.md 表述 | CHANGELOG 加粗短语 |
+|---|---|---|
+| 7 | `DeviceControl::launch_with_args` 加 `activity` 参数 | `The Android launch activity is resolved, not assumed` |
+| 8 | `LaunchAppOptions` / `Flow` 加 `launch_activity` 字段 | 与 #7 同一条 —— 它们是一次改动的三个面 |
 
-### N6 —— 断言语言没有关系运算符。**补文法。**
+**合并成一条,不拆三条**:三处签名变化服务同一个能力(启动 Activity 不再是猜的),
+用户读发布说明时要知道的是「这件事变了」,不是「三个符号各自变了」。
+迁移说明写在同一条里。
 
-`assertTrue: ${output.userCount > 0}` 里的 `>` 在词法上就落 `UnexpectedToken`;
-`expr.rs:12` 的文法里 `eq` 已是最紧的比较层。
+另外两条**已在 CHANGELOG 而不在 v2.md 表**的(smix-server 去数据库、选择器映射拒未知键)
+按现有 CHANGELOG 措辞回填进表,不重写。
 
-**这是能力缺位**:一门连大小比较都没有的断言语言确实弱,而页面把它当成有。
-按 §12.2 补 core:在 `eq` 与 `unary` 之间插一层 `rel`:
-
-```text
-eq   = rel  (("==" | "!=") rel)*
-rel  = unary (("<" | "<=" | ">" | ">=") unary)*
-```
-
-语义预先定死,不在执行期再议:
-- 两边都是 `Number` → 数值比较
-- 两边都是 `String` → 字典序(`str` 的 `Ord`)
-- 其余混合类型 → **报错**,不做 JS 那种隐式转换。理由与该文件头部既有的取舍一致
-  (「不支持的构造报 `UnsupportedPattern` 而不是静默 no-op」)——
-  静默的类型转换正是这类表达式最容易骗人的地方
-- `Null` 参与比较 → 报错
-
-### N7 —— 想写正则,没有写法。**补解析。**
-
-`03-selectors.md` 说「含 regex meta 字符即自动识别」,实际 `text_to_pattern` **只认 `|`**;
-页面自举的 `^Help$` 与 `Row #[0-9]+` 都退化成字面量相等匹配。
-
-**两件事,都要做**:
-
-1. **不扩大自动识别**。把 `.` `?` `[` 也当 meta 会让 `Delete?` / `3.5` / `Row [1]`
-   这类**普通标签**悄悄变成正则并匹配过宽 —— 比现在更糟,因为它不报错。
-   页面那句话改成如实描述:`|` 触发;其余要显式写
-2. **补显式写法(这才是能力缺位)**。`smix_selector::Pattern` 的 wire 形态
-   `{regex, flags}` **早就存在**,但 yaml 解析器的 `text` 分支用 `.and_then(Value::as_str)`,
-   映射形态直接掉出去 —— 于是**没有任何 yaml 写法能刻意造出一个 `Pattern::Regex`**。
-   让 `text:` 接受已有的 tagged 形态:
-
-   ```yaml
-   - tapOn:
-       text: { regex: "^Help$" }
-   ```
-
-   `flags` 沿用 `Pattern` 已有的 `default_regex_flags`(`"i"`),**不新造语义**
+于是 C1 结束时:表 **9 行**,CHANGELOG `Breaking` **9 条**。
 
 ---
 
-## 步骤(线性,4 个,一条 finding 一步)
+## 步骤(线性,2 个)
 
-### S1. N3 —— 让页面说的路由与轨迹一致
-
-**红(写测试)**
-
-- 文件:`crates/smix-cli/src/guide_gate.rs`
-- `the_default_tap_still_misses_the_route_its_page_names` 翻正向,改名
-  `the_default_tap_takes_the_route_its_page_names`:轨迹必须是 `Tap`(主机解析),
-  **而页面必须这么写** —— 断言 04-actions §Default tap 的正文里出现
-  `/tap-at-norm-coord` 且**不**出现「`/tap-by-id` 是默认」的说法
-  (用页面里确实存在的字符串做判据,不用正则猜)
-- 跑:红
-
-**绿(实现)**
-
-- 文件:`docs/ai-guide/04-actions.md` —— §Action mental model 与 §Default tap 按上表重写;
-  三条路由各自的用途以 `SmixRunnerServer.swift` 的 handler 文档为准
-- 跑:S1 转绿
-
-### S2. N5 —— 让「可用键」列表与 `KeyName` 一致
+### S1. 闸门先红
 
 **红(写测试)**
 
-- 文件:`crates/smix-cli/src/guide_gate.rs`
-- 新 probe `every_documented_key_name_parses`:从 04-actions 的「Available keys」那一行
-  抽出全部键名,逐个喂 `smix_adapter_maestro` 的键名解析,全部必须成功
-  (解析函数是 crate 私有 → 用一条 `pressKey: <KEY>` 的最小 flow 跑派生臂 1 的同一条路径)
-- 跑:红,点名 `BACK` / `POWER` / `SCREEN_LOCK`
+- 文件:`crates/smix-cli/src/release_record.rs`(新)+ `main.rs` 加 `#[cfg(test)] mod release_record;`
+- 两个断言臂:
+  - `every_breaking_change_is_in_both_lists` —— 口径 2 的双向对账
+  - `the_breaking_table_shape_holds` —— 表必须有 `changelog` 列;行数下界 `>= 6`
+    (少于既有六项 = 抽取失配,会因一无所知而通过)
+- docstring 按本仓范式写全:**防的是哪一次事故**(两份清单 6 vs 8,且三条新变更两处都没有)
+  + **WHAT THIS CANNOT SEE**(不判某条是否真的破坏性;不判 `Added`/`Fixed` 的覆盖度;
+  不判迁移说明是否可行)
+- 跑:`cargo test -p smix-cli --bin smix release_record`,应看到红,
+  失败文本点名**两边各自多出来的条目**
 
 **绿(实现)**
 
-- 文件:`docs/ai-guide/04-actions.md` / `02-yaml-reference.md` / `08-cookbook.md` ——
-  三页里的 `pressKey: BACK` 改 `- back`;`POWER` 删;`SCREEN_LOCK` 改 `LOCK`;
-  补 iOS 模拟器上 VOLUME_* 被 skip 的一句
-- 从 `KNOWN_BROKEN` 删掉 N5 的两条(`04-actions` #13、`08-cookbook` #17)与
-  `02-yaml-reference` #7 —— 它们现在应当能跑;**留着会让派生臂报「listed-as-broken 现在能跑了」**
-- 跑:S2 转绿,派生臂 1 仍绿
+- 文件:`docs/v2.md` —— 表加 `changelog` 列;补第 7 行(口径 3)与两条回填行
+- 文件:`CHANGELOG.md` —— `### Breaking` 补一条 `**The Android launch activity is resolved,
+  not assumed**`,内容含:三处签名变化、`activity:` 覆盖仍生效、`.MainActivity` 只作最后回退、
+  以及**自己实现 `DeviceControl` 的调用方要改签名**这一句迁移说明
+- 跑:全绿
 
-### S3. N6 —— 补关系运算符
+**重构**
+
+- 无。
+
+### S2. 接线 + 验红
 
 **红(写测试)**
 
-- 文件:`crates/smix-adapter-maestro/src/expr.rs` 的 `#[cfg(test)] mod`
-- 六条:`>` `<` `>=` `<=` 各一条数值真/假、一条字符串序、一条混合类型报错
-- 跑:红
+- 文件:`crates/smix-cli/src/release_record.rs`
+- 加自查臂 `this_gate_runs_where_it_must`,与 `guide_gate` 同形:
+  preflight 的文档反查(`docs/v2.md` 与 `CHANGELOG.md` 都被 `include_str!` 进本 crate,
+  所以只改这两份文件时 preflight 会把 smix-cli 拉进来 —— **这一条要实际验证**,
+  不是假设:改一行 `CHANGELOG.md` 然后跑 preflight 的 crate 推导,确认 smix-cli 在列)
+- **三次装回缺陷验红**,结果写进决策日志:
+  1. 从 `v2.md` 表删一行 → 红,点名 CHANGELOG 里那个孤立短语
+  2. 从 CHANGELOG 删一条 → 红,点名表里那个悬空引用
+  3. 把表里某行的 `changelog` 值改一个字 → 红
 
 **绿(实现)**
 
-- 文件:`crates/smix-adapter-maestro/src/expr.rs` —— 词法加四个 token,文法插 `rel` 层,
-  求值按上面定死的语义;文件头 grammar 注释同步
-- 从 `KNOWN_BROKEN` 删掉 `02-yaml-reference` #3
-- 跑:S3 转绿
+- 文件:`docs/v2.md` 决策日志按 §10 追加一行,写明口径 1(闸门不判什么)与三次验红结果
+- 跑:`bash scripts/dev/preflight.sh`
 
-### S4. N7 —— 补显式正则写法,并把页面改成实话
+**重构**
 
-**红(写测试)**
-
-- 文件:`crates/smix-cli/src/guide_gate.rs`
-- `the_documented_regex_examples_are_still_literals` 翻正向,改名
-  `the_documented_regex_examples_are_patterns`:页面里印出来的每个正则示例,
-  经解析后必须是 `Pattern::Regex`
-- 文件:`crates/smix-adapter-maestro/tests/parser.rs` —— 加 tagged 形态解析的用例
-- 跑:红
-
-**绿(实现)**
-
-- 文件:`crates/smix-adapter-maestro/src/parser.rs` —— `tapOn` / `assertVisible` 等
-  走 `visible_to_selector` 的选择器位置,`text:` 接受 `{regex, flags}` 映射形态
-  (**一处改动**:那些 verb 共用同一个 selector 读取路径,别分叉)
-- 文件:`docs/ai-guide/03-selectors.md` —— 自动识别那句改成 `|`;两个示例改显式写法
-- 跑:S4 转绿
+- 无。
 
 ---
 
-## Checkpoint C4 验收
+## Checkpoint C1 验收
 
 ```bash
-cargo test -p smix-cli --bin smix guide_gate -- --nocapture 2>&1 | grep -E 'guide-executability:|test result:'
-grep -c '| broken |' docs/guide-executability.md
+cargo test -p smix-cli --bin smix release_record -- --nocapture 2>&1 | grep -E 'release-record:|test result:'
+grep -c '^| [0-9] |' docs/v2.md
+awk '/^### Breaking/,/^### Added/' CHANGELOG.md | grep -c '^- '
 bash scripts/dev/preflight.sh
 ```
 
 期望:
 
-1. `guide-executability: 8 claims (8 runs / 0 broken / 0 unjudged) · … yaml blocks judged`;
-   且 `test result: ok. … 0 failed`
-2. 第二条输出 `0`
-3. 第三条最后一行 `preflight: clean`
+1. 一行 `release-record: 9 breaking changes, both lists agree`;且 `test result: ok. … 0 failed`
+2. 第二条输出 `9`
+3. 第三条输出 `9`
+4. 第四条最后一行 `preflight: clean`
 
 ## 完成后动作
 
-1. `mv docs/plan-hot.md docs/plan-history/v2.4-c4-hot.md`
-2. v2.4 冷计划的出口验收在此成立 → 回 `docs/roadmap.md` 与 `docs/v2.md`,
-   确认 v2 是否还有未闭合的段;若无,下一份热计划覆盖 v2.0.0 的发布前收口
-   (`docs/scope-decisions-pending.md` 里三条待拍板仍未拍,那是**委托方的决定**,
-   不是可以自己推进的工作 —— 收口计划要把它列为阻塞项而不是绕过它)
+1. `mv docs/plan-hot.md docs/plan-history/v2.5-c1-hot.md`
+2. 生成新 `docs/plan-hot.md`(覆盖 C2:CHANGELOG 的 `2.0.0` 段覆盖 v2.1–v2.4 实际做过的事),
+   附加专属 context:
+   - **覆盖判据由 C1 的结果定**,冷计划已经写明这一点 —— 不要在 C2 起手时才发现没有判据
+   - v2.1–v2.4 的用户可见改动清单在四段的决策日志里,不在别处
+   - C2 **不**碰 `docs/scope-decisions-pending.md` 的三条:那是委托方的决定

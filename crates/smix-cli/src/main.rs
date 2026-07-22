@@ -14,6 +14,9 @@ mod capsule;
 mod down;
 #[cfg(test)]
 mod guide_gate;
+
+#[cfg(test)]
+mod release_record;
 mod runner;
 mod runner_android;
 mod runner_state;
