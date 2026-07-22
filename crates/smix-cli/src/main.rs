@@ -393,6 +393,18 @@ Documentation: docs/AI_GUIDE.md
         /// `adb shell am start`). Saves 3-5s cold-start latency.
         #[arg(long, default_value_t = false)]
         no_launch: bool,
+        /// Run with the device's own animation settings instead of
+        /// quietening them.
+        ///
+        /// By default a run asks the device to stop animating first:
+        /// Android's three animation scales go to zero, iOS gets Reduce
+        /// Motion (XCUITest cannot reach the app's own animation flag,
+        /// so that is as far as it goes). Both are read back and the
+        /// run refuses if they did not take. Pass this when motion is
+        /// the subject — recording a demo, or an `assertScreenshot`
+        /// baseline whose frames include a transition.
+        #[arg(long, default_value_t = false)]
+        animations: bool,
         /// Target platform.
         #[arg(long, value_enum, env = "SMIX_PLATFORM", default_value_t = RunPlatform::Ios)]
         platform: RunPlatform,
@@ -1513,6 +1525,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             flows,
             device,
             bundle_id,
+            animations,
             runner_port,
             no_launch,
             platform,
@@ -1726,6 +1739,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             udid: udid.clone(),
                             bundle_id: bundle.clone(),
                             runner_port: port,
+                            animations,
                             no_launch,
                             platform: plat,
                             apps_config: apps_config.clone(),
@@ -3188,6 +3202,32 @@ mod tests {
         }
         assert!(err.contains("they are"), "plural form expected in: {err}");
     }
+    /// `--animations` exists on `smix run` and is off by default.
+    ///
+    /// The default is the whole change: a run quietens the device
+    /// unless this is passed. Read off the clap tree rather than the
+    /// help text, because the text is generated from the tree and
+    /// checking it would be checking the rendering.
+    #[test]
+    fn the_animations_flag_is_off_by_default() {
+        use clap::CommandFactory;
+        let cli = Cli::command();
+        let run = cli
+            .get_subcommands()
+            .find(|c| c.get_name() == "run")
+            .expect("`smix run` still exists");
+        let arg = run
+            .get_arguments()
+            .find(|a| a.get_id() == "animations")
+            .expect("`smix run --animations` exists");
+        assert_eq!(
+            arg.get_default_values(),
+            ["false"],
+            "the flag stopped defaulting to false, so a run no longer \
+             quietens the device unless asked"
+        );
+    }
+
     /// The port `smix run` dials, in priority order.
     ///
     /// Extracted so the chain can be asserted rather than only read.

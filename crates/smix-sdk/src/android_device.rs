@@ -188,6 +188,53 @@ fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> DeviceControlError {
     }
 }
 
+/// The animation settings smix zeroes on Android, in the order it
+/// writes them.
+///
+/// All three matter and they are separately settable: window covers
+/// activity windows, transition covers activity-to-activity, animator
+/// covers `ObjectAnimator` — a screen can sit still by two of these
+/// and keep moving by the third.
+pub const ANDROID_ANIMATION_SCALES: [&str; 3] = [
+    "window_animation_scale",
+    "transition_animation_scale",
+    "animator_duration_scale",
+];
+
+/// Judge what a device gave back after being told to stop animating.
+///
+/// Takes `(setting, value-read-back)` pairs and returns the ones that
+/// did not take. A device is not trusted to have honoured a write:
+/// `simctl ui appearance` is documented per-simulator and behaves
+/// globally, and this project has been bitten by exactly that shape
+/// before. A switch that reports success while the device kept its
+/// animations is worse than no switch, because the run that follows
+/// looks deterministic and is not.
+///
+/// Two vocabularies, because two platforms: an Android scale is off at
+/// `0`, however it is spelled (`0`, `0.0`); iOS Reduce Motion is on at
+/// `1`. Anything else — including the empty string and `null` that
+/// `settings get` prints for a key never written — is a failure that
+/// names itself.
+pub fn animation_settings_verified(read_back: &[(&str, &str)]) -> Result<(), Vec<String>> {
+    let mut bad = Vec::new();
+    for (setting, value) in read_back {
+        let v = value.trim();
+        let ok = if setting.starts_with("UIAccessibility") {
+            v == "1"
+        } else {
+            v.parse::<f64>().is_ok_and(|n| n == 0.0)
+        };
+        if !ok {
+            let seen = if v.is_empty() { "<empty>" } else { v };
+            bad.push(format!(
+                "{setting} read back as {seen}, so the device did not take it"
+            ));
+        }
+    }
+    if bad.is_empty() { Ok(()) } else { Err(bad) }
+}
+
 /// Pull the activity out of `cmd package resolve-activity --brief`.
 ///
 /// Two lines on a hit — a `priority=… isDefault=…` header, then the
@@ -279,6 +326,46 @@ impl DeviceControl for AndroidDeviceControl {
             .await
             .map_err(|e| adb_to_simctl_err(e, "shell am start"))?;
         Ok(0)
+    }
+
+    async fn set_animations_quiet(
+        &self,
+        serial: &str,
+        quiet: bool,
+    ) -> Result<(), DeviceControlError> {
+        // 1 is the platform default; 0 is off. Restoring means writing
+        // 1 back rather than deleting the key, because a deleted key
+        // reads as absent and absent is not a value the device honours.
+        let target = if quiet { "0" } else { "1" };
+        for setting in ANDROID_ANIMATION_SCALES {
+            self.client
+                .shell(serial, &["settings", "put", "global", setting, target])
+                .await
+                .map_err(|e| adb_to_simctl_err(e, "shell settings put"))?;
+        }
+        if !quiet {
+            return Ok(());
+        }
+        let mut read_back = Vec::new();
+        for setting in ANDROID_ANIMATION_SCALES {
+            let value = self
+                .client
+                .shell(serial, &["settings", "get", "global", setting])
+                .await
+                .map_err(|e| adb_to_simctl_err(e, "shell settings get"))?;
+            read_back.push((setting, value.trim().to_string()));
+        }
+        let pairs: Vec<(&str, &str)> = read_back.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        animation_settings_verified(&pairs).map_err(|bad| {
+            DeviceControlError::non_zero_exit(
+                "shell settings get",
+                1,
+                format!(
+                    "animations were not quietened on {serial}: {}",
+                    bad.join("; ")
+                ),
+            )
+        })
     }
 
     async fn terminate(&self, serial: &str, bundle_id: &str) -> Result<(), DeviceControlError> {

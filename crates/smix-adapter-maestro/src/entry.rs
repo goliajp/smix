@@ -64,6 +64,14 @@ pub struct FlowArgs {
     /// Skip the initial `App::foreground` call. Use when the app is
     /// already on screen.
     pub no_launch: bool,
+    /// Leave the device's animation settings alone.
+    ///
+    /// Off by default, which is the point: a run wants the screen to
+    /// stop moving, and `waitForAnimationToEnd` exists as compensation
+    /// for the state nobody wanted. Set it when motion is the subject —
+    /// recording a demo, or a visual-regression baseline whose frames
+    /// include a transition.
+    pub animations: bool,
     /// Target platform.
     pub platform: FlowPlatform,
     /// Optional `smix-apps.yaml` cross-platform resolver config.
@@ -324,7 +332,24 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
         FlowPlatform::Android => AppHolder::Loose(app),
     };
 
-    // 3. foreground unless --no-launch (iOS only; Android brings app
+    // 3. Quieten the device's animations, unless asked not to.
+    //
+    // Before foregrounding, so the app's first frame is already drawn
+    // under the settings the rest of the run uses. Both platforms,
+    // unlike the foreground call below: how far each can be pushed
+    // differs, but neither is exempt from being asked.
+    if !args.animations
+        && let Some(id) = args.udid.as_deref()
+        && let Err(e) = holder.app().set_animations_quiet(true).await
+    {
+        eprintln!(
+            "error: could not quieten animations on {id}: {e}\n\
+             hint: pass --animations to run with the device's own settings"
+        );
+        return 3;
+    }
+
+    // 4. foreground unless --no-launch (iOS only; Android brings app
     // to foreground via launchApp step).
     if !args.no_launch
         && args.platform == FlowPlatform::Ios

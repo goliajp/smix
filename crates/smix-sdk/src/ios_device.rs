@@ -97,6 +97,40 @@ impl DeviceControl for IosDeviceControl {
         self.client.uninstall(udid, bundle_id).await
     }
 
+    /// Reduce Motion, which is as far as smix can push iOS on its own.
+    ///
+    /// Not "animations off": XCUITest runs in a separate process from
+    /// the app under test, so `UIView.setAnimationsEnabled(false)`
+    /// cannot reach it. Reduce Motion is a system accessibility setting
+    /// UIKit honours inside the app, and it is the strongest lever
+    /// available without asking the app to cooperate — which is the
+    /// dependency that stalled the original `--stable` design.
+    async fn set_animations_quiet(
+        &self,
+        udid: &str,
+        quiet: bool,
+    ) -> Result<(), DeviceControlError> {
+        self.client.set_reduce_motion(udid, quiet).await?;
+        if !quiet {
+            return Ok(());
+        }
+        let read_back = self.client.reduce_motion(udid).await?.unwrap_or_default();
+        crate::animation_settings_verified(&[(
+            "UIAccessibilityReduceMotionEnabled",
+            read_back.as_str(),
+        )])
+        .map_err(|bad| {
+            DeviceControlError::non_zero_exit(
+                "spawn defaults read",
+                1,
+                format!(
+                    "Reduce Motion was not established on {udid}: {}",
+                    bad.join("; ")
+                ),
+            )
+        })
+    }
+
     async fn keychain_reset(&self, udid: &str) -> Result<(), DeviceControlError> {
         self.client.keychain_reset(udid).await
     }

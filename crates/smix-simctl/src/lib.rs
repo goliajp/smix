@@ -1835,6 +1835,29 @@ impl SimctlClient {
         Ok(())
     }
 
+    /// Read back the Reduce Motion accessibility setting.
+    ///
+    /// `Ok(None)` when the key was never written, which `defaults read`
+    /// reports by exiting non-zero. Absent is not off and not on — it
+    /// is the device having no opinion, and a caller that wanted the
+    /// setting established has to treat it as a failure to establish.
+    pub async fn reduce_motion(&self, udid: &str) -> Result<Option<String>, DeviceControlError> {
+        match simctl_run(&[
+            "spawn",
+            udid,
+            "/usr/bin/defaults",
+            "read",
+            "com.apple.UIKit",
+            "UIAccessibilityReduceMotionEnabled",
+        ])
+        .await
+        {
+            Ok(s) => Ok(Some(s.trim().to_string())),
+            Err(DeviceControlError::NonZeroExit { .. }) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Toggle "Reduce Motion" accessibility setting via `defaults write`.
     pub async fn set_reduce_motion(
         &self,
