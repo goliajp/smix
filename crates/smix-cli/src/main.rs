@@ -1319,10 +1319,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 RunnerAction::ListSessions => {
                     let port = runner_port();
                     let client = smix_runner_client::HttpRunnerClient::new(port);
-                    let rt = tokio::runtime::Runtime::new()
-                        .map_err(|e| CliError::Other(format!("tokio runtime: {e}")))?;
-                    let resp = rt
-                        .block_on(client.list_sessions())
+                    // `run` is already inside `#[tokio::main]`; a second
+                    // runtime here panics with "Cannot start a runtime
+                    // from within a runtime" on every call.
+                    let resp = client
+                        .list_sessions()
+                        .await
                         .map_err(|e| CliError::Other(format!("/session/list: {e}")))?;
                     if resp.sessions.is_empty() {
                         println!("(no open sessions)");
