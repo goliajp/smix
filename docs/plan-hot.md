@@ -1,141 +1,97 @@
-# plan-hot — v2.7 到 C1:tap 说出它打中了什么
+# plan-hot — v2.7 到 C4:剩下的两条都在 runner 侧
 
 ## 目标 checkpoint
 
-**C1**:`tapOn` 的成功含义从「我派发了一次触摸」变成「我打中了我匹配的那个元素」。
-打中别的东西 → 失败,并说出**瞄的是谁、打中的是谁**。
+**C4**:EXT1 九条全部有归宿。剩余两条都不是 CLI 能透传的东西,都要动 runner 的语义:
+
+- **#2 观察按住期间**(他们排第 2 优先)
+- **#8 `capsule up` 不重启应用**
 
 ## 前置条件
 
 ```bash
 git status --short                     # 期望:空
 bash scripts/dev/preflight.sh          # 期望:preflight: clean
-grep -c "OkEnvelope" crates/smix-runner-client/src/lib.rs   # tap 仍收空信封
-pgrep -fl 'runner.ts|smix run|supervise'                    # 期望:空
+ssh mini 'cd workspace/goliajp/smix && cargo test --workspace 2>&1 | grep -c "^test result: FAILED"'
+# 期望:0
 ```
 
----
+## 已经查清、不必重查的事实
 
-## 本段预先定死的四个口径(执行期不得再议)
-
-### 口径 1 — 判据是「同一个元素」,不是「坐标落在框里」
-
-主机已经解析出一个元素(有 identifier / label / frame)。runner 派发后回报**那一点上的元素**。
-判据是两者**是同一个**,不是「坐标在框内」——后者对被遮挡的情况恒真,
-而遮挡正是 #4 报的现象之一。
-
-比对顺序,预先定死:
-1. 两边都有非空 `identifier` → 比 identifier
-2. 否则两边都有非空 `label` → 比 label
-3. 否则比 frame(容差 1pt,浮点)
-4. 以上都无法比 → **判为「无法确认」而不是「通过」**,并在失败文本里说明为什么无法比
-
-第 4 条是这条设计的重点:**不能比就不叫通过**。
-
-### 口径 2 — 语义先看设备再定死
-
-「那一点上最深的元素」与「那一点上真正接收事件的元素」不是一回事。
-XCUITest 没有公开的 hitTest,能拿到的是快照树的几何包含关系。
-
-因此 **C1 先在设备上把「最深包含者」取出来看它跟实际响应者差多少**,再决定
-`tapOn` 拿哪个当判据。**不允许先按想象实现再去验证** —— 这一段的风险表就写着这条。
-
-### 口径 3 — 换判据是破坏性变更,并且要有过渡
-
-今天报成功的流,明天可能报失败 —— **那正是要的效果**,但不能一声不响地换。
-
-- 默认:不一致 → 失败
-- `SMIX_TAP_HIT_MISMATCH=warn`:降级为警告,给存量流一个过渡窗口
-- 进破坏性变更表(#11)+ CHANGELOG,由 v2.5 的闸门强制两处一致
-
-**不做**「默认警告、以后再改成失败」——那是把这次改动的价值推给下一次。
-
-### 口径 4 — 比对逻辑是纯函数,住在 driver
-
-判据可能错;错了要能被红。所以「瞄的是 A、打中的是 B,该不该判失败,失败怎么说」
-必须是一个不碰网络、不碰设备的函数,单测钉住。runner 侧只负责**如实回报那一点上是谁**。
+- **按住本身已经有了**:`longPressOn: { id, duration }` 走 `element.press(forDuration:)`,
+  真的按住。EXT1 的 #2 缺的**只是「期间能不能看」**
+- **并发探测已做(2026-07-23,mini / iPhone 17 Pro / iOS 26.5),结论是决定性的**:
+  按压进行中(占用 0.00–4.31s),`/health` 发于 +0.00s、**+0.01s 就返回**;
+  而 `/tree` 发于 +1.01s、**+4.38s 才返回** —— 排在按压结束之后。
+  **HTTP 层是并发的,凡碰 XCUITest 的路由都排在进行中的手势后面。**
+  所以 EXT1 的「外部截图落进按压窗口」**在机制上不可能**,他们看到的
+  「the press had already ended」不是按压太快,是截图被挡到了按压之后。
+- **因此 #2 只剩较贵的那条路**:handler 自己在按住窗口内取帧。
+  而 `element.press(forDuration:)` 是**同步阻塞**的,handler 在它里面也取不了 ——
+  要先确认 `SmixEventRecord` 的 hold(offset 时间轴)提交后
+  `synthesize` 是**立即返回**还是**阻塞到手势结束**。前者才有窗口可用。
+  **这是 C4-S1 的第一步,不是实现的第一步**
+- **`capsule up` 的重启在 runner 侧**:XCUITest 绑定 bundle 时 `.launch()`。
+  `crates/smix-cli/src/runner.rs` 全文没有 launch 字样,CLI 透传不到
+- **性能基线**(mini / iPhone 17 Pro / iOS 26.5):`GET /tree` 68ms,
+  `POST /tap-at-norm-coord` 466ms,10 次 burst 917ms
 
 ---
 
-## 步骤(线性,3 个)
+## 本段预先定死的两个口径
 
-### S1. 比对判据先有,并且能红
+### 口径 1 — #2 先查「runner 能不能并发服务」,再决定形态
 
-**红(写测试)**
+两种形态成本差一个数量级:
 
-- 文件:`crates/smix-driver/tests/tap_hit_verdict.rs`(新)
-- 纯函数 `smix_driver::tap_hit_verdict(aimed: &HitElement, hit: Option<&HitElement>) -> TapHitVerdict`
-- 用例(每条对应口径 1 的一行):
-  - identifier 相同 → `Confirmed`
-  - identifier 不同 → `Missed`,失败文本同时含两个 identifier
-  - 双方 identifier 空、label 相同 → `Confirmed`
-  - 双方 identifier 与 label 都空、frame 在 1pt 内 → `Confirmed`
-  - 双方全空且 frame 差 20pt → `Missed`
-  - `hit == None`(runner 说那一点上没有元素)→ `Missed`,文本说「那一点上什么都没有」
-  - **双方都无可比字段** → `Unconfirmable`,**不是 `Confirmed`**
-- 跑:红
+~~runner 能并发 → 只需更长的 duration,外部截图自己落进窗口~~ ——
+**已被探测排除**(见上)。EXT1 说这就够,但机制上做不到。
 
-**绿(实现)**
+只剩:handler 自己在按住窗口内取帧并返回,那是新的响应形状 + 图像传输;
+且它成立的前提是 synthesize 提交后立即返回。
 
-- 文件:`crates/smix-driver/src/lib.rs` —— `HitElement` / `TapHitVerdict` + 判据函数
-- 跑:S1 转绿
+**先测再定,不先按想象实现** —— C1 的语义就是这样被设备否掉的,
+而这一条的并发探测同样推翻了「加个 duration 就够」的省事路线。
 
-### S2. 让 runner 如实回报那一点上是谁
+### 口径 2 — #8 要先回答「附着是什么意思」
 
-**红(写测试)**
+`capsule up` 现在等于「起 runner 并把它绑到 bundle」,而绑定就会 launch。
+**不改 launch 行为、只加一个 flag,是把语义问题伪装成参数问题。**
 
-- 文件:`swift-bridge/Tests/SmixRunnerCoreTests/HitAtPointTests.swift`(新)
-- `SmixRunnerCore` 侧加纯函数:给一棵已有的快照节点树 + 一个点,返回**最深的包含者**
-  (与 `TreeRoute` 的 `nodeToDict` 用同一份节点结构,不另造一棵树)
-- 三条:命中最深子节点;点在父节点内但不在任何子节点内 → 返回父;点在树外 → nil
-- 跑:`swift test`,红
-
-**绿(实现)**
-
-- `SmixRunnerCore` 实现该函数;`SmixRunnerUITests` 的 `tapAtCoordHandler`
-  在 synthesize 之后调用它,把结果放进响应
-- 文件:`crates/smix-runner-wire` —— `/tap-at-norm-coord` 的响应从空信封变成带
-  `hit: Option<HitElement>`;`smix-runner-client` 的 `tap_at_norm_coord` 返回它
-- 跑:`swift test` 绿 + `cargo check` 绿
-
-### S3. 接进 driver,记录,过渡开关
-
-**红(写测试)**
-
-- `crates/smix-driver` 的单测:`IosDriver::tap` 在 `hit` 与 aimed 不一致时返回
-  `ExpectationFailure`,文本含两个元素;设 `SMIX_TAP_HIT_MISMATCH=warn` 时不失败
-- 跑:红
-
-**绿(实现)**
-
-- `IosDriver::tap` 接上判据;失败走 `ExpectationFailure`,`code` 用既有的
-  `ElementNotFound` 还是新码 —— **新码**,因为「找不到」与「找到了但没打中」
-  对读的人是两件事
-- 破坏性变更 #11 进 `docs/v2.md` 表 + CHANGELOG(闸门强制)
-- `docs/ai-guide/04-actions.md` §Default tap 补一段:tapOn 成功的含义是什么
-- `docs/v2.md` 决策日志按 §10 记:口径 1 第 4 条(不能比就不叫通过)、口径 3(为什么不默认警告)
-- 跑:`bash scripts/dev/preflight.sh`
-
-**设备核实**(不进 checkpoint 判据,写进决策日志):
-口径 2 的语义对照 —— 最深包含者 vs 实际响应者;
-以及用 EXT1 报的那个现象复现一次(tap 报成功而应用没收到)
+要回答的是:runner 能不能绑到一个**已经在跑**的 app 而不重启它。
+XCUIApplication 有 `activate()` 与 `launch()` 之分 —— 前者不重启。
+先确认 runner 侧当前用的是哪个、以及改成 activate 会不会破坏它别的保证。
 
 ---
 
-## Checkpoint C1 验收
+## 步骤(线性,2 个)
+
+### S1. #2 —— 先测并发,再按结论实现
+
+**红**:一条断言「按住期间能取到与静止时不同的画面」。测法由上面的并发探测结论决定。
+
+**绿**:按结论的形态实现,并在 docstring 写明**另一条路为什么没选**。
+
+### S2. #8 —— 先确认 activate 与 launch 的差别,再决定
+
+**红**:`capsule up` 两次,中间导航到别的屏;第二次之后断言屏幕没被重置。
+
+**绿**:runner 侧改绑定语义;若发现 activate 会破坏别的保证,
+**记下来并停**,不为了闭一条反馈项而牺牲一条已有保证。
+
+---
+
+## Checkpoint C4 验收
 
 ```bash
-cargo test -p smix-driver --test tap_hit_verdict
-cd swift-bridge && swift test --filter HitAtPoint
-cargo test -p smix-cli --bin smix release_record -- --nocapture 2>&1 | grep 'release-record:'
+cargo test -p smix-cli --bin smix guide_gate -- --nocapture
 bash scripts/dev/preflight.sh
+ssh mini 'cd workspace/goliajp/smix && cargo clippy --workspace --all-targets && cargo test --workspace'
 ```
-
-期望:前两条 `0 failed`;第三条读作 `11 breaking changes, both lists agree`;
-第四条 `preflight: clean`。
+外加:`.claude/dogfood/2026-07-22-ext1-response.md` 的「准备怎么做」一节
+已改为实际结果,九条各有归宿(已修 / 已做 / 明确不做并写明理由)。
 
 ## 完成后动作
 
-1. `mv docs/plan-hot.md docs/plan-history/v2.7-c1-hot.md`
-2. 生成 C2 热计划(#2 / #3 —— 过程中观察),附加 context:
-   **#3 的 428ms 要自己复量一次**,不照抄消费方的测量
+1. `mv docs/plan-hot.md docs/plan-history/v2.7-c4-hot.md`
+2. v2.7 出口验收成立 → 回 `docs/v2.md` 看 v2 是否只剩发布本身
