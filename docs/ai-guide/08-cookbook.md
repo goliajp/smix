@@ -40,6 +40,11 @@ apps:
     android: { package: com.example.app, activity: .MainActivity }
 ```
 
+`activity` is an override, and most apps do not need it: omitted, smix
+asks the device's package manager which activity the launcher starts.
+Set it when an app has more than one entry point and a flow wants a
+particular one.
+
 ## Login flow (text input + submit)
 
 ```yaml

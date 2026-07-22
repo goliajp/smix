@@ -554,7 +554,7 @@ class SmixHttpServer(
         // pkg/.MainActivity`. This brings the app to foreground without
         // launching a new instance (matches the iOS XCUIDevice activate
         // semantic).
-        runShellCommand(RunnerWire.foregroundCommand(bundleId))
+        runShellCommand(RunnerWire.foregroundCommand(bundleId, entryPoint(bundleId)))
         device.waitForIdle(500)
         val body = RunnerWire.foregroundBody(bundleId)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
@@ -583,7 +583,7 @@ class SmixHttpServer(
         // iOS semantics: activate:true → foreground the target once,
         // synchronously, before returning; activatedOnce mirrors it.
         if (req.activate) {
-            runShellCommand(RunnerWire.foregroundCommand(req.bundleId))
+            runShellCommand(RunnerWire.foregroundCommand(req.bundleId, entryPoint(req.bundleId)))
             device.waitForIdle(500)
         }
         val entry = sessions.open(req.bundleId, activated = req.activate)
@@ -636,7 +636,7 @@ class SmixHttpServer(
             Response.Status.NOT_FOUND,
             RunnerWire.sessionNotFoundBody("unknown session id"),
         )
-        runShellCommand(RunnerWire.foregroundCommand(entry.bundleId))
+        runShellCommand(RunnerWire.foregroundCommand(entry.bundleId, entryPoint(entry.bundleId)))
         device.waitForIdle(500)
         return newFixedLengthResponse(
             Response.Status.OK,
@@ -663,7 +663,7 @@ class SmixHttpServer(
         val cmd = if (terminate) {
             RunnerWire.terminateAppCommand(entry.bundleId)
         } else {
-            RunnerWire.foregroundCommand(entry.bundleId)
+            RunnerWire.foregroundCommand(entry.bundleId, entryPoint(entry.bundleId))
         }
         runShellCommand(cmd)
         device.waitForIdle(500)
@@ -689,7 +689,7 @@ class SmixHttpServer(
         )
         val start = System.currentTimeMillis()
         runShellCommand(RunnerWire.terminateAppCommand(entry.bundleId))
-        runShellCommand(RunnerWire.foregroundCommand(entry.bundleId))
+        runShellCommand(RunnerWire.foregroundCommand(entry.bundleId, entryPoint(entry.bundleId)))
         device.waitForIdle(500)
         val wallMs = System.currentTimeMillis() - start
         return newFixedLengthResponse(
@@ -701,6 +701,28 @@ class SmixHttpServer(
 
     private fun sessionError(status: Response.Status, body: String): Response =
         newFixedLengthResponse(status, "application/json", body)
+
+    /// The activity `am start -n` should name for this package.
+    ///
+    /// Every launch route used to hard-code `.MainActivity`, which is
+    /// what a scaffolded app is called and what almost nothing else is:
+    /// an AOSP app, or one whose entry point was renamed, simply did
+    /// not start, and the response said nothing about why. The package
+    /// manager already knows, and the runner has a Context to ask with.
+    ///
+    /// Returns null when it cannot answer, which
+    /// `RunnerWire.foregroundCommand` reads as "use the old
+    /// convention" — no device that worked before is worse off.
+    private fun entryPoint(bundleId: String): String? {
+        val pm = instrumentation.targetContext.packageManager
+        val component = pm.getLaunchIntentForPackage(bundleId)?.component ?: return null
+        val name = component.className
+        return if (name.startsWith("$bundleId.")) {
+            name.removePrefix(bundleId)
+        } else {
+            name
+        }
+    }
 
     private fun runShellCommand(cmd: String) {
         val pfd = instrumentation.uiAutomation.executeShellCommand(cmd)

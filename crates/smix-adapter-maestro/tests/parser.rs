@@ -32,6 +32,7 @@ fn parse_alerts_counting_full_match() {
     let expected = Flow {
         app_id: "com.example.app".to_string(),
         app: None,
+        launch_activity: None,
         steps: vec![
             Step::RunFlow("../../subflows/launch-warm.yaml".to_string()),
             Step::RunFlow("../../subflows/ensure-login.yaml".to_string()),
@@ -103,6 +104,7 @@ fn parse_ensure_login_with_runflow_when_clause() {
     let expected = Flow {
         app_id: "com.example.app".to_string(),
         app: None,
+        launch_activity: None,
         steps: vec![
             // runFlow: { when: { visible: "Log in" }, file: ../subflows/login.yaml }
             Step::RunFlowConditional {
@@ -143,6 +145,7 @@ fn parse_run_flow_inline_commands_with_when() {
     let expected = Flow {
         app_id: "com.t.r".to_string(),
         app: None,
+        launch_activity: None,
         steps: vec![Step::RunFlowInline {
             when_visible: Some(text_selector(Pattern::Text("Open in".to_string()))),
             when_not_visible: None,
@@ -245,6 +248,7 @@ fn parse_launch_warm_extras() {
     let expected = Flow {
         app_id: "com.example.app".to_string(),
         app: None,
+        launch_activity: None,
         steps: vec![
             Step::StopApp,
             Step::OpenLink(

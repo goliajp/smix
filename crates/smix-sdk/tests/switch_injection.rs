@@ -58,6 +58,7 @@ impl DeviceControl for RecordingDevice {
         _udid: &str,
         _bundle_id: &str,
         _args: &[String],
+        _activity: Option<&str>,
     ) -> Result<u32, DeviceControlError> {
         self.record("launch_with_args");
         Ok(1)

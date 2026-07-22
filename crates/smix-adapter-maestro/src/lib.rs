@@ -1094,6 +1094,15 @@ pub struct Flow {
     /// legacy `appId:` literal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
+    /// Android launch activity, resolved from `smix-apps.yaml`.
+    ///
+    /// Not a yaml key: there is nowhere in a flow to write it, because
+    /// it is a property of the app rather than of the run. It arrives
+    /// here from [`apps_config::resolve_app_into_flow`] and travels on
+    /// to the launch options, which is the whole journey it never used
+    /// to make — it was read, defaulted, and dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_activity: Option<String>,
     /// Ordered step list.
     pub steps: Vec<Step>,
 }

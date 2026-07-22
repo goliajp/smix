@@ -153,13 +153,19 @@ object RunnerWire {
     fun inputTextCommand(text: String): String =
         "input text ${escapeForInputText(text)}"
 
-    fun foregroundCommand(bundleId: String): String =
-        "am start --activity-single-top -n $bundleId/.MainActivity"
+    // The activity is resolved by the caller, which has a Context and
+    // can ask the package manager. `.MainActivity` remains only as the
+    // answer of last resort: it is what a scaffolded app is called and
+    // what almost nothing else is, so every launch used to work for
+    // apps generated from a template and silently for no others.
+    const val ACTIVITY_CONVENTION: String = ".MainActivity"
+
+    fun foregroundCommand(bundleId: String, activity: String? = null): String =
+        "am start --activity-single-top -n $bundleId/${activity ?: ACTIVITY_CONVENTION}"
 
     // /session/launch-app + /session/relaunch-app reuse the /foreground
-    // `.MainActivity` convention (same launch semantics, same
-    // limitation: apps whose launcher activity isn't `.MainActivity`
-    // need the convention extended, not a per-route fork).
+    // entry-point resolution — same launch semantics, so the same
+    // question about which activity to start.
     fun terminateAppCommand(bundleId: String): String =
         "am force-stop $bundleId"
 

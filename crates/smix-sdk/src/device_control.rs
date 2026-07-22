@@ -147,11 +147,21 @@ pub trait DeviceControl: Send + Sync {
     // === Lifecycle ===
 
     async fn launch(&self, udid: &str, bundle_id: &str) -> Result<u32, DeviceControlError>;
+    /// Launch with process arguments, and on Android with an explicit
+    /// entry point.
+    ///
+    /// `activity` is `None` unless a flow's app config named one. The
+    /// Android side resolved every launch to `<pkg>/.MainActivity`
+    /// before this parameter existed, which is right for a scaffolded
+    /// app and wrong for every AOSP one; `None` now means "ask the
+    /// package manager" rather than "assume". iOS ignores it — a
+    /// bundle id already names what to launch.
     async fn launch_with_args(
         &self,
         udid: &str,
         bundle_id: &str,
         args: &[String],
+        activity: Option<&str>,
     ) -> Result<u32, DeviceControlError>;
     async fn terminate(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError>;
     async fn install(&self, udid: &str, app_path: &str) -> Result<(), DeviceControlError>;
