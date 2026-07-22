@@ -168,6 +168,34 @@ pub trait DeviceControl: Send + Sync {
     async fn uninstall(&self, udid: &str, bundle_id: &str) -> Result<(), DeviceControlError>;
     async fn keychain_reset(&self, udid: &str) -> Result<(), DeviceControlError>;
 
+    /// Push the device's animations as low as this platform allows,
+    /// then read the settings back and refuse if they did not take.
+    ///
+    /// `quiet = true` is the default a run gets; `false` restores the
+    /// device's own settings for `--animations`.
+    ///
+    /// How low differs by platform and the difference is not papered
+    /// over. Android zeroes three scales, which really is off. iOS gets
+    /// Reduce Motion, which is weaker: XCUITest runs in its own
+    /// process, so `UIView.setAnimationsEnabled(false)` cannot reach
+    /// the app under test, and Reduce Motion is the strongest lever
+    /// smix can pull on its own. Saying "animations are off" would be
+    /// false on one of the two platforms.
+    ///
+    /// Reading back is not belt-and-braces. `simctl ui appearance` is
+    /// documented per-simulator and behaves globally; a setting written
+    /// by smix is not believed until the device repeats it. A switch
+    /// that reports success while the device kept animating is worse
+    /// than no switch — the run that follows looks deterministic and is
+    /// not.
+    async fn set_animations_quiet(
+        &self,
+        _id: &str,
+        _quiet: bool,
+    ) -> Result<(), DeviceControlError> {
+        Ok(())
+    }
+
     /// Revoke every privacy permission the app has been granted.
     ///
     /// Companion to [`Self::clear_app_sandbox`]; together they are the

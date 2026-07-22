@@ -41,7 +41,10 @@ pub use ios_device::IosDeviceControl;
 
 // Android DeviceControl impl backed by smix-adb.
 pub mod android_device;
-pub use android_device::{AndroidDeviceControl, parse_resolved_activity};
+pub use android_device::{
+    ANDROID_ANIMATION_SCALES, AndroidDeviceControl, animation_settings_verified,
+    parse_resolved_activity,
+};
 
 pub mod capsule;
 pub use capsule::{
@@ -1418,6 +1421,21 @@ impl App {
             Vec::new()
         };
         Ok(warnings)
+    }
+
+    /// Ask the device to stop animating, and refuse if it did not.
+    ///
+    /// The strength differs by platform and the wording does not paper
+    /// over it: Android zeroes three animation scales, which is off;
+    /// iOS gets Reduce Motion, which is weaker but is as far as smix
+    /// can push without the app under test cooperating. See
+    /// `DeviceControl::set_animations_quiet`.
+    pub async fn set_animations_quiet(&self, quiet: bool) -> Result<(), ExpectationFailure> {
+        let udid = self.require_udid()?;
+        self.device
+            .set_animations_quiet(udid, quiet)
+            .await
+            .map_err(simctl_to_failure)
     }
 
     /// Delete keys from the target app's persisted

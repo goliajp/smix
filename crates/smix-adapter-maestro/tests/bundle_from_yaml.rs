@@ -18,6 +18,7 @@ fn args_for(flow: std::path::PathBuf, port: u16, bundle_id: Option<String>) -> F
         udid: None,
         bundle_id,
         runner_port: port,
+        animations: false,
         no_launch: false,
         platform: FlowPlatform::Ios,
         apps_config: None,

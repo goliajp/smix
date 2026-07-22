@@ -98,6 +98,7 @@ async fn main() -> ExitCode {
                 udid,
                 bundle_id,
                 runner_port,
+                animations: false,
                 no_launch,
                 platform: platform.to_flow(),
                 apps_config,
