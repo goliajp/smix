@@ -118,6 +118,12 @@ done
 for harness in scripts/dev/*-guard.test.sh; do
     bash "$harness"
 done
+
+# The AI tier is a judgement and the resolver is not; nothing about
+# that separation is enforced by the type system. This ran in one
+# checkpoint's acceptance block and then in nothing for the rest of the
+# cycle.
+bash scripts/dev/fence-check.sh
 python3 scripts/dev/gen-llms.py --check
 
 echo "preflight: clean"

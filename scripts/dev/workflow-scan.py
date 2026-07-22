@@ -64,6 +64,7 @@ What this file cannot see, said plainly so it is not read as omniscient:
     by nothing. That hole is recorded rather than papered over.
 """
 
+import fnmatch
 import glob
 import json
 import os
@@ -207,7 +208,20 @@ def read_without_comments(rel):
     never.
     """
     with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
-        lines = f.read().splitlines()
+        body = f.read()
+    if rel.endswith(".py"):
+        # Python prose does not start with `#`. This checker's own
+        # docstring names a script while running it never, and a first
+        # pass read that as coverage — the checker committing the fault
+        # it is here to catch, one layer up from ship.sh's two mentions
+        # of hygiene-scan.
+        # Built at runtime: writing the fence literally here would put
+        # an unpaired triple quote in this file and mangle its own
+        # stripping, which is how the first attempt kept reading its
+        # own docstring as code.
+        for fence in (chr(34) * 3, chr(39) * 3):
+            body = re.sub(re.escape(fence) + r"(?:.|\n)*?" + re.escape(fence), "", body)
+    lines = body.splitlines()
     return "\n".join(l for l in lines if not l.lstrip().startswith("#"))
 
 
@@ -271,6 +285,86 @@ def check_source_gates_wired(failures):
                 )
 
 
+# The three gates, in the order the doctrine names them: preflight is
+# the local habit, CI is the branch, ship is the release.
+GATES = (PREFLIGHT, ".github/workflows/ci.yml", "scripts/release/ship.sh")
+
+# Scripts that are gates themselves, so asking whether a gate runs them
+# is circular.
+GATE_ENTRY_POINTS = {"preflight.sh", "ship.sh"}
+
+
+def runs_somewhere(rel, by_name, by_glob):
+    """Is this script invoked, by name or by a glob that covers it?
+
+    Loops like `for h in scripts/dev/*-guard.test.sh; do bash "$h";
+    done` invoke by pattern, and a basename search reads that as
+    nothing running — which is how a first pass reported two harnesses
+    as orphans that preflight has been running all along.
+
+    Globs count only in shell and workflow text. In Python a glob is
+    how a checker *enumerates* files, and this checker's own
+    `scripts/dev/*.sh` was duly read as running every script it was
+    about to judge.
+    """
+    base = os.path.basename(rel)
+    if any(base in text for text in by_name):
+        return True
+    for text in by_glob:
+        for pattern in re.findall(r"[\w./-]*\*[\w./*-]*", text):
+            if "/" in pattern and fnmatch.fnmatch(rel, pattern):
+                return True
+    return False
+
+
+def check_every_dev_script_runs(failures):
+    """Every script under scripts/dev/ is run by something.
+
+    `fence-check.sh` guards an architectural invariant — the AI tier
+    stays out of the sense path — and was run by one archived hot
+    plan's checkpoint and nothing since. Committed, and then invoked by
+    no gate, no hook, and no other script.
+
+    That is the same species as the runner-sources tarball, whose
+    regeneration script carried a header naming a ship gate that did
+    not exist, and two Swift fixes consequently never reached the
+    artefact consumers build. A file that runs nowhere is indistinguish-
+    able from a file that was deleted, except that it reads as coverage.
+    """
+    # Keyed by path so a file is never searched for inside itself: its
+    # own usage line and its own header both name it.
+    texts = {}
+    for g in GATES:
+        texts[g] = read_without_comments(g)
+    for path in sorted(
+        glob.glob(os.path.join(ROOT, "scripts/**/*.sh"), recursive=True)
+    ) + sorted(glob.glob(os.path.join(ROOT, "scripts/**/*.py"), recursive=True)):
+        rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+        texts.setdefault(rel, read_without_comments(rel))
+    hooks = os.path.join(ROOT, ".claude/settings.json")
+    if os.path.isfile(hooks):
+        with open(hooks, encoding="utf-8") as f:
+            texts[".claude/settings.json"] = f.read()
+
+    for path in sorted(glob.glob(os.path.join(ROOT, "scripts/dev/*.sh"))) + sorted(
+        glob.glob(os.path.join(ROOT, "scripts/dev/*.py"))
+    ):
+        rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+        if os.path.basename(rel) in GATE_ENTRY_POINTS:
+            continue
+        by_name = [t for k, t in texts.items() if k != rel]
+        by_glob = [
+            t for k, t in texts.items() if k != rel and not k.endswith(".py")
+        ]
+        if not runs_somewhere(rel, by_name, by_glob):
+            failures.append(
+                f"{rel} is run by nothing — not preflight, not CI, not ship, "
+                f"not a hook, not another script. Wire it into a gate or "
+                f"delete it; a check that never runs reads as coverage while "
+                f"providing none."
+            )
+
+
 def check_guards_tested(failures):
     for path in sorted(glob.glob(os.path.join(ROOT, "scripts/dev/*-guard.sh"))):
         harness = path[: -len(".sh")] + ".test.sh"
@@ -289,6 +383,7 @@ def main():
     check_guards_tested(failures)
     check_no_gnu_only_tools(failures)
     check_source_gates_wired(failures)
+    check_every_dev_script_runs(failures)
 
     settings_path = os.path.join(ROOT, SETTINGS)
     if os.path.isfile(settings_path):
