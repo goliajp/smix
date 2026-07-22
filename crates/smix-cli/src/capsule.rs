@@ -139,6 +139,9 @@ pub struct UpOptions<'a> {
     pub capture_endpoint: &'a str,
     pub bundle: Option<&'a str>,
     pub soft: bool,
+    /// Foreground the app instead of relaunching it. See
+    /// [`crate::runner::UpOptions::attach_without_relaunch`].
+    pub no_launch: bool,
     /// True to skip the `/api/capture/start` call (skips the /live HLS
     /// capture pipeline). Use when the scenario itself invokes
     /// `simctl io recordVideo` so the two do not fight for the EBUSY
@@ -213,8 +216,12 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         opts.udid,
         opts.runner_port,
         opts.bundle,
-        true,
         None,
+        crate::runner::UpOptions {
+            record_enabled: true,
+            attach_without_relaunch: opts.no_launch,
+            ..Default::default()
+        },
     )?;
 
     // 6. Record the capsule.
