@@ -47,8 +47,18 @@ ssh mini 'cd workspace/goliajp/smix && cargo test --workspace 2>&1 | grep -c "^t
 ~~runner 能并发 → 只需更长的 duration,外部截图自己落进窗口~~ ——
 **已被探测排除**(见上)。EXT1 说这就够,但机制上做不到。
 
-只剩:handler 自己在按住窗口内取帧并返回,那是新的响应形状 + 图像传输;
-且它成立的前提是 synthesize 提交后立即返回。
+~~handler 自己在按住窗口内取帧~~ —— **也已排除**:实测 `synthesize`
+**阻塞到手势结束**(holdMs 50/1000/3000 → wall 506/1321/3320ms,几乎 1:1),
+handler 自己就卡在里面,取不了帧。
+
+**两条走 XCUITest 的路都堵死,而这恰恰指向第三条,而且更便宜**:
+`xcrun simctl io <udid> screenshot` **根本不经过 XCUITest**,
+主机在 runner 被按压占住时照样能截图(`smix-simctl` 已有该原语,连 pacer 都有)。
+
+**所以 #2 是主机侧编排,不是 runner 改动**:主机异步发起按住请求,
+在窗口内用 simctl 截图,再等按住返回。形态形如
+`longPressOn: { id, duration, captureDuring: true }`,**runner 一行不用改**。
+下一步是照这个实现,不是再探测。
 
 **先测再定,不先按想象实现** —— C1 的语义就是这样被设备否掉的,
 而这一条的并发探测同样推翻了「加个 duration 就够」的省事路线。
