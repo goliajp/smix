@@ -2581,6 +2581,7 @@ dependencies = [
 name = "smix-cli"
 version = "2.0.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "clap",
  "criterion",
@@ -2591,7 +2592,9 @@ dependencies = [
  "smix-annotate",
  "smix-driver",
  "smix-error",
+ "smix-fixture",
  "smix-input",
+ "smix-metro-log",
  "smix-migrate",
  "smix-runner-client",
  "smix-runner-sources",

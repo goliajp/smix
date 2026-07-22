@@ -1,0 +1,6 @@
+# Exactly what 08-cookbook prints for this path.
+appId: com.example.app
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
