@@ -1107,8 +1107,8 @@ fn rows() -> Vec<Row<'static>> {
         }
         assert_eq!(
             cells.len(),
-            9,
-            "row `{first}` has {} cells, not 9 — escape any `|` inside a \
+            11,
+            "row `{first}` has {} cells, not 11 — escape any `|` inside a \
              cell as `\\|`. A row this reader cannot split is a row \
              nothing checks",
             cells.len()
