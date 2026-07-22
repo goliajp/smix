@@ -188,6 +188,50 @@ fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> DeviceControlError {
     }
 }
 
+/// Pull the activity out of `cmd package resolve-activity --brief`.
+///
+/// Two lines on a hit — a `priority=… isDefault=…` header, then the
+/// component as `<pkg>/<activity>` — and the single line
+/// `No activity found` on a miss. Captured from an API 33 emulator on
+/// 2026-07-22; the fixtures under `tests/fixtures/` are that output
+/// verbatim, so this stays checkable without a device.
+///
+/// `None` means "the device did not name one", which the caller reads
+/// as the old `.MainActivity` convention: a shell whose output format
+/// this does not recognise leaves every caller exactly where it was
+/// before the query existed, rather than launching something wrong.
+///
+/// Separate from the method that runs the shell, because the shell is
+/// the part needing a device and this is the part that can be wrong.
+/// The activity comes back relative (`.Settings`) because
+/// `AdbClient::start_activity` prefixes the package itself; returning
+/// the fully-qualified form would produce `<pkg>/<pkg>.Settings`.
+#[must_use]
+pub fn parse_resolved_activity(text: &str, bundle_id: &str) -> Option<String> {
+    let prefix = format!("{bundle_id}/");
+    // Forward, not reversed. The output's first line is a
+    // `priority=… isDefault=…` header and the second is the component,
+    // so a reversed scan looks like it is skipping the header — but it
+    // is the prefix match that skips it, and reversing was a guess
+    // about output shapes never observed. Deleting `.rev()` changed no
+    // test, which is what said so.
+    text.lines()
+        .map(str::trim)
+        .find(|l| l.starts_with(&prefix))
+        .and_then(|l| l.strip_prefix(bundle_id))
+        .map(|rest| rest.trim_start_matches('/').to_string())
+        .map(|a| {
+            if let Some(tail) = a.strip_prefix(&format!("{bundle_id}.")) {
+                format!(".{tail}")
+            } else if a.starts_with('.') {
+                a
+            } else {
+                format!(".{a}")
+            }
+        })
+        .filter(|a| a.len() > 1)
+}
+
 #[async_trait]
 impl DeviceControl for AndroidDeviceControl {
     fn platform(&self) -> Platform {
