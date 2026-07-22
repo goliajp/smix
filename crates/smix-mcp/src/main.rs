@@ -191,15 +191,47 @@ impl SmixMcpService {
         // OcrText bypasses the tree resolver: find the text's frame via
         // Apple Vision OCR and tap its normalized center (IOHID
         // synthesize), the same dispatch the maestro adapter uses.
-        match ocr_text_of(&sel) {
-            Some(needle) => app.tap_by_text_ocr(needle, &[]).await,
+        let outcome = match ocr_text_of(&sel) {
+            // An OCR hit is a text frame, not a resolved element, so
+            // there is nothing to have missed.
+            Some(needle) => app
+                .tap_by_text_ocr(needle, &[])
+                .await
+                .map(|()| smix_sdk::ActOutcome::unjudged()),
             None => app.tap(&sel).await,
         }
         .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "tapped: {}",
-            smix_selector::describe_selector(&sel)
-        ))]))
+        // What the touch landed on, not just that one was sent. This
+        // used to answer "tapped: <selector>" — a claim about the
+        // selector, made on the evidence that a touch had been
+        // synthesised somewhere, which is the reading a consumer found
+        // out the hard way was not the same thing.
+        //
+        // The elements are listed even when the verdict passed: the
+        // verdict cannot see an element covered by something else and
+        // this list can, and an agent deciding whether to retry or to
+        // report upward is exactly who needs to know.
+        let mut report = format!("tapped: {}", smix_selector::describe_selector(&sel));
+        if !outcome.observed.is_empty() {
+            let at: Vec<String> = outcome
+                .observed
+                .iter()
+                .map(|e| {
+                    if !e.identifier.is_empty() {
+                        e.identifier.clone()
+                    } else if !e.label.is_empty() {
+                        format!("{:?}", e.label)
+                    } else {
+                        "<unnamed>".to_string()
+                    }
+                })
+                .collect();
+            report.push_str(&format!("\nthe tapped point is inside: {}", at.join(" < ")));
+        }
+        if let smix_sdk::ActVerdict::Unconfirmable(why) = &outcome.verdict {
+            report.push_str(&format!("\nnot verified: {why}"));
+        }
+        Ok(CallToolResult::success(vec![Content::text(report)]))
     }
 
     #[tool(

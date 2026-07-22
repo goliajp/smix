@@ -84,8 +84,8 @@ fn swipe_endpoint(start: (f64, f64), direction: SwipeDirection) -> (f64, f64) {
 // -- re-exports for downstream user convenience ------------------------
 
 pub use smix_driver::{
-    AndroidDriver, HttpRunnerClient, IncludeScope, OcrFrame, RunnerScrollSelector,
-    RunnerTransportError, SimctlDriver, SystemPopup, TapMode,
+    ActOutcome, ActVerdict, AndroidDriver, HitElement, HttpRunnerClient, IncludeScope, OcrFrame,
+    RunnerScrollSelector, RunnerTransportError, SimctlDriver, SystemPopup, TapMode,
 };
 pub use smix_error::{
     ExpectationFailure, FailureCode, FailureInit, build_suggestions, edit_distance, similarity,
@@ -1585,7 +1585,19 @@ impl App {
 
     // ---- act (driver-bound) -------------------------------------------
 
-    pub async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
+    /// Tap a selector, and report what the touch landed on.
+    ///
+    /// Returns an outcome rather than unit. "A touch was synthesised at
+    /// that coordinate" and "the element was tapped" are different
+    /// claims, and this made the first while callers read the second —
+    /// a consumer watched it succeed ten times against a button whose
+    /// counter never moved.
+    ///
+    /// The outcome carries what was aimed at, every named element
+    /// containing the point afterwards, and a verdict. The elements
+    /// come back even when the verdict is `Confirmed`, because the
+    /// verdict cannot see occlusion and the list can.
+    pub async fn tap(&self, selector: &Selector) -> Result<ActOutcome, ExpectationFailure> {
         self.ledger
             .record_tap(now_ms(), Some(format!("{selector:?}")));
         self.driving()?.tap(selector, None).await

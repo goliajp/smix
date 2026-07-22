@@ -383,7 +383,11 @@ pub trait AppLike: Send + Sync {
 #[async_trait]
 impl AppLike for App {
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
-        App::tap(self, selector).await
+        // The outcome stops at the AppLike boundary for now. Carrying
+        // it into RunStepReport is what puts "what the tap landed on"
+        // into run-summary.json, and that is its own step rather than a
+        // field threaded through on the way past.
+        App::tap(self, selector).await.map(|_| ())
     }
     async fn tap_xcui(&self, id: &str) -> Result<(), ExpectationFailure> {
         App::tap_xcui(self, id).await
