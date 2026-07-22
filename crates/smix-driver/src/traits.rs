@@ -146,11 +146,18 @@ pub trait Driver: Send + Sync {
     // === Act (17) ============================================================
 
     /// Tap an element (default mode = element-anchored coord tap).
+    /// Tap a selector, and report what the touch landed on.
+    ///
+    /// A platform that cannot answer says so with
+    /// `ActOutcome::unjudged()` rather than with a bare success. "I
+    /// could not tell" is a different fact from "it landed", and only
+    /// one of them is what a caller reads out of a tap that returned
+    /// without error.
     async fn tap(
         &self,
         selector: &Selector,
         include: Option<IncludeScope>,
-    ) -> Result<(), ExpectationFailure>;
+    ) -> Result<crate::ActOutcome, ExpectationFailure>;
 
     /// Tap with explicit mode (Path A vs Path B).
     async fn tap_with_mode(

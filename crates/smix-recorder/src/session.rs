@@ -109,7 +109,7 @@ impl<'a> RecordingApp<'a> {
             selector: selector.clone(),
             timestamp_ms: now_ms(),
         });
-        self.app.tap(selector).await
+        self.app.tap(selector).await.map(|_| ())
     }
 
     pub async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {

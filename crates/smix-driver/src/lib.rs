@@ -365,11 +365,16 @@ impl IosDriver {
     /// [`smix_host_coord_resolver`] stone; this method orchestrates the
     /// smix-specific 5s implicit-wait loop plus AI-readable failure
     /// rendering + runner injection.
+    /// Tap a selector, and report what the touch landed on.
+    ///
+    /// Returns an outcome rather than unit: "the touch was synthesised"
+    /// and "the element was tapped" are different claims, and this used
+    /// to make the first while callers read the second.
     pub async fn tap(
         &self,
         selector: &Selector,
         include: Option<IncludeScope>,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<ActOutcome, ExpectationFailure> {
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
 
@@ -468,43 +473,63 @@ impl IosDriver {
             .tap_at_norm_coord(nx, ny)
             .await
             .map_err(transport_to_failure)?;
-        if let Some(aimed) = aimed {
-            let chain: Vec<HitElement> = landed
-                .chain
-                .iter()
-                .map(|e| HitElement {
-                    identifier: e.identifier.clone(),
-                    label: e.label.clone(),
-                    frame: (e.frame.x, e.frame.y, e.frame.w, e.frame.h),
-                })
-                .collect();
-            // An empty chain is the one case that is NOT judged. A
-            // runner older than the field answers without it, and that
-            // is indistinguishable on the wire from a point that landed
-            // outside everything — failing both would break every flow
-            // driving an older runner.
-            if !chain.is_empty()
-                && let ActVerdict::Missed(why) = tap_landed_within(&aimed, &chain)
-            {
-                if tap_mismatch_is_fatal() {
-                    return Err(ExpectationFailure::new(FailureInit {
-                        code: Some(FailureCode::TapMissed),
-                        message: format!("tap did not land where it aimed: {why}"),
-                        selector: Some(selector.clone()),
-                        hint: Some(
-                            "the screen moved between the tree fetch and the tap; \
-                             wait for it to settle first. Set \
-                             SMIX_TAP_HIT_MISMATCH=warn to downgrade this to a \
-                             warning while migrating a suite."
-                                .into(),
-                        ),
-                        ..Default::default()
-                    }));
-                }
-                eprintln!("smix: warning: tap did not land where it aimed: {why}");
+        let chain: Vec<HitElement> = landed
+            .chain
+            .iter()
+            .map(|e| HitElement {
+                identifier: e.identifier.clone(),
+                label: e.label.clone(),
+                frame: (e.frame.x, e.frame.y, e.frame.w, e.frame.h),
+            })
+            .collect();
+        let Some(aimed) = aimed else {
+            return Ok(ActOutcome {
+                target: None,
+                observed: chain,
+                verdict: ActVerdict::Unconfirmable(
+                    "the selector resolved to a coordinate but not to a node, so \
+                     there is nothing to compare the tapped point against"
+                        .into(),
+                ),
+            });
+        };
+        // An empty chain is the one case that is NOT judged. A runner
+        // older than the field answers without it, and that is
+        // indistinguishable on the wire from a point that landed
+        // outside everything — failing both would break every flow
+        // driving an older runner.
+        let verdict = if chain.is_empty() {
+            ActVerdict::Unconfirmable(
+                "the runner reported no elements at the tapped point; it may \
+                 predate the field that carries them"
+                    .into(),
+            )
+        } else {
+            tap_landed_within(&aimed, &chain)
+        };
+        if let ActVerdict::Missed(why) = &verdict {
+            if tap_mismatch_is_fatal() {
+                return Err(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::TapMissed),
+                    message: format!("tap did not land where it aimed: {why}"),
+                    selector: Some(selector.clone()),
+                    hint: Some(
+                        "the screen moved between the tree fetch and the tap; \
+                         wait for it to settle first. Set \
+                         SMIX_TAP_HIT_MISMATCH=warn to downgrade this to a \
+                         warning while migrating a suite."
+                            .into(),
+                    ),
+                    ..Default::default()
+                }));
             }
+            eprintln!("smix: warning: tap did not land where it aimed: {why}");
         }
-        Ok(())
+        Ok(ActOutcome {
+            target: Some(aimed),
+            observed: chain,
+            verdict,
+        })
     }
 
     /// Tap a selector via an explicit dispatch mode. Used to opt into
@@ -1063,6 +1088,44 @@ impl IosDriver {
     /// sidecar / no cache to tear down; reserved for future use.
     pub async fn dispose(&self) -> Result<(), ExpectationFailure> {
         Ok(())
+    }
+}
+
+/// What an act did, as opposed to what it attempted.
+///
+/// The act surface returned `Result<(), ExpectationFailure>` — success
+/// was the absence of an error — so nothing could report where a touch
+/// actually went. `POST /tap` had carried a rich result all along and
+/// the driver discarded it at three call sites; the default path never
+/// asked at all.
+///
+/// `observed` travels even when `verdict` is `Confirmed`, because the
+/// verdict cannot see occlusion and the chain can: a caller looking at
+/// a scrim next to their button knows something the verdict does not.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ActOutcome {
+    /// The element the selector resolved to, when it resolved to one.
+    pub target: Option<HitElement>,
+    /// Named elements containing the point, innermost first.
+    pub observed: Vec<HitElement>,
+    /// Whether the act landed where it aimed.
+    pub verdict: ActVerdict,
+}
+
+impl ActOutcome {
+    /// An act that reached the device with nothing to say about aim.
+    ///
+    /// Used by paths that dispatch without resolving a target — a raw
+    /// coordinate tap has no element to have missed.
+    #[must_use]
+    pub fn unjudged() -> Self {
+        ActOutcome {
+            target: None,
+            observed: Vec::new(),
+            verdict: ActVerdict::Unconfirmable(
+                "this path dispatches without resolving a target element".into(),
+            ),
+        }
     }
 }
 

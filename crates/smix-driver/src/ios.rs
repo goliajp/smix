@@ -137,7 +137,7 @@ impl Driver for IosDriver {
         &self,
         selector: &Selector,
         include: Option<IncludeScope>,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<crate::ActOutcome, ExpectationFailure> {
         IosDriver::tap(self, selector, include).await
     }
 

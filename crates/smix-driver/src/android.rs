@@ -312,17 +312,17 @@ impl Driver for AndroidDriver {
         &self,
         selector: &Selector,
         include: Option<IncludeScope>,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<crate::ActOutcome, ExpectationFailure> {
         // Host-resolve + tap_at_norm_coord (mirrors IosDriver Path B).
         let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
-        // The chain comes back unused on Android: only the iOS runner
-        // fills it in so far, and a verdict computed from an always
-        // empty chain would fail every tap. Wiring it here is the
-        // Android half of this checkpoint, not a line to sneak in.
+        // Android reports no chain yet — only the iOS runner fills it
+        // in — so the outcome says it could not be judged rather than
+        // claiming the tap landed. Wiring the Kotlin side is the other
+        // half of this checkpoint, not a line to sneak in here.
         self.runner
             .tap_at_norm_coord(nx, ny)
             .await
-            .map(|_| ())
+            .map(|_| crate::ActOutcome::unjudged())
             .map_err(|e| {
                 ExpectationFailure::new(FailureInit {
                     code: Some(FailureCode::DriverError),
