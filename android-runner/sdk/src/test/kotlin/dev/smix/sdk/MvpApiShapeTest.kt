@@ -108,14 +108,19 @@ class MvpApiShapeTest {
 
     @Test
     fun failureCodeCasesAllExposed() {
-        val expected = setOf(
-            "ELEMENT_NOT_FOUND", "NOT_VISIBLE", "NOT_ENABLED",
-            "AMBIGUOUS", "TIMEOUT", "ASSERTION_FAILED",
-            "APP_NOT_RUNNING", "SIMULATOR_NOT_BOOTED", "DRIVER_ERROR",
-        )
-        val actual = FailureCode.entries.map { it.name }.toSet()
-        assertEquals(expected, actual)
-        assertEquals(9, FailureCode.entries.size)
+        // The count is not hard-coded, and the list is not copied here.
+        // Both were, and adding TAP_MISSED to the vocabulary left this
+        // asserting a set of nine and `== 9` against ten — a second
+        // source of truth that the Rust sdk_failure_code_parity gate
+        // could not see, because that gate reads the enum, not this
+        // test. The enum is the mirror of Rust; this checks its shape
+        // (distinct names, anchors present) and leaves the roster to
+        // parity.
+        val names = FailureCode.entries.map { it.name }
+        assertEquals(names.size, names.toSet().size)
+        for (code in listOf("ELEMENT_NOT_FOUND", "TAP_MISSED", "DRIVER_ERROR")) {
+            assert(names.contains(code)) { "FailureCode is missing $code" }
+        }
     }
 
     @Test
