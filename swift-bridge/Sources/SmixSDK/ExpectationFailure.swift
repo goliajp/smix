@@ -75,6 +75,9 @@ public enum FailureCode: String, Sendable, Codable, Equatable, CaseIterable {
     case appNotRunning = "APP_NOT_RUNNING"
     /// Simulator device is not booted.
     case simulatorNotBooted = "SIMULATOR_NOT_BOOTED"
+    /// The touch was synthesised, and it did not land inside the element the selector matched.
+    /// Distinct from element-not-found: not-found means fix the selector, missed means the element was there and the touch went elsewhere.
+    case tapMissed = "TAP_MISSED"
     /// Catch-all for runner / driver / IO failures.
     case driverError = "DRIVER_ERROR"
 }

@@ -20,12 +20,14 @@ export type FailureCode =
   | 'ASSERTION_FAILED'
   | 'APP_NOT_RUNNING'
   | 'SIMULATOR_NOT_BOOTED'
+  /** The touch was synthesised, and it did not land inside the element the selector matched. Distinct from element-not-found: not-found means fix the selector, missed means the element was there and the touch went elsewhere. */
+  | 'TAP_MISSED'
   | 'DRIVER_ERROR'
 
 export const FAILURE_CODES: readonly FailureCode[] = [
   'ELEMENT_NOT_FOUND', 'NOT_VISIBLE', 'NOT_ENABLED',
   'AMBIGUOUS', 'TIMEOUT', 'ASSERTION_FAILED',
-  'APP_NOT_RUNNING', 'SIMULATOR_NOT_BOOTED', 'DRIVER_ERROR',
+  'APP_NOT_RUNNING', 'SIMULATOR_NOT_BOOTED', 'TAP_MISSED', 'DRIVER_ERROR',
 ] as const
 
 /**

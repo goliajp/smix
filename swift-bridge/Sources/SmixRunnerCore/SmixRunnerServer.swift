@@ -535,7 +535,14 @@ public actor SmixRunnerServer {
   /// It also sidesteps Apple's element-query ordering ambiguity: the host
   /// supplies concrete coords and the runner never re-queries. Returns
   /// true on tap dispatched, false on smixGuarded NSException.
-  public typealias TapAtCoordHandler = @Sendable (_ nx: Double, _ ny: Double) async -> Bool
+  /// Returns whether the touch was synthesised, and every named
+  /// element containing the point afterwards, innermost first.
+  ///
+  /// The chain is the answer to "what did the tap land on", which this
+  /// route could not previously give: it reported that a touch was
+  /// synthesised and callers read that as the element being tapped.
+  public typealias TapAtCoordHandler =
+    @Sendable (_ nx: Double, _ ny: Double) async -> (ok: Bool, chain: [HitChainEntry])
 
   /// POST /tap-by-id handler. Resolves an element by accessibility
   /// identifier and invokes `XCUIElement.tap()` (the XCTest gesture-recognizer
@@ -1717,8 +1724,8 @@ public actor SmixRunnerServer {
         return await Self.contextGuardedResponse(request: request,
           fallback: TapAtCoordRoute.success(ok: false)
         ) {
-          let ok = await tapAtCoordHandler(req.nx, req.ny)
-          return TapAtCoordRoute.success(ok: ok)
+          let outcome = await tapAtCoordHandler(req.nx, req.ny)
+          return TapAtCoordRoute.success(ok: outcome.ok, chain: outcome.chain)
         }
       }
     }

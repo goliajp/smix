@@ -71,5 +71,7 @@ enum class FailureCode {
     @SerialName("ASSERTION_FAILED") ASSERTION_FAILED,
     @SerialName("APP_NOT_RUNNING") APP_NOT_RUNNING,
     @SerialName("SIMULATOR_NOT_BOOTED") SIMULATOR_NOT_BOOTED,
+    /** The touch was synthesised, and it did not land inside the element the selector matched. Distinct from element-not-found: not-found means fix the selector, missed means the element was there and the touch went elsewhere. */
+    @SerialName("TAP_MISSED") TAP_MISSED,
     @SerialName("DRIVER_ERROR") DRIVER_ERROR,
 }

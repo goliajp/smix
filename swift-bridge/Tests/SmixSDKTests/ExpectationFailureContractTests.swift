@@ -45,10 +45,10 @@ final class ExpectationFailureContractTests: XCTestCase {
         let expected: Set<String> = [
             "ELEMENT_NOT_FOUND", "NOT_VISIBLE", "NOT_ENABLED",
             "AMBIGUOUS", "TIMEOUT", "ASSERTION_FAILED",
-            "APP_NOT_RUNNING", "SIMULATOR_NOT_BOOTED", "DRIVER_ERROR",
+            "APP_NOT_RUNNING", "SIMULATOR_NOT_BOOTED", "TAP_MISSED", "DRIVER_ERROR",
         ]
         XCTAssertEqual(Set(FailureCode.allCases.map { $0.rawValue }), expected)
-        XCTAssertEqual(FailureCode.allCases.count, 9)
+        XCTAssertEqual(FailureCode.allCases.count, 10)
     }
 
     // MARK: - AI-readable JSON contract

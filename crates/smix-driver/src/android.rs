@@ -315,13 +315,21 @@ impl Driver for AndroidDriver {
     ) -> Result<(), ExpectationFailure> {
         // Host-resolve + tap_at_norm_coord (mirrors IosDriver Path B).
         let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
-        self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::tap: runner.tap_at_norm_coord: {e}"),
-                ..Default::default()
+        // The chain comes back unused on Android: only the iOS runner
+        // fills it in so far, and a verdict computed from an always
+        // empty chain would fail every tap. Wiring it here is the
+        // Android half of this checkpoint, not a line to sneak in.
+        self.runner
+            .tap_at_norm_coord(nx, ny)
+            .await
+            .map(|_| ())
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("AndroidDriver::tap: runner.tap_at_norm_coord: {e}"),
+                    ..Default::default()
+                })
             })
-        })
     }
 
     async fn tap_with_mode(
@@ -335,13 +343,17 @@ impl Driver for AndroidDriver {
 
     async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
         // Direct passthru to Kotlin runner /tap-at-norm-coord.
-        self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::tap_at_norm_coord: {e}"),
-                ..Default::default()
+        self.runner
+            .tap_at_norm_coord(nx, ny)
+            .await
+            .map(|_| ())
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("AndroidDriver::tap_at_norm_coord: {e}"),
+                    ..Default::default()
+                })
             })
-        })
     }
 
     async fn tap_by_id(&self, id: &str) -> Result<(), ExpectationFailure> {

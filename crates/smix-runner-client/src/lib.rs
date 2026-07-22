@@ -289,7 +289,7 @@ pub use smix_runner_wire::{
     SessionRenewActivationRequest, SessionRenewActivationResponse, SessionSummary,
     SimHealthWireState, SubprocessRecord as WireSubprocessRecord, SystemPopup,
     SystemPopupActionRequest, SystemPopupActionResponse, SystemPopupButton, SystemPopupsResponse,
-    TapAtNormCoordRequest, TapMode, TapRequest, TapResult, TapStages,
+    TapAtCoordResult, TapAtNormCoordRequest, TapMode, TapRequest, TapResult, TapStages,
 };
 
 // -------------------- Transport retry constants -------------------------
@@ -1211,17 +1211,39 @@ impl HttpRunnerClient {
     }
 
     /// `POST /tap-at-norm-coord` — Apple native UI event coord tap.
-    pub async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), RunnerTransportError> {
+    /// `POST /tap-at-norm-coord` — the default tap path.
+    ///
+    /// Returns what the point turned out to be inside. It used to
+    /// return nothing at all, so a caller could report "tapped" having
+    /// checked only that a touch was synthesised somewhere.
+    ///
+    /// A runner older than the `chain` field answers without it and
+    /// deserializes to an empty chain — indistinguishable on the wire
+    /// from a point that landed outside everything, which is why the
+    /// host treats an empty chain as its own verdict rather than as a
+    /// pass.
+    pub async fn tap_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<TapAtCoordResult, RunnerTransportError> {
         #[derive(Serialize)]
         struct Req {
             nx: f64,
             ny: f64,
         }
-        let body: OkEnvelope = self
+        #[derive(Deserialize)]
+        struct Resp {
+            #[serde(default)]
+            ok: Option<bool>,
+            #[serde(flatten)]
+            result: TapAtCoordResult,
+        }
+        let body: Resp = self
             .json_post("/tap-at-norm-coord", &Req { nx, ny }, None)
             .await?;
-        body.require_ok("/tap-at-norm-coord")?;
-        Ok(())
+        OkEnvelope { ok: body.ok }.require_ok("/tap-at-norm-coord")?;
+        Ok(body.result)
     }
 
     /// `POST /double-tap-at-norm-coord` — double-tap at
