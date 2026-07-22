@@ -1,89 +1,81 @@
-# plan-hot — v2 到 C14-pre:发布链路上还有多少「声称有闸门、其实没有」
+# plan-hot — v2 到 C14-pre-2:发布前不留一个未亲验的 gate
 
 ## 目标 checkpoint
 
-**C14-pre**:v2.0.0 发布前把 `ship.sh` 全链跑一遍(**到发布为止,不发布**),并且把发布链路上
-**每一条"某某会检查它"的声称**逐条对照代码核实。
+**C14-pre-2**:`ship.sh` 上 crates-publish 之前的**每一道 gate**,都已在一台能跑它的机器上
+亲眼跑绿一次 —— 没有一道是「应该会过」。跑完把完整状态交给用户,由用户决定发不发。
 
-今天的发现是这个 checkpoint 存在的理由:`build-runner-tarball.sh` 的头部写着
-「pre-publish ship gate 调用它并比对 SHA256」,**那个 gate 不存在**,于是
-`HitChain.swift` / `TouchTimeline.swift` 两个修复从未进过发给用户的 tarball,
-而三条已经写进回信的「已做」在消费方机器上不成立。
-
-`cargo publish` 不可撤销。**同一族的第二处,要在发布前找出来,不是发布后。**
+上一段(C14-pre)把 ship 跑到了发布边界,但有几道 gate 当时**没能亲验**:
+mini 缺 `bun install` 让 TS 段没跑到底、Android gradle 段没在本机跑过、
+`cargo-semver-checks` / `ffi-bindings-fresh` / `fact-scan` / `llms` 也没单独确认。
+「跳过」和「验过」是两件事,发布前不允许把前者读成后者。
 
 ## 前置条件
 
 ```bash
 git status --short                      # 期望:空
-ssh mini 'cd workspace/goliajp/smix && cargo test --workspace 2>&1 | grep -c "^test result: FAILED"'
-# 期望:0
+cargo test -p smix-cli --test list_sessions_no_nested_runtime   # 期望 exit 0(上段的修复)
 ```
 
 ## 已经查清、不必重查的事实
 
-- **v2.7 的 C1/C2/C3 + 追加的 C4 全部闭合**,EXT1 九条各有归宿
-  (`.claude/dogfood/2026-07-22-ext1-response.md` 已改为实际结果)
-- **发布清单是拓扑序的且有闸门**(`release_record.rs`:26 crates,今天跑过)
-- **破坏性变更两侧对账有闸门**(12 条,两边一致)
-- **runner 源新鲜度现在有闸门**(`tarball_is_current.rs`,今天新增,红向验过两次)
+- **Rust 全套 + Swift + workflow-scan + fence-check 已绿**(C14-pre / S1,mini 1048 tests)
+- **smoke gate 修好后过**(list-sessions 不再 panic)
+- **TS vitest 本机已绿**(FailureCode 魔数已改)
+- **本机有 `cargo-semver-checks` 与 `android-runner/gradlew`**,两段都能在本机跑
 
 ## 本段预先定死的口径
 
-### 口径 — 找的是「声称」与「事实」的差,不是找 bug
+### 口径 — 亲验,不推断;跳过必须写明为什么跳不了
 
-要扫的**不是**代码缺陷,是**注释 / 文档 / 计划里写着"由 X 保证"而 X 不存在或够不到**的地方。
-今天那条的形态是:脚本头部写着一个 gate,`grep` 调用方零命中。
+每一道 gate 只有两种合法结局:
+1. **在能跑它的机器上跑绿**,记下命令与结果
+2. **确实跑不了**(需要 autorun 不该碰的资源,如 Android 物理设备 / 启动 emulator),
+   **写明是哪一道、为什么、以及它在别处(CI)由什么覆盖**
 
-同族可疑面(按发现成本排序,不是按重要性):
+**不允许第三种**:「大概会过」。这正是 `build-runner-tarball.sh` 那条注释的病。
 
-1. `scripts/**` 里所有形如「Called by / 由…保证 / gate 会…」的注释 → 对照真实调用方
-2. `ship.sh` 每一步的失败是否**真的**阻断(有没有 `|| true` / 吞掉退出码的)
-3. 四个 SDK 的版本齐步(`SDK lockstep`)靠什么保证,那个东西跑不跑
-4. `docs/` 里对读者承诺的可执行命令,是否真能跑(`guide_gate` 只覆盖 yaml 块)
+### Android 设备 gate 仍然跳过
 
-**扫到就补闸门,不是补注释** —— 把注释改成实话只是让它不再撒谎,不能阻止下一次漂移。
+`android-instrumentation-gate.sh` / `android-behaviour-gate.sh` 需要 emulator,
+autorun 不启动它(会污染用户物理机 `R5CT52DF07D`)。这两道**留给 CI**,
+本段不跑,但要在验收里点名它们是唯一未亲验的两道及其 CI 覆盖。
 
 ## 步骤(线性,2 个)
 
-### S1. 扫「声称有闸门」
+### S1. 把本机能跑的剩余 gate 逐道跑绿
 
-**红**
-- 文件:`crates/smix-cli/src/release_record.rs`(既有闸门里加,不新起一处)
-- 断言:`scripts/` 下每一条声称被某物调用的注释,那个调用方在仓库里 grep 得到
+**红**:无新测试。这一步执行既有 gate。
 
-**绿**
-- 对每条声称:调用方存在 → 留;不存在 → **补上真实的闸门**,再把注释改成实话
-- 关键点:闸门要机械可判(读脚本文本 + grep 调用方),不靠人读
+**绿**:在本机逐道跑,记录命令与退出码 —
+- `cargo-semver-checks`(ship.sh:252 段的等价命令)
+- `scripts/dev/ffi-bindings-fresh.sh`
+- `scripts/dev/fact-scan.py`
+- `python3 scripts/dev/gen-llms.py --check`
+- `android-runner/gradlew testDebugUnitTest assembleDebugAndroidTest`(JVM 单测 + androidTest **编译**,不装设备)
 
-**重构**
-- 无
+**关键点**:任何一道非零即停、如实记根因,不绕过。
 
-### S2. 跑到发布为止
+### S2. 汇总发布前状态,交用户拍板
 
-**红**
-- 无新测试。这一步是执行既有闸门
+**红**:无。
 
-**绿**
-- 在 mini 上跑 `ship.sh` 到 publish 之前的每一步,逐条记录通过与否
-- 关键点:**任何一步失败即停并如实记**,不绕过、不 `|| true`
+**绿**:在 `docs/v2.md` 决策日志记一条,列出 crates-publish 前**每一道 gate** 的亲验结果
+(绿 / 跳过+原因+CI 覆盖),并明确:crates.io / npm / Maven / git tag **全部未执行**,
+发不发由用户决定。
 
-## Checkpoint C14-pre 验收
+## Checkpoint C14-pre-2 验收
 
 ```bash
-ssh mini 'cd workspace/goliajp/smix && cargo test --workspace 2>&1 | grep -c "^test result: FAILED"'
-cargo test -p smix-cli --bin smix release_record -- --nocapture
-cargo test -p smix-cli --bin smix guide_gate -- --nocapture
-cargo test -p smix-runner-sources --test tarball_is_current
+git status --short                      # 期望:空
+cargo test -p smix-cli --test list_sessions_no_nested_runtime   # 期望 exit 0
 ```
 
-期望:第一条输出 `0`;其余三条 exit 0。
-外加:`docs/v2.md` 决策日志新增一条,列出扫出的每一条「声称 vs 事实」及其处置
-(补了闸门 / 改了注释 / 确认属实),**一条都不省略**。
+外加:`docs/v2.md` 新增一条,列出 crates-publish 前每一道 gate 的亲验结果,
+未亲验的仅剩两道 Android 设备 gate,且写明其 CI 覆盖。
 
 ## 完成后动作
 
-1. 归档此文件到 `docs/plan-history/v2-c14-pre-hot.md`
-2. **发布本身要用户拍板** —— `cargo publish` / `bun publish` / `gradle publish` /
-   `git tag` 全部不可撤销且对外,不在 autorun 范围内。把「全链已跑到发布为止,
-   结果如下」交给用户,由用户决定发不发
+1. 归档此文件到 `docs/plan-history/v2-c14-pre-2-hot.md`
+2. **发布本身待用户拍板** —— autorun 到此为止能做的都做完了。
+   `cargo publish` 等不可撤销且对外,不在 autorun 范围。
