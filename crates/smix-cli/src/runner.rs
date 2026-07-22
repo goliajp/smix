@@ -44,8 +44,26 @@ pub struct RunnerState {
 /// and its `RunnerPortResolver` binds FlyingFox to the requested port.
 /// This is what lets multiple concurrent runners share one host
 /// without colliding on the default 22087 port.
-pub fn runner_env(bundle: Option<&str>, record_enabled: bool, port: u16) -> Vec<(String, String)> {
+pub fn runner_env(
+    bundle: Option<&str>,
+    record_enabled: bool,
+    port: u16,
+    attach_without_relaunch: bool,
+) -> Vec<(String, String)> {
     let mut env = Vec::new();
+    // `XCUIApplication.activate()` foregrounds an app that is already
+    // running instead of restarting it, and still starts one that is
+    // not — which is what "attach" has to mean for a consumer who
+    // navigated somewhere before bringing the runner up. The runner has
+    // resolved this mode since `LaunchModeResolver` was written; until
+    // now nothing set the variable, so `launch` was the only reachable
+    // behaviour.
+    if attach_without_relaunch {
+        env.push((
+            "TEST_RUNNER_SMIX_RUNNER_LAUNCH_MODE".to_string(),
+            "activate".to_string(),
+        ));
+    }
     if let Some(b) = bundle {
         env.push((
             "TEST_RUNNER_SMIX_RUNNER_TARGET_BUNDLE".to_string(),
@@ -558,47 +576,49 @@ pub(crate) fn ensure_installed_runner_synced(
     })
 }
 
+/// What `runner up` should do beyond starting the process.
+///
+/// These were trailing positional bools; a third one would have made
+/// `up(_, _, _, _, false, _, false, true)` the call site.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UpOptions {
+    /// Let the runner record events (`capsule up` wants this; bare
+    /// `runner up` does not).
+    pub record_enabled: bool,
+    /// Spawn the `runner supervise` sidecar once `/health` answers.
+    pub supervise: bool,
+    /// Foreground the target app instead of relaunching it.
+    ///
+    /// Bringing the runner up restarts the app, which drops whatever
+    /// screen had been navigated to — and then reports the next flow's
+    /// failure as `ELEMENT_NOT_FOUND` against a splash screen.
+    pub attach_without_relaunch: bool,
+}
+
 /// Bring the runner up on `udid`. Blocks until `/health` answers 200 or
 /// the timeout (env `SMIX_RUNNER_UP_TIMEOUT_SECS`, default 300 — first
 /// run includes a full Swift build) expires.
 ///
 /// `runner_project` — optional explicit path to `SmixRunner.xcodeproj`.
 /// When `None`, uses [`resolve_runner_project`] cascade against `root`.
+///
+/// With `opts.supervise`, after `/health` returns 200 spawn a detached
+/// `smix runner supervise` process, record its pid in state.json, and
+/// return. `runner down` cascades a SIGTERM to that pid before tearing
+/// down xcodebuild.
 pub fn up(
     root: &Path,
     udid: &str,
     port: u16,
     bundle: Option<&str>,
-    record_enabled: bool,
     runner_project: Option<&Path>,
+    opts: UpOptions,
 ) -> Result<(), String> {
-    up_with_options(
-        root,
-        udid,
-        port,
-        bundle,
+    let UpOptions {
         record_enabled,
-        runner_project,
-        false,
-    )
-}
-
-/// [`up`] extended with the `--supervise` sidecar flag. When
-/// `supervise = true`, after `/health` returns 200 spawn a detached
-/// `smix runner supervise` process, record its pid in state.json, and
-/// return. `runner down` cascades a SIGTERM to that pid before
-/// tearing down xcodebuild.
-///
-/// `up_with_options(_, _, _, _, _, _, false)` is equivalent to [`up`].
-pub fn up_with_options(
-    root: &Path,
-    udid: &str,
-    port: u16,
-    bundle: Option<&str>,
-    record_enabled: bool,
-    runner_project: Option<&Path>,
-    supervise: bool,
-) -> Result<(), String> {
+        supervise,
+        attach_without_relaunch,
+    } = opts;
     // Refuse to boot without --bundle unless the caller explicitly
     // opts in via SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1. The runner's
     // built-in default `com.apple.Preferences` silently latches every
@@ -668,7 +688,12 @@ pub fn up_with_options(
 
     let mut cmd = std::process::Command::new("xcodebuild");
     cmd.args(xcodebuild_argv(&project, udid))
-        .envs(runner_env(bundle, record_enabled, port))
+        .envs(runner_env(
+            bundle,
+            record_enabled,
+            port,
+            attach_without_relaunch,
+        ))
         .stdin(std::process::Stdio::null())
         .stdout(log_file)
         .stderr(log_err);
@@ -988,14 +1013,16 @@ pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<()
     }
     println!("cycling runner: udid={udid} port={cycle_port} bundle={bundle:?}");
     down(root, cycle_port)?;
-    up_with_options(
+    up(
         root,
         &udid,
         cycle_port,
         bundle.as_deref(),
-        false,
         runner_project,
-        had_supervisor,
+        UpOptions {
+            supervise: had_supervisor,
+            ..Default::default()
+        },
     )
 }
 
@@ -1366,9 +1393,37 @@ mod tests {
         assert_eq!(back, st);
     }
 
+    /// `capsule up` and `runner up` bring the runner up by binding it
+    /// to a bundle, and binding launched — which restarts the app and
+    /// drops whatever screen had been navigated to. The runner has
+    /// understood `activate` since `LaunchModeResolver` was written and
+    /// nothing on this side ever set it, so the mode was unreachable.
+    #[test]
+    fn attaching_asks_the_runner_to_activate_rather_than_relaunch() {
+        let relaunching = runner_env(Some("com.example.app"), false, 22087, false);
+        assert!(
+            !relaunching
+                .iter()
+                .any(|(k, _)| k == "TEST_RUNNER_SMIX_RUNNER_LAUNCH_MODE"),
+            "the default must stay launch, or every existing flow changes"
+        );
+
+        let attaching = runner_env(Some("com.example.app"), false, 22087, true);
+        let mode = attaching
+            .iter()
+            .find(|(k, _)| k == "TEST_RUNNER_SMIX_RUNNER_LAUNCH_MODE")
+            .map(|(_, v)| v.as_str());
+        assert_eq!(
+            mode,
+            Some("activate"),
+            "the `TEST_RUNNER_` prefix is what makes xcodebuild surface \
+             `SMIX_RUNNER_LAUNCH_MODE` inside the runner process"
+        );
+    }
+
     #[test]
     fn runner_env_uses_test_runner_prefix() {
-        let env = runner_env(Some("com.example.app"), false, 22087);
+        let env = runner_env(Some("com.example.app"), false, 22087, false);
         let map: std::collections::HashMap<String, String> = env.iter().cloned().collect();
         assert_eq!(
             map.get("TEST_RUNNER_SMIX_RUNNER_TARGET_BUNDLE")
@@ -1379,7 +1434,7 @@ mod tests {
             map.get("TEST_RUNNER_SMIX_RUNNER_PORT").map(String::as_str),
             Some("22087")
         );
-        let env_no_bundle = runner_env(None, false, 22090);
+        let env_no_bundle = runner_env(None, false, 22090, false);
         // The version is unconditionally forwarded.
         assert_eq!(env_no_bundle.len(), 2);
         assert!(
@@ -1394,7 +1449,7 @@ mod tests {
         // The CLI's own version reaches the runner via
         // TEST_RUNNER_SMIX_RUNNER_VERSION so /health can echo it and
         // the client can refuse boot on mismatch.
-        let env = runner_env(None, false, 22087);
+        let env = runner_env(None, false, 22087, false);
         let map: std::collections::HashMap<String, String> = env.into_iter().collect();
         assert_eq!(
             map.get("TEST_RUNNER_SMIX_RUNNER_VERSION")
@@ -1405,7 +1460,7 @@ mod tests {
 
     #[test]
     fn runner_env_with_record_adds_enabled_var() {
-        let env = runner_env(Some("com.example.app"), true, 22087);
+        let env = runner_env(Some("com.example.app"), true, 22087, false);
         let map: std::collections::HashMap<String, String> = env.into_iter().collect();
         assert_eq!(
             map.get("TEST_RUNNER_SMIX_RUNNER_TARGET_BUNDLE")

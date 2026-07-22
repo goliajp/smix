@@ -696,6 +696,15 @@ enum CapsuleAction {
         /// so a capsule without this flag could never complete.
         #[arg(long)]
         bundle: String,
+        /// Foreground the app instead of relaunching it.
+        ///
+        /// Bringing the capsule up restarts the target app, dropping
+        /// whatever screen had been navigated to — and the next flow
+        /// then fails with `ELEMENT_NOT_FOUND` against a splash
+        /// screen. Same meaning as `smix run --no-launch`, which has
+        /// had it for longer.
+        #[arg(long = "no-launch", default_value_t = false)]
+        no_launch: bool,
         /// Fail instead of degrading when Simulator.app is on screen.
         ///
         /// For CI, where a window means something is wrong. On a dev
@@ -759,6 +768,15 @@ enum RunnerAction {
         /// Sidecar log at `.smix/runner/supervise-<UDID>.log`.
         #[arg(long = "supervise", default_value_t = false)]
         supervise: bool,
+        /// Foreground the app instead of relaunching it.
+        ///
+        /// Bringing the runner up restarts the target app, which drops
+        /// whatever screen was on it — and the next flow then fails
+        /// with `ELEMENT_NOT_FOUND` against a splash screen. Same
+        /// meaning as `smix run --no-launch`, which has had it for
+        /// longer.
+        #[arg(long = "no-launch", default_value_t = false)]
+        no_launch: bool,
     },
     /// Stop the runner (SIGINT-first to avoid the crash-report dialog).
     Down {
@@ -1231,6 +1249,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     runner_project,
                     runner_port: port_flag,
                     supervise,
+                    no_launch,
                 } => {
                     if platform == RunPlatform::Android {
                         reject_ios_only_up_flags(
@@ -1255,14 +1274,17 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // Bare `smix runner up` defaults to record_enabled=false;
                     // the capsule path (`capsule::up`) overrides to true
                     // via TEST_RUNNER_SMIX_RECORD_ENABLED=1.
-                    runner::up_with_options(
+                    runner::up(
                         &root,
                         &udid,
                         port,
                         bundle.as_deref(),
-                        false,
                         runner_project.as_deref(),
-                        supervise,
+                        runner::UpOptions {
+                            supervise,
+                            attach_without_relaunch: no_launch,
+                            ..Default::default()
+                        },
                     )
                     .map_err(CliError::Other)?;
                 }
@@ -1411,6 +1433,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     soft,
                     require_hard,
                     no_capture,
+                    no_launch,
                 } => {
                     let udid = resolve_device(&device)?;
                     capsule::up(capsule::UpOptions {
@@ -1422,6 +1445,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         soft,
                         require_hard,
                         no_capture,
+                        no_launch,
                     })
                     .await
                     .map_err(CliError::Other)?;
