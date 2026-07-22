@@ -65,14 +65,17 @@ describe('FailureCode', () => {
   // The vocabulary is Rust's — smix_error::FailureCode. Rust is the
   // source; crates/smix-error/tests/sdk_failure_code_parity.rs reads
   // this SDK's declaration and fails if the two ever diverge.
-  test('9 cases exposed, matching the Rust wire vocabulary', () => {
-    expect(FAILURE_CODES.length).toBe(9)
-    const expected = new Set<FailureCode>([
-      'ELEMENT_NOT_FOUND', 'NOT_VISIBLE', 'NOT_ENABLED',
-      'AMBIGUOUS', 'TIMEOUT', 'ASSERTION_FAILED',
-      'APP_NOT_RUNNING', 'SIMULATOR_NOT_BOOTED', 'DRIVER_ERROR',
-    ])
-    expect(new Set(FAILURE_CODES)).toEqual(expected)
+  // The count is not hard-coded here. It used to be, and adding
+  // TAP_MISSED to the vocabulary left this asserting 9 against 10 — a
+  // second copy of the list that Rust's sdk_failure_code_parity gate
+  // could not see, because that gate reads FAILURE_CODES, not this
+  // test. So this checks the shape of FAILURE_CODES (no duplicates, a
+  // couple of anchors present) and leaves the count to parity.
+  test('the vocabulary is a set and carries its anchors', () => {
+    expect(new Set(FAILURE_CODES).size).toBe(FAILURE_CODES.length)
+    for (const code of ['ELEMENT_NOT_FOUND', 'TAP_MISSED', 'DRIVER_ERROR'] as FailureCode[]) {
+      expect(FAILURE_CODES).toContain(code)
+    }
   })
 
   test('toJson() emits stable keys', () => {
