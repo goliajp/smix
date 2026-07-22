@@ -41,7 +41,7 @@ pub use ios_device::IosDeviceControl;
 
 // Android DeviceControl impl backed by smix-adb.
 pub mod android_device;
-pub use android_device::AndroidDeviceControl;
+pub use android_device::{AndroidDeviceControl, parse_resolved_activity};
 
 pub mod capsule;
 pub use capsule::{
