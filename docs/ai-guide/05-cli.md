@@ -162,6 +162,18 @@ smix system-popups                         # list active popups
 smix system-popup-action <popup-id> <button-id>
 ```
 
+Every one of these takes `--port` and `--device`, and resolves the port
+by the precedence at the bottom of this page. `--device` is narrower
+here than on `smix run`: it names a UDID or a registry alias purely so
+the port that device is registered on can be looked up. It does not
+change which simulator the call reaches — the port already does that,
+because a runner is a process listening on one.
+
+```bash
+smix sim register jp --udid <UDID> --runner-port 22088
+smix tap id:home-tab --device jp           # dials 22088, not 22087
+```
+
 ### Run-script driver (sequential YAML of `smix` subcommands)
 
 ```yaml

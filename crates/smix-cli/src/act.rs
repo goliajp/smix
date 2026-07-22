@@ -28,14 +28,25 @@ use smix_screen::role_from_raw_type;
 use smix_selector::{Modifiers, Pattern, Selector};
 use std::time::Duration;
 
-const DEFAULT_RUNNER_PORT: u16 = 22087;
+/// The port the runner binds when nobody says otherwise.
+///
+/// The bottom rung of the ladder, and the only place it is spelled:
+/// `run_port` reads it from here so the two paths cannot drift.
+pub const DEFAULT_RUNNER_PORT: u16 = 22087;
 
-/// Read SMIX_RUNNER_PORT env or fall back to 22087 default.
-pub fn runner_port_from_env() -> u16 {
+/// Read SMIX_RUNNER_PORT env, or nothing.
+///
+/// Deliberately not `-> u16`. It used to be, substituting 22087 for an
+/// unset variable, and that answer arrived before the registry was ever
+/// asked: the documented ladder is flag → env → registry → default, and
+/// a function that applies the default in the middle of it removes the
+/// third rung. In a workspace with a sim registered on 22088 the
+/// single-shot verbs dialled 22087 while `smix run` dialled 22088. The
+/// default now lives in one place, at the bottom of the ladder.
+pub fn runner_port_from_env_opt() -> Option<u16> {
     std::env::var("SMIX_RUNNER_PORT")
         .ok()
         .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(DEFAULT_RUNNER_PORT)
 }
 
 /// Parse `<kind>:<value>` selector shorthand. Returns None on unknown kind
@@ -390,13 +401,17 @@ mod tests {
         assert!(parse_selector("nope").is_none()); // no colon
     }
 
+    /// An unset variable is `None`, not the default.
+    ///
+    /// The distinction is the whole point: `None` lets the registry
+    /// answer next, and 22087 would not.
     #[test]
-    fn runner_port_from_env_default_when_unset() {
+    fn runner_port_from_env_is_none_when_unset() {
         let _g = ENV_LOCK.lock().unwrap();
         // SAFETY: ENV_LOCK serializes env churn across the 2 tests in this
         // module that touch SMIX_RUNNER_PORT.
         unsafe { std::env::remove_var("SMIX_RUNNER_PORT") };
-        assert_eq!(runner_port_from_env(), DEFAULT_RUNNER_PORT);
+        assert_eq!(runner_port_from_env_opt(), None);
     }
 
     #[test]
@@ -404,7 +419,7 @@ mod tests {
         let _g = ENV_LOCK.lock().unwrap();
         // SAFETY: as above.
         unsafe { std::env::set_var("SMIX_RUNNER_PORT", "22099") };
-        assert_eq!(runner_port_from_env(), 22099);
+        assert_eq!(runner_port_from_env_opt(), Some(22099));
         unsafe { std::env::remove_var("SMIX_RUNNER_PORT") };
     }
 

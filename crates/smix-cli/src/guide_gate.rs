@@ -859,36 +859,33 @@ fn block_containing(page: &str, needle: &str) -> String {
         .unwrap_or_else(|| panic!("{page} no longer prints a block containing {needle:?}"))
 }
 
-/// N1 — the registry rung of the ladder `05-cli` documents is
-/// unreachable from the single-shot verbs.
-///
-/// Named for what it asserts, not for what one would want: it passes
-/// while the finding is open and fires when it closes, at which point
-/// the row moves and this probe is rewritten or deleted. The other two
-/// `N` probes are the same shape.
+/// N1 — every command that dials the runner can reach the registry
+/// rung the ladder in `05-cli` documents.
 ///
 /// The page's §Environment-variable precedence says flag, then env,
-/// then registry, then default. `smix run` has all four — its
+/// then registry, then default. `smix run` had all four: its
 /// `--runner-port` carries `env = "SMIX_RUNNER_PORT"`, so clap merges
 /// the env rung before `run_port` sees it, and `--device` is what
-/// indexes the registry. The single-shot verbs have flag and env and
-/// then stop: nothing on them names a device, so there is no key to
-/// look a `runnerPort` up under.
+/// indexes the registry. The single-shot verbs had flag and env and
+/// then stopped — nothing on them named a device, so there was no key
+/// to look a `runnerPort` up under, and in a workspace with a sim
+/// registered on 22088 `smix tap` dialled 22087 while `smix run`
+/// dialled 22088.
 ///
 /// Asked of the clap tree rather than of a list written here, because
 /// the first version of this probe asserted `run_port` had no env rung
 /// — read off the function signature, without following the `env =`
 /// attribute on the argument feeding it. It was wrong, and it was the
-/// fifth record of its kind to be wrong this week.
+/// fifth record of its kind to be wrong that week.
 #[test]
-fn the_registry_rung_is_still_unreachable_from_single_shot_verbs() {
+fn every_runner_dialling_command_can_reach_the_registry() {
     use clap::CommandFactory;
     let cli = crate::Cli::command();
 
     // Which commands dial the runner: the ones that take a port.
     // Derived, so a new verb of the same shape is covered on the day it
-    // lands.
-    let mut portless_of_device: Vec<String> = Vec::new();
+    // lands rather than when someone remembers to add it.
+    let mut blind: Vec<String> = Vec::new();
     let mut checked = 0usize;
     fn walk(cmd: &clap::Command, path: &str, checked: &mut usize, out: &mut Vec<String>) {
         let here = if path.is_empty() {
@@ -910,19 +907,26 @@ fn the_registry_rung_is_still_unreachable_from_single_shot_verbs() {
             walk(sub, &here, checked, out);
         }
     }
-    walk(&cli, "", &mut checked, &mut portless_of_device);
+    walk(&cli, "", &mut checked, &mut blind);
 
     assert!(
         checked >= 8,
-        "only {checked} commands take a `--port` — the single-shot verbs          were renamed or restructured and this would pass by knowing          nothing"
+        "only {checked} commands take a `--port` — the single-shot verbs \
+         were renamed or restructured and this would pass by knowing \
+         nothing"
     );
     assert!(
-        !portless_of_device.is_empty(),
-        "every runner-dialling command can now name a device, so the          registry rung is reachable — N1 is fixed and its row must move          to `runs`"
+        blind.is_empty(),
+        "{} runner-dialling commands cannot name a device, so the \
+         registry rung of the documented ladder is unreachable from \
+         them:\n  {}",
+        blind.len(),
+        blind.join("\n  ")
     );
 
-    // The contrast the row rests on: `smix run` really does have all
-    // four rungs, and the env one comes from clap, not from `run_port`.
+    // The other half of the page's claim, and the shape the fix copies:
+    // `smix run` reaches env through clap and the registry through
+    // `--device`.
     let run = cli
         .get_subcommands()
         .find(|c| c.get_name() == "run")
@@ -934,11 +938,12 @@ fn the_registry_rung_is_still_unreachable_from_single_shot_verbs() {
     assert_eq!(
         runner_port.get_env().and_then(|e| e.to_str()),
         Some("SMIX_RUNNER_PORT"),
-        "`smix run` lost its env rung — then the two paths differ in a          second way and N1 needs rewriting"
+        "`smix run` lost its env rung — the ladder is short again, at \
+         the other end"
     );
     assert!(
         run.get_arguments().any(|a| a.get_id() == "device"),
-        "`smix run --device` is gone — it is what indexes the registry,          and without it no command has the rung at all"
+        "`smix run --device` is gone — it is what indexes the registry"
     );
 }
 
@@ -1196,7 +1201,7 @@ fn the_list_and_the_probes_agree() {
     // would leave its probe running and unaccounted for, which is the
     // half of the drift the row-side check cannot see.
     for name in [
-        "the_registry_rung_is_still_unreachable_from_single_shot_verbs",
+        "every_runner_dialling_command_can_reach_the_registry",
         "a_configured_launch_activity_still_reaches_nothing",
         "the_default_tap_still_misses_the_route_its_page_names",
         "the_daemon_proxy_id_example_is_admissible",

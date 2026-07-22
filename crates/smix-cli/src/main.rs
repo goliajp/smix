@@ -141,6 +141,13 @@ enum Cmd {
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Boolean existence probe (POST /find). Prints `exists=<bool>`.
     /// Same selector shorthand as `smix tap`.
@@ -148,6 +155,13 @@ enum Cmd {
         selector: String,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Poll `/find` every 250ms until the selector resolves or
     /// `--timeout` expires. Mirrors SDK `App::wait_for` semantics; useful in
@@ -159,6 +173,13 @@ enum Cmd {
         timeout: u64,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Type text into the matched field. Equivalent to the flow yaml
     /// `inputText:` verb. Selector shorthand same as `smix tap`.
@@ -168,6 +189,13 @@ enum Cmd {
         text: String,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Issue a hardware / IME key press. Key shorthand: `return`
     /// (alias `enter`), `delete` (alias `backspace`), `tab`, `space`,
@@ -179,6 +207,13 @@ enum Cmd {
         key: String,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Scroll until the selector becomes visible. Direction:
     /// `up` / `down` / `left` / `right`.
@@ -188,11 +223,25 @@ enum Cmd {
         direction: String,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Dismiss the soft keyboard if visible.
     HideKeyboard {
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Print the runner's current a11y tree. `--json` emits
     /// wire JSON; default emits an indented text outline.
@@ -201,6 +250,13 @@ enum Cmd {
         json: bool,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Print the runner's high-level ScreenDescription: the visible
     /// interactive elements aggregated from the current a11y tree.
@@ -209,6 +265,13 @@ enum Cmd {
         json: bool,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Print the runner's current SpringBoard system-popup list.
     SystemPopups {
@@ -216,6 +279,13 @@ enum Cmd {
         json: bool,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Press a button on a SpringBoard system popup. Both ids come from
     /// `smix system-popups` output (popup `id` + one of its buttons'
@@ -225,6 +295,13 @@ enum Cmd {
         button_id: String,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Sequential script driver. Reads a yaml file describing ordered
     /// smix subcommand invocations (see `crates/smix-cli/src/script.rs`
@@ -236,6 +313,13 @@ enum Cmd {
         path: PathBuf,
         #[arg(long)]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Run a flow file end-to-end. smix flows are written in a yaml
     /// dialect we share with maestro (so existing flows are reusable),
@@ -488,6 +572,13 @@ enum AuthoringAction {
         /// Runner HTTP port. Defaults to SMIX_RUNNER_PORT env or 22087.
         #[arg(long, env = "SMIX_RUNNER_PORT")]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Capture the current a11y tree JSON to a file for baseline use.
     CaptureTree {
@@ -496,6 +587,13 @@ enum AuthoringAction {
         /// Runner HTTP port.
         #[arg(long, env = "SMIX_RUNNER_PORT")]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Diff the current sim a11y tree against a baseline JSON file
     /// and report structural differences. Exit code 0 = clean,
@@ -506,6 +604,13 @@ enum AuthoringAction {
         /// Runner HTTP port.
         #[arg(long, env = "SMIX_RUNNER_PORT")]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Session recording. Sample the a11y tree at `--interval-ms`
     /// for `--duration-secs`; write a yaml scaffold with assertVisible
@@ -522,6 +627,13 @@ enum AuthoringAction {
         /// Runner HTTP port.
         #[arg(long, env = "SMIX_RUNNER_PORT")]
         port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
     },
 }
 
@@ -1294,14 +1406,22 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
             }
         }
-        Cmd::Tap { selector, port } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+        Cmd::Tap {
+            selector,
+            port,
+            device,
+        } => {
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_tap(selector, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::Find { selector, port } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+        Cmd::Find {
+            selector,
+            port,
+            device,
+        } => {
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_find(selector, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -1310,8 +1430,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             selector,
             timeout,
             port,
+            device,
         } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_wait_for(selector, timeout, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -1320,14 +1441,15 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             selector,
             text,
             port,
+            device,
         } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_fill(selector, text, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::PressKey { key, port } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+        Cmd::PressKey { key, port, device } => {
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_press_key(key, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -1336,32 +1458,33 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             selector,
             direction,
             port,
+            device,
         } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_scroll(selector, direction, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::HideKeyboard { port } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+        Cmd::HideKeyboard { port, device } => {
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_hide_keyboard(p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::Tree { json, port } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+        Cmd::Tree { json, port, device } => {
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_tree(json, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::Describe { json, port } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+        Cmd::Describe { json, port, device } => {
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_describe(json, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::SystemPopups { json, port } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+        Cmd::SystemPopups { json, port, device } => {
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_system_popups(json, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -1370,14 +1493,15 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             popup_id,
             button_id,
             port,
+            device,
         } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+            let p = runner_dial_port(port, device.as_deref());
             act::cmd_system_popup_action(&popup_id, &button_id, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::RunScript { path, port } => {
-            let p = port.unwrap_or_else(act::runner_port_from_env);
+        Cmd::RunScript { path, port, device } => {
+            let p = runner_dial_port(port, device.as_deref());
             script::cmd_run_script(&path, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
@@ -1699,43 +1823,53 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         } => {
             return cmd_annotate(input, output, annotations, compression, font).await;
         }
-        Cmd::Authoring { action } => {
-            let port = act::runner_port_from_env();
-            match action {
-                AuthoringAction::Suggest {
-                    partial,
-                    port: p_override,
-                } => {
-                    return authoring::cmd_suggest(p_override.unwrap_or(port), partial).await;
-                }
-                AuthoringAction::CaptureTree {
+        Cmd::Authoring { action } => match action {
+            AuthoringAction::Suggest {
+                partial,
+                port,
+                device,
+            } => {
+                return authoring::cmd_suggest(runner_dial_port(port, device.as_deref()), partial)
+                    .await;
+            }
+            AuthoringAction::CaptureTree {
+                output,
+                port,
+                device,
+            } => {
+                return authoring::cmd_capture_tree(
+                    runner_dial_port(port, device.as_deref()),
                     output,
-                    port: p_override,
-                } => {
-                    return authoring::cmd_capture_tree(p_override.unwrap_or(port), output).await;
-                }
-                AuthoringAction::DiffTree {
+                )
+                .await;
+            }
+            AuthoringAction::DiffTree {
+                baseline,
+                port,
+                device,
+            } => {
+                return authoring::cmd_diff_tree(
+                    runner_dial_port(port, device.as_deref()),
                     baseline,
-                    port: p_override,
-                } => {
-                    return authoring::cmd_diff_tree(p_override.unwrap_or(port), baseline).await;
-                }
-                AuthoringAction::Record {
-                    output,
+                )
+                .await;
+            }
+            AuthoringAction::Record {
+                output,
+                duration_secs,
+                interval_ms,
+                port,
+                device,
+            } => {
+                return authoring::cmd_record_session(
+                    runner_dial_port(port, device.as_deref()),
                     duration_secs,
                     interval_ms,
-                    port: p_override,
-                } => {
-                    return authoring::cmd_record_session(
-                        p_override.unwrap_or(port),
-                        duration_secs,
-                        interval_ms,
-                        output,
-                    )
-                    .await;
-                }
+                    output,
+                )
+                .await;
             }
-        }
+        },
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -2670,7 +2804,27 @@ impl std::error::Error for CliError {}
 /// The registry lookup is a closure because reading it is a disk touch
 /// worth skipping when the caller already said which port to use.
 fn run_port(flag: Option<u16>, registered: impl FnOnce() -> Option<u16>) -> u16 {
-    flag.or_else(registered).unwrap_or(22087)
+    flag.or_else(registered).unwrap_or(act::DEFAULT_RUNNER_PORT)
+}
+
+/// The port a single-shot verb dials.
+///
+/// The same ladder [`run_port`] walks, with the env rung read here
+/// rather than bound by clap: these verbs spell the flag `--port`, and
+/// giving that one an `env =` would silently widen what
+/// `SMIX_RUNNER_PORT` means for anyone passing `--port` explicitly
+/// alongside it.
+///
+/// They had no `--device` at all until the guide gate asked, so the
+/// registry rung was unreachable from them: in a workspace with a sim
+/// registered on 22088, `smix run` dialled 22088 and `smix tap`
+/// dialled 22087, and nothing said so.
+fn runner_dial_port(flag: Option<u16>, device: Option<&str>) -> u16 {
+    run_port(flag.or_else(act::runner_port_from_env_opt), || {
+        device
+            .and_then(lookup_registered)
+            .and_then(|sim| sim.runner_port)
+    })
 }
 
 /// Refuse `runner up` flags that only the iOS path implements.
