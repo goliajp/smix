@@ -175,12 +175,13 @@ pub trait DeviceControl: Send + Sync {
     /// device's own settings for `--animations`.
     ///
     /// How low differs by platform and the difference is not papered
-    /// over. Android zeroes three scales, which really is off. iOS gets
-    /// Reduce Motion, which is weaker: XCUITest runs in its own
-    /// process, so `UIView.setAnimationsEnabled(false)` cannot reach
-    /// the app under test, and Reduce Motion is the strongest lever
-    /// smix can pull on its own. Saying "animations are off" would be
-    /// false on one of the two platforms.
+    /// over. Android zeroes three scales, which really is off. **iOS
+    /// does nothing**, because nothing on the host can: `simctl ui` has
+    /// no motion option, `simctl spawn … defaults write` cannot write
+    /// any domain, and XCUITest runs in its own process so
+    /// `UIView.setAnimationsEnabled(false)` cannot reach the app. This
+    /// interface first claimed iOS got Reduce Motion; a device said
+    /// otherwise.
     ///
     /// Reading back is not belt-and-braces. `simctl ui appearance` is
     /// documented per-simulator and behaves globally; a setting written
