@@ -98,7 +98,10 @@ one that stops.
     text: "Continue"
     optional: true                       # skip if not visible (no error)
 - tapOn:
-    point: "50%,80%"                     # viewport-normalized coord (X%,Y%)
+    point: "50%,80%"                     # fraction of the viewport, NOT pixels
+                                         # `"0.5,0.8"` is the same point; `%` is optional
+                                         # pixels are refused — a flow written in them
+                                         # runs on one screen size
 
 # Several taps on one element, spaced by a number you state.
 #
