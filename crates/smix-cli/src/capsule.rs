@@ -57,6 +57,18 @@ pub const GUARD_HINT: &str = "Simulator.app is running — simctl boot will pop 
      explicitly accept the soft-capsule fallback (window visible, \
      event-ledger reconciliation only; no headless entry point).";
 
+/// Where the capture endpoint comes from, said in full.
+///
+/// The message named the dependency and not how to satisfy it, and
+/// nothing in `--help` said capture needed a separate process at all —
+/// so the way out was discoverable only by reading `capsule up --help`
+/// after already failing.
+pub const CAPTURE_HINT: &str = "capture needs the smix-server process, which is separate \
+     from the runner.\n\
+     Start it with `cargo run -p smix-server` (or the installed \
+     `smix-server` binary), or pass `--no-capture` to bring the capsule \
+     up without it.";
+
 /// Full path to `.smix/capsule/<UDID>.state.json`. Pure function — no I/O.
 pub fn state_path(workspace_root: &Path, udid: &str) -> PathBuf {
     workspace_root
@@ -74,21 +86,53 @@ pub fn simulator_app_running() -> bool {
         .unwrap_or(false)
 }
 
-/// Decide capsule mode. `soft=true` is the user's explicit escape hatch
-/// via `--soft`. `sim_running=true && soft=false` refuses the request
-/// and returns a [`CapsuleGuardRejected`] with the hint text.
-pub fn decide_mode(sim_running: bool, soft: bool) -> Result<CapsuleMode, CapsuleGuardRejected> {
-    match (sim_running, soft) {
-        (false, _) => Ok(CapsuleMode::Hard),
-        (true, true) => Ok(CapsuleMode::Soft),
-        (true, false) => Err(CapsuleGuardRejected {
+/// Decide capsule mode, and say so when it is not the one asked for.
+///
+/// A window on screen used to be a refusal. But `expo run:ios` opens
+/// Simulator.app by design, so on any React Native dev machine the
+/// hard capsule was never available — and a condition that is normal
+/// for a whole class of users reads as an error only once before it
+/// reads as noise.
+///
+/// So it degrades and says which mode it got. `require_hard` keeps the
+/// refusal for CI, where a window means something is wrong rather than
+/// that someone is working. `soft` is the caller stating the intent up
+/// front, which suppresses the warning — there is nothing to warn
+/// about when it is what was asked for.
+///
+/// Returning the warning rather than printing it keeps this a pure
+/// function, which is what lets the table below test the decision
+/// instead of the plumbing.
+pub fn decide_mode(
+    sim_running: bool,
+    soft: bool,
+    require_hard: bool,
+) -> Result<(CapsuleMode, Option<String>), CapsuleGuardRejected> {
+    match (sim_running, soft, require_hard) {
+        (false, _, _) => Ok((CapsuleMode::Hard, None)),
+        (true, _, true) => Err(CapsuleGuardRejected {
             hint: GUARD_HINT.to_string(),
         }),
+        (true, true, false) => Ok((CapsuleMode::Soft, None)),
+        (true, false, false) => Ok((
+            CapsuleMode::Soft,
+            Some(
+                "Simulator.app is on screen, so this is a soft capsule: the window \
+                 is visible and reconciliation is event-ledger only. Pass \
+                 `--require-hard` to make this a failure instead."
+                    .to_string(),
+            ),
+        )),
     }
 }
 
 /// End-to-end options for `capsule up <DEVICE>`.
 pub struct UpOptions<'a> {
+    /// Refuse rather than degrade when a window is on screen.
+    ///
+    /// For CI, where Simulator.app being open means something is wrong
+    /// rather than that someone is working.
+    pub require_hard: bool,
     pub root: &'a Path,
     pub udid: &'a str,
     pub runner_port: u16,
@@ -113,7 +157,11 @@ pub struct UpOptions<'a> {
 /// directly rather than spinning up a new runtime in the cement layer.
 pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
     let sim_running = simulator_app_running();
-    let mode = decide_mode(sim_running, opts.soft).map_err(|e| e.hint)?;
+    let (mode, warning) =
+        decide_mode(sim_running, opts.soft, opts.require_hard).map_err(|e| e.hint)?;
+    if let Some(w) = warning {
+        eprintln!("capsule up: {w}");
+    }
 
     // 2. Boot sim (skipped if already Booted). `boot_and_wait` fuses
     // boot + bootstatus and returns when the sim is fully ready;
@@ -137,7 +185,8 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         let body = format!("{{\"udid\":\"{}\"}}", opts.udid);
         post_json(&capture_start_url, &body).map_err(|e| {
             format!(
-                "capsule up: capture start failed: {e} (is smix-server running at {}?)",
+                "capsule up: capture start failed: {e}\n\
+                 tried {} — {CAPTURE_HINT}",
                 opts.capture_endpoint
             )
         })?;
@@ -383,13 +432,19 @@ mod tests {
 
     #[test]
     fn mode_default_hard_when_simulator_absent() {
-        assert_eq!(decide_mode(false, false).unwrap(), CapsuleMode::Hard);
-        assert_eq!(decide_mode(false, true).unwrap(), CapsuleMode::Hard);
+        assert_eq!(
+            decide_mode(false, false, false).unwrap().0,
+            CapsuleMode::Hard
+        );
+        assert_eq!(
+            decide_mode(false, true, false).unwrap().0,
+            CapsuleMode::Hard
+        );
     }
 
     #[test]
     fn mode_requires_soft_flag_when_simulator_present() {
-        let err = decide_mode(true, false).unwrap_err();
+        let err = decide_mode(true, false, true).unwrap_err();
         assert!(
             err.hint.contains("Simulator.app is running"),
             "guard hint should name the precondition, got {:?}",
@@ -404,7 +459,7 @@ mod tests {
 
     #[test]
     fn mode_soft_when_explicit() {
-        assert_eq!(decide_mode(true, true).unwrap(), CapsuleMode::Soft);
+        assert_eq!(decide_mode(true, true, false).unwrap().0, CapsuleMode::Soft);
     }
 
     #[test]

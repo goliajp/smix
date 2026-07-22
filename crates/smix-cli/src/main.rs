@@ -696,6 +696,15 @@ enum CapsuleAction {
         /// so a capsule without this flag could never complete.
         #[arg(long)]
         bundle: String,
+        /// Fail instead of degrading when Simulator.app is on screen.
+        ///
+        /// For CI, where a window means something is wrong. On a dev
+        /// machine `expo run:ios` opens Simulator.app by design, so a
+        /// capsule there degrades to soft with a warning rather than
+        /// refusing — a condition that is normal for a whole class of
+        /// users reads as an error only once before it reads as noise.
+        #[arg(long, default_value_t = false)]
+        require_hard: bool,
         /// Allow the "soft capsule" fallback when the Simulator UI is
         /// open (otherwise the guard rejects the boot to avoid
         /// contention with a user-visible Simulator session).
@@ -1400,6 +1409,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     device,
                     bundle,
                     soft,
+                    require_hard,
                     no_capture,
                 } => {
                     let udid = resolve_device(&device)?;
@@ -1410,6 +1420,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         capture_endpoint: &capture_endpoint,
                         bundle: Some(&bundle),
                         soft,
+                        require_hard,
                         no_capture,
                     })
                     .await
@@ -2287,6 +2298,39 @@ fn smix_workspace_root() -> Result<PathBuf, CliError> {
 /// Build the simctl argv for an exec passthrough: `{udid}` placeholder
 /// substitution when present, otherwise UDID injected right after the verb
 /// (simctl's device position for every device-taking subcommand).
+/// Catch a udid passed where the alias already implied one.
+///
+/// `smix sim exec insight openurl <UDID> "insight://…"` shifts the URL
+/// into simctl's device slot, and simctl answers
+/// `Simulator device failed to open <UDID>. (OSStatus error -50)` —
+/// which names neither the mistake nor the fix. The device is part of
+/// `sim exec`'s own shape, so a second one is always a mistake.
+///
+/// Only for verbs whose arity is known. A passthrough that guessed at
+/// every verb would refuse the ones it had not heard of, and the point
+/// of a passthrough is the verbs nobody thought about.
+fn exec_arity_complaint(verb: &str, args: &[String]) -> Option<String> {
+    const DEVICE_IMPLIED: &[&str] = &["openurl", "launch", "terminate", "install", "uninstall"];
+    if !DEVICE_IMPLIED.contains(&verb) {
+        return None;
+    }
+    let looks_like_udid =
+        |a: &String| a.len() == 36 && a.split('-').map(str::len).eq([8, 4, 4, 4, 12]);
+    let stray = args.iter().position(looks_like_udid)?;
+    Some(format!(
+        "`{verb}` takes no device argument — `sim exec <ALIAS|UDID>` already named one, \
+         and simctl would read `{}` as the device and everything after it shifted by one. \
+         Drop it: `smix sim exec <ALIAS> {verb} {}`",
+        args[stray],
+        args.iter()
+            .enumerate()
+            .filter(|(i, _)| *i != stray)
+            .map(|(_, a)| a.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    ))
+}
+
 fn exec_argv(verb: &str, udid: &str, args: &[String]) -> Vec<String> {
     let mut argv = vec![verb.to_string()];
     if args.iter().any(|a| a == "{udid}") {
@@ -2306,6 +2350,9 @@ fn exec_argv(verb: &str, udid: &str, args: &[String]) -> Vec<String> {
 
 async fn cmd_sim_exec(device: &str, verb: &str, args: &[String]) -> Result<ExitCode, CliError> {
     let udid = resolve_device(device)?;
+    if let Some(complaint) = exec_arity_complaint(verb, args) {
+        return Err(CliError::Other(complaint));
+    }
     let argv = exec_argv(verb, &udid, args);
     // exec(2), not spawn: the caller's pid becomes simctl itself, so shell
     // job control (`& ... kill -INT $!`) reaches simctl directly — required
@@ -2993,6 +3040,47 @@ mod tests {
         assert_eq!(device, "02");
         assert_eq!(verb, "status_bar");
         assert_eq!(args, ["override", "--time", "9:41"]);
+    }
+
+    /// The mistake that produced an opaque OSStatus -50.
+    #[test]
+    fn a_second_device_argument_is_named_as_the_mistake() {
+        let complaint = exec_arity_complaint(
+            "openurl",
+            &[
+                "74CAF762-06F0-4687-9D29-E737A435AEAF".to_string(),
+                "insight://x".to_string(),
+            ],
+        )
+        .expect("a udid passed to openurl is always a mistake");
+        assert!(
+            complaint.contains("takes no device argument"),
+            "{complaint}"
+        );
+        assert!(
+            complaint.contains("smix sim exec <ALIAS> openurl insight://x"),
+            "it has to show the corrected command: {complaint}"
+        );
+    }
+
+    /// A verb this does not know about is passed straight through.
+    ///
+    /// Guessing at arity for every verb would refuse the ones nobody
+    /// thought about, and those are what a passthrough is for.
+    #[test]
+    fn an_unknown_verb_is_not_second_guessed() {
+        assert!(
+            exec_arity_complaint(
+                "spawn",
+                &["74CAF762-06F0-4687-9D29-E737A435AEAF".to_string()]
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn an_ordinary_call_is_not_complained_about() {
+        assert!(exec_arity_complaint("openurl", &["insight://x".to_string()]).is_none());
     }
 
     #[test]

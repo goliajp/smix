@@ -89,6 +89,19 @@ pub struct ExpectationFailure {
     /// Optional one-line hint (e.g. "try `app.wait_for(...)` first").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// The smix that produced this failure.
+    ///
+    /// Not decoration. A consumer wrote up two defects against smix
+    /// behaviour that had been fixed hours earlier, quoting an error
+    /// message the current build no longer emits — they had no way to
+    /// tell whether the smix in front of them contained the fix for
+    /// the thing they had just hit. A failure that names its version
+    /// makes that answerable from the failure itself.
+    ///
+    /// Set by [`ExpectationFailure::new`] from the crate version, so no
+    /// call site can forget it.
+    #[serde(default)]
+    pub smix_version: String,
     /// base64-encoded PNG; omitted from default rendering to keep logs lean.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screenshot: Option<String>,
@@ -138,6 +151,7 @@ impl ExpectationFailure {
             suggestions: init.suggestions,
             visible_elements: init.visible_elements,
             hint: init.hint,
+            smix_version: env!("CARGO_PKG_VERSION").to_string(),
             screenshot: init.screenshot,
             device_log: init.device_log,
         }
@@ -153,6 +167,13 @@ impl ExpectationFailure {
             format_code(self.code),
             self.message
         ));
+        // The version, on every failure, because the reader's next
+        // question after "what went wrong" is often "is my smix old".
+        // A consumer once wrote up two defects that had been fixed
+        // hours earlier, quoting a message this build no longer emits.
+        if !self.smix_version.is_empty() {
+            lines.push(format!("  smix: {}", self.smix_version));
+        }
         if let Some(sel) = &self.selector {
             lines.push(format!("  selector: {}", describe_selector(sel)));
         }
