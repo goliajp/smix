@@ -164,6 +164,16 @@ impl AppLike for SilentMockApp {
     async fn copy_text_from(&self, _: &Selector) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn tap_burst(
+        &self,
+        _selector: &Selector,
+        _times: u32,
+        _interval_ms: Option<u32>,
+        _hold_ms: Option<u32>,
+    ) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
+
     async fn double_tap(&self, _: &Selector) -> Result<(), ExpectationFailure> {
         Ok(())
     }

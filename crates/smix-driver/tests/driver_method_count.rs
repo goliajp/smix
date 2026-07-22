@@ -33,6 +33,7 @@ const ROSTER: &[&str] = &[
     "system_popups",
     "tap",
     "tap_at_norm_coord",
+    "tap_burst",
     "tap_by_id",
     "tap_with_mode",
     "tree",

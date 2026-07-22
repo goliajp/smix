@@ -696,6 +696,22 @@ pub enum Step {
         /// Selector picking the tap target.
         selector: Selector,
     },
+    /// Tap one element several times, spaced on the event timeline.
+    ///
+    /// `repeat` around `tapOn` sends a request per tap; at ~400 ms per
+    /// synthesise that cannot drive a gesture gated on a short
+    /// inter-tap window, and the spacing is whatever the round trip
+    /// cost rather than a number the flow states.
+    RepeatTap {
+        /// Selector picking the tap target.
+        selector: Selector,
+        /// How many touches.
+        times: u32,
+        /// Milliseconds between touches; `None` takes the runner default.
+        interval_ms: Option<u32>,
+        /// Milliseconds each touch is held; `None` takes the default.
+        hold_ms: Option<u32>,
+    },
     /// Long-press on element with optional duration (ms,
     /// default 500). maestro `longPressOn: <selector>` (scalar) or
     /// `longPressOn: { ..., duration: N }`. XCUIElement.press(forDuration:).

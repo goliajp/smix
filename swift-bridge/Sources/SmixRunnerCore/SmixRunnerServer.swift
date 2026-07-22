@@ -542,7 +542,9 @@ public actor SmixRunnerServer {
   /// route could not previously give: it reported that a touch was
   /// synthesised and callers read that as the element being tapped.
   public typealias TapAtCoordHandler =
-    @Sendable (_ nx: Double, _ ny: Double) async -> (ok: Bool, chain: [HitChainEntry])
+    @Sendable (
+      _ nx: Double, _ ny: Double, _ times: Int, _ intervalMs: Int, _ holdMs: Int
+    ) async -> (ok: Bool, chain: [HitChainEntry])
 
   /// POST /tap-by-id handler. Resolves an element by accessibility
   /// identifier and invokes `XCUIElement.tap()` (the XCTest gesture-recognizer
@@ -1724,7 +1726,8 @@ public actor SmixRunnerServer {
         return await Self.contextGuardedResponse(request: request,
           fallback: TapAtCoordRoute.success(ok: false)
         ) {
-          let outcome = await tapAtCoordHandler(req.nx, req.ny)
+          let outcome = await tapAtCoordHandler(
+            req.nx, req.ny, req.times, req.intervalMs, req.holdMs)
           return TapAtCoordRoute.success(ok: outcome.ok, chain: outcome.chain)
         }
       }

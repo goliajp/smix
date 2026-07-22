@@ -29,6 +29,7 @@ that is why.
 |---|---|---|---|
 | `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
 | `doubleTapOn` / `doubleTap` | ✅ | ✅ | Android dispatches two clicks 150 ms apart at the resolved point |
+| `repeatTap` | ✅ | ⚠️ | iOS packs every touch into one synthesised event, so the interval is the number you state; Android falls back to one request per touch, where the interval is a floor and not a guarantee |
 | `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s, and XCUIElement's press convention); `{ duration: N }` sets it |
 | `tapOn: { point: "X%,Y%" }` | ✅ | ✅ | Normalized [0, 1] coordinates; the escape hatch for screens with no a11y semantics. Not a verb of its own — there is no `tapByCoord` |
 

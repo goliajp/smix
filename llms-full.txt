@@ -221,6 +221,18 @@ one that stops.
 - tapOn:
     point: "50%,80%"                     # viewport-normalized coord (X%,Y%)
 
+# Several taps on one element, spaced by a number you state.
+#
+# `repeat` around `tapOn` sends a request per tap, and each one costs a
+# synthesised event round trip (~400 ms on iOS 26.5) — so the interval
+# is whatever that cost, and a gesture gated on a short inter-tap window
+# cannot be driven. This packs the touches into one event timeline.
+- repeatTap:
+    id: "hidden-trigger"
+    times: 10
+    intervalMs: 80                       # optional; runner default
+    holdMs: 50                           # optional; how long each touch stays down
+
 - doubleTapOn: "Reset"
 - longPressOn:
     id: "list-row-3"
@@ -382,13 +394,12 @@ one that stops.
 # internal idle-wait for performance (SmixQuiescenceSwizzle); this verb
 # has always been a bounded pause at the runtime layer.
 #
-# A run quietens the device's animations before it starts, so there is
-# usually less to wait for than there used to be. How much less depends
-# on the platform: on Android the animation scales are zero and this
-# verb has little left to do; on iOS it is Reduce Motion, which shortens
-# and simplifies transitions without removing them, so the wait still
-# earns its place. `--animations` restores the device's own settings and
-# with them the original reason for this verb.
+# On Android a run zeroes the animation scales before it starts, so
+# this verb has little left to wait for; `--animations` restores the
+# device's own settings and with them the original reason for it.
+#
+# On iOS nothing is quietened — no host-side lever exists — so this
+# verb keeps its full value there.
 - waitForAnimationToEnd                  # bare form: 400 ms (maestro-compat)
 - waitForAnimationToEnd: 500             # integer: sleep N ms
 - waitForAnimationToEnd:
@@ -820,6 +831,18 @@ what `dispatch: xcui` reaches, mirroring the iOS route of that name.
 
 The two other routes exist because two specific runtimes need them, and
 both are opt-in — see the next section.
+
+**What a successful `tapOn` means.** The runner reports every named
+element containing the point it touched, and the step fails with
+`TAP_MISSED` if the element you aimed at is not among them. So success
+means the touch landed inside your target, not merely that a touch was
+synthesised somewhere — which is what it used to mean.
+
+It does **not** mean the target received the touch. Something drawn
+over your element contains the same point, and the a11y snapshot
+carries no z-order, so smix cannot tell which one is on top. If a tap
+reports success and nothing happens, see `07-errors.md` →
+"tap returns `ok: true` but state doesn't change".
 
 ### Tap with explicit dispatch (v1.0.26)
 
@@ -1765,6 +1788,35 @@ Read **`code`** first to triage. Read **`hint`** + **`suggestions`** to know the
 
 **Fix**: `smix sim boot <udid>` then retry.
 
+### TAP_MISSED
+
+**Trigger**: the touch was synthesised, and the point it landed on was
+not inside the element the selector matched.
+
+`tapOn` resolves a selector against the a11y tree, takes the matched
+element's centre, and synthesises a touch there. Between those two
+steps the screen can move — a list settles, a banner appears, a sheet
+finishes presenting — and the coordinate then belongs to something
+else. The tap still happened; it happened somewhere you did not mean.
+
+The message names both sides: what was aimed at, and what the point
+turned out to be inside.
+
+**Fixes**:
+- Wait for the screen before tapping (`extendedWaitUntil`, or
+  `waitForAnimationToEnd` if you are running with `--animations`)
+- If it reproduces on a still screen, the element's frame is wrong
+  rather than stale — capture `smix tree --json` and check the frame
+
+**Escape hatch**: `SMIX_TAP_HIT_MISMATCH=warn` downgrades this to a
+warning for a whole run. It exists so an existing suite can be moved
+over gradually; a run under it reports success for taps that missed.
+
+**What this does NOT catch**: an element covered by something
+transparent to the a11y tree. A scrim over your button contains the
+tapped point too, so the check passes and the touch still may not reach
+the button. See "tap returns `ok: true` but state doesn't change".
+
 ### DRIVER_ERROR
 
 **Trigger**: catch-all for runner-side / IO / unexpected failures. Read the `message` for specifics.
@@ -1794,7 +1846,24 @@ Generate UUIDs via `openssl rand -hex 12 | tr a-f A-F`.
 
 ### tap returns `ok: true` but state doesn't change
 
-Some Compose Button `onClick` lambdas don't fire reliably when a heavy `AndroidView` interop component (MapView, PreviewView) is in the same composition. The engine dispatches but the lambda is not invoked.
+First check whether you got `TAP_MISSED` — since v2.0.0 a tap that
+lands outside the element it aimed at says so. If the tap is reported
+as landing correctly and the app still did nothing, the cause is one of
+these:
+
+**The element is covered.** smix cannot see this: the a11y snapshot
+carries no z-order, so a scrim over your button contains the tapped
+point exactly as the button does. `smix tree --json` shows both; the
+one drawn later wins and the tree does not say which that is.
+
+**The element is not a touch responder.** An image or a label inside a
+button is in the tree and takes no touches. Aim at the ancestor that
+handles the gesture.
+
+**Compose interop.** Some Compose `Button` `onClick` lambdas don't fire
+reliably when a heavy `AndroidView` interop component (MapView,
+PreviewView) is in the same composition. The engine dispatches but the
+lambda is not invoked.
 
 **Workaround**: extract heavy `AndroidView` into a separate Composable holder.
 
@@ -3044,6 +3113,7 @@ that is why.
 |---|---|---|---|
 | `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
 | `doubleTapOn` / `doubleTap` | ✅ | ✅ | Android dispatches two clicks 150 ms apart at the resolved point |
+| `repeatTap` | ✅ | ⚠️ | iOS packs every touch into one synthesised event, so the interval is the number you state; Android falls back to one request per touch, where the interval is a floor and not a guarantee |
 | `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s, and XCUIElement's press convention); `{ duration: N }` sets it |
 | `tapOn: { point: "X%,Y%" }` | ✅ | ✅ | Normalized [0, 1] coordinates; the escape hatch for screens with no a11y semantics. Not a verb of its own — there is no `tapByCoord` |
 

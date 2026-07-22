@@ -532,6 +532,46 @@ impl IosDriver {
         })
     }
 
+    /// Tap a selector several times in a row.
+    ///
+    /// Resolves once, then hands the runner a burst: one synthesise
+    /// carrying `times` touches spaced by `interval_ms`. The spacing is
+    /// the number given, not the round-trip latency it used to be —
+    /// ten separate taps cost ten ~400 ms synthesises, and a gesture
+    /// gated on a 500 ms window sat right on that boundary.
+    ///
+    /// No hit verdict: after the first touch the screen is expected to
+    /// react, so what the later ones land on is the app's business
+    /// rather than evidence about aim.
+    pub async fn tap_burst(
+        &self,
+        selector: &Selector,
+        times: u32,
+        interval_ms: Option<u32>,
+        hold_ms: Option<u32>,
+        include: Option<IncludeScope>,
+    ) -> Result<(), ExpectationFailure> {
+        let tree = self.tree_with_retry(include).await?;
+        let (nx, ny) = resolve_to_norm_coord(&tree, selector).map_err(|_| {
+            let visible = collect_visible_summaries(&tree, 10);
+            let target = base_text_or_id(selector);
+            let suggestions = smix_error::build_suggestions(target.as_deref(), &visible);
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::ElementNotFound),
+                message: format!("element not found: {}", describe_selector(selector)),
+                selector: Some(selector.clone()),
+                visible_elements: visible,
+                suggestions,
+                ..Default::default()
+            })
+        })?;
+        self.runner
+            .tap_at_norm_coord_burst(nx, ny, times, interval_ms, hold_ms)
+            .await
+            .map(|_| ())
+            .map_err(transport_to_failure)
+    }
+
     /// Tap a selector via an explicit dispatch mode. Used to opt into
     /// the runner-side `daemonProxySynthesize` path for RN Pressable
     /// buttons whose `RCTTouchHandler` gesture recognizer does not fire

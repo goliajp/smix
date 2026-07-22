@@ -100,6 +100,18 @@ one that stops.
 - tapOn:
     point: "50%,80%"                     # viewport-normalized coord (X%,Y%)
 
+# Several taps on one element, spaced by a number you state.
+#
+# `repeat` around `tapOn` sends a request per tap, and each one costs a
+# synthesised event round trip (~400 ms on iOS 26.5) — so the interval
+# is whatever that cost, and a gesture gated on a short inter-tap window
+# cannot be driven. This packs the touches into one event timeline.
+- repeatTap:
+    id: "hidden-trigger"
+    times: 10
+    intervalMs: 80                       # optional; runner default
+    holdMs: 50                           # optional; how long each touch stays down
+
 - doubleTapOn: "Reset"
 - longPressOn:
     id: "list-row-3"
