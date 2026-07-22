@@ -79,7 +79,7 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
 
 ```yaml
 - tapOn:
-    point: "50%,80%"
+    point: "50%,80%"    # fraction of the viewport, not pixels ("0.5,0.8" is the same)
 ```
 
 - nx, ny in viewport normalized [0, 1].

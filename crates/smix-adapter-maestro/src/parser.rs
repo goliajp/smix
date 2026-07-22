@@ -914,6 +914,35 @@ fn parse_point(s: &str) -> Result<(f64, f64), ParseError> {
     }
     let nx = parse_percent(parts[0], "tapOn.point.x")?;
     let ny = parse_percent(parts[1], "tapOn.point.y")?;
+    // Catch pixels here rather than at the wire.
+    //
+    // `%` is optional, so `267` reads as 267% and travels all the way
+    // to the runner before coming back as
+    // `outOfRange("nx", 2.67)` — a number and a field name, and no
+    // mention that the units are a fraction of the viewport. A reader
+    // who wrote pixel coordinates learns that from the shape of the
+    // number they get back, if at all.
+    //
+    // Pixels are not accepted, and that is deliberate rather than
+    // unimplemented: a flow written in device pixels runs on one
+    // screen size. Normalised coordinates are what make the escape
+    // hatch portable, which is the only thing that justifies having a
+    // coordinate escape hatch at all.
+    for (v, axis, raw) in [(nx, "x", parts[0]), (ny, "y", parts[1])] {
+        if !(0.0..=1.0).contains(&v) {
+            return Err(ParseError::InvalidValue {
+                field: format!("tapOn.point.{axis}"),
+                reason: format!(
+                    "`{raw}` is {:.0}% of the viewport, which is off screen. \
+                     point takes a fraction of the viewport, not pixels — \
+                     `\"50%,80%\"` or `\"0.5,0.8\"`. Pixels are not accepted \
+                     because a flow written in them runs on one screen size; \
+                     divide by the viewport's width or height",
+                    v * 100.0
+                ),
+            });
+        }
+    }
     Ok((nx, ny))
 }
 
