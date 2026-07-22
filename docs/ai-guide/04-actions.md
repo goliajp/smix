@@ -1,15 +1,16 @@
 # 04 — Actions
 
-> Every action verb (tap / fill / swipe / scroll / press-key / etc.) with how it dispatches under the hood, and when to use Path A vs Path B.
+> Every action verb (tap / fill / swipe / scroll / press-key / etc.), the route it takes under the hood, and when a tap needs a different one.
 
 ## Action mental model
 
 ```
 yaml verb (tapOn) → smix-adapter (translation) → Driver trait method
-                                                  ├─ IosDriver  → XCUITest server (Path B)
-                                                  │                IOHID synthesize (Path A)
-                                                  └─ AndroidDriver → Kotlin runner /tap-by-id
-                                                                     /tap-at-norm-coord
+                                                  ├─ IosDriver     → host resolve → /tap-at-norm-coord
+                                                  │                  dispatch: xcui        → /tap-by-id
+                                                  │                  dispatch: daemonProxy → /tap
+                                                  └─ AndroidDriver → host resolve → /tap-at-norm-coord
+                                                                     /tap-by-id (view-id anchored)
 ```
 
 The YAML is platform-agnostic. The driver picks the right strategy for the target platform.
@@ -23,12 +24,20 @@ The YAML is platform-agnostic. The driver picks the right strategy for the targe
     id: "home-increment-btn"
 ```
 
-**iOS dispatch**:
-- If the matched element exposes `accessibilityIdentifier`, the swift `/tap-by-id` route dispatches via IOHID `_XCT_synthesizeEvent` (Path A — fires SwiftUI onTap closure; XCUI `coord.tap` does not).
-- Otherwise, falls back to XCUI `element.tap()` (Path B — dispatch only, may not fire some SwiftUI handlers).
+**iOS dispatch**: the host fetches the a11y tree, resolves the selector
+against it, and sends the element's centre to `/tap-at-norm-coord`,
+which taps via `coordinate(withNormalizedOffset:).tap()` — the Apple
+native UI event chain. This is the only route a `tapOn` without
+`dispatch:` takes; there is no fallback to another one, and having an
+`accessibilityIdentifier` does not change it.
 
-**Android dispatch**:
-- Kotlin runner `/tap-by-id` → resolves via UiAutomation `findAccessibilityNodeInfosByViewId` → returns center coord → native event synthesize.
+**Android dispatch**: the same host-side resolve, then the Kotlin
+runner's `/tap-at-norm-coord`. A view-id anchored tap
+(`findAccessibilityNodeInfosByViewId` → centre → native synthesize) is
+what `dispatch: xcui` reaches, mirroring the iOS route of that name.
+
+The two other routes exist because two specific runtimes need them, and
+both are opt-in — see the next section.
 
 ### Tap with explicit dispatch (v1.0.26)
 
@@ -192,13 +201,23 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
 
 ```yaml
 - pressKey: ENTER
-- pressKey: BACK
 - pressKey: HOME
 - pressKey: VOLUME_UP
-- pressKey: POWER
+- pressKey: LOCK
 ```
 
-- Available keys: ENTER / TAB / SPACE / DELETE / BACK / HOME / VOLUME_UP / VOLUME_DOWN / POWER / LOCK / SCREEN_LOCK.
+- Available keys: ENTER / TAB / SPACE / DELETE / ESCAPE / HOME / LOCK / VOLUME_UP / VOLUME_DOWN / ARROW_UP / ARROW_DOWN / ARROW_LEFT / ARROW_RIGHT.
+- **Back navigation is not a key press.** Use the `- back` verb: on
+  Android it sends the back key, on iOS it taps the navigation-bar back
+  button. `pressKey: BACK` is refused deliberately — an earlier alias
+  mapped it to Delete, which turned every back step into a silent
+  backspace that reported success.
+- **`VOLUME_UP` / `VOLUME_DOWN` are skipped on the iOS simulator**, not
+  executed: Apple documents `XCUIDevice.Button.volumeUp` / `.volumeDown`
+  as unavailable there, and maestro has the same limitation. The step
+  reports as skipped with the reason rather than failing.
+- There is no `POWER` key. `LOCK` is the closest equivalent
+  (`XCUIDevice.perform(.lockButton)` on iOS).
 - iOS: maps to XCUIRemote / device interaction methods.
 - Android: maps to KeyEvent constants via runner `/press-key`.
 

@@ -11,7 +11,8 @@
 //! ```text
 //! or       = and  ("||" and)*
 //! and      = eq   ("&&" eq)*
-//! eq       = unary (("==" | "!=") unary)*
+//! eq       = rel  (("==" | "!=") rel)*
+//! rel      = unary (("<" | "<=" | ">" | ">=") unary)*
 //! unary    = "!" unary | postfix
 //! postfix  = primary (".contains" "(" expr ")")*
 //! primary  = literal | varRef | "(" expr ")"
@@ -22,6 +23,13 @@
 //! Arithmetic, ternary, function definitions, object literals, string
 //! concatenation, and chained methods are **not** supported and raise
 //! [`ExprError::UnsupportedPattern`] rather than silently no-op.
+//!
+//! Relational operators arrived late: `02-yaml-reference` had been
+//! printing `assertTrue: ${output.userCount > 0}` while `>` did not
+//! even lex, so the documented example failed before it could be
+//! wrong. They compare two numbers or two strings and refuse anything
+//! else, for the same reason the rest of this file refuses what it does
+//! not implement.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -128,6 +136,10 @@ enum Token {
     Null,
     EqEq,
     NotEq,
+    Lt,
+    Le,
+    Gt,
+    Ge,
     AndAnd,
     OrOr,
     Bang,
@@ -190,6 +202,16 @@ fn tokenize(src: &str) -> Result<Vec<Token>, ExprError> {
                     out.push(Token::Bang);
                     i += 1;
                 }
+            }
+            b'<' | b'>' => {
+                let two = i + 1 < bytes.len() && bytes[i + 1] == b'=';
+                out.push(match (bytes[i], two) {
+                    (b'<', false) => Token::Lt,
+                    (b'<', true) => Token::Le,
+                    (b'>', false) => Token::Gt,
+                    (_, _) => Token::Ge,
+                });
+                i += if two { 2 } else { 1 };
             }
             b'=' => {
                 if i + 1 < bytes.len() && bytes[i + 1] == b'=' {
@@ -301,6 +323,16 @@ fn tokenize(src: &str) -> Result<Vec<Token>, ExprError> {
 // AST + Parser
 // --------------------------------------------------------------------
 
+/// Which relational comparison. Named rather than four AST variants
+/// because all four share one evaluation and one set of type rules.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ordering {
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum Expr {
     Literal(Value),
@@ -311,6 +343,10 @@ enum Expr {
     Not(Box<Expr>),
     Eq(Box<Expr>, Box<Expr>),
     NotEq(Box<Expr>, Box<Expr>),
+    /// `<` `<=` `>` `>=`. One variant carrying the operator rather than
+    /// four, because all four evaluate through the same comparison and
+    /// the same type rules.
+    Compare(Ordering, Box<Expr>, Box<Expr>),
     And(Box<Expr>, Box<Expr>),
     Or(Box<Expr>, Box<Expr>),
     /// `<expr>.contains(<expr>)`
@@ -355,21 +391,40 @@ impl Parser {
     }
 
     fn parse_eq(&mut self) -> Result<Expr, ExprError> {
-        let mut left = self.parse_unary()?;
+        let mut left = self.parse_rel()?;
         loop {
             match self.peek() {
                 Some(Token::EqEq) => {
                     self.advance();
-                    let right = self.parse_unary()?;
+                    let right = self.parse_rel()?;
                     left = Expr::Eq(Box::new(left), Box::new(right));
                 }
                 Some(Token::NotEq) => {
                     self.advance();
-                    let right = self.parse_unary()?;
+                    let right = self.parse_rel()?;
                     left = Expr::NotEq(Box::new(left), Box::new(right));
                 }
                 _ => break,
             }
+        }
+        Ok(left)
+    }
+
+    /// Relational comparison, binding tighter than equality so
+    /// `a < b == c` groups the way it reads.
+    fn parse_rel(&mut self) -> Result<Expr, ExprError> {
+        let mut left = self.parse_unary()?;
+        loop {
+            let op = match self.peek() {
+                Some(Token::Lt) => Ordering::Lt,
+                Some(Token::Le) => Ordering::Le,
+                Some(Token::Gt) => Ordering::Gt,
+                Some(Token::Ge) => Ordering::Ge,
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_unary()?;
+            left = Expr::Compare(op, Box::new(left), Box::new(right));
         }
         Ok(left)
     }
@@ -547,6 +602,38 @@ fn eval(expr: &Expr, ctx: &Context) -> Result<Value, ExprError> {
             let rv = eval(r, ctx)?;
             Ok(Value::Bool(!values_equal(&lv, &rv)))
         }
+        Expr::Compare(op, l, r) => {
+            let lv = eval(l, ctx)?;
+            let rv = eval(r, ctx)?;
+            let ord = match (&lv, &rv) {
+                (Value::Number(a), Value::Number(b)) => a.partial_cmp(b),
+                (Value::String(a), Value::String(b)) => Some(a.cmp(b)),
+                // No implicit conversion. JS would compare "10" < 9 by
+                // coercing, and an assertion that quietly answers on a
+                // reading the author did not intend is worse than one
+                // that refuses — the same call this file already makes
+                // for unsupported constructs.
+                _ => {
+                    return Err(ExprError::UnsupportedPattern {
+                        snippet: format!("{lv:?} {op:?} {rv:?}"),
+                        hint: "relational comparison needs two numbers or two strings; \
+                               no implicit conversion is performed"
+                            .to_string(),
+                    });
+                }
+            };
+            // NaN compares to nothing, so `partial_cmp` is None and
+            // every relational operator is false — the IEEE answer.
+            let Some(ord) = ord else {
+                return Ok(Value::Bool(false));
+            };
+            Ok(Value::Bool(match op {
+                Ordering::Lt => ord.is_lt(),
+                Ordering::Le => ord.is_le(),
+                Ordering::Gt => ord.is_gt(),
+                Ordering::Ge => ord.is_ge(),
+            }))
+        }
         Expr::And(l, r) => {
             // short-circuit
             let lv = eval(l, ctx)?;
@@ -707,5 +794,90 @@ mod tests {
     fn paren_precedence() {
         let v = parse_and_eval("(true || false) && false", &Context::default()).unwrap();
         assert_eq!(v, Value::Bool(false));
+    }
+}
+
+#[cfg(test)]
+mod relational_tests {
+    use super::*;
+
+    fn ctx_with(key: &str, v: Value) -> Context {
+        let mut out = BTreeMap::new();
+        out.insert(key.to_string(), v);
+        Context {
+            output: out,
+            env: BTreeMap::new(),
+        }
+    }
+
+    fn eval_str(src: &str, ctx: &Context) -> Result<Value, ExprError> {
+        parse_and_eval(src, ctx)
+    }
+
+    #[test]
+    fn numbers_compare_by_value() {
+        let ctx = ctx_with("n", Value::Number(5.0));
+        for (src, expected) in [
+            ("output.n > 0", true),
+            ("output.n > 5", false),
+            ("output.n >= 5", true),
+            ("output.n < 10", true),
+            ("output.n <= 4", false),
+        ] {
+            assert_eq!(
+                eval_str(src, &ctx).expect(src),
+                Value::Bool(expected),
+                "{src}"
+            );
+        }
+    }
+
+    #[test]
+    fn strings_compare_in_order() {
+        let ctx = ctx_with("s", Value::String("banana".into()));
+        assert_eq!(
+            eval_str("output.s > \"apple\"", &ctx).expect("gt"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            eval_str("output.s < \"apple\"", &ctx).expect("lt"),
+            Value::Bool(false)
+        );
+    }
+
+    /// A number against a string is refused, not coerced.
+    ///
+    /// JS would answer, by converting one side, and an assertion that
+    /// quietly answers on a reading its author did not intend is worse
+    /// than one that refuses.
+    #[test]
+    fn mixed_types_are_refused() {
+        let ctx = ctx_with("n", Value::Number(5.0));
+        let err = eval_str("output.n > \"apple\"", &ctx).expect_err("mixed");
+        assert!(
+            matches!(err, ExprError::UnsupportedPattern { .. }),
+            "expected UnsupportedPattern, got {err:?}"
+        );
+    }
+
+    /// Relational binds tighter than equality, so this groups as
+    /// `(n > 3) == true` rather than `n > (3 == true)`.
+    #[test]
+    fn relational_binds_tighter_than_equality() {
+        let ctx = ctx_with("n", Value::Number(5.0));
+        assert_eq!(
+            eval_str("output.n > 3 == true", &ctx).expect("precedence"),
+            Value::Bool(true)
+        );
+    }
+
+    /// The example `02-yaml-reference` prints.
+    #[test]
+    fn the_documented_assert_true_expression_evaluates() {
+        let ctx = ctx_with("userCount", Value::Number(3.0));
+        assert_eq!(
+            eval_str("output.userCount > 0", &ctx).expect("documented"),
+            Value::Bool(true)
+        );
     }
 }
