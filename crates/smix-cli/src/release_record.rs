@@ -140,8 +140,13 @@ fn every_breaking_change_is_in_both_lists() {
 #[test]
 fn summary() {
     let rows = boundary_rows();
+    let behaviour = CLAIMS
+        .lines()
+        .filter(|l| l.contains("| behaviour |"))
+        .count();
     println!(
-        "release-record: {} breaking changes, both lists agree",
+        "release-record: {} breaking changes, both lists agree · {behaviour} \
+         behaviour changes in the release notes",
         rows.len()
     );
 }
@@ -172,4 +177,109 @@ fn this_gate_runs_where_it_must() {
              runs this gate"
         );
     }
+}
+
+/// The guide-executability list, whose rows are the last four segments'
+/// user-visible changes.
+const CLAIMS: &str = include_str!("../../../docs/guide-executability.md");
+
+/// Every bold phrase opening an entry anywhere under `## [2.0.0]`.
+///
+/// All three subsections, because a reader does not care which one a
+/// change was filed under.
+fn changelog_phrases() -> Vec<String> {
+    let section = CHANGELOG
+        .split("## [2.0.0]")
+        .nth(1)
+        .expect("CHANGELOG still has a 2.0.0 section")
+        .split("\n## [")
+        .next()
+        .expect("the 2.0.0 section still ends at the next release");
+    section
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("- "))
+        .filter_map(|l| l.strip_prefix("**"))
+        .filter_map(|l| l.split_once("**").map(|(phrase, _)| phrase.to_string()))
+        .collect()
+}
+
+/// Every change that altered behaviour is in the release notes.
+///
+/// The eight rows of `docs/guide-executability.md` are the last four
+/// segments' findings, and six of them changed what smix does. None had
+/// reached the release notes: the port ladder, the tap routes learning
+/// id and label, the expression grammar, the explicit regex form — a
+/// user upgrading would have met all of them undocumented.
+///
+/// The `kind` column is filled by a person. Whether a change is visible
+/// to a user is a judgement, the same kind this file already refuses to
+/// make about breaking changes; what is checkable is that the column
+/// and the citation agree, and that a `behaviour` row names an entry
+/// that exists.
+#[test]
+fn every_behaviour_change_reaches_the_release_notes() {
+    let phrases = changelog_phrases();
+    assert!(
+        phrases.len() >= 20,
+        "only {} bold phrases read out of the 2.0.0 section — the shape \
+         changed and this would pass by knowing nothing",
+        phrases.len()
+    );
+
+    let mut behaviour = 0usize;
+    let mut problems = Vec::new();
+    for line in CLAIMS.lines() {
+        let line = line.trim();
+        if !line.starts_with("| ") {
+            continue;
+        }
+        let cells: Vec<&str> = line
+            .trim_matches('|')
+            .split(" | ")
+            .map(|c| c.trim().trim_matches('`').trim())
+            .collect();
+        let id = cells.first().copied().unwrap_or("");
+        if id == "id" || id.starts_with("---") {
+            continue;
+        }
+        assert_eq!(
+            cells.len(),
+            11,
+            "claim row `{id}` has {} cells, not 11 — escape any `|` \
+             inside a cell as `\\|`",
+            cells.len()
+        );
+        let kind = cells[9];
+        let citation = cells[10];
+        match kind {
+            "docs" => {
+                if citation != "—" {
+                    problems.push(format!("{id} is marked docs-only and cites `{citation}`"));
+                }
+            }
+            "behaviour" => {
+                behaviour += 1;
+                if !phrases.iter().any(|p| p == citation) {
+                    problems.push(format!(
+                        "{id} changed behaviour and cites `{citation}`, which \
+                         opens no entry under 2.0.0"
+                    ));
+                }
+            }
+            other => problems.push(format!(
+                "{id} has kind `{other}` — the vocabulary is docs / behaviour"
+            )),
+        }
+    }
+    assert!(
+        behaviour >= 5,
+        "only {behaviour} rows marked as behaviour changes — the column \
+         emptied and this would pass by knowing nothing"
+    );
+    assert!(
+        problems.is_empty(),
+        "{} claims are not reflected in the release notes:\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
 }
