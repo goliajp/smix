@@ -31,6 +31,32 @@ CRATES=$(
     } | cut -d/ -f2 | sort -u
 )
 
+# Crates whose tests read a changed doc.
+#
+# Several gates compile a documentation page into themselves with
+# `include_str!` and then run what it prints. Narrowing by changed
+# crates alone made those invisible to the exact edit they guard: touch
+# only `docs/ai-guide/04-actions.md` and the gate that executes its
+# examples never ran. Derived by looking for the changed path inside an
+# include, so adding a gate over a new page needs nothing here.
+CHANGED_DOCS=$(
+    {
+        git diff --name-only "$BASE"...HEAD -- 'docs/*'
+        git diff --name-only -- 'docs/*'
+        git diff --name-only --cached -- 'docs/*'
+        git ls-files --others --exclude-standard 'docs/*'
+    } | sort -u
+)
+for d in $CHANGED_DOCS; do
+    # `|| true`: no crate reads most docs, and grep's "no match" exit 1
+    # is fatal under `set -o pipefail`.
+    readers=$(grep -rl "include_str!(\"[^\"]*$d\")" crates/*/src crates/*/tests 2>/dev/null |
+        cut -d/ -f2 | sort -u || true)
+    if [ -n "$readers" ]; then
+        CRATES=$(printf '%s\n%s\n' "$CRATES" "$readers" | sort -u | sed '/^$/d')
+    fi
+done
+
 if [ -z "$CRATES" ]; then
     echo "preflight: no crate changes vs $BASE"
 else

@@ -43,8 +43,16 @@ serde_json.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 
+# Only the in-crate guide gate uses these three: it impls `AppLike`
+# for a recording mock, loads the fixture registry 06-fixtures prints,
+# and pre-seeds the log line the `- fixture:` verb waits for. A unit
+# test inside a bin can see dev-dependencies, so none of the three ends
+# up in the binary users install.
 [dev-dependencies]
+async-trait.workspace = true
 criterion.workspace = true
+smix-fixture = { path = "../smix-fixture", version = "2.0.0" }
+smix-metro-log = { path = "../smix-metro-log", version = "2.0.0" }
 tempfile = "3"
 
 [[bench]]

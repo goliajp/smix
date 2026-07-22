@@ -60,11 +60,69 @@ fn collect(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Files under `src/` that are nonetheless test code.
+///
+/// A whole file can be a test module: `#[cfg(test)] mod guide_gate;`
+/// in `main.rs` puts every line of `guide_gate.rs` behind the same
+/// gate as an inline `#[cfg(test)] mod tests { … }`, and a bin crate
+/// with no lib target has nowhere else to put a test that needs its
+/// private items. The brace-depth skip below cannot see this, because
+/// the marker is in the parent file rather than in the file it
+/// exempts. Collected by reading those declarations rather than by
+/// listing filenames, so a second one needs nothing here.
+fn whole_file_test_modules(sources: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for path in sources {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let dir = match path.parent() {
+            Some(d) => d,
+            None => continue,
+        };
+        let mut armed = false;
+        for line in text.lines() {
+            let t = line.trim();
+            if t.starts_with("#[cfg(test)]") {
+                // `#[cfg(test)] mod x;` on one line, or on the next.
+                if let Some(name) = t.strip_prefix("#[cfg(test)]").map(str::trim)
+                    && let Some(m) = module_decl(name)
+                {
+                    out.push(dir.join(format!("{m}.rs")));
+                    out.push(dir.join(m).join("mod.rs"));
+                    continue;
+                }
+                armed = true;
+                continue;
+            }
+            if armed {
+                if let Some(m) = module_decl(t) {
+                    out.push(dir.join(format!("{m}.rs")));
+                    out.push(dir.join(m).join("mod.rs"));
+                }
+                armed = false;
+            }
+        }
+    }
+    out
+}
+
+/// `mod name;` → `name`. A `mod name {` is an inline module, which the
+/// brace-depth skip already handles.
+fn module_decl(line: &str) -> Option<&str> {
+    line.strip_prefix("mod ")
+        .and_then(|rest| rest.strip_suffix(';'))
+        .map(str::trim)
+        .filter(|n| !n.is_empty() && n.chars().all(|c| c.is_alphanumeric() || c == '_'))
+}
+
 /// Kotlin and Rust sources that drive a real device.
 fn production_sources(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     collect(&root.join("crates"), "rs", &mut out);
     collect(&root.join("android-runner/app/src"), "kt", &mut out);
+    let test_modules = whole_file_test_modules(&out);
+    out.retain(|p| !test_modules.contains(p));
     out
 }
 

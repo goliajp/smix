@@ -1,0 +1,4 @@
+# Named by 08-cookbook's inverse-gate example, contents not printed.
+appId: com.example.app
+---
+- tapOn: { id: "qa-toggle" }

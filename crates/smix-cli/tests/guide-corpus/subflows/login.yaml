@@ -1,0 +1,6 @@
+# 08-cookbook's conditional-flow example runs this file and never says
+# what is in it. A reader would write their own login ceremony; the
+# gate only needs the include to resolve.
+appId: com.example.app
+---
+- tapOn: "Log in"

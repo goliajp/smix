@@ -21,7 +21,7 @@
 | 4a | 确定性:真 animation-idle(frame-diff 取代固定 sleep) | shipped | `at crates/smix-adapter-maestro/src/parser.rs:1389 "ceiling_ms"` | `waitForAnimationToEnd` 三形式统一为"等到静止,上限 N ms";实测静止屏幕 ≈387ms 对 400ms 固定 sleep 持平,价值在正确性与大 ceiling | 2026-07-22 |
 | 4b | 确定性:`--stable`(冻结动画 / 时间 / 抖动) | pending | `none "--stable" in crates/**/*.rs` | 全仓零实现(四种 grep 模式各查一次)。**追到源头是一份 `🔬 explored` 的探索记录**,且原文要求被测 app 侧配合 —— in-scope 把探索拔高成承诺并丢了那一半。对外从未承诺过。材料见 scope-decisions-pending | 2026-07-22 |
 | 5 | 六项破坏性变更 + `smix migrate` codemod | shipped | `at crates/smix-migrate/src/lib.rs:227 "pub fn migrate"` | 六项均已落地(sessions 强制 / wire 协商 / env 折 config / 选择器模型合并 / crate 改名 / VERB_TABLE freeze);迁移列已于 C2 改成属实的说法 | 2026-07-22 |
-| 6 | 代码 & 文档 hygiene(去开发噪声 / 五矛盾收敛 / 宪法同步) | shipped | `at scripts/dev/hygiene-scan.py:177 "cjk-comment"` | 闸门存在且接进 preflight / CI / ship 三处(ship 那处是 C2 补的) | 2026-07-22 |
+| 6 | 代码 & 文档 hygiene(去开发噪声 / 五矛盾收敛 / 宪法同步) | shipped | `at scripts/dev/hygiene-scan.py:180 "cjk-comment"` | 闸门存在且接进 preflight / CI / ship 三处(ship 那处是 C2 补的) | 2026-07-22 |
 | 7 | 面向 AI 的文档(`llms.txt` / `llms-full.txt` + MCP 设置指南 + 官网 IA) | shipped | `at scripts/dev/gen-llms.py:304 "def main"` | 两个文件由 VERB_TABLE + Selector 投影生成,`--check` 新鲜度闸门在三处。**官网 IA 那一半不在此判据内** —— 见下方说明 | 2026-07-22 |
 
 ## 这张表说不清的

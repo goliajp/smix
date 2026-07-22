@@ -12,6 +12,8 @@ mod act;
 mod authoring;
 mod capsule;
 mod down;
+#[cfg(test)]
+mod guide_gate;
 mod runner;
 mod runner_android;
 mod runner_state;

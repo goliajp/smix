@@ -1036,7 +1036,14 @@ impl IosDriver {
 /// or index modifiers need the tree walk — putting any of them behind
 /// this wire would mean one contract with two implementations, one of
 /// them inside XCUITest where it cannot be tested the same way.
-fn require_runner_resolvable_selector(
+///
+/// Public so a gate can ask this rule directly instead of restating
+/// it. A restatement would drift the first time the set widened, which
+/// is how the actions guide came to document a pairing this had always
+/// refused. Not part of the supported surface — hidden from the docs
+/// and free to change with the routes it guards.
+#[doc(hidden)]
+pub fn require_runner_resolvable_selector(
     selector: &Selector,
     route: &str,
 ) -> Result<(), ExpectationFailure> {
