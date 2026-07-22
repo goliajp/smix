@@ -2850,7 +2850,12 @@ pub fn parse_flow_yaml(yaml: &str) -> Result<Flow, ParseError> {
             *sid = app_id.clone();
         }
     }
-    Ok(Flow { app_id, app, steps })
+    Ok(Flow {
+        app_id,
+        app,
+        launch_activity: None,
+        steps,
+    })
 }
 
 /// Extract `(app_id, app)` from yaml header. Backward-compatible:
@@ -2997,6 +3002,7 @@ fn parse_flow_file_body(abs: &Path, stack: &mut Vec<PathBuf>) -> Result<Flow, Pa
     Ok(Flow {
         app_id: flow.app_id,
         app: flow.app,
+        launch_activity: flow.launch_activity,
         steps: expanded,
     })
 }

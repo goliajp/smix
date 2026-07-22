@@ -874,6 +874,9 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// `id:` in this registry. None → the verb fails with an
     /// actionable hint to configure `.smix/config.yaml`.
     fixture_registry: Option<smix_fixture::FixtureRegistry>,
+    /// The Android launch activity `resolve_app_into_flow` put on the
+    /// flow, seeded in [`Self::run`] alongside `last_bundle`.
+    launch_activity: Option<String>,
     /// When true, `write_step_debug`'s fail-PNG output
     /// stays raw (no annotation overlay). Opt-out via `smix run
     /// --no-fail-annotate`. Default false = annotate.
@@ -905,6 +908,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             metro_tail: None,
             step_ms_cursors: vec![0],
             fixture_registry: None,
+            launch_activity: None,
             no_fail_annotate: false,
             ai_cfg: smix_ai_tier::AiTierConfig::default(),
             quiescence: smix_sdk::quiescence::QuiescenceParams::default(),
@@ -1096,6 +1100,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         // target the declared appId. Subsequent launchApp overrides it.
         if self.last_bundle.is_none() && !flow.app_id.is_empty() {
             self.last_bundle = Some(flow.app_id.clone());
+        }
+        if self.launch_activity.is_none() {
+            self.launch_activity = flow.launch_activity.clone();
         }
         self.run_steps(&flow.steps).await
     }
@@ -2222,6 +2229,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         arguments: arguments.clone(),
                         permissions: sdk_perms,
                         app_path,
+                        launch_activity: self.launch_activity.clone(),
                     };
                     // `waitForInteractiveMs` on `launchApp` yaml is a
                     // warning-only marker. The

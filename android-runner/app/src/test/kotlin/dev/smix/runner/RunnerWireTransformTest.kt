@@ -85,10 +85,24 @@ class RunnerWireTransformTest {
     // MARK: - foreground command
 
     @Test
-    fun foregroundCommandTargetsMainActivitySingleTop() {
+    fun foregroundCommandStartsTheActivityItIsGiven() {
+        assertEquals(
+            "am start --activity-single-top -n com.example.app/.SplashActivity",
+            RunnerWire.foregroundCommand("com.example.app", ".SplashActivity"),
+        )
+    }
+
+    /// Only when nobody knows better.
+    ///
+    /// This used to be the sole behaviour, which is right for an app
+    /// generated from a template and wrong for every AOSP one. The
+    /// caller resolves the real entry point through the package
+    /// manager; this is what remains when even that answers nothing.
+    @Test
+    fun foregroundCommandFallsBackToTheConvention() {
         assertEquals(
             "am start --activity-single-top -n com.example.app/.MainActivity",
-            RunnerWire.foregroundCommand("com.example.app"),
+            RunnerWire.foregroundCommand("com.example.app", null),
         )
     }
 

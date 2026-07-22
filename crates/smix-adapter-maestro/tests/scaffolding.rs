@@ -15,6 +15,7 @@ fn flow_struct_compiles() {
     let flow = Flow {
         app_id: "com.example.app".to_string(),
         app: None,
+        launch_activity: None,
         steps: vec![Step::WaitForAnimationToEnd { ceiling_ms: 400 }],
     };
     assert_eq!(flow.app_id, "com.example.app");

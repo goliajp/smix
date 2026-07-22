@@ -947,17 +947,18 @@ fn every_runner_dialling_command_can_reach_the_registry() {
     );
 }
 
-/// N2 — a reader can configure an Android launch activity, and it
-/// reaches nothing.
+/// N2 — the Android launch activity a reader configures reaches the
+/// device.
 ///
 /// `apps.yaml` takes `activity:`, 08-cookbook shows it being set, and
-/// `AndroidApp::activity` even has a default. Resolution then uses the
-/// package alone, and the Kotlin runner starts `<pkg>/.MainActivity`
-/// regardless. Asked behaviourally — run a flow whose app config names
-/// a different activity, and look for that activity in what reached the
-/// device.
+/// `AndroidApp::activity` even has a default. For a long time
+/// resolution then used the package alone and the Kotlin runner started
+/// `<pkg>/.MainActivity` regardless — the field was read, defaulted,
+/// carried as far as `ResolvedApp::Android`, and dropped. Asked
+/// behaviourally: run a flow whose app config names a different
+/// activity, and look for that activity in what reached the device.
 #[test]
-fn a_configured_launch_activity_still_reaches_nothing() {
+fn a_configured_launch_activity_reaches_the_device() {
     let cfg = smix_adapter_maestro::AppsConfig::from_yaml(
         "apps:\n  demoApp:\n    android:\n      package: com.example.app\n      activity: .NotMainActivity\n",
     )
@@ -987,9 +988,10 @@ fn a_configured_launch_activity_still_reaches_nothing() {
         .map(MockCall::describe)
         .collect();
     assert!(
-        !trace.iter().any(|c| c.contains(".NotMainActivity")),
-        "the configured activity now reaches the device — N2 is fixed \
-         and its row must move to `runs`. Trace: {trace:?}"
+        trace.iter().any(|c| c.contains(".NotMainActivity")),
+        "the configured activity reaches nothing — it is read from the \
+         yaml, defaulted, and dropped before anything is dialled. \
+         Trace: {trace:?}"
     );
 }
 
@@ -1202,7 +1204,7 @@ fn the_list_and_the_probes_agree() {
     // half of the drift the row-side check cannot see.
     for name in [
         "every_runner_dialling_command_can_reach_the_registry",
-        "a_configured_launch_activity_still_reaches_nothing",
+        "a_configured_launch_activity_reaches_the_device",
         "the_default_tap_still_misses_the_route_its_page_names",
         "the_daemon_proxy_id_example_is_admissible",
         "the_bare_string_form_matches_a_real_tree",

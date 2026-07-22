@@ -266,6 +266,14 @@ pub struct LaunchAppOptions {
     /// `launch_fresh::app_path` parameter; usually populated by the
     /// adapter from `SMIX_APP_PATH_<NORMALIZED_BUNDLE>` env.
     pub app_path: Option<String>,
+    /// Android launch activity override.
+    ///
+    /// `None` means "ask the device": the Android runner resolves the
+    /// package's launcher activity through the package manager. Set
+    /// only when an app has more than one entry point and the flow
+    /// wants a specific one. iOS ignores it — a bundle id already
+    /// names what to launch.
+    pub launch_activity: Option<String>,
 }
 
 /// Completion-signal wait strategy for the
@@ -1337,7 +1345,7 @@ impl App {
                 }
                 LaunchFreshOp::Launch => {
                     self.device
-                        .launch_with_args(udid, bundle_id, launch_arguments)
+                        .launch_with_args(udid, bundle_id, launch_arguments, None)
                         .await
                         .map(|_| ())
                         .map_err(simctl_to_failure)?;
@@ -1398,7 +1406,12 @@ impl App {
             // dead); launch must succeed.
             let _ = self.device.terminate(udid, &opts.bundle_id).await;
             self.device
-                .launch_with_args(udid, &opts.bundle_id, &opts.arguments)
+                .launch_with_args(
+                    udid,
+                    &opts.bundle_id,
+                    &opts.arguments,
+                    opts.launch_activity.as_deref(),
+                )
                 .await
                 .map(|_| ())
                 .map_err(simctl_to_failure)?;

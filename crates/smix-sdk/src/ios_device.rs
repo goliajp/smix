@@ -71,11 +71,13 @@ impl DeviceControl for IosDeviceControl {
         self.client.launch(udid, bundle_id).await.map(|res| res.pid)
     }
 
+    /// `activity` is Android's; a bundle id is already an entry point.
     async fn launch_with_args(
         &self,
         udid: &str,
         bundle_id: &str,
         args: &[String],
+        _activity: Option<&str>,
     ) -> Result<u32, DeviceControlError> {
         self.client
             .launch_with_args(udid, bundle_id, args)

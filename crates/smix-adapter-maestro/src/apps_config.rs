@@ -191,6 +191,12 @@ pub fn resolve_app_into_flow(
     let resolved = apps.resolve(&logical, platform)?;
     let primary = resolved.primary_id().to_string();
     flow.app_id = primary.clone();
+    // The activity used to stop here: read from the yaml, defaulted,
+    // and never looked at again, so `activity: .SomethingElse` was
+    // accepted and ignored.
+    if let ResolvedApp::Android { activity, .. } = &resolved {
+        flow.launch_activity = Some(activity.clone());
+    }
     // Patch inherited LaunchApp steps (those with empty app_id) so the
     // runtime dispatch path stays oblivious to the logical resolve.
     for step in &mut flow.steps {
@@ -295,6 +301,7 @@ apps:
         let mut flow = crate::Flow {
             app_id: String::new(),
             app: Some("demoApp".to_string()),
+            launch_activity: None,
             steps: vec![],
         };
         resolve_app_into_flow(&mut flow, &cfg, Platform::Ios).unwrap();
@@ -307,6 +314,7 @@ apps:
         let mut flow = crate::Flow {
             app_id: "explicit.bundle.id".to_string(),
             app: Some("demoApp".to_string()),
+            launch_activity: None,
             steps: vec![],
         };
         resolve_app_into_flow(&mut flow, &cfg, Platform::Ios).unwrap();
