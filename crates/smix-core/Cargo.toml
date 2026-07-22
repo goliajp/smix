@@ -12,6 +12,11 @@ documentation = "https://docs.rs/smix-core"
 readme = "README.md"
 keywords = ["ios", "simulator", "automation"]
 categories = ["development-tools::testing"]
+# Not published. The criterion is dependency, not intent: nothing that ships depends on it.
+# `cargo publish` reads this, so it is the only place the decision has
+# to live — a second list of exceptions would be a second thing to
+# forget.
+publish = false
 
 [lints]
 workspace = true

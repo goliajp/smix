@@ -146,8 +146,10 @@ fn summary() {
         .count();
     println!(
         "release-record: {} breaking changes, both lists agree · {behaviour} \
-         behaviour changes in the release notes",
-        rows.len()
+         behaviour changes in the release notes · publish list {} crates, \
+         topological",
+        rows.len(),
+        publish_list().len()
     );
 }
 
@@ -282,4 +284,166 @@ fn every_behaviour_change_reaches_the_release_notes() {
         problems.len(),
         problems.join("\n  ")
     );
+}
+
+/// The release script's publish DAG.
+const SHIP: &str = include_str!("../../../scripts/release/ship.sh");
+/// The workspace manifest, for the member list.
+const WORKSPACE: &str = include_str!("../../../Cargo.toml");
+
+/// Names in `CRATES=( … )`, in the order they are published.
+fn publish_list() -> Vec<String> {
+    SHIP.split("CRATES=(")
+        .nth(1)
+        .expect("ship.sh still declares a publish DAG")
+        .split(')')
+        .next()
+        .expect("the DAG literal still closes")
+        .split_whitespace()
+        .map(str::to_string)
+        .collect()
+}
+
+/// Workspace members, and whether each opts out of publishing.
+///
+/// The manifest says `members = ["crates/*"]`, so the list is the
+/// directory. Reading the glob rather than a names list here means a
+/// crate added tomorrow is covered without touching this.
+fn members() -> Vec<(String, bool, Vec<String>)> {
+    assert!(
+        WORKSPACE.contains("members = [\"crates/*\"]"),
+        "the workspace stopped globbing crates/ — this reader assumed \
+         that shape and would now report members it invented"
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("the crates directory");
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(root).expect("reading crates/").flatten() {
+        let manifest_path = entry.path().join("Cargo.toml");
+        let Ok(manifest) = std::fs::read_to_string(&manifest_path) else {
+            continue;
+        };
+        let name = entry
+            .file_name()
+            .to_str()
+            .expect("a crate directory name is utf-8")
+            .to_string();
+        let opted_out = manifest.lines().any(|l| {
+            let l = l.trim();
+            l.starts_with("publish") && l.contains("false")
+        });
+        // Which sibling crates it needs before it can be published.
+        // Dev-dependencies do not count: the registry does not require
+        // them to exist when publishing.
+        let deps = manifest
+            .split("[dev-dependencies]")
+            .next()
+            .unwrap_or(&manifest)
+            .lines()
+            .filter_map(|l| {
+                let l = l.trim();
+                let dep = l.split_whitespace().next()?;
+                (dep.starts_with("smix-") && l.contains("path = \"../")).then(|| dep.to_string())
+            })
+            .collect();
+        out.push((name, opted_out, deps));
+    }
+    out.sort();
+    out
+}
+
+/// Everything that ships is in the publish list, in an order that works.
+///
+/// The list was written by hand and the workspace grew past it:
+/// `smix-store` was absent while `smix-cli` and `smix-simctl` both
+/// depended on it at `^2.0.0`, so `cargo publish -p smix-simctl` would
+/// have been refused by the registry — seventeen crates into a DAG
+/// whose earlier steps cannot be taken back.
+///
+/// Opting out is `publish = false` in the crate's own manifest, which
+/// is cargo's way of saying it and the only place `cargo publish` will
+/// look. A second list of exceptions here would be a second thing to
+/// forget.
+#[test]
+fn the_publish_list_covers_everything_that_ships() {
+    let listed = publish_list();
+    let members = members();
+    assert!(
+        members.len() >= 25,
+        "only {} workspace members read — the manifest's shape changed \
+         and this would pass by knowing nothing",
+        members.len()
+    );
+
+    let mut problems = Vec::new();
+    for (name, opted_out, _) in &members {
+        match (listed.contains(name), opted_out) {
+            (false, false) => problems.push(format!(
+                "{name} is a workspace member that does not opt out of \
+                 publishing and is not in the DAG"
+            )),
+            (true, true) => problems.push(format!(
+                "{name} declares `publish = false` and is in the DAG anyway"
+            )),
+            _ => {}
+        }
+    }
+    for name in &listed {
+        if !members.iter().any(|(m, _, _)| m == name) {
+            problems.push(format!("the DAG names {name}, which is not a member"));
+        }
+    }
+
+    // Topological: a crate's siblings must already have been published.
+    let mut published: Vec<&str> = Vec::new();
+    for name in &listed {
+        if let Some((_, _, deps)) = members.iter().find(|(m, _, _)| m == name) {
+            for d in deps {
+                if listed.contains(d) && !published.contains(&d.as_str()) {
+                    problems.push(format!(
+                        "{name} is published before {d}, which it depends on"
+                    ));
+                }
+            }
+        }
+        published.push(name);
+    }
+
+    assert!(
+        problems.is_empty(),
+        "the publish DAG and the workspace disagree in {} places:\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
+}
+
+/// The semver gate does not abort on a crate it cannot check.
+///
+/// `cargo semver-checks --workspace` stops the whole run when a crate
+/// has no published baseline or a baseline with no library target —
+/// three crates are new in v2 and `smix-mcp` gained its library here,
+/// so the gate immediately before publishing would have failed on all
+/// four. The script's own comment had said the tool was "blind to
+/// brand-new crates", a sentence nobody had run.
+///
+/// Checked as text, not behaviour: running it needs the network and a
+/// registry baseline. What this can see is that the retry-and-exclude
+/// shape is still there and that coverage is still reported from the
+/// run's output rather than from the exclusion count.
+#[test]
+fn the_semver_gate_survives_a_crate_it_cannot_check() {
+    for needle in [
+        "SEMVER_EXCLUDE",
+        "failed to build rustdoc for crate",
+        "not found in registry",
+        "of $SEMVER_TOTAL crates checked",
+    ] {
+        assert!(
+            SHIP.contains(needle),
+            "ship.sh no longer contains {needle:?} — the semver step \
+             stopped tolerating crates the tool refuses, or stopped \
+             saying how many it really checked"
+        );
+    }
 }
