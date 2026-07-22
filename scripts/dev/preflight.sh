@@ -31,21 +31,26 @@ CRATES=$(
     } | cut -d/ -f2 | sort -u
 )
 
-# Crates whose tests read a changed doc.
+# Crates whose tests read a changed file from outside `crates/`.
 #
-# Several gates compile a documentation page into themselves with
-# `include_str!` and then run what it prints. Narrowing by changed
-# crates alone made those invisible to the exact edit they guard: touch
-# only `docs/ai-guide/04-actions.md` and the gate that executes its
-# examples never ran. Derived by looking for the changed path inside an
-# include, so adding a gate over a new page needs nothing here.
+# Several gates compile a document into themselves with `include_str!`
+# and then check what it says. Narrowing by changed crates alone made
+# those invisible to the exact edit they guard: touch only
+# `docs/ai-guide/04-actions.md` and the gate that executes its examples
+# never ran.
+#
+# Every tracked path, not just `docs/*`: the first version of this
+# globbed `docs/` and the release-record gate reads `CHANGELOG.md` at
+# the repo root, so editing only the changelog skipped the one check
+# that reads it. A gate this list cannot see is a gate that runs
+# everywhere except where it matters.
 CHANGED_DOCS=$(
     {
-        git diff --name-only "$BASE"...HEAD -- 'docs/*'
-        git diff --name-only -- 'docs/*'
-        git diff --name-only --cached -- 'docs/*'
-        git ls-files --others --exclude-standard 'docs/*'
-    } | sort -u
+        git diff --name-only "$BASE"...HEAD
+        git diff --name-only
+        git diff --name-only --cached
+        git ls-files --others --exclude-standard
+    } | grep -v '^crates/' | sort -u
 )
 for d in $CHANGED_DOCS; do
     # `|| true`: no crate reads most docs, and grep's "no match" exit 1
