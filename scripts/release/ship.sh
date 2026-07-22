@@ -230,6 +230,13 @@ python3 "$ROOT/scripts/dev/fact-scan.py" > /tmp/smix-ship-facts.log 2>&1 \
 # enum + the workspace version. Gate them like the FFI bindings so the
 # AI-facing index can't drift from the sources it mirrors.
 log "llms.txt freshness"
+# The AI tier sits beside the resolver, not inside it. Nothing in the
+# type system says so, and the check that does say so was running in no
+# gate at all when this line was added.
+log "fence check"
+bash "$ROOT/scripts/dev/fence-check.sh" > /tmp/smix-ship-fence.log 2>&1 \
+  || fail "fence-check FAILED — the sense path reaches smix-ai-tier (see /tmp/smix-ship-fence.log)"
+
 python3 "$ROOT/scripts/dev/gen-llms.py" --check > /tmp/smix-ship-llms.log 2>&1 \
   || fail "llms.txt/llms-full.txt are stale — run scripts/dev/gen-llms.py and commit (see /tmp/smix-ship-llms.log)"
 

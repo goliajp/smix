@@ -85,6 +85,8 @@ jobs:
         run: python3 scripts/dev/fact-scan.py
       - name: workflow scan
         run: python3 scripts/dev/workflow-scan.py
+      - name: fence check
+        run: bash scripts/dev/fence-check.sh
       - name: android gate scan
         run: python3 scripts/dev/android-gate-scan.py
       - name: audit ledger scan
