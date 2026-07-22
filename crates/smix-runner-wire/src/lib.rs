@@ -188,6 +188,30 @@ pub struct TapResult {
     pub app_frame: Option<smix_screen::Rect>,
 }
 
+/// `POST /long-press` response body.
+///
+/// Bounds, not instants. `press(forDuration:)` does not report when the
+/// touch went down, so the runner reports what it can measure — the
+/// call's own span — reduced to the two bounds that hold whatever went
+/// on inside it. A reader who takes `latest_down_offset_ms` for "when
+/// it went down" will place frames inside a press they were not inside.
+///
+/// All fields default to zero, which reads as "no window can be
+/// established" rather than as a press at time zero.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PressResult {
+    /// Handler entry → the latest instant the touch could have gone down.
+    #[serde(default)]
+    pub latest_down_offset_ms: u64,
+    /// Handler entry → the earliest instant the touch could have lifted.
+    #[serde(default)]
+    pub earliest_up_offset_ms: u64,
+    /// Handler entry → handler return.
+    #[serde(default)]
+    pub handler_wall_ms: u64,
+}
+
 /// One named element containing the tapped point.
 ///
 /// Named only: the same point sits inside dozens of anonymous

@@ -182,7 +182,7 @@ impl Driver for IosDriver {
         selector: &Selector,
         duration: Duration,
         include: Option<IncludeScope>,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<crate::PressTiming, ExpectationFailure> {
         IosDriver::long_press(self, selector, duration, include).await
     }
 

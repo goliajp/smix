@@ -202,12 +202,18 @@ pub trait Driver: Send + Sync {
     ) -> Result<(), ExpectationFailure>;
 
     /// Long-press a selector for `duration`.
+    ///
+    /// Returns when the touch was held, on this host's clock, so a
+    /// caller capturing frames alongside can tell whether they fall
+    /// inside the press. A platform whose runner cannot report the
+    /// bounds returns [`PressTiming::unplaceable`] — which reads as "I
+    /// cannot tell", not as a press that happened at time zero.
     async fn long_press(
         &self,
         selector: &Selector,
         duration: Duration,
         include: Option<IncludeScope>,
-    ) -> Result<(), ExpectationFailure>;
+    ) -> Result<crate::PressTiming, ExpectationFailure>;
 
     /// Fill text into a focused / matched input.
     async fn fill(

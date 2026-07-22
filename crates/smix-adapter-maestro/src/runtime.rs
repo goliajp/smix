@@ -353,6 +353,13 @@ pub trait AppLike: Send + Sync {
         selector: &Selector,
         duration: Duration,
     ) -> Result<(), ExpectationFailure>;
+    /// Long-press while capturing the held state. Mirrors
+    /// [`App::long_press_capturing`].
+    async fn long_press_capturing(
+        &self,
+        selector: &Selector,
+        duration: Duration,
+    ) -> Result<smix_sdk::PressCapture, ExpectationFailure>;
     /// Set sim location. Mirrors [`App::set_location`].
     async fn set_location(&self, latitude: f64, longitude: f64) -> Result<(), ExpectationFailure>;
     /// Interpolate sim location. Mirrors [`App::travel`].
@@ -580,6 +587,13 @@ impl AppLike for App {
         duration: Duration,
     ) -> Result<(), ExpectationFailure> {
         App::long_press(self, selector, duration).await
+    }
+    async fn long_press_capturing(
+        &self,
+        selector: &Selector,
+        duration: Duration,
+    ) -> Result<smix_sdk::PressCapture, ExpectationFailure> {
+        App::long_press_capturing(self, selector, duration).await
     }
     async fn set_location(&self, latitude: f64, longitude: f64) -> Result<(), ExpectationFailure> {
         App::set_location(self, latitude, longitude).await
@@ -1919,10 +1933,15 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             Step::LongPressOn {
                 selector,
                 duration_ms,
+                capture_during,
             } => {
-                self.app
-                    .long_press(selector, Duration::from_millis(*duration_ms))
-                    .await?;
+                let duration = Duration::from_millis(*duration_ms);
+                if !*capture_during {
+                    self.app.long_press(selector, duration).await?;
+                    return Ok(RunStepReport::Ok);
+                }
+                let capture = self.app.long_press_capturing(selector, duration).await?;
+                self.write_press_frames(selector, &capture)?;
                 Ok(RunStepReport::Ok)
             }
             Step::AssertTrue { expr } => {
@@ -2871,6 +2890,101 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             sleep(POLL).await;
         }
+    }
+
+    /// Write the frames taken during a press, and refuse to call the
+    /// step done when none of them can be placed inside it.
+    ///
+    /// `captureDuring` promises a frame of the held state. Writing
+    /// frames that might be of the resting screen and reporting Ok
+    /// would hand back exactly the artefact that misled the consumer
+    /// who asked for this — a resting screen read as a pressed one.
+    fn write_press_frames(
+        &self,
+        selector: &Selector,
+        capture: &smix_sdk::PressCapture,
+    ) -> Result<(), ExpectationFailure> {
+        let during = capture.during_press().count();
+        if during == 0 {
+            let why = capture
+                .frames
+                .iter()
+                .find_map(|f| match &f.placement {
+                    smix_driver::FramePlacement::DuringPress => None,
+                    smix_driver::FramePlacement::Outside(w)
+                    | smix_driver::FramePlacement::Uncertain(w) => Some(w.clone()),
+                })
+                .unwrap_or_else(|| "no frame was captured at all".to_string());
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!(
+                    "longPressOn captureDuring: {} frame(s) captured, none of them \
+                     provably while the touch was down — {why}",
+                    capture.frames.len()
+                ),
+                selector: Some(selector.clone()),
+                suggestions: vec![
+                    "Raise `duration:` — the hold has to outlast one capture (~230ms) \
+                     plus resolving the element"
+                        .to_string(),
+                ],
+                ..Default::default()
+            }));
+        }
+        let dir = match self.capture_sink_dir() {
+            Some(d) => d,
+            None => {
+                return Err(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: "longPressOn captureDuring: nowhere to write frames — \
+                              neither --debug-output, a working directory, nor a home \
+                              directory could be resolved"
+                        .to_string(),
+                    ..Default::default()
+                }));
+            }
+        };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("longPressOn captureDuring: mkdir {dir:?} failed: {e}"),
+                ..Default::default()
+            }));
+        }
+        let stem = format!("press-{}", capture.timing.sent_ms);
+        let mut written: Vec<String> = Vec::new();
+        for (i, frame) in capture.frames.iter().enumerate() {
+            let label = match frame.placement {
+                smix_driver::FramePlacement::DuringPress => "during",
+                smix_driver::FramePlacement::Outside(_) => "outside",
+                smix_driver::FramePlacement::Uncertain(_) => "unplaced",
+            };
+            let path = dir.join(format!("{stem}-{i}-{label}.png"));
+            match std::fs::write(&path, &frame.png) {
+                Ok(()) => written.push(path.display().to_string()),
+                Err(e) => eprintln!("WARN: longPressOn captureDuring: write {path:?}: {e}"),
+            }
+        }
+        eprintln!(
+            "longPressOn captureDuring: {} frame(s), {during} during the press → {}",
+            capture.frames.len(),
+            written
+                .first()
+                .map_or_else(|| dir.display().to_string(), Clone::clone)
+        );
+        Ok(())
+    }
+
+    /// Where artefacts go when the consumer named no directory. Same
+    /// three-tier resolution as the timeout dump.
+    fn capture_sink_dir(&self) -> Option<PathBuf> {
+        if let Some(d) = self.debug_output.as_ref() {
+            return Some(d.clone());
+        }
+        std::env::current_dir()
+            .ok()
+            .map(|c| c.join(".smix").join("press"))
+            .or_else(|| dirs::home_dir().map(|h| h.join(".local/share/smix/press")))
     }
 
     /// Capture screenshot + a11y tree at the moment of a

@@ -183,6 +183,29 @@ impl AppLike for SilentMockApp {
     async fn long_press(&self, _: &Selector, _: Duration) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn long_press_capturing(
+        &self,
+        _: &Selector,
+        duration: Duration,
+    ) -> Result<smix_sdk::PressCapture, ExpectationFailure> {
+        Ok(smix_sdk::PressCapture {
+            timing: smix_driver::PressTiming {
+                sent_ms: 1_000,
+                received_ms: 1_400 + duration.as_millis() as u64,
+                latest_down_offset_ms: 300,
+                earliest_up_offset_ms: 300 + duration.as_millis() as u64,
+                handler_wall_ms: 400 + duration.as_millis() as u64,
+            },
+            frames: vec![smix_sdk::PressFrame {
+                span: smix_driver::CaptureSpan {
+                    start_ms: 1_400,
+                    end_ms: 1_630,
+                },
+                placement: smix_driver::FramePlacement::DuringPress,
+                png: b"\x89PNG\r\n\x1a\n".to_vec(),
+            }],
+        })
+    }
     async fn set_location(&self, _: f64, _: f64) -> Result<(), ExpectationFailure> {
         Ok(())
     }

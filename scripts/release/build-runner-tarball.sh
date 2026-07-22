@@ -12,12 +12,16 @@
 # contents MUST reproduce a working xcodebuild target on a machine
 # with just the CLI + Xcode installed.
 #
-# Called by: pre-publish ship gate (v1.0.10+), + manually during dev
-# when swift-bridge/ contents change.
+# Called by hand when swift-bridge/ changes. Whether the checked-in
+# tarball is current is enforced by
+# crates/smix-runner-sources/tests/tarball_is_current.rs, which runs in
+# `cargo test --workspace` and names the drifted files. This header
+# previously claimed a ship gate compared its SHA256; no such gate
+# existed, and three Swift files reached a release branch without ever
+# entering the tarball a consumer builds.
 #
 # Reproducibility: gzip -n strips the mtime header so the tarball is
-# byte-identical when the input files are byte-identical, letting the
-# ship-gate use SHA256 comparison to detect stale check-ins.
+# byte-identical when the input files are byte-identical.
 
 set -euo pipefail
 
@@ -50,7 +54,7 @@ mkdir -p "$DST_DIR"
 # The tar options work on both macOS (bsdtar) and GNU tar with the
 # same semantics for --exclude, -C, and .-final.
 
-tar \
+COPYFILE_DISABLE=1 tar \
   --exclude='./SmixCoreFFI.xcframework' \
   --exclude='./SmixCoreFFI.xcframework.zip' \
   --exclude='./SmixCoreFFI.xcframework.zip.sha256' \

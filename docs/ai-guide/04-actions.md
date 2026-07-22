@@ -120,8 +120,45 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
     duration: 1500     # ms
 ```
 
-- iOS: XCUI `element.press(forDuration:)`.
+- iOS: a synthesised touch held on the element's centre for `duration`.
+  `XCUIElement.press(forDuration:)` is not used — it was measured taking
+  a constant ~2.6s for every hold from 500ms to 6000ms on iOS 26.5, so
+  the duration it performed was not the one it was given.
 - Android: Kotlin `/long-press-at-norm-coord` with duration.
+
+#### Capturing the held state
+
+Verifying a pressed appearance — a highlight, a scale-down, a ghost
+background — means seeing the screen *while* the touch is down.
+
+```yaml
+- longPressOn:
+    id: "hdr-back-btn"
+    duration: 1500
+    captureDuring: true
+```
+
+Frames are written to `--debug-output` when given, else `.smix/press/`,
+one PNG per capture, named for where it sits relative to the press:
+
+| suffix | meaning |
+|---|---|
+| `-during` | the touch was provably down for the whole capture |
+| `-unplaced` | the capture straddles a boundary; its pixels could be from either side |
+| `-outside` | the touch was provably not down for part of it |
+
+The step **fails** when no frame can be placed inside the press, rather
+than handing back frames that might be of the resting screen. That
+failure is the one this exists to prevent: screenshotting alongside a
+press and reading a resting screen as "the animation never fired".
+
+`duration` must be at least **800ms**. The gesture call carries
+290-342ms of overhead and a capture takes 190-350ms, so a shorter hold
+leaves no stretch a frame provably sits inside. 800ms yields one placed
+frame; 1500ms yields three.
+
+Android does not support `captureDuring`: `UiDevice.swipe` reports
+nothing about when the touch was down, so no frame could be placed.
 
 ## Text input
 

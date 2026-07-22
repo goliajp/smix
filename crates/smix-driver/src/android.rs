@@ -401,15 +401,20 @@ impl Driver for AndroidDriver {
         selector: &Selector,
         duration: Duration,
         include: Option<IncludeScope>,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<crate::PressTiming, ExpectationFailure> {
         // Host-resolve + /long-press-at-norm-coord with
         // duration. Kotlin uses UiDevice.swipe(x,y,x,y,steps) where
         // steps = duration / 5ms to approximate a sustained press.
         let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
         let duration_ms = duration.as_millis() as u64;
+        // `UiDevice.swipe` reports nothing about when the touch was
+        // down, so the bounds are unavailable rather than guessed —
+        // `captureDuring` refuses on Android instead of handing back a
+        // frame it cannot place.
         self.runner
             .long_press_at_norm_coord(nx, ny, duration_ms)
             .await
+            .map(|()| crate::PressTiming::unplaceable())
             .map_err(|e| {
                 ExpectationFailure::new(FailureInit {
                     code: Some(FailureCode::DriverError),

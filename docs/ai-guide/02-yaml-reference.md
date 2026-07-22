@@ -119,6 +119,8 @@ one that stops.
 - longPressOn:
     id: "list-row-3"
     duration: 1500                       # ms
+    captureDuring: true                  # optional; write PNGs of the held state
+                                         # needs duration >= 800 (see below)
 
 ```
 

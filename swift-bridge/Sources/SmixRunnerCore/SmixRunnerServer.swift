@@ -589,9 +589,13 @@ public actor SmixRunnerServer {
   /// POST /long-press handler. XCUIElement.press(forDuration:)
   /// public API. `durationMs` is in milliseconds; the caller is
   /// responsible for the ms → seconds conversion.
+  /// Returns the bounds on when the touch was down, or nil when the
+  /// selector matched nothing. A press that dispatched but could not be
+  /// timed returns timings of all zero, which the host reads as "cannot
+  /// be placed" rather than as a press at time zero.
   public typealias LongPressHandler = @Sendable (
     _ selector: RouteSelector, _ durationMs: UInt32
-  ) async -> Bool
+  ) async -> LongPressRoute.PressTimings?
 
   /// POST /set-orientation handler. XCUIDevice.shared.orientation is a
   /// framework-documented public XCUI property, so the rule requiring
@@ -1871,10 +1875,9 @@ public actor SmixRunnerServer {
         return await Self.contextGuardedResponse(request: request,
           fallback: LongPressRoute.notFound(selector: req.selector)
         ) {
-          let ok = await longPressHandler(req.selector, req.durationMs)
-          return ok
-            ? LongPressRoute.success()
-            : LongPressRoute.notFound(selector: req.selector)
+          let timings = await longPressHandler(req.selector, req.durationMs)
+          return timings.map { LongPressRoute.success(timings: $0) }
+            ?? LongPressRoute.notFound(selector: req.selector)
         }
       }
     }
