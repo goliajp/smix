@@ -1,131 +1,151 @@
-# plan-hot — v2.4 到 C2:单点 verb 也能拿到注册表那一级
+# plan-hot — v2.4 到 C3:启动 Activity 不再是一个写死的猜测
 
 ## 目标 checkpoint
 
-**C2**:`docs/guide-executability.md` 的 **N1 行从 `broken` 转 `runs`**,并且装回缺陷时闸门会重新变红。
-`05-cli.md` §Environment-variable precedence 写的四级链,对**每一个会拨 runner 的子命令**都成立。
+**C3**:`docs/guide-executability.md` 的 **N2 行从 `broken` 转 `runs`**,装回缺陷时闸门重新变红。
+Android 上启动一个应用**不再依赖它的启动 Activity 恰好叫 `.MainActivity`**:
+默认由系统解析,`apps.yaml` 的 `activity:` 作为显式覆盖真正生效。
 
 ## 前置条件
 
 ```bash
-test ! -f docs/plan-hot.md || true   # 本文件即热计划,此条在生成时成立
-git status --short                   # 期望:C1 的产物已提交或在工作树里,无其它人的改动
+git status --short
+# 期望:空(C2 已提交)
+
 cargo test -p smix-cli --bin smix guide_gate 2>&1 | grep 'test result:'
 # 期望:ok. 13 passed
-grep -c '| N1 |.*| broken |' docs/guide-executability.md
+
+grep -c '| N2 |.*| broken |' docs/guide-executability.md
 # 期望:1 —— 缺陷仍在
-bash scripts/dev/preflight.sh
-# 期望:最后一行 preflight: clean
+
+grep -c 'MainActivity' android-runner/app/src/main/kotlin/dev/smix/runner/RunnerWire.kt
+# 期望:≥1 —— 字面量仍钉在那里
+
+pgrep -fl 'runner.ts|smix run|supervise'
+# 期望:空。非空 = 有人的 batch 在跑,停下等它结束(memory: runner_ops_check_batch_owner_first)
 ```
 
 ---
 
-## 本段预先定死的三个口径(执行期不得再议)
+## 本段预先定死的四个口径(执行期不得再议)
 
-### 口径 1 — 改实现,不改文档
+### 口径 1 — 根因是「runner 不会找启动 Activity」,不是「用户不能配置」
 
-冷计划把「改实现还是改文档」留给 C1 给依据后定。**C1 的依据出来了,答案是改实现。**
+按 §12.2 第一步:这格能力 core 有吗?**没有**。`RunnerWire.foregroundCommand` 把
+`am start -n $bundleId/.MainActivity` 写死,注释自陈这是「约定」——
+**对启动 Activity 不叫这个名字的应用(含全部 AOSP 应用)一律无效**。
 
-C1 的 probe 问的是 clap 命令树,答案是:`smix run` 四级齐全(`--runner-port` 带
-`env = "SMIX_RUNNER_PORT"`,clap 在 `run_port` 看到之前就把 env 并进 flag;`--device` 是索引
-注册表的键),单点 verb 有 flag 有 env,**缺的是 registry 一级,而且它们没有任何参数能命名设备**。
+于是修法**不是**「把 `activity:` 从 yaml 传到设备就完事」。那只是把「猜一个名字」换成
+「要求用户报一个名字」,而这个名字**系统本来就知道**。正统做法是问系统:
+instrumentation 里有 `Context`,`packageManager.getLaunchIntentForPackage(pkg)` 直接给出
+启动 Activity 的 `ComponentName`。零配置、对每个应用都对。
 
-按 §12.2:第一步问「这是 core 一格通用能力缺失吗」——**是**。注册表里存着每台 sim 的
-`runnerPort`(`smix sim register jp --udid … --runner-port 22088` 就是为此存在的),
-而单点 verb 够不着它,于是在一台注册在非默认端口上的 sim 上,`smix tap` 会去拨 22087 而
-`smix run` 拨 22088 —— **同一个工作区里两条命令拨不同的端口**。把文档改成「单点 verb 只有两级」
-是把能力缺口写进契约,§13 拒。
+`activity:` 覆盖仍然要生效 —— 有多个 LAUNCHER 类别 Activity、或要从某个特定入口进的应用
+需要它。**两件事一起做才让指南那句话成真**:默认解析负责普通情形,覆盖负责其余。
 
-### 口径 2 — `--device` 在单点 verb 上只做一件事:查端口
+### 口径 2 — 覆盖走 header,与 bundle id 同一机制
 
-`smix run --device` 做两件事:选要驱动的 sim(udid 进 `run_flow`),以及查注册表拿端口。
-单点 verb **只做后者** —— runner 是一个已经跑在某个端口上的进程,拨哪个端口就是拨哪台设备的
-runner,没有第二重含义。
+`App-Bundle-Id` 已经是每请求随 header 走的(runner 按它 `resolveApp()` 重绑)。
+Activity 覆盖用 **`App-Launch-Activity`** header,同一条路。
+
+**不**新开 body 字段:`/session/launch-app` 与 `/foreground` 与 `/session/relaunch-app`
+三条路由都要用到它,body 形状各不相同,而 header 对三条一视同仁 ——
+`RunnerWire.kt:159-162` 的注释正是这么写的(「需要把约定扩展,而不是给每条路由分个叉」)。
+
+### 口径 3 — Kotlin 侧的解析必须有单元测试,且不依赖设备
+
+`RunnerWire` 是纯函数集合,`app/src/test/` 下的 `RunnerWireTransformTest` 已经在测它
+(`foregroundCommandTargetsMainActivitySingleTop` 就是钉 `.MainActivity` 的那条)。
 
 因此:
-- 参数名与 `smix run` 一致(`--device`),取值同样是 **UDID 或注册表里的 alias / deviceName**
-- 帮助文本必须写明它在这里的窄含义(「查这台设备注册的 runner 端口」),否则读者会以为它能切换目标
-- **不**给单点 verb 加 `--platform` / `--udid` 等其它 `smix run` 的参数 —— 那是范围漂移
+- `foregroundCommand(bundleId, activity: String?)` 保持**纯函数** —— 传入已解析好的 activity,
+  `null` 时才落回 `.MainActivity`
+- **解析本身**(`getLaunchIntentForPackage`)在 `RunnerTest.kt`(runner body,instrumentation 内)
+  做,那里有 `Context`
+- 那条钉 `.MainActivity` 的既有单测**改成钉新契约**,不是删掉:显式 activity → 用它;
+  `null` → 落回旧字面量。旧行为是 fallback 而不是唯一行为,测试要说出这个差别
 
-### 口径 3 — 覆盖面由 clap 树导出,不由手写清单定
+### 口径 4 — 需要设备的部分与不需要的分开,先做不需要的
 
-「哪些子命令要加」由 C1 那条 probe 已经在用的规则决定:**凡有 `port` 参数的子命令**。
-执行期不得凭记忆列名单 —— 列漏一个,闸门下一次运行就会点名它。
+**不需要设备**(先做,能在本机判定):
+- Rust:`apps_config` 的 activity 走到 driver、再走上 wire
+- Kotlin:`RunnerWire.foregroundCommand` 的签名与 fallback,`app/src/test/` 单测
+- 闸门:N2 的 probe 从「配置的 activity 到不了设备」翻成「到得了」
+
+**需要设备**(后做):
+- `getLaunchIntentForPackage` 的实际解析结果
+- 一条真的对 AOSP 应用(启动 Activity 不叫 `.MainActivity`)的 `launchApp`
+
+设备段起之前**必须**重跑前置条件里的 `pgrep`;Android 侧没有 iOS 那样的显式-UDID 护栏,
+`gradlew install*` 会装到**所有**连着的设备,所以先 `export ANDROID_SERIAL=<emulator>`
+并在每条 adb 命令里显式带 `-s`(memory: `android_gradle_installs_to_all_devices`)。
 
 ---
 
-## 步骤(线性,2 个)
+## 步骤(线性,3 个)
 
-### S1. 让缺陷的反面先有断言
+### S1. 让「配置的 activity 到得了设备」先有断言
 
 **红(写测试)**
 
 - 文件:`crates/smix-cli/src/guide_gate.rs`
-- 把 `the_registry_rung_is_still_unreachable_from_single_shot_verbs` **改写成正向形态**,
-  改名 `every_runner_dialling_command_can_reach_the_registry`:
-  - 遍历 `crate::Cli::command()`,凡有 `port` 参数的子命令,断言**同时**有 `device` 参数
-  - 保留 `checked >= 8` 的反空转下界(C1 实测这类子命令不止 8 个)
-  - 保留 `smix run` 的对照断言(`--runner-port` 带 env、`--device` 存在)——
-    它是这条链「四级」说法的另一半依据,不能因为改了方向就丢
-- 跑:`cargo test -p smix-cli --bin smix guide_gate`,应看到**红**,失败文本点名全部缺 `device` 的子命令
+- 把 `a_configured_launch_activity_still_reaches_nothing` 翻成正向,改名
+  `a_configured_launch_activity_reaches_the_device`:跑那条 `activity: .NotMainActivity` 的流,
+  断言轨迹里**出现**这个字符串
+- 跑:应看到红
 
 **绿(实现)**
 
-- 文件:`crates/smix-cli/src/main.rs`
-- 对每个有 `port` 的子命令加:
-
-  ```rust
-  /// Device UDID or a registry alias. Used here only to look up the
-  /// runner port that device is registered on; it does not change
-  /// which app or simulator the call is dispatched to.
-  #[arg(long)]
-  device: Option<String>,
-  ```
-
-- 端口解析从 `port.unwrap_or_else(act::runner_port_from_env)` 改为走同一条链:
-
-  ```rust
-  let p = run_port(port.or_else(|| act::runner_port_from_env_opt()), || {
-      device.as_deref().and_then(lookup_registered).and_then(|s| s.runner_port)
-  });
-  ```
-
-  **`runner_port_from_env` 要拆出一个不带默认值的版本**(`..._opt() -> Option<u16>`),
-  否则 env 未设时它返回常量 22087,注册表那一级永远轮不到 —— 这正是 `run_port` 的
-  `flag.or_else(registered).unwrap_or(22087)` 形状要求的。原函数保留(它是公开项且有单测),
-  用新函数实现它。
-- 文件:`crates/smix-cli/src/act.rs` —— 加 `runner_port_from_env_opt`,并把
-  `runner_port_from_env` 改写成 `runner_port_from_env_opt().unwrap_or(DEFAULT_RUNNER_PORT)`。
-  两个既有单测(`runner_port_from_env_default_when_unset` / 另一条)必须保持绿
-- 跑:`cargo test -p smix-cli`,S1 那条转绿
+- 文件:`crates/smix-adapter-maestro/src/apps_config.rs` —— `resolve_app_into_flow` 目前只写
+  `flow.app_id`;让它把 Android 的 activity 也带出来
+- 文件:`crates/smix-adapter-maestro/src/runtime.rs` + `crates/smix-sdk`(`LaunchAppOptions`)——
+  activity 随 launch 走到 `AppLike`
+- 文件:`crates/smix-runner-client/src/lib.rs` —— 多一个可选 header `App-Launch-Activity`
+- 文件:`crates/smix-driver/src/android.rs` —— 把它挂上去
+- 跑:S1 那条转绿
 
 **重构**
 
-- 无。**不**把 9 个子命令的 `port` / `device` 抽成 `#[command(flatten)]` 的公共结构体:
-  那会改动它们的 clap 表面顺序与帮助分组,而 `documented_flags_exist` 与 `05-cli.md` 都盯着
-  这层表面。抽公共结构体是独立的一次改动,不与本段混。
+- 无。
 
-### S2. 让表和文档都说真话,并证明它会红
+### S2. Kotlin 侧:先解析,解析不出来才落回旧约定
 
 **红(写测试)**
 
-- 文件:`docs/guide-executability.md`
-- N1 行改:`status` → `runs`,`probe` → `every_runner_dialling_command_can_reach_the_registry`,
-  `层` → `—`,`依据` 换成**修复代码**的引用(不对称引文:`runs` 行钉修复,revert 即红),
-  `复核` → 当天
-- 跑:`cargo test -p smix-cli --bin smix guide_gate::the_list`,应绿(probe 名存在、`runs` 行 `层` 为 `—`)
-- **装回缺陷验红**:临时从某一个子命令上摘掉 `device` 参数,重跑闸门,必须变红并点名那个子命令;
-  恢复后重新变绿。这一步的结果写进决策日志
+- 文件:`android-runner/app/src/test/kotlin/dev/smix/runner/RunnerWireTransformTest.kt`
+- 把 `foregroundCommandTargetsMainActivitySingleTop` 改成两条:
+  显式 activity → 命令里是它;`null` → 命令里是 `.MainActivity`
+- 跑:`./gradlew :app:testDebugUnitTest`,应看到红(签名还没变)
 
 **绿(实现)**
 
-- 文件:`docs/ai-guide/05-cli.md`
-  - §Environment-variable precedence 保持不变(它现在是真的了)
-  - 在单点 verb 那一节补一句 `--device` 的窄含义,与口径 2 的帮助文本同源
-- 文件:`docs/v2.md` 决策日志追加一行,按 §10 格式,写明:
-  - 为什么是改实现不是改文档(口径 1)
-  - `runner_port_from_env` 拆 `_opt` 的理由(带默认值的函数吃掉了注册表那一级)
-  - 装回缺陷的验红结果
+- 文件:`android-runner/app/src/main/kotlin/dev/smix/runner/RunnerWire.kt` ——
+  `foregroundCommand(bundleId: String, activity: String?)`
+- 文件:`android-runner/app/src/androidTest/kotlin/dev/smix/runner/RunnerTest.kt` ——
+  五个调用点改为传入解析结果:先读 `App-Launch-Activity` header,没有则
+  `context.packageManager.getLaunchIntentForPackage(pkg)?.component?.className`,
+  再没有则 `null`(落回旧约定)
+- 跑:`./gradlew :app:testDebugUnitTest` 绿;`./gradlew :app:assembleDebugAndroidTest` 编得过
+
+**重构**
+
+- 无。
+
+### S3. 表、文档、验红
+
+**红(写测试)**
+
+- 文件:`docs/guide-executability.md` —— N2 行:`status` → `runs`,`probe` 换新名,`层` → `—`,
+  `依据` 换成**修复代码**的引用,`复核` → 当天
+- **装回缺陷验红**:把 `RunnerWire.foregroundCommand` 改回忽略参数、恒用 `.MainActivity`,
+  Kotlin 单测必须红;把 Rust 侧的 header 摘掉,闸门必须红。两处结果都写进决策日志
+
+**绿(实现)**
+
+- 文件:`docs/ai-guide/08-cookbook.md` —— `apps.yaml` 示例旁写明 `activity:` 是**覆盖**,
+  省略时由系统解析
+- 文件:`docs/ai-guide/05-cli.md` 若提到 Android 启动约定,同步
+- 文件:`docs/v2.md` 决策日志按 §10 追加一行,写明口径 1 的根因判断与两处验红结果
 - 跑:`bash scripts/dev/preflight.sh`
 
 **重构**
@@ -134,30 +154,32 @@ runner,没有第二重含义。
 
 ---
 
-## Checkpoint C2 验收
+## Checkpoint C3 验收
 
 ```bash
 cargo test -p smix-cli --bin smix guide_gate -- --nocapture 2>&1 | grep -E 'guide-executability:|test result:'
-grep -c '| N1 |.*| runs |' docs/guide-executability.md
+grep -c '| N2 |.*| runs |' docs/guide-executability.md
 bash scripts/dev/preflight.sh
 ```
 
 期望:
 
-1. 摘要行为 `guide-executability: 8 claims (3 runs / 5 broken / 0 unjudged) · … 69 yaml blocks judged`;
+1. 摘要行为 `guide-executability: 8 claims (4 runs / 4 broken / 0 unjudged) · … 69 yaml blocks judged`;
    且 `test result: ok. … 0 failed`
 2. 第二条输出 `1`
 3. 第三条最后一行 `preflight: clean`
 
+设备段的结果**不进 checkpoint 判据**(§5:半年后重跑要能给出确定结论,而「当时那台模拟器上跑通了」
+给不出),但必须写进决策日志。
+
 ## 完成后动作
 
-1. `mv docs/plan-hot.md docs/plan-history/v2.4-c2-hot.md`
-2. 生成新 `docs/plan-hot.md`(覆盖 C3:`launchApp` 的 Activity 约定 = N2),附加本段专属 context:
-   - 必读 `docs/guide-executability.md` 的 N2 行 —— 它的 probe 是**行为式**的
-     (跑一条 `activity: .NotMainActivity` 的流,断言那个字符串没到达任何设备调用),
-     不是「Kotlin 源里有没有这个字面量」的文本式判据
-   - N2 牵动 `apps_config.rs`(解析已经收下 `activity`,只是无人读)与
-     `RunnerWire.kt:157`(`am start -n $bundleId/.MainActivity` 钉死),**跨语言**
-   - Kotlin 侧改动需要 `assembleDebugAndroidTest` 与 emulator;起设备前查用户活动 build
-     (memory: `runner_ops_check_batch_owner_first`;Android 侧无 iOS 那样的显式-UDID 护栏,
-     `gradlew install*` 会装到所有连着的设备,必须先 `export ANDROID_SERIAL=`)
+1. `mv docs/plan-hot.md docs/plan-history/v2.4-c3-hot.md`
+2. 生成新 `docs/plan-hot.md`(覆盖 C4:清单里剩余各条 —— N3 默认 tap 的路由声明、
+   N5 `pressKey` 的键名、N6 `assertTrue` 的关系运算符、N7 regex 自动识别),附加专属 context:
+   - N5 的形状已经查清:`- back` 才是导航返回的动词(`parser.rs:2499`),`lock` 是
+     `SCREEN_LOCK` 的真名,`POWER` 没有对应物;并且 `pressKey: VOLUME_UP` 在 iOS 模拟器上是
+     **skip 不是执行**(Apple 的 XCUIDevice.Button 限制),页面那句「Available keys」在这一点上
+     也误导
+   - N6 与 N7 都是「文法比页面窄」:一个缺关系运算符,一个只认 `|`。两条各自要先定
+     「补文法还是收窄页面」,判据同 C2 —— 先问是不是 core 能力缺位
