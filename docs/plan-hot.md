@@ -1,81 +1,66 @@
-# plan-hot — v2 到 C14-pre-2:发布前不留一个未亲验的 gate
+# plan-hot — v2 到 C14:发布(唯一前置是用户授权)
 
 ## 目标 checkpoint
 
-**C14-pre-2**:`ship.sh` 上 crates-publish 之前的**每一道 gate**,都已在一台能跑它的机器上
-亲眼跑绿一次 —— 没有一道是「应该会过」。跑完把完整状态交给用户,由用户决定发不发。
+**C14**:v2.0.0 发布到 crates.io + npm + Maven Central + Swift Package tag。
+这是 v2 的最后一个 checkpoint,发布完 v2 cycle 闭合。
 
-上一段(C14-pre)把 ship 跑到了发布边界,但有几道 gate 当时**没能亲验**:
-mini 缺 `bun install` 让 TS 段没跑到底、Android gradle 段没在本机跑过、
-`cargo-semver-checks` / `ffi-bindings-fresh` / `fact-scan` / `llms` 也没单独确认。
-「跳过」和「验过」是两件事,发布前不允许把前者读成后者。
+## 为什么这一段停在这里,不 autorun
 
-## 前置条件
+发布的每一步都**不可撤销且对外**:
 
-```bash
-git status --short                      # 期望:空
-cargo test -p smix-cli --test list_sessions_no_nested_runtime   # 期望 exit 0(上段的修复)
-```
+- `cargo publish` —— crates.io 不可 unpublish(只能 yank,版本号永久占用)
+- `bun publish` —— npm 发布后 72h 才可撤,且撤了版本号也占用
+- `gradle publish` —— Maven Central 不可删
+- `git tag swift-v2.0.0 && git push` —— 对外 tag
 
-## 已经查清、不必重查的事实
+这类动作按项目规则(memory `feedback_no_pr_git_flow_only`:push/对外属 risky,需用户确认)
+与 harness 规则(不可逆 / 对外动作需明确授权)**不在 autorun 范围**。
+autorun 能做的都做完了:发布前每一道能亲验的 gate 都绿了。
 
-- **Rust 全套 + Swift + workflow-scan + fence-check 已绿**(C14-pre / S1,mini 1048 tests)
-- **smoke gate 修好后过**(list-sessions 不再 panic)
-- **TS vitest 本机已绿**(FailureCode 魔数已改)
-- **本机有 `cargo-semver-checks` 与 `android-runner/gradlew`**,两段都能在本机跑
+**这一段不是「等我判断」,是「等用户说发」。**
 
-## 本段预先定死的口径
-
-### 口径 — 亲验,不推断;跳过必须写明为什么跳不了
-
-每一道 gate 只有两种合法结局:
-1. **在能跑它的机器上跑绿**,记下命令与结果
-2. **确实跑不了**(需要 autorun 不该碰的资源,如 Android 物理设备 / 启动 emulator),
-   **写明是哪一道、为什么、以及它在别处(CI)由什么覆盖**
-
-**不允许第三种**:「大概会过」。这正是 `build-runner-tarball.sh` 那条注释的病。
-
-### Android 设备 gate 仍然跳过
-
-`android-instrumentation-gate.sh` / `android-behaviour-gate.sh` 需要 emulator,
-autorun 不启动它(会污染用户物理机 `R5CT52DF07D`)。这两道**留给 CI**,
-本段不跑,但要在验收里点名它们是唯一未亲验的两道及其 CI 覆盖。
-
-## 步骤(线性,2 个)
-
-### S1. 把本机能跑的剩余 gate 逐道跑绿
-
-**红**:无新测试。这一步执行既有 gate。
-
-**绿**:在本机逐道跑,记录命令与退出码 —
-- `cargo-semver-checks`(ship.sh:252 段的等价命令)
-- `scripts/dev/ffi-bindings-fresh.sh`
-- `scripts/dev/fact-scan.py`
-- `python3 scripts/dev/gen-llms.py --check`
-- `android-runner/gradlew testDebugUnitTest assembleDebugAndroidTest`(JVM 单测 + androidTest **编译**,不装设备)
-
-**关键点**:任何一道非零即停、如实记根因,不绕过。
-
-### S2. 汇总发布前状态,交用户拍板
-
-**红**:无。
-
-**绿**:在 `docs/v2.md` 决策日志记一条,列出 crates-publish 前**每一道 gate** 的亲验结果
-(绿 / 跳过+原因+CI 覆盖),并明确:crates.io / npm / Maven / git tag **全部未执行**,
-发不发由用户决定。
-
-## Checkpoint C14-pre-2 验收
+## 前置条件(autorun 侧已全部满足,列出供发布时复核)
 
 ```bash
-git status --short                      # 期望:空
-cargo test -p smix-cli --test list_sessions_no_nested_runtime   # 期望 exit 0
+git status --short                    # 期望:空
+grep '^version' Cargo.toml | head -1  # 期望:version = "2.0.0"
 ```
 
-外加:`docs/v2.md` 新增一条,列出 crates-publish 前每一道 gate 的亲验结果,
-未亲验的仅剩两道 Android 设备 gate,且写明其 CI 覆盖。
+- Rust 全套(mini,1048 tests)✅
+- swift 单测 + UITest build ✅
+- TS typecheck + vitest ✅ / Android JVM 单测 + androidTest 编译 ✅
+- 所有 `*-scan` + fence-check + route-conformance ✅
+- corpus(real sim)✅ / smoke(修 list-sessions 后)✅
+- ffi-bindings / llms / clippy / cargo-semver-checks(21 检查通过)✅
+- **唯二未亲验**:两道 Android 设备 gate(需 emulator,CI 覆盖)
+
+## 发布时执行(用户授权后,由用户或在用户在场时运行)
+
+**发布机是 studio(本机)** —— 依赖齐全(bun / node / cargo-semver-checks / gradle / GPG key)。
+mini 缺 `bun install` 等,不适合当发布机。
+
+```bash
+# 一条命令,ship.sh 自己按 DAG 顺序发四个生态,失败即停不留半发布状态
+bash scripts/release/ship.sh 2.0.0
+```
+
+ship.sh 会**重跑**上面所有 gate(不信任「刚才绿过」),全绿后才依次:
+crates.io(拓扑序 26 crates)→ npm → Maven Central → swift tag + push。
+
+**Android 设备 gate 在发布机上需要 emulator**:
+`"$ANDROID_HOME/emulator/emulator" -avd sim-smix-android-01 -port 5554 -no-snapshot-save &`
+(ship.sh 的 `android-instrumentation-gate.sh` 会用它;这一步 autorun 没跑,发布时必须过)。
+
+## Checkpoint C14 验收(发布后)
+
+```bash
+cargo search smix-cli | head -1          # 期望:2.0.0
+npm view @goliapkg/smix version          # 期望:2.0.0
+git tag -l 'swift-v2.0.0'                # 期望:有
+```
 
 ## 完成后动作
 
-1. 归档此文件到 `docs/plan-history/v2-c14-pre-2-hot.md`
-2. **发布本身待用户拍板** —— autorun 到此为止能做的都做完了。
-   `cargo publish` 等不可撤销且对外,不在 autorun 范围。
+1. 归档此文件到 `docs/plan-history/v2-c14-hot.md`
+2. v2 cycle 闭合 → 起 v2.1 或 post-v2 roadmap(见 `docs/roadmap.md`)
