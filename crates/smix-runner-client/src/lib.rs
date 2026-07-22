@@ -281,8 +281,8 @@ impl OcrFrame {
 
 pub use smix_runner_wire::{
     DiagnosticDumpResponse, FindRequest, FindResponse, HealthProcessInfo, HealthResponse,
-    HealthTestHostInfo, IncludeScope, KeyboardStages, RecordEventsResponse, RecordedEvent,
-    RunnerIncludeOpts, RunnerKeyboardResult, RunnerScrollSelector, ScrollResponse,
+    HealthTestHostInfo, IncludeScope, KeyboardStages, PressResult, RecordEventsResponse,
+    RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult, RunnerScrollSelector, ScrollResponse,
     SessionAppLifecycleRequest, SessionAppLifecycleResponse, SessionCloseAllResponse,
     SessionCloseRequest, SessionCloseResponse, SessionListResponse, SessionOpenRequest,
     SessionOpenResponse, SessionRelaunchAppRequest, SessionRelaunchAppResponse,
@@ -1529,7 +1529,7 @@ impl HttpRunnerClient {
         selector: &Selector,
         duration_ms: u64,
         include: Option<IncludeScope>,
-    ) -> Result<TapResult, RunnerTransportError> {
+    ) -> Result<PressResult, RunnerTransportError> {
         #[derive(Serialize)]
         struct Req<'a> {
             selector: &'a Selector,

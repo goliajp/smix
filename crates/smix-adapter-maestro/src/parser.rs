@@ -2426,6 +2426,17 @@ fn parse_repeat_tap(v: &Value) -> Result<Step, ParseError> {
 // LongPressOn has two forms: scalar (default duration) or mapping
 // (selector fields + optional `duration: <ms>`). maestro documents
 // the field name as `duration`, in milliseconds.
+/// Shortest hold that can contain a capture whole.
+///
+/// Measured on iPhone 17 Pro / iOS 26.5: the gesture call carries
+/// 290-342ms of overhead independent of the hold, and a `simctl`
+/// screenshot takes 190-290ms alone and up to ~350ms while the runner
+/// is working. A hold of 800ms leaves ~470ms certainly held, which
+/// admits exactly one capture — and a flow written at 800ms produced
+/// exactly one placed frame, so this is the boundary rather than a
+/// margin around it.
+const CAPTURE_DURING_MIN_MS: u64 = 800;
+
 fn parse_long_press_on(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::LongPressOn {
@@ -2434,6 +2445,7 @@ fn parse_long_press_on(v: &Value) -> Result<Step, ParseError> {
                 modifiers: Modifiers::default(),
             },
             duration_ms: LONG_PRESS_DEFAULT_MS,
+            capture_during: false,
         }),
         Value::Mapping(m) => {
             let selector = visible_to_selector(v)?;
@@ -2441,9 +2453,31 @@ fn parse_long_press_on(v: &Value) -> Result<Step, ParseError> {
                 .get(Value::String("duration".into()))
                 .and_then(Value::as_u64)
                 .unwrap_or(LONG_PRESS_DEFAULT_MS);
+            let capture_during = m
+                .get(Value::String("captureDuring".into()))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            // Refuse a window nothing can be captured inside rather
+            // than run and hand back frames that are all "could not be
+            // placed". Resolving the element runs before the touch goes
+            // down, and a capture is not instantaneous; both come out
+            // of the hold.
+            if capture_during && duration_ms < CAPTURE_DURING_MIN_MS {
+                return Err(ParseError::InvalidValue {
+                    field: "longPressOn.duration".into(),
+                    reason: format!(
+                        "captureDuring needs a hold of at least {CAPTURE_DURING_MIN_MS}ms \
+                         and this one is {duration_ms}ms. A capture takes around 230ms \
+                         and the element is resolved before the touch goes down, so a \
+                         shorter hold leaves no stretch that a frame provably sits \
+                         inside — every frame would come back unplaceable"
+                    ),
+                });
+            }
             Ok(Step::LongPressOn {
                 selector,
                 duration_ms,
+                capture_during,
             })
         }
         other => Err(ParseError::InvalidValue {

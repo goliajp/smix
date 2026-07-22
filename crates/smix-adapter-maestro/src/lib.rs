@@ -720,6 +720,8 @@ pub enum Step {
         selector: Selector,
         /// Press duration in milliseconds (default 500 per maestro doc).
         duration_ms: u64,
+        /// Capture frames of the held state while the touch is down.
+        capture_during: bool,
     },
     /// Assert a yaml expression evaluates truthy. maestro
     /// `assertTrue: ${expression}`. The expression source is held raw

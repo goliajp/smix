@@ -86,6 +86,8 @@ pub const SELECTOR_KEYS: &[&str] = &[
     "times",
     "intervalMs",
     "holdMs",
+    // longPressOn
+    "captureDuring",
 ];
 
 /// One verb in the canonical table.

@@ -655,19 +655,32 @@ impl IosDriver {
     /// Long-press a selector for `duration` via swift sim-side
     /// XCUIElement.press(forDuration:). 5s implicit-wait + retry on
     /// transport. Same as Maestro `longPressOn`.
+    ///
+    /// Returns when the touch was held, anchored to this host's clock,
+    /// so a caller capturing frames alongside can tell whether they
+    /// fall inside the press. See [`press_frame_placement`].
     pub async fn long_press(
         &self,
         selector: &Selector,
         duration: Duration,
         include: Option<IncludeScope>,
-    ) -> Result<(), ExpectationFailure> {
+    ) -> Result<PressTiming, ExpectationFailure> {
         require_runner_resolvable_selector(selector, "/long-press")?;
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
         let duration_ms = duration.as_millis().min(u64::MAX as u128) as u64;
         loop {
+            let sent_ms = host_now_ms();
             match self.runner.long_press(selector, duration_ms, include).await {
-                Ok(_result) => return Ok(()),
+                Ok(result) => {
+                    return Ok(PressTiming {
+                        sent_ms,
+                        received_ms: host_now_ms(),
+                        latest_down_offset_ms: result.latest_down_offset_ms,
+                        earliest_up_offset_ms: result.earliest_up_offset_ms,
+                        handler_wall_ms: result.handler_wall_ms,
+                    });
+                }
                 Err(e) => {
                     // 4xx is the runner refusing the request shape — it
                     // will refuse it identically on every retry, so the
@@ -1223,6 +1236,161 @@ pub enum ActVerdict {
 /// the app frame, the runner multiplies it back — so exact equality
 /// would fail on arithmetic rather than on aim.
 const FRAME_TOLERANCE_PT: f64 = 1.0;
+
+/// Wall clock in milliseconds, for anchoring a press window and the
+/// captures taken alongside it to the same timeline.
+#[must_use]
+pub fn host_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
+/// What the runner reported about when a press was actually held,
+/// paired with what the host observed about the round trip.
+///
+/// Offsets are measured by the runner from the moment its handler was
+/// entered, not from any shared clock. Nothing here assumes the
+/// simulator and the host agree on the time of day.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PressTiming {
+    /// Host clock when the request went out.
+    pub sent_ms: u64,
+    /// Host clock when the response came back.
+    pub received_ms: u64,
+    /// Runner clock, handler entry → the latest instant the touch could
+    /// have gone down.
+    ///
+    /// The runner cannot see inside `press(forDuration:)`, so it reports
+    /// bounds rather than instants: the call spanned `[A, B]` and held
+    /// for `d`, so the touch went down no later than `B - d` and lifted
+    /// no earlier than `A + d`. Composing these as if they were the
+    /// instants themselves would widen the window rather than narrow it,
+    /// which is why they are named for the bound they are.
+    pub latest_down_offset_ms: u64,
+    /// Runner clock, handler entry → the earliest instant the touch
+    /// could have lifted.
+    pub earliest_up_offset_ms: u64,
+    /// Runner clock, handler entry → handler return.
+    pub handler_wall_ms: u64,
+}
+
+/// When a captured frame's pixels were sampled, as an interval.
+///
+/// A screenshot is not instantaneous — around 230ms on an M-series
+/// simulator — and nothing says which instant inside that the pixels
+/// come from. So a capture is an interval, and only a capture whose
+/// whole interval sits inside the press is during the press.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaptureSpan {
+    /// Host clock when the capture was started.
+    pub start_ms: u64,
+    /// Host clock when the capture returned.
+    pub end_ms: u64,
+}
+
+/// Where a captured frame sits relative to the press.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FramePlacement {
+    /// The touch was provably still down for the whole capture.
+    DuringPress,
+    /// The touch was provably not down for part of the capture.
+    Outside(String),
+    /// It cannot be placed either way.
+    ///
+    /// Its own answer rather than a pass, because the whole point of
+    /// the verb is to hand back a frame of a held state, and a frame
+    /// that might be of a resting one is what sent the consumer who
+    /// asked for this down a wrong path in the first place.
+    Uncertain(String),
+}
+
+impl PressTiming {
+    /// How much of the round trip is unaccounted for by the handler,
+    /// and therefore could have been spent in either direction.
+    fn transit_ambiguity_ms(&self) -> u64 {
+        self.received_ms
+            .saturating_sub(self.sent_ms)
+            .saturating_sub(self.handler_wall_ms)
+    }
+
+    /// The interval over which the touch is certainly down, on the host
+    /// clock.
+    ///
+    /// The handler was entered somewhere in `[sent, sent +
+    /// ambiguity]`, so touch-down is no later than `sent + ambiguity +
+    /// down_offset` and lift-up is no earlier than `sent + up_offset`.
+    /// Those two bounds are the interval that holds under every
+    /// division of the round trip.
+    fn certainly_held_ms(&self) -> Option<(u64, u64)> {
+        let start = self.sent_ms + self.transit_ambiguity_ms() + self.latest_down_offset_ms;
+        let end = self.sent_ms + self.earliest_up_offset_ms;
+        (start < end).then_some((start, end))
+    }
+}
+
+impl PressTiming {
+    /// A press whose bounds the runner did not report.
+    ///
+    /// Every offset is zero, so no interval is certainly held and every
+    /// frame comes back `Uncertain`. That is the honest answer for a
+    /// platform that cannot time its own press.
+    #[must_use]
+    pub fn unplaceable() -> Self {
+        PressTiming {
+            sent_ms: 0,
+            received_ms: 0,
+            latest_down_offset_ms: 0,
+            earliest_up_offset_ms: 0,
+            handler_wall_ms: 0,
+        }
+    }
+}
+
+/// Was this frame captured while the touch was down?
+///
+/// Judged against the interval that holds under every division of the
+/// round trip between request transit, handler work, and response
+/// transit — so a `DuringPress` needs no assumption about which of
+/// those the unaccounted milliseconds went to, and no assumption that
+/// the simulator's clock agrees with the host's.
+#[must_use]
+pub fn press_frame_placement(press: &PressTiming, frame: &CaptureSpan) -> FramePlacement {
+    let held_ms = press
+        .earliest_up_offset_ms
+        .saturating_sub(press.latest_down_offset_ms);
+    let ambiguity = press.transit_ambiguity_ms();
+    let Some((held_from, held_to)) = press.certainly_held_ms() else {
+        return FramePlacement::Uncertain(format!(
+            "the press was held for {held_ms}ms but {ambiguity}ms of the \
+             round trip is unaccounted for, so no instant on this host's \
+             clock is certainly inside it — hold for longer than {ambiguity}ms"
+        ));
+    };
+    if frame.start_ms >= held_from && frame.end_ms <= held_to {
+        return FramePlacement::DuringPress;
+    }
+    if frame.start_ms >= held_to {
+        return FramePlacement::Outside(format!(
+            "the capture started {}ms after the touch could still have been \
+             down — the press was {held_ms}ms and a capture takes around \
+             230ms, so it has to start earlier or the press has to be longer",
+            frame.start_ms - held_to
+        ));
+    }
+    if frame.end_ms <= held_from {
+        return FramePlacement::Outside(format!(
+            "the capture finished {}ms before the touch was certainly down",
+            held_from - frame.end_ms
+        ));
+    }
+    FramePlacement::Uncertain(format!(
+        "the capture ran {}..{} and the touch was certainly down only over \
+         {held_from}..{held_to}, so its pixels could be from either side of \
+         the boundary",
+        frame.start_ms, frame.end_ms
+    ))
+}
 
 /// Did the touch land inside the element it aimed at?
 ///

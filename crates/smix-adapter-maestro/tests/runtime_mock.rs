@@ -92,6 +92,7 @@ enum MockCall {
     TapBurst(Selector, u32, Option<u32>, Option<u32>),
     /// `App::long_press(selector, duration)`.
     LongPress(Selector, Duration),
+    LongPressCapturing(Selector, Duration),
     /// `App::set_location(lat, lng)`.
     SetLocation(f64, f64),
     /// `App::travel(points, speed)`.
@@ -712,6 +713,37 @@ impl AppLike for MockApp {
             .unwrap()
             .push(MockCall::LongPress(selector.clone(), duration));
         Ok(())
+    }
+    /// One frame, provably inside the press. The runtime's sink path
+    /// only runs when a frame can be placed, so a mock that returned
+    /// nothing would leave the writing untested.
+    async fn long_press_capturing(
+        &self,
+        selector: &Selector,
+        duration: Duration,
+    ) -> Result<smix_sdk::PressCapture, ExpectationFailure> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(MockCall::LongPressCapturing(selector.clone(), duration));
+        let timing = smix_driver::PressTiming {
+            sent_ms: 1_000,
+            received_ms: 1_000 + duration.as_millis() as u64 + 400,
+            latest_down_offset_ms: 300,
+            earliest_up_offset_ms: 300 + duration.as_millis() as u64,
+            handler_wall_ms: duration.as_millis() as u64 + 400,
+        };
+        Ok(smix_sdk::PressCapture {
+            timing,
+            frames: vec![smix_sdk::PressFrame {
+                span: smix_driver::CaptureSpan {
+                    start_ms: 1_400,
+                    end_ms: 1_630,
+                },
+                placement: smix_driver::FramePlacement::DuringPress,
+                png: b"\x89PNG\r\n\x1a\n".to_vec(),
+            }],
+        })
     }
     async fn set_location(&self, latitude: f64, longitude: f64) -> Result<(), ExpectationFailure> {
         self.calls

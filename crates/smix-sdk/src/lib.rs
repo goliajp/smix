@@ -773,6 +773,47 @@ pub struct App {
     launch_fresh_force_reinstall: Option<bool>,
 }
 
+/// How far past the requested hold to keep capturing.
+///
+/// Resolving the element runs before the touch goes down (measured at
+/// 320-450ms on an M-series simulator), so a window sized to the hold
+/// alone would stop capturing before the press began. Frames past
+/// lift-up come back labelled `Outside`, which costs one screenshot and
+/// tells the reader the hold was too short.
+const CAPTURE_OVERRUN_MS: u64 = 600;
+
+/// Cap on frames per press, so a long hold does not fill a directory.
+const MAX_PRESS_FRAMES: usize = 8;
+
+/// One frame taken during a press, with where it sits relative to it.
+#[derive(Clone, Debug)]
+pub struct PressFrame {
+    /// When the capture ran, on the host clock.
+    pub span: smix_driver::CaptureSpan,
+    /// Whether the touch was provably down for the whole capture.
+    pub placement: smix_driver::FramePlacement,
+    /// PNG bytes.
+    pub png: Vec<u8>,
+}
+
+/// A press and the frames taken alongside it.
+#[derive(Clone, Debug)]
+pub struct PressCapture {
+    /// When the touch was held, on the host clock.
+    pub timing: smix_driver::PressTiming,
+    /// Frames in capture order.
+    pub frames: Vec<PressFrame>,
+}
+
+impl PressCapture {
+    /// Frames the touch was provably down for.
+    pub fn during_press(&self) -> impl Iterator<Item = &PressFrame> {
+        self.frames
+            .iter()
+            .filter(|f| f.placement == smix_driver::FramePlacement::DuringPress)
+    }
+}
+
 impl App {
     /// Construct from a fully-wired driver + simctl client. Use this when
     /// you already manage Cell / UDID lifecycle externally.
@@ -2018,7 +2059,87 @@ impl App {
                 describe_selector(selector)
             )),
         );
-        self.driving()?.long_press(selector, duration, None).await
+        // The driver reports when the touch was held; on its own that
+        // is not something a caller can act on, so it is surfaced
+        // where it becomes usable — paired with frames, in
+        // `long_press_capturing`.
+        self.driving()?
+            .long_press(selector, duration, None)
+            .await
+            .map(|_timing| ())
+    }
+
+    /// Long-press an element while capturing frames of the held state.
+    ///
+    /// The two halves run on different transports on purpose. The press
+    /// goes to the runner, and every runner route that touches
+    /// XCUITest queues behind an in-flight gesture — a `/tree` sent one
+    /// second into a four-second press was measured returning only
+    /// after the press ended. So the frames come from `simctl`, which
+    /// does not go through XCUITest and answers while the runner is
+    /// occupied.
+    ///
+    /// Each frame is judged against the interval the touch was
+    /// provably down for, and frames that cannot be placed inside it
+    /// say so. Handing back an unjudged frame is what this exists to
+    /// stop: a consumer who screenshotted alongside a press got the
+    /// resting screen and read it as "the animation never fired".
+    pub async fn long_press_capturing(
+        &self,
+        selector: &Selector,
+        duration: Duration,
+    ) -> Result<PressCapture, ExpectationFailure> {
+        let udid = self.require_udid()?.to_string();
+        self.ledger.record_tap(
+            now_ms(),
+            Some(format!(
+                "longpress-capturing({}ms):{}",
+                duration.as_millis(),
+                describe_selector(selector)
+            )),
+        );
+        let driver = self.driving()?;
+
+        // Capture past the press rather than racing its completion: a
+        // frame taken after lift-up is labelled and costs one
+        // screenshot, whereas cancelling a capture mid-flight leaves a
+        // `simctl` child behind.
+        let deadline_ms =
+            smix_driver::host_now_ms() + duration.as_millis() as u64 + CAPTURE_OVERRUN_MS;
+        let capturing = async {
+            let mut frames = Vec::new();
+            while frames.len() < MAX_PRESS_FRAMES && smix_driver::host_now_ms() < deadline_ms {
+                let start_ms = smix_driver::host_now_ms();
+                match self.device.screenshot(&udid).await {
+                    Ok(png) => frames.push((
+                        smix_driver::CaptureSpan {
+                            start_ms,
+                            end_ms: smix_driver::host_now_ms(),
+                        },
+                        png,
+                    )),
+                    // One failing capture will fail identically for the
+                    // rest of the window; stop rather than burn it.
+                    Err(_) => break,
+                }
+            }
+            frames
+        };
+
+        let (pressed, captured) =
+            tokio::join!(driver.long_press(selector, duration, None), capturing);
+        let timing = pressed?;
+        Ok(PressCapture {
+            timing,
+            frames: captured
+                .into_iter()
+                .map(|(span, png)| PressFrame {
+                    placement: smix_driver::press_frame_placement(&timing, &span),
+                    span,
+                    png,
+                })
+                .collect(),
+        })
     }
 
     /// Set sim location. Maestro `setLocation: { latitude, longitude }`.
