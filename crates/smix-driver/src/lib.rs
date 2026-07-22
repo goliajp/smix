@@ -1018,12 +1018,11 @@ impl IosDriver {
     }
 }
 
-/// One element as two sides describe it: what the host aimed at, and
-/// what the runner found under the tapped point.
+/// One element, as either side describes it.
 ///
-/// Deliberately three fields and not a whole `A11yNode`. The question
-/// is "same element?", and every extra field is another thing two
-/// truthful descriptions can differ on for reasons that are not the
+/// Three fields and not a whole `A11yNode`: the question is "is this
+/// the thing I aimed at", and every extra field is another way two
+/// truthful descriptions can differ for reasons that are not the
 /// answer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HitElement {
@@ -1035,19 +1034,18 @@ pub struct HitElement {
     pub frame: (f64, f64, f64, f64),
 }
 
-/// What a tap turned out to have done.
+/// What an act turned out to have done.
 #[derive(Clone, Debug, PartialEq)]
-pub enum TapHitVerdict {
-    /// The point held the element that was aimed at.
+pub enum ActVerdict {
+    /// The touch landed inside the element that was aimed at.
     Confirmed,
-    /// It held something else, or nothing.
+    /// It landed somewhere else, or on nothing.
     Missed(String),
-    /// Neither description carried anything comparable.
+    /// Nothing comparable came back.
     ///
     /// Its own verdict rather than a pass, because "I could not tell"
-    /// and "it hit" are different facts and only one of them is what
-    /// `tapOn` claims. Folding this into `Confirmed` would rebuild the
-    /// defect this check exists to remove.
+    /// and "it landed" are different facts and only one of them is
+    /// what `tapOn` claims.
     Unconfirmable(String),
 }
 
@@ -1058,60 +1056,101 @@ pub enum TapHitVerdict {
 /// would fail on arithmetic rather than on aim.
 const FRAME_TOLERANCE_PT: f64 = 1.0;
 
-/// Are these two descriptions the same element?
+/// Did the touch land inside the element it aimed at?
 ///
-/// Compared by the strongest field both sides carry: identifier, then
-/// label, then geometry. Not by "is the point inside the frame" — that
-/// is true of an overlay covering the whole screen, and an overlay
-/// swallowing the touch is one of the things this exists to catch.
+/// `chain` is every named element containing the tapped point, as the
+/// runner found them after synthesising the touch.
 ///
-/// `hit == None` means the runner found nothing at the point.
-pub fn tap_hit_verdict(aimed: &HitElement, hit: Option<&HitElement>) -> TapHitVerdict {
-    let Some(hit) = hit else {
-        return TapHitVerdict::Missed(format!(
-            "aimed at {} but the tapped point held nothing — the element \
+/// # Why containment and not identity
+///
+/// The first version of this asked whether the element at the point
+/// *was* the element aimed at. A live tree says why that is wrong. At
+/// the centre of the first row of Settings, the named elements
+/// containing the point are:
+///
+/// ```text
+/// staticText  "登录以访问iCloud数据…"                      area 7283
+/// button      id=com.apple.settings.primaryAppleAccount   area 33423
+/// application id=com.apple.Preferences                    area 351348
+/// ```
+///
+/// A flow aiming at that button taps its centre, and the innermost
+/// element there is the button's own label. Identity would call a
+/// perfectly good tap a miss — and text nested inside a row is what
+/// every list screen looks like. Containment gets it right: the button
+/// is on the chain.
+///
+/// # WHAT THIS CANNOT SEE
+///
+/// **Occlusion.** A scrim covering the aimed element contains the
+/// point too, so this passes. The snapshot the runner walks carries no
+/// z-order (`TreeRoute.swift`: snapshots are dead frames), and
+/// `isHittable` — Apple's own answer — has been rejected here twice
+/// on purpose: it reports false for an element that is reachable in
+/// the AX tree but visually covered, which is exactly the see-through
+/// tap `SmixRunnerUITests.swift` performs deliberately, and it broke a
+/// QA-overlay assertion in v1.0.27.
+///
+/// So this closes the stale-frame half of "the tap reported success and
+/// nothing happened" and not the covered-element half. The whole chain
+/// travels in the outcome regardless, so a caller can see the scrim
+/// even when the verdict passes.
+pub fn tap_landed_within(aimed: &HitElement, chain: &[HitElement]) -> ActVerdict {
+    if chain.is_empty() {
+        return ActVerdict::Missed(format!(
+            "aimed at {} and the tapped point held nothing — the element \
              moved between the tree fetch and the tap, or its frame was \
              stale",
             describe_hit(aimed)
         ));
-    };
-    if !aimed.identifier.is_empty() && !hit.identifier.is_empty() {
-        return same_or_missed(aimed.identifier == hit.identifier, aimed, hit, "identifier");
     }
-    if !aimed.label.is_empty() && !hit.label.is_empty() {
-        return same_or_missed(aimed.label == hit.label, aimed, hit, "label");
+    if chain.iter().any(|c| same_element(aimed, c)) {
+        return ActVerdict::Confirmed;
     }
-    let close = |a: f64, b: f64| (a - b).abs() <= FRAME_TOLERANCE_PT;
-    let degenerate = aimed.frame.2 <= 0.0 && aimed.frame.3 <= 0.0;
-    if degenerate {
-        return TapHitVerdict::Unconfirmable(
-            "neither the element aimed at nor the one at the tapped point \
-             carries an identifier or a label, and the frame is empty, so \
-             there is nothing to compare them by"
-                .to_string(),
-        );
+    if aimed.identifier.is_empty() && aimed.label.is_empty() {
+        return ActVerdict::Unconfirmable(format!(
+            "the element aimed at carries neither an identifier nor a \
+             label, so it cannot be looked for among the {} element(s) \
+             at the tapped point",
+            chain.len()
+        ));
     }
-    same_or_missed(
-        close(aimed.frame.0, hit.frame.0)
-            && close(aimed.frame.1, hit.frame.1)
-            && close(aimed.frame.2, hit.frame.2)
-            && close(aimed.frame.3, hit.frame.3),
-        aimed,
-        hit,
-        "frame",
-    )
+    ActVerdict::Missed(format!(
+        "aimed at {} but the tapped point is inside {} instead",
+        describe_hit(aimed),
+        chain
+            .iter()
+            .map(describe_hit)
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
-fn same_or_missed(same: bool, aimed: &HitElement, hit: &HitElement, by: &str) -> TapHitVerdict {
-    if same {
-        TapHitVerdict::Confirmed
-    } else {
-        TapHitVerdict::Missed(format!(
-            "aimed at {} but the tapped point held {} (compared by {by})",
-            describe_hit(aimed),
-            describe_hit(hit)
-        ))
+/// Are these two descriptions the same element?
+///
+/// By the strongest field both carry: identifier, then label, then
+/// geometry.
+fn same_element(a: &HitElement, b: &HitElement) -> bool {
+    if !a.identifier.is_empty() && !b.identifier.is_empty() {
+        return a.identifier == b.identifier;
     }
+    if !a.label.is_empty() && !b.label.is_empty() {
+        return a.label == b.label;
+    }
+    if a.identifier.is_empty()
+        && a.label.is_empty()
+        && b.identifier.is_empty()
+        && b.label.is_empty()
+    {
+        let close = |x: f64, y: f64| (x - y).abs() <= FRAME_TOLERANCE_PT;
+        return close(a.frame.0, b.frame.0)
+            && close(a.frame.1, b.frame.1)
+            && close(a.frame.2, b.frame.2)
+            && close(a.frame.3, b.frame.3);
+    }
+    // One is named and the other is not: they are describable in
+    // different vocabularies, which is not evidence of sameness.
+    false
 }
 
 fn describe_hit(e: &HitElement) -> String {

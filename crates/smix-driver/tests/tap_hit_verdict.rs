@@ -1,18 +1,17 @@
-//! Did the tap land on the element it aimed at?
+//! Did the touch land inside the element it aimed at?
 //!
 //! `tapOn` reported success ten times in a row against an icon button
 //! whose app-side counter never moved (EXT1, 2026-07-22). It was
 //! telling the truth about what it did — a touch was synthesised at a
 //! coordinate — and that is not what a reader takes "tapped" to mean.
 //!
-//! The host resolves a selector to an element and sends its centre.
-//! The runner reports what is at that point. This decides whether they
-//! are the same thing, and it is a free function because the rule is
-//! the part that can be wrong: getting a coordinate onto the wire is
-//! mechanical, deciding that two element descriptions are the same
-//! element is a judgement with edge cases.
+//! The chains below are not invented. They were read off a live
+//! iPhone 17 Pro running Settings (iOS 26.5, 2026-07-22), from the tree
+//! committed beside this file. That tree is why the rule is
+//! containment and not identity: at the centre of the first row, the
+//! innermost named element is the row's own label, not the row.
 
-use smix_driver::{HitElement, TapHitVerdict, tap_hit_verdict};
+use smix_driver::{ActVerdict, HitElement, tap_landed_within};
 
 fn el(id: &str, label: &str, frame: (f64, f64, f64, f64)) -> HitElement {
     HitElement {
@@ -22,64 +21,74 @@ fn el(id: &str, label: &str, frame: (f64, f64, f64, f64)) -> HitElement {
     }
 }
 
+/// The named elements containing the centre of Settings' first row,
+/// innermost first, exactly as observed.
+fn settings_first_row_chain() -> Vec<HitElement> {
+    vec![
+        el(
+            "",
+            "登录以访问iCloud数据、App Store等",
+            (24.0, 196.0, 216.0, 33.0),
+        ),
+        el(
+            "com.apple.settings.primaryAppleAccount",
+            "Apple账户、登录以访问iCloud数据、App Store等",
+            (16.0, 168.0, 370.0, 90.0),
+        ),
+        el("com.apple.Preferences", "设置", (0.0, 0.0, 402.0, 874.0)),
+    ]
+}
+
+/// The case that killed the identity rule.
+///
+/// A flow aims at the row's button and taps its centre. The innermost
+/// element there is the button's own label. Identity called this a
+/// miss; it is a perfectly good tap.
 #[test]
-fn the_same_identifier_is_the_same_element() {
-    let aimed = el("hdr-back-btn", "", (10.0, 20.0, 44.0, 44.0));
-    let hit = el("hdr-back-btn", "", (10.0, 20.0, 44.0, 44.0));
+fn a_tap_that_lands_on_the_aimed_elements_own_label_is_confirmed() {
+    let aimed = el(
+        "com.apple.settings.primaryAppleAccount",
+        "Apple账户、登录以访问iCloud数据、App Store等",
+        (16.0, 168.0, 370.0, 90.0),
+    );
     assert_eq!(
-        tap_hit_verdict(&aimed, Some(&hit)),
-        TapHitVerdict::Confirmed
+        tap_landed_within(&aimed, &settings_first_row_chain()),
+        ActVerdict::Confirmed
     );
 }
 
-/// The reported case: something else was at the point.
+/// The reported case: the point is inside something unrelated.
 #[test]
-fn a_different_identifier_names_both() {
-    let aimed = el("landing-logo", "", (0.0, 0.0, 100.0, 100.0));
-    let hit = el("overlay-scrim", "", (0.0, 0.0, 400.0, 800.0));
-    let verdict = tap_hit_verdict(&aimed, Some(&hit));
-    let TapHitVerdict::Missed(why) = verdict else {
-        panic!("expected Missed, got {verdict:?}");
+fn a_point_inside_none_of_the_aimed_element_names_what_was_there() {
+    let aimed = el("landing-logo", "", (100.0, 100.0, 80.0, 80.0));
+    let chain = vec![
+        el("overlay-scrim", "", (0.0, 0.0, 402.0, 874.0)),
+        el("com.example.app", "Insight", (0.0, 0.0, 402.0, 874.0)),
+    ];
+    let ActVerdict::Missed(why) = tap_landed_within(&aimed, &chain) else {
+        panic!("a point inside neither the element nor its ancestors is a miss");
     };
     assert!(
         why.contains("landing-logo") && why.contains("overlay-scrim"),
-        "a miss has to name what was aimed at and what was hit: {why}"
+        "a miss names what was aimed at and what was there: {why}"
     );
 }
 
+/// Aiming at an ancestor is fine too — a flow may target the row.
 #[test]
-fn labels_decide_when_neither_carries_an_identifier() {
-    let aimed = el("", "Submit", (10.0, 20.0, 80.0, 30.0));
+fn aiming_at_an_ancestor_on_the_chain_is_confirmed() {
+    let aimed = el("com.apple.Preferences", "设置", (0.0, 0.0, 402.0, 874.0));
     assert_eq!(
-        tap_hit_verdict(&aimed, Some(&el("", "Submit", (10.0, 20.0, 80.0, 30.0)))),
-        TapHitVerdict::Confirmed
+        tap_landed_within(&aimed, &settings_first_row_chain()),
+        ActVerdict::Confirmed
     );
-    assert!(matches!(
-        tap_hit_verdict(&aimed, Some(&el("", "Cancel", (10.0, 20.0, 80.0, 30.0)))),
-        TapHitVerdict::Missed(_)
-    ));
 }
 
-/// Geometry is the last resort, with a tolerance, because the frame
-/// makes a round trip through normalised coordinates and back.
+/// Nothing at the point at all — the frame was stale.
 #[test]
-fn frames_decide_when_nothing_else_can() {
-    let aimed = el("", "", (10.0, 20.0, 80.0, 30.0));
-    assert_eq!(
-        tap_hit_verdict(&aimed, Some(&el("", "", (10.4, 20.0, 80.0, 30.0)))),
-        TapHitVerdict::Confirmed
-    );
-    assert!(matches!(
-        tap_hit_verdict(&aimed, Some(&el("", "", (30.0, 20.0, 80.0, 30.0)))),
-        TapHitVerdict::Missed(_)
-    ));
-}
-
-/// Nothing at the point at all.
-#[test]
-fn an_empty_point_is_a_miss() {
+fn an_empty_chain_is_a_miss() {
     let aimed = el("btn-login", "", (10.0, 20.0, 80.0, 30.0));
-    let TapHitVerdict::Missed(why) = tap_hit_verdict(&aimed, None) else {
+    let ActVerdict::Missed(why) = tap_landed_within(&aimed, &[]) else {
         panic!("a tap that landed on nothing is a miss");
     };
     assert!(
@@ -88,23 +97,49 @@ fn an_empty_point_is_a_miss() {
     );
 }
 
-/// Two elements with nothing comparable are NOT confirmed.
-///
-/// The load-bearing case. Saying "confirmed" when there was no way to
-/// compare would put this check in the same category as the thing it
-/// replaces: an answer that asserts more than it checked. It has its
-/// own verdict so a caller can decide, and it says why it could not
-/// tell.
+/// Unnamed elements are matched by geometry, since that is all there is.
 #[test]
-fn what_cannot_be_compared_is_not_confirmed() {
+fn an_unnamed_element_is_found_by_its_frame() {
+    let aimed = el("", "", (16.0, 168.0, 370.0, 90.0));
+    let chain = vec![el("", "", (16.4, 168.0, 370.0, 90.0))];
+    assert_eq!(tap_landed_within(&aimed, &chain), ActVerdict::Confirmed);
+}
+
+/// An unnamed target against a named chain cannot be judged.
+///
+/// The load-bearing case. Calling this `Confirmed` would put the check
+/// in the category it exists to remove — an answer asserting more than
+/// it checked — and calling it `Missed` would fail correct taps on
+/// elements the tree does not name.
+#[test]
+fn an_unnamed_target_against_a_named_chain_is_unconfirmable() {
     let aimed = el("", "", (0.0, 0.0, 0.0, 0.0));
-    let hit = el("", "", (0.0, 0.0, 0.0, 0.0));
-    let verdict = tap_hit_verdict(&aimed, Some(&hit));
-    let TapHitVerdict::Unconfirmable(why) = verdict else {
+    let verdict = tap_landed_within(&aimed, &settings_first_row_chain());
+    let ActVerdict::Unconfirmable(why) = verdict else {
         panic!("expected Unconfirmable, got {verdict:?}");
     };
     assert!(
-        why.contains("identifier") || why.contains("label"),
+        why.contains("identifier") && why.contains("label"),
         "it has to say what it was missing: {why}"
     );
+}
+
+/// The fixture is still the tree these chains were read from.
+///
+/// A check on the evidence, not on the rule: the chains above are
+/// hand-transcribed, and if the tree they came from is gone there is
+/// nothing left saying they were ever real.
+#[test]
+fn the_captured_tree_still_holds_the_element_these_chains_name() {
+    let tree = include_str!("fixtures/live-tree-preferences-mini-2026-07-22.json");
+    for needle in [
+        "com.apple.settings.primaryAppleAccount",
+        "com.apple.Preferences",
+    ] {
+        assert!(
+            tree.contains(needle),
+            "the captured tree no longer contains {needle} — the chains \
+             in this file no longer stand for anything observed"
+        );
+    }
 }
