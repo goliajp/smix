@@ -13,7 +13,8 @@
 
 use smix_error::ExpectationFailure;
 
-use crate::png_gray::decode_gray;
+use crate::png_gray::{decode_gray, sampler_for};
+use smix_simctl::surface_capture::CapturedFrame;
 
 /// What counts as still.
 ///
@@ -74,23 +75,64 @@ pub fn frames_are_still(
     if a.w != b.w || a.h != b.h {
         return Ok(false);
     }
+    Ok(grid_still(
+        (a.w, a.h),
+        |x, y| a.gray(x, y),
+        |x, y| b.gray(x, y),
+        params,
+    ))
+}
 
+/// Same stillness test over [`CapturedFrame`]s — the fast diff-loop path.
+///
+/// A raw BGRA frame is sampled in place (no PNG decode); a PNG frame (the
+/// `simctl` fallback) is decoded once. Comparing a BGRA frame against a PNG
+/// frame is fine — both resolve to the same grayscale grid — which keeps the
+/// path correct across a mid-loop fallback.
+pub fn frames_still(
+    previous: &CapturedFrame,
+    next: &CapturedFrame,
+    params: &QuiescenceParams,
+) -> Result<bool, ExpectationFailure> {
+    let a = sampler_for(previous)?;
+    let b = sampler_for(next)?;
+    if a.dims() != b.dims() {
+        return Ok(false);
+    }
+    let (w, h) = a.dims();
+    Ok(grid_still(
+        (w, h),
+        |x, y| a.gray(x, y),
+        |x, y| b.gray(x, y),
+        params,
+    ))
+}
+
+/// Shared grid-lattice stillness core: sample both frames on a `grid × grid`
+/// lattice and count how many samples moved past `pixel_delta`.
+fn grid_still(
+    dims: (usize, usize),
+    a: impl Fn(usize, usize) -> u8,
+    b: impl Fn(usize, usize) -> u8,
+    params: &QuiescenceParams,
+) -> bool {
+    let (w, h) = dims;
     let grid = params.grid.max(1);
     let mut moved = 0usize;
     for gy in 0..grid {
-        let sy = (gy * a.h) / grid;
+        let sy = (gy * h) / grid;
         for gx in 0..grid {
-            let sx = (gx * a.w) / grid;
-            let delta = a.gray(sx, sy).abs_diff(b.gray(sx, sy));
+            let sx = (gx * w) / grid;
+            let delta = a(sx, sy).abs_diff(b(sx, sy));
             if delta > params.pixel_delta {
                 moved += 1;
                 if moved > params.max_moved_samples {
-                    return Ok(false);
+                    return false;
                 }
             }
         }
     }
-    Ok(true)
+    true
 }
 
 #[cfg(test)]
@@ -187,6 +229,64 @@ mod tests {
     fn an_undecodable_frame_is_an_error_not_a_still_frame() {
         let a = flat(128);
         let err = frames_are_still(&a, b"not a png", &QuiescenceParams::default()).unwrap_err();
+        assert_eq!(err.code, smix_error::FailureCode::DriverError);
+    }
+
+    /// Build a solid-color BGRA frame.
+    fn bgra_flat(w: u32, h: u32, b: u8, g: u8, r: u8) -> CapturedFrame {
+        let mut data = Vec::with_capacity((w * h * 4) as usize);
+        for _ in 0..(w * h) {
+            data.extend_from_slice(&[b, g, r, 0xff]);
+        }
+        CapturedFrame::Bgra {
+            width: w,
+            height: h,
+            data,
+        }
+    }
+
+    #[test]
+    fn identical_bgra_frames_are_still() {
+        let a = bgra_flat(64, 64, 10, 20, 30);
+        let b = bgra_flat(64, 64, 10, 20, 30);
+        assert!(frames_still(&a, &b, &QuiescenceParams::default()).unwrap());
+    }
+
+    #[test]
+    fn a_whole_bgra_screen_change_is_motion() {
+        let a = bgra_flat(64, 64, 0, 0, 0);
+        let b = bgra_flat(64, 64, 255, 255, 255);
+        assert!(!frames_still(&a, &b, &QuiescenceParams::default()).unwrap());
+    }
+
+    #[test]
+    fn a_bgra_dimension_change_is_motion() {
+        let a = bgra_flat(64, 64, 128, 128, 128);
+        let b = bgra_flat(32, 128, 128, 128, 128);
+        assert!(!frames_still(&a, &b, &QuiescenceParams::default()).unwrap());
+    }
+
+    #[test]
+    fn bgra_and_its_png_encoding_compare_equal() {
+        // The fallback correctness contract: a raw BGRA frame and a PNG of the
+        // SAME pixels must read as still relative to each other. If the BGRA
+        // channel order were mishandled the grayscale means would diverge.
+        let (w, h) = (40u32, 40u32);
+        let bgra = bgra_flat(w, h, 30, 90, 200); // B=30 G=90 R=200
+        let png = encode(w, h, |_, _| ((30u16 + 90 + 200) / 3) as u8);
+        let png_frame = CapturedFrame::Png(png);
+        assert!(frames_still(&bgra, &png_frame, &QuiescenceParams::default()).unwrap());
+    }
+
+    #[test]
+    fn a_truncated_bgra_frame_is_an_error() {
+        let a = bgra_flat(64, 64, 0, 0, 0);
+        let bad = CapturedFrame::Bgra {
+            width: 64,
+            height: 64,
+            data: vec![0u8; 10],
+        };
+        let err = frames_still(&a, &bad, &QuiescenceParams::default()).unwrap_err();
         assert_eq!(err.code, smix_error::FailureCode::DriverError);
     }
 

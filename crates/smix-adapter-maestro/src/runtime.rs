@@ -284,6 +284,12 @@ pub trait AppLike: Send + Sync {
     async fn hide_keyboard(&self) -> Result<(), ExpectationFailure>;
     /// Capture a screenshot. Mirrors [`App::screenshot`].
     async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure>;
+    /// Capture a frame preferring the fast raw-BGRA path. Mirrors
+    /// [`App::capture_bgra`]. The default impl wraps [`screenshot`](Self::screenshot)
+    /// as a PNG frame so mock backends keep working.
+    async fn capture_frame(&self) -> Result<smix_sdk::CapturedFrame, ExpectationFailure> {
+        self.screenshot().await.map(smix_sdk::CapturedFrame::Png)
+    }
     /// Session-scoped in-place data clear. Default
     /// impl errors — the real path is only meaningful when a session
     /// is open and the driver is iOS + host has SimctlClient access.
@@ -538,6 +544,9 @@ impl AppLike for App {
     }
     async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure> {
         App::screenshot(self).await
+    }
+    async fn capture_frame(&self) -> Result<smix_sdk::CapturedFrame, ExpectationFailure> {
+        App::capture_bgra(self).await
     }
     async fn tree(&self) -> Result<smix_sdk::A11yNode, ExpectationFailure> {
         App::tree(self).await
@@ -1421,16 +1430,16 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// treating it as "still moving" would burn the whole ceiling on every
     /// step and look like a slow device.
     async fn wait_until_still(&self, ceiling_ms: u64) -> Result<bool, RunError> {
-        // No sleep between samples: the capture is the interval. Measured on a
-        // booted sim, a simctl screenshot round-trip is ~174 ms and the
-        // compare ~39 ms, so consecutive frames are already ~174 ms apart —
-        // a fine spacing to see an animation in. Sleeping on top of that
-        // would only make the verb slower without sampling anything new.
+        // No sleep between samples: the capture is the interval. The raw-BGRA
+        // capture path grabs a frame directly from the resident IOSurface host
+        // (~sub-ms) and compares grayscale in place — no PNG encode/decode. It
+        // falls back to a simctl PNG frame when the surface is unavailable, and
+        // `frames_still` compares BGRA and PNG frames interchangeably.
         let deadline = std::time::Instant::now() + Duration::from_millis(ceiling_ms);
-        let mut previous = self.app.screenshot().await?;
+        let mut previous = self.app.capture_frame().await?;
         loop {
-            let next = self.app.screenshot().await?;
-            if smix_sdk::quiescence::frames_are_still(&previous, &next, &self.quiescence)? {
+            let next = self.app.capture_frame().await?;
+            if smix_sdk::quiescence::frames_still(&previous, &next, &self.quiescence)? {
                 return Ok(true);
             }
             if std::time::Instant::now() >= deadline {

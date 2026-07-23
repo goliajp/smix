@@ -185,6 +185,13 @@ impl DeviceControl for IosDeviceControl {
         self.client.screenshot(udid).await
     }
 
+    async fn capture_bgra(
+        &self,
+        udid: &str,
+    ) -> Result<smix_simctl::surface_capture::CapturedFrame, DeviceControlError> {
+        self.client.capture_bgra(udid).await
+    }
+
     // === Clipboard / Media / Location ===
 
     async fn pasteboard_set(&self, udid: &str, text: &str) -> Result<(), DeviceControlError> {

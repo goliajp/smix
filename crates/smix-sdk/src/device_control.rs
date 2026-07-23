@@ -262,6 +262,22 @@ pub trait DeviceControl: Send + Sync {
     ) -> Result<(), DeviceControlError>;
     async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, DeviceControlError>;
 
+    /// Capture a frame preferring the fast raw-BGRA path (iOS: resident
+    /// IOSurface host, ~0.3 ms, skips the PNG encode+decode round-trip for
+    /// diff-loop consumers). The default impl wraps [`screenshot`](Self::screenshot)
+    /// as a PNG frame, so backends without a direct path (Android) keep
+    /// working unchanged.
+    ///
+    /// Since smix 2.0.0.
+    async fn capture_bgra(
+        &self,
+        udid: &str,
+    ) -> Result<smix_simctl::surface_capture::CapturedFrame, DeviceControlError> {
+        self.screenshot(udid)
+            .await
+            .map(smix_simctl::surface_capture::CapturedFrame::Png)
+    }
+
     // === Clipboard / Media / Location ===
 
     async fn pasteboard_set(&self, udid: &str, text: &str) -> Result<(), DeviceControlError>;

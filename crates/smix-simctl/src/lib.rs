@@ -19,6 +19,9 @@ pub mod registry;
 /// Adaptive `xcrun simctl io screenshot` pacer. See
 /// [`screenshot_pacer::ScreenshotPacer`].
 pub mod screenshot_pacer;
+/// Persistent CoreSimulator framebuffer capture via a resident
+/// `smix-capture-host`. See [`surface_capture::SurfaceCaptureHost`].
+pub mod surface_capture;
 
 use screenshot_pacer::{ScreenshotPacer, ScreenshotPacerConfig};
 use serde::{Deserialize, Serialize};
@@ -1149,6 +1152,10 @@ pub struct SimctlClient {
     /// so a cloned client (which callers occasionally do) still shares
     /// pressure accounting.
     screenshot_pacer: Arc<std::sync::Mutex<ScreenshotPacer>>,
+    /// Resident per-UDID `smix-capture-host` processes for the direct
+    /// IOSurface capture path. Shared so a cloned client reuses the same
+    /// warm surfaces. See [`surface_capture`].
+    capture_hosts: Arc<tokio::sync::Mutex<surface_capture::CaptureHostRegistry>>,
 }
 
 impl Default for SimctlClient {
@@ -1166,6 +1173,9 @@ impl SimctlClient {
             screenshot_pacer: Arc::new(std::sync::Mutex::new(ScreenshotPacer::new(
                 ScreenshotPacerConfig::default(),
             ))),
+            capture_hosts: Arc::new(tokio::sync::Mutex::new(
+                surface_capture::CaptureHostRegistry::default(),
+            )),
         }
     }
 
@@ -1907,6 +1917,100 @@ impl SimctlClient {
     /// decoded or modified. See [`ensure_srgb_chunk`] for the exact
     /// splice operation.
     pub async fn screenshot(&self, udid: &str) -> Result<Vec<u8>, DeviceControlError> {
+        match self.capture_frame(udid, true).await? {
+            surface_capture::CapturedFrame::Png(bytes) => Ok(bytes),
+            // want_png=true only ever produces a PNG (host ImageIO encode or
+            // the simctl fallback). A raw frame here is a protocol violation.
+            surface_capture::CapturedFrame::Bgra { .. } => Err(DeviceControlError::Malformed {
+                subcommand: "screenshot".into(),
+                detail: "capture returned raw BGRA for a PNG request".into(),
+            }),
+        }
+    }
+
+    /// Capture a frame preferring the fast raw-BGRA path.
+    ///
+    /// When the resident IOSurface host is available this returns
+    /// [`CapturedFrame::Bgra`](surface_capture::CapturedFrame::Bgra) —
+    /// ~0.3 ms per frame, no PNG encode. When the surface can't be resolved
+    /// (sim not booted, framework layout change) it falls back to
+    /// `xcrun simctl io screenshot` and returns
+    /// [`CapturedFrame::Png`](surface_capture::CapturedFrame::Png). The
+    /// pixels are correct either way; consumers that only need grayscale
+    /// samples (diff-loop / dhash) skip the PNG encode+decode round-trip.
+    ///
+    /// Since smix 2.0.0.
+    pub async fn capture_bgra(
+        &self,
+        udid: &str,
+    ) -> Result<surface_capture::CapturedFrame, DeviceControlError> {
+        self.capture_frame(udid, false).await
+    }
+
+    /// Core capture path: try the resident IOSurface host, fall back to
+    /// `simctl`. `want_png` selects an in-host ImageIO PNG encode over a raw
+    /// BGRA frame; the fallback is always a PNG.
+    async fn capture_frame(
+        &self,
+        udid: &str,
+        want_png: bool,
+    ) -> Result<surface_capture::CapturedFrame, DeviceControlError> {
+        // Direct path first. No pacer gate: the direct IOSurface read does not
+        // touch `com.apple.display.captureservice`, so the crash-guard floor
+        // the pacer enforces for `simctl io screenshot` does not apply here.
+        // Surface unavailable, or the host transport failed — both fall
+        // through to the correct-but-slow simctl path below.
+        if let Ok(Some(frame)) = self.try_capture_direct(udid, want_png).await {
+            return Ok(frame);
+        }
+        let png = self.screenshot_via_simctl(udid).await?;
+        Ok(surface_capture::CapturedFrame::Png(png))
+    }
+
+    /// Get-or-spawn the resident host for `udid` and grab one frame. Returns
+    /// `Ok(None)` when the host reports the surface is gone, `Err` on a
+    /// transport failure. In both non-`Some` cases the host is dropped (and
+    /// killed) so the next call re-resolves from scratch.
+    async fn try_capture_direct(
+        &self,
+        udid: &str,
+        want_png: bool,
+    ) -> Result<Option<surface_capture::CapturedFrame>, surface_capture::HostError> {
+        // Take the host out from under the lock so a 12.6 MB grab (or a 5s
+        // spawn) never serializes captures for other sims.
+        let existing = { self.capture_hosts.lock().await.take(udid) };
+        let mut host = match existing {
+            Some(h) => h,
+            None => surface_capture::SurfaceCaptureHost::spawn(udid).await?,
+        };
+        match host.grab(want_png).await {
+            Ok(Some(frame)) => {
+                self.capture_hosts.lock().await.put(udid, host);
+                Ok(Some(frame))
+            }
+            // Host is exiting (surface gone) — drop it, fall back.
+            Ok(None) => Ok(None),
+            // Transport died — drop it, fall back.
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Drop the resident capture host for `udid`, if any. Call this whenever a
+    /// lifecycle operation may have invalidated the framebuffer surface
+    /// (shutdown / erase / reboot) so the next capture re-resolves cleanly.
+    ///
+    /// Since smix 2.0.0.
+    pub async fn evict_capture_host(&self, udid: &str) {
+        let host = { self.capture_hosts.lock().await.evict(udid) };
+        if let Some(h) = host {
+            h.shutdown().await;
+        }
+    }
+
+    /// `xcrun simctl io <udid> screenshot <tmpfile>` → raw PNG bytes, paced +
+    /// circuit-guarded, with the sRGB metadata splice. The correct-but-slow
+    /// fallback for [`capture_frame`](Self::capture_frame).
+    async fn screenshot_via_simctl(&self, udid: &str) -> Result<Vec<u8>, DeviceControlError> {
         // Pace + circuit-check before invoking simctl.
         let wait = {
             let mut pacer = self
