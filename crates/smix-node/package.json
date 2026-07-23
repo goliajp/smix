@@ -1,0 +1,16 @@
+{
+  "name": "@goliapkg/smix-node",
+  "version": "2.0.0",
+  "private": true,
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "smix-node"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3"
+  },
+  "scripts": {
+    "build": "napi build --platform --release"
+  }
+}
