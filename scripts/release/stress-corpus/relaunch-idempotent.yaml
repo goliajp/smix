@@ -1,0 +1,7 @@
+# Smoke: launching twice in a row leaves the app foregrounded, not
+# wedged. Exercises the launch path's idempotency.
+appId: com.apple.Preferences
+---
+- launchApp
+- launchApp
+- takeScreenshot: relaunch.png

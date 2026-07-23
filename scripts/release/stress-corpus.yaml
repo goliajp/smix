@@ -1,0 +1,13 @@
+# The stress/smoke corpus. `stress-select.py` reads this; `tier: smoke`
+# flows run per-PR and nightly, `tier: stress` flows run nightly only.
+#
+# STARTER SET — this seeds the harness with device-proven flows and is
+# NOT yet the full 20. Growing it to >=20 device-verified flows across
+# the verb surface (tap / fill / scroll / session / cross-screen nav) is
+# the remaining C5 content work; see docs/v2.md 2026-07-23 C5.
+- path: scripts/release/stress-corpus/launch-and-capture.yaml
+  tier: smoke
+- path: scripts/release/stress-corpus/relaunch-idempotent.yaml
+  tier: smoke
+- path: scripts/release/stress-corpus/tree-after-launch.yaml
+  tier: stress

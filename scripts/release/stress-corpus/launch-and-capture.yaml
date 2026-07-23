@@ -1,0 +1,6 @@
+# Smoke: the app foregrounds and a frame captures. The minimal proof a
+# runner drives a sim at all — proven on device in the v2.8-C4 e2e.
+appId: com.apple.Preferences
+---
+- launchApp
+- takeScreenshot: launch-capture.png
