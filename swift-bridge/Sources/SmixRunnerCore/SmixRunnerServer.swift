@@ -64,6 +64,74 @@ actor ShutdownSignal {
   }
 }
 
+// Re-armable restart signal fired by `POST /soft-cycle`. DISTINCT from
+// `ShutdownSignal`: firing it bounces the in-process FlyingFox server
+// (stop → re-run on the same actor) WITHOUT ending `test_runForever`, so
+// the XCUITest host survives an `smix runner cycle` and the ~23 s SIGINT
+// teardown is skipped entirely. Never fired → the restart-loop's driver
+// simply blocks in `server.run()` exactly as before (purely additive).
+//
+// `wait()` is cancellation-aware (returns `false` on cancel) so the loop
+// can tear the stop-observer down cleanly when a /shutdown — not a
+// restart — ends the loop; without that the non-cancellable park would
+// wedge the task group at shutdown.
+actor RestartSignal {
+  private var pending = false
+  private var waiter: (id: UUID, cont: CheckedContinuation<Bool, Never>)?
+  private var cancelledBeforePark: Set<UUID> = []
+
+  func fire() {
+    if let w = waiter {
+      waiter = nil
+      w.cont.resume(returning: true)
+    } else {
+      // Fired with no one waiting (server just came back, observer not
+      // yet re-parked). Remember it so the next wait() consumes it.
+      pending = true
+    }
+  }
+
+  private func park(_ id: UUID, _ cont: CheckedContinuation<Bool, Never>) {
+    if cancelledBeforePark.remove(id) != nil {
+      cont.resume(returning: false)
+      return
+    }
+    if pending {
+      pending = false
+      cont.resume(returning: true)
+      return
+    }
+    if let existing = waiter {
+      // Single observer at a time; release any stale waiter defensively.
+      waiter = nil
+      existing.cont.resume(returning: false)
+    }
+    waiter = (id, cont)
+  }
+
+  private func cancelWaiter(_ id: UUID) {
+    if let w = waiter, w.id == id {
+      waiter = nil
+      w.cont.resume(returning: false)
+    } else {
+      cancelledBeforePark.insert(id)
+    }
+  }
+
+  /// Suspend until `fire()` (returns `true`) or the calling task is
+  /// cancelled (returns `false`).
+  func wait() async -> Bool {
+    let id = UUID()
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+        Task { await self.park(id, cont) }
+      }
+    } onCancel: {
+      Task { await self.cancelWaiter(id) }
+    }
+  }
+}
+
 /// Per-session `/system-popups` request pacer.
 ///
 /// The XCTest arbitration cost of `/system-popups` is 6 accessibility
@@ -511,6 +579,26 @@ public actor SmixRunnerServer {
   // an NSException (vanished bundle / sim mid-crash / etc.).
   public typealias ForegroundHandler = @Sendable (_ bundleId: String) async -> Bool
 
+  /// Result of the `POST /soft-cycle` app rebind. `rebound` is whether
+  /// the runner-bound app was re-driven; `mode` names how ("relaunch" =
+  /// terminate+launch fresh app, matching what the hard cycle's `up()`
+  /// gives). The server bounce that follows is the runner's concern, not
+  /// the handler's.
+  public struct SoftCycleOutcome: Sendable {
+    public let rebound: Bool
+    public let mode: String
+    public init(rebound: Bool, mode: String) {
+      self.rebound = rebound
+      self.mode = mode
+    }
+  }
+
+  // POST /soft-cycle handler — the app-rebind half of the in-process
+  // cycle. Runs while the server is still up (before the FlyingFox
+  // bounce), so it drives XCUITest through the surviving host exactly
+  // like every other route. Returns how the app was rebound.
+  public typealias SoftCycleHandler = @Sendable () async -> SoftCycleOutcome
+
   // POST /back handler. App-level navigation pop capability —
   // queries `XCUIApplication.navigationBars.buttons.firstMatch` and calls
   // `.tap()`. The standard XCUITest path is i18n-safe (firstMatch is
@@ -866,6 +954,142 @@ public actor SmixRunnerServer {
     return HTTPServer(address: addr)
   }
 
+  enum ServerLoopError: Error, CustomStringConvertible {
+    case serverEndedUnexpectedly
+    case serverFailed(String)
+    var description: String {
+      switch self {
+      case .serverEndedUnexpectedly:
+        return "server.run() ended without a shutdown or restart signal"
+      case .serverFailed(let detail):
+        return "server.run() failed: \(detail)"
+      }
+    }
+  }
+
+  private enum RunOutcome {
+    case restarted
+    case shutdownStopped
+    case failed(any Error)
+  }
+
+  // `Sendable` so it can be a task-group element result — the run
+  // failure is carried as text (a thrown `any Error` is not Sendable).
+  private enum RunEvent: Sendable {
+    case runEnded(errorText: String?)
+    case restartFired
+    case waitCancelled
+  }
+
+  /// Run `server` until `shutdownSignal` fires, re-binding it on the same
+  /// actor each time `restartSignal` fires.
+  ///
+  /// - Shutdown: `stop(timeout: 0)` then this returns normally — the
+  ///   byte-identical exit-0 path `test_runForever` relies on. Observably
+  ///   identical to the pre-C2 single-shot server.
+  /// - Restart (`POST /soft-cycle`): `stop(timeout: restartGraceSeconds)`
+  ///   — a grace window so the in-flight `/soft-cycle` response flushes
+  ///   before the socket closes (FlyingFox `stop` closes the *listening*
+  ///   socket and completes the request-decode, but leaves the in-flight
+  ///   connection's response write to finish, then drains within the
+  ///   grace) — after which the loop re-enters `server.run()` (FlyingFox
+  ///   `guard state == nil` passes post-stop, `SO_REUSEADDR` rebinds,
+  ///   routes persist in `handlers`). The host process is never torn
+  ///   down.
+  static func runServerLoop(
+    _ server: HTTPServer,
+    shutdownSignal: ShutdownSignal,
+    restartSignal: RestartSignal,
+    restartGraceSeconds: TimeInterval = 5.0
+  ) async throws {
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      // Long-lived shutdown observer: parked exactly once, resolved only
+      // by a real /shutdown. Stops the server hard (timeout 0), identical
+      // to the pre-C2 teardown, then ends the loop.
+      group.addTask {
+        await shutdownSignal.wait()
+        await server.stop(timeout: 0)
+      }
+      // Run/restart driver.
+      group.addTask {
+        while true {
+          switch await Self.runUntilRestartOrStop(
+            server: server,
+            shutdownSignal: shutdownSignal,
+            restartSignal: restartSignal,
+            restartGraceSeconds: restartGraceSeconds
+          ) {
+          case .restarted:
+            continue
+          case .shutdownStopped:
+            return
+          case .failed(let error):
+            throw error
+          }
+        }
+      }
+      do {
+        try await group.next()
+      } catch {
+        group.cancelAll()
+        throw error
+      }
+      group.cancelAll()
+    }
+  }
+
+  private static func runUntilRestartOrStop(
+    server: HTTPServer,
+    shutdownSignal: ShutdownSignal,
+    restartSignal: RestartSignal,
+    restartGraceSeconds: TimeInterval
+  ) async -> RunOutcome {
+    await withTaskGroup(of: RunEvent.self) { inner in
+      inner.addTask {
+        do {
+          try await server.run()
+          return .runEnded(errorText: nil)
+        } catch {
+          return .runEnded(errorText: "\(error)")
+        }
+      }
+      inner.addTask {
+        if await restartSignal.wait() {
+          await server.stop(timeout: restartGraceSeconds)
+          return .restartFired
+        }
+        return .waitCancelled
+      }
+
+      var restarted = false
+      var runErrorText: String?
+      // First decisive event, then drain the loser so the group tears
+      // down without a leaked child.
+      if let first = await inner.next() {
+        switch first {
+        case .restartFired: restarted = true
+        case .runEnded(let text): runErrorText = text
+        case .waitCancelled: break
+        }
+      }
+      inner.cancelAll()
+      while let ev = await inner.next() {
+        switch ev {
+        case .restartFired: restarted = true
+        case .runEnded(let text): if runErrorText == nil { runErrorText = text }
+        case .waitCancelled: break
+        }
+      }
+
+      if restarted { return .restarted }
+      if await shutdownSignal.didFire { return .shutdownStopped }
+      if let text = runErrorText {
+        return .failed(ServerLoopError.serverFailed(text))
+      }
+      return .failed(ServerLoopError.serverEndedUnexpectedly)
+    }
+  }
+
   // DispatchTime delta → ms (truncates fractional). Shared by tap
   // (TapStages) and keyboard (KeyboardOutcome.success) timing paths in the
   // UITest closure.
@@ -1214,10 +1438,14 @@ public actor SmixRunnerServer {
     /// categorize why a snapshot returned nil. UITest target
     /// implements via `XCUIApplication.state` + .ips scan. `nil` opts
     /// out and falls back to an `.aliveButTreeEmpty` best-guess.
-    unavailableReasonInferer: UnavailableReasonInferer? = nil
+    unavailableReasonInferer: UnavailableReasonInferer? = nil,
+    /// App-rebind half of `POST /soft-cycle`. `nil` opts out (the route
+    /// is not registered; `smix runner cycle` then always hard-cycles).
+    softCycleHandler: SoftCycleHandler? = nil
   ) async throws {
     let server = Self.makeServer(port: port)
     let shutdownSignal = ShutdownSignal()
+    let restartSignal = RestartSignal()
 
     // The extended /health body is what lets the CLI detect on-disk
     // runner version drift — without it the runner never tells the CLI
@@ -1258,6 +1486,25 @@ public actor SmixRunnerServer {
     await server.appendRoute("POST /shutdown") { _ in
       await shutdownSignal.fire()
       return ShutdownRoute.response()
+    }
+    // In-process cycle. Rebind the app FIRST (server still up, so the
+    // handler drives XCUITest through the surviving host), then fire the
+    // restart signal to bounce FlyingFox. The bounce runs `stop` with a
+    // grace window (see `runServerLoop`) so this response flushes before
+    // the socket closes; the host-side CLI re-confirms recovery with a
+    // follow-up `GET /health`. Registered only when a handler is wired.
+    if let softCycleHandler {
+      await server.appendRoute("POST /soft-cycle") { _ in
+        let start = DispatchTime.now()
+        let outcome = await softCycleHandler()
+        await restartSignal.fire()
+        let ms = Self.msBetween(start, DispatchTime.now())
+        return SoftCycleRoute.response(
+          rebound: outcome.rebound,
+          mode: outcome.mode,
+          wallMs: ms
+        )
+      }
     }
     await server.appendRoute("POST /tap") { request in
       let body: Data
@@ -2017,17 +2264,15 @@ public actor SmixRunnerServer {
       }
     }
 
-    // Run the server concurrently with a stop-observer. On
-    // /shutdown the observer calls `server.stop(timeout: 0)` (close socket
-    // immediately, no in-flight long connections to preserve — the /shutdown
-    // response was already sent). FlyingFox `server.run()` then re-throws the
-    // socket-closed/cancellation error from its own catch; that throw, once
-    // shutdown was signalled, IS the expected graceful path — swallow it so
-    // `runForever` returns normally (→ test_runForever returns → XCTest
-    // exit 0). If run() throws WITHOUT a shutdown signal (a genuine startup
-    // failure), it is re-thrown unchanged, and if /shutdown is never called
-    // the observer awaits forever so run() is never stopped.
-    var sawShutdown = false
+    // Run the server in a restart loop (`runServerLoop`). /shutdown fires
+    // `shutdownSignal` → `stop(timeout: 0)` → the loop returns → this
+    // returns → test_runForever returns → XCTest exit 0 (byte-identical to
+    // the pre-C2 single-shot path). /soft-cycle fires `restartSignal` →
+    // `stop(timeout: grace)` → the loop re-runs the SAME server on the
+    // SAME actor (host never torn down). A genuine server failure with
+    // neither signalled is re-thrown, exactly as before. Never signalled →
+    // the loop blocks in `server.run()` forever, as it always has.
+    //
     // Set the runtime-scoped actors as task-locals so every request
     // handler (spawned as child tasks by FlyingFox) inherits them via
     // Swift's structured concurrency propagation. nil values mean
@@ -2036,29 +2281,11 @@ public actor SmixRunnerServer {
     try await Self.$currentAppAliveCache.withValue(appAliveCache) {
     try await Self.$currentPopupPacer.withValue(popupPacer) {
     try await Self.$currentUnavailableReasonInferer.withValue(unavailableReasonInferer) {
-      do {
-        try await withThrowingTaskGroup(of: Void.self) { group in
-          group.addTask {
-            try await server.run()
-          }
-          group.addTask {
-            await shutdownSignal.wait()
-            await server.stop(timeout: 0)
-          }
-          do {
-            try await group.next()
-          } catch {
-            sawShutdown = await shutdownSignal.didFire
-            if !sawShutdown {
-              group.cancelAll()
-              throw error
-            }
-          }
-          group.cancelAll()
-        }
-      } catch {
-        if !sawShutdown { throw error }
-      }
+      try await Self.runServerLoop(
+        server,
+        shutdownSignal: shutdownSignal,
+        restartSignal: restartSignal
+      )
     }}}}
   }
 }
