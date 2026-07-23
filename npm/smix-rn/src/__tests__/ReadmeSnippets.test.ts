@@ -14,6 +14,8 @@ import {
   App,
   ExpectationFailure,
   HttpSimRuntime,
+  MockNodeDriver,
+  MockSelectorResolver,
   Selector,
   Session,
   SmixNotImplementedError,
@@ -90,31 +92,41 @@ describe('the README\'s claims about this package', () => {
   })
 })
 
-describe('the README\'s "not wired up yet" warning is true', () => {
-  it('names methods that really do throw SmixNotImplementedError', async () => {
-    // The warning is the first thing an npm visitor reads. If a method
-    // it names quietly started working (or was renamed), the page would
-    // be lying in the direction that wastes the most of a reader's
-    // time — so the claim is checked, not trusted.
-    const named = [...README.matchAll(/`(Smix|App)\.(\w+)`/g)].map(
-      (m) => [m[1], m[2]] as const,
-    )
-    expect(named.length).toBeGreaterThanOrEqual(3)
+describe('the README\'s throw-warning is true', () => {
+  // The warning is the first thing an npm visitor reads. It must not lie in
+  // either direction: a method it says still throws must throw, and a method
+  // it shows driving must no longer throw SmixNotImplementedError.
+  const makeApp = () => {
+    const driver = new MockNodeDriver()
+    return new App('com.example.app', driver, driver.session, new MockSelectorResolver().resolve)
+  }
 
-    const runtime = new HttpSimRuntime('http://127.0.0.1:1')
-    const app = new App('com.example.app', runtime.resolver)
-    for (const [holder, method] of named) {
-      if (holder !== 'App') continue
-      const fn = (app as unknown as Record<string, unknown>)[method as string]
-      expect(typeof fn, `App.${method} is named by the README`).toBe('function')
-      await expect(
-        (fn as (...a: unknown[]) => Promise<unknown>).call(
-          app,
-          Selector.id('x'),
-          'text',
-        ),
-        `App.${method} must throw the error the README promises`,
-      ).rejects.toBeInstanceOf(SmixNotImplementedError)
+  it('names exactly the three surfaces that still throw, and they do', async () => {
+    const gaps = new Set(
+      [...README.matchAll(/`App\.(screenshot|openUrl|launchFresh)`/g)].map((m) => m[1]),
+    )
+    expect(gaps, 'README must name screenshot, openUrl, launchFresh as still-throwing').toEqual(
+      new Set(['screenshot', 'openUrl', 'launchFresh']),
+    )
+    const app = makeApp()
+    const calls: Array<() => Promise<unknown>> = [
+      () => app.screenshot(),
+      () => app.openUrl('https://x'),
+      () => app.launchFresh(),
+    ]
+    for (const call of calls) {
+      await expect(call()).rejects.toBeInstanceOf(SmixNotImplementedError)
     }
+  })
+
+  it('the driving methods the README shows working no longer throw napi', async () => {
+    const app = makeApp()
+    // Empty resolver -> tap fails ELEMENT_NOT_FOUND, a real failure, NOT
+    // SmixNotImplementedError; snapshotTree drives and resolves.
+    await expect(app.tap(Selector.id('x'))).rejects.not.toBeInstanceOf(SmixNotImplementedError)
+    await expect(app.fill(Selector.id('x'), 't')).rejects.not.toBeInstanceOf(
+      SmixNotImplementedError,
+    )
+    await expect(app.snapshotTree()).resolves.toBeDefined()
   })
 })

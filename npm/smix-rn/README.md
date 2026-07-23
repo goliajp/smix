@@ -4,11 +4,16 @@ TypeScript types and host-side building blocks for
 [smix](https://github.com/goliajp/smix) — AI-native UI automation for the
 iOS Simulator and Android emulator.
 
-**Driving a device from TypeScript is not wired up yet.** This package
-ships the same typed API surface as the Swift / Kotlin / Rust SDKs, but
-the driving methods (`Smix.launchApp`, `App.tap`, `App.fill`, …) throw
-`SmixNotImplementedError` until the native transport lands. To drive a
-device today, use the [`smix` CLI](https://crates.io/crates/smix-cli) or
+**Live driving now runs through the napi addon.** This package ships the
+same typed API surface as the Swift / Kotlin / Rust SDKs; `Smix.launchApp`,
+`App.tap`, `App.fill`, and the rest drive a device by calling into
+`@goliapkg/smix-node`. The bundled per-platform addon — so you don't wire
+one up yourself — lands with the prebuild matrix in a later release; until
+then, inject a `NodeDriver`. Three surfaces still throw
+`SmixNotImplementedError` pending their transport: `App.screenshot` and
+`App.openUrl` need a runner wire route, and `App.launchFresh` needs
+host-side state clearing. To drive a device without wiring the addon
+yourself today, use the [`smix` CLI](https://crates.io/crates/smix-cli) or
 one of the Swift / Kotlin / Rust SDKs.
 
 ## What works today

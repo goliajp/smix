@@ -6,10 +6,13 @@
 // the resolver seam: given a treeJson, `resolver` / `labelsResolver` resolve
 // selectors against the runner's served /select/resolve* routes.
 
-import { type A11yNode } from './A11yNode.js'
+import { type A11yNode, flatten } from './A11yNode.js'
+import { ExpectationFailure } from './ExpectationFailure.js'
 import { Locator, SmixNotImplementedError } from './Locator.js'
-import { type Selector } from './Selector.js'
+import type { NodeDriver, NodeSession } from './NodeDriver.js'
+import { type Selector, encodeSelectorJson } from './Selector.js'
 import type { LabelsResolver, SelectorResolver } from './SelectorResolver.js'
+import type { SystemPopup } from './SystemPopup.js'
 
 type KeyName = 'return' | 'delete' | 'space' | 'tab' | 'escape' | 'enter'
 type SwipeDirection = 'up' | 'down' | 'left' | 'right'
@@ -20,6 +23,10 @@ type SwipeDirection = 'up' | 'down' | 'left' | 'right'
 export class App {
   constructor(
     public readonly bundleId: string,
+    /** The napi driver (act + sense); a mock in tests, the real addon in prod. */
+    public readonly driver: NodeDriver,
+    /** The napi session this app was launched in (lifecycle verbs). */
+    public readonly session: NodeSession,
     public readonly resolver: SelectorResolver,
     /**
      * Wraps `resolve_selector_labels`, backing toHaveCount and
@@ -32,39 +39,72 @@ export class App {
     },
   ) {}
 
-  // ---- act methods (pending napi) -----------------------------------
+  // ---- act methods --------------------------------------------------
 
-  async tap(_selector: Selector, _opts: { timeoutMs?: number } = {}): Promise<void> {
-    throw new SmixNotImplementedError('napi', 'App.tap')
+  /**
+   * Snapshot the tree, resolve `selector` against it, and return the first
+   * matching id. Selectors resolve to an id on this side; only the id crosses
+   * the napi boundary. No match throws ELEMENT_NOT_FOUND with the visible
+   * elements so the failure is AI-readable.
+   */
+  private async resolveFirstOrThrow(selector: Selector): Promise<string> {
+    const treeJson = await this.driver.snapshotTree()
+    const selectorJson = encodeSelectorJson(selector)
+    const ids = await this.resolver(treeJson, selectorJson)
+    const first = ids[0]
+    if (first === undefined) {
+      const tree = JSON.parse(treeJson) as A11yNode
+      throw new ExpectationFailure({
+        code: 'ELEMENT_NOT_FOUND',
+        message: `no element matched selector ${selectorJson}`,
+        selectorJson,
+        visibleElements: flatten(tree).slice(0, 20),
+      })
+    }
+    return first
   }
 
-  async fill(_selector: Selector, _text: string): Promise<void> {
-    throw new SmixNotImplementedError('napi', 'App.fill')
+  async tap(selector: Selector, _opts: { timeoutMs?: number } = {}): Promise<void> {
+    await this.driver.tapById(await this.resolveFirstOrThrow(selector))
   }
 
-  async pressKey(_key: KeyName): Promise<void> {
-    throw new SmixNotImplementedError('napi', 'App.pressKey')
+  async fill(selector: Selector, text: string): Promise<void> {
+    const id = await this.resolveFirstOrThrow(selector)
+    await this.driver.tapById(id)
+    await this.driver.inputText(text)
   }
 
-  async swipe(_direction: SwipeDirection): Promise<void> {
-    throw new SmixNotImplementedError('napi', 'App.swipe')
+  async pressKey(key: KeyName): Promise<void> {
+    await this.driver.pressKey(key === 'enter' ? 'return' : key)
+  }
+
+  async swipe(direction: SwipeDirection): Promise<void> {
+    await this.driver.swipe(direction)
   }
 
   async screenshot(): Promise<Uint8Array> {
-    throw new SmixNotImplementedError('napi', 'App.screenshot')
+    // No runner wire route yet — singled out to a later checkpoint (v2.md
+    // decision, 2026-07-24). The blocker is the wire, not napi.
+    throw new SmixNotImplementedError('wire', 'App.screenshot')
   }
 
   /** Tap at a normalized coordinate (0..1) — escape hatch per §9 #3. */
-  async tapAtCoord(_nx: number, _ny: number): Promise<void> {
-    throw new SmixNotImplementedError('napi', 'App.tapAtCoord')
+  async tapAtCoord(nx: number, ny: number): Promise<void> {
+    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) {
+      throw new ExpectationFailure({
+        code: 'ASSERTION_FAILED',
+        message: `tapAtCoord expects normalized 0..1 coordinates, got (${nx}, ${ny})`,
+      })
+    }
+    await this.driver.tapAtCoord(nx, ny)
   }
 
   async terminate(): Promise<void> {
-    throw new SmixNotImplementedError('napi', 'App.terminate')
+    await this.session.terminateApp()
   }
 
   async relaunch(): Promise<void> {
-    throw new SmixNotImplementedError('napi', 'App.relaunch')
+    await this.session.relaunchApp()
   }
 
   async launchFresh(_opts: {
@@ -72,7 +112,10 @@ export class App {
     clearKeychain?: boolean
     appPath?: string
   } = {}): Promise<void> {
-    throw new SmixNotImplementedError('napi', 'App.launchFresh')
+    // Clearing state / installing an appPath is host-side (simctl), with no
+    // runner wire — singled out to a later checkpoint. The blocker is the
+    // host, not napi.
+    throw new SmixNotImplementedError('host', 'App.launchFresh')
   }
 
   // ---- sense methods ------------------------------------------------
@@ -86,19 +129,21 @@ export class App {
    * no live simulator to snapshot. Lands with the napi axis.
    */
   async snapshotTree(): Promise<A11yNode> {
-    throw new SmixNotImplementedError('napi', 'App.snapshotTree')
+    return JSON.parse(await this.driver.snapshotTree()) as A11yNode
   }
 
   async tree(): Promise<A11yNode> {
     return this.snapshotTree()
   }
 
-  async systemPopups(): Promise<A11yNode[]> {
-    throw new SmixNotImplementedError('napi', 'App.systemPopups')
+  async systemPopups(): Promise<SystemPopup[]> {
+    return JSON.parse(await this.driver.systemPopups()) as SystemPopup[]
   }
 
   async openUrl(_url: string): Promise<void> {
-    throw new SmixNotImplementedError('napi', 'App.openUrl')
+    // No runner wire route yet — singled out to a later checkpoint. The
+    // blocker is the wire, not napi.
+    throw new SmixNotImplementedError('wire', 'App.openUrl')
   }
 }
 
