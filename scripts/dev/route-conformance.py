@@ -56,6 +56,11 @@ EXCLUDED_AREAS = [
         "crates/smix-ai-tier/tests/verdict.rs",
         "names a binary that is deliberately absent",
     ),
+    (
+        "swift-bridge/Tests/SmixRunnerCoreTests/RestartLoopTests.swift",
+        "registers ad-hoc /ping + /bounce handlers on a test server to "
+        "exercise the restart loop's grace flush — fixtures, not runner routes",
+    ),
 ]
 
 # Literals that are filesystem paths. A route never lives under these.
