@@ -49,11 +49,17 @@ if [ "${1:-}" = "--selftest" ]; then
 fi
 
 TIER="smoke"; PARALLEL=""; DRY=0; SIM="${SMIX_CORPUS_SIM:-}"
+# The runner's initial target bundle. `runner up` refuses to start
+# without one (it would latch to a built-in default), and each flow
+# rebinds to its own appId per request anyway, so this is just the
+# initial binding. Defaults to the starter corpus's app.
+BUNDLE="${SMIX_CORPUS_BUNDLE:-com.apple.Preferences}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --tier) TIER="$2"; shift 2 ;;
     --parallel) PARALLEL="$2"; shift 2 ;;
     --sim) SIM="$2"; shift 2 ;;
+    --bundle) BUNDLE="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -83,7 +89,7 @@ cleanup() { "$SMIX_BIN" runner down --device "$SIM" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 "$SMIX_BIN" sim boot "$SIM" >"$LOG_DIR/boot.log" 2>&1 || true
-"$SMIX_BIN" runner up "$SIM" >"$LOG_DIR/up.log" 2>&1 \
+"$SMIX_BIN" runner up "$SIM" --bundle "$BUNDLE" >"$LOG_DIR/up.log" 2>&1 \
   || { echo "error: runner up failed"; tail -20 "$LOG_DIR/up.log" >&2; exit 3; }
 
 # Run the flows. --parallel shards them across sims when the caller
