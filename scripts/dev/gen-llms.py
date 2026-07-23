@@ -57,6 +57,7 @@ FULL_INCLUDE = [
     "docs/ai-guide/09-sessions.md",
     "docs/ai-guide/10-ai-assertions.md",
     "docs/ai-guide/11-mcp.md",
+    "docs/ai-guide/12-authoring.md",
     "docs/ai-guide/wire-format.md",
     "docs/ai-guide/abi-stability.md",
     "docs/ai-guide/verb-parity.md",
