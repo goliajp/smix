@@ -82,6 +82,33 @@ class SmixHttpServer(
     // header (parity with the iOS runner).
     private val treeServeCounter = java.util.concurrent.atomic.AtomicLong(0)
 
+    // Rate-limit screenshots (parity with the iOS pacer). A tight OCR
+    // loop otherwise contends with UiAutomator; the floor is cheap
+    // insurance. Elapsed-realtime clock so it is monotonic across the
+    // process. See ScreenshotPacer.
+    private val screenshotPacer = ScreenshotPacer(nowMs = { android.os.SystemClock.elapsedRealtime() })
+
+    /**
+     * Take a screenshot through the pacer: wait out the interval floor,
+     * shoot, and record the wall time (and any failure, which opens the
+     * pacer's circuit). Returns null on a failed capture, same as the
+     * raw call. A backpressure decision still waits here rather than
+     * erroring, so the caller's contract is unchanged.
+     */
+    private fun pacedScreenshot(): android.graphics.Bitmap? {
+        when (val d = screenshotPacer.computeWait()) {
+            is PacerDecision.Wait -> if (d.ms > 0) Thread.sleep(d.ms)
+            is PacerDecision.Backpressure -> Thread.sleep(d.retryAfterMs)
+        }
+        val start = android.os.SystemClock.elapsedRealtime()
+        val bmp = instrumentation.uiAutomation.takeScreenshot()
+        screenshotPacer.record(
+            android.os.SystemClock.elapsedRealtime() - start,
+            failed = bmp == null,
+        )
+        return bmp
+    }
+
     // NanoHTTPD serves each connection on its own thread, so the body
     // drained in `serve` reaches that request's handler and no other.
     private val drainedBody = ThreadLocal<String>()
@@ -745,7 +772,7 @@ class SmixHttpServer(
         // packages add ~10MB each).
         val target = RunnerWire.decodeOcrTarget(readBodyString(session))
 
-        val bitmap = instrumentation.uiAutomation.takeScreenshot()
+        val bitmap = pacedScreenshot()
             ?: return errorJson(
                 Response.Status.INTERNAL_ERROR,
                 "screenshot_failed",
