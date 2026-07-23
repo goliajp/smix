@@ -428,7 +428,10 @@ fn post_soft_cycle(port: u16) -> Result<(u16, Vec<u8>), ()> {
 /// Parse the numeric status from an HTTP response's status line
 /// (`HTTP/1.1 200 OK`).
 fn parse_http_status(buf: &[u8]) -> Option<u16> {
-    let line_end = buf.windows(2).position(|w| w == b"\r\n").unwrap_or(buf.len());
+    let line_end = buf
+        .windows(2)
+        .position(|w| w == b"\r\n")
+        .unwrap_or(buf.len());
     let line = std::str::from_utf8(&buf[..line_end]).ok()?;
     line.split_whitespace().nth(1)?.parse::<u16>().ok()
 }
