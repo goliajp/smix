@@ -8,6 +8,10 @@ on:
   push:
     branches: ["**"]
     tags-ignore: ["**"]
+  schedule:
+    # Nightly — the graded stress tier runs the full corpus. Per-push
+    # runs stay on the smoke tier (in the gates job below).
+    - cron: "0 8 * * *"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -93,6 +97,10 @@ jobs:
         run: python3 scripts/dev/audit-ledger-scan.py
       - name: scope promise scan
         run: python3 scripts/dev/scope-promise-scan.py
+      - name: stress tier selector self-test
+        run: python3 scripts/release/stress-select.py --test
+      - name: stress-gate aggregation self-test
+        run: bash scripts/release/stress-gate.sh --selftest
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check
 
