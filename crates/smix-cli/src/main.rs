@@ -10,6 +10,7 @@
 
 mod act;
 mod authoring;
+mod bench;
 mod capsule;
 mod down;
 #[cfg(test)]
@@ -104,6 +105,25 @@ struct Cli {
 enum Cmd {
     /// Probe environment health: xcrun simctl availability + sim listing.
     Doctor,
+    /// Perf regression gate: measure the in-process corpus, compare
+    /// against the committed baseline, and fail on a >5% slowdown or a
+    /// metric that stopped being measured. The absolute `perf_gate`
+    /// ceilings catch a spike; this catches slow drift under them.
+    Bench {
+        /// Overwrite the committed baseline with this run's measurement
+        /// instead of comparing against it.
+        #[arg(long = "update-baseline", default_value_t = false)]
+        update_baseline: bool,
+        /// Read the "current" measurement from a JSON file instead of
+        /// measuring. For tests and CI reproduction; skips the
+        /// machine-sensitive measurement.
+        #[arg(long = "current-file")]
+        current_file: Option<std::path::PathBuf>,
+        /// Baseline JSON to compare against. Defaults to the committed
+        /// `crates/smix-cli/bench/baseline.json`.
+        #[arg(long = "baseline-file")]
+        baseline_file: Option<std::path::PathBuf>,
+    },
     /// Runtime observability commands. `dump` pretty-prints the
     /// runner's recent subprocess ring buffer + open sessions + sim
     /// health so a failed flow can be diagnosed without a new smix
@@ -1042,6 +1062,18 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
     let simctl = SimctlClient::new();
     match cli.cmd {
         Cmd::Doctor => cmd_doctor(&simctl).await?,
+        Cmd::Bench {
+            update_baseline,
+            current_file,
+            baseline_file,
+        } => {
+            let default_baseline = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("bench")
+                .join("baseline.json");
+            let baseline_path = baseline_file.unwrap_or(default_baseline);
+            bench::run(update_baseline, current_file.as_deref(), &baseline_path)
+                .map_err(CliError::Other)?;
+        }
         Cmd::Diagnostic { action } => cmd_diagnostic(action).await?,
         Cmd::Sim { action } => match action {
             SimAction::List { json } => cmd_sim_list(&simctl, json).await?,
