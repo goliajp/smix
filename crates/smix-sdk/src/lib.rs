@@ -99,10 +99,10 @@ pub use smix_selector::{
     AnchorBox, IndexModifiers, Modifiers, Pattern, Selector, True, describe_selector, match_text,
     match_text_compiled,
 };
+pub use smix_simctl::surface_capture::CapturedFrame;
 pub use smix_simctl::{
     Appearance, DeviceControlError, LaunchResult, SimctlClient, SimctlPermission,
 };
-pub use smix_simctl::surface_capture::CapturedFrame;
 
 /// Nucleus of `App::assert_screenshot`. Wraps fs IO + the dhash algorithm
 /// without any `App` dependency, so it can be exercised in host-side

@@ -197,15 +197,12 @@ impl SurfaceCaptureHost {
 
         let mut stderr_reader = BufReader::new(stderr);
         let mut header = String::new();
-        let read = tokio::time::timeout(
-            Duration::from_secs(5),
-            stderr_reader.read_line(&mut header),
-        )
-        .await;
+        let read =
+            tokio::time::timeout(Duration::from_secs(5), stderr_reader.read_line(&mut header))
+                .await;
         let (width, height) = match read {
-            Ok(Ok(n)) if n > 0 => parse_geometry_line(&header).ok_or_else(|| {
-                HostError::ResolveFailed(format!("bad WxH header: {header:?}"))
-            })?,
+            Ok(Ok(n)) if n > 0 => parse_geometry_line(&header)
+                .ok_or_else(|| HostError::ResolveFailed(format!("bad WxH header: {header:?}")))?,
             Ok(Ok(_)) => {
                 return Err(HostError::ResolveFailed(
                     "host exited before WxH header".into(),
@@ -345,7 +342,9 @@ mod tests {
     #[test]
     fn frame_header_parses_little_endian() {
         // w=1206 (0x000004B6), h=2622 (0x00000A3E), len=12648528 (0x00C10050)
-        let buf = [0xB6, 0x04, 0x00, 0x00, 0x3E, 0x0A, 0x00, 0x00, 0x50, 0x00, 0xC1, 0x00];
+        let buf = [
+            0xB6, 0x04, 0x00, 0x00, 0x3E, 0x0A, 0x00, 0x00, 0x50, 0x00, 0xC1, 0x00,
+        ];
         let h = FrameHeader::parse(&buf);
         assert_eq!(h.width, 1206);
         assert_eq!(h.height, 2622);
