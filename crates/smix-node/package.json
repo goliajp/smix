@@ -5,7 +5,12 @@
   "main": "index.js",
   "types": "index.d.ts",
   "napi": {
-    "binaryName": "smix-node"
+    "binaryName": "smix-node",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu"
+    ]
   },
   "devDependencies": {
     "@napi-rs/cli": "^3"

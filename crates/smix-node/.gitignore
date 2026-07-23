@@ -5,3 +5,7 @@
 *.node
 /index.js
 /index.d.ts
+
+# napi create-npm-dirs output — per-platform subpackages, regenerated at
+# build/publish time, not source.
+/npm/

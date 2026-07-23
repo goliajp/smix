@@ -98,7 +98,7 @@ describe('Smix.launchApp (C3 entry)', () => {
   it('opens a session, launches, and returns a wired App', async () => {
     const driver = new MockNodeDriver()
     const resolver = new MockSelectorResolver()
-    const app = await Smix.launchApp(bundleId('com.acme.app'), driver, resolver.resolve)
+    const app = await Smix.launchApp(bundleId('com.acme.app'), resolver.resolve, { driver })
     expect(app).toBeInstanceOf(App)
     expect(driver.calls.find((c) => c.verb === 'openSession')?.args[0]).toBe('com.acme.app')
     expect(driver.session.calls.filter((c) => c.verb === 'launchApp')).toHaveLength(1)

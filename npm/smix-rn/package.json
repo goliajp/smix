@@ -24,6 +24,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json"
   },
+  "optionalDependencies": {
+    "@goliapkg/smix-node": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "typescript": "^5.5.0",

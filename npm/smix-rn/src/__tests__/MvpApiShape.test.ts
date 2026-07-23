@@ -109,11 +109,9 @@ describe('the driving surface works through the node seam; only host/wire gaps t
   }
 
   test('Smix.launchApp drives through the node driver and returns an App', async () => {
-    const app = await Smix.launchApp(
-      bundleId('dev.smix.target'),
-      new MockNodeDriver(),
-      new MockSelectorResolver().resolve,
-    )
+    const app = await Smix.launchApp(bundleId('dev.smix.target'), new MockSelectorResolver().resolve, {
+      driver: new MockNodeDriver(),
+    })
     expect(app).toBeInstanceOf(App)
   })
 

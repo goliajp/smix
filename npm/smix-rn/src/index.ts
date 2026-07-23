@@ -22,6 +22,11 @@ export {
 } from './SystemPopup.js'
 
 export {
+  defaultRunnerPort,
+  loadNodeDriver,
+} from './loadNodeDriver.js'
+
+export {
   literal,
   patternFromJson,
   patternToJson,
