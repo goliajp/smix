@@ -1,0 +1,5 @@
+appId: com.apple.Preferences
+---
+- launchApp
+- scrollUntilVisible:
+    element: { id: "com.apple.settings.accessibility" }

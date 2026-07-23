@@ -1,0 +1,5 @@
+appId: com.apple.Preferences
+---
+- launchApp
+- assertVisible: { id: "com.apple.settings.primaryAppleAccount" }
+- takeScreenshot: launch-assert.png

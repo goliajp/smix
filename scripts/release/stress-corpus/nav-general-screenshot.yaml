@@ -1,0 +1,8 @@
+appId: com.apple.Preferences
+---
+- launchApp
+- scrollUntilVisible:
+    element: { id: "com.apple.settings.general" }
+- tapOn: { id: "com.apple.settings.general" }
+- takeScreenshot: general-subscreen.png
+- back
