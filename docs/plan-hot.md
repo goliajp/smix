@@ -66,6 +66,12 @@ python3 scripts/dev/route-conformance.py                                  # 基�
 
 - **vitest 工具链（`npm/smix-rn/package.json` 核实）**：`"test": "vitest run"`、`"typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json"`，`vitest ^2` 在 devDeps，`vitest.config.ts` 在。跑法 = `cd npm/smix-rn && bun run test` / `bun run typecheck`。TS strict + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` 全开（§8.3）—— 构造签名变更后 typecheck 必须一并绿。既有 `__tests__/MvpApiShape.test.ts` 的「pending-napi surface throws」块断言 tap/fill/snapshotTree/systemPopups/`Smix.launchApp` 抛 napi，**退桩后这些不再抛** → 该块必须随退桩改写（改为经 mock driver 真驱动 / 或断言保留的 3 桩改标后仍 throw）。
 
+- **⚠️ 补充核实（实现前发现，本段热化 agent 漏了 —— 必须一并处理，否则 checkpoint 红/README 谎报）**：`App` 构造签名从 2 参（`bundleId, resolver`）改 5 参，`grep -rn 'new App(' npm/smix-rn/src` 命中**三处** caller，热化只提了 MvpApiShape 两处，**漏了第三处 `ReadmeSnippets.test.ts:105`**（`new App('com.example.app', runtime.resolver)`，`HttpSimRuntime` 造 resolver）。更关键：`ReadmeSnippets.test.ts` 的契约是 **读 `README.md` → 正则提取所有 ``App.<m>`` / ``Smix.<m>`` 名 → 断言每个被点名的 App 方法都 `rejects.toBeInstanceOf(SmixNotImplementedError)`**（守「README 说会抛就真会抛」）。而 `README.md:9` 明写「**the driving methods (`Smix.launchApp`, `App.tap`, `App.fill`, …) throw** [SmixNotImplementedError]」。C3 让这 9 个真工作后：
+  1. **`README.md` 必须改**：line 9 的「driving methods … throw」对退掉的 9 个不再成立 —— 改为「driving works through the napi addon (lands wire distribution in a later release); `App.screenshot`/`openUrl`/`launchFresh` still throw pending wire/host」之类，**只保留对 screenshot/openUrl/launchFresh 的 throw 声明**。这是 npm 落地页的中心警示，措辞要准（`honesty/no-false-verified` 同源：README 不能对已工作的方法说「会抛」）。
+  2. **`ReadmeSnippets.test.ts` 必须改**：`new App(...)` 补 driver+session(mock)；「每个 README-named App 方法都 throw napi」的断言改为「只有 README 仍点名为 throw 的（screenshot/openUrl/launchFresh）throw、其余经 mock driver 真驱动」。
+  3. **`SmixNotImplementedError` 消息措辞**：其 message 模板是 ``${api} not implemented yet (lands ${stage})``（`Locator.ts:186`）。stage 改 `'wire'`/`'host'` 后消息成「lands wire」/「lands host」—— 语义可接受（「等 wire 路由 / host 侧落地」），但确认 README 与该措辞一致。
+  → **S3 的范围要含 README.md 改写 + ReadmeSnippets.test.ts 改写**（原 S3 只写了 MvpApiShape）。README 是面向 npm 的公开文档：改的是仓库源文件（非 `npm publish`，发布仍顺延用户授权），但措辞要当公开声明对待、准确无谎。
+
 ## 步骤（线性，3 个，按面分组）
 
 ### S1. seam + 恢复 live sense + 退入口桩（`Smix.launchApp` + `App` 构造）
