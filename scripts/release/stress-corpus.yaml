@@ -1,13 +1,44 @@
-# The stress/smoke corpus. `stress-select.py` reads this; `tier: smoke`
-# flows run per-PR and nightly, `tier: stress` flows run nightly only.
-#
-# STARTER SET — this seeds the harness with device-proven flows and is
-# NOT yet the full 20. Growing it to >=20 device-verified flows across
-# the verb surface (tap / fill / scroll / session / cross-screen nav) is
-# the remaining C5 content work; see docs/v2.md 2026-07-23 C5.
+# Stress/smoke corpus — device-verified against Preferences with stable,
+# locale-independent ids. smoke per-PR+nightly, stress nightly. The fill verb
+# is not covered (Preferences' search a11y frame is unreliable on iOS 26.5;
+# see docs/v2.md 2026-07-23 C5) — deferred to a fixture-app corpus.
+- path: scripts/release/stress-corpus/assert-account-cell.yaml
+  tier: smoke
+- path: scripts/release/stress-corpus/assert-general-after-scroll.yaml
+  tier: stress
+- path: scripts/release/stress-corpus/clearstate-launch.yaml
+  tier: stress
 - path: scripts/release/stress-corpus/launch-and-capture.yaml
   tier: smoke
+- path: scripts/release/stress-corpus/launch-assert-capture.yaml
+  tier: smoke
+- path: scripts/release/stress-corpus/longpress-account.yaml
+  tier: stress
+- path: scripts/release/stress-corpus/nav-accessibility-and-back.yaml
+  tier: stress
+- path: scripts/release/stress-corpus/nav-general-and-back.yaml
+  tier: smoke
+- path: scripts/release/stress-corpus/nav-general-screenshot.yaml
+  tier: stress
 - path: scripts/release/stress-corpus/relaunch-idempotent.yaml
   tier: smoke
+- path: scripts/release/stress-corpus/relaunch-then-assert.yaml
+  tier: stress
+- path: scripts/release/stress-corpus/screenshot-twice.yaml
+  tier: stress
+- path: scripts/release/stress-corpus/scroll-to-accessibility.yaml
+  tier: stress
+- path: scripts/release/stress-corpus/scroll-to-actionbutton.yaml
+  tier: stress
+- path: scripts/release/stress-corpus/scroll-to-camera.yaml
+  tier: stress
+- path: scripts/release/stress-corpus/scroll-to-general.yaml
+  tier: smoke
+- path: scripts/release/stress-corpus/scroll-to-screentime.yaml
+  tier: stress
+- path: scripts/release/stress-corpus/scroll-to-siri.yaml
+  tier: stress
 - path: scripts/release/stress-corpus/tree-after-launch.yaml
   tier: stress
+- path: scripts/release/stress-corpus/wait-for-account.yaml
+  tier: smoke

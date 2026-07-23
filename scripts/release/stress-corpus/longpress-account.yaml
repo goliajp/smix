@@ -1,0 +1,4 @@
+appId: com.apple.Preferences
+---
+- launchApp
+- longPressOn: { id: "com.apple.settings.primaryAppleAccount", duration: 800 }

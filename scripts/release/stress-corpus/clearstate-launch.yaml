@@ -1,0 +1,4 @@
+appId: com.apple.Preferences
+---
+- launchApp: { clearState: true }
+- assertVisible: { id: "com.apple.settings.primaryAppleAccount" }

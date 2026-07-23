@@ -1,0 +1,6 @@
+appId: com.apple.Preferences
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: "com.apple.settings.primaryAppleAccount" }
+    timeout: 10000

@@ -1,0 +1,8 @@
+appId: com.apple.Preferences
+---
+- launchApp
+- scrollUntilVisible:
+    element: { id: "com.apple.settings.accessibility" }
+- tapOn: { id: "com.apple.settings.accessibility" }
+- back
+- assertVisible: { id: "com.apple.settings.primaryAppleAccount" }

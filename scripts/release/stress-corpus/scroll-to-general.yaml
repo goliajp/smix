@@ -1,0 +1,6 @@
+appId: com.apple.Preferences
+---
+- launchApp
+- scrollUntilVisible:
+    element: { id: "com.apple.settings.general" }
+- assertVisible: { id: "com.apple.settings.general" }
