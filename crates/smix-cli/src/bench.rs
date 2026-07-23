@@ -135,8 +135,11 @@ fn median_ns(mut f: impl FnMut(), iters: u32) -> f64 {
 fn measure_corpus() -> BenchSet {
     use smix_selector::{Modifiers, Pattern, Selector, describe_selector};
 
+    // smix's own bench workload, not a stand-in for a user's app — the
+    // id is named for what it is so the placeholder gate (which forbids
+    // com.example.* in production source) has nothing to catch.
     let flow_yaml = "\
-appId: com.example.app
+appId: smix.bench.corpus
 ---
 - launchApp
 - tapOn: { id: sign-in }
