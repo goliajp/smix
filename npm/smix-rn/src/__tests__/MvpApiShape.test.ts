@@ -10,6 +10,7 @@ import {
   ExpectationFailure,
   FAILURE_CODES,
   literal,
+  MockNodeDriver,
   MockSelectorResolver,
   Selector,
   Smix,
@@ -101,26 +102,49 @@ describe('FailureCode', () => {
   })
 })
 
-describe('pending-napi surface throws SmixNotImplementedError', () => {
-  test('Smix.launchApp throws napi', async () => {
-    await expect(
-      Smix.launchApp(bundleId('dev.smix.target'), new MockSelectorResolver().resolve),
-    ).rejects.toBeInstanceOf(SmixNotImplementedError)
+describe('the driving surface works through the node seam; only host/wire gaps throw', () => {
+  const makeApp = () => {
+    const driver = new MockNodeDriver()
+    return new App('dev.smix.target', driver, driver.session, new MockSelectorResolver().resolve)
+  }
+
+  test('Smix.launchApp drives through the node driver and returns an App', async () => {
+    const app = await Smix.launchApp(
+      bundleId('dev.smix.target'),
+      new MockNodeDriver(),
+      new MockSelectorResolver().resolve,
+    )
+    expect(app).toBeInstanceOf(App)
   })
 
-  test('App act + sense methods throw napi', async () => {
-    const app = new App('dev.smix.target', new MockSelectorResolver().resolve)
-    await expect(app.tap(Selector.id('x'))).rejects.toBeInstanceOf(SmixNotImplementedError)
-    await expect(app.fill(Selector.id('x'), 't')).rejects.toBeInstanceOf(SmixNotImplementedError)
-    await expect(app.snapshotTree()).rejects.toBeInstanceOf(SmixNotImplementedError)
-    await expect(app.tree()).rejects.toBeInstanceOf(SmixNotImplementedError)
-    await expect(app.systemPopups()).rejects.toBeInstanceOf(SmixNotImplementedError)
+  test('retired act + sense methods no longer throw SmixNotImplementedError', async () => {
+    const app = makeApp()
+    // tap with an empty resolver fails ELEMENT_NOT_FOUND — a real failure,
+    // NOT SmixNotImplementedError. That distinction is the whole point.
+    await expect(app.tap(Selector.id('x'))).rejects.not.toBeInstanceOf(SmixNotImplementedError)
+    await expect(app.snapshotTree()).resolves.toBeDefined()
+    await expect(app.tree()).resolves.toBeDefined()
+    await expect(app.systemPopups()).resolves.toBeDefined()
   })
 
-  test('Locator assertions throw napi at the tree seam', async () => {
-    const app = new App('dev.smix.target', new MockSelectorResolver().resolve)
+  test('screenshot / openUrl / launchFresh still throw, re-labeled off napi', async () => {
+    const app = makeApp()
+    const gaps: Array<[() => Promise<unknown>, string]> = [
+      [() => app.screenshot(), 'wire'],
+      [() => app.openUrl('https://x'), 'wire'],
+      [() => app.launchFresh(), 'host'],
+    ]
+    for (const [call, stage] of gaps) {
+      await expect(call()).rejects.toSatisfy(
+        (e: unknown) => e instanceof SmixNotImplementedError && e.stage === stage,
+      )
+    }
+  })
+
+  test('Locator polls the real tree seam rather than throwing napi', async () => {
+    const app = makeApp()
     await expect(
       app.find(Selector.id('x')).toBeVisible({ timeoutMs: 50 }),
-    ).rejects.toBeInstanceOf(SmixNotImplementedError)
+    ).rejects.not.toBeInstanceOf(SmixNotImplementedError)
   })
 })

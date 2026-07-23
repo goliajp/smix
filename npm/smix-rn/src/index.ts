@@ -9,6 +9,19 @@ export {
 } from './App.js'
 
 export {
+  MockNodeDriver,
+  MockNodeSession,
+  type NodeDriver,
+  type NodeSession,
+  type RecordedCall,
+} from './NodeDriver.js'
+
+export {
+  type SystemPopup,
+  type SystemPopupButton,
+} from './SystemPopup.js'
+
+export {
   literal,
   patternFromJson,
   patternToJson,
