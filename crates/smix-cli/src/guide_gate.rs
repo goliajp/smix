@@ -430,6 +430,10 @@ fn guide_pages() -> BTreeMap<&'static str, &'static str> {
             "10-ai-assertions",
             include_str!("../../../docs/ai-guide/10-ai-assertions.md"),
         ),
+        (
+            "12-authoring",
+            include_str!("../../../docs/ai-guide/12-authoring.md"),
+        ),
     ])
 }
 

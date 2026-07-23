@@ -151,6 +151,32 @@ The `SmixDriver`-backed Swift and Kotlin sessions carry no state
 stream — poll `GET /health`, or watch the supervisor, for the same
 signal there.
 
+### Playbook — what to do on each transition
+
+The state is a raw signal; the response is not one-size. The comments in the
+snippets above compress to this runbook. "Gate loop" = the driving loop that
+issues flow steps.
+
+| State | What it means | Do | Why |
+|---|---|---|---|
+| `healthy` | every watched signal in envelope | proceed | nothing to recover from |
+| `degraded` | one signal slow — screenshot slow-path, `/health` aging, popups throttled — but the runner is alive | **pause the gate loop, do not fail**; back off and re-check state before the next step | a step issued during a slowdown times out on latency, not on a real defect; failing it attributes the wrong cause |
+| `cycling` | supervisor is mid auto-restart | **wait for `healthy`**, then re-issue the *last* step; do not count the interruption as a failed attempt | the runner is briefly absent by design; a call now fails transport, not the app |
+| `dead` | SimRenderServer / xcodebuild is gone | **bail** — stop the gate loop and surface it; a fresh `runner up` (or supervisor cycle) is required before any step can succeed | nothing the gate does recovers a dead host; retrying only produces a wall of transport errors |
+
+Two transitions deserve care beyond the table:
+
+- **`healthy → degraded → healthy`** is normal flapping under load. Do not
+  treat a single `degraded` as terminal; only escalate if it persists past your
+  back-off budget.
+- **`cycling → dead`** means the auto-restart itself failed. This is the one
+  case to escalate immediately rather than keep waiting — the supervisor has
+  given up, and so should the gate.
+
+For an app crash *without* a host problem (state stays `healthy`, but the target
+app is gone), the response is neither pause nor bail — it is
+[`relaunch_app()`](#relaunch-app) below, which recovers in place without a
+cycle.
 
 ### Relaunch app
 
