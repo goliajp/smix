@@ -1,10 +1,10 @@
-# Stress: after launch the a11y tree is fetchable (sense path alive).
+# Stress: after launch the a11y tree is fetchable and a known element
+# resolves. Asserts the Apple-account cell by its stable identifier
+# (locale-independent, at the top of Settings) rather than by visible
+# text — the harness caught the first version asserting "General",
+# which sits below the fold and is localised.
 appId: com.apple.Preferences
 ---
 - launchApp
 - assertVisible:
-    fallback:
-      - text: "General"
-      - text: "通用"
-      - ocrText: "General"
-      - ocrText: "通用"
+    id: "com.apple.settings.primaryAppleAccount"
