@@ -3019,6 +3019,20 @@ final class SmixRunnerUITests: XCTestCase {
         @unknown default:
           return .unknown
         }
+      },
+      // App-rebind half of `POST /soft-cycle`. Terminate + launch the
+      // runner-bound app fresh — the SAME semantics `up()`'s boot
+      // `app.launch()` gives a hard cycle — so a soft cycle is a faster
+      // equivalent, not a weaker one (an activate-only rebind would leave
+      // the app in its prior state, silently narrowing what `cycle`
+      // means). The FlyingFox bounce that follows is the runner core's
+      // concern (`runServerLoop`).
+      softCycleHandler: {
+        await SmixRunnerServer.onMain {
+          app.terminate()
+          app.launch()
+        }
+        return SmixRunnerServer.SoftCycleOutcome(rebound: true, mode: "relaunch")
       }
     )
   }

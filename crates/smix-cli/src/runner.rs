@@ -351,6 +351,102 @@ fn read_health_bytes(port: u16, cap: usize) -> Result<(bool, Vec<u8>), ()> {
     Ok((status_ok, buf))
 }
 
+/// Probe a live runner for the in-process soft-cycle and report the
+/// outcome. `POST /soft-cycle` asks the surviving XCUITest host to bounce
+/// its FlyingFox server (via the in-process restart signal) and rebind
+/// the app; a `GET /health` afterwards confirms the server came back on
+/// the same port. The whole path costs one app relaunch (~seconds)
+/// instead of the ~36 s SIGINT-teardown + xcodebuild respawn a hard cycle
+/// pays.
+///
+/// Only a reachable runner can be soft-cycled: if `/health` does not
+/// answer up front the host is dead or wedged and the caller must hard
+/// cycle. An older runner that never learned the route answers 404 →
+/// [`SoftCycleProbe::Unsupported`], also a hard fallback.
+fn try_soft_cycle(port: u16) -> smix_runner_client::SoftCycleProbe {
+    use smix_runner_client::SoftCycleProbe;
+    if !health_ok(port) {
+        return SoftCycleProbe::Unreachable;
+    }
+    let start = std::time::Instant::now();
+    match post_soft_cycle(port) {
+        Ok((200, _body)) => {
+            // The bounce briefly drops the listening socket; confirm the
+            // reborn server answers before declaring recovery.
+            if wait_health_back(port, std::time::Duration::from_secs(15)) {
+                SoftCycleProbe::Recovered {
+                    wall_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+                }
+            } else {
+                SoftCycleProbe::Failed(
+                    "/soft-cycle answered 200 but /health did not return after the bounce"
+                        .to_string(),
+                )
+            }
+        }
+        Ok((404, _)) | Ok((400, _)) => SoftCycleProbe::Unsupported,
+        Ok((status, _)) => SoftCycleProbe::Failed(format!("/soft-cycle returned status {status}")),
+        Err(()) => {
+            // The response was cut mid-flight. If the server nonetheless
+            // came back, the bounce did happen — treat it as recovered;
+            // otherwise it genuinely failed.
+            if wait_health_back(port, std::time::Duration::from_secs(15)) {
+                SoftCycleProbe::Recovered {
+                    wall_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+                }
+            } else {
+                SoftCycleProbe::Failed(
+                    "/soft-cycle connection dropped and /health did not return".to_string(),
+                )
+            }
+        }
+    }
+}
+
+/// `POST /soft-cycle` over raw loopback TCP. Returns `(status, body)`.
+/// The read timeout is generous because the handler performs the app
+/// relaunch before it writes the response.
+fn post_soft_cycle(port: u16) -> Result<(u16, Vec<u8>), ()> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let mut s = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_secs(2))
+        .map_err(|_| ())?;
+    s.set_read_timeout(Some(Duration::from_secs(30)))
+        .map_err(|_| ())?;
+    s.write_all(b"POST /soft-cycle HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        .map_err(|_| ())?;
+    let mut buf = Vec::with_capacity(512);
+    s.read_to_end(&mut buf).map_err(|_| ())?;
+    if buf.is_empty() {
+        return Err(());
+    }
+    let status = parse_http_status(&buf).ok_or(())?;
+    Ok((status, buf))
+}
+
+/// Parse the numeric status from an HTTP response's status line
+/// (`HTTP/1.1 200 OK`).
+fn parse_http_status(buf: &[u8]) -> Option<u16> {
+    let line_end = buf.windows(2).position(|w| w == b"\r\n").unwrap_or(buf.len());
+    let line = std::str::from_utf8(&buf[..line_end]).ok()?;
+    line.split_whitespace().nth(1)?.parse::<u16>().ok()
+}
+
+/// Poll `GET /health` until it answers 200 or the deadline passes.
+fn wait_health_back(port: u16, timeout: std::time::Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if health_ok(port) {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
 /// Forget the iOS runner record. Reported rather than discarded: a
 /// stale record makes the next `up` believe a runner is already there.
 fn clear_state(root: &Path) {
@@ -1012,18 +1108,37 @@ pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<()
         );
     }
     println!("cycling runner: udid={udid} port={cycle_port} bundle={bundle:?}");
-    down(root, cycle_port)?;
-    up(
-        root,
-        &udid,
-        cycle_port,
-        bundle.as_deref(),
-        runner_project,
-        UpOptions {
-            supervise: had_supervisor,
-            ..Default::default()
-        },
-    )
+
+    // Try the in-process soft-cycle first: if the XCUITest host is alive
+    // and answering /health, it can bounce its server + relaunch the app
+    // in seconds without the ~36 s SIGINT-teardown + xcodebuild respawn.
+    // Anything else (host dead, wedged, or an older runner that never
+    // learned /soft-cycle) falls back to the byte-identical hard cycle,
+    // preserving the N=1 / no-supervisor contract.
+    match smix_runner_client::soft_cycle_plan(try_soft_cycle(cycle_port)) {
+        smix_runner_client::CyclePlan::Soft { wall_ms } => {
+            println!(
+                "runner soft-cycled: recovered in {wall_ms}ms on port {cycle_port} \
+                 (host survived, no xcodebuild respawn)"
+            );
+            Ok(())
+        }
+        smix_runner_client::CyclePlan::HardFallback { reason } => {
+            println!("soft-cycle unavailable ({reason}); hard-cycling via xcodebuild");
+            down(root, cycle_port)?;
+            up(
+                root,
+                &udid,
+                cycle_port,
+                bundle.as_deref(),
+                runner_project,
+                UpOptions {
+                    supervise: had_supervisor,
+                    ..Default::default()
+                },
+            )
+        }
+    }
 }
 
 /// Collect ±`context_size` lines surrounding the first occurrence of
