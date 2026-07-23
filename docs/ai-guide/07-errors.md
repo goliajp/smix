@@ -131,7 +131,10 @@ over gradually; a run under it reports success for taps that missed.
 **What this does NOT catch**: an element covered by something
 transparent to the a11y tree. A scrim over your button contains the
 tapped point too, so the check passes and the touch still may not reach
-the button. See "tap returns `ok: true` but state doesn't change".
+the button. Why no private XCUITest surface recovers this — the ivar and
+hit-test enumeration behind the limit — is in
+`docs/research/c7-zorder-obtainability.md`. See "tap returns `ok: true`
+but state doesn't change".
 
 ### DRIVER_ERROR
 
