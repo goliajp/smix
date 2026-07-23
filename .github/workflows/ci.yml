@@ -48,8 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - name: install
-        working-directory: npm/smix-rn
+      - name: install (workspace)
         run: bun install --frozen-lockfile
       - name: typecheck
         working-directory: npm/smix-rn
@@ -114,3 +113,40 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: smix-server wiring suite
         run: cargo test -p smix-server
+
+  napi-prebuild:
+    # Builds the per-triple .node for each published target on a native
+    # runner, and validates the npm distribution structure. Wires the
+    # distribution machinery only — it never publishes (that is deferred and
+    # user-gated); it uploads artifacts a later release step would collect.
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - target: aarch64-apple-darwin
+            host: macos-14
+          - target: x86_64-apple-darwin
+            host: macos-14
+          - target: x86_64-unknown-linux-gnu
+            host: ubuntu-latest
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+      - name: add rust target
+        run: rustup target add ${{ matrix.settings.target }}
+      - name: install (workspace)
+        run: bun install --frozen-lockfile
+      - name: build .node
+        working-directory: crates/smix-node
+        run: bunx napi build --platform --release --target ${{ matrix.settings.target }}
+      - name: package structure
+        working-directory: crates/smix-node
+        run: bunx napi create-npm-dirs
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smix-node-${{ matrix.settings.target }}
+          path: crates/smix-node/*.node
+          if-no-files-found: error
