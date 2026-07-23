@@ -9,7 +9,32 @@
 use std::sync::Arc;
 
 use napi_derive::napi;
-use smix_runner_client::HttpRunnerClient;
+use smix_input::{KeyName, SwipeDirection};
+use smix_runner_client::{
+    HttpRunnerClient, RunnerTransportError, SessionAppLifecycleRequest, SessionOpenRequest,
+    SessionRelaunchAppRequest,
+};
+
+/// A wire transport failure is a cross-language contract report, not a
+/// defensive catch — the JS caller needs the reason, so it surfaces as a
+/// rejected Promise rather than a swallowed error.
+fn transport_err(e: RunnerTransportError) -> napi::Error {
+    napi::Error::from_reason(e.to_string())
+}
+
+/// A serialization failure of a wire type is a programmer error (the type
+/// derives Serialize); it still crosses the boundary as a reason string
+/// rather than panicking the Node process.
+fn json_err(e: serde_json::Error) -> napi::Error {
+    napi::Error::from_reason(e.to_string())
+}
+
+/// Parse a camelCase wire-enum name at the boundary, reusing the enum's own
+/// serde mapping so the name table lives in exactly one place.
+fn parse_wire_enum<T: serde::de::DeserializeOwned>(name: &str, what: &str) -> napi::Result<T> {
+    serde_json::from_value(serde_json::Value::String(name.to_string()))
+        .map_err(|_| napi::Error::from_reason(format!("unknown {what}: {name:?}")))
+}
 
 #[napi]
 pub struct SmixNodeDriver {
@@ -38,10 +63,132 @@ impl SmixNodeDriver {
     #[napi]
     pub async fn tap_at_coord(&self, nx: f64, ny: f64) -> napi::Result<String> {
         let client = Arc::clone(&self.client);
-        let result = client
-            .tap_at_norm_coord(nx, ny)
+        let result = client.tap_at_norm_coord(nx, ny).await.map_err(transport_err)?;
+        serde_json::to_string(&result).map_err(json_err)
+    }
+
+    /// Tap the element with accessibility identifier `id`. Returns whether a
+    /// matching element was found and tapped — selectors resolve to an id in
+    /// the SDK layer, so no selector crosses the boundary (parity with the
+    /// UniFFI surface).
+    #[napi]
+    pub async fn tap_by_id(&self, id: String) -> napi::Result<bool> {
+        let client = Arc::clone(&self.client);
+        client.tap_by_id(&id).await.map_err(transport_err)
+    }
+
+    /// Type `text` into the focused element.
+    #[napi]
+    pub async fn input_text(&self, text: String) -> napi::Result<()> {
+        let client = Arc::clone(&self.client);
+        client.input_text(&text).await.map_err(transport_err)
+    }
+
+    /// Press a hardware/keyboard key by its camelCase wire name (e.g.
+    /// `return`, `arrowUp`). The keyboard diagnostic payload is dropped —
+    /// fire-and-return, matching the UniFFI surface.
+    #[napi]
+    pub async fn press_key(&self, key: String) -> napi::Result<()> {
+        let key: KeyName = parse_wire_enum(&key, "key")?;
+        let client = Arc::clone(&self.client);
+        client.press_key(key).await.map_err(transport_err)?;
+        Ok(())
+    }
+
+    /// Swipe once in a camelCase direction (`up`/`down`/`left`/`right`).
+    #[napi]
+    pub async fn swipe(&self, direction: String) -> napi::Result<()> {
+        let direction: SwipeDirection = parse_wire_enum(&direction, "direction")?;
+        let client = Arc::clone(&self.client);
+        client.swipe_once(direction).await.map_err(transport_err)?;
+        Ok(())
+    }
+
+    /// Snapshot the accessibility tree as JSON — the full scope (`None`), the
+    /// same convention as the UniFFI surface. The Node side parses it.
+    #[napi]
+    pub async fn snapshot_tree(&self) -> napi::Result<String> {
+        let client = Arc::clone(&self.client);
+        let tree = client.get_tree(None).await.map_err(transport_err)?;
+        serde_json::to_string(&tree).map_err(json_err)
+    }
+
+    /// The system popups currently on screen, as JSON.
+    #[napi]
+    pub async fn system_popups(&self) -> napi::Result<String> {
+        let client = Arc::clone(&self.client);
+        let popups = client.system_popups(None).await.map_err(transport_err)?;
+        serde_json::to_string(&popups).map_err(json_err)
+    }
+
+    /// Open a session bound to `bundle_id` and return a handle for the
+    /// lifecycle verbs. The session shares this driver's client (connection
+    /// pool). `activate: false` mirrors the UniFFI surface — the caller
+    /// foregrounds explicitly.
+    #[napi]
+    pub async fn open_session(&self, bundle_id: String) -> napi::Result<SmixNodeSession> {
+        let client = Arc::clone(&self.client);
+        let req = SessionOpenRequest {
+            bundle_id,
+            activate: false,
+        };
+        let resp = client.open_session(&req).await.map_err(transport_err)?;
+        Ok(SmixNodeSession {
+            client,
+            session_id: resp.session_id,
+        })
+    }
+}
+
+/// A handle to an open runner session. Only the lifecycle verbs need the
+/// session id, so they live here; the stateless act/sense verbs stay on the
+/// driver.
+#[napi]
+pub struct SmixNodeSession {
+    client: Arc<HttpRunnerClient>,
+    session_id: String,
+}
+
+#[napi]
+impl SmixNodeSession {
+    /// Launch (or relaunch fresh) the session's app.
+    #[napi]
+    pub async fn launch_app(&self) -> napi::Result<()> {
+        let client = Arc::clone(&self.client);
+        let req = SessionAppLifecycleRequest {
+            session_id: self.session_id.clone(),
+            ..Default::default()
+        };
+        client.launch_session_app(&req).await.map_err(transport_err)?;
+        Ok(())
+    }
+
+    /// Terminate the session's app.
+    #[napi]
+    pub async fn terminate_app(&self) -> napi::Result<()> {
+        let client = Arc::clone(&self.client);
+        let req = SessionAppLifecycleRequest {
+            session_id: self.session_id.clone(),
+            ..Default::default()
+        };
+        client
+            .terminate_session_app(&req)
             .await
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        serde_json::to_string(&result).map_err(|e| napi::Error::from_reason(e.to_string()))
+            .map_err(transport_err)?;
+        Ok(())
+    }
+
+    /// Terminate and relaunch the session's app in one cycle.
+    #[napi]
+    pub async fn relaunch_app(&self) -> napi::Result<()> {
+        let client = Arc::clone(&self.client);
+        let req = SessionRelaunchAppRequest {
+            session_id: self.session_id.clone(),
+        };
+        client
+            .relaunch_session_app(&req)
+            .await
+            .map_err(transport_err)?;
+        Ok(())
     }
 }
