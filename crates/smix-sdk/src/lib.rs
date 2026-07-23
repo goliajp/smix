@@ -102,6 +102,7 @@ pub use smix_selector::{
 pub use smix_simctl::{
     Appearance, DeviceControlError, LaunchResult, SimctlClient, SimctlPermission,
 };
+pub use smix_simctl::surface_capture::CapturedFrame;
 
 /// Nucleus of `App::assert_screenshot`. Wraps fs IO + the dhash algorithm
 /// without any `App` dependency, so it can be exercised in host-side
@@ -1534,6 +1535,22 @@ impl App {
         let udid = self.require_udid()?;
         self.device
             .screenshot(udid)
+            .await
+            .map_err(simctl_to_failure)
+    }
+
+    /// Capture a frame preferring the fast raw-BGRA path (skips PNG
+    /// encode+decode for diff-loop consumers). Falls back to a PNG frame when
+    /// the direct IOSurface path is unavailable. See
+    /// [`DeviceControl::capture_bgra`](crate::device_control::DeviceControl::capture_bgra).
+    ///
+    /// Since smix 2.0.0.
+    pub async fn capture_bgra(
+        &self,
+    ) -> Result<smix_simctl::surface_capture::CapturedFrame, ExpectationFailure> {
+        let udid = self.require_udid()?;
+        self.device
+            .capture_bgra(udid)
             .await
             .map_err(simctl_to_failure)
     }
