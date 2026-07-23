@@ -130,5 +130,6 @@ python3 scripts/dev/gen-llms.py --check
 # its subset invariant (smoke ⊆ all) is what keeps stress-gate from
 # hand-maintaining a second list.
 python3 scripts/release/stress-select.py --test
+bash scripts/release/stress-gate.sh --selftest
 
 echo "preflight: clean"
