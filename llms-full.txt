@@ -1284,6 +1284,21 @@ smix down                      # tear down all smix-owned processes (runner, cap
 
 If XCUITest / xcodebuild processes remain after teardown, use `pgrep -fl xctrunner` / `pkill xctrunner` (or the equivalent for `xcodebuild`) to clear them.
 
+### Perf regression (`smix bench`)
+
+```bash
+smix bench                      # measure the in-process corpus, compare to the committed baseline, fail on >5% drift
+smix bench --update-baseline    # overwrite the baseline with this run (do this on the machine that will gate)
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--update-baseline` | (off) | Write this run's measurement as the new baseline instead of comparing |
+| `--baseline-file <PATH>` | `crates/smix-cli/bench/baseline.json` | Baseline JSON to compare against |
+| `--current-file <PATH>` | (unset) | Read the "current" measurement from a file instead of measuring — for tests / CI reproduction |
+
+The absolute `perf_gate` budgets catch a spike; this catches slow drift under them. The baseline holds absolute times from the machine that captured it, so run `--update-baseline` on the machine that will gate (see `crates/smix-cli/bench/README.md` on cross-machine use).
+
 ### Low-level probes (use a running runner)
 
 These act on the runner's currently-active sim. Used for ad-hoc debugging without writing YAML.
