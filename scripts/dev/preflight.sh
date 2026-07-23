@@ -126,4 +126,9 @@ done
 bash scripts/dev/fence-check.sh
 python3 scripts/dev/gen-llms.py --check
 
+# The stress/smoke tier selector decides which corpus flows a tier runs;
+# its subset invariant (smoke ⊆ all) is what keeps stress-gate from
+# hand-maintaining a second list.
+python3 scripts/release/stress-select.py --test
+
 echo "preflight: clean"

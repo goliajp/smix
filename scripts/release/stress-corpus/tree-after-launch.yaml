@@ -1,0 +1,10 @@
+# Stress: after launch the a11y tree is fetchable (sense path alive).
+appId: com.apple.Preferences
+---
+- launchApp
+- assertVisible:
+    fallback:
+      - text: "General"
+      - text: "通用"
+      - ocrText: "General"
+      - ocrText: "通用"
