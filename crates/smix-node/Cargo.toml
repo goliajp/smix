@@ -1,0 +1,26 @@
+[package]
+name = "smix-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-node — napi-rs binding of the smix wire client (smix-runner-client) for the TypeScript/Node SDK. Produces a per-triple .node addon through which the TS SDK reaches live device driving — the napi peer of smix-ffi's UniFFI surface. Not published to crates.io; consumed as a binary artifact by the npm package."
+homepage.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", default-features = false, features = ["napi9", "tokio_rt"] }
+napi-derive = "3"
+smix-runner-client = { path = "../smix-runner-client", version = "2.0.0" }
+serde_json = { workspace = true }
+
+[build-dependencies]
+napi-build = "2"
