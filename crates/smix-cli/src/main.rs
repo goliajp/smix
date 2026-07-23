@@ -15,6 +15,7 @@ mod capsule;
 mod down;
 #[cfg(test)]
 mod guide_gate;
+mod parallel;
 
 #[cfg(test)]
 mod release_record;
@@ -400,6 +401,19 @@ Documentation: docs/AI_GUIDE.md
         /// `smix capsule ...`.
         #[arg(long, env = "SMIX_UDID")]
         device: Option<String>,
+        /// Additional sims for `--parallel`. Repeatable. The flows are
+        /// sharded round-robin across `--device` plus every
+        /// `--also-device`; each shard runs as its own single-sim
+        /// `smix run`, so a shard is the ordinary sequential path pinned
+        /// to one sim. Ignored when `--parallel` is 1.
+        #[arg(long = "also-device")]
+        also_device: Vec<String>,
+        /// Run up to N sims concurrently, sharding the listed flows
+        /// across `--device` + `--also-device`. Default 1 = the
+        /// single-sim path, byte-identical. Capped at the number of sims
+        /// given.
+        #[arg(long, default_value_t = 1)]
+        parallel: usize,
         /// Bundle id / Android package for `App::foreground` (skipped
         /// with --no-launch). Overridden by `appId:` / `app:` in the
         /// yaml header.
@@ -1593,6 +1607,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Run {
             flows,
             device,
+            also_device,
+            parallel,
             bundle_id,
             animations,
             runner_port,
@@ -1696,6 +1712,91 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 return Ok(std::process::ExitCode::from(fail));
             }
+
+            // Parallel multi-sim. Shard the flows across `--device` +
+            // `--also-device`, each shard a child `smix run` pinned to
+            // one sim — so a shard reuses the sequential single-sim path
+            // verbatim rather than re-implementing it concurrently. Only
+            // when >1 sim is actually in play; `--parallel 1` (default)
+            // or a single device falls through to the path below,
+            // byte-identical.
+            let all_devices: Vec<String> = device
+                .iter()
+                .cloned()
+                .chain(also_device.iter().cloned())
+                .collect();
+            let sim_count = parallel::effective_sim_count(parallel, all_devices.len());
+            if sim_count > 1 {
+                let devices = &all_devices[..sim_count];
+                let flow_strs: Vec<String> =
+                    flows.iter().map(|p| p.display().to_string()).collect();
+                let buckets = parallel::shard_flows(flow_strs.len(), sim_count);
+                let shards: Vec<(String, Vec<String>)> = buckets
+                    .iter()
+                    .enumerate()
+                    .map(|(i, idxs)| {
+                        (
+                            devices[i].clone(),
+                            idxs.iter().map(|&j| flow_strs[j].clone()).collect(),
+                        )
+                    })
+                    .collect();
+                // CLI-sourced flags a child needs; behaviour switches and
+                // the flow's own appId are inherited via config/env and
+                // yaml. runner_port is per-sim (skipped → each child
+                // resolves its own); await/gate signals are batch
+                // coordination, not per-shard; --parallel/--also-device
+                // never recurse.
+                let mut passthrough: Vec<String> = Vec::new();
+                if let Some(b) = &bundle_id {
+                    passthrough.push("--bundle-id".into());
+                    passthrough.push(b.clone());
+                }
+                if no_launch {
+                    passthrough.push("--no-launch".into());
+                }
+                if animations {
+                    passthrough.push("--animations".into());
+                }
+                if activate {
+                    passthrough.push("--activate".into());
+                }
+                if verbose {
+                    passthrough.push("--verbose".into());
+                }
+                if fail_fast {
+                    passthrough.push("--fail-fast".into());
+                }
+                if retry != 1 {
+                    passthrough.push("--retry".into());
+                    passthrough.push(retry.to_string());
+                }
+                passthrough.push("--platform".into());
+                passthrough.push(
+                    match platform {
+                        RunPlatform::Ios => "ios",
+                        RunPlatform::Android => "android",
+                    }
+                    .into(),
+                );
+                if let Some(a) = &apps_config {
+                    passthrough.push("--apps-config".into());
+                    passthrough.push(a.display().to_string());
+                }
+                if let Some(d) = &debug_output {
+                    passthrough.push("--debug-output".into());
+                    passthrough.push(d.display().to_string());
+                }
+                for (k, v) in &env {
+                    passthrough.push("--env".into());
+                    passthrough.push(format!("{k}={v}"));
+                }
+                let exe = std::env::current_exe()
+                    .map_err(|e| CliError::Other(format!("cannot find smix binary: {e}")))?;
+                let code = parallel::run_parallel(&exe, &shards, &passthrough);
+                return Ok(std::process::ExitCode::from(code));
+            }
+
             // The verbose flag sets SMIX_LOG=debug for this process
             // only. tracing_subscriber (initialized in whichever binary
             // set it up) will pick it up.
