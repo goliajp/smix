@@ -352,7 +352,12 @@ WORKSPACE_VERSION="$(grep '^version' "$ROOT/Cargo.toml" | head -1 | sed 's/.*"\(
 [[ "$WORKSPACE_VERSION" == "$VERSION" ]] \
   || fail "workspace Cargo.toml version=$WORKSPACE_VERSION doesn't match arg $VERSION"
 
-NPM_VERSION="$(cd "$ROOT/npm/smix-rn" && node -p 'require("./package.json").version')"
+# python3, not `node -p`: under nvm, `node` is a shell function that only
+# exists in an interactive shell, so a ship started from a script or a
+# non-interactive context died here with "node: command not found" after
+# every gate had already passed. python3 is what the rest of this script
+# already relies on.
+NPM_VERSION="$(python3 -c 'import json;print(json.load(open("'"$ROOT"'/npm/smix-rn/package.json"))["version"])')"
 [[ "$NPM_VERSION" == "$VERSION" ]] \
   || fail "npm package.json version=$NPM_VERSION doesn't match arg $VERSION"
 
