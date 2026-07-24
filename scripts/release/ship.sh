@@ -373,6 +373,7 @@ CRATES=(
   smix-store smix-simctl smix-runner-client
   smix-host-coord-resolver smix-driver
   smix-sdk smix-mcp smix-adapter-maestro smix-recorder
+  smix-authoring-propose
   smix-cli
 )
 for c in "${CRATES[@]}"; do

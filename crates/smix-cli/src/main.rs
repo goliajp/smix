@@ -644,9 +644,15 @@ enum AuthoringAction {
         /// Output format.
         #[arg(long, value_enum, default_value_t = authoring::GenFormat::Maestro)]
         format: authoring::GenFormat,
-        /// Runner HTTP port (Android default 28080).
-        #[arg(long, default_value_t = 28080)]
-        port: u16,
+        /// Runner HTTP port (default: the device's registered port, else
+        /// 28080 — the Android runner's default).
+        #[arg(long)]
+        port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port that
+        /// device is registered on.
+        #[arg(long)]
+        device: Option<String>,
         /// App / bundle id embedded in the generated flow.
         #[arg(long, default_value = "com.example")]
         app_id: String,
@@ -2091,9 +2097,20 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 duration,
                 format,
                 port,
+                device,
                 app_id,
                 test_fn_name,
             } => {
+                // The run_port ladder, with the Android runner's 28080 as
+                // the final rung: tap-record is Android-only today.
+                let port = port
+                    .or_else(|| {
+                        device
+                            .as_deref()
+                            .and_then(lookup_registered)
+                            .and_then(|sim| sim.runner_port)
+                    })
+                    .unwrap_or(28080);
                 return authoring::cmd_tap_record(
                     port,
                     duration,
