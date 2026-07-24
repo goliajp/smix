@@ -2693,6 +2693,7 @@ dependencies = [
  "serde_norway",
  "smix-adapter-maestro",
  "smix-annotate",
+ "smix-authoring-propose",
  "smix-driver",
  "smix-error",
  "smix-fixture",

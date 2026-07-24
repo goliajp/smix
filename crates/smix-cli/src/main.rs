@@ -704,6 +704,21 @@ enum AuthoringAction {
         #[arg(long)]
         device: Option<String>,
     },
+    /// Read a failed flow's on-disk bundle, ask a local `claude` to
+    /// propose edits, and write the amended flow. Device-free: consumes
+    /// a bundle already on disk (produce it with `smix run
+    /// --debug-output <dir> --format json > <dir>/failure.json`); this
+    /// subcommand does not run the flow itself.
+    Propose {
+        /// The failed flow yaml.
+        flow: PathBuf,
+        /// The on-disk bundle dir (run-summary.json + failure.json + …).
+        #[arg(long)]
+        bundle: PathBuf,
+        /// Output path for the amended flow yaml.
+        #[arg(long, short)]
+        output: PathBuf,
+    },
     /// Session recording. Sample the a11y tree at `--interval-ms`
     /// for `--duration-secs`; write a yaml scaffold with assertVisible
     /// steps for stable-visible IDs.
@@ -2111,6 +2126,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 )
                 .await;
             }
+            AuthoringAction::Propose { flow, bundle, output } => {
+                return authoring::cmd_propose(flow, bundle, output).await;
+            }
             AuthoringAction::Record {
                 output,
                 duration_secs,
@@ -3245,6 +3263,30 @@ mod tests {
         std::fs::write(&path, content).unwrap();
         let tail = tail_lines(&path, 1).unwrap();
         assert_eq!(tail, vec!["tail-line"]);
+    }
+
+    #[test]
+    fn authoring_propose_parses_flow_bundle_out() {
+        let cli = Cli::try_parse_from([
+            "smix",
+            "authoring",
+            "propose",
+            "corrupt.yaml",
+            "--bundle",
+            "bundle-dir",
+            "-o",
+            "amended.yaml",
+        ])
+        .unwrap();
+        let Cmd::Authoring {
+            action: AuthoringAction::Propose { flow, bundle, output },
+        } = cli.cmd
+        else {
+            panic!("expected authoring propose")
+        };
+        assert_eq!(flow, std::path::PathBuf::from("corrupt.yaml"));
+        assert_eq!(bundle, std::path::PathBuf::from("bundle-dir"));
+        assert_eq!(output, std::path::PathBuf::from("amended.yaml"));
     }
 
     #[test]

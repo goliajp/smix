@@ -601,6 +601,25 @@ mod authoring_generate_tests {
     }
 }
 
+/// `smix authoring propose` — device-free wire over `propose_and_amend`: read
+/// a failed flow + its on-disk bundle, ask the local `claude` to propose
+/// edits, write the amended flow yaml. Producing the bundle (running the flow
+/// on a device) is the caller's step, not this one.
+pub async fn cmd_propose(
+    flow: PathBuf,
+    bundle: PathBuf,
+    output: PathBuf,
+) -> Result<ExitCode, CliError> {
+    let cfg = smix_authoring_propose::AiTierConfig::default();
+    let yaml = smix_authoring_propose::propose_and_amend(&flow, &bundle, &cfg)
+        .await
+        .map_err(|e| CliError::Other(format!("propose: {e:?}")))?;
+    std::fs::write(&output, &yaml)
+        .map_err(|e| CliError::Other(format!("write {}: {e}", output.display())))?;
+    println!("wrote {}", output.display());
+    Ok(ExitCode::SUCCESS)
+}
+
 /// `smix authoring tap-record` — record a live session on a runner and generate
 /// a flow. Starts recording, waits `duration_secs` while the operator drives
 /// the app, stops and drains the IRAction the capture leg emitted, and feeds it
