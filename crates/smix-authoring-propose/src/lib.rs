@@ -325,8 +325,9 @@ pub enum AmendError {
     /// The flow yaml did not parse.
     ParseFlow(String),
     /// The local `claude` step failed (CLI error, or a reply that was not a
-    /// well-shaped [`Proposal`]).
-    Propose(ExpectationFailure),
+    /// well-shaped [`Proposal`]). Boxed: an `ExpectationFailure` is ~10× the
+    /// size of the other arms, so an unboxed variant bloats every `AmendError`.
+    Propose(Box<ExpectationFailure>),
     /// The proposal could not be applied to the flow's steps.
     Apply(ApplyError),
     /// The amended steps could not be emitted back to maestro yaml.
@@ -352,7 +353,7 @@ pub async fn propose_and_amend(
 
     let proposal = propose_from_bundle(flow_path, bundle_dir, cfg)
         .await
-        .map_err(AmendError::Propose)?;
+        .map_err(|e| AmendError::Propose(Box::new(e)))?;
 
     let amended = apply(&proposal, &flow.steps).map_err(AmendError::Apply)?;
     smix_adapter_maestro::emit_flow_yaml(&amended, &flow.app_id).map_err(AmendError::Emit)
