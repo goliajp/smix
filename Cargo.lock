@@ -2667,6 +2667,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "smix-authoring-propose"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "smix-adapter-maestro",
+ "smix-ai-tier",
+ "smix-error",
+ "smix-selector",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "smix-cli"
 version = "2.0.0"
 dependencies = [

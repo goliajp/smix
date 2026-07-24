@@ -134,7 +134,13 @@ async fn with_staged_image(
     reply
 }
 
-async fn ask(prompt: String, cfg: &AiTierConfig) -> Result<String, ExpectationFailure> {
+/// Run the `claude` CLI once with `prompt` under `--tools Read` and return its
+/// stdout. Every error means the CLI never produced an answer — a missing
+/// binary, a timeout, a non-zero exit — surfaced as a `DriverError`, never
+/// folded into a made-up reply. This is the single claude primitive; other
+/// tiers (e.g. `smix-authoring-propose`) build on it rather than re-spawning
+/// the CLI themselves.
+pub async fn ask(prompt: String, cfg: &AiTierConfig) -> Result<String, ExpectationFailure> {
     let mut cmd = Command::new(&cfg.claude_bin);
     // `-p` needs an explicit `--tools`; `Read` is the narrowest set that can
     // still open the screenshot.
@@ -202,9 +208,11 @@ fn scratch_png_path() -> PathBuf {
     std::env::temp_dir().join(format!("smix-ai-tier-{}-{nanos}.png", std::process::id()))
 }
 
-/// Take the object out of the reply, tolerating prose around it — models like
-/// to introduce themselves, and that is not a reason to fail a flow.
-fn parse_json_object<T: serde::de::DeserializeOwned>(reply: &str) -> Option<T> {
+/// Take the first JSON object out of the reply, tolerating prose around it —
+/// models like to introduce themselves, and that is not a reason to fail a
+/// flow. The generic type is the caller's target shape; a reply that carries
+/// no object, or one that does not deserialize into `T`, yields `None`.
+pub fn parse_json_object<T: serde::de::DeserializeOwned>(reply: &str) -> Option<T> {
     let start = reply.find('{')?;
     let end = reply.rfind('}')?;
     if end < start {
