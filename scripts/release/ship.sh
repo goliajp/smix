@@ -308,8 +308,11 @@ if command -v cargo-semver-checks >/dev/null 2>&1; then
       python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))')
   while :; do
       SEMVER_ATTEMPTS=$((SEMVER_ATTEMPTS + 1))
+      # `${arr[@]+"${arr[@]}"}` — bash 3.2 (macOS) errors on `"${arr[@]}"`
+      # when the array is empty under `set -u`; this expands to nothing
+      # when unset and to the array's quoted elements otherwise.
       if ( cd "$ROOT" && cargo semver-checks check-release --workspace \
-              "${SEMVER_EXCLUDE[@]}" ) > "$SEMVER_LOG" 2>&1; then
+              ${SEMVER_EXCLUDE[@]+"${SEMVER_EXCLUDE[@]}"} ) > "$SEMVER_LOG" 2>&1; then
           break
       fi
       if [ "$SEMVER_ATTEMPTS" -gt "$SEMVER_MAX" ]; then
