@@ -631,6 +631,29 @@ enum AuthoringAction {
         #[arg(long, default_value = "recorded")]
         test_fn_name: String,
     },
+    /// Record a live session on a runner and generate a flow. Records for
+    /// `--duration` seconds while you drive the app, then generates from the
+    /// captured IRAction. Android today (its runner emits IRAction directly).
+    TapRecord {
+        /// Output flow file.
+        #[arg(long, short)]
+        output: PathBuf,
+        /// Seconds to record while you interact.
+        #[arg(long, default_value_t = 10)]
+        duration: u64,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = authoring::GenFormat::Maestro)]
+        format: authoring::GenFormat,
+        /// Runner HTTP port (Android default 28080).
+        #[arg(long, default_value_t = 28080)]
+        port: u16,
+        /// App / bundle id embedded in the generated flow.
+        #[arg(long, default_value = "com.example")]
+        app_id: String,
+        /// Test fn name (rust format only).
+        #[arg(long, default_value = "recorded")]
+        test_fn_name: String,
+    },
     /// Suggest selectors matching a partial spec against the current
     /// sim state. Runs against a live runner on `--port`. Examples:
     ///   smix authoring suggest 'id: qa-*'
@@ -2047,6 +2070,24 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 test_fn_name,
             } => {
                 return authoring::cmd_generate(input, format, output, app_id, test_fn_name).await;
+            }
+            AuthoringAction::TapRecord {
+                output,
+                duration,
+                format,
+                port,
+                app_id,
+                test_fn_name,
+            } => {
+                return authoring::cmd_tap_record(
+                    port,
+                    duration,
+                    format,
+                    output,
+                    app_id,
+                    test_fn_name,
+                )
+                .await;
             }
             AuthoringAction::CaptureTree {
                 output,

@@ -1898,4 +1898,21 @@ impl HttpRunnerClient {
             .await?;
         Ok(env.events)
     }
+
+    /// `POST /record/stop` reading events as raw IRAction JSON, for runners
+    /// that emit IRAction directly (Android). The iOS `stop_record` above reads
+    /// `RecordedEvent` (raw AX codes); reading IRAction through that shape would
+    /// swallow `kind` / `selector` into its `extra`, so this keeps them raw
+    /// `Value`s for the record -> generate glue to hand to the generator.
+    pub async fn stop_record_actions(&self) -> Result<Vec<serde_json::Value>, RunnerTransportError> {
+        #[derive(Deserialize)]
+        struct Envelope {
+            #[serde(default)]
+            events: Vec<serde_json::Value>,
+        }
+        let env: Envelope = self
+            .json_post("/record/stop", &serde_json::json!({}), None)
+            .await?;
+        Ok(env.events)
+    }
 }
