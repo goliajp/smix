@@ -1904,7 +1904,9 @@ impl HttpRunnerClient {
     /// `RecordedEvent` (raw AX codes); reading IRAction through that shape would
     /// swallow `kind` / `selector` into its `extra`, so this keeps them raw
     /// `Value`s for the record -> generate glue to hand to the generator.
-    pub async fn stop_record_actions(&self) -> Result<Vec<serde_json::Value>, RunnerTransportError> {
+    pub async fn stop_record_actions(
+        &self,
+    ) -> Result<Vec<serde_json::Value>, RunnerTransportError> {
         let env: RecordStopEnvelope = self
             .json_post("/record/stop", &serde_json::json!({}), None)
             .await?;
@@ -1938,7 +1940,11 @@ mod record_actions_tests {
             {"kind":"clear","selector":{"id":"field"},"timestampMs":3}
         ]}"#;
         let env: RecordStopEnvelope = serde_json::from_str(body).unwrap();
-        let kinds: Vec<&str> = env.events.iter().map(|e| e["kind"].as_str().unwrap()).collect();
+        let kinds: Vec<&str> = env
+            .events
+            .iter()
+            .map(|e| e["kind"].as_str().unwrap())
+            .collect();
         assert_eq!(kinds, ["tap", "fill", "clear"]);
         assert_eq!(env.events[0]["selector"]["id"], "field");
         assert_eq!(env.events[1]["text"], "smix");

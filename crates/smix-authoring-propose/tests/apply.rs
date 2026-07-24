@@ -23,11 +23,7 @@ fn tap(sel: Selector) -> Step {
 }
 
 fn three_steps() -> Vec<Step> {
-    vec![
-        tap(id("a")),
-        tap(id("b")),
-        tap(id("c")),
-    ]
+    vec![tap(id("a")), tap(id("b")), tap(id("c"))]
 }
 
 fn wait_step() -> Step {
@@ -84,7 +80,10 @@ fn apply_reorder_moves() {
         }],
     };
     let out = apply(&proposal, &steps).expect("valid");
-    assert_eq!(out, vec![steps[1].clone(), steps[2].clone(), steps[0].clone()]);
+    assert_eq!(
+        out,
+        vec![steps[1].clone(), steps[2].clone(), steps[0].clone()]
+    );
 }
 
 #[test]

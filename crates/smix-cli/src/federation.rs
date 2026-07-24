@@ -47,18 +47,23 @@ struct NodesFile {
 /// boundary, so the shape is validated here: a non-empty roster, every
 /// node with at least one device, node names unique.
 pub fn parse_nodes(yaml: &str) -> Result<Vec<NodeSpec>, NodesError> {
-    let file: NodesFile = serde_norway::from_str(yaml)
-        .map_err(|e| NodesError::Malformed { message: e.to_string() })?;
+    let file: NodesFile = serde_norway::from_str(yaml).map_err(|e| NodesError::Malformed {
+        message: e.to_string(),
+    })?;
     if file.nodes.is_empty() {
         return Err(NodesError::Empty);
     }
     let mut seen = std::collections::HashSet::new();
     for node in &file.nodes {
         if node.devices.is_empty() {
-            return Err(NodesError::EmptyDevices { node: node.name.clone() });
+            return Err(NodesError::EmptyDevices {
+                node: node.name.clone(),
+            });
         }
         if !seen.insert(node.name.as_str()) {
-            return Err(NodesError::DuplicateName { name: node.name.clone() });
+            return Err(NodesError::DuplicateName {
+                name: node.name.clone(),
+            });
         }
     }
     Ok(file.nodes)
@@ -138,7 +143,8 @@ pub fn remote_argv(
     passthrough: &[String],
 ) -> Vec<String> {
     let quoted_flows: Vec<String> = flows.iter().map(|f| shell_quote(f)).collect();
-    let smix_argv = crate::parallel::child_argv(&quoted_flows, &shell_quote(device_ref), passthrough);
+    let smix_argv =
+        crate::parallel::child_argv(&quoted_flows, &shell_quote(device_ref), passthrough);
     let remote = format!(
         "cd {} && target/release/smix {} --format json",
         shell_quote(&node.repo),
@@ -186,13 +192,18 @@ pub fn parse_report_lines(stdout: &str) -> Result<Vec<FlowReport>, ReportError> 
         if line.trim().is_empty() {
             continue;
         }
-        let raw: serde_json::Value = serde_json::from_str(line)
-            .map_err(|_| ReportError::NotJson { line: line.to_string() })?;
+        let raw: serde_json::Value =
+            serde_json::from_str(line).map_err(|_| ReportError::NotJson {
+                line: line.to_string(),
+            })?;
         let field = |name: &'static str| -> Result<String, ReportError> {
             raw.get(name)
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
-                .ok_or(ReportError::MissingField { field: name, line: line.to_string() })
+                .ok_or(ReportError::MissingField {
+                    field: name,
+                    line: line.to_string(),
+                })
         };
         let flow = field("flow")?;
         let outcome = field("runOutcome")?;
@@ -482,12 +493,13 @@ pub fn run_federation(
     if let Some(local_dir) = pull_to {
         let local = local_dir.display().to_string();
         for node in nodes {
-            let pull = run_rsync(&artifact_pull_argv(node, FED_ARTIFACT_DIR, &local)).map_err(
-                |e| FederationRunError::Spawn {
-                    node: node.name.clone(),
-                    source: e,
-                },
-            )?;
+            let pull =
+                run_rsync(&artifact_pull_argv(node, FED_ARTIFACT_DIR, &local)).map_err(|e| {
+                    FederationRunError::Spawn {
+                        node: node.name.clone(),
+                        source: e,
+                    }
+                })?;
             if pull.exit != 0 {
                 return Err(FederationRunError::ArtifactPull {
                     node: node.name.clone(),
@@ -793,7 +805,11 @@ nodes:
         assert_eq!(reports.len(), flows.len());
         for (report, flow) in reports.iter().zip(&flows) {
             assert_eq!(&report.flow, flow);
-            assert_eq!(report.outcome, "success", "flow {flow} failed: {}", report.raw);
+            assert_eq!(
+                report.outcome, "success",
+                "flow {flow} failed: {}",
+                report.raw
+            );
         }
     }
 
@@ -810,8 +826,7 @@ nodes:
             artifact_pull_argv(&node, FED_ARTIFACT_DIR, "/tmp/pull"),
             vec![
                 "-a".to_string(),
-                "mini:'/Users/doracawl/workspace/goliajp/smix/.smix/fed-artifacts/'"
-                    .to_string(),
+                "mini:'/Users/doracawl/workspace/goliajp/smix/.smix/fed-artifacts/'".to_string(),
                 "/tmp/pull/mini/".to_string(),
             ]
         );
@@ -872,8 +887,7 @@ nodes:
                 node.name, gate.stderr
             );
 
-            let mut passthrough =
-                vec!["--debug-output".to_string(), FED_ARTIFACT_DIR.to_string()];
+            let mut passthrough = vec!["--debug-output".to_string(), FED_ARTIFACT_DIR.to_string()];
             if let Some(port) = ports.get(&node.name) {
                 passthrough.push("--runner-port".to_string());
                 passthrough.push(port.clone());

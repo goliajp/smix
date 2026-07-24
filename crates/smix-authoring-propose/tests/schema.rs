@@ -22,7 +22,10 @@ fn proposal_deserializes_four_edit_ops() {
     assert_eq!(proposal.edits.len(), 4);
 
     match &proposal.edits[0] {
-        ProposalEdit::ReplaceSelector { step_index, new_selector } => {
+        ProposalEdit::ReplaceSelector {
+            step_index,
+            new_selector,
+        } => {
             assert_eq!(*step_index, 0);
             assert!(matches!(new_selector, Selector::Id { id, .. } if id == "submit-btn"));
         }
@@ -38,7 +41,10 @@ fn proposal_deserializes_four_edit_ops() {
     }
 
     match &proposal.edits[2] {
-        ProposalEdit::ReorderStep { from_index, to_index } => {
+        ProposalEdit::ReorderStep {
+            from_index,
+            to_index,
+        } => {
             assert_eq!(*from_index, 2);
             assert_eq!(*to_index, 0);
         }
@@ -46,7 +52,10 @@ fn proposal_deserializes_four_edit_ops() {
     }
 
     match &proposal.edits[3] {
-        ProposalEdit::ReplaceStep { step_index, new_step } => {
+        ProposalEdit::ReplaceStep {
+            step_index,
+            new_step,
+        } => {
             assert_eq!(*step_index, 1);
             assert!(matches!(new_step, Step::TapOn { .. }));
         }

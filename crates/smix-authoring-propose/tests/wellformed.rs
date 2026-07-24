@@ -61,7 +61,10 @@ fn round_trips(amended: &[Step]) {
     let yaml = emit_flow_yaml(amended, APP_ID).expect("amended flow emits");
     let flow =
         parse_flow_yaml(&yaml).unwrap_or_else(|e| panic!("emitted yaml must parse: {e}\n{yaml}"));
-    assert_eq!(flow.steps, amended, "amended flow must round-trip faithfully\n{yaml}");
+    assert_eq!(
+        flow.steps, amended,
+        "amended flow must round-trip faithfully\n{yaml}"
+    );
 }
 
 #[test]
@@ -83,7 +86,9 @@ fn amended_flow_round_trips_to_legal_flow() {
             },
             ProposalEdit::ReplaceStep {
                 step_index: 3,
-                new_step: Step::AssertVisible { selector: id("hero") },
+                new_step: Step::AssertVisible {
+                    selector: id("hero"),
+                },
             },
         ],
     };

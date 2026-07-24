@@ -96,12 +96,13 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
             timeout_ms,
             expect_visible,
         } => {
-            let arm = if *expect_visible { "visible" } else { "notVisible" };
+            let arm = if *expect_visible {
+                "visible"
+            } else {
+                "notVisible"
+            };
             let mut inner = Mapping::new();
-            inner.insert(
-                Value::String(arm.into()),
-                selector_to_maestro(selector)?,
-            );
+            inner.insert(Value::String(arm.into()), selector_to_maestro(selector)?);
             inner.insert(
                 Value::String("timeout".into()),
                 Value::Number(Number::from(*timeout_ms)),
@@ -153,11 +154,11 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
             wait_for_interactive_ms,
         } => {
             let mut inner = Mapping::new();
+            inner.insert(Value::String("appId".into()), Value::String(app_id.clone()));
             inner.insert(
-                Value::String("appId".into()),
-                Value::String(app_id.clone()),
+                Value::String("clearState".into()),
+                Value::Bool(*clear_state),
             );
-            inner.insert(Value::String("clearState".into()), Value::Bool(*clear_state));
             inner.insert(
                 Value::String("clearKeychain".into()),
                 Value::Bool(*clear_keychain),

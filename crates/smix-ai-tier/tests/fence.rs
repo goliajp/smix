@@ -25,11 +25,18 @@ fn nothing_that_senses_depends_on_this_crate() {
         .args(["metadata", "--format-version", "1", "--no-deps"])
         .output()
         .expect("cargo metadata runs");
-    assert!(out.status.success(), "cargo metadata failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "cargo metadata failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let meta: serde_json::Value = serde_json::from_slice(&out.stdout).expect("metadata parses");
     let packages = meta["packages"].as_array().expect("packages array");
-    assert!(!packages.is_empty(), "metadata listed no packages — the fence read nothing");
+    assert!(
+        !packages.is_empty(),
+        "metadata listed no packages — the fence read nothing"
+    );
 
     let dependents: Vec<&str> = packages
         .iter()
@@ -43,7 +50,10 @@ fn nothing_that_senses_depends_on_this_crate() {
         .map(|p| p["name"].as_str().expect("package name"))
         .collect();
 
-    let offenders: Vec<&&str> = dependents.iter().filter(|d| !ALLOWED.contains(*d)).collect();
+    let offenders: Vec<&&str> = dependents
+        .iter()
+        .filter(|d| !ALLOWED.contains(*d))
+        .collect();
     assert!(
         offenders.is_empty(),
         "a crate took a dependency on the AI-assertion tier that is not one of \

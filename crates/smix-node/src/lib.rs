@@ -65,7 +65,10 @@ impl SmixNodeDriver {
     #[napi]
     pub async fn tap_at_coord(&self, nx: f64, ny: f64) -> napi::Result<String> {
         let client = Arc::clone(&self.client);
-        let result = client.tap_at_norm_coord(nx, ny).await.map_err(transport_err)?;
+        let result = client
+            .tap_at_norm_coord(nx, ny)
+            .await
+            .map_err(transport_err)?;
         serde_json::to_string(&result).map_err(json_err)
     }
 
@@ -161,7 +164,10 @@ impl SmixNodeSession {
             session_id: self.session_id.clone(),
             ..Default::default()
         };
-        client.launch_session_app(&req).await.map_err(transport_err)?;
+        client
+            .launch_session_app(&req)
+            .await
+            .map_err(transport_err)?;
         Ok(())
     }
 
@@ -247,10 +253,12 @@ pub fn resolve_selector(tree_json: String, selector_json: String) -> napi::Resul
             .map(|node| vec![node.identifier.clone().unwrap_or_default()])
             .unwrap_or_default())
     } else {
-        Ok(smix_selector_resolver::resolve_selector_all(&tree, &selector)
-            .iter()
-            .map(|node| node.identifier.clone().unwrap_or_default())
-            .collect())
+        Ok(
+            smix_selector_resolver::resolve_selector_all(&tree, &selector)
+                .iter()
+                .map(|node| node.identifier.clone().unwrap_or_default())
+                .collect(),
+        )
     }
 }
 
@@ -273,8 +281,10 @@ pub fn resolve_selector_labels(
 ) -> napi::Result<Vec<String>> {
     let tree = parse_tree(&tree_json)?;
     let selector = parse_selector(&selector_json)?;
-    Ok(smix_selector_resolver::resolve_selector_all(&tree, &selector)
-        .iter()
-        .map(|node| node.label.clone().unwrap_or_default())
-        .collect())
+    Ok(
+        smix_selector_resolver::resolve_selector_all(&tree, &selector)
+            .iter()
+            .map(|node| node.label.clone().unwrap_or_default())
+            .collect(),
+    )
 }

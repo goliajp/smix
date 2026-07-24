@@ -17,7 +17,9 @@ const CLEAR: &str = r#"{"kind":"clear","selector":{"id":"q"},"timestampMs":1}"#;
 fn parse_all() -> Vec<IRAction> {
     [TAP, FILL, CLEAR]
         .iter()
-        .map(|s| serde_json::from_str::<IRAction>(s).expect("Android IRAction JSON must deserialize"))
+        .map(|s| {
+            serde_json::from_str::<IRAction>(s).expect("Android IRAction JSON must deserialize")
+        })
         .collect()
 }
 
@@ -41,6 +43,9 @@ fn android_actions_generate_non_empty_maestro_and_rust() {
     assert!(!yaml.trim().is_empty());
 
     let rust = generate_rust(&actions, "recorded", "com.android.settings").expect("rust");
-    assert!(rust.contains("async fn recorded"), "rust source should be a test fn");
+    assert!(
+        rust.contains("async fn recorded"),
+        "rust source should be a test fn"
+    );
     assert!(!rust.trim().is_empty());
 }

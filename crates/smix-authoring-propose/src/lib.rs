@@ -101,7 +101,10 @@ impl Proposal {
                 | ProposalEdit::ReplaceStep { step_index, .. } => {
                     check_in_range(*step_index, flow_len)?;
                 }
-                ProposalEdit::ReorderStep { from_index, to_index } => {
+                ProposalEdit::ReorderStep {
+                    from_index,
+                    to_index,
+                } => {
                     check_in_range(*from_index, flow_len)?;
                     check_in_range(*to_index, flow_len)?;
                 }
@@ -115,7 +118,9 @@ impl Proposal {
                     match step {
                         Step::ExtendedWaitUntil { .. } | Step::WaitForAnimationToEnd { .. } => {}
                         other => {
-                            return Err(ProposalError::InsertNotWait { verb: step_verb(other) });
+                            return Err(ProposalError::InsertNotWait {
+                                verb: step_verb(other),
+                            });
                         }
                     }
                 }
