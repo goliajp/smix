@@ -39,6 +39,16 @@ The first major release: the v1 accretions are consolidated into one deliberate 
 - `App::connect_to_runner_lazy` — build a client without a startup health probe, for hosts whose lifecycle starts before the runner's.
 - `smix runner up --platform android` / `smix runner down --platform android` bring the Kotlin runner up and down: install the instrumentation APK, forward the port, start the server, wait for `/health`. Every adb call names its device with `-s`.
 
+#### Folded capabilities (v2.8–v2.12)
+
+The v2.1-additive and Beyond-v2 roadmap work was folded into 2.0.0 rather than shipped incrementally. The user-visible surface it adds:
+
+- **TypeScript SDK drives real simulators** (v2.9) — the RN/Node SDK reached devices through a napi-rs addon (`@goliapkg/smix-node`, the napi peer of the Swift/Kotlin UniFFI surface). `Smix.launchApp` and the `App` driving methods (`tap`, `fill`, `swipe`, `snapshotTree`, `systemPopups`, …) drive a live sim instead of throwing; selectors resolve host-side through the same stone resolver the other SDKs use. (The napi binary's npm publishing is gated on the ship authorization — see Known limitations.)
+- **Cross-platform recorder** (v2.10) — a recording captured on iOS (`RecordingApp`), Android (`UiAutomation` accessibility events) or the web (Playwright DOM injection) emits the same `smix-authoring-ir::IRAction` stream, and `smix authoring generate` turns it into a byte-identical maestro or rust flow across all three legs. `smix authoring tap-record --platform android` records a live Android session and generates a flow from it.
+- **LLM-in-the-loop authoring** (v2.11) — `smix authoring propose <flow> --bundle <dir> -o <out>` reads a failed run's on-disk bundle, asks the local `claude` CLI to propose structured edits over the real `Step`/`Selector` vocabulary, applies them, and writes an amended flow. Single-provider, local CLI only; fenced (deletable, opt-in, non-deterministic) exactly like the AI-assertion tier.
+- **Distributed run federation** (v2.12) — `smix run <flows…> --nodes <roster.yaml>` shards flows across the devices of N machines, runs each shard remotely over ssh, and merges the per-node reports into one JSON document with a worst-of-nodes exit code (an ssh transport failure surfaces as `255`). Nodes run simulators/emulators only — the simulator-only invariant holds across machines.
+- **Faster and wider** (v2.8) — in-process runner soft-cycle (~4× faster reset than relaunch), resident IOSurface screenshot capture (~45× faster diff-loop frame grab), `smix run --parallel N` across multiple sims on one machine, an Android parity pass (`ScreenshotPacer` / `AppAliveCache`), a baseline-relative `smix bench` regression layer, and a real-sim stress corpus.
+
 ### Fixed
 - **The tap routes resolve id and label** — `/tap`, `/double-tap` and `/long-press` decoded only `selector.text`, so `dispatch: daemonProxy` — the escape hatch for React Native views whose `Pressable` swallows the ordinary gesture path — could only ever address an element by its visible label, which is exactly what an RN `testID` is not. The actions guide has documented that pairing with an `id` since it was written and it had never worked. `text`'s meaning is byte-for-byte what it was; `id` and `label` are new and exact.
 - **smix authoring suggest searches every readable string** — a bare-string search looked at `text`, `value` and `title` only, and a real iOS tree carries labels: a captured Settings tree has 33 non-empty labels and no text or title at all, so the example printed in the command's own help returned nothing on the platform smix exists for.
@@ -56,6 +66,13 @@ The first major release: the v1 accretions are consolidated into one deliberate 
 - **A runner that was never reached is reported unreachable, not dead.** `last_seen_ms = 0` produced "runner died mid-session", sending first-time users after a crash that never happened.
 - **`back` waits for the navigation bar to change** instead of sleeping a fixed 500 ms and reporting success unconditionally; an end-to-end flow measured 1811 ms → 1433 ms.
 - **The Android runner reads the whole request body.** Unread POST bytes prefixed the next request line on a keep-alive connection, producing `HTTP verb {}GET unhandled`.
+
+### Known limitations
+
+- **The napi backend of the TypeScript SDK is not yet on npm.** The TS driving code is wired, but `@goliapkg/smix-node` (and its per-triple prebuilt addons) is not published, so a plain `npm install @goliapkg/smix` cannot drive a device until that publishing step lands. Swift, Kotlin and the CLI are unaffected.
+- **Recording captures user interaction on Android and the web, but not on iOS.** The iOS leg records the SDK's own driving calls (`RecordingApp`), not passive user taps — an accessibility notification carries no action intent, so reconstructing tap/fill/clear from it is a separate research problem.
+- **Web recordings generate native flows; they do not replay in the browser.** The web leg is a capture source (Playwright bridge), not an execution target.
+- **`App.screenshot()` / `App.openUrl()` / `App.launchFresh()` are not exposed as SDK methods** on any SDK (they need runner-wire or host-side routes that are a separate checkpoint). Screenshots are available as the `takeScreenshot` flow verb; `smix sim openurl` covers URL opening from the CLI.
 
 ## [1.0.27] — 2026-07-13
 

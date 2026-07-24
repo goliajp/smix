@@ -328,6 +328,28 @@ next run.
 Suggest selectors matching a partial spec, and capture or diff
 accessibility-tree baselines for visual gates. Requires a runner.
 
+**Record → generate.** A recording of a live session becomes a flow. The
+capture leg is platform-specific (iOS `RecordingApp`, Android accessibility
+events, web Playwright injection) but every leg emits the same
+`smix-authoring-ir::IRAction` stream, so the generator produces a
+byte-identical maestro or rust flow from any of them.
+
+```bash
+# live Android session -> maestro flow (records --duration seconds while you drive):
+smix authoring tap-record --device emulator-5554 --format maestro -o flow.yaml --duration 15
+
+# an IRAction JSON file (from any capture leg) -> flow, device-free:
+smix authoring generate events.json --format maestro -o flow.yaml
+smix authoring generate events.json --format rust -o flow.rs --test-fn-name my_test
+```
+
+`--format maestro` writes a maestro-compatible yaml flow; `--format rust`
+writes an XCUITest-style rust test. `tap-record` is Android-only today (the
+Android runner emits IRAction directly); web capture goes through the
+`@goliapkg/smix-web-record` Playwright bridge, which writes an IRAction JSON
+file that `generate` then consumes. Web recordings generate native flows —
+there is no in-browser replay.
+
 `smix authoring propose` closes the loop on a failed run: it reads the
 flow plus the on-disk bundle a failed run left behind, asks the local
 `claude` CLI to propose edits, applies them, and writes the amended

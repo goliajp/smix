@@ -1,9 +1,7 @@
 #![no_main]
 //! Fuzz the maestro YAML parse path. YAML arrives from user-supplied
 //! flow files (and runFlow-referenced sub-flows). Parser must reject
-//! malformed input without panicking. The c1 scaffold's
-//! `parse_flow_yaml` is `todo!()` so this fuzz target will panic until
-//! c2 lands the parser body.
+//! malformed input without panicking.
 
 use libfuzzer_sys::fuzz_target;
 use smix_adapter_maestro::parse_flow_yaml;
