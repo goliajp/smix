@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "crates/smix-node",
-    "npm/smix-rn"
+    "npm/smix-rn",
+    "npm/smix-web-record"
   ]
 }
