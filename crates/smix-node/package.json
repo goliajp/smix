@@ -1,9 +1,18 @@
 {
   "name": "@goliapkg/smix-node",
   "version": "2.0.0",
-  "private": true,
   "main": "index.js",
   "types": "index.d.ts",
+  "license": "Apache-2.0 OR MIT",
+  "homepage": "https://github.com/goliajp/smix",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goliajp/smix.git"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
   "napi": {
     "binaryName": "smix-node",
     "targets": [
@@ -11,6 +20,11 @@
       "x86_64-apple-darwin",
       "x86_64-unknown-linux-gnu"
     ]
+  },
+  "optionalDependencies": {
+    "@goliapkg/smix-node-darwin-arm64": "2.0.0",
+    "@goliapkg/smix-node-darwin-x64": "2.0.0",
+    "@goliapkg/smix-node-linux-x64-gnu": "2.0.0"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3"
