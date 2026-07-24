@@ -38,7 +38,11 @@ const CANNED_PROPOSAL: &str =
 /// the fixture is a real on-disk bundle rather than an invented wire.
 fn write_bundle(dir: &std::path::Path) -> std::path::PathBuf {
     let flow = dir.join("flow.yaml");
-    std::fs::write(&flow, "appId: com.example.app\n---\n- tapOn:\n    id: submit-btn\n").unwrap();
+    std::fs::write(
+        &flow,
+        "appId: com.example.app\n---\n- tapOn:\n    id: submit-btn\n",
+    )
+    .unwrap();
     std::fs::write(
         dir.join("run-summary.json"),
         r#"{"runOutcome":"failure","steps":[{"n":1,"verb":"tapon","summary":"tap submit-btn","verdict":"failed","wall_ms":1200,"json_path":"step-1-tapon.json","tree_path":"step-1-tapon.fail.tree.json","failure_kind":"ELEMENT_NOT_FOUND","failure_message":"no element matched"}]}"#,

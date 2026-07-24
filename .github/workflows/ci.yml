@@ -25,6 +25,9 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      # The macOS runner's default rustc lags the workspace MSRV (1.97);
+      # pin a stable toolchain so the build is not gated on runner drift.
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: rustfmt
         run: cargo fmt --all --check
@@ -132,10 +135,13 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v4
+      # Pin a stable toolchain (macOS runners default below the 1.97 MSRV)
+      # and add the cross target in one step.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
       - uses: Swatinem/rust-cache@v2
       - uses: oven-sh/setup-bun@v2
-      - name: add rust target
-        run: rustup target add ${{ matrix.settings.target }}
       - name: install (workspace)
         run: bun install --frozen-lockfile
       - name: build .node

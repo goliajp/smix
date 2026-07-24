@@ -229,12 +229,22 @@ fn build_suggestions_matches_id_field() {
     // must surface it via the `id` field, not only name / text.
     let visible = vec![
         summary(Some(Role::Button), None, Some("search_action_bar")),
-        summary(Some(Role::Button), Some("Settings"), Some("settings_homepage_container")),
+        summary(
+            Some(Role::Button),
+            Some("Settings"),
+            Some("settings_homepage_container"),
+        ),
     ];
     let s = build_suggestions(Some("search_action_barX"), &visible);
     assert!(!s.is_empty(), "an id typo should yield a suggestion");
-    assert!(s[0].contains("search_action_bar"), "suggestion names the correct id: {s:?}");
-    assert!(s[0].contains("field id"), "suggestion attributes the id field: {s:?}");
+    assert!(
+        s[0].contains("search_action_bar"),
+        "suggestion names the correct id: {s:?}"
+    );
+    assert!(
+        s[0].contains("field id"),
+        "suggestion attributes the id field: {s:?}"
+    );
 }
 
 #[test]

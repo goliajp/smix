@@ -597,7 +597,9 @@ mod authoring_generate_tests {
 
     #[test]
     fn bad_json_errors() {
-        assert!(generate_actions_json(b"not json", GenFormat::Maestro, "com.x", "recorded").is_err());
+        assert!(
+            generate_actions_json(b"not json", GenFormat::Maestro, "com.x", "recorded").is_err()
+        );
     }
 }
 
@@ -645,11 +647,15 @@ pub async fn cmd_tap_record(
         .stop_record_actions()
         .await
         .map_err(|e| CliError::Other(format!("record stop: {e}")))?;
-    let json =
-        serde_json::to_vec(&events).map_err(|e| CliError::Other(format!("serialize events: {e}")))?;
+    let json = serde_json::to_vec(&events)
+        .map_err(|e| CliError::Other(format!("serialize events: {e}")))?;
     let out = generate_actions_json(&json, format, &app_id, &test_fn_name)?;
     std::fs::write(&output, &out)
         .map_err(|e| CliError::Other(format!("write {}: {e}", output.display())))?;
-    println!("recorded {} action(s); wrote {}", events.len(), output.display());
+    println!(
+        "recorded {} action(s); wrote {}",
+        events.len(),
+        output.display()
+    );
     Ok(ExitCode::SUCCESS)
 }

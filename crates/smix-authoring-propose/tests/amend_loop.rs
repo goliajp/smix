@@ -70,7 +70,10 @@ fn stub_loop_closes_and_swaps() {
         match &flow2.steps[1] {
             Step::AssertVisible {
                 selector: Selector::Id { id, .. },
-            } => assert_eq!(id, "search_action_bar", "typo swapped back to the suggestion"),
+            } => assert_eq!(
+                id, "search_action_bar",
+                "typo swapped back to the suggestion"
+            ),
             other => panic!("step 1 not a fixed assertVisible: {other:?}"),
         }
     });

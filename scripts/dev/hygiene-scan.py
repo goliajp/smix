@@ -56,6 +56,11 @@ EXCLUSIONS = [
     ("docs/v2.md", "checkpoint tags are its subject"),
     ("docs/plan-cold/", "checkpoint tags are their subject"),
     ("docs/plan-history/", "archived plans, kept as written"),
+    ("docs/research/", "decomposition research records — obtainability verdicts "
+                       "written in the language they were reasoned in, "
+                       "checkpoint tags are their subject, same as plan-history"),
+    ("docs/perf/", "perf decomposition ground-truth docs — Phase A/B records "
+                   "per the perf methodology, kept as reasoned, same as research"),
     ("docs/dogfood-archive/", "archived consumer correspondence, kept as written"),
     (".claude/rfcs/", "design records written per consumer; editorial pass"),
     (".claude/CLAUDE.md", "the development charter — written in the language "

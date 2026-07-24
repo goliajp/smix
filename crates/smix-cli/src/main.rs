@@ -1803,9 +1803,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             // readiness gate only judges (repair is the sync script's
             // job), and a red gate fast-fails before anything fans out.
             if let Some(nodes_path) = &nodes {
-                let yaml = std::fs::read_to_string(nodes_path).map_err(|e| {
-                    CliError::Other(format!("read {}: {e}", nodes_path.display()))
-                })?;
+                let yaml = std::fs::read_to_string(nodes_path)
+                    .map_err(|e| CliError::Other(format!("read {}: {e}", nodes_path.display())))?;
                 let node_specs =
                     federation::parse_nodes(&yaml).map_err(|e| CliError::Other(e.to_string()))?;
                 // Flow paths are repo-relative and must exist on every
@@ -2259,7 +2258,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 )
                 .await;
             }
-            AuthoringAction::Propose { flow, bundle, output } => {
+            AuthoringAction::Propose {
+                flow,
+                bundle,
+                output,
+            } => {
                 return authoring::cmd_propose(flow, bundle, output).await;
             }
             AuthoringAction::Record {
@@ -3412,7 +3415,12 @@ mod tests {
         ])
         .unwrap();
         let Cmd::Authoring {
-            action: AuthoringAction::Propose { flow, bundle, output },
+            action:
+                AuthoringAction::Propose {
+                    flow,
+                    bundle,
+                    output,
+                },
         } = cli.cmd
         else {
             panic!("expected authoring propose")

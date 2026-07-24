@@ -101,7 +101,8 @@ fn emit_core_steps_round_trip() {
     ];
 
     let yaml = emit_flow_yaml(&steps, "com.x").expect("core steps emit");
-    let flow = parse_flow_yaml(&yaml).unwrap_or_else(|e| panic!("emitted yaml must parse: {e}\n{yaml}"));
+    let flow =
+        parse_flow_yaml(&yaml).unwrap_or_else(|e| panic!("emitted yaml must parse: {e}\n{yaml}"));
     assert_eq!(flow.steps, steps, "round-trip must be faithful\n{yaml}");
 }
 
@@ -117,7 +118,9 @@ fn emit_refuses_out_of_core_variant() {
 #[test]
 fn emit_refuses_unsupported_selector() {
     let steps = vec![Step::TapOn {
-        selector: Selector::Focused { focused: True(true) },
+        selector: Selector::Focused {
+            focused: True(true),
+        },
         optional: false,
         dispatch: None,
     }];
