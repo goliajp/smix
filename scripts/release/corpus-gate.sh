@@ -65,7 +65,13 @@ if [[ ! -d "$CORPUS_DIR" ]]; then
   exit 2
 fi
 
-mapfile -t YAMLS < <(find "$CORPUS_DIR" -type f -name '*.yaml' | sort)
+# Portable to macOS's /bin/bash 3.2 (which has no `mapfile`): read into
+# an array via while-read on NUL-safe input isn't needed here — the file
+# names come from `find`, and none in-tree carry newlines.
+YAMLS=()
+while IFS= read -r line; do
+  YAMLS+=("$line")
+done < <(find "$CORPUS_DIR" -type f -name '*.yaml' | sort)
 if [[ ${#YAMLS[@]} -eq 0 ]]; then
   echo "error: no .yaml files under $CORPUS_DIR" >&2
   exit 2
@@ -96,12 +102,26 @@ trap cleanup EXIT
 
 # --- setup ---------------------------------------------------------------
 
-echo "corpus gate: booting sim $SMIX_CORPUS_SIM"
-"$SMIX_BIN" sim boot "$SMIX_CORPUS_SIM" >"$LOG_DIR/sim-boot.log" 2>&1 \
-  || { echo "error: sim boot failed"; cat "$LOG_DIR/sim-boot.log" >&2; exit 3; }
+# `sim boot` is idempotent in intent — an already-booted sim is fine here,
+# the gate needs it up not freshly cycled. `xcrun simctl` returns exit 149
+# with SimError 405 ("Unable to boot device in current state: Booted") on a
+# booted sim; treat that as success.
+echo "corpus gate: ensuring sim $SMIX_CORPUS_SIM is booted"
+if "$SMIX_BIN" sim boot "$SMIX_CORPUS_SIM" >"$LOG_DIR/sim-boot.log" 2>&1; then
+  :
+elif grep -q 'current state: Booted' "$LOG_DIR/sim-boot.log"; then
+  echo "corpus gate: sim already booted"
+else
+  echo "error: sim boot failed"
+  cat "$LOG_DIR/sim-boot.log" >&2
+  exit 3
+fi
 
-echo "corpus gate: bringing runner up (auto-syncs sources on version drift)"
-"$SMIX_BIN" runner up "$SMIX_CORPUS_SIM" >"$LOG_DIR/runner-up.log" 2>&1 \
+# iOS `runner up` requires --bundle: the runner latches XCUIApplication to
+# it. The stress corpus drives Preferences (v2.8-C5 shipping form).
+: "${SMIX_CORPUS_BUNDLE:=com.apple.Preferences}"
+echo "corpus gate: bringing runner up --bundle $SMIX_CORPUS_BUNDLE (auto-syncs sources on version drift)"
+"$SMIX_BIN" runner up "$SMIX_CORPUS_SIM" --bundle "$SMIX_CORPUS_BUNDLE" >"$LOG_DIR/runner-up.log" 2>&1 \
   || { echo "error: runner up failed"; tail -25 "$LOG_DIR/runner-up.log" >&2; exit 3; }
 
 # --- run corpus ----------------------------------------------------------
@@ -119,8 +139,15 @@ for yaml in "${YAMLS[@]}"; do
   # yaml, every one was recorded FAIL, and the gate could never be
   # anything but RED. A missing tool has to read as a missing tool, not
   # as a product failing all of its tests.
+  # `smix run` takes the flow yaml as a positional (per `smix run --help`);
+  # a stale `--script` flag would be rejected as "unexpected argument".
+  # --device is required (post-fold: App is not bound to a UDID otherwise).
+  # --retry 2: iOS 26.5 sim animation races produce occasional TAP_MISSED
+  # (the tree fetched pre-animation, the tap landed on the moved element).
+  # Second attempt runs after the sim settled; the retry itself is smix's
+  # own primitive, so the gate borrows it rather than reimplementing.
   if python3 "$REPO_ROOT/scripts/dev/run-with-timeout.py" "$SMIX_CORPUS_TIMEOUT_S" \
-       "$SMIX_BIN" run --script "$yaml" \
+       "$SMIX_BIN" run "$yaml" --device "$SMIX_CORPUS_SIM" --retry 2 \
        >"$yaml_log" 2>&1; then
     echo "corpus gate: [$name] PASS"
   else
