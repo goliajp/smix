@@ -20,7 +20,7 @@ REPO="workspace/goliajp/smix"   # remote, relative to $HOME
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FLOW_A="scripts/release/stress-corpus/launch-and-capture.yaml"
 FLOW_B="scripts/release/stress-corpus/screenshot-twice.yaml"
-ARTIFACT_DIR=".smix/fed-c4-artifacts"
+ARTIFACT_DIR=".smix/fed-artifacts"
 
 log()  { printf '[c4-fed] %s\n' "$*"; }
 fail() { printf '[c4-fed] FAIL: %s\n' "$*" >&2; exit 1; }

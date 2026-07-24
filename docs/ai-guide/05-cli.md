@@ -22,6 +22,7 @@ smix run [FLAGS] <FLOW.yaml>
 | `--dry-run` (alias `--check`) | — | (off) | Parse-only gate: validates every listed yaml (+ `runFlow:` includes) and reports `parse OK/FAIL` per file with step counts. No runner, no simulator. Exit 0 on clean parse, 2 on any error |
 | `--retry <N>` | — | `1` | Per-flow attempt count; attempts recorded in `~/.local/share/smix/flow-attempts.json` for `smix diagnostic dump` attribution |
 | `--debug-output <DIR>` | — | (unset) | Per-step JSON + on-fail screenshot/tree artifacts |
+| `--nodes <PATH>` | — | (unset) | Distributed run across machines; see below |
 
 Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 
@@ -47,6 +48,65 @@ Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 - stdout has step-by-step progress + final summary JSON
 - stderr has DEBUG / WARN lines (when `RUST_LOG=info` or higher)
 - Final line is `summary: N steps, X warnings, Y skipped, Z expanded subflows` on success
+
+### Distributed runs across machines (`--nodes`)
+
+`smix run <flows...> --nodes <roster.yaml>` shards the listed flows
+round-robin across every device of every node in a roster, runs each
+shard remotely over ssh, and merges the results into one JSON document
+on stdout. Nodes list simulators/emulators only — the simulator-only
+invariant holds across machines.
+
+Roster shape (conventionally `.smix/nodes.yaml`):
+
+```yaml
+nodes:
+  - name: studio
+    host: localhost
+    repo: /Users/me/workspace/smix
+    devices: [sim-smix-02]
+    runnerPort: 22097        # optional; forwarded as --runner-port
+  - name: mini
+    host: mini
+    repo: /Users/me/workspace/smix
+    devices: [sim-simx-001]
+```
+
+Node preparation is the operator's job, not the CLI's. Before a run,
+each remote node needs two steps (the scheduler repo is the authority):
+
+```bash
+rsync -a --exclude target/ --exclude .git/ ./ <host>:<repo>/
+ssh <host> 'cd <repo> && cargo build --release -p smix-cli && touch target/.smix-fed-stamp'
+```
+
+The CLI runs a per-node readiness gate first (binary present, stamp
+present, no source newer than the stamp) and fails fast if any node is
+stale or unreachable — the gate only judges, it never rebuilds. Flow
+paths are repo-relative and must exist at the same path on every node;
+a flow missing on the scheduler fails before any ssh is dialed.
+
+```bash
+smix run smoke.yaml checkout.yaml --nodes .smix/nodes.yaml --debug-output ./artifacts
+```
+
+- **Output**: one merged JSON document on stdout, shaped
+  `{"nodes":[{"node":"studio","exit":0,"flows":[…]}],"aggregateExit":0}` —
+  the flow leaves are each node's `--format json` report lines verbatim.
+- **Exit**: worst of nodes. `255` means an ssh transport failure on at
+  least one node (never produced by smix itself, so it cannot be masked).
+- **`--debug-output <dir>`**: each node stages its artifacts under
+  `.smix/fed-artifacts` in its repo (overwritten in place, never
+  pre-cleaned), and the CLI rsync-pulls them back into `<dir>/<node>/`
+  after the run. A failed pull fails the whole run.
+- **Mutually exclusive** with `--device`, `--also-device` and
+  `--parallel`: device placement belongs to the roster. Note that an
+  exported `SMIX_UDID` counts as `--device` being present and triggers
+  the conflict — unset it when using `--nodes`.
+- **Not consulted** in this lane: `--format` (the merged report is
+  always the JSON document; remote leaves always run `--format json`)
+  and `--runner-port` (ports are per-node — set `runnerPort` in the
+  roster instead).
 
 ## `smix` — environment + low-level
 

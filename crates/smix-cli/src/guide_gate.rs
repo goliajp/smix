@@ -480,6 +480,11 @@ fn looks_like_a_flow(block: &str) -> bool {
     if block.lines().any(|l| l.trim_start().starts_with("cmd:")) {
         return false;
     }
+    // Node rosters (`smix run --nodes`, 05-cli) are yaml lists too;
+    // their entries carry `host:`, which no flow step does.
+    if block.lines().any(|l| l.trim_start().starts_with("host:")) {
+        return false;
+    }
     block.contains("- ") || block.contains("appId:")
 }
 
