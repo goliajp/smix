@@ -190,6 +190,110 @@ pub async fn propose_from_bundle(
     })
 }
 
+/// Why [`apply`] could not turn a [`Proposal`] into an amended flow.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ApplyError {
+    /// The proposal failed [`Proposal::validate`] (index out of range, or
+    /// an `InsertStep` carrying a non-wait verb).
+    Invalid(ProposalError),
+    /// A `ReplaceSelector` targeted a step that carries no selector.
+    /// Refusing beats a silent no-op: the model asked to change a selector
+    /// on a step that has none, which is a malformed proposal, not a
+    /// change to drop on the floor.
+    NoSelector {
+        /// The targeted step index.
+        step_index: usize,
+        /// The verb of the step that has no selector.
+        verb: &'static str,
+    },
+}
+
+impl std::fmt::Display for ApplyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ApplyError::Invalid(e) => write!(f, "proposal failed validation: {e:?}"),
+            ApplyError::NoSelector { step_index, verb } => write!(
+                f,
+                "replaceSelector at step {step_index} targets `{verb}`, which has no selector"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ApplyError {}
+
+/// Validate a [`Proposal`] then apply its edits to a copy of `steps`,
+/// returning the amended flow. Validation runs first (index bounds +
+/// insert-wait policy); a failure propagates as [`ApplyError::Invalid`]
+/// rather than a partial mutation. Edits apply in the order the model
+/// emitted them.
+///
+/// Device-free: a pure `Vec<Step>` transform, no emit / parse / claude /
+/// sim involved.
+///
+/// # Errors
+///
+/// [`ApplyError::Invalid`] when [`Proposal::validate`] rejects the
+/// proposal; [`ApplyError::NoSelector`] when a `ReplaceSelector` targets a
+/// step with no selector field.
+pub fn apply(proposal: &Proposal, steps: &[Step]) -> Result<Vec<Step>, ApplyError> {
+    proposal
+        .validate(steps.len())
+        .map_err(ApplyError::Invalid)?;
+    let mut out = steps.to_vec();
+    for edit in &proposal.edits {
+        match edit {
+            ProposalEdit::ReplaceSelector {
+                step_index,
+                new_selector,
+            } => {
+                set_step_selector(&mut out[*step_index], new_selector.clone()).map_err(|verb| {
+                    ApplyError::NoSelector {
+                        step_index: *step_index,
+                        verb,
+                    }
+                })?;
+            }
+            ProposalEdit::InsertStep { before_index, step } => {
+                out.insert(*before_index, step.clone());
+            }
+            ProposalEdit::ReorderStep {
+                from_index,
+                to_index,
+            } => {
+                let s = out.remove(*from_index);
+                out.insert(*to_index, s);
+            }
+            ProposalEdit::ReplaceStep {
+                step_index,
+                new_step,
+            } => {
+                out[*step_index] = new_step.clone();
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn set_step_selector(step: &mut Step, new_selector: Selector) -> Result<(), &'static str> {
+    match step {
+        Step::TapOn { selector, .. }
+        | Step::ExtendedWaitUntil { selector, .. }
+        | Step::AssertVisible { selector }
+        | Step::AssertNotVisible { selector }
+        | Step::InputTextInto { selector, .. }
+        | Step::ScrollUntilVisible { selector, .. }
+        | Step::CopyTextFrom { selector }
+        | Step::DoubleTapOn { selector }
+        | Step::RepeatTap { selector, .. }
+        | Step::LongPressOn { selector, .. } => {
+            *selector = new_selector;
+            Ok(())
+        }
+        other => Err(step_verb(other)),
+    }
+}
+
 fn driver_error(message: String, hint: Option<String>) -> ExpectationFailure {
     ExpectationFailure::new(FailureInit {
         code: Some(FailureCode::DriverError),

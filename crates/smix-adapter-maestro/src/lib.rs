@@ -251,11 +251,14 @@ pub(crate) fn parse_annotation_from_kind(
 
 mod annotate_bridge;
 mod apps_config;
+mod emitter;
 mod entry;
 mod expr;
 mod output;
 mod parser;
 mod runtime;
+
+pub use emitter::{EmitError, emit_flow_yaml};
 
 pub use entry::{FlowArgs, FlowPlatform, OutputFormat, run_flow, run_flow_code};
 
