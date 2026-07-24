@@ -233,12 +233,98 @@ pub struct RemoteOutput {
 /// hide exactly the signal the merge loop needs. A signal-killed ssh
 /// has no exit code and maps to 1, the same shape `run_parallel` uses.
 pub fn run_ssh(argv: &[String]) -> std::io::Result<RemoteOutput> {
-    let out = std::process::Command::new("ssh").args(argv).output()?;
+    capture("ssh", argv)
+}
+
+fn capture(program: &str, argv: &[String]) -> std::io::Result<RemoteOutput> {
+    let out = std::process::Command::new(program).args(argv).output()?;
     Ok(RemoteOutput {
         exit: out.status.code().map_or(1, |c| c.clamp(0, 255) as u8),
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
     })
+}
+
+/// Where a federation run's `--debug-output` artifacts land on each
+/// node, relative to the node's repo (bare-safe: it rides the remote
+/// argv passthrough verbatim, unquoted).
+pub const FED_ARTIFACT_DIR: &str = ".smix/fed-c4-artifacts";
+
+/// Build the argv for the artifact-recovery `rsync` (the `"rsync"` word
+/// itself excluded, the same convention as `readiness_argv`): archive
+/// pull of the node's remote artifact dir into a per-node local subdir.
+/// Trailing slashes on both sides give directory-content semantics; the
+/// local side is keyed by the node name, so same-basename artifacts
+/// from different nodes never collide — the wrapper layer solves the
+/// collision, the bundle content stays untouched.
+#[must_use]
+pub fn artifact_pull_argv(node: &NodeSpec, remote_dir: &str, local_dir: &str) -> Vec<String> {
+    vec![
+        "-a".to_string(),
+        format!(
+            "{}:{}",
+            node.host,
+            shell_quote(&format!("{}/{}/", node.repo, remote_dir))
+        ),
+        format!("{}/{}/", local_dir, node.name),
+    ]
+}
+
+/// Spawn `rsync` with the given argv and capture everything — the same
+/// shape as `run_ssh`: no retry, no timeout, a transfer failure
+/// surfaces as its own non-zero exit.
+pub fn run_rsync(argv: &[String]) -> std::io::Result<RemoteOutput> {
+    capture("rsync", argv)
+}
+
+/// One node's complete outcome: its exit code and the per-flow reports
+/// parsed off its stdout. A transport-lost node (exit 255) has no
+/// usable stdout and carries an empty `reports`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeResult {
+    pub name: String,
+    pub exit: u8,
+    pub reports: Vec<FlowReport>,
+}
+
+/// One node inside the merged CI report: a pure wrapper around the
+/// node's report-line leaves, which stay verbatim `serde_json::Value`s.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct MergedNode {
+    pub node: String,
+    pub exit: u8,
+    pub flows: Vec<serde_json::Value>,
+}
+
+/// The merged CI report for a federation batch: every node's leaves
+/// wrapped under its name/exit, plus the worst-of-nodes aggregate.
+/// Serialization is plain `serde_json::to_string` — one JSON document
+/// is the CI consumption surface, no bespoke emitter.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergedReport {
+    pub nodes: Vec<MergedNode>,
+    pub aggregate_exit: u8,
+}
+
+/// Merge per-node results into one report. The aggregate is
+/// `parallel::aggregate_exit` verbatim — one worst-of semantic,
+/// maintained in one place; the 255 transport sentinel wins by max.
+/// The flow leaves are the remote report lines untouched.
+#[must_use]
+pub fn merge_reports(results: &[NodeResult]) -> MergedReport {
+    let exits: Vec<u8> = results.iter().map(|r| r.exit).collect();
+    MergedReport {
+        nodes: results
+            .iter()
+            .map(|r| MergedNode {
+                node: r.name.clone(),
+                exit: r.exit,
+                flows: r.reports.iter().map(|f| f.raw.clone()).collect(),
+            })
+            .collect(),
+        aggregate_exit: crate::parallel::aggregate_exit(&exits),
+    }
 }
 
 #[cfg(test)]
@@ -513,6 +599,245 @@ nodes:
             assert_eq!(&report.flow, flow);
             assert_eq!(report.outcome, "success", "flow {flow} failed: {}", report.raw);
         }
+    }
+
+    #[test]
+    fn artifact_pull_argv_pins_the_rsync_command() {
+        let node = NodeSpec {
+            name: "mini".to_string(),
+            host: "mini".to_string(),
+            repo: "/Users/doracawl/workspace/goliajp/smix".to_string(),
+            devices: vec!["sim-smix-001".to_string()],
+        };
+        assert_eq!(
+            artifact_pull_argv(&node, FED_ARTIFACT_DIR, "/tmp/pull"),
+            vec![
+                "-a".to_string(),
+                "mini:'/Users/doracawl/workspace/goliajp/smix/.smix/fed-c4-artifacts/'"
+                    .to_string(),
+                "/tmp/pull/mini/".to_string(),
+            ]
+        );
+    }
+
+    /// Two-node e2e over live nodes (studio via `ssh localhost` + mini):
+    /// parse_nodes → expand_slots → assign_flows → per-node readiness
+    /// gate → remote run with `--debug-output` passthrough → JSON report
+    /// lines → merge_reports → per-node artifact rsync recovery. Driven
+    /// by scripts/dev/v2.12-c4-federation-two-node-e2e.sh, which owns
+    /// the self-authorization, sync, rebuild, device prep and teardown
+    /// around it.
+    #[test]
+    #[ignore]
+    fn federation_e2e_two_nodes_merge_reports_and_recover_artifacts() {
+        let nodes_path = std::env::var("SMIX_FED_E2E_NODES")
+            .expect("SMIX_FED_E2E_NODES unset — this test is driven by the C4 e2e script");
+        let flows_env = std::env::var("SMIX_FED_E2E_FLOWS")
+            .expect("SMIX_FED_E2E_FLOWS unset — this test is driven by the C4 e2e script");
+        let pull_dir = std::env::var("SMIX_FED_E2E_PULL_DIR")
+            .expect("SMIX_FED_E2E_PULL_DIR unset — this test is driven by the C4 e2e script");
+        let ports_env = std::env::var("SMIX_FED_E2E_RUNNER_PORTS").unwrap_or_default();
+        let ports: std::collections::HashMap<String, String> = ports_env
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .map(|pair| {
+                let (name, port) = pair
+                    .split_once('=')
+                    .expect("SMIX_FED_E2E_RUNNER_PORTS entry is name=port");
+                (name.to_string(), port.to_string())
+            })
+            .collect();
+        let flows: Vec<String> = flows_env.split(',').map(str::to_string).collect();
+        assert_eq!(flows.len(), 2, "two-node e2e expects exactly two flows");
+
+        let yaml = std::fs::read_to_string(&nodes_path).unwrap();
+        let nodes = parse_nodes(&yaml).unwrap();
+        assert_eq!(nodes.len(), 2, "two-node e2e expects exactly two nodes");
+        let slots = expand_slots(&nodes);
+        assert_eq!(slots.len(), 2, "two-node e2e expects exactly two slots");
+        let assignments = assign_flows(flows.len(), &slots);
+
+        let mut results = Vec::new();
+        for assignment in &assignments {
+            assert_eq!(
+                assignment.flows.len(),
+                1,
+                "each slot carries exactly one flow"
+            );
+            let node = &nodes[assignment.node];
+            let node_flows: Vec<String> =
+                assignment.flows.iter().map(|&i| flows[i].clone()).collect();
+
+            let gate = run_ssh(&readiness_argv(node)).unwrap();
+            assert_eq!(
+                gate.exit, 0,
+                "readiness gate failed on {} — node is stale\nstderr: {}",
+                node.name, gate.stderr
+            );
+
+            let mut passthrough =
+                vec!["--debug-output".to_string(), FED_ARTIFACT_DIR.to_string()];
+            if let Some(port) = ports.get(&node.name) {
+                passthrough.push("--runner-port".to_string());
+                passthrough.push(port.clone());
+            }
+            let out = run_ssh(&remote_argv(
+                node,
+                &node_flows,
+                &assignment.device_ref,
+                &passthrough,
+            ))
+            .unwrap();
+            assert!(
+                !is_transport_failure(out.exit),
+                "ssh transport failure on {}\nstderr: {}",
+                node.name,
+                out.stderr
+            );
+            assert_eq!(
+                out.exit, 0,
+                "remote run failed on {}\nstderr: {}",
+                node.name, out.stderr
+            );
+
+            let reports = parse_report_lines(&out.stdout).unwrap();
+            assert_eq!(reports.len(), 1);
+            assert_eq!(&reports[0].flow, &node_flows[0]);
+            assert_eq!(
+                reports[0].outcome, "success",
+                "flow {} failed on {}: {}",
+                node_flows[0], node.name, reports[0].raw
+            );
+            results.push(NodeResult {
+                name: node.name.clone(),
+                exit: out.exit,
+                reports,
+            });
+        }
+
+        let merged = merge_reports(&results);
+        assert_eq!(merged.nodes.len(), 2);
+        assert_eq!(merged.aggregate_exit, 0);
+        let doc = serde_json::to_string(&merged).unwrap();
+        for node in &nodes {
+            assert!(
+                doc.contains(&node.name),
+                "merged report is missing node {}",
+                node.name
+            );
+        }
+
+        for node in &nodes {
+            let pull = run_rsync(&artifact_pull_argv(node, FED_ARTIFACT_DIR, &pull_dir)).unwrap();
+            assert_eq!(
+                pull.exit, 0,
+                "artifact rsync failed for {}\nstderr: {}",
+                node.name, pull.stderr
+            );
+            let summary = std::path::Path::new(&pull_dir)
+                .join(&node.name)
+                .join("run-summary.json");
+            assert!(
+                summary.is_file(),
+                "recovered artifact missing: {}",
+                summary.display()
+            );
+        }
+    }
+
+    #[test]
+    fn merges_two_nodes_into_one_wrapped_report_pinning_the_json() {
+        let leaf_a = r#"{"flow":"scripts/release/stress-corpus/launch-and-capture.yaml","runOutcome":"success","warnings":[],"steps":[]}"#;
+        let leaf_b = r#"{"flow":"scripts/release/stress-corpus/screenshot-twice.yaml","runOutcome":"success","warnings":[],"steps":[]}"#;
+        let results = vec![
+            NodeResult {
+                name: "a".to_string(),
+                exit: 0,
+                reports: parse_report_lines(leaf_a).unwrap(),
+            },
+            NodeResult {
+                name: "b".to_string(),
+                exit: 0,
+                reports: parse_report_lines(leaf_b).unwrap(),
+            },
+        ];
+        let merged = merge_reports(&results);
+        // The wrapper carries node/exit/flows + aggregateExit and nothing
+        // else; the leaves are the report lines verbatim (serde_json's
+        // Value serializes object keys alphabetically — the leaf content
+        // is untouched, only that canonical key order applies).
+        assert_eq!(
+            serde_json::to_string(&merged).unwrap(),
+            concat!(
+                r#"{"nodes":["#,
+                r#"{"node":"a","exit":0,"flows":[{"flow":"scripts/release/stress-corpus/launch-and-capture.yaml","runOutcome":"success","steps":[],"warnings":[]}]},"#,
+                r#"{"node":"b","exit":0,"flows":[{"flow":"scripts/release/stress-corpus/screenshot-twice.yaml","runOutcome":"success","steps":[],"warnings":[]}]}"#,
+                r#"],"aggregateExit":0}"#,
+            )
+        );
+    }
+
+    #[test]
+    fn transport_255_node_merges_empty_and_wins_the_aggregate() {
+        let leaf = r#"{"flow":"a.yaml","runOutcome":"success","warnings":[],"steps":[]}"#;
+        let results = vec![
+            NodeResult {
+                name: "a".to_string(),
+                exit: 0,
+                reports: parse_report_lines(leaf).unwrap(),
+            },
+            // Transport loss: ssh exited 255, its stdout is not a report
+            // channel — the node merges in with no flows, never dropped.
+            NodeResult {
+                name: "b".to_string(),
+                exit: SSH_TRANSPORT_EXIT,
+                reports: vec![],
+            },
+        ];
+        let merged = merge_reports(&results);
+        assert_eq!(merged.nodes.len(), 2);
+        assert_eq!(merged.nodes[1].node, "b");
+        assert_eq!(merged.nodes[1].flows, Vec::<serde_json::Value>::new());
+        assert_eq!(merged.aggregate_exit, 255);
+        assert!(is_transport_failure(merged.aggregate_exit));
+    }
+
+    #[test]
+    fn a_node_with_all_failed_flows_keeps_failure_leaves_verbatim() {
+        let stdout = concat!(
+            r#"{"flow":"a.yaml","runOutcome":"failure","failure":{"code":"NotVisible","message":"no match","selector":null,"suggestions":[],"visibleCount":3}}"#,
+            "\n",
+            r#"{"flow":"b.yaml","runOutcome":"failure","failure":{"code":"Timeout","message":"gave up","selector":null,"suggestions":[],"visibleCount":0}}"#,
+            "\n",
+        );
+        let results = vec![NodeResult {
+            name: "mini".to_string(),
+            exit: 3,
+            reports: parse_report_lines(stdout).unwrap(),
+        }];
+        let merged = merge_reports(&results);
+        assert_eq!(merged.nodes[0].flows.len(), 2);
+        assert_eq!(merged.nodes[0].flows[0]["failure"]["code"], "NotVisible");
+        assert_eq!(merged.nodes[0].flows[1]["failure"]["code"], "Timeout");
+        assert_eq!(merged.aggregate_exit, 3);
+    }
+
+    #[test]
+    fn empty_inputs_merge_to_exit_zero() {
+        // No nodes at all: the same empty-set semantic as aggregate_exit.
+        let merged = merge_reports(&[]);
+        assert_eq!(merged.nodes, Vec::<MergedNode>::new());
+        assert_eq!(merged.aggregate_exit, 0);
+        // A node that ran nothing (more slots than flows): flows stay
+        // empty and the aggregate stays green.
+        let merged = merge_reports(&[NodeResult {
+            name: "idle".to_string(),
+            exit: 0,
+            reports: vec![],
+        }]);
+        assert_eq!(merged.nodes.len(), 1);
+        assert_eq!(merged.nodes[0].flows, Vec::<serde_json::Value>::new());
+        assert_eq!(merged.aggregate_exit, 0);
     }
 
     #[test]
