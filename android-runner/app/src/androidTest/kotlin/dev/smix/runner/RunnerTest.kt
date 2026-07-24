@@ -62,7 +62,27 @@ class RunnerTest {
         info.flags = info.flags or
             android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
             android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+        // The recorder (v2.10-C2) listens on the AccessibilityEvent stream; open
+        // the two event types it maps so the listener is delivered them. Whether
+        // this needs widening further, and whether it perturbs waitForIdle, is
+        // proven on the emulator in the C2-S3 e2e (source-only cannot decide it).
+        info.eventTypes = info.eventTypes or
+            android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED or
+            android.view.accessibility.AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
         inst.uiAutomation.serviceInfo = info
+        // Feed captured events to RecordBuffer while a recording is active. The
+        // buffer drops them until /record/start, so this is cheap when idle.
+        inst.uiAutomation.setOnAccessibilityEventListener { ev ->
+            RecordBuffer.append(
+                CapturedAxEvent(
+                    type = ev.eventType,
+                    viewId = ev.source?.viewIdResourceName,
+                    text = ev.text?.joinToString(""),
+                    beforeText = ev.beforeText?.toString(),
+                    eventTimeMs = ev.eventTime,
+                ),
+            )
+        }
         val server = SmixHttpServer(PORT, device, inst)
         server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, /* daemon = */ false)
         CountDownLatch(1).await()
@@ -145,6 +165,9 @@ class SmixHttpServer(
         return try {
             when {
                 uri == "/health" && session.method == Method.GET -> serveHealth()
+                uri == "/record/start" && session.method == Method.POST -> serveRecordStart()
+                uri == "/record/poll" && session.method == Method.GET -> serveRecordPoll()
+                uri == "/record/stop" && session.method == Method.POST -> serveRecordStop()
                 uri == "/tree" && session.method == Method.GET -> serveTree()
                 uri == "/tap-at-norm-coord" && session.method == Method.POST ->
                     serveTapAtNormCoord(session)
@@ -201,6 +224,25 @@ class SmixHttpServer(
 
     private fun serveHealth(): Response {
         val body = RunnerWire.healthBody(SmixRunner.VERSION)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    // ---- recorder (v2.10-C2) ------------------------------------------
+    // /record/start begins capture; /record/poll drains accumulated IRAction
+    // JSON (streaming); /record/stop drains the remainder and deactivates.
+
+    private fun serveRecordStart(): Response {
+        RecordBuffer.start()
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
+    }
+
+    private fun serveRecordPoll(): Response = recordEventsResponse(RecordBuffer.poll())
+
+    private fun serveRecordStop(): Response = recordEventsResponse(RecordBuffer.stop())
+
+    private fun recordEventsResponse(actions: List<String>): Response {
+        // Each action is already an IRAction JSON object string.
+        val body = "{\"events\":[" + actions.joinToString(",") + "]}"
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
