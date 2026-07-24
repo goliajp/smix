@@ -397,6 +397,64 @@ for c in "${CRATES[@]}"; do
   sleep 8
 done
 
+# --- publish napi smix-node (per-triple prebuilds + loader) -----------
+#
+# The TS SDK (`@goliapkg/smix`) declares an optionalDependency on
+# `@goliapkg/smix-node`, so that package and its three per-triple `.node`
+# addons must exist on npm BEFORE smix-rn is published — otherwise the
+# published SDK resolves a dependency that is not there and `loadNodeDriver`
+# throws at runtime for every consumer.
+#
+# The three addons are built by the `napi-prebuild` CI matrix on native
+# runners (darwin-arm64, darwin-x64, linux-x64-gnu). linux-x64-gnu cannot be
+# cross-built on a mac ship host, so this step does not build — it collects
+# the artifacts of the green CI run for THIS commit and publishes them. A
+# missing or non-green run is a hard fail: no partial or stale publish.
+#
+# Set SMIX_SHIP_NAPI_DRYRUN=1 to run every publish here as `--dry-run`.
+log "napi smix-node — collect prebuilds + publish"
+NODE_DIR="$ROOT/crates/smix-node"
+NAPI_DRY=""
+[ "${SMIX_SHIP_NAPI_DRYRUN:-0}" = 1 ] && NAPI_DRY="--dry-run"
+
+HEAD_SHA="$(cd "$ROOT" && git rev-parse HEAD)"
+RUN_ID="$(gh run list --repo goliajp/smix --workflow ci.yml --commit "$HEAD_SHA" \
+  --json databaseId,conclusion --jq '[.[] | select(.conclusion=="success")][0].databaseId')" \
+  || fail "gh run list failed — is gh authenticated for goliajp/smix?"
+[ -n "$RUN_ID" ] || fail "no green ci.yml run for HEAD ($HEAD_SHA): push HEAD and let napi-prebuild build the three .node addons before shipping"
+
+ART_DIR="$(mktemp -d)"
+gh run download "$RUN_ID" --repo goliajp/smix --dir "$ART_DIR" \
+  --pattern 'smix-node-*' || fail "gh run download of napi prebuilds failed"
+
+# Generate the platform-agnostic loader (index.js / index.d.ts) once. This
+# also produces the host's own .node, which we overwrite from the artifacts
+# so all three come from the same reproducible CI build.
+( cd "$NODE_DIR" && bunx napi build --platform --release ) || fail "napi loader build"
+( cd "$NODE_DIR" && bunx napi create-npm-dirs ) || fail "napi create-npm-dirs"
+
+# Place each downloaded .node into its per-triple subpackage. The platform
+# short-name is in the file name (smix-node.<platform>.node).
+found=0
+while IFS= read -r nodefile; do
+  base="$(basename "$nodefile")"                       # smix-node.darwin-arm64.node
+  plat="${base#smix-node.}"; plat="${plat%.node}"      # darwin-arm64
+  [ -d "$NODE_DIR/npm/$plat" ] || fail "no subpackage dir for platform $plat"
+  cp "$nodefile" "$NODE_DIR/npm/$plat/" || fail "stage $base"
+  found=$((found + 1))
+done < <(find "$ART_DIR" -name '*.node')
+[ "$found" = 3 ] || fail "expected 3 prebuilt .node addons, collected $found"
+
+# Publish the three per-triple subpackages, then the main loader package.
+for plat in darwin-arm64 darwin-x64 linux-x64-gnu; do
+  log "  npm publish @goliapkg/smix-node-$plat@$VERSION"
+  ( cd "$NODE_DIR/npm/$plat" && bun publish --access public $NAPI_DRY ) \
+    || fail "bun publish smix-node-$plat"
+done
+log "  npm publish @goliapkg/smix-node@$VERSION"
+( cd "$NODE_DIR" && bun publish --access public $NAPI_DRY ) \
+  || fail "bun publish smix-node"
+
 # --- publish npm ------------------------------------------------------
 
 log "npm publish @goliapkg/smix@$VERSION"

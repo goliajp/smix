@@ -11,6 +11,11 @@
       "devDependencies": {
         "@napi-rs/cli": "^3",
       },
+      "optionalDependencies": {
+        "@goliapkg/smix-node-darwin-arm64": "2.0.0",
+        "@goliapkg/smix-node-darwin-x64": "2.0.0",
+        "@goliapkg/smix-node-linux-x64-gnu": "2.0.0",
+      },
     },
     "npm/smix-rn": {
       "name": "@goliapkg/smix",
