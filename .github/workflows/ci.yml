@@ -50,9 +50,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: oven-sh/setup-bun@v2
       - name: install (workspace)
         run: bun install --frozen-lockfile
+      # Build the napi addon so RealAddonLoopback drives the real
+      # @goliapkg/smix-node over the workspace link, not a mock. It also
+      # regenerates index.d.ts (committed as the type contract) — a drift
+      # would show as a dirty tree.
+      - name: build napi addon
+        working-directory: crates/smix-node
+        run: bunx napi build --platform --release
       - name: typecheck
         working-directory: npm/smix-rn
         run: bun run typecheck
