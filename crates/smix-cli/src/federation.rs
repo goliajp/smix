@@ -146,6 +146,101 @@ pub fn remote_argv(
     ]
 }
 
+/// The freshness stamp, touched after a successful `cargo build` on the
+/// node. `target/` is excluded from the source rsync, so a sync can
+/// never forge freshness — only a real rebuild lays the stamp.
+pub const FED_BUILD_STAMP: &str = "target/.smix-fed-stamp";
+
+/// One flow's report line from a remote `--format json` stdout. `raw`
+/// keeps the whole line as parsed — the C4 merge layer consumes it;
+/// C3 does not reshape it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowReport {
+    pub flow: String,
+    pub outcome: String,
+    pub raw: serde_json::Value,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ReportError {
+    #[error("remote stdout line is not JSON (protocol violation): {line}")]
+    NotJson { line: String },
+    #[error("remote report line is missing '{field}': {line}")]
+    MissingField { field: &'static str, line: String },
+}
+
+/// Parse a remote `--format json` stdout into per-flow reports. The
+/// remote stdout is a trust boundary: under `--format json` it must
+/// carry only JSON lines (noise is stderr's — verified on the wire),
+/// so any non-JSON line is a protocol violation surfaced as an error,
+/// never skipped. Blank lines between reports are not violations.
+pub fn parse_report_lines(stdout: &str) -> Result<Vec<FlowReport>, ReportError> {
+    let mut reports = Vec::new();
+    for line in stdout.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let raw: serde_json::Value = serde_json::from_str(line)
+            .map_err(|_| ReportError::NotJson { line: line.to_string() })?;
+        let field = |name: &'static str| -> Result<String, ReportError> {
+            raw.get(name)
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .ok_or(ReportError::MissingField { field: name, line: line.to_string() })
+        };
+        let flow = field("flow")?;
+        let outcome = field("runOutcome")?;
+        reports.push(FlowReport { flow, outcome, raw });
+    }
+    Ok(reports)
+}
+
+/// Build the argv for the readiness gate — a read-only probe (repair,
+/// i.e. rebuilding, is the sync script's job, never the gate's). Same
+/// ssh conventions as `remote_argv`: no `"ssh"` word, batch mode, one
+/// quoted remote command. The order is fail-safe: a missing stamp
+/// fails `test -f` before anything else, so "never rebuilt" reads as
+/// stale, not fresh.
+#[must_use]
+pub fn readiness_argv(node: &NodeSpec) -> Vec<String> {
+    let remote = format!(
+        "cd {} && test -f {FED_BUILD_STAMP} && test -x target/release/smix && \
+         [ -z \"$(find crates -name '*.rs' -newer {FED_BUILD_STAMP})\" ]",
+        shell_quote(&node.repo),
+    );
+    vec![
+        "-o".to_string(),
+        "BatchMode=yes".to_string(),
+        node.host.clone(),
+        remote,
+    ]
+}
+
+/// A remote command's full result: exit code plus both streams,
+/// captured whole. SSH keeps the remote stdout/stderr split intact
+/// on the wire, and federation depends on that — stdout is the JSON
+/// report channel, stderr the noise channel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteOutput {
+    pub exit: u8,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// Spawn `ssh` with the given argv and capture everything. No retry,
+/// no timeout here — ssh's own transport failures surface as the 255
+/// sentinel and win the worst-of-nodes aggregate; wrapping them would
+/// hide exactly the signal the merge loop needs. A signal-killed ssh
+/// has no exit code and maps to 1, the same shape `run_parallel` uses.
+pub fn run_ssh(argv: &[String]) -> std::io::Result<RemoteOutput> {
+    let out = std::process::Command::new("ssh").args(argv).output()?;
+    Ok(RemoteOutput {
+        exit: out.status.code().map_or(1, |c| c.clamp(0, 255) as u8),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,6 +406,113 @@ nodes:
         // uses; 255 sits above every smix code, so transport loss can
         // never be masked by a flow failure.
         assert_eq!(crate::parallel::aggregate_exit(&[0, 255, 2]), 255);
+    }
+
+    #[test]
+    fn parses_one_report_line_per_flow() {
+        let stdout = concat!(
+            r#"{"flow":"scripts/release/stress-corpus/launch-and-capture.yaml","runOutcome":"success","warnings":[],"steps":[]}"#,
+            "\n",
+            r#"{"flow":"scripts/release/stress-corpus/screenshot-twice.yaml","runOutcome":"failure","failure":{"code":"NotVisible","message":"no match","selector":null,"suggestions":[],"visibleCount":3}}"#,
+            "\n",
+        );
+        let reports = parse_report_lines(stdout).unwrap();
+        assert_eq!(reports.len(), 2);
+        assert_eq!(
+            reports[0].flow,
+            "scripts/release/stress-corpus/launch-and-capture.yaml"
+        );
+        assert_eq!(reports[0].outcome, "success");
+        assert_eq!(
+            reports[1].flow,
+            "scripts/release/stress-corpus/screenshot-twice.yaml"
+        );
+        assert_eq!(reports[1].outcome, "failure");
+        assert_eq!(reports[1].raw["failure"]["code"], "NotVisible");
+    }
+
+    #[test]
+    fn rejects_a_non_json_stdout_line() {
+        let stdout = concat!(
+            r#"{"flow":"a.yaml","runOutcome":"success","warnings":[],"steps":[]}"#,
+            "\n\n",
+            "kevy: AOF 3 entries replayed\n",
+        );
+        let err = parse_report_lines(stdout).unwrap_err();
+        assert!(
+            matches!(&err, ReportError::NotJson { line } if line == "kevy: AOF 3 entries replayed")
+        );
+        assert!(err.to_string().contains("kevy: AOF 3 entries replayed"));
+    }
+
+    #[test]
+    fn readiness_argv_pins_the_gate_command() {
+        let node = NodeSpec {
+            name: "mini".to_string(),
+            host: "mini".to_string(),
+            repo: "/Users/doracawl/workspace/goliajp/smix".to_string(),
+            devices: vec!["sim-smix-001".to_string()],
+        };
+        assert_eq!(
+            readiness_argv(&node),
+            vec![
+                "-o".to_string(),
+                "BatchMode=yes".to_string(),
+                "mini".to_string(),
+                "cd '/Users/doracawl/workspace/goliajp/smix' && \
+                 test -f target/.smix-fed-stamp && \
+                 test -x target/release/smix && \
+                 [ -z \"$(find crates -name '*.rs' -newer target/.smix-fed-stamp)\" ]"
+                    .to_string(),
+            ]
+        );
+    }
+
+    /// Single-node e2e over a live node: parse_nodes → expand_slots →
+    /// assign_flows → readiness gate → remote_argv → run_ssh → JSON
+    /// report lines. Driven by scripts/dev/
+    /// v2.12-c3-federation-single-node-e2e.sh, which owns the sync,
+    /// rebuild, device prep and teardown around it.
+    #[test]
+    #[ignore]
+    fn federation_e2e_single_node_runs_flows_on_mini() {
+        let nodes_path = std::env::var("SMIX_FED_E2E_NODES")
+            .expect("SMIX_FED_E2E_NODES unset — this test is driven by the C3 e2e script");
+        let flows_env = std::env::var("SMIX_FED_E2E_FLOWS")
+            .expect("SMIX_FED_E2E_FLOWS unset — this test is driven by the C3 e2e script");
+        let flows: Vec<String> = flows_env.split(',').map(str::to_string).collect();
+        assert!(!flows.is_empty());
+
+        let yaml = std::fs::read_to_string(&nodes_path).unwrap();
+        let nodes = parse_nodes(&yaml).unwrap();
+        let slots = expand_slots(&nodes);
+        assert_eq!(slots.len(), 1, "single-node e2e expects exactly one slot");
+        let assignments = assign_flows(flows.len(), &slots);
+        assert_eq!(assignments[0].flows, (0..flows.len()).collect::<Vec<_>>());
+        let node = &nodes[assignments[0].node];
+        let device_ref = &assignments[0].device_ref;
+
+        let gate = run_ssh(&readiness_argv(node)).unwrap();
+        assert_eq!(
+            gate.exit, 0,
+            "readiness gate failed — node is stale\nstderr: {}",
+            gate.stderr
+        );
+
+        let out = run_ssh(&remote_argv(node, &flows, device_ref, &[])).unwrap();
+        assert!(
+            !is_transport_failure(out.exit),
+            "ssh transport failure\nstderr: {}",
+            out.stderr
+        );
+        assert_eq!(out.exit, 0, "remote run failed\nstderr: {}", out.stderr);
+
+        let reports = parse_report_lines(&out.stdout).unwrap();
+        assert_eq!(reports.len(), flows.len());
+        for (report, flow) in reports.iter().zip(&flows) {
+            assert_eq!(&report.flow, flow);
+            assert_eq!(report.outcome, "success", "flow {flow} failed: {}", report.raw);
+        }
     }
 
     #[test]

@@ -13,9 +13,9 @@ mod authoring;
 mod bench;
 mod capsule;
 mod down;
-/// Test-gated until C3 wires the ssh execution leg; the zero-warning
-/// build denies dead code, and C2 ships pure logic with no runtime
-/// caller yet.
+/// Test-gated until C5 wires the CLI surface; the zero-warning build
+/// denies dead code, and through C3 every consumer is a test (unit +
+/// the ignored single-node e2e) — no runtime caller yet.
 #[cfg(test)]
 mod federation;
 #[cfg(test)]
