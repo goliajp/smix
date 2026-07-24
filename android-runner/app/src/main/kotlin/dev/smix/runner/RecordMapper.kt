@@ -40,7 +40,15 @@ object RecordMapper {
      * text). An event with no accessibility id is dropped and counted, never
      * given a fabricated selector.
      */
-    fun map(events: List<CapturedAxEvent>): MapResult {
+    fun map(rawEvents: List<CapturedAxEvent>): MapResult {
+        // Keep only the mapping types first. On a real device each keystroke's
+        // TYPE_VIEW_TEXT_CHANGED is interleaved with droppable noise
+        // (TYPE_VIEW_TEXT_SELECTION_CHANGED etc.); filtering it out makes a
+        // field's text-change run contiguous so it coalesces, while a real
+        // CLICKED between two runs still separates them.
+        val events = rawEvents.filter {
+            it.type == TYPE_VIEW_CLICKED || it.type == TYPE_VIEW_TEXT_CHANGED
+        }
         val actions = mutableListOf<String>()
         var unmapped = 0
         var i = 0

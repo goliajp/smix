@@ -52,6 +52,24 @@ class RecordMapperTest {
     }
 
     @Test
+    fun textChangesInterleavedWithNoiseStillCoalesce() {
+        // On a real device each keystroke's TEXT_CHANGED is separated by
+        // TYPE_VIEW_TEXT_SELECTION_CHANGED (8192) noise; it must not break the
+        // coalesce into one fill per keystroke.
+        val a = one(
+            listOf(
+                textChange("com.x:id/q", "s", ""),
+                CapturedAxEvent(8192, "com.x:id/q", null, null, 1),
+                textChange("com.x:id/q", "sm", "s"),
+                CapturedAxEvent(8192, "com.x:id/q", null, null, 1),
+                textChange("com.x:id/q", "smix", "sm"),
+            ),
+        )
+        assertEquals("fill", a.getString("kind"))
+        assertEquals("smix", a.getString("text"))
+    }
+
+    @Test
     fun emptyTextAfterNonEmptyBecomesClear() {
         val a = one(listOf(textChange("com.x:id/q", "", "hel")))
         assertEquals("clear", a.getString("kind"))
