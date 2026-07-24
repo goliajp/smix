@@ -14,9 +14,13 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use smix_adapter_maestro::Step;
-use smix_ai_tier::AiTierConfig;
 use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_selector::Selector;
+
+/// Re-exported so a CLI wire needs only this crate as a dependency, not
+/// `smix-ai-tier` directly — keeping the authoring-propose fence's allowlist
+/// to a single crate.
+pub use smix_ai_tier::AiTierConfig;
 
 /// A machine-checkable set of edits over a flow's `Vec<Step>`.
 #[derive(Clone, Debug, Serialize, Deserialize)]

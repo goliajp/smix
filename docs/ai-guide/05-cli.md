@@ -268,6 +268,22 @@ next run.
 Suggest selectors matching a partial spec, and capture or diff
 accessibility-tree baselines for visual gates. Requires a runner.
 
+`smix authoring propose` closes the loop on a failed run: it reads the
+flow plus the on-disk bundle a failed run left behind, asks the local
+`claude` CLI to propose edits, applies them, and writes the amended
+flow. It is device-free — producing the bundle is the caller's step:
+
+```bash
+# 1) produce the bundle by running the (failing) flow on a device:
+smix run --device <SERIAL> --platform android --debug-output ./bundle --format json corrupt.yaml > ./bundle/failure.json
+# 2) device-free: propose + amend from the on-disk bundle via local claude:
+smix authoring propose corrupt.yaml --bundle ./bundle -o amended.yaml
+```
+
+The proposal step is non-deterministic (a model is in the loop) and
+fenced like `smix-ai-tier`: deletable, opt-in, never on the sense/act
+path.
+
 ### `smix annotate` — draw on a screenshot
 
 Circle, arrow, text, box and line primitives over a PNG, for failure
