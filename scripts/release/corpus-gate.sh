@@ -38,9 +38,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Default corpus: the 20-flow stress corpus built in-tree at v2.8-C5. The
-# insight-bootstrap-corpus PR that used to live at the old default is not
-# tracked in this repo; the in-tree corpus is what ship.sh and preflight
-# can reach without a consumer checkout.
+# older default pointed at a consumer PR path that is not tracked in this
+# repo; the in-tree corpus is what ship.sh and preflight can reach without
+# a consumer checkout.
 DEFAULT_CORPUS="$REPO_ROOT/scripts/release/stress-corpus"
 
 CORPUS_DIR=""
