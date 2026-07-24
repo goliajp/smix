@@ -20,7 +20,8 @@ resolver, never inside it:
 
 - **Nothing that senses may depend on this crate.** Delete `smix-ai-tier` and
   the sense path still compiles and its tests still pass. That deletability is
-  the fence, and it is enforced by a test rather than asserted in a comment.
+  the fence, and it is enforced by a test (`tests/fence.rs`) rather than
+  asserted in a comment.
 - **Opt-in.** The verbs are inert unless a flow turns them on.
 - **Marked non-deterministic.** A verdict is a judgement, not a measurement, and
   the output says so.
