@@ -105,6 +105,14 @@ struct Cli {
     cmd: Cmd,
 }
 
+// A clap top-level command enum: parsed once, held as a single value, never
+// stored in bulk. `Run` legitimately carries ~20 flag fields while `Doctor` is
+// a unit — the variant-size spread is by design, not the memory bloat this lint
+// guards against. Boxing `Run`'s fields into a separate Args struct buys lint
+// compliance at the cost of clap-derive machinery for no runtime gain; the
+// inline allow is the sanctioned exception (same idiom as `RunError` in
+// smix-adapter-maestro, per the workspace lints policy).
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand, Debug)]
 enum Cmd {
     /// Probe environment health: xcrun simctl availability + sim listing.
