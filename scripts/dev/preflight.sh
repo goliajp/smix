@@ -132,4 +132,16 @@ python3 scripts/dev/gen-llms.py --check
 python3 scripts/release/stress-select.py --test
 bash scripts/release/stress-gate.sh --selftest
 
+# The device e2e scripts (record/propose/federation) each need a booted
+# sim or emulator, so preflight — device-free and run dozens of times a
+# day — only runs them when SMIX_DEVICE_E2E is set. The glob wires every
+# `*-e2e.sh` into a gate so workflow-scan reads them as run rather than
+# orphaned, without a hand-kept list that would drift as checkpoints add
+# scripts.
+if [[ -n "${SMIX_DEVICE_E2E:-}" ]]; then
+    for e2e in scripts/dev/*-e2e.sh; do
+        bash "$e2e"
+    done
+fi
+
 echo "preflight: clean"
