@@ -34,6 +34,16 @@ until all of it is done.** These were separate, later, and in three cases explic
 out-of-scope; the decision to do them first and ship once is recorded in
 `docs/v2.md` (决策日志 2026-07-23) and drives the v2.8+ phase cold plans.
 
+**Status (2026-07-24): the fold is complete.** All five folded minors landed —
+v2.8 faster-and-wider, v2.9 napi (TS SDK drives sims), v2.10 cross-platform
+recorder, v2.11 LLM-in-the-loop authoring, v2.12 federation — each with its
+checkpoints green (see the `docs/v2.md` decision log and `docs/plan-history/`).
+The item descriptions below stand as written; what shipped is recorded per
+minor in `CHANGELOG.md`. Two things remain before publish and are the user's
+call: wiring the napi `@goliapkg/smix-node` npm publish into `ship.sh` (the TS
+driving code is done but its addon is not yet on npm), and the ship
+authorization itself.
+
 Two constraints survive the fold and are not the user's to waive silently, so they
 are called out where an item brushes them:
 
