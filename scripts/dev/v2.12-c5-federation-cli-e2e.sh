@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# v2.12-C4 federation two-node e2e: the scheduler machine drives TWO
-# live nodes — itself over `ssh localhost` (dedicated runner port, so it
-# coexists with any resident runner on the default port) and mini —
-# end to end: localhost self-authorization -> source sync (mini) ->
-# config authority sync (mini) -> rebuild + freshness stamp (both) ->
-# readiness gate (both) -> sim prep (explicit UDID, §9#1 sims only) ->
-# the ignored Rust e2e test (parse_nodes → expand_slots → assign_flows
-# → per-node gate → remote run with --debug-output passthrough → JSON
-# report lines → merge_reports → per-node artifact rsync recovery) ->
-# teardown. Every stage is machine judged; any failure stops the script
-# with a FAIL marker.
+# v2.12-C5 federation CLI e2e: one real `smix run --nodes` command
+# drives TWO live nodes — studio over `ssh localhost` (dedicated runner
+# port) and mini — through the whole product lane: roster parse ->
+# local flow check -> per-node readiness gate -> concurrent ssh fan-out
+# -> per-node fold -> artifact rsync recovery -> merged JSON on stdout
+# -> worst-of-nodes exit. The script owns everything around it:
+# self-authorization, source/config sync, rebuild + stamp, device prep,
+# and a no-sweep teardown (recorded-handle precise kill on studio —
+# never any iOS-form `smix runner down` here; its port-agnostic pkill
+# fallback is the unfixed C4 incident, fix pending user decision).
+# Every stage is machine judged; any failure stops with a FAIL marker.
 set -euo pipefail
 
 HOST="${SMIX_FED_NODE_HOST:-mini}"
@@ -22,8 +22,8 @@ FLOW_A="scripts/release/stress-corpus/launch-and-capture.yaml"
 FLOW_B="scripts/release/stress-corpus/screenshot-twice.yaml"
 ARTIFACT_DIR=".smix/fed-artifacts"
 
-log()  { printf '[c4-fed] %s\n' "$*"; }
-fail() { printf '[c4-fed] FAIL: %s\n' "$*" >&2; exit 1; }
+log()  { printf '[c5-fed] %s\n' "$*"; }
+fail() { printf '[c5-fed] FAIL: %s\n' "$*" >&2; exit 1; }
 
 rssh() { ssh -o ConnectTimeout=5 -o BatchMode=yes "$HOST" "$@"; }
 lssh() { ssh -o ConnectTimeout=5 -o BatchMode=yes localhost "$@"; }
@@ -56,21 +56,62 @@ lsof -nP -i ":$STUDIO_PORT" >/dev/null 2>&1 && fail "port $STUDIO_PORT busy on s
 [ -f "$ROOT/$FLOW_A" ] || fail "corpus flow missing: $FLOW_A"
 [ -f "$ROOT/$FLOW_B" ] || fail "corpus flow missing: $FLOW_B"
 
+log "guard: SMIX_UDID / SMIX_RUNNER_PORT not exported (clap counts env values as present -> --nodes conflict)"
+[ -z "${SMIX_UDID:-}" ] || fail "SMIX_UDID is exported — unset it before a --nodes run"
+[ -z "${SMIX_RUNNER_PORT:-}" ] || fail "SMIX_RUNNER_PORT is exported — unset it before a --nodes run"
+
 WORK="$(mktemp -d)"
 mkdir -p "$WORK/pull"
 UDID_S=""
 UDID_M=""
+
+# Studio teardown, no sweep (C4 incident discipline): read the recorded
+# runner handle from the store, verify the pid is still xcodebuild
+# (pid-reuse guard), then a precise kill -INT with a bounded wait.
+# Never any iOS-form `smix runner down` here — env or flag — and never
+# a bare `pgrep xcodebuild`. The stale handle stays in the store; the
+# product drops it itself on the next `runner down`.
+stop_studio_runner() {
+  local pid cmd i
+  pid="$( (cd "$ROOT" && target/release/smix diagnostic store 2>/dev/null) \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["one:runner-ios"]["pid"])' 2>/dev/null )" || true
+  if [ -z "$pid" ]; then
+    log "teardown: no recorded runner handle on studio — nothing to stop"
+    return 0
+  fi
+  cmd="$(ps -p "$pid" -o command= 2>/dev/null)" || true
+  case "$cmd" in
+    *xcodebuild*)
+      log "teardown: kill -INT recorded runner pid $pid (verified xcodebuild)"
+      kill -INT "$pid" 2>/dev/null || true
+      i=0
+      while [ "$i" -lt 30 ] && kill -0 "$pid" 2>/dev/null; do
+        sleep 1
+        i=$((i + 1))
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        log "teardown: pid $pid survived ${i}s after INT — kill -9"
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+      ;;
+    "")
+      log "teardown: recorded pid $pid is already gone — nothing to stop"
+      ;;
+    *)
+      log "teardown: recorded pid $pid is not xcodebuild (pid-reuse guard) — not touching it"
+      ;;
+  esac
+}
+
 cleanup() {
-  log "teardown: runners down + sims shutdown + artifacts + workdir"
+  log "teardown: runners down (mini) / precise handle kill (studio) + sims shutdown + artifacts + workdir"
   if [ -n "$UDID_M" ]; then
     rssh "cd '$REMOTE_REPO' && target/release/smix runner down" || true
     rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID_M" || true
   fi
   rssh "cd '$REMOTE_REPO' && rm -rf $ARTIFACT_DIR && rm -f launch-capture.png shot-1.png shot-2.png" || true
   if [ -n "$UDID_S" ]; then
-    # iOS `runner down` selects its port from SMIX_RUNNER_PORT only —
-    # never run it bare here, that would hit the default port's runner.
-    ( cd "$ROOT" && SMIX_RUNNER_PORT="$STUDIO_PORT" target/release/smix runner down ) || true
+    stop_studio_runner
     ( cd "$ROOT" && target/release/smix sim shutdown "$UDID_S" ) || true
   fi
   rm -rf "$ROOT/$ARTIFACT_DIR"
@@ -97,7 +138,8 @@ else
   rssh "test ! -f '$REMOTE_REPO/.smix/config.yaml'" || fail "config sync: remote config.yaml still present"
 fi
 
-# --- 4. rebuild + freshness stamp, both nodes (cargo judges freshness) ---
+# --- 4. rebuild + freshness stamp, both nodes (cargo judges freshness;
+#        the studio rebuild is what puts the C5 lane into target/release/smix) ---
 log "remote rebuild (cargo build --release -p smix-cli) + stamp on $HOST"
 rssh "cd '$REMOTE_REPO' && cargo build --release -p smix-cli && touch target/.smix-fed-stamp" \
   || fail "remote rebuild failed on $HOST — not running stale"
@@ -105,7 +147,8 @@ log "local rebuild (cargo build --release -p smix-cli) + stamp on studio"
 ( cd "$ROOT" && cargo build --release -p smix-cli && touch target/.smix-fed-stamp ) \
   || fail "local rebuild failed on studio — not running stale"
 
-# --- 5. readiness gate, independent recheck on both nodes (same shape as readiness_argv) ---
+# --- 5. readiness gate, independent recheck on both nodes (same shape as
+#        readiness_argv; the product lane runs its own gate again — deliberate double run) ---
 log "readiness gate recheck: studio (via ssh localhost)"
 lssh "cd '$ROOT' && test -f target/.smix-fed-stamp && test -x target/release/smix && [ -z \"\$(find crates -name '*.rs' -newer target/.smix-fed-stamp)\" ]" \
   || fail "studio readiness gate red after rebuild"
@@ -138,30 +181,43 @@ rssh "cd '$REMOTE_REPO' && target/release/smix sim boot $UDID_M" || true
 rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID_M --bundle com.apple.Preferences" \
   || fail "runner up did not reach ready on $HOST"
 
-# --- 7. drive the ignored Rust e2e test (the product-side leg) ---
-log "drive federation_e2e_two_nodes_merge_reports_and_recover_artifacts (ignored test)"
+# --- 7. the real CLI, one command through the whole lane ---
+log "smix run --nodes: two nodes, one command"
 cat >"$WORK/nodes.yaml" <<YAML
 nodes:
-  - name: c4-studio
+  - name: c5-studio
     host: localhost
     repo: $ROOT
     devices: [$UDID_S]
-  - name: c4-mini
+    runnerPort: $STUDIO_PORT
+  - name: c5-mini
     host: $HOST
     repo: $REMOTE_REPO
     devices: [$UDID_M]
 YAML
-(
-  cd "$ROOT"
-  SMIX_FED_E2E_NODES="$WORK/nodes.yaml" \
-  SMIX_FED_E2E_FLOWS="$FLOW_A,$FLOW_B" \
-  SMIX_FED_E2E_RUNNER_PORTS="c4-studio=$STUDIO_PORT" \
-  SMIX_FED_E2E_PULL_DIR="$WORK/pull" \
-    cargo test -p smix-cli --bin smix federation_e2e_two_nodes -- --ignored --nocapture
-) || fail "ignored e2e test red — the two-node loop did not close"
-log "recheck recovered artifacts (per-node subdirs)"
-[ -f "$WORK/pull/c4-studio/run-summary.json" ] || fail "recovered artifact missing: pull/c4-studio/run-summary.json"
-[ -f "$WORK/pull/c4-mini/run-summary.json" ] || fail "recovered artifact missing: pull/c4-mini/run-summary.json"
+( cd "$ROOT" && target/release/smix run "$FLOW_A" "$FLOW_B" \
+    --nodes "$WORK/nodes.yaml" --debug-output "$WORK/pull" >"$WORK/merged.json" ) \
+  || fail "smix run --nodes exited non-zero — the federation lane did not close"
 
-# --- 8. marker (teardown runs via trap) ---
-log "C4-FED-E2E-PASS"
+# --- 8. merged report + recovered artifact assertions (python3, no jq dependency) ---
+log "assert merged.json shape + per-node success leaves"
+python3 - "$WORK/merged.json" <<'PY' || fail "merged.json assertions failed"
+import json, sys
+with open(sys.argv[1]) as f:
+    text = f.read()
+doc = json.loads(text)  # a single JSON document, not a line stream
+assert doc["aggregateExit"] == 0, f"aggregateExit={doc['aggregateExit']}"
+nodes = doc["nodes"]
+assert len(nodes) == 2, f"expected 2 nodes, got {len(nodes)}"
+assert {n["node"] for n in nodes} == {"c5-studio", "c5-mini"}, f"node names: {[n['node'] for n in nodes]}"
+for n in nodes:
+    assert len(n["flows"]) == 1, f"{n['node']}: expected exactly 1 flow leaf, got {len(n['flows'])}"
+    assert n["flows"][0]["runOutcome"] == "success", f"{n['node']}: {n['flows'][0]}"
+print("merged.json OK: 2 nodes, 1 success leaf each, aggregateExit 0")
+PY
+log "assert recovered artifacts (per-node subdirs)"
+[ -f "$WORK/pull/c5-studio/run-summary.json" ] || fail "recovered artifact missing: pull/c5-studio/run-summary.json"
+[ -f "$WORK/pull/c5-mini/run-summary.json" ] || fail "recovered artifact missing: pull/c5-mini/run-summary.json"
+
+# --- 9. marker (teardown runs via trap) ---
+log "C5-FED-E2E-PASS"

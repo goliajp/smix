@@ -13,10 +13,8 @@ mod authoring;
 mod bench;
 mod capsule;
 mod down;
-/// Test-gated until C5 wires the CLI surface; the zero-warning build
-/// denies dead code, and through C3 every consumer is a test (unit +
-/// the ignored single-node e2e) — no runtime caller yet.
-#[cfg(test)]
+/// Distributed `smix run --nodes`: roster parsing, cross-node flow
+/// sharding, readiness gate, ssh fan-out and merged reporting.
 mod federation;
 #[cfg(test)]
 mod guide_gate;
@@ -419,6 +417,11 @@ Documentation: docs/AI_GUIDE.md
         /// given.
         #[arg(long, default_value_t = 1)]
         parallel: usize,
+        /// Distributed run: shard the flows across the nodes in a roster
+        /// yaml (each node runs its own simulators; results merge into one
+        /// JSON report on stdout, exit = worst of nodes).
+        #[arg(long, conflicts_with_all = ["device", "also_device", "parallel"])]
+        nodes: Option<PathBuf>,
         /// Bundle id / Android package for `App::foreground` (skipped
         /// with --no-launch). Overridden by `appId:` / `app:` in the
         /// yaml header.
@@ -1678,6 +1681,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             device,
             also_device,
             parallel,
+            nodes,
             bundle_id,
             animations,
             runner_port,
@@ -1780,6 +1784,105 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     );
                 }
                 return Ok(std::process::ExitCode::from(fail));
+            }
+
+            // Federation lane: shard the flows across the nodes in a
+            // roster yaml. Devices come from the roster (`--nodes`
+            // conflicts with `--device`/`--also-device`/`--parallel`),
+            // the leaves run remotely under `--format json`, and the
+            // merged report is one JSON document on stdout — exit is
+            // the worst of nodes. Sync/rebuild never happen here: the
+            // readiness gate only judges (repair is the sync script's
+            // job), and a red gate fast-fails before anything fans out.
+            if let Some(nodes_path) = &nodes {
+                let yaml = std::fs::read_to_string(nodes_path).map_err(|e| {
+                    CliError::Other(format!("read {}: {e}", nodes_path.display()))
+                })?;
+                let node_specs =
+                    federation::parse_nodes(&yaml).map_err(|e| CliError::Other(e.to_string()))?;
+                // Flow paths are repo-relative and must exist on every
+                // node at the same path; the scheduler repo is the
+                // authority, so a flow missing here fails fast before
+                // any ssh is dialed.
+                for flow in &flows {
+                    if !flow.is_file() {
+                        return Err(CliError::Other(format!(
+                            "flow not found locally: {} — flow paths are repo-relative \
+                             and must exist on every node (scheduler repo is the authority)",
+                            flow.display()
+                        )));
+                    }
+                }
+                // Same CLI-sourced passthrough set as the parallel lane,
+                // except `--debug-output`: the remote leaves stage their
+                // artifacts under the fixed per-repo dir and the user's
+                // directory is the local rsync-pull target instead.
+                // Every token is shell-quoted — passthrough rides the
+                // remote command string verbatim.
+                let mut passthrough: Vec<String> = Vec::new();
+                if let Some(b) = &bundle_id {
+                    passthrough.push("--bundle-id".into());
+                    passthrough.push(b.clone());
+                }
+                if no_launch {
+                    passthrough.push("--no-launch".into());
+                }
+                if animations {
+                    passthrough.push("--animations".into());
+                }
+                if activate {
+                    passthrough.push("--activate".into());
+                }
+                if verbose {
+                    passthrough.push("--verbose".into());
+                }
+                if fail_fast {
+                    passthrough.push("--fail-fast".into());
+                }
+                if retry != 1 {
+                    passthrough.push("--retry".into());
+                    passthrough.push(retry.to_string());
+                }
+                passthrough.push("--platform".into());
+                passthrough.push(
+                    match platform {
+                        RunPlatform::Ios => "ios",
+                        RunPlatform::Android => "android",
+                    }
+                    .into(),
+                );
+                if let Some(a) = &apps_config {
+                    passthrough.push("--apps-config".into());
+                    passthrough.push(a.display().to_string());
+                }
+                if debug_output.is_some() {
+                    passthrough.push("--debug-output".into());
+                    passthrough.push(federation::FED_ARTIFACT_DIR.into());
+                }
+                for (k, v) in &env {
+                    passthrough.push("--env".into());
+                    passthrough.push(format!("{k}={v}"));
+                }
+                let passthrough: Vec<String> = passthrough
+                    .iter()
+                    .map(|t| federation::shell_quote(t))
+                    .collect();
+                let flow_strs: Vec<String> =
+                    flows.iter().map(|p| p.display().to_string()).collect();
+                let slots = federation::expand_slots(&node_specs);
+                let assignments = federation::assign_flows(flow_strs.len(), &slots);
+                let merged = federation::run_federation(
+                    &node_specs,
+                    &assignments,
+                    &flow_strs,
+                    &passthrough,
+                    debug_output.as_deref(),
+                )
+                .map_err(|e| CliError::Other(e.to_string()))?;
+                let doc = serde_json::to_string(&merged)
+                    .map_err(|e| CliError::Other(format!("serialize merged report: {e}")))?;
+                println!("{doc}");
+                return Ok(std::process::ExitCode::from(merged.aggregate_exit));
             }
 
             // Parallel multi-sim. Shard the flows across `--device` +

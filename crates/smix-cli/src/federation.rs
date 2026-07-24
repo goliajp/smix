@@ -18,6 +18,12 @@ pub struct NodeSpec {
     pub host: String,
     pub repo: String,
     pub devices: Vec<String>,
+    /// The node's runner port, forwarded to its slots as
+    /// `--runner-port`. Per-node because ports are heterogeneous across
+    /// machines — the local `--runner-port` flag cannot express them.
+    /// Same spelling as the sim registry's per-sim field.
+    #[serde(rename = "runnerPort", default)]
+    pub runner_port: Option<u16>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -248,7 +254,7 @@ fn capture(program: &str, argv: &[String]) -> std::io::Result<RemoteOutput> {
 /// Where a federation run's `--debug-output` artifacts land on each
 /// node, relative to the node's repo (bare-safe: it rides the remote
 /// argv passthrough verbatim, unquoted).
-pub const FED_ARTIFACT_DIR: &str = ".smix/fed-c4-artifacts";
+pub const FED_ARTIFACT_DIR: &str = ".smix/fed-artifacts";
 
 /// Build the argv for the artifact-recovery `rsync` (the `"rsync"` word
 /// itself excluded, the same convention as `readiness_argv`): archive
@@ -275,6 +281,16 @@ pub fn artifact_pull_argv(node: &NodeSpec, remote_dir: &str, local_dir: &str) ->
 /// surfaces as its own non-zero exit.
 pub fn run_rsync(argv: &[String]) -> std::io::Result<RemoteOutput> {
     capture("rsync", argv)
+}
+
+/// One slot's raw outcome from the fan-out: which node it ran on
+/// (roster index), the ssh exit, and the captured stdout — the input
+/// `fold_slot_results` groups back into per-node results.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotResult {
+    pub node: usize,
+    pub exit: u8,
+    pub stdout: String,
 }
 
 /// One node's complete outcome: its exit code and the per-flow reports
@@ -307,6 +323,39 @@ pub struct MergedReport {
     pub aggregate_exit: u8,
 }
 
+/// Fold the fan-out's slot results back into per-node results, in
+/// roster order. A node's exit is `parallel::aggregate_exit` over its
+/// slots' exits — the one worst-of semantic, reused verbatim — and its
+/// reports are the slots' parsed report lines concatenated in slot
+/// order. A transport-lost slot (exit 255) has no report channel on
+/// stdout and is skipped without parsing; a healthy slot's parse error
+/// is a protocol violation surfaced as-is, never swallowed. Pure — the
+/// direct upstream of `merge_reports`.
+pub fn fold_slot_results(
+    nodes: &[NodeSpec],
+    slots: &[SlotResult],
+) -> Result<Vec<NodeResult>, ReportError> {
+    nodes
+        .iter()
+        .enumerate()
+        .map(|(index, spec)| {
+            let mut exits = Vec::new();
+            let mut reports = Vec::new();
+            for slot in slots.iter().filter(|s| s.node == index) {
+                exits.push(slot.exit);
+                if !is_transport_failure(slot.exit) {
+                    reports.extend(parse_report_lines(&slot.stdout)?);
+                }
+            }
+            Ok(NodeResult {
+                name: spec.name.clone(),
+                exit: crate::parallel::aggregate_exit(&exits),
+                reports,
+            })
+        })
+        .collect()
+}
+
 /// Merge per-node results into one report. The aggregate is
 /// `parallel::aggregate_exit` verbatim — one worst-of semantic,
 /// maintained in one place; the 255 transport sentinel wins by max.
@@ -325,6 +374,131 @@ pub fn merge_reports(results: &[NodeResult]) -> MergedReport {
             .collect(),
         aggregate_exit: crate::parallel::aggregate_exit(&exits),
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum FederationRunError {
+    #[error("node '{node}' failed the readiness gate (stale or unreachable): {stderr}")]
+    Gate { node: String, stderr: String },
+    #[error("spawning ssh for node '{node}': {source}")]
+    Spawn {
+        node: String,
+        source: std::io::Error,
+    },
+    #[error(transparent)]
+    Report(#[from] ReportError),
+    #[error("artifact rsync for node '{node}' failed (exit {exit}): {stderr}")]
+    ArtifactPull {
+        node: String,
+        exit: u8,
+        stderr: String,
+    },
+}
+
+/// The whole federation lane behind `smix run --nodes`: per-node
+/// readiness gate (all pass before anything fans out), concurrent
+/// spawn-all-then-join ssh fan-out over the slot assignments (the
+/// `run_parallel` shape: stdout piped as the report channel, stderr
+/// inherited so remote progress stays visible), slot results folded
+/// per node, optional per-node artifact recovery (before the merged
+/// report is printed — a failed pull fails the run, no half-success),
+/// then the merged report.
+///
+/// `passthrough` tokens must already be shell-quoted by the caller —
+/// they ride the remote command string verbatim; the per-node
+/// `--runner-port` tokens added here are quoted the same way.
+pub fn run_federation(
+    nodes: &[NodeSpec],
+    assignments: &[SlotAssignment],
+    flows: &[String],
+    passthrough: &[String],
+    pull_to: Option<&std::path::Path>,
+) -> Result<MergedReport, FederationRunError> {
+    for node in nodes {
+        let gate = run_ssh(&readiness_argv(node)).map_err(|e| FederationRunError::Spawn {
+            node: node.name.clone(),
+            source: e,
+        })?;
+        if gate.exit != 0 {
+            return Err(FederationRunError::Gate {
+                node: node.name.clone(),
+                stderr: gate.stderr,
+            });
+        }
+    }
+
+    let mut running = Vec::new();
+    for assignment in assignments {
+        if assignment.flows.is_empty() {
+            continue;
+        }
+        let node = &nodes[assignment.node];
+        let slot_flows: Vec<String> = assignment.flows.iter().map(|&i| flows[i].clone()).collect();
+        let mut slot_passthrough = passthrough.to_vec();
+        if let Some(port) = node.runner_port {
+            slot_passthrough.push(shell_quote("--runner-port"));
+            slot_passthrough.push(shell_quote(&port.to_string()));
+        }
+        let argv = remote_argv(node, &slot_flows, &assignment.device_ref, &slot_passthrough);
+        let child = std::process::Command::new("ssh")
+            .args(&argv)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| FederationRunError::Spawn {
+                node: node.name.clone(),
+                source: e,
+            })?;
+        running.push((assignment, child));
+    }
+
+    let mut slot_results = Vec::new();
+    for (assignment, child) in running {
+        let node = &nodes[assignment.node];
+        let out = child
+            .wait_with_output()
+            .map_err(|e| FederationRunError::Spawn {
+                node: node.name.clone(),
+                source: e,
+            })?;
+        let exit = out.status.code().map_or(1, |c| c.clamp(0, 255) as u8);
+        let note = if is_transport_failure(exit) {
+            " (ssh transport failure)"
+        } else {
+            ""
+        };
+        eprintln!(
+            "smix run --nodes: node {} device {} exited {exit}{note}",
+            node.name, assignment.device_ref
+        );
+        slot_results.push(SlotResult {
+            node: assignment.node,
+            exit,
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        });
+    }
+
+    let results = fold_slot_results(nodes, &slot_results)?;
+
+    if let Some(local_dir) = pull_to {
+        let local = local_dir.display().to_string();
+        for node in nodes {
+            let pull = run_rsync(&artifact_pull_argv(node, FED_ARTIFACT_DIR, &local)).map_err(
+                |e| FederationRunError::Spawn {
+                    node: node.name.clone(),
+                    source: e,
+                },
+            )?;
+            if pull.exit != 0 {
+                return Err(FederationRunError::ArtifactPull {
+                    node: node.name.clone(),
+                    exit: pull.exit,
+                    stderr: pull.stderr,
+                });
+            }
+        }
+    }
+
+    Ok(merge_reports(&results))
 }
 
 #[cfg(test)]
@@ -379,8 +553,28 @@ nodes:
                 host: (*name).to_string(),
                 repo: format!("/repo/{name}"),
                 devices: devices.iter().map(|d| (*d).to_string()).collect(),
+                runner_port: None,
             })
             .collect()
+    }
+
+    #[test]
+    fn parses_an_optional_per_node_runner_port() {
+        let yaml = "\
+nodes:
+  - name: studio
+    host: localhost
+    repo: /repo/studio
+    devices: [sim-1]
+    runnerPort: 22097
+  - name: mini
+    host: mini
+    repo: /repo/mini
+    devices: [sim-2]
+";
+        let nodes = parse_nodes(yaml).unwrap();
+        assert_eq!(nodes[0].runner_port, Some(22097));
+        assert_eq!(nodes[1].runner_port, None);
     }
 
     #[test]
@@ -448,6 +642,7 @@ nodes:
             host: "mini".to_string(),
             repo: "/Users/doracawl/workspace/goliajp/smix".to_string(),
             devices: vec!["sim-smix-001".to_string()],
+            runner_port: None,
         };
         let argv = remote_argv(
             &node,
@@ -538,6 +733,7 @@ nodes:
             host: "mini".to_string(),
             repo: "/Users/doracawl/workspace/goliajp/smix".to_string(),
             devices: vec!["sim-smix-001".to_string()],
+            runner_port: None,
         };
         assert_eq!(
             readiness_argv(&node),
@@ -608,12 +804,13 @@ nodes:
             host: "mini".to_string(),
             repo: "/Users/doracawl/workspace/goliajp/smix".to_string(),
             devices: vec!["sim-smix-001".to_string()],
+            runner_port: None,
         };
         assert_eq!(
             artifact_pull_argv(&node, FED_ARTIFACT_DIR, "/tmp/pull"),
             vec![
                 "-a".to_string(),
-                "mini:'/Users/doracawl/workspace/goliajp/smix/.smix/fed-c4-artifacts/'"
+                "mini:'/Users/doracawl/workspace/goliajp/smix/.smix/fed-artifacts/'"
                     .to_string(),
                 "/tmp/pull/mini/".to_string(),
             ]
@@ -838,6 +1035,70 @@ nodes:
         assert_eq!(merged.nodes.len(), 1);
         assert_eq!(merged.nodes[0].flows, Vec::<serde_json::Value>::new());
         assert_eq!(merged.aggregate_exit, 0);
+    }
+
+    #[test]
+    fn fold_groups_slots_by_node_with_max_exit_and_concatenated_reports() {
+        let nodes = roster(&[("a", &["a1", "a2"]), ("b", &["b1"])]);
+        let leaf_ok = r#"{"flow":"a.yaml","runOutcome":"success","warnings":[],"steps":[]}"#;
+        let leaf_fail = r#"{"flow":"b.yaml","runOutcome":"failure","failure":{"code":"NotVisible","message":"no match","selector":null,"suggestions":[],"visibleCount":3}}"#;
+        let leaf_other = r#"{"flow":"c.yaml","runOutcome":"success","warnings":[],"steps":[]}"#;
+        let slots = vec![
+            SlotResult {
+                node: 0,
+                exit: 0,
+                stdout: format!("{leaf_ok}\n"),
+            },
+            SlotResult {
+                node: 0,
+                exit: 3,
+                stdout: format!("{leaf_fail}\n"),
+            },
+            SlotResult {
+                node: 1,
+                exit: 0,
+                stdout: format!("{leaf_other}\n"),
+            },
+        ];
+        let results = fold_slot_results(&nodes, &slots).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].name, "a");
+        assert_eq!(results[0].exit, 3);
+        assert_eq!(results[0].reports.len(), 2);
+        assert_eq!(results[0].reports[0].flow, "a.yaml");
+        assert_eq!(results[0].reports[1].flow, "b.yaml");
+        assert_eq!(results[1].name, "b");
+        assert_eq!(results[1].exit, 0);
+        assert_eq!(results[1].reports.len(), 1);
+        assert_eq!(results[1].reports[0].flow, "c.yaml");
+    }
+
+    #[test]
+    fn fold_keeps_a_transport_lost_slot_empty_without_parsing_its_stdout() {
+        let nodes = roster(&[("a", &["a1"])]);
+        let slots = vec![SlotResult {
+            node: 0,
+            exit: SSH_TRANSPORT_EXIT,
+            stdout: "ssh: connect to host a port 22: Connection refused".to_string(),
+        }];
+        let results = fold_slot_results(&nodes, &slots).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].exit, SSH_TRANSPORT_EXIT);
+        assert_eq!(results[0].reports, Vec::<FlowReport>::new());
+    }
+
+    #[test]
+    fn fold_surfaces_a_protocol_violation_from_a_healthy_slot() {
+        let nodes = roster(&[("a", &["a1"])]);
+        let slots = vec![SlotResult {
+            node: 0,
+            exit: 0,
+            stdout: "kevy: AOF 3 entries replayed\n".to_string(),
+        }];
+        let err = fold_slot_results(&nodes, &slots).unwrap_err();
+        assert!(
+            matches!(&err, ReportError::NotJson { line } if line == "kevy: AOF 3 entries replayed")
+        );
     }
 
     #[test]
