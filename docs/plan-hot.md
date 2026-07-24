@@ -149,9 +149,11 @@ cd /Users/doracawl/workspace/goliajp/smix
 export ANDROID_SERIAL=emulator-5554
 
 # —— Gate A:glue 核心 + runner-client 变体 + 三平台 parity + 契约锁(device-free,硬门)——
-cargo test -p smix-cli authoring_generate \
-  && cargo test -p smix-runner-client stop_record_actions \
-  && cargo test -p smix-recorder cross_platform_parity android_iraction_contract web_iraction_contract \
+# 注:cargo test 只吃单个 positional testname,多 filter 必须放 --test <bin> 或 -- 后(libtest OR);
+# 名字咬真实测试模块(authoring_generate_tests / stop_record_actions_envelope)不是想象的名字。
+cargo test -p smix-cli --bin smix authoring_generate_tests \
+  && cargo test -p smix-runner-client stop_record_actions_envelope \
+  && cargo test -p smix-recorder --test cross_platform_parity --test android_iraction_contract --test web_iraction_contract \
   && ( cd android-runner && ./gradlew :app:testDebugUnitTest --tests '*RecordMapperTest*' --tests '*RecordBufferTest*' ) \
   && ( cd npm/smix-web-record && bun run test ) \
   && cargo build -p smix-cli \

@@ -1905,14 +1905,51 @@ impl HttpRunnerClient {
     /// swallow `kind` / `selector` into its `extra`, so this keeps them raw
     /// `Value`s for the record -> generate glue to hand to the generator.
     pub async fn stop_record_actions(&self) -> Result<Vec<serde_json::Value>, RunnerTransportError> {
-        #[derive(Deserialize)]
-        struct Envelope {
-            #[serde(default)]
-            events: Vec<serde_json::Value>,
-        }
-        let env: Envelope = self
+        let env: RecordStopEnvelope = self
             .json_post("/record/stop", &serde_json::json!({}), None)
             .await?;
         Ok(env.events)
+    }
+}
+
+/// `{ "events": [ <IRAction JSON>, ... ] }` — the Android `/record/stop` body,
+/// read as raw [`serde_json::Value`]s so `kind` / `selector` survive intact
+/// for the record -> generate glue. Hoisted to module scope so the test below
+/// locks the exact shape [`HttpRunnerClient::stop_record_actions`] depends on.
+#[derive(Deserialize)]
+struct RecordStopEnvelope {
+    #[serde(default)]
+    events: Vec<serde_json::Value>,
+}
+
+#[cfg(test)]
+mod record_actions_tests {
+    use super::*;
+
+    // Locks that the envelope preserves IRAction structure — the reason
+    // stop_record_actions exists apart from stop_record, whose RecordedEvent
+    // shape swallows kind/selector into `extra`. Deserializes into the SAME
+    // type the method uses, so field-name/serde drift fails here.
+    #[test]
+    fn stop_record_actions_envelope_preserves_iraction_structure() {
+        let body = r#"{"events":[
+            {"kind":"tap","selector":{"id":"field"},"timestampMs":1},
+            {"kind":"fill","selector":{"id":"field"},"text":"smix","timestampMs":2},
+            {"kind":"clear","selector":{"id":"field"},"timestampMs":3}
+        ]}"#;
+        let env: RecordStopEnvelope = serde_json::from_str(body).unwrap();
+        let kinds: Vec<&str> = env.events.iter().map(|e| e["kind"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["tap", "fill", "clear"]);
+        assert_eq!(env.events[0]["selector"]["id"], "field");
+        assert_eq!(env.events[1]["text"], "smix");
+    }
+
+    // A runner that emits nothing (or omits the field) drains to empty, not error
+    // — `#[serde(default)]`. An empty drain is the generator's EmptySession to
+    // reject, not a transport failure to raise here.
+    #[test]
+    fn stop_record_actions_envelope_defaults_empty() {
+        let env: RecordStopEnvelope = serde_json::from_str("{}").unwrap();
+        assert!(env.events.is_empty());
     }
 }
