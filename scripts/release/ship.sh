@@ -376,7 +376,20 @@ CRATES=(
   smix-authoring-propose
   smix-cli
 )
+# SMIX_SHIP_DRYRUN=1 runs every publish leg without touching a registry:
+# npm/napi/gradle go through their own dry-run, git-tag is skipped, and
+# cargo is skipped here — 27 interdependent crates cannot be `cargo publish
+# --dry-run`'d (a dependent's dry-run cannot find a sibling that is not on
+# crates.io yet), so its validation is CI's `cargo test --workspace` + the
+# version and DAG gates above, not a dry-run.
+SHIP_DRY="${SMIX_SHIP_DRYRUN:-0}"
+[ "$SHIP_DRY" = 1 ] && export SMIX_SHIP_NAPI_DRYRUN=1
+
 for c in "${CRATES[@]}"; do
+  if [ "$SHIP_DRY" = 1 ]; then
+    log "cargo publish -p $c — SKIPPED (dry-run; interdependent crates validated by CI)"
+    continue
+  fi
   log "cargo publish -p $c"
   # v1.0.4+ pattern from prior ship cycles: crates.io rate-limits at
   # ~1-2 publishes per 90s window under aggressive sequential publish.
@@ -457,32 +470,44 @@ log "  npm publish @goliapkg/smix-node@$VERSION"
 
 # --- publish npm ------------------------------------------------------
 
-log "npm publish @goliapkg/smix@$VERSION"
+log "npm publish @goliapkg/smix@$VERSION${NAPI_DRY:+ (dry-run)}"
 # v0.1.0 SDK ship cycle finding: `npm publish` crashes on nvm 26.5.0
 # node ("Cannot find module npm.js"), `bun publish` works. Prefer bun.
 if command -v bun >/dev/null 2>&1; then
-  ( cd "$ROOT/npm/smix-rn" && bun run build && bun publish --access public ) \
+  ( cd "$ROOT/npm/smix-rn" && bun run build && bun publish --access public $NAPI_DRY ) \
     || fail "bun publish"
 else
-  ( cd "$ROOT/npm/smix-rn" && npm publish --access public ) || fail "npm publish"
+  ( cd "$ROOT/npm/smix-rn" && npm publish --access public ${NAPI_DRY:+--dry-run} ) || fail "npm publish"
 fi
 
 # --- publish Maven Central -------------------------------------------
 
-log "gradle publish jp.golia.smix:smix-sdk:$VERSION"
+# In dry-run, publish to the local Maven repo (validates POM + signing +
+# artifact assembly) instead of Maven Central.
+GRADLE_PUB_TASK=":sdk:publish"
+[ "$SHIP_DRY" = 1 ] && GRADLE_PUB_TASK=":sdk:publishToMavenLocal"
+log "gradle $GRADLE_PUB_TASK jp.golia.smix:smix-sdk:$VERSION"
 GPG_KEY="$(gpg --export-secret-keys --armor FBD802632CFAD78B 2>/dev/null)" \
   || fail "gpg export failed for signing key FBD802632CFAD78B"
 ( cd "$ROOT/android-runner" && \
   ORG_GRADLE_PROJECT_signingInMemoryKey="$GPG_KEY" \
   ORG_GRADLE_PROJECT_signingInMemoryKeyId=2CFAD78B \
   ORG_GRADLE_PROJECT_signingInMemoryKeyPassword="" \
-  ./gradlew :sdk:publish --console=plain ) \
+  ./gradlew "$GRADLE_PUB_TASK" --console=plain ) \
   || fail "gradle publish"
 
 # --- tag Swift Package + push ----------------------------------------
 
-log "tag swift-v$VERSION + push"
-( cd "$ROOT" && git tag -a "swift-v$VERSION" -m "Swift Package v$VERSION" && git push origin "swift-v$VERSION" ) \
-  || fail "git tag + push"
+if [ "$SHIP_DRY" = 1 ]; then
+  log "tag swift-v$VERSION — SKIPPED (dry-run)"
+else
+  log "tag swift-v$VERSION + push"
+  ( cd "$ROOT" && git tag -a "swift-v$VERSION" -m "Swift Package v$VERSION" && git push origin "swift-v$VERSION" ) \
+    || fail "git tag + push"
+fi
 
-log "SHIP COMPLETE — v$VERSION live on crates.io + npm + Maven Central + Swift Package"
+if [ "$SHIP_DRY" = 1 ]; then
+  log "SHIP DRY-RUN COMPLETE — all gates green, every publish leg dry-run (cargo skipped, validated by CI)"
+else
+  log "SHIP COMPLETE — v$VERSION live on crates.io + npm + Maven Central + Swift Package"
+fi
