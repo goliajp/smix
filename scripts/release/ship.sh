@@ -194,8 +194,18 @@ if [[ -z "${SMIX_CORPUS_SIM:-}" ]]; then
 fi
 [[ -n "$SMIX_CORPUS_SIM" ]] \
   || fail "corpus gate needs SMIX_CORPUS_SIM or a booted sim"
+# Build the workspace's own smix release for the gate — a global `smix` on
+# PATH is whatever version was installed some other day, and a mismatch
+# between it and the runner sources this workspace ships is exactly how a
+# pre-fold binary drove the post-fold runner in dry-run and the gate turned
+# red on a real driver/runner drift.
+log "cargo build -p smix-cli --release (for corpus gate)"
+( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release"
+
 log "corpus gate on $SMIX_CORPUS_SIM"
-SMIX_CORPUS_SIM="$SMIX_CORPUS_SIM" "$ROOT/scripts/release/corpus-gate.sh" \
+SMIX_CORPUS_SIM="$SMIX_CORPUS_SIM" \
+SMIX_BIN="$ROOT/target/release/smix" \
+  "$ROOT/scripts/release/corpus-gate.sh" \
     > /tmp/smix-ship-corpus.log 2>&1 \
   || fail "corpus gate FAILED — see /tmp/smix-ship-corpus.log"
 
