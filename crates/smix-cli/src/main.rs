@@ -611,6 +611,26 @@ Documentation: docs/AI_GUIDE.md
 
 #[derive(Subcommand, Debug)]
 enum AuthoringAction {
+    /// Generate a flow (maestro yaml or rust test) from recorded IRAction
+    /// JSON — the record -> generate glue. The input is the JSON any capture
+    /// leg produces (iOS / Android / web), so a recording from any platform
+    /// becomes a flow through the one platform-neutral generator.
+    Generate {
+        /// Recorded IRAction JSON file (a `Vec<IRAction>`).
+        input: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = authoring::GenFormat::Maestro)]
+        format: authoring::GenFormat,
+        /// Output flow file.
+        #[arg(long, short)]
+        output: PathBuf,
+        /// App / bundle id embedded in the generated flow.
+        #[arg(long, default_value = "com.example")]
+        app_id: String,
+        /// Test fn name (rust format only).
+        #[arg(long, default_value = "recorded")]
+        test_fn_name: String,
+    },
     /// Suggest selectors matching a partial spec against the current
     /// sim state. Runs against a live runner on `--port`. Examples:
     ///   smix authoring suggest 'id: qa-*'
@@ -2018,6 +2038,15 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             } => {
                 return authoring::cmd_suggest(runner_dial_port(port, device.as_deref()), partial)
                     .await;
+            }
+            AuthoringAction::Generate {
+                input,
+                format,
+                output,
+                app_id,
+                test_fn_name,
+            } => {
+                return authoring::cmd_generate(input, format, output, app_id, test_fn_name).await;
             }
             AuthoringAction::CaptureTree {
                 output,
