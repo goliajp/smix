@@ -160,11 +160,19 @@ pub async fn propose_from_bundle(
          Propose the edits that would make the flow pass. Reply with one JSON \
          object and nothing else:\n\
          {{\"edits\": [ <edit>, ... ]}}\n\n\
+         The single most reliable repair signal is the `suggestions` array in \
+         failure.json (the driver's \"Did you mean ...?\" list for a selector \
+         that matched nothing); prefer swapping the failing selector to a \
+         suggested one. `*.fail.tree.json` and .png may be absent — ignore them \
+         if missing rather than treating their absence as an error.\n\n\
          Each <edit> is exactly one of:\n\
          {{\"op\": \"replaceSelector\", \"step_index\": <n>, \"new_selector\": <selector>}}\n\
          {{\"op\": \"insertStep\", \"before_index\": <n>, \"step\": <step>}}   (step must be extendedWaitUntil or waitForAnimationToEnd)\n\
          {{\"op\": \"reorderStep\", \"from_index\": <n>, \"to_index\": <n>}}\n\
          {{\"op\": \"replaceStep\", \"step_index\": <n>, \"new_step\": <step>}}\n\n\
+         Every index (`step_index`, `before_index`, `from_index`, `to_index`) \
+         is 0-based into the flow's step list: the first step is 0. Do not use \
+         the 1-based `n` from run-summary.json's `steps[].n`.\n\n\
          A <selector> is a maestro selector object, e.g. {{\"id\": \"submit-btn\"}} \
          or {{\"text\": \"Login\"}}. A <step> is a maestro step object, e.g. \
          {{\"tapOn\": {{\"selector\": {{\"id\": \"submit-btn\"}}}}}} or \
@@ -301,6 +309,49 @@ fn driver_error(message: String, hint: Option<String>) -> ExpectationFailure {
         hint,
         ..Default::default()
     })
+}
+
+/// Why [`propose_and_amend`] could not turn a failed flow + its bundle into an
+/// amended flow yaml. Each arm names the stage that failed; nothing is
+/// swallowed and no stage falls back to an empty amend.
+#[derive(Debug)]
+pub enum AmendError {
+    /// The flow file could not be read.
+    ReadFlow(std::io::Error),
+    /// The flow yaml did not parse.
+    ParseFlow(String),
+    /// The local `claude` step failed (CLI error, or a reply that was not a
+    /// well-shaped [`Proposal`]).
+    Propose(ExpectationFailure),
+    /// The proposal could not be applied to the flow's steps.
+    Apply(ApplyError),
+    /// The amended steps could not be emitted back to maestro yaml.
+    Emit(smix_adapter_maestro::EmitError),
+}
+
+/// Glue the C2/C3 pieces into one device-free primitive: read `flow_path`,
+/// parse it, ask a local `claude` to propose edits from the on-disk `bundle_dir`,
+/// apply them, and emit the amended flow as maestro yaml.
+///
+/// The only external call is the local `claude` CLI (through
+/// [`propose_from_bundle`]); no network Claude API path is touched. Every stage
+/// error maps to its own [`AmendError`] arm — a failing claude surfaces, it
+/// never collapses to an empty amend.
+pub async fn propose_and_amend(
+    flow_path: &Path,
+    bundle_dir: &Path,
+    cfg: &AiTierConfig,
+) -> Result<String, AmendError> {
+    let yaml = std::fs::read_to_string(flow_path).map_err(AmendError::ReadFlow)?;
+    let flow = smix_adapter_maestro::parse_flow_yaml(&yaml)
+        .map_err(|e| AmendError::ParseFlow(e.to_string()))?;
+
+    let proposal = propose_from_bundle(flow_path, bundle_dir, cfg)
+        .await
+        .map_err(AmendError::Propose)?;
+
+    let amended = apply(&proposal, &flow.steps).map_err(AmendError::Apply)?;
+    smix_adapter_maestro::emit_flow_yaml(&amended, &flow.app_id).map_err(AmendError::Emit)
 }
 
 fn step_verb(step: &Step) -> &'static str {
