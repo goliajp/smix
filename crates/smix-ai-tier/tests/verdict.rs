@@ -7,7 +7,7 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use smix_ai_tier::{AiTierConfig, StructuredVerdict, extract, judge};
+use smix_ai_tier::{AiTierConfig, StructuredVerdict, ask, extract, judge};
 use smix_error::FailureCode;
 
 /// One runtime for the whole binary, rather than one per test.
@@ -48,6 +48,16 @@ fn stub_cli(dir: &std::path::Path, body: &str) -> AiTierConfig {
         // timeout IS the subject sets its own, short.
         timeout_secs: 120,
     }
+}
+
+#[test]
+fn ask_pub_runs_stub() {
+    rt().block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = stub_cli(dir.path(), "echo hi");
+        let reply = ask("p".to_string(), &cfg).await.unwrap();
+        assert_eq!(reply, "hi\n");
+    });
 }
 
 #[test]
