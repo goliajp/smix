@@ -21,7 +21,7 @@ use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
 use smix_input::{KeyName, SwipeDirection};
 use smix_runner_client::{HttpRunnerClient, IncludeScope, OcrFrame, SystemPopup, TapMode};
-use smix_screen::A11yNode;
+use smix_screen::{A11yNode, DEFAULT_VISIBLE_LIMIT, collect_visible_summaries};
 use smix_selector::{Selector, describe_selector};
 use smix_selector_resolver::{resolve_selector, resolve_selector_all};
 
@@ -291,6 +291,18 @@ impl Driver for AndroidDriver {
                 return Ok(node.clone());
             }
             if start.elapsed() >= timeout {
+                // Suggestions scan the whole visible tree, not just the ten
+                // displayed elements: an Android window dump leads with the
+                // navigation / status bar chrome, so the first ten
+                // identity-bearing nodes are all system UI and the app's own
+                // content (which the near-miss target actually resembles)
+                // sits far deeper. Truncating the candidate set to the
+                // display limit would blind "Did you mean ...?" to every real
+                // app element.
+                let candidates = collect_visible_summaries(&tree, DEFAULT_VISIBLE_LIMIT);
+                let target = crate::base_text_or_id(selector);
+                let suggestions = smix_error::build_suggestions(target.as_deref(), &candidates);
+                let visible = collect_visible_summaries(&tree, 10);
                 return Err(ExpectationFailure::new(FailureInit {
                     code: Some(FailureCode::ElementNotFound),
                     message: format!(
@@ -299,6 +311,8 @@ impl Driver for AndroidDriver {
                         describe_selector(selector)
                     ),
                     selector: Some(selector.clone()),
+                    visible_elements: visible,
+                    suggestions,
                     ..Default::default()
                 }));
             }

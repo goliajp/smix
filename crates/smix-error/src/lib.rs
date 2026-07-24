@@ -6,7 +6,7 @@
 //! `to_prompt()` + `build_suggestions` (stone, cold path).
 //!
 //! `build_suggestions` behavior: threshold > 0.5, top 3, sort by score
-//! descending → field (name > text) → DFS index ascending.
+//! descending → field (name > id > text) → DFS index ascending.
 //!
 //! # Why a separate stone
 //!
@@ -277,6 +277,14 @@ pub fn build_suggestions(target: Option<&str>, visible: &[ElementSummary]) -> Ve
                 best = Some((s, "name", name.clone()));
             }
         }
+        if let Some(id) = &el.id
+            && !id.is_empty()
+        {
+            let s = similarity(&id.to_lowercase(), &lower_target);
+            if s > SUGGESTION_THRESHOLD && best.as_ref().map(|(bs, _, _)| s > *bs).unwrap_or(true) {
+                best = Some((s, "id", id.clone()));
+            }
+        }
         if let Some(text) = &el.text
             && !text.is_empty()
         {
@@ -290,14 +298,15 @@ pub fn build_suggestions(target: Option<&str>, visible: &[ElementSummary]) -> Ve
         }
     }
     // Sort: score desc → field name>text → index asc.
+    let field_rank = |f: &str| match f {
+        "name" => 0,
+        "id" => 1,
+        _ => 2, // text
+    };
     candidates.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| match (a.1, b.1) {
-                ("name", "text") => std::cmp::Ordering::Less,
-                ("text", "name") => std::cmp::Ordering::Greater,
-                _ => std::cmp::Ordering::Equal,
-            })
+            .then_with(|| field_rank(a.1).cmp(&field_rank(b.1)))
             .then_with(|| a.3.cmp(&b.3))
     });
     candidates

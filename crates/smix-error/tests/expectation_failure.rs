@@ -223,6 +223,21 @@ fn build_suggestions_top_3_ordered_by_score_desc_then_field_then_index() {
 }
 
 #[test]
+fn build_suggestions_matches_id_field() {
+    // An id-selector typo is the most common failure: the visible element
+    // carries the correct id, differing by one character. build_suggestions
+    // must surface it via the `id` field, not only name / text.
+    let visible = vec![
+        summary(Some(Role::Button), None, Some("search_action_bar")),
+        summary(Some(Role::Button), Some("Settings"), Some("settings_homepage_container")),
+    ];
+    let s = build_suggestions(Some("search_action_barX"), &visible);
+    assert!(!s.is_empty(), "an id typo should yield a suggestion");
+    assert!(s[0].contains("search_action_bar"), "suggestion names the correct id: {s:?}");
+    assert!(s[0].contains("field id"), "suggestion attributes the id field: {s:?}");
+}
+
+#[test]
 fn build_suggestions_below_threshold_skipped() {
     let visible = vec![summary(
         Some(Role::Button),
