@@ -24,6 +24,7 @@ export {
 export {
   defaultRunnerPort,
   loadNodeDriver,
+  loadNodeResolver,
 } from './loadNodeDriver.js'
 
 export {

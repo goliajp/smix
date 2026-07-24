@@ -14,6 +14,8 @@ use smix_runner_client::{
     HttpRunnerClient, RunnerTransportError, SessionAppLifecycleRequest, SessionOpenRequest,
     SessionRelaunchAppRequest,
 };
+use smix_screen::A11yNode;
+use smix_selector::Selector;
 
 /// A wire transport failure is a cross-language contract report, not a
 /// defensive catch — the JS caller needs the reason, so it surfaces as a
@@ -191,4 +193,88 @@ impl SmixNodeSession {
             .map_err(transport_err)?;
         Ok(())
     }
+}
+
+// ---- host-side selector resolution (pure stone, no wire) --------------
+//
+// The napi peer of smix-ffi's UniFFI resolver exports: the TS SDK resolves a
+// selector against a tree HERE (in-process, over the napi boundary), exactly
+// as the Swift/Kotlin SDKs resolve host-side through UniFFI — no `/select/
+// resolve` round-trip to a runner that never served it. Mirrors
+// `smix-ffi/src/lib.rs`; the single source of resolution logic is the
+// `smix-selector-resolver` stone.
+
+fn parse_tree(tree_json: &str) -> napi::Result<A11yNode> {
+    serde_json::from_str(tree_json)
+        .map_err(|e| napi::Error::from_reason(format!("invalid tree JSON: {e}")))
+}
+
+fn parse_selector(selector_json: &str) -> napi::Result<Selector> {
+    serde_json::from_str(selector_json)
+        .map_err(|e| napi::Error::from_reason(format!("invalid selector JSON: {e}")))
+}
+
+fn modifiers_has_index(m: &smix_selector::Modifiers) -> bool {
+    m.nth.is_some() || m.first.is_some() || m.last.is_some()
+}
+
+/// True when the selector carries an index modifier (first/last/nth), so a
+/// single result (index pick) is wanted rather than every match. Mirrors
+/// `smix-ffi::has_index_modifier`.
+fn has_index_modifier(selector: &Selector) -> bool {
+    use smix_selector::Selector as S;
+    match selector {
+        S::Text { modifiers, .. }
+        | S::Id { modifiers, .. }
+        | S::Label { modifiers, .. }
+        | S::Role { modifiers, .. }
+        | S::LocalizedText { modifiers, .. } => modifiers_has_index(modifiers),
+        S::Anchor { index, .. } => {
+            index.nth.is_some() || index.first.is_some() || index.last.is_some()
+        }
+        _ => false,
+    }
+}
+
+/// Resolve a selector against a tree and return the matched identifiers.
+/// Index modifiers pick a single result; otherwise every match's id.
+#[napi]
+pub fn resolve_selector(tree_json: String, selector_json: String) -> napi::Result<Vec<String>> {
+    let tree = parse_tree(&tree_json)?;
+    let selector = parse_selector(&selector_json)?;
+    if has_index_modifier(&selector) {
+        Ok(smix_selector_resolver::resolve_selector(&tree, &selector)
+            .map(|node| vec![node.identifier.clone().unwrap_or_default()])
+            .unwrap_or_default())
+    } else {
+        Ok(smix_selector_resolver::resolve_selector_all(&tree, &selector)
+            .iter()
+            .map(|node| node.identifier.clone().unwrap_or_default())
+            .collect())
+    }
+}
+
+/// Count selector matches against a tree (ignores index modifiers, matching
+/// Playwright "match all" semantics).
+#[napi]
+pub fn resolve_selector_count(tree_json: String, selector_json: String) -> napi::Result<u32> {
+    let tree = parse_tree(&tree_json)?;
+    let selector = parse_selector(&selector_json)?;
+    let matches = smix_selector_resolver::resolve_selector_all(&tree, &selector);
+    Ok(u32::try_from(matches.len()).unwrap_or(u32::MAX))
+}
+
+/// Resolve a selector and return each match's accessibility label (empty
+/// string where a match has none), aligned 1:1 with the match set.
+#[napi]
+pub fn resolve_selector_labels(
+    tree_json: String,
+    selector_json: String,
+) -> napi::Result<Vec<String>> {
+    let tree = parse_tree(&tree_json)?;
+    let selector = parse_selector(&selector_json)?;
+    Ok(smix_selector_resolver::resolve_selector_all(&tree, &selector)
+        .iter()
+        .map(|node| node.label.clone().unwrap_or_default())
+        .collect())
 }

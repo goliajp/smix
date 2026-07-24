@@ -69,7 +69,7 @@ describe('smix-rn drives through the real napi addon (C4)', () => {
       const driver = await loadNodeDriver(wire.port)
       const resolver = new MockSelectorResolver()
       resolver.registerHit(encodeSelectorJson(Selector.id('root')), 'root')
-      const app = await Smix.launchApp(bundleId('com.acme.app'), resolver.resolve, { driver })
+      const app = await Smix.launchApp(bundleId('com.acme.app'), { driver, resolver: resolver.resolve })
       expect(app).toBeInstanceOf(App)
 
       await app.tap(Selector.id('root'))

@@ -2847,6 +2847,9 @@ dependencies = [
  "serde_json",
  "smix-input",
  "smix-runner-client",
+ "smix-screen",
+ "smix-selector",
+ "smix-selector-resolver",
 ]
 
 [[package]]
