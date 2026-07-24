@@ -2685,6 +2685,7 @@ dependencies = [
  "smix-input",
  "smix-metro-log",
  "smix-migrate",
+ "smix-recorder",
  "smix-runner-client",
  "smix-runner-sources",
  "smix-runner-wire",

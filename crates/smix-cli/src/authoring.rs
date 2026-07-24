@@ -515,3 +515,88 @@ mod authoring_live_tree_tests {
         );
     }
 }
+
+// ---- record -> generate glue (v2.10-C4) ------------------------------
+//
+// The single host-side path from recorded IRAction to a flow file. Every
+// capture leg (iOS RecordingApp, Android /record, web mapDomEvents) produces
+// the same IRAction JSON; this feeds it to the one platform-neutral generator
+// stone (`smix-recorder`), so a recording from any platform becomes a flow.
+
+/// Output format for `smix authoring generate`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum GenFormat {
+    Maestro,
+    Rust,
+}
+
+/// Deserialize recorded `Vec<IRAction>` JSON and generate a flow. Pure — the
+/// single source of generation is the `smix-recorder` stone.
+pub fn generate_actions_json(
+    input: &[u8],
+    format: GenFormat,
+    app_id: &str,
+    test_fn_name: &str,
+) -> Result<String, CliError> {
+    let actions: Vec<smix_recorder::IRAction> = serde_json::from_slice(input)
+        .map_err(|e| CliError::Other(format!("parse IRAction JSON: {e}")))?;
+    match format {
+        GenFormat::Maestro => smix_recorder::generate_maestro_yaml(&actions, app_id)
+            .map_err(|e| CliError::Other(format!("generate maestro: {e}"))),
+        GenFormat::Rust => smix_recorder::generate_rust(&actions, test_fn_name, app_id)
+            .map_err(|e| CliError::Other(format!("generate rust: {e}"))),
+    }
+}
+
+/// `smix authoring generate` — read recorded IRAction JSON and write a flow.
+pub async fn cmd_generate(
+    input: PathBuf,
+    format: GenFormat,
+    output: PathBuf,
+    app_id: String,
+    test_fn_name: String,
+) -> Result<ExitCode, CliError> {
+    let bytes = std::fs::read(&input)
+        .map_err(|e| CliError::Other(format!("read {}: {e}", input.display())))?;
+    let out = generate_actions_json(&bytes, format, &app_id, &test_fn_name)?;
+    std::fs::write(&output, &out)
+        .map_err(|e| CliError::Other(format!("write {}: {e}", output.display())))?;
+    println!("wrote {}", output.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod authoring_generate_tests {
+    use super::{GenFormat, generate_actions_json};
+
+    const ACTIONS: &str = concat!(
+        r#"[{"kind":"tap","selector":{"id":"go"},"timestampMs":1},"#,
+        r#"{"kind":"fill","selector":{"id":"q"},"text":"smix","timestampMs":2},"#,
+        r#"{"kind":"clear","selector":{"id":"q"},"timestampMs":3}]"#
+    );
+
+    #[test]
+    fn maestro_carries_the_actions() {
+        let y = generate_actions_json(ACTIONS.as_bytes(), GenFormat::Maestro, "com.x", "recorded")
+            .expect("maestro");
+        assert!(y.contains("tapOn"), "{y}");
+        assert!(y.contains("inputText"), "{y}");
+    }
+
+    #[test]
+    fn rust_is_a_test_fn() {
+        let r = generate_actions_json(ACTIONS.as_bytes(), GenFormat::Rust, "com.x", "recorded")
+            .expect("rust");
+        assert!(r.contains("async fn recorded"), "{r}");
+    }
+
+    #[test]
+    fn empty_actions_is_an_error_not_a_swallow() {
+        assert!(generate_actions_json(b"[]", GenFormat::Maestro, "com.x", "recorded").is_err());
+    }
+
+    #[test]
+    fn bad_json_errors() {
+        assert!(generate_actions_json(b"not json", GenFormat::Maestro, "com.x", "recorded").is_err());
+    }
+}
