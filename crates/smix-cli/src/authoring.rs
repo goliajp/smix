@@ -600,3 +600,37 @@ mod authoring_generate_tests {
         assert!(generate_actions_json(b"not json", GenFormat::Maestro, "com.x", "recorded").is_err());
     }
 }
+
+/// `smix authoring tap-record` — record a live session on a runner and generate
+/// a flow. Starts recording, waits `duration_secs` while the operator drives
+/// the app, stops and drains the IRAction the capture leg emitted, and feeds it
+/// to the same generate glue. Android today (the Android runner emits IRAction);
+/// iOS live-user-capture -> generate is a v2.11+ follow-on (its /record emits
+/// RecordedEvent, which carries no action intent).
+pub async fn cmd_tap_record(
+    port: u16,
+    duration_secs: u64,
+    format: GenFormat,
+    output: PathBuf,
+    app_id: String,
+    test_fn_name: String,
+) -> Result<ExitCode, CliError> {
+    let client = smix_runner_client::HttpRunnerClient::new(port);
+    client
+        .start_record()
+        .await
+        .map_err(|e| CliError::Other(format!("record start: {e}")))?;
+    println!("recording for {duration_secs}s on port {port} — drive the app now…");
+    tokio::time::sleep(std::time::Duration::from_secs(duration_secs)).await;
+    let events = client
+        .stop_record_actions()
+        .await
+        .map_err(|e| CliError::Other(format!("record stop: {e}")))?;
+    let json =
+        serde_json::to_vec(&events).map_err(|e| CliError::Other(format!("serialize events: {e}")))?;
+    let out = generate_actions_json(&json, format, &app_id, &test_fn_name)?;
+    std::fs::write(&output, &out)
+        .map_err(|e| CliError::Other(format!("write {}: {e}", output.display())))?;
+    println!("recorded {} action(s); wrote {}", events.len(), output.display());
+    Ok(ExitCode::SUCCESS)
+}
