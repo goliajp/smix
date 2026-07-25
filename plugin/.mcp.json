@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "smix": {
+      "command": "smix-mcp"
+    }
+  }
+}

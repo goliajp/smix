@@ -1,0 +1,13 @@
+{
+  "name": "smix",
+  "description": "Drive an iOS Simulator or Android emulator from the session you are already developing in: pick a device, bring a runner up, sense the screen, act on it, and turn what you did into a flow.",
+  "version": "2.0.0",
+  "author": {
+    "name": "Golia",
+    "email": "takagi@golia.jp"
+  },
+  "homepage": "https://github.com/goliajp/smix",
+  "repository": "https://github.com/goliajp/smix",
+  "license": "Apache-2.0 OR MIT",
+  "keywords": ["ios", "android", "simulator", "emulator", "testing", "automation"]
+}

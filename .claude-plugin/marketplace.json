@@ -1,0 +1,15 @@
+{
+  "name": "goliajp",
+  "owner": {
+    "name": "Golia",
+    "email": "takagi@golia.jp"
+  },
+  "description": "Tools for driving simulators and emulators from a Claude Code session, published by the smix project.",
+  "plugins": [
+    {
+      "name": "smix",
+      "source": "./plugin",
+      "description": "Drive an iOS Simulator or Android emulator from the session you are already developing in."
+    }
+  ]
+}
