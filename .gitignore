@@ -67,3 +67,6 @@ __pycache__/
 # cargo-fuzz run artifacts — regenerated on every fuzz-smoke run
 crates/*/fuzz/corpus/
 crates/*/fuzz/artifacts/
+
+# Release-gate and scratch output (corpus logs, diagnostic dumps).
+.tmp/
