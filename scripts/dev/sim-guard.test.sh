@@ -13,7 +13,10 @@
 
 set -uo pipefail
 
-GUARD="$(cd "$(dirname "$0")" && pwd)/sim-guard.sh"
+# The guard ships in the plugin, and the repo's own hook runs that same
+# copy — one implementation, so a regression bites us before it bites
+# anyone who installed it.
+GUARD="$(cd "$(dirname "$0")/../.." && pwd)/plugin/scripts/sim-guard.sh"
 UDID="A1B2C3D4-1111-2222-3333-444455556666"
 fails=0
 
@@ -58,6 +61,16 @@ feed $ALLOW "$(printf 'cat >> docs/v2.md <<%s\nsimctl shutdown all hits every si
 feed $BLOCK "$(printf 'bash <<%s\nxcrun simctl shutdown all\nEOF\n' "'EOF'")"
 # The line opening an inert heredoc is itself still judged.
 feed $BLOCK "$(printf 'xcrun simctl erase all && cat <<%s\nharmless\nEOF\n' "'EOF'")"
+
+SMIX_WAY_CASE='xcrun simctl shutdown all'
+# A refusal that names no alternative gets routed around rather than
+# obeyed, so the way out is part of what is under test.
+refusal="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' \
+  "$(printf '%s' "$SMIX_WAY_CASE" | sed 's/"/\\"/g')" | bash "$GUARD" 2>&1 || true)"
+case "$refusal" in
+  *"smix sim list"*) ;;
+  *) echo "FAIL: the refusal names no smix command; said: $refusal"; fails=$((fails + 1)) ;;
+esac
 
 if [ "$fails" -eq 0 ]; then
   echo "sim-guard: all cases pass"

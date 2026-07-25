@@ -6,13 +6,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/sim-guard.sh\"",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/plugin/scripts/sim-guard.sh\"",
             "timeout": 10,
             "statusMessage": "sim-guard: checking simulator authorization"
           },
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/adb-guard.sh\"",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/plugin/scripts/adb-guard.sh\"",
             "timeout": 10,
             "statusMessage": "adb-guard: checking emulator authorization"
           }
