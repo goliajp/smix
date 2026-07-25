@@ -6,7 +6,10 @@
 
 set -uo pipefail
 
-GUARD="$(cd "$(dirname "$0")" && pwd)/adb-guard.sh"
+# The guard ships in the plugin, and the repo's own hook runs that same
+# copy — one implementation, so a regression bites us before it bites
+# anyone who installed it.
+GUARD="$(cd "$(dirname "$0")/../.." && pwd)/plugin/scripts/adb-guard.sh"
 fails=0
 
 # feed <expected-exit> <command>
@@ -64,6 +67,16 @@ feed $BLOCK "$(printf 'bash <<%s\nadb install -r app.apk\nEOF\n' "'EOF'")"
 feed $BLOCK "$(printf 'python3 - <<%s\n# adb install -r app.apk\nPY\n' "'PY'")"
 # The line opening an inert heredoc is itself still judged.
 feed $BLOCK "$(printf 'adb install -r app.apk && cat <<%s\nharmless\nEOF\n' "'EOF'")"
+
+SMIX_WAY_CASE='adb install app.apk'
+# A refusal that names no alternative gets routed around rather than
+# obeyed, so the way out is part of what is under test.
+refusal="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' \
+  "$(printf '%s' "$SMIX_WAY_CASE" | sed 's/"/\\"/g')" | bash "$GUARD" 2>&1 || true)"
+case "$refusal" in
+  *"smix runner up"*) ;;
+  *) echo "FAIL: the refusal names no smix command; said: $refusal"; fails=$((fails + 1)) ;;
+esac
 
 if [ "$fails" -eq 0 ]; then
   echo "adb-guard: all cases pass"

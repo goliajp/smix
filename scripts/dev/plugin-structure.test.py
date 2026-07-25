@@ -107,6 +107,48 @@ readiness = os.path.join(PLUGIN, "scripts", "readiness.sh")
 if not os.access(readiness, os.X_OK):
     problems.append("plugin/scripts/readiness.sh is not executable; hooks are exec'd")
 
+# --- the guards are shipped, and are the ones this repo runs -------------
+
+# Two copies of a guard drift, and the one that drifts is the copy nobody
+# runs the tests against. So the plugin holds the implementation and this
+# repo's own hook config points at it: a regression reaches us before it
+# reaches anyone who installed the plugin.
+for script in ("sim-guard.sh", "adb-guard.sh", "hook-command.py"):
+    shipped = os.path.join(PLUGIN, "scripts", script)
+    if not os.access(shipped, os.X_OK) and script.endswith(".sh"):
+        problems.append(f"plugin/scripts/{script} is missing or not executable")
+    elif not os.path.exists(shipped):
+        problems.append(f"plugin/scripts/{script} is missing")
+    stale = os.path.join(ROOT, "scripts", "dev", script)
+    if os.path.exists(stale):
+        problems.append(
+            f"scripts/dev/{script} still exists alongside the plugin copy — "
+            "two of these drift, and the tests only cover one"
+        )
+
+settings_path = os.path.join(ROOT, ".claude", "settings.json")
+settings = read_json(settings_path)
+wired = json.dumps(settings)
+for script in ("sim-guard.sh", "adb-guard.sh"):
+    if f"plugin/scripts/{script}" not in wired:
+        problems.append(
+            f"this repo's own hooks do not run plugin/scripts/{script}; "
+            "we would be shipping a guard we do not use"
+        )
+
+pre = hooks.get("hooks", {}).get("PreToolUse", [])
+pre_json = json.dumps(pre)
+if not pre:
+    problems.append("hooks.json does not wire PreToolUse, so the guards ship inert")
+else:
+    if '"matcher": "Bash"' not in pre_json.replace('"matcher":"Bash"', '"matcher": "Bash"'):
+        problems.append("the PreToolUse hook does not match Bash")
+    for script in ("sim-guard.sh", "adb-guard.sh"):
+        if script not in pre_json:
+            problems.append(f"PreToolUse does not run {script}")
+    if "${CLAUDE_PLUGIN_ROOT}" not in pre_json:
+        problems.append("the PreToolUse commands do not use ${CLAUDE_PLUGIN_ROOT}")
+
 # --- the marketplace points at something real ----------------------------
 
 entries = marketplace.get("plugins", [])
