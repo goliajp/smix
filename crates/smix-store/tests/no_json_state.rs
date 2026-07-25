@@ -31,8 +31,12 @@ fn is_exempt(path: &Path) -> bool {
     let p = path.to_string_lossy();
     // The importer reads legacy files by design; the runner and capsule
     // modules read one on first open for the same reason.
+    // Matched by path, so an exemption has to follow its file: this one
+    // read `smix-cli/src/runner_state.rs` until the runner lifecycle moved
+    // into its own crate, at which point the module went unexempt and this
+    // test reported it as new.
     p.ends_with("smix-store/src/import.rs")
-        || p.ends_with("smix-cli/src/runner_state.rs")
+        || p.ends_with("smix-capsule/src/runner_state.rs")
         || p.ends_with("smix-cli/src/capsule.rs")
         || p.ends_with("smix-simctl/src/registry.rs")
 }
