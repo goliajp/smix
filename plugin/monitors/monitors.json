@@ -1,0 +1,8 @@
+[
+  {
+    "name": "smix-runner",
+    "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/watch-runner.sh",
+    "description": "the runner this session drives through, and whether it is still answering",
+    "when": "on-skill-invoke:drive"
+  }
+]

@@ -139,6 +139,11 @@ bash scripts/release/stress-gate.sh --selftest
 # silently not loaded.
 python3 scripts/dev/plugin-structure.test.py
 bash scripts/dev/plugin-readiness.test.sh
+# The invariant the plugin is built on: it adds initiative, not
+# capability. A skill naming a command the CLI does not have would be
+# documenting something that only exists inside Claude Code.
+python3 scripts/dev/plugin-capability-parity.test.py
+bash scripts/dev/plugin-monitor.test.sh
 
 # The device e2e scripts (record/propose/federation) each need a booted
 # sim or emulator, so preflight — device-free and run dozens of times a
