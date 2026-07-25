@@ -2210,6 +2210,14 @@ final class SmixRunnerUITests: XCTestCase {
         // the host looked and an overlay swallowing the touch, are both
         // visible in the state the touch is about to be delivered to.
         //
+        // What it still cannot see: the snapshot takes time, so a screen
+        // moving during it can leave the target under the point here and
+        // gone by the touch, which reads as confirmed. That window is the
+        // snapshot's own duration against the host round trip this
+        // replaces, and it errs towards accepting a tap rather than
+        // failing a working one — the opposite of the trade the
+        // post-touch reading made.
+        //
         // A failure to snapshot yields an empty chain rather than a
         // failed tap: the touch still happens, and the host reads an
         // empty chain as "could not be judged" rather than as a pass.
