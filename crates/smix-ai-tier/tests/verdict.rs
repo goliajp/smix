@@ -55,7 +55,7 @@ fn ask_pub_runs_stub() {
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let cfg = stub_cli(dir.path(), "echo hi");
-        let reply = ask("p".to_string(), &cfg).await.unwrap();
+        let reply = ask("p".to_string(), &[], &cfg).await.unwrap();
         assert_eq!(reply, "hi\n");
     });
 }
