@@ -128,28 +128,89 @@ async fn with_staged_image(
             )
         })?;
 
-    let reply = ask(prompt(&image), cfg).await;
+    let reply = ask(prompt(&image), &[Attachment::image(&image)], cfg).await;
     // Best-effort: a leftover temp png must never turn into a flow failure.
     let _ = tokio::fs::remove_file(&image).await;
     reply
 }
 
-/// Run the `claude` CLI once with `prompt` under `--tools Read` and return its
-/// stdout. Every error means the CLI never produced an answer — a missing
-/// binary, a timeout, a non-zero exit — surfaced as a `DriverError`, never
-/// folded into a made-up reply. This is the single claude primitive; other
-/// tiers (e.g. `smix-authoring-propose`) build on it rather than re-spawning
-/// the CLI themselves.
-pub async fn ask(prompt: String, cfg: &AiTierConfig) -> Result<String, ExpectationFailure> {
+/// Something the question is about, alongside the words.
+///
+/// The primitive is prompt-and-attachments to text. Stating an image as an
+/// attachment rather than writing its path into the question is what keeps
+/// the primitive independent of who answers it: a local CLI locates it by
+/// path, and something speaking a network protocol would send the bytes.
+/// A caller that writes the path into its own prose has decided, on the
+/// satisfier's behalf, that the reader can open local files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Attachment {
+    /// An image on disk.
+    Image {
+        /// Where it is.
+        path: PathBuf,
+    },
+}
+
+impl Attachment {
+    /// An image attachment.
+    #[must_use]
+    pub fn image(path: impl Into<PathBuf>) -> Self {
+        Self::Image { path: path.into() }
+    }
+}
+
+/// The argv for the local-CLI satisfier.
+///
+/// Separated from running it so the decisions are testable: that a
+/// text-only question grants no tools, and that an attachment is what
+/// causes read access rather than it being granted always.
+fn claude_argv(prompt: &str, attachments: &[Attachment], _cfg: &AiTierConfig) -> Vec<String> {
+    let mut argv: Vec<String> = Vec::new();
+
+    // Read access exists to open the attachments and nothing else, so a
+    // question that carries none does not get it. Granting it always made
+    // the text case look as though it needed a filesystem.
+    if !attachments.is_empty() {
+        argv.push("--tools".into());
+        argv.push("Read".into());
+    }
+
+    let mut full = String::from(prompt);
+    for attachment in attachments {
+        match attachment {
+            Attachment::Image { path } => {
+                full.push_str(&format!("\n\nThe screenshot is at {}", path.display()));
+            }
+        }
+    }
+
+    argv.push("-p".into());
+    argv.push(full);
+    argv.push("--output-format".into());
+    argv.push("text".into());
+    argv
+}
+
+/// Ask once, and return what came back.
+///
+/// The whole AI surface is this one call: words in, optional attachments
+/// alongside, text out. Who satisfies it is configuration — today a local
+/// `claude` CLI, which is the default and the only one wired. What smix
+/// does not do is branch on provider or keep a capability matrix; that is
+/// the abstraction §9 forbids, and it is a different thing from being
+/// able to reach a model over a different transport.
+///
+/// Every error means no answer was produced — a missing binary, a
+/// timeout, a non-zero exit — surfaced as a `DriverError`, never folded
+/// into a made-up reply. Other tiers (`smix-authoring-propose`) build on
+/// this rather than spawning their own.
+pub async fn ask(
+    prompt: String,
+    attachments: &[Attachment],
+    cfg: &AiTierConfig,
+) -> Result<String, ExpectationFailure> {
     let mut cmd = Command::new(&cfg.claude_bin);
-    // `-p` needs an explicit `--tools`; `Read` is the narrowest set that can
-    // still open the screenshot.
-    cmd.arg("--tools")
-        .arg("Read")
-        .arg("-p")
-        .arg(prompt)
-        .arg("--output-format")
-        .arg("text")
+    cmd.args(claude_argv(&prompt, attachments, cfg))
         // Timing out only drops the future — without this the judge keeps
         // running, outliving the step that gave up on it.
         .kill_on_drop(true);
@@ -219,4 +280,71 @@ pub fn parse_json_object<T: serde::de::DeserializeOwned>(reply: &str) -> Option<
         return None;
     }
     serde_json::from_str(&reply[start..=end]).ok()
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn cfg() -> AiTierConfig {
+        AiTierConfig::default()
+    }
+
+    #[test]
+    fn a_text_only_ask_grants_no_tools() {
+        // The primitive is prompt-to-text. Handing the satisfier file
+        // access for a question that carries no files widens what it can
+        // reach for no reason, and makes the text case look like it needs
+        // a filesystem when it does not.
+        let argv = claude_argv("is the sky blue?", &[], &cfg());
+        assert!(
+            !argv.iter().any(|a| a == "--tools"),
+            "text-only ask should grant nothing: {argv:?}"
+        );
+        assert!(argv.iter().any(|a| a == "-p"));
+    }
+
+    #[test]
+    fn an_attachment_is_named_in_the_prompt_and_readable() {
+        // How an attachment reaches the model is the satisfier's business.
+        // This one is a local CLI, so it passes a path and the permission
+        // to open it; a satisfier speaking HTTP would inline the bytes
+        // instead. What the caller states is *that* there is an image.
+        let png = PathBuf::from("/tmp/shot.png");
+        let argv = claude_argv("what is on screen?", &[Attachment::image(&png)], &cfg());
+        let tools = argv
+            .iter()
+            .position(|a| a == "--tools")
+            .expect("an attachment needs read access");
+        assert_eq!(argv[tools + 1], "Read");
+        let prompt = argv
+            .iter()
+            .position(|a| a == "-p")
+            .map(|i| argv[i + 1].clone())
+            .expect("prompt");
+        assert!(
+            prompt.contains("/tmp/shot.png"),
+            "the CLI satisfier locates an attachment by path: {prompt}"
+        );
+    }
+
+    #[test]
+    fn the_caller_does_not_write_the_path_into_its_own_prose() {
+        // The judge used to embed the path in the question it wrote. That
+        // is what made the primitive untransportable: the prompt itself
+        // assumed the reader could open local files.
+        let png = PathBuf::from("/tmp/a.png");
+        let argv = claude_argv("describe it", &[Attachment::image(&png)], &cfg());
+        let prompt = argv
+            .iter()
+            .position(|a| a == "-p")
+            .map(|i| argv[i + 1].clone())
+            .expect("prompt");
+        let written_by_caller = prompt.split("/tmp/a.png").count() - 1;
+        assert_eq!(
+            written_by_caller, 1,
+            "the path should appear once, added here"
+        );
+    }
 }

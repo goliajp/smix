@@ -327,7 +327,7 @@ bun x vitest run src/sim/__tests__/simctl.test.ts
 ## 9. 不变量（任何改动都不能违反）
 
 1. **只支持模拟器**。任何引入真机代码路径的 PR 直接拒
-2. **不引入 multi-provider VLM 抽象**。VLM 走本机 `claude` CLI
+2. **AI 层对外只暴露一个 prompt+附件 → text 原语**（`smix_ai_tier::ask`）。由谁满足它是配置决定；**不按 provider 分叉、不维护能力矩阵**。禁的是 multi-provider 抽象，不是某种传输 —— 附件显式传递（不把本地路径写进提问的散文里），所以换传输不需要改调用方。默认满足方是本机 `claude` CLI（2026-07-25 改写，原文为「VLM 走本机 `claude` CLI」）
 3. **不暴露 xpath / 坐标 selector 到 DSL 表面**。例外：`tap_at_coord(nx, ny)` 与 `swipe_at_coord(...)` 两个授权的 native escape hatch（归一化坐标 0..1；用于 maestro `point: "X%,Y%"` / point-form `swipe` port 等无 a11y semantic 的场景。Selector 表面仍禁 xpath / coord — escape hatch 不是 Selector，是 Apple native event chain 的直 wire 入口。两者同源，授权同据。其他坐标 API（fill_at_coord / anchor_at_coord 等）不授权，需独立 §10 决策。详 `docs/v2.md` 决策日志 2026-07-16 矛盾③。）
 4. **不提供裸 `sleep` API**
 5. **失败信息必须 AI-readable**（含 visibleElements / suggestions）
