@@ -100,8 +100,11 @@ What v2 will NOT drop, carried as a standing guarantee:
 
 ## Beyond v2
 
-Open. The former speculative horizon is now inside v2.0.0; the next horizon is set after
-v2 ships.
+v2 shipped on 2026-07-25. The next horizon is **smix inside Claude Code**: the real AI runner
+is the session the developer is already in, so smix ships as a Claude Code plugin — MCP tools
+that pick a device and bring the runner up in-session, hooks that keep a stray `simctl` or
+`adb install` off the developer's own devices, and skills that carry the drive → diagnose →
+record loop into the app repo. Phase plan: `docs/plan-cold/v2.13-claude-code-plugin.md`.
 
 ---
 

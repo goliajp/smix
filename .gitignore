@@ -70,3 +70,8 @@ crates/*/fuzz/artifacts/
 
 # Release-gate and scratch output (corpus logs, diagnostic dumps).
 .tmp/
+
+# Built launcher output and binaries staged for packing.
+npm/smix-cli/dist/
+npm/smix-cli/npm/*/smix
+npm/smix-cli/npm/*/smix-mcp

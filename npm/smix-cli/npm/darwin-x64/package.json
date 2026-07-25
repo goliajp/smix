@@ -1,0 +1,22 @@
+{
+  "name": "@goliapkg/smix-cli-darwin-x64",
+  "version": "2.0.0",
+  "description": "smix prebuilt binaries for darwin/x64.",
+  "license": "Apache-2.0 OR MIT",
+  "homepage": "https://github.com/goliajp/smix",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goliajp/smix.git"
+  },
+  "private": true,
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "smix",
+    "smix-mcp"
+  ]
+}
