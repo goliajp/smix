@@ -126,6 +126,56 @@ jobs:
       - name: smix-server wiring suite
         run: cargo test -p smix-server
 
+  cli-dist:
+    # Packs the npm distribution and installs it into an empty project on a
+    # PATH without cargo, then drives both executables. Distribution breaks
+    # quietly — a missing `files` entry or a launcher that mangles stdio
+    # installs cleanly and only fails for the person who trusted it.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+      - name: install (workspace)
+        run: bun install --frozen-lockfile
+      - name: clean-room install + drive
+        run: bash scripts/dev/v2.13-c1-cli-dist-e2e.sh
+
+  cli-prebuild:
+    # Builds the `smix` and `smix-mcp` binaries for every target the npm
+    # distribution resolves to, on a native runner each. `cargo install`
+    # asks for a Rust toolchain and a 27-crate compile from someone whose
+    # app is Swift or Kotlin; this is what lets them npm install instead.
+    # Wires the machinery only — it never publishes.
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - target: aarch64-apple-darwin
+            host: macos-14
+          - target: x86_64-apple-darwin
+            host: macos-14
+          - target: x86_64-unknown-linux-gnu
+            host: ubuntu-latest
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: build binaries
+        run: cargo build --release -p smix-cli -p smix-mcp --target ${{ matrix.settings.target }}
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smix-cli-${{ matrix.settings.target }}
+          path: |
+            target/${{ matrix.settings.target }}/release/smix
+            target/${{ matrix.settings.target }}/release/smix-mcp
+          if-no-files-found: error
+
   napi-prebuild:
     # Builds the per-triple .node for each published target on a native
     # runner, and validates the npm distribution structure. Wires the
