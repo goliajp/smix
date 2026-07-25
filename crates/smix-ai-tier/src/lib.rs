@@ -128,7 +128,7 @@ async fn with_staged_image(
             )
         })?;
 
-    let reply = ask(prompt(&image), &[Attachment::image(&image)], cfg).await;
+    let reply = ask_with_attachments(prompt(&image), &[Attachment::image(&image)], cfg).await;
     // Best-effort: a leftover temp png must never turn into a flow failure.
     let _ = tokio::fs::remove_file(&image).await;
     reply
@@ -204,7 +204,21 @@ fn claude_argv(prompt: &str, attachments: &[Attachment], _cfg: &AiTierConfig) ->
 /// timeout, a non-zero exit — surfaced as a `DriverError`, never folded
 /// into a made-up reply. Other tiers (`smix-authoring-propose`) build on
 /// this rather than spawning their own.
-pub async fn ask(
+///
+/// This form carries no attachments; [`ask_with_attachments`] is the same
+/// call for a question that is about a file. Two entry points rather than
+/// one changed signature: callers outside this workspace compile against
+/// the old one, and a minor release is not where that should break.
+pub async fn ask(prompt: String, cfg: &AiTierConfig) -> Result<String, ExpectationFailure> {
+    ask_with_attachments(prompt, &[], cfg).await
+}
+
+/// Ask about something, with the something stated rather than described.
+///
+/// See [`ask`] for what the primitive is. This is the same call with
+/// attachments alongside the words — the form that keeps a question about
+/// an image independent of whether the answerer can open local files.
+pub async fn ask_with_attachments(
     prompt: String,
     attachments: &[Attachment],
     cfg: &AiTierConfig,

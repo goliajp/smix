@@ -492,6 +492,45 @@ log "  npm publish @goliapkg/smix-node@$VERSION"
 ( cd "$NODE_DIR" && bun publish --access public $NAPI_DRY ) \
   || fail "bun publish smix-node"
 
+# --- publish the CLI as prebuilt binaries -----------------------------
+
+# The same shape as the napi addon above, for the same reason: someone
+# whose app is Swift or Kotlin should not need a Rust toolchain to get
+# smix. The per-triple binaries come from the `cli-prebuild` CI matrix on
+# native runners, so this collects that run's artifacts rather than
+# cross-compiling here.
+CLI_DIR="$ROOT/npm/smix-cli"
+CLI_ART="$(mktemp -d)"
+log "npm smix-cli — collect prebuilds + publish"
+gh run download "$RUN_ID" --repo goliajp/smix --dir "$CLI_ART" \
+  --pattern 'smix-cli-*' || fail "gh run download of the CLI prebuilds failed"
+
+declare -a CLI_TRIPLES=(aarch64-apple-darwin darwin-arm64 x86_64-apple-darwin darwin-x64 \
+                        x86_64-unknown-linux-gnu linux-x64-gnu)
+i=0
+while [ "$i" -lt "${#CLI_TRIPLES[@]}" ]; do
+  triple="${CLI_TRIPLES[$i]}"
+  plat="${CLI_TRIPLES[$((i + 1))]}"
+  for exe in smix smix-mcp; do
+    src="$CLI_ART/smix-cli-$triple/$exe"
+    [ -f "$src" ] || fail "missing $exe for $triple in the CI artifacts"
+    cp "$src" "$CLI_DIR/npm/$plat/$exe" || fail "stage $exe for $plat"
+    chmod +x "$CLI_DIR/npm/$plat/$exe"
+  done
+  i=$((i + 2))
+done
+
+( cd "$CLI_DIR" && bun x tsc ) || fail "smix-cli launcher build"
+
+for plat in darwin-arm64 darwin-x64 linux-x64-gnu; do
+  log "  npm publish @goliapkg/smix-cli-$plat@$VERSION"
+  ( cd "$CLI_DIR/npm/$plat" && bun publish --access public $NAPI_DRY ) \
+    || fail "bun publish smix-cli-$plat"
+done
+log "  npm publish @goliapkg/smix-cli@$VERSION"
+( cd "$CLI_DIR" && bun publish --access public $NAPI_DRY ) \
+  || fail "bun publish smix-cli"
+
 # --- publish npm ------------------------------------------------------
 
 log "npm publish @goliapkg/smix@$VERSION${NAPI_DRY:+ (dry-run)}"
