@@ -1337,10 +1337,35 @@ adb -s emulator-5554 shell am instrument -w \
 A typo in any of those three coordinates produces `OK (0 tests)` — a
 silent no-op that reads as success.
 
-### Doctor (housekeeping)
+### First run (`smix init`)
+
+`smix init` is the bootstrap: it registers a simulator under an alias, creating
+the `.smix` registry that alias-form device refs resolve against. Give it an
+`.app` and it boots the device, installs the app, and reads the bundle id out of
+the bundle, so the command it prints next is runnable as it stands.
 
 ```bash
-smix doctor                    # health probe: xcrun, simctl, sims, runners
+smix init --device <UDID>                      # register it as `dev`
+smix init --device <UDID> --app ./MyApp.app    # …and install the app on it
+smix init --device <UDID> --alias staging      # a name other than `dev`
+```
+
+It does not choose between devices: with several simulators available and no
+`--device`, it lists them and exits non-zero. It also never repoints an alias
+that already exists — an alias is what every later command resolves through, so
+silently moving one would take over every flow written against it.
+
+### Doctor (housekeeping)
+
+`smix doctor` answers whether this machine can drive anything yet and, when it
+cannot, prints the command to run next. Checks stop at the first blocked one:
+being told to run `smix init` with no Xcode command-line tools installed would
+send you to a command that cannot succeed. `--json` gives the same verdict as
+`{ready, checks[], next}` for scripts.
+
+```bash
+smix doctor                    # verdict + the next command to run
+smix doctor --json             # same, machine-readable
 smix down                      # tear down all smix-owned processes (runner, capture)
 ```
 
