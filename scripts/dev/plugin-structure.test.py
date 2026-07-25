@@ -149,6 +149,45 @@ else:
     if "${CLAUDE_PLUGIN_ROOT}" not in pre_json:
         problems.append("the PreToolUse commands do not use ${CLAUDE_PLUGIN_ROOT}")
 
+# --- skills and the monitor ----------------------------------------------
+
+skills_dir = os.path.join(PLUGIN, "skills")
+skills = sorted(
+    d for d in os.listdir(skills_dir) if os.path.isdir(os.path.join(skills_dir, d))
+) if os.path.isdir(skills_dir) else []
+if not skills:
+    problems.append("plugin/skills/ has no skills")
+for name in skills:
+    doc = os.path.join(skills_dir, name, "SKILL.md")
+    if not os.path.exists(doc):
+        problems.append(f"skills/{name}/ has no SKILL.md")
+        continue
+    head = open(doc).read().split("---")
+    # Frontmatter is how Claude Code decides when to invoke a skill; without
+    # a description it loads and is never chosen.
+    if len(head) < 3 or "description:" not in head[1]:
+        problems.append(f"skills/{name}/SKILL.md has no frontmatter description")
+
+monitors_path = os.path.join(PLUGIN, "monitors", "monitors.json")
+try:
+    monitors = json.load(open(monitors_path))
+except FileNotFoundError:
+    monitors = []
+    problems.append("missing: plugin/monitors/monitors.json")
+except json.JSONDecodeError as e:
+    monitors = []
+    problems.append(f"monitors.json is not JSON — {e}")
+for entry in monitors:
+    for field in ("name", "command", "description"):
+        if not entry.get(field):
+            problems.append(f"a monitor entry has no {field}")
+    if "${CLAUDE_PLUGIN_ROOT}" not in entry.get("command", ""):
+        problems.append(f"monitor {entry.get('name')!r} does not use ${{CLAUDE_PLUGIN_ROOT}}")
+    # Unscoped, the watch runs for every session the plugin is enabled in,
+    # including ones that never touch a device.
+    if not entry.get("when"):
+        problems.append(f"monitor {entry.get('name')!r} has no `when`, so it runs always")
+
 # --- the marketplace points at something real ----------------------------
 
 entries = marketplace.get("plugins", [])
