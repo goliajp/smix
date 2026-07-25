@@ -2197,28 +2197,35 @@ final class SmixRunnerUITests: XCTestCase {
             Data("smix-runner: tap-at-norm-coord: XCPointerEventPath unavailable\n".utf8))
           return (ok: false, chain: [])
         }
-        do {
-          try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
-        } catch {
-          FileHandle.standardError.write(
-            Data("smix-runner: tap-at-norm-coord: synthesize error: \(error)\n".utf8))
-          return (ok: false, chain: [])
-        }
-        // What the point turned out to be inside. Taken after the
-        // touch, from a fresh snapshot, because the question is what
-        // was there when it landed — the host's own tree is from
-        // before, and comparing against that would only confirm the
-        // arithmetic it already did.
+        // What the point is inside, from a fresh snapshot taken here —
+        // immediately before the touch, and from the runner rather than
+        // from the host's tree, which is a round trip older and would
+        // only confirm the arithmetic the host already did.
+        //
+        // Not after the touch. A tap that opens a screen has the
+        // destination under that point by the time a post-touch
+        // snapshot returns, so the successful taps — the ones that
+        // navigate — are exactly the ones such a check calls misses.
+        // The two things it exists to catch, a target that moved since
+        // the host looked and an overlay swallowing the touch, are both
+        // visible in the state the touch is about to be delivered to.
         //
         // A failure to snapshot yields an empty chain rather than a
-        // failed tap: the touch did happen, and the host reads an empty
-        // chain as "could not be judged" rather than as a pass.
+        // failed tap: the touch still happens, and the host reads an
+        // empty chain as "could not be judged" rather than as a pass.
         var chain: [HitChainEntry] = []
         _ = smixGuarded("tap-at-norm-coord-chain") { () -> Bool in
           guard let snap = try? app.snapshot() else { return false }
           chain = HitChain.at(
             point: CGPoint(x: px, y: py), in: convertSnapshot(snap))
           return true
+        }
+        do {
+          try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
+        } catch {
+          FileHandle.standardError.write(
+            Data("smix-runner: tap-at-norm-coord: synthesize error: \(error)\n".utf8))
+          return (ok: false, chain: [])
         }
         return (ok: true, chain: chain)
       },

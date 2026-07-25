@@ -239,9 +239,11 @@ pub struct HitChainEntry {
 /// succeed against a button whose counter never moved found out which
 /// one they were getting.
 ///
-/// `chain` is every named element containing the point after the touch,
-/// innermost first — not one element, because the innermost thing at a
-/// button's centre is usually the button's own label. See
+/// `chain` is every named element containing the point in the state the
+/// touch was delivered to, innermost first — not one element, because
+/// the innermost thing at a button's centre is usually the button's own
+/// label, and not after the touch, because a tap that opens a screen
+/// has the destination under that point by then. See
 /// `smix_driver::tap_landed_within` for what the host does with it and,
 /// more importantly, for what it still cannot see.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]

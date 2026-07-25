@@ -98,6 +98,14 @@ echo "corpus gate: sim=$SMIX_CORPUS_SIM corpus=$CORPUS_DIR yamls=${#YAMLS[@]} lo
 cleanup() {
   echo "corpus gate: tearing down runner"
   "$SMIX_BIN" runner down >/dev/null 2>&1 || true
+  # The corpus's `takeScreenshot` steps write to the working directory,
+  # which for the release gate is the repo root — so a gate run left six
+  # untracked PNGs behind every time. They are named by the flows, so
+  # the list comes from the flows rather than from a copy of it here.
+  for shot in $(grep -rh 'takeScreenshot' "$CORPUS_DIR"/*.yaml \
+                | sed 's/.*takeScreenshot: *//' | sort -u); do
+    rm -f "$REPO_ROOT/$shot"
+  done
   # Diagnostic dump AFTER runner down — captures the last observed state.
   "$SMIX_BIN" diagnostic dump --json \
     > "$LOG_DIR/diagnostic-dump.json" 2>/dev/null || true
@@ -146,12 +154,15 @@ for yaml in "${YAMLS[@]}"; do
   # `smix run` takes the flow yaml as a positional (per `smix run --help`);
   # a stale `--script` flag would be rejected as "unexpected argument".
   # --device is required (post-fold: App is not bound to a UDID otherwise).
-  # --retry 2: iOS 26.5 sim animation races produce occasional TAP_MISSED
-  # (the tree fetched pre-animation, the tap landed on the moved element).
-  # Second attempt runs after the sim settled; the retry itself is smix's
-  # own primitive, so the gate borrows it rather than reimplementing.
+  #
+  # No --retry. It was here on a wrong reading: TAP_MISSED on the two
+  # nav flows was called an iOS animation race, and it was the hit chain
+  # being snapshotted after the touch, so a tap that opened a screen saw
+  # the destination under its own coordinate and reported itself a miss.
+  # Retrying only made the gate quieter about it. A flow that needs two
+  # attempts here is a finding, not a pass.
   if python3 "$REPO_ROOT/scripts/dev/run-with-timeout.py" "$SMIX_CORPUS_TIMEOUT_S" \
-       "$SMIX_BIN" run "$yaml" --device "$SMIX_CORPUS_SIM" --retry 2 \
+       "$SMIX_BIN" run "$yaml" --device "$SMIX_CORPUS_SIM" \
        >"$yaml_log" 2>&1; then
     echo "corpus gate: [$name] PASS"
   else
