@@ -33,10 +33,22 @@ except Exception:
 ' "$MANIFEST" 2>/dev/null)"
 fi
 
-# The version each binary reports, or empty when it is not on PATH.
+# The version each binary reports, or empty when it is not on PATH or
+# does not answer with one.
+#
+# Matched against a version shape rather than filtered down to digits.
+# Stripping non-digits out of arbitrary output manufactures a version from
+# noise: `smix-mcp --version` once printed a JSON-RPC parse error whose
+# code is -32700, which came out of a `tr -cd` as "2.032700" and had this
+# hook reporting a mismatch that did not exist — and a session that then
+# declined to use smix at all. Saying nothing is the honest answer when
+# the binary did not answer.
 version_of() {
   command -v "$1" >/dev/null 2>&1 || return 0
-  "$1" --version 2>/dev/null | head -1 | tr -cd '0-9.\n' | head -1
+  "$1" --version 2>/dev/null \
+    | head -1 \
+    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*' \
+    | head -1
 }
 
 cli_version="$(version_of smix)"
@@ -49,6 +61,14 @@ if [ -z "$mcp_version" ] && [ -z "$cli_version" ]; then
 fi
 
 if [ -z "$mcp_version" ]; then
+  if command -v smix-mcp >/dev/null 2>&1; then
+    # Present but not answering with a version. Older builds had no
+    # --version at all; that is a reason to say so, not to claim the
+    # server is missing or to invent a number for it.
+    say "smix-mcp is installed but did not report a version, so it cannot be"
+    say "checked against this plugin's $expected. If the tools misbehave, update: $INSTALL_HINT"
+    exit 0
+  fi
   # The likelier half to be missing: someone with `cargo install smix-cli`
   # has the CLI and not the MCP server, which is a separate binary.
   say "the smix CLI is here (${cli_version:-unknown}) but smix-mcp is not, and the"
