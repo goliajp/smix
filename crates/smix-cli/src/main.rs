@@ -18,7 +18,9 @@ mod down;
 mod federation;
 #[cfg(test)]
 mod guide_gate;
+mod init;
 mod parallel;
+mod readiness;
 
 #[cfg(test)]
 mod release_record;
@@ -115,8 +117,25 @@ struct Cli {
 #[allow(clippy::large_enum_variant)]
 #[derive(Subcommand, Debug)]
 enum Cmd {
-    /// Probe environment health: xcrun simctl availability + sim listing.
-    Doctor,
+    /// Register a simulator under an alias, creating the `.smix` registry.
+    /// This is the bootstrap: alias-form device refs have nothing to
+    /// resolve against until one exists.
+    Init {
+        /// Alias to register under.
+        #[arg(long, default_value = "dev")]
+        alias: String,
+        /// UDID to register. Required when more than one simulator is
+        /// available — init does not choose between devices.
+        #[arg(long)]
+        device: Option<String>,
+    },
+    /// Say whether this machine can drive anything yet, and if not, what
+    /// to run next. `--json` for the same verdict in machine form.
+    Doctor {
+        /// Emit the verdict as JSON instead of prose.
+        #[arg(long)]
+        json: bool,
+    },
     /// Perf regression gate: measure the in-process corpus, compare
     /// against the committed baseline, and fail on a >5% slowdown or a
     /// metric that stopped being measured. The absolute `perf_gate`
@@ -1155,7 +1174,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
 
     let simctl = SimctlClient::new();
     match cli.cmd {
-        Cmd::Doctor => cmd_doctor(&simctl).await?,
+        Cmd::Init { alias, device } => cmd_init(&simctl, &alias, device.as_deref()).await?,
+        Cmd::Doctor { json } => cmd_doctor(&simctl, json).await?,
         Cmd::Bench {
             update_baseline,
             current_file,
@@ -3146,38 +3166,134 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
     Ok(())
 }
 
-async fn cmd_doctor(simctl: &SimctlClient) -> Result<(), CliError> {
+async fn cmd_init(
+    simctl: &SimctlClient,
+    alias: &str,
+    device: Option<&str>,
+) -> Result<(), CliError> {
+    let devices = simctl.list_devices().await?;
+    let candidates: Vec<init::Candidate> = devices
+        .iter()
+        .filter(|d| d.is_available)
+        .map(|d| init::Candidate {
+            udid: d.udid.clone(),
+            name: d.name.clone(),
+        })
+        .collect();
+
+    // The same resolution `smix sim register` uses — env override,
+    // discovered registry, else a fresh `.smix/sims.json` in cwd. Init
+    // writing anywhere else would produce a registry the rest of smix
+    // does not read, which is worse than not writing one.
+    let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+    let existing: Vec<String> = SimRegistry::load(&path)
+        .map(|reg| reg.sims().keys().cloned().collect())
+        .unwrap_or_default();
+
+    let plan = match init::plan_init(&candidates, alias, device, &existing) {
+        Ok(plan) => plan,
+        Err(refusal) => {
+            return Err(CliError::Other(format!(
+                "{}\n{}",
+                refusal.reason, refusal.remedy
+            )));
+        }
+    };
+
+    let sim = devices
+        .iter()
+        .find(|d| d.udid == plan.udid)
+        .map(|d| registry::RegisteredSim {
+            udid: d.udid.to_ascii_uppercase(),
+            device_name: d.name.clone(),
+            runtime: d.runtime_identifier.clone(),
+            device_type: d.device_type_identifier.clone(),
+            runner_port: None,
+            locale: None,
+        })
+        .ok_or_else(|| CliError::Other(format!("device {} vanished mid-init", plan.udid)))?;
+    SimRegistry::register(&path, &plan.alias, sim)
+        .map_err(|e| CliError::Other(format!("register: {e}")))?;
+
+    println!(
+        "registered `{}` -> {} in {}",
+        plan.alias,
+        plan.udid,
+        path.display()
+    );
+    println!();
+    println!(
+        "next: smix capsule up {} --bundle <your.bundle.id>",
+        plan.alias
+    );
+    println!("      boots the device and starts the runner that carries every tap and query");
+    Ok(())
+}
+
+async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
+    // Gather, then judge. The judging is `readiness::assess`, a pure
+    // function with its ordering under test — which is the only way the
+    // "what do I run next" answer stays correct as checks are added.
+    let simctl_facts = match simctl.list_runtimes().await {
+        Ok(runtimes) => {
+            let devices = simctl.list_devices().await.unwrap_or_default();
+            Some(readiness::SimctlFacts {
+                available_runtimes: runtimes.iter().filter(|r| r.is_available).count(),
+                available_devices: devices.iter().filter(|d| d.is_available).count(),
+            })
+        }
+        // Not an error to report and abort on: "simctl does not run" is
+        // the most useful thing doctor can say, and it can only say it by
+        // continuing.
+        Err(_) => None,
+    };
+
+    let registry = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| SimRegistry::discover(&cwd))
+        .and_then(|path| SimRegistry::load(&path).ok())
+        .map(|reg| readiness::RegistryFacts {
+            aliases: reg.sims().len(),
+            first_alias: reg.sims().keys().next().cloned(),
+        });
+
+    let port: u16 = std::env::var("SMIX_RUNNER_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(22087);
+
+    let verdict = readiness::assess(&readiness::Facts {
+        simctl: simctl_facts,
+        registry,
+        runner_up: runner::health_ok(port),
+    });
+
+    if json {
+        let out = serde_json::to_string_pretty(&verdict)
+            .map_err(|e| CliError::Other(format!("serialize: {e}")))?;
+        println!("{out}");
+        return Ok(());
+    }
+
     println!("smix doctor");
     println!("============");
-
-    // 1. xcrun simctl reachable + runtimes listable.
-    let runtimes = simctl.list_runtimes().await.map_err(|e| {
-        CliError::Other(format!(
-            "xcrun simctl unavailable — check Xcode command-line tools install: {e}"
-        ))
-    })?;
-    let avail = runtimes.iter().filter(|r| r.is_available).count();
-    println!(
-        "✓ xcrun simctl reachable; {} runtimes detected ({} available)",
-        runtimes.len(),
-        avail
-    );
-
-    // 2. Device inventory.
-    let devices = simctl.list_devices().await?;
-    let avail_dev = devices.iter().filter(|d| d.is_available).count();
-    let booted = devices.iter().filter(|d| d.state == "Booted").count();
-    println!(
-        "✓ {} devices total ({} available, {} booted)",
-        devices.len(),
-        avail_dev,
-        booted
-    );
-
-    // 3. iOS-only enforcement reminder.
-    println!("ℹ smix supports iOS Simulator only — real-device automation is");
-    println!("  explicitly out of scope.");
-
+    for check in &verdict.checks {
+        let mark = match check.status {
+            readiness::Status::Ok => "\u{2713}",
+            readiness::Status::Blocked => "\u{2717}",
+            readiness::Status::Skipped => "\u{2022}",
+        };
+        println!("{mark} {}", check.detail);
+    }
+    println!("{}", readiness::PLATFORM_NOTE);
+    match &verdict.next {
+        Some(next) => {
+            println!();
+            println!("next: {}", next.command);
+            println!("      {}", next.reason);
+        }
+        None => println!("\nready — nothing left to set up"),
+    }
     Ok(())
 }
 
