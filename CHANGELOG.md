@@ -2,7 +2,13 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [2.0.0] — Unreleased
+## [Unreleased]
+
+### Fixed
+
+- **`smix runner down` stops the runner on the port it was given, and no others.** After dealing with its own recorded handle it swept anything matching `xcodebuild.*SmixRunner`, which is every runner on the machine — so a teardown pinned to one port stopped a resident runner on another, belonging to a different workspace. `--parallel` and `--nodes` both put several runners up at once, so the sweep contradicted capabilities smix already shipped. The port is now resolved to the session that holds it: the process listening on it is the runner app inside the simulator, whose executable path names the device, and the `xcodebuild` session driving that device is the one that gets the SIGINT. A wedged session that answers on no port is no longer swept — it has to be stopped by hand, which is the price of not being able to tell whose it was.
+
+## [2.0.0] — 2026-07-25
 
 The first major release: the v1 accretions are consolidated into one deliberate surface. Breaking; `smix migrate` rewrites v1 flow yaml, and the runner keeps answering wire schema 1 so v1.x clients still negotiate.
 
