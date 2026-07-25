@@ -2,10 +2,28 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [2.1.0] — Unreleased
+
+smix installs without a Rust toolchain, tells you what to run next, and
+ships as a Claude Code plugin. Two loops are closed and tested apart: what
+smix does on its own, and what it does inside a session.
+
+### Added
+
+- **The CLI and MCP server as prebuilt binaries** — `npm install -g @goliapkg/smix-cli`. Getting smix meant `cargo install smix-cli --locked`: a Rust toolchain and a 27-crate compile, asked of someone whose app is Swift or Kotlin. Platform resolution refuses what it has no binary for, naming the platform and the source build that still works, because a binary for the wrong architecture installs cleanly and fails later at exec with a loader error that mentions neither smix nor the mismatch.
+- **`smix init`** — registers a simulator under an alias, creating the `.smix` registry that alias-form device refs resolve against. With `--app`, it also boots the device and installs the app, reading the bundle id out of the bundle so the command it prints next is runnable as it stands. It does not choose between devices, and never repoints an alias that already exists: an alias is what every later command resolves through.
+- **`smix doctor` says what to run next**, and `--json` gives the same verdict as `{ready, checks[], next}`. Checks stop at the first blocked one — telling someone with no Xcode command-line tools to run `smix init` sends them to a command that cannot succeed. It also checks whether the capture server is running, and suggests the `capsule up` invocation that works on the machine it is speaking about.
+- **A Claude Code plugin** — `/plugin marketplace add goliajp/smix`. It carries the MCP server, three skills (driving, turning a session into a flow, reading a failure), the device guards, a readiness hook that speaks when smix is not installed, and a monitor that reports a runner going away instead of leaving it to surface as a missing element. It adds initiative, not capability: every verb a skill teaches can be typed in a terminal, and a test compares each one against what the CLI and server actually offer.
+- **The MCP session picks its own device** — `smix_devices`, `smix_use`, `smix_release`. `SMIX_UDID` is now a default rather than a requirement; the device is chosen inside the conversation instead of in the client's config file before it started. `smix_use` opens the driving session as well as starting the runner, since a runner on a port is not yet something the other tools can use.
+- **`smix authoring record --app-id`** — a recording names the app it was taken against, so it can be run back without an edit.
+- **`smix_ai_tier::ask_with_attachments`** — the AI primitive takes attachments rather than assuming whoever answers can open local files.
 
 ### Fixed
 
+- **A tap that opened a screen reported itself a miss.** The hit chain was snapshotted after the touch, so a tap that navigated had the destination under its own coordinate by the time the snapshot returned — the successful taps were exactly the ones it called misses. It is now read immediately before the touch. What that cannot see: a screen moving during the snapshot can leave the target under the point when it is read and gone when the touch lands, which reads as confirmed. That errs towards accepting a working tap rather than failing one.
+- **A failure message used two definitions of visible at once.** The assertion judged geometry; the "visible elements" list under it judged Apple's flag. A zero-bounds node satisfied one and not the other, and appeared in the same message as both absent and present.
+- **`smix doctor` claimed smix supports "iOS Simulator only"**, which stopped being true when the Android emulator lane landed. The first command a new user runs was telling them their platform was unsupported.
+- **`authoring record` asserted on the application element itself** — a step that tests nothing and cannot pass, so every recording carried one that failed.
 - **`smix runner down` stops the runner on the port it was given, and no others.** After dealing with its own recorded handle it swept anything matching `xcodebuild.*SmixRunner`, which is every runner on the machine — so a teardown pinned to one port stopped a resident runner on another, belonging to a different workspace. `--parallel` and `--nodes` both put several runners up at once, so the sweep contradicted capabilities smix already shipped. The port is now resolved to the session that holds it: the process listening on it is the runner app inside the simulator, whose executable path names the device, and the `xcodebuild` session driving that device is the one that gets the SIGINT. A wedged session that answers on no port is no longer swept — it has to be stopped by hand, which is the price of not being able to tell whose it was.
 
 ## [2.0.0] — 2026-07-25

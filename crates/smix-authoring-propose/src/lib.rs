@@ -190,10 +190,10 @@ pub async fn propose_from_bundle(
         bundle = bundle_dir.display(),
     );
 
-    // No attachments: this tier reads the failure bundle itself and
-    // puts the material in the words, so nothing has to be opened on
-    // the other side.
-    let reply = smix_ai_tier::ask(prompt, &[], cfg).await?;
+    // The text-only form: this tier reads the failure bundle itself and
+    // puts the material in the words, so nothing has to be opened on the
+    // other side.
+    let reply = smix_ai_tier::ask(prompt, cfg).await?;
 
     parse_proposal_reply(&reply).ok_or_else(|| {
         driver_error(
