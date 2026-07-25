@@ -25,6 +25,8 @@ name = "smix-mcp"
 path = "src/main.rs"
 
 [dependencies]
+smix-capsule = { path = "../smix-capsule", version = "2.0.0" }
+smix-simctl = { path = "../smix-simctl", version = "2.0.0" }
 smix-error = { path = "../smix-error", version = "2.0.0" }
 smix-sdk = { path = "../smix-sdk", version = "2.0.0" }
 smix-screen = { path = "../smix-screen", version = "2.0.0" }

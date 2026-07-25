@@ -25,7 +25,7 @@ fn pkill(sig: &str, pattern: &str, label: &str) -> bool {
 /// processes survive.
 pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     println!("=== 1. XCUITest runner ===");
-    crate::runner::down(root, runner_port)?;
+    smix_capsule::runner::down(root, runner_port)?;
 
     println!("=== 2. web demo stack ===");
     pkill("-TERM", "smix/web/node_modules/.bin/vite", "vite");

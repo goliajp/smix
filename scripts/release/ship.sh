@@ -394,6 +394,7 @@ CRATES=(
   smix-runner-wire smix-selector-resolver smix-fixture
   smix-annotate smix-migrate smix-authoring-ir
   smix-store smix-simctl smix-runner-client
+  smix-capsule
   smix-host-coord-resolver smix-driver
   smix-sdk smix-mcp smix-adapter-maestro smix-recorder
   smix-authoring-propose

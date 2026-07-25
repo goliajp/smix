@@ -43,12 +43,37 @@ use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct SmixMcpService {
-    /// Shared App (one per process; UDID + runner-port from env).
+    /// The App every sense/act tool drives through. Replaced, not
+    /// reconfigured, when `smix_use` changes device: an App is bound to a
+    /// port at construction.
     app: Arc<Mutex<App>>,
+    /// Which device this session chose, if any.
+    ///
+    /// Separate from `app` because the answer "none yet" has to be
+    /// tellable. An App exists either way, and asking it produces a
+    /// connection error that describes a symptom rather than the choice
+    /// nobody made.
+    session: Arc<smix_mcp::SessionState>,
     /// Tool router populated by #[tool_router] macro; read by the
     /// macro-generated `serve` plumbing, not by hand-written code.
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
+}
+
+/// Which device to drive, and optionally on which port and with which app.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct UseParams {
+    /// Simulator UDID, as reported by `smix_devices`.
+    udid: String,
+    /// Runner port. Defaults to 22087; give a different one to drive two
+    /// devices at once from separate sessions.
+    #[serde(default)]
+    port: Option<u16>,
+    /// Bundle id the runner latches its XCUIApplication to. The runner
+    /// refuses to start without one unless the caller opts into a default.
+    #[serde(default)]
+    bundle_id: Option<String>,
 }
 
 /// Typing needs two strings — which field, and what to put in it — so the
@@ -117,18 +142,173 @@ fn missing_udid_error() -> McpError {
 
 #[tool_router]
 impl SmixMcpService {
-    fn new(app: App) -> Self {
+    fn new(app: App, session: smix_mcp::SessionState) -> Self {
         Self {
             app: Arc::new(Mutex::new(app)),
+            session: Arc::new(session),
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// The App, once a device has been chosen for this session.
+    ///
+    /// Every sense and act tool goes through here so that "no device
+    /// bound" is answered by naming `smix_use`, rather than by whatever
+    /// connection error the first call happens to produce.
+    async fn bound_app(&self) -> Result<tokio::sync::MutexGuard<'_, App>, McpError> {
+        self.session
+            .require()
+            .map_err(|hint| McpError::invalid_params(hint, None))?;
+        Ok(self.app.lock().await)
+    }
+
+    /// Same, mutably.
+    async fn bound_app_mut(&self) -> Result<tokio::sync::MutexGuard<'_, App>, McpError> {
+        self.bound_app().await
+    }
+
+    // --- device lifecycle -------------------------------------------
+    //
+    // These exist so a conversation can start from nothing. Without them
+    // the device came from `SMIX_UDID` in the client's config file — set
+    // before anyone said a word, unchangeable without a restart — and the
+    // runner had to be brought up by a human in another terminal.
+
+    #[tool(
+        description = "List the simulators available to drive, with their UDID, name and state. Call this first when no device is bound; pass one of the UDIDs to smix_use."
+    )]
+    async fn smix_devices(&self) -> Result<CallToolResult, McpError> {
+        let simctl = smix_simctl::SimctlClient::new();
+        let devices = simctl
+            .list_devices()
+            .await
+            .map_err(|e| McpError::internal_error(format!("simctl: {e}"), None))?;
+        let listed: Vec<_> = devices
+            .iter()
+            .filter(|d| d.is_available)
+            .map(|d| {
+                serde_json::json!({
+                    "udid": d.udid,
+                    "name": d.name,
+                    "state": d.state,
+                })
+            })
+            .collect();
+        let json = serde_json::to_string_pretty(&listed).unwrap_or_default();
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    #[tool(
+        description = "Bind this session to a simulator and bring its runner up, booting the device if needed. Everything else drives whatever this last chose. Call it again with another UDID to switch."
+    )]
+    async fn smix_use(
+        &self,
+        Parameters(params): Parameters<UseParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let port = params.port.unwrap_or(22087);
+
+        // Already here: bringing the runner up again would restart the app
+        // and drop whatever state the conversation had built up.
+        if let Some(current) = self.session.current()
+            && current.udid == params.udid
+            && current.port == port
+            && smix_capsule::health_ok(port)
+        {
+            return Ok(CallToolResult::success(vec![Content::text(format!(
+                "already driving {} on port {port}",
+                params.udid
+            ))]));
+        }
+
+        let simctl = smix_simctl::SimctlClient::new();
+        if let Err(e) = simctl.boot(&params.udid).await
+            && !e.to_string().contains("current state: Booted")
+        {
+            return Err(McpError::internal_error(
+                format!("boot {}: {e}", params.udid),
+                None,
+            ));
+        }
+
+        let root = std::env::current_dir()
+            .map_err(|e| McpError::internal_error(format!("cwd: {e}"), None))?;
+        // Blocking: `up` spawns xcodebuild and waits on /health, and the
+        // rmcp handler is async, so it goes to a blocking thread rather
+        // than stalling the runtime for the length of a build.
+        let udid = params.udid.clone();
+        let bundle = params.bundle_id.clone();
+        tokio::task::spawn_blocking(move || {
+            smix_capsule::runner::up(
+                &root,
+                &udid,
+                port,
+                bundle.as_deref(),
+                None,
+                smix_capsule::runner::UpOptions {
+                    record_enabled: false,
+                    supervise: false,
+                    attach_without_relaunch: false,
+                },
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("runner up panicked: {e}"), None))?
+        .map_err(|e| McpError::internal_error(format!("runner up: {e}"), None))?;
+
+        // Rebuild rather than reconfigure: an App is bound to its port at
+        // construction, so switching device means a new one.
+        let mut next = App::connect_to_runner_lazy(port);
+        next = next.with_udid(params.udid.clone());
+
+        // A runner on a port is not yet something the driving tools can
+        // use: iOS driving happens inside a session, and without one every
+        // sense and act call fails asking for `App::open_session`. Binding
+        // a device and then leaving the caller a second, undiscoverable
+        // step is the shape this tool exists to remove.
+        if let Some(bundle) = params.bundle_id.as_deref() {
+            next.open_session_in_place(bundle, true)
+                .await
+                .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        }
+        *self.app.lock().await = next;
+
+        self.session.bind(smix_mcp::Bound {
+            udid: params.udid.clone(),
+            port,
+        });
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "driving {} on port {port}",
+            params.udid
+        ))]))
+    }
+
+    #[tool(
+        description = "Take the runner down and unbind this session's device. Leaves the simulator booted — shutting down a device someone else may be using is not this tool's call."
+    )]
+    async fn smix_release(&self) -> Result<CallToolResult, McpError> {
+        let Some(bound) = self.session.release() else {
+            return Ok(CallToolResult::success(vec![Content::text(
+                "nothing was bound".to_string(),
+            )]));
+        };
+        let root = std::env::current_dir()
+            .map_err(|e| McpError::internal_error(format!("cwd: {e}"), None))?;
+        let port = bound.port;
+        tokio::task::spawn_blocking(move || smix_capsule::runner::down(&root, port))
+            .await
+            .map_err(|e| McpError::internal_error(format!("runner down panicked: {e}"), None))?
+            .map_err(|e| McpError::internal_error(format!("runner down: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "released {} on port {port}",
+            bound.udid
+        ))]))
     }
 
     #[tool(
         description = "Get a structured description of the current screen — visible elements + bounds. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_describe(&self) -> Result<CallToolResult, McpError> {
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         let desc = app
             .describe()
             .await
@@ -141,7 +321,7 @@ impl SmixMcpService {
         description = "Get the raw A11yNode tree of the current screen. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_tree(&self) -> Result<CallToolResult, McpError> {
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         let tree = app
             .tree()
             .await
@@ -158,7 +338,7 @@ impl SmixMcpService {
         Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         // The tree resolver never matches OcrText (live-vision op, not a
         // tree predicate) — routed through `app.find` an ocrText selector
         // is always false. Dispatch it to the OCR path instead, as the
@@ -187,7 +367,7 @@ impl SmixMcpService {
         Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         // OcrText bypasses the tree resolver: find the text's frame via
         // Apple Vision OCR and tap its normalized center (IOHID
         // synthesize), the same dispatch the maestro adapter uses.
@@ -252,7 +432,7 @@ impl SmixMcpService {
                 None,
             ));
         }
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         app.fill(&sel, &params.text)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
@@ -271,7 +451,7 @@ impl SmixMcpService {
         Parameters(params): Parameters<SwipeParams>,
     ) -> Result<CallToolResult, McpError> {
         let dir = parse_direction(&params.direction)?;
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         app.swipe_once(dir)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
@@ -299,7 +479,7 @@ impl SmixMcpService {
             ));
         }
         let dir = parse_direction(params.direction.as_deref().unwrap_or("down"))?;
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         app.scroll(&sel, dir)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
@@ -316,10 +496,7 @@ impl SmixMcpService {
         &self,
         Parameters(params): Parameters<BundleParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut app = self.app.lock().await;
-        if app.udid().is_none() {
-            return Err(missing_udid_error());
-        }
+        let mut app = self.bound_app_mut().await?;
         app.launch(&params.bundle_id)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
@@ -342,7 +519,7 @@ impl SmixMcpService {
         &self,
         Parameters(params): Parameters<BundleParams>,
     ) -> Result<CallToolResult, McpError> {
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         if app.udid().is_none() {
             return Err(missing_udid_error());
         }
@@ -371,7 +548,7 @@ impl SmixMcpService {
         Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         match ocr_text_of(&sel) {
             // Same budget and cadence as the tree path: `App::assert_visible`
             // waits 5 s at the driver's 250 ms poll interval.
@@ -421,7 +598,7 @@ impl SmixMcpService {
         Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         match ocr_text_of(&sel) {
             // A tree-routed OcrText never matches, so this assert used to
             // pass vacuously — a false green. Probe OCR once, mirroring the
@@ -461,7 +638,7 @@ impl SmixMcpService {
         Parameters(params): Parameters<PressKeyParams>,
     ) -> Result<CallToolResult, McpError> {
         let k = parse_key_name(&params.key).map_err(|m| McpError::invalid_params(m, None))?;
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         app.press_key(k)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
@@ -475,7 +652,7 @@ impl SmixMcpService {
         description = "Capture a base64-PNG screenshot of the current screen. Requires the SMIX_UDID env var (set it in the MCP server config)."
     )]
     async fn smix_screenshot(&self) -> Result<CallToolResult, McpError> {
-        let app = self.app.lock().await;
+        let app = self.bound_app().await?;
         if app.udid().is_none() {
             return Err(missing_udid_error());
         }
@@ -573,7 +750,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         app = app.with_udid(udid);
     }
 
-    let service = SmixMcpService::new(app);
+    let session = smix_mcp::SessionState::from_env(std::env::var("SMIX_UDID").ok(), port);
+    let service = SmixMcpService::new(app, session);
     let server = service.serve(stdio()).await?;
     server.waiting().await?;
     Ok(())

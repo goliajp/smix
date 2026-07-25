@@ -24,9 +24,7 @@ mod readiness;
 
 #[cfg(test)]
 mod release_record;
-mod runner;
 mod runner_android;
-mod runner_state;
 mod script;
 
 use clap::{Parser, Subcommand};
@@ -1433,13 +1431,13 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // Bare `smix runner up` defaults to record_enabled=false;
                     // the capsule path (`capsule::up`) overrides to true
                     // via TEST_RUNNER_SMIX_RECORD_ENABLED=1.
-                    runner::up(
+                    smix_capsule::runner::up(
                         &root,
                         &udid,
                         port,
                         bundle.as_deref(),
                         runner_project.as_deref(),
-                        runner::UpOptions {
+                        smix_capsule::runner::UpOptions {
                             supervise,
                             attach_without_relaunch: no_launch,
                             ..Default::default()
@@ -1465,15 +1463,16 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
                     let port = runner_port();
-                    runner::down(&root, port).map_err(CliError::Other)?;
+                    smix_capsule::runner::down(&root, port).map_err(CliError::Other)?;
                 }
                 RunnerAction::Cycle { runner_project } => {
                     let port = runner_port();
-                    runner::cycle(&root, port, runner_project.as_deref())
+                    smix_capsule::runner::cycle(&root, port, runner_project.as_deref())
                         .map_err(CliError::Other)?;
                 }
                 RunnerAction::Supervise { runner_project } => {
-                    runner::supervise(&root, runner_project.as_deref()).map_err(CliError::Other)?;
+                    smix_capsule::runner::supervise(&root, runner_project.as_deref())
+                        .map_err(CliError::Other)?;
                 }
                 RunnerAction::ListSessions => {
                     let port = runner_port();
@@ -1502,21 +1501,22 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 RunnerAction::Install { path, force } => {
                     let target = path.unwrap_or_else(|| {
-                        runner::installed_runner_dir()
+                        smix_capsule::runner::installed_runner_dir()
                             .unwrap_or_else(|| PathBuf::from("~/.local/share/smix/runner"))
                     });
                     if !force {
                         // Delegate to the same auto-sync used inside
                         // `runner up`. Idempotent when already current.
-                        match runner::ensure_installed_runner_synced(&target) {
-                            Ok(runner::SyncOutcome::AlreadyCurrent) => {
+                        match smix_capsule::runner::ensure_installed_runner_synced(&target) {
+                            Ok(smix_capsule::runner::SyncOutcome::AlreadyCurrent) => {
                                 println!(
                                     "runner install: already at v{} — nothing to do (pass --force to re-extract).",
                                     smix_runner_sources::SOURCES_VERSION
                                 );
                             }
-                            Ok(runner::SyncOutcome::Extracted {
-                                previous_version, ..
+                            Ok(smix_capsule::runner::SyncOutcome::Extracted {
+                                previous_version,
+                                ..
                             }) => {
                                 let from = previous_version.as_deref().unwrap_or("<none>");
                                 println!(
@@ -1755,21 +1755,27 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             // parser (via FlowArgs → thread-local override) and the sdk
             // (via FlowArgs → App builder) — parser/sdk keep their own env
             // reads solely as the non-CLI fallback.
-            let switches = runner::load_switches();
-            let sw_auto_ocr =
-                runner::resolve_switch(switches.auto_ocr_fallback, "SMIX_AUTO_OCR_FALLBACK");
-            let sw_ai_assertions =
-                runner::resolve_switch(switches.enable_ai_assertions, "SMIX_ENABLE_AI_ASSERTIONS");
-            let sw_assert_no_autorecord = runner::resolve_switch(
+            let switches = smix_capsule::runner::load_switches();
+            let sw_auto_ocr = smix_capsule::runner::resolve_switch(
+                switches.auto_ocr_fallback,
+                "SMIX_AUTO_OCR_FALLBACK",
+            );
+            let sw_ai_assertions = smix_capsule::runner::resolve_switch(
+                switches.enable_ai_assertions,
+                "SMIX_ENABLE_AI_ASSERTIONS",
+            );
+            let sw_assert_no_autorecord = smix_capsule::runner::resolve_switch(
                 switches.assert_screenshot_no_autorecord,
                 "SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD",
             );
-            let sw_launch_reinstall = runner::resolve_switch(
+            let sw_launch_reinstall = smix_capsule::runner::resolve_switch(
                 switches.launch_fresh_force_reinstall,
                 "SMIX_LAUNCH_FRESH_FORCE_REINSTALL",
             );
-            let warn_if_env = |r: &runner::ResolvedSwitch, env_name: &str, key: &str| {
-                if r.source == runner::SwitchSource::Env {
+            let warn_if_env = |r: &smix_capsule::runner::ResolvedSwitch,
+                               env_name: &str,
+                               key: &str| {
+                if r.source == smix_capsule::runner::SwitchSource::Env {
                     eprintln!(
                         "warning: {env_name} is deprecated; use .smix/config.yaml switches.{key}"
                     );
@@ -2702,7 +2708,7 @@ fn smix_workspace_root() -> Result<PathBuf, CliError> {
     }
     let cwd = std::env::current_dir()
         .map_err(|e| CliError::Other(format!("cannot determine cwd: {e}")))?;
-    runner::workspace_root(&cwd).ok_or_else(|| {
+    smix_capsule::runner::workspace_root(&cwd).ok_or_else(|| {
         CliError::Other(format!(
             "no .smix/ workspace found upward from {} — cd into the smix \
              workspace or set SMIX_WORKSPACE",
@@ -3349,7 +3355,7 @@ async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
     let verdict = readiness::assess(&readiness::Facts {
         simctl: simctl_facts,
         registry,
-        runner_up: runner::health_ok(port),
+        runner_up: smix_capsule::runner::health_ok(port),
         capture_server_up: capture_server_reachable(),
     });
 
