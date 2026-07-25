@@ -13,9 +13,14 @@ use std::path::{Path, PathBuf};
 /// Persisted handle for the host-side xcodebuild process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunnerState {
+    /// Host-side `xcodebuild` pid. Checked against `ps` before signalling:
+    /// a recorded pid that has been recycled belongs to someone else now.
     pub pid: u32,
+    /// Simulator the session drives.
     pub udid: String,
+    /// Port the runner's HTTP server answers on.
     pub port: u16,
+    /// Where `xcodebuild`'s output is being written.
     pub log: PathBuf,
     /// Target bundle the runner's XCUIApplication is bound to (None =
     /// runner default, com.apple.Preferences).
@@ -133,9 +138,14 @@ fn read_config_yaml(root: &Path) -> Option<serde_json::Value> {
 /// through to the `SMIX_*` env var, then to the default.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct SwitchesConfig {
+    /// Fall back to OCR when the accessibility tree yields nothing.
     pub auto_ocr_fallback: Option<bool>,
+    /// Allow assertions that ask a model to judge the screen.
     pub enable_ai_assertions: Option<bool>,
+    /// Refuse to record a screenshot baseline as a side effect of a
+    /// comparison that found none.
     pub assert_screenshot_no_autorecord: Option<bool>,
+    /// Reinstall the app on `launchFresh` rather than clearing its data.
     pub launch_fresh_force_reinstall: Option<bool>,
 }
 
@@ -184,7 +194,9 @@ pub enum SwitchSource {
 /// A resolved switch: the effective `bool` plus where it came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedSwitch {
+    /// The effective value.
     pub value: bool,
+    /// Which layer supplied it — config, environment, or the default.
     pub source: SwitchSource,
 }
 
@@ -707,7 +719,7 @@ fn installed_runner_project() -> Option<PathBuf> {
 /// Follows XDG basedir when `$XDG_DATA_HOME` is set; falls back to
 /// `~/.local/share/smix/runner/` on macOS + Linux. Returns `None` when
 /// `$HOME` is unset (rare).
-pub(crate) fn installed_runner_dir() -> Option<PathBuf> {
+pub fn installed_runner_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
@@ -716,7 +728,7 @@ pub(crate) fn installed_runner_dir() -> Option<PathBuf> {
 
 /// Outcome of an [`ensure_installed_runner_synced`] call.
 #[derive(Debug)]
-pub(crate) enum SyncOutcome {
+pub enum SyncOutcome {
     /// The on-disk `.smix-runner-version` already matched the CLI
     /// version — no extract performed.
     AlreadyCurrent,
@@ -741,7 +753,7 @@ pub(crate) enum SyncOutcome {
 /// baked into the CLI binary and re-materialise on every `smix runner
 /// up` when the CLI version has moved forward (typically after
 /// `cargo install smix` / `brew upgrade smix`).
-pub(crate) fn ensure_installed_runner_synced(
+pub fn ensure_installed_runner_synced(
     dir: &Path,
 ) -> Result<SyncOutcome, smix_runner_sources::ExtractError> {
     let previous = smix_runner_sources::read_installed_version(dir)?;
@@ -1544,6 +1556,7 @@ pub fn supervise(root: &Path, runner_project: Option<&Path>) -> Result<(), Strin
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)] // env mutation: the thing under test
 mod tests {
     use super::*;
     use std::fs;

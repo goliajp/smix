@@ -20,7 +20,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::runner::{RunnerState, health_ok};
+use smix_capsule::runner::{RunnerState, health_ok};
 
 /// The Kotlin runner's HTTP port, by convention. iOS uses 22087.
 pub const DEFAULT_ANDROID_PORT: u16 = 28080;
@@ -145,8 +145,11 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
     // before: this wrote the same file `runner.rs` wrote, so an Android
     // runner replaced the iOS record — and `let _ =` meant a failed
     // write said nothing at all.
-    if let Err(e) = crate::runner_state::write(root, crate::runner_state::Platform::Android, &state)
-    {
+    if let Err(e) = smix_capsule::runner_state::write(
+        root,
+        smix_capsule::runner_state::Platform::Android,
+        &state,
+    ) {
         eprintln!("runner: {e}");
     }
 
@@ -163,7 +166,9 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
-    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
+    if let Err(e) =
+        smix_capsule::runner_state::clear(root, smix_capsule::runner_state::Platform::Android)
+    {
         eprintln!("runner: {e}");
     }
     Err(format!(
@@ -192,7 +197,9 @@ pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
     let _ = adb(serial)
         .args(["forward", "--remove", &format!("tcp:{port}")])
         .output();
-    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
+    if let Err(e) =
+        smix_capsule::runner_state::clear(root, smix_capsule::runner_state::Platform::Android)
+    {
         eprintln!("runner: {e}");
     }
     println!("runner down: device={serial} port {port} closed");

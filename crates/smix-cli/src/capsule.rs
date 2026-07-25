@@ -140,7 +140,7 @@ pub struct UpOptions<'a> {
     pub bundle: Option<&'a str>,
     pub soft: bool,
     /// Foreground the app instead of relaunching it. See
-    /// [`crate::runner::UpOptions::attach_without_relaunch`].
+    /// [`smix_capsule::runner::UpOptions::attach_without_relaunch`].
     pub no_launch: bool,
     /// True to skip the `/api/capture/start` call (skips the /live HLS
     /// capture pipeline). Use when the scenario itself invokes
@@ -211,13 +211,13 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
     // 5. runner up with record=true. Uses runner-project cascade
     // (repo-side swift-bridge/ or install-shipped ~/.local/share/smix/runner/,
     // whichever exists first). capsule callers don't override.
-    crate::runner::up(
+    smix_capsule::runner::up(
         opts.root,
         opts.udid,
         opts.runner_port,
         opts.bundle,
         None,
-        crate::runner::UpOptions {
+        smix_capsule::runner::UpOptions {
             record_enabled: true,
             attach_without_relaunch: opts.no_launch,
             ..Default::default()
@@ -317,7 +317,7 @@ pub async fn down(root: &Path, udid: &str) -> Result<(), String> {
     };
 
     let mut errors: Vec<String> = Vec::new();
-    if let Err(e) = crate::runner::down(root, state.runner_port) {
+    if let Err(e) = smix_capsule::runner::down(root, state.runner_port) {
         eprintln!("capsule down: runner down failed: {e}");
         errors.push(format!("runner: {e}"));
     }
@@ -356,7 +356,7 @@ pub async fn down(root: &Path, udid: &str) -> Result<(), String> {
 }
 
 /// Bare HTTP POST helper (same hand-written TCP style as
-/// [`crate::runner::health_ok`] — avoids pulling in `reqwest` / `ureq`).
+/// [`smix_capsule::runner::health_ok`] — avoids pulling in `reqwest` / `ureq`).
 /// The returned `Err` string embeds `status=<code>` so callers can
 /// branch on the HTTP status.
 fn post_json(url: &str, body: &str) -> Result<(), String> {
