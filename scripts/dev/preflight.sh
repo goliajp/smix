@@ -132,6 +132,14 @@ python3 scripts/dev/gen-llms.py --check
 python3 scripts/release/stress-select.py --test
 bash scripts/release/stress-gate.sh --selftest
 
+# The Claude Code plugin. Both are device-free and take under a second;
+# what they cover is a plugin that parses perfectly and does nothing —
+# a manifest pointing at a directory that moved, a hook that is not
+# executable, or components filed inside `.claude-plugin/` where they are
+# silently not loaded.
+python3 scripts/dev/plugin-structure.test.py
+bash scripts/dev/plugin-readiness.test.sh
+
 # The device e2e scripts (record/propose/federation) each need a booted
 # sim or emulator, so preflight — device-free and run dozens of times a
 # day — only runs them when SMIX_DEVICE_E2E is set. The glob wires every
