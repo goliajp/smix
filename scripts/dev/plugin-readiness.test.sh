@@ -89,5 +89,31 @@ check "skew names the installed version" "1.0.27" "$OUT"
 check "skew names the expected version" "2.0.0" "$OUT"
 check "skew says what to do" "update" "$OUT"
 
+# 5. The real binaries, because the fakes above encode an assumption.
+#
+# Every case so far hands the hook a stand-in that echoes a version on
+# demand. That is what let this ship believing `smix-mcp --version` worked
+# when the server had no such flag: it answered an empty stdin as a
+# request and printed a JSON-RPC parse error, whose -32700 came out of the
+# old digit filter as "2.032700" — a version manufactured from noise, and
+# a reported mismatch that did not exist. A fake can only ever confirm the
+# shape you already believed.
+REAL_BIN="$ROOT/target/release"
+if [ -x "$REAL_BIN/smix" ] && [ -x "$REAL_BIN/smix-mcp" ]; then
+  REAL_VERSION="$("$REAL_BIN/smix" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  printf '{"name":"smix","version":"%s"}\n' "$REAL_VERSION" \
+    > "$WORK/plugin/.claude-plugin/plugin.json"
+  OUT="$(run_hook "$REAL_BIN:/usr/bin:/bin")"
+  check "the real binaries report ready" "smix $REAL_VERSION ready" "$OUT"
+  case "$OUT" in
+    *mismatch*|*expects*)
+      echo "FAIL: the real pair reported a mismatch against its own version: $OUT" >&2
+      fail=$((fail + 1)) ;;
+    *) pass=$((pass + 1)) ;;
+  esac
+else
+  echo "note: no release build at $REAL_BIN — the real-binary case was skipped" >&2
+fi
+
 printf 'plugin-readiness: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

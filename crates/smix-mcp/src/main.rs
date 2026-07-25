@@ -735,6 +735,22 @@ impl ServerHandler for SmixMcpService {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Answer `--version` before anything else touches stdio.
+    //
+    // Without this, asking the server its version made it treat an empty
+    // stdin as a request and print a JSON-RPC parse error — on stdout, in
+    // a shape whose digits (`-32700`) read as a version number to anything
+    // scraping them. The plugin's readiness hook did exactly that and told
+    // sessions there was a version mismatch that did not exist. A binary
+    // that ships should be able to say what it is.
+    let mut args = std::env::args().skip(1);
+    if let Some(flag) = args.next()
+        && (flag == "--version" || flag == "-V")
+    {
+        println!("smix-mcp {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let port: u16 = std::env::var("SMIX_RUNNER_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
