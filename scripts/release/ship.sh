@@ -187,13 +187,18 @@ python3 "$ROOT/scripts/dev/scope-promise-scan.py" > /tmp/smix-ship-scope.log 2>&
 
 # --- corpus gate (real sim) -------------------------------------------
 # Runs the bootstrap corpus end-to-end on a simulator. Device selection
-# mirrors the smoke: explicit env first, else the first booted sim.
+# is explicit env first, else this repo's own booted dev sim.
+#
+# Not "the first booted sim", which is what it used to be. This machine
+# also runs a consumer's sim, and picking blind meant the release gate
+# could install its runner onto someone else's device and drive it —
+# whichever one simctl happened to list first that day.
 if [[ -z "${SMIX_CORPUS_SIM:-}" ]]; then
-  SMIX_CORPUS_SIM="$(xcrun simctl list devices booted -j 2>/dev/null \
-    | jq -r '[.devices | to_entries[] | .value[]] | .[0].udid // empty')"
+  SMIX_CORPUS_SIM="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" \
+    || fail "corpus gate needs SMIX_CORPUS_SIM (no unambiguous dev sim booted)"
 fi
 [[ -n "$SMIX_CORPUS_SIM" ]] \
-  || fail "corpus gate needs SMIX_CORPUS_SIM or a booted sim"
+  || fail "corpus gate needs SMIX_CORPUS_SIM or a booted dev sim"
 # Build the workspace's own smix release for the gate — a global `smix` on
 # PATH is whatever version was installed some other day, and a mismatch
 # between it and the runner sources this workspace ships is exactly how a
