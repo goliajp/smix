@@ -34,11 +34,13 @@ command -v jq >/dev/null || fail "jq required for smoke output introspection"
 command -v xcrun >/dev/null || fail "xcrun required"
 
 if [[ -z "$SMOKE_UDID" ]]; then
-  # Fallback: pick the first booted sim.
-  SMOKE_UDID="$(xcrun simctl list devices booted -j 2>/dev/null \
-    | jq -r '[.devices | to_entries[] | .value[]] | .[0].udid // empty')"
+  # Fallback: this repo's own booted sim. Not the first booted one —
+  # a machine that also has a consumer's sim up would hand the smoke
+  # someone else's device to install a runner onto.
+  SMOKE_UDID="$(bash "$(dirname "$0")/../dev/pick-dev-sim.sh")" \
+    || fail "no SMOKE_UDID env and no unambiguous dev sim booted"
 fi
-[[ -n "$SMOKE_UDID" ]] || fail "no SMOKE_UDID env and no booted sim to pick"
+[[ -n "$SMOKE_UDID" ]] || fail "no SMOKE_UDID env and no booted dev sim to pick"
 
 log "sim UDID:       $SMOKE_UDID"
 log "target bundle:  $SMOKE_BUNDLE"
