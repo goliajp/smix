@@ -485,6 +485,91 @@ fn pid_command(pid: u32) -> Option<String> {
     if cmd.is_empty() { None } else { Some(cmd) }
 }
 
+/// The simulator UDID a runner-app process belongs to, read off its
+/// executable path.
+///
+/// A runner app lives under
+/// `…/CoreSimulator/Devices/<UDID>/data/Containers/Bundle/…`, so the
+/// path is what ties a listening socket back to a sim. The process
+/// holding the port is the runner app inside the simulator, not the
+/// `xcodebuild` that started the session, and the two are not related by
+/// parentage — the app is a child of the sim's own launchd. The path is
+/// the link between them.
+fn udid_from_device_path(cmd: &str) -> Option<String> {
+    let rest = cmd.split("/Devices/").nth(1)?;
+    let udid = rest.split('/').next()?;
+    // A UDID is 8-4-4-4-12 hex. Anything else under Devices/ is not one,
+    // and guessing would hand a sweep the wrong sim.
+    let shape: Vec<usize> = udid.split('-').map(str::len).collect();
+    let hex = udid.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    if shape == [8, 4, 4, 4, 12] && hex {
+        Some(udid.to_string())
+    } else {
+        None
+    }
+}
+
+/// Whether a command line is an `xcodebuild` session driving `udid`.
+///
+/// `runner_up` puts the sim in `-destination platform=iOS Simulator,
+/// id=<UDID>`, which is the only place the session names its device —
+/// the port arrives as an environment variable, and macOS does not let
+/// one process read another's environment.
+fn xcodebuild_drives_udid(cmd: &str, udid: &str) -> bool {
+    cmd.contains("xcodebuild") && cmd.contains(&format!("id={udid}"))
+}
+
+/// PIDs listening on `port`, as reported by `lsof`.
+fn listener_pids(port: u16) -> Vec<u32> {
+    let Ok(out) = std::process::Command::new("lsof")
+        .args(["-nP", "-t", &format!("-iTCP:{port}"), "-sTCP:LISTEN"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.trim().parse().ok())
+        .collect()
+}
+
+/// PIDs of `xcodebuild` runner sessions driving the sim that holds
+/// `port`, with no state handle of our own to go on.
+///
+/// This used to be `pkill -f "xcodebuild.*SmixRunner"`, which matches on
+/// the process name and so reached every runner on the machine. `smix`
+/// supports several at once — `--parallel` and federation both depend on
+/// it — and a teardown pinned to one port killed a resident runner on
+/// another, belonging to someone else.
+///
+/// A session that is not answering on this port is not found here, and
+/// that is the trade: an unrecorded, wedged runner now has to be stopped
+/// by hand rather than by a sweep that could not tell whose it was.
+fn unrecorded_sessions_on(port: u16) -> Vec<u32> {
+    let udids: Vec<String> = listener_pids(port)
+        .into_iter()
+        .filter_map(pid_command)
+        .filter_map(|cmd| udid_from_device_path(&cmd))
+        .collect();
+    if udids.is_empty() {
+        return Vec::new();
+    }
+    let Ok(out) = std::process::Command::new("pgrep")
+        .args(["-f", "xcodebuild.*SmixRunner"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.trim().parse::<u32>().ok())
+        .filter(|pid| {
+            pid_command(*pid)
+                .is_some_and(|cmd| udids.iter().any(|u| xcodebuild_drives_udid(&cmd, u)))
+        })
+        .collect()
+}
+
 fn signal(pid: u32, sig: &str) {
     let _ = std::process::Command::new("kill")
         .args([sig, &pid.to_string()])
@@ -1049,14 +1134,11 @@ pub fn down(root: &Path, port: u16) -> Result<(), String> {
         clear_state(root);
     }
 
-    // Fallback: sessions started outside `smix runner up` (no handle).
-    let swept = std::process::Command::new("pkill")
-        .args(["-INT", "-f", "xcodebuild.*SmixRunner"])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if swept {
-        println!("swept unrecorded xcodebuild SmixRunner session(s)");
+    // Fallback: sessions started outside `smix runner up` (no handle),
+    // narrowed to whoever actually holds this port.
+    for pid in unrecorded_sessions_on(port) {
+        println!("stopping unrecorded runner session on port {port}: pid={pid}");
+        signal(pid, "-INT");
         acted = true;
     }
 
@@ -1740,5 +1822,50 @@ mod tests {
         let _ = fs::remove_dir_all(&outside);
         fs::create_dir_all(&outside).unwrap();
         assert!(workspace_root(&outside).is_none());
+    }
+
+    // --- port-scoped sweep -------------------------------------------
+
+    const RUNNER_APP_CMD: &str = "/Users/x/Library/Developer/CoreSimulator/Devices/\
+5D087114-ECB3-443C-8DDB-40EEF9CFB90C/data/Containers/Bundle/Application/\
+DAD42368-FF61-4237-9205-8C3E041D89A7/SmixRunnerUITests-Runner.app/SmixRunnerUITests-Runner";
+
+    #[test]
+    fn udid_read_off_the_runner_app_path() {
+        assert_eq!(
+            udid_from_device_path(RUNNER_APP_CMD).as_deref(),
+            Some("5D087114-ECB3-443C-8DDB-40EEF9CFB90C")
+        );
+    }
+
+    #[test]
+    fn udid_absent_when_the_path_is_not_under_a_device() {
+        assert_eq!(
+            udid_from_device_path("/usr/bin/some-server --port 22087"),
+            None
+        );
+        assert_eq!(udid_from_device_path(""), None);
+    }
+
+    #[test]
+    fn xcodebuild_session_matched_by_the_sim_it_drives() {
+        let cmd = format!(
+            "/usr/bin/xcodebuild test -project /r/SmixRunner.xcodeproj -scheme SmixRunner \
+             -destination platform=iOS Simulator,id={UDID}"
+        );
+        assert!(xcodebuild_drives_udid(&cmd, UDID));
+        assert!(!xcodebuild_drives_udid(
+            &cmd,
+            "FFC57DAE-4B26-4B0C-9FAD-4F5735C0C2B1"
+        ));
+    }
+
+    #[test]
+    fn a_non_xcodebuild_process_is_never_a_runner_session() {
+        // Something else mentioning the same sim must not be swept: the
+        // whole point of scoping is that we only ever stop our own
+        // xcodebuild sessions.
+        let cmd = format!("/usr/bin/log stream --predicate device == '{UDID}'");
+        assert!(!xcodebuild_drives_udid(&cmd, UDID));
     }
 }
