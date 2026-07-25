@@ -110,14 +110,20 @@ pub struct ScreenDescription {
 /// pre-order), projecting each via [`summarize_node`]. Default limit = 1000.
 ///
 /// Anonymous layout scaffolding is skipped — see [`has_identity`].
+///
+/// "Visible" here means what the resolver means by it: Apple's flag *and*
+/// [`is_visible_enough`]. Filtering on the flag alone let a node with zero
+/// bounds be listed as visible in the same failure message that said the
+/// selector matching it was not visible — one message, two definitions,
+/// and the reader left to guess which one the tool believed.
 #[must_use]
 pub fn collect_visible_summaries(tree: &A11yNode, limit: usize) -> Vec<ElementSummary> {
     let mut out: Vec<ElementSummary> = Vec::new();
-    fn walk(n: &A11yNode, limit: usize, out: &mut Vec<ElementSummary>) {
+    fn walk(n: &A11yNode, root: &A11yNode, limit: usize, out: &mut Vec<ElementSummary>) {
         if out.len() >= limit {
             return;
         }
-        if n.enabled && n.visible {
+        if n.enabled && n.visible && is_visible_enough(n, root) {
             let s = summarize_node(n);
             if has_identity(&s) {
                 out.push(s);
@@ -127,10 +133,10 @@ pub fn collect_visible_summaries(tree: &A11yNode, limit: usize) -> Vec<ElementSu
             if out.len() >= limit {
                 return;
             }
-            walk(c, limit, out);
+            walk(c, root, limit, out);
         }
     }
-    walk(tree, limit, &mut out);
+    walk(tree, tree, limit, &mut out);
     out
 }
 

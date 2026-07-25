@@ -23,7 +23,10 @@ Designed for LLM-authored test flows:
 Pick the SDK that matches your test harness. All ship the same wire-level primitives.
 
 ```bash
-# Rust CLI + SDK
+# CLI + MCP server, prebuilt — no Rust toolchain needed
+npm install -g @goliapkg/smix-cli
+
+# Rust CLI + SDK, from source
 cargo install smix-cli --locked
 
 # Swift Package Manager
@@ -32,7 +35,7 @@ cargo install smix-cli --locked
 # Gradle / Maven (Kotlin / Java)
 # implementation("jp.golia.smix:smix-sdk:2.0.0")
 
-# TypeScript / Node / Bun (typed surface; driving transport in progress)
+# TypeScript / Node / Bun (drives a simulator through the native addon)
 npm install @goliapkg/smix
 ```
 
@@ -43,12 +46,14 @@ Prerequisites: macOS with Xcode + Simulator (iOS testing); Android SDK with an e
 Register a simulator under an alias, boot it, start the runner, run a YAML flow:
 
 ```bash
-smix sim list                                  # find the UDID
-smix sim register dev --udid <UDID>            # creates the .smix/ registry
-smix sim boot dev
-smix runner up dev --bundle com.example.app
+smix doctor                                    # says what is missing, and the command for it
+smix init --device <UDID> --app ./MyApp.app    # registers the sim, installs the app
+smix capsule up dev --bundle <your.bundle.id>  # boots it and starts the runner
 smix run examples/hello.yaml --device dev
 ```
+
+`smix doctor` prints the next command at every point along that sequence, so
+the order above is what it walks you through rather than something to memorise.
 
 Equivalent Rust SDK:
 

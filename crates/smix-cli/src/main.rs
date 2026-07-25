@@ -128,6 +128,11 @@ enum Cmd {
         /// available — init does not choose between devices.
         #[arg(long)]
         device: Option<String>,
+        /// Path to the `.app` bundle to install on it. The device is
+        /// booted first: `simctl install` refuses a shut-down device, and
+        /// a freshly registered one is shut down.
+        #[arg(long)]
+        app: Option<PathBuf>,
     },
     /// Say whether this machine can drive anything yet, and if not, what
     /// to run next. `--json` for the same verdict in machine form.
@@ -782,6 +787,12 @@ enum AuthoringAction {
         /// port already names the runner.
         #[arg(long)]
         device: Option<String>,
+        /// Bundle id to write into the recorded flow. Without it the
+        /// scaffold names a placeholder, and a flow naming an app that
+        /// does not exist fails at its first step — so a recording could
+        /// not be run back without an edit.
+        #[arg(long)]
+        app_id: Option<String>,
     },
 }
 
@@ -1174,7 +1185,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
 
     let simctl = SimctlClient::new();
     match cli.cmd {
-        Cmd::Init { alias, device } => cmd_init(&simctl, &alias, device.as_deref()).await?,
+        Cmd::Init { alias, device, app } => {
+            cmd_init(&simctl, &alias, device.as_deref(), app.as_deref()).await?
+        }
         Cmd::Doctor { json } => cmd_doctor(&simctl, json).await?,
         Cmd::Bench {
             update_baseline,
@@ -2291,12 +2304,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 interval_ms,
                 port,
                 device,
+                app_id,
             } => {
                 return authoring::cmd_record_session(
                     runner_dial_port(port, device.as_deref()),
                     duration_secs,
                     interval_ms,
                     output,
+                    app_id,
                 )
                 .await;
             }
@@ -3170,6 +3185,7 @@ async fn cmd_init(
     simctl: &SimctlClient,
     alias: &str,
     device: Option<&str>,
+    app: Option<&Path>,
 ) -> Result<(), CliError> {
     let devices = simctl.list_devices().await?;
     let candidates: Vec<init::Candidate> = devices
@@ -3221,13 +3237,81 @@ async fn cmd_init(
         plan.udid,
         path.display()
     );
+
+    // Registering a device is half of what someone arrives with; the other
+    // half is an app. Installing it here is what lets the next command
+    // carry a real bundle id instead of a placeholder to fill in.
+    let bundle = match app {
+        Some(app_path) => {
+            // simctl refuses to install on a shut-down device, and a device
+            // that was just registered is shut down. Booting is part of
+            // installing here, not a step to leave someone to discover from
+            // a raw CoreSimulator error code.
+            if let Err(e) = simctl.boot(&plan.udid).await
+                && !e.to_string().contains("current state: Booted")
+            {
+                return Err(CliError::Other(format!("boot {}: {e}", plan.udid)));
+            }
+            let id = bundle_id_of(app_path)?;
+            simctl
+                .install(&plan.udid, &app_path.display().to_string())
+                .await
+                .map_err(|e| CliError::Other(format!("install {}: {e}", app_path.display())))?;
+            println!("installed {} ({id})", app_path.display());
+            Some(id)
+        }
+        None => None,
+    };
+
     println!();
-    println!(
-        "next: smix capsule up {} --bundle <your.bundle.id>",
-        plan.alias
-    );
+    match bundle {
+        Some(id) => println!("next: smix capsule up {} --bundle {id}", plan.alias),
+        None => println!(
+            "next: smix capsule up {} --bundle <your.bundle.id>",
+            plan.alias
+        ),
+    }
     println!("      boots the device and starts the runner that carries every tap and query");
     Ok(())
+}
+
+/// The bundle id declared by an `.app`.
+///
+/// Read rather than asked for: it is already inside the bundle, and making
+/// someone supply it is asking them to retype something they have no
+/// reason to know by heart.
+fn bundle_id_of(app: &Path) -> Result<String, CliError> {
+    let plist = app.join("Info.plist");
+    if !plist.exists() {
+        return Err(CliError::Other(format!(
+            "{} has no Info.plist — is it an .app bundle?",
+            app.display()
+        )));
+    }
+    let out = std::process::Command::new("plutil")
+        .args(["-extract", "CFBundleIdentifier", "raw", "-o", "-"])
+        .arg(&plist)
+        .output()
+        .map_err(|e| CliError::Other(format!("plutil: {e}")))?;
+    if !out.status.success() {
+        return Err(CliError::Other(format!(
+            "{} declares no CFBundleIdentifier",
+            plist.display()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Whether the capture server is answering on its default endpoint.
+///
+/// A plain TCP connect: `capsule up` only needs the process to be there,
+/// and asking for a health route would couple doctor to a surface that is
+/// not this module's business.
+fn capture_server_reachable() -> bool {
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+    let addr: SocketAddr = ([127, 0, 0, 1], 8787).into();
+    TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
 async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
@@ -3266,6 +3350,7 @@ async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
         simctl: simctl_facts,
         registry,
         runner_up: runner::health_ok(port),
+        capture_server_up: capture_server_reachable(),
     });
 
     if json {

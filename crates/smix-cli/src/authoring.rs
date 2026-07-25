@@ -312,6 +312,7 @@ pub async fn cmd_record_session(
     duration_secs: u64,
     interval_ms: u64,
     output: PathBuf,
+    app_id: Option<String>,
 ) -> Result<ExitCode, CliError> {
     let end = std::time::Instant::now() + std::time::Duration::from_secs(duration_secs);
     let mut samples: Vec<A11yNode> = Vec::new();
@@ -330,17 +331,30 @@ pub async fn cmd_record_session(
     let n_samples = samples.len();
     for s in &samples {
         let mut seen = std::collections::BTreeSet::new();
-        walk_tree(s, &mut |node| {
-            if let Some(id) = &node.identifier
-                && seen.insert(id.clone())
-            {
-                *stable_ids.entry(id.clone()).or_insert(0) += 1;
-            }
-        });
+        // Children only: the root of the tree is the application element,
+        // and `assertVisible` on it is not a test of anything the app
+        // does. It also does not pass — the resolver judges visibility by
+        // geometry, and the application element reports none — so every
+        // recording carried one step that could not run.
+        for child in &s.children {
+            walk_tree(child, &mut |node| {
+                if let Some(id) = &node.identifier
+                    && seen.insert(id.clone())
+                {
+                    *stable_ids.entry(id.clone()).or_insert(0) += 1;
+                }
+            });
+        }
     }
     let mut yaml = String::new();
     yaml.push_str("# auto-generated session recording\n");
-    yaml.push_str("appId: com.example    # update to your app\n");
+    // Without an app id the scaffold names a placeholder, and a flow that
+    // names an app that does not exist fails at its first step — so what
+    // came out of a recording could not be run back without an edit.
+    match &app_id {
+        Some(id) => yaml.push_str(&format!("appId: {id}\n")),
+        None => yaml.push_str("appId: com.example    # update to your app\n"),
+    }
     yaml.push_str("---\n");
     for (id, count) in &stable_ids {
         if *count >= n_samples * 3 / 4 {

@@ -23,6 +23,13 @@ pub struct Facts {
     pub registry: Option<RegistryFacts>,
     /// Whether something is already answering on the runner port.
     pub runner_up: bool,
+    /// Whether the capture server is answering.
+    ///
+    /// `capsule up` records the session by default and fails outright when
+    /// this process is absent — so on a machine without it, the obvious
+    /// next command does not work, and a readiness oracle that suggested it
+    /// anyway would be sending people into that wall.
+    pub capture_server_up: bool,
 }
 
 /// What simctl reported.
@@ -206,10 +213,24 @@ pub fn assess(facts: &Facts) -> Readiness {
             status: Status::Blocked,
             detail: "no runner answering — sense and act need one on the device".into(),
         });
+        // Capture is on by default and needs a separate smix-server. Suggest
+        // the invocation that works on THIS machine rather than the one that
+        // works on a machine with more running on it.
+        let (flags, note) = if facts.capture_server_up {
+            ("", "")
+        } else {
+            (
+                " --no-capture",
+                " (--no-capture because the capture server is not running; \
+                 start smix-server first to record the session)",
+            )
+        };
         return blocked(
             checks,
-            format!("smix capsule up {alias} --bundle <your.bundle.id>"),
-            "boots the device and starts the runner that carries every tap and query",
+            format!("smix capsule up {alias} --bundle <your.bundle.id>{flags}"),
+            format!(
+                "boots the device and starts the runner that carries every tap and query{note}"
+            ),
             0,
         );
     }
@@ -273,6 +294,7 @@ mod tests {
             simctl: Some(simctl_ok()),
             registry: None,
             runner_up: false,
+            capture_server_up: false,
         });
         assert!(!r.ready);
         let next = r
@@ -295,6 +317,7 @@ mod tests {
                 first_alias: Some("dev".into()),
             }),
             runner_up: false,
+            capture_server_up: false,
         });
         assert!(!r.ready);
         let next = r.next.expect("still blocked on the runner");
@@ -314,6 +337,7 @@ mod tests {
             simctl: None,
             registry: None,
             runner_up: false,
+            capture_server_up: false,
         });
         let next = r.next.expect("blocked");
         assert!(
@@ -338,6 +362,7 @@ mod tests {
                 first_alias: Some("dev".into()),
             }),
             runner_up: true,
+            capture_server_up: true,
         });
         assert!(r.ready);
         assert!(r.next.is_none(), "a ready machine has no next command");
@@ -355,6 +380,7 @@ mod tests {
                 first_alias: None,
             }),
             runner_up: false,
+            capture_server_up: false,
         });
         assert_eq!(r.next.expect("blocked").command, "smix init");
     }
@@ -365,12 +391,42 @@ mod tests {
             simctl: Some(simctl_ok()),
             registry: None,
             runner_up: false,
+            capture_server_up: false,
         });
         let v: serde_json::Value = serde_json::to_value(&r).expect("serialize");
         assert_eq!(v["ready"], serde_json::Value::Bool(false));
         assert_eq!(v["next"]["command"], "smix init");
         assert_eq!(v["checks"][0]["id"], "simctl");
         assert_eq!(v["checks"][0]["status"], "ok");
+    }
+
+    #[test]
+    fn the_suggested_command_works_on_the_machine_it_is_suggested_on() {
+        // capsule up records by default and dies when the capture server is
+        // absent. Suggesting the bare form on such a machine hands someone a
+        // command that fails, which is worse than saying nothing.
+        let without = assess(&Facts {
+            simctl: Some(simctl_ok()),
+            registry: Some(RegistryFacts {
+                aliases: 1,
+                first_alias: Some("dev".into()),
+            }),
+            runner_up: false,
+            capture_server_up: false,
+        });
+        let cmd = without.next.expect("blocked").command;
+        assert!(cmd.contains("--no-capture"), "got: {cmd}");
+
+        let with = assess(&Facts {
+            simctl: Some(simctl_ok()),
+            registry: Some(RegistryFacts {
+                aliases: 1,
+                first_alias: Some("dev".into()),
+            }),
+            runner_up: false,
+            capture_server_up: true,
+        });
+        assert!(!with.next.expect("blocked").command.contains("--no-capture"));
     }
 
     #[test]
