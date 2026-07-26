@@ -2,7 +2,39 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [2.1.0] — Unreleased
+## [2.2.0] — Unreleased
+
+### Changed
+
+- **The embedded store moves to kevy 4.** A data directory written by an
+  earlier smix opens with no migration step, and the AOF rewrites itself
+  into kevy 4's checksummed format the first time it compacts. **That
+  rewrite is one-way**: after it happens, the directory can no longer be
+  opened by a smix built against kevy 3. Nothing in the smix API changes,
+  and the store holds the same things it always did — the device
+  registry, runner handles, and the server's stream sessions. What the
+  upgrade buys is per-record checksums on the durable log, and an engine
+  whose global state now lives in the instance, which is the shape smix
+  already relies on when it runs several runners at once.
+- **Store failures carry kevy's own error rather than a flattened
+  string.** `StoreError::Open` and `StoreError::Op` hold a
+  `kevy_embedded::KevyError`, so a caller can still tell an I/O failure
+  from a missing key from an engine refusal. This is a breaking change
+  for anyone matching on those fields; nothing in the CLI or the SDKs
+  exposes them.
+
+### Fixed
+
+- **`smix-mcp` answers `--version`.** Asked for its version, the MCP
+  server treated an empty stdin as a request and printed a JSON-RPC parse
+  error on stdout — and the plugin's readiness hook filtered that output
+  down to digits, produced "2.032700" out of the `-32700` error code, and
+  told every session there was a version mismatch with the plugin. The
+  server now answers before anything touches stdio, and the hook matches a
+  version shape instead of inventing one from whatever it was handed. When
+  a binary is present but says nothing recognisable, it says exactly that.
+
+## [2.1.0] — 2026-07-26
 
 smix installs without a Rust toolchain, tells you what to run next, and
 ships as a Claude Code plugin. Two loops are closed and tested apart: what

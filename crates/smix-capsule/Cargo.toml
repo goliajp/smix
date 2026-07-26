@@ -1,6 +1,6 @@
 [package]
 name = "smix-capsule"
-version = "2.1.0"
+version = "2.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -9,10 +9,10 @@ homepage.workspace = true
 description = "Runner lifecycle for smix: bring an XCUITest runner up on a simulator, watch it, take it down."
 
 [dependencies]
-smix-runner-client = { path = "../smix-runner-client", version = "2.1.0" }
-smix-runner-sources = { path = "../smix-runner-sources", version = "2.1.0" }
-smix-store = { path = "../smix-store", version = "2.1.0" }
-smix-runner-wire = { path = "../smix-runner-wire", version = "2.1.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "2.2.0" }
+smix-runner-sources = { path = "../smix-runner-sources", version = "2.2.0" }
+smix-store = { path = "../smix-store", version = "2.2.0" }
+smix-runner-wire = { path = "../smix-runner-wire", version = "2.2.0" }
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true
