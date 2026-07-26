@@ -59,6 +59,15 @@ pub enum StoreError {
         /// The directory smix tried to persist into.
         path: PathBuf,
         /// The underlying failure.
+        ///
+        /// Deliberately `io::Error` and not kevy 4's `KevyError`, even
+        /// though the engine now returns its own type. This variant also
+        /// carries smix's own filesystem failures — the lock file, the
+        /// directory — and making them wear an engine error would be a
+        /// lie about where they came from. Nothing in or out of this
+        /// workspace matches on the cause, so the structure would buy
+        /// nothing while breaking this crate's published API; the
+        /// engine's message text survives the conversion intact.
         #[source]
         source: std::io::Error,
     },
@@ -69,7 +78,8 @@ pub enum StoreError {
         op: &'static str,
         /// The full key, prefix included.
         key: String,
-        /// The underlying failure.
+        /// The underlying failure. See `Open` for why this is
+        /// `io::Error` rather than the engine's own type.
         #[source]
         source: std::io::Error,
     },
@@ -161,7 +171,7 @@ impl Store {
         let inner = KevyStore::open(Config::default().with_persist(&dir)).map_err(|source| {
             StoreError::Open {
                 path: dir.clone(),
-                source,
+                source: std::io::Error::other(source),
             }
         })?;
         Ok(Store {
@@ -205,7 +215,7 @@ impl Store {
         let inner = KevyStore::open(Config::default().with_persist(&dir)).map_err(|source| {
             StoreError::Open {
                 path: dir.clone(),
-                source,
+                source: std::io::Error::other(source),
             }
         })?;
         Ok(Some(Store {
@@ -237,7 +247,7 @@ impl Store {
         self.inner.fsync_aof().map_err(|source| StoreError::Op {
             op: "sync",
             key: "<aof>".to_string(),
-            source,
+            source: std::io::Error::other(source),
         })
     }
 
@@ -283,7 +293,7 @@ impl Store {
                 .map_err(|source| StoreError::Op {
                     op: "dump",
                     key: key.clone(),
-                    source,
+                    source: std::io::Error::other(source),
                 })?;
             let value = match raw {
                 None => serde_json::Value::Null,
@@ -389,7 +399,7 @@ impl Namespace<'_> {
             .map_err(|source| StoreError::Op {
                 op: "get",
                 key,
-                source,
+                source: std::io::Error::other(source),
             })
     }
 
@@ -403,7 +413,7 @@ impl Namespace<'_> {
             .map_err(|source| StoreError::Op {
                 op: "put",
                 key,
-                source,
+                source: std::io::Error::other(source),
             })
     }
 
@@ -417,7 +427,7 @@ impl Namespace<'_> {
             .map_err(|source| StoreError::Op {
                 op: "delete",
                 key,
-                source,
+                source: std::io::Error::other(source),
             })
     }
 
@@ -494,7 +504,7 @@ impl Singleton<'_> {
             .map_err(|source| StoreError::Op {
                 op: "get",
                 key: key.clone(),
-                source,
+                source: std::io::Error::other(source),
             })?;
         let Some(bytes) = raw else {
             return Ok(None);
@@ -523,7 +533,7 @@ impl Singleton<'_> {
             .map_err(|source| StoreError::Op {
                 op: "put",
                 key,
-                source,
+                source: std::io::Error::other(source),
             })
     }
 
@@ -537,7 +547,7 @@ impl Singleton<'_> {
             .map_err(|source| StoreError::Op {
                 op: "delete",
                 key,
-                source,
+                source: std::io::Error::other(source),
             })
     }
 }
@@ -563,7 +573,7 @@ impl Set<'_> {
             .map_err(|source| StoreError::Op {
                 op: "sadd",
                 key,
-                source,
+                source: std::io::Error::other(source),
             })
     }
 
@@ -577,7 +587,7 @@ impl Set<'_> {
             .map_err(|source| StoreError::Op {
                 op: "srem",
                 key,
-                source,
+                source: std::io::Error::other(source),
             })
     }
 
@@ -592,7 +602,7 @@ impl Set<'_> {
             .map_err(|source| StoreError::Op {
                 op: "smembers",
                 key,
-                source,
+                source: std::io::Error::other(source),
             })?;
         Ok(raw
             .into_iter()
