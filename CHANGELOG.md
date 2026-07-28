@@ -7,10 +7,20 @@ All notable changes to the `smix` workspace are documented here. The format foll
 ### Changed
 
 - **The embedded store moves to kevy 4.** A data directory written by an
-  earlier smix opens with no migration step, and the AOF rewrites itself
-  into kevy 4's checksummed format the first time it compacts. **That
-  rewrite is one-way**: after it happens, the directory can no longer be
-  opened by a smix built against kevy 3. Nothing in the smix API changes,
+  earlier smix opens with no migration step. The AOF's record format is
+  new in kevy 4, and it upgrades lazily rather than at open: an existing
+  log keeps appending in the old format until something rewrites it, and
+  **that rewrite is one-way** — afterwards the directory can no longer be
+  opened by a smix built against kevy 3.
+
+  So there is a window in which downgrading is still just installing the
+  older smix, and it closes the first time the log compacts. Two things
+  worth knowing about that window, both honest limitations rather than
+  advice: smix does not expose kevy's rewrite policy, so you cannot hold
+  the window open; and smix cannot currently tell you which side of it
+  you are on, because the engine does not expose the format to embedders.
+  If keeping a downgrade path matters more than the upgrade, copy the
+  directory before running 2.2.0. Nothing in the smix API changes,
   and the store holds the same things it always did — the device
   registry, runner handles, and the server's stream sessions. What the
   upgrade buys is per-record checksums on the durable log, and an engine
