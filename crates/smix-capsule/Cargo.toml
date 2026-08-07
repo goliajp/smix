@@ -9,6 +9,9 @@ homepage.workspace = true
 description = "Runner lifecycle for smix: bring an XCUITest runner up on a simulator, watch it, take it down."
 
 [dependencies]
+thiserror.workspace = true
+smix-usbmux = { path = "../smix-usbmux", version = "2.2.0" }
+smix-lease = { path = "../smix-lease", version = "2.2.0" }
 smix-runner-client = { path = "../smix-runner-client", version = "2.2.0" }
 smix-runner-sources = { path = "../smix-runner-sources", version = "2.2.0" }
 smix-store = { path = "../smix-store", version = "2.2.0" }

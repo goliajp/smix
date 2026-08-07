@@ -156,6 +156,22 @@ pub struct RecordingHandle {
     pub started_at: std::time::Instant,
 }
 
+impl RecordingHandle {
+    /// Pid of the `simctl io … recordVideo` child.
+    ///
+    /// Needed by anything that must record this process somewhere it will
+    /// outlive us: a recording whose only handle is this struct dies with
+    /// the process holding it, and the mp4 it was writing loses its
+    /// trailer with no one left who knows to send the SIGINT that would
+    /// have saved it.
+    ///
+    /// `None` once the child has been reaped.
+    #[must_use]
+    pub fn pid(&self) -> Option<u32> {
+        self.child.id()
+    }
+}
+
 // -------------------- types ----------------------------------------------
 
 /// One iOS / watchOS / tvOS runtime installed on the host.
@@ -1735,11 +1751,27 @@ impl SimctlClient {
         udid: &str,
         path: &str,
     ) -> Result<RecordingHandle, DeviceControlError> {
+        // Log to a file beside the video, not to pipes.
+        //
+        // Piped output with nobody reading it is a trap that only springs
+        // once the recording has to outlive the process that started it:
+        // when that process exits, the read ends close, and the next line
+        // `simctl` writes kills it with SIGPIPE. The recording then stops
+        // silently, seconds after being reported as started, leaving a
+        // zero-byte file — which is exactly what `smix record start`
+        // produced before this changed.
+        //
+        // A file also keeps `simctl`'s own diagnostics ("No display
+        // specified…", "Recording started") somewhere a person can read
+        // them, which a discarded pipe did not.
+        let log_path = format!("{path}.log");
+        let log = std::fs::File::create(&log_path)?;
+        let log_err = log.try_clone()?;
         let child = tokio::process::Command::new("xcrun")
             .args(["simctl", "io", udid, "recordVideo", path])
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::from(log))
+            .stderr(std::process::Stdio::from(log_err))
             .spawn()?;
         // brief settle for simctl to initialize encoder + open output file.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;

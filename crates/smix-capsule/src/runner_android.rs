@@ -20,7 +20,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use smix_capsule::runner::{RunnerState, health_ok};
+use crate::runner::{RunnerState, health_ok};
 
 /// The Kotlin runner's HTTP port, by convention. iOS uses 22087.
 pub const DEFAULT_ANDROID_PORT: u16 = 28080;
@@ -132,6 +132,7 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
         .spawn()
         .map_err(|e| format!("adb shell am instrument: {e}"))?;
     let pid = child.id();
+    record_android_lease(root, serial, port, pid);
 
     let state = RunnerState {
         pid,
@@ -145,11 +146,8 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
     // before: this wrote the same file `runner.rs` wrote, so an Android
     // runner replaced the iOS record — and `let _ =` meant a failed
     // write said nothing at all.
-    if let Err(e) = smix_capsule::runner_state::write(
-        root,
-        smix_capsule::runner_state::Platform::Android,
-        &state,
-    ) {
+    if let Err(e) = crate::runner_state::write(root, crate::runner_state::Platform::Android, &state)
+    {
         eprintln!("runner: {e}");
     }
 
@@ -166,9 +164,7 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
-    if let Err(e) =
-        smix_capsule::runner_state::clear(root, smix_capsule::runner_state::Platform::Android)
-    {
+    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
         eprintln!("runner: {e}");
     }
     Err(format!(
@@ -186,7 +182,97 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
     ))
 }
 
-/// Stop the instrumentation and drop the port forward.
+/// Record this runner in the device's ledger.
+///
+/// The host-side process outlives `runner up`, and what it leaves on the
+/// device outlives the host-side process. A row is what lets a later
+/// command find both and end them in the right order.
+fn record_android_lease(root: &Path, serial: &str, port: u16, pid: u32) {
+    use smix_lease::store;
+    let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
+        pid,
+        started_at: String::new(),
+        cmd: format!("instrumentation runner on {serial}"),
+    });
+    if let Err(e) = store::add_resource(
+        root,
+        serial,
+        smix_lease::Resource::AndroidRunner {
+            port,
+            serial: serial.to_string(),
+            proc,
+        },
+    ) {
+        eprintln!("warning: android runner not recorded in the device ledger: {e}");
+    }
+}
+
+/// Is this package present on the device?
+///
+/// `pm list packages <name>` prefix-matches, so the answer is checked
+/// against the exact line rather than "did anything come back".
+fn package_installed(serial: &str, package: &str) -> bool {
+    let Ok(out) = adb(serial)
+        .args(["shell", "pm", "list", "packages", package])
+        .output()
+    else {
+        return false;
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|l| l.trim() == format!("package:{package}"))
+}
+
+/// Remove the instrumentation package this runner installs.
+///
+/// `up` installs a package onto the device and `down` only stops it —
+/// which left smix able to put something on a phone and unable to take
+/// it off. On an emulator that is untidy; on somebody's own device it is
+/// smix leaving its things in a house it was let into.
+///
+/// Stops the instrumentation first: uninstalling a package whose process
+/// is running is a harder ask, and the stop is idempotent.
+pub fn uninstall(serial: &str, port: u16) -> Result<(), String> {
+    let _ = adb(serial)
+        .args(["shell", "am", "force-stop", TEST_PACKAGE])
+        .output();
+    let _ = adb(serial)
+        .args(["forward", "--remove", &format!("tcp:{port}")])
+        .output();
+    // Ask whether it is there before removing it.
+    //
+    // The tempting shortcut is to run the removal and treat its error as
+    // "already gone" — but Android answers a missing package with
+    // `DELETE_FAILED_INTERNAL_ERROR`, the same code a device policy that
+    // genuinely refuses the removal returns. Reading idempotence out of
+    // that string would swallow the real failure. Asking first keeps the
+    // two apart: absent is reported as absent, and a refusal stays a
+    // refusal.
+    if !package_installed(serial, TEST_PACKAGE) {
+        println!("runner uninstall: {TEST_PACKAGE} is not installed on {serial}");
+        return Ok(());
+    }
+    let out = adb(serial)
+        .args(["uninstall", TEST_PACKAGE])
+        .output()
+        .map_err(|e| format!("uninstall {TEST_PACKAGE}: {e}"))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if out.status.success() && !stdout.contains("Failure") {
+        println!("runner uninstall: {TEST_PACKAGE} removed from {serial}");
+        return Ok(());
+    }
+    Err(format!(
+        "adb uninstall {TEST_PACKAGE} failed on {serial}: {}",
+        if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        }
+    ))
+}
+
+/// Stop the instrumentation, drop the port forward, and clear the rows.
 pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
     // `am force-stop` on the instrumentation package is what actually
     // ends the server; killing the host-side adb client would leave the
@@ -197,10 +283,19 @@ pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
     let _ = adb(serial)
         .args(["forward", "--remove", &format!("tcp:{port}")])
         .output();
-    if let Err(e) =
-        smix_capsule::runner_state::clear(root, smix_capsule::runner_state::Platform::Android)
-    {
+    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
         eprintln!("runner: {e}");
+    }
+    if let Err(e) = smix_lease::store::drop_resource_kind(
+        root,
+        serial,
+        &smix_lease::Resource::AndroidRunner {
+            port: 0,
+            serial: String::new(),
+            proc: smix_lease::store::identify_self(),
+        },
+    ) {
+        eprintln!("runner down: lease ledger not updated: {e}");
     }
     println!("runner down: device={serial} port {port} closed");
     Ok(())

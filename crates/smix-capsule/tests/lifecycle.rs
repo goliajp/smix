@@ -46,6 +46,7 @@ fn both_consumers_depend_on_the_lifecycle_crate() {
 fn the_surface_both_consumers_need_is_public() {
     // Compilation is the assertion: a move that left one of these behind
     // in the binary would not build here.
-    let _: fn(&std::path::Path, &str) -> Vec<String> = smix_capsule::xcodebuild_argv;
+    let _: fn(&std::path::Path, &str, smix_capsule::runner::RunnerTarget<'_>) -> Vec<String> =
+        smix_capsule::xcodebuild_argv;
     let _: fn(u16) -> bool = smix_capsule::health_ok;
 }

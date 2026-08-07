@@ -35,7 +35,9 @@ pub use issued_ledger::{IssuedAction, IssuedKind, IssuedLedger};
 // DeviceControl trait + cross-platform Permission enum + iOS impl.
 // Two-trait architecture pair with smix-driver::Driver.
 pub mod device_control;
+pub mod devicectl_device;
 pub mod ios_device;
+pub mod leased;
 pub use device_control::{DeviceControl, Permission};
 pub use ios_device::IosDeviceControl;
 
@@ -772,6 +774,30 @@ pub struct App {
     /// `Some` wins; `None` falls back to the
     /// `SMIX_LAUNCH_FRESH_FORCE_REINSTALL` env read.
     launch_fresh_force_reinstall: Option<bool>,
+    /// Set while this `App` holds the device's lease, so a second process
+    /// cannot run a destructive command against a device this session is
+    /// driving.
+    ///
+    /// Opt-in: an `App` without one behaves exactly as before. Making it
+    /// mandatory would break every published caller, which is a
+    /// major-version change rather than something to slip into a minor.
+    /// What it buys today is that smix's own front doors — the CLI and
+    /// the MCP server — announce their sessions, and so refuse to run
+    /// over each other.
+    lease: Option<LeaseHold>,
+}
+
+/// Proof that an `App` holds a device's lease, and what it needs to give
+/// it back.
+///
+/// Deliberately holds no borrow of the device control: an `App` that
+/// borrowed from its own field would be a self-referential struct. The
+/// admission check happens once, at [`App::hold_device_lease`]; this is
+/// the receipt.
+#[derive(Debug, Clone)]
+struct LeaseHold {
+    root: std::path::PathBuf,
+    device_id: String,
 }
 
 /// How far past the requested hold to keep capturing.
@@ -830,6 +856,7 @@ impl App {
             ledger: IssuedLedger::new(),
             assert_screenshot_strict: None,
             launch_fresh_force_reinstall: None,
+            lease: None,
         }
     }
 
@@ -843,6 +870,7 @@ impl App {
             ledger: IssuedLedger::new(),
             assert_screenshot_strict: None,
             launch_fresh_force_reinstall: None,
+            lease: None,
         }
     }
 
@@ -893,6 +921,69 @@ impl App {
     ///
     /// This is the recommended surface for long-running gates. See the
     /// [`Session`] docs for the lifecycle contract.
+    /// Take the device's lease for the life of this session.
+    ///
+    /// Returns what settling a previous holder's abandoned session
+    /// produced, so the caller can report it rather than have it happen
+    /// invisibly. Empty when the device was already free.
+    ///
+    /// Refuses, naming the holder, while somebody else's session is live.
+    /// That refusal is the whole point: a `smix run` and a
+    /// `smix sim uninstall` aimed at the same device used to proceed side
+    /// by side, and whichever landed second won.
+    ///
+    /// # Errors
+    ///
+    /// [`leased::AdmissionError::InUse`] when another live session holds
+    /// the device; [`leased::AdmissionError::NotSettled`] when a dead
+    /// holder's leftovers could not be closed.
+    pub fn hold_device_lease(
+        &mut self,
+        root: &std::path::Path,
+        device_id: &str,
+        executor: &dyn smix_lease::CleanupExecutor,
+    ) -> Result<Vec<smix_lease::CleanupReport>, leased::AdmissionError> {
+        // The guard lives only for the check. `Leased` borrows the
+        // device control, which this struct owns, so keeping it would
+        // make `App` self-referential; what outlives the block is the
+        // receipt. Releasing is [`Self::release_device_lease`], not a
+        // `Drop` on the guard — so ending the borrow here gives nothing
+        // away.
+        let settled = {
+            let leased = leased::Leased::acquire(self.device.as_ref(), root, device_id, executor)?;
+            leased.settled().to_vec()
+        };
+        self.lease = Some(LeaseHold {
+            root: root.to_path_buf(),
+            device_id: device_id.to_string(),
+        });
+        Ok(settled)
+    }
+
+    /// Whether this `App` currently holds a device lease.
+    #[must_use]
+    pub fn holds_device_lease(&self) -> bool {
+        self.lease.is_some()
+    }
+
+    /// Give the device back.
+    ///
+    /// Idempotent, and safe to skip: an unreleased lease is not a leak,
+    /// because the next process finds it, sees the holder is gone, and
+    /// settles it. Releasing simply makes the device available sooner.
+    ///
+    /// # Errors
+    ///
+    /// Propagates a ledger write failure, which the caller should report
+    /// rather than swallow — the device stays marked as held until it is
+    /// fixed or this process exits.
+    pub fn release_device_lease(&mut self) -> Result<(), smix_lease::store::LeaseError> {
+        let Some(hold) = self.lease.take() else {
+            return Ok(());
+        };
+        smix_lease::store::drop_process_rows(&hold.root, &hold.device_id)
+    }
+
     pub async fn open_session(
         mut self,
         bundle_id: &str,
@@ -982,6 +1073,7 @@ impl App {
             ledger: IssuedLedger::new(),
             assert_screenshot_strict: None,
             launch_fresh_force_reinstall: None,
+            lease: None,
         })
     }
 
@@ -1004,6 +1096,7 @@ impl App {
             ledger: IssuedLedger::new(),
             assert_screenshot_strict: None,
             launch_fresh_force_reinstall: None,
+            lease: None,
         }
     }
 
@@ -1031,6 +1124,7 @@ impl App {
             ledger: IssuedLedger::new(),
             assert_screenshot_strict: None,
             launch_fresh_force_reinstall: None,
+            lease: None,
         })
     }
 

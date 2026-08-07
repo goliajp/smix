@@ -23,6 +23,8 @@ smix-input = { path = "../smix-input", version = "2.2.0" }
 smix-error = { path = "../smix-error", version = "2.2.0" }
 smix-runner-client = { path = "../smix-runner-client", version = "2.2.0" }
 smix-driver = { path = "../smix-driver", version = "2.2.0" }
+thiserror.workspace = true
+smix-lease = { path = "../smix-lease", version = "2.2.0" }
 smix-simctl = { path = "../smix-simctl", version = "2.2.0" }
 smix-adb = { path = "../smix-adb", version = "2.2.0" }
 tokio = { workspace = true, features = ["time", "macros"] }
@@ -38,6 +40,7 @@ async-trait.workspace = true
 png.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 wiremock = "0.6"
 serde_json.workspace = true
 serde_norway.workspace = true
