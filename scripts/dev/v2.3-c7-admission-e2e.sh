@@ -83,44 +83,57 @@ step "3. bring a session up, so the device is genuinely in use"
 LEDGER=".smix/leases/$UDID.json"
 [ -f "$LEDGER" ] || fail "no ledger — runner up did not record the session"
 
-step "4. destructive commands are now refused, and say by whom"
-set +e
-OUT="$("$SMIX" sim keychain-reset "$UDID" 2>&1)"
-RC=$?
-set -e
-[ "$RC" -ne 0 ] || fail "keychain-reset succeeded while a session was live:\n$OUT"
-echo "$OUT" | grep -q "in use by pid" \
-  || fail "refusal does not name the holder: $OUT"
-echo "$OUT" | grep -q "smix lease status" \
-  || fail "refusal gives no next step: $OUT"
-log "refused, holder named"
+step "4. the runner up's own lease is adopted, not a wall"
+# `runner up` exits by design; the runner it leaves is a service the
+# next command drives through. This step asserted the opposite until
+# C21 — refusal — which barred the quickstart's own `runner up` → `run`
+# pairing on every device kind, and was found the first time a full
+# flow ran against a physical phone. The old worry (do not tear down a
+# working runner) is answered by step 5, not by locking everyone out.
+OUT="$("$SMIX" sim keychain-reset "$UDID" 2>&1)" \
+  || fail "keychain-reset was refused after runner up — the lease was not adopted: $OUT"
+log "adopted: a later command proceeds through the runner's lease"
 
-set +e
-OUT="$("$SMIX" sim uninstall "$UDID" "$ABSENT_BUNDLE" 2>&1)"
-RC=$?
-set -e
-[ "$RC" -ne 0 ] || fail "uninstall succeeded while a session was live"
-echo "$OUT" | grep -q "in use by pid" \
-  || fail "uninstall refusal does not name the holder: $OUT"
-# The gate must come first: an absent bundle would fail differently.
-echo "$OUT" | grep -qi "not installed\|No such file" \
-  && fail "the device was touched before the gate ran"
-log "gate runs before the device is touched"
+step "4b. a LIVE holder still refuses everything, and names itself"
+# The real concurrency case. The e2e itself plays the live holder: its
+# own shell pid and true start time go into the ledger, so the identity
+# probe (pid + lstart) passes against a genuinely running process. This
+# is constructing the fact under test, not bypassing the product path —
+# nothing but a second live process can make this fact true.
+LEDGER_BAK="$(cat "$LEDGER")"
+STARTED="$(ps -o lstart= -p $$ | sed 's/^ *//;s/ *$//')"
+python3 - "$LEDGER" "$$" "$STARTED" <<'PYEOF'
+import json, sys
+path, pid, started = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+lease = json.load(open(path))
+lease["holder"] = {"pid": pid, "startedAt": started, "cmd": "c7-admission-e2e (the live holder)"}
+json.dump(lease, open(path, "w"))
+PYEOF
 
-step "4b. 'smix run' is refused too, before it even reads the flow"
-# A run is the longest thing the CLI does to a device. The flow path
-# given here does not exist: if the refusal names the missing file
-# instead of the holder, the gate is running too late to be a gate.
+for attempt in "sim keychain-reset $UDID" "sim uninstall $UDID $ABSENT_BUNDLE"; do
+  set +e
+  # shellcheck disable=SC2086
+  OUT="$("$SMIX" $attempt 2>&1)"
+  RC=$?
+  set -e
+  [ "$RC" -ne 0 ] || fail "'smix $attempt' proceeded past a live holder"
+  echo "$OUT" | grep -q "in use by pid $$" \
+    || fail "refusal does not name the live holder: $OUT"
+done
+# A run is the longest thing the CLI does to a device, and the flow path
+# here does not exist: if the refusal names the missing file instead of
+# the holder, the gate is running too late to be a gate.
 set +e
 OUT="$("$SMIX" run /nonexistent/flow.yaml --device "$UDID" 2>&1)"
 RC=$?
 set -e
-[ "$RC" -ne 0 ] || fail "smix run proceeded while a session was live"
-echo "$OUT" | grep -q "in use by pid" \
-  || fail "run refusal does not name the holder: $OUT"
+[ "$RC" -ne 0 ] || fail "smix run proceeded past a live holder"
+echo "$OUT" | grep -q "in use by pid $$" \
+  || fail "run refusal does not name the live holder: $OUT"
 echo "$OUT" | grep -qi "no such file\|not found" \
   && fail "the flow was read before the gate ran"
-log "run refused, holder named, flow never read"
+printf '%s' "$LEDGER_BAK" > "$LEDGER"
+log "live holder refused all three, by pid; ledger restored"
 
 step "5. the live session is untouched by any of it"
 curl -s -m 3 "http://127.0.0.1:${SMIX_RUNNER_PORT:-22087}/health" >/dev/null 2>&1 \

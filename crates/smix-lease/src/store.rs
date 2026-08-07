@@ -262,6 +262,38 @@ pub fn drop_process_rows(root: &Path, device_id: &str) -> Result<(), LeaseError>
     }
 }
 
+/// Drop the process rows this holder opened, keeping the ones it
+/// inherited.
+///
+/// [`drop_process_rows`] predates adoption, when a freshly acquired
+/// lease was always empty and every process row was therefore the
+/// holder's own. An adopter's lease starts with the previous session's
+/// services in it — a runner, its forwarder — and dropping those rows on
+/// release erased the ledger's memory of processes that were still
+/// running. The forwarder that nothing could find again was exactly
+/// this: alive, serving, and written down nowhere.
+pub fn drop_process_rows_except(
+    root: &Path,
+    device_id: &str,
+    keep: &[Resource],
+) -> Result<(), LeaseError> {
+    let Some(mut lease) = read(root, device_id)? else {
+        return Ok(());
+    };
+    lease
+        .resources
+        .retain(|r| !crate::is_process_backed(r) || keep.contains(r));
+    let worth_keeping = lease
+        .resources
+        .iter()
+        .any(|r| !matches!(r, Resource::Booted { by_us: false }));
+    if worth_keeping {
+        write(root, &lease)
+    } else {
+        remove(root, device_id)
+    }
+}
+
 /// Point the ledger's holder at a different process.
 ///
 /// `smix record start` needs this: the recording outlives the command

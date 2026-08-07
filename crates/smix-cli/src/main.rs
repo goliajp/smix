@@ -2653,6 +2653,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             animations,
                             no_launch,
                             platform: plat,
+                            // The registry knows whether this UDID is a
+                            // phone; the adapter cannot ask it. Without
+                            // this bit, a flow's launchApp went to
+                            // `simctl`, which answers "Invalid device"
+                            // for every physical UDID there is.
+                            physical_ios: udid.as_deref().is_some_and(|u| {
+                                device_kind_of(u) == smix_simctl::registry::DeviceKind::PhysicalIos
+                            }),
                             apps_config: apps_config.clone(),
                             env_vars: env.clone(),
                             debug_output: per_flow_debug.clone(),
@@ -3277,11 +3285,18 @@ where
 struct RunLease {
     root: std::path::PathBuf,
     device_id: String,
+    inherited: Vec<smix_lease::Resource>,
 }
 
 impl Drop for RunLease {
     fn drop(&mut self) {
-        if let Err(e) = smix_lease::store::drop_process_rows(&self.root, &self.device_id) {
+        // Keep what was inherited: an adopted runner and its forwarder
+        // belong to the ledger after this run as much as before it.
+        if let Err(e) = smix_lease::store::drop_process_rows_except(
+            &self.root,
+            &self.device_id,
+            &self.inherited,
+        ) {
             eprintln!(
                 "warning: device lease not released for {}: {e}",
                 self.device_id
@@ -3313,9 +3328,11 @@ fn hold_run_lease(udid: Option<&str>) -> Result<Option<RunLease>, CliError> {
     for report in leased.settled() {
         println!("settled first: {}", report.line);
     }
+    let inherited = leased.inherited().to_vec();
     Ok(Some(RunLease {
         root,
         device_id: udid.to_string(),
+        inherited,
     }))
 }
 

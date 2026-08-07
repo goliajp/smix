@@ -43,6 +43,21 @@ pub enum AdmissionError {
         /// Since when (RFC3339).
         acquired_at: String,
     },
+    /// The previous holder died, and what it left running is not a
+    /// service that can be adopted — a recording, today. Distinct from
+    /// [`AdmissionError::InUse`] because "wait for it to finish" is
+    /// advice about a process, and there is no process to wait for.
+    #[error(
+        "device {device_id}'s last session ({holder_cmd}) is gone, but a recording it \
+         started is still running.\n\
+         Stop it first: smix record stop {device_id}"
+    )]
+    HeldByRemains {
+        /// The device.
+        device_id: String,
+        /// What the dead holder was.
+        holder_cmd: String,
+    },
     /// The previous holder is gone, but settling what it left behind did
     /// not fully succeed. The device is not handed over in that state —
     /// the next holder would inherit a runner still occupying the
@@ -71,6 +86,11 @@ pub struct Leased<'a> {
     /// Carried so the caller can report it rather than have it vanish
     /// into a log nobody reads.
     settled: Vec<CleanupReport>,
+    /// Resource rows that were already in the lease when it was adopted.
+    /// Release keeps these: they stand for processes another session
+    /// started and this one merely used, and dropping their rows would
+    /// erase the ledger's memory of things still running.
+    inherited: Vec<smix_lease::Resource>,
 }
 
 impl<'a> Leased<'a> {
@@ -89,15 +109,46 @@ impl<'a> Leased<'a> {
         executor: &dyn CleanupExecutor,
     ) -> Result<Self, AdmissionError> {
         let facts = store::collect_facts(root, device_id)?;
+        let mut inherited: Vec<smix_lease::Resource> = Vec::new();
         let settled = match smix_lease::assess(&facts) {
             Admission::Granted => Vec::new(),
             Admission::Denied(c) => {
+                // "Wait for pid N" is advice about a process, so it may
+                // only be given about one that exists. A dead holder's
+                // denial is about what it left running — today that is
+                // a recording — and the message has to blame the thing
+                // that is actually there.
+                if !c.holder_alive {
+                    return Err(AdmissionError::HeldByRemains {
+                        device_id: device_id.to_string(),
+                        holder_cmd: c.holder.cmd,
+                    });
+                }
                 return Err(AdmissionError::InUse {
                     device_id: device_id.to_string(),
                     holder_pid: c.holder.pid,
                     holder_cmd: c.holder.cmd,
                     acquired_at: c.acquired_at,
                 });
+            }
+            Admission::Adoptable => {
+                // The holder is gone and everything it left is a
+                // service — most often `runner up`'s own runner, which
+                // exists precisely so the next command can drive
+                // through it. Take the lease over, resources intact:
+                // tearing them down would destroy the thing this
+                // command came to use.
+                store::set_holder(root, device_id, store::identify_self())?;
+                if let Some(held) = &facts.existing {
+                    inherited = held
+                        .lease
+                        .resources
+                        .iter()
+                        .filter(|r| smix_lease::is_process_backed(r))
+                        .cloned()
+                        .collect();
+                }
+                Vec::new()
             }
             Admission::Reclaimable { cleanup, .. } => {
                 let reports = executor.execute(root, &cleanup);
@@ -121,6 +172,7 @@ impl<'a> Leased<'a> {
             device_id: device_id.to_string(),
             root: root.to_path_buf(),
             settled,
+            inherited,
         })
     }
 
@@ -154,7 +206,16 @@ impl<'a> Leased<'a> {
     /// one command finished with it. Dropping it here would lose the
     /// right to shut down a device smix itself turned on.
     pub fn release(self) -> Result<(), store::LeaseError> {
-        store::drop_process_rows(&self.root, &self.device_id)
+        store::drop_process_rows_except(&self.root, &self.device_id, &self.inherited)
+    }
+
+    /// The rows this lease was adopted with — processes another session
+    /// started and this one merely used. A caller managing its own
+    /// release (the CLI's run lease does) needs the same list, or its
+    /// drop erases them.
+    #[must_use]
+    pub fn inherited(&self) -> &[smix_lease::Resource] {
+        &self.inherited
     }
 
     // === Device level ===
@@ -731,6 +792,56 @@ mod tests {
             }
             other => panic!("expected one recording row, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn adoption_inherits_rows_and_release_keeps_them() {
+        // The lease a dead `runner up` leaves behind: a live runner row
+        // under a dead holder. Adoption must (a) succeed, (b) record the
+        // row as inherited, and (c) leave it in the ledger on release —
+        // dropping it is how the ledger forgot a forwarder that was
+        // alive and serving, and a process only the ledger knows about
+        // is unfindable the moment the ledger forgets it.
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let root = tmp.path();
+        // A row whose proc is THIS process: certainly alive, so the
+        // admission probe sees a live service under a dead holder.
+        store::add_resource(
+            root,
+            "UDID-ADOPT",
+            smix_lease::Resource::Runner {
+                port: 22097,
+                proc: store::identify_self(),
+            },
+        )
+        .expect("seed runner row");
+        store::set_holder(
+            root,
+            "UDID-ADOPT",
+            smix_lease::ProcIdentity {
+                pid: 1,
+                started_at: "Thu Jan  1 00:00:01 1970".into(),
+                cmd: "smix runner up (long gone)".into(),
+            },
+        )
+        .expect("dead holder");
+
+        let dev = Recorder::new();
+        let ex = executor(true);
+        let leased = Leased::acquire(&dev, root, "UDID-ADOPT", &ex).expect("adopted, not denied");
+        assert_eq!(leased.inherited().len(), 1, "the runner row is inherited");
+
+        leased.release().expect("release");
+        let after = store::read(root, "UDID-ADOPT")
+            .expect("read")
+            .expect("the ledger survives release");
+        assert!(
+            after
+                .resources
+                .iter()
+                .any(|r| matches!(r, smix_lease::Resource::Runner { .. })),
+            "release kept the inherited runner row"
+        );
     }
 
     #[tokio::test]

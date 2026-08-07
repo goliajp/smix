@@ -106,16 +106,26 @@ if not b[0]['byUs']: sys.exit('boot recorded as somebody else\'s')
 " || fail "the boot was not recorded as ours"
 log "boot recorded as ours — the shutdown right follows from it"
 
-step "3. a live session is reported as in use, and is not preempted"
+step "3. a live session is visible in status, and is not preempted"
+# What this step pins is that nothing here tears the session down. The
+# wording moved with C21: `runner up` exits by design, so its lease shows
+# as adoptable — the runner serving, the next command taking over — not
+# as "in use", which had made the quickstart's own pairing impossible.
+# "free" would be the failure: it would mean the ledger lost the session.
 STATUS="$("$SMIX" lease status "$UDID" 2>/dev/null | grep "^$UDID:")"
 log "$STATUS"
 case "$STATUS" in
-  *"in use"*|*"held by"*) ;;
+  *"in use"*|*"held by"*|*"runner serving"*) ;;
   *) fail "a live runner reported as: $STATUS" ;;
 esac
+# Same pin, either wording: reconcile must leave the session alone. A
+# denied session says "not touching it"; an adoptable one says the
+# runner is serving and settles nothing. What neither may do is close it.
 RECON="$("$SMIX" lease reconcile "$UDID" 2>/dev/null)"
-echo "$RECON" | grep -q "not touching it" \
-  || fail "reconcile did not refuse a live session: $RECON"
+echo "$RECON" | grep -qE "not touching it|runner serving" \
+  || fail "reconcile did not leave the live session alone: $RECON"
+curl -s -m 3 "http://127.0.0.1:${SMIX_RUNNER_PORT:-22087}/health" >/dev/null 2>&1 \
+  || fail "reconcile closed a serving runner"
 ps -p "$RUNNER_PID" >/dev/null 2>&1 \
   || fail "reconcile ended a live session — the one thing it must never do"
 log "live session left alone"

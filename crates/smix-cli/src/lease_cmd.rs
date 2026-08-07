@@ -25,6 +25,10 @@ pub fn describe(device_id: &str, admission: &Admission) -> String {
              but what it started is still running",
             c.holder.pid
         ),
+        Admission::Adoptable => format!(
+            "{device_id}: a finished session left its runner serving — the next \
+             command takes the lease over as-is"
+        ),
         Admission::Reclaimable { cleanup, reason } => {
             let why = match reason {
                 StaleReason::HolderExited => "holder exited",
@@ -94,6 +98,13 @@ pub fn run(root: &Path, action: LeaseAction) -> Result<(), crate::CliError> {
             let facts = store::collect_facts(root, &udid).map_err(to_cli_error)?;
             match smix_lease::assess(&facts) {
                 Admission::Granted => println!("{udid}: nothing to settle"),
+                // Nothing to settle: the next command that wants the
+                // device will adopt this lease in passing. Reconcile
+                // closes abandoned things, and a serving runner is not
+                // abandoned — it is waiting.
+                a @ Admission::Adoptable => {
+                    println!("{}", describe(&udid, &a));
+                }
                 // A live session is not ours to end, and a command that
                 // quietly ended one would make every other command in
                 // this tool unsafe to run next to somebody's work.

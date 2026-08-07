@@ -94,6 +94,10 @@ async fn main() -> ExitCode {
             apps_config,
         } => {
             run_flow(FlowArgs {
+                // The standalone adapter binary has no registry to read
+                // a device kind from; it keeps its historical
+                // simulator-only reach. The CLI is the entry that knows.
+                physical_ios: false,
                 flow,
                 udid,
                 bundle_id,

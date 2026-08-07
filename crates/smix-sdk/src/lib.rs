@@ -862,6 +862,19 @@ impl App {
 
     /// Generic constructor for cross-platform tests. Use this when
     /// constructing with non-iOS `Driver` / `DeviceControl` impls.
+    /// Swap the device-control half, keeping the driver.
+    ///
+    /// Sense and act go through the runner on every device kind; what
+    /// differs on a phone is the *device tooling* — `simctl` cannot see
+    /// it, `devicectl` can. The default is the simulator control because
+    /// that is what every constructor predates; a caller who knows the
+    /// target is physical hands in the client that can actually reach it.
+    #[must_use]
+    pub fn with_device_control(mut self, device: Box<dyn DeviceControl>) -> Self {
+        self.device = device;
+        self
+    }
+
     pub fn new_with(driver: Box<dyn smix_driver::Driver>, device: Box<dyn DeviceControl>) -> Self {
         App {
             driver,

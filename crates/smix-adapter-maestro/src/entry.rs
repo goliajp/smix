@@ -74,6 +74,11 @@ pub struct FlowArgs {
     pub animations: bool,
     /// Target platform.
     pub platform: FlowPlatform,
+    /// The iOS device is a physical phone, so device tooling goes
+    /// through `devicectl` rather than `simctl`. Stated by the caller
+    /// because only the caller can read the registry where a device's
+    /// kind is recorded; this crate sees a UDID and a port.
+    pub physical_ios: bool,
     /// Optional `smix-apps.yaml` cross-platform resolver config.
     pub apps_config: Option<PathBuf>,
     /// Env vars for yaml `${NAME}` interpolation. CLI
@@ -248,7 +253,22 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
 
     // 2. connect runner — iOS swift smix-runner OR Android Kotlin runner.
     let app = match args.platform {
-        FlowPlatform::Ios => App::connect_to_runner(args.runner_port).await,
+        FlowPlatform::Ios => App::connect_to_runner(args.runner_port).await.map(|app| {
+            // A phone's sense and act go through the runner exactly like
+            // a simulator's; its *device tooling* does not — `simctl`
+            // answers "Invalid device" for a physical UDID, which is how
+            // the first full flow ever run against one died on step 1's
+            // launchApp. The caller (the CLI reads the registry; this
+            // crate cannot) says which world the device lives in.
+            if args.physical_ios {
+                let udid = args.udid.as_deref().unwrap_or_default();
+                app.with_device_control(Box::new(smix_sdk::devicectl_device::DevicectlClient::new(
+                    udid,
+                )))
+            } else {
+                app
+            }
+        }),
         FlowPlatform::Android => App::connect_to_runner_android(args.runner_port).await,
     };
     let app = match app {

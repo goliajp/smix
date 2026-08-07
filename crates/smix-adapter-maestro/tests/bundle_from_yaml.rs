@@ -14,6 +14,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn args_for(flow: std::path::PathBuf, port: u16, bundle_id: Option<String>) -> FlowArgs {
     FlowArgs {
+        physical_ios: false,
         flow,
         udid: None,
         bundle_id,
