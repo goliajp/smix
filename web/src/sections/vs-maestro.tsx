@@ -8,7 +8,7 @@ const TAG_LABEL: Record<string, string> = {
 }
 
 // Beyond a plain verb port — smix's native surface. Each traces to a cited
-// source (CLAUDE.md §9/§12, docs/v2.md, llms.txt).
+// source (CLAUDE.md §9/§12, .claude/docs/v2.md, llms.txt).
 const EXTENSIONS: { title: string; detail: string }[] = [
   {
     title: 'Three-layer core',

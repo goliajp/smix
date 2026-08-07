@@ -5,27 +5,35 @@ fact-scan asks whether user-facing surfaces tell the truth. This asks a
 question one layer under it: do the files that govern how this repo is
 worked on actually travel with it?
 
-They did not. `.claude/` was ignored wholesale as "process residue", and
-three things that are not residue were sitting in it:
+This check has been through both answers, and the reasons for each are
+worth keeping because they are the same reasons in opposite directions.
 
-  - `.claude/CLAUDE.md`, which opens by saying every AI touching this
-    project must read it first and that it outranks every other doc;
-  - `.claude/rule/`, the project's own lint-grade rule cards;
-  - `.claude/settings.json`, which is where the sim-guard hook is wired.
+It first ran because `.claude/` was ignored wholesale as "process
+residue" while things that are not residue sat in it, and the cost came
+due twice: sim-guard.sh's own header records that its v5.x implementation
+"was never committed and was lost with the local checkout", and adb-guard
+landed with a commit message stating it was "wired into the PreToolUse
+hook beside sim-guard" — true when written, untrue by the next session,
+because the wiring lived in the ignored file and the commit could not
+carry it. A guard that is present but unwired is indistinguishable from
+one that is working, right up until a physical phone gets wiped.
 
-The cost came due twice. sim-guard.sh's own header records that its v5.x
-implementation "was never committed and was lost with the local
-checkout". Then adb-guard landed with a commit message stating it was
-"wired into the PreToolUse hook beside sim-guard" — true when written,
-untrue by the next session, because the wiring lived in the ignored
-file and the commit could not carry it. The script was committed; the
-line that makes it run was not. A guard that is present but unwired is
-indistinguishable from one that is working, right up until a physical
-phone gets wiped.
+On 2026-07-29 the project decided the other way: `.claude/` is not
+version-controlled at all. It is single-author, and the AI-side working
+capability is deliberately unpublished. That accepts the loss above as a
+standing risk — a hook wiring still lives only on this machine — in
+exchange for keeping the development surface out of what ships. The
+check therefore inverts rather than disappears: what used to be "the
+contract must be tracked" is now "the private surface must not be", so
+an accidental `git add -f` of the working record is caught the same way
+its absence used to be.
 
 Checks:
-  1. Contract files are tracked. Being on disk is not the same as being
-     in the repo, and the difference is invisible until someone clones.
+  1. The private surface is absent from the index everywhere, and
+     present on disk wherever it lives. A tracked one means the
+     development record leaked into what ships; a missing one, on the
+     machine that has a `.claude/` at all, means this repo is being
+     worked without the file that governs how.
   2. Every script a hook invokes exists. A missing hook script surfaces
      as a non-blocking error on every single Bash call — noisy enough to
      be tuned out, quiet enough to leave the guard off.
@@ -74,13 +82,15 @@ import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-# Files that are contract rather than residue. Anything added here must
-# also be re-included in .gitignore, or check 1 fails by construction.
-CONTRACT = [
+# The private development surface: what this repo is worked with, and
+# what must never reach the index. Anything added here must stay covered
+# by the `.claude/` line in .gitignore, or check 1 fails by construction.
+PRIVATE_SURFACE = [
     ".claude/CLAUDE.md",
     ".claude/settings.json",
     ".claude/rule/*.md",
     ".claude/rfcs/*.md",
+    ".claude/docs/*.md",
 ]
 
 SETTINGS = ".claude/settings.json"
@@ -89,9 +99,9 @@ SETTINGS = ".claude/settings.json"
 def tracked_paths():
     """Paths git knows about, including staged-but-uncommitted adds.
 
-    --cached rather than HEAD: a rule card written and staged in this
-    session is already leaving with the next commit, and failing it
-    would make the gate impossible to satisfy before committing.
+    --cached rather than HEAD: a staged `git add -f` of the private
+    surface is already leaving with the next commit, so it has to count
+    as leaked before the commit is made, not after.
     """
     out = subprocess.run(
         ["git", "-C", ROOT, "ls-files", "--cached"],
@@ -102,25 +112,37 @@ def tracked_paths():
     return set(out.stdout.splitlines())
 
 
-def check_contract_tracked(failures):
-    tracked = tracked_paths()
-    for pattern in CONTRACT:
-        matches = sorted(
-            os.path.relpath(p, ROOT).replace(os.sep, "/")
-            for p in glob.glob(os.path.join(ROOT, pattern))
+def check_private_surface(failures):
+    """No part of `.claude/` is in the index; on the authoring machine, all
+    of it is on disk.
+
+    The two halves run in different places on purpose. The leak check is
+    universal — a bare checkout that has `.claude/` files tracked is exactly
+    the failure this exists to catch, and it can be answered from the index
+    alone. The completeness check needs the surface to be there to be
+    checked, so it runs only where it lives; asserting it on a checkout
+    would fail every CI build for the thing that is supposed to be true.
+    """
+    # A stray `git add -f` on a plan leaks as well as one on the charter,
+    # so this reads the whole subtree rather than the named patterns.
+    for rel in sorted(p for p in tracked_paths() if p.startswith(".claude/")):
+        failures.append(
+            f"{rel}: tracked — the private development surface reached the "
+            f"index and would ship. `git rm --cached` it; `.gitignore` "
+            f"already covers `.claude/`."
         )
-        if not matches:
+
+    if not os.path.isdir(os.path.join(ROOT, ".claude")):
+        # A checkout, not the authoring machine. Nothing further to say.
+        return
+
+    for pattern in PRIVATE_SURFACE:
+        if not glob.glob(os.path.join(ROOT, pattern)):
             failures.append(
-                f"{pattern}: no file matches — the contract names a file "
-                f"that is not there"
+                f"{pattern}: no file matches — this machine has a `.claude/` "
+                f"but is missing part of the surface that governs how this "
+                f"repo is worked"
             )
-            continue
-        for rel in matches:
-            if rel not in tracked:
-                failures.append(
-                    f"{rel}: on disk but not tracked — it will not survive a "
-                    f"clone. Re-include it in .gitignore and `git add` it."
-                )
 
 
 def hook_commands(settings):
@@ -234,6 +256,22 @@ DOWNSTREAM = (".github/workflows/ci.yml", "scripts/release/ship.sh")
 # later comparison pass on an empty set.
 MIN_SOURCE_GATES = 4
 
+# Gates whose inputs are the development record under `.claude/`, which is
+# not version-controlled. They run where that record lives — the authoring
+# machine, via preflight and ship — and cannot run on a bare checkout.
+#
+# Wiring them into CI would not be stricter, it would be worse: they would
+# report "cannot run" on every branch build, and a gate that always says
+# that is one nobody reads. The honest arrangement is that they are absent
+# from CI on purpose, named here so the absence is a decision on the record
+# rather than something that fell off.
+LOCAL_ONLY = {
+    "audit-ledger-scan",
+    "scope-promise-scan",
+    "release-record-scan",
+}
+CI_GATE = ".github/workflows/ci.yml"
+
 
 def check_source_gates_wired(failures):
     """Every source gate named in preflight also runs in CI and at ship.
@@ -276,7 +314,21 @@ def check_source_gates_wired(failures):
     # preflight → CI and ship, in text that is not a comment.
     for name in names:
         for gate in DOWNSTREAM:
-            if f"scripts/dev/{name}.py" not in read_without_comments(gate):
+            local_only_in_ci = gate == CI_GATE and name in LOCAL_ONLY
+            present = f"scripts/dev/{name}.py" in read_without_comments(gate)
+            if local_only_in_ci:
+                # Absent from CI is the intent; present would mean it runs
+                # somewhere its inputs do not exist and reports "cannot run"
+                # on every build.
+                if present:
+                    failures.append(
+                        f"{CI_GATE} invokes {name}, whose inputs live under "
+                        f"`.claude/` and do not travel with a checkout. It "
+                        f"would report cannot-run on every branch build. "
+                        f"Keep it to preflight and ship."
+                    )
+                continue
+            if not present:
                 failures.append(
                     f"{gate} does not invoke {name}, which {PREFLIGHT} runs. "
                     f"Three places, not two: preflight is the local habit, CI is "
@@ -379,7 +431,7 @@ def check_guards_tested(failures):
 
 def main():
     failures = []
-    check_contract_tracked(failures)
+    check_private_surface(failures)
     check_guards_tested(failures)
     check_no_gnu_only_tools(failures)
     check_source_gates_wired(failures)

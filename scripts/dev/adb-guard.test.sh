@@ -60,7 +60,7 @@ feed $ALLOW "git status"
 # --- heredoc bodies: data vs code ---
 # Writing prose that mentions an install command is not running one.
 # This shape is what refused an append to the decision log.
-feed $ALLOW "$(printf 'cat >> docs/v2.md <<%s\nadb install -r app.apk fans out to every device\nEOF\n' "'EOF'")"
+feed $ALLOW "$(printf 'cat >> .claude/docs/v2.md <<%s\nadb install -r app.apk fans out to every device\nEOF\n' "'EOF'")"
 feed $ALLOW "$(printf 'tee /tmp/notes <<%s\nadb -s R5CT52DF07D install app.apk\nNOTE\n' "'NOTE'")"
 # ...but a shell reading its body IS running it, so the body still counts.
 feed $BLOCK "$(printf 'bash <<%s\nadb install -r app.apk\nEOF\n' "'EOF'")"

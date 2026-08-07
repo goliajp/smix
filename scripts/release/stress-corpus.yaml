@@ -1,7 +1,7 @@
 # Stress/smoke corpus — device-verified against Preferences with stable,
 # locale-independent ids. smoke per-PR+nightly, stress nightly. The fill verb
 # is not covered (Preferences' search a11y frame is unreliable on iOS 26.5;
-# see docs/v2.md 2026-07-23 C5) — deferred to a fixture-app corpus.
+# see .claude/docs/v2.md 2026-07-23 C5) — deferred to a fixture-app corpus.
 - path: scripts/release/stress-corpus/assert-account-cell.yaml
   tier: smoke
 - path: scripts/release/stress-corpus/assert-general-after-scroll.yaml

@@ -100,9 +100,9 @@ DISCOVERED_COORDINATE_PATTERNS = [
 # of their date. Reported like hygiene-scan's exemptions so a directory
 # cannot be quietly excused.
 COORDINATE_EXEMPT = [
-    ("docs/dogfood-archive/", "shipping notes, true as of the version they announce"),
-    ("docs/plan-history/", "archived plans, kept as written"),
-    ("docs/v2.md", "decision log; quotes the coordinates it discusses"),
+    (".claude/docs/archive/dogfood-archive/", "shipping notes, true as of the version they announce"),
+    (".claude/docs/archive/plan-history/", "archived plans, kept as written"),
+    (".claude/docs/v2.md", "decision log; quotes the coordinates it discusses"),
     (".claude/rfcs/", "design records dated to the version they targeted"),
     ("CHANGELOG.md", "every release's coordinates, by definition"),
 ]
@@ -246,9 +246,54 @@ def iter_surface_files():
                     yield rel
 
 
+# What a guide's prose says about behaviour, where the sentence and the
+# code can disagree silently. `guide_gate` asks the behavioural half of
+# each of these by running the example; these are the half that is a claim
+# in words, and words are this scanner's jurisdiction.
+#
+# The actions guide printed `dispatch: daemonProxy` alongside an `id`
+# selector for as long as it did because the prose said one thing and the
+# function said another, and nothing asked them the same question.
+PROSE_CLAIMS = [
+    (
+        "docs/ai-guide/04-actions.md",
+        "### Tap with explicit dispatch",
+        [
+            ("/tap-at-norm-coord", True,
+             "describes the default tap without naming the route it takes"),
+            ("_XCT_synthesizeEvent", False,
+             "attributes IOHID synthesis to the default tap; that is "
+             "`dispatch: daemonProxy`"),
+            ("Path A", False,
+             "still describes a Path A / Path B fallback between the two "
+             "routes; there is no fallback, `/tap-by-id` is opt-in"),
+            ("Path B", False,
+             "still describes a Path A / Path B fallback between the two "
+             "routes; there is no fallback, `/tap-by-id` is opt-in"),
+        ],
+    ),
+]
+
+
+def check_prose_claims(failures):
+    for rel, boundary, claims in PROSE_CLAIMS:
+        text = read(rel)
+        if boundary not in text:
+            failures.append(
+                f"{rel}: no longer contains {boundary!r}, which bounds the "
+                f"section these claims are about — the check went blind"
+            )
+            continue
+        section = text.split(boundary)[0]
+        for needle, want_present, why in claims:
+            if (needle in section) != want_present:
+                failures.append(f"{rel}: {why}")
+
+
 def main():
     failures = []
     version = workspace_version()
+    check_prose_claims(failures)
 
     for rel, pattern in VERSION_COORDINATES:
         text = read(rel)

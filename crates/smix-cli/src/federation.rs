@@ -4,7 +4,10 @@
 //! The node roster lives in `.smix/nodes.yaml` (same direct-read shape
 //! as `.smix/config.yaml`; discovery via `workspace_root` happens at the
 //! consuming layer, not here). Nodes list simulators/emulators only —
-//! the §9#1 invariant holds across machines. A device ref in the roster
+//! the §9#1 invariant holds across machines (§9#1 was amended 2026-08-06
+//! to allow physical devices under explicit registration; federation has
+//! not been extended to them and still lists simulators/emulators only).
+//! A device ref in the roster
 //! is an alias/UDID for the *remote* node's registry; the scheduler
 //! never resolves a remote ref locally, it forwards it verbatim.
 

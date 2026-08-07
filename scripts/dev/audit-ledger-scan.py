@@ -41,8 +41,8 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-LEDGER = "docs/audit-ledger.md"
-SOURCE = "docs/v2.md"
+LEDGER = ".claude/docs/audit-ledger.md"
+SOURCE = ".claude/docs/v2.md"
 
 # The one line in v2.md that defines which entries must exist. Located by
 # anchor rather than by line number, and required to be unique: the

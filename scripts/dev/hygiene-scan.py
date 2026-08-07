@@ -51,32 +51,34 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # Each entry's remaining hits are counted and printed, so an exclusion reads
 # as a debt with an owner rather than as ground that was never walked.
 EXCLUSIONS = [
-    ("docs/roadmap.md", "the version path is its subject"),
-    ("docs/plan-hot.md", "checkpoint tags are its subject"),
-    ("docs/v2.md", "checkpoint tags are its subject"),
-    ("docs/plan-cold/", "checkpoint tags are their subject"),
-    ("docs/plan-history/", "archived plans, kept as written"),
-    ("docs/research/", "decomposition research records — obtainability verdicts "
+    (".claude/docs/roadmap.md", "the version path is its subject"),
+    (".claude/docs/plan-hot.md", "checkpoint tags are its subject"),
+    (".claude/docs/v2.md", "checkpoint tags are its subject"),
+    (".claude/docs/plan-cold/", "checkpoint tags are their subject"),
+    (".claude/docs/archive/", "frozen records — superseded hot plans and "
+                              "shipped-version consumer correspondence, kept "
+                              "exactly as written, paths inside deliberately "
+                              "not rewritten (see its README)"),
+    (".claude/docs/research/", "decomposition research records — obtainability verdicts "
                        "written in the language they were reasoned in, "
                        "checkpoint tags are their subject, same as plan-history"),
-    ("docs/perf/", "perf decomposition ground-truth docs — Phase A/B records "
+    (".claude/docs/perf/", "perf decomposition ground-truth docs — Phase A/B records "
                    "per the perf methodology, kept as reasoned, same as research"),
-    ("docs/dogfood-archive/", "archived consumer correspondence, kept as written"),
     (".claude/rfcs/", "design records written per consumer; editorial pass"),
     (".claude/CLAUDE.md", "the development charter — written in the language "
                           "its readers work in, and its references to "
                           "plan-hot.md are structural (that file exists only "
                           "between checkpoints)"),
     (".claude/rule/", "project rule cards, same charter and same language"),
-    ("docs/audit-ledger.md", "internal defect accounting — the language it is "
+    (".claude/docs/audit-ledger.md", "internal defect accounting — the language it is "
                              "worked in, and the circled numerals are its join "
                              "key to the decision log, not stray version tags"),
-    ("docs/scope-evidence.md", "internal scope accounting, same language and "
+    (".claude/docs/scope-evidence.md", "internal scope accounting, same language and "
                                "same reason as the defect ledger"),
-    ("docs/guide-executability.md", "internal accounting of what the guides "
+    (".claude/docs/guide-executability.md", "internal accounting of what the guides "
                                     "claim versus what runs, same language and "
                                     "same reason as the defect ledger"),
-    ("docs/scope-decisions-pending.md", "decision material awaiting the "
+    (".claude/docs/scope-decisions-pending.md", "decision material awaiting the "
                                         "owner's call; it quotes the scope "
                                         "text it is about, tags included"),
     (".gitignore", "names the consumer docs it ignores; the rule goes when "
@@ -84,8 +86,9 @@ EXCLUSIONS = [
 ]
 
 # git already drops anything gitignored, which is what defines "shipped" —
-# notably `.claude/` is ignored EXCEPT `.claude/rfcs/`, the tracked
-# design-decision record, so citations of it must still resolve.
+# notably `.claude/` is ignored EXCEPT the tracked contract: `CLAUDE.md`,
+# `rule/`, `rfcs/`, and `docs/` (the development record). Citations of those
+# must still resolve.
 SKIP_PREFIXES = ("target/", "build/", ".build/", "node_modules/")
 
 NOISE_PATTERNS = {
@@ -119,17 +122,17 @@ POINTER_EXTS = (".rs", ".swift", ".kt", ".md")
 # kept as written — the noise scan already excludes it for the same reason.
 #
 # CLAUDE.md sits one level above those: it is the spec the planning docs
-# are written against, so it names `docs/plan-hot.md` (which exists only
+# are written against, so it names `.claude/docs/plan-hot.md` (which exists only
 # between checkpoints, by design) and `plan-cold/v0.X.md` (a shape, not a
 # path). Reading either as a citation gets the direction backwards.
 POINTER_SKIP = (
     ".claude/CLAUDE.md",
-    "docs/roadmap.md",
-    "docs/plan-hot.md",
-    "docs/v2.md",
-    "docs/plan-cold/",
-    "docs/plan-history/",
-    "docs/dogfood-archive/",
+    ".claude/docs/roadmap.md",
+    ".claude/docs/plan-hot.md",
+    ".claude/docs/v2.md",
+    ".claude/docs/plan-cold/",
+    ".claude/docs/archive/plan-history/",
+    ".claude/docs/archive/dogfood-archive/",
 )
 
 
