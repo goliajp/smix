@@ -44,13 +44,19 @@ CRATES=$(
 # the repo root, so editing only the changelog skipped the one check
 # that reads it. A gate this list cannot see is a gate that runs
 # everywhere except where it matters.
+# `|| true` on the grep: a perfectly clean tree at $BASE feeds it
+# nothing, and grep answers no-input with exit 1 — fatal under
+# pipefail, and silently so under `set -e`, before a single line of
+# output. The readers loop below already knew this about grep; this
+# pipeline learned it the day the branch was merged and the tree was
+# clean for the first time in the script's life.
 CHANGED_DOCS=$(
     {
         git diff --name-only "$BASE"...HEAD
         git diff --name-only
         git diff --name-only --cached
         git ls-files --others --exclude-standard
-    } | grep -v '^crates/' | sort -u
+    } | { grep -v '^crates/' || true; } | sort -u
 )
 for d in $CHANGED_DOCS; do
     # `|| true`: no crate reads most docs, and grep's "no match" exit 1
