@@ -18,17 +18,25 @@ FLOW_B="scripts/release/stress-corpus/screenshot-twice.yaml"
 log()  { printf '[c3-fed] %s\n' "$*"; }
 fail() { printf '[c3-fed] FAIL: %s\n' "$*" >&2; exit 1; }
 
+# An unmet precondition is not this suite's failure to report. Yielding to
+# somebody else's batch, or a node that is not reachable here, says nothing
+# about whether smix works — and FAIL says it does not, to whoever reads
+# the suite next. A suite that cries wolf gets skimmed, and then a real
+# failure gets skimmed with it.
+skip() { printf '[c3-fed] %s\n' "$*" >&2; printf '%s\n' "C3-FEDERATION-SINGLE-SKIP"; exit 0; }
+
+
 rssh() { ssh -o ConnectTimeout=5 -o BatchMode=yes "$HOST" "$@"; }
 
 # --- 1. guards: node reachable, no batch owner on either side, flows exist ---
 log "guard: $HOST reachable"
-rssh true || fail "$HOST unreachable over BatchMode ssh"
+rssh true || skip "$HOST is not reachable over BatchMode ssh — this node is not available here"
 REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $HOST"
 log "guard: no active batch on studio or $HOST (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && fail "batch owner active on studio — yielding"
-rssh "pgrep -f 'runner.ts|smix run|supervise' >/dev/null" && fail "batch owner active on $HOST — yielding"
+pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active on studio — yielding; re-run when it is idle"
+rssh "pgrep -f 'runner.ts|smix run|supervise' >/dev/null" && skip "batch owner active on $HOST — yielding; re-run when it is idle"
 log "guard: no user build in flight on $HOST"
-rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && fail "user build in flight on $HOST — yielding"
+rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && skip "user build in flight on $HOST — yielding; re-run when it is idle"
 [ -f "$ROOT/$FLOW_A" ] || fail "corpus flow missing: $FLOW_A"
 [ -f "$ROOT/$FLOW_B" ] || fail "corpus flow missing: $FLOW_B"
 

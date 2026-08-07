@@ -65,7 +65,7 @@ COMPILE_TASK = "assembleDebugAndroidTest"
 # to match a @Test that exists on disk; when it stops matching, the
 # instrumentation reports `OK (0 tests)` — a silent no-op that reads like
 # success. Nothing checked the pair until this gate.
-SERVER_ENTRY_SOURCE = "crates/smix-cli/src/runner_android.rs"
+SERVER_ENTRY_SOURCE = "crates/smix-capsule/src/runner_android.rs"
 
 # ship.sh does not run the device suite inline; it calls this. So ship's
 # coverage is read as ship.sh plus the delegates it names by path. A

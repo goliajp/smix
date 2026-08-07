@@ -17,10 +17,17 @@ R="http://localhost:$PORT"
 log()  { printf '[c4-propose] %s\n' "$*"; }
 fail() { printf '[c4-propose] FAIL: %s\n' "$*" >&2; exit 1; }
 
+# A precondition this script detects and cannot satisfy is a SKIP with
+# what to do about it — not a FAIL. Yielding to somebody else's batch, or
+# an unset target, says nothing about whether smix works, and FAIL says it
+# does not to whoever reads the suite next.
+skip() { printf '[c4-propose] %s\n' "$*" >&2; printf '%s\n' "C4-ANDROID-PROPOSE-SKIP"; exit 0; }
+
+
 # --- guards: emulator-only, yield to a batch owner, tools present ---
 case "$SERIAL" in emulator-*) ;; *) fail "serial must be an emulator (got $SERIAL); never a physical phone" ;; esac
 export ANDROID_SERIAL="$SERIAL"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && fail "batch owner active — yielding, not seizing the runner"
+pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active — yielding, not seizing the runner"
 command -v claude >/dev/null 2>&1 || fail "claude CLI not found on PATH"
 [ -x "$SMIX" ] || fail "smix not built at $SMIX"
 

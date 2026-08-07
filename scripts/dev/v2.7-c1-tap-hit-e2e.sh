@@ -25,6 +25,13 @@ BUNDLE="com.apple.Preferences"
 log()  { printf '[c1-taphit] %s\n' "$*"; }
 fail() { printf '[c1-taphit] FAIL: %s\n' "$*" >&2; exit 1; }
 
+# A precondition this script detects and cannot satisfy is a SKIP with
+# what to do about it — not a FAIL. Yielding to somebody else's batch, or
+# an unset target, says nothing about whether smix works, and FAIL says it
+# does not to whoever reads the suite next.
+skip() { printf '[c1-taphit] %s\n' "$*" >&2; printf '%s\n' "C1-TAP-HIT-SKIP"; exit 0; }
+
+
 # --- guards --------------------------------------------------------------
 
 # §9#1: sims only, and always by explicit UDID — never a name, "booted"
@@ -34,13 +41,13 @@ fail() { printf '[c1-taphit] FAIL: %s\n' "$*" >&2; exit 1; }
 UDID="${SMIX_TAPHIT_SIM:-}"
 if [[ -z "$UDID" ]]; then
   UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" \
-    || fail "set SMIX_TAPHIT_SIM to a UDID"
+    || skip "set SMIX_TAPHIT_SIM to a UDID"
 fi
 [[ -n "$UDID" ]] || fail "no dev sim — set SMIX_TAPHIT_SIM to a UDID"
 
 log "guard: no batch owner on this machine (yield, never seize)"
 pgrep -f 'runner.ts|smix run|supervise' >/dev/null \
-  && fail "batch owner active — yielding"
+  && skip "batch owner active — yielding"
 
 [[ -f "$ROOT/$FLOW" ]] || fail "flow missing: $FLOW"
 
