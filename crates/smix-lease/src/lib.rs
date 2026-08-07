@@ -280,6 +280,11 @@ pub struct Contention {
 /// The verdict.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Admission {
+    /// The holder is gone and everything it left running is a service —
+    /// a runner, its forwarder, its supervisor. The caller takes over
+    /// the lease as-is: resources kept, holder replaced. Tearing this
+    /// down would destroy the thing the caller came to use.
+    Adoptable,
     /// Nothing holds this device, or this process already does.
     Granted,
     /// Someone else holds it and is alive. Ambiguity is an error, not a
@@ -364,10 +369,23 @@ pub fn assess(facts: &Facts) -> Admission {
 
     let holder_gone = !held.holder.pid_exists || !held.holder.identity_matches;
     if holder_gone {
-        // What it started may well outlive it. A live runner means the
-        // device is in use no matter what became of the command that
-        // brought it up.
+        // What it started may well outlive it — and what outlives it is
+        // usually the point. `smix runner up` exits by design; the
+        // runner it leaves behind is a service the next command drives
+        // *through*, not a squatter it must wait out. So a dead holder
+        // whose surviving resources are all services hands the lease to
+        // whoever asks next, resources intact. This used to deny, which
+        // barred the quickstart's own `runner up` → `run` pairing on
+        // every device — found the first time a full flow ran against a
+        // physical phone.
+        //
+        // A live recording is different: it is an exclusive activity,
+        // not a service, and adopting past it would let a second
+        // session run over whatever the first was capturing.
         if held.any_resource_alive {
+            if lease.resources.iter().all(is_service) {
+                return Admission::Adoptable;
+            }
             return deny(false);
         }
         // A ledger holding nothing but a boot is not an abandoned
@@ -546,6 +564,24 @@ pub fn may_shut_down(lease: Option<&Lease>) -> bool {
             .iter()
             .any(|r| matches!(r, Resource::Booted { by_us: true }))
     })
+}
+
+/// Is this resource a service — a thing that exists to be used by the
+/// next command, rather than an activity that excludes it?
+///
+/// The runner and its plumbing are services: a client driving through
+/// them is their purpose. A recording is an activity: two sessions
+/// writing over one capture is a collision, not a hand-off. `Booted` is
+/// neither a process nor an activity and never blocks adoption.
+pub fn is_service(r: &Resource) -> bool {
+    matches!(
+        r,
+        Resource::Runner { .. }
+            | Resource::AndroidRunner { .. }
+            | Resource::PortForward { .. }
+            | Resource::Supervisor { .. }
+            | Resource::Booted { .. }
+    )
 }
 
 /// Does this resource stand for a process that can die?
@@ -832,18 +868,56 @@ mod tests {
     }
 
     #[test]
-    fn a_live_runner_holds_the_device_after_its_launcher_exits() {
-        // `smix runner up` spawns xcodebuild into its own process group
-        // and returns. Judging by the holder alone would call this an
-        // orphan and tear down a runner that is working.
+    fn a_live_runner_after_its_launcher_exits_is_adopted_not_denied() {
+        // `smix runner up` exits by design; the runner it leaves is a
+        // service the next command drives *through*. This used to be
+        // pinned as Denied, with a comment about not tearing down a
+        // working runner — the right worry, wrong verdict: denial kept
+        // the runner alive by making it unusable, which barred the
+        // quickstart's own `runner up` → `run` pairing on every device.
         let f = facts_with_resources(lease_with(vec![runner()]), false, false, FRESH, true);
-        match assess(&f) {
-            Admission::Denied(c) => assert!(
-                !c.holder_alive,
-                "the launcher is gone; what it started is not"
-            ),
+        assert_eq!(assess(&f), Admission::Adoptable);
+    }
+
+    #[test]
+    fn the_whole_physical_stack_is_adoptable_too() {
+        // What `runner up <phone>` actually leaves: boot row, runner,
+        // forwarder. All services; all kept by the adopter.
+        let lease = lease_with(vec![
+            Resource::Booted { by_us: true },
+            runner(),
+            Resource::PortForward {
+                local_port: 22097,
+                device_port: 22097,
+                proc: runner_proc(),
+            },
+        ]);
+        assert_eq!(
+            assess(&facts_with_resources(lease, false, false, FRESH, true)),
+            Admission::Adoptable
+        );
+    }
+
+    #[test]
+    fn a_live_recording_is_not_adopted_past() {
+        // A recording is an activity, not a service: adopting past it
+        // would let a second session run over whatever the first was
+        // capturing. Denied — and the denial must say the holder is
+        // dead, so the message blames the recording rather than telling
+        // someone to wait for a pid that no longer exists.
+        let lease = lease_with(vec![runner(), recording()]);
+        match assess(&facts_with_resources(lease, false, false, FRESH, true)) {
+            Admission::Denied(c) => assert!(!c.holder_alive),
             other => panic!("expected Denied, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_live_holder_still_denies_no_matter_the_resources() {
+        // The real concurrency case, untouched: two commands at once is
+        // contention whether or not the resources are services.
+        let f = facts_with_resources(lease_with(vec![runner()]), true, true, FRESH, true);
+        assert!(matches!(assess(&f), Admission::Denied(_)));
     }
 
     #[test]
