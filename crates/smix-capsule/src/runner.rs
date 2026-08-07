@@ -1428,6 +1428,30 @@ pub fn down(root: &Path, port: u16, consent: bool) -> Result<(), String> {
                 println!("runner pid {} already gone — dropping stale handle", st.pid);
             }
         }
+        // The forwarder, before the ledger row that knows about it is
+        // dropped. It is its own process on purpose — `up` exits and the
+        // pipe must not — which means nothing dies with the runner: the
+        // one that outlived a passing e2e by five hours was found still
+        // forwarding to a phone whose runner was long gone, and the
+        // teardown check ("ledger empty, /health silent") could not see
+        // it precisely because a forwarder with no runner behind it
+        // answers nothing.
+        if let Ok(facts) = smix_lease::store::collect_facts(root, &st.udid)
+            && let Some(held) = facts.existing
+        {
+            for r in &held.lease.resources {
+                if let smix_lease::Resource::PortForward {
+                    local_port, proc, ..
+                } = r
+                {
+                    println!("stopping port forward on {local_port}: pid={}", proc.pid);
+                    match crate::reconcile::stop_port_forward(*local_port, proc) {
+                        crate::reconcile::Outcome::Failed(line) => eprintln!("  {line}"),
+                        outcome => println!("  {}", outcome.line()),
+                    }
+                }
+            }
+        }
         clear_state(root);
         forget_runner_lease(root, &st.udid);
     }

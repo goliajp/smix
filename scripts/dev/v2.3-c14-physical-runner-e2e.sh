@@ -104,6 +104,12 @@ step "6. runner down closes both, in order"
 [ -f "$LEDGER" ] && fail "ledger survived a clean teardown"
 curl -s -m 3 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 \
   && fail "the port still answers after teardown"
-log "both closed, port free"
+# The forwarder, by process — not by the port. A forwarder whose runner
+# is gone answers nothing, so the /health check above is blind to it:
+# one passed this step and lived five hours, still holding the port and
+# still wired to the phone.
+pgrep -f "runner forward $UDID" >/dev/null \
+  && fail "the forwarder outlived the teardown (pgrep -fl 'runner forward $UDID')"
+log "both closed, port free, forwarder gone"
 
 echo "C14-PHYSICAL-RUNNER-PASS"

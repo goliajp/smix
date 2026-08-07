@@ -183,7 +183,7 @@ fn stop_android_runner(root: &Path, port: u16, serial: &str, proc: &ProcIdentity
 /// SIGTERM rather than SIGINT: nothing is buffering output that needs
 /// flushing, and a forwarder that has already gone with its process is
 /// the ordinary case, not a failure.
-fn stop_port_forward(local_port: u16, proc: &ProcIdentity) -> Outcome {
+pub(crate) fn stop_port_forward(local_port: u16, proc: &ProcIdentity) -> Outcome {
     if let Err(o) = still_the_same(proc) {
         return o;
     }
