@@ -104,10 +104,12 @@ jobs:
         run: bash scripts/dev/fence-check.sh
       - name: android gate scan
         run: python3 scripts/dev/android-gate-scan.py
-      - name: audit ledger scan
-        run: python3 scripts/dev/audit-ledger-scan.py
-      - name: scope promise scan
-        run: python3 scripts/dev/scope-promise-scan.py
+      # audit-ledger-scan, scope-promise-scan and release-record-scan are
+      # deliberately absent. Their inputs are the development record under
+      # `.claude/`, which is not version-controlled, so on a checkout they
+      # have nothing to read. They run on the authoring machine via
+      # preflight and ship. workflow-scan enforces that arrangement in both
+      # directions — it fails if one of them appears here.
       - name: stress tier selector self-test
         run: python3 scripts/release/stress-select.py --test
       - name: stress-gate aggregation self-test

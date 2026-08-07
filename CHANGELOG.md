@@ -4,7 +4,92 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [2.2.0] — Unreleased
 
+### Added
+
+- **Physical devices — an iPhone or an Android phone, driven the same way a
+  simulator is.** They were refused on principle until now, and the reason was
+  never capability: it was that smix had no concept of owning a device, so
+  every non-business action was an unowned one-shot call. On a simulator that
+  costs a crash-report dialog; on somebody's phone it costs their phone. Three
+  constraints hold, and each is a code path rather than a policy. A device must
+  be **registered before it can be addressed**, so "whichever one happens to be
+  plugged in" is never a target. Destructive actions are **refused per device**
+  until allowed once, recorded rather than confirmed per command. And a
+  capability a phone does not have is a **loud error, never a silent no-op** —
+  of the 25 device operations smix offers on a simulator, six reach a phone
+  through `devicectl`, three through the runner, two do not apply, and fourteen
+  have no equivalent at all.
+
+- **A ledger of what is open on each device** — `smix lease list|show|reconcile`.
+  One record per device naming who holds it and what they opened: runner,
+  recording, boot, supervisor, Android runner, port forward. Identity is the
+  pair (pid, start time), because a pid alone is reissued to strangers and a
+  command line is identical across concurrent runs. Teardown now closes what
+  the ledger says was opened rather than what a process listing looks like,
+  which used to fail in both directions — killing another project's runner, and
+  missing the one whose command line read differently. **A kill that had no
+  graceful path gets one at the next startup**, which is what the crash-report
+  dialog was always about.
+
+- **`smix record start|stop|status`** — recording lived in one process's memory,
+  so "is this device recording, and where is the file" had no one to ask, and a
+  killed holder left `simctl` writing an mp4 that would never gain a trailer.
+  `status` reports the path, not just the fact: knowing a recording exists
+  without knowing which file it is leaves you guessing in a directory listing.
+
+- **A tunnel to a physical iOS device, written here rather than depended on** —
+  `smix runner forward`. usbmux is Apple's own daemon, so what a third party
+  would supply is the protocol, and that is exactly the part that can be
+  written. `smix runner up <phone>` raises the forward before `xcodebuild`,
+  because the runner listens on the *device's* loopback and a health probe
+  against a pipe that is not there yet reads as "the runner did not start".
+
+- **Screenshots reach every device smix can address.** The CLI dispatched to
+  `simctl` unconditionally, so a registered Android device had no screenshot at
+  all even though the adb path had been implemented the whole time. Android now
+  goes through `adb`, and a physical iPhone through a new `GET /screenshot` on
+  the runner — Apple exposes no screen capture for a phone through `simctl` or
+  `devicectl`, but `XCUIScreen` runs inside the runner and works on both. A
+  failure there answers 503 with a reason rather than 200 with an empty body: a
+  zero-byte PNG on disk is a file every later step treats as a picture of the
+  screen.
+
+- **`smix sim register --kind`**, and `--kind emulator` now succeeds. It could
+  not before: every non-physical kind had to pass a CoreSimulator UDID shape
+  check that no adb serial can pass, so the flag had no input that worked. Each
+  virtual kind is now checked against the catalogue its own platform keeps —
+  simulators against `simctl`, emulators against `adb` — and only a phone is
+  taken as given, because nothing here can enumerate the world's phones.
+
 ### Changed
+
+- **`smix runner down` no longer ends a runner it has no record of.** It reports
+  it and stops, naming the process and `--include-unrecorded` for when it should
+  go. `runner up` had refused the same situation for a year — "not killing
+  blindly" — while `down`, one keystroke away, did it silently. Both commands
+  now give the same answer about the same fact.
+
+- **A raw identifier has to be one the platform claims.** Passing a UDID used to
+  skip the registry entirely, which was safe only because `simctl` refuses to
+  recognise a phone. That stopped being true the day a `devicectl` path existed:
+  a CoreDevice UUID wears the same 8-4-4-4-12 shape a simulator's does. A raw
+  identifier now has to be a simulator `simctl` lists or an `emulator-<port>`
+  serial; anything else is refused before the command runs, naming the
+  registration that lifts it.
+
+- **Apple identifiers are normalised and adb serials are not.** `devicectl`
+  rejects the lower-case spelling of a UDID it accepts in upper case, so
+  upper-casing rescues a typed-in identifier; `adb` matches serials byte for
+  byte, so the same move broke them — a registered `emulator-5554` came back
+  from `sim resolve` as `EMULATOR-5554`, which is not a device.
+
+- **The installed runner sources re-extract when their content changes**, not
+  when the version string does. Between two releases the version does not move,
+  so a rebuilt tarball compared equal to whatever was already on disk and was
+  never extracted: the device kept running the old runner while the repository
+  showed the new, and what that looks like from outside is a new route
+  returning 404.
+
 
 - **The embedded store moves to kevy 4.** A data directory written by an
   earlier smix opens with no migration step. The AOF's record format is
@@ -34,6 +119,26 @@ All notable changes to the `smix` workspace are documented here. The format foll
   exposes them.
 
 ### Fixed
+
+- **`--supervise` did nothing, for every runner new enough to report a wire
+  schema — which is all of them.** The success branch returned from the middle
+  of the function and the sidecar block lives at the end, so the flag was
+  accepted, nothing was spawned, and nothing said so. Found only because giving
+  the supervisor a ledger row required there to be one.
+
+- **`smix down` shut down devices it had not booted.** Its last pass treated
+  "registered" as "ours to turn off", so a sweep took away a simulator someone
+  else's dev server was using. The ledger's boot row records who booted it, and
+  only that entitles a shutdown.
+
+- **A recording could report success while writing nothing.** The `simctl`
+  child's output was piped to a reader that went away once the recording had to
+  outlive its starter, so it died of SIGPIPE on its next log line, leaving a
+  zero-byte file behind a success message.
+
+- **`smix sim boot` returned before the device could be drawn.** Screenshots
+  then failed with "Timeout waiting for screen surfaces", and `recordVideo`
+  reported success while producing nothing — the boot is now waited out.
 
 - **`smix-mcp` answers `--version`.** Asked for its version, the MCP
   server treated an empty stdin as a request and printed a JSON-RPC parse

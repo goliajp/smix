@@ -148,7 +148,7 @@ python3 "$ROOT/scripts/dev/android-gate-scan.py" > /tmp/smix-ship-android-gate.l
   || fail "android gate scan FAILED — an Android test task is outside the gates (see /tmp/smix-ship-android-gate.log)"
 
 # --- audit ledger ------------------------------------------------------
-# Re-evaluates every citation in docs/audit-ledger.md. That table records
+# Re-evaluates every citation in .claude/docs/audit-ledger.md. That table records
 # which known defects are still live, and its predecessor drifted badly
 # enough that three of five sampled entries had been fixed while still
 # reading as open. Shipping against a stale account of what is broken is
@@ -156,6 +156,18 @@ python3 "$ROOT/scripts/dev/android-gate-scan.py" > /tmp/smix-ship-android-gate.l
 log "audit ledger"
 python3 "$ROOT/scripts/dev/audit-ledger-scan.py" > /tmp/smix-ship-ledger.log 2>&1 \
   || fail "audit ledger scan FAILED — a citation no longer holds; re-verify that row (see /tmp/smix-ship-ledger.log)"
+
+# --- release record ----------------------------------------------------
+# The breaking-change table and the CHANGELOG's Breaking section are two
+# lists of the same thing, and they once held six entries and eight. Also
+# checks that every behaviour change reached the release notes, and that
+# the publish DAG below still covers the workspace in a topological order
+# — a crate missing from it is discovered seventeen publishes in, when the
+# earlier steps cannot be taken back.
+log "release record"
+python3 "$ROOT/scripts/dev/release-record-scan.py" > /tmp/smix-ship-record.log 2>&1 \
+  || fail "release record scan FAILED — the release's several lists disagree (see /tmp/smix-ship-record.log)"
+
 
 # --- hygiene scan ------------------------------------------------------
 # Development noise and dead doc pointers in everything a reader outside
@@ -394,6 +406,8 @@ CRATES=(
   smix-runner-wire smix-selector-resolver smix-fixture
   smix-annotate smix-migrate smix-authoring-ir
   smix-store smix-simctl smix-runner-client
+  smix-usbmux
+  smix-lease
   smix-capsule
   smix-host-coord-resolver smix-driver
   smix-sdk smix-mcp smix-adapter-maestro smix-recorder
