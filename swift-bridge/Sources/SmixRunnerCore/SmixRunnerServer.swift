@@ -656,6 +656,15 @@ public actor SmixRunnerServer {
     _ text: String, _ locales: [String], _ recognitionLevel: String
   ) async -> (Double, Double, Double, Double)?
 
+  /// GET /screenshot handler. PNG bytes of the whole screen, from
+  /// `XCUIScreen.main.screenshot()` — the same call the OCR handler
+  /// already makes, differing only in what it hands back.
+  ///
+  /// `nil` when the host could not produce pixels. It is not "no screen";
+  /// it is "this runner could not photograph one", and the route turns it
+  /// into a refusal rather than an empty success.
+  public typealias ScreenshotHandler = @Sendable () async -> Data?
+
   /// POST /swipe-at-norm-coord handler. Coord-based swipe gesture
   /// via Apple native event chain `XCSynthesizedEventRecord` +
   /// `XCPointerEventPath` (`initForTouchAtPoint:` → `moveToPoint:atOffset:`
@@ -1418,6 +1427,7 @@ public actor SmixRunnerServer {
     tapAtCoordHandler: TapAtCoordHandler? = nil,
     tapByIdHandler: TapByIdHandler? = nil,
     findTextByOcrHandler: FindTextByOcrHandler? = nil,
+    screenshotHandler: ScreenshotHandler? = nil,
     swipeAtCoordHandler: SwipeAtCoordHandler? = nil,
     doubleTapHandler: DoubleTapHandler? = nil,
     longPressHandler: LongPressHandler? = nil,
@@ -2037,6 +2047,33 @@ public actor SmixRunnerServer {
         ) {
           let frame = await findTextByOcrHandler(req.text, req.locales, req.recognitionLevel)
           return FindTextByOcrRoute.success(found: frame != nil, frame: frame)
+        }
+      }
+    }
+
+    // GET /screenshot. PNG of the whole screen via XCUIScreen.
+    //
+    // The only way to see a physical device: `simctl io screenshot`
+    // covers simulators and Apple exposes no equivalent for a phone
+    // through `devicectl`, so before this route a real iPhone could be
+    // tapped and read but never photographed.
+    //
+    // Bare `guardedResponse`, not the context-guarded one: this
+    // photographs the screen, not the target app, so there is no bundle
+    // to rebind to — the same reason /press-key and /set-orientation
+    // skip it.
+    if let screenshotHandler {
+      await server.appendRoute("GET /screenshot") { _ in
+        await Self.guardedResponse(
+          fallback: ScreenshotRoute.response(
+            png: nil,
+            reason: "the screenshot attempt raised an XCTest issue"
+          )
+        ) {
+          ScreenshotRoute.response(
+            png: await screenshotHandler(),
+            reason: "XCUIScreen returned no PNG representation"
+          )
         }
       }
     }

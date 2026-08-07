@@ -1,0 +1,26 @@
+[package]
+name = "smix-lease"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-lease — device resource ledger: who holds a device, what they opened on it, and how to close it gracefully after they die (steel)."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-lease"
+readme = "README.md"
+keywords = ["lease", "lifecycle", "ios", "simulator", "testing"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

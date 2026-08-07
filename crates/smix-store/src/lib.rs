@@ -231,6 +231,22 @@ impl Store {
         &self.root
     }
 
+    /// Whether a smix built against kevy 3 could still open this store.
+    ///
+    /// `Some(true)`: the log is still in the old record format, so going
+    /// back is an install. `Some(false)`: a rewrite has upgraded it, and
+    /// going back now needs a keyspace export through a client. `None`:
+    /// there is no log to ask about — which is not the same as "no way
+    /// back", and a caller that collapses the two reports a loss that
+    /// never happened.
+    ///
+    /// Forwarded rather than reimplemented: this crate is the one place
+    /// smix touches the engine, and the engine is what knows.
+    #[must_use]
+    pub fn downgradeable_to_kevy3(&self) -> Option<bool> {
+        self.inner.downgradeable_to_v3()
+    }
+
     /// Force the append-only log to disk.
     ///
     /// Writes already go to the AOF; this is for the moments smix wants

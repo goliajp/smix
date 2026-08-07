@@ -248,6 +248,11 @@ impl SmixMcpService {
                     record_enabled: false,
                     supervise: false,
                     attach_without_relaunch: false,
+                    // Simulator. MCP binds a device by UDID and has no
+                    // way to say "sign this for a phone" — physical
+                    // devices come in through the CLI, which reads the
+                    // registry to know what kind of device it is.
+                    physical_team: None,
                 },
             )
         })
@@ -265,6 +270,26 @@ impl SmixMcpService {
         // sense and act call fails asking for `App::open_session`. Binding
         // a device and then leaving the caller a second, undiscoverable
         // step is the shape this tool exists to remove.
+        // Announce the binding, so a `smix run` or a destructive CLI
+        // command aimed at the same device is refused rather than landing
+        // in the middle of an agent's session. Best-effort in one
+        // direction only: a workspace root that cannot be found means
+        // there is no ledger to write, which is the state every caller
+        // was in before leases existed — but an actual refusal is
+        // surfaced, because that one means somebody else is working.
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        if let Some(root) = smix_capsule::runner::workspace_root(&cwd) {
+            match next.hold_device_lease(&root, &params.udid, &smix_capsule::reconcile::Reconciler)
+            {
+                Ok(settled) => {
+                    for report in settled {
+                        eprintln!("settled first: {}", report.line);
+                    }
+                }
+                Err(e) => return Err(McpError::internal_error(e.to_string(), None)),
+            }
+        }
+
         if let Some(bundle) = params.bundle_id.as_deref() {
             next.open_session_in_place(bundle, true)
                 .await
@@ -294,10 +319,20 @@ impl SmixMcpService {
         let root = std::env::current_dir()
             .map_err(|e| McpError::internal_error(format!("cwd: {e}"), None))?;
         let port = bound.port;
-        tokio::task::spawn_blocking(move || smix_capsule::runner::down(&root, port))
+        // No, and emphatically: an MCP release runs without anyone
+        // watching. Ending another session's runner from here would be
+        // the same accident as before, with nobody present to notice.
+        tokio::task::spawn_blocking(move || smix_capsule::runner::down(&root, port, false))
             .await
             .map_err(|e| McpError::internal_error(format!("runner down panicked: {e}"), None))?
             .map_err(|e| McpError::internal_error(format!("runner down: {e}"), None))?;
+        // Give the device back too. `runner down` ends the session; the
+        // lease is what told everybody else the device was taken, and
+        // leaving it behind would keep the next `smix run` waiting on a
+        // session that has already ended.
+        if let Err(e) = self.app.lock().await.release_device_lease() {
+            eprintln!("warning: device lease not released: {e}");
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "released {} on port {port}",
             bound.udid

@@ -241,8 +241,25 @@ pub fn workspace_root(start: &Path) -> Option<PathBuf> {
     None
 }
 
+/// What kind of thing the runner is being built for.
+///
+/// An enum rather than a pair of optional arguments, so the combination
+/// that makes no sense — a simulator with a signing team — cannot be
+/// written. A simulator build is unsigned; a device build is nothing
+/// without a team.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunnerTarget<'a> {
+    /// An iOS Simulator. Unsigned, and `platform=iOS Simulator`.
+    Simulator,
+    /// A physical device: signed by `team`, and `platform=iOS`.
+    Physical {
+        /// Apple developer team id.
+        team: &'a str,
+    },
+}
+
 /// argv for the runner session (after the `xcodebuild` word itself).
-pub fn xcodebuild_argv(project: &Path, udid: &str) -> Vec<String> {
+pub fn xcodebuild_argv(project: &Path, udid: &str, target: RunnerTarget<'_>) -> Vec<String> {
     // Per-udid `-derivedDataPath` avoids DerivedData contention when
     // multiple `capsule up` invocations share the default Xcode
     // DerivedData root (~/Library/Developer/Xcode/DerivedData): the same
@@ -251,17 +268,35 @@ pub fn xcodebuild_argv(project: &Path, udid: &str) -> Vec<String> {
     // second sim can hang for 5min+ before failing. Isolating each sim
     // under .smix/runner/derived-data-<udid>/ sidesteps the lock.
     let derived = format!(".smix/runner/derived-data-{udid}");
-    vec![
+    let mut argv = vec![
         "test".into(),
         "-project".into(),
         project.display().to_string(),
         "-scheme".into(),
         "SmixRunner".into(),
         "-destination".into(),
-        format!("platform=iOS Simulator,id={udid}"),
+        // The two platform strings are not interchangeable, and mixing
+        // them up fails in a way that names neither: xcodebuild goes
+        // looking for a simulator with a phone's udid, finds nothing,
+        // and reports a destination error that says nothing about
+        // signing or about the device being physical.
+        match target {
+            RunnerTarget::Simulator => format!("platform=iOS Simulator,id={udid}"),
+            RunnerTarget::Physical { .. } => format!("platform=iOS,id={udid}"),
+        },
         "-derivedDataPath".into(),
         derived,
-    ]
+    ];
+    if let RunnerTarget::Physical { team } = target {
+        // Both, together, are what makes an unconfigured checkout build
+        // for a phone: the team says who signs, and the flag lets Xcode
+        // create or update the profile rather than failing on a device
+        // it has not seen. Proven on 2026-08-06 — a bare checkout plus
+        // these two produced a signed device build.
+        argv.push(format!("DEVELOPMENT_TEAM={team}"));
+        argv.push("-allowProvisioningUpdates".into());
+    }
+    argv
 }
 
 /// Bare HTTP GET /health against `localhost:<port>`; true on a 200 line.
@@ -437,6 +472,94 @@ fn post_soft_cycle(port: u16) -> Result<(u16, Vec<u8>), ()> {
     Ok((status, buf))
 }
 
+/// `GET /screenshot` over raw loopback TCP. Returns the PNG bytes.
+///
+/// The only way to photograph a physical iPhone: Apple exposes no screen
+/// capture for one through `simctl` or `devicectl`, but `XCUIScreen` runs
+/// inside the runner and works on device and simulator alike.
+///
+/// Raw TCP rather than an HTTP crate, which is what every other call to
+/// the runner in this file does — one request to loopback does not earn a
+/// dependency.
+///
+/// # Errors
+///
+/// The three failures are told apart because their fixes are not alike:
+/// no runner (bring one up), a runner that refused (the device or the
+/// session), and a body that is not a picture (worth saying rather than
+/// writing a file nobody can open).
+pub fn screenshot(port: u16) -> Result<Vec<u8>, ScreenshotError> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let mut s = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_secs(2))
+        .map_err(|_| ScreenshotError::NoRunner { port })?;
+    s.set_read_timeout(Some(Duration::from_secs(30)))
+        .map_err(|_| ScreenshotError::NoRunner { port })?;
+    s.write_all(b"GET /screenshot HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .map_err(|_| ScreenshotError::NoRunner { port })?;
+    let mut buf = Vec::with_capacity(1 << 20);
+    s.read_to_end(&mut buf)
+        .map_err(|e| ScreenshotError::Truncated(e.to_string()))?;
+    let status = parse_http_status(&buf).ok_or(ScreenshotError::NoRunner { port })?;
+    let body = http_body(&buf).unwrap_or_default();
+    if status != 200 {
+        return Err(ScreenshotError::Refused {
+            status,
+            detail: String::from_utf8_lossy(body).trim().to_string(),
+        });
+    }
+    // A zero-byte 200 is the failure this whole path exists to not have:
+    // written to disk it becomes a file every later step treats as a
+    // picture of the screen.
+    if body.is_empty() {
+        return Err(ScreenshotError::Empty);
+    }
+    Ok(body.to_vec())
+}
+
+/// Why a screenshot could not be fetched from the runner.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ScreenshotError {
+    /// Nothing is answering on the port.
+    #[error(
+        "no runner is answering on port {port}, and a physical device has no other way to \
+         be seen — Apple exposes no screen capture for one through simctl or devicectl.\n\
+         Bring it up first:\n  smix runner up <device> --bundle <id>"
+    )]
+    NoRunner {
+        /// The port that was dialed.
+        port: u16,
+    },
+    /// The runner answered, and said no.
+    #[error(
+        "the runner refused to capture the screen ({status}): {detail}\n\
+         It is up, so this is the device or the session rather than the connection."
+    )]
+    Refused {
+        /// HTTP status it answered with.
+        status: u16,
+        /// Whatever it said about why.
+        detail: String,
+    },
+    /// 200 with nothing in it.
+    #[error(
+        "the runner answered 200 with an empty body — a zero-byte file is not a \
+         screenshot, so nothing was written"
+    )]
+    Empty,
+    /// The connection died mid-body.
+    #[error("the screenshot body did not arrive in full: {0}")]
+    Truncated(String),
+}
+
+/// The bytes after the blank line that ends an HTTP response's headers.
+fn http_body(buf: &[u8]) -> Option<&[u8]> {
+    buf.windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|at| &buf[at + 4..])
+}
+
 /// Parse the numeric status from an HTTP response's status line
 /// (`HTTP/1.1 200 OK`).
 fn parse_http_status(buf: &[u8]) -> Option<u16> {
@@ -582,7 +705,64 @@ fn unrecorded_sessions_on(port: u16) -> Vec<u32> {
         .collect()
 }
 
-fn signal(pid: u32, sig: &str) {
+/// What to do about runner sessions this workspace has no record of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unrecorded {
+    /// Nothing is holding the port but us.
+    None,
+    /// Something is, and nobody said to take it down.
+    Reported(Vec<u32>),
+    /// Something is, and somebody said so.
+    Taken(Vec<u32>),
+}
+
+/// Decide what a teardown may do to a runner it did not start.
+///
+/// The ledger is the authority: what is not written down is not this
+/// workspace's to end. `runner up` has said so since C6 — it refuses a
+/// port held by a runner the store has no record of, rather than killing
+/// blindly. `down` did the opposite, quietly, and that is the shape of
+/// the 2026-07 incident where a sweep took out another session's runner.
+///
+/// The fix is not "never" — `up`'s refusal points at `runner down` as the
+/// way out, and a guard that leaves someone with no path gets worked
+/// around rather than obeyed. It is "not silently": the default reports,
+/// and taking it down is something a person says out loud.
+#[must_use]
+pub fn decide_unrecorded(pids: Vec<u32>, consented: bool) -> Unrecorded {
+    if pids.is_empty() {
+        Unrecorded::None
+    } else if consented {
+        Unrecorded::Taken(pids)
+    } else {
+        Unrecorded::Reported(pids)
+    }
+}
+
+/// What a teardown says when it will not end a runner it did not start.
+///
+/// Its own function so the wording can be asserted rather than grepped
+/// for: the sentence *is* the deliverable here — a refusal that does not
+/// say whose the process might be, or how to proceed, is how a guard
+/// turns into an obstacle and then into something people route around.
+#[must_use]
+pub fn unrecorded_refusal(port: u16, pids: &[u32]) -> String {
+    let list = pids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "port {port} is held by a runner this workspace has no record of \
+         (pid {list}), and it is still running.\n\
+         It may belong to another session — check before ending it:\n  \
+         ps -o lstart=,command= -p {list}\n\
+         If it should go, say so:\n  \
+         smix runner down --include-unrecorded"
+    )
+}
+
+pub(crate) fn signal(pid: u32, sig: &str) {
     let _ = std::process::Command::new("kill")
         .args([sig, &pid.to_string()])
         .status();
@@ -757,7 +937,13 @@ pub fn ensure_installed_runner_synced(
     dir: &Path,
 ) -> Result<SyncOutcome, smix_runner_sources::ExtractError> {
     let previous = smix_runner_sources::read_installed_version(dir)?;
-    if previous.as_deref() == Some(smix_runner_sources::SOURCES_VERSION) {
+    // Compared against version *and* digest. Version alone held only
+    // across releases: change a Swift source between two of them and the
+    // stamp still matched, so the tree was left alone and the device
+    // kept running the old runner while the repo showed the new. What
+    // that looks like from the outside is a route that 404s — a bug in
+    // the caller, apparently.
+    if smix_runner_sources::stamp_is_current(previous.as_deref()) {
         return Ok(SyncOutcome::AlreadyCurrent);
     }
     // Version drift OR missing → extract with force. `force=true` is
@@ -776,7 +962,9 @@ pub fn ensure_installed_runner_synced(
 ///
 /// These were trailing positional bools; a third one would have made
 /// `up(_, _, _, _, false, _, false, true)` the call site.
-#[derive(Clone, Copy, Debug, Default)]
+// No longer `Copy`: the signing team is a `String`, because a team id
+// read from a keychain has no lifetime to borrow from.
+#[derive(Clone, Debug, Default)]
 pub struct UpOptions {
     /// Let the runner record events (`capsule up` wants this; bare
     /// `runner up` does not).
@@ -789,6 +977,12 @@ pub struct UpOptions {
     /// screen had been navigated to — and then reports the next flow's
     /// failure as `ELEMENT_NOT_FOUND` against a splash screen.
     pub attach_without_relaunch: bool,
+    /// Signing team, when the target is a physical device.
+    ///
+    /// `None` means a simulator, which is what every caller wanted
+    /// before physical devices existed — so the default keeps them all
+    /// building exactly as they did.
+    pub physical_team: Option<String>,
 }
 
 /// Bring the runner up on `udid`. Blocks until `/health` answers 200 or
@@ -814,7 +1008,12 @@ pub fn up(
         record_enabled,
         supervise,
         attach_without_relaunch,
+        physical_team,
     } = opts;
+    let target = match physical_team.as_deref() {
+        Some(team) => RunnerTarget::Physical { team },
+        None => RunnerTarget::Simulator,
+    };
     // Refuse to boot without --bundle unless the caller explicitly
     // opts in via SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1. The runner's
     // built-in default `com.apple.Preferences` silently latches every
@@ -863,10 +1062,18 @@ pub fn up(
                 ));
             }
             None => {
+                // Naming the command that actually resolves it. This
+                // used to end at `smix runner down`, which since C17
+                // reports the same session and stops — so the advice
+                // sent people in a circle, twice past the one fact that
+                // mattered: it might be somebody else's.
                 return Err(format!(
                     "port {port} already serves /health but the store has no \
-                     record of that runner — not killing blindly; investigate \
-                     (pgrep -fl xcodebuild), then `smix runner down`"
+                     record of that runner — not killing blindly.\n\
+                     See whose it is:\n  pgrep -fl xcodebuild\n\
+                     If it should go:\n  smix runner down --include-unrecorded\n\
+                     If it should stay, bring this one up elsewhere:\n  \
+                     SMIX_RUNNER_PORT=<other> smix runner up …"
                 ));
             }
         }
@@ -883,7 +1090,7 @@ pub fn up(
         .map_err(|e| format!("clone log handle: {e}"))?;
 
     let mut cmd = std::process::Command::new("xcodebuild");
-    cmd.args(xcodebuild_argv(&project, udid))
+    cmd.args(xcodebuild_argv(&project, udid, target))
         .envs(runner_env(
             bundle,
             record_enabled,
@@ -899,6 +1106,18 @@ pub fn up(
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
     }
+    // The pipe first, on a phone.
+    //
+    // The runner listens on the *device's* loopback, so without this the
+    // health probe below dials a port on the Mac that nothing is on. The
+    // failure would read as "the runner never became healthy", which is
+    // both wrong and the most expensive kind of wrong — it sends whoever
+    // reads it into the runner logs rather than at the missing pipe.
+    if matches!(target, RunnerTarget::Physical { .. }) {
+        let fwd_pid = spawn_forwarder(root, udid, port)?;
+        println!("runner up: port forward {port} -> device (pid {fwd_pid})");
+    }
+
     let mut child = cmd.spawn().map_err(|e| format!("spawn xcodebuild: {e}"))?;
     let pid = child.id();
 
@@ -911,6 +1130,7 @@ pub fn up(
         supervisor_pid: None,
     };
     crate::runner_state::write(root, crate::runner_state::Platform::Ios, &st)?;
+    record_runner_lease(root, udid, port, pid)?;
 
     let timeout_secs: u64 = std::env::var("SMIX_RUNNER_UP_TIMEOUT_SECS")
         .ok()
@@ -947,7 +1167,17 @@ pub fn up(
     // stdout sees progress instead of a stall.
     let started_at = std::time::Instant::now();
     let mut last_heartbeat = started_at;
+    // Said once, the moment it is known — not saved for the timeout.
+    // Whoever is watching can act on it while the wait is still running,
+    // and xcodebuild picks up where it left off once they do.
+    let mut announced_block = false;
     while std::time::Instant::now() < deadline {
+        if !announced_block && let Some(blocked) = device_preflight_block(&log) {
+            println!("runner up: waiting on the device — {blocked}");
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+            announced_block = true;
+        }
         if is_cold && last_heartbeat.elapsed() >= std::time::Duration::from_secs(30) {
             let elapsed_s = started_at.elapsed().as_secs();
             println!("runner up: xcodebuild still working ({elapsed_s}s elapsed)");
@@ -972,6 +1202,9 @@ pub fn up(
             // SMIX_RUNNER_PROJECT, stale supervisor cache), this check
             // catches it before the user runs into a mysterious 404.
             let cli_version = env!("CARGO_PKG_VERSION");
+            // Set when the wire-schema branch has already announced the
+            // runner, so the version branch below does not say it twice.
+            let mut wire_reported = false;
             // Ask about the wire before asking about the version. A runner
             // that has been up across a CLI upgrade is not a problem unless
             // the shape between them moved, and demanding identical semvers
@@ -988,7 +1221,16 @@ pub fn up(
                             "runner up: http://localhost:{port}/health = 200 \
                              (runner v{v}, wire schema {schema})"
                         );
-                        return Ok(());
+                        // Deliberately not returning here.
+                        //
+                        // It used to, and that quietly disabled
+                        // `--supervise` for every runner new enough to
+                        // report a wire schema — which is all of them. The
+                        // sidecar block lives at the end of this branch,
+                        // and returning from the middle skipped it: the
+                        // flag was accepted, nothing was spawned, and
+                        // nothing said so.
+                        wire_reported = true;
                     }
                     None => {
                         clear_state(root);
@@ -1006,7 +1248,9 @@ pub fn up(
             }
             match health_runner_version(port) {
                 Some(v) if v == cli_version => {
-                    println!("runner up: http://localhost:{port}/health = 200 (runner v{v})");
+                    if !wire_reported {
+                        println!("runner up: http://localhost:{port}/health = 200 (runner v{v})");
+                    }
                 }
                 Some(v) => {
                     clear_state(root);
@@ -1043,6 +1287,7 @@ pub fn up(
             if supervise {
                 match spawn_supervisor(root, runner_project) {
                     Ok(sup_pid) => {
+                        record_supervisor_lease(root, udid, sup_pid);
                         // Rewrite state.json with the supervisor pid.
                         if let Some(mut current) = read_state(root) {
                             current.supervisor_pid = Some(sup_pid);
@@ -1077,10 +1322,45 @@ pub fn up(
     }
     signal(pid, "-INT");
     clear_state(root);
+    // Lead with the reason when the device itself said one. A timeout
+    // whose log ends in "Unlock panda's iphone to Continue" is not a
+    // timeout anyone needs 25 lines of build transcript to understand.
+    if let Some(blocked) = device_preflight_block(&log) {
+        return Err(format!(
+            "the device never became ready, so the runner never started: {blocked}\n\
+             xcodebuild waits for this rather than failing, so it sat for \
+             {timeout_secs}s — sent SIGINT. Clear it and run the same command again."
+        ));
+    }
     Err(format!(
         "runner did not become healthy within {timeout_secs}s — sent SIGINT; log tail:\n{}",
         tail_log(&log, 25)
     ))
+}
+
+/// What the device is waiting for, if `xcodebuild` said so.
+///
+/// A locked phone does not fail a build — it parks it. `xcodebuild`
+/// writes `Run Destination Preflight: The destination is not ready` and
+/// then waits, so a caller polling `/health` sees nothing at all until
+/// the timeout, and the one sentence that would have taken a second to
+/// act on ("Unlock panda's iphone to Continue") stays in a file nobody
+/// was told to open.
+fn device_preflight_block(log: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(log).ok()?;
+    if !text.contains("Run Destination Preflight") {
+        return None;
+    }
+    // `NSLocalizedRecoverySuggestion=` carries the sentence written for
+    // a person; the quoted error description is the terse version.
+    let suggestion = text.find("NSLocalizedRecoverySuggestion=").map(|at| {
+        let rest = &text[at + "NSLocalizedRecoverySuggestion=".len()..];
+        let end = rest.find(", DVT").or_else(|| rest.find('\n')).unwrap_or(0);
+        rest[..end].trim().to_string()
+    });
+    suggestion
+        .filter(|s| !s.is_empty())
+        .or_else(|| Some("the destination is not ready".to_string()))
 }
 
 /// Tear the runner down. SIGINT first — xcodebuild cancels the XCUITest
@@ -1091,7 +1371,12 @@ pub fn up(
 /// BEFORE tearing down xcodebuild. Otherwise the sidecar
 /// would flap into a `TEST INTERRUPTED` trigger the moment we send
 /// SIGINT to xcodebuild and try to re-cycle a runner we just killed.
-pub fn down(root: &Path, port: u16) -> Result<(), String> {
+/// `consent` decides what happens to a runner on this port that the
+/// store has no record of: `false` reports it and fails, `true` ends it.
+/// A parameter rather than a global, so every call site has to state its
+/// position — and all but one of them say no, because only a person
+/// typing `--include-unrecorded` is in a position to know.
+pub fn down(root: &Path, port: u16, consent: bool) -> Result<(), String> {
     let mut acted = false;
     if let Some(st) = read_state(root) {
         // Supervisor teardown first. Skip when we are
@@ -1144,14 +1429,21 @@ pub fn down(root: &Path, port: u16) -> Result<(), String> {
             }
         }
         clear_state(root);
+        forget_runner_lease(root, &st.udid);
     }
 
-    // Fallback: sessions started outside `smix runner up` (no handle),
-    // narrowed to whoever actually holds this port.
-    for pid in unrecorded_sessions_on(port) {
-        println!("stopping unrecorded runner session on port {port}: pid={pid}");
-        signal(pid, "-INT");
-        acted = true;
+    // Sessions started outside `smix runner up`, narrowed to whoever
+    // actually holds this port. Not ours to end on our own say-so.
+    match decide_unrecorded(unrecorded_sessions_on(port), consent) {
+        Unrecorded::None => {}
+        Unrecorded::Taken(pids) => {
+            for pid in pids {
+                println!("stopping unrecorded runner session on port {port}: pid={pid}");
+                signal(pid, "-INT");
+                acted = true;
+            }
+        }
+        Unrecorded::Reported(pids) => return Err(unrecorded_refusal(port, &pids)),
     }
 
     if acted {
@@ -1222,7 +1514,11 @@ pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<()
         }
         smix_runner_client::CyclePlan::HardFallback { reason } => {
             println!("soft-cycle unavailable ({reason}); hard-cycling via xcodebuild");
-            down(root, cycle_port)?;
+            // No: a cycle restarts the runner this state file names. If
+            // something else holds the port, the restart is not what is
+            // wanted anyway — better to say so than to clear the way by
+            // ending somebody else's session.
+            down(root, cycle_port, false)?;
             up(
                 root,
                 &udid,
@@ -1263,6 +1559,130 @@ fn collect_log_context(log_path: &Path, match_line: &str, context_size: usize) -
 /// `.smix/runner/supervise-<UDID>.log`. Uses its own process group so
 /// a ctrl-C on the CLI doesn't tear the supervisor down. Returns the
 /// child pid on success.
+/// Spawn a process whose only job is to hold a port forwarder open.
+///
+/// The forwarder is a listener living inside a process, and `runner up`
+/// exits as soon as the runner is healthy — so a forwarder started here
+/// would die seconds later, taking the only route to the device's runner
+/// with it. Same shape as the supervisor sidecar, and for the same
+/// reason: what must outlive the command has to be its own process.
+///
+/// Returns the child's pid so the ledger can record something a later
+/// teardown can find and stop.
+fn spawn_forwarder(root: &Path, udid: &str, port: u16) -> Result<u32, String> {
+    let runner_dir = root.join(".smix/runner");
+    std::fs::create_dir_all(&runner_dir).map_err(|e| format!("mkdir .smix/runner: {e}"))?;
+    let log = runner_dir.join(format!("forward-{udid}.log"));
+    let log_file =
+        std::fs::File::create(&log).map_err(|e| format!("create {}: {e}", log.display()))?;
+    let log_err = log_file
+        .try_clone()
+        .map_err(|e| format!("clone forward log handle: {e}"))?;
+
+    let self_exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+    let mut cmd = std::process::Command::new(&self_exe);
+    cmd.arg("runner")
+        .arg("forward")
+        .arg(udid)
+        .arg("--port")
+        .arg(port.to_string())
+        .stdin(std::process::Stdio::null())
+        .stdout(log_file)
+        .stderr(log_err);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Its own process group: a Ctrl-C in the terminal that ran
+        // `runner up` should not take the forwarder with it, any more
+        // than it takes the runner.
+        cmd.process_group(0);
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("spawn forwarder: {e}"))?;
+    let pid = child.id();
+
+    // Wait for the port to answer, and treat not answering as a failure.
+    //
+    // This used to wait and then report success either way, which is
+    // worse than not waiting at all: on 2026-08-06 the forwarder died
+    // immediately — it could not resolve the device it was handed — and
+    // `runner up` printed `port forward 22097 -> device (pid 30199)`
+    // about a process that was already gone, wrote a ledger row for it,
+    // and let xcodebuild run for two minutes against a pipe that never
+    // existed. A check that cannot fail is decoration.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut ready = false;
+    while std::time::Instant::now() < deadline {
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!(
+                "the port forwarder exited immediately ({status}). It is a \
+                 `smix runner forward {udid} --port {port}` of its own, and its \
+                 output is in {}:\n{}",
+                log.display(),
+                tail_for_error(&log)
+            ));
+        }
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            ready = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    if !ready {
+        let _ = child.kill();
+        return Err(format!(
+            "the port forwarder never accepted a connection on {port} within 10s. \
+             Its output is in {}:\n{}",
+            log.display(),
+            tail_for_error(&log)
+        ));
+    }
+
+    record_forward_lease(root, udid, port, pid);
+    Ok(pid)
+}
+
+/// Last few lines of a log, for putting inside an error message.
+///
+/// The forwarder's own failure is written there and nowhere else; an
+/// error that names a path a person then has to go and open is a worse
+/// error than one that quotes it.
+fn tail_for_error(path: &Path) -> String {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return "  (its log could not be read)".to_string();
+    };
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|l| !l.starts_with("kevy:") && !l.trim().is_empty())
+        .collect();
+    let start = lines.len().saturating_sub(5);
+    lines[start..]
+        .iter()
+        .map(|l| format!("  {l}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Record the forwarder in the device's ledger.
+fn record_forward_lease(root: &Path, udid: &str, port: u16, pid: u32) {
+    use smix_lease::store;
+    let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
+        pid,
+        started_at: String::new(),
+        cmd: format!("smix runner forward {udid}"),
+    });
+    if let Err(e) = store::add_resource(
+        root,
+        udid,
+        smix_lease::Resource::PortForward {
+            local_port: port,
+            device_port: port,
+            proc,
+        },
+    ) {
+        eprintln!("warning: port forward not recorded in the device ledger: {e}");
+    }
+}
+
 fn spawn_supervisor(root: &Path, runner_project: Option<&Path>) -> Result<u32, String> {
     let st = read_state(root)
         .ok_or_else(|| "internal: no state.json to attach supervisor to".to_string())?;
@@ -1555,9 +1975,178 @@ pub fn supervise(root: &Path, runner_project: Option<&Path>) -> Result<(), Strin
     }
 }
 
+/// Record the runner in the device's lease ledger.
+///
+/// `smix runner up` returns as soon as the runner is healthy, so the
+/// process that wrote this row is gone within seconds while the
+/// `xcodebuild` it started keeps the device for hours. The row is what
+/// lets the next command tell "someone is working here" from "someone
+/// was killed here", and it is what gives that xcodebuild a graceful
+/// teardown if nobody ever comes back for it.
+///
+/// A ledger that cannot be written is not shrugged off: the whole
+/// mechanism is the ledger, and a session running without one is exactly
+/// the state that leaves crash dialogs behind.
+/// Record the supervisor sidecar in the device's ledger.
+///
+/// The sidecar outlives the command that spawned it and will restart a
+/// runner it finds dead. A teardown that does not know about it stops
+/// the runner and watches it come back — so the row exists to make the
+/// sidecar something a later process can find and stop first.
+///
+/// Reported rather than propagated: the runner is already up and healthy
+/// by this point, and failing the whole bring-up over bookkeeping would
+/// throw away a working session.
+fn record_supervisor_lease(root: &Path, udid: &str, pid: u32) {
+    use smix_lease::store;
+    let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
+        pid,
+        started_at: String::new(),
+        cmd: "smix runner supervise".to_string(),
+    });
+    if let Err(e) = store::add_resource(root, udid, smix_lease::Resource::Supervisor { proc }) {
+        eprintln!("warning: supervisor not recorded in the device ledger: {e}");
+    }
+}
+
+fn record_runner_lease(root: &Path, udid: &str, port: u16, pid: u32) -> Result<(), String> {
+    use smix_lease::store;
+    let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
+        pid,
+        // An empty start time matches nothing, so a runner that died
+        // between spawn and probe reads as gone rather than as a live
+        // holder nobody can displace.
+        started_at: String::new(),
+        cmd: format!("xcodebuild test … id={udid}"),
+    });
+    store::add_resource(root, udid, smix_lease::Resource::Runner { port, proc })
+        .map_err(|e| e.to_string())
+}
+
+/// Drop the runner row after a clean teardown, and the whole ledger with
+/// it when nothing else is open.
+///
+/// Failures here are reported, not propagated: teardown already
+/// succeeded, and refusing to admit that because the bookkeeping failed
+/// would leave callers retrying a stop that already happened.
+fn forget_runner_lease(root: &Path, udid: &str) {
+    use smix_lease::store;
+    // Both rows, because `down` stops both: the supervisor first, then
+    // the runner. Leaving the supervisor row behind would have the next
+    // reconcile try to stop a sidecar that is already gone.
+    for sample in [
+        smix_lease::Resource::Runner {
+            port: 0,
+            proc: store::identify_self(),
+        },
+        smix_lease::Resource::Supervisor {
+            proc: store::identify_self(),
+        },
+        smix_lease::Resource::PortForward {
+            local_port: 0,
+            device_port: 0,
+            proc: store::identify_self(),
+        },
+    ] {
+        if let Err(e) = store::drop_resource_kind(root, udid, &sample) {
+            eprintln!("runner down: lease ledger not updated: {e}");
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(unsafe_code)] // env mutation: the thing under test
 mod tests {
+    use super::{ScreenshotError, Unrecorded, decide_unrecorded, http_body, unrecorded_refusal};
+
+    #[test]
+    fn an_http_body_starts_after_the_blank_line() {
+        let resp = b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n\r\n\x89PNG\r\n";
+        assert_eq!(http_body(resp), Some(&b"\x89PNG\r\n"[..]));
+        // A body may itself contain \r\n\r\n; only the first one ends the
+        // headers, and a PNG is full of bytes that could be anything.
+        let with_blanks = b"HTTP/1.1 200 OK\r\n\r\nAA\r\n\r\nBB";
+        assert_eq!(http_body(with_blanks), Some(&b"AA\r\n\r\nBB"[..]));
+        assert_eq!(http_body(b"no headers here"), None);
+    }
+
+    #[test]
+    fn screenshot_failure_names_a_different_fix_each() {
+        // They read the same to someone holding an empty file — "no
+        // screenshot" — and the things to do about them are unalike.
+        let no_runner = ScreenshotError::NoRunner { port: 22087 }.to_string();
+        assert!(no_runner.contains("smix runner up"), "{no_runner}");
+        assert!(no_runner.contains("22087"), "{no_runner}");
+
+        let refused = ScreenshotError::Refused {
+            status: 503,
+            detail: "XCUIScreen returned no PNG representation".into(),
+        }
+        .to_string();
+        assert!(refused.contains("503"), "{refused}");
+        assert!(
+            refused.contains("device or the session"),
+            "a refusal must not read as a connection problem: {refused}"
+        );
+
+        let empty = ScreenshotError::Empty.to_string();
+        assert!(
+            empty.contains("nothing was written"),
+            "the caller must know no file appeared: {empty}"
+        );
+    }
+
+    #[test]
+    fn the_refusal_says_whose_it_might_be_and_how_to_proceed() {
+        // Three things, and dropping any one turns a guard into an
+        // obstacle: which process, that it may not be yours, and the
+        // way through. A refusal missing the last one gets routed
+        // around rather than obeyed.
+        let msg = unrecorded_refusal(22087, &[4242]);
+        assert!(msg.contains("4242"), "names no process: {msg}");
+        assert!(
+            msg.contains("another session"),
+            "does not raise whose: {msg}"
+        );
+        assert!(
+            msg.contains("smix runner down --include-unrecorded"),
+            "no way through: {msg}"
+        );
+        // And it must not claim to have done anything.
+        for done in ["skipped", "ignored", "stopped", "closed"] {
+            assert!(!msg.contains(done), "reads as handled ({done}): {msg}");
+        }
+    }
+
+    #[test]
+    fn nothing_unrecorded_is_nothing_to_do() {
+        assert_eq!(decide_unrecorded(vec![], false), Unrecorded::None);
+        // Consent does not invent work.
+        assert_eq!(decide_unrecorded(vec![], true), Unrecorded::None);
+    }
+
+    #[test]
+    fn an_unrecorded_session_is_reported_not_taken() {
+        // The whole point: `runner up` refuses a port held by a runner
+        // it has no record of, and `down` used to end exactly that
+        // session without asking. Two commands, one situation, opposite
+        // answers — and the quiet one was the dangerous one.
+        assert_eq!(
+            decide_unrecorded(vec![4242], false),
+            Unrecorded::Reported(vec![4242])
+        );
+    }
+
+    #[test]
+    fn consent_takes_it_down() {
+        // Not "never" — `up`'s refusal points here, and a guard that
+        // leaves someone with no way through gets worked around.
+        assert_eq!(
+            decide_unrecorded(vec![4242, 4243], true),
+            Unrecorded::Taken(vec![4242, 4243])
+        );
+    }
+
     use super::*;
     use std::fs;
     use std::sync::Mutex;
@@ -1571,7 +2160,11 @@ mod tests {
 
     #[test]
     fn xcodebuild_argv_targets_explicit_udid() {
-        let argv = xcodebuild_argv(Path::new("/repo/swift-bridge/SmixRunner.xcodeproj"), UDID);
+        let argv = xcodebuild_argv(
+            Path::new("/repo/swift-bridge/SmixRunner.xcodeproj"),
+            UDID,
+            RunnerTarget::Simulator,
+        );
         assert_eq!(argv[0], "test");
         assert!(argv.contains(&"SmixRunner".to_string()));
         assert!(
@@ -1745,11 +2338,33 @@ mod tests {
         }
         // Fresh sources landed; stale marker is NOT in the new tree.
         assert!(!dir.path().join("stale-marker.txt").exists());
+        // Version *and* digest. The version alone was what let a
+        // rebuilt tarball compare equal to an old tree between releases.
         assert_eq!(
             std::fs::read_to_string(dir.path().join(".smix-runner-version"))
                 .unwrap()
                 .trim(),
+            smix_runner_sources::version_stamp()
+        );
+    }
+
+    #[test]
+    fn a_bare_version_stamp_is_treated_as_stale() {
+        // What every tree written before digests existed looks like.
+        // Re-extracting one needlessly costs a second; trusting one
+        // costs a device running code nobody can see in the repo.
+        assert!(!smix_runner_sources::stamp_is_current(Some(
             smix_runner_sources::SOURCES_VERSION
+        )));
+        assert!(!smix_runner_sources::stamp_is_current(None));
+        assert!(smix_runner_sources::stamp_is_current(Some(
+            &smix_runner_sources::version_stamp()
+        )));
+        // And the digest must actually depend on the bytes, or this
+        // whole change is decoration.
+        assert!(
+            smix_runner_sources::version_stamp()
+                .contains(&format!("{:016x}", smix_runner_sources::sources_digest()))
         );
     }
 
@@ -1880,5 +2495,73 @@ DAD42368-FF61-4237-9205-8C3E041D89A7/SmixRunnerUITests-Runner.app/SmixRunnerUITe
         // xcodebuild sessions.
         let cmd = format!("/usr/bin/log stream --predicate device == '{UDID}'");
         assert!(!xcodebuild_drives_udid(&cmd, UDID));
+    }
+}
+
+#[cfg(test)]
+mod target_tests {
+    use super::*;
+    use std::path::Path;
+
+    const SIM: &str = "5D087114-ECB3-443C-8DDB-40EEF9CFB90C";
+    const PHONE: &str = "00008120-001410C11A42201E";
+
+    fn argv_for(udid: &str, target: RunnerTarget<'_>) -> Vec<String> {
+        xcodebuild_argv(Path::new("/repo/SmixRunner.xcodeproj"), udid, target)
+    }
+
+    #[test]
+    fn a_simulator_build_is_unchanged_and_unsigned() {
+        // Every existing caller lands here. If this drifts, a working
+        // setup breaks for a feature it never asked for.
+        let argv = argv_for(SIM, RunnerTarget::Simulator);
+        assert!(
+            argv.iter()
+                .any(|a| a == &format!("platform=iOS Simulator,id={SIM}"))
+        );
+        assert!(
+            !argv.iter().any(|a| a.starts_with("DEVELOPMENT_TEAM")),
+            "a simulator build needs no signing team: {argv:?}"
+        );
+        assert!(!argv.iter().any(|a| a == "-allowProvisioningUpdates"));
+    }
+
+    #[test]
+    fn a_device_build_names_the_platform_the_team_and_the_flag() {
+        let argv = argv_for(PHONE, RunnerTarget::Physical { team: "KF79DRC524" });
+        assert!(
+            argv.iter()
+                .any(|a| a == &format!("platform=iOS,id={PHONE}"))
+        );
+        assert!(argv.iter().any(|a| a == "DEVELOPMENT_TEAM=KF79DRC524"));
+        assert!(argv.iter().any(|a| a == "-allowProvisioningUpdates"));
+    }
+
+    #[test]
+    fn a_device_build_never_says_simulator() {
+        // The failure this pins names neither cause: xcodebuild goes
+        // looking for a simulator with a phone's udid, finds none, and
+        // reports a destination error that mentions neither signing nor
+        // the device being physical.
+        let argv = argv_for(PHONE, RunnerTarget::Physical { team: "KF79DRC524" });
+        assert!(
+            !argv.iter().any(|a| a.contains("iOS Simulator")),
+            "device build carries a simulator destination: {argv:?}"
+        );
+    }
+
+    #[test]
+    fn the_derived_data_path_is_still_per_device() {
+        // Two devices building at once would otherwise contend on one
+        // DerivedData root, and the second hangs for minutes before
+        // failing — the reason this path exists at all.
+        let a = argv_for(SIM, RunnerTarget::Simulator);
+        let b = argv_for(PHONE, RunnerTarget::Physical { team: "T" });
+        let path_of = |v: &[String]| {
+            let i = v.iter().position(|x| x == "-derivedDataPath").unwrap();
+            v[i + 1].clone()
+        };
+        assert_ne!(path_of(&a), path_of(&b));
+        assert!(path_of(&b).contains(PHONE));
     }
 }

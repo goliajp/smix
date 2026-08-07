@@ -21,13 +21,90 @@ fn pkill(sig: &str, pattern: &str, label: &str) -> bool {
     hit
 }
 
+/// Close what the ledgers say is open, on every device that has one.
+///
+/// This is the pass that knows what it is doing. Everything after it
+/// matches on process text, which fails in both directions — it kills
+/// another project's runner when the pattern is too broad, and misses
+/// the same resource when its command line reads differently. Those
+/// passes stay as a backstop for what no ledger covers, but they are no
+/// longer how smix tears down its own work.
+///
+/// A device whose session is still alive is left alone and said so:
+/// `smix down` is a sweep of *this* workspace's leftovers, not a claim
+/// on every device on the machine.
+fn settle_ledgers(root: &Path) {
+    let dir = smix_lease::store::lease_dir(root);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        println!("  no device ledgers");
+        return;
+    };
+    let mut ids: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .strip_suffix(".json")
+                .map(str::to_string)
+        })
+        .collect();
+    ids.sort();
+    if ids.is_empty() {
+        println!("  no device ledgers");
+        return;
+    }
+    for id in ids {
+        let facts = match smix_lease::store::collect_facts(root, &id) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("  {id}: ledger unreadable: {e}");
+                continue;
+            }
+        };
+        // Closed unconditionally, unlike `lease reconcile`.
+        //
+        // The two commands look alike and mean different things.
+        // `reconcile` settles what a *dead* holder left behind and
+        // refuses to touch a live session — it runs on somebody else's
+        // behalf. `down` is this workspace's operator saying "close what
+        // I started", and a live runner is precisely what they mean. A
+        // `down` that skipped live sessions would leave the thing it was
+        // asked to clean up and report success.
+        let Some(held) = facts.existing else {
+            println!("  {id}: nothing owed");
+            continue;
+        };
+        let cleanup = smix_lease::plan_cleanup(&held.lease);
+        if cleanup.is_empty() {
+            println!("  {id}: nothing owed");
+        }
+        for outcome in smix_capsule::reconcile::execute(root, &cleanup) {
+            println!("  {id}: {}", outcome.line());
+        }
+        // The whole ledger, not just the process rows. `plan_cleanup`
+        // already includes the shutdown for a device this workspace
+        // booted, so after this pass nothing on that device is owed —
+        // and a ledger kept for a row nobody owes anything on is a file
+        // that makes the next `down` look like it has work to do.
+        if let Err(e) = smix_lease::store::remove(root, &id) {
+            eprintln!("  {id}: ledger not updated: {e}");
+        }
+    }
+}
+
 /// Run the full sweep. Returns Err with the residue list if smix-shaped
 /// processes survive.
 pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
-    println!("=== 1. XCUITest runner ===");
-    smix_capsule::runner::down(root, runner_port)?;
+    println!("=== 1. device ledgers (close what we opened) ===");
+    settle_ledgers(root);
 
-    println!("=== 2. web demo stack ===");
+    println!("=== 2. XCUITest runner ===");
+    // No: `smix down` tears down what this workspace started. A
+    // runner it has no record of belongs to somebody else until
+    // somebody says otherwise.
+    smix_capsule::runner::down(root, runner_port, false)?;
+
+    println!("=== 3. web demo stack ===");
     pkill("-TERM", "smix/web/node_modules/.bin/vite", "vite");
     pkill("-TERM", "smix-demo-target/debug/smix-server", "smix-server");
 
@@ -42,7 +119,7 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
         None
     };
 
-    println!("=== 3. orphan recorders / motion loops (registered UDIDs only) ===");
+    println!("=== 4. orphan recorders / motion loops (registered UDIDs only) ===");
     // Other projects run recordVideo / app-cycling loops on their own sims
     // too — a bare pattern would kill theirs. Scope by registered UDID.
     if let Some(reg) = &reg {
@@ -60,7 +137,7 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
         }
     }
 
-    println!("=== 4. shutdown registered sims (per-UDID) ===");
+    println!("=== 5. shutdown registered sims (per-UDID) ===");
     if let Some(reg) = &reg {
         let simctl = SimctlClient::new();
         let devices = simctl.list_devices().await.map_err(|e| e.to_string())?;
@@ -68,11 +145,41 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
             let booted = devices
                 .iter()
                 .any(|d| d.udid.eq_ignore_ascii_case(&sim.udid) && d.state == "Booted");
-            if booted {
+            if !booted {
+                continue;
+            }
+            // Only devices this workspace booted.
+            //
+            // Being in the registry means "smix knows how to address
+            // it", not "smix may turn it off". Shutting down every
+            // registered device took away sessions nobody here started —
+            // a developer running `expo start` against a registered
+            // simulator lost it to a teardown of somebody else's work.
+            // The boot row is the record of who is entitled, and it is
+            // the same rule reconcile follows.
+            let ledger = smix_lease::store::read(root, &sim.udid).ok().flatten();
+            let ours = smix_lease::may_shut_down(ledger.as_ref());
+            if !ours {
+                println!("  {alias} ({}) is up but not ours — left alone", sim.udid);
+                continue;
+            }
+            {
                 simctl
                     .shutdown(&sim.udid)
                     .await
                     .map_err(|e| format!("shutdown {alias} ({}): {e}", sim.udid))?;
+                // Once it is off, nobody owes it a shutdown. Leaving the
+                // boot row behind would have the next teardown shut down
+                // a device this workspace never turned on — and would
+                // keep a ledger file alive with nothing left in it worth
+                // acting on.
+                if let Err(e) = smix_lease::store::drop_resource_kind(
+                    root,
+                    &sim.udid,
+                    &smix_lease::Resource::Booted { by_us: true },
+                ) {
+                    eprintln!("  {}: boot row not cleared: {e}", sim.udid);
+                }
                 println!("  shutdown {alias} ({})", sim.udid);
             }
         }
@@ -83,7 +190,7 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
         );
     }
 
-    println!("=== 5. residue report ===");
+    println!("=== 6. residue report ===");
     let mut patterns = vec!["xcodebuild.*Smix|smix-server|smix/web.*vite".to_string()];
     if let Some(reg) = &reg {
         for sim in reg.sims().values() {

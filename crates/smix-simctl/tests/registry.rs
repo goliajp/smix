@@ -130,6 +130,8 @@ fn discover_finds_a_store_with_no_legacy_file() {
             device_type: "iPhone 16 Pro".into(),
             locale: None,
             runner_port: None,
+            kind: smix_simctl::registry::DeviceKind::Simulator,
+            destructive_opt_in: false,
         },
     )
     .expect("registers");
@@ -221,6 +223,8 @@ fn registered(udid: &str, name: &str) -> smix_simctl::registry::RegisteredSim {
         device_type: "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro".to_string(),
         locale: None,
         runner_port: None,
+        kind: smix_simctl::registry::DeviceKind::Simulator,
+        destructive_opt_in: false,
     }
 }
 

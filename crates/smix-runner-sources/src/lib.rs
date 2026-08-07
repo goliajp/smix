@@ -30,6 +30,49 @@ pub const SOURCES_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// successful extract. Content is `SOURCES_VERSION` + trailing newline.
 pub const VERSION_FILE: &str = ".smix-runner-version";
 
+/// A stamp of what is actually installed: the version, and a digest of
+/// the bytes it came from.
+///
+/// The version alone was not enough, and the gap had teeth. Between two
+/// releases the version does not move, so a changed Swift source
+/// rebuilt into the tarball compared equal to whatever was already on
+/// disk and **was never extracted** — the runner on the device kept
+/// running the old code while the repo showed the new. The failure is
+/// silent in the worst way: the new route simply 404s, which reads as a
+/// bug in the caller.
+///
+/// This is the same species as the source-freeze cycle the tarball was
+/// introduced to end (v1.0.10); the tarball fixed distribution and left
+/// the staleness test behind.
+#[must_use]
+pub fn sources_digest() -> u64 {
+    // FNV-1a over the embedded tarball. Not a security boundary — the
+    // question is "are these the same bytes I extracted last time", and
+    // the adversary is a forgetful build, not an attacker.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in SOURCES_TAR_GZ {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    hash
+}
+
+/// The line written to [`VERSION_FILE`]: version and digest together.
+#[must_use]
+pub fn version_stamp() -> String {
+    format!("{SOURCES_VERSION} {:016x}", sources_digest())
+}
+
+/// Is an installed stamp the same sources as the embedded ones?
+///
+/// Accepts a bare version with no digest as **stale**, deliberately: a
+/// tree stamped before digests existed cannot be shown equal, and
+/// re-extracting once is cheap next to running the wrong runner.
+#[must_use]
+pub fn stamp_is_current(installed: Option<&str>) -> bool {
+    installed.is_some_and(|s| s.trim() == version_stamp())
+}
+
 /// Report of an [`extract_to`] call. Useful for the CLI to emit an
 /// info banner after auto-sync.
 #[derive(Debug, Clone)]
@@ -222,7 +265,10 @@ pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError
     }
 
     let version_path = dst.join(VERSION_FILE);
-    std::fs::write(&version_path, format!("{SOURCES_VERSION}\n"))
+    // Version *and* digest: between releases the version does not move,
+    // so it alone cannot tell a rebuilt tarball from the one already
+    // here. See `sources_digest`.
+    std::fs::write(&version_path, format!("{}\n", version_stamp()))
         .map_err(|e| ExtractError::io(format!("writing {}", version_path.display()), e))?;
 
     // Last, so a rotation failure cannot cost the tree that was just

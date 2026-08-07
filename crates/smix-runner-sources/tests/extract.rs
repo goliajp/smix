@@ -44,7 +44,15 @@ fn extract_writes_version_file_matching_crate_version() {
 
     let version_path = dir.path().join(VERSION_FILE);
     let content = fs::read_to_string(&version_path).expect("read version file");
-    assert_eq!(content.trim(), SOURCES_VERSION);
+    // Version *and* a digest of the bytes. The version alone could not
+    // tell a rebuilt tarball from the tree already on disk, because
+    // between two releases it does not move — so a changed Swift source
+    // was never extracted and the device kept running the old runner.
+    assert!(
+        content.trim().starts_with(SOURCES_VERSION),
+        "the stamp must still lead with the version: {content:?}"
+    );
+    assert_eq!(content.trim(), smix_runner_sources::version_stamp());
 }
 
 #[test]
@@ -62,7 +70,10 @@ fn read_installed_version_returns_written_version() {
     let dir = tempfile::tempdir().expect("tempdir");
     extract_to(dir.path(), false).expect("extract");
     let observed = read_installed_version(dir.path()).expect("read");
-    assert_eq!(observed.as_deref(), Some(SOURCES_VERSION));
+    assert_eq!(
+        observed.as_deref(),
+        Some(smix_runner_sources::version_stamp().as_str())
+    );
 }
 
 #[test]

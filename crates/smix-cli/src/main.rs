@@ -19,12 +19,11 @@ mod federation;
 #[cfg(test)]
 mod guide_gate;
 mod init;
+mod lease_cmd;
 mod parallel;
 mod readiness;
+mod record_cmd;
 
-#[cfg(test)]
-mod release_record;
-mod runner_android;
 mod script;
 
 use clap::{Parser, Subcommand};
@@ -181,6 +180,19 @@ enum Cmd {
     /// Tear down every smix-owned residual process and recycle registered
     /// sims (per-UDID; never touches sims outside .smix/sims.json).
     Down,
+    /// Inspect and settle the device resource ledger: who holds a device,
+    /// what they left open, and closing it gracefully when they are gone.
+    Lease {
+        #[command(subcommand)]
+        action: LeaseAction,
+    },
+    /// Record the device screen. The recording is written into the device
+    /// ledger, so it survives the process that started it and can be
+    /// closed gracefully if that process dies.
+    Record {
+        #[command(subcommand)]
+        action: RecordAction,
+    },
     /// End-to-end capsule bring-up / tear-down: headless boot, capture,
     /// and runner start with `--record`. The guard rejects a windowed
     /// session by default; pass `--soft` to accept the soft-capsule
@@ -873,6 +885,32 @@ enum CapsuleAction {
 }
 
 #[derive(Subcommand, Debug)]
+enum RecordAction {
+    /// Start recording to a file.
+    Start {
+        device: String,
+        /// Where to write the mp4.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Stop the recording, letting it write its trailer.
+    Stop { device: String },
+    /// Whether this device is recording, and where it is writing.
+    Status { device: String },
+}
+
+#[derive(Subcommand, Debug)]
+enum LeaseAction {
+    /// Every device with a ledger, and whether its holder is still there.
+    List,
+    /// One device: the holder, what is open, and the verdict.
+    Status { device: String },
+    /// Close what a dead holder left open, by the graceful path it never
+    /// got to take. A live holder is reported, never preempted.
+    Reconcile { device: String },
+}
+
+#[derive(Subcommand, Debug)]
 enum RunnerAction {
     /// Start the runner on a device; blocks until /health answers.
     Up {
@@ -910,6 +948,13 @@ enum RunnerAction {
         /// Sidecar log at `.smix/runner/supervise-<UDID>.log`.
         #[arg(long = "supervise", default_value_t = false)]
         supervise: bool,
+        /// Apple developer team id, for a physical device.
+        ///
+        /// Discovered from this machine's signing identities when
+        /// omitted. Needed only when several teams could sign, which is
+        /// a question smix refuses to answer for you.
+        #[arg(long)]
+        team: Option<String>,
         /// Foreground the app instead of relaunching it.
         ///
         /// Bringing the runner up restarts the target app, which drops
@@ -930,6 +975,43 @@ enum RunnerAction {
         /// Android only: the adb serial (e.g. `emulator-5554`).
         #[arg(long)]
         device: Option<String>,
+        /// Also stop a runner on this port that this workspace has no
+        /// record of.
+        ///
+        /// Off by default: an unrecorded runner may belong to another
+        /// session, and ending one by accident is how a sweep once took
+        /// out somebody else's work. `runner up` refuses such a port for
+        /// the same reason — this flag is the sanctioned way through,
+        /// and it is a sentence somebody says rather than something that
+        /// happens.
+        #[arg(long = "include-unrecorded", default_value_t = false)]
+        include_unrecorded: bool,
+    },
+    /// Hold a port forward open to a physical device. Runs in the
+    /// foreground until killed.
+    ///
+    /// `runner up` spawns this for a physical device; it is documented
+    /// because a process that appears in `ps` and in the device ledger
+    /// should be findable, not a mystery.
+    Forward {
+        /// Device UDID.
+        device: String,
+        /// Port, the same on both sides.
+        #[arg(long, default_value_t = 22087)]
+        port: u16,
+    },
+    /// Remove the Android instrumentation package `runner up` installed.
+    ///
+    /// Android only: the iOS runner is not installed as a standalone
+    /// package, it is launched by xcodebuild and leaves nothing behind.
+    Uninstall {
+        /// Which platform. Only `android` is meaningful here.
+        #[arg(long, value_enum, default_value_t = RunPlatform::Android)]
+        platform: RunPlatform,
+        /// Device serial. Required — an unpinned uninstall would reach
+        /// whatever is attached.
+        #[arg(long)]
+        device: String,
     },
     /// Cycle the runner: down + up on the same device/port/bundle.
     /// Preserves the per-udid derived-data directory so the warm re-up
@@ -985,7 +1067,9 @@ enum SimAction {
         json: bool,
     },
     /// Print the UDID a device ref resolves to.
-    Resolve { device: String },
+    Resolve {
+        device: String,
+    },
     /// Record a simulator in `.smix/sims.json` under an alias, creating
     /// the registry when absent. This is the bootstrap: alias-form
     /// device refs fail on a fresh checkout until a registry exists.
@@ -1001,15 +1085,38 @@ enum SimAction {
         /// Dedicated runner port for this sim. Optional.
         #[arg(long = "runner-port")]
         runner_port: Option<u16>,
+        /// What kind of device this is.
+        ///
+        /// Defaults to a simulator, which is the case that must keep
+        /// working without anyone learning a new flag. A physical value
+        /// changes two things: the identifier is taken as given rather
+        /// than looked up in simctl (which lists no phones), and
+        /// destructive actions are refused on it until
+        /// `smix sim allow-destructive` is run once.
+        #[arg(long, value_enum, default_value_t = DeviceKindArg::Simulator)]
+        kind: DeviceKindArg,
+        /// Human-readable name for a physical device. Ignored for
+        /// simulators, whose name comes from simctl.
+        #[arg(long)]
+        name: Option<String>,
     },
     /// Boot a simulator.
-    Boot { device: String },
+    Boot {
+        device: String,
+    },
     /// Shutdown a simulator.
-    Shutdown { device: String },
+    Shutdown {
+        device: String,
+    },
     /// Erase a simulator's data.
-    Erase { device: String },
+    Erase {
+        device: String,
+    },
     /// Take a screenshot (PNG). Pass `-` to write raw PNG to stdout.
-    Screenshot { device: String, out: PathBuf },
+    Screenshot {
+        device: String,
+        out: PathBuf,
+    },
     /// Launch an app by bundle id; prints the pid. Accepts repeatable
     /// `--child-env KEY=VAL` flags to inject `SIMCTL_CHILD_KEY=VAL` envp
     /// onto the simctl process — the launched app reads it back via
@@ -1032,13 +1139,25 @@ enum SimAction {
         launch_args: Vec<String>,
     },
     /// Terminate an app by bundle id.
-    Terminate { device: String, bundle_id: String },
+    Terminate {
+        device: String,
+        bundle_id: String,
+    },
     /// Install an .app bundle.
-    Install { device: String, app_path: PathBuf },
+    Install {
+        device: String,
+        app_path: PathBuf,
+    },
     /// Uninstall an app by bundle id.
-    Uninstall { device: String, bundle_id: String },
+    Uninstall {
+        device: String,
+        bundle_id: String,
+    },
     /// Open a URL on the simulator.
-    Openurl { device: String, url: String },
+    Openurl {
+        device: String,
+        url: String,
+    },
     /// Set simulator UI appearance (light / dark).
     Appearance {
         device: String,
@@ -1046,7 +1165,19 @@ enum SimAction {
         mode: Appearance,
     },
     /// Reset keychain on a simulator.
-    KeychainReset { device: String },
+    /// Allow destructive actions on a physical device, once.
+    ///
+    /// Simulators are never gated — they can be erased and rebuilt in a
+    /// minute. A phone cannot, so wiping app data, resetting a keychain
+    /// or uninstalling on one is refused until this is run. Recorded in
+    /// the registry rather than confirmed per command: a confirmation
+    /// that has to be typed every time ends up pasted into a script.
+    AllowDestructive {
+        device: String,
+    },
+    KeychainReset {
+        device: String,
+    },
     /// Set the sim's locale (`AppleLanguages` + `AppleLocale`
     /// NSGlobalDomain). By default writes the values but
     /// does NOT reboot; running apps cache locale at process-start so
@@ -1102,15 +1233,134 @@ fn parse_appearance(s: &str) -> Result<Appearance, String> {
     }
 }
 
-/// Resolve a device ref to a UDID. Explicit UDID short-circuits without
-/// touching the registry; aliases need a readable .smix/sims.json (env
-/// SMIX_SIMS_JSON overrides upward discovery from cwd).
+/// Resolve a device ref to a UDID.
+///
+/// An alias needs a readable `.smix/sims.json` (env `SMIX_SIMS_JSON`
+/// overrides upward discovery from cwd), so it is registered by
+/// construction. A raw UDID used to short-circuit straight through, and
+/// that was the hole: an identifier nobody registered went past every
+/// gate and reached an executor, where it was stopped only if that
+/// executor happened not to recognise it. `simctl` does not recognise a
+/// phone, so for a while nothing bad came of it — but `devicectl` does,
+/// and it can uninstall. So a raw UDID now has to be one of ours: either
+/// registered here, or a simulator the platform itself lists.
 fn resolve_device(device_ref: &str) -> Result<String, CliError> {
     if registry::is_udid(device_ref) {
-        return Ok(device_ref.to_ascii_uppercase());
+        let udid = device_ref.to_ascii_uppercase();
+        let known = if lookup_registered(&udid).is_some() {
+            // The class does not matter here — what may be *done* to a
+            // registered device is `guard_destructive`'s question.
+            smix_lease::Known::Registered(smix_lease::DeviceClass {
+                physical: false,
+                destructive_opt_in: false,
+            })
+        } else if simctl_knows(&udid) {
+            smix_lease::Known::UnregisteredVirtual
+        } else {
+            smix_lease::Known::Unknown
+        };
+        smix_lease::may_address(&udid, known).map_err(|e| CliError::Other(e.to_string()))?;
+        return Ok(udid);
     }
     let path = registry_path()?;
     Ok(SimRegistry::load(&path)?.resolve(device_ref)?)
+}
+
+/// Resolve an Android device ref to the serial `adb` will be given.
+///
+/// The iOS side gets its addressability check inside [`resolve_device`],
+/// because every iOS command goes through it. Android had no such place:
+/// the serial went straight to `adb`, so "whichever phone happens to be
+/// plugged in" was addressable by anyone who typed its serial — the exact
+/// shape that put smix's runner on somebody's personal handset on
+/// 2026-07-17.
+///
+/// Case is preserved rather than upper-cased the way UDIDs are: `adb`
+/// serials are matched verbatim, and `EMULATOR-5554` is not a device.
+fn resolve_android_serial(device_ref: &str) -> Result<String, CliError> {
+    // Not a heuristic: `adb` is the one naming these. An emulator is
+    // `emulator-<port>`; a physical device answers with its hardware
+    // serial, which never takes that form.
+    if device_ref.starts_with("emulator-") {
+        return Ok(device_ref.to_string());
+    }
+    let registered = lookup_registered(device_ref);
+    let known = match &registered {
+        Some(s) => smix_lease::Known::Registered(smix_lease::DeviceClass {
+            physical: s.kind.is_physical(),
+            destructive_opt_in: s.destructive_opt_in,
+        }),
+        None => smix_lease::Known::Unknown,
+    };
+    smix_lease::may_address(device_ref, known).map_err(|e| CliError::Other(e.to_string()))?;
+    // An alias resolves to the serial it was registered with; a serial
+    // given directly is already the answer.
+    Ok(registered.map_or_else(|| device_ref.to_string(), |s| s.udid))
+}
+
+/// Which platform's tooling addresses this device.
+///
+/// Read from the registry when it is there, and inferred only where the
+/// inference is a consequence of an invariant rather than a guess:
+/// `resolve_device` has, since C15, let a raw identifier through only
+/// when the platform itself claims it — a simulator `simctl` lists or an
+/// `emulator-<port>` serial. So an unregistered reference that reached
+/// this point is one of those two, and nothing else.
+fn device_kind_of(device_ref: &str) -> smix_simctl::registry::DeviceKind {
+    use smix_simctl::registry::DeviceKind;
+    if let Some(sim) = lookup_registered(device_ref) {
+        return sim.kind;
+    }
+    if registry::is_emulator_serial(device_ref) {
+        return DeviceKind::Emulator;
+    }
+    DeviceKind::Simulator
+}
+
+/// Does `simctl` list a simulator with this UDID?
+///
+/// Only ever asked when the registry missed, so the common case pays
+/// nothing for it. A substring match over the JSON is enough and cannot
+/// collide: a UDID is 36 characters of a shape nothing else in that
+/// document has.
+///
+/// A machine with no `xcrun` answers no, which is the truthful answer —
+/// there are no simulators there for the UDID to be one of.
+fn simctl_knows(udid: &str) -> bool {
+    std::process::Command::new("xcrun")
+        .args(["simctl", "list", "devices", "-j"])
+        .output()
+        .is_ok_and(|out| {
+            out.status.success()
+                && String::from_utf8_lossy(&out.stdout)
+                    .to_ascii_uppercase()
+                    .contains(udid)
+        })
+}
+
+/// Does `adb` list a device with this serial?
+///
+/// [`simctl_knows`]'s twin, and deliberately the same shape: each virtual
+/// device is checked against the catalogue its own platform keeps. Case
+/// is preserved — `adb` matches serials verbatim.
+fn adb_knows(serial: &str) -> bool {
+    std::process::Command::new("adb")
+        .arg("devices")
+        .output()
+        .is_ok_and(|out| {
+            out.status.success()
+                && String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    // `adb devices` prints "<serial>\t<state>"; a device
+                    // that is listed as `offline` or `unauthorized` is
+                    // known but cannot be driven, and registering an
+                    // alias for one would hand out a name that fails
+                    // later somewhere else.
+                    .any(|l| {
+                        l.split('\t').next().is_some_and(|s| s == serial)
+                            && l.split('\t').nth(1).is_some_and(|s| s.trim() == "device")
+                    })
+        })
 }
 
 /// Resolve the path to `.smix/sims.json` (env override or upward
@@ -1210,14 +1460,88 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 udid,
                 locale,
                 runner_port,
+                kind,
+                name,
             } => {
-                let udid = udid.to_ascii_uppercase();
-                if !registry::is_udid(&udid) {
-                    return Err(CliError::Other(format!(
-                        "--udid {udid:?} is not UDID-form (8-4-4-4-12 hex); \
-                         find it via `smix sim list`"
-                    )));
+                let kind = kind.to_registry();
+                let udid = registry::canonical_identifier(kind, &udid);
+                registry::identifier_fits(kind, &udid)
+                    .map_err(|e| CliError::Other(e.to_string()))?;
+                if kind == smix_simctl::registry::DeviceKind::Emulator {
+                    if !adb_knows(&udid) {
+                        return Err(CliError::Other(format!(
+                            "adb lists no running device {udid} — check `adb devices`.\n\
+                             An emulator is checked against adb the way a simulator is \
+                             checked against simctl; only a physical device is taken as \
+                             given, because nothing here can enumerate the world's phones."
+                        )));
+                    }
+                    let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+                    let outcome = SimRegistry::register(
+                        &path,
+                        &alias,
+                        smix_simctl::registry::RegisteredSim {
+                            device_name: name.unwrap_or_else(|| alias.clone()),
+                            udid: udid.clone(),
+                            runtime: String::new(),
+                            device_type: String::new(),
+                            locale,
+                            runner_port,
+                            kind,
+                            destructive_opt_in: false,
+                        },
+                    )?;
+                    let verb = match outcome {
+                        smix_simctl::registry::RegisterOutcome::Added => "registered",
+                        smix_simctl::registry::RegisterOutcome::Updated => "updated",
+                    };
+                    println!("{verb}: {alias} → {udid} (Android emulator)");
+                    return Ok(std::process::ExitCode::SUCCESS);
                 }
+                // A physical device is taken as given.
+                //
+                // simctl lists simulators and nothing else, so the
+                // lookup below would refuse every phone that exists. The
+                // identifier is whatever addresses it — a UDID for iOS,
+                // an adb serial for Android — and neither is checked
+                // against a catalogue, because there is no catalogue to
+                // check against. Registration is the deliberate act;
+                // that is the whole point of requiring it.
+                if kind.is_physical() {
+                    let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+                    let outcome = SimRegistry::register(
+                        &path,
+                        &alias,
+                        smix_simctl::registry::RegisteredSim {
+                            device_name: name.unwrap_or_else(|| alias.clone()),
+                            udid: udid.clone(),
+                            runtime: String::new(),
+                            device_type: String::new(),
+                            locale,
+                            runner_port,
+                            kind,
+                            // Never on by registration. Allowing
+                            // destruction has to be its own decision, or
+                            // it is not a decision.
+                            destructive_opt_in: false,
+                        },
+                    )?;
+                    let verb = match outcome {
+                        smix_simctl::registry::RegisterOutcome::Added => "registered",
+                        smix_simctl::registry::RegisterOutcome::Updated => "updated",
+                    };
+                    println!("{verb}: {alias} → {udid} (physical device)");
+                    println!(
+                        "destructive actions are refused on it until \
+                         `smix sim allow-destructive {alias}`"
+                    );
+                    return Ok(std::process::ExitCode::SUCCESS);
+                }
+                // The shape check that used to live here now runs above
+                // for every kind, and names the right world when it
+                // refuses — telling an Android user their serial "is not
+                // UDID-form" described the shape of a thing they were not
+                // registering.
                 let devices = simctl.list_devices().await?;
                 let device = devices
                     .iter()
@@ -1241,6 +1565,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         device_type: device.device_type_identifier.clone(),
                         locale,
                         runner_port,
+                        // Not a guess: this record is built from what
+                        // `simctl list devices` returned, and simctl only
+                        // ever lists simulators. A physical device is
+                        // registered by a different path.
+                        kind: smix_simctl::registry::DeviceKind::Simulator,
+                        destructive_opt_in: false,
                     },
                 )?;
                 let verb = match outcome {
@@ -1259,8 +1589,34 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             }
             SimAction::Boot { device } => {
                 let udid = resolve_device(&device)?;
-                simctl.boot(&udid).await?;
+                // Whether this command is the one that brought the device
+                // up decides, later, whether smix may shut it down. A
+                // device someone else booted is not ours to turn off as
+                // the price of cleaning up after ourselves.
+                let was_up = booted_udids(&simctl).await.contains(&udid);
+                // Wait for the device to finish booting, not just to accept
+                // the boot. `simctl boot` returns while CoreSimulator is
+                // still bringing the render surfaces up, and a device in
+                // that state answers "Booted" to a listing while
+                // `simctl io … screenshot` fails with "Timeout waiting for
+                // screen surfaces" and `recordVideo` produces a zero-byte
+                // file it reports as written. Printing "booted" then is a
+                // statement that is not yet true, and everything the next
+                // command does with the device fails in ways that do not
+                // name this as the cause.
+                simctl
+                    .boot_and_wait(&udid, std::time::Duration::from_secs(120))
+                    .await?;
                 println!("booted: {udid}");
+                if let Ok(root) = smix_workspace_root()
+                    && let Err(e) = smix_lease::store::add_resource(
+                        &root,
+                        &udid,
+                        smix_lease::Resource::Booted { by_us: !was_up },
+                    )
+                {
+                    eprintln!("warning: boot not recorded in the device ledger: {e}");
+                }
                 // Registry-driven locale enforcement. When the SimEntry
                 // has a `locale` field, ensure the sim's
                 // NSGlobalDomain AppleLanguages first entry matches; if
@@ -1291,17 +1647,70 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             }
             SimAction::Shutdown { device } => {
                 let udid = resolve_device(&device)?;
-                simctl.shutdown(&udid).await?;
+                // Already off is the state that was asked for. Failing
+                // here would also mean never clearing the boot row below,
+                // so a device shut down twice would keep a record saying
+                // smix still owes it a shutdown — forever.
+                match simctl.shutdown(&udid).await {
+                    Ok(()) => {}
+                    Err(smix_simctl::DeviceControlError::NonZeroExit { ref stderr, .. })
+                        if stderr.contains("current state: Shutdown") => {}
+                    Err(e) => return Err(e.into()),
+                }
+                // The boot row records who may shut this device down.
+                // Once it is off, the answer is nobody — leaving the row
+                // behind would have a later teardown shut down a device
+                // this process never turned on.
+                if let Ok(root) = smix_workspace_root()
+                    && let Err(e) = smix_lease::store::drop_resource_kind(
+                        &root,
+                        &udid,
+                        &smix_lease::Resource::Booted { by_us: true },
+                    )
+                {
+                    eprintln!("warning: boot row not cleared from the device ledger: {e}");
+                }
                 println!("shutdown: {udid}");
             }
             SimAction::Erase { device } => {
                 let udid = resolve_device(&device)?;
+                guard_destructive(&device)?;
                 simctl.erase(&udid).await?;
                 println!("erased: {udid}");
             }
             SimAction::Screenshot { device, out } => {
+                use smix_simctl::registry::DeviceKind;
                 let udid = resolve_device(&device)?;
-                let png = simctl.screenshot(&udid).await?;
+                // Sense is a flat capability: which tool takes the
+                // picture is smix's problem, not the caller's. What is
+                // not flat is a phone — its screen comes from the
+                // runner's XCUIScreen, and there is no device-tooling
+                // path to it at all. §9#1's third constraint says that
+                // has to be said out loud rather than degraded into an
+                // empty file that every later assertion measures.
+                let png = match device_kind_of(&device) {
+                    DeviceKind::Simulator => simctl.screenshot(&udid).await?,
+                    DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
+                        use smix_sdk::device_control::DeviceControl;
+                        smix_sdk::android_device::AndroidDeviceControl::new()
+                            .screenshot(&udid)
+                            .await
+                            .map_err(|e| CliError::Other(e.to_string()))?
+                    }
+                    DeviceKind::PhysicalIos => {
+                        // Through the runner, because Apple exposes no
+                        // screen capture for a phone via simctl or
+                        // devicectl — but `XCUIScreen` runs inside the
+                        // runner and works on both. Until C20 this arm
+                        // was a refusal saying so; leaving that in place
+                        // once the route existed would have been a
+                        // message describing a hole that had been
+                        // filled.
+                        let port = runner_port();
+                        smix_capsule::runner::screenshot(port)
+                            .map_err(|e| CliError::Other(e.to_string()))?
+                    }
+                };
                 if out.as_os_str() == "-" {
                     use std::io::Write;
                     std::io::stdout()
@@ -1347,7 +1756,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             }
             SimAction::Uninstall { device, bundle_id } => {
                 let udid = resolve_device(&device)?;
-                simctl.uninstall(&udid, &bundle_id).await?;
+                guard_destructive(&device)?;
+                let control = smix_sdk::ios_device::IosDeviceControl::new();
+                let bundle = bundle_id.clone();
+                with_device_lease(&control, &udid, |leased| async move {
+                    leased.uninstall(&bundle).await?;
+                    Ok(((), leased))
+                })
+                .await?;
                 println!("uninstalled: {bundle_id} on {udid}");
             }
             SimAction::Openurl { device, url } => {
@@ -1360,9 +1776,31 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 simctl.set_appearance(&udid, mode).await?;
                 println!("appearance: {udid} → {}", mode.as_str());
             }
+            SimAction::AllowDestructive { device } => {
+                let path = registry_path()?;
+                match smix_simctl::registry::SimRegistry::allow_destructive(&path, &device) {
+                    Ok((alias, already)) => {
+                        if already {
+                            println!("{alias}: destructive actions were already allowed");
+                        } else {
+                            println!(
+                                "{alias}: destructive actions allowed — \
+                                 erase / uninstall / keychain-reset will now run on it"
+                            );
+                        }
+                    }
+                    Err(e) => return Err(CliError::Other(e.to_string())),
+                }
+            }
             SimAction::KeychainReset { device } => {
                 let udid = resolve_device(&device)?;
-                simctl.keychain_reset(&udid).await?;
+                guard_destructive(&device)?;
+                let control = smix_sdk::ios_device::IosDeviceControl::new();
+                with_device_lease(&control, &udid, |leased| async move {
+                    leased.keychain_reset().await?;
+                    Ok(((), leased))
+                })
+                .await?;
                 println!("keychain reset: {udid}");
             }
             SimAction::Locale {
@@ -1406,6 +1844,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     runner_project,
                     runner_port: port_flag,
                     supervise,
+                    team,
                     no_launch,
                 } => {
                     if platform == RunPlatform::Android {
@@ -1415,10 +1854,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             supervise,
                         )
                         .map_err(CliError::Other)?;
-                        let port = port_flag.unwrap_or(runner_android::DEFAULT_ANDROID_PORT);
-                        // The adb serial IS the device id — there is no
-                        // registry indirection on this path.
-                        runner_android::up(&root, &device, port, 180).map_err(CliError::Other)?;
+                        let port =
+                            port_flag.unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT);
+                        // The adb serial is the device id, but it still
+                        // has to be a device smix was invited to touch:
+                        // this installs an APK.
+                        let serial = resolve_android_serial(&device)?;
+                        smix_capsule::runner_android::up(&root, &serial, port, 180)
+                            .map_err(CliError::Other)?;
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
                     // Port priority chain:
@@ -1428,6 +1871,21 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     let sims_port = lookup_registered(&device).and_then(|s| s.runner_port);
                     let port = port_flag.or(sims_port).unwrap_or(22087);
                     let udid = resolve_device(&device)?;
+                    // A physical device needs a signing team and a
+                    // different destination. Which it is comes from the
+                    // registry, not from a guess about the identifier —
+                    // §9#1 requires registration precisely so this
+                    // question has a recorded answer.
+                    let physical_team = match lookup_registered(&device) {
+                        Some(sim) if sim.kind.is_physical() => {
+                            let facts = smix_capsule::signing::collect_facts(&udid);
+                            Some(
+                                smix_capsule::signing::resolve_team(team.as_deref(), &facts)
+                                    .map_err(|e| CliError::Other(e.to_string()))?,
+                            )
+                        }
+                        _ => None,
+                    };
                     // Bare `smix runner up` defaults to record_enabled=false;
                     // the capsule path (`capsule::up`) overrides to true
                     // via TEST_RUNNER_SMIX_RECORD_ENABLED=1.
@@ -1440,12 +1898,56 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         smix_capsule::runner::UpOptions {
                             supervise,
                             attach_without_relaunch: no_launch,
+                            physical_team,
                             ..Default::default()
                         },
                     )
                     .map_err(CliError::Other)?;
                 }
-                RunnerAction::Down { platform, device } => {
+                RunnerAction::Forward { device, port } => {
+                    let udid = resolve_device(&device)?;
+                    let Some(found) = smix_usbmux::find_by_serial(&udid)
+                        .map_err(|e| CliError::Other(e.to_string()))?
+                    else {
+                        return Err(CliError::Other(format!(
+                            "usbmux does not see device {udid}. It is the transport smix \
+                             drives through, so its view is the one that counts — a device \
+                             `devicectl` calls available can still be off the USB bus.\n\
+                             Check the cable, then `smix sim list`."
+                        )));
+                    };
+                    let forward = smix_usbmux::forward(found.device_id, port, port)
+                        .map_err(|e| CliError::Other(format!("bind 127.0.0.1:{port}: {e}")))?;
+                    println!(
+                        "forwarding 127.0.0.1:{} -> {udid}:{port}",
+                        forward.local_port()
+                    );
+                    // Hold it open. The forwarder lives for as long as
+                    // this process does, which is the whole reason this
+                    // subcommand exists — a listener in the `runner up`
+                    // process would die with it.
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(3600));
+                    }
+                }
+                RunnerAction::Uninstall { platform, device } => {
+                    if platform != RunPlatform::Android {
+                        return Err(CliError::Other(
+                            "runner uninstall is Android-only: the iOS runner is launched by \
+                             xcodebuild and installs no standalone package"
+                                .to_string(),
+                        ));
+                    }
+                    let port = smix_capsule::runner_android::DEFAULT_ANDROID_PORT;
+                    let serial = resolve_android_serial(&device)?;
+                    smix_capsule::runner_android::uninstall(&serial, port)
+                        .map_err(CliError::Other)?;
+                }
+                RunnerAction::Down {
+                    platform,
+                    device,
+                    include_unrecorded,
+                } => {
                     if platform == RunPlatform::Android {
                         let serial = device.ok_or_else(|| {
                             CliError::Other(
@@ -1458,12 +1960,15 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         let port = std::env::var("SMIX_RUNNER_PORT")
                             .ok()
                             .and_then(|p| p.parse().ok())
-                            .unwrap_or(runner_android::DEFAULT_ANDROID_PORT);
-                        runner_android::down(&root, &serial, port).map_err(CliError::Other)?;
+                            .unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT);
+                        let serial = resolve_android_serial(&serial)?;
+                        smix_capsule::runner_android::down(&root, &serial, port)
+                            .map_err(CliError::Other)?;
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
                     let port = runner_port();
-                    smix_capsule::runner::down(&root, port).map_err(CliError::Other)?;
+                    smix_capsule::runner::down(&root, port, include_unrecorded)
+                        .map_err(CliError::Other)?;
                 }
                 RunnerAction::Cycle { runner_project } => {
                     let port = runner_port();
@@ -1581,6 +2086,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             down::run(&root, runner_port())
                 .await
                 .map_err(CliError::Other)?;
+        }
+        Cmd::Lease { action } => {
+            let root = smix_workspace_root()?;
+            lease_cmd::run(&root, action)?;
+        }
+        Cmd::Record { action } => {
+            let root = smix_workspace_root()?;
+            record_cmd::run(&root, action).await?;
         }
         Cmd::Capsule { action } => {
             let root = smix_workspace_root()?;
@@ -2027,6 +2540,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             let udid = device
                 .as_deref()
                 .map(|d| resolve_device(d).unwrap_or_else(|_| d.to_string()));
+            // Announce the run before it starts, and hold the device for
+            // as long as this command lasts — every flow, every retry.
+            // Released when this binding goes out of scope.
+            let _run_lease = hold_run_lease(udid.as_deref())?;
             // No placeholder default: run_flow resolves the app from the
             // flow's own appId when the flag is absent. The literal
             // com.example.app default here once made the quickstart form
@@ -2685,6 +3202,179 @@ fn warn_unknown_selector_keys(keys: &[String], src: &str) {
     }
 }
 
+/// UDIDs currently reporting `Booted`.
+///
+/// Asked before a boot so the ledger can record whether this process is
+/// the one that brought the device up.
+async fn booted_udids(simctl: &smix_simctl::SimctlClient) -> Vec<String> {
+    simctl
+        .list_devices()
+        .await
+        .map(|ds| {
+            ds.into_iter()
+                .filter(|d| d.state == "Booted")
+                .map(|d| d.udid.to_uppercase())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Take the device's lease for one destructive command, run it, give it back.
+///
+/// The two commands that reach this — `sim uninstall` and
+/// `sim keychain-reset` — take data away, and until now either would run
+/// happily against a device somebody else's session was driving. The gate
+/// is the same one the SDK uses; what is new is that the CLI goes through
+/// it rather than around it via `SimctlClient`'s inherent methods.
+///
+/// Any settling of a previous holder's abandoned session is printed
+/// rather than swallowed: a command that quietly tore down someone's
+/// leftovers and then did its own destructive work would leave the person
+/// unable to tell the two apart afterwards.
+async fn with_device_lease<'a, F, Fut, T>(
+    control: &'a smix_sdk::ios_device::IosDeviceControl,
+    udid: &str,
+    body: F,
+) -> Result<T, CliError>
+where
+    F: FnOnce(smix_sdk::leased::Leased<'a>) -> Fut,
+    Fut: std::future::Future<Output = Result<(T, smix_sdk::leased::Leased<'a>), CliError>>,
+{
+    let root = smix_workspace_root()?;
+    let leased = smix_sdk::leased::Leased::acquire(
+        control,
+        &root,
+        udid,
+        &smix_capsule::reconcile::Reconciler,
+    )
+    .map_err(|e| CliError::Other(e.to_string()))?;
+    for report in leased.settled() {
+        println!("settled first: {}", report.line);
+    }
+    let (out, leased) = body(leased).await?;
+    leased
+        .release()
+        .map_err(|e| CliError::Other(e.to_string()))?;
+    Ok(out)
+}
+
+/// Holds a device lease for as long as a `smix run` is in progress.
+///
+/// A run is the longest thing the CLI does to a device, and until now it
+/// announced nothing: `smix sim uninstall` aimed at the same device would
+/// proceed happily alongside it, and whichever landed second won.
+///
+/// Released on drop. Drop cannot report a failure, so a failed release is
+/// printed rather than returned — and it is not serious: an unreleased
+/// lease is found by the next command, which sees the holder is gone and
+/// settles it. Releasing just makes the device free sooner.
+struct RunLease {
+    root: std::path::PathBuf,
+    device_id: String,
+}
+
+impl Drop for RunLease {
+    fn drop(&mut self) {
+        if let Err(e) = smix_lease::store::drop_process_rows(&self.root, &self.device_id) {
+            eprintln!(
+                "warning: device lease not released for {}: {e}",
+                self.device_id
+            );
+        }
+    }
+}
+
+/// Take the device for this run, settling an abandoned session first.
+///
+/// `None` device means the platform picks one later, and a lease cannot
+/// be taken on a device nobody has named yet — the run proceeds
+/// unannounced, exactly as it did before leases existed.
+fn hold_run_lease(udid: Option<&str>) -> Result<Option<RunLease>, CliError> {
+    let Some(udid) = udid else {
+        return Ok(None);
+    };
+    let Ok(root) = smix_workspace_root() else {
+        return Ok(None);
+    };
+    let control = smix_sdk::ios_device::IosDeviceControl::new();
+    let leased = smix_sdk::leased::Leased::acquire(
+        &control,
+        &root,
+        udid,
+        &smix_capsule::reconcile::Reconciler,
+    )
+    .map_err(|e| CliError::Other(e.to_string()))?;
+    for report in leased.settled() {
+        println!("settled first: {}", report.line);
+    }
+    Ok(Some(RunLease {
+        root,
+        device_id: udid.to_string(),
+    }))
+}
+
+/// Refuse a destructive action on a physical device that has not opted in.
+///
+/// Reads the class out of the registry and hands the one bit that matters
+/// to `smix_lease::may_destroy`, which is where the rule lives. An
+/// unregistered ref is not gated here — resolution already refused it, and
+/// a second refusal with a different reason would be confusing.
+fn guard_destructive(device_ref: &str) -> Result<(), CliError> {
+    let Ok(path) = registry_path() else {
+        return Ok(());
+    };
+    let Ok(reg) = smix_simctl::registry::SimRegistry::load(&path) else {
+        return Ok(());
+    };
+    let Some(sim) = reg.lookup(device_ref) else {
+        // Not registered, and still here — so `resolve_device` let it
+        // through, which it only does for a simulator the platform
+        // lists. Those were never gated: erasing one costs a minute of
+        // rebuilding.
+        //
+        // This used to be the gate's blind spot rather than its
+        // conclusion: an unregistered device of *any* kind was waved
+        // through, and what stopped a phone was `simctl` refusing to
+        // recognise it downstream. That is a property of the executor,
+        // not of this guard, and it stopped holding the day a
+        // `devicectl` path appeared.
+        return Ok(());
+    };
+    smix_lease::may_destroy(
+        device_ref,
+        smix_lease::DeviceClass {
+            physical: sim.kind.is_physical(),
+            destructive_opt_in: sim.destructive_opt_in,
+        },
+    )
+    .map_err(|e| CliError::Other(e.to_string()))
+}
+
+/// CLI spelling of [`smix_simctl::registry::DeviceKind`].
+///
+/// A separate type because clap's `ValueEnum` derive belongs to the CLI,
+/// not to the registry — the registry is read by things that have no
+/// command line.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum DeviceKindArg {
+    Simulator,
+    Emulator,
+    PhysicalIos,
+    PhysicalAndroid,
+}
+
+impl DeviceKindArg {
+    fn to_registry(self) -> smix_simctl::registry::DeviceKind {
+        use smix_simctl::registry::DeviceKind as K;
+        match self {
+            DeviceKindArg::Simulator => K::Simulator,
+            DeviceKindArg::Emulator => K::Emulator,
+            DeviceKindArg::PhysicalIos => K::PhysicalIos,
+            DeviceKindArg::PhysicalAndroid => K::PhysicalAndroid,
+        }
+    }
+}
+
 fn runner_port() -> u16 {
     std::env::var("SMIX_RUNNER_PORT")
         .ok()
@@ -3232,6 +3922,10 @@ async fn cmd_init(
             device_type: d.device_type_identifier.clone(),
             runner_port: None,
             locale: None,
+            // Same reason as `sim register`: this came from simctl, which
+            // lists simulators and nothing else.
+            kind: registry::DeviceKind::Simulator,
+            destructive_opt_in: false,
         })
         .ok_or_else(|| CliError::Other(format!("device {} vanished mid-init", plan.udid)))?;
     SimRegistry::register(&path, &plan.alias, sim)
@@ -3352,11 +4046,23 @@ async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(22087);
 
+    // Existence checked before opening, because `Store::open` creates
+    // what it cannot find — and a health check that brings a store into
+    // being has changed the thing it was asked to report on. A workspace
+    // with no `.smix` yet simply has no store fact.
+    let downgradeable = std::env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join(".smix"))
+        .filter(|dir| dir.join("kv").is_dir())
+        .and_then(|dir| smix_store::Store::open(&dir).ok())
+        .and_then(|store| store.downgradeable_to_kevy3());
+
     let verdict = readiness::assess(&readiness::Facts {
         simctl: simctl_facts,
         registry,
         runner_up: smix_capsule::runner::health_ok(port),
         capture_server_up: capture_server_reachable(),
+        downgradeable,
     });
 
     if json {
@@ -3536,6 +4242,52 @@ mod tests {
     use super::*;
 
     const UDID: &str = "5D087114-ECB3-443C-8DDB-40EEF9CFB90C";
+
+    #[test]
+    fn a_device_ref_is_classed_by_the_registry_then_by_shape() {
+        use smix_simctl::registry::DeviceKind;
+        // Unregistered and emulator-shaped: adb names these, so the
+        // shape is a fact rather than a heuristic.
+        assert_eq!(device_kind_of("emulator-5554"), DeviceKind::Emulator);
+        // Unregistered and not emulator-shaped. Falling back to
+        // Simulator is a consequence of C15, not a guess: a raw
+        // identifier only gets past `resolve_device` when the platform
+        // itself claims it, and the emulator case was just handled.
+        assert_eq!(device_kind_of(UDID), DeviceKind::Simulator);
+        assert_eq!(device_kind_of("EMULATOR-5554"), DeviceKind::Simulator);
+    }
+
+    #[test]
+    fn adb_knows_answers_from_adbs_own_list() {
+        // A serial of a shape nothing answers to. This half runs
+        // everywhere, including machines with no adb at all — a missing
+        // binary is truthfully "no such device".
+        assert!(!adb_knows("NOSUCHSERIAL0001"));
+
+        // The other half needs hardware, so it asserts only when there
+        // is some: every serial adb reports as `device` must come back
+        // true. Skipping quietly would leave a function that returns
+        // `false` for everything looking exactly as healthy as one that
+        // works.
+        let Ok(out) = std::process::Command::new("adb").arg("devices").output() else {
+            return;
+        };
+        if !out.status.success() {
+            return;
+        }
+        let listed: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|l| l.split_once('\t'))
+            .filter(|(_, state)| state.trim() == "device")
+            .map(|(serial, _)| serial.to_string())
+            .collect();
+        for serial in listed {
+            assert!(
+                adb_knows(&serial),
+                "adb lists {serial} as a device but adb_knows says no"
+            );
+        }
+    }
 
     // tail_lines behavior lock-ins. Small chunk
     // reads deliberately (not just 1 huge chunk) so the "read

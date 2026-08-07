@@ -23,6 +23,14 @@ pub struct Facts {
     pub registry: Option<RegistryFacts>,
     /// Whether something is already answering on the runner port.
     pub runner_up: bool,
+    /// Whether this workspace's store could still be opened by a smix
+    /// built against kevy 3.
+    ///
+    /// `None` when the question does not apply — no store on disk yet,
+    /// or one configured without persistence. Not the same as `false`,
+    /// and reporting it as such would tell someone their downgrade path
+    /// is gone when it was never a question.
+    pub downgradeable: Option<bool>,
     /// Whether the capture server is answering.
     ///
     /// `capsule up` records the session by default and fails outright when
@@ -100,9 +108,40 @@ pub struct Readiness {
 /// being true when the Android emulator lane landed and left the first
 /// command a new user runs telling them their platform was unsupported.
 /// The boundary that is actually enforced is §9#1: simulators and
-/// emulators, never a physical device.
-pub const PLATFORM_NOTE: &str =
-    "smix drives iOS Simulators and Android emulators. Physical devices are out of scope.";
+/// emulators.
+///
+/// §9#1 was amended on 2026-08-06 — a physical device is no longer
+/// refused on principle — and this sentence deliberately did **not**
+/// change with it. The amendment lifted a ban; it did not add a
+/// capability. It changes when the capability lands, not when the
+/// charter allows it.
+///
+/// It landed for both, on 2026-08-06, and each half was measured on the
+/// hardware rather than argued from the code:
+///
+/// * **Physical Android**: `runner up --platform android` reached
+///   `/health = 200`, `/tree` returned 106 nodes at the device's true
+///   1080×2340, and a normalised tap landed. Nothing in that path
+///   branches on emulator-versus-phone; `smix-adb` names its device on
+///   every call.
+/// * **Physical iOS**: `runner up <phone>` brought the runner up over a
+///   self-written usbmux tunnel, `/health` answered through the port
+///   forward, the ledger carried both the runner and the forward, and
+///   `/tree` came back at 393×852 — the iPhone's own point size, not a
+///   simulator's. Teardown closed both in order.
+///
+/// One caveat stays in the sentence rather than out of it: a locked phone
+/// parks `xcodebuild` instead of failing it, so the device has to be
+/// unlocked. That is a precondition somebody can act on, which is why it
+/// is worth the words.
+///
+/// The capture gap that used to sit beside it is closed (C20): the runner
+/// now serves `GET /screenshot` from `XCUIScreen`, and a real iPhone was
+/// photographed at 1178×2556 through it. Nothing about that belongs in
+/// this sentence — a greeting lists what a reader must do, not what smix
+/// managed to build.
+pub const PLATFORM_NOTE: &str = "smix drives iOS Simulators, Android emulators, and — once \
+     registered — physical iPhones and Android devices. A physical iPhone must be unlocked.";
 
 /// Judge the facts.
 ///
@@ -111,6 +150,36 @@ pub const PLATFORM_NOTE: &str =
 /// them to a command that cannot succeed yet.
 pub fn assess(facts: &Facts) -> Readiness {
     let mut checks = Vec::new();
+
+    // First, and outside the chain below, because it is not a step
+    // towards driving anything — it is a standing fact about this
+    // workspace's store. Reported wherever the chain happens to stop:
+    // someone whose Xcode tools are missing still wants to know whether
+    // their downgrade path is open, and burying it behind four passing
+    // checks would mean they only learn it once they no longer need it.
+    //
+    // Never blocking. Being past the window is the ordinary state of a
+    // store that has been running a while, and a doctor that flagged it
+    // would be crying about the passage of time.
+    match facts.downgradeable {
+        Some(true) => checks.push(Check {
+            id: "store",
+            status: Status::Ok,
+            detail: "the store is still readable by kevy 3 — downgrading smix is an \
+                     install away"
+                .into(),
+        }),
+        Some(false) => checks.push(Check {
+            id: "store",
+            status: Status::Ok,
+            detail: "the store has upgraded its log format — going back to an older \
+                     smix now needs a keyspace export through a client, not an install"
+                .into(),
+        }),
+        // No store, or one without persistence: the question has no answer,
+        // and inventing one would report a loss that never happened.
+        None => {}
+    }
 
     let Some(simctl) = &facts.simctl else {
         checks.push(Check {
@@ -295,6 +364,7 @@ mod tests {
             registry: None,
             runner_up: false,
             capture_server_up: false,
+            downgradeable: None,
         });
         assert!(!r.ready);
         let next = r
@@ -318,6 +388,7 @@ mod tests {
             }),
             runner_up: false,
             capture_server_up: false,
+            downgradeable: None,
         });
         assert!(!r.ready);
         let next = r.next.expect("still blocked on the runner");
@@ -338,6 +409,7 @@ mod tests {
             registry: None,
             runner_up: false,
             capture_server_up: false,
+            downgradeable: None,
         });
         let next = r.next.expect("blocked");
         assert!(
@@ -363,6 +435,7 @@ mod tests {
             }),
             runner_up: true,
             capture_server_up: true,
+            downgradeable: None,
         });
         assert!(r.ready);
         assert!(r.next.is_none(), "a ready machine has no next command");
@@ -381,6 +454,7 @@ mod tests {
             }),
             runner_up: false,
             capture_server_up: false,
+            downgradeable: None,
         });
         assert_eq!(r.next.expect("blocked").command, "smix init");
     }
@@ -392,6 +466,7 @@ mod tests {
             registry: None,
             runner_up: false,
             capture_server_up: false,
+            downgradeable: None,
         });
         let v: serde_json::Value = serde_json::to_value(&r).expect("serialize");
         assert_eq!(v["ready"], serde_json::Value::Bool(false));
@@ -413,6 +488,7 @@ mod tests {
             }),
             runner_up: false,
             capture_server_up: false,
+            downgradeable: None,
         });
         let cmd = without.next.expect("blocked").command;
         assert!(cmd.contains("--no-capture"), "got: {cmd}");
@@ -425,17 +501,107 @@ mod tests {
             }),
             runner_up: false,
             capture_server_up: true,
+            downgradeable: None,
         });
         assert!(!with.next.expect("blocked").command.contains("--no-capture"));
     }
 
     #[test]
-    fn the_platform_note_does_not_claim_ios_only() {
-        // Android emulators have been drivable since the parity work, and
-        // the first command a new user runs was still telling them their
-        // platform was unsupported.
+    fn a_store_still_in_the_downgrade_window_says_so() {
+        // The window kevy's AOF format upgrade opens and then closes.
+        // Someone deciding whether to keep an escape hatch needs to know
+        // which side of it they are on, and doctor is where they look.
+        let r = assess(&Facts {
+            simctl: Some(simctl_ok()),
+            registry: Some(RegistryFacts {
+                aliases: 1,
+                first_alias: Some("dev".into()),
+            }),
+            runner_up: true,
+            capture_server_up: true,
+            downgradeable: Some(true),
+        });
+        let store = r
+            .checks
+            .iter()
+            .find(|c| c.id == "store")
+            .expect("a store check");
+        assert_eq!(store.status, Status::Ok);
+        assert!(store.detail.contains("kevy 3"), "got: {}", store.detail);
+    }
+
+    #[test]
+    fn a_store_past_the_window_says_that_instead() {
+        let r = assess(&Facts {
+            simctl: Some(simctl_ok()),
+            registry: Some(RegistryFacts {
+                aliases: 1,
+                first_alias: Some("dev".into()),
+            }),
+            runner_up: true,
+            capture_server_up: true,
+            downgradeable: Some(false),
+        });
+        let store = r
+            .checks
+            .iter()
+            .find(|c| c.id == "store")
+            .expect("a store check");
+        // Not a failure: being past the window is the normal state after a
+        // rewrite, and a doctor that cried about it would be noise.
+        assert_eq!(store.status, Status::Ok);
+        assert!(
+            store.detail.contains("export"),
+            "should name the way back: {}",
+            store.detail
+        );
+    }
+
+    #[test]
+    fn no_store_is_not_the_same_as_no_way_back() {
+        // `None` means the question does not apply. Reporting it as
+        // "cannot downgrade" would invent a loss that has not happened.
+        let r = assess(&Facts {
+            simctl: Some(simctl_ok()),
+            registry: Some(RegistryFacts {
+                aliases: 1,
+                first_alias: Some("dev".into()),
+            }),
+            runner_up: true,
+            capture_server_up: true,
+            downgradeable: None,
+        });
+        assert!(
+            r.checks.iter().all(|c| c.id != "store"),
+            "with no store there is nothing to report about one"
+        );
+    }
+
+    #[test]
+    fn the_platform_note_claims_only_what_has_been_measured() {
+        // The first command a new user runs, so every clause here is a
+        // promise. Android emulators have been drivable since the parity
+        // work; physical Android was measured on real hardware; physical
+        // iPhones have never been seen to take a runner.
         assert!(!PLATFORM_NOTE.contains("iOS Simulator only"));
         assert!(PLATFORM_NOTE.contains("Android"));
-        assert!(PLATFORM_NOTE.contains("Physical devices are out of scope"));
+        // Both physical halves were driven on real hardware on
+        // 2026-08-06, so the note may finally say so — and must carry the
+        // one precondition a reader can act on, because a locked phone
+        // parks xcodebuild instead of failing it.
+        assert!(
+            PLATFORM_NOTE.contains("physical iPhones"),
+            "{PLATFORM_NOTE}"
+        );
+        assert!(
+            PLATFORM_NOTE.contains("unlocked"),
+            "a locked phone stalls rather than fails; the note must say so: {PLATFORM_NOTE}"
+        );
+        assert!(PLATFORM_NOTE.contains("registered"), "{PLATFORM_NOTE}");
+        // The two claims it must never be flattened back into: one was
+        // false the day physical Android landed, the other is still false
+        // for anyone who has not registered a device.
+        assert!(!PLATFORM_NOTE.contains("Physical devices are out of scope"));
+        assert!(!PLATFORM_NOTE.contains("Physical devices are supported"));
     }
 }

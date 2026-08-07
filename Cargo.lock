@@ -1354,18 +1354,18 @@ dependencies = [
 
 [[package]]
 name = "kevy-bytes"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f06230adcb608d9c372ec8948188d08e12a6b23fb11364388c9dd2d524b7bf54"
+checksum = "d5e521f9c46645b6cfa65d62f7d95ecfd8408c191018544cf1742673f2b80ffa"
 dependencies = [
  "kevy-hash",
 ]
 
 [[package]]
 name = "kevy-embedded"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f35be602ecf5a72d7f8748125fbb8e8b709fad3077591cd453517d21a06f0952"
+checksum = "50734cb4958aacd734caf57327926e0af44e5293330ea18f4da6af6f2752fe76"
 dependencies = [
  "kevy-hash",
  "kevy-index",
@@ -1380,27 +1380,27 @@ dependencies = [
 
 [[package]]
 name = "kevy-hash"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb54ffef9063267b08c3d070d58fd3aaefa00438729cfe68331035b812ff645b"
+checksum = "152a8806f84a993b618039b224bc9ab58398040e69f9860541f8f7a5fffb9828"
 
 [[package]]
 name = "kevy-index"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0eee1245f4122fa6c397e0b805b5d3fc80eed30363410c79a4a405b0ed5e0b3f"
+checksum = "ab209b56d0a9fe21f48095b9f6634e5425f5afe9393578aa59d0c1b98fcb3814"
 
 [[package]]
 name = "kevy-madvise"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38a9478c7b13cfb6aaf8ed099d01ae2e3facbec64fdb1cf1f0efb5ac978b7f5e"
+checksum = "9c761124b671ca731089c4ea7d363e9f00ebbf94568c61c7f6950f679826ebbc"
 
 [[package]]
 name = "kevy-map"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd463c9fa07fd3ed6eca45fa32e2155a961b1435f8322f325ce5501b65109bc3"
+checksum = "34cde9f2a199c927291c3d714f942c5b85dca64c10b840c0802016fc526b7ed9"
 dependencies = [
  "kevy-hash",
  "kevy-madvise",
@@ -1408,9 +1408,9 @@ dependencies = [
 
 [[package]]
 name = "kevy-persist"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c594cbae9942e38f685ee64c9e3aa7aa28210b9f2b9bb2e9c8b77419684beecb"
+checksum = "839f4cf6765f41223e243b59e74efdf6f61767760836cfac03ba16da2fb18859"
 dependencies = [
  "kevy-resp",
  "kevy-store",
@@ -1419,33 +1419,33 @@ dependencies = [
 
 [[package]]
 name = "kevy-ranktree"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b680e347ba384dc0d29ac3ec587ebaee9f4157bc68bb31d7890e2d86c63f1c0"
+checksum = "97dcc8f2c99b6730d73b74e3d01642308a482fae98ee7b4a446b347417b4bd18"
 
 [[package]]
 name = "kevy-replicate"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfe026492e356d4c15f04cfae081fa2daa6808d8bd79bb33e285befbd81b8219"
+checksum = "b93d690c7d3188dcc7aa799bd290d0fce3130d9899c30ad3174541d784020db4"
 dependencies = [
  "kevy-resp",
 ]
 
 [[package]]
 name = "kevy-resp"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "afd7c2de626dfedb72f321b6c76a6bc6c3724e6af2134923f74bbb8c37400a7e"
+checksum = "7aee42fb77d63ce499d5b9e2ad02b1d10dc24d591804ed055e7f60ff44d93d2b"
 dependencies = [
  "kevy-bytes",
 ]
 
 [[package]]
 name = "kevy-store"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82133219571e726e3acacab21bee517a2abcdb2f9c67beb97f917d9f7d073aa1"
+checksum = "985bb0aadf9e45e31a12ee275a29358c31af99752ca76a71d195dd07369006b2"
 dependencies = [
  "kevy-bytes",
  "kevy-hash",
@@ -1456,27 +1456,27 @@ dependencies = [
 
 [[package]]
 name = "kevy-sys"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6582b38c6f37efd50478b84c33c6adfdfd22e07789fce7b6e307bcaaaf16e0a1"
+checksum = "004f49caba613e014224cd5a34ed976dd35ef4e980049e44732868e585751fcf"
 
 [[package]]
 name = "kevy-text"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3baa959a74cbd39b8923b6e4fc2dfa73eebd08ed1ef3ac51192b251e9a46d31"
+checksum = "a2bd7d6d085018ec9c4b8aa3e1b0841ddefc760c03e481b4c6ff141ca0a04c5b"
 
 [[package]]
 name = "kevy-vector"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6723e1ac63a7cad1b55cda778f8948705cbbae96bf7f6afa3ff7c091e5ec0680"
+checksum = "15cbdacb5b4b725531e53d2bc01e848835739889aa3ac35effcec4d07a13b1b7"
 
 [[package]]
 name = "kevy-vlog"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88d21c51e84fcb92dcdeb0535725d3c75ea6ac88b58e325381563f5e3863432e"
+checksum = "009f254ee8bc0f218934f35987f38142047ca331275c83b252704b78c441ecb0"
 dependencies = [
  "kevy-sys",
 ]
@@ -2712,11 +2712,14 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_norway",
+ "smix-lease",
  "smix-runner-client",
  "smix-runner-sources",
  "smix-runner-wire",
  "smix-store",
+ "smix-usbmux",
  "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2738,6 +2741,7 @@ dependencies = [
  "smix-error",
  "smix-fixture",
  "smix-input",
+ "smix-lease",
  "smix-metro-log",
  "smix-migrate",
  "smix-recorder",
@@ -2749,6 +2753,7 @@ dependencies = [
  "smix-selector",
  "smix-simctl",
  "smix-store",
+ "smix-usbmux",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -2849,6 +2854,17 @@ dependencies = [
  "criterion",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "smix-lease"
+version = "2.2.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2998,10 +3014,13 @@ dependencies = [
  "smix-error",
  "smix-host-coord-resolver",
  "smix-input",
+ "smix-lease",
  "smix-runner-client",
  "smix-screen",
  "smix-selector",
  "smix-simctl",
+ "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "wiremock",
 ]
@@ -3085,6 +3104,13 @@ dependencies = [
  "kevy-embedded",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "smix-usbmux"
+version = "2.2.0"
+dependencies = [
  "thiserror 2.0.18",
 ]
 

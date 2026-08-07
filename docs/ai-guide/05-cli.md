@@ -118,22 +118,97 @@ smix sim resolve <ALIAS>       # alias → UDID
 smix sim boot <ALIAS|UDID>     # boot
 smix sim shutdown <ALIAS|UDID> # shutdown
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
-smix sim screenshot <ALIAS|UDID> <out.png>
+smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → the runner (must be up)
 smix sim launch <ALIAS|UDID> <bundle-id>
 smix sim terminate <ALIAS|UDID> <bundle-id>
 smix sim install <ALIAS|UDID> <path/to.app>
 smix sim uninstall <ALIAS|UDID> <bundle-id>
-smix sim openurl <ALIAS|UDID> <url>
+smix sim openurl <ALIAS|UDID> <url>   # deeplink; app-level, no device lease needed
 smix sim appearance <ALIAS|UDID> light|dark
 smix sim keychain-reset <ALIAS|UDID>
+smix sim allow-destructive <ALIAS|UDID>   # physical devices only; once, not per command
 smix sim exec <ALIAS|UDID> <verb> [args...]
 ```
 
+### Physical devices
+
+A physical device must be **registered before it can be addressed** — smix
+never reaches "whatever happens to be plugged in":
+
+```bash
+smix sim register <ALIAS> --udid <UDID-or-SERIAL> --kind physical-ios --name "my phone"
+smix sim register <ALIAS> --udid <SERIAL> --kind physical-android
+```
+
+The identifier is taken as given for a physical device — a UDID for iOS, an
+adb serial for Android — and is not checked against a catalogue, because
+there is no catalogue of phones to check against. Registration is the
+deliberate act; that is why it is required.
+
+A virtual device is checked against the catalogue its own platform keeps:
+`--kind simulator` (the default) against `simctl list devices`, `--kind
+emulator` against `adb devices`. Each kind also has its own identifier shape —
+a CoreSimulator UDID for a simulator, `emulator-<port>` for an emulator — and
+registering one under the other kind is refused, naming the shape that kind
+actually uses.
+
+Apple identifiers are normalised to upper case, because `devicectl` will not
+match a lower-case spelling of a UDID it accepts in upper case. adb serials are
+stored and returned verbatim, because `adb` matches them byte for byte.
+
+Destructive actions (`erase`, `uninstall`, `keychain-reset`) are **refused on a
+physical device** until you allow them once:
+
+```bash
+smix sim allow-destructive <ALIAS>
+```
+
+Recorded in the registry, not confirmed per command — a confirmation that has to
+be typed every time ends up pasted into a script, which is the same as not
+having one. Simulators are never gated: they can be erased and rebuilt in a
+minute, and a phone in somebody's pocket cannot.
+
 **Sim safety hook**: bare `xcrun simctl <verb>` is BLOCKED for mutating verbs. Read-only `simctl list` is allowed. To pass-through unmapped subcommands use `smix sim exec <ALIAS|UDID> <verb> ...` (this is accepted by the hook because the device id is explicit).
 
-`<ALIAS>` resolves via the workspace's `.smix/` registry, created and populated by `smix sim register <alias> --udid <UDID>`. UDIDs always work without a registry. (A pre-2.1 `.smix/sims.json` is imported on first use and left on disk.)
+`<ALIAS>` resolves via the workspace's `.smix/` registry, created and populated by `smix sim register <alias> --udid <UDID>`. (A pre-2.1 `.smix/sims.json` is imported on first use and left on disk.)
+
+A raw identifier works without a registry **only if the platform itself claims
+it**: a UDID `simctl` lists, or an adb serial of the form `emulator-NNNN`.
+Anything else — an unregistered phone's UDID, an unregistered adb serial — is
+refused before the command runs:
+
+```
+$ smix sim erase D51116A4-B2AD-5432-8A75-6FBB13F17B58
+error: D51116A4-… is not a device smix may address: it is not registered here,
+and neither simctl nor adb calls it one of theirs.
+If it is a phone or tablet, say so once and it becomes addressable:
+  smix sim register <name> --udid D51116A4-… --kind physical-ios|physical-android
+```
+
+This is the enforcement of "registered before it can be addressed". It is a
+separate question from whether a destructive action is allowed: registering a
+phone makes it *reachable*, and `allow-destructive` is still needed before
+anything may be taken away from it. Two gates, asked in that order.
 
 ### Runner management
+
+`smix runner down` stops the runner **this workspace started**. If the port is
+held by a runner it has no record of, it says so and stops rather than ending
+it — that runner may belong to another session:
+
+```
+$ smix runner down
+error: port 22087 is held by a runner this workspace has no record of
+(pid 27155), and it is still running.
+It may belong to another session — check before ending it:
+  ps -o lstart=,command= -p 27155
+If it should go, say so:
+  smix runner down --include-unrecorded
+```
+
+`smix runner up` refuses the same port for the same reason. The two commands
+agree deliberately: ending somebody else's runner used to be one keystroke
+away, and silent.
 
 The runner is the on-device server smix drives. `runner up` blocks until
 its `/health` answers, so when the command returns you can run a flow.
@@ -145,6 +220,28 @@ smix runner up <ALIAS|UDID> --bundle com.example.app
 smix runner up <ALIAS|UDID> --bundle com.example.app --supervise
 smix runner down
 ```
+
+**A physical iPhone or iPad** takes the same command, once the device is
+registered with `--kind physical-ios`:
+
+```bash
+smix runner up <ALIAS> --bundle com.example.app
+smix runner up <ALIAS> --bundle com.example.app --team <TEAM_ID>
+```
+
+Two things happen that do not on a simulator, both without asking you to
+configure anything:
+
+- **The build is signed.** The team is discovered from this machine's
+  signing identities; `--team` is only needed when several could sign,
+  which is a question smix refuses to answer for you.
+- **A port forward opens first.** The runner listens on the *device's*
+  loopback, so smix runs a forwarder that makes `127.0.0.1:<port>` reach
+  it. It is a separate process (`smix runner forward`, visible in `ps`)
+  because it has to outlive the command that started it, and it is
+  recorded in the device ledger so a later teardown can find it.
+  `runner down` closes both, in that order — the runner's last requests
+  still travel through the pipe.
 
 `--bundle` is required: it binds the runner's `XCUIApplication`, and
 without it every `/tree` reads the wrong app. `--supervise` attaches a
@@ -175,7 +272,22 @@ commands over gradle install tasks.
 
 Bringing the Android runner up by hand, if you need to:
 
+```
+
+`runner down --platform android` stops the instrumentation and drops the port
+forward; the package stays installed so the next `up` does not re-push 50 MB.
+When you do want it gone — and on a device that is not yours, you do:
+
 ```bash
+smix runner uninstall --platform android --device <SERIAL>
+```
+
+It asks whether the package is there before removing it. Android answers a
+missing package with `DELETE_FAILED_INTERNAL_ERROR`, which is also what a
+device policy refusing the removal returns — reading idempotence out of that
+string would swallow the refusal. Absent is reported as absent; a refusal
+stays an error.
+bash
 adb -s emulator-5554 install -r -t \
   android-runner/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb -s emulator-5554 forward tcp:28080 tcp:28080
@@ -216,10 +328,73 @@ send you to a command that cannot succeed. `--json` gives the same verdict as
 ```bash
 smix doctor                    # verdict + the next command to run
 smix doctor --json             # same, machine-readable
-smix down                      # tear down all smix-owned processes (runner, capture)
+smix down                      # close what this workspace opened, then sweep for residue
 ```
 
+`down` works from the device ledgers first: it closes each recorded resource by
+name and prints what it closed — the supervisor before the runner it watches,
+because a supervisor exists to restart a runner it finds dead. Pattern matching
+on process names runs afterwards, as a backstop for things no ledger covers, and
+anything it finds is reported rather than silently swept.
+
+`down` differs from `smix lease reconcile` in a way worth knowing: `reconcile`
+settles what a *dead* holder left behind and refuses to touch a live session,
+while `down` is you saying "close what I started" — a running runner is exactly
+what it will close.
+
 If XCUITest / xcodebuild processes remain after teardown, use `pgrep -fl xctrunner` / `pkill xctrunner` (or the equivalent for `xcodebuild`) to clear them.
+
+### Screen recording (`smix record …`)
+
+```bash
+smix record start <DEVICE> --output run.mov   # begin recording
+smix record status <DEVICE>                   # is it recording, and where is it writing
+smix record stop <DEVICE>                     # stop, letting the file finish properly
+```
+
+A recording is written into the device ledger, which is what makes it
+survive the command that started it. `simctl io recordVideo` writes an
+mp4's trailer when it receives SIGINT and at no other time, so a recording
+whose only handle is one process's memory becomes an unplayable file the
+moment that process is killed. The ledger row means `smix record stop`
+works from a different shell than `smix record start`, and that a
+recording left behind by a killed session is closed properly by
+`smix lease reconcile` rather than left writing into nothing.
+
+`status` reports the path, not just yes-or-no — the question people
+actually have is where the footage is going. A row whose process is gone
+is reported as left behind, with the command that closes it, rather than
+as recording.
+
+### Device ledger (`smix lease …`)
+
+`smix runner up` records what it opened on a device in `.smix/leases/<UDID>.json`.
+When the process holding a session dies without tearing it down — Ctrl-C on
+`xcodebuild`, an IDE restart, a CI timeout — that ledger is what lets the next
+command find the runner it left behind and stop it the way the dying process
+never got to: SIGINT first, so `testmanagerd` ends the XCUITest session cleanly
+instead of the runner dying by SIGABRT and macOS raising a crash-report dialog.
+
+```bash
+smix lease list                # every device with a ledger, and whether it is in use
+smix lease status <DEVICE>     # the holder, what is open, and what is owed
+smix lease reconcile <DEVICE>  # close what an abandoned session left open
+```
+
+`reconcile` never preempts a live session — it reports the holder and stops.
+A session counts as live while anything it started is still running, even
+after the command that started it has exited, which is the normal state
+once `smix runner up` returns.
+
+Two things it will not do, both deliberate:
+
+- **It never signals a pid it cannot re-verify.** Each row records the process
+  start time alongside the pid, because a pid alone gets reissued to unrelated
+  processes. A row whose pid now belongs to something else is reported and left
+  untouched.
+- **It only shuts down a device it booted.** Finding a device already up and
+  turning it off would take away someone else's session as the price of
+  cleaning up after yours.
 
 ### Perf regression (`smix bench`)
 

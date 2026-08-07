@@ -171,14 +171,29 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
     // a NonZeroExit with stderr "current state: Booted" means it was
     // already booted and is treated as success.
     let simctl = smix_simctl::SimctlClient::new();
-    match simctl
+    // `by_us` is decided by which arm answers: the "already Booted" arm
+    // means somebody else's session is on this device, and a shutdown we
+    // performed later would take it from them.
+    let booted_by_us = match simctl
         .boot_and_wait(opts.udid, std::time::Duration::from_secs(120))
         .await
     {
-        Ok(_) => {}
+        Ok(_) => true,
         Err(smix_simctl::DeviceControlError::NonZeroExit { stderr, .. })
-            if stderr.contains("current state: Booted") => {}
+            if stderr.contains("current state: Booted") =>
+        {
+            false
+        }
         Err(e) => return Err(format!("simctl boot {}: {e}", opts.udid)),
+    };
+    if let Err(e) = smix_lease::store::add_resource(
+        opts.root,
+        opts.udid,
+        smix_lease::Resource::Booted {
+            by_us: booted_by_us,
+        },
+    ) {
+        eprintln!("capsule up: boot not recorded in the device ledger: {e}");
     }
 
     // 3. Capture start. Skipped when --no-capture (releases the
@@ -317,7 +332,8 @@ pub async fn down(root: &Path, udid: &str) -> Result<(), String> {
     };
 
     let mut errors: Vec<String> = Vec::new();
-    if let Err(e) = smix_capsule::runner::down(root, state.runner_port) {
+    // No: the capsule knows its own runner by its state file.
+    if let Err(e) = smix_capsule::runner::down(root, state.runner_port, false) {
         eprintln!("capsule down: runner down failed: {e}");
         errors.push(format!("runner: {e}"));
     }

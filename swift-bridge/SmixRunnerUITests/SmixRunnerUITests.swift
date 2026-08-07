@@ -2441,6 +2441,26 @@ final class SmixRunnerUITests: XCTestCase {
         }.value
         return result
       },
+      // GET /screenshot handler. PNG of the whole screen.
+      //
+      // Same call the OCR handler above makes — `XCUIScreen.main
+      // .screenshot()` — differing only in what it hands back: pixels
+      // rather than a verdict about them. That it works on a physical
+      // device is the point of the route; simulators have `simctl io
+      // screenshot` and phones had nothing.
+      //
+      // No `resolveApp()`: this photographs the screen, not the target
+      // app, so there is no bundle to rebind to.
+      //
+      // Unit-tested up to the envelope (ScreenshotRouteTests) and no
+      // further — XCUIScreen exists only in this host, so the pixels
+      // themselves are proven by e2e against a real device, not here.
+      // Saying so rather than implying coverage that does not exist.
+      screenshotHandler: {
+        await Task { @MainActor in
+          XCUIScreen.main.screenshot().image.pngData()
+        }.value
+      },
       // POST /swipe-at-norm-coord handler. From-to coordinate swipe
       // via Apple native event chain (XCSynthesizedEventRecord +
       // XCPointerEventPath initForTouchAtPoint → moveToPoint:atOffset:

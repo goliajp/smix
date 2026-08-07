@@ -21,6 +21,8 @@ name = "smix"
 path = "src/main.rs"
 
 [dependencies]
+smix-usbmux = { path = "../smix-usbmux", version = "2.2.0" }
+smix-lease = { path = "../smix-lease", version = "2.2.0" }
 smix-capsule = { path = "../smix-capsule", version = "2.2.0" }
 smix-store = { path = "../smix-store", version = "2.2.0" }
 smix-error = { path = "../smix-error", version = "2.2.0" }

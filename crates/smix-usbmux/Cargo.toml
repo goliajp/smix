@@ -1,0 +1,20 @@
+[package]
+name = "smix-usbmux"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "smix-usbmux — speak Apple's usbmux protocol: list attached iOS devices and open a TCP tunnel to a port on one (stone, no third-party deps)."
+homepage.workspace = true
+documentation = "https://docs.rs/smix-usbmux"
+readme = "README.md"
+keywords = ["usbmux", "ios", "device", "tunnel", "testing"]
+categories = ["development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true

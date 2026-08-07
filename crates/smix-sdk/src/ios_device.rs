@@ -279,6 +279,10 @@ impl DeviceControl for IosDeviceControl {
         Ok(())
     }
 
+    async fn recording_pid(&self) -> Option<u32> {
+        self.recording.lock().await.as_ref().and_then(|h| h.pid())
+    }
+
     async fn stop_recording(&self) -> Result<(), DeviceControlError> {
         let mut guard = self.recording.lock().await;
         let handle = guard.take().ok_or_else(|| {

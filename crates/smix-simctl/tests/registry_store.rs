@@ -28,6 +28,8 @@ fn sim(name: &str) -> RegisteredSim {
         device_type: "iPhone 16 Pro".to_string(),
         locale: None,
         runner_port: None,
+        kind: smix_simctl::registry::DeviceKind::Simulator,
+        destructive_opt_in: false,
     }
 }
 

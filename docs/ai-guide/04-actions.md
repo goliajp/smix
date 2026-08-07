@@ -47,10 +47,12 @@ synthesised somewhere — which is what it used to mean.
 
 It does **not** mean the target received the touch. Something drawn
 over your element contains the same point, and the a11y snapshot
-carries no z-order, so smix cannot tell which one is on top. Why the
-snapshot cannot carry it — an exhaustive enumeration of the private
-XCUITest surface — is in `docs/research/c7-zorder-obtainability.md`. If a
-tap reports success and nothing happens, see `07-errors.md` →
+carries no z-order, so smix cannot tell which one is on top. This is a
+limit of the platform, not an omission: the snapshot is a dead frame
+with no frontmost or occlusion field on it, and the only z-order-aware
+signal XCUITest offers is `isHittable`, which reports false under
+floating overlays that are genuinely visible and assertable. If a tap
+reports success and nothing happens, see `07-errors.md` →
 "tap returns `ok: true` but state doesn't change".
 
 ### Tap with explicit dispatch (v1.0.26)

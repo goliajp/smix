@@ -14,7 +14,10 @@
 // point of the test. No non-test code here uses unsafe.
 #![deny(unsafe_code)]
 
+pub mod reconcile;
 pub mod runner;
+pub mod runner_android;
 pub mod runner_state;
+pub mod signing;
 
 pub use runner::{health_ok, xcodebuild_argv};
