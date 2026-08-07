@@ -109,9 +109,17 @@ echo "--- android: unit tests + androidTest compile"
 ( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan; do
     python3 "scripts/dev/$gate.py"
 done
+
+# Takes a flag, so it cannot ride the loop above. Its own docstring calls
+# `--check` "the gate", and until 2026-08-06 nothing ran it — a check
+# that never runs reads as coverage while providing none, which is worse
+# than not having written it: the guides could drift from the corpus the
+# tests actually execute, and the drift would be invisible precisely
+# because a gate appeared to be watching.
+python3 scripts/dev/guide-corpus-sync.py --check
 
 # The device guards decide what may touch a simulator or a phone. Their
 # own judgement is source too.
