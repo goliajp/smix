@@ -1,0 +1,4 @@
+- tapOn:
+    text: "Edit"
+    inside: "modal"
+    nth: 1            # 2nd "Edit" within modal subtree

@@ -1,0 +1,16 @@
+- tapOn: { id: "tab-heavylist" }
+
+# Approach 1: jump-to-row via numeric input (fastest)
+- tapOn: { id: "heavylist-jump-input" }
+- inputText: "5000"
+- hideKeyboard
+- tapOn: { id: "heavylist-jump-btn" }
+- waitForAnimationToEnd
+- assertVisible: { id: "heavylist-row-5000-title" }
+
+# Approach 2: scrollUntilVisible (slower but no helper required)
+- scrollUntilVisible:
+    element: { id: "heavylist-row-9999-title" }
+    direction: DOWN
+    timeout: 60000
+- tapOn: { id: "heavylist-row-9999-btn" }

@@ -1,0 +1,60 @@
+# Repeat fixed count
+- repeat:
+    times: 5
+    commands:
+      - tapOn: "Increment"
+
+# Repeat while condition
+- repeat:
+    while:
+      visible: "Loading..."
+    commands:
+      - waitForAnimationToEnd: 500
+
+# Repeat while NOT visible (poll for appearance)
+- repeat:
+    while:
+      notVisible:
+        id: "home-result-label"
+    commands:
+      - waitForAnimationToEnd: 200
+
+# Retry on failure
+- retry:
+    maxRetries: 3
+    commands:
+      - tapOn: "Flaky Button"
+      - assertVisible: "Confirmed"
+
+# Run a sub-flow (file include)
+- runFlow: "../subflows/launch-fresh.yaml"
+
+# Run a sub-flow conditionally (same `runFlow` verb + `when:` gate)
+- runFlow:
+    when:
+      visible: "Need Login"           # enter only when this is visible
+    file: "../subflows/login.yaml"
+
+# Inverse gate (v1.0.24) — enter only when the selector is NOT visible.
+# Idempotency pattern: skip a ceremony whose end state is already reached.
+- runFlow:
+    when:
+      notVisible: { id: "qa-bubble" }
+    file: "../subflows/enter-qa-mode.yaml"
+
+# Inline body instead of a file (`commands:`); `when:` gates identically.
+- runFlow:
+    when:
+      visible: "Open in"
+    commands:
+      - tapOn: "Open"
+      - waitForAnimationToEnd
+
+# `visible` / `notVisible` are mutually exclusive within one `when:`.
+# The gate selector supports the full selector table, including
+# `fallback:` chains with `ocrText` (OCR fires for the check).
+
+# Run inline JS (evaluated in the maestro JS context)
+- evalScript: |
+    output.userId = output.someResponse.id
+- runScript: "../scripts/setup.js"

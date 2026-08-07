@@ -1,0 +1,3 @@
+- inputText:
+    id: "form-email-input"
+    text: "alice@example.com"

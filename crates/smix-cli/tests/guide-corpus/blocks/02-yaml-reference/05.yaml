@@ -1,0 +1,11 @@
+- inputText: "alice@example.com"         # types into focused field
+- inputText:
+    id: "form-email-input"               # target field by selector first
+    text: "alice@example.com"
+
+- eraseText: 5                           # backspace N chars (default 50)
+- copyTextFrom:
+    id: "form-result-label"              # copies result to clipboard env
+- pasteText                              # paste clipboard into focused field
+- setClipboard: "hello"                  # set clipboard programmatically
+- hideKeyboard                           # dismiss soft keyboard

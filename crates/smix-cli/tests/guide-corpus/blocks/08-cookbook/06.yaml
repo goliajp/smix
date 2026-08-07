@@ -1,0 +1,17 @@
+- tapOn: { id: "tab-deepnav" }
+
+# Drill down
+- tapOn: { id: "deepnav-l1-movies-btn" }
+- tapOn: { id: "deepnav-l2-action-btn" }
+- tapOn: { id: "deepnav-l3-item3-btn" }
+- tapOn: { id: "deepnav-l4-edit-btn" }
+
+# At L5, edit + save
+- tapOn: { id: "deepnav-l5-text-input" }
+- eraseText
+- inputText: "MyEdit"
+- tapOn: { id: "deepnav-l5-save-btn" }
+
+# Save pops back to L1, state propagated
+- waitForAnimationToEnd
+- assertVisible: { id: "deepnav-l1-saved-label", text: "saved: MyEdit" }

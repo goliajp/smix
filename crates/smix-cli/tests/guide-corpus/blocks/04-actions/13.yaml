@@ -1,0 +1,4 @@
+- swipe:
+    start: "10%,50%"
+    end: "90%,50%"
+    duration: 400

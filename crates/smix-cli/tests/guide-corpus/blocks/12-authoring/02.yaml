@@ -1,0 +1,3 @@
+- extendedWaitUntil:
+    visible: Welcome
+    timeout: 10000

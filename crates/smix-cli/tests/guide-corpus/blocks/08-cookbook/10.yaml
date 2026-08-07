@@ -1,0 +1,12 @@
+- tapOn: { id: "tab-webview" }
+- waitForAnimationToEnd               # let WebView load inline HTML
+
+# Set input + submit via JS
+- webViewEval: |
+    document.getElementById('user-input').value = 'alice';
+    submitForm();
+
+# Read back the result
+- webViewEval: |
+    document.getElementById('form-result').textContent
+# Returns "submitted=alice"

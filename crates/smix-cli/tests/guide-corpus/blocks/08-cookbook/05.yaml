@@ -1,0 +1,14 @@
+- tapOn: { id: "tab-stacked" }
+- tapOn: { id: "stacked-open-l1-btn" }
+- waitForAnimationToEnd
+- tapOn: { id: "stacked-l1-open-alert-btn" }
+- waitForAnimationToEnd
+- tapOn: { id: "stacked-l2-continue-btn" }
+- waitForAnimationToEnd
+- tapOn: { id: "stacked-l3-pay-btn" }
+
+# After all 3 dismiss, trail label should read "completed"
+- waitForAnimationToEnd
+- assertVisible:
+    id: "stacked-trail-label"
+    text: ".*completed.*"

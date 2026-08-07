@@ -1,0 +1,26 @@
+# Fixed sleep — NOT an XCTest quiescence wait. smix no-ops XCTest's
+# internal idle-wait for performance (SmixQuiescenceSwizzle); this verb
+# has always been a bounded pause at the runtime layer.
+#
+# On Android a run zeroes the animation scales before it starts, so
+# this verb has little left to wait for; `--animations` restores the
+# device's own settings and with them the original reason for it.
+#
+# On iOS nothing is quietened — no host-side lever exists — so this
+# verb keeps its full value there.
+- waitForAnimationToEnd                  # bare form: 400 ms (maestro-compat)
+- waitForAnimationToEnd: 500             # integer: sleep N ms
+- waitForAnimationToEnd:
+    timeout: 5000                        # maestro-canonical map form
+
+- extendedWaitUntil:
+    visible: "Loading complete"
+    timeout: 30000
+
+- extendedWaitUntil:
+    notVisible: "Spinner"
+    timeout: 10000
+
+# On timeout, extendedWaitUntil auto-captures a screenshot + tree JSON
+# to `.smix/timeouts/` (or `--debug-output` dir when set) and appends
+# the written paths to the failure hint — no flag needed.

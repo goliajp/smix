@@ -1,0 +1,6 @@
+# Swipe the tab bar before tapping the far-right tab
+- swipe:
+    start: "95%,8%"   # right edge of tab bar
+    end: "5%,8%"
+    duration: 200
+- tapOn: { id: "tab-wizard" }   # now visible

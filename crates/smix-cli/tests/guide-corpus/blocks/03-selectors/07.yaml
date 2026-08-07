@@ -1,0 +1,5 @@
+- tapOn:
+    anchorRelative:
+      anchor: "Header bar"
+      dx: 0.4         # +0.4 viewport width to the right
+      dy: -0.05       # -0.05 viewport height above

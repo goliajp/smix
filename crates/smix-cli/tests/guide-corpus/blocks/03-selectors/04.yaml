@@ -1,0 +1,7 @@
+- tapOn:
+    role: button
+    name: "OK"     # optional name pattern (text or regex)
+
+- assertVisible:
+    role: heading
+    name: "Welcome"

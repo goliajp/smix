@@ -1,0 +1,10 @@
+- tapOn:
+    text: "Edit"
+    below: { text: "Settings" }   # the Edit below the Settings row
+
+# Pixel-offset form — anchor plus a dx/dy nudge, all three required:
+- tapOn:
+    anchored:
+      anchor: { text: "Settings" }
+      dx: 0.0
+      dy: 40.0

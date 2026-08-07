@@ -1,0 +1,4 @@
+- longPressOn:
+    id: "hdr-back-btn"
+    duration: 1500
+    captureDuring: true

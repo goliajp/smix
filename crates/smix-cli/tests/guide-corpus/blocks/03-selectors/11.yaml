@@ -1,0 +1,6 @@
+- tapOn:
+    fallback:
+      - id: "home-cta-btn"              # try first
+      - text: "Get Started"             # if id absent
+      - ocrText: "Get Started"          # if text absent (rendered as image)
+      - point: "50%,75%"                # last resort

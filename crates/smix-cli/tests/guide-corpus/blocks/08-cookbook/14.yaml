@@ -1,0 +1,5 @@
+- retry:
+    maxRetries: 3
+    commands:
+      - tapOn: { id: "home-show-alert-btn" }
+      - assertVisible: { id: "home-alert-ok-btn" }

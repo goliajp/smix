@@ -1,0 +1,15 @@
+appId: com.example.app
+---
+- setPermissions:
+    camera: allow
+    photos: allow
+    notifications: allow
+    location: allow
+- launchApp:
+    clearState: true
+- tapOn: { id: "tab-perm" }
+- tapOn: { id: "perm-camera-btn" }
+
+# Should NOT see a permission dialog since we pre-granted
+- assertNotVisible: { text: "Allow.*to access your Camera" }
+- assertVisible: { id: "perm-status-label", text: ".*granted.*" }

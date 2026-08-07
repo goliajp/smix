@@ -1,0 +1,2 @@
+- tapOn: { id: "tab-<area>" }
+# Where <area> is the lowercase area name (home, form, list, modal, ...)

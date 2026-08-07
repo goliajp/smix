@@ -1,0 +1,17 @@
+- assertVisible: "Welcome"               # text literal
+- assertVisible:
+    id: "home-counter-label"             # accessibility identifier
+- assertVisible:
+    text: "Error"
+    optional: true                       # if absent, step is "skipped" not "failed"
+
+- assertNotVisible: "Error"              # element must NOT be on screen
+- assertNotVisible:
+    id: "modal-overlay"
+
+- assertTrue: ${1 > 0}                   # ==, !=, <, <=, >, >=, &&, ||, !, .contains()
+
+- assertScreenshot: "home.png"           # visual regression — full-frame 64-bit dhash
+- assertScreenshot:
+    path: "home.png"                     # baseline path, relative to the flow file
+    threshold: 5                         # max hamming distance (default 5)

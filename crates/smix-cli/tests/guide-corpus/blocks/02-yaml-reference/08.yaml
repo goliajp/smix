@@ -1,0 +1,13 @@
+- setOrientation: LANDSCAPE_LEFT         # PORTRAIT / LANDSCAPE_LEFT / LANDSCAPE_RIGHT / PORTRAIT_UPSIDE_DOWN
+- setLocation:
+    latitude: 35.6812
+    longitude: 139.7671
+- travel:
+    points:
+      - { latitude: 35.0, longitude: 139.0 }
+      - { latitude: 36.0, longitude: 140.0 }
+    speedMps: 50
+- setPermissions:                        # iOS / Android permission grants
+    camera: allow
+    location: allow
+    notifications: allow

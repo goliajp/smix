@@ -1,0 +1,23 @@
+# Drive the home counter
+- tapOn: { id: "tab-home" }
+- assertVisible: { id: "home-counter-label" }
+- tapOn: { id: "home-increment-btn" }
+- tapOn: { id: "home-increment-btn" }
+- assertVisible:
+    id: "home-counter-label"
+    text: "2"          # value-aware (text + id combined)
+
+# Drill deep nav
+- tapOn: { id: "tab-deepnav" }
+- tapOn: { id: "deepnav-l1-movies-btn" }
+- tapOn: { id: "deepnav-l2-action-btn" }
+- tapOn: { id: "deepnav-l3-item3-btn" }
+- tapOn: { id: "deepnav-l4-edit-btn" }
+- tapOn: { id: "deepnav-l5-save-btn" }
+- assertVisible: { id: "deepnav-l1-saved-label" }   # popped back
+
+# Exercise the wizard
+- tapOn: { id: "tab-wizard" }
+- tapOn: { id: "wizard-radio-business" }
+- tapOn: { id: "wizard-next-btn" }
+- assertVisible: { id: "wizard-company-input" }    # conditional field

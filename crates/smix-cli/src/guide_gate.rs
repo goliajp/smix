@@ -397,63 +397,87 @@ impl AppLike for MockApp {
     }
 }
 
-/// The pages a reader is pointed at, in the order the guide numbers
-/// them.
-fn guide_pages() -> BTreeMap<&'static str, &'static str> {
-    BTreeMap::from([
-        (
-            "02-yaml-reference",
-            include_str!("../../../docs/ai-guide/02-yaml-reference.md"),
-        ),
-        (
-            "03-selectors",
-            include_str!("../../../docs/ai-guide/03-selectors.md"),
-        ),
-        (
-            "04-actions",
-            include_str!("../../../docs/ai-guide/04-actions.md"),
-        ),
-        ("05-cli", include_str!("../../../docs/ai-guide/05-cli.md")),
-        (
-            "06-fixtures",
-            include_str!("../../../docs/ai-guide/06-fixtures.md"),
-        ),
-        (
-            "07-errors",
-            include_str!("../../../docs/ai-guide/07-errors.md"),
-        ),
-        (
-            "08-cookbook",
-            include_str!("../../../docs/ai-guide/08-cookbook.md"),
-        ),
-        (
-            "10-ai-assertions",
-            include_str!("../../../docs/ai-guide/10-ai-assertions.md"),
-        ),
-        (
-            "12-authoring",
-            include_str!("../../../docs/ai-guide/12-authoring.md"),
-        ),
-    ])
+/// Where the corpus lives: this crate's own test data.
+fn corpus_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/guide-corpus/blocks")
 }
 
-fn yaml_blocks(doc: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut in_block = false;
-    let mut cur = String::new();
-    for line in doc.lines() {
-        if in_block {
-            if line.trim_end() == "```" {
-                out.push(std::mem::take(&mut cur));
-                in_block = false;
-            } else {
-                cur.push_str(line);
-                cur.push('\n');
-            }
-        } else if line.trim_end() == "```yaml" {
-            in_block = true;
+/// Every documented example, page → blocks in the order the page prints
+/// them.
+///
+/// This reads the corpus, not the guides. `scripts/dev/guide-corpus-sync.py`
+/// is what extracts one from the other and, in `--check` mode, what fails
+/// when they drift; it is the only thing in the project that crosses from
+/// `docs/` into a crate. The gate used to `include_str!` nine guide pages
+/// directly, which made this crate's test build depend on documentation and
+/// forced preflight to carry a derivation mapping a changed guide back to
+/// the crates that compiled it. Test data the crate owns needs neither.
+///
+/// Numbering counts every block on a page, flows and non-flows alike — the
+/// filter below decides what to run, and `KNOWN_BROKEN` addresses blocks by
+/// that number.
+fn guide_blocks() -> BTreeMap<String, Vec<String>> {
+    let root = corpus_root();
+    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let pages = std::fs::read_dir(&root).unwrap_or_else(|e| {
+        panic!(
+            "reading the guide corpus at {}: {e}\nRun `python3 \
+             scripts/dev/guide-corpus-sync.py` to write it from the guides.",
+            root.display()
+        )
+    });
+    for page in pages.flatten() {
+        if !page.path().is_dir() {
+            continue;
         }
+        let name = page
+            .file_name()
+            .to_str()
+            .expect("a corpus page name is utf-8")
+            .to_string();
+        let mut numbered: Vec<(usize, String)> = Vec::new();
+        for block in std::fs::read_dir(page.path())
+            .expect("reading a corpus page")
+            .flatten()
+        {
+            let path = block.path();
+            if path.extension().is_none_or(|e| e != "yaml") {
+                continue;
+            }
+            // The file stem is the block's number on its page, and the
+            // order they run in has to be that order rather than the
+            // directory's: `10.yaml` sorts before `2.yaml` as text.
+            let n: usize = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(|| panic!("corpus block {} is not numbered", path.display()));
+            numbered.push((
+                n,
+                std::fs::read_to_string(&path).expect("reading a corpus block"),
+            ));
+        }
+        numbered.sort_by_key(|(n, _)| *n);
+        // The numbers are the page's block indices, so a gap means the
+        // corpus lost one and every KNOWN_BROKEN entry after it now points
+        // at the wrong example.
+        for (i, (n, _)) in numbered.iter().enumerate() {
+            assert_eq!(
+                *n,
+                i + 1,
+                "corpus page {name} jumps from block {} to {n} — re-run \
+                 guide-corpus-sync.py",
+                i
+            );
+        }
+        out.insert(name, numbered.into_iter().map(|(_, b)| b).collect());
     }
+    assert!(
+        out.len() >= 9,
+        "only {} corpus pages found — the corpus is missing or partly \
+         written; run `python3 scripts/dev/guide-corpus-sync.py`",
+        out.len()
+    );
     out
 }
 
@@ -497,35 +521,23 @@ fn looks_like_a_flow(block: &str) -> bool {
 /// the registry it depends on are checked together — if the guide
 /// renames the fixture in one place, this stops resolving.
 fn guide_registry() -> smix_fixture::FixtureRegistry {
-    let doc = include_str!("../../../docs/ai-guide/06-fixtures.md");
-    let mut block = None;
-    let mut cur: Option<String> = None;
-    for line in doc.lines() {
-        match &mut cur {
-            Some(buf) if line.trim_end() == "```" => {
-                block = Some(std::mem::take(buf));
-                cur = None;
-            }
-            Some(buf) => {
-                buf.push_str(line);
-                buf.push('\n');
-            }
-            None if line.trim_end() == "```jsonc" => cur = Some(String::new()),
-            None => {}
-        }
-    }
-    let block = block.expect("06-fixtures no longer prints a jsonc registry block");
-    // Both arms run the whole corpus, concurrently, in one process. A
-    // fixed filename meant one of them reading the file while the other
-    // was still writing it.
-    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!(
-        "smix-guide-gate-fixtures-{}-{n}.json",
-        std::process::id()
-    ));
-    std::fs::write(&path, block).expect("write registry");
-    smix_fixture::FixtureRegistry::load(&path).expect("the registry printed in 06-fixtures loads")
+    // Derived from the jsonc block in 06-fixtures by guide-corpus-sync.py,
+    // so the `- fixture:` example and the registry its id comes out of are
+    // checked together. It is a file already, and a read-only one, so both
+    // arms of the corpus can load it concurrently — the previous reader
+    // extracted the block and wrote a per-process temp file to avoid one
+    // arm reading what the other was still writing.
+    let path = corpus_root()
+        .parent()
+        .expect("the corpus root has a parent")
+        .join("derived/fixture-registry.json");
+    smix_fixture::FixtureRegistry::load(&path).unwrap_or_else(|e| {
+        panic!(
+            "loading the registry printed in 06-fixtures from {}: {e}\nRun \
+             `python3 scripts/dev/guide-corpus-sync.py`.",
+            path.display()
+        )
+    })
 }
 
 /// A log tail already carrying the signal the guide's registry waits
@@ -691,8 +703,9 @@ fn every_yaml_example_reaches_a_route() {
     let mut judged = 0usize;
     let mut broken: Vec<String> = Vec::new();
     let mut fixed: Vec<String> = Vec::new();
-    for (page, doc) in guide_pages() {
-        for (i, block) in yaml_blocks(doc).iter().enumerate() {
+    for (page, blocks) in guide_blocks() {
+        let page = page.as_str();
+        for (i, block) in blocks.iter().enumerate() {
             if !looks_like_a_flow(block) {
                 continue;
             }
@@ -747,8 +760,9 @@ fn every_yaml_example_reaches_a_route() {
 fn every_documented_tap_is_admissible_at_the_driver_boundary() {
     let mut checked = 0usize;
     let mut refused: Vec<String> = Vec::new();
-    for (page, doc) in guide_pages() {
-        for (i, block) in yaml_blocks(doc).iter().enumerate() {
+    for (page, blocks) in guide_blocks() {
+        let page = page.as_str();
+        for (i, block) in blocks.iter().enumerate() {
             if !looks_like_a_flow(block) {
                 continue;
             }
@@ -833,7 +847,7 @@ fn the_gate_catches_a_documented_example_the_driver_would_refuse() {
 }
 
 // --------------------------------------------------------------------
-// Probes — one per claim in docs/guide-executability.md.
+// Probes — one per claim in .claude/docs/guide-executability.md.
 //
 // The two arms above judge every example the same way. A probe asks a
 // question about one specific claim a guide makes, in the terms that
@@ -844,11 +858,9 @@ fn the_gate_catches_a_documented_example_the_driver_would_refuse() {
 /// re-ordering a page does not silently point a probe at a different
 /// example.
 fn block_containing(page: &str, needle: &str) -> String {
-    let doc = guide_pages()
-        .get(page)
-        .copied()
-        .unwrap_or_else(|| panic!("{page} is not in the corpus"));
-    yaml_blocks(doc)
+    guide_blocks()
+        .remove(page)
+        .unwrap_or_else(|| panic!("{page} is not in the corpus"))
         .into_iter()
         .find(|b| b.contains(needle))
         .unwrap_or_else(|| panic!("{page} no longer prints a block containing {needle:?}"))
@@ -1021,27 +1033,9 @@ fn the_default_tap_takes_the_route_its_page_names() {
          a host-side resolve. Trace: {:?}",
         calls.iter().map(MockCall::describe).collect::<Vec<_>>()
     );
-
-    let page = guide_pages()["04-actions"];
-    let section = page
-        .split("### Tap with explicit dispatch")
-        .next()
-        .expect("04-actions still opens with the default-tap section");
-    assert!(
-        section.contains("/tap-at-norm-coord"),
-        "04-actions describes the default tap without naming the route \
-         it takes"
-    );
-    assert!(
-        !section.contains("_XCT_synthesizeEvent"),
-        "04-actions still attributes IOHID synthesis to the default \
-         tap; that is `dispatch: daemonProxy`"
-    );
-    assert!(
-        !section.contains("Path A") && !section.contains("Path B"),
-        "04-actions still describes a Path A / Path B fallback between \
-         the two routes; there is no fallback, `/tap-by-id` is opt-in"
-    );
+    // What the page *says* about that route is checked by fact-scan,
+    // which reads prose. This asks the behavioural half of the same
+    // question: the example takes a host-side resolve.
 }
 
 /// P1 — `dispatch: daemonProxy` with an `id`, the pairing 04-actions
@@ -1107,9 +1101,9 @@ fn the_bare_string_form_matches_a_real_tree() {
 // The list.
 // --------------------------------------------------------------------
 
-const LIST: &str = include_str!("../../../docs/guide-executability.md");
+const LIST: &str = include_str!("../../../.claude/docs/guide-executability.md");
 const SELF: &str = include_str!("guide_gate.rs");
-const LEDGER: &str = include_str!("../../../docs/audit-ledger.md");
+const LEDGER: &str = include_str!("../../../.claude/docs/audit-ledger.md");
 
 /// One row, already split.
 struct Row<'a> {
@@ -1217,7 +1211,7 @@ fn the_list_and_the_probes_agree() {
             assert!(
                 LEDGER.contains(r.ledger),
                 "{}: cites ledger row {}, which does not appear in \
-                 docs/audit-ledger.md",
+                 .claude/docs/audit-ledger.md",
                 r.id,
                 r.ledger
             );
@@ -1286,11 +1280,8 @@ fn this_gate_runs_where_it_must() {
 #[test]
 fn summary() {
     let mut judged = 0usize;
-    for (_, doc) in guide_pages() {
-        judged += yaml_blocks(doc)
-            .iter()
-            .filter(|b| looks_like_a_flow(b))
-            .count();
+    for (_, blocks) in guide_blocks() {
+        judged += blocks.iter().filter(|b| looks_like_a_flow(b)).count();
     }
     let rows = rows();
     let count = |s: &str| rows.iter().filter(|r| r.status == s).count();
@@ -1324,8 +1315,9 @@ fn summary() {
 #[test]
 fn the_documented_regex_examples_are_patterns() {
     use smix_selector::Pattern;
-    let page = guide_pages()["03-selectors"];
-    let blocks = yaml_blocks(page);
+    let blocks = guide_blocks()
+        .remove("03-selectors")
+        .expect("03-selectors is in the corpus");
     let regex_section = blocks
         .iter()
         .find(|b| b.contains("regex:"))
@@ -1392,22 +1384,25 @@ fn the_documented_regex_examples_are_patterns() {
 /// adding a key to the sentence without adding it to the enum fails.
 #[test]
 fn every_documented_key_name_parses() {
-    let page = guide_pages()["04-actions"];
-    let line = page
+    let path = corpus_root()
+        .parent()
+        .expect("the corpus root has a parent")
+        .join("derived/press-keys.yaml");
+    let flow = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "reading {}: {e}\nThe key list is derived from the sentence in \
+             04-actions by `python3 scripts/dev/guide-corpus-sync.py`.",
+            path.display()
+        )
+    });
+    let keys: Vec<&str> = flow
         .lines()
-        .find(|l| l.starts_with("- Available keys:"))
-        .expect("04-actions still lists the available keys");
-    let keys: Vec<&str> = line
-        .trim_start_matches("- Available keys:")
-        .split('/')
-        .map(str::trim)
-        .map(|k| k.trim_end_matches('.'))
-        .filter(|k| !k.is_empty())
+        .filter_map(|l| l.trim().strip_prefix("- pressKey: "))
         .collect();
     assert!(
         keys.len() >= 6,
-        "only {} keys read out of the sentence — the list changed shape \
-         and this would pass by knowing nothing",
+        "only {} keys in the derived flow — the sentence changed shape and \
+         this would pass by knowing nothing",
         keys.len()
     );
     let mut rejected = Vec::new();

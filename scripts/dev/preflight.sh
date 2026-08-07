@@ -109,7 +109,7 @@ echo "--- android: unit tests + androidTest compile"
 ( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan; do
     python3 "scripts/dev/$gate.py"
 done
 

@@ -1,0 +1,10 @@
+- tapOn: { id: "tab-modal" }
+- tapOn: { id: "modal-open-sheet-btn" }
+
+# At this point a BottomSheet / .sheet is open
+- waitForAnimationToEnd                      # let the sheet finish animating in
+- assertVisible: { id: "modal-sheet-dismiss-btn" }
+- tapOn: { id: "modal-sheet-dismiss-btn" }
+
+- waitForAnimationToEnd                      # let it dismiss
+- assertNotVisible: { id: "modal-sheet-dismiss-btn" }

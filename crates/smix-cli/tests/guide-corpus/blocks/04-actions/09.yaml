@@ -1,0 +1,2 @@
+- eraseText: 5     # backspace 5 times (default 50 if omitted)
+- eraseText        # default depth
