@@ -257,9 +257,41 @@ fn every_repo_path_the_guides_name_exists() {
             {
                 continue;
             }
+            // A link may carry a fragment. Checking the whole string as
+            // a path would reject every anchored link in the docs, so
+            // the fragment is split off — and then held to its own
+            // standard rather than waved through, because a link into a
+            // heading that no longer exists lands the reader at the top
+            // of a page wondering what they were sent to see.
+            let (path, anchor) = match tok.split_once('#') {
+                Some((p, a)) => (p, Some(a)),
+                None => (tok, None),
+            };
             checked += 1;
-            if !root.join(tok).exists() {
+            if !root.join(path).exists() {
                 missing.push(format!("{name}: {tok}"));
+                continue;
+            }
+            if let Some(anchor) = anchor
+                && let Ok(body) = std::fs::read_to_string(root.join(path))
+            {
+                // GitHub's rule, narrowly: lower-case, spaces to
+                // hyphens, drop everything else.
+                let has = body.lines().filter(|l| l.starts_with('#')).any(|l| {
+                    let text = l.trim_start_matches('#').trim().to_lowercase();
+                    let slug: String = text
+                        .chars()
+                        .filter_map(|c| match c {
+                            ' ' => Some('-'),
+                            c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                            _ => None,
+                        })
+                        .collect();
+                    slug == anchor.to_lowercase()
+                });
+                if !has {
+                    missing.push(format!("{name}: {tok} (no such heading)"));
+                }
             }
         }
     }

@@ -7,7 +7,7 @@
 [![crates.io](https://img.shields.io/crates/v/smix-cli?label=crates.io%20smix-cli&logo=rust&style=flat-square)](https://crates.io/crates/smix-cli)
 [![Maven Central](https://img.shields.io/maven-central/v/jp.golia.smix/smix-sdk?label=Maven%20Central%20jp.golia.smix&logo=apachemaven&style=flat-square)](https://central.sonatype.com/artifact/jp.golia.smix/smix-sdk)
 
-AI-native UI automation for the iOS Simulator and Android Emulator. Written in Rust; distributed as a CLI (`smix`), a Rust SDK, and native SDKs for Swift and Kotlin. A TypeScript package ships the same typed API surface; its native driving transport is still in progress (driving calls throw `SmixNotImplementedError` today — see the [npm package README](./npm/smix-rn/README.md)).
+AI-native UI automation for the iOS Simulator, the Android Emulator, and — once registered — physical iPhones and Android devices. Written in Rust; distributed as a CLI (`smix`), a Rust SDK, and native SDKs for Swift and Kotlin. A TypeScript package ships the same typed API surface; its native driving transport is still in progress (driving calls throw `SmixNotImplementedError` today — see the [npm package README](./npm/smix-rn/README.md)).
 
 Designed for LLM-authored test flows:
 
@@ -16,7 +16,7 @@ Designed for LLM-authored test flows:
 - Playwright-shape API surface mirrored across the SDKs
 - Host-side selector resolution + native event injection (IOHID + XCUIElement chain on iOS, UiAutomator on Android)
 - MCP server entry for direct Claude Code integration
-- Simulator / emulator only — real-device automation is out of scope
+- Physical devices are a first-class target, held to three rules: a device must be **registered before it can be addressed** (so "whichever phone is plugged in" is never one), destructive actions are **refused per device** until allowed once, and a capability a phone does not have is a **loud error, never a silent no-op**
 
 ## Install
 
@@ -39,7 +39,7 @@ cargo install smix-cli --locked
 npm install @goliapkg/smix
 ```
 
-Prerequisites: macOS with Xcode + Simulator (iOS testing); Android SDK with an emulator image (Android testing).
+Prerequisites: macOS with Xcode + Simulator (iOS testing); Android SDK with an emulator image (Android testing). For a physical device, USB and a paired phone — plus, on iOS, an Apple Development signing identity and a phone that stays unlocked, because a locked one parks `xcodebuild` rather than failing it.
 
 ## Quick start
 
@@ -77,6 +77,24 @@ transport yet and throw `SmixNotImplementedError`. Use the Rust, Swift,
 or Kotlin SDK (or the CLI) to drive a device today.
 
 See [`docs/ai-guide/01-quickstart.md`](./docs/ai-guide/01-quickstart.md) for a full walkthrough.
+
+### A physical device
+
+Registration is the deliberate act — it is what makes the device addressable
+at all, and nothing on this machine can enumerate the world's phones to check
+it for you:
+
+```bash
+smix sim register phone --udid <UDID> --kind physical-ios
+smix runner up phone --bundle com.example.app     # --team <TEAM_ID> if you have more than one
+smix sim screenshot phone shot.png                # served by the runner; a phone has no other way to be seen
+```
+
+Erasing, uninstalling and keychain resets are refused on it until
+`smix sim allow-destructive phone` — recorded once, not confirmed per command,
+because a confirmation typed every time ends up pasted into a script.
+
+Full surface: [docs/ai-guide/05-cli.md](docs/ai-guide/05-cli.md#physical-devices).
 
 ## Documentation
 
