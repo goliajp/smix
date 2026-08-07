@@ -332,8 +332,7 @@ pub async fn down(root: &Path, udid: &str) -> Result<(), String> {
     };
 
     let mut errors: Vec<String> = Vec::new();
-    // No: the capsule knows its own runner by its state file.
-    if let Err(e) = smix_capsule::runner::down(root, state.runner_port, false) {
+    if let Err(e) = smix_capsule::runner::down(root, state.runner_port) {
         eprintln!("capsule down: runner down failed: {e}");
         errors.push(format!("runner: {e}"));
     }

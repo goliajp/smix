@@ -152,6 +152,11 @@ a CoreSimulator UDID for a simulator, `emulator-<port>` for an emulator — and
 registering one under the other kind is refused, naming the shape that kind
 actually uses.
 
+One MCP caveat: `smix_use` cannot *start* a runner on a physical iPhone —
+building one needs the registry and a signing team, which are the CLI's to
+resolve. Run `smix runner up <alias> --bundle <id>` first; every MCP tool then
+drives the phone through that runner exactly as it would a simulator.
+
 Apple identifiers are normalised to upper case, because `devicectl` will not
 match a lower-case spelling of a UDID it accepts in upper case. adb serials are
 stored and returned verbatim, because `adb` matches them byte for byte.

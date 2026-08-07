@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "icu_collections"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2984d1cd16c883d7935b9e07e44071dca8d917fd52ecc02c04d5fa0b5a3f191c"
 dependencies = [
@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "icu_locale_core"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92219b62b3e2b4d88ac5119f8904c10f8f61bf7e95b640d25ba3075e6cac2c29"
 dependencies = [
@@ -654,7 +654,7 @@ dependencies = [
 
 [[package]]
 name = "icu_normalizer"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c56e5ee99d6e3d33bd91c5d85458b6005a22140021cc324cea84dd0e72cff3b4"
 dependencies = [
@@ -668,13 +668,13 @@ dependencies = [
 
 [[package]]
 name = "icu_normalizer_data"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da3be0ae77ea334f4da67c12f149704f19f81d1adf7c51cf482943e84a2bad38"
 
 [[package]]
 name = "icu_properties"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bee3b67d0ea5c2cca5003417989af8996f8604e34fb9ddf96208a033901e70de"
 dependencies = [
@@ -688,13 +688,13 @@ dependencies = [
 
 [[package]]
 name = "icu_properties_data"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e2bbb201e0c04f7b4b3e14382af113e17ba4f63e2c9d2ee626b720cbce54a14"
 
 [[package]]
 name = "icu_provider"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "139c4cf31c8b5f33d7e199446eff9c1e02decfc2f0eec2c8d71f65befa45b421"
 dependencies = [
@@ -1563,7 +1563,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "smix-adapter-maestro"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-trait",
  "clap",
@@ -1595,7 +1595,7 @@ dependencies = [
 
 [[package]]
 name = "smix-adb"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1606,7 +1606,7 @@ dependencies = [
 
 [[package]]
 name = "smix-ai-tier"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1616,7 +1616,7 @@ dependencies = [
 
 [[package]]
 name = "smix-annotate"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "ab_glyph",
  "image",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-trait",
  "serde_json",
@@ -1644,7 +1644,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -1653,7 +1653,7 @@ dependencies = [
 
 [[package]]
 name = "smix-fixture"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1662,7 +1662,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1672,14 +1672,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-metro-log"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "futures-util",
  "regex",
@@ -1692,7 +1692,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1710,7 +1710,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1721,14 +1721,14 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-sdk"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1749,7 +1749,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "regex",
  "serde",
@@ -1758,7 +1758,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1766,14 +1766,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "libc",
  "serde",
@@ -1787,7 +1787,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -1797,7 +1797,7 @@ dependencies = [
 
 [[package]]
 name = "smix-verbs"
-version = "2.2.0"
+version = "2.3.0"
 
 [[package]]
 name = "socket2"

@@ -46,7 +46,11 @@ fn both_consumers_depend_on_the_lifecycle_crate() {
 fn the_surface_both_consumers_need_is_public() {
     // Compilation is the assertion: a move that left one of these behind
     // in the binary would not build here.
+    // Both faces, pinned: the 2.x two-argument form (what every caller
+    // before physical devices compiled against, and must keep compiling
+    // against), and the target-carrying form beside it.
+    let _: fn(&std::path::Path, &str) -> Vec<String> = smix_capsule::xcodebuild_argv;
     let _: fn(&std::path::Path, &str, smix_capsule::runner::RunnerTarget<'_>) -> Vec<String> =
-        smix_capsule::xcodebuild_argv;
+        smix_capsule::runner::xcodebuild_argv_for;
     let _: fn(u16) -> bool = smix_capsule::health_ok;
 }

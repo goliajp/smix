@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [2.2.0] — Unreleased
+## [2.3.0] — Unreleased
 
 ### Added
 
@@ -90,6 +90,47 @@ All notable changes to the `smix` workspace are documented here. The format foll
   showed the new, and what that looks like from outside is a new route
   returning 404.
 
+### Fixed
+
+- **`--supervise` did nothing, for every runner new enough to report a wire
+  schema — which is all of them.** The success branch returned from the middle
+  of the function and the sidecar block lives at the end, so the flag was
+  accepted, nothing was spawned, and nothing said so. Found only because giving
+  the supervisor a ledger row required there to be one.
+
+- **`smix down` shut down devices it had not booted.** Its last pass treated
+  "registered" as "ours to turn off", so a sweep took away a simulator someone
+  else's dev server was using. The ledger's boot row records who booted it, and
+  only that entitles a shutdown.
+
+- **A recording could report success while writing nothing.** The `simctl`
+  child's output was piped to a reader that went away once the recording had to
+  outlive its starter, so it died of SIGPIPE on its next log line, leaving a
+  zero-byte file behind a success message.
+
+- **`runner up` then `run` works — the lease is adopted, not a wall.** A
+  finished `runner up` leaves a runner serving and its own pid in the
+  ledger; admission read "live service under a dead holder" as occupied
+  and refused every later command, including the quickstart's own
+  pairing, on every device kind. A dead holder whose surviving resources
+  are all services now hands the lease over as-is; a live holder still
+  refuses, and a live recording is never adopted past.
+
+- **`runner down` stops the port forwarder it recorded.** The forwarder
+  is deliberately its own process, and teardown dropped its ledger row
+  without signalling it — one outlived a passing test run by five hours,
+  still holding the port and still wired to the phone. Teardown now
+  reads the ledger before forgetting it, and release keeps rows it
+  inherited rather than erasing the ledger's memory of processes that
+  are still serving.
+
+- **`smix sim boot` returned before the device could be drawn.** Screenshots
+  then failed with "Timeout waiting for screen surfaces", and `recordVideo`
+  reported success while producing nothing — the boot is now waited out.
+
+## [2.2.0] — 2026-07-26
+
+### Changed
 
 - **The embedded store moves to kevy 4.** A data directory written by an
   earlier smix opens with no migration step. The AOF's record format is
@@ -119,26 +160,6 @@ All notable changes to the `smix` workspace are documented here. The format foll
   exposes them.
 
 ### Fixed
-
-- **`--supervise` did nothing, for every runner new enough to report a wire
-  schema — which is all of them.** The success branch returned from the middle
-  of the function and the sidecar block lives at the end, so the flag was
-  accepted, nothing was spawned, and nothing said so. Found only because giving
-  the supervisor a ledger row required there to be one.
-
-- **`smix down` shut down devices it had not booted.** Its last pass treated
-  "registered" as "ours to turn off", so a sweep took away a simulator someone
-  else's dev server was using. The ledger's boot row records who booted it, and
-  only that entitles a shutdown.
-
-- **A recording could report success while writing nothing.** The `simctl`
-  child's output was piped to a reader that went away once the recording had to
-  outlive its starter, so it died of SIGPIPE on its next log line, leaving a
-  zero-byte file behind a success message.
-
-- **`smix sim boot` returned before the device could be drawn.** Screenshots
-  then failed with "Timeout waiting for screen surfaces", and `recordVideo`
-  reported success while producing nothing — the boot is now waited out.
 
 - **`smix-mcp` answers `--version`.** Asked for its version, the MCP
   server treated an empty stdin as a request and printed a JSON-RPC parse

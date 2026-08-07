@@ -119,7 +119,7 @@ fn stop_runner(root: &Path, port: u16, proc: &ProcIdentity) -> Outcome {
     // No: reconcile acts on a ledger row, so the runner it is closing
     // is recorded by definition. Anything else on the port is not the
     // session being settled.
-    match crate::runner::down(root, port, false) {
+    match crate::runner::down(root, port) {
         Ok(()) => Outcome::Closed(format!("runner on port {port}: {how}")),
         Err(e) => Outcome::Failed(format!("runner on port {port} did not stop: {e}")),
     }

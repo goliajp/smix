@@ -108,3 +108,10 @@ adb -s emulator-5554 emu kill
 - Want to **write** a YAML? → [02-yaml-reference.md](02-yaml-reference.md)
 - Need to **find an element** by some property other than testTag? → [03-selectors.md](03-selectors.md)
 - Want a reference for how to organize testTags in your test app? → [06-fixtures.md](06-fixtures.md)
+
+---
+
+Driving a physical iPhone or Android device works the same way once the
+device is registered — see [05-cli.md — Physical
+devices](./05-cli.md#physical-devices) for registration, signing, and
+what a phone cannot do.
