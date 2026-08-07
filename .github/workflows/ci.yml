@@ -100,8 +100,12 @@ jobs:
         run: python3 scripts/dev/fact-scan.py
       - name: workflow scan
         run: python3 scripts/dev/workflow-scan.py
-      - name: guide claims scan
-        run: python3 scripts/dev/guide-claims-scan.py
+      # guide-claims-scan is deliberately NOT here. It reconciles the
+      # guides against `.claude/docs/`' probe ledgers, and that record
+      # lives on the development machine only — its own refusal says
+      # "it runs where that record lives". It gates in preflight and
+      # ship, both of which run there. The corpus check below reads
+      # only the guides and the corpus, which both ship.
       - name: guide corpus in step with the guides
         run: python3 scripts/dev/guide-corpus-sync.py --check
       - name: fence check
