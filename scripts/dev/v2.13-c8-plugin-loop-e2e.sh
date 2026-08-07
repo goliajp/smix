@@ -25,16 +25,27 @@ log()  { printf '[c8-loop] %s\n' "$*"; }
 step() { printf '[c8-loop] --- %s\n' "$*"; }
 fail() { printf '[c8-loop] FAIL: %s\n' "$*" >&2; exit 1; }
 
+# A `claude` session that cannot start says nothing about the plugin. Usage
+# limits, an expired login, a missing binary — all of them mean "not
+# runnable here", and reporting FAIL tells whoever reads the suite next
+# that smix is broken. The distinction matters because this file's real
+# assertions are about what a session observes, so a session that never
+# ran has produced no evidence either way.
+UNRUNNABLE='reached your .* limit|/usage-credits|not logged in|Invalid API key|command not found|credit balance'
+skip() { printf '[c8-loop] %s\n' "$*" >&2; printf '%s\n' "C8-PLUGIN-LOOP-SKIP"; exit 0; }
+session_unrunnable() { grep -qiE "$UNRUNNABLE" "$1" 2>/dev/null; }
+
+
 command -v claude >/dev/null || fail "the claude CLI is not on PATH"
 
 log "guard: no batch owner on this machine (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && fail "batch owner active — yielding"
+pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active — yielding"
 
 UDID="${SMIX_C8_SIM:-}"
 if [ -z "$UDID" ]; then
   UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh" 2>/dev/null || true)"
 fi
-[ -n "$UDID" ] || fail "set SMIX_C8_SIM to a UDID (or boot a dev sim)"
+[ -n "$UDID" ] || skip "set SMIX_C8_SIM to a UDID (or boot a dev sim)"
 log "device: $UDID"
 
 step "build and install the app under test"

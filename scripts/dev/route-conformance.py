@@ -61,6 +61,16 @@ EXCLUDED_AREAS = [
         "registers ad-hoc /ping + /bounce handlers on a test server to "
         "exercise the restart loop's grace flush — fixtures, not runner routes",
     ),
+    (
+        "crates/smix-usbmux/src/plist.rs",
+        "an XML plist parser: `</array>` and `</dict>` are closing tags, "
+        "and a route-shaped literal is what a closing tag looks like",
+    ),
+    (
+        "crates/smix-capsule/src/reconcile.rs",
+        "tests name a path that deliberately does not exist, to prove a "
+        "cleanup reports rather than pretends when its target is gone",
+    ),
 ]
 
 # Literals that are filesystem paths. A route never lives under these.
@@ -69,6 +79,9 @@ EXCLUDED_PREFIXES = [
     ("/bin/", "filesystem"),
     ("/dev/", "filesystem"),
     ("/tmp/", "filesystem"),
+    # Apple's own usbmux daemon listens here. A socket path, not a route
+    # — and not one smix chose: it is where macOS puts it.
+    ("/var/run/", "filesystem"),
 ]
 
 SOURCE_EXTS = (".rs", ".ts", ".tsx", ".kt", ".swift")

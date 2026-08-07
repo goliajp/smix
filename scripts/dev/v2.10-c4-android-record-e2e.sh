@@ -13,16 +13,35 @@ R="http://localhost:$PORT"
 log()  { printf '[c4-android] %s\n' "$*"; }
 fail() { printf '[c4-android] FAIL: %s\n' "$*" >&2; exit 1; }
 
+# A precondition this script detects and cannot satisfy is a SKIP with
+# what to do about it — not a FAIL. Yielding to somebody else's batch, or
+# an unset target, says nothing about whether smix works, and FAIL says it
+# does not to whoever reads the suite next.
+skip() { printf '[c4-android] %s\n' "$*" >&2; printf '%s\n' "C4-ANDROID-RECORD-SKIP"; exit 0; }
+
+
 case "$SERIAL" in emulator-*) ;; *) fail "serial must be an emulator (got $SERIAL); never a physical phone" ;; esac
 [ -x "$SMIX" ] || fail "smix not built at $SMIX"
 
 WORK="$(mktemp -d)"
 cleanup() {
-  log "teardown: runner down + sweep"
+  # To stderr: the EXIT trap runs *after* the verdict is printed, so a
+  # teardown note on stdout becomes the last line and a reader tailing
+  # the output sees housekeeping where the result should be.
+  log "teardown: runner down + sweep" >&2
   "$SMIX" runner down --platform android --device "$SERIAL" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
+
+# Before anything touches the device: is there one? Without this the run
+# reached `runner up`, failed there, and reported a defect — while the
+# actual state was "no emulator is running", which says nothing about
+# smix. The verdict also has to be the last line, and a trap's teardown
+# prints after a FAIL, so a reader tailing the output saw the teardown.
+if ! adb devices 2>/dev/null | awk -F'\t' -v s="$SERIAL" '$1==s && $2=="device" {found=1} END {exit !found}'; then
+  skip "no ready adb device \"$SERIAL\" — start one (emulator -avd sim-smix-android-01) or pass a running serial"
+fi
 
 log "runner up $SERIAL (Android takes its target per-request, no --bundle)"
 "$SMIX" runner up "$SERIAL" --platform android >"$WORK/up.log" 2>&1 &
