@@ -1070,11 +1070,18 @@ enum SimAction {
     Resolve {
         device: String,
     },
-    /// Record a simulator in `.smix/sims.json` under an alias, creating
-    /// the registry when absent. This is the bootstrap: alias-form
-    /// device refs fail on a fresh checkout until a registry exists.
-    /// Device name / runtime / device type are read from `simctl list`,
-    /// so only the UDID and alias are needed.
+    /// Record a device under an alias, creating the registry when
+    /// absent. This is the bootstrap: alias-form device refs fail on a
+    /// fresh checkout until a registry exists, and a physical device
+    /// cannot be addressed at all until it is registered.
+    ///
+    /// A virtual device is checked against the catalogue its own
+    /// platform keeps — `--kind simulator` (the default) against
+    /// `simctl`, `--kind emulator` against `adb` — and its name and
+    /// runtime are read from there, so only the UDID and alias are
+    /// needed. A physical device is taken as given: nothing here can
+    /// enumerate the world's phones, which is why registering one is a
+    /// deliberate act rather than a lookup.
     Register {
         alias: String,
         #[arg(long)]
@@ -1164,7 +1171,6 @@ enum SimAction {
         #[arg(value_parser = parse_appearance)]
         mode: Appearance,
     },
-    /// Reset keychain on a simulator.
     /// Allow destructive actions on a physical device, once.
     ///
     /// Simulators are never gated — they can be erased and rebuilt in a
