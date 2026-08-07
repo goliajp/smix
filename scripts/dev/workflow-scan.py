@@ -269,6 +269,12 @@ LOCAL_ONLY = {
     "audit-ledger-scan",
     "scope-promise-scan",
     "release-record-scan",
+    # Reconciles the guides against the probe ledgers in `.claude/docs/`.
+    # Its own refusal states the rule: it runs where that record lives.
+    # Learned live — its first CI run refused on a clean checkout,
+    # exactly as designed, one job ahead of an include_str! of the same
+    # record that stopped the test target building at all.
+    "guide-claims-scan",
 }
 CI_GATE = ".github/workflows/ci.yml"
 
