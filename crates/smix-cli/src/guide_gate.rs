@@ -1101,9 +1101,24 @@ fn the_bare_string_form_matches_a_real_tree() {
 // The list.
 // --------------------------------------------------------------------
 
-const LIST: &str = include_str!("../../../.claude/docs/guide-executability.md");
 const SELF: &str = include_str!("guide_gate.rs");
-const LEDGER: &str = include_str!("../../../.claude/docs/audit-ledger.md");
+
+/// The development-machine record: the executability list and the audit
+/// ledger it cites into.
+///
+/// Read at run time, not `include_str!` — those files live in
+/// `.claude/docs/`, which is deliberately not in the repository, and a
+/// compile-time include made a clean checkout unable to *build* the
+/// test target at all. `None` on a machine without the record; the
+/// tests that reconcile against it say so and stand down, the same
+/// answer `guide-claims-scan` gives in that situation: this
+/// reconciliation runs where the record lives.
+fn dev_record() -> Option<(String, String)> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.claude/docs");
+    let list = std::fs::read_to_string(root.join("guide-executability.md")).ok()?;
+    let ledger = std::fs::read_to_string(root.join("audit-ledger.md")).ok()?;
+    Some((list, ledger))
+}
 
 /// One row, already split.
 struct Row<'a> {
@@ -1122,9 +1137,9 @@ struct Row<'a> {
 /// unescaped `|`, the row split into eleven cells, the scan skipped it
 /// as unparseable, and reported clean — a row nothing checked, in a
 /// table whose entire purpose is that every row is checked.
-fn rows() -> Vec<Row<'static>> {
+fn rows(list: &str) -> Vec<Row<'_>> {
     let mut out = Vec::new();
-    for line in LIST.lines() {
+    for line in list.lines() {
         let line = line.trim();
         if !line.starts_with("| ") {
             continue;
@@ -1165,7 +1180,14 @@ fn rows() -> Vec<Row<'static>> {
 /// The list and the probes describe the same set of claims.
 #[test]
 fn the_list_and_the_probes_agree() {
-    let rows = rows();
+    let Some((list, ledger)) = dev_record() else {
+        eprintln!(
+            "guide-executability: development-machine record absent — this \
+             reconciliation runs where the record lives (preflight, ship)"
+        );
+        return;
+    };
+    let rows = rows(&list);
     assert!(
         rows.len() >= 8,
         "only {} rows parsed out of the list — the table shape changed \
@@ -1209,7 +1231,7 @@ fn the_list_and_the_probes_agree() {
         }
         if r.ledger != "—" {
             assert!(
-                LEDGER.contains(r.ledger),
+                ledger.contains(r.ledger),
                 "{}: cites ledger row {}, which does not appear in \
                  .claude/docs/audit-ledger.md",
                 r.id,
@@ -1283,7 +1305,11 @@ fn summary() {
     for (_, blocks) in guide_blocks() {
         judged += blocks.iter().filter(|b| looks_like_a_flow(b)).count();
     }
-    let rows = rows();
+    let Some((list, _)) = dev_record() else {
+        eprintln!("guide-executability: {judged} yaml blocks judged (list absent here)");
+        return;
+    };
+    let rows = rows(&list);
     let count = |s: &str| rows.iter().filter(|r| r.status == s).count();
     println!(
         "guide-executability: {} claims ({} runs / {} broken / {} unjudged) \
