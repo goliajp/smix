@@ -55,7 +55,7 @@ mkdir -p "$WORK"
 PROXY_PID=""
 cleanup() {
   [[ -n "$PROXY_PID" ]] && kill "$PROXY_PID" 2>/dev/null
-  [[ -n "${SERIAL:-}" ]] && "$SMIX_BIN" runner down --platform android --device "$SERIAL" \
+  [[ -n "${SERIAL:-}" ]] && SMIX_RUNNER_PORT="$RUNNER_PORT" "$SMIX_BIN" runner down --platform android --device "$SERIAL" \
     >/dev/null 2>&1
   return 0
 }
@@ -104,7 +104,12 @@ echo "android behaviour gate: $APP on $SERIAL (timeout ${TIMEOUT_S}s)"
 adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1 \
   || die "could not foreground $APP on $SERIAL"
 
-"$SMIX_BIN" runner up "$SERIAL" --platform android > "$WORK/runner-up.log" 2>&1 \
+# --runner-port stated, not inherited: this gate's proxy forwards a
+# port it chose, and a SMIX_RUNNER_PORT exported for the iOS gates
+# (22087 was once occupied by another session's runner) silently moved
+# the Android runner while the proxy kept waiting on 28080 — a 180s
+# timeout that read as "the runner is broken".
+"$SMIX_BIN" runner up "$SERIAL" --platform android --runner-port "$RUNNER_PORT" > "$WORK/runner-up.log" 2>&1 \
   || die "runner up failed. Log: $WORK/runner-up.log"
 
 : > "$WIRE"
