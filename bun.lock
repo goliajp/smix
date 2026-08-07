@@ -7,19 +7,19 @@
     },
     "crates/smix-node": {
       "name": "@goliapkg/smix-node",
-      "version": "2.0.0",
+      "version": "2.2.0",
       "devDependencies": {
         "@napi-rs/cli": "^3",
       },
       "optionalDependencies": {
-        "@goliapkg/smix-node-darwin-arm64": "2.0.0",
-        "@goliapkg/smix-node-darwin-x64": "2.0.0",
-        "@goliapkg/smix-node-linux-x64-gnu": "2.0.0",
+        "@goliapkg/smix-node-darwin-arm64": "2.2.0",
+        "@goliapkg/smix-node-darwin-x64": "2.2.0",
+        "@goliapkg/smix-node-linux-x64-gnu": "2.2.0",
       },
     },
     "npm/smix-cli": {
       "name": "@goliapkg/smix-cli",
-      "version": "2.0.0",
+      "version": "2.2.0",
       "bin": {
         "smix": "bin/smix.mjs",
         "smix-mcp": "bin/smix-mcp.mjs",
@@ -29,14 +29,14 @@
         "vitest": "^3",
       },
       "optionalDependencies": {
-        "@goliapkg/smix-cli-darwin-arm64": "2.0.0",
-        "@goliapkg/smix-cli-darwin-x64": "2.0.0",
-        "@goliapkg/smix-cli-linux-x64-gnu": "2.0.0",
+        "@goliapkg/smix-cli-darwin-arm64": "2.2.0",
+        "@goliapkg/smix-cli-darwin-x64": "2.2.0",
+        "@goliapkg/smix-cli-linux-x64-gnu": "2.2.0",
       },
     },
     "npm/smix-rn": {
       "name": "@goliapkg/smix",
-      "version": "2.0.0",
+      "version": "2.2.0",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "typescript": "^5.5.0",
@@ -48,7 +48,7 @@
     },
     "npm/smix-web-record": {
       "name": "@goliapkg/smix-web-record",
-      "version": "2.0.0",
+      "version": "2.2.0",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "playwright": "^1.48.0",
@@ -114,7 +114,19 @@
 
     "@goliapkg/smix-cli": ["@goliapkg/smix-cli@workspace:npm/smix-cli"],
 
+    "@goliapkg/smix-cli-darwin-arm64": ["@goliapkg/smix-cli-darwin-arm64@2.2.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-SPgZU8zQP26IKVhYhessKDeF1Nnle5u/GCipAIk44srStrv1f9ImiSeIU6mbrBdTf52h1y2hYiJ9IrpDeUkD8w=="],
+
+    "@goliapkg/smix-cli-darwin-x64": ["@goliapkg/smix-cli-darwin-x64@2.2.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-V/ye6MIQl7Xylj89NHJL21AsDWm04ffgGus6OfGjwn/F4/Xhahsmb6ABXm6XFiOOLVL38xxSo9VnLnTDxkiw/A=="],
+
+    "@goliapkg/smix-cli-linux-x64-gnu": ["@goliapkg/smix-cli-linux-x64-gnu@2.2.0", "", { "os": "linux", "cpu": "x64" }, "sha512-0E0D5AVOWix4T8iRzizt2OZJ8bUiTjtTUbozrdpt3L2DEXdcD/TJNXwS6YLZ78o8z2bwB5GcFnFesNg3s4Xt5w=="],
+
     "@goliapkg/smix-node": ["@goliapkg/smix-node@workspace:crates/smix-node"],
+
+    "@goliapkg/smix-node-darwin-arm64": ["@goliapkg/smix-node-darwin-arm64@2.2.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-e2jSW2dvRCFSqIEsJRigtnCs55tTG31PzkUGgNDB1KSWyfvynWwio8Hd5q45HdMxSKa+F7mTff/kOKG0vdbU1g=="],
+
+    "@goliapkg/smix-node-darwin-x64": ["@goliapkg/smix-node-darwin-x64@2.2.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-Gi/6wiheVKma3knp2rxOHLG7wz5W3Gjyawn1Yzwq0Letj5JIrMcywrhktc+/dKCqovUr5xpjCYMpxQWBHX3gyw=="],
+
+    "@goliapkg/smix-node-linux-x64-gnu": ["@goliapkg/smix-node-linux-x64-gnu@2.2.0", "", { "os": "linux", "cpu": "x64" }, "sha512-kOrbtXVTqzj7iID4HL+FxxKokctew3k2enb/937xuKxitSDt06Fv91agDM0xdFr2jSO0BqkmsL2P1vMeeI+UhA=="],
 
     "@goliapkg/smix-web-record": ["@goliapkg/smix-web-record@workspace:npm/smix-web-record"],
 
