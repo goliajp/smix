@@ -99,10 +99,7 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     settle_ledgers(root);
 
     println!("=== 2. XCUITest runner ===");
-    // No: `smix down` tears down what this workspace started. A
-    // runner it has no record of belongs to somebody else until
-    // somebody says otherwise.
-    smix_capsule::runner::down(root, runner_port, false)?;
+    smix_capsule::runner::down(root, runner_port)?;
 
     println!("=== 3. web demo stack ===");
     pkill("-TERM", "smix/web/node_modules/.bin/vite", "vite");

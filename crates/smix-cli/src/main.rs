@@ -1895,7 +1895,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // Bare `smix runner up` defaults to record_enabled=false;
                     // the capsule path (`capsule::up`) overrides to true
                     // via TEST_RUNNER_SMIX_RECORD_ENABLED=1.
-                    smix_capsule::runner::up(
+                    let target = match physical_team.as_deref() {
+                        Some(team) => smix_capsule::runner::RunnerTarget::Physical { team },
+                        None => smix_capsule::runner::RunnerTarget::Simulator,
+                    };
+                    smix_capsule::runner::up_on(
                         &root,
                         &udid,
                         port,
@@ -1904,9 +1908,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         smix_capsule::runner::UpOptions {
                             supervise,
                             attach_without_relaunch: no_launch,
-                            physical_team,
                             ..Default::default()
                         },
+                        target,
                     )
                     .map_err(CliError::Other)?;
                 }
@@ -1973,8 +1977,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
                     let port = runner_port();
-                    smix_capsule::runner::down(&root, port, include_unrecorded)
-                        .map_err(CliError::Other)?;
+                    if include_unrecorded {
+                        smix_capsule::runner::down_including_unrecorded(&root, port)
+                    } else {
+                        smix_capsule::runner::down(&root, port)
+                    }
+                    .map_err(CliError::Other)?;
                 }
                 RunnerAction::Cycle { runner_project } => {
                     let port = runner_port();
@@ -2653,14 +2661,6 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             animations,
                             no_launch,
                             platform: plat,
-                            // The registry knows whether this UDID is a
-                            // phone; the adapter cannot ask it. Without
-                            // this bit, a flow's launchApp went to
-                            // `simctl`, which answers "Invalid device"
-                            // for every physical UDID there is.
-                            physical_ios: udid.as_deref().is_some_and(|u| {
-                                device_kind_of(u) == smix_simctl::registry::DeviceKind::PhysicalIos
-                            }),
                             apps_config: apps_config.clone(),
                             env_vars: env.clone(),
                             debug_output: per_flow_debug.clone(),

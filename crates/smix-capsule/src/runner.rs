@@ -259,7 +259,18 @@ pub enum RunnerTarget<'a> {
 }
 
 /// argv for the runner session (after the `xcodebuild` word itself).
-pub fn xcodebuild_argv(project: &Path, udid: &str, target: RunnerTarget<'_>) -> Vec<String> {
+/// The 2.x face: a simulator destination, which is what every caller
+/// meant before physical devices existed.
+#[must_use]
+pub fn xcodebuild_argv(project: &Path, udid: &str) -> Vec<String> {
+    xcodebuild_argv_for(project, udid, RunnerTarget::Simulator)
+}
+
+/// The xcodebuild invocation for a runner build, with the device world
+/// said explicitly — `platform=iOS,id=…` plus the signing team for a
+/// phone, the simulator destination otherwise.
+#[must_use]
+pub fn xcodebuild_argv_for(project: &Path, udid: &str, target: RunnerTarget<'_>) -> Vec<String> {
     // Per-udid `-derivedDataPath` avoids DerivedData contention when
     // multiple `capsule up` invocations share the default Xcode
     // DerivedData root (~/Library/Developer/Xcode/DerivedData): the same
@@ -962,9 +973,7 @@ pub fn ensure_installed_runner_synced(
 ///
 /// These were trailing positional bools; a third one would have made
 /// `up(_, _, _, _, false, _, false, true)` the call site.
-// No longer `Copy`: the signing team is a `String`, because a team id
-// read from a keychain has no lifetime to borrow from.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct UpOptions {
     /// Let the runner record events (`capsule up` wants this; bare
     /// `runner up` does not).
@@ -977,12 +986,6 @@ pub struct UpOptions {
     /// screen had been navigated to — and then reports the next flow's
     /// failure as `ELEMENT_NOT_FOUND` against a splash screen.
     pub attach_without_relaunch: bool,
-    /// Signing team, when the target is a physical device.
-    ///
-    /// `None` means a simulator, which is what every caller wanted
-    /// before physical devices existed — so the default keeps them all
-    /// building exactly as they did.
-    pub physical_team: Option<String>,
 }
 
 /// Bring the runner up on `udid`. Blocks until `/health` answers 200 or
@@ -1004,16 +1007,41 @@ pub fn up(
     runner_project: Option<&Path>,
     opts: UpOptions,
 ) -> Result<(), String> {
+    // The 2.x face: every caller that predates physical devices meant a
+    // simulator, and keeps meaning one without changing a line.
+    up_on(
+        root,
+        udid,
+        port,
+        bundle,
+        runner_project,
+        opts,
+        RunnerTarget::Simulator,
+    )
+}
+
+/// [`up`], with the device world said explicitly.
+///
+/// A separate name rather than a field on [`UpOptions`]: the options
+/// struct is externally constructible, so a new field would have broken
+/// every existing `UpOptions { .. }` literal — and cost the struct its
+/// `Copy` — to say something only the physical path says. The target
+/// carries the signing team, which only exists in that world.
+#[allow(clippy::too_many_arguments)]
+pub fn up_on(
+    root: &Path,
+    udid: &str,
+    port: u16,
+    bundle: Option<&str>,
+    runner_project: Option<&Path>,
+    opts: UpOptions,
+    target: RunnerTarget<'_>,
+) -> Result<(), String> {
     let UpOptions {
         record_enabled,
         supervise,
         attach_without_relaunch,
-        physical_team,
     } = opts;
-    let target = match physical_team.as_deref() {
-        Some(team) => RunnerTarget::Physical { team },
-        None => RunnerTarget::Simulator,
-    };
     // Refuse to boot without --bundle unless the caller explicitly
     // opts in via SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1. The runner's
     // built-in default `com.apple.Preferences` silently latches every
@@ -1090,7 +1118,7 @@ pub fn up(
         .map_err(|e| format!("clone log handle: {e}"))?;
 
     let mut cmd = std::process::Command::new("xcodebuild");
-    cmd.args(xcodebuild_argv(&project, udid, target))
+    cmd.args(xcodebuild_argv_for(&project, udid, target))
         .envs(runner_env(
             bundle,
             record_enabled,
@@ -1371,12 +1399,23 @@ fn device_preflight_block(log: &Path) -> Option<String> {
 /// BEFORE tearing down xcodebuild. Otherwise the sidecar
 /// would flap into a `TEST INTERRUPTED` trigger the moment we send
 /// SIGINT to xcodebuild and try to re-cycle a runner we just killed.
-/// `consent` decides what happens to a runner on this port that the
-/// store has no record of: `false` reports it and fails, `true` ends it.
-/// A parameter rather than a global, so every call site has to state its
-/// position — and all but one of them say no, because only a person
-/// typing `--include-unrecorded` is in a position to know.
-pub fn down(root: &Path, port: u16, consent: bool) -> Result<(), String> {
+/// Stop the runner this workspace recorded. A runner on the port that
+/// the store has no record of is reported, not ended — it may belong to
+/// another session, and [`down_including_unrecorded`] is the sanctioned
+/// way through when it should go.
+pub fn down(root: &Path, port: u16) -> Result<(), String> {
+    down_with(root, port, false)
+}
+
+/// [`down`], and also end any runner on the port the store has no
+/// record of. The consent lives in the name: only a person typing
+/// `--include-unrecorded` is in a position to know the unrecorded
+/// session should go, so only the CLI's flag path calls this.
+pub fn down_including_unrecorded(root: &Path, port: u16) -> Result<(), String> {
+    down_with(root, port, true)
+}
+
+fn down_with(root: &Path, port: u16, consent: bool) -> Result<(), String> {
     let mut acted = false;
     if let Some(st) = read_state(root) {
         // Supervisor teardown first. Skip when we are
@@ -1542,7 +1581,7 @@ pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<()
             // something else holds the port, the restart is not what is
             // wanted anyway — better to say so than to clear the way by
             // ending somebody else's session.
-            down(root, cycle_port, false)?;
+            down(root, cycle_port)?;
             up(
                 root,
                 &udid,
@@ -2184,7 +2223,7 @@ mod tests {
 
     #[test]
     fn xcodebuild_argv_targets_explicit_udid() {
-        let argv = xcodebuild_argv(
+        let argv = xcodebuild_argv_for(
             Path::new("/repo/swift-bridge/SmixRunner.xcodeproj"),
             UDID,
             RunnerTarget::Simulator,
@@ -2531,7 +2570,7 @@ mod target_tests {
     const PHONE: &str = "00008120-001410C11A42201E";
 
     fn argv_for(udid: &str, target: RunnerTarget<'_>) -> Vec<String> {
-        xcodebuild_argv(Path::new("/repo/SmixRunner.xcodeproj"), udid, target)
+        xcodebuild_argv_for(Path::new("/repo/SmixRunner.xcodeproj"), udid, target)
     }
 
     #[test]

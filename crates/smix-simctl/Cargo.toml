@@ -17,9 +17,9 @@ categories = ["development-tools::testing", "command-line-utilities"]
 workspace = true
 
 [dependencies]
-smix-store = { path = "../smix-store", version = "2.2.0" }
-smix-error = { path = "../smix-error", version = "2.2.0" }
-smix-sim-health = { path = "../smix-sim-health", version = "2.2.0" }
+smix-store = { path = "../smix-store", version = "2.3.0" }
+smix-error = { path = "../smix-error", version = "2.3.0" }
+smix-sim-health = { path = "../smix-sim-health", version = "2.3.0" }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["process", "macros", "rt-multi-thread", "io-util", "sync", "time"] }
@@ -36,3 +36,14 @@ tempfile.workspace = true
 [[bench]]
 name = "perf_gate"
 harness = false
+
+# `RegisteredSim` is a registry *row*: its fields are the data model, and
+# growing a column is the ordinary way a registry evolves (kind and
+# destructive_opt_in arrived with physical devices; both carry
+# #[serde(default)] so every existing registry on disk still reads). The
+# struct's outward purpose is to be read — hand-constructing a row
+# bypasses the registration path, which is exactly what the device
+# guards exist to prevent — so a new field is not treated as a breaking
+# change here. Scoped to this crate; everything else stays at deny.
+[package.metadata.cargo-semver-checks.lints]
+constructible_struct_adds_field = "warn"

@@ -147,6 +147,45 @@ but state doesn't change".
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
 
+## Device access errors
+
+These fire before any flow step runs — they are about whether smix may
+talk to the device at all.
+
+### "… is not a device smix may address"
+
+The identifier is neither registered nor claimed by its platform (a
+simulator `simctl` lists, or an `emulator-<port>` serial). For a phone
+this is the intended first contact: registration is the deliberate act
+that makes it addressable.
+
+```
+smix sim register <name> --udid <UDID> --kind physical-ios
+```
+
+### "… is a physical device and destructive actions are not allowed on it"
+
+Erase, uninstall and keychain-reset are refused on a phone until allowed
+once — recorded per device, not confirmed per command:
+
+```
+smix sim allow-destructive <alias>
+```
+
+### "no runner is answering on port …, and a physical device has no other way to be seen"
+
+A phone's screenshot comes from the runner (`XCUIScreen`); Apple exposes
+no capture for physical devices through `simctl` or `devicectl`. Bring
+the runner up first: `smix runner up <alias> --bundle <id>`.
+
+### "device … is in use by pid …"
+
+Another *live* smix process holds the device — two concurrent runs are
+contention, and the refusal names the process so you can decide. A
+runner left behind by a **finished** `runner up` does not produce this:
+the next command adopts that lease and drives through the runner, which
+is the normal `runner up` → `run` pairing.
+
 ## Common failure patterns + fixes
 
 ### "Cannot find 'FooScreen' in scope" (iOS build)

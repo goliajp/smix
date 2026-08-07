@@ -248,11 +248,6 @@ impl SmixMcpService {
                     record_enabled: false,
                     supervise: false,
                     attach_without_relaunch: false,
-                    // Simulator. MCP binds a device by UDID and has no
-                    // way to say "sign this for a phone" — physical
-                    // devices come in through the CLI, which reads the
-                    // registry to know what kind of device it is.
-                    physical_team: None,
                 },
             )
         })
@@ -322,7 +317,7 @@ impl SmixMcpService {
         // No, and emphatically: an MCP release runs without anyone
         // watching. Ending another session's runner from here would be
         // the same accident as before, with nobody present to notice.
-        tokio::task::spawn_blocking(move || smix_capsule::runner::down(&root, port, false))
+        tokio::task::spawn_blocking(move || smix_capsule::runner::down(&root, port))
             .await
             .map_err(|e| McpError::internal_error(format!("runner down panicked: {e}"), None))?
             .map_err(|e| McpError::internal_error(format!("runner down: {e}"), None))?;

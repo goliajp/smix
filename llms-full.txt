@@ -116,6 +116,13 @@ adb -s emulator-5554 emu kill
 - Need to **find an element** by some property other than testTag? → [03-selectors.md](03-selectors.md)
 - Want a reference for how to organize testTags in your test app? → [06-fixtures.md](06-fixtures.md)
 
+---
+
+Driving a physical iPhone or Android device works the same way once the
+device is registered — see [05-cli.md — Physical
+devices](./05-cli.md#physical-devices) for registration, signing, and
+what a phone cannot do.
+
 
 <!-- ===== docs/ai-guide/02-yaml-reference.md ===== -->
 
@@ -1304,6 +1311,11 @@ a CoreSimulator UDID for a simulator, `emulator-<port>` for an emulator — and
 registering one under the other kind is refused, naming the shape that kind
 actually uses.
 
+One MCP caveat: `smix_use` cannot *start* a runner on a physical iPhone —
+building one needs the registry and a signing team, which are the CLI's to
+resolve. Run `smix runner up <alias> --bundle <id>` first; every MCP tool then
+drives the phone through that runner exactly as it would a simulator.
+
 Apple identifiers are normalised to upper case, because `devicectl` will not
 match a lower-case spelling of a UDID it accepts in upper case. adb serials are
 stored and returned verbatim, because `adb` matches them byte for byte.
@@ -2189,6 +2201,45 @@ but state doesn't change".
 - `socket timeout`: runner alive but slow (XCUITest hung) — `smix down` then re-up
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
+
+## Device access errors
+
+These fire before any flow step runs — they are about whether smix may
+talk to the device at all.
+
+### "… is not a device smix may address"
+
+The identifier is neither registered nor claimed by its platform (a
+simulator `simctl` lists, or an `emulator-<port>` serial). For a phone
+this is the intended first contact: registration is the deliberate act
+that makes it addressable.
+
+```
+smix sim register <name> --udid <UDID> --kind physical-ios
+```
+
+### "… is a physical device and destructive actions are not allowed on it"
+
+Erase, uninstall and keychain-reset are refused on a phone until allowed
+once — recorded per device, not confirmed per command:
+
+```
+smix sim allow-destructive <alias>
+```
+
+### "no runner is answering on port …, and a physical device has no other way to be seen"
+
+A phone's screenshot comes from the runner (`XCUIScreen`); Apple exposes
+no capture for physical devices through `simctl` or `devicectl`. Bring
+the runner up first: `smix runner up <alias> --bundle <id>`.
+
+### "device … is in use by pid …"
+
+Another *live* smix process holds the device — two concurrent runs are
+contention, and the refusal names the process so you can decide. A
+runner left behind by a **finished** `runner up` does not produce this:
+the next command adopts that lease and drives through the runner, which
+is the normal `runner up` → `run` pairing.
 
 ## Common failure patterns + fixes
 
