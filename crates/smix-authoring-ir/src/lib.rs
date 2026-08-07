@@ -14,7 +14,7 @@
 //! notification swizzle. The swizzle path cannot surface user-tap events
 //! originating outside the smix API channel. "User taps sim screen
 //! manually with smix watching" is a separate architecture — see
-//! docs/roadmap.md.
+//! .claude/docs/roadmap.md.
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-authoring-ir")]
 

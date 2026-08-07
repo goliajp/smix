@@ -56,7 +56,7 @@ feed $ALLOW "git status"
 
 # --- heredoc bodies: data vs code ---
 # Documenting a dangerous invocation is not performing one.
-feed $ALLOW "$(printf 'cat >> docs/v2.md <<%s\nsimctl shutdown all hits every simulator\nEOF\n' "'EOF'")"
+feed $ALLOW "$(printf 'cat >> .claude/docs/v2.md <<%s\nsimctl shutdown all hits every simulator\nEOF\n' "'EOF'")"
 # A shell reading its body is running it, so the body still counts.
 feed $BLOCK "$(printf 'bash <<%s\nxcrun simctl shutdown all\nEOF\n' "'EOF'")"
 # The line opening an inert heredoc is itself still judged.

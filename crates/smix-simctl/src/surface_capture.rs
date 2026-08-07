@@ -2,8 +2,8 @@
 //! `smix-capture-host` process in request-response ("serve") mode.
 //!
 //! The per-shot `xcrun simctl io <udid> screenshot` path pays a ~74 ms
-//! process-spawn + dyld floor and a ~66 ms PNG encode every shot (see
-//! `docs/perf/v2.8-c3-screenshot-decomposition.md`). This module holds one
+//! process-spawn + dyld floor and a ~66 ms PNG encode every shot, both
+//! measured by decomposing that path stage by stage. This module holds one
 //! resident host per booted UDID that resolves the display `IOSurface` once
 //! (~58 ms, amortized) and then answers each capture request by locking +
 //! copying the framebuffer directly — ~0.3 ms for a raw BGRA frame, ~66 ms

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that what the scope file promises still matches what exists.
 
-`docs/v2.md` promises `--stable` under determinism. Nothing implements
+`.claude/docs/v2.md` promises `--stable` under determinism. Nothing implements
 it and nothing ever withdrew it. Tracing the promise back found an
 exploration note — status "explored", priority 3, aimed at an older
 milestone, and requiring cooperation from the app under test that the
@@ -50,9 +50,9 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-EVIDENCE = "docs/scope-evidence.md"
-PENDING = "docs/scope-decisions-pending.md"
-SOURCE = "docs/v2.md"
+EVIDENCE = ".claude/docs/scope-evidence.md"
+PENDING = ".claude/docs/scope-decisions-pending.md"
+SOURCE = ".claude/docs/v2.md"
 
 IN_SCOPE_START = "## 做什么（in scope）"
 IN_SCOPE_END = "## 不做什么"

@@ -13,7 +13,7 @@ more than 5%. So:
   intended use.
 - Cross-machine CI needs its own baseline (re-run `--update-baseline` on the
   nightly host) **or** ratio-normalisation so the metrics are machine-
-  independent. That normalisation is the tracked open piece for this gate
-  (see `docs/v2.md` decision log 2026-07-23, v2.8-C1); until it lands, do not
+  independent. That normalisation is the tracked open piece for this gate,
+  and until it lands, do not
   wire `smix bench` (no args) into cross-machine CI — the fixture-driven
   `bench_gate.rs` test is the CI-safe part.

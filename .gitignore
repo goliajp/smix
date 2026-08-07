@@ -1,24 +1,16 @@
-# .claude/ mixes two kinds of file: process residue (agent memory, session
-# logs, scratch worktrees) and project contract (the development charter,
-# the rule cards, the hook wiring, the design record). Only the residue is
-# ignorable. The contract is what the next checkout has to arrive with —
-# CLAUDE.md calls itself the file every agent must read first, and it lived
-# outside version control long enough for a hook wiring to be lost with a
-# session; sim-guard.sh records the same fate for its own earlier self.
+# `.claude/` is the private development surface: the charter, the rule
+# cards, the hook wiring, the skills, and the whole development record —
+# roadmap, version boundary, hot/cold plans, obtainability research, perf
+# decompositions, the internal ledgers, the frozen archives.
 #
-# Pattern: ignore everything under it, then re-include the contract. Note
-# `.claude/*` and not `.claude/` — the trailing-slash form makes every path
-# inside untrackable, negations included, because git skips the subtree
-# without ever reading the exceptions.
+# None of it is version-controlled. The project is single-author, and the
+# AI-side working capability is deliberately not published. What ships is
+# the code and `docs/` — the guides, cookbook and wire contracts a user
+# reads. Development material is not published material.
 #
-# settings.local.json stays ignored on purpose: personal overrides.
-.claude/*
-!.claude/rfcs/
-!.claude/rfcs/**
-!.claude/CLAUDE.md
-!.claude/rule/
-!.claude/rule/**
-!.claude/settings.json
+# Trailing slash, not `.claude/*`: the slash form makes every path inside
+# untrackable including negations, which is exactly the intent here.
+.claude/
 .DS_Store
 
 
@@ -75,3 +67,10 @@ crates/*/fuzz/artifacts/
 npm/smix-cli/dist/
 npm/smix-cli/npm/*/smix
 npm/smix-cli/npm/*/smix-mcp
+
+# Runtime artifacts of a running smix: the embedded store's data and its
+# lock. Products of using the tool, not sources of it — the same rule
+# that keeps `.claude/` out applies: the repository is the product's
+# face, and what a run writes belongs to the machine it ran on.
+/kv/
+/store.lock

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 // The signature. smix's true animation-idle samples the screen and asks
 // "is it still?" instead of sleeping a fixed 400ms (commit "answer 'is the
-// screen still?' instead of sleeping 400ms"; docs/v2.md C3 decision log).
+// screen still?' instead of sleeping 400ms"; .claude/docs/v2.md C3 decision log).
 //
 // The grid is 12×8 = 96 cells — the real default sample grid is 96 points.
 // The readout numbers (Δpx 4, max-moved 4) are the shipped defaults from the
