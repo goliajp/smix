@@ -1,0 +1,17 @@
+appId: com.example.app
+---
+- tapOn: { id: "tab-form" }
+
+- tapOn: { id: "form-name-input" }       # focus the field
+- inputText: "Alice"
+
+- tapOn: { id: "form-email-input" }
+- inputText: "alice@example.com"
+
+- tapOn: { id: "form-password-input" }
+- inputText: "secret123"
+
+- hideKeyboard                            # important: keyboard may cover submit
+- tapOn: { id: "form-submit-btn" }
+
+- assertVisible: { id: "form-submitted-label" }

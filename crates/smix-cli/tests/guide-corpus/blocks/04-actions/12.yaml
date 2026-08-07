@@ -1,0 +1,15 @@
+- scrollUntilVisible:
+    element:
+      text: "Row #5000"
+    direction: DOWN
+    timeout: 30000
+
+# OCR-aware variant — for virtualized lists whose off-screen items are
+# dropped from the a11y tree (RN Fabric LazyColumn/LazyRow etc.), add
+# an ocrText tier: tree + OCR are both probed between swipe strokes.
+- scrollUntilVisible:
+    element:
+      fallback:
+        - id: "btn-target"
+        - ocrText: "Target label"
+    direction: DOWN

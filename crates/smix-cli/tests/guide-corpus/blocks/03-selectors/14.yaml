@@ -1,0 +1,11 @@
+- tapOn:
+    text: "Item.*"
+    nth: 2          # 0-indexed: 3rd match
+
+- tapOn:
+    text: "Card.*"
+    first: true     # equivalent to nth: 0
+
+- tapOn:
+    text: "Page.*"
+    last: true      # last in document order

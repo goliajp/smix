@@ -1,0 +1,13 @@
+# SwiftUI .sheet / .alert / .confirmationDialog / .fullScreenCover
+# dismiss BINDINGS don't flip from coord-based taps on iOS 17+; the
+# XCUIElement-anchored path is the one that fires them. Requires `id:`.
+- tapOn:
+    id: "modal-sheet-dismiss-btn"
+    dispatch: xcui
+
+# XCTRunnerDaemonSession synthesize — bypasses the XCUIElement gesture-
+# recognizer chain so RN RCTTouchHandler receives the raw touch. Use
+# when a Pressable swallows the default path on an older RN.
+- tapOn:
+    id: "btn-login"
+    dispatch: daemonProxy

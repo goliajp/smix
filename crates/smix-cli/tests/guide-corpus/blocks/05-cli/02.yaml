@@ -1,0 +1,10 @@
+# script.yaml
+- name: boot
+  cmd: sim boot
+  args: [<device>]
+- name: runner
+  cmd: runner up
+  args: [{from: outputs.boot.udid}, --bundle, com.example.app]
+- name: tap-home
+  cmd: tap
+  args: ["id:tab-home"]

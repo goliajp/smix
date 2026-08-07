@@ -1,0 +1,10 @@
+# Both
+- tapOn: { id: "tab-deeplink" }
+
+# iOS-only — openLink to myapp://...
+- openLink:
+    link: "myapp://home/details/42"
+- assertVisible: { id: "deeplink-target-label", text: ".*home/details/42.*" }
+
+# Android-only — back navigation (its own verb, not a key press)
+- back

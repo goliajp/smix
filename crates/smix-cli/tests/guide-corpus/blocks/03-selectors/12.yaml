@@ -1,0 +1,1 @@
+- tapOn: "Submit"     # equivalent to: tapOn: { text: "Submit" }

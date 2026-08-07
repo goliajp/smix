@@ -1,0 +1,11 @@
+# Tap the button immediately to the right of "Email" label
+- tapOn:
+    role: button
+    rightOf: "Email"
+
+# Tap the gear icon offset slightly from a known anchor
+- tapOn:
+    anchorRelative:
+      anchor: "Header"
+      dx: 0.45
+      dy: 0

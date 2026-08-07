@@ -1,0 +1,4 @@
+apps:
+  myapp:
+    ios:     { bundleId: com.example.app }
+    android: { package: com.example.app, activity: .MainActivity }

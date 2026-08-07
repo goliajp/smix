@@ -138,6 +138,19 @@ log "route conformance"
 python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&1 \
   || fail "route conformance FAILED — see /tmp/smix-ship-routes.log"
 
+# --- guide claims + corpus ---------------------------------------------
+# The guides are the release's user-facing half, and this is the last
+# place before they reach anybody. Both of these ran nowhere until
+# 2026-08-06 — a check that never runs reads as coverage while providing
+# none, and the version of that which matters is the one on the path to
+# users.
+log "guide claims scan"
+python3 "$ROOT/scripts/dev/guide-claims-scan.py" > /tmp/smix-ship-guide-claims.log 2>&1 \
+  || fail "guide claims scan FAILED — a guide claims something the code does not do (see /tmp/smix-ship-guide-claims.log)"
+log "guide corpus in step with the guides"
+python3 "$ROOT/scripts/dev/guide-corpus-sync.py" --check > /tmp/smix-ship-guide-corpus.log 2>&1 \
+  || fail "guide corpus is out of step with the guides — run scripts/dev/guide-corpus-sync.py (see /tmp/smix-ship-guide-corpus.log)"
+
 # --- android gate scan -------------------------------------------------
 # Re-derives the Android modules and checks each one's test tasks are run
 # by preflight, CI and this script. The app module's unit tests were

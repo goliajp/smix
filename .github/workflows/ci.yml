@@ -100,6 +100,10 @@ jobs:
         run: python3 scripts/dev/fact-scan.py
       - name: workflow scan
         run: python3 scripts/dev/workflow-scan.py
+      - name: guide claims scan
+        run: python3 scripts/dev/guide-claims-scan.py
+      - name: guide corpus in step with the guides
+        run: python3 scripts/dev/guide-corpus-sync.py --check
       - name: fence check
         run: bash scripts/dev/fence-check.sh
       - name: android gate scan

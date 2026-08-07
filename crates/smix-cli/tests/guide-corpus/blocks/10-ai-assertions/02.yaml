@@ -1,0 +1,5 @@
+- extractWithAI:
+    into: order
+    fields: ["total", "currency"]
+
+- assertTrue: '${output["order.total"] != ""}'

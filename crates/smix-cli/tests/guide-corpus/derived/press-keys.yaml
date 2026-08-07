@@ -1,0 +1,13 @@
+- pressKey: ENTER
+- pressKey: TAB
+- pressKey: SPACE
+- pressKey: DELETE
+- pressKey: ESCAPE
+- pressKey: HOME
+- pressKey: LOCK
+- pressKey: VOLUME_UP
+- pressKey: VOLUME_DOWN
+- pressKey: ARROW_UP
+- pressKey: ARROW_DOWN
+- pressKey: ARROW_LEFT
+- pressKey: ARROW_RIGHT

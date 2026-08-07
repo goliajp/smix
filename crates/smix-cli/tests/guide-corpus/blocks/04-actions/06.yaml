@@ -1,0 +1,3 @@
+- longPressOn:
+    id: "list-row-3"
+    duration: 1500     # ms

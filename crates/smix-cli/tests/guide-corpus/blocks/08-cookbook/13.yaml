@@ -1,0 +1,11 @@
+- runFlow:
+    when:
+      visible: "Log in"                  # enter only when login is shown
+    file: "../subflows/login.yaml"
+
+# Inverse gate — run a setup ceremony only if its end state isn't
+# already on screen (idempotent across a batch):
+- runFlow:
+    when:
+      notVisible: { id: "qa-bubble" }
+    file: "../subflows/enter-qa-mode.yaml"

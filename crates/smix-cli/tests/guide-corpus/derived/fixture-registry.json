@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "fixtures": {
+    "prime-search-history": {
+      "testID": "chip-prime-search-history",
+      "signal": { "regex": "\\[qa\\] search-history primed count=5" },
+      "timeoutMs": 8000
+    }
+  }
+}

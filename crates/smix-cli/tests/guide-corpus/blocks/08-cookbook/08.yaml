@@ -1,0 +1,5 @@
+- tapOn: { id: "tab-ocr" }
+
+# Vision OCR finds "Submit" via on-screen text rendering
+- tapOn: { ocrText: "Submit", recognition_level: accurate }
+- assertVisible: { id: "ocr-last-tapped", text: "tapped: Submit" }

@@ -1,0 +1,5 @@
+- tapOn:
+    fallback:
+      - id: sign-in-btn
+      - text: Sign In
+      - ocrText: Sign In

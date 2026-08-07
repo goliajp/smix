@@ -1,0 +1,5 @@
+- setPermissions:
+    camera: allow
+    location: allow
+    notifications: allow
+    photos: deny

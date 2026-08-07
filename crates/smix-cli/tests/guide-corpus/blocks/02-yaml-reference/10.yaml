@@ -1,0 +1,3 @@
+- startRecording: "trace.mp4"
+- stopRecording                          # writes path passed to start
+- takeScreenshot: "step5.png"

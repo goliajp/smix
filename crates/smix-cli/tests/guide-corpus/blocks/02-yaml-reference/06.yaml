@@ -1,0 +1,18 @@
+- scroll                                 # scroll viewport down (default direction)
+- scroll:
+    direction: UP                        # UP / DOWN / LEFT / RIGHT
+
+- scrollUntilVisible:
+    element:
+      text: "Row #5000"
+    direction: DOWN
+    timeout: 30000                       # ms
+
+- swipe:
+    direction: LEFT
+    duration: 400
+
+- swipe:
+    start: "10%,50%"
+    end: "90%,50%"
+    duration: 400

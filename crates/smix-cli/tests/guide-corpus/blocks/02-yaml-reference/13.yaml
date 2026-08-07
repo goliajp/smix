@@ -1,0 +1,2 @@
+- addMedia:                              # iOS Photos / Android Gallery seed
+  - "/path/to/test-photo.jpg"

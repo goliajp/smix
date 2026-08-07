@@ -1,0 +1,15 @@
+# Header — use `app:` logical key (not `appId:`)
+app: myapp
+---
+# 1. Any platform-only setup step — mark optional so cross-platform runs skip it silently
+- tapOn:
+    id: "some-ios-only-btn"
+    optional: true
+
+# 2. The actual test
+- tapOn: { id: "tab-home" }
+- assertVisible: { id: "home-counter-label" }
+- tapOn: { id: "home-increment-btn" }
+- assertVisible:
+    id: "home-counter-label"
+    text: "1"

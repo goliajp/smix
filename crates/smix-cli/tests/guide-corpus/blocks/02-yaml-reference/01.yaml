@@ -1,0 +1,8 @@
+appId: com.example.app             # iOS bundle id OR Android package
+# OR for cross-platform:
+app: myapp                         # logical key resolved via --apps-config apps.yaml
+---                                # YAML doc separator (header ends, flow begins)
+- launchApp:
+    clearState: true
+- assertVisible: "Hello"
+- tapOn: "Submit"

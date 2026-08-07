@@ -1,0 +1,10 @@
+nodes:
+  - name: studio
+    host: localhost
+    repo: /Users/me/workspace/smix
+    devices: [sim-smix-02]
+    runnerPort: 22097        # optional; forwarded as --runner-port
+  - name: mini
+    host: mini
+    repo: /Users/me/workspace/smix
+    devices: [sim-simx-001]

@@ -1,0 +1,4 @@
+- pressKey: ENTER                        # ENTER / TAB / SPACE / DELETE / ESCAPE
+- pressKey: HOME                         # iOS home button
+- pressKey: VOLUME_UP                    # skipped on the iOS simulator
+- back                                   # navigation back — not a key press

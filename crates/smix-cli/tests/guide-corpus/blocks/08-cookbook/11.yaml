@@ -1,0 +1,8 @@
+- tapOn: { id: "tab-localized" }
+
+# Tap "Submit" (en), "送信" (ja), "Enviar" (es) — whichever is current
+- tapOn:
+    localizedText:
+      en: "Submit"
+      ja: "送信"
+      es: "Enviar"
