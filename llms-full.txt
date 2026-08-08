@@ -544,6 +544,21 @@ worst (escape hatch — fragile, breaks on layout change)
 
 **Rule of thumb**: a yaml that uses `Id:` is durable; one that uses `Point:` is brittle. Reach for spatial / OCR only when the upstream component genuinely lacks an accessibility identifier you can fix.
 
+## The same selector in three places
+
+A selector is one idea written three ways, and the three are easy to
+confuse when you move between them in one session:
+
+| where | how it is written |
+|---|---|
+| flow yaml | `tapOn:`<br>`    id: "submit-button"` |
+| CLI | `smix tap "id:submit-button"` |
+| MCP tool | `{"id": "submit-button"}` |
+
+The CLI's form is `field:value`, one colon, no spaces — `id=` is not
+accepted, and the error says so with the right form in it. Every field
+name is the same across all three; only the punctuation differs.
+
 ## The 12 selector forms
 
 ### 1. Id (preferred, stable)

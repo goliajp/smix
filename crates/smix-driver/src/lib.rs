@@ -1588,21 +1588,38 @@ fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
             FailureCode::DriverError,
             Some("start the runner first: bash scripts/smix-runner-health.sh".to_string()),
         ),
-        // The runner can't snapshot the target app, either because
-        // it's not foreground or because XCUITest bound to a different
-        // bundle. Emit an AI-readable hint that names the resolution
-        // channel.
-        RunnerTransportError::AppUnavailable { target, reason, .. } => (
+        // The runner could not snapshot the target app. When it said
+        // why, that answer wins: it read `XCUIApplication.state` and
+        // this side is guessing from a category string.
+        //
+        // The guess used to print regardless — three fixes, offered
+        // for every cause. Against `not-running` all three are wrong,
+        // and a reader following them re-sends a header, adds
+        // `--activate`, and foregrounds an app that is not there,
+        // while the runner's own hint ("launch it again") sat one line
+        // above.
+        RunnerTransportError::AppUnavailable {
+            target,
+            reason,
+            category,
+            hint,
+            ..
+        } => (
             FailureCode::DriverError,
-            Some(format!(
-                "runner reports snapshot_unavailable — target={} reason={}. \
-                 Fix by (a) `smix run --bundle-id <BUNDLE>` so the client sends \
-                 App-Bundle-Id header, or (b) `smix run --activate` so the runner \
-                 auto-activates the target before snapshot, or (c) foreground the \
-                 target app before invocation.",
-                target.as_deref().unwrap_or("<unknown>"),
-                reason.as_deref().unwrap_or("<no reason>"),
-            )),
+            Some(match (category.as_deref(), hint.as_deref()) {
+                (Some(cat), Some(h)) if cat != "unknown" => {
+                    format!("the runner says {cat}: {h}")
+                }
+                _ => format!(
+                    "runner reports snapshot_unavailable — target={} reason={}. \
+                     Fix by (a) `smix run --bundle-id <BUNDLE>` so the client sends \
+                     App-Bundle-Id header, or (b) `smix run --activate` so the runner \
+                     auto-activates the target before snapshot, or (c) foreground the \
+                     target app before invocation.",
+                    target.as_deref().unwrap_or("<unknown>"),
+                    reason.as_deref().unwrap_or("<no reason>"),
+                ),
+            }),
         ),
         _ => (FailureCode::DriverError, None),
     };

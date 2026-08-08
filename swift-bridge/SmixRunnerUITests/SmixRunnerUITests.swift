@@ -3053,21 +3053,28 @@ final class SmixRunnerUITests: XCTestCase {
       // supervisor as it observes SimRenderServer / xcodebuild
       // signals or by handlers that catch specific error shapes.
       simHealthPublisher: SimHealthPublisher(initial: .healthy),
-      // Categorization for /tree unavailable
-      // envelope. UITest-scope logic: read `XCUIApplication.state`
-      // for the current bundle to distinguish crashed-during-init
-      // (`.notRunning`) from alive-but-tree-empty (running); scan
-      // ~/Library/Logs/DiagnosticReports/ for a recent .ips to
-      // strengthen the crashed-during-init hint. Deliberately reads
-      // the file system per call (rare failure path); no caching.
-      unavailableReasonInferer: { bundleId in
-        guard let bundleId, !bundleId.isEmpty else { return .unknown }
+      // Categorization for /tree unavailable envelope. UITest-scope
+      // logic: read `XCUIApplication.state` and say what it says.
+      //
+      // The request does not always name a bundle — `smix describe`
+      // sends no `App-Bundle-Id` header — and this used to answer
+      // `unknown` in that case, from a runner that was started with
+      // `--bundle` and has known which app it drives the whole time.
+      // The answer was "I have no idea" while the fact sat in scope.
+      //
+      // An earlier comment here claimed this scans
+      // ~/Library/Logs/DiagnosticReports/ for a recent .ips. It does
+      // not, and it cannot: this code runs inside the simulator, and
+      // that directory is on the host.
+      unavailableReasonInferer: { requestBundleId in
+        let target = requestBundleId.flatMap { $0.isEmpty ? nil : $0 } ?? bundleId
+        guard !target.isEmpty else { return .unknown }
         let state = await SmixRunnerServer.onMain {
-          XCUIApplication(bundleIdentifier: bundleId).state
+          XCUIApplication(bundleIdentifier: target).state
         }
         switch state {
         case .notRunning:
-          return .crashedDuringInit
+          return .notRunning
         case .runningForeground, .runningBackground, .runningBackgroundSuspended:
           return .aliveButTreeEmpty
         case .unknown:
