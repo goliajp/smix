@@ -30,6 +30,81 @@ pub const SOURCES_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// successful extract. Content is `SOURCES_VERSION` + trailing newline.
 pub const VERSION_FILE: &str = ".smix-runner-version";
 
+/// Gzipped tarball of the Android runner project (`:app` only).
+///
+/// The Android counterpart of [`SOURCES_TAR_GZ`], and the same bargain:
+/// what ships is the project, not the artifact. The instrumentation APK
+/// is 51 MB; the sources that build it are under 100 KB, and anyone
+/// driving an Android device already has the SDK that compiles them —
+/// exactly as the iOS path assumes Xcode.
+///
+/// Until this existed, `runner up --platform android` looked for the APK
+/// under the *driven project's* working directory, so it could only ever
+/// be found by someone running from a clone of this repository. Everyone
+/// who installed smix was told, correctly, that there was no APK — and
+/// concluded, incorrectly, that smix had no Android support.
+pub const ANDROID_SOURCES_TAR_GZ: &[u8] =
+    include_bytes!("../data/android-runner-sources.tar.gz");
+
+/// Filename written into an extracted Android tree, mirroring
+/// [`VERSION_FILE`].
+pub const ANDROID_VERSION_FILE: &str = ".smix-android-runner-version";
+
+/// Digest of the embedded Android sources. See [`sources_digest`] for
+/// why the version alone cannot answer "are these the same bytes".
+#[must_use]
+pub fn android_sources_digest() -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in ANDROID_SOURCES_TAR_GZ {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    hash
+}
+
+/// The stamp written beside an extracted Android tree.
+#[must_use]
+pub fn android_version_stamp() -> String {
+    format!("{SOURCES_VERSION} {:016x}", android_sources_digest())
+}
+
+/// Extract the Android runner project to `dst`, replacing it when the
+/// embedded sources differ from what is already there.
+///
+/// Simpler than [`extract_to`]: there is no xcframework to carry across
+/// and no backup rotation, because nothing in the tree is expensive to
+/// reproduce — it is 96 KB of gradle project, and the build output lives
+/// under `build/` which this never touches.
+///
+/// # Errors
+///
+/// I/O failures reading the destination or unpacking the archive.
+pub fn extract_android_to(dst: &Path) -> Result<bool, ExtractError> {
+    let stamp_path = dst.join(ANDROID_VERSION_FILE);
+    let installed = std::fs::read_to_string(&stamp_path).ok();
+    if installed.as_deref().map(str::trim) == Some(android_version_stamp().as_str()) {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(dst)
+        .map_err(|e| ExtractError::io(format!("creating {}", dst.display()), e))?;
+    let gz = GzDecoder::new(ANDROID_SOURCES_TAR_GZ);
+    let mut ar = tar::Archive::new(gz);
+    ar.set_preserve_permissions(true);
+    ar.set_overwrite(true);
+    for entry in ar
+        .entries()
+        .map_err(|e| ExtractError::io("reading android tar entries", e))?
+    {
+        let mut entry = entry.map_err(|e| ExtractError::io("reading android tar entry", e))?;
+        entry
+            .unpack_in(dst)
+            .map_err(|e| ExtractError::io("unpacking android sources", e))?;
+    }
+    std::fs::write(&stamp_path, format!("{}\n", android_version_stamp()))
+        .map_err(|e| ExtractError::io(format!("writing {}", stamp_path.display()), e))?;
+    Ok(true)
+}
+
 /// A stamp of what is actually installed: the version, and a digest of
 /// the bytes it came from.
 ///
