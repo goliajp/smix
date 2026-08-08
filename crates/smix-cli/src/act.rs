@@ -188,7 +188,10 @@ pub async fn cmd_fill(selector_str: String, text: String, port: u16) -> Result<(
     let selector =
         parse_selector(&selector_str).ok_or_else(|| ActError::BadSelector(selector_str.clone()))?;
     let d = driver(port);
-    d.fill(&selector, &text, None)
+    // Same rule as the SDK: a named field is replaced, the focused one
+    // is typed into. See `App::fill`.
+    let names_a_field = !matches!(selector, smix_selector::Selector::Focused { .. });
+    d.fill(&selector, &text, None, names_a_field)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
     // The value never comes back out. smix's output is a transcript that
@@ -245,12 +248,15 @@ pub async fn cmd_scroll(
 /// `--json` emits the wire-format JSON (large — typically 100KB+ for a
 /// typical app screen); default emits an indented text outline keyed by
 /// id + label per node.
-pub async fn cmd_tree(json: bool, port: u16) -> Result<(), ActError> {
+pub async fn cmd_tree(json: bool, port: u16, keyboard: bool) -> Result<(), ActError> {
     let d = driver(port);
-    let tree = d
+    let mut tree = d
         .tree(None)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
+    if !keyboard {
+        collapse_keyboards(&mut tree);
+    }
     if json {
         let s = serde_json::to_string_pretty(&tree)
             .map_err(|e| ActError::Transport(format!("serde: {e}")))?;
@@ -259,6 +265,21 @@ pub async fn cmd_tree(json: bool, port: u16) -> Result<(), ActError> {
         print_tree_outline(&tree, 0);
     }
     Ok(())
+}
+
+/// Drop the keys under every keyboard, recording how many there were.
+///
+/// The keyboard node stays, and the outline prints the count next to
+/// it, so the reader is told what was left out and can ask for it with
+/// `--keyboard`. In `--json` the keys are simply absent — the keyboard
+/// node's presence is the signal there.
+fn collapse_keyboards(node: &mut smix_screen::A11yNode) -> usize {
+    if smix_screen::is_keyboard(node) {
+        let keys = smix_screen::subtree_len(node) - 1;
+        node.children.clear();
+        return keys;
+    }
+    node.children.iter_mut().map(collapse_keyboards).sum()
 }
 
 /// Helper for authoring subcommand to fetch the a11y
@@ -277,7 +298,12 @@ fn print_tree_outline(node: &smix_screen::A11yNode, depth: usize) {
     let id = node.identifier.as_deref().unwrap_or("");
     let label = node.label.as_deref().unwrap_or("");
     let visible = if node.visible { "✓" } else { "·" };
-    println!("{indent}{visible} id={id:?} label={label:?}");
+    let note = if smix_screen::is_keyboard(node) && node.children.is_empty() {
+        "  (keys collapsed — --keyboard to include them)"
+    } else {
+        ""
+    };
+    println!("{indent}{visible} id={id:?} label={label:?}{note}");
     for child in &node.children {
         print_tree_outline(child, depth + 1);
     }

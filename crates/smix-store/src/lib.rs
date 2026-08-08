@@ -135,6 +135,50 @@ impl std::fmt::Debug for Store {
     }
 }
 
+/// Compact the AOF when it has outgrown what it holds.
+///
+/// kevy compacts on its own, but the trigger rides the reaper's tick,
+/// and smix is a one-shot CLI: the process is gone in milliseconds and
+/// that tick never comes. So the log only ever grew. Measured on a
+/// working install: 100 MB of append holding 3,783 live commands —
+/// 26 KB of history per surviving fact, replayed in full at the start
+/// of every command, twice, forever.
+///
+/// The check is a `stat`, so the common case costs nothing. The
+/// rewrite is synchronous and holds the store lock this process
+/// already owns; at this size it is milliseconds, and it happens on
+/// roughly one command in a thousand.
+///
+/// Failure is not fatal and not silent: an uncompacted log is slower,
+/// not wrong, and a caller who cannot compact should still get their
+/// answer.
+fn compact_if_overgrown(store: &KevyStore, dir: &Path) {
+    /// Past this, the log is mostly history. Redis' own floor is 64
+    /// MiB and it compacts on a live server's timer; smix has no timer,
+    /// so it compacts lower and on open.
+    const COMPACT_ABOVE_BYTES: u64 = 16 * 1024 * 1024;
+
+    let Ok(meta) = std::fs::metadata(dir.join("aof-0.aof")) else {
+        return;
+    };
+    if meta.len() < COMPACT_ABOVE_BYTES {
+        return;
+    }
+    match store.rewrite_aof() {
+        Ok(Some(stats)) => eprintln!(
+            "smix: compacted the state log — {} bytes for {} keys (was {})",
+            stats.bytes,
+            stats.keys,
+            meta.len()
+        ),
+        Ok(None) => {}
+        Err(e) => eprintln!(
+            "smix: the state log is {} bytes and could not be compacted: {e}",
+            meta.len()
+        ),
+    }
+}
+
 impl Store {
     /// Open (or create) the store under `root`.
     ///
@@ -174,6 +218,7 @@ impl Store {
                 source: std::io::Error::other(source),
             }
         })?;
+        compact_if_overgrown(&inner, &dir);
         Ok(Store {
             inner,
             root: root.to_path_buf(),

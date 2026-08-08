@@ -82,11 +82,17 @@ fn installed_android_dir() -> Option<PathBuf> {
 /// exactly what the iOS path does with `xcodebuild`. First run pays a
 /// gradle build; later runs find the APK where this left it.
 fn ensure_installed_apk() -> Result<PathBuf, String> {
-    let dir = installed_android_dir()
-        .ok_or_else(|| "no HOME or XDG_DATA_HOME, so there is nowhere to install the \
-                        Android runner project".to_string())?;
-    let extracted = smix_runner_sources::extract_android_to(&dir)
-        .map_err(|e| format!("extracting the Android runner project to {}: {e}", dir.display()))?;
+    let dir = installed_android_dir().ok_or_else(|| {
+        "no HOME or XDG_DATA_HOME, so there is nowhere to install the \
+                        Android runner project"
+            .to_string()
+    })?;
+    let extracted = smix_runner_sources::extract_android_to(&dir).map_err(|e| {
+        format!(
+            "extracting the Android runner project to {}: {e}",
+            dir.display()
+        )
+    })?;
     if extracted {
         println!(
             "[runner] android sources synced → {} ({})",

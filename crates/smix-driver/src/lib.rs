@@ -738,9 +738,11 @@ impl IosDriver {
         selector: &Selector,
         text: &str,
         include: Option<IncludeScope>,
+        clear_first: bool,
     ) -> Result<(), ExpectationFailure> {
         if can_use_find_route(selector) {
-            self.chunked_fill_runner(selector, text, include).await
+            self.chunked_fill_runner(selector, text, include, clear_first)
+                .await
         } else if matches!(selector, Selector::Focused { .. }) {
             // When the caller passes a Focused selector (e.g. via
             // `Step::InputText` → `App::fill(&focused(), text)`), skip
@@ -750,29 +752,53 @@ impl IosDriver {
             // routes `_focused_` selector to daemon-level key event
             // sending regardless of a11y-focus state — exactly the
             // RN hidden-input case.
-            self.chunked_fill_runner(selector, text, include).await
+            self.chunked_fill_runner(selector, text, include, clear_first)
+                .await
         } else {
             self.tap(selector, include).await?;
             sleep(Duration::from_millis(300)).await;
             let focused = Selector::Focused {
                 focused: True(true),
             };
-            self.chunked_fill_runner(&focused, text, include).await
+            self.chunked_fill_runner(&focused, text, include, clear_first)
+                .await
         }
     }
 
+    /// Post the text one character at a time.
+    ///
+    /// `clear_first` belongs to the first chunk alone. Passing it on
+    /// every chunk would empty the field before each character and
+    /// leave the last one standing on its own — the chunking is a
+    /// React-Native workaround, and it must not change what the call
+    /// means.
     async fn chunked_fill_runner(
         &self,
         selector: &Selector,
         text: &str,
         include: Option<IncludeScope>,
+        clear_first: bool,
     ) -> Result<(), ExpectationFailure> {
         const INTER_CHAR_PAUSE_MS: u64 = 50;
         let chars: Vec<char> = text.chars().collect();
-        if chars.len() <= 1 {
+        if chars.is_empty() {
+            // Nothing to type, but "fill it with nothing" is a request
+            // to empty the field, and dropping it would leave the old
+            // value in place.
+            if !clear_first {
+                return Ok(());
+            }
             return self
                 .runner
-                .fill(selector, text, include)
+                .fill(selector, text, include, true)
+                .await
+                .map_err(transport_to_failure)
+                .map(|_| ());
+        }
+        if chars.len() == 1 {
+            return self
+                .runner
+                .fill(selector, text, include, clear_first)
                 .await
                 .map_err(transport_to_failure)
                 .map(|_| ());
@@ -780,7 +806,7 @@ impl IosDriver {
         for (i, ch) in chars.iter().enumerate() {
             let chunk = ch.to_string();
             self.runner
-                .fill(selector, &chunk, include)
+                .fill(selector, &chunk, include, clear_first && i == 0)
                 .await
                 .map_err(transport_to_failure)?;
             if i + 1 < chars.len() {

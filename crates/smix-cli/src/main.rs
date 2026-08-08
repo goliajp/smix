@@ -326,6 +326,16 @@ enum Cmd {
         /// port already names the runner.
         #[arg(long)]
         device: Option<String>,
+        /// Print the software keyboard's keys.
+        ///
+        /// They are collapsed by default: a key per letter plus
+        /// `Next keyboard`, `Dictate`, shift and delete is around sixty
+        /// nodes that are the same sixty on every screen of every app,
+        /// and this output is read by an AI paying for each one. The
+        /// keyboard node itself always prints, with the number of keys
+        /// it holds — so nothing disappears without saying so.
+        #[arg(long)]
+        keyboard: bool,
     },
     /// Print the runner's high-level ScreenDescription: the visible
     /// interactive elements aggregated from the current a11y tree.
@@ -1268,6 +1278,18 @@ fn resolve_device(device_ref: &str) -> Result<String, CliError> {
         smix_lease::may_address(&udid, known).map_err(|e| CliError::Other(e.to_string()))?;
         return Ok(udid);
     }
+    // An adb serial is an identifier too. Without this, `emulator-5554`
+    // fell through to the alias lookup and came back "unknown device
+    // ref" — from a tool that had just listed it, screenshotted it, and
+    // accepted it at `sim register`. Resolving is only about what this
+    // reference means and whether it may be addressed; whether a
+    // particular verb can act on that kind of device is
+    // `guard_sim_verb`'s question, asked separately.
+    if registry::is_emulator_serial(device_ref) {
+        smix_lease::may_address(device_ref, smix_lease::Known::UnregisteredVirtual)
+            .map_err(|e| CliError::Other(e.to_string()))?;
+        return Ok(device_ref.to_string());
+    }
     let path = registry_path()?;
     Ok(SimRegistry::load(&path)?.resolve(device_ref)?)
 }
@@ -1284,18 +1306,19 @@ fn resolve_device(device_ref: &str) -> Result<String, CliError> {
 /// Case is preserved rather than upper-cased the way UDIDs are: `adb`
 /// serials are matched verbatim, and `EMULATOR-5554` is not a device.
 fn resolve_android_serial(device_ref: &str) -> Result<String, CliError> {
-    // Not a heuristic: `adb` is the one naming these. An emulator is
-    // `emulator-<port>`; a physical device answers with its hardware
-    // serial, which never takes that form.
-    if device_ref.starts_with("emulator-") {
-        return Ok(device_ref.to_string());
-    }
     let registered = lookup_registered(device_ref);
     let known = match &registered {
         Some(s) => smix_lease::Known::Registered(smix_lease::DeviceClass {
             physical: s.kind.is_physical(),
             destructive_opt_in: s.destructive_opt_in,
         }),
+        // Not a heuristic: `adb` is the one naming these. An emulator is
+        // `emulator-<port>`; a physical device answers with its hardware
+        // serial, which never takes that form. An emulator is virtual,
+        // so it needs no registration — the same standing a simulator
+        // has, decided by the same function rather than by an early
+        // return that skipped past it.
+        None if device_ref.starts_with("emulator-") => smix_lease::Known::UnregisteredVirtual,
         None => smix_lease::Known::Unknown,
     };
     smix_lease::may_address(device_ref, known).map_err(|e| CliError::Other(e.to_string()))?;
@@ -1375,6 +1398,109 @@ fn adb_knows(serial: &str) -> bool {
 /// Returns `Ok(None)` only when an explicit UDID was given upstream and
 /// the registry is genuinely absent — the caller passes the UDID through
 /// without spec lookup.
+/// The device a `sim` verb was pointed at, if it names one.
+///
+/// Exhaustive for the same reason as [`sim_verb_supports`]: a new verb
+/// has to say whether it takes a device before this compiles.
+fn sim_action_device(action: &SimAction) -> Option<&str> {
+    match action {
+        SimAction::List { .. } => None,
+        SimAction::Register { udid, .. } => Some(udid),
+        SimAction::Resolve { device }
+        | SimAction::Boot { device }
+        | SimAction::Shutdown { device }
+        | SimAction::Erase { device }
+        | SimAction::Screenshot { device, .. }
+        | SimAction::Launch { device, .. }
+        | SimAction::Terminate { device, .. }
+        | SimAction::Install { device, .. }
+        | SimAction::Uninstall { device, .. }
+        | SimAction::Openurl { device, .. }
+        | SimAction::Appearance { device, .. }
+        | SimAction::AllowDestructive { device }
+        | SimAction::KeychainReset { device }
+        | SimAction::Locale { device, .. }
+        | SimAction::Exec { device, .. } => Some(device),
+    }
+}
+
+/// Which device kinds each `smix sim` verb can actually act on.
+///
+/// An exhaustive match, deliberately: adding a verb will not compile
+/// until somebody says which devices it works on. The alternative is a
+/// hand-kept list of "the verbs I remembered to check", which is how
+/// `capsule up` came to run `simctl boot` against an emulator and sit
+/// there until it timed out 120 seconds later, reporting the timeout
+/// rather than the mistake.
+///
+/// `None` means the verb takes no device, or acts on the registry
+/// rather than the device.
+fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::registry::DeviceKind]> {
+    use DeviceKind::{Emulator, PhysicalAndroid, PhysicalIos, Simulator};
+    use smix_simctl::registry::DeviceKind;
+    const ALL: &[DeviceKind] = &[Simulator, Emulator, PhysicalIos, PhysicalAndroid];
+    const SIMCTL: &[DeviceKind] = &[Simulator];
+    const APPLE: &[DeviceKind] = &[Simulator, PhysicalIos];
+    Some(match action {
+        // No device, or the registry rather than the device.
+        SimAction::List { .. }
+        | SimAction::Register { .. }
+        | SimAction::AllowDestructive { .. }
+        | SimAction::Resolve { .. } => return None,
+
+        // Dispatches all four itself.
+        SimAction::Screenshot { .. } => ALL,
+
+        // Apple device tooling: simctl for a simulator, devicectl for a
+        // phone. Neither speaks adb.
+        SimAction::Uninstall { .. } | SimAction::KeychainReset { .. } => APPLE,
+
+        // simctl and nothing else. An emulator's counterparts exist
+        // (`emulator -avd`, `adb shell am start`, `adb shell settings`)
+        // but none of them is wired here, and pretending otherwise is
+        // how a caller ends up waiting out a 120-second timeout.
+        SimAction::Boot { .. }
+        | SimAction::Shutdown { .. }
+        | SimAction::Erase { .. }
+        | SimAction::Launch { .. }
+        | SimAction::Terminate { .. }
+        | SimAction::Install { .. }
+        | SimAction::Openurl { .. }
+        | SimAction::Appearance { .. }
+        | SimAction::Locale { .. }
+        | SimAction::Exec { .. } => SIMCTL,
+    })
+}
+
+/// Refuse a verb this device kind has no path for, naming what does.
+fn guard_sim_verb(action: &SimAction, device: &str) -> Result<(), CliError> {
+    use smix_simctl::registry::DeviceKind;
+    let Some(kinds) = sim_verb_supports(action) else {
+        return Ok(());
+    };
+    let kind = device_kind_of(device);
+    if kinds.contains(&kind) {
+        return Ok(());
+    }
+    let what = match kind {
+        DeviceKind::Simulator => "an iOS Simulator",
+        DeviceKind::Emulator => "an Android emulator",
+        DeviceKind::PhysicalIos => "a physical iPhone or iPad",
+        DeviceKind::PhysicalAndroid => "a physical Android device",
+    };
+    let alternative = match kind {
+        DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
+            "\nAndroid lifecycle goes through adb — `smix runner up <serial> \
+             --platform android` brings the device up for driving."
+        }
+        _ => "",
+    };
+    Err(CliError::Other(format!(
+        "this command runs through simctl, and {device} is {what} — \
+         so there is nothing here it could do to it.{alternative}"
+    )))
+}
+
 fn registry_path() -> Result<PathBuf, CliError> {
     if let Some(p) = std::env::var_os("SMIX_SIMS_JSON") {
         return Ok(PathBuf::from(p));
@@ -1456,390 +1582,409 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .map_err(CliError::Other)?;
         }
         Cmd::Diagnostic { action } => cmd_diagnostic(action).await?,
-        Cmd::Sim { action } => match action {
-            SimAction::List { json } => cmd_sim_list(&simctl, json).await?,
-            SimAction::Resolve { device } => {
-                println!("{}", resolve_device(&device)?);
+        Cmd::Sim { action } => {
+            // One gate for every `sim` verb, before any of them runs.
+            // Putting it inside the arms would mean remembering it in
+            // each — and the arms that most needed it are exactly the
+            // ones nobody remembered.
+            if let Some(device) = sim_action_device(&action) {
+                guard_sim_verb(&action, device)?;
             }
-            SimAction::Register {
-                alias,
-                udid,
-                locale,
-                runner_port,
-                kind,
-                name,
-            } => {
-                let kind = kind.to_registry();
-                let udid = registry::canonical_identifier(kind, &udid);
-                registry::identifier_fits(kind, &udid)
-                    .map_err(|e| CliError::Other(e.to_string()))?;
-                if kind == smix_simctl::registry::DeviceKind::Emulator {
-                    if !adb_knows(&udid) {
-                        return Err(CliError::Other(format!(
-                            "adb lists no running device {udid} — check `adb devices`.\n\
+            match action {
+                SimAction::List { json } => cmd_sim_list(&simctl, json).await?,
+                SimAction::Resolve { device } => {
+                    println!("{}", resolve_device(&device)?);
+                }
+                SimAction::Register {
+                    alias,
+                    udid,
+                    locale,
+                    runner_port,
+                    kind,
+                    name,
+                } => {
+                    let kind = kind.to_registry();
+                    let udid = registry::canonical_identifier(kind, &udid);
+                    registry::identifier_fits(kind, &udid)
+                        .map_err(|e| CliError::Other(e.to_string()))?;
+                    if kind == smix_simctl::registry::DeviceKind::Emulator {
+                        if !adb_knows(&udid) {
+                            return Err(CliError::Other(format!(
+                                "adb lists no running device {udid} — check `adb devices`.\n\
                              An emulator is checked against adb the way a simulator is \
                              checked against simctl; only a physical device is taken as \
                              given, because nothing here can enumerate the world's phones."
-                        )));
-                    }
-                    let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
-                    let outcome = SimRegistry::register(
-                        &path,
-                        &alias,
-                        smix_simctl::registry::RegisteredSim {
-                            device_name: name.unwrap_or_else(|| alias.clone()),
-                            udid: udid.clone(),
-                            runtime: String::new(),
-                            device_type: String::new(),
-                            locale,
-                            runner_port,
-                            kind,
-                            destructive_opt_in: false,
-                        },
-                    )?;
-                    let verb = match outcome {
-                        smix_simctl::registry::RegisterOutcome::Added => "registered",
-                        smix_simctl::registry::RegisterOutcome::Updated => "updated",
-                    };
-                    println!("{verb}: {alias} → {udid} (Android emulator)");
-                    return Ok(std::process::ExitCode::SUCCESS);
-                }
-                // A physical device is taken as given.
-                //
-                // simctl lists simulators and nothing else, so the
-                // lookup below would refuse every phone that exists. The
-                // identifier is whatever addresses it — a UDID for iOS,
-                // an adb serial for Android — and neither is checked
-                // against a catalogue, because there is no catalogue to
-                // check against. Registration is the deliberate act;
-                // that is the whole point of requiring it.
-                if kind.is_physical() {
-                    let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
-                    let outcome = SimRegistry::register(
-                        &path,
-                        &alias,
-                        smix_simctl::registry::RegisteredSim {
-                            device_name: name.unwrap_or_else(|| alias.clone()),
-                            udid: udid.clone(),
-                            runtime: String::new(),
-                            device_type: String::new(),
-                            locale,
-                            runner_port,
-                            kind,
-                            // Never on by registration. Allowing
-                            // destruction has to be its own decision, or
-                            // it is not a decision.
-                            destructive_opt_in: false,
-                        },
-                    )?;
-                    let verb = match outcome {
-                        smix_simctl::registry::RegisterOutcome::Added => "registered",
-                        smix_simctl::registry::RegisterOutcome::Updated => "updated",
-                    };
-                    println!("{verb}: {alias} → {udid} (physical device)");
-                    println!(
-                        "destructive actions are refused on it until \
-                         `smix sim allow-destructive {alias}`"
-                    );
-                    return Ok(std::process::ExitCode::SUCCESS);
-                }
-                // The shape check that used to live here now runs above
-                // for every kind, and names the right world when it
-                // refuses — telling an Android user their serial "is not
-                // UDID-form" described the shape of a thing they were not
-                // registering.
-                let devices = simctl.list_devices().await?;
-                let device = devices
-                    .iter()
-                    .find(|d| d.udid.eq_ignore_ascii_case(&udid))
-                    .ok_or_else(|| {
-                        CliError::Other(format!(
-                            "simctl knows no device {udid} — check `smix sim list`"
-                        ))
-                    })?;
-                // Env override, discovered registry, else a fresh
-                // `.smix/sims.json` in cwd — register is the one verb
-                // that must work before the file exists.
-                let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
-                let outcome = SimRegistry::register(
-                    &path,
-                    &alias,
-                    smix_simctl::registry::RegisteredSim {
-                        device_name: device.name.clone(),
-                        udid: device.udid.to_ascii_uppercase(),
-                        runtime: device.runtime_identifier.clone(),
-                        device_type: device.device_type_identifier.clone(),
-                        locale,
-                        runner_port,
-                        // Not a guess: this record is built from what
-                        // `simctl list devices` returned, and simctl only
-                        // ever lists simulators. A physical device is
-                        // registered by a different path.
-                        kind: smix_simctl::registry::DeviceKind::Simulator,
-                        destructive_opt_in: false,
-                    },
-                )?;
-                let verb = match outcome {
-                    smix_simctl::registry::RegisterOutcome::Added => "registered",
-                    smix_simctl::registry::RegisterOutcome::Updated => "updated",
-                };
-                // The store, not `sims.json` — the file this used to
-                // name is no longer written, and pointing a user at it
-                // sends them to look at stale bytes or nothing at all.
-                println!(
-                    "{verb}: {alias} → {} ({}) in {}",
-                    device.udid,
-                    device.name,
-                    smix_simctl::registry::store_dir(&path).display()
-                );
-            }
-            SimAction::Boot { device } => {
-                let udid = resolve_device(&device)?;
-                // Whether this command is the one that brought the device
-                // up decides, later, whether smix may shut it down. A
-                // device someone else booted is not ours to turn off as
-                // the price of cleaning up after ourselves.
-                let was_up = booted_udids(&simctl).await.contains(&udid);
-                // Wait for the device to finish booting, not just to accept
-                // the boot. `simctl boot` returns while CoreSimulator is
-                // still bringing the render surfaces up, and a device in
-                // that state answers "Booted" to a listing while
-                // `simctl io … screenshot` fails with "Timeout waiting for
-                // screen surfaces" and `recordVideo` produces a zero-byte
-                // file it reports as written. Printing "booted" then is a
-                // statement that is not yet true, and everything the next
-                // command does with the device fails in ways that do not
-                // name this as the cause.
-                simctl
-                    .boot_and_wait(&udid, std::time::Duration::from_secs(120))
-                    .await?;
-                println!("booted: {udid}");
-                if let Ok(root) = smix_workspace_root()
-                    && let Err(e) = smix_lease::store::add_resource(
-                        &root,
-                        &udid,
-                        smix_lease::Resource::Booted { by_us: !was_up },
-                    )
-                {
-                    eprintln!("warning: boot not recorded in the device ledger: {e}");
-                }
-                // Registry-driven locale enforcement. When the SimEntry
-                // has a `locale` field, ensure the sim's
-                // NSGlobalDomain AppleLanguages first entry matches; if
-                // it doesn't, write the prefs + shutdown+boot once. This
-                // covers the "sim defaulted to the wrong language" case
-                // where an app was built for a locale different from the
-                // sim's persisted default.
-                if let Some(spec) = lookup_registered(&device)
-                    && let Some(desired) = spec.locale.as_ref()
-                {
-                    let current = simctl.current_locale(&udid).await.ok().flatten();
-                    if current.as_deref() == Some(desired.as_str()) {
-                        println!("locale: {desired} ok");
-                    } else {
-                        eprintln!(
-                            "locale: enforcing {desired} (current {})",
-                            current.as_deref().unwrap_or("<unset>")
+                            )));
+                        }
+                        let path =
+                            registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+                        let outcome = SimRegistry::register(
+                            &path,
+                            &alias,
+                            smix_simctl::registry::RegisteredSim {
+                                device_name: name.unwrap_or_else(|| alias.clone()),
+                                udid: udid.clone(),
+                                runtime: String::new(),
+                                device_type: String::new(),
+                                locale,
+                                runner_port,
+                                kind,
+                                destructive_opt_in: false,
+                            },
+                        )?;
+                        let verb = match outcome {
+                            smix_simctl::registry::RegisterOutcome::Added => "registered",
+                            smix_simctl::registry::RegisterOutcome::Updated => "updated",
+                        };
+                        println!(
+                            "{verb}: {alias} → {udid} (Android emulator) in {}",
+                            smix_simctl::registry::store_dir(&path).display()
                         );
-                        simctl.set_locale(&udid, desired).await?;
-                        // Defaults apply at process start — must reboot.
-                        simctl.shutdown(&udid).await?;
-                        simctl
-                            .boot_and_wait(&udid, std::time::Duration::from_secs(60))
-                            .await?;
-                        println!("locale: {desired} enforced + sim re-booted");
+                        return Ok(std::process::ExitCode::SUCCESS);
                     }
-                }
-            }
-            SimAction::Shutdown { device } => {
-                let udid = resolve_device(&device)?;
-                // Already off is the state that was asked for. Failing
-                // here would also mean never clearing the boot row below,
-                // so a device shut down twice would keep a record saying
-                // smix still owes it a shutdown — forever.
-                match simctl.shutdown(&udid).await {
-                    Ok(()) => {}
-                    Err(smix_simctl::DeviceControlError::NonZeroExit { ref stderr, .. })
-                        if stderr.contains("current state: Shutdown") => {}
-                    Err(e) => return Err(e.into()),
-                }
-                // The boot row records who may shut this device down.
-                // Once it is off, the answer is nobody — leaving the row
-                // behind would have a later teardown shut down a device
-                // this process never turned on.
-                if let Ok(root) = smix_workspace_root()
-                    && let Err(e) = smix_lease::store::drop_resource_kind(
-                        &root,
-                        &udid,
-                        &smix_lease::Resource::Booted { by_us: true },
-                    )
-                {
-                    eprintln!("warning: boot row not cleared from the device ledger: {e}");
-                }
-                println!("shutdown: {udid}");
-            }
-            SimAction::Erase { device } => {
-                let udid = resolve_device(&device)?;
-                guard_destructive(&device)?;
-                simctl.erase(&udid).await?;
-                println!("erased: {udid}");
-            }
-            SimAction::Screenshot { device, out } => {
-                use smix_simctl::registry::DeviceKind;
-                let udid = resolve_device(&device)?;
-                // Sense is a flat capability: which tool takes the
-                // picture is smix's problem, not the caller's. What is
-                // not flat is a phone — its screen comes from the
-                // runner's XCUIScreen, and there is no device-tooling
-                // path to it at all. §9#1's third constraint says that
-                // has to be said out loud rather than degraded into an
-                // empty file that every later assertion measures.
-                let png = match device_kind_of(&device) {
-                    DeviceKind::Simulator => simctl.screenshot(&udid).await?,
-                    DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
-                        use smix_sdk::device_control::DeviceControl;
-                        smix_sdk::android_device::AndroidDeviceControl::new()
-                            .screenshot(&udid)
-                            .await
-                            .map_err(|e| CliError::Other(e.to_string()))?
+                    // A physical device is taken as given.
+                    //
+                    // simctl lists simulators and nothing else, so the
+                    // lookup below would refuse every phone that exists. The
+                    // identifier is whatever addresses it — a UDID for iOS,
+                    // an adb serial for Android — and neither is checked
+                    // against a catalogue, because there is no catalogue to
+                    // check against. Registration is the deliberate act;
+                    // that is the whole point of requiring it.
+                    if kind.is_physical() {
+                        let path =
+                            registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+                        let outcome = SimRegistry::register(
+                            &path,
+                            &alias,
+                            smix_simctl::registry::RegisteredSim {
+                                device_name: name.unwrap_or_else(|| alias.clone()),
+                                udid: udid.clone(),
+                                runtime: String::new(),
+                                device_type: String::new(),
+                                locale,
+                                runner_port,
+                                kind,
+                                // Never on by registration. Allowing
+                                // destruction has to be its own decision, or
+                                // it is not a decision.
+                                destructive_opt_in: false,
+                            },
+                        )?;
+                        let verb = match outcome {
+                            smix_simctl::registry::RegisterOutcome::Added => "registered",
+                            smix_simctl::registry::RegisterOutcome::Updated => "updated",
+                        };
+                        println!(
+                            "{verb}: {alias} → {udid} (physical device) in {}",
+                            smix_simctl::registry::store_dir(&path).display()
+                        );
+                        println!(
+                            "destructive actions are refused on it until \
+                         `smix sim allow-destructive {alias}`"
+                        );
+                        return Ok(std::process::ExitCode::SUCCESS);
                     }
-                    DeviceKind::PhysicalIos => {
-                        // Through the runner, because Apple exposes no
-                        // screen capture for a phone via simctl or
-                        // devicectl — but `XCUIScreen` runs inside the
-                        // runner and works on both. Until C20 this arm
-                        // was a refusal saying so; leaving that in place
-                        // once the route existed would have been a
-                        // message describing a hole that had been
-                        // filled.
-                        let port = runner_port();
-                        smix_capsule::runner::screenshot(port)
-                            .map_err(|e| CliError::Other(e.to_string()))?
-                    }
-                };
-                if out.as_os_str() == "-" {
-                    use std::io::Write;
-                    std::io::stdout()
-                        .write_all(&png)
-                        .map_err(|e| CliError::Other(format!("write stdout: {e}")))?;
-                } else {
-                    std::fs::write(&out, &png)
-                        .map_err(|e| CliError::Other(format!("write {}: {e}", out.display())))?;
+                    // The shape check that used to live here now runs above
+                    // for every kind, and names the right world when it
+                    // refuses — telling an Android user their serial "is not
+                    // UDID-form" described the shape of a thing they were not
+                    // registering.
+                    let devices = simctl.list_devices().await?;
+                    let device = devices
+                        .iter()
+                        .find(|d| d.udid.eq_ignore_ascii_case(&udid))
+                        .ok_or_else(|| {
+                            CliError::Other(format!(
+                                "simctl knows no device {udid} — check `smix sim list`"
+                            ))
+                        })?;
+                    // Env override, discovered registry, else a fresh
+                    // `.smix/sims.json` in cwd — register is the one verb
+                    // that must work before the file exists.
+                    let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+                    let outcome = SimRegistry::register(
+                        &path,
+                        &alias,
+                        smix_simctl::registry::RegisteredSim {
+                            device_name: device.name.clone(),
+                            udid: device.udid.to_ascii_uppercase(),
+                            runtime: device.runtime_identifier.clone(),
+                            device_type: device.device_type_identifier.clone(),
+                            locale,
+                            runner_port,
+                            // Not a guess: this record is built from what
+                            // `simctl list devices` returned, and simctl only
+                            // ever lists simulators. A physical device is
+                            // registered by a different path.
+                            kind: smix_simctl::registry::DeviceKind::Simulator,
+                            destructive_opt_in: false,
+                        },
+                    )?;
+                    let verb = match outcome {
+                        smix_simctl::registry::RegisterOutcome::Added => "registered",
+                        smix_simctl::registry::RegisterOutcome::Updated => "updated",
+                    };
+                    // The store, not `sims.json` — the file this used to
+                    // name is no longer written, and pointing a user at it
+                    // sends them to look at stale bytes or nothing at all.
                     println!(
-                        "screenshot: {udid} → {} ({} bytes)",
-                        out.display(),
-                        png.len()
+                        "{verb}: {alias} → {} ({}) in {}",
+                        device.udid,
+                        device.name,
+                        smix_simctl::registry::store_dir(&path).display()
                     );
                 }
-            }
-            SimAction::Launch {
-                device,
-                bundle_id,
-                child_env,
-                launch_args,
-            } => {
-                let udid = resolve_device(&device)?;
-                let pairs: Vec<(&str, &str)> = child_env
-                    .iter()
-                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                    .collect();
-                let LaunchResult { pid } = simctl
-                    .launch_with_args_and_env(&udid, &bundle_id, &launch_args, &pairs)
-                    .await?;
-                println!("launched: {bundle_id} on {udid} (pid {pid})");
-            }
-            SimAction::Terminate { device, bundle_id } => {
-                let udid = resolve_device(&device)?;
-                simctl.terminate(&udid, &bundle_id).await?;
-                println!("terminated: {bundle_id} on {udid}");
-            }
-            SimAction::Install { device, app_path } => {
-                let udid = resolve_device(&device)?;
-                simctl
-                    .install(&udid, &app_path.display().to_string())
-                    .await?;
-                println!("installed: {} on {udid}", app_path.display());
-            }
-            SimAction::Uninstall { device, bundle_id } => {
-                let udid = resolve_device(&device)?;
-                guard_destructive(&device)?;
-                let control = smix_sdk::ios_device::IosDeviceControl::new();
-                let bundle = bundle_id.clone();
-                with_device_lease(&control, &udid, |leased| async move {
-                    leased.uninstall(&bundle).await?;
-                    Ok(((), leased))
-                })
-                .await?;
-                println!("uninstalled: {bundle_id} on {udid}");
-            }
-            SimAction::Openurl { device, url } => {
-                let udid = resolve_device(&device)?;
-                simctl.open_url(&udid, &url).await?;
-                println!("opened: {url} on {udid}");
-            }
-            SimAction::Appearance { device, mode } => {
-                let udid = resolve_device(&device)?;
-                simctl.set_appearance(&udid, mode).await?;
-                println!("appearance: {udid} → {}", mode.as_str());
-            }
-            SimAction::AllowDestructive { device } => {
-                let path = registry_path()?;
-                match smix_simctl::registry::SimRegistry::allow_destructive(&path, &device) {
-                    Ok((alias, already)) => {
-                        if already {
-                            println!("{alias}: destructive actions were already allowed");
+                SimAction::Boot { device } => {
+                    let udid = resolve_device(&device)?;
+                    // Whether this command is the one that brought the device
+                    // up decides, later, whether smix may shut it down. A
+                    // device someone else booted is not ours to turn off as
+                    // the price of cleaning up after ourselves.
+                    let was_up = booted_udids(&simctl).await.contains(&udid);
+                    // Wait for the device to finish booting, not just to accept
+                    // the boot. `simctl boot` returns while CoreSimulator is
+                    // still bringing the render surfaces up, and a device in
+                    // that state answers "Booted" to a listing while
+                    // `simctl io … screenshot` fails with "Timeout waiting for
+                    // screen surfaces" and `recordVideo` produces a zero-byte
+                    // file it reports as written. Printing "booted" then is a
+                    // statement that is not yet true, and everything the next
+                    // command does with the device fails in ways that do not
+                    // name this as the cause.
+                    simctl
+                        .boot_and_wait(&udid, std::time::Duration::from_secs(120))
+                        .await?;
+                    println!("booted: {udid}");
+                    if let Ok(root) = smix_workspace_root()
+                        && let Err(e) = smix_lease::store::add_resource(
+                            &root,
+                            &udid,
+                            smix_lease::Resource::Booted { by_us: !was_up },
+                        )
+                    {
+                        eprintln!("warning: boot not recorded in the device ledger: {e}");
+                    }
+                    // Registry-driven locale enforcement. When the SimEntry
+                    // has a `locale` field, ensure the sim's
+                    // NSGlobalDomain AppleLanguages first entry matches; if
+                    // it doesn't, write the prefs + shutdown+boot once. This
+                    // covers the "sim defaulted to the wrong language" case
+                    // where an app was built for a locale different from the
+                    // sim's persisted default.
+                    if let Some(spec) = lookup_registered(&device)
+                        && let Some(desired) = spec.locale.as_ref()
+                    {
+                        let current = simctl.current_locale(&udid).await.ok().flatten();
+                        if current.as_deref() == Some(desired.as_str()) {
+                            println!("locale: {desired} ok");
                         } else {
-                            println!(
-                                "{alias}: destructive actions allowed — \
-                                 erase / uninstall / keychain-reset will now run on it"
+                            eprintln!(
+                                "locale: enforcing {desired} (current {})",
+                                current.as_deref().unwrap_or("<unset>")
                             );
+                            simctl.set_locale(&udid, desired).await?;
+                            // Defaults apply at process start — must reboot.
+                            simctl.shutdown(&udid).await?;
+                            simctl
+                                .boot_and_wait(&udid, std::time::Duration::from_secs(60))
+                                .await?;
+                            println!("locale: {desired} enforced + sim re-booted");
                         }
                     }
-                    Err(e) => return Err(CliError::Other(e.to_string())),
                 }
-            }
-            SimAction::KeychainReset { device } => {
-                let udid = resolve_device(&device)?;
-                guard_destructive(&device)?;
-                let control = smix_sdk::ios_device::IosDeviceControl::new();
-                with_device_lease(&control, &udid, |leased| async move {
-                    leased.keychain_reset().await?;
-                    Ok(((), leased))
-                })
-                .await?;
-                println!("keychain reset: {udid}");
-            }
-            SimAction::Locale {
-                device,
-                lang,
-                reboot,
-            } => {
-                let udid = resolve_device(&device)?;
-                // Read current locale first — no-op if already desired.
-                let current = simctl.current_locale(&udid).await.ok().flatten();
-                if current.as_deref() == Some(lang.as_str()) {
-                    println!("locale already: {lang}");
-                    return Ok(ExitCode::SUCCESS);
+                SimAction::Shutdown { device } => {
+                    let udid = resolve_device(&device)?;
+                    // Already off is the state that was asked for. Failing
+                    // here would also mean never clearing the boot row below,
+                    // so a device shut down twice would keep a record saying
+                    // smix still owes it a shutdown — forever.
+                    match simctl.shutdown(&udid).await {
+                        Ok(()) => {}
+                        Err(smix_simctl::DeviceControlError::NonZeroExit {
+                            ref stderr, ..
+                        }) if stderr.contains("current state: Shutdown") => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                    // The boot row records who may shut this device down.
+                    // Once it is off, the answer is nobody — leaving the row
+                    // behind would have a later teardown shut down a device
+                    // this process never turned on.
+                    if let Ok(root) = smix_workspace_root()
+                        && let Err(e) = smix_lease::store::drop_resource_kind(
+                            &root,
+                            &udid,
+                            &smix_lease::Resource::Booted { by_us: true },
+                        )
+                    {
+                        eprintln!("warning: boot row not cleared from the device ledger: {e}");
+                    }
+                    println!("shutdown: {udid}");
                 }
-                simctl.set_locale(&udid, &lang).await?;
-                if reboot {
-                    println!("locale: written {lang} — rebooting sim to apply");
-                    simctl.shutdown(&udid).await?;
-                    simctl.boot(&udid).await?;
-                    println!("locale: {lang} enforced (sim rebooted)");
-                } else {
-                    println!(
-                        "locale: written {lang}\n\
+                SimAction::Erase { device } => {
+                    let udid = resolve_device(&device)?;
+                    guard_destructive(&device)?;
+                    simctl.erase(&udid).await?;
+                    println!("erased: {udid}");
+                }
+                SimAction::Screenshot { device, out } => {
+                    use smix_simctl::registry::DeviceKind;
+                    let udid = resolve_device(&device)?;
+                    // Sense is a flat capability: which tool takes the
+                    // picture is smix's problem, not the caller's. What is
+                    // not flat is a phone — its screen comes from the
+                    // runner's XCUIScreen, and there is no device-tooling
+                    // path to it at all. §9#1's third constraint says that
+                    // has to be said out loud rather than degraded into an
+                    // empty file that every later assertion measures.
+                    let png = match device_kind_of(&device) {
+                        DeviceKind::Simulator => simctl.screenshot(&udid).await?,
+                        DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
+                            use smix_sdk::device_control::DeviceControl;
+                            smix_sdk::android_device::AndroidDeviceControl::new()
+                                .screenshot(&udid)
+                                .await
+                                .map_err(|e| CliError::Other(e.to_string()))?
+                        }
+                        DeviceKind::PhysicalIos => {
+                            // Through the runner, because Apple exposes no
+                            // screen capture for a phone via simctl or
+                            // devicectl — but `XCUIScreen` runs inside the
+                            // runner and works on both. Until C20 this arm
+                            // was a refusal saying so; leaving that in place
+                            // once the route existed would have been a
+                            // message describing a hole that had been
+                            // filled.
+                            let port = runner_port();
+                            smix_capsule::runner::screenshot(port)
+                                .map_err(|e| CliError::Other(e.to_string()))?
+                        }
+                    };
+                    if out.as_os_str() == "-" {
+                        use std::io::Write;
+                        std::io::stdout()
+                            .write_all(&png)
+                            .map_err(|e| CliError::Other(format!("write stdout: {e}")))?;
+                    } else {
+                        std::fs::write(&out, &png).map_err(|e| {
+                            CliError::Other(format!("write {}: {e}", out.display()))
+                        })?;
+                        println!(
+                            "screenshot: {udid} → {} ({} bytes)",
+                            out.display(),
+                            png.len()
+                        );
+                    }
+                }
+                SimAction::Launch {
+                    device,
+                    bundle_id,
+                    child_env,
+                    launch_args,
+                } => {
+                    let udid = resolve_device(&device)?;
+                    let pairs: Vec<(&str, &str)> = child_env
+                        .iter()
+                        .map(|(k, v)| (k.as_str(), v.as_str()))
+                        .collect();
+                    let LaunchResult { pid } = simctl
+                        .launch_with_args_and_env(&udid, &bundle_id, &launch_args, &pairs)
+                        .await?;
+                    println!("launched: {bundle_id} on {udid} (pid {pid})");
+                }
+                SimAction::Terminate { device, bundle_id } => {
+                    let udid = resolve_device(&device)?;
+                    simctl.terminate(&udid, &bundle_id).await?;
+                    println!("terminated: {bundle_id} on {udid}");
+                }
+                SimAction::Install { device, app_path } => {
+                    let udid = resolve_device(&device)?;
+                    simctl
+                        .install(&udid, &app_path.display().to_string())
+                        .await?;
+                    println!("installed: {} on {udid}", app_path.display());
+                }
+                SimAction::Uninstall { device, bundle_id } => {
+                    let udid = resolve_device(&device)?;
+                    guard_destructive(&device)?;
+                    let control = smix_sdk::ios_device::IosDeviceControl::new();
+                    let bundle = bundle_id.clone();
+                    with_device_lease(&control, &udid, |leased| async move {
+                        leased.uninstall(&bundle).await?;
+                        Ok(((), leased))
+                    })
+                    .await?;
+                    println!("uninstalled: {bundle_id} on {udid}");
+                }
+                SimAction::Openurl { device, url } => {
+                    let udid = resolve_device(&device)?;
+                    simctl.open_url(&udid, &url).await?;
+                    println!("opened: {url} on {udid}");
+                }
+                SimAction::Appearance { device, mode } => {
+                    let udid = resolve_device(&device)?;
+                    simctl.set_appearance(&udid, mode).await?;
+                    println!("appearance: {udid} → {}", mode.as_str());
+                }
+                SimAction::AllowDestructive { device } => {
+                    let path = registry_path()?;
+                    match smix_simctl::registry::SimRegistry::allow_destructive(&path, &device) {
+                        Ok((alias, already)) => {
+                            if already {
+                                println!("{alias}: destructive actions were already allowed");
+                            } else {
+                                println!(
+                                    "{alias}: destructive actions allowed — \
+                                 erase / uninstall / keychain-reset will now run on it"
+                                );
+                            }
+                        }
+                        Err(e) => return Err(CliError::Other(e.to_string())),
+                    }
+                }
+                SimAction::KeychainReset { device } => {
+                    let udid = resolve_device(&device)?;
+                    guard_destructive(&device)?;
+                    let control = smix_sdk::ios_device::IosDeviceControl::new();
+                    with_device_lease(&control, &udid, |leased| async move {
+                        leased.keychain_reset().await?;
+                        Ok(((), leased))
+                    })
+                    .await?;
+                    println!("keychain reset: {udid}");
+                }
+                SimAction::Locale {
+                    device,
+                    lang,
+                    reboot,
+                } => {
+                    let udid = resolve_device(&device)?;
+                    // Read current locale first — no-op if already desired.
+                    let current = simctl.current_locale(&udid).await.ok().flatten();
+                    if current.as_deref() == Some(lang.as_str()) {
+                        println!("locale already: {lang}");
+                        return Ok(ExitCode::SUCCESS);
+                    }
+                    simctl.set_locale(&udid, &lang).await?;
+                    if reboot {
+                        println!("locale: written {lang} — rebooting sim to apply");
+                        simctl.shutdown(&udid).await?;
+                        simctl.boot(&udid).await?;
+                        println!("locale: {lang} enforced (sim rebooted)");
+                    } else {
+                        println!(
+                            "locale: written {lang}\n\
                          note: running apps cache locale at process-start — \
                          restart the target app, or re-run with `--reboot` to \
                          cycle the sim so subsequent launches see the new locale."
-                    );
+                        );
+                    }
+                }
+                SimAction::Exec { device, verb, args } => {
+                    return cmd_sim_exec(&device, &verb, &args).await;
                 }
             }
-            SimAction::Exec { device, verb, args } => {
-                return cmd_sim_exec(&device, &verb, &args).await;
-            }
-        },
+        }
         Cmd::Runner { action } => {
             let root = smix_workspace_root()?;
             match action {
@@ -2124,6 +2269,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     no_launch,
                 } => {
                     let udid = resolve_device(&device)?;
+                    capsule::capsule_supports(device_kind_of(&device), &device)
+                        .map_err(CliError::Other)?;
                     capsule::up(capsule::UpOptions {
                         root: &root,
                         udid: &udid,
@@ -2140,6 +2287,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 CapsuleAction::Down { device } => {
                     let udid = resolve_device(&device)?;
+                    capsule::capsule_supports(device_kind_of(&device), &device)
+                        .map_err(CliError::Other)?;
                     capsule::down(&root, &udid).await.map_err(CliError::Other)?;
                 }
             }
@@ -2209,9 +2358,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
-        Cmd::Tree { json, port, device } => {
+        Cmd::Tree {
+            json,
+            port,
+            device,
+            keyboard,
+        } => {
             let p = runner_dial_port(port, device.as_deref());
-            act::cmd_tree(json, p)
+            act::cmd_tree(json, p, keyboard)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
@@ -4117,10 +4271,113 @@ async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
+/// One Android device as `adb devices -l` reports it.
+struct AndroidDevice {
+    serial: String,
+    state: String,
+    model: String,
+    release: String,
+}
+
+/// Parse `adb devices -l` output.
+///
+/// Split out from the call so the parsing is testable without a device:
+/// the shape of that output is the only thing worth asserting, and it
+/// is not worth an emulator to assert it.
+fn parse_adb_devices(list: &str) -> Vec<(String, String, String)> {
+    list.lines()
+        .skip_while(|l| l.starts_with("List of devices"))
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let serial = fields.next()?.to_string();
+            let state = fields.next()?.to_string();
+            let model = fields
+                .find_map(|f| f.strip_prefix("model:"))
+                .unwrap_or("")
+                .to_string();
+            Some((serial, state, model))
+        })
+        .collect()
+}
+
+/// Every Android device adb can see, with its OS release.
+///
+/// A machine with no adb has no Android devices, which is the truthful
+/// answer rather than an error — the same way `simctl_knows` answers no
+/// on a machine with no Xcode.
+fn android_devices() -> Vec<AndroidDevice> {
+    let Ok(out) = std::process::Command::new("adb")
+        .args(["devices", "-l"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    parse_adb_devices(&String::from_utf8_lossy(&out.stdout))
+        .into_iter()
+        .map(|(serial, state, model)| {
+            let release = std::process::Command::new("adb")
+                .args([
+                    "-s",
+                    &serial,
+                    "shell",
+                    "getprop",
+                    "ro.build.version.release",
+                ])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            AndroidDevice {
+                serial,
+                state,
+                model,
+                release,
+            }
+        })
+        .collect()
+}
+
+/// List every device smix can drive — simulators and Android both.
+///
+/// This listed simulators only, which read as "smix has no Android
+/// devices" to anyone who ran it with an emulator attached, right after
+/// `sim register --kind emulator` had accepted that same emulator. A
+/// catalogue command that omits half the catalogue is worse than one
+/// that does not exist: it answers the question wrongly instead of
+/// sending you to ask elsewhere.
+///
+/// The JSON stays an array and every element gains a `platform` field.
+/// Android entries are not dressed in simctl's clothes — there is no
+/// runtime identifier on an emulator, and inventing one would make the
+/// listing agree with a schema by lying about the device.
 async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
     let devices = simctl.list_devices().await?;
+    let android = android_devices();
     if json {
-        let out = serde_json::to_string_pretty(&devices)
+        let mut all: Vec<serde_json::Value> = Vec::new();
+        for d in &devices {
+            let mut v =
+                serde_json::to_value(d).map_err(|e| CliError::Other(format!("serialize: {e}")))?;
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("platform".into(), "ios".into());
+            }
+            all.push(v);
+        }
+        for a in &android {
+            all.push(serde_json::json!({
+                "platform": "android",
+                "udid": a.serial,
+                "name": if a.model.is_empty() { a.serial.clone() } else { a.model.clone() },
+                "state": a.state,
+                "release": a.release,
+            }));
+        }
+        let out = serde_json::to_string_pretty(&all)
             .map_err(|e| CliError::Other(format!("serialize: {e}")))?;
         println!("{}", out);
         return Ok(());
@@ -4137,6 +4394,19 @@ async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<(), CliError>
             "{:<40} {:<28} {:<10} {runtime_short}",
             d.udid, d.name, d.state
         );
+    }
+    for a in &android {
+        let name = if a.model.is_empty() {
+            a.serial.as_str()
+        } else {
+            a.model.as_str()
+        };
+        let release = if a.release.is_empty() {
+            "Android".to_string()
+        } else {
+            format!("Android-{}", a.release)
+        };
+        println!("{:<40} {:<28} {:<10} {release}", a.serial, name, a.state);
     }
     Ok(())
 }
@@ -4278,6 +4548,30 @@ mod tests {
         // itself claims it, and the emulator case was just handled.
         assert_eq!(device_kind_of(UDID), DeviceKind::Simulator);
         assert_eq!(device_kind_of("EMULATOR-5554"), DeviceKind::Simulator);
+    }
+
+    #[test]
+    fn adb_devices_output_parses_to_serial_state_and_model() {
+        let out = "List of devices attached\n\
+                   emulator-5554          device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a transport_id:1\n\
+                   R5CT10ABCDE            unauthorized usb:337641472X transport_id:2\n\
+                   \n";
+        let got = parse_adb_devices(out);
+        assert_eq!(
+            got,
+            vec![
+                (
+                    "emulator-5554".to_string(),
+                    "device".to_string(),
+                    "sdk_gphone64_arm64".to_string()
+                ),
+                (
+                    "R5CT10ABCDE".to_string(),
+                    "unauthorized".to_string(),
+                    String::new()
+                ),
+            ]
+        );
     }
 
     #[test]

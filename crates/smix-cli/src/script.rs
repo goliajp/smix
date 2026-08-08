@@ -327,7 +327,7 @@ async fn run_step(idx: usize, step: &Step, port: u16) -> Result<(), ScriptError>
             direction,
         } => cmd_scroll(selector.clone(), direction.clone(), port).await,
         Step::HideKeyboard => cmd_hide_keyboard(port).await,
-        Step::Tree { json } => cmd_tree(*json, port).await,
+        Step::Tree { json } => cmd_tree(*json, port, false).await,
         Step::Describe { json } => cmd_describe(*json, port).await,
         Step::SystemPopups { json } => cmd_system_popups(*json, port).await,
         // Lifecycle variants handled above.

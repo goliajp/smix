@@ -31,6 +31,11 @@ The screen is not what you remember it being. Sense first:
 Then act: `smix_tap`, `smix_fill`, `smix_swipe`, `smix_scroll`,
 `smix_press_key`.
 
+`smix_fill` replaces what the field holds. Coming back to a form and
+filling a field again leaves the second value, not both concatenated —
+which used to be the failure mode, and it is invisible in a password
+field, so it read as a login rejecting a correct password.
+
 ## Selectors
 
 Prefer an accessibility identifier — it survives copy changes and
@@ -39,6 +44,52 @@ translation. `{"id": "submit-button"}`. Failing that, `text` or `label`.
 A tap reports what it landed in. If it says `TAP_MISSED`, the coordinate
 was resolved from a screen that had moved by the time the touch arrived —
 sense again and retry rather than tapping harder.
+
+## Screenshots
+
+`smix_screenshot` when the tree is not telling you enough — a scrim, a
+keyboard, or an overlay covering the target is visible in a picture and
+invisible to a selector query. It is also what to reach for when a tap
+reported success and nothing seems to have happened.
+
+## On an Android emulator
+
+The tools above are the iOS Simulator path: `smix_devices` and `smix_use`
+go through simctl, and there is no emulator in what they list. Android is
+driven from the terminal, and everything below is a real command.
+
+```bash
+smix sim register android --udid emulator-5554 --kind emulator \
+  --runner-port 22091            # says which store it wrote to
+smix runner up emulator-5554 --platform android --runner-port 22091
+```
+
+`--platform android` is not optional and does not default: without it the
+runner comes up through Xcode, on a device that has none. The first
+`runner up` on a machine extracts the runner project that ships with smix
+and builds its instrumentation APK, which takes a gradle build's worth of
+time; after that it is already there. An Android SDK is required, the way
+the iOS side requires Xcode.
+
+Then sense and act as usual, naming the serial:
+
+```bash
+SMIX_RUNNER_PORT=22091 smix tree --device emulator-5554
+SMIX_RUNNER_PORT=22091 smix tap "id:submit-button" --device emulator-5554
+smix runner down --platform android --device emulator-5554
+```
+
+Two things that look like device problems and are not:
+
+- `smix capsule up` refuses an emulator, and says so. It is simulator
+  machinery — the Simulator.app guard, `simctl boot`, the `/live` capture
+  — and none of it has an emulator counterpart. `runner up` above is the
+  whole bring-up.
+- A screen that never goes idle, a video player above all, does not stop
+  the tree from being readable. smix waits a bounded moment for the
+  accessibility stream to settle and then reads regardless, which is why
+  it works where `adb shell uiautomator dump` refuses with "could not get
+  idle state".
 
 ## The same thing from a terminal
 

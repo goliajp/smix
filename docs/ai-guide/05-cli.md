@@ -254,19 +254,26 @@ sidecar that re-cycles the runner if it dies; `runner down` cascades to
 it. Port comes from `--runner-port`, else the alias's `runnerPort` in
 the registry, else 22087.
 
-**Android** — installs the instrumentation APK, forwards the port, and
-`am instrument`s the Kotlin runner:
+**Android** — extracts the runner project if it is not already
+installed, builds and installs the instrumentation APK, forwards the
+port, and `am instrument`s the Kotlin runner:
 
 ```bash
-cd android-runner && ./gradlew :app:assembleDebugAndroidTest   # once, to build it
 smix runner up emulator-5554 --platform android
 smix runner down --platform android --device emulator-5554
 ```
 
+Nothing to fetch or build first: the runner project ships inside smix,
+the same way the Swift one does. The first `up` on a machine extracts it
+to `~/.local/share/smix/android-runner/` and runs a gradle build there,
+which takes a build's worth of time; later runs find the APK already
+built. An Android SDK is required, the way the iOS side requires Xcode.
+
 The device is the adb serial — there is no registry indirection on this
-path. Default port is 28080. `runner up` is idempotent: if `/health`
-already answers on that port it says so and returns rather than stacking
-a second instrumentation onto it.
+path. Default port is 28080; `--runner-port` sets the host side, which
+adb forwards to the runner's own port inside the device. `runner up` is
+idempotent: if `/health` already answers on that port it says so and
+returns rather than stacking a second instrumentation onto it.
 
 `runner down --platform android` requires `--device`, because an adb
 command without a serial acts on whichever device happens to be
@@ -275,13 +282,11 @@ emulator. Every adb call smix makes names its device explicitly for the
 same reason; note that `gradlew install*` does **not**, so prefer these
 commands over gradle install tasks.
 
-Bringing the Android runner up by hand, if you need to:
-
-```
-
-`runner down --platform android` stops the instrumentation and drops the port
-forward; the package stays installed so the next `up` does not re-push 50 MB.
-When you do want it gone — and on a device that is not yours, you do:
+It stops the instrumentation and closes the forward — the one adb
+actually has, read back from `adb forward --list` rather than assumed
+from the port passed in. The package stays installed so the next `up`
+does not re-push 50 MB. When you do want it gone — and on a device that
+is not yours, you do:
 
 ```bash
 smix runner uninstall --platform android --device <SERIAL>
@@ -292,9 +297,12 @@ missing package with `DELETE_FAILED_INTERNAL_ERROR`, which is also what a
 device policy refusing the removal returns — reading idempotence out of that
 string would swallow the refusal. Absent is reported as absent; a refusal
 stays an error.
-bash
+
+Bringing the Android runner up by hand, if you need to:
+
+```bash
 adb -s emulator-5554 install -r -t \
-  android-runner/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+  ~/.local/share/smix/android-runner/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb -s emulator-5554 forward tcp:28080 tcp:28080
 adb -s emulator-5554 shell am instrument -w \
   -e class dev.smix.runner.RunnerTest#runServerForever \
@@ -437,10 +445,21 @@ smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree
 smix tree                                  # human-readable outline
+smix tree --keyboard                       # …including the keyboard's keys
 smix describe                              # visible interactive elements
 smix system-popups                         # list active popups
 smix system-popup-action <popup-id> <button-id>
 ```
+
+**The software keyboard's keys are collapsed.** A key per letter plus
+`Next keyboard`, `Dictate`, shift and delete is around sixty nodes that
+are the same sixty on every screen of every app, and this output is
+read by an AI paying for each one. The keyboard node itself always
+shows — a keyboard covering the element you wanted is the explanation
+for a failure — and the outline says how many keys were left out.
+`smix tree --keyboard` includes them; `smix describe` never enumerates
+them, because it is the summary view. To press a key, `smix press-key`
+names them directly.
 
 Every one of these takes `--port` and `--device`, and resolves the port
 by the precedence at the bottom of this page. `--device` is narrower
@@ -581,6 +600,12 @@ reports a human or an agent has to read.
 Headless boot, capture and runner start together (`up`), and the
 reverse (`down`). The guard rejects a windowed session by default;
 `--soft` accepts the soft-capsule fallback.
+
+iOS Simulators only, and it says so rather than trying: all three of its
+legs — the Simulator.app guard, `simctl boot`, the `/live` capture — are
+simulator machinery with no counterpart on an emulator or a physical
+device. Those are brought up with `smix runner up` instead
+(`--platform android` for an emulator, `--physical` for a phone).
 
 ### `smix diagnostic store` — read the persisted state
 

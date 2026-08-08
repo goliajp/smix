@@ -224,7 +224,9 @@ async fn fill_chunks_one_char_per_post() {
         .mount(&server)
         .await;
     let d = driver_for(&server);
-    d.fill(&text_sel("Email"), "u@x.com", None).await.unwrap();
+    d.fill(&text_sel("Email"), "u@x.com", None, true)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -262,7 +264,9 @@ async fn fill_with_id_selector_focus_taps_then_fills_focused() {
         .mount(&server)
         .await;
     let d = driver_for(&server);
-    d.fill(&id_sel("login-btn"), "Hello", None).await.unwrap();
+    d.fill(&id_sel("login-btn"), "Hello", None, true)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -274,7 +278,8 @@ async fn fill_single_char_takes_fast_path() {
         .and(path("/fill"))
         .and(body_json(serde_json::json!({
             "selector": {"text": "Email"},
-            "text": "x"
+            "text": "x",
+            "clearFirst": true
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "tree": null, "stages": null
@@ -283,7 +288,7 @@ async fn fill_single_char_takes_fast_path() {
         .mount(&server)
         .await;
     let d = driver_for(&server);
-    d.fill(&text_sel("Email"), "x", None).await.unwrap();
+    d.fill(&text_sel("Email"), "x", None, true).await.unwrap();
 }
 
 #[tokio::test]
@@ -834,14 +839,14 @@ async fn android_key_events_mode_skips_focus_resolution() {
 
     let resolving = AndroidDriver::new(HttpRunnerClient::new(1));
     let resolved_err = resolving
-        .fill(&selector, "hello", None)
+        .fill(&selector, "hello", None, true)
         .await
         .expect_err("no runner");
 
     let mut key_events = AndroidDriver::new(HttpRunnerClient::new(1));
     key_events.set_force_key_events(true);
     let key_err = key_events
-        .fill(&selector, "hello", None)
+        .fill(&selector, "hello", None, true)
         .await
         .expect_err("no runner");
 
@@ -895,4 +900,42 @@ async fn android_sends_the_target_package_to_the_runner() {
         header.contains("jp.golia.app"),
         "the header carried the wrong package: {header}"
     );
+}
+
+#[tokio::test]
+async fn clear_first_belongs_to_the_first_chunk_only() {
+    // Chunking is a React-Native workaround, and it must not change
+    // what the call means: asking to clear once must not clear before
+    // every character, which would leave only the last one standing.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/fill"))
+        .and(body_json(serde_json::json!({
+            "selector": {"text": "Email"},
+            "text": "a",
+            "clearFirst": true
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tree": null, "stages": null
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    for ch in ["b", "c"] {
+        Mock::given(method("POST"))
+            .and(path("/fill"))
+            .and(body_json(serde_json::json!({
+                "selector": {"text": "Email"},
+                "text": ch,
+                "clearFirst": false
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "tree": null, "stages": null
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    let d = driver_for(&server);
+    d.fill(&text_sel("Email"), "abc", None, true).await.unwrap();
 }
