@@ -2,7 +2,162 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [2.3.0] — Unreleased
+## [3.0.0] — Unreleased
+
+A round of consumer feedback found fourteen things. Under them were four
+gaps, and two of those change what code you already have does. If you
+have flows or an SDK integration written against 2.x, read
+[Migrating to smix 3.0](docs/migrating-to-3.md) — it is short, and it is
+only about the two.
+
+### Changed
+
+- **`fill` replaces the field it names.** It appended, so returning to a
+  form and filling the same field again left both values concatenated.
+  In a password field that is invisible — the dots look right — and it
+  surfaces as a login rejecting a correct password.
+
+  The rule is now stateable: **you can only replace a field you named.**
+  `fill(id:…)` and `inputText: {id, text}` empty the field first; typing
+  into whatever holds focus (the scalar `inputText:`, `pasteText`,
+  `App::fill(&focused(), …)`) still appends, because there is no named
+  field to empty — which is also what maestro's verbs of that shape do,
+  so a ported flow still means what it meant.
+
+  The guides have described this verb as replacing since it existed. The
+  default flipped rather than gaining a flag, because a flag leaves the
+  bug in place for everyone who does not know to set it. On the wire it
+  is `clearFirst` on `POST /fill`, default true; a runner too old to
+  know the field appends, which is what it did before.
+
+- **`describe` no longer enumerates the software keyboard's keys, and
+  `tree` collapses them.** A summary per letter plus `Next keyboard`,
+  `Dictate`, shift and delete is around sixty elements that are the same
+  sixty on every screen of every app, in output an AI pays for by the
+  token. `smix tree --keyboard` includes them; the keyboard element
+  itself always appears, because a keyboard covering the thing you
+  wanted to tap is the explanation for a failure.
+
+- **`smix capsule` refuses a device it cannot act on, and says which
+  command can.** It ran `simctl boot` against an Android emulator and
+  sat there until it timed out 120 seconds later, reporting the timeout
+  rather than the mistake. Every `smix sim` verb now declares which
+  device kinds it supports, in a match the compiler checks: a new verb
+  does not build until it says.
+
+- **`Driver::fill` and `HttpRunnerClient::fill` take `clear_first`.**
+  `cargo semver-checks` calls this a major break, and it is; `App::fill`
+  is unchanged and derives the flag from whether the selector names a
+  field.
+
+- **The state log compacts itself.** kevy compacts on a growth rule
+  whose baseline is re-read at every open, and smix is a one-shot CLI:
+  each process saw a log that had not grown since it started. A working
+  install had reached 100,501,372 bytes holding three keys, replayed in
+  full at the start of every command. `Store::open` compacts past 16
+  MiB — that install became 35,923 bytes. Reported upstream; the replay
+  banner itself is kevy's and cannot be silenced from here.
+
+### Added
+
+- **The Android runner ships with the install.** `runner up --platform
+  android` used to end at an error naming
+  `android-runner/app/build/outputs/apk/…` — a path relative to the
+  caller's working directory, which is the project being driven, not
+  smix. That directory exists only in a clone of this repository, so
+  everyone who had merely installed smix was told there was no APK and
+  concluded the product had no Android support. The capability was
+  there the whole time, gated behind an artifact nothing shipped.
+
+  What ships is the project, not the artifact — the same bargain the
+  iOS side makes with Xcode. The APK is 51 MB; the sources that produce
+  it are 94 KB, and a machine that drives an Android device already has
+  the SDK that builds them. First run extracts to
+  `~/.local/share/smix/android-runner/` and builds; later runs find it
+  built. Staleness is decided by a content digest, with the same gate
+  the Swift sources have.
+
+- **`POST /clear-text` on the Android runner.** Emptying a field was
+  fifty `/press-key DELETE` posts from the host — fifty sequential round
+  trips over the adb forward, on every fill once fill began clearing
+  first, and still wrong for a field longer than fifty characters. One
+  request now: `ACTION_SET_TEXT` on the focused node, exact at any
+  length, falling back to bounded deletes in a single shell exec when no
+  focused editable node answers. The response names which path ran,
+  because one is exact and the other is not.
+
+- **`not-running` as an app-unavailable reason.** A terminated or
+  reinstalled app was reported as `crashed-during-init`, which sent the
+  reader to look for a crash report that does not exist. The runner also
+  falls back to the bundle it was started with when a request names
+  none, instead of answering `unknown` about an app it has known since
+  `runner up --bundle`.
+
+- **`smix sim list` lists Android devices**, with a `platform` field in
+  `--json`. Android entries are not dressed in simctl's clothes: there
+  is no runtime identifier on an emulator, and inventing one would make
+  the listing agree with a schema by lying about the device.
+
+- **`smix runner down --runner-port`.** `up` has taken it all along and
+  `down` read `SMIX_RUNNER_PORT` instead, so a teardown written as the
+  obvious mirror of the bring-up failed its argument parse and left the
+  runner running.
+
+- **`smix tree --keyboard`**, and `docs/migrating-to-3.md`.
+
+### Fixed
+
+- **A filled value no longer reaches the transcript.** `smix fill` and
+  the MCP tool echoed the text they typed, so a password read from a
+  file into a shell variable — deliberately, to keep it out of the
+  session record — was printed into that record anyway. Both now report
+  the length and nothing else. Not a `--secret` flag: a default that is
+  only safe when you remember to ask for safety is not a safe default.
+
+- **`--runner-port` works on Android.** The forward mapped host port to
+  the same device port while the runner listens on a compiled-in 28080,
+  so any port but the default forwarded into silence and the health
+  wait timed out with the runner running perfectly. Every Android caller
+  in this repository passed 28080, which is why it never showed.
+
+- **`runner down` closes the forward adb actually has**, read back from
+  `adb forward --list` rather than assumed from the port passed in. Run
+  from a directory with no workspace state it fell back to the default,
+  announced a port closed, and left the real forward pointing at a dead
+  runner.
+
+- **The instrumentation APK follows its sources.** It was rebuilt only
+  when absent, so a source sync left the artifact behind and the runner
+  answered `not_implemented` for a route whose Kotlin sat one directory
+  away. It carries a stamp of the digest it was built from; the working
+  tree's APK is rebuilt when older than `app/src`; and `runner up` no
+  longer reads "something answers /health" as "we are up", since the
+  device port is fixed and an instrumentation from an older APK answers
+  it perfectly.
+
+- **The unregistered-device refusal states the actual rule.** It said
+  "neither simctl nor adb calls it one of theirs" about a phone `adb
+  devices` lists by name. The rule is registration, not visibility —
+  being plugged in is not registration, which is the whole point.
+
+- **`sim register` says where it wrote** on every device kind, not only
+  simulators. **`sim resolve` accepts an adb serial**, which also fixes
+  `lease reconcile` on an emulator.
+
+- **The plugin's version warning says which side is behind and what
+  follows.** The two directions are not alike: a newer smix costs
+  nothing, a newer plugin can name a tool that does not exist. It also
+  names the command to update the plugin, and that a restart is needed —
+  reloading re-reads the version you have.
+
+- **The skill-parity gate checks the direction it was missing.** It
+  verified that skills name real commands; it could not see a skill that
+  promised a capability and never taught it, which `drive` did for
+  Android across two releases. Which terms count as capabilities is read
+  out of the product — subcommands, flag values, tool names — not from a
+  list somebody maintains.
+
+## [2.3.0] — 2026-08-07
 
 ### Added
 

@@ -7,7 +7,7 @@
 [![crates.io](https://img.shields.io/crates/v/smix-cli?label=crates.io%20smix-cli&logo=rust&style=flat-square)](https://crates.io/crates/smix-cli)
 [![Maven Central](https://img.shields.io/maven-central/v/jp.golia.smix/smix-sdk?label=Maven%20Central%20jp.golia.smix&logo=apachemaven&style=flat-square)](https://central.sonatype.com/artifact/jp.golia.smix/smix-sdk)
 
-AI-native UI automation for the iOS Simulator, the Android Emulator, and — once registered — physical iPhones and Android devices. Written in Rust; distributed as a CLI (`smix`), a Rust SDK, and native SDKs for Swift and Kotlin. A TypeScript package ships the same typed API surface; its native driving transport is still in progress (driving calls throw `SmixNotImplementedError` today — see the [npm package README](./npm/smix-rn/README.md)).
+AI-native UI automation for the iOS Simulator, the Android Emulator, and — once registered — physical iPhones and Android devices. Written in Rust; distributed as a CLI (`smix`), a Rust SDK, and native SDKs for Swift and Kotlin. A TypeScript package ships the same typed API surface and drives a device through the napi addon; three surfaces (`App.screenshot`, `App.openUrl`, `App.launchFresh`) still throw `SmixNotImplementedError` pending their transport — see the [npm package README](./npm/smix-rn/README.md).
 
 Designed for LLM-authored test flows:
 
@@ -30,10 +30,10 @@ npm install -g @goliapkg/smix-cli
 cargo install smix-cli --locked
 
 # Swift Package Manager
-# add https://github.com/goliajp/smix (product: SmixSDK, from: "2.3.0")
+# add https://github.com/goliajp/smix (product: SmixSDK, from: "3.0.0")
 
 # Gradle / Maven (Kotlin / Java)
-# implementation("jp.golia.smix:smix-sdk:2.3.0")
+# implementation("jp.golia.smix:smix-sdk:3.0.0")
 
 # TypeScript / Node / Bun (drives a simulator through the native addon)
 npm install @goliapkg/smix
@@ -71,10 +71,11 @@ app.press_key(KeyName::Return).await?;
 app.assert_visible(&text("Dashboard")).await?;
 ```
 
-The TypeScript package declares the same shape, but its driving methods
-(`Smix.launchApp`, `App.tap`, `App.fill`, …) are not wired to a native
-transport yet and throw `SmixNotImplementedError`. Use the Rust, Swift,
-or Kotlin SDK (or the CLI) to drive a device today.
+The TypeScript package declares the same shape and drives through the
+napi addon, which `Smix.launchApp` loads for the running platform.
+`App.screenshot`, `App.openUrl` and `App.launchFresh` are the three that
+still throw `SmixNotImplementedError`, each waiting on a transport of
+its own.
 
 See [`docs/ai-guide/01-quickstart.md`](./docs/ai-guide/01-quickstart.md) for a full walkthrough.
 
