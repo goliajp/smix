@@ -215,6 +215,11 @@ If it should go, say so:
 agree deliberately: ending somebody else's runner used to be one keystroke
 away, and silent.
 
+They take the same `--runner-port` too. They did not until 2.4.0 —
+`down` read `SMIX_RUNNER_PORT` and rejected the flag — so a teardown
+written as the obvious mirror of the bring-up failed its argument parse
+and left the runner running.
+
 The runner is the on-device server smix drives. `runner up` blocks until
 its `/health` answers, so when the command returns you can run a flow.
 
