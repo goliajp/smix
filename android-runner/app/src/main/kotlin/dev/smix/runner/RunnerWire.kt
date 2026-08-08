@@ -262,6 +262,23 @@ object RunnerWire {
         .put("text", text)
         .toString()
 
+    // `input keyevent` takes any number of keycodes in one invocation,
+    // so a fallback clear costs one shell exec rather than one per
+    // character. 67 is KEYCODE_DEL.
+    fun deleteKeysCommand(count: Int): String =
+        "input keyevent" + " 67".repeat(maxOf(count, 1))
+
+    // `method` says how the field was emptied, because the two are not
+    // equally trustworthy: `set-text` is exact, `key-events` deletes a
+    // bounded number of characters and can leave a longer field
+    // partly filled. A caller that cannot tell them apart cannot know
+    // which it got.
+    fun clearTextBody(method: String, deletes: Int): String = JSONObject()
+        .put("status", "ok")
+        .put("method", method)
+        .put("deletes", deletes)
+        .toString()
+
     fun foregroundBody(bundleId: String): String = JSONObject()
         .put("status", "ok")
         .put("bundleId", bundleId)
