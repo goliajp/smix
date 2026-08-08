@@ -46,6 +46,92 @@ fn find_test_apk(root: &Path) -> Option<PathBuf> {
     candidate.is_file().then_some(candidate)
 }
 
+/// `adb forward` argv mapping a host port onto the runner's fixed
+/// device port.
+fn forward_argv(host_port: u16) -> Vec<String> {
+    vec![
+        "forward".into(),
+        format!("tcp:{host_port}"),
+        format!("tcp:{DEFAULT_ANDROID_PORT}"),
+    ]
+}
+
+/// Where the installed Android runner project lives, mirroring the iOS
+/// `~/.local/share/smix/runner/`.
+fn installed_android_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
+    Some(base.join("smix/android-runner"))
+}
+
+/// Extract the shipped Android runner project and build its
+/// instrumentation APK.
+///
+/// The old behaviour was to fail here, naming a path relative to the
+/// caller's working directory — which is the *driven project*, not
+/// smix. So the instruction ("cd android-runner") was addressed to a
+/// directory that exists only in a clone of smix itself, and everyone
+/// who had merely installed smix was told there was no APK. They
+/// concluded, reasonably and wrongly, that smix could not drive Android
+/// at all: the capability was implemented, gated behind an artifact
+/// nothing shipped.
+///
+/// The sources ship now (`smix-runner-sources`), so the missing APK is
+/// something smix can produce rather than something to complain about —
+/// exactly what the iOS path does with `xcodebuild`. First run pays a
+/// gradle build; later runs find the APK where this left it.
+fn ensure_installed_apk() -> Result<PathBuf, String> {
+    let dir = installed_android_dir()
+        .ok_or_else(|| "no HOME or XDG_DATA_HOME, so there is nowhere to install the \
+                        Android runner project".to_string())?;
+    let extracted = smix_runner_sources::extract_android_to(&dir)
+        .map_err(|e| format!("extracting the Android runner project to {}: {e}", dir.display()))?;
+    if extracted {
+        println!(
+            "[runner] android sources synced → {} ({})",
+            dir.display(),
+            smix_runner_sources::SOURCES_VERSION
+        );
+    }
+
+    let apk = dir.join("app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
+    if apk.is_file() {
+        return Ok(apk);
+    }
+
+    println!("[runner] building the instrumentation APK (first run on this machine)");
+    let out = Command::new("./gradlew")
+        .args([":app:assembleDebugAndroidTest", "--console=plain"])
+        .current_dir(&dir)
+        .output()
+        .map_err(|e| {
+            format!(
+                "the Android runner needs a build and ./gradlew could not start: {e}\n\
+                 Its project is at {} — an Android SDK is required, the same way the \
+                 iOS runner requires Xcode.",
+                dir.display()
+            )
+        })?;
+    if !out.status.success() {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let all: Vec<&str> = stdout.lines().collect();
+        let tail = all[all.len().saturating_sub(15)..].join("\n");
+        return Err(format!(
+            "building the Android runner failed in {}:\n{}\n{}",
+            dir.display(),
+            tail,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    apk.is_file().then_some(apk.clone()).ok_or_else(|| {
+        format!(
+            "the gradle build reported success but produced no APK at {}",
+            apk.display()
+        )
+    })
+}
+
 /// Is this serial actually attached and ready?
 fn device_present(serial: &str) -> bool {
     let Ok(out) = Command::new("adb").args(["devices"]).output() else {
@@ -74,12 +160,10 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
         return Ok(());
     }
 
-    let apk = find_test_apk(root).ok_or_else(|| {
-        "no instrumentation APK found at android-runner/app/build/outputs/apk/\
-         androidTest/debug/app-debug-androidTest.apk — build it with \
-         `cd android-runner && ./gradlew :app:assembleDebugAndroidTest`"
-            .to_string()
-    })?;
+    let apk = match find_test_apk(root) {
+        Some(a) => a,
+        None => ensure_installed_apk()?,
+    };
 
     println!("[runner] android device: {serial}");
     let install = adb(serial)
@@ -95,13 +179,23 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
     }
 
     // Host:device port forward. Re-running is harmless; adb replaces.
+    //
+    // The two sides are not the same number. Inside the device the
+    // runner listens on a compiled-in 28080 (RunnerTest.PORT); `port`
+    // is the host side the caller asked for. Forwarding tcp:port to
+    // tcp:port was an identity map that only ever worked because every
+    // Android caller in this repo passed 28080 — `--runner-port 22093`
+    // forwarded to a device port nothing was listening on, and the wait
+    // for /health then timed out with the runner running perfectly.
+    let forward_argv = forward_argv(port);
     let fwd = adb(serial)
-        .args(["forward", &format!("tcp:{port}"), &format!("tcp:{port}")])
+        .args(&forward_argv)
         .output()
         .map_err(|e| format!("adb forward: {e}"))?;
     if !fwd.status.success() {
         return Err(format!(
-            "adb forward tcp:{port} failed: {}",
+            "adb {} failed: {}",
+            forward_argv.join(" "),
             String::from_utf8_lossy(&fwd.stderr).trim()
         ));
     }
@@ -272,6 +366,45 @@ pub fn uninstall(serial: &str, port: u16) -> Result<(), String> {
     ))
 }
 
+/// Host ports this serial forwards to the runner's device port, read
+/// out of `adb forward --list`.
+///
+/// Not derived from the caller's `port`: the host side of the forward
+/// is whatever `up` was asked for, and a `down` that has lost its
+/// workspace state (a different directory, a deleted one) falls back to
+/// the default and would "close" a port nobody opened while the real
+/// one keeps forwarding into a dead runner. The device side is fixed,
+/// so it is the thing worth matching on.
+fn our_forward_ports(list: &str, serial: &str) -> Vec<u16> {
+    let device_side = format!("tcp:{DEFAULT_ANDROID_PORT}");
+    list.lines()
+        .filter_map(|line| {
+            let mut f = line.split_whitespace();
+            let (dev, host, remote) = (f.next()?, f.next()?, f.next()?);
+            (dev == serial && remote == device_side)
+                .then(|| host.strip_prefix("tcp:")?.parse().ok())
+                .flatten()
+        })
+        .collect()
+}
+
+fn remove_our_forwards(serial: &str) -> Vec<u16> {
+    let Ok(out) = adb(serial).args(["forward", "--list"]).output() else {
+        return Vec::new();
+    };
+    let ports = our_forward_ports(&String::from_utf8_lossy(&out.stdout), serial);
+    ports
+        .iter()
+        .filter(|p| {
+            adb(serial)
+                .args(["forward", "--remove", &format!("tcp:{p}")])
+                .output()
+                .is_ok_and(|o| o.status.success())
+        })
+        .copied()
+        .collect()
+}
+
 /// Stop the instrumentation, drop the port forward, and clear the rows.
 pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
     // `am force-stop` on the instrumentation package is what actually
@@ -280,9 +413,7 @@ pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
     let _ = adb(serial)
         .args(["shell", "am", "force-stop", TEST_PACKAGE])
         .output();
-    let _ = adb(serial)
-        .args(["forward", "--remove", &format!("tcp:{port}")])
-        .output();
+    let closed = remove_our_forwards(serial);
     if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
         eprintln!("runner: {e}");
     }
@@ -297,6 +428,52 @@ pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
     ) {
         eprintln!("runner down: lease ledger not updated: {e}");
     }
-    println!("runner down: device={serial} port {port} closed");
+    match closed.as_slice() {
+        [] => println!("runner down: device={serial} — no forward to close"),
+        ports => println!(
+            "runner down: device={serial} host port{} {} closed",
+            if ports.len() == 1 { "" } else { "s" },
+            ports
+                .iter()
+                .map(u16::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+    let _ = port;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forward_maps_the_host_port_onto_the_device_side_28080() {
+        assert_eq!(
+            forward_argv(22093),
+            vec!["forward", "tcp:22093", "tcp:28080"]
+        );
+    }
+
+    #[test]
+    fn forwards_are_matched_by_the_device_side_not_the_caller_s_port() {
+        let list = "emulator-5554 tcp:22093 tcp:28080\n\
+                    emulator-5554 tcp:9999 tcp:5037\n\
+                    emulator-5556 tcp:28080 tcp:28080\n";
+        assert_eq!(our_forward_ports(list, "emulator-5554"), vec![22093]);
+        assert_eq!(our_forward_ports(list, "emulator-5556"), vec![28080]);
+        assert!(our_forward_ports(list, "emulator-9999").is_empty());
+    }
+
+    #[test]
+    fn the_device_side_port_matches_what_the_kotlin_runner_compiles_in() {
+        let kt = include_str!(
+            "../../../android-runner/app/src/androidTest/kotlin/dev/smix/runner/RunnerTest.kt"
+        );
+        assert!(
+            kt.contains(&format!("const val PORT = {DEFAULT_ANDROID_PORT}")),
+            "the runner listens on a port this crate no longer forwards to"
+        );
+    }
 }
