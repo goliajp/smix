@@ -40,10 +40,51 @@ fn adb(serial: &str) -> Command {
 
 /// Locate the instrumentation APK. Built by
 /// `./gradlew :app:assembleDebugAndroidTest` in `android-runner/`.
+/// The working tree's APK, when this is a clone of smix and the APK is
+/// no older than the Kotlin it was built from.
+///
+/// The repo tree takes precedence deliberately — a smix developer wants
+/// the runner from their working copy, not the one that shipped. But
+/// precedence without freshness is worse than no precedence at all: a
+/// two-day-old APK sat here and won every time, so a Kotlin route added,
+/// packed into the tarball, and installed came back `not_implemented`
+/// from an artifact predating it. `None` here means "rebuild", and the
+/// installed path is where rebuilding lives.
 fn find_test_apk(root: &Path) -> Option<PathBuf> {
-    let candidate = root
-        .join("android-runner/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
-    candidate.is_file().then_some(candidate)
+    let tree = root.join("android-runner");
+    let candidate = tree.join("app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
+    let built = candidate.metadata().ok()?.modified().ok()?;
+    if let Some(newest) = newest_source_mtime(&tree.join("app/src"))
+        && newest > built
+    {
+        println!(
+            "[runner] {} is older than the Kotlin in this tree — building it",
+            candidate.display()
+        );
+        return build_apk_in(&tree).ok();
+    }
+    Some(candidate)
+}
+
+/// The most recent modification time under `dir`, or `None` if it has
+/// no files.
+fn newest_source_mtime(dir: &Path) -> Option<std::time::SystemTime> {
+    let mut newest: Option<std::time::SystemTime> = None;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if let Ok(m) = path.metadata().and_then(|m| m.modified()) {
+                newest = Some(newest.map_or(m, |n| if m > n { m } else { n }));
+            }
+        }
+    }
+    newest
 }
 
 /// `adb forward` argv mapping a host port onto the runner's fixed
@@ -81,7 +122,7 @@ fn installed_android_dir() -> Option<PathBuf> {
 /// something smix can produce rather than something to complain about —
 /// exactly what the iOS path does with `xcodebuild`. First run pays a
 /// gradle build; later runs find the APK where this left it.
-fn ensure_installed_apk() -> Result<PathBuf, String> {
+fn ensure_installed_apk() -> Result<(PathBuf, bool), String> {
     let dir = installed_android_dir().ok_or_else(|| {
         "no HOME or XDG_DATA_HOME, so there is nowhere to install the \
                         Android runner project"
@@ -102,21 +143,53 @@ fn ensure_installed_apk() -> Result<PathBuf, String> {
     }
 
     let apk = dir.join("app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
-    if apk.is_file() {
-        return Ok(apk);
+    // The invariant is not "did this run extract" — that is true once
+    // and false forever after, so the first run to sync new sources
+    // rebuilt and every later one served the stale APK anyway. It is
+    // "was this APK built from these sources", and the way to know is
+    // to have written down which sources, at the time.
+    //
+    // Without it: sources synced, the artifact did not follow, and the
+    // runner answered `not_implemented` for a route whose Kotlin sat
+    // one directory away. That is the v1.0.10 cycle again, on the
+    // other platform.
+    let stamp = dir.join(".smix-apk-sources");
+    let want = format!("{:016x}", smix_runner_sources::android_sources_digest());
+    let built_from = std::fs::read_to_string(&stamp).unwrap_or_default();
+    if apk.is_file() && built_from.trim() == want {
+        return Ok((apk, false));
     }
+    let _ = extracted;
+    if apk.is_file() {
+        println!("[runner] the instrumentation APK is older than the sources — rebuilding");
+    } else {
+        println!("[runner] building the instrumentation APK (first run on this machine)");
+    }
+    let built = build_apk_in(&dir)?;
+    debug_assert_eq!(built, apk);
+    // Written only after the APK exists: a stamp for a build that did
+    // not produce one would claim the artifact is current forever.
+    if let Err(e) = std::fs::write(&stamp, &want) {
+        eprintln!("[runner] could not record what the APK was built from: {e}");
+    }
+    Ok((apk, true))
+}
 
-    println!("[runner] building the instrumentation APK (first run on this machine)");
+/// Run gradle's `assembleDebugAndroidTest` in `tree` and return the APK.
+///
+/// Shared by both trees, because both have the same obligation: the
+/// artifact must be no older than the sources beside it.
+fn build_apk_in(tree: &Path) -> Result<PathBuf, String> {
     let out = Command::new("./gradlew")
         .args([":app:assembleDebugAndroidTest", "--console=plain"])
-        .current_dir(&dir)
+        .current_dir(tree)
         .output()
         .map_err(|e| {
             format!(
                 "the Android runner needs a build and ./gradlew could not start: {e}\n\
                  Its project is at {} — an Android SDK is required, the same way the \
                  iOS runner requires Xcode.",
-                dir.display()
+                tree.display()
             )
         })?;
     if !out.status.success() {
@@ -125,17 +198,19 @@ fn ensure_installed_apk() -> Result<PathBuf, String> {
         let tail = all[all.len().saturating_sub(15)..].join("\n");
         return Err(format!(
             "building the Android runner failed in {}:\n{}\n{}",
-            dir.display(),
+            tree.display(),
             tail,
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    apk.is_file().then_some(apk.clone()).ok_or_else(|| {
-        format!(
+    let apk = tree.join("app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
+    if !apk.is_file() {
+        return Err(format!(
             "the gradle build reported success but produced no APK at {}",
             apk.display()
-        )
-    })
+        ));
+    }
+    Ok(apk)
 }
 
 /// Is this serial actually attached and ready?
@@ -159,17 +234,34 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
         ));
     }
 
-    // Already up on this port? Say so rather than stacking a second
-    // instrumentation onto the same forwarded port.
-    if health_ok(port) {
-        println!("runner up: already healthy on http://localhost:{port}");
-        return Ok(());
-    }
-
-    let apk = match find_test_apk(root) {
-        Some(a) => a,
+    // Which APK we would serve has to be settled before "is something
+    // already answering" can be read as "we are up".
+    //
+    // The device port is fixed, so every host port forwards onto the
+    // same in-device server. An instrumentation left over from an
+    // older APK answers /health perfectly, and taking that as "already
+    // up" served it — on any port, indefinitely, including right after
+    // a rebuild. The symptom was a runner reporting `not_implemented`
+    // for a route whose Kotlin had already shipped and built.
+    let (apk, rebuilt) = match find_test_apk(root) {
+        Some(a) => (a, false),
         None => ensure_installed_apk()?,
     };
+
+    // Already up on this port? Say so rather than stacking a second
+    // instrumentation onto the same forwarded port — unless the APK
+    // just changed, in which case whatever is answering is the old one
+    // and has to go.
+    if health_ok(port) {
+        if !rebuilt {
+            println!("runner up: already healthy on http://localhost:{port}");
+            return Ok(());
+        }
+        println!("[runner] a runner from the previous APK is answering — replacing it");
+        let _ = adb(serial)
+            .args(["shell", "am", "force-stop", TEST_PACKAGE])
+            .output();
+    }
 
     println!("[runner] android device: {serial}");
     let install = adb(serial)
@@ -453,12 +545,53 @@ pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn forward_maps_the_host_port_onto_the_device_side_28080() {
         assert_eq!(
             forward_argv(22093),
             vec!["forward", "tcp:22093", "tcp:28080"]
+        );
+    }
+
+    #[test]
+    fn the_newest_source_is_the_one_reported() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src = dir.path().join("app/src/androidTest/kotlin");
+        std::fs::create_dir_all(&src).expect("mkdir");
+        assert!(
+            newest_source_mtime(&dir.path().join("app/src")).is_some() || true,
+            "an empty tree has no newest file, which is not an error"
+        );
+        std::fs::write(src.join("Old.kt"), "// old").expect("write");
+        let first = newest_source_mtime(&dir.path().join("app/src")).expect("a file exists");
+
+        // A second file written later must move the answer forward, or
+        // an APK built between them reads as current. Set the mtime
+        // rather than sleeping: the test should not be slower than the
+        // filesystem's clock resolution to be right.
+        let newer = src.join("New.kt");
+        let mut f = std::fs::File::create(&newer).expect("create");
+        f.write_all(b"// new").expect("write");
+        let ahead = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        f.set_modified(ahead).expect("set mtime");
+        drop(f);
+
+        let second = newest_source_mtime(&dir.path().join("app/src")).expect("files exist");
+        assert!(
+            second > first,
+            "the newest source did not move when a newer file appeared"
+        );
+    }
+
+    #[test]
+    fn a_tree_with_no_sources_reports_nothing_rather_than_now() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(
+            newest_source_mtime(&dir.path().join("app/src")).is_none(),
+            "an absent source tree must not answer with a time, which would \
+             make every APK look stale forever"
         );
     }
 

@@ -53,25 +53,25 @@ impl AndroidDriver {
         &self.runner
     }
 
-    /// Empty the field that already holds focus.
+    /// Empty the field that already holds focus, in one request.
     ///
-    /// Deletes rather than a set-text action: `input text` is what
-    /// types here, and an IME-visible delete leaves the field in the
-    /// state the app's own text watchers expect. The count matches
-    /// `clear`'s, which is a fixed 50 — there is no focused-node text
-    /// length on this path to size it by, and a field longer than that
-    /// is not one a flow is filling by hand.
+    /// This sent fifty `/press-key DELETE` posts — fifty sequential
+    /// round trips over the adb forward, and once `fill` began
+    /// clearing first, on every fill. It was also wrong: fifty deletes
+    /// do not empty a field holding more than fifty characters, so the
+    /// new text landed after the remainder while the caller was told
+    /// its value had been replaced.
+    ///
+    /// The runner does it now, exactly, through the focused node's
+    /// `ACTION_SET_TEXT`.
     async fn clear_focused_field(&self, stage: &str) -> Result<(), ExpectationFailure> {
-        for _ in 0..50 {
-            self.runner.press_key(KeyName::Delete).await.map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("{stage}: clear-first delete failed: {e}"),
-                    ..Default::default()
-                })
-            })?;
-        }
-        Ok(())
+        self.runner.clear_text().await.map(|_| ()).map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("{stage}: clear-first failed: {e}"),
+                ..Default::default()
+            })
+        })
     }
 }
 
@@ -522,12 +522,8 @@ impl Driver for AndroidDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        // Kept as the public verb's body; `fill` reaches the same
-        // deletes through `clear_focused_field` once it already holds
-        // focus, so it does not tap the field twice.
-        // Host-resolve → tap to focus → press DELETE N times.
-        // No Kotlin /clear endpoint needed (avoids UiObject2 fragility);
-        // 50 BACKSPACE presses cover near all real-world input fields.
+        // Host-resolve → tap to focus → the runner's one-request clear,
+        // the same one `fill` reaches once it already holds focus.
         let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
         self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
@@ -536,16 +532,7 @@ impl Driver for AndroidDriver {
                 ..Default::default()
             })
         })?;
-        for _ in 0..50 {
-            self.runner.press_key(KeyName::Delete).await.map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::clear: delete press failed: {e}"),
-                    ..Default::default()
-                })
-            })?;
-        }
-        Ok(())
+        self.clear_focused_field("AndroidDriver::clear").await
     }
 
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {

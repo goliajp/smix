@@ -104,6 +104,26 @@ mode by not resolving. Different mechanics, same guarantee.
 Body: `{ selector: Selector | "_focused_", include?: IncludeScope }`
 Response: `{ ok: bool }`
 
+iOS only. The Android runner has `/clear-text` instead, because the
+work is different: there is no selector to resolve runner-side, and
+the host has already tapped the field to focus it.
+
+### `POST /clear-text` (Android)
+
+Body: `{}` — the focused field is the target; the host focuses it first.
+Response: `{ status: "ok", method: "set-text" | "key-events", deletes: int }`
+
+`method` is not decoration. `set-text` empties the field through the
+focused node's `ACTION_SET_TEXT` and is exact at any length.
+`key-events` is the fallback for a field the accessibility tree cannot
+address: it sends a bounded number of deletes, so a longer field
+survives it partly filled, and a caller that cannot tell the two apart
+cannot know which answer it got.
+
+This replaced fifty `/press-key delete` posts from the host — fifty
+sequential round trips over the adb forward, on every fill once fill
+began clearing first, and still wrong past fifty characters.
+
 ### `POST /press-key`
 
 Body: `{ key: KeyName }` — `KeyName` variants: `enter`, `back`, `home`,

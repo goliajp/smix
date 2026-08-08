@@ -98,6 +98,11 @@ class SmixHttpServer(
     private val device: UiDevice,
     private val instrumentation: android.app.Instrumentation,
 ) : NanoHTTPD(port) {
+    // How many deletes the fallback clear sends when no focused
+    // editable node answers. A bound, not a guarantee: a longer field
+    // survives it, which is why `/clear-text` reports which path ran.
+    private val FALLBACK_DELETE_COUNT = 64
+
     // /tree serve counter for the X-Tree-Snapshot-Refresh-Count
     // header (parity with the iOS runner).
     private val treeServeCounter = java.util.concurrent.atomic.AtomicLong(0)
@@ -187,6 +192,7 @@ class SmixHttpServer(
                 uri == "/long-press-at-norm-coord" && session.method == Method.POST ->
                     serveLongPressAtNormCoord(session)
                 uri == "/input-text" && session.method == Method.POST -> serveInputText(session)
+                uri == "/clear-text" && session.method == Method.POST -> serveClearText()
                 uri == "/foreground" && session.method == Method.POST -> serveForeground(session)
                 uri == "/find-text-by-ocr" && session.method == Method.POST ->
                     serveFindTextByOcr(session)
@@ -612,6 +618,52 @@ class SmixHttpServer(
         runShellCommand(RunnerWire.inputTextCommand(text))
         device.waitForIdle(500)
         val body = RunnerWire.inputTextBody(text)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    /// Empty the focused field in one request.
+    ///
+    /// The host used to do this by posting `/press-key DELETE` fifty
+    /// times — fifty sequential round trips over the adb forward, on
+    /// every fill once fill started clearing first. Worse than slow:
+    /// fifty deletes do not empty a field holding more than fifty
+    /// characters, so the text that followed landed after the
+    /// remainder and the caller was told it had replaced the value.
+    ///
+    /// `ACTION_SET_TEXT` is exact and length-independent, and it is
+    /// what `UiObject2.clear()` uses underneath. When no focused
+    /// editable node answers — a field the accessibility tree cannot
+    /// address is exactly the case the key-event path exists for —
+    /// fall back to delete keys, still in one shell exec, and say
+    /// which path ran so the caller knows whether the answer is exact.
+    private fun serveClearText(): Response {
+        val focused = instrumentation.uiAutomation.findFocus(
+            android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT,
+        )
+        if (focused != null && focused.isEditable) {
+            val args = android.os.Bundle()
+            args.putCharSequence(
+                android.view.accessibility.AccessibilityNodeInfo
+                    .ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                "",
+            )
+            val ok = focused.performAction(
+                android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT,
+                args,
+            )
+            focused.recycle()
+            if (ok) {
+                device.waitForIdle(500)
+                val body = RunnerWire.clearTextBody("set-text", 0)
+                return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+            }
+        } else {
+            focused?.recycle()
+        }
+        val deletes = FALLBACK_DELETE_COUNT
+        runShellCommand(RunnerWire.deleteKeysCommand(deletes))
+        device.waitForIdle(500)
+        val body = RunnerWire.clearTextBody("key-events", deletes)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 

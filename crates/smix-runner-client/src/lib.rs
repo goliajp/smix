@@ -1421,6 +1421,34 @@ impl HttpRunnerClient {
         Ok(())
     }
 
+    /// `POST /clear-text` — empty the focused field, Android only.
+    ///
+    /// Returns how the runner did it: `set-text` is exact, `key-events`
+    /// deleted a bounded number of characters and can leave a longer
+    /// field partly filled. The caller is told which because the two
+    /// are not equally trustworthy.
+    ///
+    /// The host used to send fifty `/press-key DELETE` posts instead —
+    /// fifty sequential round trips over the adb forward, on every
+    /// fill once fill began clearing first, and still wrong for a
+    /// field longer than fifty characters.
+    pub async fn clear_text(&self) -> Result<String, RunnerTransportError> {
+        #[derive(Serialize)]
+        struct Req {}
+        #[derive(Deserialize)]
+        struct Res {
+            status: Option<String>,
+            method: Option<String>,
+        }
+        let body: Res = self.json_post("/clear-text", &Req {}, None).await?;
+        if body.status.as_deref() != Some("ok") {
+            return Err(RunnerTransportError::Refused {
+                endpoint: "/clear-text".to_string(),
+            });
+        }
+        Ok(body.method.unwrap_or_else(|| "unknown".to_string()))
+    }
+
     /// `POST /tap-by-id` — `XCUIElement.tap()` via the XCTest
     /// gesture-recognizer chain. Drives SwiftUI `.sheet` / `.alert` /
     /// `.confirmationDialog` / `.fullScreenCover` dismiss bindings that the
