@@ -466,10 +466,14 @@ impl SmixMcpService {
         app.fill(&sel, &params.text)
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        // The value never comes back out — see `cmd_fill` in smix-cli
+        // for why the length is the whole confirmation. This surface is
+        // the more exposed of the two: an MCP result is written into the
+        // conversation by construction.
         Ok(CallToolResult::success(vec![Content::text(format!(
-            "filled {} with {:?}",
+            "filled {} ({} chars)",
             smix_selector::describe_selector(&sel),
-            params.text
+            params.text.chars().count()
         ))]))
     }
 
