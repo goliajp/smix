@@ -996,6 +996,18 @@ enum RunnerAction {
         /// happens.
         #[arg(long = "include-unrecorded", default_value_t = false)]
         include_unrecorded: bool,
+        /// Which runner's port, when it is not the default.
+        ///
+        /// `runner up` has taken this flag all along and `down` did
+        /// not, reading `SMIX_RUNNER_PORT` instead. So the obvious
+        /// pairing — up with `--runner-port N`, down with the same —
+        /// failed the argument parse, and a teardown written that way
+        /// left the runner running. Ours did, in the e2e written to
+        /// prove this very release: the check passed, the process
+        /// outlived it, and `|| true` on the cleanup line meant nothing
+        /// said so.
+        #[arg(long)]
+        runner_port: Option<u16>,
     },
     /// Hold a port forward open to a physical device. Runs in the
     /// foreground until killed.
@@ -2102,6 +2114,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     platform,
                     device,
                     include_unrecorded,
+                    runner_port: port_flag,
                 } => {
                     if platform == RunPlatform::Android {
                         let serial = device.ok_or_else(|| {
@@ -2112,16 +2125,18 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                     .to_string(),
                             )
                         })?;
-                        let port = std::env::var("SMIX_RUNNER_PORT")
-                            .ok()
-                            .and_then(|p| p.parse().ok())
-                            .unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT);
+                        let port = port_flag.unwrap_or_else(|| {
+                            std::env::var("SMIX_RUNNER_PORT")
+                                .ok()
+                                .and_then(|p| p.parse().ok())
+                                .unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT)
+                        });
                         let serial = resolve_android_serial(&serial)?;
                         smix_capsule::runner_android::down(&root, &serial, port)
                             .map_err(CliError::Other)?;
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
-                    let port = runner_port();
+                    let port = port_flag.unwrap_or_else(runner_port);
                     if include_unrecorded {
                         smix_capsule::runner::down_including_unrecorded(&root, port)
                     } else {
