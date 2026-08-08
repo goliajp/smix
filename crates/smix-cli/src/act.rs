@@ -191,7 +191,18 @@ pub async fn cmd_fill(selector_str: String, text: String, port: u16) -> Result<(
     d.fill(&selector, &text, None)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
-    println!("filled {selector_str} with `{text}`");
+    // The value never comes back out. smix's output is a transcript that
+    // persists and is read by an AI, so a password typed through here
+    // would live in the record forever — and it did: a staging account's
+    // password reached a session log on 2026-08-09 because this line
+    // echoed what the caller had deliberately kept in a shell variable.
+    //
+    // Not a `--secret` flag and not secure-field detection: a default
+    // that protects you only when you remember to ask for it is not a
+    // default, and detection fails open on the fields it cannot read.
+    // The length is confirmation enough — the caller already knows the
+    // value, and what they need to know is that it arrived whole.
+    println!("filled {selector_str} ({} chars)", text.chars().count());
     Ok(())
 }
 
@@ -380,6 +391,40 @@ pub async fn cmd_wait_for(
 
 #[cfg(test)]
 mod tests {
+    /// No surface that takes a caller-supplied value may echo it.
+    ///
+    /// Source-level, and that is deliberate: the leak is a `println!`
+    /// argument, so the thing to pin is that the argument is not there.
+    /// A behavioural test would have to capture stdout of a command that
+    /// needs a device, and would not run where this must hold — on every
+    /// build, on every machine.
+    ///
+    /// Found in production: `smix fill` printed a staging account's
+    /// password into a session transcript on 2026-08-09, defeating a
+    /// caller who had deliberately kept it in a shell variable.
+    #[test]
+    fn no_surface_echoes_a_value_the_caller_supplied() {
+        for (name, src) in [
+            ("smix-cli/act.rs", include_str!("act.rs")),
+            (
+                "smix-mcp/main.rs",
+                include_str!("../../smix-mcp/src/main.rs"),
+            ),
+        ] {
+            for line in src.lines() {
+                let l = line.trim();
+                if !l.starts_with("//") && l.contains("filled") {
+                    assert!(
+                        !l.contains("{text}")
+                            && !l.contains("params.text\"")
+                            && !l.contains("`{text}`"),
+                        "{name} echoes the filled value: {l}"
+                    );
+                }
+            }
+        }
+    }
+
     use super::*;
     use std::sync::Mutex;
 
