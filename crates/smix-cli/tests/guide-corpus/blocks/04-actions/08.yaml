@@ -1,3 +1,4 @@
 - inputText:
     id: "form-email-input"
-    text: "alice@example.com"
+    text: "alice@example.com"    # replaces what the field holds
+- inputText: "alice@example.com" # types into the focused field, appending

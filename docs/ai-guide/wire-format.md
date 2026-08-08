@@ -82,9 +82,16 @@ Response: `{ found: bool, exists: bool }` (both fields present; consumers may OR
 
 ### `POST /fill`
 
-Body: `{ selector: Selector | "_focused_", text: string, include?: IncludeScope }`
+Body: `{ selector: Selector | "_focused_", text: string, clearFirst?: bool, include?: IncludeScope }`
 Header: `Input-Dispatch-Mode`
 Response: `{ ok: bool, focusMs?: u64, daemonSendMs?: u64 }`
+
+`clearFirst` empties the field before typing, and is **true when
+absent** — typing appends, so a route named `fill` that did not clear
+concatenated old and new values. A runner too old to know the field
+appends, which is what it did before, so the field is additive on the
+wire. The host driver chunks long text into one POST per character;
+`clearFirst` rides the first chunk alone.
 
 `key-events` is for RN apps whose hidden `<TextInput>` defeats
 a11y-focus lookup. On iOS the header reaches the runner, which skips

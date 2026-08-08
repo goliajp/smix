@@ -149,6 +149,48 @@ pub struct UpOptions<'a> {
     pub no_capture: bool,
 }
 
+/// Refuse a device the capsule cannot bring up, naming what can.
+///
+/// All three of the capsule's legs are simulator-shaped: the
+/// Simulator.app window guard, `simctl boot`, and the HLS capture that
+/// serves `/live`. Handed an emulator it used to run them anyway —
+/// `simctl boot emulator-5554` sits there until it times out 120
+/// seconds later, and the report ("boot timed out") describes the
+/// symptom of asking the wrong tool rather than the mistake.
+///
+/// There is no silent degradation available here: a capsule that
+/// skipped the parts it cannot do would be a `runner up` wearing
+/// another command's name. So say which device this is, and which
+/// command brings it up.
+pub fn capsule_supports(
+    kind: smix_simctl::registry::DeviceKind,
+    device: &str,
+) -> Result<(), String> {
+    use smix_simctl::registry::DeviceKind;
+    let (what, instead) = match kind {
+        DeviceKind::Simulator => return Ok(()),
+        DeviceKind::Emulator => (
+            "an Android emulator",
+            format!("smix runner up {device} --platform android"),
+        ),
+        DeviceKind::PhysicalAndroid => (
+            "a physical Android device",
+            format!("smix runner up {device} --platform android"),
+        ),
+        DeviceKind::PhysicalIos => (
+            "a physical iPhone or iPad",
+            format!("smix runner up {device} --physical"),
+        ),
+    };
+    Err(format!(
+        "capsule up is for iOS Simulators, and {device} is {what}.\n\
+         The capsule boots through simctl, guards against a Simulator.app \
+         window, and records the /live capture — none of which this device \
+         has. Bring it up with:\n\
+         \n    {instead}\n"
+    ))
+}
+
 /// End-to-end `capsule up`: guard + boot + capture start + /live URL +
 /// runner up (record mode) + state.json write. Each step fails fast to
 /// stderr and skips the rest; state.json is written only on full success

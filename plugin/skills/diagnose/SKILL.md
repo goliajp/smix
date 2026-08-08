@@ -1,5 +1,5 @@
 ---
-description: Work out why a step failed against a simulator — read the failure, look at the screen, and decide what to change. Use when a tap, assertion, or flow step fails and the reason is not obvious.
+description: Work out why a step failed against a simulator or emulator — read the failure, look at the screen, and decide what to change. Use when a tap, assertion, or flow step fails and the reason is not obvious.
 ---
 
 # Reading a smix failure
@@ -39,6 +39,12 @@ in a selector query.
 
 `smix_tree` for the full picture when `smix_describe` has summarised away
 whatever matters.
+
+## A simulator and an emulator read the same
+
+None of the above is iOS-specific. The codes, the suggestions and
+`visibleElements` are filled in by the runner, and the Android runner
+fills the same fields — so a `NOT_VISIBLE` means what it means on either.
 
 ## From a terminal
 

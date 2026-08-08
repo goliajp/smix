@@ -445,7 +445,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Type text into a field. Names the field like smix_tap, except ocrText — an OCR hit is a text frame, not a focusable element. Tap the field first if it is not already focused. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Type text into a field, replacing what it holds. Names the field like smix_tap, except ocrText — an OCR hit is a text frame, not a focusable element. Tap the field first if it is not already focused. Filling the same field twice leaves the second value, not both. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     async fn smix_fill(
         &self,

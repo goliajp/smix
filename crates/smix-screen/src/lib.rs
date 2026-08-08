@@ -118,8 +118,52 @@ pub struct ScreenDescription {
 /// and the reader left to guess which one the tool believed.
 #[must_use]
 pub fn collect_visible_summaries(tree: &A11yNode, limit: usize) -> Vec<ElementSummary> {
+    collect_visible_summaries_with(tree, limit, false)
+}
+
+/// Is this the software keyboard?
+///
+/// Apple's own element type (19), not a guess from the label — the
+/// keys under it are type 20. Nothing else in a tree is typed this way.
+#[must_use]
+pub fn is_keyboard(n: &A11yNode) -> bool {
+    n.raw_type == "keyboard" || matches!(n.role, Some(Role::Keyboard))
+}
+
+/// Count every node in this subtree, the node itself included.
+#[must_use]
+pub fn subtree_len(n: &A11yNode) -> usize {
+    1 + n.children.iter().map(subtree_len).sum::<usize>()
+}
+
+/// [`collect_visible_summaries`], with the keyboard optional.
+///
+/// The keyboard is one node saying "keyboard" and then a key per
+/// letter, plus `Next keyboard`, `Dictate`, `shift`, `delete` and the
+/// rest — around sixty summaries that are the same sixty on every
+/// screen in every app. A description of a login form spent most of
+/// itself on them, and a description is read by an AI paying for every
+/// token of it.
+///
+/// So they are left out by default and the caller can ask. What is not
+/// left out is *that a keyboard is up*: the keyboard node itself is
+/// still summarised, because a keyboard covering the thing you wanted
+/// to tap is the explanation for a failure, and hiding it would turn a
+/// legible failure into a mystery. Only the keys go.
+#[must_use]
+pub fn collect_visible_summaries_with(
+    tree: &A11yNode,
+    limit: usize,
+    include_keyboard_keys: bool,
+) -> Vec<ElementSummary> {
     let mut out: Vec<ElementSummary> = Vec::new();
-    fn walk(n: &A11yNode, root: &A11yNode, limit: usize, out: &mut Vec<ElementSummary>) {
+    fn walk(
+        n: &A11yNode,
+        root: &A11yNode,
+        limit: usize,
+        keys: bool,
+        out: &mut Vec<ElementSummary>,
+    ) {
         if out.len() >= limit {
             return;
         }
@@ -129,14 +173,17 @@ pub fn collect_visible_summaries(tree: &A11yNode, limit: usize) -> Vec<ElementSu
                 out.push(s);
             }
         }
+        if !keys && is_keyboard(n) {
+            return;
+        }
         for c in &n.children {
             if out.len() >= limit {
                 return;
             }
-            walk(c, root, limit, out);
+            walk(c, root, limit, keys, out);
         }
     }
-    walk(tree, tree, limit, &mut out);
+    walk(tree, tree, limit, include_keyboard_keys, &mut out);
     out
 }
 
@@ -511,7 +558,7 @@ pub fn visible_area(node: &A11yNode, tree: &A11yNode) -> f64 {
 mod tests {
     use super::*;
 
-    fn node(
+    pub(super) fn node(
         raw_type: &str,
         id: Option<&str>,
         label: Option<&str>,
@@ -625,5 +672,50 @@ mod tests {
             1,
             "only the app node is visible+enabled; got {got:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod keyboard_collapse_tests {
+    use super::tests::node;
+    use super::*;
+
+    fn screen() -> A11yNode {
+        let keys: Vec<A11yNode> = ('a'..='z')
+            .map(|c| node("key", Some(&c.to_string()), None, vec![]))
+            .collect();
+        node(
+            "application",
+            Some("app"),
+            None,
+            vec![
+                node("textField", Some("email"), None, vec![]),
+                node("keyboard", Some("kb"), None, keys),
+            ],
+        )
+    }
+
+    #[test]
+    fn the_keys_are_left_out_but_the_keyboard_is_not() {
+        let ids: Vec<_> = collect_visible_summaries(&screen(), 1000)
+            .into_iter()
+            .filter_map(|s| s.id)
+            .collect();
+        assert!(ids.contains(&"email".to_string()));
+        assert!(
+            ids.contains(&"kb".to_string()),
+            "a keyboard covering the target is the explanation for a failure"
+        );
+        assert!(!ids.contains(&"a".to_string()), "got {ids:?}");
+    }
+
+    #[test]
+    fn asking_for_the_keys_gets_them() {
+        let ids: Vec<_> = collect_visible_summaries_with(&screen(), 1000, true)
+            .into_iter()
+            .filter_map(|s| s.id)
+            .collect();
+        assert!(ids.contains(&"a".to_string()));
+        assert_eq!(ids.len(), 29, "app + field + keyboard + 26 keys");
     }
 }

@@ -1586,7 +1586,7 @@ final class SmixRunnerUITests: XCTestCase {
       // through the test target's main thread). For a non-`_focused_`
       // selector, the handler first taps the matching typable element to
       // give it focus, then submits the string to the daemon.
-      fillHandler: { selectorText, text, scope, dispatch in
+      fillHandler: { selectorText, text, scope, dispatch, clearFirst in
         let app = await resolveApp()  // Per-request target-app rebind.
         let t0 = DispatchTime.now()
         // `key-events` skips focus resolution and types into whatever
@@ -1629,11 +1629,32 @@ final class SmixRunnerUITests: XCTestCase {
         }
         let t1 = DispatchTime.now()
         do {
+          // typeText appends, so a field with something in it ends up
+          // holding the old value and the new one concatenated. In a
+          // secure field that is invisible — the dots look right and
+          // the login fails. Empty it first unless the caller asked to
+          // append, using the same proportional delete count /clear
+          // uses so this costs a field's length, not a fixed 64.
+          if clearFirst {
+            let count: Int
+            if let cached = KeyboardCache.shared.length {
+              count = max(cached + 4, 4)
+            } else {
+              let raw: String = smixGuarded("fill-clear-read") { () -> String in
+                let focusedPred = NSPredicate(format: "hasKeyboardFocus == true")
+                let focused = app.descendants(matching: .any).matching(focusedPred).firstMatch
+                return (focused.exists ? focused.value as? String : nil) ?? ""
+              } ?? ""
+              count = max(raw.count + 4, 4)
+            }
+            let deletes = String(repeating: XCUIKeyboardKey.delete.rawValue, count: count)
+            try await DaemonKeyboard.shared.sendString(deletes, typingFrequency: 200)
+            KeyboardCache.shared.recordClear()
+          }
           try await DaemonKeyboard.shared.sendString(text, typingFrequency: 200)
           let t2 = DispatchTime.now()
-          // Track typed text length (typeText APPENDS to existing
-          // field content). clear's hot path reads this to skip the
-          // snapshot-triggering focused.value read.
+          // Track typed text length. clear's hot path reads this to
+          // skip the snapshot-triggering focused.value read.
           KeyboardCache.shared.appendFill(text)
           return .success(
             focusMs: SmixRunnerServer.msBetween(t0, t1),

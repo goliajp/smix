@@ -1735,19 +1735,34 @@ impl HttpRunnerClient {
     }
 
     /// `POST /fill` — fill text into focused / matched input.
+    ///
+    /// `clear_first` empties the field before typing. A runner too old
+    /// to know the field ignores it and appends, which is what it did
+    /// before this existed — the flag is additive on the wire.
     pub async fn fill(
         &self,
         selector: &Selector,
         text: &str,
         include: Option<IncludeScope>,
+        clear_first: bool,
     ) -> Result<RunnerKeyboardResult, RunnerTransportError> {
         #[derive(Serialize)]
         struct Req<'a> {
             selector: &'a Selector,
             text: &'a str,
+            #[serde(rename = "clearFirst")]
+            clear_first: bool,
         }
-        self.json_post("/fill", &Req { selector, text }, include)
-            .await
+        self.json_post(
+            "/fill",
+            &Req {
+                selector,
+                text,
+                clear_first,
+            },
+            include,
+        )
+        .await
     }
 
     /// `POST /clear` — clear focused / matched input.

@@ -191,8 +191,9 @@ impl Driver for IosDriver {
         selector: &Selector,
         text: &str,
         include: Option<IncludeScope>,
+        clear_first: bool,
     ) -> Result<(), ExpectationFailure> {
-        IosDriver::fill(self, selector, text, include).await
+        IosDriver::fill(self, selector, text, include, clear_first).await
     }
 
     async fn clear(

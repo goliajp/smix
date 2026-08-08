@@ -505,9 +505,12 @@ impl std::fmt::Display for NotAddressable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} is not a device smix may address: it is not registered here, and \
-             neither simctl nor adb calls it one of theirs.\n\
-             If it is a phone or tablet, say so once and it becomes addressable:\n  \
+            "{} is not a device smix may address: nothing here has registered it.\n\
+             A simulator or emulator needs no registration; anything else does, \
+             and being plugged in is not registration — that is the whole point \
+             of the rule, because the phone that happens to be attached is \
+             somebody's own.\n\
+             Say so once and it becomes addressable:\n  \
              smix sim register <name> --udid {} --kind physical-ios|physical-android",
             self.device, self.device
         )

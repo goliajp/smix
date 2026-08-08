@@ -92,7 +92,7 @@ worst (escape hatch — fragile, breaks on layout change)
 ### 5. Focused
 
 ```yaml
-- inputText: "hello"      # the scalar form types into the focused field
+- inputText: "hello"      # the scalar form types into the focused field, appending
 
 - pressKey: ENTER     # often used after focused: true to submit
 ```

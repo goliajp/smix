@@ -166,13 +166,25 @@ nothing about when the touch was down, so no frame could be placed.
 
 ## Text input
 
-### Fill (replaces focused field content)
+### Fill
 
 ```yaml
 - inputText:
     id: "form-email-input"
-    text: "alice@example.com"
+    text: "alice@example.com"    # replaces what the field holds
+- inputText: "alice@example.com" # types into the focused field, appending
 ```
+
+**You can only replace a field you named.** The mapping form above
+empties the field first, so returning to a screen and filling it again
+leaves the second value rather than both concatenated — which is
+invisible in a password field and surfaces as a login that fails with
+the right password typed. The scalar form has no field to empty: it
+types wherever focus already is, and appends, which is also what
+maestro's `inputText` and `pasteText` do.
+
+To append to a named field, clear nothing and type into the focus you
+already have: `tapOn` it, then the scalar form.
 
 - iOS: XCUI `typeText` after explicit field tap (focus + type).
 - Android: Kotlin `/input-text` → `am instrument` shell input (UiAutomation.executeShellCommand wraps `input text`).

@@ -216,11 +216,22 @@ pub trait Driver: Send + Sync {
     ) -> Result<crate::PressTiming, ExpectationFailure>;
 
     /// Fill text into a focused / matched input.
+    ///
+    /// `clear_first` empties the field before typing, which is what
+    /// "fill" means and what the guides have always described. It used
+    /// to append unconditionally: returning to a field and filling it
+    /// again produced the two values concatenated, invisible in a
+    /// secure field and visible only as a login that fails.
+    ///
+    /// False is still reachable because appending is what maestro's
+    /// `inputText` does, and a ported flow that types twice into one
+    /// field means the second call to continue the first.
     async fn fill(
         &self,
         selector: &Selector,
         text: &str,
         include: Option<IncludeScope>,
+        clear_first: bool,
     ) -> Result<(), ExpectationFailure>;
 
     /// Clear text from a focused / matched input.

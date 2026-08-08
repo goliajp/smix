@@ -49,3 +49,21 @@ final class KeyboardRouteFocusedDecodeTests: XCTestCase {
     }
   }
 }
+
+/// `clearFirst` decoding: absent means the documented behaviour.
+final class KeyboardRouteClearFirstDecodeTests: XCTestCase {
+  func testAbsentClearFirstMeansClear() throws {
+    let body = Data(#"{"selector":{"text":"id:pw"},"text":"hunter2"}"#.utf8)
+    XCTAssertTrue(try KeyboardRoute.decodeFill(body).clearFirst)
+  }
+
+  func testExplicitFalseAppends() throws {
+    let body = Data(#"{"selector":{"text":"id:pw"},"text":"more","clearFirst":false}"#.utf8)
+    XCTAssertFalse(try KeyboardRoute.decodeFill(body).clearFirst)
+  }
+
+  func testNonBoolClearFirstIsRefused() {
+    let body = Data(#"{"selector":{"text":"id:pw"},"text":"x","clearFirst":"yes"}"#.utf8)
+    XCTAssertThrowsError(try KeyboardRoute.decodeFill(body))
+  }
+}

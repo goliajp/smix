@@ -15,9 +15,23 @@ public enum KeyboardRoute {
   public struct FillRequest: Equatable, Sendable {
     public let selector: Selector
     public let text: String
-    public init(selector: Selector, text: String) {
+    /// Empty the field before typing.
+    ///
+    /// True unless the caller says otherwise, because that is what the
+    /// route is called and what the guides have always said it does
+    /// ("Fill — replaces focused field content"). It appended instead,
+    /// which is invisible in a password field and shows up as a login
+    /// that fails for no reason a screenshot can explain.
+    ///
+    /// A client that omits the field gets the documented behaviour
+    /// rather than the old one: this is a route correcting itself, and
+    /// defaulting to append would keep the bug for everyone who does
+    /// not know to ask.
+    public let clearFirst: Bool
+    public init(selector: Selector, text: String, clearFirst: Bool = true) {
       self.selector = selector
       self.text = text
+      self.clearFirst = clearFirst
     }
   }
 
@@ -47,7 +61,13 @@ public enum KeyboardRoute {
     let selector = try decodeSelector(root)
     guard let rawText = root["text"] else { throw DecodeError.missingText }
     guard let text = rawText as? String else { throw DecodeError.wrongType("text not string") }
-    return FillRequest(selector: selector, text: text)
+    let clearFirst: Bool
+    switch root["clearFirst"] {
+    case nil, is NSNull: clearFirst = true
+    case let raw as Bool: clearFirst = raw
+    default: throw DecodeError.wrongType("clearFirst not bool")
+    }
+    return FillRequest(selector: selector, text: text, clearFirst: clearFirst)
   }
 
   public static func decodeClear(_ body: Data) throws -> ClearRequest {

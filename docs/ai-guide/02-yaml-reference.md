@@ -127,9 +127,9 @@ one that stops.
 ### Text input
 
 ```yaml
-- inputText: "alice@example.com"         # types into focused field
+- inputText: "alice@example.com"         # types into focused field, appending
 - inputText:
-    id: "form-email-input"               # target field by selector first
+    id: "form-email-input"               # names a field, so it replaces
     text: "alice@example.com"
 
 - eraseText: 5                           # backspace N chars (default 50)

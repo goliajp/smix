@@ -43,8 +43,7 @@ pub const VERSION_FILE: &str = ".smix-runner-version";
 /// be found by someone running from a clone of this repository. Everyone
 /// who installed smix was told, correctly, that there was no APK — and
 /// concluded, incorrectly, that smix had no Android support.
-pub const ANDROID_SOURCES_TAR_GZ: &[u8] =
-    include_bytes!("../data/android-runner-sources.tar.gz");
+pub const ANDROID_SOURCES_TAR_GZ: &[u8] = include_bytes!("../data/android-runner-sources.tar.gz");
 
 /// Filename written into an extracted Android tree, mirroring
 /// [`VERSION_FILE`].

@@ -479,7 +479,8 @@ public actor SmixRunnerServer {
   // masked by a native modal is still focus-tappable). Same `?include=`
   // query mechanism as /tree.
   public typealias FillHandler = @Sendable (
-    _ selector: String, _ text: String, _ scope: String?, _ dispatch: InputDispatchMode
+    _ selector: String, _ text: String, _ scope: String?, _ dispatch: InputDispatchMode,
+    _ clearFirst: Bool
   ) async -> KeyboardOutcome
 
   /// How `/fill` puts text into the app.
@@ -1687,7 +1688,7 @@ public actor SmixRunnerServer {
         let dispatch = InputDispatchMode.parse(
           request.headers[HTTPHeader("Input-Dispatch-Mode")])
         let outcome = await fillHandler(
-          req.selector.text, req.text, request.query["include"], dispatch)
+          req.selector.text, req.text, request.query["include"], dispatch, req.clearFirst)
         return successFor(outcome) ?? KeyboardRoute.notFound(selector: req.selector)
       }
     }

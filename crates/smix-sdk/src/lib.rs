@@ -1808,10 +1808,25 @@ impl App {
         self.driving()?.tap_with_mode(selector, mode, None).await
     }
 
+    /// Put `text` in the field `selector` names.
+    ///
+    /// A named field is replaced: filling one twice leaves the second
+    /// value, not both concatenated. It used to append, which reads as
+    /// nothing at all in a secure field and surfaces as a login that
+    /// fails with the right password typed.
+    ///
+    /// Typing into whatever holds focus — `fill(&focused(), …)`, the
+    /// scalar `inputText:` verb, `pasteText` — still appends, because
+    /// the rule is that you can only replace a field you named. That is
+    /// also maestro's behaviour for those verbs, so a ported flow that
+    /// types twice into one field still means what it meant.
     pub async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure> {
         self.ledger
             .record_fill(now_ms(), Some(format!("{selector:?}")));
-        self.driving()?.fill(selector, text, None).await
+        let names_a_field = !matches!(selector, Selector::Focused { .. });
+        self.driving()?
+            .fill(selector, text, None, names_a_field)
+            .await
     }
 
     pub async fn clear(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
