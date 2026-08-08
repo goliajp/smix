@@ -79,8 +79,23 @@ fi
 
 if [ -n "$expected" ] && [ "$mcp_version" != "$expected" ]; then
   say "installed smix-mcp is $mcp_version; this plugin expects $expected."
-  say "one of them is behind — update whichever you pin: $INSTALL_HINT"
-  say "or install the plugin version matching your smix."
+  # Which side is behind decides whether anything can actually break,
+  # and the old message said neither. "One of them is behind" left the
+  # reader to guess whether their session was degraded — and in the
+  # direction that is harmless, guessing wrong means chasing nothing.
+  older="$(printf '%s\n%s\n' "$mcp_version" "$expected" | sort -V | head -1)"
+  if [ "$older" = "$expected" ]; then
+    say "the plugin is the older one: its skills describe less than your smix"
+    say "can do. Nothing here will fail — you just will not be told about"
+    say "anything added since $expected."
+  else
+    say "the plugin is the newer one: its skills may name a command or tool"
+    say "this smix does not have yet, and those calls will fail."
+  fi
+  say "to update smix:   $INSTALL_HINT"
+  say "to update the plugin: claude plugin update smix   (then restart Claude"
+  say "Code — reloading plugins re-reads the version you have, it does not"
+  say "fetch a newer one)."
   exit 0
 fi
 

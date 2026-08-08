@@ -387,6 +387,14 @@ public enum AppUnavailableReason: String, Sendable {
   /// XCUITest driver-side query threw or timed out. Restart the
   /// runner (`smix runner cycle`) if this persists.
   case driverDisconnected = "driver-disconnected"
+  /// The app is not running. Somebody terminated it, or it was
+  /// reinstalled out from under the runner.
+  ///
+  /// This used to be reported as `crashed-during-init`, which sent the
+  /// reader to look for a crash report that does not exist — the two
+  /// are the same `XCUIApplication.state` and different situations.
+  /// Splitting them costs nothing and saves the search.
+  case notRunning = "not-running"
   /// Fallback for the "we know something's wrong but not why" case.
   case unknown = "unknown"
 }
@@ -405,6 +413,8 @@ extension AppUnavailableReason {
       return "Tree hash matches a previous session's snapshot — driver may be returning cached content. Try POST /session/renew-activation."
     case .driverDisconnected:
       return "XCUITest driver query failed — try `smix runner cycle` to restart the runner."
+    case .notRunning:
+      return "The app is not running — it was terminated, or reinstalled out from under the runner. Launch it again (`smix sim launch <device> <bundle-id>`, or `smix runner cycle` to rebind), then retry. If nothing terminated it deliberately, it exited on its own: look in ~/Library/Logs/DiagnosticReports/ on the host for a recent .ips."
     case .unknown:
       return "Tree probe failed for an uncategorized reason — inspect the runner log."
     }

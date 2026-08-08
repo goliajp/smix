@@ -88,6 +88,22 @@ OUT="$(run_hook "$SKEW:/usr/bin:/bin")"
 check "skew names the installed version" "1.0.27" "$OUT"
 check "skew names the expected version" "2.0.0" "$OUT"
 check "skew says what to do" "update" "$OUT"
+# Which side is behind decides whether the session is degraded at all,
+# so the message has to name the direction rather than leave the reader
+# to guess. Here the installed pair is older than the plugin.
+check "skew names the failing direction" "may name a command or tool" "$OUT"
+check "skew says how to update smix" "@goliapkg/smix-cli" "$OUT"
+
+# The other direction: smix ahead of the plugin, which breaks nothing.
+# Reporting it as if it might is how a reader ends up chasing a fault
+# that is not there.
+AHEAD="$WORK/bin-ahead"
+fake_bin "$AHEAD" smix "smix 9.9.9"
+fake_bin "$AHEAD" smix-mcp "smix-mcp 9.9.9"
+OUT="$(run_hook "$AHEAD:/usr/bin:/bin")"
+check "a newer smix is said to be harmless" "Nothing here will fail" "$OUT"
+check "and names how to update the plugin" "claude plugin update smix" "$OUT"
+check "and says a reload is not enough" "restart" "$OUT"
 
 # 5. The real binaries, because the fakes above encode an assumption.
 #

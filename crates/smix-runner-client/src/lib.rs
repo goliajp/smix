@@ -95,7 +95,7 @@ pub enum RunnerTransportError {
         /// string values are the kebab-case identifiers in
         /// `AppUnavailableReason`: `crashed-during-init`,
         /// `alive-but-tree-empty`, `alive-but-tree-stale`,
-        /// `driver-disconnected`, `unknown`.
+        /// `driver-disconnected`, `not-running`, `unknown`.
         category: Option<String>,
         /// Actionable text steering downstream tooling. `None` when
         /// the runner is too old to emit it.
@@ -326,13 +326,9 @@ fn classify_error_body(endpoint: &str, status: u16, body: &str) -> RunnerTranspo
         // anything else falls through to the legacy `reason` slot.
         let parsed_reason = parsed.as_ref().and_then(|p| p.reason.clone());
         let (category, legacy_reason) = match parsed_reason.as_deref() {
-            Some(
-                "crashed-during-init"
-                | "alive-but-tree-empty"
-                | "alive-but-tree-stale"
-                | "driver-disconnected"
-                | "unknown",
-            ) => (parsed_reason.clone(), parsed_reason),
+            Some(r) if KNOWN_UNAVAILABLE_CATEGORIES.contains(&r) => {
+                (parsed_reason.clone(), parsed_reason)
+            }
             _ => (None, parsed_reason),
         };
         return RunnerTransportError::AppUnavailable {
@@ -1972,5 +1968,75 @@ mod record_actions_tests {
     fn stop_record_actions_envelope_defaults_empty() {
         let env: RecordStopEnvelope = serde_json::from_str("{}").unwrap();
         assert!(env.events.is_empty());
+    }
+}
+
+/// The categories this client recognises, which must be the ones the
+/// runner emits.
+///
+/// A category not on this list falls through to the legacy free-form
+/// slot and loses its `category`, so adding one to the Swift enum and
+/// not here silently downgrades it. The test below reads the enum and
+/// checks, because a hand-kept copy of somebody else's list is a copy
+/// that goes stale without saying so.
+pub const KNOWN_UNAVAILABLE_CATEGORIES: &[&str] = &[
+    "crashed-during-init",
+    "alive-but-tree-empty",
+    "alive-but-tree-stale",
+    "driver-disconnected",
+    "not-running",
+    "unknown",
+];
+
+#[cfg(test)]
+mod unavailable_category_tests {
+    use super::KNOWN_UNAVAILABLE_CATEGORIES;
+
+    /// The list this client matches on must be the runner's list.
+    ///
+    /// A category the runner emits and this crate does not know falls
+    /// through to the legacy free-form slot: the caller gets a `reason`
+    /// and no `category`, and every consumer keyed on `category` treats
+    /// a categorized failure as uncategorized. Nothing fails loudly —
+    /// which is why this reads the enum rather than trusting that
+    /// whoever adds one remembers to come here.
+    #[test]
+    fn every_reason_the_runner_emits_is_one_this_client_knows() {
+        let swift = include_str!("../../../swift-bridge/Sources/SmixRunnerCore/TreeRoute.swift");
+        let decl = swift
+            .split_once("public enum AppUnavailableReason")
+            .expect("the enum this list mirrors")
+            .1;
+        let body = &decl[..decl.find("\n}").expect("the enum's end")];
+
+        let mut emitted: Vec<&str> = Vec::new();
+        for line in body.lines() {
+            let Some(rest) = line.trim().strip_prefix("case ") else {
+                continue;
+            };
+            let Some((_, raw)) = rest.split_once('"') else {
+                continue;
+            };
+            emitted.push(raw.split('"').next().expect("a closed string literal"));
+        }
+        assert!(
+            emitted.len() >= 5,
+            "parsed {} cases out of the enum — the parser broke, and a parser \
+             that finds nothing agrees with any list at all: {emitted:?}",
+            emitted.len()
+        );
+        for case in &emitted {
+            assert!(
+                KNOWN_UNAVAILABLE_CATEGORIES.contains(case),
+                "the runner emits `{case}` and this client does not know it, \
+                 so it would arrive with no category at all"
+            );
+        }
+        for known in KNOWN_UNAVAILABLE_CATEGORIES {
+            assert!(
+                emitted.contains(known),
+                "this client expects `{known}` and the runner no longer emits it"
+            );
+        }
     }
 }
