@@ -94,12 +94,11 @@ pub const SELECTOR_KEYS: &[&str] = &[
 /// matched, as opposed to a modifier narrowing it.
 ///
 /// Nothing enforces "one of these per map" yet, and two of them is a
-/// live defect rather than a rule: `{ id: X, text: Y }` is resolved by
-/// whichever key the parser tests first — `id` in `parser.rs`'s tap
-/// path, `text` in `visible_to_selector` — so the same two lines mean
-/// different things at different verbs and neither says so. Six blocks
-/// in the guides are written that way and read as a conjunction, which
-/// is what maestro's selectors are and what smix owes them.
+/// live defect rather than a rule: `{ id: X, text: Y }` parses to
+/// `Text { Y }` and the `id` is dropped, so it matches any element
+/// reading Y. Six blocks in the guides are written that way and read as
+/// a conjunction, which is what maestro's selectors are and what smix
+/// owes them.
 ///
 /// This list names the pieces that fix needs. `role` is absent on
 /// purpose: `role: button` + `name: "OK"` is one form spelled with two

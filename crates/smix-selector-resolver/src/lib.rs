@@ -258,6 +258,17 @@ impl ResolverContext {
                 return false;
             }
         }
+        // The conjunction's sub-selectors are matched against the same
+        // node, so their patterns need compiling like any other. Left
+        // out of the slots above only because those are `Option<Box<_>>`
+        // and this is a list; a sub-selector whose pattern never reached
+        // the cache resolves to nothing, which reads as "no element is
+        // both" rather than as a cache miss.
+        for sub in &m.and {
+            if !Self::compile_selector(sub, out) {
+                return false;
+            }
+        }
         true
     }
 
@@ -454,6 +465,30 @@ where
 }
 
 fn matches_base(node: &A11yNode, selector: &Selector, ctx: &ResolverContext) -> bool {
+    if !matches_conjunction(node, selector, ctx) {
+        return false;
+    }
+    match_base_form(node, selector, ctx)
+}
+
+/// The `and` constraints: sub-selectors the candidate itself must also
+/// satisfy.
+///
+/// Checked against the same node rather than a neighbour, which is what
+/// separates this from the spatial modifiers and from `ancestor`. Empty
+/// for every selector naming one thing, so the common path pays a slice
+/// check.
+///
+/// Without this the constraint is parsed, carried, and ignored — the
+/// same wrong answer as dropping it, with a longer paper trail.
+fn matches_conjunction(node: &A11yNode, selector: &Selector, ctx: &ResolverContext) -> bool {
+    let Some(m) = selector.modifiers() else {
+        return true;
+    };
+    m.and.iter().all(|sub| match_base_form(node, sub, ctx))
+}
+
+fn match_base_form(node: &A11yNode, selector: &Selector, ctx: &ResolverContext) -> bool {
     match selector {
         // Anchor-only base: every node is a candidate.
         Selector::Anchor { .. } => true,

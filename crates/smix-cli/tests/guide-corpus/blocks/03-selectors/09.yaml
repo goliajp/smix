@@ -1,7 +1,5 @@
 - tapOn:
-    ocrText: "Done"
-
-- tapOn:
-    ocrText: "Confirm"
-    locales: ["en", "ja"]         # optional recognition language list
-    recognition_level: accurate   # iOS Vision (fast | accurate); ignored on Android
+    localizedText:
+      en: "Submit"
+      ja: "送信"
+      es: "Enviar"

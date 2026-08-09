@@ -559,6 +559,35 @@ The CLI's form is `field:value`, one colon, no spaces — `id=` is not
 accepted, and the error says so with the right form in it. Every field
 name is the same across all three; only the punctuation differs.
 
+## Naming two things at once
+
+A selector map may carry more than one base key. It means **and** — the
+one element that satisfies both:
+
+```yaml
+# the element whose id is home-counter-label AND whose text is "1"
+- assertVisible:
+    id: "home-counter-label"
+    text: "1"
+```
+
+The more specific key becomes the form (`id` > `label` > `text`, the
+same order as the specificity list above); the rest narrow it. Any verb
+that takes a selector reads it the same way.
+
+**What this is not.** The spatial keys (`near`, `below`, `inside`, …)
+constrain a candidate by *another* node's geometry, and `ancestor`
+constrains it by its parent chain. This constrains the candidate
+itself.
+
+`role` + `name` is one form spelled with two keys, not a conjunction —
+`name` has only ever been role's optional qualifier.
+
+> Before 3.0 the second key was read by nobody: `{ id: X, text: Y }`
+> parsed to `Text { Y }` and the id was dropped, so it matched any
+> element reading Y. The form was already written in these guides, and
+> in flows; what it meant is what it says now.
+
 ## The 12 selector forms
 
 ### 1. Id (preferred, stable)

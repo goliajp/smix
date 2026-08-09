@@ -1,3 +1,7 @@
-- inputText: "hello"      # the scalar form types into the focused field, appending
+- tapOn:
+    role: button
+    name: "OK"     # optional name pattern (text or regex)
 
-- pressKey: ENTER     # often used after focused: true to submit
+- assertVisible:
+    role: heading
+    name: "Welcome"

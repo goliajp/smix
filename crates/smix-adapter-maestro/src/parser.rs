@@ -507,6 +507,77 @@ pub fn text_to_pattern(s: &str) -> Pattern {
 /// not use, so a documented `below:` parsed cleanly and resolved as if
 /// absent — widening the match instead of narrowing it, which cannot
 /// fail loudly. One reader, used by both paths.
+/// The base selector keys, most specific first.
+///
+/// This order is the guides' own specificity doctrine — an id survives
+/// copy edits and translation, a label survives copy edits, text
+/// survives neither — and it decides which key becomes the base form
+/// when a map names more than one.
+const BASE_KEYS_BY_SPECIFICITY: &[&str] = &["id", "label", "text"];
+
+/// Fold every base key that is *not* the chosen base into
+/// `modifiers.and`, so a map naming two things matches the one element
+/// that is both.
+///
+/// Before this, the second key was read by nobody: both parse sites
+/// test `text` first and return on the first hit, so
+/// `{ id: X, text: Y }` became `Text { Y }` and the id vanished — the
+/// selector matched any element reading Y. Six blocks in the guides
+/// are written that way, `assertVisible: { id: "counter", text: "1" }`
+/// among them, and have been asserting "something on screen reads 1".
+///
+/// Only the keys this understands are folded. `role`, `point`,
+/// `anchored`, `fallback` and the rest keep their existing single-form
+/// handling: `role` + `name` is one form spelled with two keys, and the
+/// others are not things an element is *also* — they are how it is
+/// found.
+fn fold_secondary_bases(
+    map: &serde_norway::Mapping,
+    chosen: &str,
+    field: &str,
+    modifiers: &mut Modifiers,
+) -> Result<(), ParseError> {
+    for key in BASE_KEYS_BY_SPECIFICITY {
+        if *key == chosen {
+            continue;
+        }
+        let Some(raw) = map.get(Value::String((*key).into())) else {
+            continue;
+        };
+        let sub = match *key {
+            "id" => raw.as_str().map(|id| Selector::Id {
+                id: id.to_string(),
+                modifiers: Modifiers::default(),
+            }),
+            "label" => raw.as_str().map(|l| Selector::Label {
+                label: l.to_string(),
+                modifiers: Modifiers::default(),
+            }),
+            "text" => match text_pattern_from(raw, &format!("{field}.{key}")) {
+                Some(pattern) => Some(Selector::Text {
+                    text: pattern?,
+                    modifiers: Modifiers::default(),
+                }),
+                None => None,
+            },
+            _ => None,
+        };
+        if let Some(sub) = sub {
+            modifiers.and.push(sub);
+        }
+    }
+    Ok(())
+}
+
+/// Which base key a map should be built from: the most specific one it
+/// carries, or `None` when it carries none of them.
+fn chosen_base<'a>(map: &serde_norway::Mapping) -> Option<&'a str> {
+    BASE_KEYS_BY_SPECIFICITY
+        .iter()
+        .copied()
+        .find(|k| map.contains_key(Value::String((*k).into())))
+}
+
 fn modifiers_from(map: &serde_norway::Mapping, field: &str) -> Result<Modifiers, ParseError> {
     let anchor = |key: &str| -> Result<Option<Box<Selector>>, ParseError> {
         match map.get(Value::String(key.into())) {
@@ -541,6 +612,7 @@ fn modifiers_from(map: &serde_norway::Mapping, field: &str) -> Result<Modifiers,
         nth,
         first: flag("first"),
         last: flag("last"),
+        and: Vec::new(),
     })
 }
 
@@ -643,7 +715,33 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
         }
         Value::Mapping(map) => {
             reject_unknown_selector_keys(map, "selector")?;
-            let modifiers = modifiers_from(map, "selector")?;
+            let mut modifiers = modifiers_from(map, "selector")?;
+            // A map naming two base keys is a conjunction. The base is
+            // the most specific one; the rest ride along as constraints
+            // on the same node. Done before the chain below so the
+            // chain's own order stops deciding which half survives.
+            if let Some(base) = chosen_base(map) {
+                fold_secondary_bases(map, base, "selector", &mut modifiers)?;
+                if base == "id"
+                    && let Some(id) = map.get(Value::String("id".into())).and_then(Value::as_str)
+                {
+                    return Ok(Selector::Id {
+                        id: id.to_string(),
+                        modifiers,
+                    });
+                }
+                if base == "label"
+                    && let Some(l) = map
+                        .get(Value::String("label".into()))
+                        .and_then(Value::as_str)
+                {
+                    return Ok(Selector::Label {
+                        label: l.to_string(),
+                        modifiers,
+                    });
+                }
+            }
+            let modifiers = modifiers;
             if let Some(raw) = map.get(Value::String("text".into()))
                 && let Some(pattern) = text_pattern_from(raw, "selector.text")
             {
@@ -770,7 +868,27 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
                 return Ok(Step::TapAtPoint { nx, ny });
             }
 
-            let modifiers = modifiers_from(map, "tapOn")?;
+            let mut modifiers = modifiers_from(map, "tapOn")?;
+            // Same rule as `visible_to_selector`: the most specific
+            // base key wins and the others become constraints on the
+            // same node. Both sites call the one function, so the
+            // meaning of a two-key map cannot drift between verbs.
+            if let Some(base) = chosen_base(map) {
+                fold_secondary_bases(map, base, "tapOn", &mut modifiers)?;
+                if base == "id"
+                    && let Some(id) = map.get(Value::String("id".into())).and_then(Value::as_str)
+                {
+                    return Ok(Step::TapOn {
+                        selector: Selector::Id {
+                            id: id.to_string(),
+                            modifiers,
+                        },
+                        optional,
+                        dispatch,
+                    });
+                }
+            }
+            let modifiers = modifiers;
 
             if let Some(raw) = map.get(Value::String("text".into()))
                 && let Some(pattern) = text_pattern_from(raw, "tapOn.text")

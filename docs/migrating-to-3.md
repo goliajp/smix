@@ -1,11 +1,11 @@
 # Migrating to smix 3.0
 
-Two things in 3.0 change what code you already have does. Everything
-else is additive, and this page is only about the two.
+Three things in 3.0 change what code you already have does. Everything
+else is additive, and this page is only about those three.
 
 Read it if you have flows, scripts, or an SDK integration written
-against 2.x. If you drive smix by hand, `fill` behaves the way its name
-always claimed and there is nothing to do.
+against 2.x. If you drive smix by hand, all three make smix do what it
+already said it did, and there is nothing to undo.
 
 ---
 
@@ -77,7 +77,42 @@ did before, so the field is additive on the wire.
 
 ---
 
-## 2. `describe` and `tree` leave out the keyboard's keys
+## 2. A selector naming two things means both
+
+**Before**: `{ id: X, text: Y }` parsed to `Text { Y }` and the id was
+dropped. It matched **any** element reading Y.
+
+**Now**: it matches the one element that is both — the id decides which
+element, the text narrows it.
+
+```yaml
+# examples/hello.yaml, unchanged, and now asserting what it says
+- assertVisible:
+    id: "home-counter-label"
+    text: "1"
+```
+
+The form was already written this way in these guides and in flows;
+what changed is that it means it. `id` > `label` > `text` decides which
+key becomes the form, and any verb taking a selector reads it alike.
+
+### What to check
+
+- **An assertion that passed because *something else* on screen carried
+  the text.** It fails now, and it was never checking what it looked
+  like it was checking. This is the change most likely to turn a green
+  flow red, and the red is the honest answer.
+- **`{ id, text }` where the text is a stale copy.** A label that was
+  edited without the flow being updated used to be ignored; now it is
+  part of the match.
+- **`role` + `name` is unaffected** — one form spelled with two keys,
+  not a conjunction.
+
+To go back to the looser check, drop the key you did not mean:
+`{ text: "1" }` asserts something reads 1, `{ id: "counter" }` asserts
+the counter is there.
+
+## 3. `describe` and `tree` leave out the keyboard's keys
 
 **Before**: every key of the software keyboard appeared as its own
 element — a summary per letter, plus `Next keyboard`, `Dictate`, shift
