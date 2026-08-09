@@ -146,6 +146,11 @@ python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&
 # than the platform's own app; it does not ask whether they pass.
 # A route that drives the app and does not read `App-Bundle-Id` uses
 # whichever app the runner booted with, in silence. Three did.
+# A gate any bystander process can turn red judges nothing.
+log "gate port scan"
+python3 "$ROOT/scripts/dev/gate-port-scan.py" > /tmp/smix-ship-gate-port.log 2>&1 \
+  || fail "gate port scan FAILED — see /tmp/smix-ship-gate-port.log"
+
 log "route context scan"
 python3 "$ROOT/scripts/dev/route-context-scan.py" > /tmp/smix-ship-route-context.log 2>&1 \
   || fail "route context scan FAILED — see /tmp/smix-ship-route-context.log"

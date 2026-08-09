@@ -7,6 +7,9 @@ set -euo pipefail
 SERIAL="${1:-emulator-5554}"
 PORT="${SMIX_ANDROID_PORT:-28080}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$ROOT/scripts/lib/gate-port.sh"
 SMIX="$ROOT/target/release/smix"
 R="http://localhost:$PORT"
 

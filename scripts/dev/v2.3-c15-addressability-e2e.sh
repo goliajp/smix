@@ -29,6 +29,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$ROOT/scripts/lib/gate-port.sh"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 WORK="$(mktemp -d)"
 OUT="$(mktemp)"

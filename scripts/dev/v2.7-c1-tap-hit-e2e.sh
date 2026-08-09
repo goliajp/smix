@@ -19,6 +19,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$ROOT/scripts/lib/gate-port.sh"
 FLOW="scripts/release/stress-corpus/nav-general-and-back.yaml"
 BUNDLE="com.apple.Preferences"
 

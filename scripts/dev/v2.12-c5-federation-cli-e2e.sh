@@ -13,11 +13,14 @@
 set -euo pipefail
 
 HOST="${SMIX_FED_NODE_HOST:-mini}"
-STUDIO_PORT="${SMIX_FED_STUDIO_PORT:-22097}"
 STUDIO_SIM="${SMIX_FED_STUDIO_SIM:-sim-smix-02}"
 MINI_SIM="${SMIX_FED_MINI_SIM:-sim-simx-001}"
 REPO="workspace/goliajp/smix"   # remote, relative to $HOME
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$ROOT/scripts/lib/gate-port.sh"
+STUDIO_PORT="${SMIX_FED_STUDIO_PORT:-$SMIX_RUNNER_PORT}"
 FLOW_A="scripts/release/stress-corpus/launch-and-capture.yaml"
 FLOW_B="scripts/release/stress-corpus/screenshot-twice.yaml"
 ARTIFACT_DIR=".smix/fed-artifacts"

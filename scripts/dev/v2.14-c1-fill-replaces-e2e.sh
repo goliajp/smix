@@ -25,7 +25,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 UDID="${SMIX_FILL_E2E_UDID:-}"
-PORT="${SMIX_FILL_E2E_PORT:-22101}"
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$ROOT/scripts/lib/gate-port.sh"
+PORT="${SMIX_FILL_E2E_PORT:-$SMIX_RUNNER_PORT}"
 # Read from the build script rather than repeated here: a bundle id
 # that drifts makes the runner fail to attach, and the failure it
 # produces ("has not loaded accessibility") does not name the cause.

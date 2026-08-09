@@ -18,6 +18,9 @@
 
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$REPO_ROOT/scripts/lib/gate-port.sh"
 SELECT="$REPO_ROOT/scripts/release/stress-select.py"
 
 # aggregate "flow|ok|ms" ... -> JSON array on stdout; returns 1 if any
