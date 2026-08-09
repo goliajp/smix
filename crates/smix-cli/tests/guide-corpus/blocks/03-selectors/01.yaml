@@ -1,2 +1,4 @@
-- tapOn:
-    id: "home-increment-btn"
+# the element whose id is home-counter-label AND whose text is "1"
+- assertVisible:
+    id: "home-counter-label"
+    text: "1"

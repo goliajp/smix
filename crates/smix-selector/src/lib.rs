@@ -255,6 +255,59 @@ pub struct Modifiers {
     /// Pick the last match (`true`) — overridden by `nth` if both set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last: Option<bool>,
+    /// Sub-selectors the candidate **itself** must also match.
+    ///
+    /// This is the conjunction: `{ id: X, text: Y }` is `Id { id: X }`
+    /// with `Y` here, and means the one element that is both. Distinct
+    /// from the spatial keys, which constrain a candidate by *another*
+    /// node's geometry, and from `ancestor`, which constrains it by its
+    /// parent chain — those ask about neighbours, this asks about the
+    /// candidate.
+    ///
+    /// It exists because the two lines were already being written.
+    /// Maestro's selectors are conjunctions, six blocks in the guides
+    /// are written as one, and the parser resolved them by testing keys
+    /// in whichever order each call site used — `id` first in the tap
+    /// path, `text` first in `visible_to_selector` — so the same map
+    /// meant different things at different verbs, silently.
+    ///
+    /// Empty for every selector that names one thing, which is almost
+    /// all of them; it serializes away entirely in that case, so the
+    /// wire and the SDKs are unchanged by its arrival.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub and: Vec<Selector>,
+}
+
+impl Selector {
+    /// The modifier set this form carries, when it carries one.
+    ///
+    /// `Point` and `Fallback` do not: a coordinate has nothing to
+    /// narrow, and a fallback chain's elements carry their own.
+    ///
+    /// Written because reading `and` needed the modifiers of an
+    /// arbitrary selector and every existing reader had its own match
+    /// over the enum — a shape where a form added later is silently
+    /// skipped by whichever reader nobody updated.
+    #[must_use]
+    pub fn modifiers(&self) -> Option<&Modifiers> {
+        match self {
+            Selector::Text { modifiers, .. }
+            | Selector::Id { modifiers, .. }
+            | Selector::Label { modifiers, .. }
+            | Selector::Role { modifiers, .. }
+            | Selector::LocalizedText { modifiers, .. }
+            | Selector::OcrText { modifiers, .. } => Some(modifiers),
+            // `Anchor` stacks only index modifiers, `Focused` stacks
+            // nothing, and `Point` / `Fallback` / `AnchorRelative` have
+            // no `Modifiers` field at all. Listed rather than caught by
+            // a wildcard so a form added later has to be decided about.
+            Selector::Anchor { .. }
+            | Selector::Focused { .. }
+            | Selector::AnchorRelative { .. }
+            | Selector::Point { .. }
+            | Selector::Fallback { .. } => None,
+        }
+    }
 }
 
 /// Anchor base form's spatial keys. Identical shape to the spatial half

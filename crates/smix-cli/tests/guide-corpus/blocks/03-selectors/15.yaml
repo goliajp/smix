@@ -1,4 +1,11 @@
 - tapOn:
-    text: "Edit"
-    inside: "modal"
-    nth: 1            # 2nd "Edit" within modal subtree
+    text: "Item.*"
+    nth: 2          # 0-indexed: 3rd match
+
+- tapOn:
+    text: "Card.*"
+    first: true     # equivalent to nth: 0
+
+- tapOn:
+    text: "Page.*"
+    last: true      # last in document order

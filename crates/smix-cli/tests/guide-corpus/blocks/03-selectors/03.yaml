@@ -1,2 +1,12 @@
+# Literal
 - tapOn:
-    label: "Settings"
+    text: "Submit"
+
+# Regex — say so. A plain string is matched literally unless it
+# contains `|`, which is the one character that promotes it.
+- tapOn:
+    text: { regex: "Row #[0-9]+" }
+
+# Common pattern: anchored ^...$
+- tapOn:
+    text: { regex: "^Help$" }   # exclude "Help Center" etc
