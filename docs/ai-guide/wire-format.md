@@ -75,8 +75,23 @@ Response headers (metadata only — body shape unchanged; all additive):
 
 ### `POST /find`
 
-Body: `{ selector: Selector, include?: IncludeScope, requireOnScreen?: bool }`
-Response: `{ found: bool, exists: bool }` (both fields present; consumers may OR-merge for backwards compatibility).
+Body: `{ selector: { text: string }, requireOnScreen?: bool }`
+
+**Text only.** This is the fast path for a simple text lookup; the
+runner decodes `selector.text` and nothing else, and refuses any other
+selector with `400 bad_request` / `missingText`. Send id, label, role or
+any compound selector to `POST /tree` and match there — that is what the
+first-party SDKs do. `include` is not read here either.
+
+Response: `{ ok: true, found: bool }`. On `found:false` the runner may
+add `diagnostics: { appState, candidates, rebound }` — advisory only,
+and absent on the happy path so a client parsing the two-field shape
+never meets a new field when the query worked.
+
+`exists` is a **historical alias that no current runner emits**. The
+first-party client still accepts it on input for old runners; do not
+read it from a response, and do not OR-merge the two — a response has
+`found` and only `found`.
 
 `requireOnScreen: true` (v1.0.27) — `found` additionally requires the LIVE element frame to intersect the app frame. Snapshot frames drift on iOS 26.5 + RN Fabric for below-the-fold elements; the live query re-resolves current layout. The driver's visibility-semantic paths (`wait_for` / `find` / scroll probes) use this so `extendedWaitUntil` / `scrollUntilVisible` / `tapOn` agree on "visible". Deliberately checks frame∩viewport rather than `isHittable` — hittability is false under floating overlays, which are genuinely visible and assertable. `isHittable` is the only z-order-aware signal XCUITest offers, and that false-under-overlay behaviour is exactly why it stays rejected here.
 
