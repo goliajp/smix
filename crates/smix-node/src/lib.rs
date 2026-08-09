@@ -220,26 +220,11 @@ fn parse_selector(selector_json: &str) -> napi::Result<Selector> {
         .map_err(|e| napi::Error::from_reason(format!("invalid selector JSON: {e}")))
 }
 
-fn modifiers_has_index(m: &smix_selector::Modifiers) -> bool {
-    m.nth.is_some() || m.first.is_some() || m.last.is_some()
-}
-
 /// True when the selector carries an index modifier (first/last/nth), so a
 /// single result (index pick) is wanted rather than every match. Mirrors
 /// `smix-ffi::has_index_modifier`.
 fn has_index_modifier(selector: &Selector) -> bool {
-    use smix_selector::Selector as S;
-    match selector {
-        S::Text { modifiers, .. }
-        | S::Id { modifiers, .. }
-        | S::Label { modifiers, .. }
-        | S::Role { modifiers, .. }
-        | S::LocalizedText { modifiers, .. } => modifiers_has_index(modifiers),
-        S::Anchor { index, .. } => {
-            index.nth.is_some() || index.first.is_some() || index.last.is_some()
-        }
-        _ => false,
-    }
+    selector.has_index_modifier()
 }
 
 /// Resolve a selector against a tree and return the matched identifiers.

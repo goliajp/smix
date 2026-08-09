@@ -198,15 +198,7 @@ fn emit_swipe(d: SwipeDirection) -> &'static str {
 }
 
 fn is_empty_modifiers(m: &Modifiers) -> bool {
-    m.near.is_none()
-        && m.below.is_none()
-        && m.above.is_none()
-        && m.left_of.is_none()
-        && m.right_of.is_none()
-        && m.inside.is_none()
-        && m.nth.is_none()
-        && m.first.is_none()
-        && m.last.is_none()
+    m.is_empty()
 }
 
 /// Render a Rust string literal: wrap in `"..."` and escape `\` + `"`.

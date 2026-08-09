@@ -216,16 +216,7 @@ fn permission_action(action: crate::MaestroPermissionAction) -> &'static str {
 }
 
 fn is_default_modifiers(m: &Modifiers) -> bool {
-    m.near.is_none()
-        && m.below.is_none()
-        && m.above.is_none()
-        && m.left_of.is_none()
-        && m.right_of.is_none()
-        && m.inside.is_none()
-        && m.ancestor.is_none()
-        && m.nth.is_none()
-        && m.first.is_none()
-        && m.last.is_none()
+    m.is_empty()
 }
 
 /// Selector → maestro yaml node the parser's selector arms read back.

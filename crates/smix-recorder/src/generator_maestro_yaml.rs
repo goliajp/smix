@@ -244,15 +244,7 @@ fn serialize_selector(selector: &Selector) -> serde_norway::Value {
 }
 
 fn is_empty_modifiers(m: &Modifiers) -> bool {
-    m.near.is_none()
-        && m.below.is_none()
-        && m.above.is_none()
-        && m.left_of.is_none()
-        && m.right_of.is_none()
-        && m.inside.is_none()
-        && m.nth.is_none()
-        && m.first.is_none()
-        && m.last.is_none()
+    m.is_empty()
 }
 
 fn json_to_yaml(v: &serde_json::Value) -> serde_norway::Value {
