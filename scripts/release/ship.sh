@@ -147,6 +147,12 @@ python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&
 # A route that drives the app and does not read `App-Bundle-Id` uses
 # whichever app the runner booted with, in silence. Three did.
 # A gate any bystander process can turn red judges nothing.
+# preflight promises to run what CI runs. Nothing checked, and two
+# steps had no local counterpart at all.
+log "preflight parity scan"
+python3 "$ROOT/scripts/dev/preflight-parity-scan.py" > /tmp/smix-ship-parity.log 2>&1 \
+  || fail "preflight parity scan FAILED — see /tmp/smix-ship-parity.log"
+
 log "gate port scan"
 python3 "$ROOT/scripts/dev/gate-port-scan.py" > /tmp/smix-ship-gate-port.log 2>&1 \
   || fail "gate port scan FAILED — see /tmp/smix-ship-gate-port.log"

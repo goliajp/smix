@@ -86,7 +86,7 @@ final class FindTapScopeForwardTests: XCTestCase {
         snapshotHandler: { _ in nil },
         findHandler: { _, scope, _ in
           await received.set(scope)
-          return false
+          return SmixRunnerServer.FindOutcome(found: false)
         }
       )
     }
