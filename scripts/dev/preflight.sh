@@ -131,7 +131,7 @@ echo "--- android: unit tests + androidTest compile"
 ( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan; do
     python3 "scripts/dev/$gate.py"
 done
 
@@ -167,6 +167,7 @@ bash scripts/release/stress-gate.sh --selftest
 # nobody checks.
 python3 scripts/dev/flake-classify.test.py
 bash scripts/release/corpus-gate.sh --selftest
+bash scripts/dev/v3.0-c3-determinism.sh --selftest
 
 # The Claude Code plugin. Both are device-free and take under a second;
 # what they cover is a plugin that parses perfectly and does nothing —

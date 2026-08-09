@@ -119,6 +119,9 @@ jobs:
         run: cargo build -p smix-cli
       - name: mcp cli parity scan
         run: python3 scripts/dev/mcp-cli-parity-scan.py
+      # Reads the corpus and its excuse list, both in the checkout.
+      - name: known-unstable list scan
+        run: python3 scripts/dev/known-unstable-scan.py
       # guide-claims-scan is deliberately NOT here. It reconciles the
       # guides against `.claude/docs/`' probe ledgers, and that record
       # lives on the development machine only — its own refusal says
@@ -147,6 +150,8 @@ jobs:
         run: python3 scripts/dev/flake-classify.test.py
       - name: corpus-gate verdict self-test
         run: bash scripts/release/corpus-gate.sh --selftest
+      - name: determinism verdict self-test
+        run: bash scripts/dev/v3.0-c3-determinism.sh --selftest
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check
 

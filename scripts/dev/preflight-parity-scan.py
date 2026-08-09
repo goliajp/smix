@@ -43,6 +43,7 @@ LOCAL = {
     "gate port scan": "gate-port-scan",
     "preflight parity scan": "preflight-parity-scan",
     "mcp cli parity scan": "mcp-cli-parity-scan",
+    "known-unstable list scan": "known-unstable-scan",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",
     "android gate scan": "android-gate-scan",
@@ -50,6 +51,7 @@ LOCAL = {
     "stress-gate aggregation self-test": "stress-gate.sh --selftest",
     "flake classifier self-test": "flake-classify.test.py",
     "corpus-gate verdict self-test": "corpus-gate.sh --selftest",
+    "determinism verdict self-test": "v3.0-c3-determinism.sh --selftest",
     "llms.txt freshness": "gen-llms.py --check",
     "smix-server wiring suite": "cargo test",
 }
