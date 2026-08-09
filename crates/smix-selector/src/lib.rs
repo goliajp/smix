@@ -278,6 +278,26 @@ pub struct Modifiers {
     pub and: Vec<Selector>,
 }
 
+impl Modifiers {
+    /// Whether nothing is stacked on the base selector.
+    ///
+    /// Three crates each answered this with their own list of fields to
+    /// check, and all three drifted: every one of them predated `and`
+    /// and so reported a conjoined selector as unmodified, and two also
+    /// predated `inside` and `ancestor`. What that costs depends on the
+    /// caller — the emitters write the short selector form and drop the
+    /// modifiers on the floor; the driver's dispatch sends the selector
+    /// to a runner route that evaluates the base and ignores the rest.
+    /// Both report success.
+    ///
+    /// Derived from `PartialEq` against the default rather than
+    /// enumerated, so a modifier added later is covered on arrival
+    /// instead of when someone remembers three call sites.
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
 impl Selector {
     /// The modifier set this form carries, when it carries one.
     ///
@@ -307,6 +327,27 @@ impl Selector {
             | Selector::Point { .. }
             | Selector::Fallback { .. } => None,
         }
+    }
+
+    /// Whether an index modifier (`nth` / `first` / `last`) picks one
+    /// match out of many, rather than every match being wanted.
+    ///
+    /// Two crates each kept a copy of this, both listing the base forms
+    /// by hand, and both stopped at `LocalizedText` — so `OcrText` with
+    /// an `nth` fell into a `_ => false` arm and was reported as
+    /// carrying no index at all. The resolver honours it, so the answer
+    /// depended on which surface asked: a flow got its indexed pick and
+    /// the node and FFI surfaces got every match.
+    ///
+    /// `Anchor` keeps its own index shape (spatial keys without the
+    /// rest of `Modifiers`), so it is named here rather than reached
+    /// through [`Self::modifiers`].
+    pub fn has_index_modifier(&self) -> bool {
+        if let Selector::Anchor { index, .. } = self {
+            return index.nth.is_some() || index.first.is_some() || index.last.is_some();
+        }
+        self.modifiers()
+            .is_some_and(|m| m.nth.is_some() || m.first.is_some() || m.last.is_some())
     }
 }
 
@@ -818,5 +859,105 @@ pub fn match_text(node: &A11yNode, pattern: &Pattern) -> bool {
             }
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod modifiers_is_empty_tests {
+    use super::*;
+
+    #[test]
+    fn default_is_empty() {
+        assert!(Modifiers::default().is_empty());
+    }
+
+    /// The three call sites this replaced each missed at least `and`,
+    /// and reported a conjoined selector as carrying no modifiers —
+    /// which made two emitters write it out without its conjunction and
+    /// the driver send it to a route that cannot evaluate one.
+    #[test]
+    fn a_conjunction_is_not_empty() {
+        let m = Modifiers {
+            and: vec![Selector::Id {
+                id: "save".into(),
+                modifiers: Modifiers::default(),
+            }],
+            ..Modifiers::default()
+        };
+        assert!(!m.is_empty());
+    }
+
+    /// The two recorder emitters also predated these two.
+    #[test]
+    fn inside_and_ancestor_are_not_empty() {
+        let sel = || {
+            Box::new(Selector::Text {
+                text: Pattern::Text("Row".into()),
+                modifiers: Modifiers::default(),
+            })
+        };
+        assert!(
+            !Modifiers {
+                inside: Some(sel()),
+                ..Modifiers::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !Modifiers {
+                ancestor: Some(sel()),
+                ..Modifiers::default()
+            }
+            .is_empty()
+        );
+    }
+}
+
+#[cfg(test)]
+mod has_index_modifier_tests {
+    use super::*;
+
+    #[test]
+    fn plain_text_has_no_index() {
+        assert!(
+            !Selector::Text {
+                text: Pattern::Text("Save".into()),
+                modifiers: Modifiers::default(),
+            }
+            .has_index_modifier()
+        );
+    }
+
+    #[test]
+    fn nth_on_text_is_an_index() {
+        assert!(
+            Selector::Text {
+                text: Pattern::Text("Save".into()),
+                modifiers: Modifiers {
+                    nth: Some(1),
+                    ..Modifiers::default()
+                },
+            }
+            .has_index_modifier()
+        );
+    }
+
+    /// The variant both hand-written copies stopped short of. The
+    /// resolver reads `OcrText`'s index modifiers, so before this the
+    /// same selector picked one match through a flow and returned every
+    /// match through the node and FFI surfaces.
+    #[test]
+    fn nth_on_ocr_text_is_an_index() {
+        assert!(
+            Selector::OcrText {
+                ocr_text: "Save".into(),
+                locales: Vec::new(),
+                modifiers: Modifiers {
+                    nth: Some(1),
+                    ..Modifiers::default()
+                },
+            }
+            .has_index_modifier()
+        );
     }
 }

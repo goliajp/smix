@@ -1695,16 +1695,15 @@ fn can_use_find_route(selector: &Selector) -> bool {
     if !matches!(text, Pattern::Text(_)) {
         return false;
     }
-    modifiers.near.is_none()
-        && modifiers.below.is_none()
-        && modifiers.above.is_none()
-        && modifiers.left_of.is_none()
-        && modifiers.right_of.is_none()
-        && modifiers.inside.is_none()
-        && modifiers.ancestor.is_none()
-        && modifiers.nth.is_none()
-        && modifiers.first.is_none()
-        && modifiers.last.is_none()
+    // `Modifiers::is_empty`, not a list of fields to exclude, because
+    // that shape opts a new modifier IN by saying nothing — and `and`
+    // (selector conjunction, v3.0) was opted in that way. The runner's
+    // `/find` decodes `selector.text` and discards the rest, so
+    // `text:Submit` conjoined with `id:save` would have matched on the
+    // text alone and answered `found:true` with the conjunction never
+    // evaluated. A wrong answer, delivered calmly. Three emitters held
+    // their own copy of the same list and had drifted further.
+    modifiers.is_empty()
 }
 
 // Silence unused-import warning for symbols re-exported as future hooks.
@@ -1913,5 +1912,50 @@ mod describe_meta_tests {
     #[test]
     fn describe_meta_summary_is_not_produced_here() {
         assert_eq!(smix_screen::ScreenDescription::default().summary, "");
+    }
+}
+
+#[cfg(test)]
+mod find_route_dispatch_tests {
+    use super::*;
+    use smix_selector::{Modifiers, Pattern, Selector};
+
+    fn text(t: &str, modifiers: Modifiers) -> Selector {
+        Selector::Text {
+            text: Pattern::Text(t.into()),
+            modifiers,
+        }
+    }
+
+    #[test]
+    fn plain_text_rides_the_find_route() {
+        assert!(can_use_find_route(&text("Submit", Modifiers::default())));
+    }
+
+    /// The runner's `/find` decodes `selector.text` and discards
+    /// everything else, so a conjunction sent there is not merely
+    /// unsupported — it is silently dropped, and the reply is a
+    /// confident `found:true` for a match on the text alone.
+    ///
+    /// `and` shipped in this cycle and the dispatch predicate, which
+    /// listed the modifiers to exclude, did not mention it. Opting in
+    /// by saying nothing is what that shape of list does.
+    #[test]
+    fn a_conjunction_does_not_ride_the_find_route() {
+        let sel = text(
+            "Submit",
+            Modifiers {
+                and: vec![Selector::Id {
+                    id: "save-button".into(),
+                    modifiers: Modifiers::default(),
+                }],
+                ..Modifiers::default()
+            },
+        );
+        assert!(
+            !can_use_find_route(&sel),
+            "a conjoined selector must resolve host-side; /find would \
+             evaluate the text and ignore the conjunction"
+        );
     }
 }

@@ -66,26 +66,7 @@ pub fn resolve_selector(tree_json: String, selector_json: String) -> Result<Vec<
 /// (`first` / `last` / `nth`). Used to choose between `resolve_selector_all`
 /// (no index) and `resolve_selector` (single result, applies index pick).
 fn has_index_modifier(selector: &Selector) -> bool {
-    use smix_selector::Selector as S;
-    match selector {
-        S::Text { modifiers, .. }
-        | S::Id { modifiers, .. }
-        | S::Label { modifiers, .. }
-        | S::Role { modifiers, .. }
-        | S::LocalizedText { modifiers, .. } => modifiers_has_index(modifiers),
-        S::Anchor { index, .. } => {
-            index.nth.is_some() || index.first.is_some() || index.last.is_some()
-        }
-        // Other variants (Focused / OcrText / AnchorRelative / Point /
-        // etc.) — index modifiers are either N/A or absent from the
-        // fixture surface. Future fixtures touching these can extend
-        // this match.
-        _ => false,
-    }
-}
-
-fn modifiers_has_index(m: &smix_selector::Modifiers) -> bool {
-    m.nth.is_some() || m.first.is_some() || m.last.is_some()
+    selector.has_index_modifier()
 }
 
 /// Count selector matches against a tree. Returns total match count
