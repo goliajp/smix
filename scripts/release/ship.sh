@@ -158,6 +158,14 @@ python3 "$ROOT/scripts/dev/flake-classify.test.py" > /tmp/smix-ship-flake.log 2>
   || fail "flake classifier self-test FAILED — see /tmp/smix-ship-flake.log"
 bash "$ROOT/scripts/release/corpus-gate.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
   || fail "corpus-gate verdict self-test FAILED — see /tmp/smix-ship-flake.log"
+bash "$ROOT/scripts/dev/v3.0-c3-determinism.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
+  || fail "determinism verdict self-test FAILED — see /tmp/smix-ship-flake.log"
+
+# A flow excused from the gate must carry a measured rate and a
+# history, or "known unstable" is just a flow someone got tired of.
+log "known-unstable list scan"
+python3 "$ROOT/scripts/dev/known-unstable-scan.py" > /tmp/smix-ship-known-unstable.log 2>&1 \
+  || fail "known-unstable list scan FAILED — see /tmp/smix-ship-known-unstable.log"
 
 log "mcp cli parity scan"
 python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \

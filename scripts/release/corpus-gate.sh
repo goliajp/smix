@@ -224,6 +224,18 @@ echo "corpus gate: bringing runner up --bundle $SMIX_CORPUS_BUNDLE (auto-syncs s
 
 FAILURES=()
 FLAKY=()
+
+# Flows whose FLAKE is excused, from the list that has to carry a
+# measured rate and a history for each one (known-unstable-scan enforces
+# that). They still RUN and a FAIL still fails the gate — what is
+# excused is "needed a retry", not "did not work". Skipping them instead
+# would stop the data accruing, and then nobody could tell if a fix
+# landed.
+EXCUSED=""
+if [[ -r "$CORPUS_DIR/known-unstable.md" ]]; then
+  EXCUSED="$(sed -n 's/^| `\([a-z0-9-]*\)` |.*/\1/p' "$CORPUS_DIR/known-unstable.md")"
+fi
+EXCUSED_HIT=()
 for yaml in "${YAMLS[@]}"; do
   name="$(basename "$yaml" .yaml)"
   echo "corpus gate: [$name] running..."
@@ -272,8 +284,13 @@ for yaml in "${YAMLS[@]}"; do
   case "$verdict:$rc" in
     PASS:0)  echo "corpus gate: [$name] PASS" ;;
     FLAKE:0)
-      echo "corpus gate: [$name] FLAKE — passed on a retry"
-      FLAKY+=("$name")
+      if printf '%s\n' "$EXCUSED" | grep -qx "$name"; then
+        echo "corpus gate: [$name] FLAKE (known-unstable, excused) — passed on a retry"
+        EXCUSED_HIT+=("$name")
+      else
+        echo "corpus gate: [$name] FLAKE — passed on a retry"
+        FLAKY+=("$name")
+      fi
       ;;
     NORECORD:0)
       # The flow ran, so a record must exist. None means the
@@ -306,6 +323,13 @@ for f in "${FAILURES[@]+"${FAILURES[@]}"}"; do
 done
 for f in "${FLAKY[@]+"${FLAKY[@]}"}"; do
   echo "  - FLAKE $f (log: $LOG_DIR/$f.log)"
+done
+
+# Printed on every run, like the Android gate prints its downgrade: a
+# reduction in what this gate promises should be visible in the output
+# that reports the result, not only in a file someone may read.
+for f in "${EXCUSED_HIT[@]+"${EXCUSED_HIT[@]}"}"; do
+  echo "  - EXCUSED $f (known-unstable; see $CORPUS_DIR/known-unstable.md)"
 done
 
 passed=$(( ${#YAMLS[@]} - ${#FAILURES[@]} - ${#FLAKY[@]} ))
