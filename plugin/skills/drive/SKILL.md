@@ -90,6 +90,13 @@ Two things that look like device problems and are not:
   accessibility stream to settle and then reads regardless, which is why
   it works where `adb shell uiautomator dump` refuses with "could not get
   idle state".
+- **Do not run `uiautomator dump` while the runner is up.** One process
+  owns UiAutomation, so the dump throws `already registered!` — and it
+  leaves `/sdcard/ui.xml` holding the *previous* dump, so a caller that
+  reads the file gets a screen from minutes ago and taps coordinates
+  that moved. Somebody landed in system Settings twice before working
+  that out. Use `smix tree`; if you must dump, stop the runner first
+  (`smix runner down --platform android --device <serial>`).
 
 ## The same thing from a terminal
 
