@@ -162,6 +162,12 @@ python3 scripts/dev/gen-llms.py --check
 python3 scripts/release/stress-select.py --test
 bash scripts/release/stress-gate.sh --selftest
 
+# The corpus gate's verdict — the part with a decision in it. FLAKE is
+# not green, and a rule reachable only by booting a simulator is a rule
+# nobody checks.
+python3 scripts/dev/flake-classify.test.py
+bash scripts/release/corpus-gate.sh --selftest
+
 # The Claude Code plugin. Both are device-free and take under a second;
 # what they cover is a plugin that parses perfectly and does nothing —
 # a manifest pointing at a directory that moved, a hook that is not

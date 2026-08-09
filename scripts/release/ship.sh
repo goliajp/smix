@@ -151,6 +151,14 @@ python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&
 # steps had no local counterpart at all.
 # The plugin adds initiative, not capability. Nothing checked that
 # direction, and two MCP tools had no CLI behind them.
+# The corpus gate's verdict, driven with fabricated records. FLAKE is
+# not green, and that rule is otherwise only reachable by booting a sim.
+log "flake classifier + corpus verdict self-tests"
+python3 "$ROOT/scripts/dev/flake-classify.test.py" > /tmp/smix-ship-flake.log 2>&1 \
+  || fail "flake classifier self-test FAILED — see /tmp/smix-ship-flake.log"
+bash "$ROOT/scripts/release/corpus-gate.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
+  || fail "corpus-gate verdict self-test FAILED — see /tmp/smix-ship-flake.log"
+
 log "mcp cli parity scan"
 python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \
   || fail "mcp cli parity scan FAILED — see /tmp/smix-ship-mcp-parity.log"

@@ -48,6 +48,8 @@ LOCAL = {
     "android gate scan": "android-gate-scan",
     "stress tier selector self-test": "stress-select.py --test",
     "stress-gate aggregation self-test": "stress-gate.sh --selftest",
+    "flake classifier self-test": "flake-classify.test.py",
+    "corpus-gate verdict self-test": "corpus-gate.sh --selftest",
     "llms.txt freshness": "gen-llms.py --check",
     "smix-server wiring suite": "cargo test",
 }

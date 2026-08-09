@@ -141,6 +141,12 @@ jobs:
         run: python3 scripts/release/stress-select.py --test
       - name: stress-gate aggregation self-test
         run: bash scripts/release/stress-gate.sh --selftest
+      # Both device-free: they drive the classifier and the verdict with
+      # fabricated records.
+      - name: flake classifier self-test
+        run: python3 scripts/dev/flake-classify.test.py
+      - name: corpus-gate verdict self-test
+        run: bash scripts/release/corpus-gate.sh --selftest
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check
 
