@@ -249,6 +249,13 @@ enum Cmd {
         /// port already names the runner.
         #[arg(long)]
         device: Option<String>,
+        /// Wait until the element is gone, instead of until it appears.
+        ///
+        /// Mirrors `smix_assert_not_visible`, which the MCP server has
+        /// and the CLI did not — so a flow could wait for a spinner to
+        /// show and not for it to disappear.
+        #[arg(long)]
+        absent: bool,
     },
     /// Type text into the matched field. Equivalent to the flow yaml
     /// `inputText:` verb. Selector shorthand same as `smix tap`.
@@ -274,6 +281,26 @@ enum Cmd {
     PressKey {
         /// KeyName shorthand (see help text).
         key: String,
+        #[arg(long)]
+        port: Option<u16>,
+        /// Device UDID, or an alias / deviceName in the workspace's
+        /// `.smix` registry. Used here only to find the runner port
+        /// that device is registered on — it does not change which
+        /// simulator or app the call is dispatched to, because the
+        /// port already names the runner.
+        #[arg(long)]
+        device: Option<String>,
+    },
+    /// Swipe once through the content. `direction` names what you
+    /// want to see — `down` reveals what is below — not which way the
+    /// finger moves. Direction: `up` / `down` / `left` / `right`.
+    ///
+    /// Mirrors `smix_swipe`, which the MCP server has had since it
+    /// existed while the CLI had nothing. Use `scroll` when you want to
+    /// stop at an element; this is the one-gesture form.
+    Swipe {
+        /// `up` / `down` / `left` / `right`.
+        direction: String,
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -2357,9 +2384,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             timeout,
             port,
             device,
+            absent,
         } => {
             let p = runner_dial_port(port, device.as_deref());
-            act::cmd_wait_for(selector, timeout, p)
+            act::cmd_wait_for(selector, timeout, p, absent)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
@@ -2388,6 +2416,16 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         } => {
             let p = runner_dial_port(port, device.as_deref());
             act::cmd_scroll(selector, direction, p)
+                .await
+                .map_err(|e| CliError::Other(e.to_string()))?;
+        }
+        Cmd::Swipe {
+            direction,
+            port,
+            device,
+        } => {
+            let p = runner_dial_port(port, device.as_deref());
+            act::cmd_swipe(direction, p)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }

@@ -38,6 +38,11 @@ const ROSTER: &[&str] = &[
     "tap_with_mode",
     "tree",
     "wait_for",
+    // The absence half of `wait_for`, added v3.0-C1d. It lived only
+    // in the SDK, so the CLI could wait for an element to appear and
+    // not for one to leave — and `smix_assert_not_visible` had no CLI
+    // counterpart at all.
+    "wait_for_not_visible",
     "webview_eval",
 ];
 
