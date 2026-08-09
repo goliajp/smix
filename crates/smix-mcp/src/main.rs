@@ -177,6 +177,7 @@ impl SmixMcpService {
     #[tool(
         description = "List the simulators available to drive, with their UDID, name and state. Call this first when no device is bound; pass one of the UDIDs to smix_use."
     )]
+    /// CLI: smix sim list
     async fn smix_devices(&self) -> Result<CallToolResult, McpError> {
         let simctl = smix_simctl::SimctlClient::new();
         let devices = simctl
@@ -201,6 +202,7 @@ impl SmixMcpService {
     #[tool(
         description = "Bind this session to a simulator and bring its runner up, booting the device if needed. Everything else drives whatever this last chose. Call it again with another UDID to switch."
     )]
+    /// CLI: smix runner up
     async fn smix_use(
         &self,
         Parameters(params): Parameters<UseParams>,
@@ -305,6 +307,7 @@ impl SmixMcpService {
     #[tool(
         description = "Take the runner down and unbind this session's device. Leaves the simulator booted — shutting down a device someone else may be using is not this tool's call."
     )]
+    /// CLI: smix runner down
     async fn smix_release(&self) -> Result<CallToolResult, McpError> {
         let Some(bound) = self.session.release() else {
             return Ok(CallToolResult::success(vec![Content::text(
@@ -337,6 +340,7 @@ impl SmixMcpService {
     #[tool(
         description = "Get a structured description of the current screen — visible elements + bounds. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix describe
     async fn smix_describe(&self) -> Result<CallToolResult, McpError> {
         let app = self.bound_app().await?;
         let desc = app
@@ -350,6 +354,7 @@ impl SmixMcpService {
     #[tool(
         description = "Get the raw A11yNode tree of the current screen. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix tree
     async fn smix_tree(&self) -> Result<CallToolResult, McpError> {
         let app = self.bound_app().await?;
         let tree = app
@@ -363,6 +368,7 @@ impl SmixMcpService {
     #[tool(
         description = "Check whether an element is on screen, as a plain true/false. Use this to look before you act; use smix_assert_visible when absence should be a failure. An ocrText selector runs an Apple Vision OCR pass. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix find
     async fn smix_find(
         &self,
         Parameters(params): Parameters<SelectorParams>,
@@ -392,6 +398,7 @@ impl SmixMcpService {
     #[tool(
         description = "Tap an element. Name it with exactly one of id / text / label / role / ocrText — prefer id, which survives copy changes and localization. An ocrText selector OCRs the screen and taps the matched text's center. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix tap
     async fn smix_tap(
         &self,
         Parameters(params): Parameters<SelectorParams>,
@@ -447,6 +454,7 @@ impl SmixMcpService {
     #[tool(
         description = "Type text into a field, replacing what it holds. Names the field like smix_tap, except ocrText — an OCR hit is a text frame, not a focusable element. Tap the field first if it is not already focused. Filling the same field twice leaves the second value, not both. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix fill
     async fn smix_fill(
         &self,
         Parameters(params): Parameters<FillParams>,
@@ -480,6 +488,7 @@ impl SmixMcpService {
     #[tool(
         description = "Swipe once through the content. `direction` names what you want to see (down reveals what is below), not which way the finger moves. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix swipe
     async fn smix_swipe(
         &self,
         Parameters(params): Parameters<SwipeParams>,
@@ -498,6 +507,7 @@ impl SmixMcpService {
     #[tool(
         description = "Swipe until an element comes into view, then stop. Use this rather than repeated swipes — it knows when to stop. Not for ocrText — swipe with smix_swipe and check with smix_find between swipes instead. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix scroll
     async fn smix_scroll(
         &self,
         Parameters(params): Parameters<ScrollParams>,
@@ -526,6 +536,7 @@ impl SmixMcpService {
     #[tool(
         description = "Launch an app by bundle id, or bring it to the front if it is running. Opens the runner session the other tools drive through — call this before smix_describe / smix_tap / etc. Requires the SMIX_UDID env var (set it in the MCP server config)."
     )]
+    /// CLI: smix sim launch
     async fn smix_launch_app(
         &self,
         Parameters(params): Parameters<BundleParams>,
@@ -549,6 +560,7 @@ impl SmixMcpService {
     #[tool(
         description = "Terminate an app by bundle id. Already-stopped is a no-op success. Requires the SMIX_UDID env var (set it in the MCP server config)."
     )]
+    /// CLI: smix sim terminate
     async fn smix_stop_app(
         &self,
         Parameters(params): Parameters<BundleParams>,
@@ -577,6 +589,7 @@ impl SmixMcpService {
     #[tool(
         description = "Assert an element is on screen, waiting up to 5s. Fails with the visible elements and near-miss suggestions when it is not — paste that failure back to yourself to see what the screen actually had. An ocrText selector polls Apple Vision OCR on the same 5s budget. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix wait-for
     async fn smix_assert_visible(
         &self,
         Parameters(params): Parameters<SelectorParams>,
@@ -627,6 +640,7 @@ impl SmixMcpService {
     #[tool(
         description = "Assert an element is NOT on screen (single probe, no waiting). An ocrText selector checks with one Apple Vision OCR pass. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix wait-for --absent
     async fn smix_assert_not_visible(
         &self,
         Parameters(params): Parameters<SelectorParams>,
@@ -667,6 +681,7 @@ impl SmixMcpService {
     #[tool(
         description = "Press a named key (Return/Delete/Tab/Space/Escape/arrow keys). Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
+    /// CLI: smix press-key
     async fn smix_press_key(
         &self,
         Parameters(params): Parameters<PressKeyParams>,
@@ -685,6 +700,7 @@ impl SmixMcpService {
     #[tool(
         description = "Capture a base64-PNG screenshot of the current screen. Requires the SMIX_UDID env var (set it in the MCP server config)."
     )]
+    /// CLI: smix sim screenshot
     async fn smix_screenshot(&self) -> Result<CallToolResult, McpError> {
         let app = self.bound_app().await?;
         if app.udid().is_none() {
