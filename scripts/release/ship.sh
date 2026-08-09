@@ -138,6 +138,16 @@ log "route conformance"
 python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&1 \
   || fail "route conformance FAILED — see /tmp/smix-ship-routes.log"
 
+# Twenty corpus flows against one system app is one subject walked
+# twenty ways, and a defect that only shows on an ordinary app was
+# invisible to every device gate at once — which is how a consumer
+# found `/tree` returning only the SystemUI windows while everything
+# here was green. This asks whether the gates below are pointed at more
+# than the platform's own app; it does not ask whether they pass.
+log "gate subject diversity"
+python3 "$ROOT/scripts/dev/gate-subject-diversity.py" > /tmp/smix-ship-subjects.log 2>&1 \
+  || fail "gate subject diversity FAILED — see /tmp/smix-ship-subjects.log"
+
 # --- guide claims + corpus ---------------------------------------------
 # The guides are the release's user-facing half, and this is the last
 # place before they reach anybody. Both of these ran nowhere until

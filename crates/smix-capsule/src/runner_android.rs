@@ -87,6 +87,79 @@ fn newest_source_mtime(dir: &Path) -> Option<std::time::SystemTime> {
     newest
 }
 
+/// Application-window type, as `AccessibilityWindowInfo.TYPE_APPLICATION`
+/// reports it. The launcher owns one on the home screen, so there is
+/// always at least one on a working device.
+const WINDOW_TYPE_APPLICATION: u64 = 1;
+
+/// One GET against the forwarded runner port, response and all.
+fn get_body(port: u16, path: &str) -> Result<String, ()> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let mut s = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_secs(2))
+        .map_err(|_| ())?;
+    s.set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|_| ())?;
+    s.write_all(
+        format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").as_bytes(),
+    )
+    .map_err(|_| ())?;
+    let mut out = String::new();
+    s.read_to_string(&mut out).map_err(|_| ())?;
+    Ok(out)
+}
+
+/// Does the runner's automation see any application window at all?
+///
+/// Read from `/windows`, which is the route that exists to tell "not
+/// attached" from "attached but unreadable" apart. A runner too old to
+/// serve it is not judged — an unknown answer is not a failing one.
+fn automation_sees_an_app(port: u16) -> Result<(), String> {
+    // The crate's own socket read rather than an HTTP client crate:
+    // `read_health_bytes` next door does exactly this, and a dependency
+    // for one GET is a dependency for something already written.
+    //
+    // A runner too old to serve the route, or any transport hiccup,
+    // answers nothing — and an unknown answer is not a failing one.
+    let Ok(body) = get_body(port, "/windows") else {
+        return Ok(());
+    };
+    let Some(start) = body.find('{') else {
+        return Ok(());
+    };
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(&body[start..]) else {
+        return Ok(());
+    };
+    let Some(windows) = doc.get("windows").and_then(|w| w.as_array()) else {
+        return Ok(());
+    };
+    let apps: Vec<&str> = windows
+        .iter()
+        .filter(|w| {
+            w.get("type").and_then(serde_json::Value::as_u64) == Some(WINDOW_TYPE_APPLICATION)
+                && w.get("rootReadable").and_then(serde_json::Value::as_bool) == Some(true)
+        })
+        .filter_map(|w| w.get("package").and_then(serde_json::Value::as_str))
+        .collect();
+    if !apps.is_empty() {
+        return Ok(());
+    }
+    let seen: Vec<&str> = windows
+        .iter()
+        .filter_map(|w| w.get("package").and_then(serde_json::Value::as_str))
+        .collect();
+    Err(format!(
+        "no readable application window is attached — only {}. \
+         Every tree it serves would carry those and nothing else",
+        if seen.is_empty() {
+            "nothing at all".to_string()
+        } else {
+            seen.join(", ")
+        }
+    ))
+}
+
 /// `adb forward` argv mapping a host port onto the runner's fixed
 /// device port.
 fn forward_argv(host_port: u16) -> Vec<String> {
@@ -350,6 +423,30 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
     while std::time::Instant::now() < deadline {
         if health_ok(port) {
+            // `/health` says the HTTP server is alive. It does not say
+            // the automation behind it can see anything, and those come
+            // apart: an instrumentation that crashed on
+            // `getUiAutomationWithRetry` and was restarted answers
+            // /health perfectly while `getWindows()` returns the
+            // SystemUI windows and nothing else. Every tree then looks
+            // like an app with no accessibility nodes — which is how a
+            // consumer spent several rounds driving by pixel, and how
+            // this repository's own Android gate went red on Settings
+            // right after a crashed runner.
+            //
+            // An application window is the thing to check for, because
+            // there is always one: the launcher owns one on the home
+            // screen. Only-SystemUI is not a state to report success on.
+            if let Err(why) = automation_sees_an_app(port) {
+                return Err(format!(
+                    "the runner answers /health on {port} but its automation is \
+                     not usable: {why}\n\
+                     This is what a crashed-and-restarted instrumentation looks \
+                     like — the server is up, `getWindows()` is not. Stop it and \
+                     bring it up again:\n  \
+                     smix runner down --platform android --device {serial}"
+                ));
+            }
             println!("runner up: http://localhost:{port}/health = 200");
             return Ok(());
         }

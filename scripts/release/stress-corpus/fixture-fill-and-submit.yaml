@@ -1,0 +1,8 @@
+appId: jp.golia.smix.fixture
+---
+- launchApp
+- inputText: { id: "fixture-input", text: "first" }
+- inputText: { id: "fixture-input", text: "second" }
+- tapOn: { id: "fixture-submit" }
+- hideKeyboard
+- assertVisible: { text: "second" }

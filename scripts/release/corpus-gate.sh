@@ -129,8 +129,35 @@ else
   exit 3
 fi
 
+# The fixture app, which is what makes this corpus more than one subject.
+#
+# Twenty flows against Settings is one subject walked twenty ways, and a
+# system app is not an ordinary one — preinstalled, stable ids, windows
+# owned by the system. A defect that only shows on an ordinary app was
+# invisible to every device gate here at once, which is how a consumer
+# found `/tree` carrying the SystemUI windows and not their app's while
+# everything in this repository was green.
+#
+# A build failure fails the gate rather than letting the fixture flow go
+# red on "the app is not installed": those are different causes and the
+# second one names the wrong thing.
+echo "corpus gate: building and installing the fixture app"
+if ! bash "$REPO_ROOT/scripts/dev/build-fixture-app.sh" >"$LOG_DIR/fixture-build.log" 2>&1; then
+  echo "error: the fixture app did not build" >&2
+  tail -20 "$LOG_DIR/fixture-build.log" >&2
+  exit 3
+fi
+FIXTURE_APP="$REPO_ROOT/test-fixtures/demo-app/build/SmixFixture.app"
+if ! "$SMIX_BIN" sim install "$SMIX_CORPUS_SIM" "$FIXTURE_APP"      >"$LOG_DIR/fixture-install.log" 2>&1; then
+  echo "error: the fixture app did not install on $SMIX_CORPUS_SIM" >&2
+  tail -20 "$LOG_DIR/fixture-install.log" >&2
+  exit 3
+fi
+
 # iOS `runner up` requires --bundle: the runner latches XCUIApplication to
-# it. The stress corpus drives Preferences (v2.8-C5 shipping form).
+# it. The stress corpus drives Preferences (v2.8-C5 shipping form); a flow
+# naming a different appId rebinds per request through the App-Bundle-Id
+# header, which is how the fixture flow reaches its own app.
 : "${SMIX_CORPUS_BUNDLE:=com.apple.Preferences}"
 echo "corpus gate: bringing runner up --bundle $SMIX_CORPUS_BUNDLE (auto-syncs sources on version drift)"
 "$SMIX_BIN" runner up "$SMIX_CORPUS_SIM" --bundle "$SMIX_CORPUS_BUNDLE" >"$LOG_DIR/runner-up.log" 2>&1 \
