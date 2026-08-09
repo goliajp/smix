@@ -1809,11 +1809,12 @@ final class SmixRunnerUITests: XCTestCase {
         // `expect.toBeVisible()` of content behind a native modal returns
         // the truthful answer instead of a masked false.
         if scope == "all-windows" {
-          return smixGuarded("find-all-windows") { () -> Bool in
+          let hit = smixGuarded("find-all-windows") { () -> Bool in
             firstSeeThroughMatch(app: app, selector: .text(selectorText)) != nil
           } ?? false
+          return SmixRunnerServer.FindOutcome(found: hit)
         }
-        return smixGuarded("find") { () -> Bool in
+        let hit = smixGuarded("find") { () -> Bool in
           let predicate = NSPredicate(
             format: "label == %@ OR identifier == %@",
             selectorText, selectorText
@@ -1837,6 +1838,28 @@ final class SmixRunnerUITests: XCTestCase {
           }
           return true
         } ?? false
+        if hit {
+          return SmixRunnerServer.FindOutcome(found: true)
+        }
+        // The refusal explains itself, and only the refusal: the second
+        // query below is not free, and a match has nothing to explain.
+        //
+        // `candidates` separates "this app exposes no elements to the
+        // query at all" from "it exposes them and none matched" — from
+        // `found:false` alone those look the same, which is how a
+        // cross-app flow could fail every assertion with no way in.
+        let diagnostics = smixGuarded("find-diagnostics") {
+          () -> SmixRunnerServer.FindOutcome in
+          SmixRunnerServer.FindOutcome(
+            found: false,
+            diagnostics: FindRoute.Diagnostics(
+              appState: Int(app.state.rawValue),
+              candidates: Int(app.descendants(matching: .any).count),
+              rebound: SmixRunnerServer.currentContext.bundleId.map { $0 != bundleId } ?? false
+            )
+          )
+        }
+        return diagnostics ?? SmixRunnerServer.FindOutcome(found: false)
       },
       // System popup sense. Popup sensing is a core flat capability, not
       // driver-specific; the handler enumerates SpringBoard alerts /

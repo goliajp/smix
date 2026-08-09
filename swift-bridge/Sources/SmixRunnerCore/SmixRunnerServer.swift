@@ -531,9 +531,26 @@ public actor SmixRunnerServer {
   // on iOS 26.5 + RN Fabric for below-the-fold elements — they report
   // in-viewport coords — so the live query is needed to re-resolve
   // current layout. Exists-only callers pass false.
+  /// What `/find` answered, and — when it answered no — what it saw.
+  ///
+  /// The handler returned a bare `Bool`, so a refusal could not carry
+  /// its own explanation and the one case that needed one (a request
+  /// naming a bundle other than the runner's, where `/tree` returns
+  /// that app's nodes and this returns nothing) had nowhere to put it.
+  public struct FindOutcome: Sendable {
+    public let found: Bool
+    /// Only ever filled on the `false` path: it costs a second query,
+    /// and there is nothing to explain about a match.
+    public let diagnostics: FindRoute.Diagnostics?
+    public init(found: Bool, diagnostics: FindRoute.Diagnostics? = nil) {
+      self.found = found
+      self.diagnostics = diagnostics
+    }
+  }
+
   public typealias FindHandler = @Sendable (
     _ selectorText: String, _ scope: String?, _ requireOnScreen: Bool
-  ) async -> Bool
+  ) async -> FindOutcome
 
   /// XCUI snapshot is constructed inside the UITest target closure
   /// (XCUIApplication.snapshot() is a throwing, blocking API) and returned
@@ -1687,9 +1704,17 @@ public actor SmixRunnerServer {
         catch { return KeyboardRoute.badRequest(reason: "\(error)") }
         let dispatch = InputDispatchMode.parse(
           request.headers[HTTPHeader("Input-Dispatch-Mode")])
-        let outcome = await fillHandler(
-          req.selector.text, req.text, request.query["include"], dispatch, req.clearFirst)
-        return successFor(outcome) ?? KeyboardRoute.notFound(selector: req.selector)
+        // Same reason as /find: typing is done to the target app, and
+        // without the wrapper a cross-app fill typed into whichever app
+        // the runner booted with.
+        return await Self.contextGuardedResponse(
+          request: request,
+          fallback: KeyboardRoute.notFound(selector: req.selector)
+        ) {
+          let outcome = await fillHandler(
+            req.selector.text, req.text, request.query["include"], dispatch, req.clearFirst)
+          return successFor(outcome) ?? KeyboardRoute.notFound(selector: req.selector)
+        }
       }
     }
     if let clearHandler {
@@ -1702,9 +1727,15 @@ public actor SmixRunnerServer {
         do { req = try KeyboardRoute.decodeClear(body) }
         catch let e as KeyboardRoute.DecodeError { return KeyboardRoute.badRequest(reason: "\(e)") }
         catch { return KeyboardRoute.badRequest(reason: "\(error)") }
-        let outcome = await clearHandler(
-          req.selector.text, request.query["include"])
-        return successFor(outcome) ?? KeyboardRoute.notFound(selector: req.selector)
+        // Same reason as /find and /fill.
+        return await Self.contextGuardedResponse(
+          request: request,
+          fallback: KeyboardRoute.notFound(selector: req.selector)
+        ) {
+          let outcome = await clearHandler(
+            req.selector.text, request.query["include"])
+          return successFor(outcome) ?? KeyboardRoute.notFound(selector: req.selector)
+        }
       }
     }
     if let pressKeyHandler {
@@ -1737,9 +1768,21 @@ public actor SmixRunnerServer {
         // Same `?include=` mechanism as GET /tree. nil ⇒ the default
         // `app.descendants(.any)` query (the SDK posts /find with no
         // query).
-        let found = await findHandler(
-          req.selector.text, request.query["include"], req.requireOnScreen)
-        return FindRoute.success(found: found)
+        // Wrapped, because this route operates on the target app and
+        // the `App-Bundle-Id` header is how a request says which one.
+        // It was not, so `currentContext` stayed at its default,
+        // `resolveApp()` always returned the app the runner booted
+        // with, and every cross-app request silently queried the wrong
+        // process — `/tree` honoured the header and this did not, so a
+        // flow could see an element in the tree and fail to find it.
+        return await Self.contextGuardedResponse(
+          request: request,
+          fallback: FindRoute.success(found: false)
+        ) {
+          let outcome = await findHandler(
+            req.selector.text, request.query["include"], req.requireOnScreen)
+          return FindRoute.success(found: outcome.found, diagnostics: outcome.diagnostics)
+        }
       }
     }
 
