@@ -92,6 +92,22 @@ else
     cargo test -j 4 $ARGS
 fi
 
+# The Swift suite, when the Swift sources moved.
+#
+# CI runs it and this did not, so changing a handler's return type in
+# `SmixRunnerServer` and not updating the one test that stubs that
+# handler passed preflight clean and would have failed CI. The header of
+# this file says it runs the checks CI will run; for two steps it was
+# not true.
+#
+# Narrowed by changed files like the crate steps above, and for the same
+# reason — a cold `swift test` is too slow to be a habit — using the
+# same four sources, so an uncommitted edit counts.
+if printf '%s\n' "$CHANGED_DOCS" | grep -q '^swift-bridge/'; then
+    echo "--- swift test"
+    (cd swift-bridge && swift test)
+fi
+
 echo "--- android: unit tests + androidTest compile"
 # Unconditional, unlike the crate steps above. Those narrow by git diff
 # because a whole-workspace clippy is too slow to be a habit; this is a
@@ -115,7 +131,7 @@ echo "--- android: unit tests + androidTest compile"
 ( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan; do
     python3 "scripts/dev/$gate.py"
 done
 

@@ -110,6 +110,9 @@ jobs:
       # Reads only the gate scripts, which are in the checkout.
       - name: gate port scan
         run: python3 scripts/dev/gate-port-scan.py
+      # Reads ci.yml and preflight.sh; both are in the checkout.
+      - name: preflight parity scan
+        run: python3 scripts/dev/preflight-parity-scan.py
       # guide-claims-scan is deliberately NOT here. It reconciles the
       # guides against `.claude/docs/`' probe ledgers, and that record
       # lives on the development machine only — its own refusal says
