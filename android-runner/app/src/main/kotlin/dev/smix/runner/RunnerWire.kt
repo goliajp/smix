@@ -602,12 +602,53 @@ object TreeWire {
     }
 
     /// Virtual root merging all attached windows into a single dump.
-    fun windowRootJson(maxW: Int, maxH: Int, children: JSONArray): JSONObject = JSONObject()
+    // `unreadableWindows` is how many attached windows the walk could
+    // not read a root out of. They used to be skipped in silence, and a
+    // window missing from the tree looks exactly like an app with no
+    // accessibility nodes — which is what a consumer concluded, after
+    // several rounds of driving by pixel because of it.
+    fun windowRootJson(
+        maxW: Int,
+        maxH: Int,
+        children: JSONArray,
+        unreadableWindows: Int = 0,
+    ): JSONObject = JSONObject()
         .put("rawType", "android.view.WindowRoot")
         .put("bounds", JSONObject().put("x", 0).put("y", 0).put("w", maxW).put("h", maxH))
         .put("enabled", true)
         .put("selected", false)
         .put("hasFocus", false)
         .put("visible", true)
+        .put("unreadableWindows", unreadableWindows)
         .put("children", children)
+
+    /// One line per attached window, for answering "why is the app not
+    /// in the tree" without reading the runner's source.
+    ///
+    /// Everything here comes from `AccessibilityWindowInfo` itself: the
+    /// type, whether it is the active/focused one, and whether a root
+    /// node could be retrieved. A window that is present but unreadable
+    /// and a window that is not attached at all are different problems
+    /// with the same symptom, and nothing else distinguishes them.
+    fun windowsJson(rows: JSONArray): JSONObject = JSONObject()
+        .put("status", "ok")
+        .put("count", rows.length())
+        .put("windows", rows)
+
+    fun windowRowJson(
+        index: Int,
+        type: Int,
+        layer: Int,
+        active: Boolean,
+        focused: Boolean,
+        rootReadable: Boolean,
+        packageName: String?,
+    ): JSONObject = JSONObject()
+        .put("index", index)
+        .put("type", type)
+        .put("layer", layer)
+        .put("active", active)
+        .put("focused", focused)
+        .put("rootReadable", rootReadable)
+        .put("package", packageName ?: JSONObject.NULL)
 }

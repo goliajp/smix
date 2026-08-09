@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="fixture_input" type="id" />
+    <item name="fixture_submit" type="id" />
+    <item name="fixture_result" type="id" />
+</resources>

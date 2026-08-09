@@ -3552,6 +3552,26 @@ iOS only. The Android runner has `/clear-text` instead, because the
 work is different: there is no selector to resolve runner-side, and
 the host has already tapped the field to focus it.
 
+### `GET /windows` (Android)
+
+Response: `{ status: "ok", count: int, windows: [ { index, type, layer,
+active, focused, rootReadable, package } ] }`
+
+`/tree` answers what is on screen; this answers why something is not.
+A window whose root cannot be read is skipped by the tree walk, and a
+window that was never attached is skipped too — different problems,
+identical symptom, and until this route there was no way to look. The
+tree's root object also carries `unreadableWindows`, a count of the
+first kind.
+
+```bash
+curl -s http://localhost:28080/windows | jq '.windows[] | {package, active, rootReadable}'
+```
+
+If the app you are driving has no row at all, its window is not
+attached for accessibility. If it has a row with `rootReadable: false`,
+it is attached and smix cannot read it. The two want different fixes.
+
 ### `POST /clear-text` (Android)
 
 Body: `{}` — the focused field is the target; the host focuses it first.

@@ -103,6 +103,22 @@ only about the two.
   obvious mirror of the bring-up failed its argument parse and left the
   runner running.
 
+- **`GET /windows` on the Android runner**, and an `unreadableWindows`
+  count on the tree's root. A window whose root cannot be read was
+  skipped in silence, and a window missing from the tree looks exactly
+  like an app with no accessibility nodes — which is what a consumer
+  concluded, after several rounds of driving by pixel. The two are
+  different problems and now say which they are.
+
+- **A third-party fixture app for the Android gates**
+  (`test-fixtures/android-app`). Every Android e2e drove Settings, a
+  system app, so anything specific to an ordinary app's window was
+  invisible to all of them.
+
+- **`smix runner up --device`**, which `runner down` has always taken.
+  The adb guard and the guides suggested the flag form, and `runner up`
+  answered "a similar argument exists: '--supervise'".
+
 - **`smix tree --keyboard`**, and `docs/migrating-to-3.md`.
 
 ### Fixed
