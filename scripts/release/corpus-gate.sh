@@ -44,6 +44,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEFAULT_CORPUS="$REPO_ROOT/scripts/release/stress-corpus"
 
 CORPUS_DIR=""
+SELFTEST=0
 for arg in "$@"; do
   case "$arg" in
     --corpus-dir=*) CORPUS_DIR="${arg#*=}" ;;
@@ -51,12 +52,65 @@ for arg in "$@"; do
       sed -n '2,30p' "${BASH_SOURCE[0]}"
       exit 0
       ;;
+    --selftest) SELFTEST=1 ;;
   esac
 done
 : "${CORPUS_DIR:=${SMIX_CORPUS_DIR:-$DEFAULT_CORPUS}}"
 : "${SMIX_CORPUS_TIMEOUT_S:=120}"
 
 # --- guards --------------------------------------------------------------
+
+# The verdict, given how many flows landed in each bucket.
+#
+# A separate function because it is the part with a decision in it, and
+# a decision reachable only by booting a simulator is a decision nobody
+# tests. `--selftest` drives it below.
+#
+# FLAKE IS NOT GREEN. A flow that needed a second attempt is a finding,
+# and the exit code must not improve because one was granted — that is
+# the whole difference between retrying to classify and retrying to
+# absolve. The `--retry` restored here was removed once for being the
+# second kind: it had been quietly forgiving a tap that reported itself
+# missed because the hit chain was snapshotted after the touch, and
+# retrying only made the gate quieter about it.
+corpus_verdict() {
+  local total="$1" passed="$2" flaky="$3" failed="$4"
+  if [[ "$failed" -eq 0 && "$flaky" -eq 0 ]]; then
+    echo "corpus gate: GREEN — $passed/$total passing"
+    return 0
+  fi
+  echo "corpus gate: RED — $failed/$total failing, $flaky flaky ($passed clean)"
+  return 1
+}
+
+if [[ "$SELFTEST" -eq 1 ]]; then
+  fails=0
+  check() { # label expected-exit expected-substring args...
+    local label="$1" want_rc="$2" want_sub="$3"; shift 3
+    local out rc
+    out="$(corpus_verdict "$@")" && rc=0 || rc=$?
+    if [[ "$rc" -ne "$want_rc" ]]; then
+      echo "corpus-gate selftest: $label — exit $rc, wanted $want_rc" >&2
+      fails=$((fails + 1))
+    fi
+    case "$out" in
+      *"$want_sub"*) ;;
+      *) echo "corpus-gate selftest: $label — output lacks '$want_sub': $out" >&2
+         fails=$((fails + 1)) ;;
+    esac
+  }
+  check "all clean is green"       0 "GREEN"     21 21 0 0
+  check "a failure is red"         1 "1/21 failing" 21 20 0 1
+  # The one that matters: no failures at all, one retry, still red.
+  check "a flake alone is red"     1 "1 flaky"   21 20 1 0
+  check "flakes are counted apart" 1 "2/21 failing, 3 flaky" 21 16 3 2
+  if [[ "$fails" -ne 0 ]]; then
+    echo "corpus-gate selftest: FAIL ($fails)" >&2
+    exit 1
+  fi
+  echo "corpus-gate selftest: 4 cases pass"
+  exit 0
+fi
 
 if [[ -z "${SMIX_CORPUS_SIM:-}" ]]; then
   echo "error: SMIX_CORPUS_SIM env var required (sim name / UDID / registry alias)" >&2
@@ -169,6 +223,7 @@ echo "corpus gate: bringing runner up --bundle $SMIX_CORPUS_BUNDLE (auto-syncs s
 # --- run corpus ----------------------------------------------------------
 
 FAILURES=()
+FLAKY=()
 for yaml in "${YAMLS[@]}"; do
   name="$(basename "$yaml" .yaml)"
   echo "corpus gate: [$name] running..."
@@ -185,30 +240,73 @@ for yaml in "${YAMLS[@]}"; do
   # a stale `--script` flag would be rejected as "unexpected argument".
   # --device is required (post-fold: App is not bound to a UDID otherwise).
   #
-  # No --retry. It was here on a wrong reading: TAP_MISSED on the two
-  # nav flows was called an iOS animation race, and it was the hit chain
-  # being snapshotted after the touch, so a tap that opened a screen saw
-  # the destination under its own coordinate and reported itself a miss.
-  # Retrying only made the gate quieter about it. A flow that needs two
-  # attempts here is a finding, not a pass.
-  if python3 "$REPO_ROOT/scripts/dev/run-with-timeout.py" "$SMIX_CORPUS_TIMEOUT_S" \
-       "$SMIX_BIN" run "$yaml" --device "$SMIX_CORPUS_SIM" \
-       >"$yaml_log" 2>&1; then
-    echo "corpus gate: [$name] PASS"
-  else
-    rc=$?
-    echo "corpus gate: [$name] FAIL (exit $rc)"
-    FAILURES+=("$name")
-  fi
+  # `--retry 2`, and read the attempts afterwards.
+  #
+  # This flag was removed once, and the reason it was removed is still
+  # true: TAP_MISSED on the two nav flows was called an iOS animation
+  # race, and it was the hit chain being snapshotted after the touch —
+  # a tap that opened a screen saw the destination under its own
+  # coordinate and reported itself a miss. Retrying made the gate
+  # quieter about that. "A flow that needs two attempts here is a
+  # finding, not a pass."
+  #
+  # It is back on the other reading. The retry now exists to CLASSIFY,
+  # not to absolve: a flow that needed a second attempt is reported
+  # FLAKE, counted, and still fails the gate. What changes is that
+  # "unsteady" and "broken" stop being the same red — they call for
+  # different work, and until now the gate could not tell them apart.
+  # If a FLAKE ever turns this gate green, the old objection is back and
+  # the change was wrong.
+  python3 "$REPO_ROOT/scripts/dev/run-with-timeout.py" "$SMIX_CORPUS_TIMEOUT_S" \
+    "$SMIX_BIN" run "$yaml" --device "$SMIX_CORPUS_SIM" --retry 2 \
+    >"$yaml_log" 2>&1 && rc=0 || rc=$?
+
+  # The flow name as `smix run` records it, which is the yaml's stem.
+  verdict="$(python3 "$REPO_ROOT/scripts/dev/flake-classify.py" "$name")"
+
+  # The classifier reads a file `smix run` writes; the exit code comes
+  # from the process itself. When they disagree the exit code wins, and
+  # the disagreement is printed rather than swallowed — a classifier
+  # reading the wrong record would otherwise look exactly like a flow
+  # behaving well.
+  case "$verdict:$rc" in
+    PASS:0)  echo "corpus gate: [$name] PASS" ;;
+    FLAKE:0)
+      echo "corpus gate: [$name] FLAKE — passed on a retry"
+      FLAKY+=("$name")
+      ;;
+    NORECORD:0)
+      # The flow ran, so a record must exist. None means the
+      # classifier is not reading what `smix run` writes, and every
+      # verdict it gives is worthless — which is exactly how this
+      # shipped once: it parsed a JSON file smix stopped writing in
+      # July, answered NORECORD twenty-one times, and the gate printed
+      # PASS beside each one and GREEN at the end. A broken instrument
+      # must not read as a clean result.
+      echo "corpus gate: [$name] INSTRUMENT — the flow ran and left no attempt record"
+      FAILURES+=("$name")
+      ;;
+    *:0)
+      echo "corpus gate: [$name] PASS (attempts said $verdict)"
+      ;;
+    *)
+      # rc is non-zero here: the arm above took every rc-zero case.
+      echo "corpus gate: [$name] FAIL (exit $rc, attempts said $verdict)"
+      FAILURES+=("$name")
+      ;;
+  esac
 done
 
-if [[ ${#FAILURES[@]} -eq 0 ]]; then
-  echo "corpus gate: GREEN — ${#YAMLS[@]}/${#YAMLS[@]} passing"
-  exit 0
-fi
+# The flake count, on disk, so C3 can compare runs rather than compare
+# impressions.
+echo "${#FLAKY[@]}" > "$LOG_DIR/flake-count.txt"
 
-echo "corpus gate: RED — ${#FAILURES[@]}/${#YAMLS[@]} failing:"
-for f in "${FAILURES[@]}"; do
-  echo "  - $f (log: $LOG_DIR/$f.log)"
+for f in "${FAILURES[@]+"${FAILURES[@]}"}"; do
+  echo "  - FAIL  $f (log: $LOG_DIR/$f.log)"
 done
-exit 1
+for f in "${FLAKY[@]+"${FLAKY[@]}"}"; do
+  echo "  - FLAKE $f (log: $LOG_DIR/$f.log)"
+done
+
+passed=$(( ${#YAMLS[@]} - ${#FAILURES[@]} - ${#FLAKY[@]} ))
+corpus_verdict "${#YAMLS[@]}" "$passed" "${#FLAKY[@]}" "${#FAILURES[@]}"
