@@ -440,12 +440,14 @@ The selector is a positional argument in `<kind>:<value>` shorthand —
 smix tap id:home-increment-btn
 smix tap "text:Submit"
 
-smix find id:home-counter-label            # prints exists=<bool>
+smix find id:home-counter-label            # prints exists=<bool>, exits 0 either way
 smix wait-for id:loading-spinner --timeout 5    # seconds, not ms
+smix wait-for id:loading-spinner --absent  # wait until it is GONE
 
 smix fill id:form-email-input --text alice@example.com
 smix press-key return                      # positional key name
 smix scroll "text:Row #5000" --direction down
+smix swipe down                            # one gesture; `down` reveals what is below
 smix hide-keyboard
 
 smix tree --json | jq .                    # full a11y tree
@@ -455,6 +457,20 @@ smix describe                              # visible interactive elements
 smix system-popups                         # list active popups
 smix system-popup-action <popup-id> <button-id>
 ```
+
+**`find` prints, `wait-for` asserts.** `smix find` writes
+`exists=<bool>` and exits 0 whichever it is, so a shell script has to
+read its output to branch. `smix wait-for` polls until the element is
+there and exits non-zero when the timeout passes, which is what lets it
+stand alone in a `&&` chain. `--absent` is the same command waiting for
+the opposite: it returns as soon as the element is gone, and fails if it
+is still there when time runs out. Use it for a spinner or a modal you
+need off the screen before the next step.
+
+**`swipe` is one gesture, `scroll` stops at something.** `smix scroll`
+takes a selector and keeps going until it is visible. `smix swipe` does
+a single swipe and returns. In both, the direction names what you want
+to see — `down` reveals what is below — not which way a finger travels.
 
 **The software keyboard's keys are collapsed.** A key per letter plus
 `Next keyboard`, `Dictate`, shift and delete is around sixty nodes that

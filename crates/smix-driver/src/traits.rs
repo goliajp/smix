@@ -143,6 +143,43 @@ pub trait Driver: Send + Sync {
         include: Option<IncludeScope>,
     ) -> Result<A11yNode, ExpectationFailure>;
 
+    /// Wait until the selector resolves to nothing.
+    ///
+    /// A default method rather than a required one: it is the same poll
+    /// over `find` on either platform, and this capability already
+    /// existed twice — once in the SDK's `App::wait_for_not_visible` and
+    /// nowhere else, so the CLI had presence and not absence. A third
+    /// copy in `act.rs` was the alternative.
+    ///
+    /// `find` and not `find_one`: the on-screen sense of visible is what
+    /// `wait_for`'s mirror has to use, or "gone" would mean "scrolled
+    /// out of view but still in the tree" on one side and not the other.
+    async fn wait_for_not_visible(
+        &self,
+        selector: &Selector,
+        timeout: Duration,
+    ) -> Result<(), ExpectationFailure> {
+        let start = std::time::Instant::now();
+        loop {
+            if !self.find(selector, None).await? {
+                return Ok(());
+            }
+            if start.elapsed() >= timeout {
+                return Err(ExpectationFailure::new(smix_error::FailureInit {
+                    code: Some(smix_error::FailureCode::AssertionFailed),
+                    message: format!(
+                        "wait_for_not_visible: element still visible after {}ms — {}",
+                        timeout.as_millis(),
+                        smix_selector::describe_selector(selector)
+                    ),
+                    selector: Some(selector.clone()),
+                    ..Default::default()
+                }));
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
     // === Act (17) ============================================================
 
     /// Tap an element (default mode = element-anchored coord tap).

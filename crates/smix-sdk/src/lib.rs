@@ -2058,26 +2058,14 @@ impl App {
         selector: &Selector,
         timeout: Duration,
     ) -> Result<(), ExpectationFailure> {
-        let start = std::time::Instant::now();
-        let poll_interval = Duration::from_millis(250);
-        loop {
-            if !self.find(selector).await? {
-                return Ok(());
-            }
-            if start.elapsed() >= timeout {
-                return Err(ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::AssertionFailed),
-                    message: format!(
-                        "wait_for_not_visible: element still visible after {}ms — {}",
-                        timeout.as_millis(),
-                        describe_selector(selector)
-                    ),
-                    selector: Some(selector.clone()),
-                    ..Default::default()
-                }));
-            }
-            tokio::time::sleep(poll_interval).await;
-        }
+        // Delegated rather than looped here. `App::find` is already a
+        // pass-through to the driver's, so this held a second copy of
+        // the same poll — and it was the only copy, which is why the
+        // CLI could wait for an element to appear and not for one to
+        // leave.
+        self.driving()?
+            .wait_for_not_visible(selector, timeout)
+            .await
     }
 
     /// Assert the current sim screenshot matches a recorded baseline

@@ -21,6 +21,7 @@
 //!   $ smix wait-for 'id:home-counter-label' --timeout 5
 //!   visible id=home-counter-label (waited 12ms)
 
+use smix_driver::Driver as _;
 use smix_driver::SimctlDriver;
 use smix_input::{KeyName, SwipeDirection};
 use smix_runner_client::HttpRunnerClient;
@@ -244,6 +245,22 @@ pub async fn cmd_scroll(
     Ok(())
 }
 
+/// `smix swipe <direction>` — one swipe through the content.
+///
+/// `direction` names what the caller wants to SEE, which is the same
+/// contract `smix_swipe` states; both reach `swipe_once`, so the word
+/// cannot mean one thing here and another there.
+pub async fn cmd_swipe(direction_str: String, port: u16) -> Result<(), ActError> {
+    let direction = parse_direction(&direction_str)
+        .ok_or_else(|| ActError::BadSelector(format!("direction:{direction_str}")))?;
+    let d = driver(port);
+    d.swipe_once(direction)
+        .await
+        .map_err(|e| ActError::Transport(format!("{e}")))?;
+    println!("swiped {direction_str}");
+    Ok(())
+}
+
 /// `smix tree [--json]` — print the runner's current accessibility tree.
 /// `--json` emits the wire-format JSON (large — typically 100KB+ for a
 /// typical app screen); default emits an indented text outline keyed by
@@ -398,14 +415,23 @@ pub async fn cmd_wait_for(
     selector_str: String,
     timeout_secs: u64,
     port: u16,
+    absent: bool,
 ) -> Result<(), ActError> {
     let selector =
         parse_selector(&selector_str).ok_or_else(|| ActError::BadSelector(selector_str.clone()))?;
     let d = driver(port);
     let timeout = Duration::from_secs(timeout_secs);
-    match d.wait_for(&selector, timeout, None).await {
-        Ok(_) => {
-            println!("visible {selector_str}");
+    // Both arms report a timeout the same way. The waits are opposites
+    // but the failure is not: in either case the screen did not reach
+    // the state the caller asked for within the budget.
+    let outcome = if absent {
+        d.wait_for_not_visible(&selector, timeout).await
+    } else {
+        d.wait_for(&selector, timeout, None).await.map(|_| ())
+    };
+    match outcome {
+        Ok(()) => {
+            println!("{} {selector_str}", if absent { "gone" } else { "visible" });
             Ok(())
         }
         Err(_) => Err(ActError::Timeout {
