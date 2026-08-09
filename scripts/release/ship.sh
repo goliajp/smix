@@ -149,6 +149,12 @@ python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&
 # A gate any bystander process can turn red judges nothing.
 # preflight promises to run what CI runs. Nothing checked, and two
 # steps had no local counterpart at all.
+# The plugin adds initiative, not capability. Nothing checked that
+# direction, and two MCP tools had no CLI behind them.
+log "mcp cli parity scan"
+python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \
+  || fail "mcp cli parity scan FAILED — see /tmp/smix-ship-mcp-parity.log"
+
 log "preflight parity scan"
 python3 "$ROOT/scripts/dev/preflight-parity-scan.py" > /tmp/smix-ship-parity.log 2>&1 \
   || fail "preflight parity scan FAILED — see /tmp/smix-ship-parity.log"

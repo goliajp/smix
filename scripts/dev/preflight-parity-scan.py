@@ -42,6 +42,7 @@ LOCAL = {
     "route context scan": "route-context-scan",
     "gate port scan": "gate-port-scan",
     "preflight parity scan": "preflight-parity-scan",
+    "mcp cli parity scan": "mcp-cli-parity-scan",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",
     "android gate scan": "android-gate-scan",
@@ -69,6 +70,10 @@ NOT_LOCAL = {
     "build binaries": "cross-target release build matrix; a native runner each",
     "build .node": "same, for the napi addon",
     "package structure": "part of the prebuild matrix",
+    "build smix (for the MCP parity scan)": (
+        "a fresh checkout has no binary; locally the gate should judge whatever "
+        "you last built, and it refuses rather than guessing when there is none"
+    ),
     "upload artifact": "CI plumbing",
 }
 
