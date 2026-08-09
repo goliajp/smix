@@ -31,6 +31,14 @@
 # Session / scratch artifacts (never commit)
 # Swift / Xcode build products (user committed xcodeproj per release decision)
 # Build artifact ignores
+# The Android fixture app is a source tree; its build output is not.
+# 530 gradle artifacts reached a commit before this existed.
+test-fixtures/android-app/.gradle/
+test-fixtures/android-app/.kotlin/
+test-fixtures/android-app/build/
+test-fixtures/android-app/app/build/
+test-fixtures/android-app/local.properties
+
 android-runner/.gradle/
 android-runner/.kotlin/
 android-runner/app/.cxx/

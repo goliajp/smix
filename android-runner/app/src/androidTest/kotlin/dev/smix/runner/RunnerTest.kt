@@ -193,6 +193,7 @@ class SmixHttpServer(
                     serveLongPressAtNormCoord(session)
                 uri == "/input-text" && session.method == Method.POST -> serveInputText(session)
                 uri == "/clear-text" && session.method == Method.POST -> serveClearText()
+                uri == "/windows" && session.method == Method.GET -> serveWindows()
                 uri == "/foreground" && session.method == Method.POST -> serveForeground(session)
                 uri == "/find-text-by-ocr" && session.method == Method.POST ->
                     serveFindTextByOcr(session)
@@ -282,6 +283,36 @@ class SmixHttpServer(
         resp.addHeader("X-Tree-Snapshot-Refresh-Count", refreshCount.toString())
         resp.addHeader("X-Tree-Snapshot-Wall-Ms", wallMs.toString())
         return resp
+    }
+
+    /// Every attached window, and whether its root could be read.
+    ///
+    /// `/tree` answers "what is on screen"; this answers "why is
+    /// something not". A consumer reported the tree carrying only the
+    /// SystemUI windows and not their app's, and neither of us could
+    /// tell from here whether their app's window was absent from the
+    /// list or present and unreadable — different problems, identical
+    /// symptom, and no way to look.
+    private fun serveWindows(): Response {
+        val rows = JSONArray()
+        val windows = instrumentation.uiAutomation.windows
+        for ((i, w) in windows.withIndex()) {
+            val root = w.root
+            rows.put(
+                TreeWire.windowRowJson(
+                    index = i,
+                    type = w.type,
+                    layer = w.layer,
+                    active = w.isActive,
+                    focused = w.isFocused,
+                    rootReadable = root != null,
+                    packageName = root?.packageName?.toString(),
+                ),
+            )
+            root?.recycle()
+        }
+        val body = TreeWire.windowsJson(rows).toString()
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveTapAtNormCoord(session: IHTTPSession): Response {
@@ -1244,8 +1275,17 @@ object TreeBuilder {
         val rootChildren = JSONArray()
         var maxW = 0
         var maxH = 0
+        var unreadable = 0
         for (window in automation.windows) {
-            val node = window.root ?: continue
+            // A window whose root cannot be read is counted, not
+            // dropped in silence: absent from the tree and "that app
+            // has no accessibility nodes" look identical to the caller,
+            // and one of them is smix's problem.
+            val node = window.root
+            if (node == null) {
+                unreadable += 1
+                continue
+            }
             try {
                 val obj = nodeToJson(node)
                 rootChildren.put(obj)
@@ -1257,7 +1297,7 @@ object TreeBuilder {
                 node.recycle()
             }
         }
-        return TreeWire.windowRootJson(maxW, maxH, rootChildren)
+        return TreeWire.windowRootJson(maxW, maxH, rootChildren, unreadable)
     }
 
     private fun nodeToJson(node: AccessibilityNodeInfo): JSONObject {

@@ -924,7 +924,19 @@ enum LeaseAction {
 enum RunnerAction {
     /// Start the runner on a device; blocks until /health answers.
     Up {
-        device: String,
+        /// The device to bring the runner up on.
+        ///
+        /// `--device` names the same thing and is accepted, because
+        /// `runner down` takes it that way. One pair of commands with
+        /// two shapes for the same argument is a trip somebody takes
+        /// every time — and the guards and guides that suggested the
+        /// flag form were, until now, suggesting something this command
+        /// answered with "a similar argument exists: '--supervise'".
+        #[arg(value_name = "DEVICE", required_unless_present = "device_flag")]
+        device: Option<String>,
+        /// The device, named rather than positional. See `device`.
+        #[arg(long = "device", conflicts_with = "device")]
+        device_flag: Option<String>,
         /// Which runner to bring up. `ios` drives xcodebuild + the
         /// XCUITest runner; `android` installs the instrumentation APK,
         /// forwards the port, and `am instrument`s the Kotlin runner.
@@ -2002,6 +2014,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             match action {
                 RunnerAction::Up {
                     device,
+                    device_flag,
                     platform,
                     bundle,
                     runner_project,
@@ -2010,6 +2023,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     team,
                     no_launch,
                 } => {
+                    // clap has already refused the case where neither
+                    // is given, and the case where both are.
+                    let device = device
+                        .or(device_flag)
+                        .expect("clap requires one of the two forms");
                     if platform == RunPlatform::Android {
                         reject_ios_only_up_flags(
                             bundle.is_some(),
