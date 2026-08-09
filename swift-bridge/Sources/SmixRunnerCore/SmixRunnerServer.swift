@@ -625,7 +625,16 @@ public actor SmixRunnerServer {
   // at runForever() time). Returns `ok:true` when the tap dispatched,
   // `ok:false` when there's no navbar back button on the current screen
   // (top-level / root screens) or smixGuarded caught an NSException.
-  public typealias BackHandler = @Sendable () async -> Bool
+  /// `ok`, plus which branch decided — see `BackRoute.SettledBy`.
+  public struct BackOutcome: Sendable {
+    public let ok: Bool
+    public let settledBy: BackRoute.SettledBy?
+    public init(ok: Bool, settledBy: BackRoute.SettledBy? = nil) {
+      self.ok = ok
+      self.settledBy = settledBy
+    }
+  }
+  public typealias BackHandler = @Sendable () async -> BackOutcome
 
   /// Single-swipe gesture handler. Caller (driver host-side loop)
   /// passes direction; handler triggers XCUITest swipe gesture (`app.swipeUp()`
@@ -1970,8 +1979,8 @@ public actor SmixRunnerServer {
         return await Self.contextGuardedResponse(request: request,
           fallback: BackRoute.success(ok: false)
         ) {
-          let ok = await backHandler()
-          return BackRoute.success(ok: ok)
+          let outcome = await backHandler()
+          return BackRoute.success(ok: outcome.ok, settledBy: outcome.settledBy)
         }
       }
     }

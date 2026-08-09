@@ -1898,10 +1898,33 @@ impl HttpRunnerClient {
 
     /// `POST /back` — back gesture.
     pub async fn back(&self) -> Result<(), RunnerTransportError> {
-        let body: OkEnvelope = self
+        /// `ok`, plus which branch of the runner's settle decided.
+        ///
+        /// The branch is why this exists. `back` reporting success while
+        /// the departing screen was still up made one corpus run in ten
+        /// fail, and eighty isolated navigations reproduced it zero
+        /// times — the conditions that matter only occur deep in a
+        /// batch, where a probe cannot follow. So the value is read
+        /// where the failure actually happens.
+        #[derive(serde::Deserialize)]
+        struct BackEnvelope {
+            #[serde(default)]
+            ok: Option<bool>,
+            #[serde(default, rename = "settledBy")]
+            settled_by: Option<String>,
+        }
+        let body: BackEnvelope = self
             .json_post("/back", &serde_json::json!({}), None)
             .await?;
-        body.require_ok("/back")?;
+        // stderr, unconditionally: `smix run` already writes its step
+        // lines there and the corpus captures them per flow, so the
+        // branch lands in the log beside the failure it explains
+        // instead of in a facility someone has to switch on before the
+        // one run in ten that matters.
+        if let Some(why) = body.settled_by.as_deref() {
+            eprintln!("smix: back settled by {why}");
+        }
+        OkEnvelope { ok: body.ok }.require_ok("/back")?;
         Ok(())
     }
 

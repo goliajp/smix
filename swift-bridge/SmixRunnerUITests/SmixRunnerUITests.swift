@@ -2053,7 +2053,7 @@ final class SmixRunnerUITests: XCTestCase {
         //   interactive pop gesture; works for RN react-navigation
         //   Modal screens off the nav stack when the modal has
         //   `gestureEnabled: true`.
-        let outcome: Bool? = smixGuarded("back") {
+        let outcome: BackRoute.SettledBy? = smixGuarded("back") {
           // The navigation bar's identifier is the screen title, so a
           // change in it IS the "did navigate" signal. Both strategies
           // watch it instead of sleeping a fixed 0.5s and reporting
@@ -2072,28 +2072,80 @@ final class SmixRunnerUITests: XCTestCase {
           // throws mid-gesture means "no reading", not "navigated" — an
           // earlier version of this returned true on the throw and so
           // reported success on a root screen with nowhere to go.
-          func navigated(from previous: String?) -> Bool {
-            guard let previous else {
-              Thread.sleep(forTimeInterval: 0.5)
-              return true
-            }
+          // The decision lives in `NavigationSettle`; this only takes
+          // readings. `if !bar.exists { return true }` used to be here,
+          // and a pop animation's one unfindable frame read as arrival —
+          // `back` returned before landing and the assertion after it
+          // saw the screen being left behind. One flake in ten corpus
+          // runs, on nav-accessibility-and-back.
+          // Reports WHICH branch decided, because the boolean alone was
+          // wrong once in ten corpus runs and a fix made from reading
+          // the source did not change the rate. The next change attacks
+          // the branch the data names.
+          func navigated(from previous: String?)
+            -> (Bool, BackRoute.SettledBy)
+          {
+            var settle = NavigationSettle(before: previous)
+            var sawAbsence = false
+            // 50ms, and slowing it down was tried and measured.
+            //
+            // Each look costs an accessibility round trip into the app
+            // under test, and this transition is sensitive to being
+            // watched: adding ONE more query per poll took the flow
+            // from 2 flakes in 20 runs to failing in 28 of 30. The
+            // obvious reading — look less often — is wrong too. At
+            // 250ms only 1 of 11 runs came back clean, against 10 of 10
+            // here. Whatever the mechanism is, it is not "observation
+            // pressure" in a way that a slower cadence relieves.
             let deadline = Date().addingTimeInterval(2.0)
             while Date() < deadline {
               Thread.sleep(forTimeInterval: 0.05)
               let bar = app.navigationBars.firstMatch
-              if !bar.exists { return true }
-              if let now = (try? bar.snapshot())?.identifier, now != previous {
-                return true
+              let reading: NavigationSettle.Reading
+              if !bar.exists {
+                reading = .absent
+                sawAbsence = true
+              } else if let now = (try? bar.snapshot())?.identifier {
+                // NOT asking whether the departing bar is still there.
+                //
+                // That query — `app.navigationBars[previous].exists`,
+                // one more accessibility round trip per 50ms poll —
+                // was added to answer exactly the right question and
+                // measured a disaster: the flow went from 2 flakes in
+                // 20 runs to failing in 28 of 30. Removing only the
+                // DECISION that used it left the rate at 8 in 10, so
+                // the criterion was innocent and the extra look was
+                // not. Observing the transition more closely is what
+                // broke it.
+                //
+                // The field stays in the reading because the next
+                // attempt has to come from a cheaper view, not from
+                // pretending the question is uninteresting.
+                reading = .title(now, departingStillPresent: false)
+              } else {
+                reading = .unreadable
+              }
+              switch settle.observe(reading) {
+              case .arrived:
+                return (true, sawAbsence ? .sustainedAbsence : .titleChanged)
+              case .noIdentity:
+                // Nothing to watch. Keep the old fixed settle and the
+                // old optimistic answer rather than inventing a signal —
+                // and say so, so the correlation is visible.
+                Thread.sleep(forTimeInterval: 0.5)
+                return (true, .noIdentity)
+              case .notYet: continue
               }
             }
-            return false
+            return (false, .gaveUp)
           }
 
           // Strategy 1: navigation bar back button
           let firstButton = navBars.buttons.firstMatch
           if firstButton.exists {
             firstButton.tap()
-            if navigated(from: beforeTitle) { return true }
+            let (landed, why) = navigated(from: beforeTitle)
+            if landed { return why }
           }
           // Strategy 2: iOS interactive pop gesture (swipe right from left
           // edge). RN screens with `gestureEnabled:true` (default for stack
@@ -2101,13 +2153,17 @@ final class SmixRunnerUITests: XCTestCase {
           let leftEdge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
           let rightTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
           leftEdge.press(forDuration: 0.1, thenDragTo: rightTarget)
-          if navigated(from: beforeTitle) { return true }
-          // Neither strategy moved the screen. `false` reaches the caller
-          // as a 404-shaped refusal, which is the honest answer — the old
-          // code returned true here without looking.
-          return false
+          let (landed, why) = navigated(from: beforeTitle)
+          if landed { return why }
+          // Neither strategy moved the screen. A refusal reaches the
+          // caller, which is the honest answer — the old code returned
+          // true here without looking.
+          return .gaveUp
         }
-        return outcome ?? false
+        guard let outcome, outcome != .gaveUp else {
+          return SmixRunnerServer.BackOutcome(ok: false, settledBy: outcome ?? .gaveUp)
+        }
+        return SmixRunnerServer.BackOutcome(ok: true, settledBy: outcome)
       },
       // POST /swipe-once handler. Single XCUITest swipe gesture, no probe,
       // no selector. The driver-side host loop scrollUntilVisible
