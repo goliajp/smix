@@ -22,7 +22,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 SERIAL="${SMIX_ANDROID_SERIAL:-emulator-5554}"
-PORT="${SMIX_ANDROID_CLEAR_PORT:-22094}"
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$ROOT/scripts/lib/gate-port.sh"
+PORT="${SMIX_ANDROID_CLEAR_PORT:-$SMIX_RUNNER_PORT}"
 R="http://127.0.0.1:$PORT"
 WORK="$(mktemp -d)"
 

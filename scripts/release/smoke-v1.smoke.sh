@@ -21,6 +21,9 @@ set -euo pipefail
 SMOKE_UDID="${SMOKE_UDID:-}"
 SMOKE_BUNDLE="${SMOKE_BUNDLE:-com.apple.mobilesafari}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$ROOT/scripts/lib/gate-port.sh"
 SMOKE_YAML="${ROOT}/scripts/release/smoke-v1.smoke.yaml"
 OUT_DIR="${OUT_DIR:-/tmp/smix-smoke-out}"
 

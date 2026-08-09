@@ -13,7 +13,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 ALIAS="${SMIX_PHYSICAL_ALIAS:-phone}"
 BUNDLE="${SMIX_PHYSICAL_BUNDLE:-com.apple.Preferences}"
-PORT="${SMIX_RUNNER_PORT:-22087}"
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$ROOT/scripts/lib/gate-port.sh"
+PORT="$SMIX_RUNNER_PORT"
 OUT="$(mktemp)"
 
 log()  { printf '[c14-phys] %s\n' "$*"; }

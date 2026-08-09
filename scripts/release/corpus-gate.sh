@@ -87,11 +87,14 @@ if [[ -z "$SMIX_BIN" ]]; then
   exit 2
 fi
 
+# A port of this gate's own, so a bystander runner cannot turn it red.
+. "$REPO_ROOT/scripts/lib/gate-port.sh"
+
 STAMP="$(date +%Y%m%d-%H%M%S)"
 LOG_DIR="$REPO_ROOT/.tmp/release-gate/$STAMP"
 mkdir -p "$LOG_DIR"
 
-echo "corpus gate: sim=$SMIX_CORPUS_SIM corpus=$CORPUS_DIR yamls=${#YAMLS[@]} log=$LOG_DIR"
+echo "corpus gate: sim=$SMIX_CORPUS_SIM corpus=$CORPUS_DIR yamls=${#YAMLS[@]} port=$SMIX_RUNNER_PORT log=$LOG_DIR"
 
 # --- teardown ------------------------------------------------------------
 
