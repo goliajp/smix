@@ -37,6 +37,42 @@ mcp = read_json(os.path.join(PLUGIN, ".mcp.json"))
 
 # --- the manifest names this plugin, and says which smix it expects ------
 
+# Exactly one plugin manifest in the tree.
+#
+# `.claude-plugin/plugin.json` at a repository root is the convention for
+# "this repository is itself a plugin". When the plugin moved into
+# `plugin/`, the original was left behind — and it stayed at 0.7.0 for
+# two major versions, claiming 27 tools and naming `src/cli/index.ts` as
+# its command, a TypeScript entry point deleted when the CLI became
+# Rust. Nothing pointed at it, so nothing caught it; but anyone adding
+# this repository to Claude Code directly loads that file and not the
+# real one, and gets a plugin that cannot start.
+manifests = sorted(
+    os.path.relpath(os.path.join(d, "plugin.json"), ROOT)
+    for d, _s, f in os.walk(ROOT)
+    if "plugin.json" in f
+    and os.path.basename(d) == ".claude-plugin"
+    and "node_modules" not in d
+)
+if manifests != ["plugin/.claude-plugin/plugin.json"]:
+    problems.append(
+        "there should be exactly one plugin manifest, at "
+        f"plugin/.claude-plugin/plugin.json — found {manifests}. A second one "
+        "at the repository root is what Claude Code loads instead of the real "
+        "plugin."
+    )
+
+# The marketplace points at a directory that is there.
+market_root = os.path.join(ROOT, ".claude-plugin", "marketplace.json")
+if os.path.isfile(market_root):
+    for entry in read_json(market_root).get("plugins", []):
+        src = entry.get("source", "")
+        if not os.path.isdir(os.path.join(ROOT, src)):
+            problems.append(
+                f"marketplace entry {entry.get('name')!r} sources {src!r}, which "
+                "is not a directory here"
+            )
+
 for field in ("name", "description", "version"):
     if not manifest.get(field):
         problems.append(f"plugin.json has no {field}")
