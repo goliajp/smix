@@ -977,12 +977,18 @@ enum RunnerAction {
         /// a question smix refuses to answer for you.
         #[arg(long)]
         team: Option<String>,
-        /// Foreground the app instead of relaunching it.
+        /// Keep the app where it is: foreground it instead of
+        /// relaunching it.
         ///
-        /// Bringing the runner up restarts the target app, which drops
-        /// whatever screen was on it — and the next flow then fails
-        /// with `ELEMENT_NOT_FOUND` against a splash screen. Same
-        /// meaning as `smix run --no-launch`, which has had it for
+        /// **Reach for this when the runner died mid-session and you
+        /// are several screens deep.** Bringing the runner back up
+        /// restarts the target app by default, so the navigation is
+        /// gone and the next step fails against a splash screen —
+        /// somebody re-walked three or four screens a dozen times in an
+        /// afternoon before finding this flag, because the text here
+        /// described the problem without saying it was also the answer.
+        ///
+        /// Same meaning as `smix run --no-launch`, which has had it for
         /// longer.
         #[arg(long = "no-launch", default_value_t = false)]
         no_launch: bool,
