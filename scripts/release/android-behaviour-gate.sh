@@ -39,6 +39,13 @@ TIMEOUT_S="${SMIX_ANDROID_GATE_TIMEOUT_S:-600}"
 SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
 
 APP="com.android.settings"
+# The second subject. Settings is a system app — preinstalled, stable
+# ids, windows owned by the system — so A1–A3 prove things about the
+# platform's own app and nothing about anybody else's. A4 drives an
+# ordinary one, which is the shape a consumer actually has. Added
+# alongside rather than instead: the Settings assertions cover the
+# system window layer, which the fixture cannot.
+FIXTURE_APP_ID="dev.smix.fixture"
 FLOW="$SCRIPT_DIR/android-behaviour/force-key-events.yaml"
 PROXY_PORT=28090
 RUNNER_PORT=28080
@@ -206,4 +213,65 @@ if [[ "$MATCH" != "qualified" ]]; then
 fi
 echo "  A3: X-View-Id-Match: qualified (probe id: $PROBE_ID)"
 
-echo "android behaviour gate: 3/3 assertions on $SERIAL ($APP)"
+# A4 — an ordinary app's window is in the tree, and readable.
+#
+# This is the assertion that was missing when a consumer reported /tree
+# carrying the SystemUI windows and not their app's, while every gate
+# here was green: not one of them drove an app that was not Settings.
+#
+# /windows separates the two ways this fails, which look identical from
+# the tree alone — a window that is not attached, and a window attached
+# with a root the walk cannot read.
+FIXTURE_APK="$(bash "$REPO_ROOT/scripts/dev/build-android-fixture.sh" 2>/dev/null)" \
+  || die "A4: the fixture app did not build"
+adb -s "$SERIAL" install -r "$FIXTURE_APK" >/dev/null 2>&1 \
+  || die "A4: could not install the fixture on $SERIAL"
+adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+  || die "A4: could not foreground $FIXTURE_APP_ID on $SERIAL"
+sleep 3
+
+curl -sS --max-time 15 "http://localhost:$PROXY_PORT/windows" > "$WORK/windows.json" \
+  || die "A4: /windows did not answer"
+python3 - "$WORK/windows.json" "$FIXTURE_APP_ID" <<'PY' || die "A4: see above. $WORK/windows.json"
+import json, sys
+doc = json.load(open(sys.argv[1]))
+app = sys.argv[2]
+rows = doc.get("windows", [])
+if not rows:
+    print("A4: /windows listed no windows at all — nothing here proves anything",
+          file=sys.stderr)
+    sys.exit(1)
+mine = [r for r in rows if r.get("package") == app]
+if not mine:
+    seen = sorted({r.get("package") for r in rows})
+    print(f"A4: no window belongs to {app}. Attached: {seen}. Its window is not "
+          "attached for accessibility — which reads, from /tree alone, exactly "
+          "like an app with no accessibility nodes.", file=sys.stderr)
+    sys.exit(1)
+unreadable = [r for r in mine if not r.get("rootReadable")]
+if unreadable:
+    print(f"A4: {app} has {len(unreadable)} window(s) attached whose root could "
+          "not be read, so they are absent from the tree while present on screen.",
+          file=sys.stderr)
+    sys.exit(1)
+print(f"  A4a: {app} has {len(mine)} readable window(s) among {len(rows)}")
+PY
+
+curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/fixture-tree.json" \
+  || die "A4: /tree did not answer for the fixture"
+python3 - "$WORK/fixture-tree.json" <<'PY' || die "A4: see above. $WORK/fixture-tree.json"
+import json, sys
+tree = json.load(open(sys.argv[1]))
+unreadable = tree.get("unreadableWindows")
+def walk(n):
+    if "fixture_input" in (n.get("identifier") or ""):
+        return True
+    return any(walk(c) for c in n.get("children", []))
+if not walk(tree):
+    print("A4: the fixture's own field is not in the tree while its window is "
+          f"attached and readable (unreadableWindows={unreadable})", file=sys.stderr)
+    sys.exit(1)
+print(f"  A4b: the fixture's field is in the tree (unreadableWindows={unreadable})")
+PY
+
+echo "android behaviour gate: 5/5 assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"

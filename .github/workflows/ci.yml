@@ -100,6 +100,10 @@ jobs:
         run: python3 scripts/dev/fact-scan.py
       - name: workflow scan
         run: python3 scripts/dev/workflow-scan.py
+      # Reads the corpus and the Android gate, both of which ship — so
+      # unlike guide-claims-scan it has everything it needs here.
+      - name: gate subject diversity
+        run: python3 scripts/dev/gate-subject-diversity.py
       # guide-claims-scan is deliberately NOT here. It reconciles the
       # guides against `.claude/docs/`' probe ledgers, and that record
       # lives on the development machine only — its own refusal says
