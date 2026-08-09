@@ -144,6 +144,12 @@ python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&
 # found `/tree` returning only the SystemUI windows while everything
 # here was green. This asks whether the gates below are pointed at more
 # than the platform's own app; it does not ask whether they pass.
+# A route that drives the app and does not read `App-Bundle-Id` uses
+# whichever app the runner booted with, in silence. Three did.
+log "route context scan"
+python3 "$ROOT/scripts/dev/route-context-scan.py" > /tmp/smix-ship-route-context.log 2>&1 \
+  || fail "route context scan FAILED — see /tmp/smix-ship-route-context.log"
+
 log "gate subject diversity"
 python3 "$ROOT/scripts/dev/gate-subject-diversity.py" > /tmp/smix-ship-subjects.log 2>&1 \
   || fail "gate subject diversity FAILED — see /tmp/smix-ship-subjects.log"

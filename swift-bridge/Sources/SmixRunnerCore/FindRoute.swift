@@ -59,8 +59,59 @@ public enum FindRoute {
     )
   }
 
-  public static func success(found: Bool) -> HTTPResponse {
-    let body = Data(#"{"ok":true,"found":\#(found)}"#.utf8)
+  /// What the query saw, for the refusals that explain nothing.
+  ///
+  /// A flow whose `appId` differed from the runner's `--bundle` got
+  /// `found:false` here for every selector, while `/tree` — same
+  /// request, same header — returned that app's nodes in full. The
+  /// suspicion was that the two routes reach elements differently and
+  /// only `/tree`'s snapshot honoured the rebind.
+  ///
+  /// These fields answered it, and the answer was neither route's
+  /// element access: `rebound:false` with and without the header, and
+  /// the identical `candidates` count both ways. This route was
+  /// registered without `contextGuardedResponse`, so `currentContext`
+  /// was never set and `resolveApp()` returned the boot-time app every
+  /// time. `/fill` and `/clear` were the same. Fixed 2026-08-09; a
+  /// `found:false` carrying nothing is what kept it unknowable for as
+  /// long as it did.
+  ///
+  /// Diagnostic only. Nothing here changes what `found` says.
+  public struct Diagnostics: Equatable, Sendable {
+    /// `XCUIApplication.State` raw value for the app the query ran
+    /// against — 1 notRunning, 2 runningBackgroundSuspended,
+    /// 3 runningBackground, 4 runningForeground.
+    public let appState: Int
+    /// How many elements the query had before the predicate. Zero
+    /// separates "the app has no elements here" from "it has them and
+    /// none matched", which look identical from `found:false`.
+    public let candidates: Int
+    /// Whether this request named a bundle other than the one the
+    /// runner was started with — the case under suspicion.
+    public let rebound: Bool
+    public init(appState: Int, candidates: Int, rebound: Bool) {
+      self.appState = appState
+      self.candidates = candidates
+      self.rebound = rebound
+    }
+  }
+
+  /// `found:true` keeps the two-field shape it has always had — there
+  /// is nothing to explain about a query that worked, and a client
+  /// parsing the old shape should not meet a new field on the happy
+  /// path. A runner that cannot tell passes `nil` and says nothing,
+  /// rather than inventing a zero that would read as "not running".
+  public static func success(found: Bool, diagnostics: Diagnostics? = nil) -> HTTPResponse {
+    let body: Data
+    switch diagnostics {
+    case let d? where !found:
+      body = Data(
+        #"{"ok":true,"found":false,"diagnostics":{"appState":\#(d.appState),"candidates":\#(d.candidates),"rebound":\#(d.rebound)}}"#
+          .utf8
+      )
+    default:
+      body = Data(#"{"ok":true,"found":\#(found)}"#.utf8)
+    }
     return envelope(.ok, body)
   }
 

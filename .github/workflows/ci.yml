@@ -104,6 +104,9 @@ jobs:
       # unlike guide-claims-scan it has everything it needs here.
       - name: gate subject diversity
         run: python3 scripts/dev/gate-subject-diversity.py
+      # Reads the runner server's route registrations, which ship.
+      - name: route context scan
+        run: python3 scripts/dev/route-context-scan.py
       # guide-claims-scan is deliberately NOT here. It reconciles the
       # guides against `.claude/docs/`' probe ledgers, and that record
       # lives on the development machine only — its own refusal says
