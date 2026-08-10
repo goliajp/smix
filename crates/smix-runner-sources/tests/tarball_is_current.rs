@@ -79,6 +79,34 @@ fn the_embedded_tarball_matches_the_swift_sources_in_this_repository() {
     // counterpart in the source tree.
     embedded.remove(Path::new(smix_runner_sources::VERSION_FILE));
 
+    // `Package.swift` is deliberately not the workspace's.
+    //
+    // The workspace manifest declares the SDK, the UniFFI bindings and a
+    // `.binaryTarget` pointing at SmixCoreFFI.xcframework — 49 MB that
+    // this archive excludes on purpose. SwiftPM resolves the whole graph
+    // before building, so shipping that declaration without the file
+    // stopped `runner up` on every machine except the one whose earlier
+    // builds had left an xcframework behind. CI found it on the first
+    // push.
+    //
+    // `scripts/release/runner-package-manifest.py` emits the manifest
+    // the runner actually builds, and the packaging script stages it in.
+    // Comparing it against the workspace copy would fail by design, so
+    // it is excused here — and only it. The rest of the tree must still
+    // match, which is what this test is for: a runner built from sources
+    // older than the repository reports success while testing something
+    // that is gone.
+    let manifest = Path::new("Package.swift");
+    let embedded_manifest = embedded.remove(manifest);
+    assert!(
+        embedded_manifest.is_some(),
+        "the archive has no Package.swift. An earlier attempt at this \
+         excluded the workspace copy and appended the trimmed one with a \
+         second `-C`; bsdtar took the exclude and dropped the append, and \
+         the archive shipped with no manifest at all."
+    );
+    on_disk.remove(manifest);
+
     let mut drifted: Vec<String> = Vec::new();
     for (rel, want) in &on_disk {
         match embedded.get(rel) {
