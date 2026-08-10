@@ -41,7 +41,13 @@ command -v claude >/dev/null || fail "the claude CLI is not on PATH"
 log "guard: no batch owner on this machine (yield, never seize)"
 pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active — yielding"
 
-UDID="${SMIX_C8_SIM:-}"
+# Its own variable first, then the one the whole tier is driven by.
+#
+# Without the second, `device-e2e-tier.sh` — which sets SMIX_E2E_UDID and
+# nothing else — skips this for want of a name. That reads in the summary
+# as "nothing to see" rather than "nobody told it where", and a skipped
+# script proves nothing while the gate stays green.
+UDID="${SMIX_C8_SIM:-${SMIX_E2E_UDID:-}}"
 if [ -z "$UDID" ]; then
   UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh" 2>/dev/null || true)"
 fi

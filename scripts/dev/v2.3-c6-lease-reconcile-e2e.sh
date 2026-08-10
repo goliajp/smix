@@ -68,6 +68,25 @@ if pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1; then
   echo "C6-LEASE-RECONCILE-SKIP"
   exit 0
 fi
+
+# The `byUs` assertion below needs this script to be the one that booted
+# the device, and it cannot become that by asking.
+#
+# It asserts that smix's ledger tells "we brought this up" apart from
+# "somebody else did" — which is what a lease is for, so the assertion
+# stays exactly as it is. What was missing is the precondition: run
+# against a device someone else booted and the honest answer is "I
+# cannot check this here", not "smix got it wrong". It failed that way
+# for the first time tonight, and only because an earlier fix stopped
+# other scripts shutting the device down between runs.
+if [ "$WAS_BOOTED" = "yes" ]; then
+  # Same reasoning as the guard above, and the same shape: an unmet
+  # precondition is a SKIP.
+  log "$UDID was already booted by someone else — \`byUs\` says whose boot it"
+  log "was, and this script can only check that about a boot it performed"
+  echo "C6-LEASE-RECONCILE-SKIP"
+  exit 0
+fi
 # The default runner port is shared with every other smix session on this
 # machine, so a busy port is not this test's failure to report.
 if curl -s -m 2 "http://127.0.0.1:${SMIX_RUNNER_PORT:-22087}/health" >/dev/null 2>&1; then

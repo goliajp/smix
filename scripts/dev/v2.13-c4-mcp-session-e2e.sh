@@ -36,7 +36,13 @@ skip() { printf '[c4-mcp] %s\n' "$*" >&2; printf '%s\n' "C4-MCP-SESSION-SKIP"; e
 log "guard: no batch owner on this machine (yield, never seize)"
 pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active — yielding"
 
-UDID="${SMIX_C4_SIM:-}"
+# Its own variable first, then the one the whole tier is driven by.
+#
+# Without the second, `device-e2e-tier.sh` — which sets SMIX_E2E_UDID and
+# nothing else — skips this for want of a name. That reads in the summary
+# as "nothing to see" rather than "nobody told it where", and a skipped
+# script proves nothing while the gate stays green.
+UDID="${SMIX_C4_SIM:-${SMIX_E2E_UDID:-}}"
 if [ -z "$UDID" ]; then
   UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" || skip "set SMIX_C4_SIM to a UDID"
 fi
