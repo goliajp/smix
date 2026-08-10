@@ -131,6 +131,9 @@ jobs:
       # Reads the e2e scripts' own refusals; they are in the checkout.
       - name: a yield is not a failure
         run: python3 scripts/dev/yield-is-not-failure-scan.py
+      # Reads the e2e scripts' teardowns; they are in the checkout.
+      - name: teardown restores rather than imposes
+        run: python3 scripts/dev/teardown-restores-scan.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the

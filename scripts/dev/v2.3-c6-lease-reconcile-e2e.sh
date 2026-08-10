@@ -41,6 +41,21 @@ cd "$ROOT"
 
 step "0. resolve the device, and refuse to run next to somebody's session"
 UDID="$("$SMIX" sim list 2>/dev/null | awk -v a="$ALIAS" '$2 == a || $0 ~ a {print $1; exit}')"
+
+# Only shut down what this script booted.
+#
+# `sim shutdown` in teardown reads as tidiness when the script is run
+# alone. In a suite it is how one script fails the ones after it: this
+# resolved the shared dev sim from an alias, drove it, and shut it down,
+# and everything later needing that sim failed with "Unable to lookup in
+# current state: Shutdown". Four of eight failures in the first full
+# tier run passed when run on their own.
+#
+# `smix sim boot` on a booted device is a no-op, so booting it is not a
+# way to acquire the right to shut it down — what matters is whether it
+# was already up when we arrived.
+WAS_BOOTED=no
+xcrun simctl list devices 2>/dev/null | grep -q "$UDID.*Booted" && WAS_BOOTED=yes
 [ -n "$UDID" ] || fail "alias $ALIAS is not registered — see \`smix sim list\`"
 log "device $ALIAS = $UDID"
 if pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1; then
@@ -69,7 +84,9 @@ cleanup() {
   # smix leaves the boot row behind, pointing at a device that is
   # already off. Our own scripts should not be the example of the
   # thing this whole mechanism is about.
-  "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
+  if [ "$WAS_BOOTED" != "yes" ]; then
+    "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 

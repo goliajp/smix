@@ -169,6 +169,11 @@ bash "$ROOT/scripts/dev/v3.0-c3-determinism.sh" --selftest >> /tmp/smix-ship-fla
 # CI failure means running something that was equivalent when written.
 # A gate that goes red because the machine was busy is one people stop
 # reading, and then stop running.
+# One script shutting down a device it was lent is how four others fail.
+log "teardown restores rather than imposes"
+python3 "$ROOT/scripts/dev/teardown-restores-scan.py" > /tmp/smix-ship-teardown.log 2>&1 \
+  || fail "teardown-restores scan FAILED — see /tmp/smix-ship-teardown.log"
+
 log "a yield is not a failure"
 python3 "$ROOT/scripts/dev/yield-is-not-failure-scan.py" > /tmp/smix-ship-yield.log 2>&1 \
   || fail "yield-is-not-failure scan FAILED — see /tmp/smix-ship-yield.log"

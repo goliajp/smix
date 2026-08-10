@@ -18,6 +18,16 @@ STUDIO_SIM="${SMIX_FED_STUDIO_SIM:-sim-smix-02}"
 MINI_SIM="${SMIX_FED_MINI_SIM:-sim-simx-001}"
 REPO="workspace/goliajp/smix"   # remote, relative to $HOME
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# Only shut down what this script booted, here and on the far node.
+#
+# In teardown `sim shutdown` reads as tidiness; in a suite it is how one
+# script fails the ones after it. `smix sim boot` on a booted device is
+# a no-op, so booting is not a way to acquire the right to shut down —
+# what matters is whether it was already up when we arrived. The far
+# node is somebody else's machine, so the same question is asked there.
+WAS_BOOTED_LOCAL=no
+WAS_BOOTED_REMOTE=no
 FLOW_A="scripts/release/stress-corpus/launch-and-capture.yaml"
 FLOW_B="scripts/release/stress-corpus/screenshot-twice.yaml"
 ARTIFACT_DIR=".smix/fed-artifacts"
@@ -72,19 +82,25 @@ lsof -nP -i ":$STUDIO_PORT" >/dev/null 2>&1 && skip "port $STUDIO_PORT busy on s
 WORK="$(mktemp -d)"
 mkdir -p "$WORK/pull"
 UDID_S=""
+xcrun simctl list devices 2>/dev/null | grep -q "$UDID_S.*Booted" && WAS_BOOTED_LOCAL=yes
 UDID_M=""
+rssh "xcrun simctl list devices 2>/dev/null | grep -q \"$UDID_M.*Booted\"" && WAS_BOOTED_REMOTE=yes
 cleanup() {
   log "teardown: runners down + sims shutdown + artifacts + workdir"
   if [ -n "$UDID_M" ]; then
     rssh "cd '$REMOTE_REPO' && target/release/smix runner down" || true
-    rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID_M" || true
+    if [ "$WAS_BOOTED_REMOTE" != "yes" ]; then
+      rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID_M" || true
+    fi
   fi
   rssh "cd '$REMOTE_REPO' && rm -rf $ARTIFACT_DIR && rm -f launch-capture.png shot-1.png shot-2.png" || true
   if [ -n "$UDID_S" ]; then
     # iOS `runner down` selects its port from SMIX_RUNNER_PORT only —
     # never run it bare here, that would hit the default port's runner.
     ( cd "$ROOT" && SMIX_RUNNER_PORT="$STUDIO_PORT" target/release/smix runner down ) || true
-    ( cd "$ROOT" && target/release/smix sim shutdown "$UDID_S" ) || true
+    if [ "$WAS_BOOTED_LOCAL" != "yes" ]; then
+      ( cd "$ROOT" && target/release/smix sim shutdown "$UDID_S" ) || true
+    fi
   fi
   rm -rf "$ROOT/$ARTIFACT_DIR"
   rm -f "$ROOT/launch-capture.png" "$ROOT/shot-1.png" "$ROOT/shot-2.png"

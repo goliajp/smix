@@ -12,6 +12,16 @@ HOST="${SMIX_FED_NODE_HOST:-mini}"
 REPO="${SMIX_FED_NODE_REPO:-workspace/goliajp/smix}"   # remote, relative to $HOME
 SIM_NAME="sim-simx-001"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# Only shut down what this script booted, here and on the far node.
+#
+# In teardown `sim shutdown` reads as tidiness; in a suite it is how one
+# script fails the ones after it. `smix sim boot` on a booted device is
+# a no-op, so booting is not a way to acquire the right to shut down —
+# what matters is whether it was already up when we arrived. The far
+# node is somebody else's machine, so the same question is asked there.
+WAS_BOOTED_LOCAL=no
+WAS_BOOTED_REMOTE=no
 FLOW_A="scripts/release/stress-corpus/launch-and-capture.yaml"
 FLOW_B="scripts/release/stress-corpus/screenshot-twice.yaml"
 
@@ -42,11 +52,14 @@ rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && skip "user build in fligh
 
 WORK="$(mktemp -d)"
 UDID=""
+rssh "xcrun simctl list devices 2>/dev/null | grep -q \"$UDID.*Booted\"" && WAS_BOOTED_REMOTE=yes
 cleanup() {
   log "teardown: runner down + sim shutdown + remote artifacts + workdir"
   if [ -n "$UDID" ]; then
     rssh "cd '$REMOTE_REPO' && target/release/smix runner down --device $UDID" || true
-    rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID" || true
+    if [ "$WAS_BOOTED_REMOTE" != "yes" ]; then
+      rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID" || true
+    fi
   fi
   rssh "cd '$REMOTE_REPO' && rm -f launch-capture.png shot-1.png shot-2.png" || true
   rm -rf "$WORK"
