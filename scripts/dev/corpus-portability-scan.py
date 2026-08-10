@@ -103,6 +103,18 @@ if len(portable) < MINIMUM_PORTABLE:
         f"— do not reach it by deleting flows."
     )
 
+# `--list` prints the portable flow names and nothing else, so the
+# runner script derives its tier from this judgement instead of keeping
+# a second copy of it. Four lists in this cycle were copies that had
+# drifted from what they copied.
+if "--list" in sys.argv:
+    if problems:
+        for p in problems:
+            print(f"corpus-portability-scan: {p}", file=sys.stderr)
+        sys.exit(1)
+    print("\n".join(portable))
+    sys.exit(0)
+
 if problems:
     print("corpus-portability-scan: FAIL")
     for p in problems:

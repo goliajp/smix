@@ -165,6 +165,12 @@ bash "$ROOT/scripts/dev/v3.0-c3-determinism.sh" --selftest >> /tmp/smix-ship-fla
 # history, or "known unstable" is just a flow someone got tired of.
 # Twenty of twenty-one corpus flows name system-app identifiers that
 # differ by iOS version; the portable tier is what a CI runner can run.
+# The CI job must run the same script a person can, or reproducing a
+# CI failure means running something that was equivalent when written.
+log "portable tier parity"
+python3 "$ROOT/scripts/dev/portable-tier-parity.py" > /tmp/smix-ship-tier-parity.log 2>&1 \
+  || fail "portable tier parity FAILED — see /tmp/smix-ship-tier-parity.log"
+
 log "corpus portability scan"
 python3 "$ROOT/scripts/dev/corpus-portability-scan.py" > /tmp/smix-ship-portability.log 2>&1 \
   || fail "corpus portability scan FAILED — see /tmp/smix-ship-portability.log"

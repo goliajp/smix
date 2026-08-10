@@ -45,6 +45,8 @@ LOCAL = {
     "mcp cli parity scan": "mcp-cli-parity-scan",
     "known-unstable list scan": "known-unstable-scan",
     "corpus portability scan": "corpus-portability-scan",
+    "portable tier parity": "portable-tier-parity",
+    "portable tier selftest": "portable-tier.sh --selftest",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",
     "android gate scan": "android-gate-scan",
@@ -78,6 +80,13 @@ NOT_LOCAL = {
     "build smix (for the MCP parity scan)": (
         "a fresh checkout has no binary; locally the gate should judge whatever "
         "you last built, and it refuses rather than guessing when there is none"
+    ),
+    "what runtimes this runner has": "a runner's image is not this machine; printed there, meaningless here",
+    "build smix": "CI setup for the job below, not a check",
+    "boot a simulator": "CI setup; locally you already have one",
+    "portable corpus tier": (
+        "needs a booted simulator, so it stays out of a device-free preflight; "
+        "run `scripts/release/portable-tier.sh` yourself when working on it"
     ),
     "upload artifact": "CI plumbing",
 }
