@@ -54,7 +54,17 @@ adb devices | grep -q "^${SERIAL}[[:space:]]*device$" \
 # The field this drives. Settings' search box is on every image and is a
 # plain EditText, which is what makes it a fair stand-in for an app's
 # own field; the recorder e2e drives the same one.
-FIELD_ID="search_src_text"
+# The fixture's field, not the system Settings search box.
+#
+# `search_src_text` is a resource id belonging to whatever version of
+# Settings the emulator happens to run, and on this one it does not
+# exist — so the tap missed, nothing took focus, and this gate reported
+# a typing failure that was not one. A gate that names a system app's
+# internals has taken that app's version as a contract; the same reason
+# the iOS corpus grew a portable tier at C4a.
+FIELD_ID="fixture_input"
+# One field, so focusing and typing are the same element.
+FOCUS_ID="${FOCUS_ID:-fixture_input}"
 
 field_text() {
   curl -s --max-time 10 "$R/tree" | python3 -c '
@@ -84,14 +94,37 @@ echo "$OUT" | grep -q '"method":"key-events"' \
 log "key-events, named"
 
 step "3. a focused field, longer than the old fifty-delete bound"
-adb -s "$SERIAL" shell am force-stop com.android.settings >/dev/null 2>&1 || true
-adb -s "$SERIAL" shell am start -n com.android.settings/.Settings >/dev/null 2>&1
+adb -s "$SERIAL" shell am force-stop dev.smix.fixture >/dev/null 2>&1 || true
+adb -s "$SERIAL" shell am start -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
 sleep 3
-curl -sf --max-time 10 -X POST "$R/tap-by-id" -H 'Content-Type: application/json' \
-  --data '{"id":"search_action_bar"}' >/dev/null || true
+# A tap that found nothing fails here, naming the id.
+#
+# Both of these discarded their result with `|| true`. The second one
+# missed — `search_src_text` does not exist in this Android version's
+# Settings — so nothing took focus, 120 characters went nowhere, and the
+# failure surfaced three steps later as "the field holds 0 characters".
+# That message sent the investigation at the typing path, which was
+# working. `saw_node` in the reply is what separated "the tap failed"
+# from "the tap landed and did nothing".
+tap_id() {
+  local out
+  out="$(curl -s --max-time 10 -X POST "$R/tap-by-id" \
+    -H 'Content-Type: application/json' --data "{\"id\":\"$1\"}")"
+  # `ok`, not `saw_node`.
+  #
+  # `saw_node` answers "did the a11y path resolve it", and `/tap-by-id`
+  # has two paths: a `touch` reply is `ok:true` with `saw_node:false`
+  # and the tap landed. Asserting on `saw_node` failed a tap that
+  # worked — the first draft of this check read a path marker as a hit
+  # marker. `ok` is the field that answers whether it was tapped.
+  case "$out" in
+    *'"ok":true'*) ;;
+    *) fail "no node with id $1 on screen — the subject does not have it: $out" ;;
+  esac
+}
+tap_id "$FOCUS_ID"
 sleep 2
-curl -sf --max-time 10 -X POST "$R/tap-by-id" -H 'Content-Type: application/json' \
-  --data "{\"id\":\"$FIELD_ID\"}" >/dev/null || true
+tap_id "$FIELD_ID"
 sleep 2
 
 LONG="$(python3 -c 'print("x" * 120)')"
