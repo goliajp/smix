@@ -18,6 +18,16 @@ MINI_SIM="${SMIX_FED_MINI_SIM:-sim-simx-001}"
 REPO="workspace/goliajp/smix"   # remote, relative to $HOME
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
+# Only shut down what this script booted, here and on the far node.
+#
+# In teardown `sim shutdown` reads as tidiness; in a suite it is how one
+# script fails the ones after it. `smix sim boot` on a booted device is
+# a no-op, so booting is not a way to acquire the right to shut down —
+# what matters is whether it was already up when we arrived. The far
+# node is somebody else's machine, so the same question is asked there.
+WAS_BOOTED_LOCAL=no
+WAS_BOOTED_REMOTE=no
+
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$ROOT/scripts/lib/gate-port.sh"
 STUDIO_PORT="${SMIX_FED_STUDIO_PORT:-$SMIX_RUNNER_PORT}"
@@ -79,7 +89,9 @@ log "guard: SMIX_UDID / SMIX_RUNNER_PORT not exported (clap counts env values as
 WORK="$(mktemp -d)"
 mkdir -p "$WORK/pull"
 UDID_S=""
+xcrun simctl list devices 2>/dev/null | grep -q "$UDID_S.*Booted" && WAS_BOOTED_LOCAL=yes
 UDID_M=""
+rssh "xcrun simctl list devices 2>/dev/null | grep -q \"$UDID_M.*Booted\"" && WAS_BOOTED_REMOTE=yes
 
 # Studio teardown, no sweep (C4 incident discipline): read the recorded
 # runner handle from the store, verify the pid is still xcodebuild
@@ -123,12 +135,16 @@ cleanup() {
   log "teardown: runners down (mini) / precise handle kill (studio) + sims shutdown + artifacts + workdir"
   if [ -n "$UDID_M" ]; then
     rssh "cd '$REMOTE_REPO' && target/release/smix runner down" || true
-    rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID_M" || true
+    if [ "$WAS_BOOTED_REMOTE" != "yes" ]; then
+      rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID_M" || true
+    fi
   fi
   rssh "cd '$REMOTE_REPO' && rm -rf $ARTIFACT_DIR && rm -f launch-capture.png shot-1.png shot-2.png" || true
   if [ -n "$UDID_S" ]; then
     stop_studio_runner
-    ( cd "$ROOT" && target/release/smix sim shutdown "$UDID_S" ) || true
+    if [ "$WAS_BOOTED_LOCAL" != "yes" ]; then
+      ( cd "$ROOT" && target/release/smix sim shutdown "$UDID_S" ) || true
+    fi
   fi
   rm -rf "$ROOT/$ARTIFACT_DIR"
   rm -f "$ROOT/launch-capture.png" "$ROOT/shot-1.png" "$ROOT/shot-2.png"

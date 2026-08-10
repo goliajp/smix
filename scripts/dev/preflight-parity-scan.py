@@ -47,6 +47,7 @@ LOCAL = {
     "corpus portability scan": "corpus-portability-scan",
     "portable tier parity": "portable-tier-parity",
     "a yield is not a failure": "yield-is-not-failure-scan",
+    "teardown restores rather than imposes": "teardown-restores-scan",
     "portable tier selftest": "portable-tier.sh --selftest",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",
