@@ -126,6 +126,10 @@ jobs:
       # the author's; reads only the corpus, which is in the checkout.
       - name: corpus portability scan
         run: python3 scripts/dev/corpus-portability-scan.py
+      - name: portable tier parity
+        run: python3 scripts/dev/portable-tier-parity.py
+      - name: portable tier selftest
+        run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the
       # guides against `.claude/docs/`' probe ledgers, and that record
       # lives on the development machine only — its own refusal says
@@ -158,6 +162,41 @@ jobs:
         run: bash scripts/dev/v3.0-c3-determinism.sh --selftest
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check
+
+  portable-corpus:
+    # The corpus flows that do not name system-app identifiers, on a
+    # runner's simulator.
+    #
+    # The other twenty drive Settings, whose row ids differ by iOS
+    # version and device model; this machine's 26.5 is not what a runner
+    # has, so those would go red for reasons unrelated to smix.
+    #
+    # `continue-on-error` for now: this is the first job here to boot a
+    # simulator, and a new device job that can block every push before
+    # anyone has seen it behave is how a gate gets disabled rather than
+    # fixed. It comes off once the runs are boring.
+    runs-on: macos-15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: what runtimes this runner has
+        # Printed, not assumed. The author's machine runs iOS 26.5 and
+        # what a runner image ships is a separate fact; a job that
+        # assumed one would fail with a message about smix.
+        run: xcrun simctl list runtimes
+      - name: build smix
+        run: cargo build --release -p smix-cli
+      - name: boot a simulator
+        run: |
+          UDID="$(xcrun simctl create smix-ci 'iPhone 16' 2>/dev/null \
+                  || xcrun simctl list devices available -j \
+                     | python3 -c 'import json,sys;d=json.load(sys.stdin)["devices"];print(next(x["udid"] for v in d.values() for x in v if x["isAvailable"]))')"
+          echo "SMIX_CORPUS_SIM=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+      - name: portable corpus tier
+        run: SMIX_BIN=$PWD/target/release/smix bash scripts/release/portable-tier.sh
 
   server-integration:
     # The wiring suite needs nothing running: both stores are embedded.
