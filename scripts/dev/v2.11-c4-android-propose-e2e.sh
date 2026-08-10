@@ -9,11 +9,21 @@
 set -euo pipefail
 
 SERIAL="${1:-emulator-5554}"
-PORT="${SMIX_ANDROID_PORT:-28080}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$ROOT/scripts/lib/gate-port.sh"
+# The port the runner is actually on, which since gate-port.sh landed is
+# not 28080 unless someone says so.
+#
+# `runner up` reads SMIX_RUNNER_PORT from the environment, and
+# gate-port.sh exports a free one so a bystander's runner cannot turn
+# this red. This line kept probing 28080 regardless, so the health loop
+# knocked ninety times on a door nobody was behind and reported "runner
+# never healthy" — a self-inflicted break that reads exactly like the
+# product failing to start.
+PORT="${SMIX_ANDROID_PORT:-$SMIX_RUNNER_PORT}"
+
 SMIX="$ROOT/target/release/smix"
 R="http://localhost:$PORT"
 
