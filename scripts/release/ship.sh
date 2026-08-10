@@ -170,6 +170,13 @@ bash "$ROOT/scripts/dev/v3.0-c3-determinism.sh" --selftest >> /tmp/smix-ship-fla
 # A gate that goes red because the machine was busy is one people stop
 # reading, and then stop running.
 # One script shutting down a device it was lent is how four others fail.
+# A gate naming a system app's resource ids has taken that app's
+# version as a contract; when one goes missing the failure lands
+# somewhere else entirely.
+log "android gates drive our own app"
+python3 "$ROOT/scripts/dev/android-subject-scan.py" > /tmp/smix-ship-android-subject.log 2>&1 \
+  || fail "android-subject scan FAILED — see /tmp/smix-ship-android-subject.log"
+
 log "teardown restores rather than imposes"
 python3 "$ROOT/scripts/dev/teardown-restores-scan.py" > /tmp/smix-ship-teardown.log 2>&1 \
   || fail "teardown-restores scan FAILED — see /tmp/smix-ship-teardown.log"

@@ -61,14 +61,13 @@ log "runner up $SERIAL (Android takes its target per-request, no --bundle)"
 for i in $(seq 1 90); do sleep 2; curl -sf --max-time 2 "$R/health" >/dev/null 2>&1 && break; [ "$i" = 90 ] && { cat "$WORK/up.log"; fail "runner never healthy"; }; done
 
 log "launch Settings to record against"
-adb -s "$SERIAL" shell am force-stop com.android.settings >/dev/null 2>&1 || true
-adb -s "$SERIAL" shell am start -n com.android.settings/.Settings >/dev/null 2>&1
+adb -s "$SERIAL" shell am force-stop dev.smix.fixture >/dev/null 2>&1 || true
+adb -s "$SERIAL" shell am start -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
 sleep 2
 
 log "record a tap + fill"
 curl -sf -X POST "$R/record/start" >/dev/null
-curl -sf -X POST "$R/tap-by-id" -H 'Content-Type: application/json' --data '{"id":"search_action_bar"}' >/dev/null; sleep 1
-curl -sf -X POST "$R/tap-by-id" -H 'Content-Type: application/json' --data '{"id":"search_src_text"}' >/dev/null; sleep 1
+curl -sf -X POST "$R/tap-by-id" -H 'Content-Type: application/json' --data '{"id":"fixture_input"}' >/dev/null; sleep 1
 curl -sf -X POST "$R/input-text" -H 'Content-Type: application/json' --data '{"text":"smix"}' >/dev/null; sleep 1
 curl -sf -X POST "$R/record/stop" -o "$WORK/stop.json"
 

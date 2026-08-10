@@ -63,27 +63,33 @@ done
 
 # --- put Settings home on screen ---
 log "launch Settings home"
-adb -s "$SERIAL" shell am force-stop com.android.settings >/dev/null 2>&1 || true
-adb -s "$SERIAL" shell am start -n com.android.settings/.Settings >/dev/null 2>&1
+adb -s "$SERIAL" shell am force-stop dev.smix.fixture >/dev/null 2>&1 || true
+adb -s "$SERIAL" shell am start -n dev.smix.fixture/.MainActivity >/dev/null 2>&1
 sleep 2
 
-SEL="search_action_bar"
+# The fixture, not the system Settings app.
+#
+# Those resource ids belong to whatever Settings version the emulator
+# runs; `search_src_text` is absent on this one, so the tap landed
+# nowhere and the failure surfaced somewhere else entirely. The fixture
+# ships in this repository and is built by the gate that drives it.
+SEL="fixture_input"
 
 # --- (a) baseline flow must pass (exit 0) ---
 cat >"$WORK/baseline.yaml" <<YAML
-appId: com.android.settings
+appId: dev.smix.fixture
 ---
 - assertVisible:
     id: $SEL
 YAML
 log "baseline flow (assertVisible id:$SEL)"
 if ! "$SMIX" run --device "$SERIAL" --platform android --runner-port "$PORT" --no-launch "$WORK/baseline.yaml"; then
-  fail "C4-BASELINE-FAIL: baseline selector $SEL stale on Settings home — not a loop problem"
+  fail "C4-BASELINE-FAIL: baseline selector $SEL not on the fixture — not a loop problem"
 fi
 
 # --- (b) corrupt flow must fail (exit 3, Sdk), assembling a real bundle ---
 cat >"$WORK/corrupt.yaml" <<YAML
-appId: com.android.settings
+appId: dev.smix.fixture
 ---
 - assertVisible:
     id: ${SEL}X
