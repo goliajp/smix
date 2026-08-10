@@ -167,6 +167,12 @@ bash "$ROOT/scripts/dev/v3.0-c3-determinism.sh" --selftest >> /tmp/smix-ship-fla
 # differ by iOS version; the portable tier is what a CI runner can run.
 # The CI job must run the same script a person can, or reproducing a
 # CI failure means running something that was equivalent when written.
+# A gate that goes red because the machine was busy is one people stop
+# reading, and then stop running.
+log "a yield is not a failure"
+python3 "$ROOT/scripts/dev/yield-is-not-failure-scan.py" > /tmp/smix-ship-yield.log 2>&1 \
+  || fail "yield-is-not-failure scan FAILED — see /tmp/smix-ship-yield.log"
+
 log "portable tier parity"
 python3 "$ROOT/scripts/dev/portable-tier-parity.py" > /tmp/smix-ship-tier-parity.log 2>&1 \
   || fail "portable tier parity FAILED — see /tmp/smix-ship-tier-parity.log"

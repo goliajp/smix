@@ -59,10 +59,15 @@ rssh "pgrep -f 'runner.ts|smix run|supervise' >/dev/null" && skip "batch owner a
 
 log "guard: no user build in flight ($HOST: cargo/xcodebuild; studio: cargo only — resident runner capsule is legitimate)"
 rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && skip "user build in flight on $HOST — yielding; re-run when it is idle"
-pgrep -f 'cargo build' >/dev/null && fail "cargo build in flight on studio — yielding"
+# `skip`, not `fail` — the word "yielding" is right there. A script
+# that detects a condition it will not disturb and reports failure makes
+# a gate red for something the product did not do, and a gate that goes
+# red for reasons unrelated to the code is one people stop reading. The
+# line above this one already treats a busy batch owner as a skip.
+pgrep -f 'cargo build' >/dev/null && skip "cargo build in flight on studio — yielding"
 
 log "guard: studio runner port $STUDIO_PORT free"
-lsof -nP -i ":$STUDIO_PORT" >/dev/null 2>&1 && fail "port $STUDIO_PORT busy on studio"
+lsof -nP -i ":$STUDIO_PORT" >/dev/null 2>&1 && skip "port $STUDIO_PORT busy on studio — yielding"
 
 [ -f "$ROOT/$FLOW_A" ] || fail "corpus flow missing: $FLOW_A"
 [ -f "$ROOT/$FLOW_B" ] || fail "corpus flow missing: $FLOW_B"
