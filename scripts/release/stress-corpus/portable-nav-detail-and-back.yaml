@@ -1,0 +1,12 @@
+# Portable counterpart of nav-general-and-back.
+#
+# Through a NavigationStack and out again by the navigation bar's back
+# button, which is what the Settings flow does. A bespoke close control
+# would exercise a different path.
+appId: jp.golia.smix.fixture
+---
+- launchApp
+- tapOn: { id: "fixture-detail-link" }
+- assertVisible: { id: "fixture-detail" }
+- back
+- assertVisible: { id: "fixture-input" }

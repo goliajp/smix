@@ -122,6 +122,10 @@ jobs:
       # Reads the corpus and its excuse list, both in the checkout.
       - name: known-unstable list scan
         run: python3 scripts/dev/known-unstable-scan.py
+      # Counts how much of the corpus could run on a machine that is not
+      # the author's; reads only the corpus, which is in the checkout.
+      - name: corpus portability scan
+        run: python3 scripts/dev/corpus-portability-scan.py
       # guide-claims-scan is deliberately NOT here. It reconciles the
       # guides against `.claude/docs/`' probe ledgers, and that record
       # lives on the development machine only — its own refusal says

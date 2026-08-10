@@ -1,0 +1,9 @@
+# Portable counterpart of assert-account-cell.
+#
+# Same shape against a subject that travels: the Settings row ids this
+# mirrors change with the iOS version and the device model, so that flow
+# cannot run anywhere but a machine with the same runtime.
+appId: jp.golia.smix.fixture
+---
+- launchApp
+- assertVisible: { id: "fixture-input" }

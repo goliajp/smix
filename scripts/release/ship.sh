@@ -163,6 +163,12 @@ bash "$ROOT/scripts/dev/v3.0-c3-determinism.sh" --selftest >> /tmp/smix-ship-fla
 
 # A flow excused from the gate must carry a measured rate and a
 # history, or "known unstable" is just a flow someone got tired of.
+# Twenty of twenty-one corpus flows name system-app identifiers that
+# differ by iOS version; the portable tier is what a CI runner can run.
+log "corpus portability scan"
+python3 "$ROOT/scripts/dev/corpus-portability-scan.py" > /tmp/smix-ship-portability.log 2>&1 \
+  || fail "corpus portability scan FAILED — see /tmp/smix-ship-portability.log"
+
 log "known-unstable list scan"
 python3 "$ROOT/scripts/dev/known-unstable-scan.py" > /tmp/smix-ship-known-unstable.log 2>&1 \
   || fail "known-unstable list scan FAILED — see /tmp/smix-ship-known-unstable.log"
