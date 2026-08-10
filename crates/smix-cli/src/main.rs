@@ -1644,6 +1644,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             // Putting it inside the arms would mean remembering it in
             // each — and the arms that most needed it are exactly the
             // ones nobody remembered.
+            // Governance before transport. Both can refuse the same
+            // verb on the same device; the difference is what the
+            // person is told, and only one of the two is the rule.
+            guard_destructive_action(&action)?;
             if let Some(device) = sim_action_device(&action) {
                 guard_sim_verb(&action, device)?;
             }
@@ -1880,7 +1884,6 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 SimAction::Erase { device } => {
                     let udid = resolve_device(&device)?;
-                    guard_destructive(&device)?;
                     simctl.erase(&udid).await?;
                     println!("erased: {udid}");
                 }
@@ -1963,7 +1966,6 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 SimAction::Uninstall { device, bundle_id } => {
                     let udid = resolve_device(&device)?;
-                    guard_destructive(&device)?;
                     let control = smix_sdk::ios_device::IosDeviceControl::new();
                     let bundle = bundle_id.clone();
                     with_device_lease(&control, &udid, |leased| async move {
@@ -2001,7 +2003,6 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 SimAction::KeychainReset { device } => {
                     let udid = resolve_device(&device)?;
-                    guard_destructive(&device)?;
                     let control = smix_sdk::ios_device::IosDeviceControl::new();
                     with_device_lease(&control, &udid, |leased| async move {
                         leased.keychain_reset().await?;
@@ -3573,6 +3574,49 @@ fn hold_run_lease(udid: Option<&str>) -> Result<Option<RunLease>, CliError> {
 /// to `smix_lease::may_destroy`, which is where the rule lives. An
 /// unregistered ref is not gated here — resolution already refused it, and
 /// a second refusal with a different reason would be confusing.
+/// Whether this verb can take something away from a device somebody
+/// carries.
+///
+/// Named here, once, so the test that requires every variant to be
+/// classified reads the same judgement the runtime uses. `exec` is on
+/// the list because it runs an arbitrary command: whatever the worst
+/// thing that command can do is, this verb can do it.
+fn is_destructive(action: &SimAction) -> bool {
+    matches!(
+        action,
+        SimAction::Erase { .. }
+            | SimAction::Uninstall { .. }
+            | SimAction::KeychainReset { .. }
+            | SimAction::Exec { .. }
+    )
+}
+
+/// The governance gate, for every verb, before any of them runs.
+///
+/// It used to be called inside three match arms, and the comment above
+/// `guard_sim_verb` had already explained why that fails: "putting it
+/// inside the arms would mean remembering it in each — and the arms
+/// that most needed it are exactly the ones nobody remembered." `exec`
+/// was one nobody remembered.
+///
+/// Before `guard_sim_verb`, deliberately. Both refuse a destructive
+/// verb on a physical device, but they answer different questions —
+/// this one says the rule and how to lift it, the other says simctl
+/// cannot reach that device. A reader told the second learns a plumbing
+/// detail and goes looking for another route; a reader told the first
+/// learns the rule. The device was safe either way only because simctl
+/// happens not to reach phones, which the guard's own comment noted
+/// "stopped holding the day a `devicectl` path appeared".
+fn guard_destructive_action(action: &SimAction) -> Result<(), CliError> {
+    if !is_destructive(action) {
+        return Ok(());
+    }
+    let Some(device) = sim_action_device(action) else {
+        return Ok(());
+    };
+    guard_destructive(device)
+}
+
 fn guard_destructive(device_ref: &str) -> Result<(), CliError> {
     let Ok(path) = registry_path() else {
         return Ok(());
