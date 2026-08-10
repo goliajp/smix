@@ -54,6 +54,31 @@ mkdir -p "$DST_DIR"
 # The tar options work on both macOS (bsdtar) and GNU tar with the
 # same semantics for --exclude, -C, and .-final.
 
+# The manifest that goes in describes the runner, not the workspace.
+#
+# `swift-bridge/Package.swift` declares the SDK, the UniFFI bindings and
+# a `.binaryTarget` pointing at SmixCoreFFI.xcframework — which the
+# excludes below deliberately leave out, at 49 MB against a 0.25 MB
+# archive compiled into the CLI. SwiftPM resolves the whole graph before
+# building, so shipping that declaration without the file stopped
+# `runner up` everywhere except the machine whose earlier builds had
+# left an xcframework lying in ~/.local/share/smix/runner/. CI found it
+# on the first push; nothing here could, because here it was present.
+#
+# Staged into a copy: the workspace manifest is the source of truth and
+# stays as it is.
+# Staged as a whole tree, with the manifest replaced in place.
+#
+# The first attempt excluded ./Package.swift and appended the trimmed
+# one with a second `-C`; bsdtar took the exclude and dropped the
+# append, and the archive shipped with no manifest at all. One source
+# directory, one pass, nothing to get wrong about how the two combine.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+cp -R "$SRC/." "$STAGE/tree"
+python3 "$REPO_ROOT/scripts/release/runner-package-manifest.py" > "$STAGE/tree/Package.swift" \
+  || { echo "error: could not build the runner manifest" >&2; exit 1; }
+
 COPYFILE_DISABLE=1 tar \
   --exclude='./SmixCoreFFI.xcframework' \
   --exclude='./SmixCoreFFI.xcframework.zip' \
@@ -66,7 +91,7 @@ COPYFILE_DISABLE=1 tar \
   --exclude='./.build' \
   --exclude='./.DS_Store' \
   --exclude='./__MACOSX' \
-  -cf - -C "$SRC" . \
+  -cf - -C "$STAGE/tree" . \
   | gzip -n -9 > "$DST_TAR"
 
 # SHA256 sidecar — matches the format we use elsewhere in the repo.
