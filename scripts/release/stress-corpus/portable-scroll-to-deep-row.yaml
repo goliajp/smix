@@ -1,0 +1,9 @@
+# Portable counterpart of the scroll-to-* flows.
+#
+# Row 39 of 40 is off screen at launch — measured, five swipes on this
+# simulator — so a device that never scrolled cannot pass this.
+appId: jp.golia.smix.fixture
+---
+- launchApp
+- scrollUntilVisible:
+    element: { id: "fixture-row-39" }

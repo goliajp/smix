@@ -44,6 +44,7 @@ LOCAL = {
     "preflight parity scan": "preflight-parity-scan",
     "mcp cli parity scan": "mcp-cli-parity-scan",
     "known-unstable list scan": "known-unstable-scan",
+    "corpus portability scan": "corpus-portability-scan",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",
     "android gate scan": "android-gate-scan",
