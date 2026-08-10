@@ -49,6 +49,30 @@ fi
 
 : "${SMIX_CORPUS_SIM:?set SMIX_CORPUS_SIM to the simulator to drive}"
 
+# This script had no binary of its own — it passed SMIX_BIN through to
+# the corpus gate and never ran smix itself. The bootstrap below does,
+# so it resolves one the same way the gate does.
+SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
+[ -n "$SMIX_BIN" ] || { echo "error: smix binary not on PATH (set SMIX_BIN)" >&2; exit 2; }
+
+# A `.smix` workspace, if this checkout has none.
+#
+# `runner up` resolves device refs against the registry in `.smix/`, and
+# that directory is runtime state — it is not in git, so a fresh
+# checkout has none and the first CI run of this tier died with "no
+# .smix/ workspace found upward from ...". Everything before it had
+# worked: the simulator booted, the fixture compiled and installed.
+#
+# `smix init` is the bootstrap for exactly this, and it is idempotent
+# enough to run when the directory is already there. Done here rather
+# than in the workflow so that the local and CI paths stay the same one
+# — the parity gate exists because they drift otherwise.
+if [ ! -d "$ROOT/.smix" ]; then
+    echo "portable tier: no .smix workspace — initialising for $SMIX_CORPUS_SIM"
+    ( cd "$ROOT" && "$SMIX_BIN" init --device "$SMIX_CORPUS_SIM" ) \
+        || { echo "error: smix init failed" >&2; exit 3; }
+fi
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
