@@ -27,7 +27,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
-UDID="${SMIX_CROSSAPP_E2E_UDID:-}"
+# Its own variable first, then the one the whole tier is driven by.
+#
+# Without the second, `device-e2e-tier.sh` — which sets SMIX_E2E_UDID and
+# nothing else — skipped this script for want of a name, and a skip in a
+# tier run reads as "nothing to see" rather than "nobody told it where".
+# It was the only one of the seven skips with that cause; the rest had
+# reasons (no physical device, no remote host).
+UDID="${SMIX_CROSSAPP_E2E_UDID:-${SMIX_E2E_UDID:-}}"
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$ROOT/scripts/lib/gate-port.sh"
 PORT="$SMIX_RUNNER_PORT"
@@ -46,9 +53,18 @@ FIXTURE_BUNDLE="$(grep -m1 '^BUNDLE_ID=' "$ROOT/scripts/dev/build-fixture-app.sh
 # `missingText`, and the SDK sends id selectors to `/tree` instead. The
 # header question is the same for both routes, and this is the one whose
 # wrapper was missing.
+# From ContentView, not from the top of the file.
+#
+# `grep -m1` took the first `Text("…")` anywhere, which was right until
+# the fixture grew a `DetailView` above `ContentView` — then this gate
+# asserted on "Detail", a string on the SECOND screen, and failed with
+# `found:false` while the header had worked perfectly (the diagnostics
+# said 125 candidates, which is the fixture's count). The second
+# self-inflicted break of this shape today; the first moved a port out
+# from under an Android health probe.
 FIXTURE_SRC="$ROOT/test-fixtures/demo-app/main.swift"
-FIXTURE_TEXT="$(grep -m1 -oE 'Text\("[^"]+"\)' "$FIXTURE_SRC" 2>/dev/null \
-  | sed 's/Text("//; s/")//')"
+FIXTURE_TEXT="$(sed -n '/struct ContentView/,$p' "$FIXTURE_SRC" 2>/dev/null \
+  | grep -m1 -oE 'Text\("[^"]+"\)' | sed 's/Text("//; s/")//')"
 WORK="$(mktemp -d)"
 
 log()  { printf '[c1c] %s\n' "$*" >&2; }
@@ -67,7 +83,7 @@ trap cleanup EXIT
 
 [ -x "$SMIX" ] || skip "no smix binary at $SMIX (build it, or set SMIX_BIN)"
 if [ -z "$UDID" ]; then
-  skip "set SMIX_CROSSAPP_E2E_UDID to a booted simulator"
+  skip "set SMIX_CROSSAPP_E2E_UDID or SMIX_E2E_UDID to a booted simulator"
 fi
 
 # The text has to have come out of the fixture, or a green run means it
