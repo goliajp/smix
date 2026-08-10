@@ -53,44 +53,56 @@ export PATH="$BUILT:$PATH"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-step "start a session with --plugin-dir and ask what it has"
-# `-p` for one non-interactive turn. The prompt asks for the tool names
-# because that is the thing under test: a plugin that loads but whose MCP
-# server never starts has no smix tools and says nothing about why.
-# stdout captured, stderr to a file, exit code kept — and all three
-# consulted below. `claude` writes a usage-limit refusal to *stdout*, so a
-# check that only read stderr saw an empty file and called the plugin
-# broken.
-set +e
-OUT="$(cd "$WORK" && claude --plugin-dir "$PLUGIN" \
-  --tools "" \
-  -p 'List every tool name available to you that begins with smix_. Output only the names, one per line. If there are none, output the single word NONE.' \
-  2>"$WORK/err.log")"
-SESSION_RC=$?
-set -e
-printf '%s\n' "$OUT" > "$WORK/out.log"
-[ "$SESSION_RC" -eq 0 ] || {
-  # `if`, not `&&`: under `set -e` a non-matching `a && b` returns
-  # non-zero and takes the whole script down without a word — a verdict
-  # line that silently never prints is exactly what this suite is being
-  # cleaned up to stop doing.
-  if session_unrunnable "$WORK/err.log" || session_unrunnable "$WORK/out.log"; then
-    skip "the claude session could not start ($(grep -hiEm1 "$UNRUNNABLE" "$WORK/err.log" "$WORK/out.log")) — nothing was observed either way"
-  fi
-  tail -10 "$WORK/err.log" >&2
-  fail "the session did not complete"
-}
+step "the plugin's MCP server starts and serves its tools"
+# Asked over the protocol, not of a language model.
+#
+# This used to run `claude -p 'list every tool beginning with smix_'` and
+# assert on the prose that came back. What it is testing — does the
+# plugin load, and does its MCP server start — is a fact the protocol
+# answers exactly: `tools/list` returns the names. Asking a model to
+# recite them adds a step that can drop one, and it did: twice tonight
+# this failed reporting `smix_tree` missing, while querying both the
+# installed and the freshly built binary over the protocol returned all
+# sixteen tools including that one.
+#
+# A model omitting one name from a list of sixteen is a model behaving
+# normally. Reading that as "the plugin is broken" is the test choosing
+# a proxy for the thing it means, which is the same error as watching a
+# navigation bar's title for "the transition finished".
+#
+# The server command comes out of the plugin's own `.mcp.json`, so this
+# starts what a session would start rather than a second opinion about
+# what that is.
+SERVER="$(python3 -c 'import json;print(json.load(open("'"$PLUGIN"'/.mcp.json"))["mcpServers"]["smix"]["command"])')"
+command -v "$SERVER" >/dev/null || fail "the plugin names $SERVER and it is not on PATH"
 
+OUT="$(printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"c5-plugin","version":"1"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | python3 "$ROOT/scripts/dev/run-with-timeout.py" 30 "$SERVER" 2>"$WORK/err.log" \
+  | python3 -c '
+import json, sys
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue
+    if d.get("id") == 2:
+        print("\\n".join(sorted(t["name"] for t in d["result"]["tools"])))
+        break
+')"
 printf '%s\n' "$OUT" > "$WORK/tools.txt"
 
-case "$OUT" in
-  *NONE*) fail "the session has no smix tools — the plugin loaded but its server did not" ;;
-esac
+[ -n "$OUT" ] || {
+  tail -10 "$WORK/err.log" >&2
+  fail "the plugin's server answered no tools — it loaded but did not start"
+}
 
 for tool in smix_devices smix_use smix_release smix_tree; do
   case "$OUT" in
     *"$tool"*) ;;
-    *) fail "the session is missing $tool; it reported: $(tr '\n' ' ' < "$WORK/tools.txt")" ;;
+    *) fail "the server does not serve $tool; it serves: $(tr '\n' ' ' < "$WORK/tools.txt")" ;;
   esac
 done
 log "lifecycle and sense tools are in the session"
