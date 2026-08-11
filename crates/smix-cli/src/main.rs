@@ -973,6 +973,13 @@ enum LeaseAction {
         /// Defaults to the one above the working directory.
         #[arg(long = "from", value_name = "DIR")]
         from: Vec<PathBuf>,
+        /// Say what would move and move nothing.
+        ///
+        /// The same decision path as the real thing, split only at the
+        /// write — a rehearsal that works the answer out for itself is
+        /// answering about itself.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Delete ledgers that no longer describe anything.
     ///
@@ -1325,6 +1332,9 @@ enum SimAction {
         /// cares about.
         #[arg(long = "from", value_name = "DIR")]
         from: Vec<PathBuf>,
+        /// Say what would move and move nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
     KeychainReset {
         device: String,
@@ -1792,7 +1802,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         cmd_sim_list(&simctl, json).await?;
                     }
                 }
-                SimAction::Migrate { from } => cmd_sim_migrate(from)?,
+                SimAction::Migrate { from, dry_run } => cmd_sim_migrate(from, dry_run)?,
                 SimAction::Unregister { alias } => {
                     let path = registry_path()?;
                     let sim = SimRegistry::unregister(&path, &alias)
@@ -4723,7 +4733,7 @@ fn cmd_sim_list_registered(json: bool) -> Result<(), CliError> {
 }
 
 /// Fold per-checkout device registries into this machine's.
-fn cmd_sim_migrate(from: Vec<PathBuf>) -> Result<(), CliError> {
+fn cmd_sim_migrate(from: Vec<PathBuf>, dry_run: bool) -> Result<(), CliError> {
     let into = registry_path()?;
     let sources: Vec<PathBuf> = if from.is_empty() {
         let cwd = std::env::current_dir()
@@ -4766,8 +4776,15 @@ fn cmd_sim_migrate(from: Vec<PathBuf>) -> Result<(), CliError> {
         })
         .collect();
 
-    let report = SimRegistry::migrate(&into, &sources)
-        .map_err(|e| CliError::Other(format!("migrate: {e}")))?;
+    // A rehearsal reads the same books and applies the same merge
+    // rules; only the write is skipped. Working the answer out a second
+    // way would produce a report about the second way.
+    let report = if dry_run {
+        SimRegistry::migrate_dry_run(&into, &sources)
+    } else {
+        SimRegistry::migrate(&into, &sources)
+    }
+    .map_err(|e| CliError::Other(format!("migrate: {e}")))?;
 
     for (path, why) in &report.unreadable {
         eprintln!("  {} could not be read: {why}", path.display());
@@ -4782,12 +4799,17 @@ fn cmd_sim_migrate(from: Vec<PathBuf>) -> Result<(), CliError> {
         println!("  ~ {alias} — destructive consent narrowed to the stricter answer");
     }
     println!(
-        "{} device(s) now recorded in {} ({} already there)",
+        "{} device(s) {} in {} ({} already there)",
         report.added.len(),
+        if dry_run {
+            "would be recorded"
+        } else {
+            "now recorded"
+        },
         into.display(),
         report.unchanged.len()
     );
-    if !report.added.is_empty() {
+    if !report.added.is_empty() && !dry_run {
         // The source is deliberately left in place, so the next reader
         // still finds it and still calls it unmigrated. Saying so beats
         // having somebody wonder why the note did not go away.

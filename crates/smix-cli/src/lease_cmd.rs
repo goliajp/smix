@@ -6,7 +6,7 @@
 //! is one nobody can trust or debug. These three verbs are that window.
 
 use crate::LeaseAction;
-use smix_lease::store::LeaseDir;
+use smix_lease::store::{CheckoutLedgers, LeaseDir, LedgerDivergence};
 use smix_lease::{Admission, StaleReason, store};
 use std::path::{Path, PathBuf};
 
@@ -66,17 +66,68 @@ fn device_ids(leases: &LeaseDir) -> Vec<String> {
 /// standing in. `root` is still the tree, and is used for exactly one
 /// thing: settling a dead holder's build products, which are in a tree.
 pub fn run(root: &Path, leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::CliError> {
+    // What the tree underfoot still holds, if it holds anything.
+    //
+    // Read for one purpose: to say when it disagrees. Never merged into
+    // the machine's answer — a tree's book is written by whatever smix
+    // that tree last ran, and on this machine that was still 3.0.0
+    // ninety-one minutes after the ledgers moved.
+    let checkout = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| CheckoutLedgers::discover(&cwd));
+    let divergences: Vec<LedgerDivergence> = match &checkout {
+        Some(c) => store::survey(leases, c),
+        None => Vec::new(),
+    };
+    let say_divergences = |only: Option<&str>| {
+        let Some(c) = &checkout else { return };
+        let rows: Vec<&LedgerDivergence> = divergences
+            .iter()
+            .filter(|d| only.is_none_or(|id| d.device_id() == id))
+            .collect();
+        if rows.is_empty() {
+            return;
+        }
+        let tree = c
+            .path()
+            .parent()
+            .and_then(std::path::Path::parent)
+            .unwrap_or(c.path());
+        eprintln!();
+        for d in rows {
+            match d {
+                LedgerDivergence::OnlyInCheckout { device_id } => eprintln!(
+                    "note: {device_id} has a ledger in {c} and none here — no other \
+                     checkout can see it. `smix lease migrate --from {}` brings it over.",
+                    tree.display()
+                ),
+                LedgerDivergence::Disagrees { device_id, detail } => eprintln!(
+                    "note: {device_id} is recorded differently in {c} — {detail}. \
+                     Something still writes there; until they agree, this command \
+                     answers from {leases} alone."
+                ),
+            }
+        }
+    };
     match action {
         LeaseAction::List => {
             let ids = device_ids(leases);
             if ids.is_empty() {
                 println!("no device ledgers under {leases}");
+                // Not a return. An empty machine and a tree that still
+                // holds ledgers is the state somebody most needs told
+                // about — it is what a fresh checkout of a machine mid-
+                // migration looks like, and returning here answered
+                // "nothing to see" while a tree held the only record of
+                // a device.
+                say_divergences(None);
                 return Ok(0);
             }
             for id in ids {
                 let facts = store::collect_facts(leases, &id).map_err(to_cli_error)?;
                 println!("{}", describe(&id, &smix_lease::assess(&facts)));
             }
+            say_divergences(None);
         }
         LeaseAction::Status { device } => {
             let udid = crate::resolve_device(&device)?;
@@ -94,9 +145,45 @@ pub fn run(root: &Path, leases: &LeaseDir, action: LeaseAction) -> Result<u8, cr
                 }
                 println!("run `smix lease reconcile {device}` to close them");
             }
+            say_divergences(Some(&udid));
         }
         LeaseAction::Reconcile { device } => {
             let udid = crate::resolve_device(&device)?;
+            // A device the two books disagree about is not settled here.
+            //
+            // Reconcile acts: it stops runners and shuts simulators
+            // down. The machine ledger is the only thing it reads, and
+            // while a tree holds a different record for the same device
+            // the machine's may be the older of the two. That is not a
+            // guess about this machine — for ninety-one minutes on
+            // 2026-08-11 the machine ledger read "abandoned, 2 close(s)
+            // owed" for a simulator whose runner, recorded only in
+            // `qualcomm/insight`, was alive and serving on port 22087.
+            // Acting then would have killed it.
+            //
+            // Refusing costs a wait. `lease migrate` is the way out, and
+            // it refuses in its own turn when both books name a live
+            // holder rather than choosing between two people's work.
+            if let Some(d) = divergences.iter().find(|d| d.device_id() == udid) {
+                let c = checkout
+                    .as_ref()
+                    .expect("a divergence implies a checkout book");
+                let tree = c
+                    .path()
+                    .parent()
+                    .and_then(std::path::Path::parent)
+                    .unwrap_or(c.path());
+                eprintln!("{udid}: not settling — {c} has a different record for it.");
+                if let LedgerDivergence::Disagrees { detail, .. } = d {
+                    eprintln!("  {detail}");
+                }
+                eprintln!(
+                    "  Settling from one book while the other says otherwise is how a \
+                     live session gets torn down. Reconcile them first:"
+                );
+                eprintln!("    smix lease migrate --from {}", tree.display());
+                return Ok(1);
+            }
             let facts = store::collect_facts(leases, &udid).map_err(to_cli_error)?;
             match smix_lease::assess(&facts) {
                 Admission::Granted => println!("{udid}: nothing to settle"),
@@ -143,7 +230,7 @@ pub fn run(root: &Path, leases: &LeaseDir, action: LeaseAction) -> Result<u8, cr
             }
         }
         LeaseAction::Owner { device } => return owner(leases, &device),
-        LeaseAction::Migrate { from } => migrate(leases, &from)?,
+        LeaseAction::Migrate { from, dry_run } => migrate(leases, &from, dry_run)?,
         LeaseAction::Prune { dry_run } => prune(leases, dry_run)?,
     }
     Ok(0)
@@ -184,7 +271,7 @@ fn owner(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
 }
 
 /// Fold per-checkout ledgers into this machine's.
-fn migrate(leases: &LeaseDir, from: &[PathBuf]) -> Result<(), crate::CliError> {
+fn migrate(leases: &LeaseDir, from: &[PathBuf], dry_run: bool) -> Result<(), crate::CliError> {
     let sources: Vec<PathBuf> = if from.is_empty() {
         std::env::current_dir()
             .ok()
@@ -209,20 +296,28 @@ fn migrate(leases: &LeaseDir, from: &[PathBuf]) -> Result<(), crate::CliError> {
     let mut moved = 0usize;
     let mut refused = 0usize;
     for src in &sources {
-        let src_dir = LeaseDir::at(src.clone());
-        let ids = device_ids(&src_dir);
+        let src_dir = CheckoutLedgers::at(src.clone());
+        let ids = src_dir.device_ids();
         if ids.is_empty() {
             println!("  {} held no ledgers", src.display());
             continue;
         }
         for id in ids {
-            let Ok(Some(incoming)) = store::read(&src_dir, &id) else {
+            let Ok(Some(incoming)) = src_dir.read(&id) else {
                 eprintln!("  {}/{id}: unreadable, left where it is", src.display());
                 continue;
             };
             match store::read(leases, &id) {
                 Ok(None) => {
-                    store::write(leases, &incoming).map_err(to_cli_error)?;
+                    // The only branch that differs between a rehearsal
+                    // and the real thing. Everything above — which
+                    // sources, which ids, which of the three verdicts —
+                    // is one path, so what the rehearsal reports is what
+                    // the run would do rather than a second opinion
+                    // about it.
+                    if !dry_run {
+                        store::write(leases, &incoming).map_err(to_cli_error)?;
+                    }
                     println!("  + {id} from {}", src.display());
                     moved += 1;
                 }
@@ -248,16 +343,22 @@ fn migrate(leases: &LeaseDir, from: &[PathBuf]) -> Result<(), crate::CliError> {
             }
         }
     }
-    println!("{moved} ledger(s) now in {leases}");
+    if dry_run {
+        println!("{moved} ledger(s) would move into {leases}; nothing was written");
+    } else {
+        println!("{moved} ledger(s) now in {leases}");
+    }
     if refused > 0 {
         return Err(crate::CliError::Other(format!(
             "{refused} device(s) had a ledger in two places and were left alone"
         )));
     }
-    // The sources stay. Somebody unsure whether this worked has to be
-    // able to run it again, and a migration that deletes what it just
-    // copied cannot be run twice.
-    println!("the source ledgers are untouched");
+    if !dry_run {
+        // The sources stay. Somebody unsure whether this worked has to
+        // be able to run it again, and a migration that deletes what it
+        // just copied cannot be run twice.
+        println!("the source ledgers are untouched");
+    }
     Ok(())
 }
 

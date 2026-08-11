@@ -742,6 +742,30 @@ impl SimRegistry {
     /// reason that function documents: a whole-file rewrite loses a
     /// concurrent registration without saying so.
     pub fn migrate(into: &Path, sources: &[PathBuf]) -> Result<MigrationReport, RegistryError> {
+        Self::migrate_inner(into, sources, true)
+    }
+
+    /// What [`Self::migrate`] would do, having done nothing.
+    ///
+    /// The same function with the write skipped, rather than a second
+    /// one that works the answer out again — a rehearsal with its own
+    /// copy of the rules reports on its copy.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::migrate`], minus the ones only a write can raise.
+    pub fn migrate_dry_run(
+        into: &Path,
+        sources: &[PathBuf],
+    ) -> Result<MigrationReport, RegistryError> {
+        Self::migrate_inner(into, sources, false)
+    }
+
+    fn migrate_inner(
+        into: &Path,
+        sources: &[PathBuf],
+        commit: bool,
+    ) -> Result<MigrationReport, RegistryError> {
         let mut report = MigrationReport::default();
         let mut books = vec![Self::load(into)?];
         let before: BTreeMap<String, String> = books[0]
@@ -768,7 +792,9 @@ impl SimRegistry {
                 Some(_) => report.narrowed.push(alias.clone()),
                 None => report.added.push(alias.clone()),
             }
-            Self::register(into, alias, sim.clone())?;
+            if commit {
+                Self::register(into, alias, sim.clone())?;
+            }
         }
         Ok(report)
     }
