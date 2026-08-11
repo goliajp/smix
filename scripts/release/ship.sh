@@ -177,6 +177,13 @@ log "android gates drive our own app"
 python3 "$ROOT/scripts/dev/android-subject-scan.py" > /tmp/smix-ship-android-subject.log 2>&1 \
   || fail "android-subject scan FAILED — see /tmp/smix-ship-android-subject.log"
 
+# A device record written into a checkout is a record the next checkout
+# cannot read. That is how a runner came to be on the books and
+# invisible at the same time.
+log "device facts are machine-scoped"
+python3 "$ROOT/scripts/dev/device-facts-are-machine-scoped.py" > /tmp/smix-ship-device-scope.log 2>&1 \
+  || fail "device-facts-are-machine-scoped FAILED — see /tmp/smix-ship-device-scope.log"
+
 log "teardown restores rather than imposes"
 python3 "$ROOT/scripts/dev/teardown-restores-scan.py" > /tmp/smix-ship-teardown.log 2>&1 \
   || fail "teardown-restores scan FAILED — see /tmp/smix-ship-teardown.log"

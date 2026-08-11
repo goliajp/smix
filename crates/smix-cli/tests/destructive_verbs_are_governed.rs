@@ -71,6 +71,15 @@ const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
         "grants the consent; gating it on consent is a circle",
     ),
     ("Locale", "reversible by the same verb"),
+    (
+        "Unregister",
+        "takes away a name, not anything on the device; another alias for \
+         the same device keeps working, and re-registering restores it",
+    ),
+    (
+        "Migrate",
+        "copies records between books and removes nothing from either",
+    ),
 ];
 
 /// Every `SimAction` variant, read out of the enum.

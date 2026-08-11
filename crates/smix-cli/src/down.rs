@@ -109,11 +109,16 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     // `.smix/sims.json` meant a machine that had only ever run the
     // store looked like it had no registered devices, and the
     // orphan-cleanup pass below silently did nothing.
+    // Every device this machine has registered, not this tree's copy of
+    // the list. Which devices to *consider* and which this workspace may
+    // turn off are separate questions, and the second one is answered
+    // below by the boot ledger — so widening the first only widens what
+    // gets looked at. Narrowing it is what let a device booted from here
+    // survive a teardown run from a sibling checkout.
     let smix_dir = root.join(".smix");
-    let reg = if smix_dir.is_dir() {
-        Some(SimRegistry::load(&smix_dir).map_err(|e| e.to_string())?)
-    } else {
-        None
+    let reg = {
+        let merged = SimRegistry::open_all(root);
+        (!merged.registry.sims().is_empty()).then_some(merged.registry)
     };
 
     println!("=== 4. orphan recorders / motion loops (registered UDIDs only) ===");

@@ -49,6 +49,7 @@ LOCAL = {
     "a yield is not a failure": "yield-is-not-failure-scan",
     "teardown restores rather than imposes": "teardown-restores-scan",
     "android gates drive our own app": "android-subject-scan",
+    "device facts are machine-scoped": "device-facts-are-machine-scoped",
     "portable tier selftest": "portable-tier.sh --selftest",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",
