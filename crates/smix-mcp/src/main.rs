@@ -275,9 +275,21 @@ impl SmixMcpService {
         // was in before leases existed — but an actual refusal is
         // surfaced, because that one means somebody else is working.
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        if let Some(root) = smix_capsule::runner::workspace_root(&cwd) {
-            match next.hold_device_lease(&root, &params.udid, &smix_capsule::reconcile::Reconciler)
-            {
+        // The ledger no longer depends on standing in a workspace. It
+        // used to: no `.smix` above the working directory meant no lease
+        // written, and this server is what held the lease that went
+        // missing — a runner on port 22087, recorded in a tree nobody
+        // else was standing in. The tree still decides where a dead
+        // holder's build products would be settled, which is all it ever
+        // decided.
+        let root = smix_capsule::runner::workspace_root(&cwd).unwrap_or(cwd);
+        if let Some(leases) = smix_lease::store::LeaseDir::machine() {
+            match next.hold_device_lease(
+                &root,
+                &leases,
+                &params.udid,
+                &smix_capsule::reconcile::Reconciler,
+            ) {
                 Ok(settled) => {
                     for report in settled {
                         eprintln!("settled first: {}", report.line);

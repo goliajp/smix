@@ -312,6 +312,16 @@ pub enum StaleReason {
     /// was recycled. Nothing may be signalled at that pid.
     PidRecycled,
     /// The process is there and is the holder, but it stopped beating.
+    ///
+    /// No longer produced. `assess` returned this until 2026-08-11,
+    /// when the ledgers moved from each checkout to the machine and
+    /// every tree could act on it. The heartbeat is written when the
+    /// ledger is touched, so a holder that takes a device and then
+    /// serves for hours is silent by design — `smix-mcp` had held a
+    /// simulator for two days with an eighty-three-minute-old heartbeat
+    /// while serving — and treating that silence as wedged would have
+    /// any `lease reconcile` tear down a live session. Kept as a name so
+    /// a ledger or a caller written against it still resolves.
     HeartbeatExpired,
 }
 
@@ -407,10 +417,24 @@ pub fn assess(facts: &Facts) -> Admission {
         });
     }
 
-    // The holder itself is alive. A heartbeat that stopped means it is
-    // wedged rather than working.
+    // The holder itself is alive.
+    //
+    // A stopped heartbeat used to make it reclaimable, on the reading
+    // that a live holder which went quiet is wedged rather than
+    // working. Nothing here can tell those apart, and the heartbeat is
+    // written when the ledger is touched — so a holder that takes a
+    // device and then serves for hours is silent by design. `smix-mcp`
+    // is exactly that shape: one had held a simulator since 9 August
+    // with a heartbeat eighty-three minutes old, and it was serving.
+    //
+    // While each tree kept its own ledgers, only that tree could act on
+    // the mistake. They are the machine's now, so any `lease reconcile`
+    // from any checkout would settle it. Refusing costs a wait;
+    // reclaiming costs somebody their session — and the way out of a
+    // genuinely wedged holder is to end the process, which a person can
+    // establish and this cannot.
     if heartbeat_expired(&lease.heartbeat_at, &facts.now) {
-        return reclaim(StaleReason::HeartbeatExpired);
+        return deny(true);
     }
 
     deny(true)
@@ -833,8 +857,15 @@ mod tests {
     }
 
     #[test]
-    fn live_holder_past_heartbeat_window_is_stale() {
-        // 91 s after the recorded heartbeat.
+    fn live_holder_past_heartbeat_window_still_denies() {
+        // 91 s after the recorded heartbeat — past the window, and the
+        // holder is still there.
+        //
+        // This asserted `Reclaimable` until 2026-08-11. The heartbeat is
+        // written when the ledger is touched, so a holder that takes a
+        // device and then serves is silent by design, and nothing here
+        // can separate silent-because-serving from wedged. Denying costs
+        // a wait; reclaiming costs somebody their session.
         let f = facts(
             lease_with(vec![runner()]),
             true,
@@ -842,10 +873,8 @@ mod tests {
             "2026-08-06T10:01:31Z",
         );
         match assess(&f) {
-            Admission::Reclaimable { reason, .. } => {
-                assert_eq!(reason, StaleReason::HeartbeatExpired)
-            }
-            other => panic!("expected Reclaimable, got {other:?}"),
+            Admission::Denied(c) => assert!(c.holder_alive),
+            other => panic!("expected Denied, got {other:?}"),
         }
     }
 

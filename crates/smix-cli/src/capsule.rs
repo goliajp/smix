@@ -228,14 +228,19 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         }
         Err(e) => return Err(format!("simctl boot {}: {e}", opts.udid)),
     };
-    if let Err(e) = smix_lease::store::add_resource(
-        opts.root,
-        opts.udid,
-        smix_lease::Resource::Booted {
-            by_us: booted_by_us,
-        },
-    ) {
-        eprintln!("capsule up: boot not recorded in the device ledger: {e}");
+    match smix_capsule::runner::machine_leases() {
+        Ok(leases) => {
+            if let Err(e) = smix_lease::store::add_resource(
+                &leases,
+                opts.udid,
+                smix_lease::Resource::Booted {
+                    by_us: booted_by_us,
+                },
+            ) {
+                eprintln!("capsule up: boot not recorded in the device ledger: {e}");
+            }
+        }
+        Err(e) => eprintln!("capsule up: boot not recorded in the device ledger: {e}"),
     }
 
     // 3. Capture start. Skipped when --no-capture (releases the

@@ -796,7 +796,7 @@ pub struct App {
 /// the receipt.
 #[derive(Debug, Clone)]
 struct LeaseHold {
-    root: std::path::PathBuf,
+    lease_dir: smix_lease::store::LeaseDir,
     device_id: String,
 }
 
@@ -952,7 +952,8 @@ impl App {
     /// holder's leftovers could not be closed.
     pub fn hold_device_lease(
         &mut self,
-        root: &std::path::Path,
+        workspace_root: &std::path::Path,
+        lease_dir: &smix_lease::store::LeaseDir,
         device_id: &str,
         executor: &dyn smix_lease::CleanupExecutor,
     ) -> Result<Vec<smix_lease::CleanupReport>, leased::AdmissionError> {
@@ -963,11 +964,17 @@ impl App {
         // `Drop` on the guard — so ending the borrow here gives nothing
         // away.
         let settled = {
-            let leased = leased::Leased::acquire(self.device.as_ref(), root, device_id, executor)?;
+            let leased = leased::Leased::acquire(
+                self.device.as_ref(),
+                workspace_root,
+                lease_dir,
+                device_id,
+                executor,
+            )?;
             leased.settled().to_vec()
         };
         self.lease = Some(LeaseHold {
-            root: root.to_path_buf(),
+            lease_dir: lease_dir.clone(),
             device_id: device_id.to_string(),
         });
         Ok(settled)
@@ -994,7 +1001,7 @@ impl App {
         let Some(hold) = self.lease.take() else {
             return Ok(());
         };
-        smix_lease::store::drop_process_rows(&hold.root, &hold.device_id)
+        smix_lease::store::drop_process_rows(&hold.lease_dir, &hold.device_id)
     }
 
     pub async fn open_session(

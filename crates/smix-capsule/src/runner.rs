@@ -911,10 +911,7 @@ fn installed_runner_project() -> Option<PathBuf> {
 /// `~/.local/share/smix/runner/` on macOS + Linux. Returns `None` when
 /// `$HOME` is unset (rare).
 pub fn installed_runner_dir() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
-    Some(base.join("smix/runner"))
+    smix_lease::store::machine_root().map(|r| r.join("runner"))
 }
 
 /// Outcome of an [`ensure_installed_runner_synced`] call.
@@ -1158,7 +1155,7 @@ pub fn up_on(
         supervisor_pid: None,
     };
     crate::runner_state::write(root, crate::runner_state::Platform::Ios, &st)?;
-    record_runner_lease(root, udid, port, pid)?;
+    record_runner_lease(&machine_leases()?, udid, port, pid)?;
 
     let timeout_secs: u64 = std::env::var("SMIX_RUNNER_UP_TIMEOUT_SECS")
         .ok()
@@ -1315,7 +1312,10 @@ pub fn up_on(
             if supervise {
                 match spawn_supervisor(root, runner_project) {
                     Ok(sup_pid) => {
-                        record_supervisor_lease(root, udid, sup_pid);
+                        match machine_leases() {
+                            Ok(leases) => record_supervisor_lease(&leases, udid, sup_pid),
+                            Err(e) => eprintln!("warning: supervisor not recorded: {e}"),
+                        }
                         // Rewrite state.json with the supervisor pid.
                         if let Some(mut current) = read_state(root) {
                             current.supervisor_pid = Some(sup_pid);
@@ -1475,7 +1475,8 @@ fn down_with(root: &Path, port: u16, consent: bool) -> Result<(), String> {
         // teardown check ("ledger empty, /health silent") could not see
         // it precisely because a forwarder with no runner behind it
         // answers nothing.
-        if let Ok(facts) = smix_lease::store::collect_facts(root, &st.udid)
+        if let Ok(leases) = machine_leases()
+            && let Ok(facts) = smix_lease::store::collect_facts(&leases, &st.udid)
             && let Some(held) = facts.existing
         {
             for r in &held.lease.resources {
@@ -1492,7 +1493,10 @@ fn down_with(root: &Path, port: u16, consent: bool) -> Result<(), String> {
             }
         }
         clear_state(root);
-        forget_runner_lease(root, &st.udid);
+        match machine_leases() {
+            Ok(leases) => forget_runner_lease(&leases, &st.udid),
+            Err(e) => eprintln!("runner down: lease ledger not updated: {e}"),
+        }
     }
 
     // Sessions started outside `smix runner up`, narrowed to whoever
@@ -1700,7 +1704,10 @@ fn spawn_forwarder(root: &Path, udid: &str, port: u16) -> Result<u32, String> {
         ));
     }
 
-    record_forward_lease(root, udid, port, pid);
+    match machine_leases() {
+        Ok(leases) => record_forward_lease(&leases, udid, port, pid),
+        Err(e) => eprintln!("warning: port forward not recorded: {e}"),
+    }
     Ok(pid)
 }
 
@@ -1726,7 +1733,22 @@ fn tail_for_error(path: &Path) -> String {
 }
 
 /// Record the forwarder in the device's ledger.
-fn record_forward_lease(root: &Path, udid: &str, port: u16, pid: u32) {
+/// This machine's ledger directory, or the reason there is none.
+///
+/// Resolved at each recording site rather than threaded down from the
+/// CLI: a lease is a fact about the machine, and passing it in from
+/// above is what let a workspace root stand in for it for as long as it
+/// did.
+pub fn machine_leases() -> Result<smix_lease::store::LeaseDir, String> {
+    smix_lease::store::LeaseDir::machine().ok_or_else(|| {
+        "no machine-level place to keep device ledgers — neither HOME nor \
+         XDG_DATA_HOME is set, so there is nowhere to record who holds \
+         this device"
+            .to_string()
+    })
+}
+
+fn record_forward_lease(leases: &smix_lease::store::LeaseDir, udid: &str, port: u16, pid: u32) {
     use smix_lease::store;
     let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
         pid,
@@ -1734,7 +1756,7 @@ fn record_forward_lease(root: &Path, udid: &str, port: u16, pid: u32) {
         cmd: format!("smix runner forward {udid}"),
     });
     if let Err(e) = store::add_resource(
-        root,
+        leases,
         udid,
         smix_lease::Resource::PortForward {
             local_port: port,
@@ -2060,19 +2082,24 @@ pub fn supervise(root: &Path, runner_project: Option<&Path>) -> Result<(), Strin
 /// Reported rather than propagated: the runner is already up and healthy
 /// by this point, and failing the whole bring-up over bookkeeping would
 /// throw away a working session.
-fn record_supervisor_lease(root: &Path, udid: &str, pid: u32) {
+fn record_supervisor_lease(leases: &smix_lease::store::LeaseDir, udid: &str, pid: u32) {
     use smix_lease::store;
     let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
         pid,
         started_at: String::new(),
         cmd: "smix runner supervise".to_string(),
     });
-    if let Err(e) = store::add_resource(root, udid, smix_lease::Resource::Supervisor { proc }) {
+    if let Err(e) = store::add_resource(leases, udid, smix_lease::Resource::Supervisor { proc }) {
         eprintln!("warning: supervisor not recorded in the device ledger: {e}");
     }
 }
 
-fn record_runner_lease(root: &Path, udid: &str, port: u16, pid: u32) -> Result<(), String> {
+fn record_runner_lease(
+    leases: &smix_lease::store::LeaseDir,
+    udid: &str,
+    port: u16,
+    pid: u32,
+) -> Result<(), String> {
     use smix_lease::store;
     let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
         pid,
@@ -2082,7 +2109,7 @@ fn record_runner_lease(root: &Path, udid: &str, port: u16, pid: u32) -> Result<(
         started_at: String::new(),
         cmd: format!("xcodebuild test … id={udid}"),
     });
-    store::add_resource(root, udid, smix_lease::Resource::Runner { port, proc })
+    store::add_resource(leases, udid, smix_lease::Resource::Runner { port, proc })
         .map_err(|e| e.to_string())
 }
 
@@ -2092,7 +2119,7 @@ fn record_runner_lease(root: &Path, udid: &str, port: u16, pid: u32) -> Result<(
 /// Failures here are reported, not propagated: teardown already
 /// succeeded, and refusing to admit that because the bookkeeping failed
 /// would leave callers retrying a stop that already happened.
-fn forget_runner_lease(root: &Path, udid: &str) {
+fn forget_runner_lease(leases: &smix_lease::store::LeaseDir, udid: &str) {
     use smix_lease::store;
     // Both rows, because `down` stops both: the supervisor first, then
     // the runner. Leaving the supervisor row behind would have the next
@@ -2111,7 +2138,7 @@ fn forget_runner_lease(root: &Path, udid: &str) {
             proc: store::identify_self(),
         },
     ] {
-        if let Err(e) = store::drop_resource_kind(root, udid, &sample) {
+        if let Err(e) = store::drop_resource_kind(leases, udid, &sample) {
             eprintln!("runner down: lease ledger not updated: {e}");
         }
     }

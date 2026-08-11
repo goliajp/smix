@@ -140,6 +140,9 @@ jobs:
       # Reads where the device registry resolves from; that is source.
       - name: device facts are machine-scoped
         run: python3 scripts/dev/device-facts-are-machine-scoped.py
+      # Reads where the ledgers resolve from; that is source.
+      - name: leases are machine-scoped
+        run: python3 scripts/dev/leases-are-machine-scoped.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the
