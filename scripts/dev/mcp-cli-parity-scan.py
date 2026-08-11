@@ -25,6 +25,15 @@ A tool with no counterpart writes `/// CLI: none — <reason>`. Saying
 nothing is not an option; that is how the two above stayed missing.
 """
 
+# `X | None` in an annotation is evaluated at definition time on
+# Python 3.9, which is the interpreter a login shell finds first here
+# (Xcode's, 3.9.6) — while preflight runs under whichever python3 is
+# on the interactive PATH (3.14 here). This scan passed every local
+# run and died in the ship, which starts with `bash -lc`. Deferring
+# annotations makes the file mean the same thing under both.
+from __future__ import annotations
+
+
 import os
 import re
 import subprocess

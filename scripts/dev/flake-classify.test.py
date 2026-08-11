@@ -16,6 +16,15 @@ Two of these cases are the ones that would quietly go wrong:
   already, and every time it read as coverage that was not there.
 """
 
+# `X | None` in an annotation is evaluated at definition time on
+# Python 3.9, which is the interpreter a login shell finds first here
+# (Xcode's, 3.9.6) — while preflight runs under whichever python3 is
+# on the interactive PATH (3.14 here). This scan passed every local
+# run and died in the ship, which starts with `bash -lc`. Deferring
+# annotations makes the file mean the same thing under both.
+from __future__ import annotations
+
+
 import json
 import os
 import subprocess

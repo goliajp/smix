@@ -470,8 +470,73 @@ def check_guards_tested(failures):
             )
 
 
+def check_scripts_load_under_the_ship_interpreter(failures):
+    """Every scan must import under the python a login shell finds.
+
+    `preflight.sh` runs in the interactive shell and gets whatever
+    `python3` is on that PATH — homebrew's 3.14 here. `ship.sh` is
+    started with `bash -lc`, which finds Xcode's 3.9.6 first. Four scans
+    used `X | None` in annotations, which 3.9 evaluates at definition
+    time: they passed every local run for weeks and died in the ship,
+    after an hour of gates, at the one place a failure costs the most.
+
+    Loading rather than running: a scan that needs a device or a
+    argument would fail for reasons that are not about the interpreter.
+    An import is enough to catch the whole class — annotations, walrus,
+    match, f-string nesting — because all of them are decided before the
+    first statement runs.
+    """
+    login_python = subprocess.run(
+        ["bash", "-lc", "command -v python3"],
+        capture_output=True, text=True, check=False,
+    ).stdout.strip()
+    if not login_python:
+        failures.append(
+            "a login shell finds no python3, and `ship.sh` runs under one — "
+            "every scan it invokes would die on the first line"
+        )
+        return
+    mine = sys.executable
+    if os.path.realpath(login_python) == os.path.realpath(mine):
+        return  # One interpreter, nothing to diverge.
+
+    probe = (
+        "import importlib.util,sys\n"
+        "spec=importlib.util.spec_from_file_location('m',sys.argv[1])\n"
+        "m=importlib.util.module_from_spec(spec)\n"
+        "try: spec.loader.exec_module(m)\n"
+        "except SystemExit: pass\n"
+    )
+    checked = 0
+    for pattern in ("scripts/dev/*.py", "scripts/release/*.py"):
+        for path in sorted(glob.glob(os.path.join(ROOT, pattern))):
+            if os.path.basename(path) == os.path.basename(__file__):
+                continue
+            checked += 1
+            r = subprocess.run(
+                [login_python, "-c", probe, path],
+                capture_output=True, text=True, check=False,
+            )
+            first = (r.stderr or "").strip().splitlines()
+            bad = [l for l in first if l.startswith(("SyntaxError", "TypeError"))]
+            if bad:
+                rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+                failures.append(
+                    f"{rel} does not load under {login_python} "
+                    f"({bad[-1][:90]}). preflight runs under {mine} and ship "
+                    f"runs under a login shell; a scan that only works in one "
+                    f"of them passes every rehearsal and fails the performance."
+                )
+    if checked == 0:
+        failures.append(
+            "no scan was probed against the login shell's python — the layout "
+            "changed and this check is reading air"
+        )
+
+
 def main():
     failures = []
+    check_scripts_load_under_the_ship_interpreter(failures)
     check_private_surface(failures)
     check_guards_tested(failures)
     check_no_gnu_only_tools(failures)
