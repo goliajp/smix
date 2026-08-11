@@ -121,6 +121,227 @@ impl LeaseDir {
     }
 }
 
+/// Two books saying different things about one device.
+///
+/// Not an error and not a verdict — a reason to stop. The machine
+/// ledger stays the only input to a decision; what a tree holds was
+/// written by whatever smix that tree last ran, and on this machine
+/// that was still 3.0.0 an hour and a half after the ledgers moved.
+/// Merging the two would let that binary go on giving orders; ignoring
+/// it is what left a live runner looking abandoned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LedgerDivergence {
+    /// The tree has a ledger for a device the machine does not.
+    ///
+    /// The completeness answer: this is what `lease migrate` would
+    /// bring over.
+    OnlyInCheckout {
+        /// The device.
+        device_id: String,
+    },
+    /// Both have one and they do not match.
+    Disagrees {
+        /// The device.
+        device_id: String,
+        /// What differs, in enough detail to go and look. Both pids
+        /// rather than "they differ": somebody has to be able to run
+        /// `ps` on each and find out which session is real.
+        detail: String,
+    },
+}
+
+impl LedgerDivergence {
+    /// The device this is about.
+    #[must_use]
+    pub fn device_id(&self) -> &str {
+        match self {
+            Self::OnlyInCheckout { device_id } | Self::Disagrees { device_id, .. } => device_id,
+        }
+    }
+}
+
+/// What, if anything, the two books disagree about.
+///
+/// Pure: fed what each side holds, it never looks at a disk or a
+/// process. The judging is separated from the reading for the reason
+/// the rest of this crate is — a rule reachable only by having the
+/// right two files on a real machine is a rule nobody checks.
+///
+/// A device only the machine has is not a divergence. Every device
+/// registered since the move is that, and reporting it would put a line
+/// on every report for ever.
+#[must_use]
+pub fn compare(
+    device_id: &str,
+    machine: Option<&Lease>,
+    checkout: Option<&Lease>,
+) -> Option<LedgerDivergence> {
+    match (machine, checkout) {
+        (_, None) => None,
+        (None, Some(_)) => Some(LedgerDivergence::OnlyInCheckout {
+            device_id: device_id.to_string(),
+        }),
+        (Some(m), Some(c)) => {
+            if m == c {
+                return None;
+            }
+            let mut parts: Vec<String> = Vec::new();
+            if m.holder != c.holder {
+                parts.push(format!(
+                    "holder: machine says pid {}, the tree says pid {}",
+                    m.holder.pid, c.holder.pid
+                ));
+            }
+            let procs = |l: &Lease| -> Vec<String> {
+                l.resources
+                    .iter()
+                    .map(|r| match r {
+                        Resource::Runner { port, proc } => {
+                            format!("runner :{port} pid {}", proc.pid)
+                        }
+                        Resource::AndroidRunner { port, proc, .. } => {
+                            format!("android runner :{port} pid {}", proc.pid)
+                        }
+                        Resource::PortForward {
+                            local_port, proc, ..
+                        } => format!("forward :{local_port} pid {}", proc.pid),
+                        Resource::Supervisor { proc } => format!("supervisor pid {}", proc.pid),
+                        Resource::Recording { proc, .. } => {
+                            format!("recording pid {}", proc.pid)
+                        }
+                        Resource::Booted { by_us } => format!("booted by_us={by_us}"),
+                    })
+                    .collect()
+            };
+            let (mp, cp) = (procs(m), procs(c));
+            if mp != cp {
+                parts.push(format!(
+                    "open: machine has [{}], the tree has [{}]",
+                    mp.join(", "),
+                    cp.join(", ")
+                ));
+            }
+            if parts.is_empty() {
+                parts.push(format!(
+                    "the records differ but not in the holder or in what is open \
+                     — machine heartbeat {}, tree heartbeat {}",
+                    m.heartbeat_at, c.heartbeat_at
+                ));
+            }
+            Some(LedgerDivergence::Disagrees {
+                device_id: device_id.to_string(),
+                detail: parts.join("; "),
+            })
+        }
+    }
+}
+
+/// Every device the two books disagree about, over the union of both.
+///
+/// Over the union rather than over the machine's list, because a device
+/// only the tree knows about is the thing a person most needs told: it
+/// is invisible from every other checkout.
+#[must_use]
+pub fn survey(machine: &LeaseDir, checkout: &CheckoutLedgers) -> Vec<LedgerDivergence> {
+    let mut ids: Vec<String> = checkout.device_ids();
+    if let Ok(entries) = std::fs::read_dir(machine.path()) {
+        for e in entries.flatten() {
+            if let Some(id) = e.file_name().to_string_lossy().strip_suffix(".json") {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    ids.iter()
+        .filter_map(|id| {
+            let m = read(machine, id).ok().flatten();
+            let c = checkout.read(id).ok().flatten();
+            compare(id, m.as_ref(), c.as_ref())
+        })
+        .collect()
+}
+
+/// A tree's old ledger book.
+///
+/// Read, and nothing else. There is no way to hand one of these to the
+/// writing half of this module, and that is the whole point of it being
+/// a separate type: what a checkout holds was written by whatever smix
+/// that tree last ran, which on this machine on 2026-08-11 was 3.0.0 —
+/// still writing into `.smix/leases` ninety-one minutes after the
+/// ledgers moved. Its contents are evidence about a divergence. They
+/// are not an input to a decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckoutLedgers(PathBuf);
+
+impl CheckoutLedgers {
+    /// The book under `path`, which may or may not exist.
+    pub fn at(path: impl Into<PathBuf>) -> Self {
+        Self(path.into())
+    }
+
+    /// The `.smix/leases` at or above `start`, if a tree there has one.
+    #[must_use]
+    pub fn discover(start: &Path) -> Option<Self> {
+        let mut dir = Some(start);
+        while let Some(d) = dir {
+            let candidate = d.join(".smix").join("leases");
+            if candidate.is_dir() {
+                return Some(Self(candidate));
+            }
+            dir = d.parent();
+        }
+        None
+    }
+
+    /// Where it is.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+
+    /// Every device this book has a ledger for.
+    ///
+    /// An unreadable directory is an empty one here: a book nobody can
+    /// open cannot disagree with anything, and refusing to answer would
+    /// stop the commands that merely wanted to know whether it did.
+    #[must_use]
+    pub fn device_ids(&self) -> Vec<String> {
+        let Ok(entries) = std::fs::read_dir(&self.0) else {
+            return Vec::new();
+        };
+        let mut ids: Vec<String> = entries
+            .flatten()
+            .filter_map(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .strip_suffix(".json")
+                    .map(str::to_string)
+            })
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// One device's ledger, as this tree has it.
+    ///
+    /// # Errors
+    ///
+    /// Malformed JSON, or an id that cannot be a filename. A ledger that
+    /// exists and will not parse is an error rather than an absence, for
+    /// the same reason [`read`] gives: reported as "no ledger" it would
+    /// read as agreement.
+    pub fn read(&self, device_id: &str) -> Result<Option<Lease>, LeaseError> {
+        read(&LeaseDir(self.0.clone()), device_id)
+    }
+}
+
+impl std::fmt::Display for CheckoutLedgers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.display().fmt(f)
+    }
+}
+
 impl std::fmt::Display for LeaseDir {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.display().fmt(f)

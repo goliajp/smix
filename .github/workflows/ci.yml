@@ -143,6 +143,9 @@ jobs:
       # Reads where the ledgers resolve from; that is source.
       - name: leases are machine-scoped
         run: python3 scripts/dev/leases-are-machine-scoped.py
+      # Reads who may name either ledger directory; that is source.
+      - name: no second ledger path
+        run: python3 scripts/dev/no-second-ledger-path.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the

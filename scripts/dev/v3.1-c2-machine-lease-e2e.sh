@@ -91,18 +91,32 @@ step "3. boot it from this checkout"
 WE_BOOTED=yes
 ok "booted $IDLE"
 
-step "4. four checkouts, one answer"
+step "4. every checkout on this machine, one answer"
+# Found rather than listed. A hard-coded set of paths would name
+# somebody's working tree in a repository that ships, and would make
+# this script answer "one checkout agrees with itself" anywhere else.
+# `|| true`: find exits non-zero on the first directory it may not
+# read, and under `set -e` that ends the script — which it did, one step
+# after reporting a pass, leaving a booted simulator to the trap.
+TREES="$( { find "$HOME" -maxdepth 4 -type d -name .smix 2>/dev/null || true; } | sed 's|/.smix$||' | head -8)"
+TREES="$(printf '%s\n%s\n' "$ROOT" "$TREES" | sort -u)"
 FIRST=""
 SAME=yes
-for w in "$HOME/workspace/goliajp/smix" "$HOME/workspace/qualcomm/insight" \
-         "$HOME/workspace/stables/mailrs" "$HOME/workspace/goliajp/sentori"; do
-    [ -d "$w" ] || continue
+SEEN=0
+while read -r w; do
+    [ -n "$w" ] && [ -d "$w" ] || continue
     got="$(cd "$w" && "$SMIX" lease list 2>/dev/null | sort | shasum | awk '{print $1}')"
     echo "  $(basename "$w"): $got"
+    SEEN=$((SEEN + 1))
     if [ -z "$FIRST" ]; then FIRST="$got"; elif [ "$got" != "$FIRST" ]; then SAME=no; fi
-done
-[ "$SAME" = yes ] && ok "every checkout reads the same ledgers" \
-                  || bad "checkouts disagree about what this machine holds"
+done <<< "$TREES"
+if [ "$SEEN" -lt 2 ]; then
+    bad "only $SEEN checkout found — one tree agreeing with itself proves nothing"
+elif [ "$SAME" = yes ]; then
+    ok "all $SEEN checkouts read the same ledgers"
+else
+    bad "checkouts disagree about what this machine holds"
+fi
 
 step "5. the device this script booted is on the books"
 # Captured, then searched. `lease list | grep -q` reads as "not found"
@@ -117,13 +131,15 @@ case "$LIST" in
 esac
 
 step "6. from a checkout that never held it, ask who booted it"
-OTHER="$HOME/workspace/goliajp/sentori"
-if [ -d "$OTHER" ]; then
+# Any tree that is not this one. Named by discovery for the same reason
+# as step 4.
+OTHER="$(printf '%s\n' "$TREES" | grep -v "^$ROOT\$" | head -1)"
+if [ -n "$OTHER" ] && [ -d "$OTHER" ]; then
     ( cd "$OTHER" && "$SMIX" lease owner "$IDLE" ) && rc=0 || rc=$?
     [ "$rc" = 0 ] && ok "answered from another tree (exit 0)" \
                   || bad "another tree cannot see who booted it (exit $rc)"
 else
-    echo "  SKIP: $OTHER is not on this machine"
+    echo "  SKIP: no second checkout on this machine"
 fi
 
 step "7. a booted device nobody recorded is nobody's"

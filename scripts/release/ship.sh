@@ -190,6 +190,13 @@ log "leases are machine-scoped"
 python3 "$ROOT/scripts/dev/leases-are-machine-scoped.py" > /tmp/smix-ship-lease-scope.log 2>&1 \
   || fail "leases-are-machine-scoped FAILED — see /tmp/smix-ship-lease-scope.log"
 
+# A tree's old book is read and never obeyed. While the two disagree,
+# nothing acts — for ninety-one minutes on 2026-08-11 the machine ledger
+# called a live runner abandoned.
+log "no second ledger path"
+python3 "$ROOT/scripts/dev/no-second-ledger-path.py" > /tmp/smix-ship-ledger-path.log 2>&1 \
+  || fail "no-second-ledger-path FAILED — see /tmp/smix-ship-ledger-path.log"
+
 log "teardown restores rather than imposes"
 python3 "$ROOT/scripts/dev/teardown-restores-scan.py" > /tmp/smix-ship-teardown.log 2>&1 \
   || fail "teardown-restores scan FAILED — see /tmp/smix-ship-teardown.log"
