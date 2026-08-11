@@ -4391,6 +4391,27 @@ async fn cmd_init(
     device: Option<&str>,
     app: Option<&Path>,
 ) -> Result<(), CliError> {
+    // Make this tree a workspace first, before anything here can refuse.
+    //
+    // `.smix/` is what `runner up` walks up to find, and where a run's
+    // traces, cells and runner state go — checkout-scoped facts, which
+    // the move of device records to the machine did not touch. It used
+    // to appear as a side effect of writing the registry into it; once
+    // the registry went elsewhere, nothing created it, and on a machine
+    // that had never run smix `init` reported success while the next
+    // command answered "no .smix/ workspace found upward". CI found it
+    // on a clean runner; here every tree already had one from before.
+    //
+    // Before the device is resolved rather than after, because which
+    // simulator you name is a separate question from whether this tree
+    // is a place smix can work in. An `init` that cannot find your
+    // device should still leave you somewhere to run the next one.
+    let workspace = std::env::current_dir()
+        .map_err(|e| CliError::Other(format!("cannot determine cwd: {e}")))?
+        .join(".smix");
+    std::fs::create_dir_all(&workspace)
+        .map_err(|e| CliError::Other(format!("create {}: {e}", workspace.display())))?;
+
     let devices = simctl.list_devices().await?;
     let candidates: Vec<init::Candidate> = devices
         .iter()
