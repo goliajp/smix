@@ -39,6 +39,16 @@ TIMEOUT_S="${SMIX_ANDROID_GATE_TIMEOUT_S:-600}"
 SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
 
 APP="com.android.settings"
+# The app the FLOW binds to, which is not always the one we launch.
+#
+# Tapping Settings' search bar hands the screen to
+# `com.android.settings.intelligence`, so the flow declares that as its
+# appId and every driving request carries it. A2 asserts the header is
+# present on each one, and comparing against $APP made it fail on a
+# correct run — the launcher and the flow's subject are two different
+# facts. Read from the flow rather than restated here: one of them
+# changing without the other is exactly what happened.
+FLOW_APP="$(grep -m1 '^appId:' "$SCRIPT_DIR/android-behaviour/force-key-events.yaml" | awk '{print $2}')"
 # The second subject. Settings is a system app — preinstalled, stable
 # ids, windows owned by the system — so A1–A3 prove things about the
 # platform's own app and nothing about anybody else's. A4 drives an
@@ -177,7 +187,7 @@ echo "  A1b: flow fails without it — the flag is what decides"
 #
 # /health is exempt and only /health: it asks whether the runner is
 # alive, not about any app. Every route that drives must carry it.
-python3 - "$WIRE" "$APP" <<'PY' || die "A2: see above. Wire log: $WIRE"
+python3 - "$WIRE" "$FLOW_APP" <<'PY' || die "A2: see above. Wire log: $WIRE"
 import json, sys
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 app = sys.argv[2]
