@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [3.0.0] — Unreleased
+## [3.0.0] — 2026-08-11
 
 A round of consumer feedback found fourteen things. Under them were four
 gaps, and two of those change what code you already have does. If you
@@ -122,6 +122,29 @@ only about the two.
 - **`smix tree --keyboard`**, and `docs/migrating-to-3.md`.
 
 ### Fixed
+- **`/find`, `/fill` and `/clear` read `App-Bundle-Id`.** A request says
+  which app it means with that header, and these three never looked at
+  it — they used whichever app the runner booted with. A flow whose
+  `appId` differed from `runner up --bundle` could not find anything,
+  and `fill` was worse than a failed lookup: it typed into the wrong app
+  and reported success. If you drive more than one app in a flow, this
+  is the difference between it working and it silently working on
+  something else.
+- **The iOS runner starts from a fresh install.** `Package.swift`
+  declared a 49 MB binary target the archive deliberately excludes, and
+  SwiftPM resolves the whole package graph before building anything —
+  so `smix runner up` failed on any machine that had not built smix from
+  source before, with `local binary target 'SmixCoreFFI' … does not
+  contain a binary artifact`. The tarball now carries the manifest the
+  runner builds rather than the whole workspace's.
+- **Destructive verbs meet the governance gate, and `exec` is one of
+  them.** On a physical device, `sim erase`, `uninstall` and
+  `keychain-reset` were refused by the transport layer — "this command
+  runs through simctl, and that is a phone" — which reads as "this is
+  impossible" and sends you looking for another route. The rule now
+  speaks first and says how to lift it. `smix sim exec` runs an
+  arbitrary command on the device and was not gated at all.
+
 
 - **A filled value no longer reaches the transcript.** `smix fill` and
   the MCP tool echoed the text they typed, so a password read from a
