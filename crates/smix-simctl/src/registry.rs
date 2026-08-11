@@ -141,9 +141,46 @@ pub enum RegisterOutcome {
 }
 
 /// Loaded view of the registry, keyed by alias.
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 pub struct SimRegistry {
     sims: BTreeMap<String, RegisteredSim>,
+}
+
+/// What a migration did, per alias.
+///
+/// Reported rather than summarised as a count. A migration is a one-way
+/// door and the thing somebody needs afterwards is the ability to look
+/// up one device by name and see what happened to it.
+#[derive(Debug, Default, Clone)]
+pub struct MigrationReport {
+    /// Aliases the destination did not have.
+    pub added: Vec<String>,
+    /// Aliases that were already there, pointing at the same device.
+    pub unchanged: Vec<String>,
+    /// Aliases that were already there and whose record changed —
+    /// which, under [`SimRegistry::merge`], can only mean consent
+    /// narrowed.
+    pub narrowed: Vec<String>,
+    /// Sources that opened and held nothing.
+    pub empty: Vec<PathBuf>,
+    /// Sources that would not open, and why.
+    pub unreadable: Vec<(PathBuf, String)>,
+}
+
+/// Every registry this machine can read, folded into one.
+#[derive(Debug, Default, Clone)]
+pub struct MergedRegistry {
+    /// The merged view. Which book a device came from is not visible
+    /// here, deliberately: a device is a device.
+    pub registry: SimRegistry,
+    /// Aliases a checkout is the only holder of, and which checkout.
+    ///
+    /// Not an error — those devices work. It is the one thing a caller
+    /// has to be able to say out loud, because a record only one tree
+    /// holds is a record the next tree cannot act on, and the whole
+    /// point of moving these was that "check who owns this runner" can
+    /// be carried out from anywhere.
+    pub unmigrated: BTreeMap<String, PathBuf>,
 }
 
 /// Whether `s` has CoreSimulator UDID form (8-4-4-4-12 hex).
@@ -365,6 +402,45 @@ impl SimRegistry {
         })
     }
 
+    /// Remove one alias from the registry at `path`.
+    ///
+    /// The other half of [`Self::register`], and absent until the
+    /// records moved to machine scope made its absence permanent: a
+    /// device registered by mistake — a test that wrote to the real
+    /// book, an alias for a phone somebody no longer has — could be
+    /// added and never taken back. A registry that only grows stops
+    /// describing the machine.
+    ///
+    /// Removes the name, not the device. Another alias for the same
+    /// device keeps working, which is why this takes an alias key
+    /// rather than a device ref: "forget this device" and "forget this
+    /// name for it" are different requests, and only the second one is
+    /// unambiguous.
+    ///
+    /// # Errors
+    ///
+    /// [`RegistryError::UnknownDevice`] when no such alias exists.
+    /// Silently succeeding would let a typo read as a removal.
+    pub fn unregister(path: &Path, alias: &str) -> Result<RegisteredSim, RegistryError> {
+        let reg = Self::load(path)?;
+        let Some(sim) = reg.sims.get(alias).cloned() else {
+            return Err(RegistryError::UnknownDevice {
+                device_ref: alias.to_string(),
+                known: reg.sims.keys().cloned().collect(),
+            });
+        };
+        let store = open_store(path)?;
+        store.sims().delete(alias).map_err(|e| RegistryError::Io {
+            path: path.display().to_string(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
+        store.sync().map_err(|e| RegistryError::Io {
+            path: path.display().to_string(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
+        Ok(sim)
+    }
+
     /// Allow destructive actions on one registered device, once.
     ///
     /// Goes through [`Self::register`] rather than rewriting the file,
@@ -442,6 +518,108 @@ impl SimRegistry {
         Ok(Self { sims })
     }
 
+    /// Where device facts live: this machine, not this checkout.
+    ///
+    /// A simulator is an operating-system object. Its UDID, its runtime
+    /// version, whether it is booted and who booted it do not change
+    /// when you `cd` — so storing them per checkout means four trees on
+    /// one machine each hold their own answer, which is what they do
+    /// today. On 2026-08-11 two of them held a lease on the same
+    /// simulators, and a runner on port 22087 was simultaneously on the
+    /// books and invisible: the rule says check the owner before
+    /// touching a runner, and the checkout doing the checking was not
+    /// the one holding the record.
+    ///
+    /// `$XDG_DATA_HOME/smix` or `~/.local/share/smix`, which is where
+    /// the runner tree and its version stamp already live — machine
+    /// scope is not a new idea here, it was just not used for this.
+    ///
+    /// `None` when neither variable is set, which is the same condition
+    /// under which the runner tree has no home either; the caller falls
+    /// back to the checkout and says so.
+    pub fn machine_dir() -> Option<PathBuf> {
+        std::env::var_os("SMIX_MACHINE_DIR")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("XDG_DATA_HOME")
+                    .map(PathBuf::from)
+                    .map(|d| d.join("smix"))
+            })
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(PathBuf::from)
+                    .map(|h| h.join(".local/share/smix"))
+            })
+            .map(|d| d.join("devices"))
+    }
+
+    /// Every registry a read may draw on, in precedence order.
+    ///
+    /// `SMIX_SIMS_JSON` names one registry and means exactly that one:
+    /// it is how a test works against a book of its own, and a
+    /// machine-level fallback under it would let the real one leak in.
+    ///
+    /// Otherwise the machine registry first, then whatever checkout is
+    /// underfoot. The checkout entry keeps books written before this
+    /// move working until `smix sim migrate` folds them in; nothing is
+    /// ever written back to it.
+    pub fn read_paths(start: &Path) -> Vec<PathBuf> {
+        if let Some(p) = std::env::var_os("SMIX_SIMS_JSON") {
+            return vec![PathBuf::from(p)];
+        }
+        let mut paths = Vec::new();
+        if let Some(m) = Self::machine_dir() {
+            paths.push(m);
+        }
+        if let Some(c) = Self::discover(start) {
+            paths.push(c);
+        }
+        paths
+    }
+
+    /// Read every registry that applies and fold them into one.
+    ///
+    /// A source that will not open is skipped rather than fatal: one
+    /// corrupt book must not strand the devices recorded in the others.
+    /// Which is why this returns a value and not a `Result` — there is
+    /// no failure here other than "nothing was readable anywhere", and
+    /// that is an empty registry, which reads the same as a machine
+    /// where nothing has been registered yet.
+    pub fn open_all(start: &Path) -> MergedRegistry {
+        let paths = Self::read_paths(start);
+        // Under `SMIX_SIMS_JSON` there is no machine/checkout split to
+        // report: the caller named the registry, and calling their own
+        // choice "unmigrated" would be advice to move a book they put
+        // where they wanted it.
+        let machine = if std::env::var_os("SMIX_SIMS_JSON").is_some() {
+            None
+        } else {
+            Self::machine_dir()
+        };
+        let mut loaded: Vec<Self> = Vec::new();
+        let mut unmigrated: BTreeMap<String, PathBuf> = BTreeMap::new();
+        let mut on_machine: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for path in &paths {
+            let Ok(reg) = Self::load(path) else {
+                continue;
+            };
+            if machine.as_deref() == Some(path.as_path()) {
+                on_machine.extend(reg.sims.values().map(|s| s.udid.to_ascii_uppercase()));
+            } else if machine.is_some() {
+                for (alias, sim) in &reg.sims {
+                    if !on_machine.contains(&sim.udid.to_ascii_uppercase()) {
+                        unmigrated.insert(alias.clone(), path.clone());
+                    }
+                }
+            }
+            loaded.push(reg);
+        }
+        MergedRegistry {
+            registry: Self::merge(loaded),
+            unmigrated,
+        }
+    }
+
     /// Walk up from `start` looking for a `.smix` that holds a
     /// registry — either the store or a legacy `sims.json`.
     pub fn discover(start: &Path) -> Option<PathBuf> {
@@ -507,6 +685,118 @@ impl SimRegistry {
     }
 
     /// All registered sims, keyed by alias.
+    /// Fold several registries into one, losing nothing.
+    ///
+    /// Four checkouts on this machine each keep their own, and merging
+    /// them is a one-way door: whatever this drops, the tree that was
+    /// relying on it stops working, and nobody can tell which of the
+    /// four to look in. So the rules are chosen to be safe, not tidy.
+    ///
+    /// - **Two aliases for one device: keep both.** An alias is how
+    ///   somebody types a device's name. Dropping one breaks whatever
+    ///   script used it; a duplicate is noise.
+    /// - **Conflicting destructive consent: take the stricter.**
+    ///   Consent is a per-device authorisation (§9 #1), and merging two
+    ///   books is not a moment to widen it. Granting it again is one
+    ///   command; un-wiping a phone is not a command at all.
+    /// - **Same alias, different devices: keep both**, the later one
+    ///   under a suffixed alias. Silently overwriting means one tree's
+    ///   alias stops resolving with no way to know which.
+    ///
+    /// Order-independent for the facts that matter: four checkouts have
+    /// no natural order, and a merge that depends on read order changes
+    /// when somebody renames a directory.
+    pub fn merge(sources: impl IntoIterator<Item = Self>) -> Self {
+        let mut out: BTreeMap<String, RegisteredSim> = BTreeMap::new();
+        // Sorted, so the result cannot depend on which tree was read
+        // first.
+        let mut incoming: Vec<(String, RegisteredSim)> = sources
+            .into_iter()
+            .flat_map(|r| r.sims.into_iter())
+            .collect();
+        incoming.sort_by(|a, b| (&a.0, &a.1.udid).cmp(&(&b.0, &b.1.udid)));
+
+        for (alias, sim) in incoming {
+            match out.get_mut(&alias) {
+                None => {
+                    out.insert(alias, sim);
+                }
+                Some(existing) if existing.udid == sim.udid => {
+                    // Same device under the same name: the only thing
+                    // that can differ is consent, and it narrows.
+                    existing.destructive_opt_in =
+                        existing.destructive_opt_in && sim.destructive_opt_in;
+                }
+                Some(_) => {
+                    // Same name, different device. Both survive; the
+                    // second takes a suffix derived from its UDID so the
+                    // name is stable across merges rather than depending
+                    // on how many collisions came before it.
+                    let short = sim.udid.chars().take(8).collect::<String>().to_lowercase();
+                    out.insert(format!("{alias}-{short}"), sim);
+                }
+            }
+        }
+        Self { sims: out }
+    }
+
+    /// Fold `sources` into the registry at `into`, keeping everything.
+    ///
+    /// The merge rules are [`Self::merge`]'s; this applies them to books
+    /// on disk. What it adds to them is a promise about the sources:
+    /// they are read and left alone. Somebody who has to go back to a
+    /// smix from before device records became machine-scoped must still
+    /// find their registry where they left it — and a migration that
+    /// deletes what it has just copied has no way to be run twice by
+    /// somebody who is not sure whether it worked.
+    ///
+    /// Writes go through [`Self::register`], one key at a time, for the
+    /// reason that function documents: a whole-file rewrite loses a
+    /// concurrent registration without saying so.
+    pub fn migrate(into: &Path, sources: &[PathBuf]) -> Result<MigrationReport, RegistryError> {
+        let mut report = MigrationReport::default();
+        let mut books = vec![Self::load(into)?];
+        let before: BTreeMap<String, String> = books[0]
+            .sims
+            .iter()
+            .map(|(a, s)| (a.clone(), s.udid.clone()))
+            .collect();
+
+        for src in sources {
+            match Self::load(src) {
+                Ok(reg) if reg.sims.is_empty() => report.empty.push(src.clone()),
+                Ok(reg) => books.push(reg),
+                // Named, not fatal. One book nobody can open must not
+                // strand the devices recorded in the others — and the
+                // path is what somebody needs in order to go look.
+                Err(e) => report.unreadable.push((src.clone(), e.to_string())),
+            }
+        }
+
+        let merged = Self::merge(books);
+        for (alias, sim) in &merged.sims {
+            match before.get(alias) {
+                Some(udid) if udid == &sim.udid => report.unchanged.push(alias.clone()),
+                Some(_) => report.narrowed.push(alias.clone()),
+                None => report.added.push(alias.clone()),
+            }
+            Self::register(into, alias, sim.clone())?;
+        }
+        Ok(report)
+    }
+
+    /// Every alias and what it points at.
+    pub fn all(&self) -> impl Iterator<Item = (&str, &RegisteredSim)> {
+        self.sims.iter().map(|(k, v)| (k.as_str(), v))
+    }
+
+    /// Add or replace one entry. For merging and for tests; the
+    /// registering path goes through `register`, which also writes.
+    pub fn insert(&mut self, alias: impl Into<String>, sim: RegisteredSim) {
+        self.sims.insert(alias.into(), sim);
+    }
+
+    /// Every registered sim, keyed by alias.
     pub fn sims(&self) -> &BTreeMap<String, RegisteredSim> {
         &self.sims
     }

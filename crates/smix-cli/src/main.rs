@@ -1132,6 +1132,16 @@ enum SimAction {
         /// Output as JSON instead of human-readable table.
         #[arg(long)]
         json: bool,
+        /// List the devices smix has recorded, with their aliases,
+        /// instead of the ones the platform reports.
+        ///
+        /// These are two different questions and nothing answered the
+        /// second one. `smix sim list` asks simctl and adb, so it
+        /// returns the same thing from every checkout whether or not
+        /// device records are shared — which made it useless as
+        /// evidence that they are.
+        #[arg(long)]
+        registered: bool,
     },
     /// Print the UDID a device ref resolves to.
     Resolve {
@@ -1248,6 +1258,33 @@ enum SimAction {
     AllowDestructive {
         device: String,
     },
+    /// Forget one alias.
+    ///
+    /// Removes the name, not the device — another alias for the same
+    /// device keeps working. The other half of `register`, which
+    /// without it could only ever add.
+    Unregister {
+        alias: String,
+    },
+    /// Fold per-checkout device registries into this machine's.
+    ///
+    /// Device records used to live in whichever `.smix/` was above the
+    /// working directory, so a machine with four checkouts had four
+    /// answers about the same simulators. This copies them into one
+    /// place. It adds and never removes: the source registries are left
+    /// exactly where they are, and running it twice does nothing the
+    /// second time.
+    Migrate {
+        /// A checkout (or its `.smix`) to read. Repeatable. Defaults to
+        /// the one above the working directory.
+        ///
+        /// There is no index of checkouts on a machine, so the ones
+        /// that are not underfoot have to be named. Better than guessing
+        /// at a list and quietly missing the tree somebody actually
+        /// cares about.
+        #[arg(long = "from", value_name = "DIR")]
+        from: Vec<PathBuf>,
+    },
     KeychainReset {
         device: String,
     },
@@ -1347,8 +1384,10 @@ fn resolve_device(device_ref: &str) -> Result<String, CliError> {
             .map_err(|e| CliError::Other(e.to_string()))?;
         return Ok(device_ref.to_string());
     }
-    let path = registry_path()?;
-    Ok(SimRegistry::load(&path)?.resolve(device_ref)?)
+    let view = load_registry();
+    let resolved = view.registry.resolve(device_ref)?;
+    note_if_unmigrated(&view, device_ref);
+    Ok(resolved)
 }
 
 /// Resolve an Android device ref to the serial `adb` will be given.
@@ -1393,8 +1432,20 @@ fn resolve_android_serial(device_ref: &str) -> Result<String, CliError> {
 /// `emulator-<port>` serial. So an unregistered reference that reached
 /// this point is one of those two, and nothing else.
 fn device_kind_of(device_ref: &str) -> smix_simctl::registry::DeviceKind {
+    classify_device(&load_registry().registry, device_ref)
+}
+
+/// What kind of device a ref names, given a registry to ask.
+///
+/// Split from [`device_kind_of`] so it can be checked against a
+/// registry somebody wrote down. As one function it read whatever this
+/// machine happened to have registered, and its test passed or failed
+/// on that — which it did, the day the device records moved and a
+/// registered `emulator-5554` started making the uppercase spelling
+/// resolve to it.
+fn classify_device(reg: &SimRegistry, device_ref: &str) -> smix_simctl::registry::DeviceKind {
     use smix_simctl::registry::DeviceKind;
-    if let Some(sim) = lookup_registered(device_ref) {
+    if let Some(sim) = reg.lookup(device_ref) {
         return sim.kind;
     }
     if registry::is_emulator_serial(device_ref) {
@@ -1461,7 +1512,8 @@ fn adb_knows(serial: &str) -> bool {
 /// has to say whether it takes a device before this compiles.
 fn sim_action_device(action: &SimAction) -> Option<&str> {
     match action {
-        SimAction::List { .. } => None,
+        SimAction::List { .. } | SimAction::Migrate { .. } => None,
+        SimAction::Unregister { .. } => None,
         SimAction::Register { udid, .. } => Some(udid),
         SimAction::Resolve { device }
         | SimAction::Boot { device }
@@ -1503,6 +1555,8 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
         SimAction::List { .. }
         | SimAction::Register { .. }
         | SimAction::AllowDestructive { .. }
+        | SimAction::Migrate { .. }
+        | SimAction::Unregister { .. }
         | SimAction::Resolve { .. } => return None,
 
         // Dispatches all four itself.
@@ -1558,28 +1612,70 @@ fn guard_sim_verb(action: &SimAction, device: &str) -> Result<(), CliError> {
     )))
 }
 
+/// Where a device fact is written: this machine.
+///
+/// A simulator's UDID, its runtime version and whether destruction has
+/// been allowed on it are facts about the machine, not about the tree
+/// you happen to be standing in. This used to walk up from the working
+/// directory, which is why four checkouts here each held their own
+/// answer — and why on 2026-08-11 a runner on port 22087 was on the
+/// books and invisible at the same time: the books were another
+/// workspace's.
+///
+/// `SMIX_SIMS_JSON` still wins, and still means exactly one registry —
+/// tests and gates use it to work against a registry of their own, and
+/// a machine-level fallback under it would let the real one leak in.
 fn registry_path() -> Result<PathBuf, CliError> {
     if let Some(p) = std::env::var_os("SMIX_SIMS_JSON") {
         return Ok(PathBuf::from(p));
     }
-    let cwd = std::env::current_dir()
-        .map_err(|e| CliError::Other(format!("cannot determine cwd: {e}")))?;
-    SimRegistry::discover(&cwd).ok_or_else(|| {
-        CliError::Other(format!(
-            "no .smix registry was found upward from {} — pass an explicit \
-             UDID or set SMIX_SIMS_JSON",
-            cwd.display()
-        ))
+    SimRegistry::machine_dir().ok_or_else(|| {
+        CliError::Other(
+            "no machine-level place to keep device records — neither HOME nor \
+             XDG_DATA_HOME is set. Set SMIX_MACHINE_DIR, or point \
+             SMIX_SIMS_JSON at a registry."
+                .into(),
+        )
     })
+}
+
+/// The merged registry, from wherever this machine keeps device facts.
+///
+/// Delegates to the core resolution rather than repeating it: `smix
+/// down` and `smix doctor` read the same records, and three callers
+/// each deciding where the registry lives is how four checkouts came to
+/// hold four answers in the first place.
+fn load_registry() -> smix_simctl::registry::MergedRegistry {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    SimRegistry::open_all(&cwd)
+}
+
+/// Say so when a device is recorded in a checkout and not on this machine.
+///
+/// A record only one tree holds is a record the next tree cannot act on.
+fn note_if_unmigrated(view: &smix_simctl::registry::MergedRegistry, device_ref: &str) {
+    let Some(sim) = view.registry.lookup(device_ref) else {
+        return;
+    };
+    let Some((alias, from)) = view.unmigrated.iter().find(|(alias, _)| {
+        view.registry
+            .lookup(alias)
+            .is_some_and(|s| s.udid.eq_ignore_ascii_case(&sim.udid))
+    }) else {
+        return;
+    };
+    eprintln!(
+        "note: `{alias}` is recorded in {} and not on this machine — another \
+         checkout cannot see it. `smix sim migrate` moves it.",
+        from.display()
+    );
 }
 
 /// Best-effort `RegisteredSim` lookup. Returns `None` (not an error)
 /// when the device was given as a raw UDID with no registry entry for
 /// it — `smix sim boot <unregistered-udid>` is legitimate.
 fn lookup_registered(device_ref: &str) -> Option<smix_simctl::registry::RegisteredSim> {
-    let path = registry_path().ok()?;
-    let reg = SimRegistry::load(&path).ok()?;
-    reg.lookup(device_ref).cloned()
+    load_registry().registry.lookup(device_ref).cloned()
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
@@ -1652,7 +1748,20 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 guard_sim_verb(&action, device)?;
             }
             match action {
-                SimAction::List { json } => cmd_sim_list(&simctl, json).await?,
+                SimAction::List { json, registered } => {
+                    if registered {
+                        cmd_sim_list_registered(json)?;
+                    } else {
+                        cmd_sim_list(&simctl, json).await?;
+                    }
+                }
+                SimAction::Migrate { from } => cmd_sim_migrate(from)?,
+                SimAction::Unregister { alias } => {
+                    let path = registry_path()?;
+                    let sim = SimRegistry::unregister(&path, &alias)
+                        .map_err(|e| CliError::Other(e.to_string()))?;
+                    println!("forgot `{alias}` -> {} in {}", sim.udid, path.display());
+                }
                 SimAction::Resolve { device } => {
                     println!("{}", resolve_device(&device)?);
                 }
@@ -1677,8 +1786,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                              given, because nothing here can enumerate the world's phones."
                             )));
                         }
-                        let path =
-                            registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+                        let path = registry_path()?;
                         let outcome = SimRegistry::register(
                             &path,
                             &alias,
@@ -1713,8 +1821,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // check against. Registration is the deliberate act;
                     // that is the whole point of requiring it.
                     if kind.is_physical() {
-                        let path =
-                            registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+                        let path = registry_path()?;
                         let outcome = SimRegistry::register(
                             &path,
                             &alias,
@@ -1760,10 +1867,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 "simctl knows no device {udid} — check `smix sim list`"
                             ))
                         })?;
-                    // Env override, discovered registry, else a fresh
-                    // `.smix/sims.json` in cwd — register is the one verb
-                    // that must work before the file exists.
-                    let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
+                    // The machine registry, which `open_store` creates on
+                    // first write — register is the one verb that has to
+                    // work before any registry exists. It used to fall
+                    // back to `.smix/sims.json` in the working directory
+                    // when that resolution failed, which meant a device
+                    // record landing somewhere no other tree would ever
+                    // read. There is no good place to put it silently.
+                    let path = registry_path()?;
                     let outcome = SimRegistry::register(
                         &path,
                         &alias,
@@ -3582,13 +3693,35 @@ fn hold_run_lease(udid: Option<&str>) -> Result<Option<RunLease>, CliError> {
 /// the list because it runs an arbitrary command: whatever the worst
 /// thing that command can do is, this verb can do it.
 fn is_destructive(action: &SimAction) -> bool {
-    matches!(
-        action,
+    // Exhaustive, for the reason `sim_verb_supports` is: a new verb has
+    // to say whether it destroys something before this compiles. As a
+    // `matches!` it listed four verbs and called everything else safe,
+    // and `exec` — which runs an arbitrary command on the device — was
+    // absent from that list for as long as it existed. A gate whose
+    // default answer is "harmless" is one nobody has to remember to
+    // update, which is the same as not having it.
+    match action {
         SimAction::Erase { .. }
-            | SimAction::Uninstall { .. }
-            | SimAction::KeychainReset { .. }
-            | SimAction::Exec { .. }
-    )
+        | SimAction::Uninstall { .. }
+        | SimAction::KeychainReset { .. }
+        | SimAction::Exec { .. } => true,
+
+        SimAction::List { .. }
+        | SimAction::Register { .. }
+        | SimAction::Resolve { .. }
+        | SimAction::Migrate { .. }
+        | SimAction::Unregister { .. }
+        | SimAction::AllowDestructive { .. }
+        | SimAction::Boot { .. }
+        | SimAction::Shutdown { .. }
+        | SimAction::Screenshot { .. }
+        | SimAction::Launch { .. }
+        | SimAction::Terminate { .. }
+        | SimAction::Install { .. }
+        | SimAction::Openurl { .. }
+        | SimAction::Appearance { .. }
+        | SimAction::Locale { .. } => false,
+    }
 }
 
 /// The governance gate, for every verb, before any of them runs.
@@ -3618,12 +3751,7 @@ fn guard_destructive_action(action: &SimAction) -> Result<(), CliError> {
 }
 
 fn guard_destructive(device_ref: &str) -> Result<(), CliError> {
-    let Ok(path) = registry_path() else {
-        return Ok(());
-    };
-    let Ok(reg) = smix_simctl::registry::SimRegistry::load(&path) else {
-        return Ok(());
-    };
+    let reg = load_registry().registry;
     let Some(sim) = reg.lookup(device_ref) else {
         // Not registered, and still here — so `resolve_device` let it
         // through, which it only does for a simulator the platform
@@ -4191,14 +4319,15 @@ async fn cmd_init(
         })
         .collect();
 
-    // The same resolution `smix sim register` uses — env override,
-    // discovered registry, else a fresh `.smix/sims.json` in cwd. Init
-    // writing anywhere else would produce a registry the rest of smix
-    // does not read, which is worse than not writing one.
-    let path = registry_path().unwrap_or_else(|_| PathBuf::from(".smix/sims.json"));
-    let existing: Vec<String> = SimRegistry::load(&path)
-        .map(|reg| reg.sims().keys().cloned().collect())
-        .unwrap_or_default();
+    // The same resolution `smix sim register` uses. Init writing
+    // anywhere else would produce a registry the rest of smix does not
+    // read, which is worse than not writing one.
+    let path = registry_path()?;
+    // Every alias this machine already answers to, not just the ones in
+    // the book being written: an alias that collides with another
+    // checkout's is a name that means two devices depending on where you
+    // stand, which is the thing this scope move exists to end.
+    let existing: Vec<String> = load_registry().registry.sims().keys().cloned().collect();
 
     let plan = match init::plan_init(&candidates, alias, device, &existing) {
         Ok(plan) => plan,
@@ -4330,14 +4459,14 @@ async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
         Err(_) => None,
     };
 
-    let registry = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| SimRegistry::discover(&cwd))
-        .and_then(|path| SimRegistry::load(&path).ok())
-        .map(|reg| readiness::RegistryFacts {
-            aliases: reg.sims().len(),
-            first_alias: reg.sims().keys().next().cloned(),
-        });
+    // Every device this machine knows, not every device this tree
+    // knows. A doctor that reports on the checkout answers a question
+    // nobody asked: the simulators are the machine's.
+    let reg = load_registry().registry;
+    let registry = (!reg.sims().is_empty()).then(|| readiness::RegistryFacts {
+        aliases: reg.sims().len(),
+        first_alias: reg.sims().keys().next().cloned(),
+    });
 
     let port: u16 = std::env::var("SMIX_RUNNER_PORT")
         .ok()
@@ -4476,6 +4605,146 @@ fn android_devices() -> Vec<AndroidDevice> {
 /// Android entries are not dressed in simctl's clothes — there is no
 /// runtime identifier on an emulator, and inventing one would make the
 /// listing agree with a schema by lying about the device.
+/// The devices smix has records for, and where each record lives.
+fn cmd_sim_list_registered(json: bool) -> Result<(), CliError> {
+    let view = load_registry();
+    let machine = SimRegistry::machine_dir();
+    if json {
+        let rows: Vec<serde_json::Value> = view
+            .registry
+            .all()
+            .map(|(alias, sim)| {
+                serde_json::json!({
+                    "alias": alias,
+                    "udid": sim.udid,
+                    "name": sim.device_name,
+                    "kind": sim.kind,
+                    "runtime": sim.runtime,
+                    "destructiveOptIn": sim.destructive_opt_in,
+                    // Where the record is, not just what it says. The
+                    // question this command exists to answer is whether
+                    // two checkouts see the same devices, and a row
+                    // that does not say where it came from cannot
+                    // answer it.
+                    "scope": match view.unmigrated.get(alias) {
+                        Some(p) => serde_json::json!({"checkout": p.display().to_string()}),
+                        None => serde_json::json!({"machine": machine.as_ref().map(|m| m.display().to_string())}),
+                    },
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&rows)
+                .map_err(|e| CliError::Other(format!("serialize: {e}")))?
+        );
+        return Ok(());
+    }
+    if view.registry.sims().is_empty() {
+        println!("no devices recorded — `smix sim register <alias> --udid <udid>`");
+        return Ok(());
+    }
+    println!("{:<20} {:<40} {:<10} SCOPE", "ALIAS", "UDID", "KIND");
+    for (alias, sim) in view.registry.all() {
+        let scope = match view.unmigrated.get(alias) {
+            Some(p) => p.display().to_string(),
+            None => "machine".to_string(),
+        };
+        println!(
+            "{:<20} {:<40} {:<10} {scope}",
+            alias,
+            sim.udid,
+            format!("{:?}", sim.kind).to_lowercase()
+        );
+    }
+    if !view.unmigrated.is_empty() {
+        println!();
+        println!(
+            "{} record(s) live in a checkout and are invisible from anywhere \
+             else — `smix sim migrate` folds them in",
+            view.unmigrated.len()
+        );
+    }
+    Ok(())
+}
+
+/// Fold per-checkout device registries into this machine's.
+fn cmd_sim_migrate(from: Vec<PathBuf>) -> Result<(), CliError> {
+    let into = registry_path()?;
+    let sources: Vec<PathBuf> = if from.is_empty() {
+        let cwd = std::env::current_dir()
+            .map_err(|e| CliError::Other(format!("cannot determine cwd: {e}")))?;
+        SimRegistry::discover(&cwd).into_iter().collect()
+    } else {
+        from.iter()
+            .map(|p| {
+                if p.ends_with(".smix") {
+                    p.clone()
+                } else {
+                    p.join(".smix")
+                }
+            })
+            .collect()
+    };
+    if sources.is_empty() {
+        println!(
+            "nothing to migrate — no .smix registry above {}. \
+             Name the checkouts to read with --from <dir>.",
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .display()
+        );
+        return Ok(());
+    }
+    // Migrating a book into itself would read every row and write it
+    // back, which is harmless but reports every device as "already
+    // there" and reads like the migration did nothing. Say which one it
+    // is instead.
+    let sources: Vec<PathBuf> = sources
+        .into_iter()
+        .filter(|p| {
+            if p == &into {
+                println!("{} is already the machine registry — skipped", p.display());
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    let report = SimRegistry::migrate(&into, &sources)
+        .map_err(|e| CliError::Other(format!("migrate: {e}")))?;
+
+    for (path, why) in &report.unreadable {
+        eprintln!("  {} could not be read: {why}", path.display());
+    }
+    for path in &report.empty {
+        println!("  {} held no devices", path.display());
+    }
+    for alias in &report.added {
+        println!("  + {alias}");
+    }
+    for alias in &report.narrowed {
+        println!("  ~ {alias} — destructive consent narrowed to the stricter answer");
+    }
+    println!(
+        "{} device(s) now recorded in {} ({} already there)",
+        report.added.len(),
+        into.display(),
+        report.unchanged.len()
+    );
+    if !report.added.is_empty() {
+        // The source is deliberately left in place, so the next reader
+        // still finds it and still calls it unmigrated. Saying so beats
+        // having somebody wonder why the note did not go away.
+        println!(
+            "the source registries are untouched — delete them yourself once \
+             every tree you use has been migrated"
+        );
+    }
+    Ok(())
+}
+
 async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
     let devices = simctl.list_devices().await?;
     let android = android_devices();
@@ -4659,16 +4928,40 @@ mod tests {
 
     #[test]
     fn a_device_ref_is_classed_by_the_registry_then_by_shape() {
-        use smix_simctl::registry::DeviceKind;
+        use smix_simctl::registry::{DeviceKind, RegisteredSim};
+        let mut reg = SimRegistry::default();
+        reg.insert(
+            "phone",
+            RegisteredSim {
+                device_name: "a phone".into(),
+                kind: DeviceKind::PhysicalIos,
+                destructive_opt_in: false,
+                udid: "00008120-000000000000000E".into(),
+                runtime: String::new(),
+                device_type: String::new(),
+                locale: None,
+                runner_port: None,
+            },
+        );
+        // Registered wins over shape: that is the whole ordering.
+        assert_eq!(
+            classify_device(&reg, "00008120-000000000000000E"),
+            DeviceKind::PhysicalIos
+        );
         // Unregistered and emulator-shaped: adb names these, so the
         // shape is a fact rather than a heuristic.
-        assert_eq!(device_kind_of("emulator-5554"), DeviceKind::Emulator);
+        assert_eq!(classify_device(&reg, "emulator-5554"), DeviceKind::Emulator);
         // Unregistered and not emulator-shaped. Falling back to
         // Simulator is a consequence of C15, not a guess: a raw
         // identifier only gets past `resolve_device` when the platform
         // itself claims it, and the emulator case was just handled.
-        assert_eq!(device_kind_of(UDID), DeviceKind::Simulator);
-        assert_eq!(device_kind_of("EMULATOR-5554"), DeviceKind::Simulator);
+        assert_eq!(classify_device(&reg, UDID), DeviceKind::Simulator);
+        // The uppercase spelling is not what adb answers to, so it is
+        // not an emulator serial.
+        assert_eq!(
+            classify_device(&reg, "EMULATOR-5554"),
+            DeviceKind::Simulator
+        );
     }
 
     #[test]

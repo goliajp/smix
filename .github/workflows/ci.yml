@@ -137,6 +137,9 @@ jobs:
       # Reads the Android e2e scripts' subjects; they are in the checkout.
       - name: android gates drive our own app
         run: python3 scripts/dev/android-subject-scan.py
+      # Reads where the device registry resolves from; that is source.
+      - name: device facts are machine-scoped
+        run: python3 scripts/dev/device-facts-are-machine-scoped.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the
