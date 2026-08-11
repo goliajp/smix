@@ -59,6 +59,13 @@ MACHINE_LEDGER_CALLERS = {
 # decision from what a 3.0.0 binary wrote.
 CHECKOUT_LEDGER_READERS = {
     "crates/smix-cli/src/lease_cmd.rs": "`lease migrate` and `lease list` read the source side",
+    # Added deliberately: `runner list` reads a tree's book so it can say
+    # which checkout has a record of a runner this machine's ledgers do
+    # not — the question that could not be answered about port 22087.
+    # It never classifies a row from it; the tree's path is printed
+    # alongside, labelled as evidence. This list fails in both
+    # directions, so an entry is an act rather than a relaxation.
+    "crates/smix-cli/src/runner_list.rs": "`runner list` names the tree that knows a runner",
 }
 
 problems: list[str] = []

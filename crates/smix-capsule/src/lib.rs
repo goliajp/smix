@@ -18,6 +18,7 @@ pub mod reconcile;
 pub mod runner;
 pub mod runner_android;
 pub mod runner_state;
+pub mod runner_view;
 pub mod signing;
 
 pub use runner::{health_ok, xcodebuild_argv};

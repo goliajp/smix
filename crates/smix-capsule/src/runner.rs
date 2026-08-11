@@ -619,7 +619,7 @@ fn read_state(root: &Path) -> Option<RunnerState> {
 }
 
 /// `ps -p <pid> -o command=` — None if the pid is gone.
-fn pid_command(pid: u32) -> Option<String> {
+pub(crate) fn pid_command(pid: u32) -> Option<String> {
     let out = std::process::Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "command="])
         .output()
@@ -641,7 +641,7 @@ fn pid_command(pid: u32) -> Option<String> {
 /// `xcodebuild` that started the session, and the two are not related by
 /// parentage — the app is a child of the sim's own launchd. The path is
 /// the link between them.
-fn udid_from_device_path(cmd: &str) -> Option<String> {
+pub(crate) fn udid_from_device_path(cmd: &str) -> Option<String> {
     let rest = cmd.split("/Devices/").nth(1)?;
     let udid = rest.split('/').next()?;
     // A UDID is 8-4-4-4-12 hex. Anything else under Devices/ is not one,
@@ -661,22 +661,8 @@ fn udid_from_device_path(cmd: &str) -> Option<String> {
 /// id=<UDID>`, which is the only place the session names its device —
 /// the port arrives as an environment variable, and macOS does not let
 /// one process read another's environment.
-fn xcodebuild_drives_udid(cmd: &str, udid: &str) -> bool {
+pub(crate) fn xcodebuild_drives_udid(cmd: &str, udid: &str) -> bool {
     cmd.contains("xcodebuild") && cmd.contains(&format!("id={udid}"))
-}
-
-/// PIDs listening on `port`, as reported by `lsof`.
-fn listener_pids(port: u16) -> Vec<u32> {
-    let Ok(out) = std::process::Command::new("lsof")
-        .args(["-nP", "-t", &format!("-iTCP:{port}"), "-sTCP:LISTEN"])
-        .output()
-    else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| l.trim().parse().ok())
-        .collect()
 }
 
 /// PIDs of `xcodebuild` runner sessions driving the sim that holds
@@ -692,27 +678,15 @@ fn listener_pids(port: u16) -> Vec<u32> {
 /// that is the trade: an unrecorded, wedged runner now has to be stopped
 /// by hand rather than by a sweep that could not tell whose it was.
 fn unrecorded_sessions_on(port: u16) -> Vec<u32> {
-    let udids: Vec<String> = listener_pids(port)
+    // Reads the same survey `smix runner list` reads. It used to run
+    // its own `lsof` and its own `pgrep`, which meant two answers to
+    // "what counts as a smix runner process" — and two answers drift.
+    // The machine root had six copies of its own question and three of
+    // them did not consult XDG_DATA_HOME.
+    crate::runner_view::listeners()
         .into_iter()
-        .filter_map(pid_command)
-        .filter_map(|cmd| udid_from_device_path(&cmd))
-        .collect();
-    if udids.is_empty() {
-        return Vec::new();
-    }
-    let Ok(out) = std::process::Command::new("pgrep")
-        .args(["-f", "xcodebuild.*SmixRunner"])
-        .output()
-    else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| l.trim().parse::<u32>().ok())
-        .filter(|pid| {
-            pid_command(*pid)
-                .is_some_and(|cmd| udids.iter().any(|u| xcodebuild_drives_udid(&cmd, u)))
-        })
+        .filter(|l| l.port == port)
+        .filter_map(|l| l.session_pid)
         .collect()
 }
 
