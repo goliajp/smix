@@ -239,8 +239,14 @@ its `/health` answers, so when the command returns you can run a flow.
 ```bash
 smix runner up <ALIAS|UDID> --bundle com.example.app
 smix runner up <ALIAS|UDID> --bundle com.example.app --supervise
+smix runner list
 smix runner down
 ```
+
+`runner list` is the one to reach for before touching anything: it reads
+this machine's ledgers *and* the listening sockets, and where only one of
+them has something it says which. A runner nobody wrote down is exactly
+the one you cannot decide about from the ledger alone.
 
 **A physical iPhone or iPad** takes the same command, once the device is
 registered with `--kind physical-ios`:

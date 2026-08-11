@@ -24,7 +24,8 @@ export function Hero() {
           smix is the substrate an AI agent stands on to build, drive, and debug a mobile app: it
           senses the screen, acts on it, and reports failures the agent can read. Every maestro verb,
           plus a native <span className="text-fg">sense · decide · act</span> surface — iOS and
-          Android at parity, on the simulator only.
+          Android at parity. Simulators and emulators by default; a physical device once you
+          register it, with erase and uninstall refused on it until you say otherwise.
         </p>
 
         <div className="mt-9 flex flex-wrap items-center gap-3">

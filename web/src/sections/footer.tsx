@@ -62,7 +62,7 @@ export function Footer() {
         </div>
         <div className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
           <span className="font-mono text-[11px] tracking-wide text-fg-dim">
-            simulator only · iOS + Android · v{VERSION}
+            simulators, emulators, and registered devices · iOS + Android · v{VERSION}
           </span>
           <span className="font-mono text-[11px] text-fg-dim">sense · decide · act</span>
         </div>
