@@ -1,11 +1,15 @@
 {/* The parse-check golden path — from examples/hello.yaml's own header
-    comment and docs/ai-guide. No device required. */}
+    comment and docs/ai-guide. Only the first block needs no device. */}
 
 ```bash
 # Parse-check the flow — no simulator needed
 smix run --check examples/hello.yaml
 
-# Boot a simulator and run it for real
+# Name a simulator once. The record is the machine's, so every
+# checkout on it resolves the same alias.
+smix sim register ios-17 --udid <UDID>
+
+# Boot it and run for real
 smix sim boot ios-17
 smix runner up ios-17
 smix run examples/hello.yaml --device ios-17

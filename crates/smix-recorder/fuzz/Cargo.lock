@@ -929,7 +929,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "smix-adb"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "smix-authoring-ir"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "serde",
  "smix-input",
@@ -949,7 +949,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "async-trait",
  "serde_json",
@@ -966,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -975,7 +975,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -985,14 +985,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-lease"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1002,7 +1002,7 @@ dependencies = [
 
 [[package]]
 name = "smix-recorder"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1028,7 +1028,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1046,7 +1046,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1057,14 +1057,14 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-sdk"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1087,7 +1087,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "regex",
  "serde",
@@ -1096,7 +1096,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1104,19 +1104,20 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "libc",
  "serde",
  "serde_json",
  "smix-error",
+ "smix-lease",
  "smix-sim-health",
  "smix-store",
  "thiserror",
@@ -1125,7 +1126,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "kevy-embedded",
  "serde",
