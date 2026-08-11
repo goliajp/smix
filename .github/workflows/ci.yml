@@ -144,6 +144,9 @@ jobs:
       - name: leases are machine-scoped
         run: python3 scripts/dev/leases-are-machine-scoped.py
       # Reads who may name either ledger directory; that is source.
+      # Which simulator a gate may be handed. Fakes only; no device.
+      - name: the dev-sim picker asks the ledger
+        run: bash scripts/dev/pick-dev-sim.test.sh
       - name: no second ledger path
         run: python3 scripts/dev/no-second-ledger-path.py
       - name: portable tier selftest
