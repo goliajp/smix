@@ -107,3 +107,15 @@ can do something the CLI cannot; use whichever suits the moment.
 If the user has no device registered yet, `smix doctor` prints the next
 command to run at every point, and `smix init --device <UDID> --app ./App.app`
 registers one and installs the app in a single step.
+
+## Before you take a device somebody else may be using
+
+A machine can have several simulators up, and the ones that are not
+yours look exactly like the ones that are. `smix runner list` says which
+runners exist here, on which ports, and whether the ledgers know about
+them; `smix lease owner <device>` answers whether smix booted that one
+(exit 0) or nobody here did (exit 3).
+
+Ask before you start a runner on a device you did not boot. A runner
+started on somebody's simulator takes over the app they had open — this
+is not hypothetical, it is why those two commands exist.
