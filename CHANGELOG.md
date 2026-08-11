@@ -2,7 +2,16 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [4.0.0] — 2026-08-11
+
+Device records moved, and two published Rust signatures moved with them.
+If you have an SDK integration written against 3.x, read
+[Migrating to smix 4.0](docs/migrating-to-4.md) — it is short, and most
+of it is one command you run once.
+
+If you drive smix by hand or from YAML flows, there is nothing to undo:
+`smix sim migrate` and `smix lease migrate` copy your existing records
+into place, and the old locations keep being read until you do.
 
 ### A device belongs to the machine, not to the checkout you are standing in
 
@@ -56,6 +65,15 @@ ledgers are read and never obeyed.
 - A device record no longer falls back to `.smix/sims.json` in the working
   directory when the machine location cannot be resolved. There is no good
   place to put such a record silently.
+
+**Breaking**
+
+- `smix_lease::store::lease_dir` is gone. It built `.smix/leases` from a
+  workspace root, which is the thing that no longer happens.
+- `smix_sdk::leased::Leased::acquire` and `smix_sdk::App::hold_device_lease`
+  each take one more argument: the ledger directory. The tree they were given
+  used to mean two things — where the ledger is, and where a dead holder's
+  build products would be settled — and only the second is still a tree.
 
 **Library**
 
