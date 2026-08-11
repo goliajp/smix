@@ -23,6 +23,7 @@ mod lease_cmd;
 mod parallel;
 mod readiness;
 mod record_cmd;
+mod runner_list;
 
 mod script;
 
@@ -1152,6 +1153,19 @@ enum RunnerAction {
     /// List every session the runner currently tracks.
     /// Reads `POST /session/list`. Useful for post-cycle diagnostics.
     ListSessions,
+    /// Every smix runner on this machine: its port, its device, and
+    /// whether the ledgers know about it.
+    ///
+    /// Not `list-sessions`, which asks one runner what app sessions it
+    /// has open. This asks the machine what runners it has at all —
+    /// reading the ledgers and the listening sockets and putting them
+    /// side by side, because a runner nobody wrote down is exactly the
+    /// one you cannot decide about.
+    ///
+    /// Reads only. It never signals a process or writes a ledger, and
+    /// always exits 0: a command meant to be run before touching
+    /// anything has to be safe to run.
+    List,
     /// Extract the CLI's embedded Swift runner sources
     /// into `~/.local/share/smix/runner/`. Normally auto-invoked by
     /// `smix runner up` when the on-disk `.smix-runner-version` file
@@ -2367,6 +2381,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 RunnerAction::Supervise { runner_project } => {
                     smix_capsule::runner::supervise(&root, runner_project.as_deref())
                         .map_err(CliError::Other)?;
+                }
+                RunnerAction::List => {
+                    let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
+                    return Ok(std::process::ExitCode::from(runner_list::run(&leases)?));
                 }
                 RunnerAction::ListSessions => {
                     let port = runner_port();
