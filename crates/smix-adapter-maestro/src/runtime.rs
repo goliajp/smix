@@ -2993,7 +2993,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         std::env::current_dir()
             .ok()
             .map(|c| c.join(".smix").join("press"))
-            .or_else(|| dirs::home_dir().map(|h| h.join(".local/share/smix/press")))
+            .or_else(|| smix_lease::store::machine_root().map(|r| r.join("press")))
     }
 
     /// Capture screenshot + a11y tree at the moment of a
@@ -3026,7 +3026,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             let local = std::env::current_dir()
                 .ok()
                 .map(|c| c.join(".smix").join("timeouts"));
-            let home = dirs::home_dir().map(|h| h.join(".local/share/smix/timeouts"));
+            let home = smix_lease::store::machine_root().map(|r| r.join("timeouts"));
             local.or(home)?
         };
         if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -3646,8 +3646,8 @@ fn resolve_std_subflow(name: &str, base_dir: &Path) -> Option<PathBuf> {
         std::env::var_os("SMIX_STD_SUBFLOWS")
             .map(|p| PathBuf::from(p).join(file))
             .unwrap_or_default(),
-        dirs::home_dir()
-            .map(|h| h.join(".local/share/smix/std").join(file))
+        smix_lease::store::machine_root()
+            .map(|r| r.join("std").join(file))
             .unwrap_or_default(),
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()

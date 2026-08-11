@@ -173,10 +173,7 @@ fn forward_argv(host_port: u16) -> Vec<String> {
 /// Where the installed Android runner project lives, mirroring the iOS
 /// `~/.local/share/smix/runner/`.
 fn installed_android_dir() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
-    Some(base.join("smix/android-runner"))
+    smix_lease::store::machine_root().map(|r| r.join("android-runner"))
 }
 
 /// Extract the shipped Android runner project and build its
@@ -397,7 +394,10 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
         .spawn()
         .map_err(|e| format!("adb shell am instrument: {e}"))?;
     let pid = child.id();
-    record_android_lease(root, serial, port, pid);
+    match crate::runner::machine_leases() {
+        Ok(leases) => record_android_lease(&leases, serial, port, pid),
+        Err(e) => eprintln!("warning: android runner not recorded: {e}"),
+    }
 
     let state = RunnerState {
         pid,
@@ -476,7 +476,7 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
 /// The host-side process outlives `runner up`, and what it leaves on the
 /// device outlives the host-side process. A row is what lets a later
 /// command find both and end them in the right order.
-fn record_android_lease(root: &Path, serial: &str, port: u16, pid: u32) {
+fn record_android_lease(leases: &smix_lease::store::LeaseDir, serial: &str, port: u16, pid: u32) {
     use smix_lease::store;
     let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
         pid,
@@ -484,7 +484,7 @@ fn record_android_lease(root: &Path, serial: &str, port: u16, pid: u32) {
         cmd: format!("instrumentation runner on {serial}"),
     });
     if let Err(e) = store::add_resource(
-        root,
+        leases,
         serial,
         smix_lease::Resource::AndroidRunner {
             port,
@@ -612,8 +612,15 @@ pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
     if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
         eprintln!("runner: {e}");
     }
+    let leases = match crate::runner::machine_leases() {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("runner down: lease ledger not updated: {e}");
+            return Ok(());
+        }
+    };
     if let Err(e) = smix_lease::store::drop_resource_kind(
-        root,
+        &leases,
         serial,
         &smix_lease::Resource::AndroidRunner {
             port: 0,

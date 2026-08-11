@@ -49,9 +49,82 @@ fn io_err(path: &Path) -> impl FnOnce(std::io::Error) -> LeaseError + '_ {
     }
 }
 
-/// Directory holding one file per device.
-pub fn lease_dir(root: &Path) -> PathBuf {
-    root.join(".smix").join("leases")
+/// Where this machine keeps smix's data.
+///
+/// The one resolver. Seven functions across four crates each worked
+/// this out for themselves, and three of them reached through
+/// `dirs::home_dir()`, which does not consult `XDG_DATA_HOME` at all —
+/// so with that variable set the runner tree and the press-timing table
+/// landed in different places. It lives in this crate because this
+/// crate is below everything that needs it: the registry, the capsule
+/// and the adapter all depend on leases, and none of them is depended
+/// on by it.
+///
+/// `SMIX_MACHINE_DIR` first, so a test can point the whole machine
+/// somewhere disposable without touching a real one.
+///
+/// `None` when the machine has no home for it — neither variable set.
+/// Callers say so rather than guessing, because the fallback that used
+/// to be guessed at was the working directory.
+#[must_use]
+pub fn machine_root() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("SMIX_MACHINE_DIR") {
+        return Some(PathBuf::from(p));
+    }
+    if let Some(d) = std::env::var_os("XDG_DATA_HOME") {
+        return Some(PathBuf::from(d).join("smix"));
+    }
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share/smix"))
+}
+
+/// The directory holding one ledger file per device.
+///
+/// A type rather than a `&Path`, because the change that put these on
+/// the machine could not be made with a path. Every ledger function
+/// used to take a workspace root and append `.smix/leases` itself;
+/// changing what the first argument means left twenty-five call sites
+/// still compiling and still writing device facts into trees. The
+/// compiler could not see it, so it became a type it can.
+///
+/// A lease says who holds a device, what they opened on it and on which
+/// port. Every field of that is about the machine, and storing them per
+/// checkout is how a runner came to be holding port 22087 while the
+/// tree asking about it saw an empty ledger directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaseDir(PathBuf);
+
+impl LeaseDir {
+    /// This machine's ledger directory.
+    ///
+    /// `None` when the machine has no home for it — see
+    /// [`machine_root`]. Callers say so rather than falling back to
+    /// somewhere, because the somewhere that used to be fallen back to
+    /// was the working directory.
+    #[must_use]
+    pub fn machine() -> Option<Self> {
+        machine_root().map(|r| Self(r.join("leases")))
+    }
+
+    /// A directory named outright.
+    ///
+    /// Two callers need this and no others should: a test pointing at a
+    /// tempdir, and `lease migrate` reading a book somebody wrote before
+    /// these moved.
+    pub fn at(path: impl Into<PathBuf>) -> Self {
+        Self(path.into())
+    }
+
+    /// Where it is.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for LeaseDir {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.display().fmt(f)
+    }
 }
 
 /// Path of one device's ledger.
@@ -61,7 +134,7 @@ pub fn lease_dir(root: &Path) -> PathBuf {
 /// separators; anything else — a path separator above all — is refused
 /// instead of sanitised, because a silently rewritten id would address a
 /// different device than the caller named.
-pub fn lease_path(root: &Path, device_id: &str) -> Result<PathBuf, LeaseError> {
+pub fn lease_path(dir: &LeaseDir, device_id: &str) -> Result<PathBuf, LeaseError> {
     let ok = !device_id.is_empty()
         && device_id
             .chars()
@@ -71,7 +144,7 @@ pub fn lease_path(root: &Path, device_id: &str) -> Result<PathBuf, LeaseError> {
             device_id: device_id.to_string(),
         });
     }
-    Ok(lease_dir(root).join(format!("{device_id}.json")))
+    Ok(dir.path().join(format!("{device_id}.json")))
 }
 
 /// Read a device's ledger. `Ok(None)` means no lease; a ledger that
@@ -80,8 +153,8 @@ pub fn lease_path(root: &Path, device_id: &str) -> Result<PathBuf, LeaseError> {
 /// Reporting a corrupt ledger as "no lease" would hand the device to the
 /// next caller along with an orphaned runner and a half-written video the
 /// ledger was the only record of.
-pub fn read(root: &Path, device_id: &str) -> Result<Option<Lease>, LeaseError> {
-    let path = lease_path(root, device_id)?;
+pub fn read(dir: &LeaseDir, device_id: &str) -> Result<Option<Lease>, LeaseError> {
+    let path = lease_path(dir, device_id)?;
     let bytes = match std::fs::read(&path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -100,22 +173,23 @@ pub fn read(root: &Path, device_id: &str) -> Result<Option<Lease>, LeaseError> {
 /// Temp file plus rename, the same discipline the store uses: a process
 /// killed mid-write is exactly the case this whole module exists for, and
 /// it must not be the case that leaves a truncated ledger behind.
-pub fn write(root: &Path, lease: &Lease) -> Result<(), LeaseError> {
-    let path = lease_path(root, &lease.device_id)?;
-    let dir = lease_dir(root);
-    std::fs::create_dir_all(&dir).map_err(io_err(&dir))?;
+pub fn write(dir: &LeaseDir, lease: &Lease) -> Result<(), LeaseError> {
+    let path = lease_path(dir, &lease.device_id)?;
+    std::fs::create_dir_all(dir.path()).map_err(io_err(dir.path()))?;
     let json = serde_json::to_vec_pretty(lease).map_err(|e| LeaseError::Malformed {
         path: path.display().to_string(),
         detail: e.to_string(),
     })?;
-    let tmp = dir.join(format!(".{}.{}.tmp", lease.device_id, std::process::id()));
+    let tmp = dir
+        .path()
+        .join(format!(".{}.{}.tmp", lease.device_id, std::process::id()));
     std::fs::write(&tmp, &json).map_err(io_err(&tmp))?;
     std::fs::rename(&tmp, &path).map_err(io_err(&path))
 }
 
 /// Drop a device's ledger. Absent is success — release is idempotent.
-pub fn remove(root: &Path, device_id: &str) -> Result<(), LeaseError> {
-    let path = lease_path(root, device_id)?;
+pub fn remove(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
+    let path = lease_path(dir, device_id)?;
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -135,14 +209,55 @@ fn ps_field(pid: u32, field: &str) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }
 
+/// What `ps` said about a pid.
+///
+/// Separated from the judgement so the judgement can be tested. The
+/// judgement used to be "`ps` answered, so it is alive", and a
+/// `<defunct>` process answers.
+#[derive(Debug, Clone)]
+pub struct PsFacts {
+    /// `lstart=` — the start time, which is what makes a pid an identity.
+    pub started_at: String,
+    /// `command=`.
+    pub cmd: String,
+    /// `state=` — `S`, `R`, `Z`, sometimes with flags after it.
+    pub state: String,
+}
+
+/// Is there still a process there?
+///
+/// A zombie is not. It has exited; what is left is a row in the process
+/// table waiting for its parent to collect the exit status, and it
+/// answers `ps -o lstart=` with the time the process it used to be
+/// started. On 2026-08-11 that was enough to make a ledger report a live
+/// runner on a device that had had none since 8 August: the recorded
+/// start time and the zombie's matched to the character.
+///
+/// Anything unrecognised reads as running. Reading an unfamiliar state
+/// as dead would let the next command settle a live session; the cost of
+/// the other direction is a wait.
+#[must_use]
+pub fn is_running(facts: &PsFacts) -> bool {
+    !facts.state.starts_with('Z')
+}
+
 /// Look up a live process by pid.
+///
+/// `None` for a pid with no process behind it — including a zombie,
+/// which has one only in the sense that the table still lists it.
 pub fn identify(pid: u32) -> Option<ProcIdentity> {
-    let started_at = ps_field(pid, "lstart=")?;
-    let cmd = ps_field(pid, "command=").unwrap_or_default();
+    let facts = PsFacts {
+        started_at: ps_field(pid, "lstart=")?,
+        cmd: ps_field(pid, "command=").unwrap_or_default(),
+        state: ps_field(pid, "state=").unwrap_or_default(),
+    };
+    if !is_running(&facts) {
+        return None;
+    }
     Some(ProcIdentity {
         pid,
-        started_at,
-        cmd,
+        started_at: facts.started_at,
+        cmd: facts.cmd,
     })
 }
 
@@ -192,9 +307,9 @@ pub fn now_rfc3339() -> String {
 /// than stacking beside it. A device has one runner, one recording, and
 /// one boot state; a second row for any of them would be a second thing
 /// to tear down that never existed.
-pub fn add_resource(root: &Path, device_id: &str, resource: Resource) -> Result<(), LeaseError> {
+pub fn add_resource(dir: &LeaseDir, device_id: &str, resource: Resource) -> Result<(), LeaseError> {
     let now = now_rfc3339();
-    let mut lease = read(root, device_id)?.unwrap_or_else(|| Lease {
+    let mut lease = read(dir, device_id)?.unwrap_or_else(|| Lease {
         device_id: device_id.to_string(),
         holder: identify_self(),
         acquired_at: now.clone(),
@@ -207,7 +322,7 @@ pub fn add_resource(root: &Path, device_id: &str, resource: Resource) -> Result<
         .retain(|r| std::mem::discriminant(r) != same_kind);
     lease.resources.push(resource);
     lease.heartbeat_at = now;
-    write(root, &lease)
+    write(dir, &lease)
 }
 
 /// Forget every resource of one kind, and the ledger itself once nothing
@@ -217,11 +332,11 @@ pub fn add_resource(root: &Path, device_id: &str, resource: Resource) -> Result<
 /// records a device somebody else brought up, which is precisely the
 /// thing this process must not act on.
 pub fn drop_resource_kind(
-    root: &Path,
+    dir: &LeaseDir,
     device_id: &str,
     sample: &Resource,
 ) -> Result<(), LeaseError> {
-    let Some(mut lease) = read(root, device_id)? else {
+    let Some(mut lease) = read(dir, device_id)? else {
         return Ok(());
     };
     let kind = std::mem::discriminant(sample);
@@ -233,9 +348,9 @@ pub fn drop_resource_kind(
         .iter()
         .any(|r| !matches!(r, Resource::Booted { by_us: false }));
     if worth_keeping {
-        write(root, &lease)
+        write(dir, &lease)
     } else {
-        remove(root, device_id)
+        remove(dir, device_id)
     }
 }
 
@@ -246,8 +361,8 @@ pub fn drop_resource_kind(
 /// the boot row here would lose the right to shut down a device smix
 /// booted, which is the one thing that stops teardown from turning off
 /// somebody else's device — and from leaving its own running.
-pub fn drop_process_rows(root: &Path, device_id: &str) -> Result<(), LeaseError> {
-    let Some(mut lease) = read(root, device_id)? else {
+pub fn drop_process_rows(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
+    let Some(mut lease) = read(dir, device_id)? else {
         return Ok(());
     };
     lease.resources.retain(|r| !crate::is_process_backed(r));
@@ -256,9 +371,9 @@ pub fn drop_process_rows(root: &Path, device_id: &str) -> Result<(), LeaseError>
         .iter()
         .any(|r| !matches!(r, Resource::Booted { by_us: false }));
     if worth_keeping {
-        write(root, &lease)
+        write(dir, &lease)
     } else {
-        remove(root, device_id)
+        remove(dir, device_id)
     }
 }
 
@@ -273,11 +388,11 @@ pub fn drop_process_rows(root: &Path, device_id: &str) -> Result<(), LeaseError>
 /// running. The forwarder that nothing could find again was exactly
 /// this: alive, serving, and written down nowhere.
 pub fn drop_process_rows_except(
-    root: &Path,
+    dir: &LeaseDir,
     device_id: &str,
     keep: &[Resource],
 ) -> Result<(), LeaseError> {
-    let Some(mut lease) = read(root, device_id)? else {
+    let Some(mut lease) = read(dir, device_id)? else {
         return Ok(());
     };
     lease
@@ -288,9 +403,9 @@ pub fn drop_process_rows_except(
         .iter()
         .any(|r| !matches!(r, Resource::Booted { by_us: false }));
     if worth_keeping {
-        write(root, &lease)
+        write(dir, &lease)
     } else {
-        remove(root, device_id)
+        remove(dir, device_id)
     }
 }
 
@@ -303,18 +418,18 @@ pub fn drop_process_rows_except(
 /// Handing the holder role to the recording process itself makes the
 /// ledger say what is true: this device is busy for as long as that
 /// process runs.
-pub fn set_holder(root: &Path, device_id: &str, holder: ProcIdentity) -> Result<(), LeaseError> {
-    let Some(mut lease) = read(root, device_id)? else {
+pub fn set_holder(dir: &LeaseDir, device_id: &str, holder: ProcIdentity) -> Result<(), LeaseError> {
+    let Some(mut lease) = read(dir, device_id)? else {
         return Ok(());
     };
     lease.holder = holder;
     lease.heartbeat_at = now_rfc3339();
-    write(root, &lease)
+    write(dir, &lease)
 }
 
 /// Gather everything `assess` needs.
-pub fn collect_facts(root: &Path, device_id: &str) -> Result<Facts, LeaseError> {
-    let existing = read(root, device_id)?.map(|lease| {
+pub fn collect_facts(dir: &LeaseDir, device_id: &str) -> Result<Facts, LeaseError> {
+    let existing = read(dir, device_id)?.map(|lease| {
         let holder = probe(&lease.holder);
         // Only a runner speaks for "somebody is using this device".
         //

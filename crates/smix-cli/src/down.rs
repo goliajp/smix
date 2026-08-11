@@ -31,11 +31,10 @@ fn pkill(sig: &str, pattern: &str, label: &str) -> bool {
 /// longer how smix tears down its own work.
 ///
 /// A device whose session is still alive is left alone and said so:
-/// `smix down` is a sweep of *this* workspace's leftovers, not a claim
+/// `smix down` is a sweep of *this* operator's leftovers, not a claim
 /// on every device on the machine.
-fn settle_ledgers(root: &Path) {
-    let dir = smix_lease::store::lease_dir(root);
-    let Ok(entries) = std::fs::read_dir(&dir) else {
+fn settle_ledgers(root: &Path, leases: &smix_lease::store::LeaseDir) {
+    let Ok(entries) = std::fs::read_dir(leases.path()) else {
         println!("  no device ledgers");
         return;
     };
@@ -54,26 +53,36 @@ fn settle_ledgers(root: &Path) {
         return;
     }
     for id in ids {
-        let facts = match smix_lease::store::collect_facts(root, &id) {
+        let facts = match smix_lease::store::collect_facts(leases, &id) {
             Ok(f) => f,
             Err(e) => {
                 eprintln!("  {id}: ledger unreadable: {e}");
                 continue;
             }
         };
-        // Closed unconditionally, unlike `lease reconcile`.
-        //
-        // The two commands look alike and mean different things.
-        // `reconcile` settles what a *dead* holder left behind and
-        // refuses to touch a live session — it runs on somebody else's
-        // behalf. `down` is this workspace's operator saying "close what
-        // I started", and a live runner is precisely what they mean. A
-        // `down` that skipped live sessions would leave the thing it was
-        // asked to clean up and report success.
         let Some(held) = facts.existing else {
             println!("  {id}: nothing owed");
             continue;
         };
+        // A live holder that is not this process is left alone.
+        //
+        // This used to close every ledger it found, and the reasoning
+        // was sound while the ledgers were per checkout: "`down` is
+        // this workspace's operator saying close what I started", and a
+        // live runner is precisely what they mean. The ledgers are the
+        // machine's now, so the directory holds other people's work —
+        // on 2026-08-11 it held pid 50057, an `smix-mcp` still serving
+        // somebody. "Which directory it is in" was never the question;
+        // "is its holder still there" is, and it is answerable.
+        let mine = std::process::id();
+        let holder_alive = held.holder.pid_exists && held.holder.identity_matches;
+        if holder_alive && held.lease.holder.pid != mine {
+            println!(
+                "  {id}: held by pid {} ({}) — still alive, left alone",
+                held.lease.holder.pid, held.lease.holder.cmd
+            );
+            continue;
+        }
         let cleanup = smix_lease::plan_cleanup(&held.lease);
         if cleanup.is_empty() {
             println!("  {id}: nothing owed");
@@ -86,7 +95,7 @@ fn settle_ledgers(root: &Path) {
         // booted, so after this pass nothing on that device is owed —
         // and a ledger kept for a row nobody owes anything on is a file
         // that makes the next `down` look like it has work to do.
-        if let Err(e) = smix_lease::store::remove(root, &id) {
+        if let Err(e) = smix_lease::store::remove(leases, &id) {
             eprintln!("  {id}: ledger not updated: {e}");
         }
     }
@@ -95,8 +104,9 @@ fn settle_ledgers(root: &Path) {
 /// Run the full sweep. Returns Err with the residue list if smix-shaped
 /// processes survive.
 pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
+    let leases = smix_capsule::runner::machine_leases()?;
     println!("=== 1. device ledgers (close what we opened) ===");
-    settle_ledgers(root);
+    settle_ledgers(root, &leases);
 
     println!("=== 2. XCUITest runner ===");
     smix_capsule::runner::down(root, runner_port)?;
@@ -159,7 +169,7 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
             // simulator lost it to a teardown of somebody else's work.
             // The boot row is the record of who is entitled, and it is
             // the same rule reconcile follows.
-            let ledger = smix_lease::store::read(root, &sim.udid).ok().flatten();
+            let ledger = smix_lease::store::read(&leases, &sim.udid).ok().flatten();
             let ours = smix_lease::may_shut_down(ledger.as_ref());
             if !ours {
                 println!("  {alias} ({}) is up but not ours — left alone", sim.udid);
@@ -176,7 +186,7 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
                 // keep a ledger file alive with nothing left in it worth
                 // acting on.
                 if let Err(e) = smix_lease::store::drop_resource_kind(
-                    root,
+                    &leases,
                     &sim.udid,
                     &smix_lease::Resource::Booted { by_us: true },
                 ) {

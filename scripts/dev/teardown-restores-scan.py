@@ -47,9 +47,37 @@ KNOWS_PRIOR_STATE = re.compile(
     r"BOOTED_BEFORE|we_booted|WE_BOOTED\w*|booted_by_us)\s*=\s*(?:yes|true|1)\b",
 )
 
+# The scripts that shut a device down, named rather than discovered.
+#
+# Discovery alone answered "every script I found has a guard", which is
+# also what it says when a script stops being found. A script that drops
+# out of the set — renamed, or its shutdown moved behind a helper this
+# regex does not read — would leave the count quietly one lower and the
+# verdict still clean. The set found must equal this one, both ways.
+SHUTS_DOWN_SCRIPTS = {
+    "v2.12-c3-federation-single-node-e2e.sh",
+    "v2.12-c4-federation-two-node-e2e.sh",
+    "v2.12-c5-federation-cli-e2e.sh",
+    "v2.3-c6-lease-reconcile-e2e.sh",
+    "v2.3-c7-admission-e2e.sh",
+    "v2.3-c8-recording-reconcile-e2e.sh",
+    "v2.3-c9-ledger-teardown-e2e.sh",
+    "v3.1-c2-machine-lease-e2e.sh",
+}
+
+# Scripts that name a shutdown without performing one, and why.
+#
+# `v2.13-c6` writes `xcrun simctl shutdown all` on purpose: it is the
+# thing the guard under test must refuse. Listed, so that "it does not
+# shut anything down" is a claim somebody made rather than a gap.
+NOT_A_SHUTDOWN = {
+    "v2.13-c6-guard-e2e.sh": "the `shutdown all` in it is the guard's target, not a teardown",
+}
+
 problems: list[str] = []
 checked = 0
 careful = 0
+found: set[str] = set()
 
 for name in sorted(os.listdir(DEV)) if os.path.isdir(DEV) else []:
     if not name.endswith("-e2e.sh"):
@@ -64,6 +92,7 @@ for name in sorted(os.listdir(DEV)) if os.path.isdir(DEV) else []:
     if not hits:
         continue
     checked += 1
+    found.add(name)
     if KNOWS_PRIOR_STATE.search(code):
         careful += 1
         continue
@@ -71,6 +100,26 @@ for name in sorted(os.listdir(DEV)) if os.path.isdir(DEV) else []:
         f"{name} shuts a device down without recording whether it was already "
         f"booted on arrival. Alone that reads as tidiness; in a suite it is how "
         f"one script fails the ones after it.\n      {hits[0].strip()}"
+    )
+
+for missing in sorted(SHUTS_DOWN_SCRIPTS - found):
+    if os.path.isfile(os.path.join(DEV, missing)):
+        problems.append(
+            f"{missing} is listed as shutting a device down and no longer reads "
+            f"as one. Either its teardown moved somewhere this scan cannot see "
+            f"it — in which case the guard is no longer checked — or it stopped "
+            f"shutting devices down, in which case take it off the list."
+        )
+    else:
+        problems.append(
+            f"{missing} is on the list and does not exist. A list naming a file "
+            f"that is gone stops being a list of anything."
+        )
+
+for extra in sorted(found - SHUTS_DOWN_SCRIPTS):
+    problems.append(
+        f"{extra} shuts a device down and is not on the list. Add it, or say in "
+        f"NOT_A_SHUTDOWN why what it writes is not a teardown."
     )
 
 # A scan that reads no scripts agrees with any suite at all.
@@ -88,5 +137,6 @@ if problems:
 
 print(
     f"teardown-restores-scan: clean — {careful} script(s) shut a device down and "
-    f"know whether they booted it"
+    f"know whether they booted it; {len(NOT_A_SHUTDOWN)} name one without "
+    f"performing it"
 )

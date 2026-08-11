@@ -184,6 +184,12 @@ log "device facts are machine-scoped"
 python3 "$ROOT/scripts/dev/device-facts-are-machine-scoped.py" > /tmp/smix-ship-device-scope.log 2>&1 \
   || fail "device-facts-are-machine-scoped FAILED — see /tmp/smix-ship-device-scope.log"
 
+# A ledger written into a checkout is a ledger the next checkout cannot
+# read — which is how a runner came to be on the books and invisible.
+log "leases are machine-scoped"
+python3 "$ROOT/scripts/dev/leases-are-machine-scoped.py" > /tmp/smix-ship-lease-scope.log 2>&1 \
+  || fail "leases-are-machine-scoped FAILED — see /tmp/smix-ship-lease-scope.log"
+
 log "teardown restores rather than imposes"
 python3 "$ROOT/scripts/dev/teardown-restores-scan.py" > /tmp/smix-ship-teardown.log 2>&1 \
   || fail "teardown-restores scan FAILED — see /tmp/smix-ship-teardown.log"
@@ -497,6 +503,10 @@ README_GRADLE_VERSION="$(grep 'jp.golia.smix:smix-sdk:' "$ROOT/README.md" | sed 
 
 # --- publish crates.io (DAG order) -----------------------------------
 
+# `smix-lease` sits before `smix-simctl` and `smix-adapter-maestro`,
+# which now depend on it: the machine root — where this machine keeps
+# smix's data — is resolved in one place, and that place is there. It
+# used to come after them, back when nothing above the capsule needed it.
 log "publish crates.io DAG at $VERSION"
 CRATES=(
   smix-sim-health smix-runner-sources
@@ -504,9 +514,8 @@ CRATES=(
   smix-verbs smix-metro-log smix-adb smix-ai-tier
   smix-runner-wire smix-selector-resolver smix-fixture
   smix-annotate smix-migrate smix-authoring-ir
-  smix-store smix-simctl smix-runner-client
+  smix-store smix-lease smix-simctl smix-runner-client
   smix-usbmux
-  smix-lease
   smix-capsule
   smix-host-coord-resolver smix-driver
   smix-sdk smix-mcp smix-adapter-maestro smix-recorder

@@ -538,19 +538,7 @@ impl SimRegistry {
     /// under which the runner tree has no home either; the caller falls
     /// back to the checkout and says so.
     pub fn machine_dir() -> Option<PathBuf> {
-        std::env::var_os("SMIX_MACHINE_DIR")
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("XDG_DATA_HOME")
-                    .map(PathBuf::from)
-                    .map(|d| d.join("smix"))
-            })
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(PathBuf::from)
-                    .map(|h| h.join(".local/share/smix"))
-            })
-            .map(|d| d.join("devices"))
+        smix_lease::store::machine_root().map(|r| r.join("devices"))
     }
 
     /// Every registry a read may draw on, in precedence order.

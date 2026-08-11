@@ -16,8 +16,9 @@
 //! the way past. They are deprecated in favour of this, which is what a
 //! deprecation is for.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use smix_lease::store::LeaseDir;
 use smix_lease::{Admission, CleanupExecutor, CleanupReport, store};
 use smix_simctl::DeviceControlError;
 
@@ -81,7 +82,14 @@ pub enum AdmissionError {
 pub struct Leased<'a> {
     inner: &'a dyn DeviceControl,
     device_id: String,
-    root: PathBuf,
+    /// The machine's ledgers.
+    ///
+    /// The one `root` this replaces served two jobs — where the ledger
+    /// is, and which tree to settle a dead holder's mess in. Only the
+    /// first outlives `acquire`; the tree is used there, by the
+    /// `CleanupExecutor`, and never again. Keeping it would be keeping
+    /// a field for a caller that does not exist.
+    lease_dir: LeaseDir,
     /// What settling the previous holder's mess produced, if anything.
     /// Carried so the caller can report it rather than have it vanish
     /// into a log nobody reads.
@@ -104,11 +112,12 @@ impl<'a> Leased<'a> {
     /// it.
     pub fn acquire(
         inner: &'a dyn DeviceControl,
-        root: &Path,
+        workspace_root: &Path,
+        lease_dir: &LeaseDir,
         device_id: &str,
         executor: &dyn CleanupExecutor,
     ) -> Result<Self, AdmissionError> {
-        let facts = store::collect_facts(root, device_id)?;
+        let facts = store::collect_facts(lease_dir, device_id)?;
         let mut inherited: Vec<smix_lease::Resource> = Vec::new();
         let settled = match smix_lease::assess(&facts) {
             Admission::Granted => Vec::new(),
@@ -138,7 +147,7 @@ impl<'a> Leased<'a> {
                 // through it. Take the lease over, resources intact:
                 // tearing them down would destroy the thing this
                 // command came to use.
-                store::set_holder(root, device_id, store::identify_self())?;
+                store::set_holder(lease_dir, device_id, store::identify_self())?;
                 if let Some(held) = &facts.existing {
                     inherited = held
                         .lease
@@ -151,7 +160,7 @@ impl<'a> Leased<'a> {
                 Vec::new()
             }
             Admission::Reclaimable { cleanup, .. } => {
-                let reports = executor.execute(root, &cleanup);
+                let reports = executor.execute(workspace_root, &cleanup);
                 let failures: Vec<&str> = reports
                     .iter()
                     .filter(|r| !r.clean)
@@ -163,14 +172,14 @@ impl<'a> Leased<'a> {
                         details: failures.join("\n"),
                     });
                 }
-                store::remove(root, device_id)?;
+                store::remove(lease_dir, device_id)?;
                 reports
             }
         };
         Ok(Self {
             inner,
             device_id: device_id.to_string(),
-            root: root.to_path_buf(),
+            lease_dir: lease_dir.clone(),
             settled,
             inherited,
         })
@@ -190,7 +199,7 @@ impl<'a> Leased<'a> {
     /// Record something opened on this device, so a later process can
     /// close it if this one dies first.
     pub fn record(&self, resource: smix_lease::Resource) -> Result<(), store::LeaseError> {
-        store::add_resource(&self.root, &self.device_id, resource)
+        store::add_resource(&self.lease_dir, &self.device_id, resource)
     }
 
     /// Give the device back.
@@ -206,7 +215,7 @@ impl<'a> Leased<'a> {
     /// one command finished with it. Dropping it here would lose the
     /// right to shut down a device smix itself turned on.
     pub fn release(self) -> Result<(), store::LeaseError> {
-        store::drop_process_rows_except(&self.root, &self.device_id, &self.inherited)
+        store::drop_process_rows_except(&self.lease_dir, &self.device_id, &self.inherited)
     }
 
     /// The rows this lease was adopted with — processes another session
@@ -303,7 +312,7 @@ impl<'a> Leased<'a> {
     pub async fn stop_recording(&self) -> Result<(), DeviceControlError> {
         self.inner.stop_recording().await?;
         if let Err(e) = smix_lease::store::drop_resource_kind(
-            &self.root,
+            &self.lease_dir,
             &self.device_id,
             &smix_lease::Resource::Recording {
                 path: String::new(),
@@ -653,7 +662,14 @@ mod tests {
     fn a_free_device_is_granted_without_cleaning_anything() {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let ex = executor(true);
-        let leased = Leased::acquire(&NeverCalled, tmp.path(), "UDID-FREE", &ex).expect("granted");
+        let leased = Leased::acquire(
+            &NeverCalled,
+            tmp.path(),
+            &LeaseDir::at(tmp.path()),
+            "UDID-FREE",
+            &ex,
+        )
+        .expect("granted");
         assert!(leased.settled().is_empty());
         assert!(
             ex.seen.borrow().is_empty(),
@@ -672,9 +688,15 @@ mod tests {
             started_at: "Thu Aug  6 10:00:00 2026".into(),
             cmd: "launchd".into(),
         });
-        store::write(tmp.path(), &lease).expect("write");
+        store::write(&LeaseDir::at(tmp.path()), &lease).expect("write");
         let ex = executor(true);
-        match Leased::acquire(&NeverCalled, tmp.path(), "UDID-BUSY", &ex) {
+        match Leased::acquire(
+            &NeverCalled,
+            tmp.path(),
+            &LeaseDir::at(tmp.path()),
+            "UDID-BUSY",
+            &ex,
+        ) {
             Err(AdmissionError::InUse { holder_pid, .. }) => assert_eq!(holder_pid, 1),
             other => panic!("expected InUse, got {other:?}", other = other.err()),
         }
@@ -687,9 +709,16 @@ mod tests {
     #[test]
     fn an_abandoned_device_is_settled_before_it_is_handed_over() {
         let tmp = tempfile::tempdir().expect("tmpdir");
-        store::write(tmp.path(), &dead_holder_lease("UDID-DEAD")).expect("write");
+        store::write(&LeaseDir::at(tmp.path()), &dead_holder_lease("UDID-DEAD")).expect("write");
         let ex = executor(true);
-        let leased = Leased::acquire(&NeverCalled, tmp.path(), "UDID-DEAD", &ex).expect("granted");
+        let leased = Leased::acquire(
+            &NeverCalled,
+            tmp.path(),
+            &LeaseDir::at(tmp.path()),
+            "UDID-DEAD",
+            &ex,
+        )
+        .expect("granted");
         assert_eq!(
             ex.seen.borrow().len(),
             2,
@@ -697,7 +726,7 @@ mod tests {
         );
         assert_eq!(leased.settled().len(), 2, "and the caller is told about it");
         assert!(
-            store::read(tmp.path(), "UDID-DEAD")
+            store::read(&LeaseDir::at(tmp.path()), "UDID-DEAD")
                 .expect("read")
                 .is_none(),
             "the dead holder's ledger is gone once settled"
@@ -709,14 +738,20 @@ mod tests {
         // Handing it over anyway would give the next holder a device with
         // someone else's runner still on it, and no way to know.
         let tmp = tempfile::tempdir().expect("tmpdir");
-        store::write(tmp.path(), &dead_holder_lease("UDID-STUCK")).expect("write");
+        store::write(&LeaseDir::at(tmp.path()), &dead_holder_lease("UDID-STUCK")).expect("write");
         let ex = executor(false);
-        match Leased::acquire(&NeverCalled, tmp.path(), "UDID-STUCK", &ex) {
+        match Leased::acquire(
+            &NeverCalled,
+            tmp.path(),
+            &LeaseDir::at(tmp.path()),
+            "UDID-STUCK",
+            &ex,
+        ) {
             Err(AdmissionError::NotSettled { details, .. }) => assert!(details.contains("handled")),
             other => panic!("expected NotSettled, got {other:?}", other = other.err()),
         }
         assert!(
-            store::read(tmp.path(), "UDID-STUCK")
+            store::read(&LeaseDir::at(tmp.path()), "UDID-STUCK")
                 .expect("read")
                 .is_some(),
             "the ledger stays so the next command still sees what did not close"
@@ -727,17 +762,30 @@ mod tests {
     fn releasing_drops_what_the_lease_covered() {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let ex = executor(true);
-        let leased = Leased::acquire(&NeverCalled, tmp.path(), "UDID-REL", &ex).expect("granted");
+        let leased = Leased::acquire(
+            &NeverCalled,
+            tmp.path(),
+            &LeaseDir::at(tmp.path()),
+            "UDID-REL",
+            &ex,
+        )
+        .expect("granted");
         leased
             .record(Resource::Recording {
                 path: "x.mov".into(),
                 proc: store::identify_self(),
             })
             .expect("record");
-        assert!(store::read(tmp.path(), "UDID-REL").expect("read").is_some());
+        assert!(
+            store::read(&LeaseDir::at(tmp.path()), "UDID-REL")
+                .expect("read")
+                .is_some()
+        );
         leased.release().expect("release");
         assert!(
-            store::read(tmp.path(), "UDID-REL").expect("read").is_none(),
+            store::read(&LeaseDir::at(tmp.path()), "UDID-REL")
+                .expect("read")
+                .is_none(),
             "nothing was left that this process owes a teardown"
         );
     }
@@ -748,7 +796,14 @@ mod tests {
         // device smix turned on with nobody entitled to turn it off.
         let tmp = tempfile::tempdir().expect("tmpdir");
         let ex = executor(true);
-        let leased = Leased::acquire(&NeverCalled, tmp.path(), "UDID-BOOT", &ex).expect("granted");
+        let leased = Leased::acquire(
+            &NeverCalled,
+            tmp.path(),
+            &LeaseDir::at(tmp.path()),
+            "UDID-BOOT",
+            &ex,
+        )
+        .expect("granted");
         leased
             .record(Resource::Booted { by_us: true })
             .expect("boot row");
@@ -759,7 +814,7 @@ mod tests {
             })
             .expect("recording row");
         leased.release().expect("release");
-        let after = store::read(tmp.path(), "UDID-BOOT")
+        let after = store::read(&LeaseDir::at(tmp.path()), "UDID-BOOT")
             .expect("read")
             .expect("ledger kept");
         assert_eq!(after.resources, vec![Resource::Booted { by_us: true }]);
@@ -773,13 +828,14 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let dev = Recorder::new();
         let ex = executor(true);
-        let leased = Leased::acquire(&dev, tmp.path(), "UDID-REC", &ex).expect("granted");
+        let leased = Leased::acquire(&dev, tmp.path(), &LeaseDir::at(tmp.path()), "UDID-REC", &ex)
+            .expect("granted");
         leased
             .start_recording(Path::new("/tmp/run.mov"))
             .await
             .expect("start");
 
-        let lease = store::read(tmp.path(), "UDID-REC")
+        let lease = store::read(&LeaseDir::at(tmp.path()), "UDID-REC")
             .expect("read")
             .expect("ledger");
         match lease.resources.as_slice() {
@@ -804,10 +860,11 @@ mod tests {
         // is unfindable the moment the ledger forgets it.
         let tmp = tempfile::tempdir().expect("tmpdir");
         let root = tmp.path();
+        let dir = LeaseDir::at(root);
         // A row whose proc is THIS process: certainly alive, so the
         // admission probe sees a live service under a dead holder.
         store::add_resource(
-            root,
+            &dir,
             "UDID-ADOPT",
             smix_lease::Resource::Runner {
                 port: 22097,
@@ -816,7 +873,7 @@ mod tests {
         )
         .expect("seed runner row");
         store::set_holder(
-            root,
+            &dir,
             "UDID-ADOPT",
             smix_lease::ProcIdentity {
                 pid: 1,
@@ -828,11 +885,12 @@ mod tests {
 
         let dev = Recorder::new();
         let ex = executor(true);
-        let leased = Leased::acquire(&dev, root, "UDID-ADOPT", &ex).expect("adopted, not denied");
+        let leased =
+            Leased::acquire(&dev, root, &dir, "UDID-ADOPT", &ex).expect("adopted, not denied");
         assert_eq!(leased.inherited().len(), 1, "the runner row is inherited");
 
         leased.release().expect("release");
-        let after = store::read(root, "UDID-ADOPT")
+        let after = store::read(&dir, "UDID-ADOPT")
             .expect("read")
             .expect("the ledger survives release");
         assert!(
@@ -849,7 +907,14 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let dev = Recorder::new();
         let ex = executor(true);
-        let leased = Leased::acquire(&dev, tmp.path(), "UDID-REC2", &ex).expect("granted");
+        let leased = Leased::acquire(
+            &dev,
+            tmp.path(),
+            &LeaseDir::at(tmp.path()),
+            "UDID-REC2",
+            &ex,
+        )
+        .expect("granted");
         leased
             .start_recording(Path::new("/tmp/run.mov"))
             .await
@@ -857,7 +922,7 @@ mod tests {
         leased.stop_recording().await.expect("stop");
         assert_eq!(dev.stop_count(), 1);
         assert!(
-            store::read(tmp.path(), "UDID-REC2")
+            store::read(&LeaseDir::at(tmp.path()), "UDID-REC2")
                 .expect("read")
                 .is_none(),
             "nothing is left owed once the recording is stopped"

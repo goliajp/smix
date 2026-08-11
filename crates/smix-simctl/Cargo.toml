@@ -17,6 +17,7 @@ categories = ["development-tools::testing", "command-line-utilities"]
 workspace = true
 
 [dependencies]
+smix-lease = { path = "../smix-lease", version = "3.0.0" }
 smix-store = { path = "../smix-store", version = "3.0.0" }
 smix-error = { path = "../smix-error", version = "3.0.0" }
 smix-sim-health = { path = "../smix-sim-health", version = "3.0.0" }

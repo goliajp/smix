@@ -50,6 +50,9 @@ pub fn describe_status(device_id: &str, lease: Option<&smix_lease::Lease>) -> St
 
 /// Run the subcommand.
 pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliError> {
+    // The ledgers are the machine's; `root` is still the tree, and is
+    // used only for settling a dead holder's build products.
+    let leases = smix_capsule::runner::machine_leases().map_err(crate::CliError::Other)?;
     match action {
         RecordAction::Start { device, output } => {
             let udid = crate::resolve_device(&device)?;
@@ -57,6 +60,7 @@ pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliErro
             let leased = smix_sdk::leased::Leased::acquire(
                 &control,
                 root,
+                &leases,
                 &udid,
                 &smix_capsule::reconcile::Reconciler,
             )
@@ -75,7 +79,7 @@ pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliErro
             // busy for exactly as long as that process runs.
             if let Some(pid) = control.recording_pid().await
                 && let Some(proc) = store::identify(pid)
-                && let Err(e) = store::set_holder(root, &udid, proc)
+                && let Err(e) = store::set_holder(&leases, &udid, proc)
             {
                 eprintln!(
                     "warning: recording started but the ledger still names this command as holder: {e}"
@@ -97,7 +101,7 @@ pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliErro
             // process from the one that started it. The ledger row is the
             // only handle across a process boundary, so this closes it the
             // same way an abandoned one is closed.
-            let Some(lease) = store::read(root, &udid).map_err(to_cli_error)? else {
+            let Some(lease) = store::read(&leases, &udid).map_err(to_cli_error)? else {
                 println!("{udid}: not recording");
                 return Ok(());
             };
@@ -124,7 +128,7 @@ pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliErro
                 .all(smix_capsule::reconcile::Outcome::is_clean)
             {
                 store::drop_resource_kind(
-                    root,
+                    &leases,
                     &udid,
                     &Resource::Recording {
                         path: String::new(),
@@ -137,7 +141,7 @@ pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliErro
         }
         RecordAction::Status { device } => {
             let udid = crate::resolve_device(&device)?;
-            let lease = store::read(root, &udid).map_err(to_cli_error)?;
+            let lease = store::read(&leases, &udid).map_err(to_cli_error)?;
             println!("{}", describe_status(&udid, lease.as_ref()));
         }
     }

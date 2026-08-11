@@ -945,6 +945,47 @@ enum LeaseAction {
     /// Close what a dead holder left open, by the graceful path it never
     /// got to take. A live holder is reported, never preempted.
     Reconcile { device: String },
+    /// Who booted this device, in one line and an exit code.
+    ///
+    /// `0` means a ledger says smix booted it, and names the session;
+    /// `3` means no ledger says that — somebody else turned it on, or
+    /// nobody wrote it down; `1` means the question could not be asked.
+    /// Three codes rather than two: a check that answers "safe" when it
+    /// means "I do not know" is the shape this cycle keeps finding.
+    ///
+    /// Not a teardown permission. It answers "did smix boot this",
+    /// which is not "did *you* boot this" — a shell script's `smix sim
+    /// boot` exits immediately, so the session that booted the device
+    /// is never the one asking. A script that shut down whatever this
+    /// reported as smix's would take away a device another run is
+    /// using. What it is for is the question that could not be answered
+    /// on 2026-08-11: a runner was found holding port 22087, the rule
+    /// said find its owner before touching it, and the owner was
+    /// recorded in a tree nobody was standing in.
+    Owner { device: String },
+    /// Fold per-checkout ledgers into this machine's.
+    ///
+    /// Ledgers used to live in whichever `.smix/` was above the working
+    /// directory. Adds and never removes; running it twice does nothing
+    /// the second time.
+    Migrate {
+        /// A checkout (or its `.smix/leases`) to read. Repeatable.
+        /// Defaults to the one above the working directory.
+        #[arg(long = "from", value_name = "DIR")]
+        from: Vec<PathBuf>,
+    },
+    /// Delete ledgers that no longer describe anything.
+    ///
+    /// A ledger that can only be added to stops describing the machine:
+    /// a holder that died without releasing, or a boot row for a device
+    /// that is off, sits there for ever and every later command has to
+    /// reason around it. Says what it deleted and why; keeps everything
+    /// else and says why too.
+    Prune {
+        /// Report what would go, and delete nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -1693,17 +1734,13 @@ async fn main() -> ExitCode {
 async fn run(cli: Cli) -> Result<ExitCode, CliError> {
     // Enable subprocess-ring persistence so
     // `/diagnostic/dump` payloads survive supervisor cycles that used
-    // to wipe the in-memory ring. Path is $XDG_DATA_HOME/smix or
-    // ~/.local/share/smix; best-effort — a missing $HOME is a no-op.
-    if let Some(dir) = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-    {
+    // to wipe the in-memory ring. Best-effort — a machine with no home
+    // for smix's data is a no-op.
+    if let Some(diag_root) = smix_lease::store::machine_root() {
         // One store directory for all three. They used to be three JSON
         // files here; passing the old filenames still worked (the store
         // resolves a `.json` path to its parent) but it read as though
         // smix still wrote them.
-        let diag_root = dir.join("smix");
         smix_simctl::set_subprocess_ring_persist_path(diag_root.clone());
         // resetAppData counter persistence so
         // `smix diagnostic dump` (later, separate process) sees the
@@ -1928,9 +1965,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         .boot_and_wait(&udid, std::time::Duration::from_secs(120))
                         .await?;
                     println!("booted: {udid}");
-                    if let Ok(root) = smix_workspace_root()
+                    // Not gated on standing in a workspace. It was, and
+                    // "no `.smix` above the working directory" meant no
+                    // record of who booted this device — a fact about the
+                    // machine, withheld because of where somebody's shell
+                    // happened to be.
+                    if let Ok(leases) = smix_capsule::runner::machine_leases()
                         && let Err(e) = smix_lease::store::add_resource(
-                            &root,
+                            &leases,
                             &udid,
                             smix_lease::Resource::Booted { by_us: !was_up },
                         )
@@ -1982,9 +2024,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // Once it is off, the answer is nobody — leaving the row
                     // behind would have a later teardown shut down a device
                     // this process never turned on.
-                    if let Ok(root) = smix_workspace_root()
+                    if let Ok(leases) = smix_capsule::runner::machine_leases()
                         && let Err(e) = smix_lease::store::drop_resource_kind(
-                            &root,
+                            &leases,
                             &udid,
                             &smix_lease::Resource::Booted { by_us: true },
                         )
@@ -2426,7 +2468,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         }
         Cmd::Lease { action } => {
             let root = smix_workspace_root()?;
-            lease_cmd::run(&root, action)?;
+            let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
+            return Ok(std::process::ExitCode::from(lease_cmd::run(
+                &root, &leases, action,
+            )?));
         }
         Cmd::Record { action } => {
             let root = smix_workspace_root()?;
@@ -3598,9 +3643,11 @@ where
     Fut: std::future::Future<Output = Result<(T, smix_sdk::leased::Leased<'a>), CliError>>,
 {
     let root = smix_workspace_root()?;
+    let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
     let leased = smix_sdk::leased::Leased::acquire(
         control,
         &root,
+        &leases,
         udid,
         &smix_capsule::reconcile::Reconciler,
     )
@@ -3626,7 +3673,7 @@ where
 /// lease is found by the next command, which sees the holder is gone and
 /// settles it. Releasing just makes the device free sooner.
 struct RunLease {
-    root: std::path::PathBuf,
+    leases: smix_lease::store::LeaseDir,
     device_id: String,
     inherited: Vec<smix_lease::Resource>,
 }
@@ -3636,7 +3683,7 @@ impl Drop for RunLease {
         // Keep what was inherited: an adopted runner and its forwarder
         // belong to the ledger after this run as much as before it.
         if let Err(e) = smix_lease::store::drop_process_rows_except(
-            &self.root,
+            &self.leases,
             &self.device_id,
             &self.inherited,
         ) {
@@ -3657,13 +3704,20 @@ fn hold_run_lease(udid: Option<&str>) -> Result<Option<RunLease>, CliError> {
     let Some(udid) = udid else {
         return Ok(None);
     };
-    let Ok(root) = smix_workspace_root() else {
+    // A run outside a workspace still gets a lease: the ledger is the
+    // machine's. `root` only decides where a dead holder's build
+    // products would be settled, and cwd is the honest answer when
+    // there is no `.smix` above it.
+    let root = smix_workspace_root()
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let Ok(leases) = smix_capsule::runner::machine_leases() else {
         return Ok(None);
     };
     let control = smix_sdk::ios_device::IosDeviceControl::new();
     let leased = smix_sdk::leased::Leased::acquire(
         &control,
         &root,
+        &leases,
         udid,
         &smix_capsule::reconcile::Reconciler,
     )
@@ -3673,7 +3727,7 @@ fn hold_run_lease(udid: Option<&str>) -> Result<Option<RunLease>, CliError> {
     }
     let inherited = leased.inherited().to_vec();
     Ok(Some(RunLease {
-        root,
+        leases,
         device_id: udid.to_string(),
         inherited,
     }))
