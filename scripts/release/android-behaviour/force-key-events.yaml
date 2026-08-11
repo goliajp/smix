@@ -17,7 +17,20 @@
 # and a release gate that fails on it would be reporting the wrong
 # thing. Whether text reaches a focused field is /input-text's contract;
 # what this flow isolates is whether the flag changed the driver's path.
-appId: com.android.settings
+# The search page belongs to `com.android.settings.intelligence`, not to
+# Settings itself.
+#
+# Tapping the search bar hands the screen to a different application, and
+# smix's tree reads the windows of the app it is bound to — so with
+# `com.android.settings` here the step below waited eight seconds for a
+# field that was in another app's window the whole time. `uiautomator
+# dump` sees it because it does not filter by window at all; the two
+# tools use different scopes, they do not disagree.
+#
+# Same shape as the iOS defect this cycle opened with: bound to one app,
+# looking for an element in another, and the failure names the element
+# rather than the binding.
+appId: com.android.settings.intelligence
 ---
 - tapOn: { id: "search_action_bar" }
 - extendedWaitUntil: { visible: { id: "search_src_text" }, timeout: 8000 }
