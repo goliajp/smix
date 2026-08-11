@@ -19,14 +19,25 @@ the graceful path the holder never got to take.
 
 ## What it does
 
-- `Lease` / `Resource` — one file per device under `.smix/leases/`, recording
-  each runner (iOS and Android), supervisor sidecar, screen recording, and
-  boot the holder performed.
-- `assess(&Facts) -> Admission` — pure. Granted / Denied / Reclaimable.
+- `Lease` / `Resource` — one file per device under
+  `$XDG_DATA_HOME/smix/leases/` (or `~/.local/share/smix/leases/`),
+  recording each runner (iOS and Android), supervisor sidecar, screen
+  recording, and boot the holder performed. On the machine, not in a
+  checkout: who holds a device and which port they opened on it are facts
+  about the machine, and a machine with several checkouts used to keep
+  several answers.
+- `LeaseDir` / `CheckoutLedgers` — where those files are. The first is
+  writable and is what every `store` function takes; the second is a
+  tree's pre-4.0 book, which can be read and never obeyed.
+- `assess(&Facts) -> Admission` — pure. Granted / Adoptable / Denied /
+  Reclaimable. A holder whose process is alive is never reclaimable, however
+  long it has been silent: the heartbeat is written when the ledger is
+  touched, so a session that takes a device and then serves for hours is
+  quiet by design.
 - `plan_cleanup(&Lease) -> Vec<CleanupAction>` — pure. The closes owed, in
   reverse of the order they were opened, with one exception: a supervisor
   goes first, because its job is to restart a runner it finds dead.
-- `may_shut_down(Option<&Lease>) -> bool` — pure. Whether this workspace is
+- `may_shut_down(Option<&Lease>) -> bool` — pure. Whether the caller is
   entitled to turn the device off, which is not the same question as
   whether it knows how to address it.
 - `store` — the I/O half: atomic writes, `ps`-backed process probes.
