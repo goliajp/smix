@@ -2,6 +2,74 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### A device belongs to the machine, not to the checkout you are standing in
+
+A simulator is an operating-system object. Its UDID, its runtime version,
+whether it is booted, who booted it and which port a runner holds on it do not
+change when you `cd`. They were stored in whichever `.smix/` sat above the
+working directory, so a machine with four checkouts held four answers about the
+same simulators — and a runner could hold a port while the tree asking about it
+saw an empty ledger and could neither confirm it an orphan nor stop it.
+
+Device records now resolve under `$XDG_DATA_HOME/smix/devices`, and leases under
+`.../leases`, beside the runner tree that already lived there. A checkout's
+registry still resolves as a read-only fallback and says so; a checkout's
+ledgers are read and never obeyed.
+
+**Added**
+
+- `smix runner list` — every runner on this machine: its port, its device, and
+  whether the ledgers know about it. Reads only; always exits 0.
+- `smix lease owner <device>` — who booted it. Exit 0 recorded, 3 no record,
+  1 the question could not be asked. Not a teardown permission: it answers
+  "did smix boot this", which is not "did *you*".
+- `smix lease migrate [--from DIR] [--dry-run]` and
+  `smix sim migrate [--from DIR] [--dry-run]` — fold a checkout's books into
+  this machine's. They add and never remove; a second run does nothing.
+- `smix lease prune [--dry-run]` — drop ledgers that no longer describe
+  anything. A record that can only be added to stops describing the machine.
+- `smix sim unregister <alias>` — forget a name, not a device.
+- `smix sim list --registered` — the devices smix has recorded, and whether
+  each record is the machine's or one checkout's.
+
+**Changed**
+
+- `smix down` closes a ledger when its holder is gone or is this process, and
+  names and leaves the rest. It used to close every ledger it found, which was
+  sound while the ledgers were per checkout and is not now that the directory
+  holds other people's sessions.
+- A live holder that has stopped updating its heartbeat is refused rather than
+  reclaimed. The heartbeat is written when the ledger is touched, so a holder
+  that takes a device and then serves for hours is silent by design; treating
+  that as wedged would let any `lease reconcile`, from any checkout, tear down
+  a live session. `StaleReason::HeartbeatExpired` remains as a name and is no
+  longer produced.
+- A zombie process no longer passes the liveness check. `<defunct>` answers
+  `ps -o lstart=` with the time the process it used to be started, so the
+  (pid, start time) identity matched and a ledger reported a live runner on a
+  device that had none.
+- `smix lease reconcile` refuses on a device whose checkout ledger disagrees
+  with the machine's, naming both paths and the one command that ends the
+  state.
+- A device record no longer falls back to `.smix/sims.json` in the working
+  directory when the machine location cannot be resolved. There is no good
+  place to put such a record silently.
+
+**Library**
+
+- `smix_lease::store` takes a `LeaseDir` rather than a workspace root. The
+  argument used to be a root the functions appended `.smix/leases` to; changing
+  what it meant left every call site compiling and still writing into trees, so
+  it is a type the compiler can check. `CheckoutLedgers` is the read-only
+  counterpart.
+- `smix_lease::store::machine_root()` is the single resolver for where this
+  machine keeps smix's data. Six functions worked it out for themselves and
+  three reached through `dirs::home_dir()`, which does not consult
+  `XDG_DATA_HOME` — so with that variable set, the runner tree and the
+  press-timing table landed in different places.
+
 ## [3.0.0] — 2026-08-11
 
 A round of consumer feedback found fourteen things. Under them were four

@@ -1390,7 +1390,18 @@ minute, and a phone in somebody's pocket cannot.
 
 **Sim safety hook**: bare `xcrun simctl <verb>` is BLOCKED for mutating verbs. Read-only `simctl list` is allowed. To pass-through unmapped subcommands use `smix sim exec <ALIAS|UDID> <verb> ...` (this is accepted by the hook because the device id is explicit).
 
-`<ALIAS>` resolves via the workspace's `.smix/` registry, created and populated by `smix sim register <alias> --udid <UDID>`. (A pre-2.1 `.smix/sims.json` is imported on first use and left on disk.)
+`<ALIAS>` resolves against this machine's device registry, under
+`$XDG_DATA_HOME/smix/devices` (or `~/.local/share/smix/devices`), created and
+populated by `smix sim register <alias> --udid <UDID>`. A simulator is an
+operating-system object: its UDID, its runtime version and whether destruction
+has been allowed on it do not change when you `cd`, so they are recorded once
+for the machine rather than once per checkout.
+
+A `.smix/` registry inside a checkout still resolves, as a read-only fallback,
+and a device only a checkout knows about is named as such — no other tree can
+see it. `smix sim migrate` folds those in; it adds and never removes, so it is
+safe to run twice. `smix sim list --registered` shows every recorded device and
+which of the two it came from.
 
 A raw identifier works without a registry **only if the platform itself claims
 it**: a UDID `simctl` lists, or an adb serial of the form `emulator-NNNN`.
@@ -1561,7 +1572,7 @@ send you to a command that cannot succeed. `--json` gives the same verdict as
 ```bash
 smix doctor                    # verdict + the next command to run
 smix doctor --json             # same, machine-readable
-smix down                      # close what this workspace opened, then sweep for residue
+smix down                      # close what is no longer held, then sweep for residue
 ```
 
 `down` works from the device ledgers first: it closes each recorded resource by
@@ -1570,12 +1581,21 @@ because a supervisor exists to restart a runner it finds dead. Pattern matching
 on process names runs afterwards, as a backstop for things no ledger covers, and
 anything it finds is reported rather than silently swept.
 
+A ledger whose holder is still running, and is not this process, is named and
+left alone. The ledgers describe the machine, so the directory holds other
+people's sessions as well as yours; "which directory it is in" was never the
+question, and "is its holder still there" is one that can be answered.
+
 `down` differs from `smix lease reconcile` in a way worth knowing: `reconcile`
 settles what a *dead* holder left behind and refuses to touch a live session,
 while `down` is you saying "close what I started" — a running runner is exactly
 what it will close.
 
-If XCUITest / xcodebuild processes remain after teardown, use `pgrep -fl xctrunner` / `pkill xctrunner` (or the equivalent for `xcodebuild`) to clear them.
+If XCUITest / xcodebuild processes remain after teardown, start with `smix
+runner list`: it prints every runner on this machine with its port and its
+device, and says whether the ledgers know about it. `pkill xctrunner` reaches
+every runner on the machine including other people's sessions, which is the
+failure this ledger exists to prevent — end the one you meant by its pid.
 
 ### Screen recording (`smix record …`)
 
@@ -1601,7 +1621,11 @@ as recording.
 
 ### Device ledger (`smix lease …`)
 
-`smix runner up` records what it opened on a device in `.smix/leases/<UDID>.json`.
+`smix runner up` records what it opened on a device in
+`~/.local/share/smix/leases/<UDID>.json`. On the machine, not in the checkout: a
+lease says who holds a device, what they opened on it and on which port, and
+every one of those is a fact about this machine. Stored per checkout, a runner
+could hold a port while the tree asking about it saw an empty ledger directory.
 When the process holding a session dies without tearing it down — Ctrl-C on
 `xcodebuild`, an IDE restart, a CI timeout — that ledger is what lets the next
 command find the runner it left behind and stop it the way the dying process
@@ -1611,7 +1635,12 @@ instead of the runner dying by SIGABRT and macOS raising a crash-report dialog.
 ```bash
 smix lease list                # every device with a ledger, and whether it is in use
 smix lease status <DEVICE>     # the holder, what is open, and what is owed
+smix lease owner <DEVICE>      # who booted it — exit 0 yes, 3 no record, 1 cannot ask
 smix lease reconcile <DEVICE>  # close what an abandoned session left open
+smix lease prune               # drop ledgers that no longer describe anything
+smix lease prune --dry-run     # ...or say what it would drop, and drop nothing
+smix lease migrate --from <DIR>  # fold a checkout's old ledgers into this machine's
+smix runner list               # every runner here: port, device, and who knows about it
 ```
 
 `reconcile` never preempts a live session — it reports the holder and stops.
@@ -1738,31 +1767,34 @@ smix sim register dev --udid <UDID>          # record it under an alias
 smix sim register jp --udid <UDID> --locale ja-JP --runner-port 22088
 ```
 
-`register` creates the `.smix/` registry when absent (walking up from the
-working directory; `SMIX_SIMS_JSON` overrides the location). Device
-name, runtime, and device type are read from `simctl`, so only the UDID
-and alias are yours to choose. After this, every command accepts the
-alias where it accepts a UDID.
+`register` writes to this machine's registry, creating it when absent
+(`$XDG_DATA_HOME/smix/devices`, or `~/.local/share/smix/devices`;
+`SMIX_MACHINE_DIR` moves the whole of smix's machine data, and
+`SMIX_SIMS_JSON` names one registry and only that one). Device name,
+runtime, and device type are read from `simctl`, so only the UDID and
+alias are yours to choose. After this, every command accepts the alias
+where it accepts a UDID — from any directory on the machine, not just
+the tree you registered it from.
 
-Registry file shape, for editing by hand:
+`smix sim unregister <alias>` is the other half: it forgets a name, not
+a device, so another alias for the same device keeps working.
 
-```json
-{
-  "version": 1,
-  "sims": {
-    "dev": {
-      "deviceName": "iPhone 17 Pro",
-      "udid": "47ACEAE5-36BA-4C62-811B-F09B397910D7",
-      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
-      "deviceType": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
-      "locale": "ja-JP",
-      "runnerPort": 22088
-    }
-  }
-}
+What is recorded, per device:
+
+```
+ALIAS                UDID                                     KIND       SCOPE
+dev                  47ACEAE5-36BA-4C62-811B-F09B397910D7     simulator  machine
 ```
 
-`locale` and `runnerPort` are optional.
+`smix sim list --registered` prints it. Each row carries the device name,
+runtime, device type, and — for a physical device — whether destructive
+actions have been allowed on it. `--locale` and `--runner-port` are optional
+and set at registration.
+
+These live in a store rather than a file you edit. `smix sim register` and
+`smix sim unregister` are the way in and out; a JSON file written by hand is
+not read, except for a pre-2.1 `.smix/sims.json`, which is imported once and
+then left alone.
 
 ## Migration and authoring
 
@@ -1846,7 +1878,7 @@ device. Those are brought up with `smix runner up` instead
 ### `smix diagnostic store` — read the persisted state
 
 ```bash
-smix diagnostic store               # this workspace's .smix
+smix diagnostic store               # this workspace's .smix (flows and traces; devices and leases are the machine's)
 smix diagnostic store --root PATH   # another store
 ```
 
@@ -1898,7 +1930,7 @@ smix run --device emulator-5554 --platform android \
 ```
 1. Explicit CLI flag (highest)
 2. ENV var (e.g. SMIX_UDID)
-3. the .smix/ registry (for aliases)
+3. this machine's device registry, then a checkout's, for aliases
 4. Hardcoded default in code (lowest)
 ```
 

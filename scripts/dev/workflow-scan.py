@@ -37,7 +37,7 @@ Checks:
   2. Every script a hook invokes exists. A missing hook script surfaces
      as a non-blocking error on every single Bash call — noisy enough to
      be tuned out, quiet enough to leave the guard off.
-  3. Every device guard is wired. `scripts/dev/*-guard.sh` exists to be
+  3. Every device guard is wired. `plugin/scripts/*-guard.sh` exists to be
      run by a hook; one that no hook names is inert. This is the check
      that would have caught adb-guard.
   4. Every device guard has a harness. sim-guard went from v5.x to here
@@ -177,9 +177,39 @@ def check_hook_scripts_exist(settings, failures):
             )
 
 
+# Where the device guards live.
+#
+# They were looked for under `scripts/dev/` until 2026-08-11, and there
+# are none there — they have been in `plugin/scripts/` since the plugin
+# was carved out. Both checks below iterated an empty list, so "every
+# device guard is wired" and "every device guard has a harness" were
+# saying "there are no device guards" in a repository with two. The
+# scan reported clean, in preflight, in CI, and in ship.
+GUARDS = "plugin/scripts/*-guard.sh"
+
+
+def device_guards() -> list[str]:
+    """Every guard, or a hard stop.
+
+    An empty answer here is indistinguishable from a clean one for both
+    callers, which is the whole reason this exists as a function: the
+    glob that returned nothing for months looked exactly like a glob
+    that found everything in order.
+    """
+    found = sorted(glob.glob(os.path.join(ROOT, GUARDS)))
+    if not found:
+        raise SystemExit(
+            f"workflow-scan: FAIL\n"
+            f"  - no device guard matches {GUARDS} — either they moved again, "
+            f"in which case the checks below are inert, or there are none, in "
+            f"which case nothing decides what may touch a device."
+        )
+    return found
+
+
 def check_guards_wired(settings, failures):
     referenced = referenced_scripts(settings)
-    for path in sorted(glob.glob(os.path.join(ROOT, "scripts/dev/*-guard.sh"))):
+    for path in device_guards():
         rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
         if rel not in referenced:
             failures.append(
@@ -424,8 +454,13 @@ def check_every_dev_script_runs(failures):
 
 
 def check_guards_tested(failures):
-    for path in sorted(glob.glob(os.path.join(ROOT, "scripts/dev/*-guard.sh"))):
-        harness = path[: -len(".sh")] + ".test.sh"
+    for path in device_guards():
+        # The guard ships with the plugin; its harness is a dev script
+        # and stays here. Deriving the harness path from the guard's own
+        # directory would look for it inside the published plugin, where
+        # it does not belong.
+        name = os.path.basename(path)[: -len(".sh")]
+        harness = os.path.join(ROOT, "scripts", "dev", f"{name}.test.sh")
         if not os.path.isfile(harness):
             rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
             want = os.path.relpath(harness, ROOT).replace(os.sep, "/")
