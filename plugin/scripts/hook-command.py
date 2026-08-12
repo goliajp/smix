@@ -100,6 +100,73 @@ def strip_inert_heredocs(command):
     return "\n".join(out)
 
 
+# Where one command ends.
+#
+# A guard matches a pattern against text and then reads a word out of it,
+# and while the text was the whole Bash call those two could land on
+# different commands. `adb -s emulator-5554 shell getprop` followed by
+# `adb -s <a physical serial> install -r app.apk` was allowed through:
+# the emulator pin on the first answered for the second. Five shapes of
+# that were reproduced on 2026-08-12, including installing to a phone and
+# `rm -rf` on one, and the mirror-image false refusal — a `curl -s <url>`
+# beside a legitimate device command had its URL read as a device name.
+#
+# Splitting belongs here rather than in either guard because both read
+# from here, and because this file already owns the other half of the
+# same question: which text a guard may match at all.
+# One character each. `&&` and `||` need no entry of their own: the
+# second character starts a fragment that is empty, and empty fragments
+# are dropped. Listing them as well changed nothing that could be
+# observed, which is the definition of a line that should not be here.
+SEPARATORS = (";", "|", "&", "\n")
+
+
+def split_commands(command):
+    """One command per element, honouring quotes and backslash escapes.
+
+    Quoting is the half that has to be right. `shell input text "note;
+    more"` is one command — splitting inside the quotes would invent a
+    second command out of a string somebody is typing into a text field,
+    and the guard would then judge text that never runs.
+    """
+    out = []
+    current = []
+    quote = None
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        if quote:
+            current.append(ch)
+            if ch == "\\" and quote == '"' and i + 1 < len(command):
+                current.append(command[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            current.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < len(command):
+            current.append(ch)
+            current.append(command[i + 1])
+            i += 2
+            continue
+        hit = next((s for s in SEPARATORS if command.startswith(s, i)), None)
+        if hit:
+            out.append("".join(current))
+            current = []
+            i += len(hit)
+            continue
+        current.append(ch)
+        i += 1
+    out.append("".join(current))
+    return [c.strip() for c in out if c.strip()]
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -108,7 +175,8 @@ def main():
         return 0
 
     command = payload.get("tool_input", {}).get("command", "")
-    print(strip_inert_heredocs(command))
+    for one in split_commands(strip_inert_heredocs(command)):
+        print(one)
     return 0
 
 

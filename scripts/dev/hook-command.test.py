@@ -84,6 +84,49 @@ CASES = [
 ]
 
 
+# Where one command ends.
+#
+# The guards match a pattern against text and then take a word out of it.
+# While the text was the whole Bash call, those two could land on
+# different commands: `{TOOL} -s emulator-5554 shell getprop` followed by
+# `{TOOL} -s <a physical serial> install` was allowed through, because the
+# emulator pin on the first line answered for the second. That is the one
+# thing the guard exists to stop.
+#
+# So the payload comes back one command per line, and each is judged
+# alone. The separators are shell's, and quoting is the half that has to
+# be right: `shell input text "note; ..."` is one command, and splitting
+# inside the quotes would invent a second one out of a string somebody is
+# typing into a text field.
+SPLIT_CASES = [
+    (
+        "&& separates, and the flag stays with the command it belongs to",
+        f"curl -s https://example.com/x -o /tmp/x && {TOOL} -s emulator-5554 install x",
+        2,
+    ),
+    (
+        "a newline separates",
+        f"{TOOL} -s emulator-5554 shell getprop x\n{TOOL} -s {SERIAL} install x",
+        2,
+    ),
+    (
+        "so do ; || and |",
+        f"{TOOL} devices ; {TOOL} devices || {TOOL} devices | grep x",
+        4,
+    ),
+    (
+        "a separator inside quotes is text somebody is typing, not a command",
+        f'{TOOL} -s emulator-5554 shell input text "note; {TOOL} install x"',
+        1,
+    ),
+    (
+        "and inside single quotes",
+        f"{TOOL} -s emulator-5554 shell input text 'a && b'",
+        1,
+    ),
+]
+
+
 def main() -> int:
     failures = []
     for name, command, should_reach in CASES:
@@ -95,13 +138,32 @@ def main() -> int:
                 f"{'see' if seen else 'not see'} it"
             )
 
+    for name, command, want in SPLIT_CASES:
+        lines = [l for l in run(command).splitlines() if l.strip()]
+        if len(lines) != want:
+            failures.append(
+                f"{name}\n      expected {want} command(s), got {len(lines)}: {lines}"
+            )
+
+    # The pairing, stated directly: the command carrying the URL must not
+    # be the one the guard reads a device out of. Counting lines alone
+    # would pass an implementation that split in the wrong places.
+    first = run(
+        f"curl -s https://example.com/x -o /tmp/x && {TOOL} -s emulator-5554 install x"
+    ).splitlines()
+    if first and TOOL in first[0]:
+        failures.append(
+            "the URL's command and the device command came back as one\n"
+            f"      first line was: {first[0]!r}"
+        )
+
     if failures:
         print("hook-command.test: FAIL")
         for f in failures:
             print(f"  - {f}")
         return 1
 
-    print(f"hook-command.test: {len(CASES)} cases pass")
+    print(f"hook-command.test: {len(CASES) + len(SPLIT_CASES) + 1} cases pass")
     return 0
 
 

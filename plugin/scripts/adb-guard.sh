@@ -74,36 +74,68 @@ is_read_only() {
   esac
 }
 
-# A `-s <serial>` that names a physical device (not emulator-NNNN) is
-# refused for anything that could change it. Reading is allowed and
-# always was, on paper.
-if printf '%s' "$command" | grep -qE 'adb[[:space:]]+(-[a-z]+[[:space:]]+)*-s[[:space:]]+[^[:space:]]+' ; then
-  serial="$(printf '%s' "$command" | grep -oE '\-s[[:space:]]+[^[:space:]]+' | head -1 | sed -E 's/^-s[[:space:]]+//')"
-  case "$serial" in
-    emulator-*) ;;  # explicit emulator — the safe case
-    *)
-      if ! is_read_only " $command"; then
-        deny "adb -s '$serial' names a non-emulator device (physical serials are not emulator-NNNN)"
-      fi
-      ;;
-  esac
-fi
+# Every judgement below reads ONE command, and it is the same one the
+# pattern matched.
+#
+# It used to read the whole Bash call for both, and the two could land on
+# different commands. An `adb -s emulator-5554 shell getprop` in front of
+# an `adb -s <phone> install -r app.apk` allowed the install: the pin on
+# the first answered for the second, and a phone got an APK. A `devices`
+# anywhere in the call released an `rm -rf` on a phone somewhere else in
+# it. The mirror image refused honest work — a `curl -s <url>` beside a
+# legitimate device command had its URL read as the device name.
+#
+# The one thing that does travel between commands is an exported
+# `ANDROID_SERIAL`, because in shell it genuinely does. A `VAR=value cmd`
+# prefix does not: it applies to that command alone, and treating it as a
+# pin for the next line would restore the hole in gradle's half. A `-s`
+# never travels — it is one invocation's argument — and neither does
+# being read-only, which is a fact about one command and says nothing
+# about what another one does.
+judge_one() {
+  local one="$1"
+  local carried="$2"
+  local serial
 
-# Mutating adb subcommands must carry an explicit emulator serial.
-# `am instrument` is reached via `adb [-s …] shell am instrument`.
-mutating='(install|uninstall|push)'
-if printf '%s' "$command" | grep -qE "adb[[:space:]]+([^|;&]*[[:space:]])?$mutating([[:space:]]|$)" \
-   || printf '%s' "$command" | grep -qE 'am[[:space:]]+instrument'; then
-  if ! printf '%s' "$command" | grep -qE '\-s[[:space:]]+emulator-[0-9]+'; then
-    deny "a device-mutating adb command with no explicit '-s emulator-NNNN'"
+  if printf '%s' "$one" | grep -qE 'adb[[:space:]]+(-[a-z]+[[:space:]]+)*-s[[:space:]]+[^[:space:]]+' ; then
+    serial="$(printf '%s' "$one" | grep -oE '\-s[[:space:]]+[^[:space:]]+' | head -1 | sed -E 's/^-s[[:space:]]+//')"
+    case "$serial" in
+      emulator-*) ;;  # explicit emulator — the safe case
+      *)
+        if ! is_read_only " $one"; then
+          deny "adb -s '$serial' names a non-emulator device (physical serials are not emulator-NNNN), in: $one"
+        fi
+        ;;
+    esac
   fi
-fi
 
-# gradle install / connected tasks fan out to every attached device.
-if printf '%s' "$command" | grep -qE 'gradlew[^|;&]*(install(Debug|Release)[A-Za-z]*|connectedAndroidTest|connectedCheck|connectedDebugAndroidTest)'; then
-  if ! printf '%s' "$command" | grep -qE 'ANDROID_SERIAL=emulator-[0-9]+'; then
-    deny "a gradle install/connected task with no 'ANDROID_SERIAL=emulator-NNNN' pin — it installs to ALL attached devices"
+  # Mutating adb subcommands must carry an explicit emulator serial.
+  # `am instrument` is reached via `adb [-s …] shell am instrument`.
+  local mutating='(install|uninstall|push)'
+  if printf '%s' "$one" | grep -qE "adb[[:space:]]+([^|;&]*[[:space:]])?$mutating([[:space:]]|$)" \
+     || printf '%s' "$one" | grep -qE 'am[[:space:]]+instrument'; then
+    if ! printf '%s' "$one" | grep -qE '\-s[[:space:]]+emulator-[0-9]+'; then
+      deny "a device-mutating adb command with no explicit '-s emulator-NNNN', in: $one"
+    fi
   fi
-fi
+
+  # gradle install / connected tasks fan out to every attached device.
+  if printf '%s' "$one" | grep -qE 'gradlew[^|;&]*(install(Debug|Release)[A-Za-z]*|connectedAndroidTest|connectedCheck|connectedDebugAndroidTest)'; then
+    if [ "$carried" != "yes" ] \
+       && ! printf '%s' "$one" | grep -qE 'ANDROID_SERIAL=emulator-[0-9]+'; then
+      deny "a gradle install/connected task with no 'ANDROID_SERIAL=emulator-NNNN' pin — it installs to ALL attached devices, in: $one"
+    fi
+  fi
+}
+
+carried_pin=""
+while IFS= read -r one; do
+  [ -n "$one" ] || continue
+  if printf '%s' "$one" | grep -qE '^[[:space:]]*export[[:space:]]+ANDROID_SERIAL=emulator-[0-9]+([[:space:]]|$)' \
+     || printf '%s' "$one" | grep -qE '^[[:space:]]*ANDROID_SERIAL=emulator-[0-9]+[[:space:]]*$'; then
+    carried_pin="yes"
+  fi
+  judge_one "$one" "$carried_pin"
+done <<< "$command"
 
 exit 0
