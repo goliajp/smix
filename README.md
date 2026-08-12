@@ -41,6 +41,12 @@ npm install @goliapkg/smix
 
 Prerequisites: macOS with Xcode + Simulator (iOS testing); Android SDK with an emulator image (Android testing). For a physical device, USB and a paired phone — plus, on iOS, an Apple Development signing identity and a phone that stays unlocked, because a locked one parks `xcodebuild` rather than failing it.
 
+Coming from 3.x? Device records and leases moved to the machine, so one
+checkout no longer holds answers the next cannot see. Run `smix sim
+migrate` and `smix lease migrate` once — they copy and never remove —
+and read [Migrating to smix 4.0](docs/migrating-to-4.md) if you call the
+Rust crates: two signatures changed.
+
 ## Quick start
 
 Register a simulator under an alias, boot it, start the runner, run a YAML flow:

@@ -61,6 +61,13 @@ FULL_INCLUDE = [
     "docs/ai-guide/wire-format.md",
     "docs/ai-guide/abi-stability.md",
     "docs/ai-guide/verb-parity.md",
+    # The migration notes belong in the full text, not only in the repo.
+    # An agent that meets smix through `llms-full.txt` and has flows or an
+    # integration written against an older major has no other way to
+    # learn that anything changed under it — which is the one thing it
+    # most needs from this file.
+    "docs/migrating-to-4.md",
+    "docs/migrating-to-3.md",
 ]
 
 # `v("tapOn", "tap", VerbCategory::Tap, ArgShape::Selector)` — rustfmt wraps
@@ -258,6 +265,22 @@ def gen_llms():
     out.append("- [Wire format](docs/ai-guide/wire-format.md): the runner wire schema")
     out.append("- [ABI stability](docs/ai-guide/abi-stability.md): the FFI + wire compatibility contract")
     out.append("- [Verb parity](docs/ai-guide/verb-parity.md): maestro ↔ smix ↔ platform coverage")
+    out.append("")
+    # Named in the index, not only carried in the full text. An agent
+    # reading this file to find out what smix is may be holding flows or
+    # an integration written against an older major, and nothing else
+    # here would tell it that anything moved.
+    out.append("## Upgrading")
+    out.append("")
+    out.append(
+        "- [To 4.0](docs/migrating-to-4.md): device records and leases moved to "
+        "the machine; `smix sim migrate` and `smix lease migrate` copy the old "
+        "ones over. Two Rust signatures changed."
+    )
+    out.append(
+        "- [To 3.0](docs/migrating-to-3.md): `fill` replaces the field it names, "
+        "and two other behaviours changed."
+    )
     out.append("")
 
     return "\n".join(out)

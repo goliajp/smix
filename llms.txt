@@ -122,3 +122,8 @@ smix exposes the simulator to an agent over MCP — launch, look, tap, type, ass
 - [Wire format](docs/ai-guide/wire-format.md): the runner wire schema
 - [ABI stability](docs/ai-guide/abi-stability.md): the FFI + wire compatibility contract
 - [Verb parity](docs/ai-guide/verb-parity.md): maestro ↔ smix ↔ platform coverage
+
+## Upgrading
+
+- [To 4.0](docs/migrating-to-4.md): device records and leases moved to the machine; `smix sim migrate` and `smix lease migrate` copy the old ones over. Two Rust signatures changed.
+- [To 3.0](docs/migrating-to-3.md): `fill` replaces the field it names, and two other behaviours changed.
