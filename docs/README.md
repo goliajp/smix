@@ -13,6 +13,7 @@ directory](#what-is-not-in-this-directory).
 | | |
 |---|---|
 | [`ai-guide/01-quickstart.md`](./ai-guide/01-quickstart.md) | First flow, end to end. |
+| [`migrating-to-4.md`](./migrating-to-4.md) | Coming from 3.x. Device records moved to the machine; two SDK signatures changed. |
 | [`ai-guide/08-cookbook.md`](./ai-guide/08-cookbook.md) | Recipes for the situations that actually come up. |
 | [`ai-guide/07-errors.md`](./ai-guide/07-errors.md) | What a failure means and what to change. |
 
@@ -28,6 +29,7 @@ directory](#what-is-not-in-this-directory).
 | [`ai-guide/09-sessions.md`](./ai-guide/09-sessions.md) | Session lifetime and reuse. |
 | [`ai-guide/10-ai-assertions.md`](./ai-guide/10-ai-assertions.md) | Assertions that ask a model. |
 | [`ai-guide/11-mcp.md`](./ai-guide/11-mcp.md) | Driving smix as an MCP server. |
+| [`migrating-to-3.md`](./migrating-to-3.md) | Coming from 2.x. Three behaviours changed. |
 | [`ai-guide/12-authoring.md`](./ai-guide/12-authoring.md) | Turning a manual session into a re-runnable flow. |
 
 ## Contracts (for SDK and integration authors)

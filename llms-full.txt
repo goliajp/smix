@@ -4043,3 +4043,329 @@ other in silence.
 - One log-signal syntax across platforms — each platform's log tail is read
   on its own terms
 
+
+<!-- ===== docs/migrating-to-4.md ===== -->
+
+# Migrating to smix 4.0
+
+Device records moved. Where a simulator's UDID lives, who is recorded as
+holding it, and which port a runner has on it are now facts about **the
+machine**, not about the checkout you happen to be standing in.
+
+If you drive smix by hand or from YAML flows, there is **nothing to
+undo** — run `smix sim migrate` and `smix lease migrate` once and carry
+on. Everything below is for code that calls the Rust crates.
+
+---
+
+## Why it moved
+
+A simulator is an operating-system object. Its UDID, its runtime version,
+whether it is booted and who booted it do not change when you `cd`.
+
+They were stored in whichever `.smix/` sat above the working directory,
+so a machine with four checkouts held four answers about the same
+simulators. Measured on one machine: a runner was found holding port
+22087 with no record of it. The rule is to find a runner's owner before
+touching it; the check came back empty, so it could neither be confirmed
+an orphan nor stopped. It was on the books the whole time — in another
+workspace's books.
+
+---
+
+## 1. Your existing records keep working, once
+
+Nothing is lost and nothing is moved out from under you. The old
+locations are still read; the migrations copy and never remove.
+
+```bash
+smix sim migrate --dry-run      # say what would move
+smix sim migrate                # move it
+smix lease migrate              # the same, for who-holds-what
+```
+
+Run them from each checkout that has a `.smix/`, or name the trees with
+`--from <DIR>`. Running either twice does nothing the second time, so
+"run it again if you are not sure" is safe advice.
+
+Until you do, a device only one checkout knows about is named as such
+every time you list devices — no other tree can see it.
+
+To check where you stand:
+
+```bash
+smix sim list --registered      # every recorded device, and whose book it is in
+smix runner list                # every runner on this machine, and who knows about it
+```
+
+---
+
+## 2. `smix_lease::store` takes a `LeaseDir`, not a path
+
+**Before**: every ledger function took a workspace root and appended
+`.smix/leases` to it itself.
+
+```rust
+smix_lease::store::write(&workspace_root, &lease)?;
+let lease = smix_lease::store::read(&workspace_root, udid)?;
+```
+
+**Now**: they take the ledger directory as a type.
+
+```rust
+let leases = smix_lease::store::LeaseDir::machine()
+    .ok_or("no HOME or XDG_DATA_HOME")?;
+smix_lease::store::write(&leases, &lease)?;
+let lease = smix_lease::store::read(&leases, udid)?;
+```
+
+`LeaseDir::machine()` is the answer you want in a program. `LeaseDir::at`
+exists for tests, where a temporary directory stands in for a whole
+machine.
+
+This is a type rather than a path on purpose. When the first argument
+changed meaning, twenty-five call sites inside smix went on compiling and
+went on writing device facts into checkouts — nothing but a type could
+have caught that, and nothing but a type can catch it in your code
+either.
+
+`store::lease_dir(root)` is gone. It existed to build `.smix/leases` from
+a workspace root, which is the thing that no longer happens.
+
+Reading a checkout's old book — to report a divergence, never to act on
+one — is `CheckoutLedgers`:
+
+```rust
+use smix_lease::store::CheckoutLedgers;
+if let Some(book) = CheckoutLedgers::discover(&cwd) {
+    for id in book.device_ids() { /* book.read(&id)? */ }
+}
+```
+
+It has no write path, deliberately: what a checkout holds was written by
+whichever smix that tree last ran.
+
+---
+
+## 3. Two SDK calls take the ledger directory
+
+`Leased::acquire` and `App::hold_device_lease` each gained one argument,
+in the same position and for the same reason: the tree they were given
+used to mean two things — where the ledger is, and where a dead holder's
+build products would be settled. Only the second is still a tree.
+
+```rust
+// before
+Leased::acquire(&control, &workspace_root, udid, &executor)?;
+app.hold_device_lease(&workspace_root, udid, &reconciler)?;
+
+// now
+let leases = smix_lease::store::LeaseDir::machine().unwrap();
+Leased::acquire(&control, &workspace_root, &leases, udid, &executor)?;
+app.hold_device_lease(&workspace_root, &leases, udid, &reconciler)?;
+```
+
+---
+
+## 4. Two things smix now refuses that it used to do
+
+Neither needs a code change. Both change what happens on a machine
+somebody else is also using, so they are worth knowing.
+
+**A live holder is no longer reclaimed for going quiet.** The heartbeat
+is written when the ledger is touched, so a holder that takes a device
+and then serves requests for hours is silent by design. Ninety seconds of
+silence used to make its lease reclaimable; a long-lived MCP session was
+exactly that shape. `smix lease reconcile` now reports it as held.
+`StaleReason::HeartbeatExpired` remains as a name and is never produced.
+
+If you relied on that to clear a genuinely wedged holder, end the process
+— which you can establish and smix cannot — and the ordinary
+holder-is-gone path settles it.
+
+**`smix down` leaves a live holder alone.** It used to close every ledger
+it found, which was right while the ledgers were per checkout. The
+directory is the machine's now, and it holds other people's sessions. It
+closes what is no longer held, or what this process holds, and names the
+rest.
+
+---
+
+## 5. Nothing falls back to the working directory any more
+
+A device record used to fall back to `.smix/sims.json` beside you when
+the machine location could not be resolved. It now says so and stops.
+There is no good place to put such a record silently — one written where
+nobody else reads it is the failure this release is about.
+
+Set `SMIX_MACHINE_DIR` if you need to point smix's machine data
+somewhere else; it moves all of it together.
+
+
+<!-- ===== docs/migrating-to-3.md ===== -->
+
+# Migrating to smix 3.0
+
+Three things in 3.0 change what code you already have does. Everything
+else is additive, and this page is only about those three.
+
+Read it if you have flows, scripts, or an SDK integration written
+against 2.x. If you drive smix by hand, all three make smix do what it
+already said it did, and there is nothing to undo.
+
+---
+
+## 1. `fill` replaces the field it names
+
+**Before**: filling a field typed on the end of whatever was already
+there. Returning to a form and filling the same field again left both
+values concatenated.
+
+**Now**: **you can only replace a field you named.**
+
+| what you write | 2.x | 3.0 |
+|---|---|---|
+| `fill(id:email)` / `inputText: {id, text}` | appends | **replaces** |
+| `inputText: "text"` (scalar, no field named) | appends | appends |
+| `pasteText` | appends | appends |
+| `App::fill(&focused(), …)` | appends | appends |
+
+Typing into whatever holds focus still appends, because there is no
+named field to empty — and that is also what maestro's verbs of that
+shape do, so a flow ported from maestro still means what it meant.
+
+### What to check in your flows
+
+Search for a field filled twice without a clear between:
+
+```bash
+grep -n -A3 'inputText:' your-flows/*.yaml | grep -B1 'id:'
+```
+
+Three shapes, and what to do with each:
+
+- **Filled once.** Nothing to do — the field was empty, and emptying an
+  empty field changes nothing.
+- **`eraseText` then `inputText: {id, …}`.** Still correct. The
+  `eraseText` is now redundant, not wrong; leaving it costs a round
+  trip.
+- **Two `inputText: {id, …}` on the same field, expecting the values to
+  join.** This is the one that changes. Rewrite it as one step with the
+  whole value, or tap the field and use the scalar form for the second
+  part:
+
+  ```yaml
+  # 2.x: relied on appending
+  - inputText: { id: "search", text: "hello " }
+  - inputText: { id: "search", text: "world" }
+
+  # 3.0: say what the field should hold
+  - inputText: { id: "search", text: "hello world" }
+
+  # 3.0: or keep the two steps, appending deliberately
+  - tapOn: { id: "search" }
+  - inputText: "hello "
+  - inputText: "world"
+  ```
+
+### Why the default flipped rather than gaining a flag
+
+The guides have described this verb as replacing since it existed
+("Fill — replaces focused field content"). The implementation appended.
+In a password field the difference is invisible — the dots look right —
+so it surfaces as a login rejecting a correct password, which is what it
+cost the person who reported it.
+
+A flag would have left that bug in place for everyone who did not know
+to set it. The wire carries `clearFirst` on `POST /fill` and it defaults
+to true; a runner too old to know the field appends, which is what it
+did before, so the field is additive on the wire.
+
+---
+
+## 2. A selector naming two things means both
+
+**Before**: `{ id: X, text: Y }` parsed to `Text { Y }` and the id was
+dropped. It matched **any** element reading Y.
+
+**Now**: it matches the one element that is both — the id decides which
+element, the text narrows it.
+
+```yaml
+# examples/hello.yaml, unchanged, and now asserting what it says
+- assertVisible:
+    id: "home-counter-label"
+    text: "1"
+```
+
+The form was already written this way in these guides and in flows;
+what changed is that it means it. `id` > `label` > `text` decides which
+key becomes the form, and any verb taking a selector reads it alike.
+
+### What to check
+
+- **An assertion that passed because *something else* on screen carried
+  the text.** It fails now, and it was never checking what it looked
+  like it was checking. This is the change most likely to turn a green
+  flow red, and the red is the honest answer.
+- **`{ id, text }` where the text is a stale copy.** A label that was
+  edited without the flow being updated used to be ignored; now it is
+  part of the match.
+- **`role` + `name` is unaffected** — one form spelled with two keys,
+  not a conjunction.
+
+To go back to the looser check, drop the key you did not mean:
+`{ text: "1" }` asserts something reads 1, `{ id: "counter" }` asserts
+the counter is there.
+
+## 3. `describe` and `tree` leave out the keyboard's keys
+
+**Before**: every key of the software keyboard appeared as its own
+element — a summary per letter, plus `Next keyboard`, `Dictate`, shift
+and delete. Around sixty of them, the same sixty on every screen of
+every app.
+
+**Now**: `describe` never enumerates them. `tree` collapses them and
+prints how many it left out; `smix tree --keyboard` includes them.
+
+**The keyboard element itself still appears.** A keyboard covering the
+thing you wanted to tap is the explanation for a failure, and hiding it
+would turn a legible failure into a mystery. Only the keys go.
+
+### What to check
+
+- **Counting elements from `describe --json`.** The count drops on any
+  screen with the keyboard up. If you were using it as a fingerprint,
+  it is a different fingerprint now.
+- **Selecting a key by label** (`text:a`, `label:return`). Use
+  `pressKey` / `smix press-key`, which names keys directly and does not
+  depend on the tree at all.
+- **A tree snapshot committed as a fixture.** Regenerate it, or pass
+  `--keyboard` to keep the old shape.
+
+---
+
+## Rust API
+
+Two crates changed shape. This affects you only if you depend on them
+directly — `smix-sdk`'s `App` is unchanged.
+
+```rust
+// smix-driver: the Driver trait
+async fn fill(&self, selector: &Selector, text: &str,
+              include: Option<IncludeScope>,
+              clear_first: bool) -> Result<(), ExpectationFailure>;
+
+// smix-runner-client
+pub async fn fill(&self, selector: &Selector, text: &str,
+                  include: Option<IncludeScope>,
+                  clear_first: bool) -> Result<RunnerKeyboardResult, RunnerTransportError>;
+```
+
+Pass `true` for the 3.0 behaviour. `App::fill` derives it from whether
+the selector names a field, which is the rule above expressed once.
+
+`smix-runner-client` also gained `clear_text()` for the Android runner's
+`POST /clear-text`, and `KNOWN_UNAVAILABLE_CATEGORIES`, which now
+includes `not-running`.
+
