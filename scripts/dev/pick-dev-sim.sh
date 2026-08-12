@@ -24,6 +24,12 @@
 # refusing is a message telling you to boot it through smix; the cost of
 # claiming is somebody's session.
 #
+# The name did not go away — it still narrows the candidates before the
+# ledger is asked, so both must hold. Keeping it costs nothing here and
+# it is what makes a stray dev sim on a shared machine invisible to this
+# script even in the window before its ledger entry lands. What changed
+# is which of the two decides: a matching name is no longer sufficient.
+#
 # Usage:  UDID="$(bash scripts/dev/pick-dev-sim.sh)" || exit 1
 # Exit:   0 with the UDID on stdout; 1 with a reason on stderr.
 set -euo pipefail
