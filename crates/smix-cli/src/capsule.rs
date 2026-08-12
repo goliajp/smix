@@ -230,13 +230,7 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
     };
     match smix_capsule::runner::machine_leases() {
         Ok(leases) => {
-            if let Err(e) = smix_lease::store::add_resource(
-                &leases,
-                opts.udid,
-                smix_lease::Resource::Booted {
-                    by_us: booted_by_us,
-                },
-            ) {
+            if let Err(e) = smix_lease::store::record_boot(&leases, opts.udid, booted_by_us) {
                 eprintln!("capsule up: boot not recorded in the device ledger: {e}");
             }
         }

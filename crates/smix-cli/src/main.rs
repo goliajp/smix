@@ -2028,11 +2028,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // machine, withheld because of where somebody's shell
                     // happened to be.
                     if let Ok(leases) = smix_capsule::runner::machine_leases()
-                        && let Err(e) = smix_lease::store::add_resource(
-                            &leases,
-                            &udid,
-                            smix_lease::Resource::Booted { by_us: !was_up },
-                        )
+                        && let Err(e) = smix_lease::store::record_boot(&leases, &udid, !was_up)
                     {
                         eprintln!("warning: boot not recorded in the device ledger: {e}");
                     }
@@ -2367,11 +2363,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             .boot_and_wait(&udid, std::time::Duration::from_secs(120))
                             .await?;
                         if let Ok(leases) = smix_capsule::runner::machine_leases()
-                            && let Err(e) = smix_lease::store::add_resource(
-                                &leases,
-                                &udid,
-                                smix_lease::Resource::Booted { by_us: !was_up },
-                            )
+                            && let Err(e) = smix_lease::store::record_boot(&leases, &udid, !was_up)
                         {
                             eprintln!("warning: boot not recorded in the device ledger: {e}");
                         }

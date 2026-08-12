@@ -546,6 +546,37 @@ pub fn add_resource(dir: &LeaseDir, device_id: &str, resource: Resource) -> Resu
     write(dir, &lease)
 }
 
+/// Write down that this device was booted, without losing an earlier
+/// answer to the same question.
+///
+/// `add_resource` replaces same-kind rows, and both boot rows are the
+/// same kind — so a second boot of a device that is already up overwrote
+/// `by_us: true` with `by_us: false`, and the ledger stopped saying smix
+/// had turned it on. Everything after that followed: the process rows go
+/// at teardown, a lone `by_us: false` row is not worth a file, the file
+/// goes, and `lease owner` answers 3 about a simulator that is still
+/// running. That is how the 4.2.0 ship stopped — `pick-dev-sim` refused
+/// a sim it could no longer tell apart from somebody else's.
+///
+/// `by_us` is about one transition: who took this device from off to on.
+/// A later call finding it already up learns nothing about that
+/// transition, so it must not answer for it. True is therefore sticky,
+/// and only a shutdown — which drops the row outright — ends it.
+pub fn record_boot(dir: &LeaseDir, device_id: &str, by_us: bool) -> Result<(), LeaseError> {
+    let already = read(dir, device_id)?.is_some_and(|l| {
+        l.resources
+            .iter()
+            .any(|r| matches!(r, Resource::Booted { by_us: true }))
+    });
+    add_resource(
+        dir,
+        device_id,
+        Resource::Booted {
+            by_us: by_us || already,
+        },
+    )
+}
+
 /// Forget every resource of one kind, and the ledger itself once nothing
 /// worth tearing down is left.
 ///

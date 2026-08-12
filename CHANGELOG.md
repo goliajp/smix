@@ -60,8 +60,16 @@ what it asked.
 
 ### Fixed
 
-- The four ways a boot record could be lost or never written. Two of the
-  six suspected sites turned out to be sound and are documented as such.
+- The ways a boot record could be lost or never written. Two of the six
+  suspected sites turned out to be sound and are documented as such.
+- Booting a device that is already up no longer un-says who turned it on.
+  Both boot rows are the same kind of row and the ledger replaces rows by
+  kind, so a second `smix sim boot` of a simulator smix had already
+  booted rewrote "smix booted this" into "smix found it running". The
+  next teardown then found a row not worth keeping a file for, and the
+  file went while the device stayed up. `by_us` describes one transition
+  — off to on — and a later call that finds the device already up learns
+  nothing about it.
 
 ## [4.1.0] — 2026-08-12
 
