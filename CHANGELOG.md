@@ -2,6 +2,46 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [4.1.0] — 2026-08-12
+
+4.0 made a physical Android device registrable, addressable and
+drivable, and left no way to put an app on it. This closes that, and the
+loop it was part of: the adb guard refuses a bare install and names smix
+as the way through, while smix routed the install to simctl and said to
+use adb. A consumer chasing a crash that only exists in a minified
+release build on real camera hardware moved all eight copies of the
+guard aside to get their build onto a phone.
+
+### Added
+
+- `smix sim install` reaches Android. A simulator still goes through
+  `simctl`; an emulator or an Android phone goes through `adb`. A
+  physical iPhone is refused rather than attempted — installing on one
+  needs `devicectl` and a provisioning profile, which nothing here
+  wires up, and §9 #1 ③ asks for that to be said rather than degraded
+  into silence.
+- `smix sim uninstall` reaches every kind of device smix can address.
+
+### Changed
+
+- Taking an app off a physical device is refused until that device has
+  been opted in with `smix sim allow-destructive`. Registering one has
+  always printed that this gate exists; until now nothing could reach
+  it, because erase and keychain-reset are simctl and Apple. An Android
+  phone is the first device it has ever had to refuse.
+- The plugin's adb guard no longer judges text that is being written
+  rather than run. Its patterns are shell syntax, and a heredoc body fed
+  to anything but a shell cannot be the shell command those patterns
+  describe — so keeping it could only ever refuse prose, which it did:
+  a document mentioning a device command could not be saved, placeholder
+  serials included. A body read by `bash` is still judged.
+- The same guard allows read-only adb against a physical serial —
+  `devices`, `get-state`, `logcat`, `shell getprop`. Its header has
+  always said read-only was untouched and its behaviour did not agree,
+  so a `getprop` came back as a policy refusal that reads like a typo.
+  `shell` alone is not read-only: `shell pm uninstall`, `shell rm` and
+  `shell settings put` still stop.
+
 ## [4.0.0] — 2026-08-11
 
 Device records moved, and two published Rust signatures moved with them.
