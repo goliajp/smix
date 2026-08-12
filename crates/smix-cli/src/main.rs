@@ -2348,6 +2348,34 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         Some(team) => smix_capsule::runner::RunnerTarget::Physical { team },
                         None => smix_capsule::runner::RunnerTarget::Simulator,
                     };
+                    // Turn the simulator on here, and write down that we
+                    // did. It came up either way — `xcodebuild test
+                    // -destination platform=iOS Simulator,id=…` boots it
+                    // as a side effect — but then nothing on the machine
+                    // could say who turned it on, and `lease owner` exits
+                    // 3 for a device that is very much running. That code
+                    // is what `pick-dev-sim` reads, so a good simulator
+                    // looked busy and the 4.1.0 ship failed on it.
+                    //
+                    // §9 #9: who booted a device is a fact about the
+                    // machine. Letting a subprocess create that fact
+                    // without recording it is the same as not having it.
+                    if physical_team.is_none() {
+                        let simctl = SimctlClient::new();
+                        let was_up = booted_udids(&simctl).await.contains(&udid);
+                        simctl
+                            .boot_and_wait(&udid, std::time::Duration::from_secs(120))
+                            .await?;
+                        if let Ok(leases) = smix_capsule::runner::machine_leases()
+                            && let Err(e) = smix_lease::store::add_resource(
+                                &leases,
+                                &udid,
+                                smix_lease::Resource::Booted { by_us: !was_up },
+                            )
+                        {
+                            eprintln!("warning: boot not recorded in the device ledger: {e}");
+                        }
+                    }
                     smix_capsule::runner::up_on(
                         &root,
                         &udid,
@@ -2560,9 +2588,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Lease { action } => {
             let root = smix_workspace_root()?;
             let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
-            return Ok(std::process::ExitCode::from(lease_cmd::run(
-                &root, &leases, action,
-            )?));
+            return Ok(std::process::ExitCode::from(
+                lease_cmd::run(&root, &leases, action).await?,
+            ));
         }
         Cmd::Record { action } => {
             let root = smix_workspace_root()?;

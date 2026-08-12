@@ -65,7 +65,11 @@ fn device_ids(leases: &LeaseDir) -> Vec<String> {
 /// directory — the ledgers stopped being a property of the tree you are
 /// standing in. `root` is still the tree, and is used for exactly one
 /// thing: settling a dead holder's build products, which are in a tree.
-pub fn run(root: &Path, leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::CliError> {
+pub async fn run(
+    root: &Path,
+    leases: &LeaseDir,
+    action: LeaseAction,
+) -> Result<u8, crate::CliError> {
     // What the tree underfoot still holds, if it holds anything.
     //
     // Read for one purpose: to say when it disagrees. Never merged into
@@ -231,7 +235,7 @@ pub fn run(root: &Path, leases: &LeaseDir, action: LeaseAction) -> Result<u8, cr
         }
         LeaseAction::Owner { device } => return owner(leases, &device),
         LeaseAction::Migrate { from, dry_run } => migrate(leases, &from, dry_run)?,
-        LeaseAction::Prune { dry_run } => prune(leases, dry_run)?,
+        LeaseAction::Prune { dry_run } => prune(leases, dry_run).await?,
     }
     Ok(0)
 }
@@ -375,13 +379,46 @@ fn checkout_lease_dir(start: &Path) -> Option<PathBuf> {
     None
 }
 
+/// What this machine can say about whether a device is switched on.
+///
+/// Three answers, not two. `Unknown` is the one that matters: an Android
+/// serial and a physical iPhone are not in `simctl`'s list at all, and
+/// reading "not listed" as "off" would let `prune` delete the record of a
+/// device it cannot see the state of.
+enum Power {
+    On,
+    Off,
+    Unknown,
+}
+
+async fn power_of(device_ids: &[String]) -> std::collections::HashMap<String, Power> {
+    let listed = smix_simctl::SimctlClient::new().list_devices().await;
+    device_ids
+        .iter()
+        .map(|id| {
+            let state = listed.as_ref().ok().and_then(|ds| {
+                ds.iter()
+                    .find(|d| d.udid.eq_ignore_ascii_case(id))
+                    .map(|d| d.state == "Booted")
+            });
+            let power = match state {
+                Some(true) => Power::On,
+                Some(false) => Power::Off,
+                None => Power::Unknown,
+            };
+            (id.clone(), power)
+        })
+        .collect()
+}
+
 /// Delete ledgers that no longer describe anything.
-fn prune(leases: &LeaseDir, dry_run: bool) -> Result<(), crate::CliError> {
+async fn prune(leases: &LeaseDir, dry_run: bool) -> Result<(), crate::CliError> {
     let ids = device_ids(leases);
     if ids.is_empty() {
         println!("no device ledgers under {leases}");
         return Ok(());
     }
+    let power = power_of(&ids).await;
     let mut gone = 0usize;
     for id in ids {
         let facts = store::collect_facts(leases, &id).map_err(to_cli_error)?;
@@ -393,13 +430,16 @@ fn prune(leases: &LeaseDir, dry_run: bool) -> Result<(), crate::CliError> {
             gone += 1;
             continue;
         };
-        let holder_alive = held.holder.pid_exists && held.holder.identity_matches;
-        if holder_alive {
-            println!("  {id}: held by pid {} — kept", held.lease.holder.pid);
-            continue;
-        }
-        if held.any_resource_alive {
-            println!("  {id}: holder gone but something it started is still running — kept");
+        // One place decides, and it is pure. Judging and doing I/O in
+        // the same breath is what made the old rule untestable and let
+        // `--help` describe a check the code never performed.
+        let on = match power.get(&id).unwrap_or(&Power::Unknown) {
+            Power::On => Some(true),
+            Power::Off => Some(false),
+            Power::Unknown => None,
+        };
+        if let smix_lease::PruneVerdict::Keep(why) = smix_lease::prune_verdict(held, on) {
+            println!("  {id}: {why} — kept");
             continue;
         }
         println!(

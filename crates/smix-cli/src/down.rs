@@ -87,16 +87,31 @@ fn settle_ledgers(root: &Path, leases: &smix_lease::store::LeaseDir) {
         if cleanup.is_empty() {
             println!("  {id}: nothing owed");
         }
+        let mut all_clean = true;
         for outcome in smix_capsule::reconcile::execute(root, &cleanup) {
             println!("  {id}: {}", outcome.line());
+            all_clean &= outcome.is_clean();
         }
-        // The whole ledger, not just the process rows. `plan_cleanup`
-        // already includes the shutdown for a device this workspace
-        // booted, so after this pass nothing on that device is owed —
-        // and a ledger kept for a row nobody owes anything on is a file
-        // that makes the next `down` look like it has work to do.
-        if let Err(e) = smix_lease::store::remove(leases, &id) {
-            eprintln!("  {id}: ledger not updated: {e}");
+        // The whole ledger, not just the process rows — but only when the
+        // closes actually closed. `plan_cleanup` includes the shutdown for
+        // a device this workspace booted, so after a clean pass nothing on
+        // that device is owed, and a ledger kept for a row nobody owes
+        // anything on makes the next `down` look like it has work to do.
+        //
+        // When a close failed, the opposite is true and the ledger is the
+        // only thing that still knows: a shutdown that did not happen
+        // leaves the device running, and deleting the row that says smix
+        // turned it on loses that fact for good. `lease_cmd.rs`'s
+        // reconcile has always drawn this line — "the next command must
+        // still see what did not close" — and this path did not, which
+        // meant the same situation was judged two different ways
+        // depending on which verb you reached for.
+        if all_clean {
+            if let Err(e) = smix_lease::store::remove(leases, &id) {
+                eprintln!("  {id}: ledger not updated: {e}");
+            }
+        } else {
+            println!("  {id}: some closes failed — ledger kept so they stay visible");
         }
     }
 }
