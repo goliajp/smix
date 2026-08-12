@@ -51,14 +51,41 @@ deny() {
   exit 2
 }
 
-# A `-s <serial>` that names a physical device (not emulator-NNNN),
-# used with any adb subcommand, is refused outright — the intent to
-# address the phone is explicit and wrong for this project.
+# Subcommands that read and change nothing, named one by one.
+#
+# The header has always said read-only adb is never touched. Until
+# 2026-08-12 that was not true of a physical serial: `-s <phone>` was
+# refused for any subcommand at all, so `adb -s R5CT… shell getprop
+# ro.product.cpu.abi` — which writes nothing — came back as a policy
+# refusal that reads like a typo. A rule whose stated form is kinder
+# than its real one gets discovered the hard way, and by someone who
+# then stops believing the rest of it.
+#
+# An allowlist rather than a denylist, and a narrow one: `shell` on its
+# own is not read-only (`shell pm uninstall`, `shell rm`), so only
+# `shell getprop` is here. Anything not named falls through to the
+# refusals below.
+is_read_only() {
+  case "$1" in
+    *' devices'*|*' get-state'*|*' get-serialno'*|*' start-server'*) return 0 ;;
+    *' logcat'*|*' forward --list'*|*' reverse --list'*) return 0 ;;
+    *' shell getprop'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# A `-s <serial>` that names a physical device (not emulator-NNNN) is
+# refused for anything that could change it. Reading is allowed and
+# always was, on paper.
 if printf '%s' "$command" | grep -qE 'adb[[:space:]]+(-[a-z]+[[:space:]]+)*-s[[:space:]]+[^[:space:]]+' ; then
   serial="$(printf '%s' "$command" | grep -oE '\-s[[:space:]]+[^[:space:]]+' | head -1 | sed -E 's/^-s[[:space:]]+//')"
   case "$serial" in
     emulator-*) ;;  # explicit emulator — the safe case
-    *) deny "adb -s '$serial' names a non-emulator device (physical serials are not emulator-NNNN)" ;;
+    *)
+      if ! is_read_only " $command"; then
+        deny "adb -s '$serial' names a non-emulator device (physical serials are not emulator-NNNN)"
+      fi
+      ;;
   esac
 fi
 

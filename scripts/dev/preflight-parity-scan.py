@@ -51,6 +51,7 @@ LOCAL = {
     "android gates drive our own app": "android-subject-scan",
     "device facts are machine-scoped": "device-facts-are-machine-scoped",
     "leases are machine-scoped": "leases-are-machine-scoped",
+    "the hook tells commands from prose": "hook-command.test",
     "the dev-sim picker asks the ledger": "pick-dev-sim.test",
     "no second ledger path": "no-second-ledger-path",
     "portable tier selftest": "portable-tier.sh --selftest",

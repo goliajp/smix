@@ -153,6 +153,9 @@ done
 # handed, and it answered from a naming convention until that convention
 # handed away a sim somebody was using.
 bash scripts/dev/pick-dev-sim.test.sh
+# And what the guards are allowed to judge in the first place: a body
+# being written down is not a command being run.
+python3 scripts/dev/hook-command.test.py
 
 # The AI tier is a judgement and the resolver is not; nothing about
 # that separation is enforced by the type system. This ran in one
