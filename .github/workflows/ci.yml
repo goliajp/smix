@@ -159,6 +159,14 @@ jobs:
         run: python3 scripts/dev/retired-claims-scan.py
       - name: the retired-wording scan can still go red
         run: python3 scripts/dev/retired-claims-scan.test.py
+      # contract-scan itself is deliberately NOT here. It reads the four
+      # layers under `.claude/docs/`, which is not version-controlled, so
+      # on a checkout it refuses — and a gate that refuses on every build
+      # is one nobody reads. workflow-scan's LOCAL_ONLY records that as a
+      # decision. The harness below builds its own trees and needs nothing
+      # from the checkout, so it runs here.
+      - name: the contract gate can still go red
+        run: python3 scripts/dev/contract-scan.test.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the
