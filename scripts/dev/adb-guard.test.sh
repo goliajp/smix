@@ -93,6 +93,39 @@ feed $ALLOW "$(printf 'python3 - <<%s\n# adb install -r app.apk\nPY\n' "'PY'")"
 # The line opening an inert heredoc is itself still judged.
 feed $BLOCK "$(printf 'adb install -r app.apk && cat <<%s\nharmless\nEOF\n' "'EOF'")"
 
+# --- two commands' words must not be spliced into a third ---
+#
+# The guard matched a pattern against the whole Bash call and then read a
+# word out of the whole Bash call, and those two could land on different
+# commands. Five shapes let a mutation through on 2026-08-12 and one
+# refused honest work; the dangerous direction is the point.
+#
+# R2 is the one that matters most: an emulator pin on the first command
+# answered for an install onto a phone on the second. That is the exact
+# thing the header says this guard exists to stop.
+feed $ALLOW "curl -s https://example.com/x.txt -o /tmp/x.txt && adb -s emulator-5554 install -r app.apk"
+feed $BLOCK "$(printf 'adb -s emulator-5554 shell getprop sys.boot_completed\nadb -s R5CT52DF07D install -r app.apk')"
+feed $BLOCK "$(printf 'adb -s emulator-5554 shell getprop sys.boot_completed\nadb install -r app.apk')"
+feed $BLOCK "adb -s emulator-5554 shell getprop sys.boot_completed && adb install -r app.apk"
+feed $BLOCK "adb -s R5CT52DF07D shell rm -rf /sdcard/x && adb devices"
+# A `VAR=value cmd` prefix applies to that command only — shell says so,
+# and the guard has to say the same. The pin does not reach the next line.
+feed $BLOCK "$(printf 'ANDROID_SERIAL=emulator-5554 ./gradlew assembleDebug\n./gradlew connectedAndroidTest')"
+
+# --- and what must still be refused once they are judged one by one ---
+#
+# Splitting is the kind of change that fixes the false refusals by
+# refusing nothing at all. Each of these names the way that could happen.
+feed $BLOCK "adb devices && adb -s emulator-5554 install -r app.apk && adb -s R5CT52DF07D uninstall dev.smix.fixture"
+# `export` does persist across commands, unlike the prefix form above.
+# Without this case the fix for R6 invents a new false refusal, and
+# `scripts/dev/v2.11-c4-android-propose-e2e.sh` is written this way.
+feed $ALLOW "export ANDROID_SERIAL=emulator-5554 && ./gradlew connectedAndroidTest"
+# A separator inside quotes is text being typed into a field, not a
+# second command. Splitting there would have the guard judge a fragment
+# that never runs.
+feed $ALLOW 'adb -s emulator-5554 shell input text "note; adb install app.apk"'
+
 SMIX_WAY_CASE='adb install app.apk'
 # A refusal that names no alternative gets routed around rather than
 # obeyed, so the way out is part of what is under test.
