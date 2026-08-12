@@ -10,24 +10,53 @@ it was being asked to file.
 
 A guard that refuses correct work teaches people to take the guard off,
 which costs more than the false negative it was protecting against. So
-heredoc bodies are stripped — but only when the command consuming them
-demonstrably does not execute them.
+heredoc bodies are stripped — every body except a shell's.
 
-That last clause is the whole design. `bash <<EOF` runs its body, and a
-guard that dropped it could be bypassed by anyone typing a heredoc. The
-consumers whose bodies are inert are listed explicitly (cat, tee — the
-write-to-a-file shapes); every other consumer keeps its body, including
-`python3 -`, which can perfectly well shell out. Allowlisting what is
-safe rather than denylisting what is not is the stance the guards
-themselves take with emulator serials.
+The line moved on 2026-08-12, and where it sits now follows from what
+the guards match. Their patterns are shell syntax: the word `adb`, some
+flags, a subcommand. A python heredoc that genuinely reached a device
+would write `subprocess.run(["adb", "-s", serial, ...])`, and that
+pattern does not match it. So judging a non-shell body with a
+shell-shaped pattern cannot catch the dangerous form, and catches only
+the harmless one — a string, a comment, a paragraph about a command.
+
+It used to be the other way round: bodies were kept unless the consumer
+was `cat` or `tee`. That read as the careful choice and was not one. It
+blocked a document that described a device command, treating even the
+placeholder `<serial>` as a real serial, and the same wall was hit three
+times while writing the change that removed the reason for it. The
+person who reported it moved eight copies of the guard aside instead.
+
+`bash <<EOF` still has its body judged, because there the pattern means
+exactly what it looks like. The shells are listed, so adding one is a
+deliberate act; everything else has its body dropped.
 """
 
 import json
 import re
 import sys
 
-# Commands whose heredoc body is written or printed, never executed.
-INERT_CONSUMERS = {"cat", "tee"}
+# Consumers that run their heredoc body as shell.
+#
+# The inversion matters, and the reason is what the guards downstream
+# actually match on. Their patterns are shell syntax — a word `adb`,
+# then flags, then a subcommand. A python heredoc that really did reach
+# a device would say `subprocess.run(["adb", "-s", serial, ...])`, which
+# that pattern never matches. So judging a non-shell body with a
+# shell-shaped pattern cannot catch the dangerous form and can only
+# catch the harmless one: a string, a comment, a paragraph.
+#
+# It did. Writing a document that described a device command made the
+# command unwritable — the placeholder `<serial>` was read as a real
+# serial — and the same wall was hit three times while implementing the
+# change that removed the reason for it. The consumer who reported it
+# moved eight copies of the guard aside instead.
+#
+# A shell body stays judged, because there the pattern means exactly
+# what it looks like. Listed rather than derived: a consumer that is not
+# named here has its body dropped, so anything added to shells must be
+# added on purpose.
+SHELL_CONSUMERS = {"bash", "sh", "zsh", "dash", "ksh", "shell"}
 
 OPENER = re.compile(r"<<(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 
@@ -54,7 +83,7 @@ def strip_inert_heredocs(command):
         if not openers:
             continue
 
-        inert = leading_word(line) in INERT_CONSUMERS
+        inert = leading_word(line) not in SHELL_CONSUMERS
         pending = [(delim, dash == "-") for dash, _q, delim in openers]
 
         while i < len(lines) and pending:
