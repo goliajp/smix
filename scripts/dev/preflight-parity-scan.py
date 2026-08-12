@@ -54,6 +54,8 @@ LOCAL = {
     "the hook tells commands from prose": "hook-command.test",
     "the dev-sim picker asks the ledger": "pick-dev-sim.test",
     "no second ledger path": "no-second-ledger-path",
+    "a retired sentence is off the surfaces": "retired-claims-scan",
+    "the retired-wording scan can still go red": "retired-claims-scan.test",
     "portable tier selftest": "portable-tier.sh --selftest",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",

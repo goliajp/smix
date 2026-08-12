@@ -131,7 +131,7 @@ echo "--- android: unit tests + androidTest compile"
 ( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan corpus-portability-scan portable-tier-parity yield-is-not-failure-scan teardown-restores-scan android-subject-scan device-facts-are-machine-scoped leases-are-machine-scoped no-second-ledger-path; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan corpus-portability-scan portable-tier-parity yield-is-not-failure-scan teardown-restores-scan android-subject-scan device-facts-are-machine-scoped leases-are-machine-scoped no-second-ledger-path retired-claims-scan; do
     python3 "scripts/dev/$gate.py"
 done
 
@@ -156,6 +156,11 @@ bash scripts/dev/pick-dev-sim.test.sh
 # And what the guards are allowed to judge in the first place: a body
 # being written down is not a command being run.
 python3 scripts/dev/hook-command.test.py
+# And that the retired-wording scan can still go red. Its subject is a
+# sentence nobody will notice: `llms.txt` opened with "never a physical
+# device" for two majors after §9 #1 stopped saying so, past every gate
+# there was, because no gate knew a rule had a date.
+python3 scripts/dev/retired-claims-scan.test.py
 
 # The AI tier is a judgement and the resolver is not; nothing about
 # that separation is enforced by the type system. This ran in one

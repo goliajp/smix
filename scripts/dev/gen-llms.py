@@ -153,13 +153,16 @@ def gen_llms():
     out.append("# smix")
     out.append("")
     out.append(
-        "> smix is a simulator-only UI test runner for iOS and Android, "
-        "built as a Claude Code sub-product. Tests are authored in "
-        "maestro-compatible yaml (or the Rust / TypeScript / Swift / Kotlin "
-        "SDKs) and driven through an accessibility-first sensing stack — "
-        "a11y tree, Vision OCR, then a local-`claude` AI-assertion tier — "
-        "against the simulator only, never a physical device. Failures are "
-        "AI-readable: every miss carries visible elements and suggested fixes."
+        "> smix is a UI test runner for iOS and Android, built as a Claude "
+        "Code sub-product. Tests are authored in maestro-compatible yaml (or "
+        "the Rust / TypeScript / Swift / Kotlin SDKs) and driven through an "
+        "accessibility-first sensing stack — a11y tree, Vision OCR, then a "
+        "local-`claude` AI-assertion tier. Simulators, emulators and physical "
+        "devices are all addressable; a physical one must be registered by "
+        "hand first, wiping it needs a second per-device opt-in, and a verb a "
+        "phone has no equivalent for errors rather than quietly doing nothing. "
+        "Failures are AI-readable: every miss carries visible elements and "
+        "suggested fixes."
     )
     out.append("")
     out.append(

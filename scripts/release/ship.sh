@@ -197,6 +197,14 @@ log "no second ledger path"
 python3 "$ROOT/scripts/dev/no-second-ledger-path.py" > /tmp/smix-ship-ledger-path.log 2>&1 \
   || fail "no-second-ledger-path FAILED — see /tmp/smix-ship-ledger-path.log"
 
+# The one gate on this list whose defect has already shipped. `llms.txt`
+# — the first file an agent reads — opened with "never a physical device"
+# through 3.x and into 4.1, two majors after §9 #1 stopped saying it.
+# Every other gate was green, because none of them knows a rule has a day.
+log "a retired sentence is off the surfaces"
+python3 "$ROOT/scripts/dev/retired-claims-scan.py" > /tmp/smix-ship-retired-claims.log 2>&1 \
+  || fail "retired-claims scan FAILED — see /tmp/smix-ship-retired-claims.log"
+
 log "teardown restores rather than imposes"
 python3 "$ROOT/scripts/dev/teardown-restores-scan.py" > /tmp/smix-ship-teardown.log 2>&1 \
   || fail "teardown-restores scan FAILED — see /tmp/smix-ship-teardown.log"
