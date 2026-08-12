@@ -17,6 +17,7 @@ export const LINKS = {
   quickstart: `${BLOB}/docs/ai-guide/01-quickstart.md`,
   selectors: `${BLOB}/docs/ai-guide/03-selectors.md`,
   mcp: `${BLOB}/docs/ai-guide/11-mcp.md`,
+  cli: `${BLOB}/docs/ai-guide/05-cli.md`,
   aiAssertions: `${BLOB}/docs/ai-guide/10-ai-assertions.md`,
   verbParity: `${BLOB}/docs/ai-guide/verb-parity.md`,
   hello: `${BLOB}/examples/hello.yaml`,

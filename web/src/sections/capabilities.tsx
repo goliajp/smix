@@ -78,9 +78,15 @@ const CARDS: Card[] = [
     meta: 'frame-diff · not a sleep',
   },
   {
-    title: 'Simulator only, by invariant',
-    body: 'smix drives the iOS and Android simulators and never a physical device. Selectors stay semantic — the sole coordinate escape hatches are the authorized native tapAtCoord and swipeAtCoord.',
-    meta: 'sim-only · tapAtCoord / swipeAtCoord',
+    title: 'A phone is reachable only once you say so',
+    body: 'Simulators, emulators and physical devices are all addressable — but a physical one must be registered by hand first, so smix never reaches whatever happens to be plugged in. Wiping it takes a second, per-device opt-in. Where a phone has no equivalent of a simulator verb, you get an error naming the gap rather than a silent no-op.',
+    meta: 'register · allow-destructive · no silent degrade',
+    href: LINKS.cli,
+  },
+  {
+    title: 'Selectors stay semantic',
+    body: 'No xpath, no coordinates on the selector surface — a flow names what a human would name. The sole escape hatches are the authorized native tapAtCoord and swipeAtCoord, for the screens that carry no accessibility semantics at all.',
+    meta: 'tapAtCoord / swipeAtCoord',
     href: LINKS.selectors,
   },
 ]
