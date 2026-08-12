@@ -121,8 +121,8 @@ smix sim erase <ALIAS|UDID>    # wipe (reset content)
 smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → the runner (must be up)
 smix sim launch <ALIAS|UDID> <bundle-id>
 smix sim terminate <ALIAS|UDID> <bundle-id>
-smix sim install <ALIAS|UDID> <path/to.app>
-smix sim uninstall <ALIAS|UDID> <bundle-id>
+smix sim install <ALIAS|UDID> <path/to.app|.apk>   # simulator → simctl, Android → adb; a physical iPhone is refused
+smix sim uninstall <ALIAS|UDID> <bundle-id|package>  # every kind; on a physical one, after allow-destructive
 smix sim openurl <ALIAS|UDID> <url>   # deeplink; app-level, no device lease needed
 smix sim appearance <ALIAS|UDID> light|dark
 smix sim keychain-reset <ALIAS|UDID>
