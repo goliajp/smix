@@ -443,14 +443,28 @@ def main():
             "matching and this check would pass by knowing nothing"
         )
 
+    site = "\n".join(read(rel) for rel in iter_surface_files() if rel.startswith("web/"))
+    said_unreleased = [m for m in UNRELEASED_MARKERS if m in site.lower()]
     if not release_tag_exists(version):
-        site = "\n".join(read(rel) for rel in iter_surface_files() if rel.startswith("web/"))
-        if not any(marker in site.lower() for marker in UNRELEASED_MARKERS):
+        if not said_unreleased:
             failures.append(
                 f"web/: the site states {version} install coordinates, no release "
                 f"tag for {version} exists, and no copy says so — visitors are "
                 f"told to install a version the registries do not serve"
             )
+    elif said_unreleased:
+        # The other direction, and the one that lasted longer. The banner
+        # above is what silences the check above it, so once written it
+        # both told visitors the wrong thing AND kept the gate quiet about
+        # it: through 4.0 and 4.1 the site said "4.1.0 is not published
+        # yet ... the registries currently serve 1.0.27" while npm served
+        # 4.1.0. An escape hatch nothing checks the far side of becomes
+        # the place a falsehood hides.
+        failures.append(
+            f"web/: a release tag for {version} exists and the site still says "
+            f"{said_unreleased[0]!r} — that copy exists to cover the gap before "
+            f"a release and has to come out with it"
+        )
 
     if failures:
         print(f"fact-scan: {len(failures)} falsehood(s) on user-facing surfaces")

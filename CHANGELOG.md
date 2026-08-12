@@ -2,6 +2,67 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [4.2.0] — 2026-08-12
+
+A rule changed on 6 August and four things went on saying the old one.
+`llms.txt` — the first file an agent reads — still opened with
+"simulator-only ... never a physical device" two majors after physical
+devices became a first-class backend. A guard meant to keep an install
+off a physical phone let one through. A device left running had nothing
+on the machine able to say who turned it on. And the document that says
+what is being worked on had a shape the contract could not describe, so
+its absence read as carelessness rather than as waiting.
+
+None of it was failing. Every gate was green, and each was right about
+what it asked.
+
+### Added
+
+- `smix lease prune` asks whether the device is actually on. Three
+  answers rather than two: on keeps the ledger, off clears it, and
+  *this machine cannot tell* keeps it. An Android serial and a phone
+  are not in `simctl`'s list at all, and unlisted must never collapse
+  into off.
+- `smix_lease::prune_verdict` / `PruneVerdict`, the judgement above as
+  a pure function — fed the device's state rather than going for it.
+
+### Changed
+
+- `smix runner up` boots the simulator itself and records that it did.
+  It came up either way, because `xcodebuild test -destination platform=
+  iOS Simulator,id=…` boots it as a side effect — but nothing then said
+  who turned it on, so `smix lease owner` exited 3 for a device that was
+  plainly running. Anything reading that code, including release
+  tooling, saw a working simulator as busy.
+- `smix down` keeps the ledger when a close fails. It used to delete it
+  regardless, which meant a failed shutdown left the device running and
+  removed the only record of it. `smix lease reconcile` has always drawn
+  this line; the two verbs now answer the same situation the same way.
+- The plugin's adb guard judges **one command at a time**. It matched a
+  pattern against the whole Bash call and then read a word out of the
+  whole Bash call, and the two could land on different commands:
+
+      adb -s emulator-5554 shell getprop sys.boot_completed
+      adb -s <a physical serial> install -r app.apk
+
+  was allowed, because the emulator pin on the first answered for the
+  second. Five shapes of that were reproduced, including `rm -rf` on a
+  phone. The mirror image refused honest work: a `curl -s <url>` beside
+  a legitimate device command had its URL read as the device name.
+
+  **A script that relied on one command's `-s` covering the next will
+  now be refused.** Pin each command that touches a device. An exported
+  `ANDROID_SERIAL` still carries, because in shell it genuinely does; a
+  `VAR=value cmd` prefix does not, because it applies to that command
+  alone.
+- `llms.txt` describes what smix drives today. It said "simulator-only"
+  and "never a physical device" from 3.x into 4.1.
+
+### Fixed
+
+- The four ways a boot record could be lost or never written. Two of the
+  six suspected sites turned out to be sound and are documented as such.
+
 ## [4.1.0] — 2026-08-12
 
 4.0 made a physical Android device registrable, addressable and
