@@ -184,6 +184,63 @@ fn a_device_left_running_still_says_who_booted_it() {
     );
 }
 
+/// Booting a device that is already up must not un-say who turned it on.
+///
+/// This is the one the first pass missed, and it stopped the 4.2.0 ship.
+/// The colour table listed the two places a boot row is written and never
+/// asked what a second write does to the first: `add_resource` replaces
+/// same-kind rows, and both boot rows are the same kind. So a gate that
+/// runs `sim boot` on a simulator somebody already booted through smix
+/// downgraded `by_us: true` to `by_us: false`, teardown then found a lone
+/// row not worth a file, and the ledger went — with the device still
+/// running. `pick-dev-sim` refused it, correctly, as possibly somebody
+/// else's.
+///
+/// `by_us` describes one transition: off to on. A later call that finds
+/// the device already up learns nothing about that transition.
+#[test]
+fn booting_an_already_booted_device_does_not_erase_who_booted_it() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let dir = LeaseDir::at(tmp.path());
+
+    store::record_boot(&dir, "UDID-B", true).expect("first boot");
+    store::record_boot(&dir, "UDID-B", false).expect("second boot, already up");
+
+    assert!(
+        booted_by_us(&dir, "UDID-B"),
+        "a second `sim boot` of a device smix had already booted rewrote \
+         the row to say smix did not boot it — everything after that reads \
+         a running simulator as somebody else's"
+    );
+    assert_eq!(
+        store::read(&dir, "UDID-B")
+            .expect("read")
+            .expect("some")
+            .resources
+            .len(),
+        1,
+        "two boot rows for one device — the ledger now describes two \
+         answers to a question that has one"
+    );
+}
+
+/// And the plain case, so stickiness cannot be had by making every device
+/// read as ours: a device that was already up when smix first saw it is
+/// recorded as not ours.
+#[test]
+fn a_device_that_was_already_up_is_not_recorded_as_ours() {
+    let tmp = tempfile::tempdir().expect("tmpdir");
+    let dir = LeaseDir::at(tmp.path());
+
+    store::record_boot(&dir, "UDID-A", false).expect("boot, already up");
+
+    assert!(
+        !booted_by_us(&dir, "UDID-A"),
+        "a device smix found running was recorded as one smix booted — \
+         that is a claim on somebody else's session"
+    );
+}
+
 /// Candidate (e) — `smix-cli/src/lease_cmd.rs:402` reading
 /// `smix-lease/src/store.rs:684`.
 ///
