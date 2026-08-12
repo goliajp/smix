@@ -1289,12 +1289,29 @@ enum SimAction {
         device: String,
         bundle_id: String,
     },
-    /// Install an .app bundle.
+    /// Put an app on a device: an `.app` on a simulator, an `.apk` on an
+    /// Android emulator or phone.
+    ///
+    /// A simulator goes through `simctl`, an emulator or an Android
+    /// phone through `adb`. A physical iPhone has no path here and is
+    /// refused rather than attempted — installing on one needs
+    /// `devicectl` and a provisioning profile, which nothing in smix
+    /// wires up.
+    ///
+    /// adb's own failures are passed through as it reports them: an
+    /// `.apk` signed by a different key does not replace the installed
+    /// one, and you get adb's words for why rather than smix's guess.
     Install {
         device: String,
         app_path: PathBuf,
     },
-    /// Uninstall an app by bundle id.
+    /// Take an app off a device, by bundle id on Apple platforms and by
+    /// package name on Android.
+    ///
+    /// Reaches every kind of device smix can address. On a physical one
+    /// it is refused until that device has been opted in with `smix sim
+    /// allow-destructive <device>` — taking an app off somebody's phone
+    /// removes its data with it.
     Uninstall {
         device: String,
         bundle_id: String,
@@ -1615,6 +1632,11 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
     const ALL: &[DeviceKind] = &[Simulator, Emulator, PhysicalIos, PhysicalAndroid];
     const SIMCTL: &[DeviceKind] = &[Simulator];
     const APPLE: &[DeviceKind] = &[Simulator, PhysicalIos];
+    // Everything that can be handed a payload. A physical iPhone is
+    // absent because no path here puts an app on one — `devicectl` would
+    // and is not wired — and §9 #1 ③ says a capability that is not
+    // available is said out loud rather than attempted into silence.
+    const LOADABLE: &[DeviceKind] = &[Simulator, Emulator, PhysicalAndroid];
     Some(match action {
         // No device, or the registry rather than the device.
         SimAction::List { .. }
@@ -1629,7 +1651,19 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
 
         // Apple device tooling: simctl for a simulator, devicectl for a
         // phone. Neither speaks adb.
-        SimAction::Uninstall { .. } | SimAction::KeychainReset { .. } => APPLE,
+        SimAction::KeychainReset { .. } => APPLE,
+
+        // Taking an app off reaches every kind, and on a physical
+        // Android device it is the first thing the per-device
+        // destructive opt-in ever has to refuse. Registering one prints
+        // that the gate exists; until this arm, nothing could reach it —
+        // erase and keychain-reset are simctl and Apple, so a registered
+        // phone had a gate with nothing behind it.
+        SimAction::Uninstall { .. } => ALL,
+
+        // Putting one on: simctl for a simulator, adb for an emulator or
+        // an Android phone.
+        SimAction::Install { .. } => LOADABLE,
 
         // simctl and nothing else. An emulator's counterparts exist
         // (`emulator -avd`, `adb shell am start`, `adb shell settings`)
@@ -1640,7 +1674,6 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
         | SimAction::Erase { .. }
         | SimAction::Launch { .. }
         | SimAction::Terminate { .. }
-        | SimAction::Install { .. }
         | SimAction::Openurl { .. }
         | SimAction::Appearance { .. }
         | SimAction::Locale { .. }
@@ -2135,21 +2168,51 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     println!("terminated: {bundle_id} on {udid}");
                 }
                 SimAction::Install { device, app_path } => {
+                    use smix_simctl::registry::DeviceKind;
                     let udid = resolve_device(&device)?;
-                    simctl
-                        .install(&udid, &app_path.display().to_string())
-                        .await?;
+                    // Which tool carries the payload is smix's problem,
+                    // not the caller's — the same shape `screenshot`
+                    // takes. `guard_sim_verb` has already refused the
+                    // kinds with no path, so the arms here are the ones
+                    // that have one.
+                    match device_kind_of(&device) {
+                        DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
+                            use smix_sdk::device_control::DeviceControl;
+                            smix_sdk::android_device::AndroidDeviceControl::new()
+                                .install(&udid, &app_path.display().to_string())
+                                .await
+                                .map_err(|e| CliError::Other(e.to_string()))?;
+                        }
+                        _ => {
+                            simctl
+                                .install(&udid, &app_path.display().to_string())
+                                .await?;
+                        }
+                    }
                     println!("installed: {} on {udid}", app_path.display());
                 }
                 SimAction::Uninstall { device, bundle_id } => {
+                    use smix_simctl::registry::DeviceKind;
                     let udid = resolve_device(&device)?;
-                    let control = smix_sdk::ios_device::IosDeviceControl::new();
                     let bundle = bundle_id.clone();
-                    with_device_lease(&control, &udid, |leased| async move {
-                        leased.uninstall(&bundle).await?;
-                        Ok(((), leased))
-                    })
-                    .await?;
+                    match device_kind_of(&device) {
+                        DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
+                            let control = smix_sdk::android_device::AndroidDeviceControl::new();
+                            with_device_lease(&control, &udid, |leased| async move {
+                                leased.uninstall(&bundle).await?;
+                                Ok(((), leased))
+                            })
+                            .await?;
+                        }
+                        _ => {
+                            let control = smix_sdk::ios_device::IosDeviceControl::new();
+                            with_device_lease(&control, &udid, |leased| async move {
+                                leased.uninstall(&bundle).await?;
+                                Ok(((), leased))
+                            })
+                            .await?;
+                        }
+                    }
                     println!("uninstalled: {bundle_id} on {udid}");
                 }
                 SimAction::Openurl { device, url } => {
@@ -3662,7 +3725,12 @@ async fn booted_udids(simctl: &smix_simctl::SimctlClient) -> Vec<String> {
 /// leftovers and then did its own destructive work would leave the person
 /// unable to tell the two apart afterwards.
 async fn with_device_lease<'a, F, Fut, T>(
-    control: &'a smix_sdk::ios_device::IosDeviceControl,
+    // Whatever drives the device, not one platform's driver.
+    // `Leased::acquire` has always taken `&dyn DeviceControl`; this
+    // named a concrete iOS type only because iOS was the only caller,
+    // and that is what would have made the Android arm build a second
+    // way of taking a lease rather than use this one.
+    control: &'a dyn smix_sdk::device_control::DeviceControl,
     udid: &str,
     body: F,
 ) -> Result<T, CliError>
@@ -5077,6 +5145,54 @@ mod tests {
             classify_device(&reg, "EMULATOR-5554"),
             DeviceKind::Simulator
         );
+    }
+
+    /// A device you can register and drive, you can also load.
+    ///
+    /// v4.0 made a physical Android device registrable, addressable and
+    /// drivable, and left it impossible to put an app on: `Install`
+    /// routed to simctl alone, while `smix-adb` had carried the call
+    /// that does it the whole time. The device guard refuses the bare
+    /// form and names smix as the way through, so the two pointed at
+    /// each other — and a consumer moved all eight copies of that guard
+    /// aside to get a build onto a phone.
+    ///
+    /// Shape only: `sim_verb_supports` reads nothing but its argument. A
+    /// test that consulted the registry would pass or fail on whatever
+    /// this machine happens to have registered, which is how the
+    /// classification test went red the day device records moved.
+    #[test]
+    fn payload_verbs_reach_android() {
+        use smix_simctl::registry::DeviceKind::{
+            Emulator, PhysicalAndroid, PhysicalIos, Simulator,
+        };
+        let install = sim_verb_supports(&SimAction::Install {
+            device: String::new(),
+            app_path: std::path::PathBuf::new(),
+        })
+        .expect("install takes a device");
+        assert!(install.contains(&Emulator), "install: {install:?}");
+        assert!(install.contains(&PhysicalAndroid), "install: {install:?}");
+        assert!(install.contains(&Simulator), "install: {install:?}");
+        // No devicectl path is wired for it, and §9 #1 ③ says an
+        // unavailable capability is loud rather than silently attempted.
+        assert!(
+            !install.contains(&PhysicalIos),
+            "install claims a physical iPhone, and nothing here can put an \
+             app on one: {install:?}"
+        );
+
+        let uninstall = sim_verb_supports(&SimAction::Uninstall {
+            device: String::new(),
+            bundle_id: String::new(),
+        })
+        .expect("uninstall takes a device");
+        for kind in [Simulator, PhysicalIos, Emulator, PhysicalAndroid] {
+            assert!(
+                uninstall.contains(&kind),
+                "uninstall dropped {kind:?}: {uninstall:?}"
+            );
+        }
     }
 
     #[test]
