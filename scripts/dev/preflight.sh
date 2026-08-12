@@ -174,6 +174,9 @@ python3 scripts/dev/flake-classify.test.py
 bash scripts/release/corpus-gate.sh --selftest
 bash scripts/dev/v3.0-c3-determinism.sh --selftest
 bash scripts/release/portable-tier.sh --selftest
+# The site check's own judgement: it has to recognise the SPA fallback,
+# because that is what a missing file answers with.
+bash scripts/release/site-is-current.sh --selftest
 
 # The Claude Code plugin. Both are device-free and take under a second;
 # what they cover is a plugin that parses perfectly and does nothing —
