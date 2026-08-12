@@ -194,6 +194,59 @@ pub struct Held {
     pub any_resource_alive: bool,
 }
 
+/// Whether a ledger still describes anything, and the sentence for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PruneVerdict {
+    /// Keep it, for the stated reason.
+    Keep(&'static str),
+    /// Nothing here describes the machine any more.
+    Remove,
+}
+
+/// Does this ledger still describe something?
+///
+/// Pure, and fed `device_is_on` rather than asking, for the reason
+/// `is_running` is pure: judging and doing I/O in the same breath makes a
+/// rule testable only against whatever this machine happens to be doing.
+///
+/// `device_is_on` is `None` when the machine cannot tell — an Android
+/// serial and a physical iPhone are not in `simctl`'s list at all.
+/// Not-listed must never collapse into off: that would delete the record
+/// of a device whose state nobody here can see.
+///
+/// The boot row is the reason this exists. `any_resource_alive` reads
+/// `Booted` as false by construction, which is correct for what that
+/// field means — a boot is not a process and cannot be probed — and
+/// wrong as the last word on whether a ledger is empty. A device that is
+/// on, with a row saying smix turned it on, is a ledger holding the only
+/// answer to a question `lease owner` is asked and `pick-dev-sim` acts
+/// on.
+pub fn prune_verdict(held: &Held, device_is_on: Option<bool>) -> PruneVerdict {
+    if held.holder.pid_exists && held.holder.identity_matches {
+        return PruneVerdict::Keep("held by a live holder");
+    }
+    if held.any_resource_alive {
+        return PruneVerdict::Keep("holder gone but something it started is still running");
+    }
+    let booted_by_us = held
+        .lease
+        .resources
+        .iter()
+        .any(|r| matches!(r, Resource::Booted { by_us: true }));
+    if booted_by_us {
+        return match device_is_on {
+            Some(true) => PruneVerdict::Keep(
+                "still switched on and this ledger is the only record of who turned it on",
+            ),
+            None => PruneVerdict::Keep(
+                "says smix booted it and this machine cannot tell whether it is still on",
+            ),
+            Some(false) => PruneVerdict::Remove,
+        };
+    }
+    PruneVerdict::Remove
+}
+
 /// What the world looks like. Gathered by the caller; never read from the
 /// world in here.
 #[derive(Debug, Clone)]
