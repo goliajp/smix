@@ -305,6 +305,11 @@ LOCAL_ONLY = {
     # exactly as designed, one job ahead of an include_str! of the same
     # record that stopped the test target building at all.
     "guide-claims-scan",
+    # Reads `.claude/docs/` — the four layers themselves. On a checkout
+    # there is nothing there to read, so it refuses rather than passing;
+    # in CI that refusal would fire on every build. Its harness DOES run
+    # in CI, on trees it builds itself.
+    "contract-scan",
 }
 CI_GATE = ".github/workflows/ci.yml"
 

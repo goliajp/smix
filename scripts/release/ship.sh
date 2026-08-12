@@ -201,6 +201,13 @@ python3 "$ROOT/scripts/dev/no-second-ledger-path.py" > /tmp/smix-ship-ledger-pat
 # — the first file an agent reads — opened with "never a physical device"
 # through 3.x and into 4.1, two majors after §9 #1 stopped saying it.
 # Every other gate was green, because none of them knows a rule has a day.
+# The four layers, and which of the two shapes layer three is in. A
+# release cut while the record of what is being worked on has gone
+# missing is one nobody can reconstruct afterwards.
+log "the four layers are all present"
+python3 "$ROOT/scripts/dev/contract-scan.py" > /tmp/smix-ship-contract.log 2>&1 \
+  || fail "contract scan FAILED — a layer is missing or the gap is unclaimed (see /tmp/smix-ship-contract.log)"
+
 log "a retired sentence is off the surfaces"
 python3 "$ROOT/scripts/dev/retired-claims-scan.py" > /tmp/smix-ship-retired-claims.log 2>&1 \
   || fail "retired-claims scan FAILED — see /tmp/smix-ship-retired-claims.log"

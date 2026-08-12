@@ -56,6 +56,7 @@ LOCAL = {
     "no second ledger path": "no-second-ledger-path",
     "a retired sentence is off the surfaces": "retired-claims-scan",
     "the retired-wording scan can still go red": "retired-claims-scan.test",
+    "the contract gate can still go red": "contract-scan.test",
     "portable tier selftest": "portable-tier.sh --selftest",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",
