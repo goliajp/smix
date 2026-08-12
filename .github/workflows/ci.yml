@@ -152,6 +152,13 @@ jobs:
         run: bash scripts/dev/pick-dev-sim.test.sh
       - name: no second ledger path
         run: python3 scripts/dev/no-second-ledger-path.py
+      # Reads the prose surfaces and the wording list; both are in the
+      # checkout. The register it reconciles against is not, and it says
+      # which half it therefore skipped.
+      - name: a retired sentence is off the surfaces
+        run: python3 scripts/dev/retired-claims-scan.py
+      - name: the retired-wording scan can still go red
+        run: python3 scripts/dev/retired-claims-scan.test.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the
