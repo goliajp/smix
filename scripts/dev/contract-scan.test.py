@@ -85,7 +85,10 @@ def tree(tmp: str) -> str:
     write(os.path.join(tmp, "Cargo.toml"), 'version = "4.1.0"\n')
     write(os.path.join(docs, "roadmap.md"), "# roadmap\n\n- v4.2：说出去的话与契约\n")
     write(os.path.join(docs, "v4.md"), "# v4 边界\n\n## 决策日志\n")
-    write(os.path.join(docs, "plan-cold", "v4.2-claims-and-contract.md"), "# cold\n")
+    write(
+        os.path.join(docs, "plan-cold", "v4.2-claims-and-contract.md"),
+        "# cold\n\n- C1：退役断言门\n- C2：契约门\n",
+    )
     write(
         os.path.join(docs, "archive", "plan-history", "v4.2-c1-hot.md"),
         "# plan-hot — v4.2 到 C1：退役断言门\n",
@@ -284,19 +287,46 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = run(tmp)
     expect("a constitution that names both passes", code == 0, f"exit {code}:\n{out}")
 
-# 14. This repository. Last, and never the only one — see the header.
+# 14. A checkpoint archived against a cold plan that never heard of it.
+#     The shape and what was built have parted, and it is the shape that
+#     is fiction. v4.3's cold plan described runner-attach work through
+#     two checkpoints of selector work, and the rearrangement had been
+#     left in the previous checkpoint's closing actions — where it was
+#     skipped, because a documentation edit has nothing that goes red.
+with tempfile.TemporaryDirectory() as tmp:
+    docs = tree(tmp)
+    write(os.path.join(docs, "plan-hot.md"), HOT)
+    write(
+        os.path.join(docs, "plan-cold", "v4.2-claims-and-contract.md"),
+        "# cold\n\n- C2：契约门\n- C3：账本\n",
+    )
+    code, out = run(tmp)
+    expect_verdict("an archive the cold plan does not list fails", code, out)
+    expect("and names the checkpoint", "C1" in out, f"no C1 in:\n{out}")
+
+# 15. A cold plan with no checkpoint list. Every archive is unlisted, and
+#     a check written the other way round would agree with anything.
+with tempfile.TemporaryDirectory() as tmp:
+    docs = tree(tmp)
+    write(os.path.join(docs, "plan-hot.md"), HOT)
+    write(os.path.join(docs, "plan-cold", "v4.2-claims-and-contract.md"), "# cold\n")
+    code, out = run(tmp)
+    expect_verdict("a cold plan with no checkpoints fails", code, out)
+    expect("and says it is reading air", "reading air" in out, f"no reason in:\n{out}")
+
+# 16. This repository. Last, and never the only one — see the header.
 #    On a bare checkout there is no `.claude/docs/` to read, and the case
 #    says which one it dropped rather than counting itself as coverage.
 if os.path.isdir(os.path.join(ROOT, ".claude", "docs")):
     code, out = run(ROOT)
     expect("this repository is claimed", code == 0, f"exit {code}:\n{out}")
-    checked = 14
+    checked = 16
 else:
     print(
-        "note: no .claude/docs/ here — case 14 (this repository) was not run",
+        "note: no .claude/docs/ here — case 16 (this repository) was not run",
         file=sys.stderr,
     )
-    checked = 13
+    checked = 15
 
 if problems:
     print("contract-scan.test: FAIL")
