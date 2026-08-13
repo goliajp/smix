@@ -70,6 +70,9 @@ def tree(tmp: str, variants: list[str] | None = None) -> None:
                 lines.append(f"// selector-surface: {v} — none, not wired on this surface")
         body = "\n".join(lines) + "\n\n"
         body += "".join(f'let _ = "{t}";\n' for t in TOKEN.values())
+        # A supported form's construction token, so the absence-side check
+        # has something true to agree with.
+        body += "".join(f"let _ = Selector::{v} {{}};\n" for v in supported)
         write(os.path.join(tmp, rel), body)
 
 
@@ -181,7 +184,22 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = scan_in(tmp)
     expect_verdict("a surface that supports nothing fails", code, out, "not really read")
 
-# 8. No surfaces at all. Both other floors guard the rows of the table;
+# 8. A `none` that is not true. The gate checked only the claims that
+#    said yes for a checkpoint, so wiring `fallback` into MCP and leaving
+#    its line at `none` passed clean. The rule this violates was written
+#    in this repository before it was applied to this file.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    rel = os.path.join(tmp, "crates/smix-mcp/src/selector_params.rs")
+    body = open(rel, encoding="utf-8").read().replace(
+        "// selector-surface: Fallback — none, not wired on this surface",
+        "// selector-surface: Fallback — none, not wired on this surface",
+    ) + "let _ = Selector::Fallback {};\n"
+    write(rel, body)
+    code, out = scan_in(tmp)
+    expect_verdict("a none the code contradicts fails", code, out, "says it is not")
+
+# 9. No surfaces at all. Both other floors guard the rows of the table;
 #    this guards the table. Emptying it makes "every surface declares
 #    every form" true of nothing, which is the exact failure this gate
 #    exists to catch, turned on itself.
@@ -199,7 +217,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "no surfaces at all fails", out.returncode, out.stdout + out.stderr, "reading air"
     )
 
-# 9. This repository. Last, and never the only one.
+# 10. This repository. Last, and never the only one.
 code, out = run(ROOT)
 expect("this repository is fully declared", code == 0, f"exit {code}:\n{out}")
 
@@ -209,4 +227,4 @@ if problems:
         print(f"  - {p}")
     sys.exit(1)
 
-print("selector-surface-scan.test: 9 cases pass")
+print("selector-surface-scan.test: 10 cases pass")

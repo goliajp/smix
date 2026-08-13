@@ -29,6 +29,13 @@ A declaration that says a form IS supported has to name a word that
 appears in that file. Otherwise the declaration is prose: it says the
 surface accepts something, nothing checks, and the gate reports coverage
 for a line somebody wrote once.
+
+And the other direction, which this gate was missing for a checkpoint: a
+`none` has to be true. Wiring `fallback` into MCP while leaving its line
+saying `none` passed clean — the gate only ever checked the claims that
+said yes. `gate/absence-needs-presence` in
+`.claude/rule/empty-predicate.md` is exactly this, and it was written
+here before it was applied here.
 """
 
 from __future__ import annotations
@@ -65,6 +72,18 @@ MIN_SUPPORTED = 4
 # written to catch, in its own source. Found by applying
 # `.claude/rule/empty-predicate.md` to the gate rather than to the code.
 MIN_SURFACES = 3
+
+# How a surface would name each form in its own code, when it takes it.
+# Only forms with an unmistakable token: a `none` is checked against
+# these, so a word that could appear for another reason would make the
+# check lie in the direction that reports a defect.
+SIGNATURE = {
+    "Point": "Selector::Point",
+    "Fallback": "Selector::Fallback",
+    "OcrText": "Selector::OcrText",
+    "LocalizedText": "Selector::LocalizedText",
+    "AnchorRelative": "Selector::AnchorRelative",
+}
 
 
 def read(rel: str) -> str:
@@ -132,6 +151,17 @@ def main() -> int:
                 continue
             detail = declared[variant]
             if detail.startswith("none"):
+                # A `none` that is not true. The form's own name, in the
+                # shape a surface writes it, appearing in the code means
+                # the surface does take it and the line is stale.
+                token = SIGNATURE.get(variant)
+                if token and token in evidence:
+                    problems.append(
+                        f"{surface} signs {variant} off as `none` and {rel} contains "
+                        f"`{token}` — the form is wired and the line says it is not. "
+                        f"A `none` that is false is worse than no line: it is a "
+                        f"decision on the record that was never made"
+                    )
                 if not re.match(r"none\s*[—,-]\s*\S", detail):
                     problems.append(
                         f"{surface}'s {variant} is `none` with no reason ({rel}). "
