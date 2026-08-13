@@ -239,6 +239,46 @@ def main() -> int:
                 f"{', '.join(sorted(hits))}"
             )
 
+    # Every archived checkpoint has a line in its cold plan, and the two
+    # say the same thing.
+    #
+    # The cold plan is the version's shape and the archive is what was
+    # actually done; when they part, the shape is fiction. v4.3's cold
+    # plan described runner-attach work from its title to its checkpoint
+    # list while two checkpoints of selector-surface work were archived
+    # against it, and the previous checkpoint had put "rearrange the cold
+    # plan" in its own closing actions — where it was skipped, because a
+    # documentation edit has nothing that goes red.
+    if inflight and not problems:
+        ver = f"v{inflight[0]}.{inflight[1]}"
+        cold = os.path.join(docs, "plan-cold")
+        cold_file = next(
+            (n for n in sorted(os.listdir(cold)) if n.startswith(ver)), None
+        ) if os.path.isdir(cold) else None
+        if cold_file:
+            cold_text = read(os.path.join(cold, cold_file))
+            lines = re.findall(r"^- (C\d+)[：:]\s*(.+)$", cold_text, re.M)
+            # A cold plan with no checkpoint list agrees with any archive.
+            if not lines:
+                problems.append(
+                    f"plan-cold/{cold_file} lists no `- C{{N}}：` checkpoints — "
+                    f"this check is reading air, and a version with no shape "
+                    f"written down cannot disagree with what was built"
+                )
+            listed = dict(lines)
+            for name in archives:
+                m = re.match(rf"{re.escape(ver)}-c(\d+)-hot\.md$", name)
+                if not m:
+                    continue
+                cp = f"C{int(m.group(1))}"
+                if cp not in listed:
+                    problems.append(
+                        f"{ARCHIVE}/{name} was archived and plan-cold/{cold_file} "
+                        f"has no `- {cp}：` line. The cold plan is the version's "
+                        f"shape; an archive it does not know about means the "
+                        f"shape is describing a different version"
+                    )
+
     # Everything else beside the layers, claimed by name.
     for name in sorted(os.listdir(docs)):
         rel = name + "/" if os.path.isdir(os.path.join(docs, name)) else name
