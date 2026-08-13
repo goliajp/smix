@@ -25,7 +25,6 @@ use smix_driver::Driver as _;
 use smix_driver::SimctlDriver;
 use smix_input::{KeyName, SwipeDirection};
 use smix_runner_client::HttpRunnerClient;
-use smix_screen::role_from_raw_type;
 use smix_selector::{Modifiers, Pattern, Selector};
 use std::time::Duration;
 
@@ -55,7 +54,7 @@ pub fn runner_port_from_env_opt() -> Option<u16> {
 // selector-surface: Text — `text:Save`
 // selector-surface: Id — `id:btn-submit`
 // selector-surface: Label — `label:Close`
-// selector-surface: Role — `role:button` — note this reads role_from_raw_type, the wire's vocabulary, while yaml and MCP read role_from_name; one word, two vocabularies, and the next gap on this axis
+// selector-surface: Role — `role:button`, and `Button` / `text_field` / `heading` / `tab` too: role_from_name, the same vocabulary yaml and MCP read
 // selector-surface: Focused — none, the CLI has no verb whose target is whatever holds focus
 // selector-surface: Anchor — none, modifiers have no shorthand at all here — a spatial chain needs more than one token
 // selector-surface: LocalizedText — none, the shorthand carries one value and this form needs a locale list beside it
@@ -93,9 +92,20 @@ pub fn parse_selector(s: &str) -> Result<Selector, String> {
             label: value.to_string(),
             modifiers,
         }),
+        // `role_from_name`, not `role_from_raw_type`. The wire form reads
+        // the strings the runner sends; a person types the word. Every
+        // word the wire form took, this one takes too and maps the same
+        // way — the reverse difference is empty — so this is widening, and
+        // what it adds is what a reader writes first: `Button` with its
+        // capital, `text_field` with its underscore, `heading` and `tab`,
+        // which have no wire spelling at all.
         "role" => {
-            let role =
-                role_from_raw_type(value).ok_or_else(|| format!("unknown role `{value}`"))?;
+            let role = smix_selector::role_from_name(value).ok_or_else(|| {
+                format!(
+                    "unknown role `{value}`; accepted: {}",
+                    smix_selector::ROLE_NAMES
+                )
+            })?;
             Ok(Selector::Role {
                 role,
                 name: None,
@@ -606,6 +616,54 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// One word, one meaning, on every surface a person types it into.
+    ///
+    /// The CLI read roles through `role_from_raw_type` — the wire's own
+    /// `rawType` strings — while yaml and MCP read the same word through
+    /// `role_from_name`, which is what a person writes. So `role:Button`
+    /// worked in a flow and was refused here, and the refusal did not
+    /// even list what was on offer. The reverse difference is empty: every
+    /// word the wire form accepts, the written form accepts too and maps
+    /// to the same Role. Widening loses nothing.
+    #[test]
+    fn the_cli_reads_the_same_role_vocabulary_as_yaml_and_mcp() {
+        for (written, expected) in [
+            ("role:Button", smix_screen::Role::Button),
+            ("role:BUTTON", smix_screen::Role::Button),
+            ("role:text_field", smix_screen::Role::TextField),
+            ("role:heading", smix_screen::Role::StaticText),
+            ("role:tab", smix_screen::Role::Tab),
+        ] {
+            let s = parse_selector(written)
+                .unwrap_or_else(|e| panic!("{written} is accepted in yaml and MCP: {e}"));
+            assert!(
+                matches!(&s, Selector::Role { role, .. } if *role == expected),
+                "{written} resolved to something else"
+            );
+        }
+    }
+
+    /// The words that already worked keep working — widening is not the
+    /// same as replacing.
+    #[test]
+    fn the_wire_spellings_still_parse() {
+        for w in ["role:button", "role:textField", "role:staticText"] {
+            assert!(parse_selector(w).is_ok(), "{w}");
+        }
+    }
+
+    /// A word in neither vocabulary is refused with the vocabulary shown.
+    /// The old refusal said "unknown role `x`" and stopped there.
+    #[test]
+    fn an_unknown_role_shows_what_is_on_offer() {
+        let e = parse_selector("role:widget").expect_err("not a role");
+        assert!(e.contains("widget"), "{e}");
+        assert!(
+            e.contains("button"),
+            "the accepted list has to be in it: {e}"
+        );
     }
 
     /// Was `returns_none`. It returns the reason now — the same refusal,

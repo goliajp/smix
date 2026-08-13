@@ -1692,7 +1692,17 @@ The absolute `perf_gate` budgets catch a spike; this catches slow drift under th
 These act on the runner's currently-active sim. Used for ad-hoc debugging without writing YAML.
 
 The selector is a positional argument in `<kind>:<value>` shorthand —
-`id:` / `text:` / `label:` / `role:`.
+`id:` / `text:` / `label:` / `role:` / `point:`.
+
+`role:` takes the word a person writes, the same vocabulary yaml and MCP
+read: `button`, `Button`, `text_field`, `heading`, `tab`.
+
+`point:` is the last resort — `point:50%,80%`, or the same point written
+`point:0.5,0.8`. A fraction of the viewport, never pixels, because a flow
+written in pixels runs on one screen size. Only `smix tap` takes one:
+there is nothing at a coordinate to find, fill, scroll to or wait for,
+and those four say so rather than resolving something that cannot
+resolve.
 
 ```bash
 smix tap id:home-increment-btn

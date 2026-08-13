@@ -58,6 +58,13 @@ DECLARATION = re.compile(
 # numbers the day this was written; both only ever grow.
 MIN_VARIANTS = 11
 MIN_SUPPORTED = 4
+# And a floor on the surfaces themselves. Both floors above guard the
+# rows; nothing guarded the table. With `SURFACES` emptied, "every
+# surface declares every form" is true of no surfaces at all, and this
+# gate would report clean while reading nothing — the shape it was
+# written to catch, in its own source. Found by applying
+# `.claude/rule/empty-predicate.md` to the gate rather than to the code.
+MIN_SURFACES = 3
 
 
 def read(rel: str) -> str:
@@ -82,6 +89,15 @@ def main() -> int:
             f"  - {len(variants)} variant(s) parsed out of {CANONICAL} — this scan is "
             f"reading air. An empty set of variants makes 'every variant is declared' "
             f"true of every surface, including one that declares nothing."
+        )
+        return 1
+
+    if len(SURFACES) < MIN_SURFACES:
+        print("selector-surface-scan: FAIL")
+        print(
+            f"  - {len(SURFACES)} surface(s) listed — this scan is reading air. "
+            f"With no surfaces, 'every surface declares every form' is true and "
+            f"says nothing."
         )
         return 1
 

@@ -181,7 +181,25 @@ with tempfile.TemporaryDirectory() as tmp:
     code, out = scan_in(tmp)
     expect_verdict("a surface that supports nothing fails", code, out, "not really read")
 
-# 8. This repository. Last, and never the only one.
+# 8. No surfaces at all. Both other floors guard the rows of the table;
+#    this guards the table. Emptying it makes "every surface declares
+#    every form" true of nothing, which is the exact failure this gate
+#    exists to catch, turned on itself.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    shim = os.path.join(tmp, "scripts", "dev", "selector-surface-scan.py")
+    os.makedirs(os.path.dirname(shim), exist_ok=True)
+    src = open(SCAN, encoding="utf-8").read()
+    import re as _re
+    emptied = _re.sub(r"SURFACES = \{.*?\n\}", "SURFACES = {}", src, count=1, flags=_re.S)
+    assert "SURFACES = {}" in emptied, "the mutation did not take"
+    write(shim, emptied)
+    out = subprocess.run([sys.executable, shim], capture_output=True, text=True, check=False)
+    expect_verdict(
+        "no surfaces at all fails", out.returncode, out.stdout + out.stderr, "reading air"
+    )
+
+# 9. This repository. Last, and never the only one.
 code, out = run(ROOT)
 expect("this repository is fully declared", code == 0, f"exit {code}:\n{out}")
 
@@ -191,4 +209,4 @@ if problems:
         print(f"  - {p}")
     sys.exit(1)
 
-print("selector-surface-scan.test: 8 cases pass")
+print("selector-surface-scan.test: 9 cases pass")
