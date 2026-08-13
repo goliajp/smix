@@ -1692,10 +1692,16 @@ The absolute `perf_gate` budgets catch a spike; this catches slow drift under th
 These act on the runner's currently-active sim. Used for ad-hoc debugging without writing YAML.
 
 The selector is a positional argument in `<kind>:<value>` shorthand —
-`id:` / `text:` / `label:` / `role:` / `point:`.
+`id:` / `text:` / `label:` / `role:` / `ocrText:` / `point:`.
 
 `role:` takes the word a person writes, the same vocabulary yaml and MCP
 read: `button`, `Button`, `text_field`, `heading`, `tab`.
+
+`ocrText:` reads the screen with Apple Vision instead of the accessibility
+tree — for a canvas, an image of text, anything the tree cannot see. It
+costs a vision pass, so reach for it after the others. `tap`, `find` and
+`wait-for` take one; `fill` and `scroll` refuse it, because an OCR hit is
+where text was one look ago, not a field or an anchor.
 
 `point:` is the last resort — `point:50%,80%`, or the same point written
 `point:0.5,0.8`. A fraction of the viewport, never pixels, because a flow

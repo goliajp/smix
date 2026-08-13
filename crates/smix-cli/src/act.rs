@@ -58,7 +58,7 @@ pub fn runner_port_from_env_opt() -> Option<u16> {
 // selector-surface: Focused — none, the CLI has no verb whose target is whatever holds focus
 // selector-surface: Anchor — none, modifiers have no shorthand at all here — a spatial chain needs more than one token
 // selector-surface: LocalizedText — none, the shorthand carries one value and this form needs a locale list beside it
-// selector-surface: OcrText — none, not yet wired — the vision path is reachable from yaml and MCP and this is the surface it is missing from
+// selector-surface: OcrText — `ocrText:Total`, dispatched past the tree by every cmd that acts on it
 // selector-surface: AnchorRelative — none, an anchor plus two offsets does not fit one token
 // selector-surface: Point — `point:50%,25%`, dispatched by cmd_tap and refused by the rest
 // selector-surface: Fallback — none, a chain in one token needs a separator, and `text:` may legally contain any character
@@ -75,7 +75,7 @@ pub fn parse_selector(s: &str) -> Result<Selector, String> {
     let Some((kind, value)) = s.split_once(':') else {
         return Err(format!(
             "`{s}` has no kind — write `<kind>:<value>`, one of \
-             id / text / label / role / point"
+             id / text / label / role / ocrText / point"
         ));
     };
     let modifiers = Modifiers::default();
@@ -112,6 +112,17 @@ pub fn parse_selector(s: &str) -> Result<Selector, String> {
                 modifiers,
             })
         }
+        // The vision path. It never matches in the tree — the resolver
+        // returns false for OcrText by design, because OCR is a live
+        // look at the screen and not a predicate over a dump — so every
+        // command that takes it has to dispatch past the tree. Forgetting
+        // that is not an error: it is a silent miss on text that is
+        // plainly there.
+        "ocrText" => Ok(Selector::OcrText {
+            ocr_text: value.to_string(),
+            locales: Vec::new(),
+            modifiers,
+        }),
         // A place rather than a thing, and the same reading as yaml and
         // MCP because it is the same function. Only `tap` takes one —
         // there is nothing at a coordinate to find, fill or wait for.
@@ -120,8 +131,36 @@ pub fn parse_selector(s: &str) -> Result<Selector, String> {
             Ok(Selector::Point { nx, ny })
         }
         _ => Err(format!(
-            "unknown selector kind `{kind}` — one of id / text / label / role / point"
+            "unknown selector kind `{kind}` — one of id / text / label / role / ocrText / point"
         )),
+    }
+}
+
+/// Where an OCR needle is on screen, or nothing.
+///
+/// `OcrText` never matches in the tree — the resolver returns false for
+/// it by design, since OCR is a live look and not a predicate over a
+/// dump. So every command that accepts one dispatches here instead of
+/// resolving, and forgetting to is a silent miss on text that is plainly
+/// on screen rather than an error anyone would see.
+async fn ocr_frame(
+    d: &SimctlDriver,
+    needle: &str,
+) -> Result<Option<smix_driver::OcrFrame>, ActError> {
+    d.find_text_by_ocr(
+        needle,
+        &smix_driver::ocr_locales(&[]),
+        smix_driver::OCR_RECOGNITION_LEVEL,
+    )
+    .await
+    .map_err(|e| ActError::Transport(e.to_prompt()))
+}
+
+/// The needle, when the selector is the vision path.
+fn ocr_needle(sel: &Selector) -> Option<&str> {
+    match sel {
+        Selector::OcrText { ocr_text, .. } => Some(ocr_text),
+        _ => None,
     }
 }
 
@@ -182,6 +221,25 @@ pub async fn cmd_tap(selector_str: String, port: u16) -> Result<(), ActError> {
     // A place, not a thing: the resolver has nothing to match, and its own
     // comment says so — reaching it means a caller forgot to dispatch. The
     // touch goes straight to the coordinate, the same as `tapOn: { point }`.
+    if let Some(needle) = ocr_needle(&selector) {
+        return match ocr_frame(&d, needle).await? {
+            Some(f) => {
+                d.tap_at_norm_coord(f.mid_x(), f.mid_y())
+                    .await
+                    .map_err(|e| ActError::Transport(e.to_prompt()))?;
+                println!(
+                    "tapped: ocrText={needle} at ({:.3}, {:.3}) — not verified: an OCR hit is a text frame, not a resolved element",
+                    f.mid_x(),
+                    f.mid_y()
+                );
+                Ok(())
+            }
+            None => Err(ActError::Timeout {
+                selector: format!("ocrText:{needle}"),
+                timeout_ms: 0,
+            }),
+        };
+    }
     if let Selector::Point { nx, ny } = selector {
         d.tap_at_norm_coord(nx, ny)
             .await
@@ -240,6 +298,11 @@ pub async fn cmd_find(selector_str: String, port: u16) -> Result<(), ActError> {
         ));
     }
     let d = driver(port);
+    if let Some(needle) = ocr_needle(&selector) {
+        let exists = ocr_frame(&d, needle).await?.is_some();
+        println!("exists={exists}");
+        return Ok(());
+    }
     let exists = d
         .find(&selector, None)
         .await
@@ -253,6 +316,14 @@ pub async fn cmd_find(selector_str: String, port: u16) -> Result<(), ActError> {
 pub async fn cmd_fill(selector_str: String, text: String, port: u16) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
+    if ocr_needle(&selector).is_some() {
+        return Err(ActError::BadSelector(
+            selector_str.clone(),
+            "an OCR hit is a text frame on the screen, not a field with a value — find it with `smix find ocrText:…` or tap it, then act on \
+             what the tap put on screen"
+                .into(),
+        ));
+    }
     if matches!(selector, Selector::Point { .. }) {
         return Err(ActError::BadSelector(
             selector_str.clone(),
@@ -309,6 +380,14 @@ pub async fn cmd_scroll(
 ) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
+    if ocr_needle(&selector).is_some() {
+        return Err(ActError::BadSelector(
+            selector_str.clone(),
+            "scrolling needs an element the tree can follow; an OCR frame is where text was one look ago — find it with `smix find ocrText:…` or tap it, then act on \
+             what the tap put on screen"
+                .into(),
+        ));
+    }
     if matches!(selector, Selector::Point { .. }) {
         return Err(ActError::BadSelector(
             selector_str.clone(),
@@ -519,6 +598,26 @@ pub async fn cmd_wait_for(
     }
     let d = driver(port);
     let timeout = Duration::from_secs(timeout_secs);
+    // Waiting for text to appear is what the vision path is for, so this
+    // polls rather than refusing. It cannot go through `wait_for`: that
+    // resolves, and a resolve of an OCR needle is a no every time.
+    if let Some(needle) = ocr_needle(&selector) {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let seen = ocr_frame(&d, needle).await?.is_some();
+            if seen != absent {
+                println!("{} {selector_str}", if absent { "gone" } else { "visible" });
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(ActError::Timeout {
+                    selector: selector_str,
+                    timeout_ms: timeout.as_millis() as u64,
+                });
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
     // Both arms report a timeout the same way. The waits are opposites
     // but the failure is not: in either case the screen did not reach
     // the state the caller asked for within the budget.

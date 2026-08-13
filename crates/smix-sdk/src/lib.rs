@@ -1932,15 +1932,9 @@ impl App {
         text: &str,
         locales: &[String],
     ) -> Result<Option<OcrFrame>, ExpectationFailure> {
-        let owned_default;
-        let locales_slice: &[String] = if locales.is_empty() {
-            owned_default = vec!["en".to_string()];
-            &owned_default
-        } else {
-            locales
-        };
+        let locales_slice = smix_driver::ocr_locales(locales);
         self.driving()?
-            .find_text_by_ocr(text, locales_slice, "accurate")
+            .find_text_by_ocr(text, &locales_slice, smix_driver::OCR_RECOGNITION_LEVEL)
             .await
     }
 
