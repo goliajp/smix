@@ -2523,21 +2523,22 @@ final class SmixRunnerUITests: XCTestCase {
             return nil
           }
           guard let observations = request.results else { return nil }
-          let needle = text.lowercased()
-          for obs in observations {
-            guard let cand = obs.topCandidates(1).first else { continue }
-            if cand.string.lowercased().contains(needle) {
-              // Vision bbox: bottom-left origin, y-up, normalized [0,1]
-              let vbox = obs.boundingBox
-              // Convert to UIKit: top-left origin, y-down
-              let nx = Double(vbox.origin.x)
-              let nyUiKit = 1.0 - Double(vbox.origin.y) - Double(vbox.size.height)
-              let w = Double(vbox.size.width)
-              let h = Double(vbox.size.height)
-              return (nx, nyUiKit, w, h)
-            }
+          // The rule lives in SmixRunnerCore so it can be tested without
+          // a screen: FindTextByOcrRoute.pick. Two copies of "which
+          // reading did they mean" is one copy that will answer
+          // differently, and the answer this one gives taps things.
+          let readings = observations.compactMap { $0.topCandidates(1).first?.string }
+          guard let i = FindTextByOcrRoute.pick(needle: text, from: readings) else {
+            return nil
           }
-          return nil
+          // Vision bbox: bottom-left origin, y-up, normalized [0,1]
+          let vbox = observations[i].boundingBox
+          // Convert to UIKit: top-left origin, y-down
+          let nx = Double(vbox.origin.x)
+          let nyUiKit = 1.0 - Double(vbox.origin.y) - Double(vbox.size.height)
+          let w = Double(vbox.size.width)
+          let h = Double(vbox.size.height)
+          return (nx, nyUiKit, w, h)
         }.value
         return result
       },
