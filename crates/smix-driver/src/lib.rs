@@ -78,6 +78,26 @@ pub struct IosDriver {
     runner: HttpRunnerClient,
 }
 
+/// The recognition level every OCR caller asks for.
+///
+/// A literal in two places is a literal that will differ in one of them.
+/// The SDK had it; the CLI would have been the second copy.
+pub const OCR_RECOGNITION_LEVEL: &str = "accurate";
+
+/// The locales to read with, when the caller named none.
+///
+/// Empty means "whatever the session is", and the session's answer is
+/// English until something sets it. Callers pass their own list through
+/// untouched.
+#[must_use]
+pub fn ocr_locales(given: &[String]) -> Vec<String> {
+    if given.is_empty() {
+        vec!["en".to_string()]
+    } else {
+        given.to_vec()
+    }
+}
+
 impl IosDriver {
     pub fn new(runner: HttpRunnerClient) -> Self {
         IosDriver { runner }
