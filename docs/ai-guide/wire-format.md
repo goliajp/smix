@@ -20,7 +20,7 @@ Every route accepts these OPTIONAL headers; absent = default behavior
 
 | Header | Semantics |
 |---|---|
-| `App-Bundle-Id: <bundle>` | Per-request `XCUIApplication` rebind target |
+| `App-Bundle-Id: <bundle>` | Per-request `XCUIApplication` rebind target. smix also uses it to ask a question: `GET /tree` with this header answers 200 when that app can be snapshotted and 500 `snapshot_unavailable` when it cannot, which is how `runner up` tells "the runner is answering" from "the app it was asked about is drivable". |
 | `App-Activate: true` | Runner calls `.activate()` on the resolved target before the operation (main-actor hop) |
 | `Input-Dispatch-Mode: a11y \| key-events \| auto` | How `/fill` puts text in. `a11y` (default) resolves the field and taps it to take focus; `key-events` skips resolution and types into whatever holds focus, for fields the tree cannot address. An unknown value degrades to `auto` rather than failing the step. |
 
@@ -187,7 +187,14 @@ Response: `{ ok: bool }`
 
 ### `GET /screenshot`
 
-Response: raw PNG bytes (`Content-Type: image/png`).
+Response: raw PNG bytes (`Content-Type: image/png`). A 503 means
+`XCUIScreen` produced nothing, which is not the same as a blank screen —
+it carries `error` and `reason`, and callers are expected to say so
+rather than hand back an empty image.
+
+**iOS only**: the Android runner serves no such route, and a frame there
+comes from device tooling instead. Anything that can go either way is
+expected to name which it took.
 
 ### `POST /foreground`
 

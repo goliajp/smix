@@ -284,6 +284,39 @@ For YAMLs that primarily run cross-platform but have a few platform-specific bit
 - back
 ```
 
+## Photograph something that hides itself
+
+A control bar that appears on tap and disappears a few seconds later
+outlives neither a second command nor the turn between two tool calls.
+The usual workaround is to change the app so it stays up long enough to
+photograph, which means the thing you photographed is not the thing that
+ships.
+
+Take the frame in the same call as the tap:
+
+```bash
+smix tap id:player-surface --then-screenshot /tmp/controls.png
+# tapped: id:player-surface — frame via runner 91 ms later, 84213 bytes to /tmp/controls.png
+```
+
+Over MCP, the same thing is `smix_tap_then_screenshot`, which answers
+with the delay and then the PNG.
+
+What this buys is not wire speed. A tap is about 336 ms and a frame from
+the runner about 88 ms — both together fit inside a UI that lives three
+seconds. What it removes is the round trip between two calls, which is
+where the time actually went.
+
+Two things to know:
+
+- **A tap that fails writes nothing.** A frame taken after a tap that
+  did not land is a picture of the screen nothing happened on, and it
+  looks exactly like evidence.
+- **It needs a selector the tree can resolve.** `point:` and `ocrText:`
+  are dispatched without resolving a target, so there is nothing to say
+  about where the touch landed. A `fallback:` chain is fine — the first
+  layer that is on screen is the one tapped.
+
 ## Performance: skip launchApp for fast iteration
 
 YAMLs that don't need a fresh app state can avoid the `launchApp` cost (3-5s for cold start):

@@ -131,7 +131,7 @@ echo "--- android: unit tests + androidTest compile"
 ( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan corpus-portability-scan portable-tier-parity yield-is-not-failure-scan teardown-restores-scan android-subject-scan device-facts-are-machine-scoped leases-are-machine-scoped no-second-ledger-path retired-claims-scan contract-scan selector-surface-scan; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan corpus-portability-scan portable-tier-parity yield-is-not-failure-scan teardown-restores-scan android-subject-scan device-facts-are-machine-scoped leases-are-machine-scoped no-second-ledger-path retired-claims-scan contract-scan selector-surface-scan health-is-not-a-session-check probes-name-the-app tap-then-capture-is-one-path; do
     python3 "scripts/dev/$gate.py"
 done
 
@@ -169,6 +169,18 @@ python3 scripts/dev/contract-scan.test.py
 # axis nothing watched: `point` worked in flows and four SDKs and was
 # missing from MCP and the CLI for two majors, with every gate green.
 python3 scripts/dev/selector-surface-scan.test.py
+# And that the health/session gate can still go red. Its subject is a
+# question two commands answered with a different question: /health says
+# the server answers and nothing about the app binding.
+python3 scripts/dev/health-is-not-a-session-check.test.py
+# And that the probe-naming gate can still go red. Its subject is the
+# half of the session question C5 left open: asking without naming an app
+# answers about whichever one the runner was bound to at startup.
+python3 scripts/dev/probes-name-the-app.test.py
+# And that the one-path gate can still go red. Its subject is two
+# sentences no behaviour test can see: the combined action has one
+# implementation, and the frame comes from the process that tapped.
+python3 scripts/dev/tap-then-capture-is-one-path.test.py
 
 # The AI tier is a judgement and the resolver is not; nothing about
 # that separation is enforced by the type system. This ran in one

@@ -224,6 +224,20 @@ enum Cmd {
         /// port already names the runner.
         #[arg(long)]
         device: Option<String>,
+        /// Write a frame to this path the moment the tap returns.
+        ///
+        /// For UI that does not wait: a control bar that hides itself
+        /// after a few seconds outlives neither a second command nor the
+        /// turn between two tool calls. One call takes the picture from
+        /// the same process that tapped — measured at about 88 ms after
+        /// the tap returns, against roughly 325 ms going out to device
+        /// tooling.
+        ///
+        /// A tap that fails writes nothing: a frame taken after a tap
+        /// that did not land looks like evidence and is a picture of the
+        /// screen nothing happened on.
+        #[arg(long = "then-screenshot", value_name = "OUT")]
+        then_screenshot: Option<PathBuf>,
     },
     /// Boolean existence probe (POST /find). Prints `exists=<bool>`.
     /// Same selector shorthand as `smix tap`.
@@ -1086,6 +1100,24 @@ enum RunnerAction {
         /// longer.
         #[arg(long = "no-launch", default_value_t = false)]
         no_launch: bool,
+        /// Cycle a runner of ours whose session has stopped working,
+        /// instead of reporting it as already up.
+        ///
+        /// `/health` says the runner's HTTP server is answering; it
+        /// cannot see the app binding, so reinstalling the app leaves a
+        /// runner that answers 200 and drives nothing — and this command,
+        /// reading only that, used to say "already up" and return
+        /// success. Without this flag it now says no and names the fix;
+        /// with it, it runs the fix: the same in-place cycle as
+        /// `smix runner cycle`, seconds, no xcodebuild restart.
+        ///
+        /// It does not reach across to a runner recorded for another
+        /// device, or to one the store has no record of. Those are
+        /// refused with or without it — `runner down --include-unrecorded`
+        /// is the sanctioned way through, and it is a separate decision
+        /// on purpose.
+        #[arg(long = "force", default_value_t = false)]
+        force: bool,
     },
     /// Stop the runner (SIGINT-first to avoid the crash-report dialog).
     Down {
@@ -2310,6 +2342,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     supervise,
                     team,
                     no_launch,
+                    force,
                 } => {
                     // clap has already refused the case where neither
                     // is given, and the case where both are.
@@ -2395,6 +2428,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         smix_capsule::runner::UpOptions {
                             supervise,
                             attach_without_relaunch: no_launch,
+                            force_recover: force,
                             ..Default::default()
                         },
                         target,
@@ -2650,11 +2684,17 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             ocr_locale,
             port,
             device,
+            then_screenshot,
         } => {
             let p = runner_dial_port(port, device.as_deref());
-            act::cmd_tap(selector, p, ocr_locale)
-                .await
-                .map_err(|e| CliError::Other(e.to_string()))?;
+            match then_screenshot {
+                Some(out) => act::cmd_tap_then_screenshot(selector, p, &out)
+                    .await
+                    .map_err(|e| CliError::Other(e.to_string()))?,
+                None => act::cmd_tap(selector, p, ocr_locale)
+                    .await
+                    .map_err(|e| CliError::Other(e.to_string()))?,
+            }
         }
         Cmd::Find {
             selector,
@@ -4699,6 +4739,8 @@ async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
     let verdict = readiness::assess(&readiness::Facts {
         simctl: simctl_facts,
         registry,
+        // health-not-a-decider: doctor prints whether a runner is
+        // answering. It concludes nothing and drives nothing.
         runner_up: smix_capsule::runner::health_ok(port),
         capture_server_up: capture_server_reachable(),
         downgradeable,

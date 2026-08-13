@@ -172,6 +172,21 @@ jobs:
         run: python3 scripts/dev/selector-surface-scan.py
       - name: the selector-surface gate can still go red
         run: python3 scripts/dev/selector-surface-scan.test.py
+      # Reads every health_ok call site in crates/; all in the checkout.
+      - name: every health_ok call site says whether it decides
+        run: python3 scripts/dev/health-is-not-a-session-check.py
+      - name: the health/session gate can still go red
+        run: python3 scripts/dev/health-is-not-a-session-check.test.py
+      # Reads every session-probe call site in crates/*/src; all in the checkout.
+      - name: every session probe says which app it asks about
+        run: python3 scripts/dev/probes-name-the-app.py
+      - name: the probe-naming gate can still go red
+        run: python3 scripts/dev/probes-name-the-app.test.py
+      # Reads the combined action and its surfaces in crates/*/src.
+      - name: tap-then-frame is one path
+        run: python3 scripts/dev/tap-then-capture-is-one-path.py
+      - name: the one-path gate can still go red
+        run: python3 scripts/dev/tap-then-capture-is-one-path.test.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the

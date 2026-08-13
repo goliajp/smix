@@ -379,19 +379,342 @@ pub fn health_wire_schemas(port: u16) -> Vec<u32> {
         .unwrap_or_default()
 }
 
-/// Shared HTTP GET /health primitive. Returns `(status_is_200, raw_response_bytes)`
-/// on connection success, `Err(())` on IO failure. Callers pick apart
-/// the byte buffer to answer specific questions.
+/// What a runner answers when asked whether its session still works.
+///
+/// `/health` cannot answer this. It is a closure over a boot date and an
+/// environment variable — it never touches the app, the `XCUIApplication`
+/// or a session table, so it says 200 for as long as the socket is being
+/// read. A runner whose app was reinstalled out from under it answers
+/// `/health` 200 and `/tree` 500 at the same instant, and that pair is
+/// the whole of this type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionProbe {
+    /// A snapshot came back. The next real call will work.
+    Usable,
+    /// The runner said, in its own words, that it cannot snapshot.
+    Gone {
+        /// The runner's own category for the failure, e.g. `not-running`.
+        reason: String,
+        /// The runner's own sentence about what to do, carried verbatim.
+        hint: String,
+    },
+    /// Nothing came back before the deadline, or the connection died.
+    ///
+    /// Separate from [`SessionProbe::Gone`] on purpose: a runner that
+    /// answers with a diagnosis is not in the same state as one that has
+    /// stopped answering, and only the first can be quoted back.
+    Silent {
+        /// What happened at the transport, in a form worth printing.
+        detail: String,
+    },
+}
+
+/// [`probe_session`], about a named app rather than whichever one the
+/// runner happens to be bound to.
+///
+/// Naming it matters where the two can differ — after a fallback that
+/// re-attached, the runner may be answering about something other than
+/// the app that was asked for, and a probe that does not say a name
+/// cannot tell those apart.
+
+impl SessionProbe {
+    /// The reason this session cannot be driven, or `None` when it can.
+    pub fn unusable_because(&self) -> Option<&str> {
+        match self {
+            SessionProbe::Usable => None,
+            SessionProbe::Gone { reason, .. } => Some(reason),
+            SessionProbe::Silent { detail } => Some(detail),
+        }
+    }
+}
+
+/// What to do when a bring-up ran out of time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AfterTimeout {
+    /// End this attempt and make one more, foregrounding the app instead
+    /// of asking the runner to launch it.
+    RetryAsAttach {
+        /// Why a second attempt is worth making, in a form worth printing.
+        because: String,
+    },
+    /// Stop, and say what was tried.
+    GiveUp {
+        /// The whole refusal, ready to print.
+        message: String,
+    },
+}
+
+/// Decide what a timed-out bring-up does next.
+///
+/// Pure, so the whole table is reachable without a device — including
+/// the row that stops the second time, which is the only thing keeping
+/// "one more attempt" from being an unbounded loop.
+#[allow(clippy::too_many_arguments)]
+pub fn decide_after_timeout(
+    target: RunnerTarget<'_>,
+    bundle: Option<&str>,
+    attach_requested: bool,
+    attach_already_tried: bool,
+    last_session_gap: Option<&str>,
+    timeout_secs: u64,
+    log_tail: &str,
+) -> AfterTimeout {
+    let waited = match last_session_gap {
+        Some(gap) => format!(
+            "the runner's server came up within {timeout_secs}s and its session \
+             never did: {gap}\n\
+             /health answered the whole time — it says the HTTP server is \
+             answering and nothing about the app binding."
+        ),
+        None => format!("the runner did not become usable within {timeout_secs}s."),
+    };
+    let stop = |extra: &str| AfterTimeout::GiveUp {
+        message: format!("{waited}\n{extra}\nSent SIGINT; log tail:\n{log_tail}"),
+    };
+
+    if attach_already_tried {
+        return stop(
+            "Both ways were tried: launching the app from the runner, and \
+             foregrounding it first and attaching. Neither finished in time.",
+        );
+    }
+    if attach_requested {
+        return stop(
+            "This attempt already was the attaching one (--no-launch), so \
+             retrying that way would ask the same question twice.",
+        );
+    }
+    let Some(app) = bundle else {
+        return stop(
+            "Retrying would foreground the app first, and no app was named — \
+             pass --bundle <id> to make that possible.",
+        );
+    };
+    if let RunnerTarget::Physical { .. } = target {
+        return stop(
+            "On a physical device there is no `xcrun simctl launch` to \
+             foreground the app with, so the second attempt smix makes on a \
+             simulator does not exist here. Launch the app on the device and \
+             run the same command with --no-launch.",
+        );
+    }
+    AfterTimeout::RetryAsAttach {
+        because: format!(
+            "{waited}\nTrying once more the other way round: foreground \
+             {app} first, then attach to it instead of asking the runner to \
+             launch it."
+        ),
+    }
+}
+
+/// The verdict on "something is already on this port".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlreadyServing {
+    /// Ours, and working. Say so and stop.
+    ReportUp {
+        /// The recorded host pid, so the caller can name it without
+        /// reading the record a second time.
+        pid: u32,
+    },
+    /// Ours, not working, and the caller asked for it to be fixed.
+    Recover {
+        /// Why recovery is happening, in the runner's own words.
+        because: String,
+    },
+    /// Say no, out loud, and name what resolves it.
+    Refuse {
+        /// The whole refusal, ready to print.
+        message: String,
+    },
+}
+
+/// How long the probe waits for a snapshot before calling it silence.
+///
+/// Its own deadline, deliberately not `/health`'s: the typical way a
+/// session dies is that the snapshot never comes back, so a probe that
+/// waits indefinitely hangs in exactly the case it exists to detect.
+/// A healthy tree measured 48–63 ms and a refusal 3.8 ms, so five
+/// seconds is silence rather than slowness.
+const SESSION_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Ask the runner on `port` whether its session still works.
+///
+/// The question goes to `/tree` rather than to some cheaper purpose-built
+/// route, because the thing worth knowing is whether the next real call
+/// will succeed — and `/tree` *is* that call. A route that only read
+/// `app.state` would be a proxy, and a proxy can answer "fine" while
+/// `/tree` still returns 500, which is a new way to be wrong about the
+/// same thing.
+pub fn probe_session(port: u16) -> SessionProbe {
+    // unnamed-probe: this is the unnamed face itself. Callers that know
+    // which app they mean should say so; this one exists for the callers
+    // that do not, and it answers about whatever the runner is bound to.
+    probe_session_for(port, None)
+}
+
+/// [`probe_session`], about a named app rather than whichever one the
+/// runner happens to be bound to.
+///
+/// Naming it matters where the two can differ — after a fallback that
+/// re-attached, the runner may be answering about something other than
+/// the app that was asked for, and a probe that does not say a name
+/// cannot tell those apart. Measured on 2026-08-14: a runner bound to
+/// `jp.golia.smix.fixture` answers `/tree` 200 for that name and 500
+/// (`snapshot_unavailable` / `not-running`) for one that is not running,
+/// so the named question does discriminate.
+pub fn probe_session_for(port: u16, bundle: Option<&str>) -> SessionProbe {
+    // Enough to carry a refusal whole (401 bytes when reproduced) and to
+    // recognise a tree without reading all 21 KB of one.
+    let named: [(&str, &str); 1];
+    // No name means no header, rather than an empty one. The runner reads
+    // an empty `App-Bundle-Id` as absent, so both behave the same on the
+    // wire — but an implementation that always sends the header makes
+    // "did it name the app" true for free, and the question stops being
+    // asked.
+    let headers: &[(&str, &str)] = match bundle {
+        Some(id) => {
+            named = [("App-Bundle-Id", id)];
+            &named
+        }
+        None => &[],
+    };
+    let (status, body) = match read_get(port, "/tree", headers, 2048, SESSION_PROBE_TIMEOUT) {
+        Ok(pair) => pair,
+        Err(detail) => return SessionProbe::Silent { detail },
+    };
+    if status == 200 {
+        return SessionProbe::Usable;
+    }
+    let json = body
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|i| i + 4)
+        .and_then(|start| serde_json::from_slice::<serde_json::Value>(&body[start..]).ok());
+    let field = |name: &str| {
+        json.as_ref()
+            .and_then(|v| v.get(name))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+    SessionProbe::Gone {
+        reason: field("reason")
+            .or_else(|| field("error"))
+            .unwrap_or_else(|| format!("/tree answered {status}")),
+        hint: field("hint").unwrap_or_else(|| String::from_utf8_lossy(&body).into_owned()),
+    }
+}
+
+/// Decide what to do about a port that is already answering `/health`.
+///
+/// Pure on purpose: every row of it is reachable from a test without a
+/// device, and the caller is left with one branch instead of five.
+pub fn decide_already_serving(
+    record: Option<&RunnerState>,
+    port: u16,
+    udid: &str,
+    bundle: Option<&str>,
+    probe: &SessionProbe,
+    force: bool,
+) -> AlreadyServing {
+    let pid = match record {
+        Some(st) if st.udid == udid && st.bundle.as_deref() == bundle => st.pid,
+        // Somebody else's, or nobody's. `--force` is not consulted in
+        // either branch and that is the whole of its safety: it changes
+        // what happens to *our own* wedged runner, and nothing about
+        // whose runner this is.
+        Some(st) => {
+            return AlreadyServing::Refuse {
+                message: format!(
+                    "port {port} already serves a runner recorded for udid={} \
+                     bundle={:?} — run `smix runner down` first",
+                    st.udid, st.bundle
+                ),
+            };
+        }
+        None => {
+            return AlreadyServing::Refuse {
+                message: format!(
+                    "port {port} already serves /health but the store has no \
+                     record of that runner — not killing blindly.\n\
+                     See whose it is:\n  pgrep -fl xcodebuild\n\
+                     If it should go:\n  smix runner down --include-unrecorded\n\
+                     If it should stay, bring this one up elsewhere:\n  \
+                     SMIX_RUNNER_PORT=<other> smix runner up …"
+                ),
+            };
+        }
+    };
+
+    let (what, told) = match probe {
+        SessionProbe::Usable => {
+            return AlreadyServing::ReportUp { pid };
+        }
+        SessionProbe::Gone { reason, hint } => (
+            format!("its session is not usable: {reason}"),
+            format!("\nthe runner said:\n  {hint}\n"),
+        ),
+        SessionProbe::Silent { detail } => (
+            format!("its session did not answer at all: {detail}"),
+            String::new(),
+        ),
+    };
+
+    if force {
+        return AlreadyServing::Recover { because: what };
+    }
+    AlreadyServing::Refuse {
+        message: format!(
+            "port {port} answers /health, but {what}.\n{told}\n\
+             /health says the runner's HTTP server is answering. It cannot say \
+             more than that: it never touches the app binding, so a session \
+             that died under it — a reinstall, a terminated app — leaves \
+             /health saying 200 and every real call failing.\n\n\
+             Recover it in place (seconds, without restarting xcodebuild):\n  \
+             smix runner cycle\n\
+             or have this command do it for you:\n  \
+             smix runner up {udid} --bundle {} --force",
+            bundle.unwrap_or("<id>")
+        ),
+    }
+}
+
+/// `GET /health`, in the shape the three health readers below want.
 fn read_health_bytes(port: u16, cap: usize) -> Result<(bool, Vec<u8>), ()> {
+    read_get(port, "/health", &[], cap, std::time::Duration::from_secs(2))
+        .map(|(status, body)| (status == 200, body))
+        .map_err(|_| ())
+}
+
+/// Shared bare-HTTP GET primitive. Returns `(status, raw_response_bytes)`
+/// on a parseable response, `Err(why)` when the socket, the deadline or
+/// the status line gave nothing to go on. Callers pick apart the byte
+/// buffer to answer specific questions.
+///
+/// The status comes from the status line rather than from searching the
+/// buffer for `" 200"` — with a body in the buffer, that search answers
+/// yes for a 500 whose text happens to contain the digits, which is the
+/// same family of mistake as the one this checkpoint is about.
+fn read_get(
+    port: u16,
+    path: &str,
+    headers: &[(&str, &str)],
+    cap: usize,
+    timeout: std::time::Duration,
+) -> Result<(u16, Vec<u8>), String> {
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::time::Duration;
     let mut s = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_secs(1))
-        .map_err(|_| ())?;
-    s.set_read_timeout(Some(Duration::from_secs(2)))
-        .map_err(|_| ())?;
-    s.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-        .map_err(|_| ())?;
+        .map_err(|e| format!("could not connect to 127.0.0.1:{port}: {e}"))?;
+    s.set_read_timeout(Some(timeout))
+        .map_err(|e| format!("could not set a read deadline: {e}"))?;
+    let mut request = format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n");
+    for (name, value) in headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str("\r\n");
+    s.write_all(request.as_bytes())
+        .map_err(|e| format!("could not send GET {path}: {e}"))?;
     let mut buf = vec![0u8; cap];
     let mut total = 0usize;
     while total < cap {
@@ -402,11 +725,15 @@ fn read_health_bytes(port: u16, cap: usize) -> Result<(bool, Vec<u8>), ()> {
         }
     }
     buf.truncate(total);
-    let status_ok = std::str::from_utf8(&buf)
+    let status = std::str::from_utf8(&buf)
         .ok()
-        .map(|s| s.contains(" 200"))
-        .unwrap_or(false);
-    Ok((status_ok, buf))
+        .and_then(|text| text.lines().next())
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or_else(|| {
+            format!("connected to 127.0.0.1:{port} but GET {path} produced no status line within {timeout:?}")
+        })?;
+    Ok((status, buf))
 }
 
 /// Probe a live runner for the in-process soft-cycle and report the
@@ -423,6 +750,9 @@ fn read_health_bytes(port: u16, cap: usize) -> Result<(bool, Vec<u8>), ()> {
 /// [`SoftCycleProbe::Unsupported`], also a hard fallback.
 fn try_soft_cycle(port: u16) -> smix_runner_client::SoftCycleProbe {
     use smix_runner_client::SoftCycleProbe;
+    // health-not-a-decider: whether there is a live host to ask for a
+    // bounce at all. Whether the bounce worked is judged afterwards, by
+    // the caller, from a fresh answer.
     if !health_ok(port) {
         return SoftCycleProbe::Unreachable;
     }
@@ -586,6 +916,8 @@ fn parse_http_status(buf: &[u8]) -> Option<u16> {
 fn wait_health_back(port: u16, timeout: std::time::Duration) -> bool {
     let deadline = std::time::Instant::now() + timeout;
     loop {
+        // health-not-a-decider: waits for the socket to come back after a
+        // bounce. Its answer is one input to a judgement made elsewhere.
         if health_ok(port) {
             return true;
         }
@@ -951,6 +1283,15 @@ pub struct UpOptions {
     pub record_enabled: bool,
     /// Spawn the `runner supervise` sidecar once `/health` answers.
     pub supervise: bool,
+    /// When the port answers `/health` but the session behind it is
+    /// unusable, cycle it in place instead of refusing.
+    ///
+    /// Not a way past the ownership judgement: a runner recorded for
+    /// somebody else, or recorded nowhere, is refused with this set
+    /// exactly as it is without. What it changes is the one case where
+    /// refusing helped nobody — our own runner, wedged, with the fix a
+    /// command away.
+    pub force_recover: bool,
     /// Foreground the target app instead of relaunching it.
     ///
     /// Bringing the runner up restarts the app, which drops whatever
@@ -1012,6 +1353,7 @@ pub fn up_on(
         record_enabled,
         supervise,
         attach_without_relaunch,
+        force_recover,
     } = opts;
     // Refuse to boot without --bundle unless the caller explicitly
     // opts in via SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE=1. The runner's
@@ -1047,37 +1389,121 @@ pub fn up_on(
             );
         }
     }
+    // health-decider: whether this port is already serving, and what to
+    // do about it when it is answering without serving.
     if health_ok(port) {
-        match read_state(root) {
-            Some(st) if st.udid == udid && st.bundle.as_deref() == bundle => {
-                println!("runner already up: udid={udid} port={port} pid={}", st.pid);
+        let record = read_state(root);
+        let probe = probe_session_for(port, bundle);
+        match decide_already_serving(record.as_ref(), port, udid, bundle, &probe, force_recover) {
+            AlreadyServing::ReportUp { pid } => {
+                println!("runner already up: udid={udid} port={port} pid={pid}");
                 return Ok(());
             }
-            Some(st) => {
-                return Err(format!(
-                    "port {port} already serves a runner recorded for udid={} \
-                     bundle={:?} — run `smix runner down` first",
-                    st.udid, st.bundle
-                ));
+            AlreadyServing::Recover { because } => {
+                println!("runner is up but {because} — cycling it in place");
+                return cycle(root, port, runner_project);
             }
-            None => {
-                // Naming the command that actually resolves it. This
-                // used to end at `smix runner down`, which since C17
-                // reports the same session and stops — so the advice
-                // sent people in a circle, twice past the one fact that
-                // mattered: it might be somebody else's.
-                return Err(format!(
-                    "port {port} already serves /health but the store has no \
-                     record of that runner — not killing blindly.\n\
-                     See whose it is:\n  pgrep -fl xcodebuild\n\
-                     If it should go:\n  smix runner down --include-unrecorded\n\
-                     If it should stay, bring this one up elsewhere:\n  \
-                     SMIX_RUNNER_PORT=<other> smix runner up …"
-                ));
-            }
+            AlreadyServing::Refuse { message } => return Err(message),
         }
     }
 
+    let timeout_secs: u64 = std::env::var("SMIX_RUNNER_UP_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300);
+    let log = root.join(format!(".smix/runner/runner-{udid}.log"));
+
+    // At most twice: launch-then-wait, and if that never finishes,
+    // foreground-then-attach. The bound lives in `decide_after_timeout`,
+    // which stops once `attach_already_tried` is set — so it is a rule
+    // with a test rather than a comment next to a loop.
+    let mut attach = attach_without_relaunch;
+    let mut attach_already_tried = false;
+    loop {
+        match one_bring_up(
+            root,
+            udid,
+            port,
+            bundle,
+            runner_project,
+            target,
+            record_enabled,
+            supervise,
+            attach,
+            timeout_secs,
+        )? {
+            Attempt::Up => return Ok(()),
+            Attempt::TimedOut { last_session_gap } => {
+                match decide_after_timeout(
+                    target,
+                    bundle,
+                    attach,
+                    attach_already_tried,
+                    last_session_gap.as_deref(),
+                    timeout_secs,
+                    &tail_log(&log, 25),
+                ) {
+                    AfterTimeout::GiveUp { message } => return Err(message),
+                    AfterTimeout::RetryAsAttach { because } => {
+                        println!("{because}");
+                        // Bring the app to the front ourselves. `activate`
+                        // on an app that is not running still launches it,
+                        // and that launch is the step the first attempt
+                        // was waiting on — so the retry has to do it out
+                        // here, where a failure is visible, rather than
+                        // ask the runner to try the same thing again.
+                        let out = std::process::Command::new("xcrun")
+                            .args(["simctl", "launch", udid])
+                            .arg(bundle.unwrap_or_default())
+                            .output()
+                            .map_err(|e| format!("run simctl launch: {e}"))?;
+                        if !out.status.success() {
+                            return Err(format!(
+                                "the first attempt timed out and the second one \
+                                 could not start {} on {udid}: {}",
+                                bundle.unwrap_or("<id>"),
+                                String::from_utf8_lossy(&out.stderr).trim()
+                            ));
+                        }
+                        attach = true;
+                        attach_already_tried = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// How one bring-up ended.
+enum Attempt {
+    /// The runner is up and its session answers.
+    Up,
+    /// The deadline passed. `last_session_gap` is what the last
+    /// otherwise-healthy poll was still missing, when there was one.
+    TimedOut {
+        last_session_gap: Option<String>,
+    },
+}
+
+/// One bring-up: spawn `xcodebuild`, write the handles down, and wait
+/// for a runner that can actually be driven.
+///
+/// Extracted so it can be run twice — once asking the runner to launch
+/// the app, and if that never finishes, once with the app already in
+/// front of it. Nothing about a single attempt changed in the move.
+#[allow(clippy::too_many_arguments)]
+fn one_bring_up(
+    root: &Path,
+    udid: &str,
+    port: u16,
+    bundle: Option<&str>,
+    runner_project: Option<&Path>,
+    target: RunnerTarget<'_>,
+    record_enabled: bool,
+    supervise: bool,
+    attach_without_relaunch: bool,
+    timeout_secs: u64,
+) -> Result<Attempt, String> {
     let project = resolve_runner_project(root, runner_project)?;
     let runner_dir = root.join(".smix/runner");
     std::fs::create_dir_all(&runner_dir).map_err(|e| format!("mkdir .smix/runner: {e}"))?;
@@ -1131,10 +1557,6 @@ pub fn up_on(
     crate::runner_state::write(root, crate::runner_state::Platform::Ios, &st)?;
     record_runner_lease(&machine_leases()?, udid, port, pid)?;
 
-    let timeout_secs: u64 = std::env::var("SMIX_RUNNER_UP_TIMEOUT_SECS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(300);
     // Detect cold vs warm rebuild by inspecting whether the per-udid
     // derived-data dir is already populated. Cold rebuilds after a
     // version bump can take 5-10 min (full swift stdlib copy + linker +
@@ -1157,7 +1579,9 @@ pub fn up_on(
     } else {
         println!(
             "runner starting: udid={udid} port={port} pid={pid} \
-             (warm rebuild ~3 s expected; log {}, timeout {timeout_secs}s)",
+             (warm rebuild ~3 s expected; log {}, timeout {timeout_secs}s — \
+             a timeout is retried once with the app already in front, so the \
+             worst case is twice that)",
             log.display()
         );
     }
@@ -1170,6 +1594,10 @@ pub fn up_on(
     // Whoever is watching can act on it while the wait is still running,
     // and xcodebuild picks up where it left off once they do.
     let mut announced_block = false;
+    // Why the last otherwise-healthy poll was not good enough. Kept so
+    // the timeout can say "the server came up and the session never did"
+    // instead of "never became healthy", which would be false.
+    let mut last_session_gap: Option<String> = None;
     while std::time::Instant::now() < deadline {
         if !announced_block && let Some(blocked) = device_preflight_block(&log) {
             println!("runner up: waiting on the device — {blocked}");
@@ -1191,7 +1619,24 @@ pub fn up_on(
                 tail_log(&log, 25)
             ));
         }
-        if health_ok(port) {
+        // health-decider: whether the bring-up is finished — which has to
+        // mean a flow can run, not that a socket answers. The Android
+        // runner has asked its own version of this since the round a
+        // crashed instrumentation answered /health perfectly and every
+        // tree came back with nothing in it.
+        let ready = health_ok(port)
+            && match probe_session_for(port, bundle).unusable_because() {
+                None => true,
+                Some(why) => {
+                    // The server answers before the app is bound. Waiting
+                    // is the right thing here — the loop is already a
+                    // wait — and returning would hand back a runner that
+                    // answers 200 and drives nothing.
+                    last_session_gap = Some(why.to_string());
+                    false
+                }
+            };
+        if ready {
             // Version-mismatch gate. Ask the runner what version it
             // thinks it is; if it disagrees with the CLI, refuse boot
             // with an actionable message. This is the last line of
@@ -1318,7 +1763,7 @@ pub fn up_on(
                     }
                 }
             }
-            return Ok(());
+            return Ok(Attempt::Up);
         }
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
@@ -1334,10 +1779,7 @@ pub fn up_on(
              {timeout_secs}s — sent SIGINT. Clear it and run the same command again."
         ));
     }
-    Err(format!(
-        "runner did not become healthy within {timeout_secs}s — sent SIGINT; log tail:\n{}",
-        tail_log(&log, 25)
-    ))
+    Ok(Attempt::TimedOut { last_session_gap })
 }
 
 /// What the device is waiting for, if `xcodebuild` said so.
@@ -1489,10 +1931,15 @@ fn down_with(root: &Path, port: u16, consent: bool) -> Result<(), String> {
 
     if acted {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        // health-not-a-decider: waits for the port to go quiet after a
+        // teardown. A session that is gone is the point here.
         while health_ok(port) && std::time::Instant::now() < deadline {
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
     }
+    // health-not-a-decider: whether anything still answers after the
+    // teardown. Nothing is being driven, so there is no session to ask
+    // about.
     if health_ok(port) {
         return Err(format!(
             "port {port} still answers /health after teardown — inspect \

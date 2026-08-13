@@ -930,6 +930,59 @@ impl HttpRunnerClient {
         })
     }
 
+    /// `GET /screenshot` — the whole screen as raw PNG bytes, taken
+    /// inside the runner by `XCUIScreen`.
+    ///
+    /// iOS only: the Android runner serves no such route.
+    pub async fn screenshot(&self) -> Result<Vec<u8>, RunnerTransportError> {
+        let endpoint = "/screenshot";
+        let url = self.url(endpoint, None);
+        let res = self
+            .send_with_retry(endpoint, |c| self.apply_context(c.get(&url)))
+            .await?;
+        let status = res.status();
+        if !status.is_success() {
+            // The 503 is deliberate on the runner's side: it means
+            // XCUIScreen produced nothing, which is a different thing
+            // from a screen that is blank. Carrying its words through is
+            // what keeps those two apart upstream.
+            let body = res.text().await.unwrap_or_default();
+            let err = RunnerTransportError::NonSuccessStatus {
+                endpoint: endpoint.to_string(),
+                status: status.as_u16(),
+                body,
+            };
+            self.record_outcome(endpoint, false, &err.to_string());
+            return Err(err);
+        }
+        // Bytes, not text: this route answers with a raw PNG rather than
+        // JSON or base64, and any string round-trip would corrupt it.
+        let bytes = match res.bytes().await {
+            Ok(b) => b,
+            Err(source) => {
+                let err = RunnerTransportError::NonJsonBody {
+                    endpoint: endpoint.to_string(),
+                    source,
+                };
+                self.record_outcome(endpoint, false, &err.to_string());
+                return Err(err);
+            }
+        };
+        if bytes.is_empty() {
+            // A zero-byte PNG is not a picture of nothing. Handing one
+            // back makes every assertion downstream measure an empty
+            // file, and none of them would say so.
+            let err = RunnerTransportError::MalformedBody {
+                endpoint: endpoint.to_string(),
+                detail: "the runner answered 200 with no image bytes".to_string(),
+            };
+            self.record_outcome(endpoint, false, &err.to_string());
+            return Err(err);
+        }
+        self.record_outcome(endpoint, true, "");
+        Ok(bytes.to_vec())
+    }
+
     async fn json_get<T: for<'de> Deserialize<'de>>(
         &self,
         endpoint: &str,

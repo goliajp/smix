@@ -129,15 +129,28 @@ for tool, decl in sorted(tools.items()):
         continue
     argv = [binary, *words[1:], "--help"]
     result = subprocess.run(argv, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        problems.append(
-            f"{tool} declares `{decl}` and that command does not exist — "
-            f"`{' '.join(words)} --help` exited {result.returncode}. Either the "
-            f"CLI is missing a capability the MCP server has, or the "
-            f"declaration is out of date"
-        )
-    else:
+    if result.returncode == 0:
         checked += 1
+        continue
+    # A declaration ending in a flag that takes a value cannot be checked
+    # by appending `--help`: clap reads the `--help` as the flag's value
+    # and then fails on the missing positional. Ask the command itself
+    # instead, and require the flag to be listed — which is a stricter
+    # question than "does this run", not a looser one.
+    if words[-1].startswith("--"):
+        parent = subprocess.run(
+            [binary, *words[1:-1], "--help"], capture_output=True, text=True, check=False
+        )
+        if parent.returncode == 0 and words[-1] in parent.stdout:
+            checked += 1
+            continue
+    problems.append(
+        f"{tool} declares `{decl}` and that command does not exist — "
+        f"`{' '.join(words)} --help` exited {result.returncode}, and "
+        f"`{' '.join(words[:-1])} --help` does not list {words[-1]!r} either. "
+        f"Either the CLI is missing a capability the MCP server has, or the "
+        f"declaration is out of date"
+    )
 
 if problems:
     print("mcp-cli-parity-scan: FAIL")

@@ -214,6 +214,27 @@ log "every selector form is declared on every surface"
 python3 "$ROOT/scripts/dev/selector-surface-scan.py" > /tmp/smix-ship-selector-surface.log 2>&1 \
   || fail "selector-surface scan FAILED — a selector form is undeclared on a surface (see /tmp/smix-ship-selector-surface.log)"
 
+# /health says the server is answering and nothing about the app binding.
+# Two commands concluded a device was drivable from it, and one of them
+# was the command you reach for when it is not.
+log "every health_ok call site says whether it decides"
+python3 "$ROOT/scripts/dev/health-is-not-a-session-check.py" > /tmp/smix-ship-health-session.log 2>&1 \
+  || fail "health/session scan FAILED — a call site decides from /health alone (see /tmp/smix-ship-health-session.log)"
+
+# Asking whether a session works without naming an app answers about
+# whichever app the runner was bound to at startup. Harmless where smix
+# started the runner; expensive the first time it did not.
+log "every session probe says which app it asks about"
+python3 "$ROOT/scripts/dev/probes-name-the-app.py" > /tmp/smix-ship-probe-naming.log 2>&1 \
+  || fail "probe-naming scan FAILED — a probe asks about an unnamed app (see /tmp/smix-ship-probe-naming.log)"
+
+# A surface that quietly does its own tap-then-screenshot works, passes
+# every test, and takes the frame 237 ms later from a different layer
+# than the touch. Only a scan sees that.
+log "tap-then-frame is one path"
+python3 "$ROOT/scripts/dev/tap-then-capture-is-one-path.py" > /tmp/smix-ship-one-path.log 2>&1 \
+  || fail "one-path scan FAILED — the combined action grew a second implementation (see /tmp/smix-ship-one-path.log)"
+
 log "a retired sentence is off the surfaces"
 python3 "$ROOT/scripts/dev/retired-claims-scan.py" > /tmp/smix-ship-retired-claims.log 2>&1 \
   || fail "retired-claims scan FAILED — see /tmp/smix-ship-retired-claims.log"

@@ -241,11 +241,41 @@ impl SmixMcpService {
 
         // Already here: bringing the runner up again would restart the app
         // and drop whatever state the conversation had built up.
+        //
         if let Some(current) = self.session.current()
             && current.udid == params.udid
             && current.port == port
+            // health-decider: whether this server is already driving the
+            // device the caller named, and can go on driving it.
             && smix_capsule::health_ok(port)
         {
+            // `/health` answering is not the same as the session working:
+            // it is a closure over a boot date and never touches the app
+            // binding, so a reinstall leaves it saying 200 while every
+            // real call fails. Saying "already driving" there hands the
+            // agent a device it cannot drive.
+            // Named when the caller named one. This tool is the case the
+            // naming was written for: the session on this port may have
+            // been brought up by somebody else, so "some app is drivable"
+            // and "the app you asked for is drivable" are not the same
+            // answer.
+            if let Some(why) = smix_capsule::runner::probe_session_for(
+                port,
+                params.bundle_id.as_deref(),
+            )
+            .unusable_because()
+            {
+                return Err(McpError::internal_error(
+                    format!(
+                        "the runner on port {port} answers /health, but its session \
+                         is not usable: {why}. That happens when the app is \
+                         reinstalled or terminated out from under the runner.\n\
+                         Recover it in place, then use this tool again:\n  \
+                         smix runner cycle"
+                    ),
+                    None,
+                ));
+            }
             return Ok(CallToolResult::success(vec![Content::text(format!(
                 "already driving {} on port {port}",
                 params.udid
@@ -280,6 +310,7 @@ impl SmixMcpService {
                     record_enabled: false,
                     supervise: false,
                     attach_without_relaunch: false,
+                    force_recover: false,
                 },
             )
         })
@@ -907,6 +938,70 @@ impl SmixMcpService {
             "pressed: {}",
             params.key
         ))]))
+    }
+
+    #[tool(
+        description = "Tap an element and take a frame in the same call, in that order. For UI that does not wait: something that hides itself after a few seconds outlives neither a second tool call nor the turn between them. Name the element with exactly one of id / text / label / role — prefer id. Returns a line saying where the frame came from and how many milliseconds after the tap it landed, then the PNG as base64. A tap that fails returns no frame. Needs the session smix_launch_app opens."
+    )]
+    /// CLI: smix tap --then-screenshot
+    async fn smix_tap_then_screenshot(
+        &self,
+        Parameters(params): Parameters<SelectorParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let sel = params.to_selector()?;
+        let app = self.bound_app().await?;
+        // A chain is dispatched by the caller — handing the whole thing
+        // to the resolver is one no where several tries were asked for.
+        // Walk it, take the first layer that is on screen, and tap that
+        // one; the frame is then a picture of a tap that resolved.
+        let target = match chain_of(&sel) {
+            Some(layers) => match first_visible_layer(&app, &layers).await? {
+                Some(i) => layers[i].clone(),
+                None => {
+                    return Err(McpError::internal_error(
+                        "no layer of the chain is on screen, so nothing was \
+                         tapped and no frame was taken"
+                            .to_string(),
+                        None,
+                    ));
+                }
+            },
+            None => sel.clone(),
+        };
+        // Neither form resolves to an element in the tree, and this tool
+        // reports where the touch landed — so it refuses them by name
+        // rather than reporting a landing it did not observe. Checked on
+        // the layer that won, because that is the one being tapped.
+        if point_of(&target).is_some() || ocr_text_of(&target).is_some() {
+            return Err(McpError::invalid_params(
+                "smix_tap_then_screenshot needs a selector the tree can \
+                 resolve, and this one is a point or an ocrText hit. Both \
+                 are dispatched without resolving a target, so there would \
+                 be nothing to say about where the touch landed — use \
+                 smix_tap followed by smix_screenshot if that is what you \
+                 want."
+                    .to_string(),
+                None,
+            ));
+        }
+        let (outcome, captured) = app
+            .tap_then_capture(&target)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+        let mut said = format!(
+            "tapped — frame via {} {} ms later, {} bytes",
+            captured.via,
+            captured.gap_ms,
+            captured.png.len()
+        );
+        if let smix_sdk::ActVerdict::Unconfirmable(why) = &outcome.verdict {
+            said.push_str(&format!("\nnot verified: {why}"));
+        }
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&captured.png);
+        Ok(CallToolResult::success(vec![
+            Content::text(said),
+            Content::text(b64),
+        ]))
     }
 
     #[tool(

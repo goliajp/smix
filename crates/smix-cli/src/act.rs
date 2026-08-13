@@ -213,6 +213,52 @@ pub fn parse_direction(s: &str) -> Option<SwipeDirection> {
 /// `smix tap <selector>` — host-resolve + tap_at_norm_coord on the running
 /// runner. Routes through `SimctlDriver::tap` so id/label/role selectors
 /// resolve via the /tree path (swift /tap only supports text selectors).
+/// `smix tap <selector> --then-screenshot <out>`.
+///
+/// The tap and the frame in one command, in that order. What this saves
+/// is not wire time — a tap is about 336 ms and a frame from the runner
+/// about 88 ms, and a UI that hides itself after three seconds outlives
+/// both. It saves the gap between two commands, which is where the
+/// seconds actually went for the consumer who asked for it.
+pub async fn cmd_tap_then_screenshot(
+    selector_str: String,
+    port: u16,
+    out: &std::path::Path,
+) -> Result<(), ActError> {
+    let selector = parse_selector(&selector_str)
+        .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
+    if ocr_needle(&selector).is_some() {
+        return Err(ActError::BadSelector(
+            selector_str,
+            "--then-screenshot needs a selector the tree can resolve. An \
+             ocrText hit is a text frame rather than a resolved element, \
+             so there would be nothing to say about where the touch \
+             landed — which is why this command takes no --ocr-locale"
+                .to_string(),
+        ));
+    }
+    let d = driver(port);
+    let (outcome, captured) =
+        smix_sdk::tap_then_capture_with(&d, Some(d.runner()), &selector)
+            .await
+            .map_err(|e| ActError::Transport(e.to_prompt()))?;
+    // Only now: a tap that failed returned above, so nothing on disk can
+    // be mistaken for a picture of something that happened.
+    std::fs::write(out, &captured.png)
+        .map_err(|e| ActError::Transport(format!("write {}: {e}", out.display())))?;
+    println!(
+        "tapped: {selector_str} — frame via {} {} ms later, {} bytes to {}",
+        captured.via,
+        captured.gap_ms,
+        captured.png.len(),
+        out.display()
+    );
+    if let smix_driver::ActVerdict::Unconfirmable(why) = &outcome.verdict {
+        println!("  not verified: {why}");
+    }
+    Ok(())
+}
+
 pub async fn cmd_tap(
     selector_str: String,
     port: u16,
