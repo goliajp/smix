@@ -488,6 +488,14 @@ impl SmixMcpService {
         Parameters(params): Parameters<FillParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.target.to_selector()?;
+        if point_of(&sel).is_some() {
+            return Err(McpError::invalid_params(
+                "a point names a place, not a field with a value — the schema says so and now this does too. Name the \
+                 element with id / text / label / role / ocrText, or tap the \
+                 point and act on what the tap put on screen.",
+                None,
+            ));
+        }
         if ocr_text_of(&sel).is_some() {
             return Err(McpError::invalid_params(
                 "ocrText cannot name a fill target — an OCR hit is a text frame on \
@@ -541,6 +549,14 @@ impl SmixMcpService {
         Parameters(params): Parameters<ScrollParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.target.to_selector()?;
+        if point_of(&sel).is_some() {
+            return Err(McpError::invalid_params(
+                "a point is already a place on this screen; scrolling to it means nothing — the schema says so and now this does too. Name the \
+                 element with id / text / label / role / ocrText, or tap the \
+                 point and act on what the tap put on screen.",
+                None,
+            ));
+        }
         if ocr_text_of(&sel).is_some() {
             return Err(McpError::invalid_params(
                 "ocrText cannot drive smix_scroll — its stop condition resolves \
