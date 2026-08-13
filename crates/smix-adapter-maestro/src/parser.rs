@@ -1022,6 +1022,21 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
+// What a flow can write, form by form. The gate that reads these is
+// `scripts/dev/selector-surface-scan.py`; `none` needs its reason,
+// because "not listed" and "decided against" read the same in a diff.
+// selector-surface: Text — `text:` in a selector map, or the bare scalar form
+// selector-surface: Id — `id:` — the form every guide leads with
+// selector-surface: Label — `label:` matched exactly
+// selector-surface: Role — `role:` read through role_from_name, plus `name:` to narrow it
+// selector-surface: Focused — none, no selector key — it is the implicit target of the scalar `inputText` form, not something a flow names
+// selector-surface: Anchor — none, the spatial-relation chain has no yaml form; `anchored` is AnchorRelative, a different thing
+// selector-surface: LocalizedText — `localizedText:` with its locales
+// selector-surface: OcrText — `ocrText:` — the vision path, last before a coordinate
+// selector-surface: AnchorRelative — `anchored:` (alias `anchorRelative:`), an offset from something that can be named
+// selector-surface: Point — `point:` — `"50%,80%"` or `"0.5,0.8"`, dispatched by Step::TapAtPoint
+// selector-surface: Fallback — `fallback:` — a chain tried in order, dispatched element by element
+
 fn parse_point(s: &str) -> Result<(f64, f64), ParseError> {
     // The reading of `%` and the refusal of pixels both live in
     // `smix_selector::point_from_str` — three surfaces type a point now,

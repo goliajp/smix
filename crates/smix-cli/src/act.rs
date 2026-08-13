@@ -50,6 +50,20 @@ pub fn runner_port_from_env_opt() -> Option<u16> {
         .and_then(|s| s.parse::<u16>().ok())
 }
 
+// What `<kind>:<value>` accepts, form by form. Read by
+// `scripts/dev/selector-surface-scan.py`; a `none` carries its reason.
+// selector-surface: Text — `text:Save`
+// selector-surface: Id — `id:btn-submit`
+// selector-surface: Label — `label:Close`
+// selector-surface: Role — `role:button` — note this reads role_from_raw_type, the wire's vocabulary, while yaml and MCP read role_from_name; one word, two vocabularies, and the next gap on this axis
+// selector-surface: Focused — none, the CLI has no verb whose target is whatever holds focus
+// selector-surface: Anchor — none, modifiers have no shorthand at all here — a spatial chain needs more than one token
+// selector-surface: LocalizedText — none, the shorthand carries one value and this form needs a locale list beside it
+// selector-surface: OcrText — none, not yet wired — the vision path is reachable from yaml and MCP and this is the surface it is missing from
+// selector-surface: AnchorRelative — none, an anchor plus two offsets does not fit one token
+// selector-surface: Point — `point:50%,25%`, dispatched by cmd_tap and refused by the rest
+// selector-surface: Fallback — none, a chain in one token needs a separator, and `text:` may legally contain any character
+
 /// Parse `<kind>:<value>` selector shorthand.
 ///
 /// `Err` carries the sentence to print. It used to be `Option`, and the

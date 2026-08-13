@@ -167,6 +167,11 @@ jobs:
       # from the checkout, so it runs here.
       - name: the contract gate can still go red
         run: python3 scripts/dev/contract-scan.test.py
+      # Reads three source files and the Selector enum; all in the checkout.
+      - name: every selector form is declared on every surface
+        run: python3 scripts/dev/selector-surface-scan.py
+      - name: the selector-surface gate can still go red
+        run: python3 scripts/dev/selector-surface-scan.test.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the
