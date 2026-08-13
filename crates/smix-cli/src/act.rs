@@ -50,40 +50,61 @@ pub fn runner_port_from_env_opt() -> Option<u16> {
         .and_then(|s| s.parse::<u16>().ok())
 }
 
-/// Parse `<kind>:<value>` selector shorthand. Returns None on unknown kind
-/// / missing colon so the CLI can surface a clear "selector parse error".
-pub fn parse_selector(s: &str) -> Option<Selector> {
-    let (kind, value) = s.split_once(':')?;
+/// Parse `<kind>:<value>` selector shorthand.
+///
+/// `Err` carries the sentence to print. It used to be `Option`, and the
+/// caller turned `None` into "expected one of id / text / label / role"
+/// whatever had gone wrong — so `point:267,100` was answered with a list
+/// of kinds rather than the one thing the writer needed to hear, which is
+/// that the unit is a fraction of the viewport. yaml has said that for a
+/// while. §9 #1 ③: name what is wrong, never degrade into a shrug.
+pub fn parse_selector(s: &str) -> Result<Selector, String> {
+    let Some((kind, value)) = s.split_once(':') else {
+        return Err(format!(
+            "`{s}` has no kind — write `<kind>:<value>`, one of \
+             id / text / label / role / point"
+        ));
+    };
     let modifiers = Modifiers::default();
     match kind {
-        "id" => Some(Selector::Id {
+        "id" => Ok(Selector::Id {
             id: value.to_string(),
             modifiers,
         }),
-        "text" => Some(Selector::Text {
+        "text" => Ok(Selector::Text {
             text: Pattern::text(value),
             modifiers,
         }),
-        "label" => Some(Selector::Label {
+        "label" => Ok(Selector::Label {
             label: value.to_string(),
             modifiers,
         }),
         "role" => {
-            let role = role_from_raw_type(value)?;
-            Some(Selector::Role {
+            let role =
+                role_from_raw_type(value).ok_or_else(|| format!("unknown role `{value}`"))?;
+            Ok(Selector::Role {
                 role,
                 name: None,
                 modifiers,
             })
         }
-        _ => None,
+        // A place rather than a thing, and the same reading as yaml and
+        // MCP because it is the same function. Only `tap` takes one —
+        // there is nothing at a coordinate to find, fill or wait for.
+        "point" => {
+            let (nx, ny) = smix_selector::point_from_str(value)?;
+            Ok(Selector::Point { nx, ny })
+        }
+        _ => Err(format!(
+            "unknown selector kind `{kind}` — one of id / text / label / role / point"
+        )),
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ActError {
-    #[error("invalid selector `{0}` — expected one of `id:` / `text:` / `label:` / `role:`")]
-    BadSelector(String),
+    #[error("invalid selector `{0}`: {1}")]
+    BadSelector(String, String),
     #[error("runner transport: {0}")]
     Transport(String),
     #[error("wait_for timeout after {timeout_ms}ms: {selector}")]
@@ -131,9 +152,21 @@ pub fn parse_direction(s: &str) -> Option<SwipeDirection> {
 /// runner. Routes through `SimctlDriver::tap` so id/label/role selectors
 /// resolve via the /tree path (swift /tap only supports text selectors).
 pub async fn cmd_tap(selector_str: String, port: u16) -> Result<(), ActError> {
-    let selector =
-        parse_selector(&selector_str).ok_or_else(|| ActError::BadSelector(selector_str.clone()))?;
+    let selector = parse_selector(&selector_str)
+        .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
     let d = driver(port);
+    // A place, not a thing: the resolver has nothing to match, and its own
+    // comment says so — reaching it means a caller forgot to dispatch. The
+    // touch goes straight to the coordinate, the same as `tapOn: { point }`.
+    if let Selector::Point { nx, ny } = selector {
+        d.tap_at_norm_coord(nx, ny)
+            .await
+            .map_err(|e| ActError::Transport(e.to_prompt()))?;
+        println!(
+            "tapped: point=({nx:.3}, {ny:.3}) — not verified: this path sends a touch without resolving a target"
+        );
+        return Ok(());
+    }
     let outcome = d
         .tap(&selector, None)
         .await
@@ -172,8 +205,16 @@ pub async fn cmd_tap(selector_str: String, port: u16) -> Result<(), ActError> {
 /// `smix find <selector>` — boolean existence probe. Same routing path as
 /// `smix tap`: text → swift /find shortcut, anything else → /tree resolve.
 pub async fn cmd_find(selector_str: String, port: u16) -> Result<(), ActError> {
-    let selector =
-        parse_selector(&selector_str).ok_or_else(|| ActError::BadSelector(selector_str.clone()))?;
+    let selector = parse_selector(&selector_str)
+        .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
+    if matches!(selector, Selector::Point { .. }) {
+        return Err(ActError::BadSelector(
+            selector_str.clone(),
+            "a point names a place, not an element, so there is nothing here to \
+             find. Only `smix tap` takes one"
+                .into(),
+        ));
+    }
     let d = driver(port);
     let exists = d
         .find(&selector, None)
@@ -186,8 +227,16 @@ pub async fn cmd_find(selector_str: String, port: u16) -> Result<(), ActError> {
 /// `smix fill <selector> --text <text>` — type `text` into the matched field.
 /// Mirrors maestro `inputText:`.
 pub async fn cmd_fill(selector_str: String, text: String, port: u16) -> Result<(), ActError> {
-    let selector =
-        parse_selector(&selector_str).ok_or_else(|| ActError::BadSelector(selector_str.clone()))?;
+    let selector = parse_selector(&selector_str)
+        .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
+    if matches!(selector, Selector::Point { .. }) {
+        return Err(ActError::BadSelector(
+            selector_str.clone(),
+            "a point names a place, not an element, so there is nothing here to \
+             fill. Only `smix tap` takes one"
+                .into(),
+        ));
+    }
     let d = driver(port);
     // Same rule as the SDK: a named field is replaced, the focused one
     // is typed into. See `App::fill`.
@@ -216,8 +265,9 @@ pub async fn cmd_fill(selector_str: String, text: String, port: u16) -> Result<(
 /// `down`, `arrowLeft` / `left`, `arrowRight` / `right`, `home`, `lock`,
 /// `volumeUp` / `volume-up`, `volumeDown` / `volume-down`.
 pub async fn cmd_press_key(key_str: String, port: u16) -> Result<(), ActError> {
-    let key =
-        parse_key_name(&key_str).ok_or_else(|| ActError::BadSelector(format!("key:{key_str}")))?;
+    let key = parse_key_name(&key_str).ok_or_else(|| {
+        ActError::BadSelector(format!("key:{key_str}"), "unknown key name".into())
+    })?;
     let d = driver(port);
     d.press_key(key)
         .await
@@ -233,10 +283,22 @@ pub async fn cmd_scroll(
     direction_str: String,
     port: u16,
 ) -> Result<(), ActError> {
-    let selector =
-        parse_selector(&selector_str).ok_or_else(|| ActError::BadSelector(selector_str.clone()))?;
-    let direction = parse_direction(&direction_str)
-        .ok_or_else(|| ActError::BadSelector(format!("direction:{direction_str}")))?;
+    let selector = parse_selector(&selector_str)
+        .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
+    if matches!(selector, Selector::Point { .. }) {
+        return Err(ActError::BadSelector(
+            selector_str.clone(),
+            "a point names a place, not an element, so there is nothing here to \
+             scroll to. Only `smix tap` takes one"
+                .into(),
+        ));
+    }
+    let direction = parse_direction(&direction_str).ok_or_else(|| {
+        ActError::BadSelector(
+            format!("direction:{direction_str}"),
+            "expected up / down / left / right".into(),
+        )
+    })?;
     let d = driver(port);
     d.scroll(&selector, direction)
         .await
@@ -251,8 +313,12 @@ pub async fn cmd_scroll(
 /// contract `smix_swipe` states; both reach `swipe_once`, so the word
 /// cannot mean one thing here and another there.
 pub async fn cmd_swipe(direction_str: String, port: u16) -> Result<(), ActError> {
-    let direction = parse_direction(&direction_str)
-        .ok_or_else(|| ActError::BadSelector(format!("direction:{direction_str}")))?;
+    let direction = parse_direction(&direction_str).ok_or_else(|| {
+        ActError::BadSelector(
+            format!("direction:{direction_str}"),
+            "expected up / down / left / right".into(),
+        )
+    })?;
     let d = driver(port);
     d.swipe_once(direction)
         .await
@@ -417,8 +483,16 @@ pub async fn cmd_wait_for(
     port: u16,
     absent: bool,
 ) -> Result<(), ActError> {
-    let selector =
-        parse_selector(&selector_str).ok_or_else(|| ActError::BadSelector(selector_str.clone()))?;
+    let selector = parse_selector(&selector_str)
+        .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
+    if matches!(selector, Selector::Point { .. }) {
+        return Err(ActError::BadSelector(
+            selector_str.clone(),
+            "a point names a place, not an element, so there is nothing here to \
+             wait for. Only `smix tap` takes one"
+                .into(),
+        ));
+    }
     let d = driver(port);
     let timeout = Duration::from_secs(timeout_secs);
     // Both arms report a timeout the same way. The waits are opposites
@@ -520,10 +594,12 @@ mod tests {
         ));
     }
 
+    /// Was `returns_none`. It returns the reason now — the same refusal,
+    /// with the half a reader needs added to it.
     #[test]
-    fn parse_selector_unknown_kind_returns_none() {
-        assert!(parse_selector("xpath://*[1]").is_none());
-        assert!(parse_selector("nope").is_none()); // no colon
+    fn parse_selector_unknown_kind_says_why() {
+        assert!(parse_selector("xpath://*[1]").is_err());
+        assert!(parse_selector("nope").is_err()); // no colon
     }
 
     /// An unset variable is `None`, not the default.
@@ -571,5 +647,61 @@ mod tests {
         assert_eq!(parse_direction("right"), Some(SwipeDirection::Right));
         assert_eq!(parse_direction("nope"), None);
         assert_eq!(parse_direction("UP"), None); // case-sensitive
+    }
+}
+
+#[cfg(test)]
+mod point_selector_tests {
+    use super::parse_selector;
+    use smix_selector::Selector;
+
+    /// The same reading as yaml and MCP, because it is the same function.
+    #[test]
+    fn a_point_parses_and_a_fraction_equals_a_percentage() {
+        let a = parse_selector("point:50%,25%").expect("percentage");
+        let b = parse_selector("point:0.5,0.25").expect("fraction");
+        assert!(matches!(a, Selector::Point { nx, ny } if nx == 0.5 && ny == 0.25));
+        assert_eq!(format!("{a:?}"), format!("{b:?}"));
+    }
+
+    /// The reason this returns `Result`. A list of accepted kinds is not an
+    /// answer to "your number is in pixels".
+    #[test]
+    fn pixels_are_answered_with_the_unit_not_a_list_of_kinds() {
+        let e = parse_selector("point:267,100").expect_err("267 is off screen");
+        assert!(e.contains("fraction of the viewport"), "{e}");
+        assert!(
+            !e.contains("one of id / text"),
+            "a kind list is not the answer: {e}"
+        );
+    }
+
+    /// And the shapes that were always wrong still say what is wrong.
+    #[test]
+    fn an_unknown_kind_and_a_missing_colon_each_say_so() {
+        assert!(
+            parse_selector("xpath://div")
+                .unwrap_err()
+                .contains("unknown selector kind")
+        );
+        assert!(
+            parse_selector("btn-submit")
+                .unwrap_err()
+                .contains("no kind")
+        );
+    }
+
+    /// The four that were there before still parse — the point of adding a
+    /// fifth is not to break the four.
+    #[test]
+    fn the_existing_kinds_still_parse() {
+        // Lower case: the CLI reads roles through `role_from_raw_type`,
+        // which is the wire's vocabulary, while yaml and MCP read the same
+        // word through `role_from_name`. `role:Button` parses in two of the
+        // three surfaces. That is the next gap on this axis and is not this
+        // change's to close — it is written down in the decision log.
+        for s in ["id:btn", "text:Save", "label:Close", "role:button"] {
+            assert!(parse_selector(s).is_ok(), "{s}");
+        }
     }
 }
