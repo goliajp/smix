@@ -59,6 +59,58 @@ use smix_screen::A11yNode;
 // next to the other wire types here.
 pub use smix_screen::Role;
 
+/// Read a point the way a person writes one: `"50%,80%"` or `"0.5,0.8"`.
+///
+/// The second vocabulary every surface has to share. It lives here for the
+/// same reason [`role_from_name`] does, and it arrives here having already
+/// cost what drift costs: `%` was stripped and the number divided by a
+/// hundred either way, so `"0.5,0.8"` meant (0.005, 0.008) — a hundredth of
+/// the point every guide says it is, landing a tap eight pixels from the
+/// corner instead of in the middle of the screen. The test that covered it
+/// asked whether the string parsed, and both forms parse; it never asked
+/// what they parsed to.
+///
+/// So `%` decides the reading, and nothing else does. With it, the number is
+/// a percentage. Without it, the number is already the fraction — which
+/// makes a bare `"1"` mean the full width, not one percent of it. That is
+/// the only reading under which the two written forms are the same point,
+/// and being the same point is what the guides promise.
+///
+/// Pixels are refused rather than unimplemented: a flow written in device
+/// pixels runs on one screen size, and portability is the whole reason a
+/// coordinate escape hatch is allowed at all (§9 #3).
+///
+/// `Err` carries the sentence a reader should see. Each surface wraps it in
+/// its own error type, because the field names differ and the reason does
+/// not.
+pub fn point_from_str(s: &str) -> Result<(f64, f64), String> {
+    let parts: Vec<&str> = s.split(',').map(str::trim).collect();
+    if parts.len() != 2 {
+        return Err(format!("expected `X%,Y%`, got `{s}`"));
+    }
+    let mut out = [0.0_f64; 2];
+    for (i, (raw, axis)) in parts.iter().zip(["x", "y"]).enumerate() {
+        let is_percent = raw.ends_with('%');
+        let n: f64 = raw
+            .trim_end_matches('%')
+            .parse()
+            .map_err(|e| format!("{axis} is not a number ({e}): `{raw}`"))?;
+        let v = if is_percent { n / 100.0 } else { n };
+        if !(0.0..=1.0).contains(&v) {
+            return Err(format!(
+                "`{raw}` is {:.0}% of the viewport, which is off screen. \
+                 point takes a fraction of the viewport, not pixels — \
+                 `\"50%,80%\"` or `\"0.5,0.8\"`. Pixels are not accepted \
+                 because a flow written in them runs on one screen size; \
+                 divide by the viewport's width or height",
+                v * 100.0
+            ));
+        }
+        out[i] = v;
+    }
+    Ok((out[0], out[1]))
+}
+
 /// Read a role the way a person writes one.
 ///
 /// Every surface a human or an agent types a role into — yaml, MCP — needs
