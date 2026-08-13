@@ -73,8 +73,16 @@ Every element-facing tool takes the same shape. Exactly one of:
 | `{ "label": "Close" }` | Accessibility label, exact. |
 | `{ "role": "button", "name": "Reload" }` | Kind, optionally narrowed. |
 | `{ "ocrText": "Submit" }` | Read off the pixels. Slower than the tree. |
+| `{ "ocrText": "Zulassen", "locales": ["de"] }` | Which languages to read it in. |
 | `{ "fallback": [ … ] }` | Ways to name the same thing, tried in order, first hit wins. |
 | `{ "point": "50%,80%" }` | A place, not a thing. Only `smix_tap` takes one. |
+
+`locales` is worth naming whenever the text is not English. Left out, the
+recogniser works out the language itself; told the wrong one it does not fail,
+it misreads, and what you then see is "no matching text" about a dialog the
+word is plainly on. Android refuses a
+script it cannot read rather than reporting the screen: its recogniser ships
+the Latin package only.
 
 `fallback` is the one to reach for when a name might not hold: each entry is a
 whole selector, so `[{"id":"submit"},{"text":"Send"},{"point":"50%,90%"}]`

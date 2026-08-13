@@ -1033,6 +1033,8 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
 // selector-surface: Anchor — none, the spatial-relation chain has no yaml form; `anchored` is AnchorRelative, a different thing
 // selector-surface: LocalizedText — `localizedText:` with its locales
 // selector-surface: OcrText — `ocrText:` — the vision path, last before a coordinate
+// selector-surface-field: OcrText.locales — `locales:` beside `ocrText:`, best first
+// selector-surface-field: Role.name — `name:` beside `role:`, which narrows it
 // selector-surface: AnchorRelative — `anchored:` (alias `anchorRelative:`), an offset from something that can be named
 // selector-surface: Point — `point:` — `"50%,80%"` or `"0.5,0.8"`, dispatched by Step::TapAtPoint
 // selector-surface: Fallback — `fallback:` — a chain tried in order, dispatched element by element

@@ -209,6 +209,12 @@ enum Cmd {
         /// Selector in `<kind>:<value>` shorthand.
         selector: String,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
+        /// Which language to read an `ocrText:` selector in — `zh-Hans`,
+        /// `ja`, `en`. Repeatable, best first. Left out, the recogniser
+        /// works out the language itself; naming the wrong one does not
+        /// fail, it misreads.
+        #[arg(long = "ocr-locale")]
+        ocr_locale: Vec<String>,
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -223,6 +229,12 @@ enum Cmd {
     /// Same selector shorthand as `smix tap`.
     Find {
         selector: String,
+        /// Which language to read an `ocrText:` selector in — `zh-Hans`,
+        /// `ja`, `en`. Repeatable, best first. Left out, the recogniser
+        /// works out the language itself; naming the wrong one does not
+        /// fail, it misreads.
+        #[arg(long = "ocr-locale")]
+        ocr_locale: Vec<String>,
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -241,6 +253,12 @@ enum Cmd {
         /// Timeout in seconds (default 5).
         #[arg(long, default_value_t = 5)]
         timeout: u64,
+        /// Which language to read an `ocrText:` selector in — `zh-Hans`,
+        /// `ja`, `en`. Repeatable, best first. Left out, the recogniser
+        /// works out the language itself; naming the wrong one does not
+        /// fail, it misreads.
+        #[arg(long = "ocr-locale")]
+        ocr_locale: Vec<String>,
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -2629,33 +2647,36 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         }
         Cmd::Tap {
             selector,
+            ocr_locale,
             port,
             device,
         } => {
             let p = runner_dial_port(port, device.as_deref());
-            act::cmd_tap(selector, p)
+            act::cmd_tap(selector, p, ocr_locale)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
         Cmd::Find {
             selector,
+            ocr_locale,
             port,
             device,
         } => {
             let p = runner_dial_port(port, device.as_deref());
-            act::cmd_find(selector, p)
+            act::cmd_find(selector, p, ocr_locale)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
         Cmd::WaitFor {
             selector,
+            ocr_locale,
             timeout,
             port,
             device,
             absent,
         } => {
             let p = runner_dial_port(port, device.as_deref());
-            act::cmd_wait_for(selector, timeout, p, absent)
+            act::cmd_wait_for(selector, timeout, p, absent, ocr_locale)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }

@@ -35,7 +35,7 @@ use rmcp::{tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use smix_input::{KeyName, SwipeDirection};
-use smix_mcp::{SelectorParams, chain_of, ocr_text_of, point_of};
+use smix_mcp::{SelectorParams, chain_of, ocr_locales_of, ocr_text_of, point_of};
 use smix_sdk::{App, KeyName as SdkKeyName};
 use std::sync::Arc;
 use std::time::Duration;
@@ -154,7 +154,7 @@ async fn first_visible_layer(
     for (i, layer) in layers.iter().enumerate() {
         let seen = match ocr_text_of(layer) {
             Some(needle) => app
-                .find_by_text_ocr(needle, &[])
+                .find_by_text_ocr(needle, ocr_locales_of(layer))
                 .await
                 .map_err(|e| McpError::internal_error(e.to_prompt(), None))?
                 .is_some(),
@@ -453,7 +453,7 @@ impl SmixMcpService {
         // maestro adapter does.
         let exists = match ocr_text_of(&sel) {
             Some(needle) => app
-                .find_by_text_ocr(needle, &[])
+                .find_by_text_ocr(needle, ocr_locales_of(&sel))
                 .await
                 .map_err(|e| McpError::internal_error(e.to_prompt(), None))?
                 .is_some(),
@@ -487,7 +487,10 @@ impl SmixMcpService {
             for (i, layer) in layers.iter().enumerate() {
                 let hit = match (point_of(layer), ocr_text_of(layer)) {
                     (Some((nx, ny)), _) => app.tap_at_coord(nx, ny).await.map(|()| true),
-                    (_, Some(needle)) => match app.find_by_text_ocr(needle, &[]).await {
+                    (_, Some(needle)) => match app
+                        .find_by_text_ocr(needle, ocr_locales_of(layer))
+                        .await
+                    {
                         Ok(Some(f)) => app.tap_at_coord(f.mid_x(), f.mid_y()).await.map(|()| true),
                         Ok(None) => Ok(false),
                         Err(e) => Err(e),
@@ -523,7 +526,7 @@ impl SmixMcpService {
             // An OCR hit is a text frame, not a resolved element, so
             // there is nothing to have missed.
             (_, Some(needle)) => app
-                .tap_by_text_ocr(needle, &[])
+                .tap_by_text_ocr(needle, ocr_locales_of(&sel))
                 .await
                 .map(|()| smix_sdk::ActOutcome::unjudged()),
             _ => app.tap(&sel).await,
@@ -778,7 +781,7 @@ impl SmixMcpService {
                 let start = std::time::Instant::now();
                 loop {
                     let hit = app
-                        .find_by_text_ocr(needle, &[])
+                        .find_by_text_ocr(needle, ocr_locales_of(&sel))
                         .await
                         .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
                     if hit.is_some() {
@@ -862,7 +865,7 @@ impl SmixMcpService {
             // tree path's single non-waiting `find`.
             Some(needle) => {
                 let hit = app
-                    .find_by_text_ocr(needle, &[])
+                    .find_by_text_ocr(needle, ocr_locales_of(&sel))
                     .await
                     .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
                 if hit.is_some() {

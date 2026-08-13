@@ -59,6 +59,8 @@ pub fn runner_port_from_env_opt() -> Option<u16> {
 // selector-surface: Anchor — none, modifiers have no shorthand at all here — a spatial chain needs more than one token
 // selector-surface: LocalizedText — none, the shorthand carries one value and this form needs a locale list beside it
 // selector-surface: OcrText — `ocrText:Total`, dispatched past the tree by every cmd that acts on it
+// selector-surface-field: OcrText.locales — `--ocr-locale zh-Hans`, repeatable, best first; a value cannot ride in the token because `text:` may legally contain any character
+// selector-surface-field: Role.name — none, `role:` carries one value and narrowing needs a second; nobody has wired the flag
 // selector-surface: AnchorRelative — none, an anchor plus two offsets does not fit one token
 // selector-surface: Point — `point:50%,25%`, dispatched by cmd_tap and refused by the rest
 // selector-surface: Fallback — none, a chain in one token needs a separator, and `text:` may legally contain any character
@@ -146,14 +148,11 @@ pub fn parse_selector(s: &str) -> Result<Selector, String> {
 async fn ocr_frame(
     d: &SimctlDriver,
     needle: &str,
+    locales: &[String],
 ) -> Result<Option<smix_driver::OcrFrame>, ActError> {
-    d.find_text_by_ocr(
-        needle,
-        &smix_driver::ocr_locales(&[]),
-        smix_driver::OCR_RECOGNITION_LEVEL,
-    )
-    .await
-    .map_err(|e| ActError::Transport(e.to_prompt()))
+    d.find_text_by_ocr(needle, locales, smix_driver::OCR_RECOGNITION_LEVEL)
+        .await
+        .map_err(|e| ActError::Transport(e.to_prompt()))
 }
 
 /// The needle, when the selector is the vision path.
@@ -214,7 +213,11 @@ pub fn parse_direction(s: &str) -> Option<SwipeDirection> {
 /// `smix tap <selector>` — host-resolve + tap_at_norm_coord on the running
 /// runner. Routes through `SimctlDriver::tap` so id/label/role selectors
 /// resolve via the /tree path (swift /tap only supports text selectors).
-pub async fn cmd_tap(selector_str: String, port: u16) -> Result<(), ActError> {
+pub async fn cmd_tap(
+    selector_str: String,
+    port: u16,
+    ocr_locales: Vec<String>,
+) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
     let d = driver(port);
@@ -222,7 +225,7 @@ pub async fn cmd_tap(selector_str: String, port: u16) -> Result<(), ActError> {
     // comment says so — reaching it means a caller forgot to dispatch. The
     // touch goes straight to the coordinate, the same as `tapOn: { point }`.
     if let Some(needle) = ocr_needle(&selector) {
-        return match ocr_frame(&d, needle).await? {
+        return match ocr_frame(&d, needle, &ocr_locales).await? {
             Some(f) => {
                 d.tap_at_norm_coord(f.mid_x(), f.mid_y())
                     .await
@@ -286,7 +289,11 @@ pub async fn cmd_tap(selector_str: String, port: u16) -> Result<(), ActError> {
 
 /// `smix find <selector>` — boolean existence probe. Same routing path as
 /// `smix tap`: text → swift /find shortcut, anything else → /tree resolve.
-pub async fn cmd_find(selector_str: String, port: u16) -> Result<(), ActError> {
+pub async fn cmd_find(
+    selector_str: String,
+    port: u16,
+    ocr_locales: Vec<String>,
+) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
     if matches!(selector, Selector::Point { .. }) {
@@ -299,7 +306,7 @@ pub async fn cmd_find(selector_str: String, port: u16) -> Result<(), ActError> {
     }
     let d = driver(port);
     if let Some(needle) = ocr_needle(&selector) {
-        let exists = ocr_frame(&d, needle).await?.is_some();
+        let exists = ocr_frame(&d, needle, &ocr_locales).await?.is_some();
         println!("exists={exists}");
         return Ok(());
     }
@@ -585,6 +592,7 @@ pub async fn cmd_wait_for(
     timeout_secs: u64,
     port: u16,
     absent: bool,
+    ocr_locales: Vec<String>,
 ) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
@@ -604,7 +612,7 @@ pub async fn cmd_wait_for(
     if let Some(needle) = ocr_needle(&selector) {
         let deadline = std::time::Instant::now() + timeout;
         loop {
-            let seen = ocr_frame(&d, needle).await?.is_some();
+            let seen = ocr_frame(&d, needle, &ocr_locales).await?.is_some();
             if seen != absent {
                 println!("{} {selector_str}", if absent { "gone" } else { "visible" });
                 return Ok(());

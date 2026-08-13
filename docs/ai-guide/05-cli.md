@@ -474,6 +474,10 @@ The selector is a positional argument in `<kind>:<value>` shorthand —
 `role:` takes the word a person writes, the same vocabulary yaml and MCP
 read: `button`, `Button`, `text_field`, `heading`, `tab`.
 
+`--ocr-locale zh-Hans` (repeatable, best first) says which languages to read an
+`ocrText:` selector in. The value cannot ride in the token because `text:` may
+legally contain any character. Left out, the recogniser decides for itself.
+
 `ocrText:` reads the screen with Apple Vision instead of the accessibility
 tree — for a canvas, an image of text, anything the tree cannot see. It
 costs a vision pass, so reach for it after the others. `tap`, `find` and

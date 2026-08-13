@@ -245,10 +245,25 @@ impl Driver for AndroidDriver {
         locales: &[String],
         recognition_level: &str,
     ) -> Result<Option<OcrFrame>, ExpectationFailure> {
-        // Google ML Kit Text Recognition (Latin script package).
-        // Locales + recognition_level args are iOS Apple Vision specific;
-        // Kotlin /find-text-by-ocr endpoint reads + ignores them today
-        // (ML Kit Latin handles ASCII/European text universally).
+        // Google ML Kit Text Recognition, Latin script package. The
+        // Kotlin route reads `locales` and ignores it, which is fine
+        // while every caller sends none and wrong the moment one can
+        // send some: a Chinese needle would be read by a Latin
+        // recogniser and come back "no matching text" — a sentence
+        // about the screen when the truth is about the recogniser.
+        if let Some(tag) = crate::latin_script_only(locales) {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!(
+                    "ocrText locale `{tag}` needs a script this Android runner \
+                     cannot read: it ships ML Kit's Latin package, so Chinese, \
+                     Japanese, Korean and Cyrillic are not available here. Name \
+                     the element from the accessibility tree instead — Android's \
+                     is usually richer than iOS's — or drive this check on iOS"
+                ),
+                ..Default::default()
+            }));
+        }
         self.runner
             .find_text_by_ocr(text, locales, recognition_level)
             .await

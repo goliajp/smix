@@ -43,6 +43,17 @@ pub struct SelectorParams {
     /// cannot see. Slower than the others; reach for it last.
     #[serde(default)]
     pub ocr_text: Option<String>,
+    /// Which languages to read `ocrText` in, best first — `["zh-Hans"]`,
+    /// `["ja"]`, `["en"]`.
+    ///
+    /// Leave it out and the recogniser works out the language itself,
+    /// which is right far more often than a guess would be. Name them
+    /// when you know: a recogniser told the wrong language does not
+    /// fail, it misreads, and what comes back is "no matching text"
+    /// about a dialog the word is plainly on. Only meaningful with
+    /// `ocrText`.
+    #[serde(default)]
+    pub locales: Option<Vec<String>>,
     /// A place on screen rather than a thing on it: `"50%,80%"` or the same
     /// point written `"0.5,0.8"`. A fraction of the viewport, never pixels —
     /// a flow written in pixels runs on one screen size.
@@ -80,6 +91,8 @@ pub struct SelectorParams {
 // selector-surface: Anchor — none, no modifier has an MCP form yet
 // selector-surface: LocalizedText — none, not yet wired — reachable from yaml, missing here
 // selector-surface: OcrText — the `ocrText` field, dispatched past the resolver
+// selector-surface-field: OcrText.locales — the `locales` field, best first; left out means the recogniser decides
+// selector-surface-field: Role.name — the `name` field, which narrows `role`
 // selector-surface: AnchorRelative — none, not yet wired — reachable from yaml, missing here
 // selector-surface: Point — the `point` field, dispatched by smix_tap and refused by find and the asserts
 // selector-surface: Fallback — the `fallback` field, a list of selectors walked in order by tap / find / the asserts
@@ -97,6 +110,18 @@ pub fn ocr_text_of(selector: &Selector) -> Option<&str> {
     match selector {
         Selector::OcrText { ocr_text, .. } => Some(ocr_text),
         _ => None,
+    }
+}
+
+/// The languages to read in, when the selector is the vision path.
+///
+/// Carried on the selector rather than fetched at each call site: a
+/// field a tool accepts and then drops is worse than one it never
+/// offered, because the caller believes it was heard.
+pub fn ocr_locales_of(selector: &Selector) -> &[String] {
+    match selector {
+        Selector::OcrText { locales, .. } => locales,
+        _ => &[],
     }
 }
 
@@ -180,6 +205,14 @@ impl SelectorParams {
             }
         }
 
+        if self.locales.is_some() && self.ocr_text.is_none() {
+            return Err(McpError::invalid_params(
+                "`locales` says which languages to read `ocrText` in, so it needs \
+                 one — every other form reads the accessibility tree, where the \
+                 text is already text",
+                None,
+            ));
+        }
         if self.name.is_some() && self.role.is_none() {
             return Err(McpError::invalid_params(
                 "`name` narrows `role`, so it needs one — give role, or use `text` to match \
@@ -212,8 +245,8 @@ impl SelectorParams {
         if let Some(ocr) = &self.ocr_text {
             return Ok(Selector::OcrText {
                 ocr_text: ocr.clone(),
-                // Empty means the adapter fills in the session's locale.
-                locales: Vec::new(),
+                // Empty means the recogniser decides for itself.
+                locales: self.locales.clone().unwrap_or_default(),
                 modifiers: Modifiers::default(),
             });
         }

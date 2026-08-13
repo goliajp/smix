@@ -78,6 +78,29 @@ pub struct IosDriver {
     runner: HttpRunnerClient,
 }
 
+/// Scripts the Android recogniser can read.
+///
+/// ML Kit's Latin package is what the Android runner ships, so a needle
+/// in Chinese, Japanese, Korean or Cyrillic cannot be read there — and
+/// asking for it produced "no matching text", which is a sentence about
+/// the screen when the truth is about the recogniser. Invariant 9 #1 ③:
+/// say what this device cannot do.
+///
+/// Pure, and by script rather than by tag, because `zh-Hans` and `zh` and
+/// `zh-Hant-HK` are one answer.
+#[must_use]
+pub fn latin_script_only(locales: &[String]) -> Option<&str> {
+    locales.iter().find_map(|l| {
+        let tag = l.to_ascii_lowercase();
+        [
+            "zh", "ja", "ko", "ru", "uk", "bg", "sr", "el", "ar", "he", "hi", "th",
+        ]
+        .into_iter()
+        .find(|p| tag == *p || tag.starts_with(&format!("{p}-")))
+        .map(|_| l.as_str())
+    })
+}
+
 /// The recognition level every OCR caller asks for.
 ///
 /// A literal in two places is a literal that will differ in one of them.
