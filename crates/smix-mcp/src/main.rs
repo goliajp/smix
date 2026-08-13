@@ -35,7 +35,7 @@ use rmcp::{tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use smix_input::{KeyName, SwipeDirection};
-use smix_mcp::{SelectorParams, ocr_text_of};
+use smix_mcp::{SelectorParams, ocr_text_of, point_of};
 use smix_sdk::{App, KeyName as SdkKeyName};
 use std::sync::Arc;
 use std::time::Duration;
@@ -386,6 +386,15 @@ impl SmixMcpService {
         Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
+        if point_of(&sel).is_some() {
+            return Err(McpError::invalid_params(
+                "a point names a place, not an element, so there is nothing here to \
+                 find. Only smix_tap takes one. Name the element with id / text / \
+                 label / role / ocrText, or tap the point and check what the tap \
+                 landed on.",
+                None,
+            ));
+        }
         let app = self.bound_app().await?;
         // The tree resolver never matches OcrText (live-vision op, not a
         // tree predicate) — routed through `app.find` an ocrText selector
@@ -420,14 +429,21 @@ impl SmixMcpService {
         // OcrText bypasses the tree resolver: find the text's frame via
         // Apple Vision OCR and tap its normalized center (IOHID
         // synthesize), the same dispatch the maestro adapter uses.
-        let outcome = match ocr_text_of(&sel) {
+        let outcome = match (point_of(&sel), ocr_text_of(&sel)) {
+            // A place, not a thing: the resolver has nothing to match, so
+            // the touch is synthesised straight at the coordinate — the
+            // same dispatch `tapOn: { point: … }` takes in a flow.
+            (Some((nx, ny)), _) => app
+                .tap_at_coord(nx, ny)
+                .await
+                .map(|()| smix_sdk::ActOutcome::unjudged()),
             // An OCR hit is a text frame, not a resolved element, so
             // there is nothing to have missed.
-            Some(needle) => app
+            (_, Some(needle)) => app
                 .tap_by_text_ocr(needle, &[])
                 .await
                 .map(|()| smix_sdk::ActOutcome::unjudged()),
-            None => app.tap(&sel).await,
+            _ => app.tap(&sel).await,
         }
         .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
         // What the touch landed on, not just that one was sent. This
@@ -607,6 +623,15 @@ impl SmixMcpService {
         Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
+        if point_of(&sel).is_some() {
+            return Err(McpError::invalid_params(
+                "a point names a place, not an element, so there is nothing here to \
+                 assert. Only smix_tap takes one. Name the element with id / text / \
+                 label / role / ocrText, or tap the point and check what the tap \
+                 landed on.",
+                None,
+            ));
+        }
         let app = self.bound_app().await?;
         match ocr_text_of(&sel) {
             // Same budget and cadence as the tree path: `App::assert_visible`
@@ -658,6 +683,15 @@ impl SmixMcpService {
         Parameters(params): Parameters<SelectorParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.to_selector()?;
+        if point_of(&sel).is_some() {
+            return Err(McpError::invalid_params(
+                "a point names a place, not an element, so there is nothing here to \
+                 assert the absence of. Only smix_tap takes one. Name the element with id / text / \
+                 label / role / ocrText, or tap the point and check what the tap \
+                 landed on.",
+                None,
+            ));
+        }
         let app = self.bound_app().await?;
         match ocr_text_of(&sel) {
             // A tree-routed OcrText never matches, so this assert used to
