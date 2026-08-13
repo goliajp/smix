@@ -322,6 +322,13 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
     // instrumentation onto the same forwarded port — unless the APK
     // just changed, in which case whatever is answering is the old one
     // and has to go.
+    //
+    // health-decider: whether this port is already serving — deferred:
+    // the answer to ask instead is right below, in the wait loop:
+    // `automation_sees_an_app`. Moving it up here changes what happens
+    // to a live Android runner, and that is a claim about a device this
+    // was not run against (§9 #1 ③). It is a two-line change with an
+    // emulator in front of it, and none without one.
     if health_ok(port) {
         if !rebuilt {
             println!("runner up: already healthy on http://localhost:{port}");
@@ -422,6 +429,8 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
     );
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
     while std::time::Instant::now() < deadline {
+        // health-decider: whether the bring-up is finished, which has to
+        // mean the automation can see something.
         if health_ok(port) {
             // `/health` says the HTTP server is alive. It does not say
             // the automation behind it can see anything, and those come

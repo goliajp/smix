@@ -186,6 +186,39 @@ runner left behind by a **finished** `runner up` does not produce this:
 the next command adopts that lease and drives through the runner, which
 is the normal `runner up` → `run` pairing.
 
+### "port … answers /health, but its session is not usable"
+
+The runner's HTTP server is alive and the session behind it is not. The
+usual cause is that the app was reinstalled or terminated out from under
+the runner, which leaves its `XCUIApplication` bound to something that no
+longer exists — `/health` cannot see that, because it never touches the
+app.
+
+**Fix**: `smix runner cycle` rebinds in place, in seconds, without
+restarting `xcodebuild`. `smix runner up … --force` does the same thing
+from the bring-up command. Neither reaches a runner recorded for another
+device, or one the store has no record of; those still need
+`runner down --include-unrecorded`.
+
+`smix_use` reports the same condition, with the same fix — the MCP server
+has no `--force` because it is not a flag surface.
+
+### "the runner's server came up … and its session never did"
+
+The bring-up ran out of time with `/health` answering the whole way. That
+is a different failure from "the runner never started", and it says so:
+the HTTP server was up and the app binding never became drivable.
+
+smix has already retried by this point — once, with the app foregrounded
+and the runner attaching to it rather than launching it. The message says
+which ways were tried. If it says the retry did not happen, it names the
+reason: a physical device (no `simctl launch`), no `--bundle`, or an
+attempt that was already `--no-launch`.
+
+**Fix**: the log tail is in the message; start there. A cold rebuild
+after a version bump can genuinely need more than the default 300 s —
+`SMIX_RUNNER_UP_TIMEOUT_SECS` raises it.
+
 ## Common failure patterns + fixes
 
 ### "Cannot find 'FooScreen' in scope" (iOS build)

@@ -1625,7 +1625,12 @@ pub fn require_runner_resolvable_selector(
     }))
 }
 
-fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
+/// What a transport error means to a caller, in one place.
+///
+/// Exported rather than copied: a second translation of the same errors
+/// drifts from this one, and the thing that drifts first is the hint —
+/// which is the half a reader acts on.
+pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
     let (code, hint) = match &e {
         RunnerTransportError::Unreachable { .. } => (
             FailureCode::DriverError,

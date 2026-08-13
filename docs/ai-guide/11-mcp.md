@@ -127,10 +127,27 @@ The suggestion is the answer: the id has `-button`, not `-btn`. The failure
 carries the near-misses and the elements that *were* there, so the next call
 can be right rather than another guess.
 
+One failure comes from `smix_use` rather than from the screen:
+
+```
+the runner on port 22087 answers /health, but its session is not usable:
+not-running. That happens when the app is reinstalled or terminated out
+from under the runner.
+Recover it in place, then use this tool again:
+  smix runner cycle
+```
+
+`smix_use` answers `already driving …` only when the session actually
+works. `/health` on its own does not establish that: it says the runner's
+HTTP server is answering, and it never touches the app binding — so a
+reinstall leaves a runner that answers 200 and drives nothing. Reporting
+that as "already driving" hands you a device you cannot drive, which is
+what it did before 4.3.
+
 ## Tools
 
 **Look** — `smix_describe` · `smix_tree` · `smix_screenshot` · `smix_find`
-**Act** — `smix_tap` · `smix_fill` · `smix_press_key` · `smix_swipe` · `smix_scroll`
+**Act** — `smix_tap` · `smix_tap_then_screenshot` · `smix_fill` · `smix_press_key` · `smix_swipe` · `smix_scroll`
 **Lifecycle** — `smix_launch_app` · `smix_stop_app`
 **Assert** — `smix_assert_visible` · `smix_assert_not_visible`
 
@@ -138,6 +155,14 @@ can be right rather than another guess.
 decide what to do next, `assert` when absence is a problem.
 
 `smix_scroll` beats a loop of `smix_swipe` — it knows when to stop.
+
+`smix_tap_then_screenshot` is for something that will not still be there
+by the next call. What it saves is not wire time: a tap is about 336 ms
+and a frame from the runner about 88 ms, so both together are well
+inside a UI that lives three seconds. What it saves is **the turn
+between two tool calls** — the model's own round trip, which is where
+the seconds actually go. It answers with a line naming the route and the
+delay, then the PNG as base64. A tap that fails returns no frame.
 
 ## Directions
 

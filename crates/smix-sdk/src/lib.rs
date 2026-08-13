@@ -841,6 +841,67 @@ impl PressCapture {
     }
 }
 
+/// A frame taken right after a tap, and how it was taken.
+///
+/// `via` and `gap_ms` are here because the consumer who asked for this
+/// was measuring against a UI that lives three seconds: a combined call
+/// is only worth anything if it can say how late the frame is, and which
+/// path took it. Neither is a promise in a document; both are numbers
+/// this call reports about itself.
+#[derive(Debug, Clone)]
+pub struct CapturedAfterTap {
+    /// The frame, as PNG bytes.
+    pub png: Vec<u8>,
+    /// Which route took the picture: `"runner"` (XCUIScreen, inside the
+    /// same process that tapped) or `"device-tooling"` (adb / simctl).
+    pub via: &'static str,
+    /// Milliseconds between the tap call returning and the frame landing.
+    pub gap_ms: u64,
+}
+
+
+/// Tap, then take one frame — the one implementation of that order.
+///
+/// A free function rather than a method because the two surfaces that
+/// need it reach different things: the MCP server holds an [`App`], and
+/// the CLI's `tap` holds a bare driver. Written twice, the copies drift,
+/// and what drifts first is the ordering — which is the entire point.
+///
+/// On a runner-less caller the frame is left empty and `via` says
+/// `device-tooling`; that caller is expected to fill it from whatever
+/// device tooling it has. Said out loud rather than degraded silently
+/// (§9 #1 ③).
+pub async fn tap_then_capture_with(
+    driver: &dyn smix_driver::Driver,
+    runner: Option<&HttpRunnerClient>,
+    selector: &Selector,
+) -> Result<(ActOutcome, CapturedAfterTap), ExpectationFailure> {
+    // Tap first, and let a failed tap end it here. A frame taken after a
+    // tap that did not land is the most misleading thing in this kind of
+    // debugging: it looks like evidence, and it is a picture of the
+    // screen nothing happened on.
+    let outcome = driver.tap(selector, None).await?;
+    let tapped_at = std::time::Instant::now();
+    let (png, via) = match runner {
+        Some(runner) => (
+            runner
+                .screenshot()
+                .await
+                .map_err(smix_driver::transport_to_failure)?,
+            "runner",
+        ),
+        None => (Vec::new(), "device-tooling"),
+    };
+    Ok((
+        outcome,
+        CapturedAfterTap {
+            png,
+            via,
+            gap_ms: u64::try_from(tapped_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+        },
+    ))
+}
+
 impl App {
     /// Construct from a fully-wired driver + simctl client. Use this when
     /// you already manage Cell / UDID lifecycle externally.
@@ -1769,6 +1830,26 @@ impl App {
     /// containing the point afterwards, and a verdict. The elements
     /// come back even when the verdict is `Confirmed`, because the
     /// verdict cannot see occlusion and the list can.
+    /// Tap, then take one frame from the hand that tapped.
+    ///
+    /// One call rather than two, because the thing being photographed may
+    /// not survive the round trip between them.
+    pub async fn tap_then_capture(
+        &self,
+        selector: &Selector,
+    ) -> Result<(ActOutcome, CapturedAfterTap), ExpectationFailure> {
+        let device_side = self.http_runner_client().is_none();
+        let (outcome, mut captured) =
+            tap_then_capture_with(self.driving()?, self.http_runner_client(), selector).await?;
+        if device_side {
+            // The Android side has no runner route for this; the frame
+            // comes from device tooling, which lives behind DeviceControl
+            // rather than behind the driver.
+            captured.png = self.screenshot().await?;
+        }
+        Ok((outcome, captured))
+    }
+
     pub async fn tap(&self, selector: &Selector) -> Result<ActOutcome, ExpectationFailure> {
         self.ledger
             .record_tap(now_ms(), Some(format!("{selector:?}")));

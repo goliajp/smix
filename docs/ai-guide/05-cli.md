@@ -232,7 +232,58 @@ written as the obvious mirror of the bring-up failed its argument parse
 and left the runner running.
 
 The runner is the on-device server smix drives. `runner up` blocks until
-its `/health` answers, so when the command returns you can run a flow.
+its `/health` answers **and its session answers**, so when the command
+returns you can run a flow.
+
+Those are two questions, and it is worth knowing which is which.
+`/health` says the runner's HTTP server is answering: it is a handler
+over a boot date, and it never touches the app. So a runner whose app was
+reinstalled underneath it — `simctl install` over a running build is the
+usual way — answers `/health` 200 and fails every real call. Until 4.3
+`runner up` read only the first of those and returned "already up", which
+made the one command that could recover the runner the one refusing to.
+
+Now it says so, and names the fix:
+
+```
+$ smix runner up <UDID> --bundle com.example.app
+error: port 22087 answers /health, but its session is not usable: not-running
+
+the runner said:
+  The app is not running — it was terminated, or reinstalled out from under
+  the runner. Launch it again, or `smix runner cycle` to rebind, then retry.
+
+Recover it in place (seconds, without restarting xcodebuild):
+  smix runner cycle
+or have this command do it for you:
+  smix runner up <UDID> --bundle com.example.app --force
+```
+
+`--force` runs that cycle for you. It is not a way past the ownership
+check: a runner recorded for another device, or one the store has no
+record of, is refused with the flag exactly as without it —
+`runner down --include-unrecorded` stays the sanctioned way through, and
+stays a separate decision.
+
+**If the bring-up runs out of time, it tries once more the other way
+round.** The first attempt asks the runner to launch the app; when that
+never finishes, the app is often launchable by other means, so smix
+foregrounds it with `simctl launch` and attaches to it instead. There is
+no flag for this — it is what the command does when it runs out of time.
+Two consequences worth knowing:
+
+- **The worst case is twice `--runner-port`'s timeout**, not once: the
+  second attempt starts a fresh clock. Giving it the remains of the first
+  would be designing the fallback to fail. The startup banner says so.
+- **It happens at most once.** A second timeout stops and says both ways
+  were tried.
+
+It does not happen on a physical device (no `simctl launch` to
+foreground with — launch the app yourself and pass `--no-launch`), when
+no `--bundle` was given (there is nothing to foreground), or when the
+attempt already was the attaching one (`--no-launch` asks the same
+question twice). Each of those says which it is rather than quietly
+skipping the retry.
 
 **iOS** — drives `xcodebuild` against the XCUITest runner:
 
@@ -494,6 +545,7 @@ resolve.
 ```bash
 smix tap id:home-increment-btn
 smix tap "text:Submit"
+smix tap id:play-btn --then-screenshot /tmp/bar.png   # tap and frame, one command
 
 smix find id:home-counter-label            # prints exists=<bool>, exits 0 either way
 smix wait-for id:loading-spinner --timeout 5    # seconds, not ms
@@ -512,6 +564,25 @@ smix describe                              # visible interactive elements
 smix system-popups                         # list active popups
 smix system-popup-action <popup-id> <button-id>
 ```
+
+**`--then-screenshot` is for UI that does not wait.** A control bar that
+hides itself after a few seconds outlives neither a second command nor
+the turn between two tool calls, and the usual answer is to change the
+app so the thing stays up long enough to photograph. This takes the
+frame from the same process that tapped, in the same call: measured at
+about 88 ms after the tap returns, against roughly 325 ms going out to
+device tooling. The line it prints says which route took the frame and
+how many milliseconds late it is, so the number is reported rather than
+promised.
+
+A tap that fails writes nothing. A frame taken after a tap that did not
+land is a picture of the screen nothing happened on, and it looks
+exactly like evidence.
+
+It needs a selector the tree can resolve — `point:` and `ocrText:` are
+both dispatched without resolving a target, so there would be nothing to
+say about where the touch landed. Use `smix tap` and `smix sim
+screenshot` separately if that is what you want.
 
 **`find` prints, `wait-for` asserts.** `smix find` writes
 `exists=<bool>` and exits 0 whichever it is, so a shell script has to
