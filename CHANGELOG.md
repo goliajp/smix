@@ -2,6 +2,106 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [5.0.0] — 2026-08-14
+
+**The major is the arbiter's, not the plan's.** Everything here is
+additive, and `cargo semver-checks` still says major: two public structs
+gained public fields, so any code constructing them with an exhaustive
+struct literal no longer compiles. Nothing was added to justify the
+number — the number was read off the gate, and the two structs are named
+under **Breaking** below. If you never wrote either literal, this is a
+minor release wearing a bigger number.
+
+The content is one consumer report, answered. A team driving a simulator
+for a day sent four things they had hit; three were defects and one was a
+capability that did not exist. What the first one cost them is the shape
+worth reading: `/health` answered 200, `/tree` was dead, and
+`smix runner up` read only the first and returned success — so the one
+command that could have recovered the runner was the one refusing to.
+They worked around it three times by hand. The runner had been saying
+"reinstalled out from under the runner" the whole time; nothing asked it.
+
+### Breaking
+
+- **`smix_capsule::runner::UpOptions` has a new public field**,
+  `force_recover`. Constructing it with `..Default::default()` is
+  unaffected; an exhaustive literal needs the field. This one was
+  avoidable — the file's own comment says a new field breaks every
+  existing literal, and says it next to the function that exists because
+  of exactly that.
+- **`smix_mcp::SelectorParams` has three new public fields**: `point`,
+  `fallback`, `locales`. Same rule, same fix. These are what let a
+  coordinate, a chain and a recognition language be named over MCP at
+  all, so there is no version of this release without them.
+
+### Changed
+
+- **`smix runner up` no longer reports success when the session behind
+  `/health` is unusable.** It used to print `runner already up` and exit
+  0 whenever the port answered. It now asks whether the session works,
+  and when it does not it exits non-zero naming both facts and the
+  command that recovers it. `--force` runs that recovery for you — the
+  same in-place cycle `smix runner cycle` does, and it does **not** reach
+  a runner recorded for another device or one the store has no record of.
+- **A bring-up that runs out of time now tries once more**, with the app
+  foregrounded first and the runner attaching to it rather than launching
+  it. At most once, and the second attempt starts a fresh clock, so the
+  worst case is twice `SMIX_RUNNER_UP_TIMEOUT_SECS` rather than once. It
+  does not happen on a physical device (no `simctl launch` to foreground
+  with), without `--bundle`, or when the attempt already was
+  `--no-launch` — each says which it is rather than skipping quietly.
+- **`smix_use` answers `already driving` only when the session works**,
+  for the same reason, and names `smix runner cycle` when it does not.
+
+### Added
+
+- **`smix tap --then-screenshot <OUT>`** and **`smix_tap_then_screenshot`** —
+  tap and frame in one call, for UI that does not wait. What this saves is
+  measured rather than assumed: the wire is 423 ms (a tap 336, a frame
+  from the runner 88) and the UI that prompted it lives 3000, so what it
+  removes is the turn between two calls, not a round trip. On a simulator
+  it also takes the frame from the process that tapped — 88 ms rather
+  than the ~325 ms of going out to device tooling. It reports which route
+  took the frame and how many milliseconds after the tap it landed. A tap
+  that fails writes nothing.
+- `smix_capsule::runner::probe_session` / `probe_session_for` /
+  `SessionProbe` — "can this session be driven", as a question that can
+  be asked, optionally about a named app.
+- `smix_capsule::runner::decide_already_serving` /
+  `decide_after_timeout` — the two judgements above as pure functions, so
+  every row of them is reachable without a device.
+- `smix_sdk::tap_then_capture_with` / `App::tap_then_capture` /
+  `CapturedAfterTap`, and `smix_runner_client::HttpRunnerClient::screenshot`.
+- `smix_driver::transport_to_failure` is now public — what a transport
+  error means to a caller, in one place rather than two that drift.
+
+### Gates
+
+Three, each with a harness of its own and each rule removed once to watch
+its case go red:
+
+- `health-is-not-a-session-check` — every `health_ok` call site says
+  whether it is making a decision, and the ones that are must also ask
+  whether the session works. Silence is not a way to become exempt.
+- `probes-name-the-app` — a probe either names the app it is asking
+  about or carries a reason it cannot.
+- `tap-then-capture-is-one-path` — the combined action has one
+  implementation, both surfaces reach it, and the frame comes from the
+  runner. None of that is visible to a behaviour test.
+
+`mcp-cli-parity-scan` also asks a stricter question now: a declaration
+ending in a flag is checked by the flag being listed in that command's
+help, rather than by the command running with `--help` appended — which
+a value-taking flag cannot survive.
+
+### Not done
+
+The attach retry is asserted from a pure decision table and a TCP stub.
+**"It really timed out, really retried, and really attached" has not been
+watched on a device.** The cold plan expected an injection point for
+that; the checkpoint meant to build one became something else, and no
+test-only switch was added to a production path to manufacture it.
+
 ## [4.2.0] — 2026-08-12
 
 A rule changed on 6 August and four things went on saying the old one.
