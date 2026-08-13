@@ -4,10 +4,10 @@ use rmcp::ErrorData as McpError;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use smix_sdk::Selector;
-use smix_selector::{Modifiers, ROLE_NAMES, role_from_name};
+use smix_selector::{Modifiers, ROLE_NAMES, point_from_str, role_from_name};
 
 /// How to find one element on screen. Give exactly one of `id`, `text`,
-/// `label`, `role`, or `ocrText`.
+/// `label`, `role`, `ocrText`, or `point`.
 ///
 /// Prefer `id` — it survives copy changes and localization. Fall back to
 /// `text` or `label` when the app has no testID, and to `ocrText` only when
@@ -43,6 +43,19 @@ pub struct SelectorParams {
     /// cannot see. Slower than the others; reach for it last.
     #[serde(default)]
     pub ocr_text: Option<String>,
+    /// A place on screen rather than a thing on it: `"50%,80%"` or the same
+    /// point written `"0.5,0.8"`. A fraction of the viewport, never pixels —
+    /// a flow written in pixels runs on one screen size.
+    ///
+    /// The last resort, and only for tapping. Nothing here is named, so
+    /// nothing can be found, asserted, or filled at a point — those tools
+    /// refuse it rather than tapping where you did not ask. Use it when the
+    /// target has no accessibility form at all: a canvas, a map, a video
+    /// surface. If the element has an id, a label, or visible text, one of
+    /// those will still be right after the next layout change and this will
+    /// not.
+    #[serde(default)]
+    pub point: Option<String>,
 }
 
 /// The OCR needle, when the selector is the OCR path.
@@ -61,6 +74,21 @@ pub fn ocr_text_of(selector: &Selector) -> Option<&str> {
     }
 }
 
+/// The coordinate, when the selector is a place rather than a thing.
+///
+/// Point is dispatched by the caller, never resolved. The resolver says so
+/// in as many words — "reaching matches_base means a caller forgot to
+/// dispatch; no node matches" — so a tool that accepts `point` and hands it
+/// to `App::tap` gets a miss on a screen where the touch was perfectly
+/// deliverable. Every tool that takes a selector splits on this the way it
+/// already splits on [`ocr_text_of`]; the ones that cannot tap refuse.
+pub fn point_of(selector: &Selector) -> Option<(f64, f64)> {
+    match selector {
+        Selector::Point { nx, ny } => Some((*nx, *ny)),
+        _ => None,
+    }
+}
+
 impl SelectorParams {
     /// Turn what the agent wrote into a selector.
     ///
@@ -73,6 +101,7 @@ impl SelectorParams {
             self.label.as_ref().map(|_| "label"),
             self.role.as_ref().map(|_| "role"),
             self.ocr_text.as_ref().map(|_| "ocrText"),
+            self.point.as_ref().map(|_| "point"),
         ]
         .into_iter()
         .flatten()
@@ -81,8 +110,8 @@ impl SelectorParams {
         match given.len() {
             0 => {
                 return Err(McpError::invalid_params(
-                    "name the element with exactly one of: id, text, label, role, ocrText \
-                     (prefer id)",
+                    "name the element with exactly one of: id, text, label, role, ocrText, \
+                     point (prefer id; point is a place, not a thing, and only taps)",
                     None,
                 ));
             }
@@ -90,7 +119,7 @@ impl SelectorParams {
             _ => {
                 return Err(McpError::invalid_params(
                     format!(
-                        "name the element with exactly one of id, text, label, role, ocrText — got {}",
+                        "name the element with exactly one of id, text, label, role, ocrText, point — got {}",
                         given.join(" and ")
                     ),
                     None,
@@ -134,6 +163,12 @@ impl SelectorParams {
                 locales: Vec::new(),
                 modifiers: Modifiers::default(),
             });
+        }
+
+        if let Some(p) = &self.point {
+            let (nx, ny) = point_from_str(p)
+                .map_err(|reason| McpError::invalid_params(format!("point: {reason}"), None))?;
+            return Ok(Selector::Point { nx, ny });
         }
 
         // The count check above already covered this.
