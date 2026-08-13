@@ -7,7 +7,7 @@ use smix_sdk::Selector;
 use smix_selector::{Modifiers, ROLE_NAMES, point_from_str, role_from_name};
 
 /// How to find one element on screen. Give exactly one of `id`, `text`,
-/// `label`, `role`, `ocrText`, or `point`.
+/// `label`, `role`, `ocrText`, `point`, or `fallback`.
 ///
 /// Prefer `id` — it survives copy changes and localization. Fall back to
 /// `text` or `label` when the app has no testID, and to `ocrText` only when
@@ -56,6 +56,18 @@ pub struct SelectorParams {
     /// not.
     #[serde(default)]
     pub point: Option<String>,
+    /// Ways to name the same thing, tried in order, first hit wins.
+    ///
+    /// Each entry is a whole selector — `[{"id":"submit"},{"text":"Send"}]`
+    /// — so a chain survives a copy edit or a missing testID without the
+    /// caller looking first and choosing. Nesting a chain inside a chain
+    /// is allowed and means the same as writing it flat.
+    ///
+    /// `point` may only be the last entry. A coordinate always hits, so
+    /// anything after it is unreachable, and a chain with a dead tail is
+    /// worse than no chain: it looks like a plan and is not one.
+    #[serde(default)]
+    pub fallback: Option<Vec<SelectorParams>>,
 }
 
 // What an agent may write, form by form. Read by
@@ -70,7 +82,7 @@ pub struct SelectorParams {
 // selector-surface: OcrText — the `ocrText` field, dispatched past the resolver
 // selector-surface: AnchorRelative — none, not yet wired — reachable from yaml, missing here
 // selector-surface: Point — the `point` field, dispatched by smix_tap and refused by find and the asserts
-// selector-surface: Fallback — none, not yet wired — a chain needs a recursive schema and the schema is the whole documentation an agent gets
+// selector-surface: Fallback — the `fallback` field, a list of selectors walked in order by tap / find / the asserts
 
 /// The OCR needle, when the selector is the OCR path.
 ///
@@ -84,6 +96,32 @@ pub struct SelectorParams {
 pub fn ocr_text_of(selector: &Selector) -> Option<&str> {
     match selector {
         Selector::OcrText { ocr_text, .. } => Some(ocr_text),
+        _ => None,
+    }
+}
+
+/// The layers, when the selector is a chain.
+///
+/// `Fallback` is dispatched by the caller like `Point` is, and for the
+/// same reason: the resolver returns false for it — "reaching
+/// matches_base means a caller forgot to dispatch". A tool that hands a
+/// chain to `App::find` gets one no, not several tries.
+///
+/// Flat, because nesting is allowed and means the same as writing it out
+/// — so every caller iterates one list rather than each rediscovering
+/// that a layer may itself be a chain.
+pub fn chain_of(selector: &Selector) -> Option<Vec<Selector>> {
+    match selector {
+        Selector::Fallback { fallback } => {
+            let mut out = Vec::new();
+            for layer in fallback {
+                match chain_of(layer) {
+                    Some(inner) => out.extend(inner),
+                    None => out.push(layer.clone()),
+                }
+            }
+            Some(out)
+        }
         _ => None,
     }
 }
@@ -116,6 +154,7 @@ impl SelectorParams {
             self.role.as_ref().map(|_| "role"),
             self.ocr_text.as_ref().map(|_| "ocrText"),
             self.point.as_ref().map(|_| "point"),
+            self.fallback.as_ref().map(|_| "fallback"),
         ]
         .into_iter()
         .flatten()
@@ -125,7 +164,7 @@ impl SelectorParams {
             0 => {
                 return Err(McpError::invalid_params(
                     "name the element with exactly one of: id, text, label, role, ocrText, \
-                     point (prefer id; point is a place, not a thing, and only taps)",
+                     point, fallback (prefer id; point is a place, not a thing, and only taps)",
                     None,
                 ));
             }
@@ -133,7 +172,7 @@ impl SelectorParams {
             _ => {
                 return Err(McpError::invalid_params(
                     format!(
-                        "name the element with exactly one of id, text, label, role, ocrText, point — got {}",
+                        "name the element with exactly one of id, text, label, role, ocrText, point, fallback — got {}",
                         given.join(" and ")
                     ),
                     None,
@@ -179,6 +218,37 @@ impl SelectorParams {
             });
         }
 
+        if let Some(chain) = &self.fallback {
+            if chain.is_empty() {
+                return Err(McpError::invalid_params(
+                    "fallback is an empty chain — a list of no ways to name a thing \
+                     is not a way to name it",
+                    None,
+                ));
+            }
+            let mut out = Vec::with_capacity(chain.len());
+            for (i, entry) in chain.iter().enumerate() {
+                let sel = entry.to_selector().map_err(|e| {
+                    McpError::invalid_params(format!("fallback[{i}]: {}", e.message), None)
+                })?;
+                // A coordinate always hits, so a layer after one is
+                // unreachable. Taking the chain anyway would hand back
+                // something that reads as a plan and has a dead tail.
+                if matches!(sel, Selector::Point { .. }) && i + 1 < chain.len() {
+                    return Err(McpError::invalid_params(
+                        format!(
+                            "fallback[{i}] is a point and {} layer(s) follow it. A \
+                             coordinate always hits, so nothing after it is ever \
+                             tried — put the point last, or drop it",
+                            chain.len() - i - 1
+                        ),
+                        None,
+                    ));
+                }
+                out.push(sel);
+            }
+            return Ok(Selector::Fallback { fallback: out });
+        }
         if let Some(p) = &self.point {
             let (nx, ny) = point_from_str(p)
                 .map_err(|reason| McpError::invalid_params(format!("point: {reason}"), None))?;

@@ -72,7 +72,21 @@ Every element-facing tool takes the same shape. Exactly one of:
 | `{ "text": "Submit" }` | Visible text, case-insensitive. |
 | `{ "label": "Close" }` | Accessibility label, exact. |
 | `{ "role": "button", "name": "Reload" }` | Kind, optionally narrowed. |
-| `{ "ocrText": "Submit" }` | Read off the pixels. Slowest; last resort. |
+| `{ "ocrText": "Submit" }` | Read off the pixels. Slower than the tree. |
+| `{ "fallback": [ … ] }` | Ways to name the same thing, tried in order, first hit wins. |
+| `{ "point": "50%,80%" }` | A place, not a thing. Only `smix_tap` takes one. |
+
+`fallback` is the one to reach for when a name might not hold: each entry is a
+whole selector, so `[{"id":"submit"},{"text":"Send"},{"point":"50%,90%"}]`
+survives a missing testID and a copy edit without you looking first and
+choosing. `point` may only be last — a coordinate always hits, so anything
+after it would never be tried, and a chain with a dead tail reads as a plan
+and is not one.
+
+`point` is a fraction of the viewport, never pixels: `"50%,80%"`, or the same
+place written `"0.5,0.8"`. Only tapping takes one — nothing is named at a
+coordinate, so `smix_find`, the asserts, `smix_fill` and `smix_scroll` refuse
+it and say so rather than answering about somewhere you did not ask.
 
 Ids survive copy edits and translation. Text does not — a flow written against
 `{"text": "Submit"}` breaks when someone changes the button to "Send", and

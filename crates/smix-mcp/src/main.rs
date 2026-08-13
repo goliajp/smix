@@ -35,7 +35,7 @@ use rmcp::{tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use smix_input::{KeyName, SwipeDirection};
-use smix_mcp::{SelectorParams, ocr_text_of, point_of};
+use smix_mcp::{SelectorParams, chain_of, ocr_text_of, point_of};
 use smix_sdk::{App, KeyName as SdkKeyName};
 use std::sync::Arc;
 use std::time::Duration;
@@ -138,6 +138,36 @@ fn missing_udid_error() -> McpError {
          devices`), then restart the server",
         None,
     )
+}
+
+/// Is any layer of a chain on screen, and which.
+///
+/// Every layer goes through the same split the single-selector path
+/// takes, because a layer may be an `ocrText` and that never matches in
+/// the tree. Not iterating — handing the chain to `App::find` — is one
+/// no instead of several tries, and it reads exactly like the thing not
+/// being there.
+async fn first_visible_layer(
+    app: &smix_sdk::App,
+    layers: &[smix_selector::Selector],
+) -> Result<Option<usize>, McpError> {
+    for (i, layer) in layers.iter().enumerate() {
+        let seen = match ocr_text_of(layer) {
+            Some(needle) => app
+                .find_by_text_ocr(needle, &[])
+                .await
+                .map_err(|e| McpError::internal_error(e.to_prompt(), None))?
+                .is_some(),
+            None => app
+                .find(layer)
+                .await
+                .map_err(|e| McpError::internal_error(e.to_prompt(), None))?,
+        };
+        if seen {
+            return Ok(Some(i));
+        }
+    }
+    Ok(None)
 }
 
 #[tool_router]
@@ -396,6 +426,27 @@ impl SmixMcpService {
             ));
         }
         let app = self.bound_app().await?;
+        if let Some(layers) = chain_of(&sel) {
+            for (i, layer) in layers.iter().enumerate() {
+                if point_of(layer).is_some() {
+                    return Err(McpError::invalid_params(
+                        format!(
+                            "fallback[{i}] is a point, and a point is a place rather \
+                             than something that can be seen. Only smix_tap takes one"
+                        ),
+                        None,
+                    ));
+                }
+            }
+            let hit = first_visible_layer(&app, &layers).await?;
+            return Ok(CallToolResult::success(vec![Content::text(match hit {
+                Some(i) => format!(
+                    "true — fallback[{i}] {}",
+                    smix_selector::describe_selector(&layers[i])
+                ),
+                None => format!("false — all {} fallback layers missed", layers.len()),
+            })]));
+        }
         // The tree resolver never matches OcrText (live-vision op, not a
         // tree predicate) — routed through `app.find` an ocrText selector
         // is always false. Dispatch it to the OCR path instead, as the
@@ -429,6 +480,38 @@ impl SmixMcpService {
         // OcrText bypasses the tree resolver: find the text's frame via
         // Apple Vision OCR and tap its normalized center (IOHID
         // synthesize), the same dispatch the maestro adapter uses.
+        // A chain is tried a layer at a time, first hit wins — the shape
+        // `fallback:` has in a flow. Handing the whole chain to the
+        // resolver is one no instead of several tries.
+        if let Some(layers) = chain_of(&sel) {
+            for (i, layer) in layers.iter().enumerate() {
+                let hit = match (point_of(layer), ocr_text_of(layer)) {
+                    (Some((nx, ny)), _) => app.tap_at_coord(nx, ny).await.map(|()| true),
+                    (_, Some(needle)) => match app.find_by_text_ocr(needle, &[]).await {
+                        Ok(Some(f)) => app.tap_at_coord(f.mid_x(), f.mid_y()).await.map(|()| true),
+                        Ok(None) => Ok(false),
+                        Err(e) => Err(e),
+                    },
+                    _ => match app.find(layer).await {
+                        Ok(true) => app.tap(layer).await.map(|_| true),
+                        Ok(false) => Ok(false),
+                        Err(e) => Err(e),
+                    },
+                }
+                .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+                if hit {
+                    return Ok(CallToolResult::success(vec![Content::text(format!(
+                        "tapped: fallback[{i}] {} — not verified: a chain reports \
+                         which layer answered, not what the touch landed on",
+                        smix_selector::describe_selector(layer)
+                    ))]));
+                }
+            }
+            return Err(McpError::internal_error(
+                format!("all {} fallback layers missed", layers.len()),
+                None,
+            ));
+        }
         let outcome = match (point_of(&sel), ocr_text_of(&sel)) {
             // A place, not a thing: the resolver has nothing to match, so
             // the touch is synthesised straight at the coordinate — the
@@ -488,6 +571,12 @@ impl SmixMcpService {
         Parameters(params): Parameters<FillParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.target.to_selector()?;
+        if chain_of(&sel).is_some() {
+            return Err(McpError::invalid_params(
+                "typing needs one field, and a chain is several ways to name one thing. Find it with smix_find first, then fill what you found",
+                None,
+            ));
+        }
         if point_of(&sel).is_some() {
             return Err(McpError::invalid_params(
                 "a point names a place, not a field with a value — the schema says so and now this does too. Name the \
@@ -549,6 +638,12 @@ impl SmixMcpService {
         Parameters(params): Parameters<ScrollParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.target.to_selector()?;
+        if chain_of(&sel).is_some() {
+            return Err(McpError::invalid_params(
+                "a chain means 'try these in order on this screen', and scrolling changes the screen between tries, so the later layers would answer a different question. Probing the whole chain after each swipe is a capability smix does not have yet; it is named here rather than approximated",
+                None,
+            ));
+        }
         if point_of(&sel).is_some() {
             return Err(McpError::invalid_params(
                 "a point is already a place on this screen; scrolling to it means nothing — the schema says so and now this does too. Name the \
@@ -649,6 +744,32 @@ impl SmixMcpService {
             ));
         }
         let app = self.bound_app().await?;
+        if let Some(layers) = chain_of(&sel) {
+            for (i, layer) in layers.iter().enumerate() {
+                if point_of(layer).is_some() {
+                    return Err(McpError::invalid_params(
+                        format!(
+                            "fallback[{i}] is a point, and a point is a place rather \
+                             than something that can be seen. Only smix_tap takes one"
+                        ),
+                        None,
+                    ));
+                }
+            }
+            let hit = first_visible_layer(&app, &layers).await?;
+            return Ok(CallToolResult::success(vec![Content::text(match hit {
+                Some(i) => format!(
+                    "visible: fallback[{i}] {}",
+                    smix_selector::describe_selector(&layers[i])
+                ),
+                None => {
+                    return Err(McpError::internal_error(
+                        format!("all {} fallback layers missed", layers.len()),
+                        None,
+                    ));
+                }
+            })]));
+        }
         match ocr_text_of(&sel) {
             // Same budget and cadence as the tree path: `App::assert_visible`
             // waits 5 s at the driver's 250 ms poll interval.
@@ -709,6 +830,32 @@ impl SmixMcpService {
             ));
         }
         let app = self.bound_app().await?;
+        if let Some(layers) = chain_of(&sel) {
+            for (i, layer) in layers.iter().enumerate() {
+                if point_of(layer).is_some() {
+                    return Err(McpError::invalid_params(
+                        format!(
+                            "fallback[{i}] is a point, and a point is a place rather \
+                             than something that can be seen. Only smix_tap takes one"
+                        ),
+                        None,
+                    ));
+                }
+            }
+            let hit = first_visible_layer(&app, &layers).await?;
+            return Ok(CallToolResult::success(vec![Content::text(match hit {
+                Some(i) => {
+                    return Err(McpError::internal_error(
+                        format!(
+                            "fallback[{i}] {} is visible",
+                            smix_selector::describe_selector(&layers[i])
+                        ),
+                        None,
+                    ));
+                }
+                None => format!("not visible: all {} fallback layers", layers.len()),
+            })]));
+        }
         match ocr_text_of(&sel) {
             // A tree-routed OcrText never matches, so this assert used to
             // pass vacuously — a false green. Probe OCR once, mirroring the

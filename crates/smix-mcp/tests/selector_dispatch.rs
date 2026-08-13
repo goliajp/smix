@@ -101,3 +101,38 @@ fn the_schema_promises_only_what_the_tools_do() {
         );
     }
 }
+
+/// Same rule, same reason, for chains. `Fallback` is dispatched by the
+/// caller too — the resolver returns false for it — so a tool that hands
+/// one to `App::find` gets a single no where the caller asked for several
+/// tries, and cannot tell that from the thing being absent.
+#[test]
+fn every_selector_tool_answers_for_a_chain() {
+    let tools = tool_bodies();
+    assert!(
+        tools.len() >= 6,
+        "only {} tool(s) take a selector — this test is reading air",
+        tools.len()
+    );
+    for (name, body) in &tools {
+        assert!(
+            body.contains("chain_of"),
+            "smix_{name} takes a selector and never asks whether it is a chain.              It will hand one to the resolver, which says no once instead of              trying each layer"
+        );
+    }
+}
+
+/// A chain is only worth having if some tool walks it. If every tool
+/// refused, the field would be documentation for a capability nobody has.
+#[test]
+fn at_least_one_tool_walks_the_chain() {
+    let walkers: Vec<String> = tool_bodies()
+        .into_iter()
+        .filter(|(_, b)| b.contains("first_visible_layer") || b.contains("for (i, layer)"))
+        .map(|(n, _)| n)
+        .collect();
+    assert!(
+        walkers.len() >= 3,
+        "only {walkers:?} walk a chain — a field every tool refuses is a          promise in the schema with nothing behind it"
+    );
+}

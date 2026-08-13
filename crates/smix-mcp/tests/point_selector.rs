@@ -83,3 +83,71 @@ fn only_a_point_reads_as_one() {
         assert_eq!(point_of(&sel), None, "{json}");
     }
 }
+
+/// A chain of ways to name the same thing, flattened, in order.
+#[test]
+fn a_chain_becomes_a_fallback_selector() {
+    let sel = params(r#"{"fallback":[{"id":"submit"},{"text":"Send"}]}"#)
+        .to_selector()
+        .expect("valid chain");
+    let layers = smix_mcp::chain_of(&sel).expect("is a chain");
+    assert_eq!(layers.len(), 2);
+}
+
+/// Nesting is allowed and means what writing it flat means, so every
+/// caller iterates one list instead of each rediscovering the recursion.
+#[test]
+fn a_nested_chain_flattens() {
+    let sel = params(r#"{"fallback":[{"id":"a"},{"fallback":[{"id":"b"},{"id":"c"}]}]}"#)
+        .to_selector()
+        .expect("valid");
+    assert_eq!(smix_mcp::chain_of(&sel).expect("chain").len(), 3);
+}
+
+/// A coordinate always hits, so a layer after one is never reached. A
+/// chain with a dead tail reads as a plan and is not one.
+#[test]
+fn a_point_before_the_end_of_a_chain_is_refused() {
+    let e = params(r#"{"fallback":[{"point":"50%,50%"},{"id":"submit"}]}"#)
+        .to_selector()
+        .expect_err("dead tail");
+    let msg = format!("{e:?}");
+    assert!(msg.contains("fallback[0]"), "names the layer: {msg}");
+    assert!(msg.contains("always hits"), "says why: {msg}");
+}
+
+/// And last is where it belongs, so that case has to keep working.
+#[test]
+fn a_point_at_the_end_of_a_chain_is_fine() {
+    assert!(
+        params(r#"{"fallback":[{"id":"submit"},{"point":"50%,50%"}]}"#)
+            .to_selector()
+            .is_ok()
+    );
+}
+
+/// An empty chain is not a way of naming anything.
+#[test]
+fn an_empty_chain_is_refused() {
+    assert!(params(r#"{"fallback":[]}"#).to_selector().is_err());
+}
+
+/// A layer that is itself malformed says which layer.
+#[test]
+fn a_bad_layer_names_its_index() {
+    let e = params(r#"{"fallback":[{"id":"a"},{"point":"267,100"}]}"#)
+        .to_selector()
+        .expect_err("pixels in layer 1");
+    assert!(format!("{e:?}").contains("fallback[1]"), "{e:?}");
+}
+
+/// The recursive schema generates, and generates as a self-reference —
+/// the risk this checkpoint was planned around, measured rather than
+/// assumed.
+#[test]
+fn the_schema_is_recursive_and_generates() {
+    let s = schemars::schema_for!(SelectorParams);
+    let j = serde_json::to_string(&s).expect("serializes");
+    assert!(j.contains("fallback"), "the field is in the schema");
+    assert!(j.contains("\"$ref\""), "and refers to itself: {j}");
+}
