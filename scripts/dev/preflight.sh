@@ -131,7 +131,7 @@ echo "--- android: unit tests + androidTest compile"
 ( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan corpus-portability-scan portable-tier-parity yield-is-not-failure-scan teardown-restores-scan android-subject-scan device-facts-are-machine-scoped leases-are-machine-scoped no-second-ledger-path retired-claims-scan contract-scan; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan corpus-portability-scan portable-tier-parity yield-is-not-failure-scan teardown-restores-scan android-subject-scan device-facts-are-machine-scoped leases-are-machine-scoped no-second-ledger-path retired-claims-scan contract-scan selector-surface-scan; do
     python3 "scripts/dev/$gate.py"
 done
 
@@ -165,6 +165,10 @@ python3 scripts/dev/retired-claims-scan.test.py
 # whole point is one file's worth of difference between the two, so a
 # harness is the only thing that can show it still reads that difference.
 python3 scripts/dev/contract-scan.test.py
+# And that the selector-surface gate can still go red. Its subject is an
+# axis nothing watched: `point` worked in flows and four SDKs and was
+# missing from MCP and the CLI for two majors, with every gate green.
+python3 scripts/dev/selector-surface-scan.test.py
 
 # The AI tier is a judgement and the resolver is not; nothing about
 # that separation is enforced by the type system. This ran in one

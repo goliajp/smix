@@ -208,6 +208,12 @@ log "the four layers are all present"
 python3 "$ROOT/scripts/dev/contract-scan.py" > /tmp/smix-ship-contract.log 2>&1 \
   || fail "contract scan FAILED — a layer is missing or the gap is unclaimed (see /tmp/smix-ship-contract.log)"
 
+# An element can be nameable in a flow and unnameable from the surface an
+# agent drives through, with nothing red. `point` was, for two majors.
+log "every selector form is declared on every surface"
+python3 "$ROOT/scripts/dev/selector-surface-scan.py" > /tmp/smix-ship-selector-surface.log 2>&1 \
+  || fail "selector-surface scan FAILED — a selector form is undeclared on a surface (see /tmp/smix-ship-selector-surface.log)"
+
 log "a retired sentence is off the surfaces"
 python3 "$ROOT/scripts/dev/retired-claims-scan.py" > /tmp/smix-ship-retired-claims.log 2>&1 \
   || fail "retired-claims scan FAILED — see /tmp/smix-ship-retired-claims.log"

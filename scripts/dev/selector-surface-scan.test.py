@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""What `selector-surface-scan.py` must answer, fed trees rather than this one.
+
+The gate exists because a form can be written in flows and in four SDKs
+and be missing from two surfaces for two majors with nothing red. A gate
+for that has one failure mode worth guarding above all others: agreeing
+that everything is declared because it read nothing. An empty set of
+variants makes "every variant is declared" true of a surface that
+declares nothing at all.
+
+So every case builds its own tree, and this repository's own state is
+checked last and separately — it is one sample, it is green today, and a
+harness that only ever ran against it would be green on the day the scan
+stopped parsing the enum.
+
+Each red case asserts the exit code is 1 AND that the verdict says the
+expected thing. A crash and a judgement leave the same code; the contract
+gate paid for that lesson with three branches that were going red by
+raising.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+import tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SCAN = os.path.join(ROOT, "scripts", "dev", "selector-surface-scan.py")
+
+problems: list[str] = []
+
+if not os.path.isfile(SCAN):
+    print("selector-surface-scan.test: FAIL")
+    print(f"  - {os.path.relpath(SCAN, ROOT)} does not exist")
+    sys.exit(1)
+
+VARIANTS = [
+    "Text", "Id", "Label", "Role", "Focused", "Anchor",
+    "LocalizedText", "OcrText", "AnchorRelative", "Point", "Fallback",
+]
+
+# Which forms each fake surface claims to support; the rest are signed off.
+SUPPORTED = {
+    "crates/smix-adapter-maestro/src/parser.rs": ["Text", "Id", "Label", "Role", "Point"],
+    "crates/smix-cli/src/act.rs": ["Text", "Id", "Label", "Role", "Point"],
+    "crates/smix-mcp/src/selector_params.rs": ["Text", "Id", "Label", "Role", "Point"],
+}
+TOKEN = {"Text": "text", "Id": "id", "Label": "label", "Role": "role", "Point": "point"}
+
+
+def write(path: str, body: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(body)
+
+
+def tree(tmp: str, variants: list[str] | None = None) -> None:
+    """A tree shaped like this repository's, and declared complete."""
+    vs = VARIANTS if variants is None else variants
+    enum = "pub enum Selector {\n" + "".join(f"    {v} {{}},\n" for v in vs) + "}\n"
+    write(os.path.join(tmp, "crates/smix-selector/src/lib.rs"), enum)
+    for rel, supported in SUPPORTED.items():
+        lines = []
+        for v in vs:
+            if v in supported:
+                lines.append(f"// selector-surface: {v} — the `{TOKEN[v]}` form")
+            else:
+                lines.append(f"// selector-surface: {v} — none, not wired on this surface")
+        body = "\n".join(lines) + "\n\n"
+        body += "".join(f'let _ = "{t}";\n' for t in TOKEN.values())
+        write(os.path.join(tmp, rel), body)
+
+
+def run(root: str) -> tuple[int, str]:
+    out = subprocess.run(
+        [sys.executable, SCAN],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=root,
+        env={**os.environ, "PYTHONPATH": ""},
+    )
+    return out.returncode, out.stdout + out.stderr
+
+
+def scan_in(tmp: str) -> tuple[int, str]:
+    """Run the scan against a fake tree by copying it in beside a shim."""
+    shim = os.path.join(tmp, "scripts", "dev", "selector-surface-scan.py")
+    os.makedirs(os.path.dirname(shim), exist_ok=True)
+    with open(SCAN, encoding="utf-8") as fh:
+        src = fh.read()
+    write(shim, src)
+    out = subprocess.run(
+        [sys.executable, shim], capture_output=True, text=True, check=False
+    )
+    return out.returncode, out.stdout + out.stderr
+
+
+def expect(label: str, ok: bool, detail: str) -> None:
+    if not ok:
+        problems.append(f"{label}: {detail}")
+
+
+def expect_verdict(label: str, code: int, out: str, needle: str) -> None:
+    expect(label, code == 1, f"exit {code}, wanted 1:\n{out}")
+    expect(f"{label} — a verdict, not a crash", "Traceback" not in out, f"raised:\n{out}")
+    expect(f"{label} — says why", needle in out, f"no {needle!r} in:\n{out}")
+
+
+# 1. The positive control. A gate that is always red is as useless as one
+#    that is always green, and only this case can tell them apart.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    code, out = scan_in(tmp)
+    expect("a fully declared tree passes", code == 0, f"exit {code}:\n{out}")
+
+# 2. One form undeclared on one surface — the shape `Point` had.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    rel = os.path.join(tmp, "crates/smix-cli/src/act.rs")
+    body = open(rel, encoding="utf-8").read()
+    body = "\n".join(l for l in body.splitlines() if "selector-surface: Point" not in l)
+    write(rel, body + "\n")
+    code, out = scan_in(tmp)
+    expect_verdict("an undeclared form fails", code, out, "Point")
+
+# 3. The declaration says the form is written here and the file has no
+#    such word — the line has become prose.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    rel = os.path.join(tmp, "crates/smix-mcp/src/selector_params.rs")
+    body = open(rel, encoding="utf-8").read().replace('let _ = "point";', "")
+    write(rel, body)
+    code, out = scan_in(tmp)
+    expect_verdict("a declaration the file does not back fails", code, out, "prose")
+
+# 4. The enum stops parsing. Every variant is declared, vacuously — this
+#    is the case `gate/no-empty-predicate` is named for.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    write(os.path.join(tmp, "crates/smix-selector/src/lib.rs"), "pub enum Other {}\n")
+    code, out = scan_in(tmp)
+    expect_verdict("an unparseable enum fails", code, out, "reading air")
+
+# 5. A `none` with no reason behind it.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    rel = os.path.join(tmp, "crates/smix-cli/src/act.rs")
+    body = open(rel, encoding="utf-8").read().replace(
+        "// selector-surface: Focused — none, not wired on this surface",
+        "// selector-surface: Focused — none",
+    )
+    write(rel, body)
+    code, out = scan_in(tmp)
+    expect_verdict("a none with no reason fails", code, out, "no reason")
+
+# 6. A declaration for a variant the enum no longer has.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    rel = os.path.join(tmp, "crates/smix-mcp/src/selector_params.rs")
+    body = open(rel, encoding="utf-8").read()
+    write(rel, body + "// selector-surface: Xpath — none, never supported\n")
+    code, out = scan_in(tmp)
+    expect_verdict("a declaration for a gone variant fails", code, out, "Xpath")
+
+# 7. A surface that signs everything off. Every other check passes —
+#    each variant is declared, each `none` has its reason, no declaration
+#    is prose — and the surface accepts nothing at all. Without the floor
+#    this reads as a fully audited surface, which is how a scan agrees
+#    with a file it never really read.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    rel = os.path.join(tmp, "crates/smix-cli/src/act.rs")
+    body = "\n".join(
+        f"// selector-surface: {v} — none, signed off for a stated reason"
+        for v in VARIANTS
+    ) + "\n"
+    write(rel, body)
+    code, out = scan_in(tmp)
+    expect_verdict("a surface that supports nothing fails", code, out, "not really read")
+
+# 8. This repository. Last, and never the only one.
+code, out = run(ROOT)
+expect("this repository is fully declared", code == 0, f"exit {code}:\n{out}")
+
+if problems:
+    print("selector-surface-scan.test: FAIL")
+    for p in problems:
+        print(f"  - {p}")
+    sys.exit(1)
+
+print("selector-surface-scan.test: 8 cases pass")

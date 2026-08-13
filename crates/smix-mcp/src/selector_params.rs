@@ -58,6 +58,20 @@ pub struct SelectorParams {
     pub point: Option<String>,
 }
 
+// What an agent may write, form by form. Read by
+// `scripts/dev/selector-surface-scan.py`; a `none` carries its reason.
+// selector-surface: Text — the `text` field
+// selector-surface: Id — the `id` field, and the one to prefer
+// selector-surface: Label — the `label` field
+// selector-surface: Role — the `role` field, narrowed by `name`
+// selector-surface: Focused — none, an agent asks for what it can see; focus is not visible in a tree dump
+// selector-surface: Anchor — none, no modifier has an MCP form yet
+// selector-surface: LocalizedText — none, not yet wired — reachable from yaml, missing here
+// selector-surface: OcrText — the `ocrText` field, dispatched past the resolver
+// selector-surface: AnchorRelative — none, not yet wired — reachable from yaml, missing here
+// selector-surface: Point — the `point` field, dispatched by smix_tap and refused by find and the asserts
+// selector-surface: Fallback — none, not yet wired — a chain needs a recursive schema and the schema is the whole documentation an agent gets
+
 /// The OCR needle, when the selector is the OCR path.
 ///
 /// The tree resolver's `matches_base` returns `false` for `OcrText` by
