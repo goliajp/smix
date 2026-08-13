@@ -167,6 +167,14 @@ PINS = [
         "crates/smix-adapter-maestro/src/runtime.rs",
         r"unwrap_or\((\d+)\)",
     ),
+    # `runner up`'s wait, which the errors guide names when it tells a
+    # reader a cold rebuild may need longer than it.
+    (
+        "default",
+        "s",
+        "crates/smix-capsule/src/runner.rs",
+        r"SMIX_RUNNER_UP_TIMEOUT_SECS[\s\S]{0,200}?unwrap_or\((\d+)\)",
+    ),
     # The parity page said long-press was 700 ms and not configurable;
     # it is 500 and takes `{ duration: N }`.
     (

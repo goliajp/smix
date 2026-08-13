@@ -194,7 +194,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "smix-authoring-ir"
-version = "4.2.0"
+version = "5.0.0"
 dependencies = [
  "serde",
  "smix-input",
@@ -212,21 +212,21 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "4.2.0"
+version = "5.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-screen"
-version = "4.2.0"
+version = "5.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-selector"
-version = "4.2.0"
+version = "5.0.0"
 dependencies = [
  "regex",
  "serde",

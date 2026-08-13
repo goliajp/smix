@@ -16,10 +16,10 @@ categories = ["development-tools"]
 workspace = true
 
 [dependencies]
-smix-selector = { path = "../smix-selector", version = "4.2.0" }
-smix-adapter-maestro = { path = "../smix-adapter-maestro", version = "4.2.0" }
-smix-error = { path = "../smix-error", version = "4.2.0" }
-smix-ai-tier = { path = "../smix-ai-tier", version = "4.2.0" }
+smix-selector = { path = "../smix-selector", version = "5.0.0" }
+smix-adapter-maestro = { path = "../smix-adapter-maestro", version = "5.0.0" }
+smix-error = { path = "../smix-error", version = "5.0.0" }
+smix-ai-tier = { path = "../smix-ai-tier", version = "5.0.0" }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["process", "time"] }
