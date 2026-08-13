@@ -859,7 +859,6 @@ pub struct CapturedAfterTap {
     pub gap_ms: u64,
 }
 
-
 /// Tap, then take one frame — the one implementation of that order.
 ///
 /// A free function rather than a method because the two surfaces that

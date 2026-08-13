@@ -156,7 +156,10 @@ fn each_attempt_starts_its_own_clock() {
         .split("fn one_bring_up(")
         .nth(1)
         .expect("the single attempt is still its own function");
-    let signature = helper.split(") -> Result<Attempt").next().expect("its arguments");
+    let signature = helper
+        .split(") -> Result<Attempt")
+        .next()
+        .expect("its arguments");
     assert!(
         signature.contains("timeout_secs: u64"),
         "an attempt takes how long it may take: {signature}"
