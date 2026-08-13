@@ -1480,9 +1480,7 @@ enum Attempt {
     Up,
     /// The deadline passed. `last_session_gap` is what the last
     /// otherwise-healthy poll was still missing, when there was one.
-    TimedOut {
-        last_session_gap: Option<String>,
-    },
+    TimedOut { last_session_gap: Option<String> },
 }
 
 /// One bring-up: spawn `xcodebuild`, write the handles down, and wait

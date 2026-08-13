@@ -27,7 +27,12 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const FRAME: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR-and-then-some";
 
-fn node(raw_type: &str, identifier: Option<&str>, bounds: Rect, children: Vec<A11yNode>) -> A11yNode {
+fn node(
+    raw_type: &str,
+    identifier: Option<&str>,
+    bounds: Rect,
+    children: Vec<A11yNode>,
+) -> A11yNode {
     A11yNode {
         raw_type: raw_type.into(),
         element_type_raw: 1,
@@ -96,9 +101,7 @@ async fn runner_server() -> MockServer {
         .await;
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })))
         .mount(&server)
         .await;
     Mock::given(method("GET"))

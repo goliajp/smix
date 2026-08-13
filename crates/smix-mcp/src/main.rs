@@ -259,11 +259,9 @@ impl SmixMcpService {
             // been brought up by somebody else, so "some app is drivable"
             // and "the app you asked for is drivable" are not the same
             // answer.
-            if let Some(why) = smix_capsule::runner::probe_session_for(
-                port,
-                params.bundle_id.as_deref(),
-            )
-            .unusable_because()
+            if let Some(why) =
+                smix_capsule::runner::probe_session_for(port, params.bundle_id.as_deref())
+                    .unusable_because()
             {
                 return Err(McpError::internal_error(
                     format!(

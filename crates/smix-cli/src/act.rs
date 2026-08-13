@@ -238,10 +238,9 @@ pub async fn cmd_tap_then_screenshot(
         ));
     }
     let d = driver(port);
-    let (outcome, captured) =
-        smix_sdk::tap_then_capture_with(&d, Some(d.runner()), &selector)
-            .await
-            .map_err(|e| ActError::Transport(e.to_prompt()))?;
+    let (outcome, captured) = smix_sdk::tap_then_capture_with(&d, Some(d.runner()), &selector)
+        .await
+        .map_err(|e| ActError::Transport(e.to_prompt()))?;
     // Only now: a tap that failed returned above, so nothing on disk can
     // be mistaken for a picture of something that happened.
     std::fs::write(out, &captured.png)
