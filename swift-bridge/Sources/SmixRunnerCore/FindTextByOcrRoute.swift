@@ -76,6 +76,37 @@ public enum FindTextByOcrRoute {
     return FindTextByOcrRequest(text: s, locales: locales, recognitionLevel: level)
   }
 
+  /// Which recognized string the needle meant, out of everything on
+  /// screen.
+  ///
+  /// Pure, so the rule can be tested without a screen. It used to live
+  /// inside the Vision callback and read "the first observation whose
+  /// text contains the needle, in whatever order the recognizer
+  /// returned them". On iOS's notification alert that is `Don't Allow`
+  /// and `Allow`, so an ocrText of "Allow" tapped Don't Allow and
+  /// reported success — and iOS never asks a second time, so the app
+  /// had to be reinstalled to try again.
+  ///
+  /// An exact reading wins outright: "Allow" beside "Don't Allow" is not
+  /// ambiguous to a person and must not be here. With no exact reading,
+  /// a single substring match is taken; two or more is `nil`, because
+  /// choosing between them is a coin flip the caller never sees.
+  public static func pick(needle: String, from candidates: [String]) -> Int? {
+    let want = needle.lowercased().trimmingCharacters(in: .whitespaces)
+    var exact: [Int] = []
+    var partial: [Int] = []
+    for (i, c) in candidates.enumerated() {
+      let seen = c.lowercased().trimmingCharacters(in: .whitespaces)
+      if seen == want {
+        exact.append(i)
+      } else if seen.contains(want) {
+        partial.append(i)
+      }
+    }
+    let chosen = exact.isEmpty ? partial : exact
+    return chosen.count == 1 ? chosen.first : nil
+  }
+
   public static func success(found: Bool, frame: (Double, Double, Double, Double)?)
     -> HTTPResponse
   {
