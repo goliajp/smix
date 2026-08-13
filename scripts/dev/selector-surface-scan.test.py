@@ -45,9 +45,18 @@ VARIANTS = [
 SUPPORTED = {
     "crates/smix-adapter-maestro/src/parser.rs": ["Text", "Id", "Label", "Role", "Point"],
     "crates/smix-cli/src/act.rs": ["Text", "Id", "Label", "Role", "Point"],
-    "crates/smix-mcp/src/selector_params.rs": ["Text", "Id", "Label", "Role", "Point"],
+    "crates/smix-mcp/src/selector_params.rs": [
+        "Text", "Id", "Label", "Role", "Point", "OcrText",
+    ],
 }
-TOKEN = {"Text": "text", "Id": "id", "Label": "label", "Role": "role", "Point": "point"}
+TOKEN = {
+    "Text": "text",
+    "Id": "id",
+    "Label": "label",
+    "Role": "role",
+    "Point": "point",
+    "OcrText": "ocrText",
+}
 
 
 def write(path: str, body: str) -> None:
@@ -59,7 +68,21 @@ def write(path: str, body: str) -> None:
 def tree(tmp: str, variants: list[str] | None = None) -> None:
     """A tree shaped like this repository's, and declared complete."""
     vs = VARIANTS if variants is None else variants
-    enum = "pub enum Selector {\n" + "".join(f"    {v} {{}},\n" for v in vs) + "}\n"
+    # Two variants carry an optional companion field, matching the real
+    # enum's shape: a form can be present on a surface and unusable there
+    # because the parameter that makes it work cannot be given.
+    def body_of(v: str) -> str:
+        if v == "Role":
+            return "        role: Role,\n        name: Option<Pattern>,\n        modifiers: Modifiers,\n"
+        if v == "OcrText":
+            return "        ocr_text: String,\n        locales: Vec<String>,\n        modifiers: Modifiers,\n"
+        return "        modifiers: Modifiers,\n"
+
+    enum = (
+        "pub enum Selector {\n"
+        + "".join(f"    {v} {{\n{body_of(v)}    }},\n" for v in vs)
+        + "}\n"
+    )
     write(os.path.join(tmp, "crates/smix-selector/src/lib.rs"), enum)
     for rel, supported in SUPPORTED.items():
         lines = []
@@ -73,6 +96,10 @@ def tree(tmp: str, variants: list[str] | None = None) -> None:
         # A supported form's construction token, so the absence-side check
         # has something true to agree with.
         body += "".join(f"let _ = Selector::{v} {{}};\n" for v in supported)
+        # The optional companion fields each surface must speak for.
+        for v, f in [("Role", "name"), ("OcrText", "locales")]:
+            if v in supported:
+                body += f"// selector-surface-field: {v}.{f} — the `{f}` form\n"
         write(os.path.join(tmp, rel), body)
 
 
@@ -217,7 +244,34 @@ with tempfile.TemporaryDirectory() as tmp:
         "no surfaces at all fails", out.returncode, out.stdout + out.stderr, "reading air"
     )
 
-# 10. This repository. Last, and never the only one.
+# 10. A form that is present and unusable: the surface takes `ocrText`
+#     and says nothing about which languages it can be read in. That is
+#     the shape a consumer hit — a Chinese dialog answered with "no
+#     matching text" by a recogniser told to read English.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    rel = os.path.join(tmp, "crates/smix-mcp/src/selector_params.rs")
+    body = "\n".join(
+        l
+        for l in open(rel, encoding="utf-8").read().splitlines()
+        if "selector-surface-field: OcrText.locales" not in l
+    )
+    write(rel, body + "\n")
+    code, out = scan_in(tmp)
+    expect_verdict("a form with no word for its parameter fails", code, out, "locales")
+
+# 11. And the floor under it: an enum whose optional fields cannot be
+#     parsed makes "every parameter is spoken for" true of nothing.
+with tempfile.TemporaryDirectory() as tmp:
+    tree(tmp)
+    write(
+        os.path.join(tmp, "crates/smix-selector/src/lib.rs"),
+        "pub enum Selector {\n" + "".join(f"    {v} {{}},\n" for v in VARIANTS) + "}\n",
+    )
+    code, out = scan_in(tmp)
+    expect_verdict("an enum with no parseable fields fails", code, out, "reading air")
+
+# 12. This repository. Last, and never the only one.
 code, out = run(ROOT)
 expect("this repository is fully declared", code == 0, f"exit {code}:\n{out}")
 
@@ -227,4 +281,4 @@ if problems:
         print(f"  - {p}")
     sys.exit(1)
 
-print("selector-surface-scan.test: 10 cases pass")
+print("selector-surface-scan.test: 12 cases pass")

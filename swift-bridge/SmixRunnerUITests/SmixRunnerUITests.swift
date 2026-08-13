@@ -2493,10 +2493,10 @@ final class SmixRunnerUITests: XCTestCase {
       // so the handler converts to UIKit. This is the sense-layer
       // fallback for a11y-less and i18n cases.
       //
-      // Matching: case-insensitive substring on `topCandidates(1)` of each
-      // observation. Returns the first hit (top-left-most by Vision
-      // observation order). Caller can re-call with finer keyword for
-      // disambiguation.
+      // Matching lives in `FindTextByOcrRoute.pick`: an exact reading
+      // wins outright, a lone containing one is taken, and two or more
+      // return nothing. It did read "the first containing hit in Vision's
+      // order", and that tapped Don't Allow when asked for Allow.
       findTextByOcrHandler: { text, locales, recognitionLevel in
         let app = await resolveApp()  // Per-request target-app rebind.
         let result: (Double, Double, Double, Double)? = await Task { @MainActor in

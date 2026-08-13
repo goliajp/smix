@@ -317,12 +317,12 @@ async fn run_step(idx: usize, step: &Step, port: u16) -> Result<(), ScriptError>
         _ => {}
     }
     let res = match step {
-        Step::Tap { selector } => cmd_tap(selector.clone(), port).await,
-        Step::Find { selector } => cmd_find(selector.clone(), port).await,
+        Step::Tap { selector } => cmd_tap(selector.clone(), port, Vec::new()).await,
+        Step::Find { selector } => cmd_find(selector.clone(), port, Vec::new()).await,
         // Flow yaml's `wait-for` is the presence form; absence is
         // `extendedWaitUntil: { notVisible: … }`, a different step.
         Step::WaitFor { selector, timeout } => {
-            cmd_wait_for(selector.clone(), *timeout, port, false).await
+            cmd_wait_for(selector.clone(), *timeout, port, false, Vec::new()).await
         }
         Step::Fill { selector, text } => cmd_fill(selector.clone(), text.clone(), port).await,
         Step::PressKey { key } => cmd_press_key(key.clone(), port).await,

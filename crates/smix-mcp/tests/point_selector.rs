@@ -151,3 +151,33 @@ fn the_schema_is_recursive_and_generates() {
     assert!(j.contains("fallback"), "the field is in the schema");
     assert!(j.contains("\"$ref\""), "and refers to itself: {j}");
 }
+
+/// The languages to read in ride on the selector, so a tool cannot
+/// accept the field and then drop it.
+#[test]
+fn locales_reach_the_selector() {
+    let sel = params(r#"{"ocrText":"允许","locales":["zh-Hans"]}"#)
+        .to_selector()
+        .expect("valid");
+    assert_eq!(smix_mcp::ocr_locales_of(&sel), ["zh-Hans".to_string()]);
+}
+
+/// Left out means the recogniser decides, which is what every caller got
+/// before there was a way to say.
+#[test]
+fn no_locales_means_the_recogniser_decides() {
+    let sel = params(r#"{"ocrText":"Allow"}"#)
+        .to_selector()
+        .expect("valid");
+    assert!(smix_mcp::ocr_locales_of(&sel).is_empty());
+}
+
+/// `locales` narrows `ocrText` and means nothing without it — the same
+/// rule `name` has for `role`.
+#[test]
+fn locales_without_ocr_text_is_refused() {
+    let e = params(r#"{"id":"submit","locales":["ja"]}"#)
+        .to_selector()
+        .expect_err("locales needs ocrText");
+    assert!(format!("{e:?}").contains("locales"), "{e:?}");
+}

@@ -59,6 +59,21 @@ DECLARATION = re.compile(
     r"//\s*selector-surface:\s*(\w+)\s*[—-]\s*(.+?)\s*$", re.M
 )
 
+# A form's optional companion field, declared the same way.
+#
+# A form can be present on a surface and unusable there. `ocrText` is on
+# all three, and only yaml lets you say which languages to read — so a
+# consumer driving a Chinese permission dialog got "no matching
+# observations" from a recogniser that had been told to read English. The
+# form was there; the parameter that makes it work was not.
+#
+# Required fields cannot go missing quietly — `Point` without `nx` does
+# not compile. Optional ones can, and the canonical enum already marks
+# which those are.
+FIELD_DECLARATION = re.compile(
+    r"//\s*selector-surface-field:\s*(\w+)\.(\w+)\s*[—-]\s*(.+?)\s*$", re.M
+)
+
 # Floors. A scan that reads no variants agrees that every surface is
 # complete, and a surface with two declarations agrees it was audited.
 # Eleven variants and four supported forms per surface were the measured
@@ -72,6 +87,10 @@ MIN_SUPPORTED = 4
 # written to catch, in its own source. Found by applying
 # `.claude/rule/empty-predicate.md` to the gate rather than to the code.
 MIN_SURFACES = 3
+# The optional companion fields, measured: `Role.name` and
+# `OcrText.locales` the day this was written. A form's whole payload is
+# not a companion, so `Fallback.fallback` is not one of them.
+MIN_FIELDS = 2
 
 # How a surface would name each form in its own code, when it takes it.
 # Only forms with an unmistakable token: a `none` is checked against
@@ -89,6 +108,41 @@ SIGNATURE = {
 def read(rel: str) -> str:
     with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
         return fh.read()
+
+
+def optional_fields(src: str) -> list[tuple[str, str]]:
+    """`Variant.field` pairs a surface may leave out without noticing.
+
+    A field that is the variant's whole payload is the form itself, not a
+    companion — `Fallback { fallback }` is the chain, and declaring it
+    twice would say nothing. So a field counts only where the variant
+    carries something else besides it and `modifiers`.
+    """
+    m = re.search(r"pub enum Selector \{(.*?)\n\}", src, re.S)
+    if not m:
+        return []
+    out: list[tuple[str, str]] = []
+    variant = None
+    fields: dict[str, list[tuple[str, bool]]] = {}
+    for line in m.group(1).split("\n"):
+        v = re.match(r"^    ([A-Z]\w+)\s*\{", line)
+        if v:
+            variant = v.group(1)
+            fields[variant] = []
+            continue
+        if variant is None or line.lstrip().startswith("//"):
+            continue
+        f = re.search(r"\b(\w+): (Option<|Vec<)", line)
+        if f:
+            fields[variant].append((f.group(1), True))
+        elif re.search(r"\b(\w+): [A-Za-z]", line):
+            fields[variant].append((re.search(r"\b(\w+): ", line).group(1), False))
+    for variant, fs in fields.items():
+        carried = [n for n, _ in fs if n != "modifiers"]
+        for name, is_optional in fs:
+            if is_optional and name != "modifiers" and len(carried) > 1:
+                out.append((variant, name))
+    return out
 
 
 def canonical_variants(src: str) -> list[str]:
@@ -117,6 +171,16 @@ def main() -> int:
             f"  - {len(SURFACES)} surface(s) listed — this scan is reading air. "
             f"With no surfaces, 'every surface declares every form' is true and "
             f"says nothing."
+        )
+        return 1
+
+    fields = optional_fields(read(CANONICAL))
+    if len(fields) < MIN_FIELDS:
+        print("selector-surface-scan: FAIL")
+        print(
+            f"  - {len(fields)} optional field(s) parsed out of {CANONICAL} — this "
+            f"scan is reading air on the half that decides whether a form works "
+            f"rather than whether it exists"
         )
         return 1
 
@@ -182,6 +246,28 @@ def main() -> int:
                 problems.append(
                     f"{surface} declares {variant} as `{token.group(1)}` and {rel} "
                     f"contains no such word — the declaration has become prose"
+                )
+
+        declared_fields = {
+            (v, f): d for v, f, d in FIELD_DECLARATION.findall(body)
+        }
+        for variant, field in fields:
+            if variant not in declared:
+                continue  # the form itself is already reported above
+            if declared[variant].startswith("none"):
+                continue  # a form that is not here has no parameters
+            if (variant, field) not in declared_fields:
+                problems.append(
+                    f"{surface} takes {variant} and says nothing about its "
+                    f"`{field}`. Add `// selector-surface-field: {variant}.{field} "
+                    f"— …` to {rel}: how it is written here, or `none — <why>`. A "
+                    f"form whose parameters cannot be given is present and unusable, "
+                    f"which is how `ocrText` read English at a Chinese dialog"
+                )
+            elif not re.match(r"none\s*[—,-]\s*\S", declared_fields[(variant, field)]) \
+                    and declared_fields[(variant, field)].startswith("none"):
+                problems.append(
+                    f"{surface}'s {variant}.{field} is `none` with no reason ({rel})"
                 )
 
         for variant in declared:

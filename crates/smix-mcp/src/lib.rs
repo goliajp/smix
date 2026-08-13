@@ -10,5 +10,5 @@
 mod selector_params;
 pub mod session;
 
-pub use selector_params::{SelectorParams, chain_of, ocr_text_of, point_of};
+pub use selector_params::{SelectorParams, chain_of, ocr_locales_of, ocr_text_of, point_of};
 pub use session::{Bound, SessionState, UNBOUND_HINT};
