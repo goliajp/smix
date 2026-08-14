@@ -2,6 +2,31 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [5.0.1] — 2026-08-14
+
+Help text, and a gate for the axis it was on.
+
+A reader of 5.0.0 found `smix tap --help` describing `--ocr-locale` with
+`--port`'s sentence while `--port` itself was blank. It was not a typo:
+`--port`'s doc comment sat above the field *before* it, because a field
+had been inserted between a comment and the thing it described, and clap
+reads the comment as the new field's. Nineteen more flags were blank the
+same way — the reader saw the ones on commands they happened to run.
+
+### Fixed
+
+- **Twenty flags and positional arguments now say what they do.**
+  `--port` on twelve commands, `--json` on three, and `--text`,
+  `--direction`, `--udid`, `<MODE>` and `<ARGS>`, each of which sat first
+  in its variant where the `///` above it belongs to the command.
+
+### Gates
+
+- `every-flag-says-what-it-does` — every `#[arg]` field carries a
+  description, `hide = true` exempted by name. It found five of the
+  twenty by reading the source rather than the rendered help, which is
+  where the last five were invisible.
+
 ## [5.0.0] — 2026-08-14
 
 **The major is the arbiter's, not the plan's.** Everything here is

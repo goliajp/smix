@@ -208,13 +208,13 @@ enum Cmd {
     Tap {
         /// Selector in `<kind>:<value>` shorthand.
         selector: String,
-        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         /// Which language to read an `ocrText:` selector in — `zh-Hans`,
         /// `ja`, `en`. Repeatable, best first. Left out, the recogniser
         /// works out the language itself; naming the wrong one does not
         /// fail, it misreads.
         #[arg(long = "ocr-locale")]
         ocr_locale: Vec<String>,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -242,6 +242,7 @@ enum Cmd {
     /// Boolean existence probe (POST /find). Prints `exists=<bool>`.
     /// Same selector shorthand as `smix tap`.
     Find {
+        /// Which element to look for, in `<kind>:<value>` shorthand.
         selector: String,
         /// Which language to read an `ocrText:` selector in — `zh-Hans`,
         /// `ja`, `en`. Repeatable, best first. Left out, the recogniser
@@ -249,6 +250,7 @@ enum Cmd {
         /// fail, it misreads.
         #[arg(long = "ocr-locale")]
         ocr_locale: Vec<String>,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -263,6 +265,7 @@ enum Cmd {
     /// `--timeout` expires. Mirrors SDK `App::wait_for` semantics; useful in
     /// shell loops driving the runner from outside Rust.
     WaitFor {
+        /// Which element to wait for, in `<kind>:<value>` shorthand.
         selector: String,
         /// Timeout in seconds (default 5).
         #[arg(long, default_value_t = 5)]
@@ -273,6 +276,7 @@ enum Cmd {
         /// fail, it misreads.
         #[arg(long = "ocr-locale")]
         ocr_locale: Vec<String>,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -293,9 +297,12 @@ enum Cmd {
     /// Type text into the matched field. Equivalent to the flow yaml
     /// `inputText:` verb. Selector shorthand same as `smix tap`.
     Fill {
+        /// Which field to type into, in `<kind>:<value>` shorthand.
         selector: String,
+        /// The text to type.
         #[arg(long)]
         text: String,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -314,6 +321,7 @@ enum Cmd {
     PressKey {
         /// KeyName shorthand (see help text).
         key: String,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -334,6 +342,7 @@ enum Cmd {
     Swipe {
         /// `up` / `down` / `left` / `right`.
         direction: String,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -347,9 +356,13 @@ enum Cmd {
     /// Scroll until the selector becomes visible. Direction:
     /// `up` / `down` / `left` / `right`.
     Scroll {
+        /// Which element to bring into view, in `<kind>:<value>` shorthand.
         selector: String,
+        /// Which way to travel through the content — names what you want to
+        /// SEE, not the finger's path. `up` / `down` / `left` / `right`.
         #[arg(long)]
         direction: String,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -362,6 +375,7 @@ enum Cmd {
     },
     /// Dismiss the soft keyboard if visible.
     HideKeyboard {
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -375,8 +389,10 @@ enum Cmd {
     /// Print the runner's current a11y tree. `--json` emits
     /// wire JSON; default emits an indented text outline.
     Tree {
+        /// Emit machine-readable JSON instead of the human outline.
         #[arg(long)]
         json: bool,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -400,8 +416,10 @@ enum Cmd {
     /// Print the runner's high-level ScreenDescription: the visible
     /// interactive elements aggregated from the current a11y tree.
     Describe {
+        /// Emit machine-readable JSON instead of the human outline.
         #[arg(long)]
         json: bool,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -414,8 +432,10 @@ enum Cmd {
     },
     /// Print the runner's current SpringBoard system-popup list.
     SystemPopups {
+        /// Emit machine-readable JSON instead of the human outline.
         #[arg(long)]
         json: bool,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -430,8 +450,11 @@ enum Cmd {
     /// `smix system-popups` output (popup `id` + one of its buttons'
     /// `id`). Errors when the popup or button no longer exists.
     SystemPopupAction {
+        /// Which popup, as `smix system-popups` reports it.
         popup_id: String,
+        /// Which button on it, as that same listing reports it.
         button_id: String,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -450,6 +473,7 @@ enum Cmd {
     RunScript {
         /// Path to the script yaml file.
         path: PathBuf,
+        /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
@@ -914,6 +938,7 @@ impl RunPlatform {
 enum CapsuleAction {
     /// Bring up sim + start capture + start runner in record mode.
     Up {
+        /// Which device to bring the capsule up on, by UDID or registry alias.
         device: String,
         /// Bundle id the runner binds to. Required — `capsule up` runs
         /// `runner up`, which refuses to start without a target bundle,
@@ -958,6 +983,7 @@ enum CapsuleAction {
 enum RecordAction {
     /// Start recording to a file.
     Start {
+        /// Which device to record, by UDID or registry alias.
         device: String,
         /// Where to write the mp4.
         #[arg(long)]
@@ -1257,6 +1283,7 @@ enum SimAction {
     },
     /// Print the UDID a device ref resolves to.
     Resolve {
+        /// The alias to look up.
         device: String,
     },
     /// Record a device under an alias, creating the registry when
@@ -1272,7 +1299,10 @@ enum SimAction {
     /// enumerate the world's phones, which is why registering one is a
     /// deliberate act rather than a lookup.
     Register {
+        /// The short name this device answers to from now on.
         alias: String,
+        /// The device's own identifier: a CoreSimulator UDID, an
+        /// `emulator-<port>` serial, or a phone's UDID.
         #[arg(long)]
         udid: String,
         /// BCP 47 locale to enforce at boot (e.g. `ja-JP`). Optional.
@@ -1298,19 +1328,24 @@ enum SimAction {
     },
     /// Boot a simulator.
     Boot {
+        /// Which device to boot, by UDID or registry alias.
         device: String,
     },
     /// Shutdown a simulator.
     Shutdown {
+        /// Which device to shut down, by UDID or registry alias.
         device: String,
     },
     /// Erase a simulator's data.
     Erase {
+        /// Which device to wipe, by UDID or registry alias.
         device: String,
     },
     /// Take a screenshot (PNG). Pass `-` to write raw PNG to stdout.
     Screenshot {
+        /// Which device to photograph, by UDID or registry alias.
         device: String,
+        /// Where to write the PNG.
         out: PathBuf,
     },
     /// Launch an app by bundle id; prints the pid. Accepts repeatable
@@ -1320,7 +1355,9 @@ enum SimAction {
     /// before any `openLink` so iOS treats the URL as in-app routing
     /// (sidesteps the SpringBoard "Open in '`<App>`'?" dialog).
     Launch {
+        /// Which device, by UDID or registry alias.
         device: String,
+        /// The app to launch.
         bundle_id: String,
         /// `--child-env KEY=VAL` (repeatable). KEY is the bare name the
         /// app reads; the `SIMCTL_CHILD_` prefix is added automatically.
@@ -1336,7 +1373,9 @@ enum SimAction {
     },
     /// Terminate an app by bundle id.
     Terminate {
+        /// Which device, by UDID or registry alias.
         device: String,
+        /// The app to stop.
         bundle_id: String,
     },
     /// Put an app on a device: an `.app` on a simulator, an `.apk` on an
@@ -1352,7 +1391,9 @@ enum SimAction {
     /// `.apk` signed by a different key does not replace the installed
     /// one, and you get adb's words for why rather than smix's guess.
     Install {
+        /// Which device, by UDID or registry alias.
         device: String,
+        /// Path to the `.app` bundle or `.apk` to install.
         app_path: PathBuf,
     },
     /// Take an app off a device, by bundle id on Apple platforms and by
@@ -1363,17 +1404,23 @@ enum SimAction {
     /// allow-destructive <device>` — taking an app off somebody's phone
     /// removes its data with it.
     Uninstall {
+        /// Which device, by UDID or registry alias.
         device: String,
+        /// The app to remove.
         bundle_id: String,
     },
     /// Open a URL on the simulator.
     Openurl {
+        /// Which device, by UDID or registry alias.
         device: String,
+        /// The URL to open — a deeplink the app registered, or any scheme the OS handles.
         url: String,
     },
     /// Set simulator UI appearance (light / dark).
     Appearance {
+        /// Which device, by UDID or registry alias.
         device: String,
+        /// `light` or `dark`.
         #[arg(value_parser = parse_appearance)]
         mode: Appearance,
     },
@@ -1385,6 +1432,7 @@ enum SimAction {
     /// the registry rather than confirmed per command: a confirmation
     /// that has to be typed every time ends up pasted into a script.
     AllowDestructive {
+        /// Which device this consent is recorded for, by UDID or registry alias.
         device: String,
     },
     /// Forget one alias.
@@ -1393,6 +1441,7 @@ enum SimAction {
     /// device keeps working. The other half of `register`, which
     /// without it could only ever add.
     Unregister {
+        /// The alias to forget.
         alias: String,
     },
     /// Fold per-checkout device registries into this machine's.
@@ -1418,6 +1467,7 @@ enum SimAction {
         dry_run: bool,
     },
     KeychainReset {
+        /// Which device, by UDID or registry alias.
         device: String,
     },
     /// Set the sim's locale (`AppleLanguages` + `AppleLocale`
@@ -1432,6 +1482,7 @@ enum SimAction {
     /// covers the "sim is already booted, want to change locale now"
     /// gap.
     Locale {
+        /// Which device, by UDID or registry alias.
         device: String,
         /// BCP-47 tag (e.g. `en`, `en-US`, `ja`, `zh-Hans`).
         lang: String,
@@ -1446,8 +1497,11 @@ enum SimAction {
     /// argument shape. If any arg is the literal `{udid}`, the resolved
     /// UDID substitutes there instead of being injected after the verb.
     Exec {
+        /// Which device, by UDID or registry alias.
         device: String,
+        /// The simctl verb to run.
         verb: String,
+        /// Everything after the verb, passed through untouched.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },

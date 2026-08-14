@@ -187,6 +187,11 @@ jobs:
         run: python3 scripts/dev/tap-then-capture-is-one-path.py
       - name: the one-path gate can still go red
         run: python3 scripts/dev/tap-then-capture-is-one-path.test.py
+      # Reads the CLI's clap derives; all in the checkout.
+      - name: every flag says what it does
+        run: python3 scripts/dev/every-flag-says-what-it-does.py
+      - name: the flag-description gate can still go red
+        run: python3 scripts/dev/every-flag-says-what-it-does.test.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the

@@ -1,6 +1,6 @@
 {
   "name": "@goliapkg/smix",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "description": "Playwright-shape iOS Simulator / Android emulator UI automation SDK for React Native + Expo + Detox-compatible TypeScript test runners.",
   "type": "module",
   "license": "Apache-2.0 OR MIT",
