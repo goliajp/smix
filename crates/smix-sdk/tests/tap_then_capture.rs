@@ -117,7 +117,7 @@ async fn runner_server() -> MockServer {
 }
 
 async fn driven(server: &MockServer) -> App {
-    let runner = HttpRunnerClient::with_base(&server.uri());
+    let runner = HttpRunnerClient::with_base(server.uri());
     let mut app = App::new(SimctlDriver::new(runner), SimctlClient::new());
     app.open_session_in_place("com.example.app", true)
         .await

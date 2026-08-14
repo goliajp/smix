@@ -64,6 +64,7 @@ WORKSPACE = "Cargo.toml"
 # so this stays pinned rather than tracking the newest section.
 BREAKING_RELEASE = "## [2.0.0]"
 
+
 problems = []
 missing = []
 
@@ -76,6 +77,18 @@ def read(rel):
     except OSError:
         missing.append(rel)
         return None
+
+
+def workspace_major():
+    """The major the workspace is on, for the release being made."""
+    text = read(WORKSPACE) or ""
+    found = re.search(r'^version\s*=\s*"(\d+)\.', text, re.M)
+    return found.group(1) if found else None
+
+
+def newest_release_heading(changelog):
+    found = re.search(r"^## \[(\d+\.\d+\.\d+)\]", changelog, re.M)
+    return f"## [{found.group(1)}]" if found else None
 
 
 def cells_of(line):
@@ -113,12 +126,33 @@ def bold_phrases(section):
     return out
 
 
-def changelog_breaking_phrases(changelog):
-    parts = changelog.split("### Breaking")
+def breaking_section(changelog, release):
+    """The `### Breaking` block inside one release's entry.
+
+    Inside, not "the first one in the file". The comment above
+    BREAKING_RELEASE says this side is pinned too, and for four years it
+    read the same thing either way because no later release had a
+    Breaking section. 5.0.0 is the first that does, and the unpinned read
+    silently compared v2's boundary table against v5's entry — the
+    reader agreeing with the writer by accident.
+    """
+    parts = changelog.split(release)
     if len(parts) < 2:
-        problems.append("CHANGELOG has no `### Breaking` section")
+        return None
+    entry = parts[1].split("\n## [")[0]
+    if "### Breaking" not in entry:
+        return None
+    return entry.split("### Breaking")[1].split("\n### ")[0]
+
+
+def changelog_breaking_phrases(changelog):
+    section = breaking_section(changelog, BREAKING_RELEASE)
+    if section is None:
+        problems.append(
+            f"CHANGELOG's {BREAKING_RELEASE} entry has no `### Breaking` section"
+        )
         return []
-    return bold_phrases(parts[1].split("### Added")[0])
+    return bold_phrases(section)
 
 
 def changelog_release_phrases(changelog):
@@ -132,6 +166,35 @@ def changelog_release_phrases(changelog):
         problems.append(f"CHANGELOG has no `{BREAKING_RELEASE}` section")
         return []
     return bold_phrases(parts[1].split("\n## [")[0])
+
+
+def boundary_rows_of(text, rel):
+    """`boundary_rows`, for a boundary file other than the pinned one."""
+    parts = text.split("## 破坏性变更")
+    if len(parts) < 2:
+        problems.append(
+            f"{rel} has no breaking-change table, and the release being made "
+            "has breaking entries to record in it"
+        )
+        return []
+    table = parts[1].split("\n## ")[0]
+    out = []
+    for line in table.splitlines():
+        line = line.strip()
+        if not line.startswith("| "):
+            continue
+        cells = cells_of(line)
+        if not cells or is_separator(cells[0]):
+            continue
+        if len(cells) != 4:
+            problems.append(
+                f"{rel}: breaking-change row `{cells[0]}` has {len(cells)} "
+                "cells, not 4 — a row this reader cannot split is a row "
+                "nothing checks"
+            )
+            continue
+        out.append((cells[0], cells[3]))
+    return out
 
 
 def boundary_rows(boundary):
@@ -179,6 +242,55 @@ def claim_rows(claims):
             continue
         out.append(cells)
     return out
+
+
+def check_release_being_made(changelog):
+    """The same rule, applied to the release actually being made.
+
+    The v2 check above is about what v2 *is* and stays pinned there. It
+    therefore says nothing about the entry at the top of the file — and
+    for four years that was harmless, because no later release had a
+    Breaking section. The first one that did (5.0.0) went entirely
+    unchecked by the gate whose whole subject is "once it is on one list,
+    it must be on both".
+
+    Silent when the newest entry has no Breaking section: most releases
+    do not, and a rule that demanded one would be asking for a table
+    about nothing.
+    """
+    heading = newest_release_heading(changelog)
+    major = workspace_major()
+    if heading is None or major is None:
+        problems.append(
+            "cannot read the newest release heading or the workspace major — "
+            "this half of the gate would be checking one list against nothing"
+        )
+        return 0
+    section = breaking_section(changelog, heading)
+    if section is None:
+        return 0
+    phrases = bold_phrases(section)
+    rel = f".claude/docs/v{major}.md"
+    text = read(rel)
+    if text is None:
+        problems.append(
+            f"{heading} has a Breaking section and {rel} is absent — a change "
+            "to what the version is belongs in the version's boundary file (§10)"
+        )
+        return 0
+    claimed = [c for _, c in boundary_rows_of(text, rel)]
+    for phrase in phrases:
+        if phrase not in claimed:
+            problems.append(
+                f"{heading} lists `{phrase}` and no row of {rel}'s "
+                "breaking-change table claims it"
+            )
+    for c in claimed:
+        if c not in phrases:
+            problems.append(
+                f"{rel} claims `{c}`, which {heading} does not open an entry with"
+            )
+    return len(phrases)
 
 
 def check_breaking_lists(boundary, changelog):
@@ -397,6 +509,7 @@ def main():
         return 2
 
     n_breaking = check_breaking_lists(boundary, changelog)
+    n_now = check_release_being_made(changelog)
     n_behaviour = check_behaviour_changes(claims, changelog)
     listed = check_publish_dag(ship, workspace)
     check_semver_gate(ship)
@@ -409,7 +522,8 @@ def main():
         return 1
 
     print(
-        f"release-record: {n_breaking} breaking changes, both lists agree · "
+        f"release-record: {n_breaking} v2 breaking changes and {n_now} in the "
+        f"release being made, both lists agree · "
         f"{n_behaviour} behaviour changes in the release notes · publish list "
         f"{len(listed)} crates, topological"
     )
