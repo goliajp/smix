@@ -643,6 +643,17 @@ public actor SmixRunnerServer {
   /// internal NSException (vanished-element / app terminated mid-gesture).
   public typealias SwipeOnceHandler = @Sendable (_ direction: String, _ scope: String?) async -> Bool
 
+  /// GET /coordinate-space handler. Reports the two spaces and the
+  /// orientation stamped on synthesised events, having moved nothing.
+  /// Returns the app frame, the snapshot root frame, the interface
+  /// orientation, the orientation the event record is built with, and
+  /// where a given normalised offset resolves to.
+  public typealias CoordinateSpaceHandler = @Sendable (_ nx: Double, _ ny: Double) async -> (
+    appFrame: CGRect, snapshotRootFrame: CGRect,
+    deviceOrientation: String, eventRecordOrientation: String,
+    resolvedPoint: CGPoint
+  )
+
   /// POST /tap-at-norm-coord handler. Coord-based tap via
   /// `app.coordinate(withNormalizedOffset: CGVector(dx:nx, dy:ny)).tap()`.
   /// The Apple native UI event chain fires RN Pressable React events,
@@ -1478,7 +1489,10 @@ public actor SmixRunnerServer {
     unavailableReasonInferer: UnavailableReasonInferer? = nil,
     /// App-rebind half of `POST /soft-cycle`. `nil` opts out (the route
     /// is not registered; `smix runner cycle` then always hard-cycles).
-    softCycleHandler: SoftCycleHandler? = nil
+    softCycleHandler: SoftCycleHandler? = nil,
+    /// `nil` opts out: the route is not registered and the
+    /// mismatch it exists to measure stays unmeasurable.
+    coordinateSpaceHandler: CoordinateSpaceHandler? = nil
   ) async throws {
     let server = Self.makeServer(port: port)
     let shutdownSignal = ShutdownSignal()
@@ -1504,6 +1518,40 @@ public actor SmixRunnerServer {
         sessionsOpen: 0,
         activationsTotal: 0
       )
+    }
+
+    // GET /coordinate-space. Read-only: it synthesises nothing.
+    if let coordinateSpaceHandler {
+      await server.appendRoute("GET /coordinate-space") { request in
+        // Reads the app under test — `app.frame` is half of what it
+        // reports — so it goes through the same context guard every
+        // route that touches the app does. Answering about whichever
+        // app the runner happened to boot with would make the numbers
+        // describe a different screen than the caller is asking about,
+        // which is precisely the class of mistake this route exists to
+        // expose.
+        return await Self.contextGuardedResponse(
+          request: request,
+          fallback: CoordinateSpaceRoute.unavailable()
+        ) {
+          // The probe point is a query parameter with a default rather
+          // than a required one: the two frames are the answer most of
+          // the time, and demanding coordinates to read them back would
+          // make the simplest question the hardest to ask.
+          let q = request.query
+          let nx = Double(q["nx"] ?? "") ?? 0.5
+          let ny = Double(q["ny"] ?? "") ?? 0.5
+          let r = await coordinateSpaceHandler(nx, ny)
+          return CoordinateSpaceRoute.response(
+            body: CoordinateSpaceRoute.body(
+              appFrame: r.appFrame,
+              snapshotRootFrame: r.snapshotRootFrame,
+              deviceOrientation: r.deviceOrientation,
+              eventRecordOrientation: r.eventRecordOrientation,
+              nx: nx, ny: ny,
+              resolvedPoint: r.resolvedPoint))
+        }
+      }
     }
 
     // Register /select/resolve* routes when handler provided.

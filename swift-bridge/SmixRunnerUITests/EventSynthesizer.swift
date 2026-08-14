@@ -220,3 +220,44 @@ final class SmixRunnerDaemonProxy: @unchecked Sendable {
     }
   }
 }
+
+/// The interface orientation every synthesised event is stamped with.
+///
+/// It was written out at six call sites as a literal `.portrait`. That
+/// is the value `XCSynthesizedEventRecord` uses to decide how the
+/// points in an event path are read, so a landscape app receives
+/// touches computed in its own frame and interpreted as though the
+/// screen were portrait — which is the defect under investigation in
+/// v5.1. Naming it once does not change it; it makes
+/// `GET /coordinate-space` able to report the same value the touches
+/// actually carry, instead of a comment claiming what they carry.
+let smixEventRecordOrientation: UIInterfaceOrientation = .portrait
+
+func describeInterfaceOrientation(_ o: UIInterfaceOrientation) -> String {
+  switch o {
+  case .portrait: return "portrait"
+  case .portraitUpsideDown: return "portraitUpsideDown"
+  case .landscapeLeft: return "landscapeLeft"
+  case .landscapeRight: return "landscapeRight"
+  case .unknown: return "unknown"
+  @unknown default: return "unknown"
+  }
+}
+
+func describeDeviceOrientation(_ o: UIDeviceOrientation) -> String {
+  switch o {
+  case .portrait: return "portrait"
+  case .portraitUpsideDown: return "portraitUpsideDown"
+  // Named as the interface would name them, so the two strings this
+  // route returns are comparable at all. UIDeviceOrientation's
+  // landscapeLeft is the interface's landscapeRight — comparing the
+  // raw names would report a mismatch that is only a vocabulary
+  // difference, and hide a real one behind it.
+  case .landscapeLeft: return "landscapeRight"
+  case .landscapeRight: return "landscapeLeft"
+  case .faceUp: return "faceUp"
+  case .faceDown: return "faceDown"
+  case .unknown: return "unknown"
+  @unknown default: return "unknown"
+  }
+}

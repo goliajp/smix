@@ -57,6 +57,12 @@ DRIVES_THE_APP = {
     "POST /set-orientation",
     "POST /record/start",
     "POST /record/stop",
+    # Reports rather than acts, and still belongs here: half of what it
+    # returns is `XCUIApplication.frame`, so answering about whichever
+    # app the runner booted with would describe a different screen than
+    # the caller asked about — the exact confusion it was added to
+    # measure.
+    "GET /coordinate-space",
 }
 
 # Routes that do not. Listed rather than assumed: "not in the first
