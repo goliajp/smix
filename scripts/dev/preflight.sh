@@ -68,6 +68,30 @@ for d in $CHANGED_DOCS; do
     fi
 done
 
+# Crates that embed a copy of a whole tree from outside `crates/`.
+#
+# The rule above finds a crate that reads a changed *file* by name.
+# `smix-runner-sources` embeds a tarball of `swift-bridge/` and
+# `android-runner/` and compares it against them, and it names only the
+# two directories — so bumping the version, which edits a README and a
+# Kotlin constant inside those trees, matched nothing and the test that
+# exists to catch a stale tarball did not run. Preflight said clean; the
+# ship found both tarballs stale an hour later. A consumer would have
+# had `smix runner up` build the old Swift and report success.
+#
+# The directory is matched as the tail of a string literal, so
+# `join("../../swift-bridge")` selects it and `"docs/ai-guide/x.md"`
+# does not select every crate that says docs.
+for d in $CHANGED_DOCS; do
+    case "$d" in */*) tree=${d%%/*} ;; *) continue ;; esac
+    # `|| true`: grep answers no-match with exit 1, fatal under pipefail.
+    embedders=$(grep -rl "\"[^\"]*/$tree\"" crates/*/src crates/*/tests 2>/dev/null |
+        cut -d/ -f2 | sort -u || true)
+    if [ -n "$embedders" ]; then
+        CRATES=$(printf '%s\n%s\n' "$CRATES" "$embedders" | sort -u | sed '/^$/d')
+    fi
+done
+
 if [ -z "$CRATES" ]; then
     echo "preflight: no crate changes vs $BASE"
 else
