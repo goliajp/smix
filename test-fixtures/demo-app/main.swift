@@ -41,6 +41,100 @@ struct DetailView: View {
   }
 }
 
+// A landscape-only screen, shaped like the one a consumer could not tap.
+//
+// Theirs is a `.fullScreen` controller with
+// `supportedInterfaceOrientations = .landscapeRight`, and every touch
+// into it — by identifier and by coordinate, six rotation mappings —
+// left the screen byte-identical while smix reported the tap landing
+// inside the button aimed at.
+//
+// Two targets, deliberately: `landscape-increment` is wide enough that
+// missing it cannot be blamed on precision, and `landscape-exit` is
+// 44×40 in the top-left corner, the size and place of the button they
+// were actually after. If only the small one misses, that is a
+// different fault from both missing.
+final class LandscapeCounter: ObservableObject {
+  @Published var value = 0
+}
+
+// One view, two orientations, so the portrait run is a control rather
+// than a different experiment. Same hierarchy, same identifiers modulo
+// the prefix, same presentation path — the only difference between the
+// two is the orientation mask on the controller. If portrait moves
+// pixels and landscape does not, orientation is the only thing it can
+// be.
+struct CounterView: View {
+  let prefix: String
+  @ObservedObject var counter: LandscapeCounter
+  let onExit: () -> Void
+
+  var body: some View {
+    ZStack(alignment: .topLeading) {
+      Color(white: 0.93).ignoresSafeArea()
+
+      VStack(spacing: 24) {
+        // The subject of the pixel comparison: its glyphs change on a
+        // tap that arrives, and nothing else on this screen moves on
+        // its own — no animation, no clock, no spinner — so a diff of
+        // before and after has exactly one thing it can be reporting.
+        Text("\(counter.value)")
+          .font(.system(size: 96, weight: .bold, design: .monospaced))
+          .accessibilityIdentifier("\(prefix)-counter")
+
+        Button(action: { counter.value += 1 }) {
+          Text("increment")
+            .font(.title2)
+            .frame(width: 280, height: 96)
+            .background(Color.blue.opacity(0.25))
+        }
+        .accessibilityIdentifier("\(prefix)-increment")
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+      Button(action: onExit) {
+        Text("×")
+          .font(.title3)
+          .frame(width: 44, height: 40)
+          .background(Color.red.opacity(0.3))
+      }
+      .accessibilityIdentifier("\(prefix)-exit")
+      .padding(.leading, 64)
+      .padding(.top, 4)
+    }
+  }
+}
+
+final class LandscapeHost: UIHostingController<CounterView> {
+  override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscapeRight }
+  override var shouldAutorotate: Bool { true }
+}
+
+final class PortraitHost: UIHostingController<CounterView> {
+  override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+  override var shouldAutorotate: Bool { true }
+}
+
+enum LandscapeStage {
+  static let counter = LandscapeCounter()
+  static weak var presenter: UIViewController?
+
+  static func present(landscape: Bool) {
+    guard let root = presenter else { return }
+    counter.value = 0
+    let prefix = landscape ? "landscape" : "portrait"
+    let view = CounterView(
+      prefix: prefix, counter: counter, onExit: { root.dismiss(animated: false) })
+    let host: UIViewController =
+      landscape ? LandscapeHost(rootView: view) : PortraitHost(rootView: view)
+    host.modalPresentationStyle = .fullScreen
+    // Unanimated on purpose: a screenshot taken during a presentation
+    // transition differs from the one before it for reasons that have
+    // nothing to do with whether a touch arrived.
+    root.present(host, animated: false)
+  }
+}
+
 struct ContentView: View {
   @State private var typed = ""
   @State private var submitted = ""
@@ -73,6 +167,12 @@ struct ContentView: View {
           NavigationLink("Open detail") { DetailView() }
             .accessibilityIdentifier("fixture-detail-link")
 
+          Button("Open landscape") { LandscapeStage.present(landscape: true) }
+            .accessibilityIdentifier("landscape-enter")
+
+          Button("Open portrait counter") { LandscapeStage.present(landscape: false) }
+            .accessibilityIdentifier("portrait-enter")
+
           // Its label changes on the gesture, so the assertion is about
           // the long press having happened rather than about the row
           // still existing.
@@ -101,9 +201,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     let window = UIWindow(frame: UIScreen.main.bounds)
-    window.rootViewController = UIHostingController(rootView: ContentView())
+    let root = UIHostingController(rootView: ContentView())
+    window.rootViewController = root
     window.makeKeyAndVisible()
     self.window = window
+    LandscapeStage.presenter = root
     return true
   }
 }

@@ -722,7 +722,7 @@ private func findAndTapSystemPopupButton(
           let bId = bn.id.isEmpty ? "b-\(i)" : bn.id
           if bId == buttonId {
             let center = CGPoint(x: bn.frame.midX, y: bn.frame.midY)
-            guard let record = SmixEventRecord(orientation: .portrait),
+            guard let record = SmixEventRecord(orientation: smixEventRecordOrientation),
                   record.addPointerTouchEvent(at: center) else {
               return .notFound
             }
@@ -1457,7 +1457,7 @@ final class SmixRunnerUITests: XCTestCase {
               x: elementFrame.origin.x + elementFrame.size.width / 2,
               y: elementFrame.origin.y + elementFrame.size.height / 2
             )
-            guard let record = SmixEventRecord(orientation: .portrait),
+            guard let record = SmixEventRecord(orientation: smixEventRecordOrientation),
                   record.addPointerTouchEvent(at: center) else {
               return SmixRunnerServer.TapOutcome.notFound
             }
@@ -2282,7 +2282,7 @@ final class SmixRunnerUITests: XCTestCase {
         }
         guard setupOk == true else { return (ok: false, chain: []) }
 
-        guard let record = SmixEventRecord(orientation: .portrait) else {
+        guard let record = SmixEventRecord(orientation: smixEventRecordOrientation) else {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
           return (ok: false, chain: [])
@@ -2466,7 +2466,7 @@ final class SmixRunnerUITests: XCTestCase {
           return true
         }
         guard setupOk == true else { return false }
-        guard let record = SmixEventRecord(orientation: .portrait) else {
+        guard let record = SmixEventRecord(orientation: smixEventRecordOrientation) else {
           FileHandle.standardError.write(
             Data("smix-runner: tap-by-id: XCSynthesizedEventRecord unavailable\n".utf8))
           return false
@@ -2584,7 +2584,7 @@ final class SmixRunnerUITests: XCTestCase {
         }
         guard setupOk == true else { return false }
 
-        guard let record = SmixEventRecord(orientation: .portrait) else {
+        guard let record = SmixEventRecord(orientation: smixEventRecordOrientation) else {
           FileHandle.standardError.write(
             Data("smix-runner: swipe-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
           return false
@@ -2664,7 +2664,7 @@ final class SmixRunnerUITests: XCTestCase {
         }
         guard resolved == true else { return nil }
 
-        guard let record = SmixEventRecord(orientation: .portrait) else {
+        guard let record = SmixEventRecord(orientation: smixEventRecordOrientation) else {
           FileHandle.standardError.write(
             Data("smix-runner: long-press: XCSynthesizedEventRecord unavailable\n".utf8))
           return nil
@@ -3176,6 +3176,36 @@ final class SmixRunnerUITests: XCTestCase {
           app.launch()
         }
         return SmixRunnerServer.SoftCycleOutcome(rebound: true, mode: "relaunch")
+      },
+      // Reports, and moves nothing. The orientation below is read off
+      // the same constant the synthesised events are built with rather
+      // than described in a comment, so the route cannot claim one
+      // thing while the touches do another.
+      coordinateSpaceHandler: { nx, ny in
+        let app = await resolveApp()
+        var appFrame = CGRect.zero
+        var rootFrame = CGRect.zero
+        var interface = "unknown"
+        var resolved = CGPoint.zero
+        _ = smixGuarded("coordinate-space") {
+          let frame = app.frame
+          appFrame = frame
+          resolved = CGPoint(
+            x: frame.origin.x + frame.size.width * CGFloat(nx),
+            y: frame.origin.y + frame.size.height * CGFloat(ny))
+          if let snapshot = try? app.snapshot() {
+            rootFrame = snapshot.frame
+          }
+          interface = describeDeviceOrientation(XCUIDevice.shared.orientation)
+          return true
+        }
+        return (
+          appFrame: appFrame,
+          snapshotRootFrame: rootFrame,
+          deviceOrientation: interface,
+          eventRecordOrientation: describeInterfaceOrientation(smixEventRecordOrientation),
+          resolvedPoint: resolved
+        )
       }
     )
   }

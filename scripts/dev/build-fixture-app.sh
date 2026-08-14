@@ -65,6 +65,17 @@ cat > "$OUT/Info.plist" <<PLIST
   <key>MinimumOSVersion</key><string>$TARGET_OS</string>
   <key>UIDeviceFamily</key><array><integer>1</integer></array>
   <key>UILaunchScreen</key><dict/>
+  <!-- Declared rather than left to the default, because a view
+       controller's supportedInterfaceOrientations is intersected with
+       this list: a landscape-only screen inside an app whose bundle
+       never mentions landscape stays portrait, and the fixture would
+       then disprove a bug it never reproduced. -->
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
 </dict>
 </plist>
 PLIST
