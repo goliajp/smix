@@ -131,7 +131,7 @@ echo "--- android: unit tests + androidTest compile"
 ( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan corpus-portability-scan portable-tier-parity yield-is-not-failure-scan teardown-restores-scan android-subject-scan device-facts-are-machine-scoped leases-are-machine-scoped no-second-ledger-path retired-claims-scan contract-scan selector-surface-scan health-is-not-a-session-check probes-name-the-app tap-then-capture-is-one-path; do
+for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan corpus-portability-scan portable-tier-parity yield-is-not-failure-scan teardown-restores-scan android-subject-scan device-facts-are-machine-scoped leases-are-machine-scoped no-second-ledger-path retired-claims-scan contract-scan selector-surface-scan health-is-not-a-session-check probes-name-the-app tap-then-capture-is-one-path every-flag-says-what-it-does; do
     python3 "scripts/dev/$gate.py"
 done
 
@@ -181,6 +181,10 @@ python3 scripts/dev/probes-name-the-app.test.py
 # sentences no behaviour test can see: the combined action has one
 # implementation, and the frame comes from the process that tapped.
 python3 scripts/dev/tap-then-capture-is-one-path.test.py
+# And that the flag-description gate can still go red. A consumer read a
+# help text where one flag carried another's sentence and the second
+# carried nothing; fifteen more were the same and nobody was looking.
+python3 scripts/dev/every-flag-says-what-it-does.test.py
 
 # The AI tier is a judgement and the resolver is not; nothing about
 # that separation is enforced by the type system. This ran in one

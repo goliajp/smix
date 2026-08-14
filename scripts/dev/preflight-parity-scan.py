@@ -65,6 +65,8 @@ LOCAL = {
     "the probe-naming gate can still go red": "probes-name-the-app.test",
     "tap-then-frame is one path": "tap-then-capture-is-one-path",
     "the one-path gate can still go red": "tap-then-capture-is-one-path.test",
+    "every flag says what it does": "every-flag-says-what-it-does",
+    "the flag-description gate can still go red": "every-flag-says-what-it-does.test",
     "portable tier selftest": "portable-tier.sh --selftest",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",

@@ -1,6 +1,6 @@
 {
   "name": "@goliapkg/smix-node",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "main": "index.js",
   "types": "index.d.ts",
   "license": "Apache-2.0 OR MIT",
@@ -22,9 +22,9 @@
     ]
   },
   "optionalDependencies": {
-    "@goliapkg/smix-node-darwin-arm64": "5.0.0",
-    "@goliapkg/smix-node-darwin-x64": "5.0.0",
-    "@goliapkg/smix-node-linux-x64-gnu": "5.0.0"
+    "@goliapkg/smix-node-darwin-arm64": "5.0.1",
+    "@goliapkg/smix-node-darwin-x64": "5.0.1",
+    "@goliapkg/smix-node-linux-x64-gnu": "5.0.1"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3"
