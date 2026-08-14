@@ -2826,6 +2826,7 @@ dependencies = [
  "smix-host-coord-resolver",
  "smix-input",
  "smix-runner-client",
+ "smix-runner-wire",
  "smix-screen",
  "smix-selector",
  "smix-selector-resolver",

@@ -31,6 +31,7 @@ fn all_variants() -> Vec<FailureCode> {
         FailureCode::AppNotRunning,
         FailureCode::SimulatorNotBooted,
         FailureCode::TapMissed,
+        FailureCode::CoordinateSpaceMismatch,
         FailureCode::DriverError,
     ];
     for code in &all {
@@ -45,6 +46,7 @@ fn all_variants() -> Vec<FailureCode> {
             | FailureCode::AppNotRunning
             | FailureCode::SimulatorNotBooted
             | FailureCode::TapMissed
+            | FailureCode::CoordinateSpaceMismatch
             | FailureCode::DriverError => {}
         }
     }

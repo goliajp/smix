@@ -413,6 +413,29 @@ impl IosDriver {
     /// Returns an outcome rather than unit: "the touch was synthesised"
     /// and "the element was tapped" are different claims, and this used
     /// to make the first while callers read the second.
+    /// Stop before a tap that cannot land where the tree says.
+    ///
+    /// A runner without `/coordinate-space` answers nothing and this
+    /// returns `Ok(())`: those runners drive apps correctly, and
+    /// failing them for the absence of a check would be the check
+    /// causing the outage it exists to prevent.
+    async fn refuse_if_spaces_disagree(&self) -> Result<(), ExpectationFailure> {
+        // A transport error here is not this check's business — the tap
+        // itself is about to hit the same transport and will report it
+        // in its own terms.
+        let Ok(Some(space)) = self.runner.coordinate_space(0.5, 0.5).await else {
+            return Ok(());
+        };
+        match decide_tap_outcome(&space) {
+            TapSpaceVerdict::Proceed => Ok(()),
+            TapSpaceVerdict::Refuse { message } => Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::CoordinateSpaceMismatch),
+                message,
+                ..Default::default()
+            })),
+        }
+    }
+
     pub async fn tap(
         &self,
         selector: &Selector,
@@ -420,6 +443,12 @@ impl IosDriver {
     ) -> Result<ActOutcome, ExpectationFailure> {
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
+
+        // Before resolving anything: if the point this is about to
+        // compute will be read in a different space than it is computed
+        // in, the tap cannot land where the tree says the element is,
+        // and every signal after this line would say it did.
+        self.refuse_if_spaces_disagree().await?;
 
         let (nx, ny, aimed) = loop {
             // Transport retry parity with wait_for / find. Tree fetch
@@ -1284,12 +1313,83 @@ pub struct HitElement {
     pub frame: (f64, f64, f64, f64),
 }
 
+// The two spaces and the stamp are wire shapes — the runner reports
+// them and both the client and this crate read them, so they live in
+// the crate whose job that is rather than here, where the client could
+// not reach them.
+pub use smix_runner_wire::{CoordinateSpace, Rect};
+
+/// Whether a tap may proceed, given the spaces it is about to cross.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TapSpaceVerdict {
+    Proceed,
+    Refuse { message: String },
+}
+
+/// Decide before touching anything.
+///
+/// Refusing is the whole point. A tap into a space the touch will not
+/// be read in still resolves the element, still reports the aim inside
+/// it, and still changes nothing — three signals that all point at the
+/// caller's selector, which is where the consumer who found this spent
+/// their afternoon. Invariant §9 #1 ③: a capability that is not
+/// available is a loud error, never a quiet degradation.
+pub fn decide_tap_outcome(space: &CoordinateSpace) -> TapSpaceVerdict {
+    if space.spaces_agree {
+        return TapSpaceVerdict::Proceed;
+    }
+
+    let app = space.app_frame;
+    let root = space.snapshot_root_frame;
+    // Say which way round each rectangle is, and what the stamp implies
+    // the screen must be. Two identical numbers printed under the word
+    // "different" read as agreement; the reader has to be able to see
+    // that the frames match each other and the stamp is the odd one.
+    let shape = |w: f64, h: f64| if w > h { "landscape" } else { "portrait" };
+    let stamped_shape = match space.event_record_orientation.as_str() {
+        "landscapeLeft" | "landscapeRight" => "landscape",
+        _ => "portrait",
+    };
+    let message = format!(
+        "this device's screen and the touch it would receive are described in \
+         different spaces, so a tap aimed from the tree would not land where the \
+         tree says it is.\n\
+         \x20 the app is laid out    {aw}x{ah} ({app_shape})\n\
+         \x20 the tree agrees        {rw}x{rh} ({root_shape})\n\
+         \x20 the touch is stamped   {stamp} — so its coordinates are read \
+         against a {stamped_shape} screen (the device reports {device})\n\
+         \n\
+         This is not your selector, and it is not the app: smix would have \
+         reported this tap as aimed inside its target and moved nothing. \
+         Refusing instead.\n\
+         Portrait works. If you need this screen driven now, drive it portrait; \
+         there is no coordinate you can pass that works around it, because the \
+         point is recomputed after you pass it.",
+        aw = app.w,
+        ah = app.h,
+        rw = root.w,
+        rh = root.h,
+        app_shape = shape(app.w, app.h),
+        root_shape = shape(root.w, root.h),
+        stamped_shape = stamped_shape,
+        stamp = space.event_record_orientation,
+        device = space.device_orientation,
+    );
+    TapSpaceVerdict::Refuse { message }
+}
+
 /// What an act turned out to have done.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ActVerdict {
-    /// The touch landed inside the element that was aimed at.
+    /// The point aimed at was inside the element aimed at, as the
+    /// accessibility snapshot describes the screen.
+    ///
+    /// Not "the touch arrived". The comparison is geometric and happens
+    /// entirely in snapshot space; whether the synthesised event is then
+    /// read in that same space is a separate question, and on a landscape
+    /// screen the answer is no.
     Confirmed,
-    /// It landed somewhere else, or on nothing.
+    /// The point was inside something else, or inside nothing.
     Missed(String),
     /// Nothing comparable came back.
     ///

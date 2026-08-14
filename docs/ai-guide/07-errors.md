@@ -137,6 +137,38 @@ signal derived from that tree — snapshot fields and live hit-tests
 alike — is blind to it in the same way. See "tap returns `ok: true`
 but state doesn't change".
 
+### COORDINATE_SPACE_MISMATCH
+
+**Trigger**: the screen is described in one coordinate space and a touch
+would be delivered in another, so smix refused to tap rather than aim
+into the gap.
+
+A point is worked out against the app's own frame — the same frame
+`/tree` reports — and the synthesised event carries an interface
+orientation that decides which space those numbers are read in. When an
+app rotates its own layout without the device rotating (a
+`.fullScreen` controller declaring `landscapeRight`, for instance), the
+app is laid out 874×402 while the event is still stamped portrait, and
+`x = 437` is read against a 402-wide screen.
+
+**What it looks like without this check**: every tap reports the element
+it aimed at and nothing on screen moves. The element resolves, the aim
+is inside it, the app is fine — three signals all pointing at your
+selector.
+
+**Fixes**:
+- Drive the screen in portrait. It is not a workaround for one
+  selector, it is the axis that works.
+- There is no coordinate that gets around it. Whatever `point:` you
+  pass is recomputed against the app's frame before the stamp is
+  applied, so flipping or rotating the numbers moves the point inside
+  the same wrong space. Six mappings were tried before this was
+  diagnosed; none of them could have worked.
+
+**Not a `TAP_MISSED`**: a miss means the element was there and the touch
+went elsewhere, which invites a better point. Here there is no better
+point, which is why it has its own code.
+
 ### DRIVER_ERROR
 
 **Trigger**: catch-all for runner-side / IO / unexpected failures. Read the `message` for specifics.
@@ -242,6 +274,15 @@ First check whether you got `TAP_MISSED` — since v2.0.0 a tap that
 lands outside the element it aimed at says so. If the tap is reported
 as landing correctly and the app still did nothing, the cause is one of
 these:
+
+**The screen and the touch are in different coordinate spaces.** This
+one is not in your app. An app that rotates its own layout while the
+device stays put is laid out in a space the synthesised touch is not
+read in, and every tap reports success while nothing moves. smix now
+refuses these with `COORDINATE_SPACE_MISMATCH` rather than reporting
+them as landed — if you are on a build old enough not to, check
+whether the screen is landscape while `xcrun simctl io <udid>
+screenshot` still comes out portrait-shaped.
 
 **The element is covered.** smix cannot see this: the a11y snapshot
 carries no z-order, so a scrim over your button contains the tapped

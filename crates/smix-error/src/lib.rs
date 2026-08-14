@@ -52,6 +52,18 @@ pub enum FailureCode {
     /// stale frame, or something moved between the tree fetch and the
     /// tap.
     TapMissed,
+    /// The screen is described in one coordinate space and the touch
+    /// would be delivered in another, so no aim can land where the tree
+    /// says the element is.
+    ///
+    /// Distinct from `TapMissed`, and the distinction is the whole
+    /// point: a miss says the element was there and the touch went
+    /// elsewhere, which invites another attempt with a better point.
+    /// There is no better point here — whatever is passed gets
+    /// recomputed against the app's frame and then read against the
+    /// device's. Retrying is the trap, and the consumer who found this
+    /// spent an afternoon in it.
+    CoordinateSpaceMismatch,
     /// Catch-all for runner / driver / IO failures.
     DriverError,
 }
@@ -226,6 +238,7 @@ fn format_code(c: FailureCode) -> &'static str {
         FailureCode::AppNotRunning => "APP_NOT_RUNNING",
         FailureCode::SimulatorNotBooted => "SIMULATOR_NOT_BOOTED",
         FailureCode::TapMissed => "TAP_MISSED",
+        FailureCode::CoordinateSpaceMismatch => "COORDINATE_SPACE_MISMATCH",
         FailureCode::DriverError => "DRIVER_ERROR",
     }
 }

@@ -24,6 +24,7 @@ smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "5.
 smix-input = { path = "../smix-input", version = "5.0.1" }
 smix-error = { path = "../smix-error", version = "5.0.1" }
 smix-runner-client = { path = "../smix-runner-client", version = "5.0.1" }
+smix-runner-wire = { path = "../smix-runner-wire", version = "5.0.1" }
 tokio = { workspace = true, features = ["time", "macros"] }
 tracing.workspace = true
 serde_json.workspace = true

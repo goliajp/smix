@@ -897,10 +897,21 @@ The two other routes exist because two specific runtimes need them, and
 both are opt-in — see the next section.
 
 **What a successful `tapOn` means.** The runner reports every named
-element containing the point it touched, and the step fails with
-`TAP_MISSED` if the element you aimed at is not among them. So success
-means the touch landed inside your target, not merely that a touch was
-synthesised somewhere — which is what it used to mean.
+element containing the point it aimed at, and the step fails with
+`TAP_MISSED` if the element you named is not among them. So success
+means **the aim was inside your target**, judged against the
+accessibility snapshot — a stronger statement than "a touch was
+synthesised somewhere", and a weaker one than "your element was
+touched".
+
+The gap between those two is not hypothetical. The comparison happens
+entirely in the coordinate space the snapshot describes; the
+synthesised event is read in whatever space it is stamped with, and
+on a landscape screen those are not the same space —
+every tap reports the button it aimed at and the screen does not
+change. `smix` refuses the tap outright when it can see the two
+disagree, but the general shape of the limit stands: this line is
+evidence about aim.
 
 It does **not** mean the target received the touch. Something drawn
 over your element contains the same point, and the a11y snapshot
@@ -2431,6 +2442,38 @@ signal derived from that tree — snapshot fields and live hit-tests
 alike — is blind to it in the same way. See "tap returns `ok: true`
 but state doesn't change".
 
+### COORDINATE_SPACE_MISMATCH
+
+**Trigger**: the screen is described in one coordinate space and a touch
+would be delivered in another, so smix refused to tap rather than aim
+into the gap.
+
+A point is worked out against the app's own frame — the same frame
+`/tree` reports — and the synthesised event carries an interface
+orientation that decides which space those numbers are read in. When an
+app rotates its own layout without the device rotating (a
+`.fullScreen` controller declaring `landscapeRight`, for instance), the
+app is laid out 874×402 while the event is still stamped portrait, and
+`x = 437` is read against a 402-wide screen.
+
+**What it looks like without this check**: every tap reports the element
+it aimed at and nothing on screen moves. The element resolves, the aim
+is inside it, the app is fine — three signals all pointing at your
+selector.
+
+**Fixes**:
+- Drive the screen in portrait. It is not a workaround for one
+  selector, it is the axis that works.
+- There is no coordinate that gets around it. Whatever `point:` you
+  pass is recomputed against the app's frame before the stamp is
+  applied, so flipping or rotating the numbers moves the point inside
+  the same wrong space. Six mappings were tried before this was
+  diagnosed; none of them could have worked.
+
+**Not a `TAP_MISSED`**: a miss means the element was there and the touch
+went elsewhere, which invites a better point. Here there is no better
+point, which is why it has its own code.
+
 ### DRIVER_ERROR
 
 **Trigger**: catch-all for runner-side / IO / unexpected failures. Read the `message` for specifics.
@@ -2536,6 +2579,15 @@ First check whether you got `TAP_MISSED` — since v2.0.0 a tap that
 lands outside the element it aimed at says so. If the tap is reported
 as landing correctly and the app still did nothing, the cause is one of
 these:
+
+**The screen and the touch are in different coordinate spaces.** This
+one is not in your app. An app that rotates its own layout while the
+device stays put is laid out in a space the synthesised touch is not
+read in, and every tap reports success while nothing moves. smix now
+refuses these with `COORDINATE_SPACE_MISMATCH` rather than reporting
+them as landed — if you are on a build old enough not to, check
+whether the screen is landscape while `xcrun simctl io <udid>
+screenshot` still comes out portrait-shaped.
 
 **The element is covered.** smix cannot see this: the a11y snapshot
 carries no z-order, so a scrim over your button contains the tapped
@@ -3706,10 +3758,12 @@ iteration rather than guessing a fixed delay.
 
 ## Confirming a tap did something
 
-A green `tapOn` means "a touch reached the element it aimed at" — its success
-output names what it landed on (`landed inside: …`). It does **not** mean the
-app reacted; if the screen did not change, the no-op is downstream in the app,
-not in the harness. Assert the *consequence*, not the tap:
+A green `tapOn` means "the point aimed at was inside the element named" — its
+success output says so in those terms (`aimed inside: …`). It does **not** mean
+the app reacted, and it does not mean the app is where an unchanged screen came
+from: this line is judged in the snapshot's coordinate space, and a mismatch
+between that space and the one the touch is delivered in produces exactly this
+output with nothing moving. Assert the *consequence*, not the tap:
 
 ```yaml
 - tapOn: { id: open-menu }

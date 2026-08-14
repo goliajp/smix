@@ -1162,3 +1162,44 @@ impl SimHealthWireState {
         }
     }
 }
+
+/// A rectangle as the runner reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Rect {
+    /// Left edge, in the space whose rectangle this is.
+    pub x: f64,
+    /// Top edge, same space.
+    pub y: f64,
+    /// Width. Compared against the other rectangle's, which is how a
+    /// landscape screen described by a portrait frame shows up.
+    pub w: f64,
+    /// Height.
+    pub h: f64,
+}
+
+/// The two coordinate spaces a tap passes through, and the orientation
+/// the synthesised event is stamped with.
+///
+/// `GET /coordinate-space`. Reported together because separately they
+/// are three unremarkable numbers: the defect they exist to expose is
+/// the relationship between them — a point computed against the app's
+/// frame and then read in whatever space the event is stamped with.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoordinateSpace {
+    /// What a normalised offset is multiplied by to get a point.
+    pub app_frame: Rect,
+    /// What `/tree` describes the screen as.
+    pub snapshot_root_frame: Rect,
+    /// What the device says it is rotated to. A simulator that has
+    /// never been rotated answers `unknown`, and an app can be laid out
+    /// landscape while this stays `portrait` — so it is reported, not
+    /// used as the verdict.
+    pub device_orientation: String,
+    /// The orientation stamped on the synthesised event, which decides
+    /// which space the point above is read in.
+    pub event_record_orientation: String,
+    /// The runner's own verdict on whether the point will be read in
+    /// the space it was computed in.
+    pub spaces_agree: bool,
+}

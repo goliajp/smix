@@ -92,6 +92,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # fact-scan asks whether a release tag exists, and the default
+          # checkout fetches no tags — so it read every shipped version
+          # as unpublished and turned this job red the moment 5.0.1's
+          # pre-release banner came out.
+          fetch-tags: true
+          fetch-depth: 0
       - name: hygiene scan
         run: python3 scripts/dev/hygiene-scan.py
       - name: route conformance
