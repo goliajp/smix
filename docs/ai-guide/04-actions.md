@@ -40,10 +40,21 @@ The two other routes exist because two specific runtimes need them, and
 both are opt-in — see the next section.
 
 **What a successful `tapOn` means.** The runner reports every named
-element containing the point it touched, and the step fails with
-`TAP_MISSED` if the element you aimed at is not among them. So success
-means the touch landed inside your target, not merely that a touch was
-synthesised somewhere — which is what it used to mean.
+element containing the point it aimed at, and the step fails with
+`TAP_MISSED` if the element you named is not among them. So success
+means **the aim was inside your target**, judged against the
+accessibility snapshot — a stronger statement than "a touch was
+synthesised somewhere", and a weaker one than "your element was
+touched".
+
+The gap between those two is not hypothetical. The comparison happens
+entirely in the coordinate space the snapshot describes; the
+synthesised event is read in whatever space it is stamped with, and
+on a landscape screen those are not the same space —
+every tap reports the button it aimed at and the screen does not
+change. `smix` refuses the tap outright when it can see the two
+disagree, but the general shape of the limit stands: this line is
+evidence about aim.
 
 It does **not** mean the target received the touch. Something drawn
 over your element contains the same point, and the a11y snapshot

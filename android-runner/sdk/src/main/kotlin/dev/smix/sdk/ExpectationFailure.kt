@@ -73,5 +73,7 @@ enum class FailureCode {
     @SerialName("SIMULATOR_NOT_BOOTED") SIMULATOR_NOT_BOOTED,
     /** The touch was synthesised, and it did not land inside the element the selector matched. Distinct from element-not-found: not-found means fix the selector, missed means the element was there and the touch went elsewhere. */
     @SerialName("TAP_MISSED") TAP_MISSED,
+    /** The screen is described in one coordinate space and the touch would be delivered in another, so no aim can land where the tree says the element is. Distinct from tap-missed: a miss invites another attempt with a better point, and there is no better point here — whatever is passed gets recomputed against the app's frame and then read against the device's. */
+    @SerialName("COORDINATE_SPACE_MISMATCH") COORDINATE_SPACE_MISMATCH,
     @SerialName("DRIVER_ERROR") DRIVER_ERROR,
 }

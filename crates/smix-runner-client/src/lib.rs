@@ -934,6 +934,59 @@ impl HttpRunnerClient {
     /// inside the runner by `XCUIScreen`.
     ///
     /// iOS only: the Android runner serves no such route.
+    /// Ask the runner which spaces a tap is about to cross.
+    ///
+    /// `Ok(None)` means this runner has no such route. Every runner
+    /// shipped before it does, and they drive apps fine — treating a
+    /// missing route as a failure would break every working setup on
+    /// the day the check arrived.
+    pub async fn coordinate_space(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<Option<smix_runner_wire::CoordinateSpace>, RunnerTransportError> {
+        let endpoint = "/coordinate-space";
+        let url = self.url(endpoint, None);
+        let res = self
+            .send_with_retry(endpoint, |c| {
+                self.apply_context(c.get(&url).query(&[("nx", nx), ("ny", ny)]))
+            })
+            .await?;
+        let status = res.status();
+        if status.as_u16() == 404 {
+            // Not an error and not a verdict: this runner predates the
+            // route. The caller has to be able to tell that apart from
+            // both answers, because "nobody asked" and "the spaces
+            // agree" look identical everywhere downstream.
+            self.record_outcome(endpoint, true, "route absent");
+            return Ok(None);
+        }
+        if !status.is_success() {
+            let body = res.text().await.unwrap_or_default();
+            let err = RunnerTransportError::NonSuccessStatus {
+                endpoint: endpoint.to_string(),
+                status: status.as_u16(),
+                body,
+            };
+            self.record_outcome(endpoint, false, &err.to_string());
+            return Err(err);
+        }
+        match res.json::<smix_runner_wire::CoordinateSpace>().await {
+            Ok(space) => {
+                self.record_outcome(endpoint, true, "");
+                Ok(Some(space))
+            }
+            Err(source) => {
+                let err = RunnerTransportError::NonJsonBody {
+                    endpoint: endpoint.to_string(),
+                    source,
+                };
+                self.record_outcome(endpoint, false, &err.to_string());
+                Err(err)
+            }
+        }
+    }
+
     pub async fn screenshot(&self) -> Result<Vec<u8>, RunnerTransportError> {
         let endpoint = "/screenshot";
         let url = self.url(endpoint, None);

@@ -45,10 +45,16 @@ final class ExpectationFailureContractTests: XCTestCase {
         let expected: Set<String> = [
             "ELEMENT_NOT_FOUND", "NOT_VISIBLE", "NOT_ENABLED",
             "AMBIGUOUS", "TIMEOUT", "ASSERTION_FAILED",
-            "APP_NOT_RUNNING", "SIMULATOR_NOT_BOOTED", "TAP_MISSED", "DRIVER_ERROR",
+            "APP_NOT_RUNNING", "SIMULATOR_NOT_BOOTED", "TAP_MISSED",
+            "COORDINATE_SPACE_MISMATCH", "DRIVER_ERROR",
         ]
         XCTAssertEqual(Set(FailureCode.allCases.map { $0.rawValue }), expected)
-        XCTAssertEqual(FailureCode.allCases.count, 10)
+        // Counted off the list above rather than written out. A literal
+        // here is a second copy of the same fact that has to be
+        // remembered separately, and it was not: adding a code updated
+        // the set and left the number at 10, so a test whose subject is
+        // "these two agree" failed on its own bookkeeping.
+        XCTAssertEqual(FailureCode.allCases.count, expected.count)
     }
 
     // MARK: - AI-readable JSON contract

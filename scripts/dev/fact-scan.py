@@ -73,6 +73,14 @@ VERSION_COORDINATES = [
     ("web/src/data/site.ts", r'@goliapkg/smix@([0-9][0-9a-zA-Z.\-]*)'),
     ("web/src/data/site.ts", r'jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)'),
     ("llms.txt", r'jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)'),
+    # The lockfile records the workspace packages' own versions, and
+    # nothing here looked at it: it sat at 2.3.0 through three majors
+    # while every `package.json` moved. It stayed invisible because a
+    # lockfile is not a surface anybody reads — until CI's bun got
+    # strict enough to compare the two, and then every job that runs
+    # `bun install --frozen-lockfile` went red at once, on a commit that
+    # had not touched a single npm file.
+    ("bun.lock", r'"@goliapkg/smix-cli"[^}]*?"version":\s*"([^"]+)"'),
 ]
 
 # Check 5 — the same coordinates, found rather than listed.
@@ -221,7 +229,30 @@ TOOL_CLAIM_SURFACES = [
 
 
 def release_tag_exists(version):
-    """Is there a tag for this version? Tagging is what publishes."""
+    """Is there a tag for this version? Tagging is what publishes.
+
+    Raises when the checkout has no tags at all, rather than answering
+    "no". `actions/checkout` fetches none by default, so in CI this
+    function saw an empty list and concluded every shipped version was
+    unpublished — it turned every run red the moment 5.0.1's
+    pre-release banner came out, and it would have said the same about
+    a release that had been live for a year. An absent list is not an
+    empty one, and the difference is the whole verdict.
+    """
+    any_tags = subprocess.run(
+        ["git", "tag", "--list", "swift-v*"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if not any_tags.stdout.strip():
+        raise RuntimeError(
+            "this checkout has no release tags at all, so whether "
+            f"{version} is published cannot be read from it. In CI, give "
+            "the checkout `fetch-tags: true` (or `fetch-depth: 0`); "
+            "locally, `git fetch --tags`."
+        )
     result = subprocess.run(
         ["git", "tag", "--list", f"v{version}", f"swift-v{version}"],
         cwd=ROOT,
@@ -453,7 +484,18 @@ def main():
 
     site = "\n".join(read(rel) for rel in iter_surface_files() if rel.startswith("web/"))
     said_unreleased = [m for m in UNRELEASED_MARKERS if m in site.lower()]
-    if not release_tag_exists(version):
+    try:
+        tagged = release_tag_exists(version)
+    except RuntimeError as cannot_tell:
+        # Refused, not guessed, and said in a sentence rather than a
+        # traceback: a stack trace and a verdict leave the same exit
+        # code, and the reader of a red build has to be told which one
+        # this is.
+        failures.append(str(cannot_tell))
+        tagged = None
+    if tagged is None:
+        pass
+    elif not tagged:
         if not said_unreleased:
             failures.append(
                 f"web/: the site states {version} install coordinates, no release "

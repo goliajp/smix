@@ -324,7 +324,12 @@ pub async fn cmd_tap(
                 }
             })
             .collect();
-        println!("  landed inside: {}", inside.join(" < "));
+        // "aimed", not "landed". What the runner computed is geometry —
+        // every named element whose frame contains the point, as the
+        // snapshot describes it. A landscape screen returns exactly this
+        // line for a touch that never moves a pixel: the point is worked
+        // out in the app's space and delivered stamped with the device's.
+        println!("  aimed inside: {}", inside.join(" < "));
     }
     if let smix_driver::ActVerdict::Unconfirmable(why) = &outcome.verdict {
         println!("  not verified: {why}");
