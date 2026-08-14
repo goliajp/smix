@@ -27,6 +27,11 @@ public enum CoordinateSpaceRoute {
     snapshotRootFrame: CGRect,
     deviceOrientation: String,
     eventRecordOrientation: String,
+    /// Which repair is in force. Reported because a strategy that never
+    /// reached the runner and a strategy that did not help produce the
+    /// same table row, and telling those apart afterwards is not
+    /// possible.
+    stampStrategy: String,
     nx: Double,
     ny: Double,
     resolvedPoint: CGPoint
@@ -53,7 +58,17 @@ public enum CoordinateSpaceRoute {
     let eventSpaceIsLandscape =
       eventRecordOrientation == "landscapeLeft" || eventRecordOrientation == "landscapeRight"
     let appSpaceIsLandscape = appFrame.size.width > appFrame.size.height
-    let agree = sameShape && (eventSpaceIsLandscape == appSpaceIsLandscape)
+
+    // The question is whether the point as delivered is read in the
+    // space it was computed for — not whether the stamp happens to
+    // match the layout. One of the repairs keeps the stamp portrait on
+    // purpose and rotates the point instead; judging it by the stamp
+    // alone called a compensated delivery a mismatch, and the refusal
+    // then blocked the very experiment meant to choose between the
+    // repairs. Three identical rows, and none of them a measurement.
+    let deliveryIsCompensated = stampStrategy == EventStampStrategy.convertPointToDeviceSpace.rawValue
+    let readInTheRightSpace = deliveryIsCompensated || (eventSpaceIsLandscape == appSpaceIsLandscape)
+    let agree = sameShape && readInTheRightSpace
 
     func rect(_ r: CGRect) -> String {
       #"{"x":\#(Double(r.origin.x)),"y":\#(Double(r.origin.y)),"#
@@ -65,6 +80,7 @@ public enum CoordinateSpaceRoute {
       + #""snapshotRootFrame":\#(rect(snapshotRootFrame)),"#
       + #""deviceOrientation":"\#(jsonEscape(deviceOrientation))","#
       + #""eventRecordOrientation":"\#(jsonEscape(eventRecordOrientation))","#
+      + #""stampStrategy":"\#(jsonEscape(stampStrategy))","#
       + #""spacesAgree":\#(agree),"#
       + #""nx":\#(nx),"ny":\#(ny),"#
       + #""resolvedPoint":{"x":\#(Double(resolvedPoint.x)),"y":\#(Double(resolvedPoint.y))}}"#

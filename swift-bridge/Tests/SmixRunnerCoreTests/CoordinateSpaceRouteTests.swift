@@ -24,6 +24,7 @@ final class CoordinateSpaceRouteTests: XCTestCase {
       snapshotRootFrame: CGRect(x: 0, y: 0, width: 874, height: 402),
       deviceOrientation: "landscapeRight",
       eventRecordOrientation: "portrait",
+      stampStrategy: "legacyAlwaysPortrait",
       nx: 0.5,
       ny: 0.5,
       resolvedPoint: CGPoint(x: 201, y: 437)
@@ -60,6 +61,7 @@ final class CoordinateSpaceRouteTests: XCTestCase {
       snapshotRootFrame: CGRect(x: 0, y: 0, width: 874, height: 402),
       deviceOrientation: "landscapeRight",
       eventRecordOrientation: "portrait",
+      stampStrategy: "legacyAlwaysPortrait",
       nx: 0.5, ny: 0.5,
       resolvedPoint: CGPoint(x: 201, y: 437))
     let a = try XCTUnwrap(
@@ -71,6 +73,7 @@ final class CoordinateSpaceRouteTests: XCTestCase {
       snapshotRootFrame: CGRect(x: 0, y: 0, width: 402, height: 874),
       deviceOrientation: "portrait",
       eventRecordOrientation: "portrait",
+      stampStrategy: "legacyAlwaysPortrait",
       nx: 0.5, ny: 0.5,
       resolvedPoint: CGPoint(x: 201, y: 437))
     let b = try XCTUnwrap(
@@ -90,6 +93,7 @@ final class CoordinateSpaceRouteTests: XCTestCase {
       snapshotRootFrame: CGRect(x: 0, y: 0, width: 402, height: 874),
       deviceOrientation: "unknown",
       eventRecordOrientation: "portrait",
+      stampStrategy: "legacyAlwaysPortrait",
       nx: 0.5, ny: 0.5,
       resolvedPoint: CGPoint(x: 201, y: 437))
     let json = try XCTUnwrap(
@@ -109,6 +113,7 @@ final class CoordinateSpaceRouteTests: XCTestCase {
       snapshotRootFrame: CGRect(x: 0, y: 0, width: 874, height: 402),
       deviceOrientation: "unknown",
       eventRecordOrientation: "portrait",
+      stampStrategy: "legacyAlwaysPortrait",
       nx: 0.5, ny: 0.5,
       resolvedPoint: CGPoint(x: 437, y: 201))
     let json = try XCTUnwrap(
@@ -119,5 +124,26 @@ final class CoordinateSpaceRouteTests: XCTestCase {
     let root = try XCTUnwrap(json["snapshotRootFrame"] as? [String: Any])
     XCTAssertEqual(app["w"] as? Double, root["w"] as? Double)
     XCTAssertEqual(app["h"] as? Double, root["h"] as? Double)
+  }
+}
+
+extension CoordinateSpaceRouteTests {
+  /// A portrait stamp with the point already rotated into the device's
+  /// space is not a mismatch. Judged by the stamp alone it looks like
+  /// one, and the refusal built on that verdict blocked every touch in
+  /// the experiment that was supposed to choose between the two
+  /// repairs — three rows, identical, none of them a measurement.
+  func testACompensatedDeliveryIsNotAMismatch() throws {
+    let body = CoordinateSpaceRoute.body(
+      appFrame: CGRect(x: 0, y: 0, width: 874, height: 402),
+      snapshotRootFrame: CGRect(x: 0, y: 0, width: 874, height: 402),
+      deviceOrientation: "portrait",
+      eventRecordOrientation: "portrait",
+      stampStrategy: "convertPointToDeviceSpace",
+      nx: 0.5, ny: 0.5,
+      resolvedPoint: CGPoint(x: 437, y: 201))
+    let json = try XCTUnwrap(
+      try JSONSerialization.jsonObject(with: body) as? [String: Any])
+    XCTAssertEqual(json["spacesAgree"] as? Bool, true)
   }
 }

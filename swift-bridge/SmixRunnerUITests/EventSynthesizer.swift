@@ -261,3 +261,38 @@ func describeDeviceOrientation(_ o: UIDeviceOrientation) -> String {
   @unknown default: return "unknown"
   }
 }
+
+/// Which repair is in force, read once.
+///
+/// Two are possible and only a device can say which the system honours,
+/// so both are buildable and the default is what already shipped: the
+/// experiment must not itself be a change in behaviour.
+let smixEventStampStrategy = EventStampStrategy.fromEnvironment()
+
+func smixUIOrientation(_ o: StampOrientation) -> UIInterfaceOrientation {
+  switch o {
+  case .portrait: return .portrait
+  case .portraitUpsideDown: return .portraitUpsideDown
+  case .landscapeLeft: return .landscapeLeft
+  case .landscapeRight: return .landscapeRight
+  }
+}
+
+/// The stamp and the point to deliver, for a point in the app's space.
+///
+/// Every synthesised touch in this file goes through here, so a strategy
+/// cannot be in force for taps and not for swipes — which is the shape
+/// of a fix that passes its own test and leaves half the surface broken.
+func smixDelivery(
+  of point: CGPoint, appFrame: CGSize
+) -> (orientation: UIInterfaceOrientation, point: CGPoint) {
+  let stamp = eventStamp(forAppFrame: appFrame, strategy: smixEventStampStrategy)
+  guard smixEventStampStrategy == .convertPointToDeviceSpace else {
+    return (smixUIOrientation(stamp), point)
+  }
+  // The layout's own handedness, not the stamp's: this strategy keeps
+  // the stamp portrait on purpose and moves the point instead, so the
+  // rotation has to be read off the frame.
+  let layout = eventStamp(forAppFrame: appFrame, strategy: .deriveFromAppFrame)
+  return (smixUIOrientation(stamp), pointInDeviceSpace(point, appFrame: appFrame, interface: layout))
+}
