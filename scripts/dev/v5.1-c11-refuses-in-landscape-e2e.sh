@@ -7,11 +7,17 @@
 # refuses correct work is worse than the silence it replaced, and this
 # one sits in front of every tap.
 #
-# Landscape: exit non-zero, and the message carries both frames so the
-# reader can see which two spaces disagree rather than being told that
-# they do.
-# Portrait: exit zero. Same binary, same runner, same fixture, one
-# screen over.
+# Since the delivery was repaired, landscape taps land, so the refusal
+# has to be provoked to be checked at all: the runner is brought up once
+# with `SMIX_EVENT_STAMP=legacyAlwaysPortrait`, which reproduces the
+# uncompensated delivery, and once with the default. A guard nothing can
+# trigger is a guard nobody can trust, and this is the one reachable way
+# to trigger it.
+#
+# Under the legacy delivery: exit non-zero, and the message carries both
+# frames so the reader can see which two spaces disagree rather than
+# being told that they do.
+# Under the default: exit zero, in both orientations.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -84,15 +90,35 @@ grep -q "aimed inside" "$WORK/portrait.log" \
 log "portrait taps proceed"
 "$SMIX" tap "id:portrait-exit" --port "$PORT" >/dev/null 2>&1 || true
 
-step "4. landscape: the check must refuse, with the numbers"
+step "4. landscape under the repaired delivery: taps land"
 "$SMIX" tap "id:landscape-enter" --port "$PORT" >/dev/null 2>&1 \
   || fail "could not reach the landscape screen"
 "$SMIX" wait-for "id:landscape-counter" --port "$PORT" --timeout 10 >/dev/null 2>&1 \
   || fail "the landscape screen did not come up"
+"$SMIX" tap "id:landscape-increment" --port "$PORT" > "$WORK/landed.log" 2>&1 \
+  || { cat "$WORK/landed.log" >&2; fail "a landscape tap was refused under the repaired delivery"; }
+log "landscape taps proceed"
+
+step "5. the guard still fires when the delivery is not compensated"
+"$SMIX" runner down --runner-port "$PORT" >/dev/null 2>&1 || true
+TEST_RUNNER_SMIX_EVENT_STAMP=legacyAlwaysPortrait "$SMIX" runner up "$UDID" \
+  --bundle "$BUNDLE" --runner-port "$PORT" > "$WORK/up-legacy.log" 2>&1 \
+  || { tail -20 "$WORK/up-legacy.log"; fail "runner did not come up under the legacy delivery"; }
+
+active="$(curl -fsS "http://127.0.0.1:$PORT/coordinate-space?nx=0.5&ny=0.5" 2>/dev/null \
+  | python3 -c "import json,sys; print(json.load(sys.stdin).get('stampStrategy','<absent>'))")"
+[ "$active" = "legacyAlwaysPortrait" ] \
+  || fail "asked the runner for the legacy delivery and it reports $active — this
+step would pass or fail for a reason other than the one it names"
+
+"$SMIX" tap "id:landscape-enter" --port "$PORT" >/dev/null 2>&1 \
+  || fail "could not reach the landscape screen under the legacy delivery"
+"$SMIX" wait-for "id:landscape-counter" --port "$PORT" --timeout 10 >/dev/null 2>&1 \
+  || fail "the landscape screen did not come up under the legacy delivery"
 
 if "$SMIX" tap "id:landscape-increment" --port "$PORT" > "$WORK/landscape.log" 2>&1; then
   cat "$WORK/landscape.log" >&2
-  fail "a landscape tap reported success — it cannot land where the tree says"
+  fail "an uncompensated landscape tap reported success — the guard did not fire"
 fi
 
 for needle in "874" "402" "COORDINATE_SPACE_MISMATCH"; do

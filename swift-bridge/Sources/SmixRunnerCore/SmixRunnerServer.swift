@@ -651,6 +651,7 @@ public actor SmixRunnerServer {
   public typealias CoordinateSpaceHandler = @Sendable (_ nx: Double, _ ny: Double) async -> (
     appFrame: CGRect, snapshotRootFrame: CGRect,
     deviceOrientation: String, eventRecordOrientation: String,
+    stampStrategy: String,
     resolvedPoint: CGPoint
   )
 
@@ -1548,6 +1549,7 @@ public actor SmixRunnerServer {
               snapshotRootFrame: r.snapshotRootFrame,
               deviceOrientation: r.deviceOrientation,
               eventRecordOrientation: r.eventRecordOrientation,
+              stampStrategy: r.stampStrategy,
               nx: nx, ny: ny,
               resolvedPoint: r.resolvedPoint))
         }
