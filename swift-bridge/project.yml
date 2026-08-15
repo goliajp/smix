@@ -53,5 +53,17 @@ schemes:
         SmixRunner: all
         SmixRunnerUITests: [test]
     test:
+      # The runner is a long-lived XCUITest that never reaches a success
+      # verdict, so anything XCTest keeps "until the test ends" is kept
+      # forever. Automatic screen recording wrote a .mov per session into the
+      # runner's tmp/Attachments at ~1.8 MB/s of active UI and nothing ever
+      # reclaimed it — 337 GB on studio and 36 GB on mini by 2026-08-15, one
+      # single file of 24.5 GB. smix never reads that video.
+      # keepNever, not deleteOnSuccess: a runner that never succeeds would
+      # never trigger the delete. Keep this in sync with
+      # SmixRunner.xcodeproj/xcshareddata/xcschemes/SmixRunner.xcscheme —
+      # the .xcodeproj is checked in, this file only regenerates it.
+      systemAttachmentLifetime: keepNever
+      userAttachmentLifetime: keepNever
       targets:
         - SmixRunnerUITests
