@@ -96,8 +96,15 @@ struct FillParams {
 struct SwipeParams {
     /// Which way to travel through the content: up, down, left, or right.
     /// This names what you want to SEE — "down" reveals what is below,
-    /// whichever way the finger has to move to get there.
-    direction: String,
+    /// whichever way the finger has to move to get there. Leave it out
+    /// when giving swipe_from and swipe_to.
+    direction: Option<String>,
+    /// Where the finger starts, as "X%,Y%" or "X,Y" in 0..1. The
+    /// authorised coordinate escape hatch for swipe, for screens with
+    /// nothing nameable to swipe between. Needs swipe_to as well.
+    swipe_from: Option<String>,
+    /// Where the finger ends, same form as swipe_from.
+    swipe_to: Option<String>,
 }
 
 /// Nested rather than flattened, to match `smix_fill` — the two tools that
@@ -650,15 +657,46 @@ impl SmixMcpService {
         &self,
         Parameters(params): Parameters<SwipeParams>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = parse_direction(&params.direction)?;
         let app = self.bound_app().await?;
-        app.swipe_once(dir)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "swiped: {}",
-            params.direction
-        ))]))
+        // A direction and a pair of points are two different asks, and
+        // answering one when both arrived is how a flow does something
+        // nobody wrote.
+        match (params.direction, params.swipe_from, params.swipe_to) {
+            (Some(direction), None, None) => {
+                let dir = parse_direction(&direction)?;
+                app.swipe_once(dir)
+                    .await
+                    .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(format!(
+                    "swiped: {direction}"
+                ))]))
+            }
+            (None, Some(from), Some(to)) => {
+                let from_pt = smix_selector::point_from_str(&from)
+                    .map_err(|why| McpError::invalid_params(format!("swipe_from: {why}"), None))?;
+                let to_pt = smix_selector::point_from_str(&to)
+                    .map_err(|why| McpError::invalid_params(format!("swipe_to: {why}"), None))?;
+                app.swipe_at_coord(from_pt, to_pt)
+                    .await
+                    .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(format!(
+                    "swiped: ({:.3}, {:.3}) → ({:.3}, {:.3})",
+                    from_pt.0, from_pt.1, to_pt.0, to_pt.1
+                ))]))
+            }
+            (None, None, None) => Err(McpError::invalid_params(
+                "swipe needs either a direction or both swipe_from and swipe_to".to_string(),
+                None,
+            )),
+            (None, _, _) => Err(McpError::invalid_params(
+                "a coordinate swipe needs both ends: swipe_from and swipe_to".to_string(),
+                None,
+            )),
+            (Some(_), _, _) => Err(McpError::invalid_params(
+                "swipe takes a direction or a swipe_from/swipe_to pair, not both".to_string(),
+                None,
+            )),
+        }
     }
 
     #[tool(

@@ -17,14 +17,14 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-screen = { path = "../smix-screen", version = "5.0.1" }
-smix-selector = { path = "../smix-selector", version = "5.0.1" }
-smix-selector-resolver = { path = "../smix-selector-resolver", version = "5.0.1" }
-smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "5.0.1" }
-smix-input = { path = "../smix-input", version = "5.0.1" }
-smix-error = { path = "../smix-error", version = "5.0.1" }
-smix-runner-client = { path = "../smix-runner-client", version = "5.0.1" }
-smix-runner-wire = { path = "../smix-runner-wire", version = "5.0.1" }
+smix-screen = { path = "../smix-screen", version = "5.1.0" }
+smix-selector = { path = "../smix-selector", version = "5.1.0" }
+smix-selector-resolver = { path = "../smix-selector-resolver", version = "5.1.0" }
+smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "5.1.0" }
+smix-input = { path = "../smix-input", version = "5.1.0" }
+smix-error = { path = "../smix-error", version = "5.1.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "5.1.0" }
+smix-runner-wire = { path = "../smix-runner-wire", version = "5.1.0" }
 tokio = { workspace = true, features = ["time", "macros"] }
 tracing.workspace = true
 serde_json.workspace = true

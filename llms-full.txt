@@ -4258,7 +4258,7 @@ here as verbs once; a flow that wrote `tapById:` or `tapAtCoord:` got
 |---|---|---|---|
 | tap by id | ✅ | ✅ | `tapOn: { id: "btn" }` — the id path skips OCR and the a11y walk |
 | tap at a coordinate | ✅ | ✅ | `tapOn: { point: "50%,80%" }` — normalized 0..1 |
-| swipe between coordinates | ✅ | ✅ | `swipe: { from: …, to: … }`; `{ direction: UP }` desugars to the same pair |
+| swipe between coordinates | ✅ | ✅ | `swipe: { from: …, to: … }`; on the CLI `smix swipe --from 50%,80% --to 50%,20%`, and `swipe_from` / `swipe_to` through MCP |
 | find text by OCR | ✅ | ✅ | the `ocrText` selector, below — the `find_text_by_ocr` wire route has no verb of its own |
 
 ### Selector forms

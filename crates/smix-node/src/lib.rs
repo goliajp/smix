@@ -72,6 +72,25 @@ impl SmixNodeDriver {
         serde_json::to_string(&result).map_err(json_err)
     }
 
+    /// Swipe between two normalised points, the authorised coordinate
+    /// escape hatch for swipe (§9 #3). Two points rather than one: a
+    /// swipe is a path, and tap's single-point shape does not describe
+    /// one.
+    #[napi]
+    pub async fn swipe_at_coord(
+        &self,
+        from_x: f64,
+        from_y: f64,
+        to_x: f64,
+        to_y: f64,
+    ) -> napi::Result<()> {
+        let client = Arc::clone(&self.client);
+        client
+            .swipe_at_norm_coord((from_x, from_y), (to_x, to_y))
+            .await
+            .map_err(transport_err)
+    }
+
     /// Tap the element with accessibility identifier `id`. Returns whether a
     /// matching element was found and tapped — selectors resolve to an id in
     /// the SDK layer, so no selector crosses the boundary (parity with the
