@@ -116,7 +116,7 @@ dependencies {
 
 val mavenCentralGroupId = "jp.golia.smix" // reverse DNS of smix.golia.jp
 val mavenCentralArtifactId = "smix-sdk"
-val mavenCentralVersion = "5.0.1"
+val mavenCentralVersion = "5.1.0"
 
 mavenPublishing {
     publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)

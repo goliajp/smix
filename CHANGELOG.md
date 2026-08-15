@@ -2,6 +2,77 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [5.1.0] — unreleased
+
+A tap that reported success while nothing moved, and the half of an
+escape hatch that never reached a surface.
+
+A consumer drove a landscape screen and watched every `smix tap` answer
+`landed inside: <the button>` while a pixel-by-pixel diff found the
+screen byte-identical. Six rotation mappings, all reasonable, all
+useless — because the error is applied *after* the caller's input.
+
+The point is computed against `XCUIApplication.frame`, which is the
+app's own landscape space, and the synthesised event was stamped
+`.portrait` at six call sites. That stamp decides which space the
+coordinates are read in, so `x = 437` of an 874-wide layout arrived read
+against a 402-wide screen. The device had not rotated at all: the
+framebuffer stays portrait with the app's landscape layout drawn rotated
+inside it.
+
+Which repair it took was not the one the analysis pointed at. Stamping
+the event with the app's orientation — the obvious move — changes
+nothing at all on a device. `XCSynthesizedEventRecord`'s interface
+orientation does not participate in mapping coordinates. What lands is
+rotating the point into the device's space and leaving the stamp alone.
+
+### Fixed
+
+- **Landscape taps reach the app.** Every synthesised touch — tap, tap
+  by id, long press, swipe, system-popup buttons, and the RN daemon-proxy
+  path — now converts its point from the app's space to the device's
+  before delivery.
+
+### Added
+
+- **`swipe` takes coordinates, on every surface.** `smix swipe --from
+  50%,80% --to 50%,20%`, `swipe_from` / `swipe_to` through MCP,
+  `swipeAtCoord` in the TypeScript SDK and the napi binding. Section 9 #3
+  of the charter authorises two coordinate escape hatches on the same
+  grounds; `tap`'s reached the surfaces at 5.0.0 and `swipe`'s did not,
+  while `docs/ai-guide/verb-parity.md` ticked both platforms for it. A
+  reader following the guide wrote a flow that could not be written.
+- **`GET /coordinate-space`** on the runner — read-only, synthesises
+  nothing. Reports the app frame, the snapshot root frame, the device
+  orientation, the orientation stamped on synthesised events, and
+  whether a point will be read in the space it was computed for. The
+  runner could describe the screen and touch the screen and had no way
+  to say whether those were the same space.
+- **`COORDINATE_SPACE_MISMATCH`**, a failure code of its own. Distinct
+  from `TAP_MISSED` because the two send a reader somewhere different: a
+  miss invites another attempt with a better point, and here there is no
+  better point.
+
+### Changed
+
+- **`aimed inside`, not `landed inside`.** What the runner computes is
+  geometry — every named element whose frame contains the point, as the
+  snapshot describes it. It is evidence about the aim and never was
+  evidence of arrival. Two guide passages claimed the stronger thing;
+  one of them told the reader that an unchanged screen meant the fault
+  was in their app.
+
+### Gates
+
+- `a-tap-proves-aim-not-arrival` — no surface may say a successful tap
+  proves the touch arrived, and the surfaces must state what it does
+  prove. Both halves, because banning phrasings is satisfied by silence.
+- `an-authorised-hatch-reaches-every-surface` — every hatch §9 #3
+  authorises is present on all four surfaces (CLI, MCP, TypeScript SDK,
+  napi), and every coordinate API it does not authorise is absent from
+  all of them. The second half is what keeps the gate from reading as a
+  licence to add more.
+
 ## [5.0.1] — 2026-08-14
 
 Help text, and a gate for the axis it was on.

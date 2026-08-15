@@ -472,6 +472,32 @@ pub async fn cmd_scroll(
 /// `direction` names what the caller wants to SEE, which is the same
 /// contract `smix_swipe` states; both reach `swipe_once`, so the word
 /// cannot mean one thing here and another there.
+/// Swipe between two normalised points.
+///
+/// The authorised coordinate escape hatch for swipe (§9 #3), on the
+/// same grounds as tap's: a screen with nothing nameable to swipe
+/// between leaves a flow author with no other move. Two points rather
+/// than one, because a swipe is a path — tap's single-point shape does
+/// not describe it.
+pub async fn cmd_swipe_between(from: &str, to: &str, port: u16) -> Result<(), ActError> {
+    // The same parser the `point:` selector uses, so `50%,80%` and
+    // `0.5,0.8` mean the same thing here as everywhere else and pixels
+    // are refused with the same sentence.
+    let from_pt = smix_selector::point_from_str(from)
+        .map_err(|why| ActError::BadSelector(format!("--from {from}"), why))?;
+    let to_pt = smix_selector::point_from_str(to)
+        .map_err(|why| ActError::BadSelector(format!("--to {to}"), why))?;
+    let d = driver(port);
+    d.swipe_at_norm_coord(from_pt, to_pt)
+        .await
+        .map_err(|e| ActError::Transport(format!("{e}")))?;
+    println!(
+        "swiped ({:.3}, {:.3}) → ({:.3}, {:.3})",
+        from_pt.0, from_pt.1, to_pt.0, to_pt.1
+    );
+    Ok(())
+}
+
 pub async fn cmd_swipe(direction_str: String, port: u16) -> Result<(), ActError> {
     let direction = parse_direction(&direction_str).ok_or_else(|| {
         ActError::BadSelector(

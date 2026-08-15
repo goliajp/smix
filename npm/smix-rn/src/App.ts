@@ -99,6 +99,24 @@ export class App {
     await this.driver.tapAtCoord(nx, ny)
   }
 
+  /**
+   * Swipe between two normalized points (0..1) — escape hatch per §9 #3,
+   * authorised on the same grounds as tapAtCoord. Two points, because a
+   * swipe is a path: tap's single-point shape does not describe one.
+   */
+  async swipeAtCoord(from: [number, number], to: [number, number]): Promise<void> {
+    for (const [label, p] of [['from', from], ['to', to]] as const) {
+      const [x, y] = p
+      if (x < 0 || x > 1 || y < 0 || y > 1) {
+        throw new ExpectationFailure({
+          code: 'ASSERTION_FAILED',
+          message: `swipeAtCoord expects normalized 0..1 coordinates, got ${label}=(${x}, ${y})`,
+        })
+      }
+    }
+    await this.driver.swipeAtCoord(from, to)
+  }
+
   async terminate(): Promise<void> {
     await this.session.terminateApp()
   }

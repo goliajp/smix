@@ -80,7 +80,14 @@ VERSION_COORDINATES = [
     # strict enough to compare the two, and then every job that runs
     # `bun install --frozen-lockfile` went red at once, on a commit that
     # had not touched a single npm file.
-    ("bun.lock", r'"@goliapkg/smix-cli"[^}]*?"version":\s*"([^"]+)"'),
+    # Every `@goliapkg` entry, not one of them. The first version of this
+    # pinned `smix-cli` alone and reported clean on a lockfile where
+    # `smix-node` was a release behind — a rule that names one member of
+    # a set reads as though it covered the set.
+    *[
+        ("bun.lock", rf'"{name}"[^}}]*?"version":\s*"([^"]+)"')
+        for name in ("@goliapkg/smix", "@goliapkg/smix-cli", "@goliapkg/smix-node")
+    ],
 ]
 
 # Check 5 — the same coordinates, found rather than listed.
