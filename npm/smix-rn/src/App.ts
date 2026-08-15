@@ -114,7 +114,7 @@ export class App {
         })
       }
     }
-    await this.driver.swipeAtCoord(from, to)
+    await this.driver.swipeAtCoord(from[0], from[1], to[0], to[1])
   }
 
   async terminate(): Promise<void> {

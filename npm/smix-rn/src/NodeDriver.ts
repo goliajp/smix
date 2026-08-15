@@ -16,6 +16,7 @@ export interface NodeDriver {
   pressKey(key: string): Promise<void>
   swipe(direction: string): Promise<void>
   tapAtCoord(nx: number, ny: number): Promise<string>
+  swipeAtCoord(fromX: number, fromY: number, toX: number, toY: number): Promise<void>
   snapshotTree(): Promise<string>
   systemPopups(): Promise<string>
   openSession(bundleId: string): Promise<NodeSession>
@@ -90,6 +91,10 @@ export class MockNodeDriver implements NodeDriver {
   async tapAtCoord(nx: number, ny: number): Promise<string> {
     this.calls.push({ verb: 'tapAtCoord', args: [nx, ny] })
     return '{"chain":[]}'
+  }
+
+  async swipeAtCoord(fromX: number, fromY: number, toX: number, toY: number): Promise<void> {
+    this.calls.push({ verb: 'swipeAtCoord', args: [fromX, fromY, toX, toY] })
   }
 
   async snapshotTree(): Promise<string> {
