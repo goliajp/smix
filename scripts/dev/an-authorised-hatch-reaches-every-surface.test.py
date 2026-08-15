@@ -46,6 +46,10 @@ COMPLETE = {
         async tapAtCoord(nx: number, ny: number): Promise<void> {}
         async swipeAtCoord(from: [number, number], to: [number, number]): Promise<void> {}
     ''',
+    "npm/smix-rn/src/NodeDriver.ts": '''
+        tapAtCoord(nx: number, ny: number): Promise<string>
+        swipeAtCoord(fromX: number, fromY: number, toX: number, toY: number): Promise<void>
+    ''',
     "crates/smix-node/src/lib.rs": '''
         pub async fn tap_at_coord(&self, nx: f64, ny: f64) -> napi::Result<String> {}
         pub async fn swipe_at_coord(&self, from: (f64, f64), to: (f64, f64)) -> napi::Result<String> {}
@@ -73,6 +77,13 @@ CASES = [
         "npm/smix-rn/src/App.ts",
         "async swipeAtCoord",
         "async swipeDirection",
+        True,
+    ),
+    (
+        "the TS driver loses the swipe hatch",
+        "npm/smix-rn/src/NodeDriver.ts",
+        "swipeAtCoord(fromX",
+        "swipeDirection(fromX",
         True,
     ),
     (

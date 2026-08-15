@@ -42,6 +42,11 @@ SURFACES = [
     ("CLI", "crates/smix-cli/src/main.rs"),
     ("MCP", "crates/smix-mcp/src/main.rs"),
     ("TS SDK", "npm/smix-rn/src/App.ts"),
+    # The layer App.ts calls. A method on App that dispatches to a
+    # driver without it typechecks nowhere and runs nowhere, and this
+    # gate called the surface complete while CI refused to compile it:
+    # "reaches the surface" has to mean reaching through it.
+    ("TS driver", "npm/smix-rn/src/NodeDriver.ts"),
     ("napi", "crates/smix-node/src/lib.rs"),
 ]
 
@@ -58,6 +63,7 @@ PRESENCE = {
         "CLI": r'"point"|point:',
         "MCP": r"\bpoint\b",
         "TS SDK": r"\btapAtCoord\b",
+        "TS driver": r"\btapAtCoord\b",
         "napi": r"\btap_at_coord\b",
     },
     "swipe_at_coord": {
@@ -68,6 +74,7 @@ PRESENCE = {
         "CLI": r'long = "from"',
         "MCP": r'"from"|from:\s*Option|swipe_from',
         "TS SDK": r"\bswipeAtCoord\b",
+        "TS driver": r"\bswipeAtCoord\b",
         "napi": r"\bswipe_at_coord\b",
     },
 }
