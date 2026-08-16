@@ -240,6 +240,18 @@ python3 "$ROOT/scripts/dev/tap-then-capture-is-one-path.py" > /tmp/smix-ship-one
 log "every flag says what it does"
 python3 "$ROOT/scripts/dev/every-flag-says-what-it-does.py" > /tmp/smix-ship-flag-docs.log 2>&1 \
   || fail "flag-description scan FAILED — a flag reaches the surface with nothing to read (see /tmp/smix-ship-flag-docs.log)"
+log "an-authorised-hatch-reaches-every-surface"
+python3 "$ROOT/scripts/dev/an-authorised-hatch-reaches-every-surface.py" > /tmp/smix-ship-an-authorised-hatch-reaches-every-surface.log 2>&1 \
+  || fail "an-authorised-hatch-reaches-every-surface FAILED — see /tmp/smix-ship-an-authorised-hatch-reaches-every-surface.log"
+log "a-tap-proves-aim-not-arrival"
+python3 "$ROOT/scripts/dev/a-tap-proves-aim-not-arrival.py" > /tmp/smix-ship-a-tap-proves-aim-not-arrival.log 2>&1 \
+  || fail "a-tap-proves-aim-not-arrival FAILED — see /tmp/smix-ship-a-tap-proves-aim-not-arrival.log"
+log "v5.1-c10-ground-truth-is-complete"
+python3 "$ROOT/scripts/dev/v5.1-c10-ground-truth-is-complete.py" > /tmp/smix-ship-v5.1-c10-ground-truth-is-complete.log 2>&1 \
+  || fail "v5.1-c10-ground-truth-is-complete FAILED — see /tmp/smix-ship-v5.1-c10-ground-truth-is-complete.log"
+log "no-script-picks-a-device-by-accident"
+python3 "$ROOT/scripts/dev/no-script-picks-a-device-by-accident.py" > /tmp/smix-ship-no-script-picks-a-device-by-accident.log 2>&1 \
+  || fail "no-script-picks-a-device-by-accident FAILED — see /tmp/smix-ship-no-script-picks-a-device-by-accident.log"
 
 log "a retired sentence is off the surfaces"
 python3 "$ROOT/scripts/dev/retired-claims-scan.py" > /tmp/smix-ship-retired-claims.log 2>&1 \

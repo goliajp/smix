@@ -5,8 +5,10 @@
 
 set -euo pipefail
 
-AVD_NAME="${AVD_NAME:-android-emulator}"
-SERIAL="${ADB_SERIAL:-emulator-5554}"
+# The emulator's start and stop live in one place for all six smoke
+# scripts, and go through smix so the machine's ledger says who
+# booted it and teardown stops only that.
+. "$(cd "$(dirname "$0")" && pwd)/lib/emulator-lifecycle.sh"
 PORT=28080
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,15 +18,8 @@ if [ ! -f "$APK" ]; then
   (cd "$ROOT" && ./gradlew :app:assembleDebugAndroidTest)
 fi
 
-echo "=== 1. boot emulator $AVD_NAME ==="
-emulator @$AVD_NAME -no-audio -no-snapshot -no-boot-anim ${EMU_VISIBLE_FLAGS:-} \
-  -port 5554 -id $AVD_NAME -skin 1080x2340 \
-  >/tmp/smix-android-emulator.log 2>&1 &
-EMU_PID=$!
-
-echo "=== 2. wait boot complete ==="
-until adb -s $SERIAL shell getprop sys.boot_completed 2>/dev/null | grep -q 1; do sleep 5; done
-echo "boot ok"
+echo "=== 1-2. emulator up (through smix; SERIAL is set by the lifecycle) ==="
+smoke_emulator_up
 
 echo "=== 3. install APK ==="
 adb -s $SERIAL install -r "$APK"
@@ -80,9 +75,8 @@ echo
 echo "=== 10. teardown ==="
 adb -s $SERIAL shell am force-stop dev.smix.runner.test || true
 adb -s $SERIAL forward --remove tcp:$PORT || true
-adb -s $SERIAL emu kill || true
+smoke_emulator_down
 wait $INSTR_PID 2>/dev/null || true
-wait $EMU_PID 2>/dev/null || true
 
 echo
 echo "ALL PASS (Android element act surface)"
