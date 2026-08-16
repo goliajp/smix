@@ -34,22 +34,11 @@ fn all_variants() -> Vec<FailureCode> {
         FailureCode::CoordinateSpaceMismatch,
         FailureCode::DriverError,
     ];
-    for code in &all {
-        // Exhaustive on purpose — a new variant must fail to compile.
-        match code {
-            FailureCode::ElementNotFound
-            | FailureCode::NotVisible
-            | FailureCode::NotEnabled
-            | FailureCode::Ambiguous
-            | FailureCode::Timeout
-            | FailureCode::AssertionFailed
-            | FailureCode::AppNotRunning
-            | FailureCode::SimulatorNotBooted
-            | FailureCode::TapMissed
-            | FailureCode::CoordinateSpaceMismatch
-            | FailureCode::DriverError => {}
-        }
-    }
+    // The exhaustiveness guard moved into the crate — see
+    // `the_vocabulary_is_pinned` in src/lib.rs. `FailureCode` is
+    // `#[non_exhaustive]`, so a `match` out here would accept a new
+    // variant silently, which is the opposite of what that guard is
+    // for. This list is still the one every SDK is compared against.
     all
 }
 

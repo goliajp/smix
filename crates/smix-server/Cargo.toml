@@ -29,8 +29,8 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-smix-store = { path = "../smix-store", version = "5.1.0" }
-smix-simctl = { path = "../smix-simctl", version = "5.1.0" }
+smix-store = { path = "../smix-store", version = "6.0.0" }
+smix-simctl = { path = "../smix-simctl", version = "6.0.0" }
 axum.workspace = true
 tower-http.workspace = true
 chrono.workspace = true

@@ -26,6 +26,20 @@ use std::fmt;
 /// (SCREAMING_SNAKE_CASE wire).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+// New codes keep arriving — two in two releases — and on an exhaustive
+// enum each one is a major, because a consumer matching every arm stops
+// compiling. That is the wrong price for smix naming a failure more
+// precisely, and it was about to be paid for the second time.
+//
+// The cost lands once, here, in a major that was already owed: every
+// downstream `match` needs a catch-all arm from now on. What it buys is
+// that the next code is additive.
+//
+// The guard that made a new variant fail to compile lives inside this
+// crate now (see `the_vocabulary_is_pinned` below). From out here
+// `non_exhaustive` would have made it accept anything, so it moved
+// rather than being weakened.
+#[non_exhaustive]
 pub enum FailureCode {
     /// Selector matched zero elements in the visible tree.
     ElementNotFound,
@@ -376,4 +390,60 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
         }
     }
     dp[b_len]
+}
+
+#[cfg(test)]
+mod vocabulary {
+    use super::*;
+
+    /// A new `FailureCode` must not compile until it has been thought
+    /// about everywhere.
+    ///
+    /// This match is exhaustive on purpose and lives inside the crate on
+    /// purpose: `#[non_exhaustive]` makes an outside `match` accept
+    /// anything, so the guard that used to sit in
+    /// `tests/sdk_failure_code_parity.rs` would have started passing for
+    /// every future variant. Adding a code should break this line, then
+    /// the wire-string arm below it, then the three SDK declarations the
+    /// parity test reads, then the errors guide.
+    #[test]
+    fn the_vocabulary_is_pinned() {
+        let every = [
+            FailureCode::ElementNotFound,
+            FailureCode::NotVisible,
+            FailureCode::NotEnabled,
+            FailureCode::Ambiguous,
+            FailureCode::Timeout,
+            FailureCode::AssertionFailed,
+            FailureCode::AppNotRunning,
+            FailureCode::SimulatorNotBooted,
+            FailureCode::TapMissed,
+            FailureCode::CoordinateSpaceMismatch,
+            FailureCode::DriverError,
+        ];
+        for code in every {
+            match code {
+                FailureCode::ElementNotFound
+                | FailureCode::NotVisible
+                | FailureCode::NotEnabled
+                | FailureCode::Ambiguous
+                | FailureCode::Timeout
+                | FailureCode::AssertionFailed
+                | FailureCode::AppNotRunning
+                | FailureCode::SimulatorNotBooted
+                | FailureCode::TapMissed
+                | FailureCode::CoordinateSpaceMismatch
+                | FailureCode::DriverError => {}
+            }
+            // Every code renders as a wire string, and a code whose
+            // string nobody wrote would reach a consumer as whatever
+            // the formatter defaults to.
+            assert!(!format_code(code).is_empty(), "{code:?} has no wire string");
+        }
+        assert_eq!(
+            every.len(),
+            11,
+            "counted off the list above, not remembered"
+        );
+    }
 }

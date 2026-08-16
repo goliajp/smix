@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [5.1.0] — unreleased
+## [6.0.0] — unreleased
 
 A tap that reported success while nothing moved, and the half of an
 escape hatch that never reached a surface.
@@ -25,6 +25,26 @@ the event with the app's orientation — the obvious move — changes
 nothing at all on a device. `XCSynthesizedEventRecord`'s interface
 orientation does not participate in mapping coordinates. What lands is
 rotating the point into the device's space and leaving the stamp alone.
+
+### Breaking
+
+- **`FailureCode` is `#[non_exhaustive]`, and gained `COORDINATE_SPACE_MISMATCH`.**
+  A `match` over every arm no longer
+  compiles without a catch-all; add one. `cargo semver-checks` called
+  this a major and it is right — an exhaustive public enum cannot grow.
+
+  The attribute is the reason this is the last time. Two codes arrived in
+  two releases, and on an exhaustive enum each one costs a major, which
+  is the wrong price for smix naming a failure more precisely. From here
+  a new code is additive.
+
+  The guard that made a new variant fail to compile moved inside
+  `smix-error`, because from outside `non_exhaustive` would have made it
+  accept anything — an escape hatch nobody checks the far side of.
+
+- **`DriverError`'s discriminant moved from 9 to 10.**
+  Only matters to code that transmutes or persists the numeric value; the wire form is
+  the SCREAMING_SNAKE string and is unchanged.
 
 ### Fixed
 
