@@ -27,6 +27,7 @@ smix-capsule = { path = "../smix-capsule", version = "6.0.0" }
 smix-store = { path = "../smix-store", version = "6.0.0" }
 smix-error = { path = "../smix-error", version = "6.0.0" }
 smix-simctl = { path = "../smix-simctl", version = "6.0.0" }
+smix-adb = { path = "../smix-adb", version = "6.0.0" }
 smix-sdk = { path = "../smix-sdk", version = "6.0.0" }
 smix-runner-client = { path = "../smix-runner-client", version = "6.0.0" }
 smix-runner-sources = { path = "../smix-runner-sources", version = "6.0.0" }
