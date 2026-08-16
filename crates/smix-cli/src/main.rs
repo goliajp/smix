@@ -592,9 +592,12 @@ Documentation: docs/AI_GUIDE.md
         /// baseline whose frames include a transition.
         #[arg(long, default_value_t = false)]
         animations: bool,
-        /// Target platform.
-        #[arg(long, value_enum, env = "SMIX_PLATFORM", default_value_t = RunPlatform::Ios)]
-        platform: RunPlatform,
+        /// Target platform. Left out, it is read from `--device`: an
+        /// emulator is Android, a simulator is iOS. Pass it only for a
+        /// device the registry cannot classify, or a run with no
+        /// `--device` at all.
+        #[arg(long, value_enum, env = "SMIX_PLATFORM")]
+        platform: Option<RunPlatform>,
         /// Path to `smix-apps.yaml` cross-platform app resolver config.
         /// When the yaml header uses `app: <logicalKey>`, this resolver
         /// maps to platform-specific bundle id / Android package.
@@ -932,6 +935,35 @@ impl RunOutputFormat {
 enum RunPlatform {
     Ios,
     Android,
+}
+
+/// The platform a run targets, read from the device it names rather
+/// than from an argument that defaults to one.
+///
+/// `explicit` is `--platform` when the caller passed it — the override
+/// for a device the registry cannot classify. Otherwise the device's
+/// kind decides. When neither is available the answer is an error, not
+/// a guess: guessing iOS is what sent an Android flow's launchApp to
+/// simctl.
+fn resolve_run_platform(
+    explicit: Option<RunPlatform>,
+    device_kind: Option<smix_simctl::registry::DeviceKind>,
+) -> Result<RunPlatform, String> {
+    use smix_simctl::registry::DeviceKind;
+    if let Some(p) = explicit {
+        return Ok(p);
+    }
+    match device_kind {
+        Some(DeviceKind::Emulator) | Some(DeviceKind::PhysicalAndroid) => Ok(RunPlatform::Android),
+        Some(DeviceKind::Simulator) | Some(DeviceKind::PhysicalIos) => Ok(RunPlatform::Ios),
+        None => Err(
+            "cannot tell which platform this device is — it is not in the registry, \
+             so its kind is unknown. Register it (`smix sim register <alias> --udid \
+             <id> --kind emulator|simulator`) so the platform is read from the \
+             device, or pass --platform to say it once."
+                .to_string(),
+        ),
+    }
 }
 
 impl RunPlatform {
@@ -3195,14 +3227,20 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     passthrough.push("--retry".into());
                     passthrough.push(retry.to_string());
                 }
-                passthrough.push("--platform".into());
-                passthrough.push(
-                    match platform {
-                        RunPlatform::Ios => "ios",
-                        RunPlatform::Android => "android",
-                    }
-                    .into(),
-                );
+                // Forward --platform only when it was given. Left out,
+                // each node reads it from its own --device, the same way
+                // the single-machine path does — forwarding a guessed
+                // default would override that inference downstream.
+                if let Some(p) = platform {
+                    passthrough.push("--platform".into());
+                    passthrough.push(
+                        match p {
+                            RunPlatform::Ios => "ios",
+                            RunPlatform::Android => "android",
+                        }
+                        .into(),
+                    );
+                }
                 if let Some(a) = &apps_config {
                     passthrough.push("--apps-config".into());
                     passthrough.push(a.display().to_string());
@@ -3295,14 +3333,20 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     passthrough.push("--retry".into());
                     passthrough.push(retry.to_string());
                 }
-                passthrough.push("--platform".into());
-                passthrough.push(
-                    match platform {
-                        RunPlatform::Ios => "ios",
-                        RunPlatform::Android => "android",
-                    }
-                    .into(),
-                );
+                // Forward --platform only when it was given. Left out,
+                // each node reads it from its own --device, the same way
+                // the single-machine path does — forwarding a guessed
+                // default would override that inference downstream.
+                if let Some(p) = platform {
+                    passthrough.push("--platform".into());
+                    passthrough.push(
+                        match p {
+                            RunPlatform::Ios => "ios",
+                            RunPlatform::Android => "android",
+                        }
+                        .into(),
+                    );
+                }
                 if let Some(a) = &apps_config {
                     passthrough.push("--apps-config".into());
                     passthrough.push(a.display().to_string());
@@ -3353,7 +3397,23 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     .and_then(lookup_registered)
                     .and_then(|sim| sim.runner_port)
             });
-            let plat = platform.to_flow();
+            // Read the platform from the device rather than an argument
+            // that defaulted to iOS. A run with no --device has no kind
+            // to read and keeps the old default; a --device the registry
+            // classifies decides; a --device it cannot classify, with no
+            // --platform, is an error rather than a silent iOS guess —
+            // which is what sent an Android launchApp to simctl.
+            let plat = match device.as_deref() {
+                None => platform.unwrap_or(RunPlatform::Ios),
+                Some(d) => {
+                    let kind = lookup_registered(d).map(|s| s.kind);
+                    match resolve_run_platform(platform, kind) {
+                        Ok(p) => p,
+                        Err(e) => return Err(CliError::Other(e)),
+                    }
+                }
+            }
+            .to_flow();
             let out_fmt = format.to_adapter();
             // The run path consumes all four switches. Warn once for any
             // sourced from a deprecated env var, then inject Some(value)
@@ -5580,6 +5640,66 @@ mod emulator_ownership {
             ),
             other => panic!("stopping a device another process holds was allowed: {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod platform_from_device {
+    use super::*;
+    use smix_simctl::registry::DeviceKind;
+
+    // The platform used to be an argument that defaulted to iOS,
+    // unrelated to the device you named — so `smix run --device
+    // emulator-5560` sent its launchApp to simctl and got
+    // `Invalid device: emulator-5560`. The device already says which
+    // platform it is; the run should read it there, and only fall back
+    // to an explicit --platform, never to a guess.
+
+    #[test]
+    fn an_explicit_platform_wins() {
+        assert_eq!(
+            resolve_run_platform(Some(RunPlatform::Android), Some(DeviceKind::Simulator)).unwrap(),
+            RunPlatform::Android,
+            "--platform is the override for a device the registry cannot classify"
+        );
+    }
+
+    #[test]
+    fn an_emulator_is_android_without_being_told() {
+        for k in [DeviceKind::Emulator, DeviceKind::PhysicalAndroid] {
+            assert_eq!(
+                resolve_run_platform(None, Some(k)).unwrap(),
+                RunPlatform::Android,
+                "{k:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_simulator_is_ios_without_being_told() {
+        for k in [DeviceKind::Simulator, DeviceKind::PhysicalIos] {
+            assert_eq!(
+                resolve_run_platform(None, Some(k)).unwrap(),
+                RunPlatform::Ios,
+                "{k:?}"
+            );
+        }
+    }
+
+    /// The bug was defaulting to iOS when nothing said otherwise. An
+    /// unregistered bare name has no kind, and guessing is how an
+    /// Android flow reached simctl. Refuse and name the two ways out.
+    #[test]
+    fn an_unclassifiable_device_refuses_rather_than_guessing() {
+        let err = resolve_run_platform(None, None).unwrap_err();
+        assert!(
+            err.contains("--platform"),
+            "the error must name the override: {err}"
+        );
+        assert!(
+            err.to_lowercase().contains("register"),
+            "and the durable fix: {err}"
+        );
     }
 }
 
