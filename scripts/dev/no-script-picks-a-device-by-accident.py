@@ -63,6 +63,7 @@ NOT_A_SUBJECT = {
     "adb-guard.test.sh": "feeds adb command lines to the guard under test; it runs none of them",
     "hook-command.test.py": "same — the strings are the guard's inputs, not commands",
     "no-script-picks-a-device-by-accident.test.py": "this gate's own harness: its fixtures ARE the accidents, written down to be refused",
+    "v6.1-c5-two-devices-one-is-not-yours-e2e.sh": "two devices are its subject: it starts one by hand and reads `adb devices` to prove it stays up after a refusal, never to pick one to drive — ours comes from `sim resolve`",
 }
 
 
