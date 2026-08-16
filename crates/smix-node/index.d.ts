@@ -18,6 +18,13 @@ export declare class SmixNodeDriver {
    */
   tapAtCoord(nx: number, ny: number): Promise<string>
   /**
+   * Swipe between two normalised points, the authorised coordinate
+   * escape hatch for swipe (§9 #3). Two points rather than one: a
+   * swipe is a path, and tap's single-point shape does not describe
+   * one.
+   */
+  swipeAtCoord(fromX: number, fromY: number, toX: number, toY: number): Promise<void>
+  /**
    * Tap the element with accessibility identifier `id`. Returns whether a
    * matching element was found and tapped — selectors resolve to an id in
    * the SDK layer, so no selector crosses the boundary (parity with the
