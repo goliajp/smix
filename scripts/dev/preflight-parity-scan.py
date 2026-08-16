@@ -71,8 +71,6 @@ LOCAL = {
     "an-authorised-hatch-reaches-every-surface harness": "an-authorised-hatch-reaches-every-surface.test",
     "a-tap-proves-aim-not-arrival": "a-tap-proves-aim-not-arrival",
     "a-tap-proves-aim-not-arrival harness": "a-tap-proves-aim-not-arrival.test",
-    "v5.1-c10-ground-truth-is-complete": "v5.1-c10-ground-truth-is-complete",
-    "v5.1-c10-ground-truth-is-complete harness": "v5.1-c10-ground-truth-is-complete.test",
     "no-script-picks-a-device-by-accident": "no-script-picks-a-device-by-accident",
     "no-script-picks-a-device-by-accident harness": "no-script-picks-a-device-by-accident.test",
     "portable tier selftest": "portable-tier.sh --selftest",

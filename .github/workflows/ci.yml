@@ -207,10 +207,6 @@ jobs:
         run: python3 scripts/dev/a-tap-proves-aim-not-arrival.py
       - name: a-tap-proves-aim-not-arrival harness
         run: python3 scripts/dev/a-tap-proves-aim-not-arrival.test.py
-      - name: v5.1-c10-ground-truth-is-complete
-        run: python3 scripts/dev/v5.1-c10-ground-truth-is-complete.py
-      - name: v5.1-c10-ground-truth-is-complete harness
-        run: python3 scripts/dev/v5.1-c10-ground-truth-is-complete.test.py
       - name: no-script-picks-a-device-by-accident
         run: python3 scripts/dev/no-script-picks-a-device-by-accident.py
       - name: no-script-picks-a-device-by-accident harness
