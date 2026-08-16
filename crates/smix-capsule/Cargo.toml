@@ -1,6 +1,6 @@
 [package]
 name = "smix-capsule"
-version = "5.1.0"
+version = "6.0.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -10,12 +10,12 @@ description = "Runner lifecycle for smix: bring an XCUITest runner up on a simul
 
 [dependencies]
 thiserror.workspace = true
-smix-usbmux = { path = "../smix-usbmux", version = "5.1.0" }
-smix-lease = { path = "../smix-lease", version = "5.1.0" }
-smix-runner-client = { path = "../smix-runner-client", version = "5.1.0" }
-smix-runner-sources = { path = "../smix-runner-sources", version = "5.1.0" }
-smix-store = { path = "../smix-store", version = "5.1.0" }
-smix-runner-wire = { path = "../smix-runner-wire", version = "5.1.0" }
+smix-usbmux = { path = "../smix-usbmux", version = "6.0.0" }
+smix-lease = { path = "../smix-lease", version = "6.0.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "6.0.0" }
+smix-runner-sources = { path = "../smix-runner-sources", version = "6.0.0" }
+smix-store = { path = "../smix-store", version = "6.0.0" }
+smix-runner-wire = { path = "../smix-runner-wire", version = "6.0.0" }
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true
