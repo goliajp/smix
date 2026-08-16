@@ -1601,7 +1601,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "smix-adapter-maestro"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "async-trait",
  "clap",
@@ -1634,7 +1634,7 @@ dependencies = [
 
 [[package]]
 name = "smix-adb"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1645,7 +1645,7 @@ dependencies = [
 
 [[package]]
 name = "smix-ai-tier"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1655,7 +1655,7 @@ dependencies = [
 
 [[package]]
 name = "smix-annotate"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "ab_glyph",
  "image",
@@ -1666,7 +1666,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "async-trait",
  "serde_json",
@@ -1684,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -1693,7 +1693,7 @@ dependencies = [
 
 [[package]]
 name = "smix-fixture"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1702,7 +1702,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1712,14 +1712,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-lease"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1729,7 +1729,7 @@ dependencies = [
 
 [[package]]
 name = "smix-metro-log"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "futures-util",
  "regex",
@@ -1742,7 +1742,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1760,7 +1760,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1771,14 +1771,14 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-sdk"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "regex",
  "serde",
@@ -1810,7 +1810,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1818,14 +1818,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "libc",
  "serde",
@@ -1840,7 +1840,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "5.1.0"
+version = "6.0.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -1850,7 +1850,7 @@ dependencies = [
 
 [[package]]
 name = "smix-verbs"
-version = "5.1.0"
+version = "6.0.0"
 
 [[package]]
 name = "socket2"
