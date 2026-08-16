@@ -310,6 +310,11 @@ LOCAL_ONLY = {
     # in CI that refusal would fire on every build. Its harness DOES run
     # in CI, on trees it builds itself.
     "contract-scan",
+    # Reads the C10 ground-truth doc under `.claude/docs/research/`, which
+    # is not in the checkout. Same as release-record-scan: absent from CI
+    # on purpose, present at ship because ship runs on the authoring
+    # machine where that doc lives.
+    "v5.1-c10-ground-truth-is-complete",
 }
 CI_GATE = ".github/workflows/ci.yml"
 
