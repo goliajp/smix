@@ -4,7 +4,12 @@
 # the emulator serial (a physical phone must never be touched), sweeps on exit.
 set -euo pipefail
 
-SERIAL="${1:-emulator-5554}"
+# A serial from the caller, or the ledger's answer — never a port
+# somebody else's emulator may be sitting on.
+SERIAL="${1:-}"
+if [ -z "$SERIAL" ]; then
+  SERIAL="$(bash "$(cd "$(dirname "$0")/../.." && pwd)/scripts/dev/pick-dev-emulator.sh")" || exit 1
+fi
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # A port of this gate's own, so a bystander runner cannot turn it red.
