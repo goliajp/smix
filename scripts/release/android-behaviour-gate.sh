@@ -98,11 +98,16 @@ die() {
 
 SERIAL="${SMIX_ANDROID_SERIAL:-}"
 if [[ -z "$SERIAL" ]]; then
-  SERIAL="$(adb devices | awk '/^emulator-[0-9]+[[:space:]]+device$/ { print $1; exit }')"
+  # Not the first emulator adb lists — that handed this gate somebody
+  # else's device once. pick-dev-emulator asks the ledger whether smix
+  # booted a device, and refuses rather than guesses.
+  SERIAL="$(bash "$REPO_ROOT/scripts/dev/pick-dev-emulator.sh" 2>&1)" || {
+    die "no emulator this machine's ledger says smix booted:
+$SERIAL
+  Boot one through smix — \`smix sim boot <alias>\` — or pin one with
+  SMIX_ANDROID_SERIAL to say it is yours."
+  }
 fi
-[[ -n "$SERIAL" ]] || die "no emulator attached. Start one:
-  \"\$ANDROID_HOME/emulator/emulator\" -avd sim-smix-android-01 -port 5554 -no-snapshot-save &
-  adb -s emulator-5554 wait-for-device"
 
 if [[ ! "$SERIAL" =~ ^emulator-[0-9]+$ ]]; then
   die "refusing to drive '$SERIAL': not an emulator serial (emulator-NNNN).

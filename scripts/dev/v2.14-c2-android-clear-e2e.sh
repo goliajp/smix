@@ -21,7 +21,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
-SERIAL="${SMIX_ANDROID_SERIAL:-emulator-5554}"
+# A serial from the caller, or the ledger's answer — never a port
+# somebody else's emulator may be sitting on.
+SERIAL="${SMIX_ANDROID_SERIAL:-}"
+if [ -z "$SERIAL" ]; then
+  SERIAL="$(bash "$(cd "$(dirname "$0")/../.." && pwd)/scripts/dev/pick-dev-emulator.sh")" || exit 1
+fi
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$ROOT/scripts/lib/gate-port.sh"
 PORT="${SMIX_ANDROID_CLEAR_PORT:-$SMIX_RUNNER_PORT}"

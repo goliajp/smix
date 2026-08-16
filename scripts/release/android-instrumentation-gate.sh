@@ -43,13 +43,17 @@ die() {
 
 SERIAL="${SMIX_ANDROID_SERIAL:-}"
 if [[ -z "$SERIAL" ]]; then
-  SERIAL="$(adb devices | awk '/^emulator-[0-9]+[[:space:]]+device$/ { print $1; exit }')"
-fi
-
-if [[ -z "$SERIAL" ]]; then
-  die "no emulator attached. Start one first:
-  \"\$ANDROID_HOME/emulator/emulator\" -avd sim-smix-android-01 -port 5554 -no-snapshot-save &
-  adb -s emulator-5554 wait-for-device"
+  # Not the first emulator adb lists. That is a coin toss over whose
+  # device this gate drives, and it landed on somebody else's: another
+  # person's smix had an emulator on the default port, and this gate
+  # drove it. pick-dev-emulator asks this machine's ledger whether smix
+  # booted a device, and refuses rather than guesses.
+  SERIAL="$(bash "$REPO_ROOT/scripts/dev/pick-dev-emulator.sh" 2>&1)" || {
+    die "no emulator this machine's ledger says smix booted:
+$SERIAL
+  Boot one through smix — \`smix sim boot <alias>\` — or pin one with
+  SMIX_ANDROID_SERIAL to say it is yours."
+  }
 fi
 
 if [[ ! "$SERIAL" =~ ^emulator-[0-9]+$ ]]; then
