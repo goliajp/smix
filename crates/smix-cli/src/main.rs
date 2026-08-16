@@ -1744,6 +1744,11 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
     use smix_simctl::registry::DeviceKind;
     const ALL: &[DeviceKind] = &[Simulator, Emulator, PhysicalIos, PhysicalAndroid];
     const SIMCTL: &[DeviceKind] = &[Simulator];
+    // Powering a device on and off, which is not an Apple-only idea.
+    // Physical devices are absent on purpose: section 9 #1 gates them
+    // behind registration and a per-device opt-in, and nothing here
+    // should decide a phone's power state.
+    const POWERABLE: &[DeviceKind] = &[Simulator, Emulator];
     const APPLE: &[DeviceKind] = &[Simulator, PhysicalIos];
     // Everything that can be handed a payload. A physical iPhone is
     // absent because no path here puts an app on one — `devicectl` would
@@ -1782,9 +1787,8 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
         // (`emulator -avd`, `adb shell am start`, `adb shell settings`)
         // but none of them is wired here, and pretending otherwise is
         // how a caller ends up waiting out a 120-second timeout.
-        SimAction::Boot { .. }
-        | SimAction::Shutdown { .. }
-        | SimAction::Erase { .. }
+        SimAction::Boot { .. } | SimAction::Shutdown { .. } => POWERABLE,
+        SimAction::Erase { .. }
         | SimAction::Launch { .. }
         | SimAction::Terminate { .. }
         | SimAction::Openurl { .. }
@@ -1993,6 +1997,16 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                              given, because nothing here can enumerate the world's phones."
                             )));
                         }
+                        // Which AVD this serial is running, taken now,
+                        // while the emulator is up — the check above just
+                        // proved it is. A serial identifies the emulator
+                        // answering today; the AVD name is what starts one
+                        // tomorrow, and nothing later in the day can recover
+                        // it from a device that has since stopped.
+                        let avd = smix_adb::AdbClient::new()
+                            .avd_name(&udid)
+                            .await
+                            .unwrap_or_default();
                         let path = registry_path()?;
                         let outcome = SimRegistry::register(
                             &path,
@@ -2001,7 +2015,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 device_name: name.unwrap_or_else(|| alias.clone()),
                                 udid: udid.clone(),
                                 runtime: String::new(),
-                                device_type: String::new(),
+                                device_type: avd,
                                 locale,
                                 runner_port,
                                 kind,
@@ -2116,11 +2130,79 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 SimAction::Boot { device } => {
                     let udid = resolve_device(&device)?;
+                    // An emulator is started by name, not by serial: the
+                    // serial is what answers once it is up. The AVD name was
+                    // written down at registration, when the device was
+                    // provably running and could be asked.
+                    if device_kind_of(&device) == smix_simctl::registry::DeviceKind::Emulator {
+                        let already = adb_knows(&udid);
+                        let claim = boot_claim(if already {
+                            EmulatorState::AlreadyRunning
+                        } else {
+                            EmulatorState::WasOff
+                        });
+                        if !already {
+                            let avd = lookup_registered(&device)
+                                .map(|s| s.device_type.clone())
+                                .filter(|a| !a.is_empty())
+                                .ok_or_else(|| {
+                                    CliError::Other(format!(
+                                        "{udid} has no AVD name on record, so there is \
+                                         nothing to start. Register it once while it is \
+                                         running — `smix sim register <alias> --udid \
+                                         {udid} --kind emulator` — and the name is kept."
+                                    ))
+                                })?;
+                            let adb = smix_adb::AdbClient::new();
+                            adb.start_emulator_on(&avd, &udid)
+                                .map_err(|e| CliError::Other(format!("{e}")))?;
+                            // Wait for the device to exist, not for the
+                            // command that asks for it to return. The first
+                            // version printed `booted:` and wrote the ledger
+                            // row the moment the process was spawned — so a
+                            // start that failed left the ledger claiming smix
+                            // had booted a device that was not there. That is
+                            // the same defect this whole version is about,
+                            // committed by the code meant to fix it.
+                            let ready = adb
+                                .wait_for_boot(&udid, std::time::Duration::from_secs(180))
+                                .await;
+                            if let Err(e) = ready {
+                                return Err(CliError::Other(format!(
+                                    "{avd} was started and {udid} did not come up \
+                                     within 180s: {e}\n\
+                                     the ledger has not been told smix booted it, \
+                                     because it did not"
+                                )));
+                            }
+                        }
+                        if let Ok(leases) = smix_capsule::runner::machine_leases()
+                            && let Err(e) = smix_lease::store::record_boot(
+                                &leases,
+                                &udid,
+                                claim == BootClaim::ClaimAsOurs,
+                            )
+                        {
+                            eprintln!("warning: boot not recorded in the device ledger: {e}");
+                        }
+                        println!("booted: {udid}");
+                        return Ok(std::process::ExitCode::SUCCESS);
+                    }
                     // Whether this command is the one that brought the device
                     // up decides, later, whether smix may shut it down. A
                     // device someone else booted is not ours to turn off as
                     // the price of cleaning up after ourselves.
                     let was_up = booted_udids(&simctl).await.contains(&udid);
+                    // One decision for both platforms. iOS grew this rule
+                    // first and expressed it inline as `!was_up`; naming it
+                    // is what let Android reuse it rather than reimplement
+                    // it slightly differently, which is how the two came to
+                    // disagree about ownership in the first place.
+                    let claim = boot_claim(if was_up {
+                        EmulatorState::AlreadyRunning
+                    } else {
+                        EmulatorState::WasOff
+                    });
                     // Wait for the device to finish booting, not just to accept
                     // the boot. `simctl boot` returns while CoreSimulator is
                     // still bringing the render surfaces up, and a device in
@@ -2141,7 +2223,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // machine, withheld because of where somebody's shell
                     // happened to be.
                     if let Ok(leases) = smix_capsule::runner::machine_leases()
-                        && let Err(e) = smix_lease::store::record_boot(&leases, &udid, !was_up)
+                        && let Err(e) = smix_lease::store::record_boot(
+                            &leases,
+                            &udid,
+                            claim == BootClaim::ClaimAsOurs,
+                        )
                     {
                         eprintln!("warning: boot not recorded in the device ledger: {e}");
                     }
@@ -2175,16 +2261,45 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 SimAction::Shutdown { device } => {
                     let udid = resolve_device(&device)?;
+                    // The comment below this block has said for a while that
+                    // the boot row records who may shut a device down. It
+                    // was never read: the shutdown went ahead and then
+                    // cleared the row. So the rule existed in prose and not
+                    // in behaviour, and a device somebody else booted was
+                    // stopped by whoever tidied up next.
+                    match shutdown_verdict(ownership_of(&udid), &udid) {
+                        ShutdownVerdict::Proceed => {}
+                        ShutdownVerdict::Refuse { message } => {
+                            return Err(CliError::Other(message));
+                        }
+                    }
                     // Already off is the state that was asked for. Failing
                     // here would also mean never clearing the boot row below,
                     // so a device shut down twice would keep a record saying
                     // smix still owes it a shutdown — forever.
-                    match simctl.shutdown(&udid).await {
-                        Ok(()) => {}
-                        Err(smix_simctl::DeviceControlError::NonZeroExit {
-                            ref stderr, ..
-                        }) if stderr.contains("current state: Shutdown") => {}
-                        Err(e) => return Err(e.into()),
+                    //
+                    // The mechanism differs by platform and the rule above
+                    // does not: `emu kill` and `simctl shutdown` stop a
+                    // device in different ways, and both are only reached
+                    // once the ledger has said this process may.
+                    if device_kind_of(&device) == smix_simctl::registry::DeviceKind::Emulator {
+                        let adb = smix_adb::AdbClient::new();
+                        if let Err(e) = adb.stop_emulator(&udid).await {
+                            // An emulator that is already gone is the state
+                            // asked for, same as the simctl arm below.
+                            if !format!("{e}").contains("device") {
+                                return Err(CliError::Other(format!("could not stop {udid}: {e}")));
+                            }
+                        }
+                    } else {
+                        match simctl.shutdown(&udid).await {
+                            Ok(()) => {}
+                            Err(smix_simctl::DeviceControlError::NonZeroExit {
+                                ref stderr,
+                                ..
+                            }) if stderr.contains("current state: Shutdown") => {}
+                            Err(e) => return Err(e.into()),
+                        }
                     }
                     // The boot row records who may shut this device down.
                     // Once it is off, the answer is nobody — leaving the row
@@ -2473,11 +2588,24 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     if physical_team.is_none() {
                         let simctl = SimctlClient::new();
                         let was_up = booted_udids(&simctl).await.contains(&udid);
+                        // Same rule as `sim boot`, through the same function.
+                        // This site had its own copy of it, which is how one
+                        // path can start disagreeing with the other about who
+                        // owns a device.
+                        let claim = boot_claim(if was_up {
+                            EmulatorState::AlreadyRunning
+                        } else {
+                            EmulatorState::WasOff
+                        });
                         simctl
                             .boot_and_wait(&udid, std::time::Duration::from_secs(120))
                             .await?;
                         if let Ok(leases) = smix_capsule::runner::machine_leases()
-                            && let Err(e) = smix_lease::store::record_boot(&leases, &udid, !was_up)
+                            && let Err(e) = smix_lease::store::record_boot(
+                                &leases,
+                                &udid,
+                                claim == BootClaim::ClaimAsOurs,
+                            )
                         {
                             eprintln!("warning: boot not recorded in the device ledger: {e}");
                         }
@@ -5276,6 +5404,249 @@ fn reject_ios_only_up_flags(
 }
 
 // ---- tests --------------------------------------------------------------
+
+/// Whether this process is the one that turned an emulator on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum EmulatorState {
+    WasOff,
+    AlreadyRunning,
+}
+
+/// What to write to the ledger after a boot.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum BootClaim {
+    ClaimAsOurs,
+    LeaveUnclaimed,
+}
+
+/// What the ledger says about who holds a device.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Ownership {
+    BootedByUs,
+    HeldByOther { pid: u32 },
+    NoLedgerRow,
+}
+
+/// Whether this process may stop a device.
+#[derive(Clone, Debug, PartialEq)]
+enum ShutdownVerdict {
+    Proceed,
+    Refuse { message: String },
+}
+
+/// A device that was already up was turned on by somebody else, and
+/// claiming it is how a later teardown comes to stop their work.
+fn boot_claim(state: EmulatorState) -> BootClaim {
+    match state {
+        EmulatorState::WasOff => BootClaim::ClaimAsOurs,
+        EmulatorState::AlreadyRunning => BootClaim::LeaveUnclaimed,
+    }
+}
+
+/// What this machine's ledger says about a device, in the shape the
+/// verdict below takes.
+///
+/// A translation of `smix_lease::assess`, not a second opinion. The
+/// first draft asked only "is there a row", which cannot tell a device
+/// somebody is using from one whose holder died hours ago — and a
+/// stale row would then have locked the device out of smix's hands
+/// permanently. The ledger already draws that line (`Admission`), and
+/// drawing it twice is how the two answers start disagreeing.
+fn ownership_of(serial: &str) -> Ownership {
+    let Ok(leases) = smix_capsule::runner::machine_leases() else {
+        return Ownership::NoLedgerRow;
+    };
+    let Ok(facts) = smix_lease::store::collect_facts(&leases, serial) else {
+        return Ownership::NoLedgerRow;
+    };
+    // Booted-by-us is read off the resources rather than the admission,
+    // because `Booted` is a device state and not a process: `assess`
+    // deliberately does not treat it as something to probe for
+    // liveness. Whether this device is ours and whether somebody's
+    // session is alive on it are two questions.
+    let booted_by_us = facts.existing.as_ref().is_some_and(|h| {
+        h.lease
+            .resources
+            .iter()
+            .any(|r| matches!(r, smix_lease::Resource::Booted { by_us: true }))
+    });
+    match smix_lease::assess(&facts) {
+        smix_lease::Admission::Denied(c) if c.holder_alive => {
+            Ownership::HeldByOther { pid: c.holder.pid }
+        }
+        _ if booted_by_us => Ownership::BootedByUs,
+        _ => Ownership::NoLedgerRow,
+    }
+}
+
+/// Whoever booted it stops it.
+///
+/// The two refusals are kept apart because they send a reader somewhere
+/// different: no ledger row means nothing here started the device and
+/// there is nobody to ask; a row held by another process means
+/// something did start it and may still be using it, and names who.
+fn shutdown_verdict(owner: Ownership, serial: &str) -> ShutdownVerdict {
+    match owner {
+        Ownership::BootedByUs => ShutdownVerdict::Proceed,
+        Ownership::NoLedgerRow => ShutdownVerdict::Refuse {
+            message: format!(
+                "{serial} is running and this machine's ledger has no record of smix \
+                 booting it — whoever booted it stops it.\n\
+                 \x20 if it is yours and you started it by hand, stop it the same way\n\
+                 \x20 if it should be smix's, start it with `smix sim boot {serial}` \
+                 and the ledger will say so"
+            ),
+        },
+        Ownership::HeldByOther { pid } => ShutdownVerdict::Refuse {
+            message: format!(
+                "{serial} is held by pid {pid}, which is still alive — stopping it now \
+                 takes a device out from under work that is running.\n\
+                 \x20 `smix lease status {serial}` says what it has open\n\
+                 \x20 `smix lease reconcile {serial}` closes it gracefully once that \
+                 process is gone"
+            ),
+        },
+    }
+}
+
+#[cfg(test)]
+mod emulator_ownership {
+    use super::*;
+
+    // Who turned this device on, and may this process turn it off.
+    //
+    // The iOS path has answered both since the ledger moved to the
+    // machine: `record_boot(.., !was_up)` declines to claim a device
+    // that was already running, and teardown reads that claim back.
+    // Android had neither, and the day this was written another
+    // person's smix stopped this machine's emulator a dozen times
+    // while a release was using it — nobody was doing anything wrong,
+    // because nothing could be asked.
+
+    #[test]
+    fn a_device_already_running_is_not_claimed() {
+        assert_eq!(
+            boot_claim(EmulatorState::AlreadyRunning),
+            BootClaim::LeaveUnclaimed,
+            "smix did not turn this one on, and saying otherwise is how a \
+             teardown later stops somebody else's work"
+        );
+    }
+
+    #[test]
+    fn a_device_this_process_started_is_claimed() {
+        assert_eq!(boot_claim(EmulatorState::WasOff), BootClaim::ClaimAsOurs);
+    }
+
+    /// The seed of the whole version. Everything else in v6.1 is this
+    /// sentence applied in another place.
+    #[test]
+    fn an_emulator_we_did_not_boot_is_not_ours_to_stop() {
+        match shutdown_verdict(Ownership::NoLedgerRow, "emulator-5560") {
+            ShutdownVerdict::Refuse { message } => {
+                assert!(
+                    message.contains("emulator-5560"),
+                    "a refusal that does not name the device cannot be acted on: {message}"
+                );
+                assert!(
+                    message.to_lowercase().contains("boot"),
+                    "the refusal must say the rule it is applying — whoever booted it \
+                     stops it: {message}"
+                );
+            }
+            other => panic!("stopping a device smix never started was allowed: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_emulator_we_booted_is_ours_to_stop() {
+        assert!(matches!(
+            shutdown_verdict(Ownership::BootedByUs, "emulator-5560"),
+            ShutdownVerdict::Proceed
+        ));
+    }
+
+    /// Held by another live process, with a ledger row that is not ours.
+    /// Distinct from "no row" because the two send a reader somewhere
+    /// different: no row means nothing here started it, and a row means
+    /// something did and may still be using it.
+    #[test]
+    fn an_emulator_held_by_someone_else_names_the_holder() {
+        match shutdown_verdict(Ownership::HeldByOther { pid: 4242 }, "emulator-5560") {
+            ShutdownVerdict::Refuse { message } => assert!(
+                message.contains("4242"),
+                "the refusal must name who is holding it, or the reader has nothing \
+                 to go and ask: {message}"
+            ),
+            other => panic!("stopping a device another process holds was allowed: {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod device_power {
+    use super::*;
+    use smix_simctl::registry::DeviceKind;
+
+    // Turning a device on and off was an Apple-only idea here, and an
+    // Android emulator therefore had no way to be started *by smix* —
+    // so no way to be recorded as started. Every ownership question
+    // above this rests on the one fact nobody could write down: who
+    // turned this device on. Measured cost over one day: another person
+    // driving smix on this machine took a release's emulator out from
+    // under it a dozen times, and two release gates picked their device
+    // instead of ours. Neither side could tell, because neither side
+    // could ask.
+
+    fn kinds(action: &SimAction) -> &'static [DeviceKind] {
+        sim_verb_supports(action).expect("this verb acts on a device")
+    }
+
+    fn boot() -> SimAction {
+        SimAction::Boot {
+            device: String::new(),
+        }
+    }
+
+    fn shutdown() -> SimAction {
+        SimAction::Shutdown {
+            device: String::new(),
+        }
+    }
+
+    #[test]
+    fn booting_and_stopping_reach_emulators() {
+        for action in [boot(), shutdown()] {
+            let k = kinds(&action);
+            assert!(
+                k.contains(&DeviceKind::Emulator),
+                "an emulator cannot be powered by smix, so nothing can record who did: {k:?}"
+            );
+            assert!(
+                k.contains(&DeviceKind::Simulator),
+                "the iOS path must survive the widening: {k:?}"
+            );
+        }
+    }
+
+    /// The half that goes quietly wrong if only the first is written.
+    /// Widening a set is one edit from widening it too far, and a phone
+    /// powered off by a release gate is not recovered by re-running the
+    /// gate.
+    #[test]
+    fn no_physical_device_is_powered_here() {
+        for action in [boot(), shutdown()] {
+            let k = kinds(&action);
+            for forbidden in [DeviceKind::PhysicalIos, DeviceKind::PhysicalAndroid] {
+                assert!(
+                    !k.contains(&forbidden),
+                    "this path claims to reach {forbidden:?} — section 9 #1 does not put \
+                     a physical device's power state on it"
+                );
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

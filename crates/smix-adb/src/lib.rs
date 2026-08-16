@@ -367,6 +367,123 @@ impl AdbClient {
         Ok(())
     }
 
+    /// `adb -s <serial> emu avd name` — which AVD this emulator is running.
+    ///
+    /// A serial says which emulator is answering now; the AVD name says
+    /// which one to start when none is. Registration is the moment both
+    /// are knowable — it already refuses a serial adb cannot see — so
+    /// that is where the pair gets written down.
+    pub async fn avd_name(&self, serial: &str) -> Result<String, AdbError> {
+        let out = self.emu(serial, &["avd", "name"]).await?;
+        // The console answers with the name and then `OK` on its own
+        // line. Taking the whole body would store "sim-smix-01\nOK" as
+        // the AVD, and `emulator -avd` would then be handed something no
+        // AVD is called.
+        Ok(out
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && *l != "OK")
+            .unwrap_or_default()
+            .to_string())
+    }
+
+    /// Start an AVD, detached, and return once the process is away.
+    ///
+    /// Not through adb: adb talks to emulators that exist, and this is
+    /// how one comes to exist. Detached on purpose — the emulator
+    /// outlives the command that asked for it, which is the whole point
+    /// of a device somebody else can then find in the ledger.
+    /// `serial` is not decoration: `emulator-5560` *is* the console port
+    /// 5560, and starting the AVD without saying so takes whatever port
+    /// is free — 5554, usually. The first version of this omitted it and
+    /// asked for one device while starting another, which is the exact
+    /// confusion this whole line of work exists to end, committed by the
+    /// code meant to end it.
+    pub fn start_emulator_on(&self, avd: &str, serial: &str) -> Result<(), AdbError> {
+        let port = serial
+            .rsplit('-')
+            .next()
+            .and_then(|p| p.parse::<u16>().ok());
+        let Some(port) = port else {
+            return Err(AdbError::Malformed {
+                subcommand: "start_emulator_on".to_string(),
+                detail: format!(
+                    "{serial} does not end in a console port, so there is \
+                                 no way to start the emulator that would answer to it"
+                ),
+            });
+        };
+        self.spawn_emulator(avd, Some(port))
+    }
+
+    pub fn start_emulator(&self, avd: &str) -> Result<(), AdbError> {
+        self.spawn_emulator(avd, None)
+    }
+
+    fn spawn_emulator(&self, avd: &str, port: Option<u16>) -> Result<(), AdbError> {
+        let home = std::env::var("ANDROID_HOME")
+            .or_else(|_| std::env::var("ANDROID_SDK_ROOT"))
+            .unwrap_or_else(|_| {
+                format!(
+                    "{}/Library/Android/sdk",
+                    std::env::var("HOME").unwrap_or_default()
+                )
+            });
+        let mut cmd = std::process::Command::new(format!("{home}/emulator/emulator"));
+        cmd.args(["-avd", avd, "-no-boot-anim"]);
+        if let Some(port) = port {
+            cmd.args(["-port", &port.to_string()]);
+        }
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(AdbError::from)?;
+        Ok(())
+    }
+
+    /// Poll until the device answers and Android says it finished booting.
+    ///
+    /// Two conditions, not one: adb lists a device well before
+    /// `sys.boot_completed` is 1, and a command sent in that window
+    /// fails in ways that read like the app's fault.
+    pub async fn wait_for_boot(
+        &self,
+        serial: &str,
+        within: std::time::Duration,
+    ) -> Result<(), AdbError> {
+        let deadline = std::time::Instant::now() + within;
+        loop {
+            if let Ok((out, _)) = self
+                .run_capture(Some(serial), "shell", &["getprop", "sys.boot_completed"])
+                .await
+                && out.trim() == "1"
+            {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(AdbError::Malformed {
+                    subcommand: "getprop sys.boot_completed".to_string(),
+                    detail: format!("{serial} did not report a completed boot"),
+                });
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+    }
+
+    /// `adb -s <serial> emu kill` — ask an emulator to stop.
+    ///
+    /// Whether this process *may* ask is decided before the call, by the
+    /// ledger, not here: this is the mechanism and the ownership rule
+    /// lives with the caller. Six smoke scripts in this repository call
+    /// the same command against a hard-coded `emulator-5554` and stop
+    /// whichever emulator happens to be on that port, which is the
+    /// failure mode that rule exists to end.
+    pub async fn stop_emulator(&self, serial: &str) -> Result<(), AdbError> {
+        self.emu(serial, &["kill"]).await?;
+        Ok(())
+    }
+
     /// `adb -s <serial> shell screencap -p` — capture device screen as PNG.
     /// Returns raw PNG bytes via stdout.
     pub async fn screenshot(&self, serial: &str) -> Result<Vec<u8>, AdbError> {

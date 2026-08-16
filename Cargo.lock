@@ -2773,6 +2773,7 @@ dependencies = [
  "serde_json",
  "serde_norway",
  "smix-adapter-maestro",
+ "smix-adb",
  "smix-annotate",
  "smix-authoring-propose",
  "smix-capsule",
