@@ -23,7 +23,10 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
+# `SMIX_GATE_ROOT` lets the harness point this at a fixture tree. Without
+# it the only tree this gate has ever judged is the one it lives in, and
+# every accident it exists to catch has been removed from that tree.
+REPO = os.path.abspath(os.environ.get("SMIX_GATE_ROOT") or os.path.join(HERE, "..", ".."))
 
 SCAN_DIRS = ["scripts/dev", "scripts/release", "android-runner/scripts"]
 
@@ -47,6 +50,11 @@ DELIBERATE = [
     # pattern saw only the bare word and called the C1 e2e — which does
     # exactly the right thing — an accident.
     re.compile(r"sim\s+(boot|resolve)\s+\S"),
+    # Sourcing the shared emulator lifecycle: its `smoke_emulator_up`
+    # boots through smix on a registered alias and sets $SERIAL from
+    # that. A script that takes its device from the lifecycle has
+    # chosen it exactly as deliberately as one that calls smix itself.
+    re.compile(r"lib/emulator-lifecycle\.sh"),
 ]
 
 # Scripts whose subject IS the accident — a guard test feeding it inputs
@@ -54,6 +62,7 @@ DELIBERATE = [
 NOT_A_SUBJECT = {
     "adb-guard.test.sh": "feeds adb command lines to the guard under test; it runs none of them",
     "hook-command.test.py": "same — the strings are the guard's inputs, not commands",
+    "no-script-picks-a-device-by-accident.test.py": "this gate's own harness: its fixtures ARE the accidents, written down to be refused",
 }
 
 

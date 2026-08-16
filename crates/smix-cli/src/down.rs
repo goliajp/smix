@@ -21,6 +21,42 @@ fn pkill(sig: &str, pattern: &str, label: &str) -> bool {
     hit
 }
 
+/// May this teardown turn a device off?
+///
+/// Two conditions and both must hold. The boot row (`may_shut_down`)
+/// says smix started it once; a live holder that is not this process
+/// says somebody is on it now. The first alone shut down a consumer's
+/// simulator: its ledger carried an old boot row from a session that
+/// smix had opened, and their runner was alive on it. The rule was
+/// applied to the record and not to the device.
+///
+/// Pure so both sides can be pinned without a device — the state that
+/// bites (our row + their live session) is hard to hold still on a
+/// shared machine long enough to observe, and was not observed: two
+/// attempts had `down`'s own earlier passes clear the session before
+/// this pass could read it.
+#[derive(Debug, PartialEq)]
+pub enum Teardown {
+    Proceed,
+    NotOurs,
+    OursButHeld { pid: u32 },
+}
+
+pub fn teardown_verdict(
+    ledger: Option<&smix_lease::Lease>,
+    admission: Option<&smix_lease::Admission>,
+) -> Teardown {
+    if !smix_lease::may_shut_down(ledger) {
+        return Teardown::NotOurs;
+    }
+    if let Some(smix_lease::Admission::Denied(c)) = admission
+        && c.holder_alive
+    {
+        return Teardown::OursButHeld { pid: c.holder.pid };
+    }
+    Teardown::Proceed
+}
+
 /// Close what the ledgers say is open, on every device that has one.
 ///
 /// This is the pass that knows what it is doing. Everything after it
@@ -168,10 +204,33 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     if let Some(reg) = &reg {
         let simctl = SimctlClient::new();
         let devices = simctl.list_devices().await.map_err(|e| e.to_string())?;
+        // Emulators are not in simctl's list, and this pass used to
+        // ask only simctl — so a registered emulator was skipped as
+        // "not booted" every time, and the six smoke scripts that had
+        // to stop one did it with a hard-coded `emu kill` on 5554
+        // instead. The ownership rule below is the same for both; only
+        // the question "is it running" and the verb that stops it
+        // differ.
+        let adb = smix_adb::AdbClient::new();
+        let running_emulators: std::collections::HashSet<String> = adb
+            .devices()
+            .await
+            .map(|list| {
+                list.into_iter()
+                    .filter(|d| d.state == "device")
+                    .map(|d| d.serial)
+                    .collect()
+            })
+            .unwrap_or_default();
         for (alias, sim) in reg.sims() {
-            let booted = devices
-                .iter()
-                .any(|d| d.udid.eq_ignore_ascii_case(&sim.udid) && d.state == "Booted");
+            let is_emulator = sim.kind == smix_simctl::registry::DeviceKind::Emulator;
+            let booted = if is_emulator {
+                running_emulators.contains(&sim.udid)
+            } else {
+                devices
+                    .iter()
+                    .any(|d| d.udid.eq_ignore_ascii_case(&sim.udid) && d.state == "Booted")
+            };
             if !booted {
                 continue;
             }
@@ -185,16 +244,34 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
             // The boot row is the record of who is entitled, and it is
             // the same rule reconcile follows.
             let ledger = smix_lease::store::read(&leases, &sim.udid).ok().flatten();
-            let ours = smix_lease::may_shut_down(ledger.as_ref());
-            if !ours {
-                println!("  {alias} ({}) is up but not ours — left alone", sim.udid);
-                continue;
+            let admission = smix_lease::store::collect_facts(&leases, &sim.udid)
+                .ok()
+                .map(|f| smix_lease::assess(&f));
+            match teardown_verdict(ledger.as_ref(), admission.as_ref()) {
+                Teardown::NotOurs => {
+                    println!("  {alias} ({}) is up but not ours — left alone", sim.udid);
+                    continue;
+                }
+                Teardown::OursButHeld { pid } => {
+                    println!(
+                        "  {alias} ({}) is ours by boot row but pid {pid} is alive on it — left alone",
+                        sim.udid
+                    );
+                    continue;
+                }
+                Teardown::Proceed => {}
             }
             {
-                simctl
-                    .shutdown(&sim.udid)
-                    .await
-                    .map_err(|e| format!("shutdown {alias} ({}): {e}", sim.udid))?;
+                if is_emulator {
+                    adb.stop_emulator(&sim.udid)
+                        .await
+                        .map_err(|e| format!("shutdown {alias} ({}): {e}", sim.udid))?;
+                } else {
+                    simctl
+                        .shutdown(&sim.udid)
+                        .await
+                        .map_err(|e| format!("shutdown {alias} ({}): {e}", sim.udid))?;
+                }
                 // Once it is off, nobody owes it a shutdown. Leaving the
                 // boot row behind would have the next teardown shut down
                 // a device this workspace never turned on — and would
@@ -241,4 +318,61 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     }
     println!("clean — no smix residual processes.");
     Ok(())
+}
+
+#[cfg(test)]
+mod teardown_verdict_tests {
+    use super::*;
+    use smix_lease::{Admission, Contention, Lease, ProcIdentity, Resource};
+
+    fn proc(pid: u32) -> ProcIdentity {
+        ProcIdentity {
+            pid,
+            started_at: String::new(),
+            cmd: String::new(),
+        }
+    }
+
+    fn ours() -> Lease {
+        Lease {
+            device_id: "emulator-5560".into(),
+            holder: proc(1),
+            acquired_at: String::new(),
+            heartbeat_at: String::new(),
+            resources: vec![Resource::Booted { by_us: true }],
+        }
+    }
+
+    fn held_by(pid: u32) -> Admission {
+        Admission::Denied(Contention {
+            holder: proc(pid),
+            acquired_at: String::new(),
+            holder_alive: true,
+        })
+    }
+
+    #[test]
+    fn a_device_without_our_boot_row_is_not_ours() {
+        assert_eq!(teardown_verdict(None, None), Teardown::NotOurs);
+    }
+
+    /// The case that bit. Our boot row, and somebody's session alive on
+    /// top of it: the row is history and the session is now.
+    #[test]
+    fn our_boot_row_does_not_outrank_a_live_session() {
+        let l = ours();
+        assert_eq!(
+            teardown_verdict(Some(&l), Some(&held_by(42098))),
+            Teardown::OursButHeld { pid: 42098 }
+        );
+    }
+
+    #[test]
+    fn our_boot_row_and_nobody_on_it_proceeds() {
+        let l = ours();
+        assert_eq!(
+            teardown_verdict(Some(&l), Some(&Admission::Granted)),
+            Teardown::Proceed
+        );
+    }
 }
