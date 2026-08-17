@@ -119,9 +119,11 @@ enum Cmd {
     /// This is the bootstrap: alias-form device refs have nothing to
     /// resolve against until one exists.
     Init {
-        /// Alias to register under.
-        #[arg(long, default_value = "dev")]
-        alias: String,
+        /// Alias to register under. Omitted, it is derived from the
+        /// project directory's name, so two projects do not both silently
+        /// register as "dev".
+        #[arg(long)]
+        alias: Option<String>,
         /// UDID to register. Required when more than one simulator is
         /// available — init does not choose between devices.
         #[arg(long)]
@@ -2051,7 +2053,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
     let simctl = SimctlClient::new();
     match cli.cmd {
         Cmd::Init { alias, device, app } => {
-            cmd_init(&simctl, &alias, device.as_deref(), app.as_deref()).await?
+            cmd_init(&simctl, alias.as_deref(), device.as_deref(), app.as_deref()).await?
         }
         Cmd::Doctor { json } => cmd_doctor(&simctl, json).await?,
         Cmd::Bench {
@@ -3463,6 +3465,19 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 // adapter/sdk async setup). setting env is safe.
                 unsafe { std::env::set_var("SMIX_LOG", "debug") };
             }
+            // No --device: fall back to this project's default device —
+            // the pointer `smix init` recorded, keyed by the project path,
+            // in the machine store. Explicit --device wins; with no pointer
+            // the old behaviour stands. Never "whatever is attached" — only
+            // a device the project deliberately registered.
+            let device = run_device_ref(
+                device.as_deref(),
+                registry_path().ok().and_then(|p| {
+                    SimRegistry::project_alias(&p, &project_key())
+                        .ok()
+                        .flatten()
+                }),
+            );
             // Resolve device alias if registry has it; else pass raw.
             let udid = device
                 .as_deref()
@@ -4946,7 +4961,7 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
 
 async fn cmd_init(
     simctl: &SimctlClient,
-    alias: &str,
+    alias: Option<&str>,
     device: Option<&str>,
     app: Option<&Path>,
 ) -> Result<(), CliError> {
@@ -4965,11 +4980,15 @@ async fn cmd_init(
     // simulator you name is a separate question from whether this tree
     // is a place smix can work in. An `init` that cannot find your
     // device should still leave you somewhere to run the next one.
-    let workspace = std::env::current_dir()
-        .map_err(|e| CliError::Other(format!("cannot determine cwd: {e}")))?
-        .join(".smix");
+    let cwd = std::env::current_dir()
+        .map_err(|e| CliError::Other(format!("cannot determine cwd: {e}")))?;
+    let workspace = cwd.join(".smix");
     std::fs::create_dir_all(&workspace)
         .map_err(|e| CliError::Other(format!("create {}: {e}", workspace.display())))?;
+    // Omitted --alias derives from the project directory's name.
+    let alias = alias
+        .map(str::to_string)
+        .unwrap_or_else(|| init::default_project_alias(&cwd));
 
     let devices = simctl.list_devices().await?;
     let candidates: Vec<init::Candidate> = devices
@@ -4991,7 +5010,7 @@ async fn cmd_init(
     // stand, which is the thing this scope move exists to end.
     let existing: Vec<String> = load_registry().registry.sims().keys().cloned().collect();
 
-    let plan = match init::plan_init(&candidates, alias, device, &existing) {
+    let plan = match init::plan_init(&candidates, &alias, device, &existing) {
         Ok(plan) => plan,
         Err(refusal) => {
             return Err(CliError::Other(format!(
@@ -5020,8 +5039,15 @@ async fn cmd_init(
     SimRegistry::register(&path, &plan.alias, sim)
         .map_err(|e| CliError::Other(format!("register: {e}")))?;
 
+    // Record which device this project defaults to — a pointer (the alias
+    // string, keyed by the project path) in the machine store, so a later
+    // `smix run` here needs no --device. The alias's facts (UDID, kind)
+    // stay in the registry; only the pointer is per-project.
+    SimRegistry::set_project_alias(&path, &project_key(), &plan.alias)
+        .map_err(|e| CliError::Other(format!("record project device: {e}")))?;
+
     println!(
-        "registered `{}` -> {} in {}",
+        "registered `{}` -> {} in {} (this project's default device)",
         plan.alias,
         plan.udid,
         path.display()
@@ -5538,6 +5564,33 @@ fn run_port(flag: Option<u16>, registered: impl FnOnce() -> Option<u16>) -> u16 
 /// registry rung was unreachable from them: in a workspace with a sim
 /// registered on 22088, `smix run` dialled 22088 and `smix tap`
 /// dialled 22087, and nothing said so.
+/// The device a `run` should drive, given what the caller named and
+/// what the project defaults to. Explicit `--device` always wins; with
+/// none, the project's recorded pointer stands in; with neither, `None`
+/// keeps the old behaviour (the iOS default). It never reaches for a
+/// device the project did not name — the pointer is a deliberate
+/// `smix init` / `smix sim register`, not "whatever is attached".
+fn run_device_ref(explicit: Option<&str>, pointer: Option<String>) -> Option<String> {
+    match explicit {
+        Some(d) => Some(d.to_string()),
+        None => pointer,
+    }
+}
+
+/// The key a project's device pointer is stored under: the workspace
+/// root (the nearest ancestor with a `.smix/`), canonicalized, or the
+/// cwd when there is no workspace. Lenient on purpose — a `run` outside
+/// a workspace still resolves to a key, just one with no pointer, so it
+/// falls through to the old behaviour rather than failing.
+fn project_key() -> String {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let root = smix_capsule::runner::workspace_root(&cwd).unwrap_or_else(|| cwd.clone());
+    std::fs::canonicalize(&root)
+        .unwrap_or(root)
+        .to_string_lossy()
+        .into_owned()
+}
+
 fn runner_dial_port(flag: Option<u16>, device: Option<&str>) -> u16 {
     run_port(flag.or_else(act::runner_port_from_env_opt), || {
         device
@@ -5869,6 +5922,25 @@ mod platform_from_device {
 mod dial_platform {
     use super::*;
     use smix_simctl::registry::DeviceKind;
+
+    #[test]
+    fn run_device_ref_prefers_explicit_then_pointer_then_none() {
+        assert_eq!(
+            run_device_ref(Some("emulator-5560"), Some("proj-alias".into())),
+            Some("emulator-5560".to_string()),
+            "explicit --device wins over the project pointer"
+        );
+        assert_eq!(
+            run_device_ref(None, Some("proj-alias".into())),
+            Some("proj-alias".to_string()),
+            "no --device falls back to the project pointer"
+        );
+        assert_eq!(
+            run_device_ref(None, None),
+            None,
+            "neither → None, the old iOS-default behaviour"
+        );
+    }
 
     // C3: the same capability has to reach the same driver from every
     // entrance. The CLI act verbs always built a SimctlDriver, so `fill`

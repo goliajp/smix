@@ -49,13 +49,15 @@ Rust crates: two signatures changed.
 
 ## Quick start
 
-Register a simulator under an alias, boot it, start the runner, run a YAML flow:
+Register a **dedicated device for your project**, then run a YAML flow — `smix
+run` needs no `--device` after that, because `smix init` records the project's
+default (omit `--alias` and it is derived from the project directory's name):
 
 ```bash
-smix doctor                                    # says what is missing, and the command for it
-smix init --device <UDID> --app ./MyApp.app    # registers the sim, installs the app
-smix capsule up dev --bundle <your.bundle.id>  # boots it and starts the runner
-smix run examples/hello.yaml --device dev
+smix doctor                                       # says what is missing, and the command for it
+smix init --alias dev --device <UDID> --app ./MyApp.app  # registers this project's device, installs the app
+smix capsule up dev --bundle <your.bundle.id>     # boots it and starts the runner
+smix run examples/hello.yaml                       # no --device: resolves the project's default
 ```
 
 `smix doctor` prints the next command at every point along that sequence, so

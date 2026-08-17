@@ -100,9 +100,58 @@ pub fn plan_init(
     })
 }
 
+/// The alias `smix init` gives a project when the caller does not name
+/// one: the project directory's own name, lowercased, with anything
+/// outside `[a-z0-9_-]` folded to `-` and runs collapsed. Two different
+/// projects no longer both silently register as "dev". Falls back to
+/// "dev" only when there is no usable directory name (the filesystem
+/// root).
+pub fn default_project_alias(cwd: &std::path::Path) -> String {
+    let base = cwd
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in base.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            out.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "dev".to_string()
+    } else {
+        trimmed
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_project_alias_from_dir_name() {
+        use std::path::Path;
+        assert_eq!(
+            default_project_alias(Path::new("/Users/x/my-app")),
+            "my-app"
+        );
+        assert_eq!(
+            default_project_alias(Path::new("/Users/x/My App")),
+            "my-app"
+        );
+        assert_eq!(
+            default_project_alias(Path::new("/Users/x/smix.fixture")),
+            "smix-fixture"
+        );
+        assert_eq!(default_project_alias(Path::new("/")), "dev");
+    }
 
     fn devices() -> Vec<Candidate> {
         vec![

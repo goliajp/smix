@@ -402,6 +402,52 @@ impl SimRegistry {
         })
     }
 
+    /// Record which alias a project defaults to, keyed by the project's
+    /// path. The value is the alias string only — a pointer into the
+    /// registered devices, never a device fact. What the alias resolves
+    /// to (UDID, kind, opt-in) stays in the machine registry; this says
+    /// only "this project drives that one", which is a project's to
+    /// decide and safe to keep per-project (§9 #9: the pointer may live
+    /// with the project, the facts may not).
+    ///
+    /// # Errors
+    /// [`RegistryError::Io`] if the store cannot be opened or written.
+    pub fn set_project_alias(
+        path: &Path,
+        project_key: &str,
+        alias: &str,
+    ) -> Result<(), RegistryError> {
+        let store = open_store(path)?;
+        store
+            .project_devices()
+            .put(project_key, alias.as_bytes())
+            .map_err(|e| RegistryError::Io {
+                path: path.display().to_string(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
+        store.sync().map_err(|e| RegistryError::Io {
+            path: path.display().to_string(),
+            source: std::io::Error::other(e.to_string()),
+        })
+    }
+
+    /// The alias a project defaults to, or `None` if it has never set
+    /// one. Read-only counterpart of [`Self::set_project_alias`].
+    ///
+    /// # Errors
+    /// [`RegistryError::Io`] if the store cannot be opened or read.
+    pub fn project_alias(path: &Path, project_key: &str) -> Result<Option<String>, RegistryError> {
+        let store = open_store(path)?;
+        let raw = store
+            .project_devices()
+            .get(project_key)
+            .map_err(|e| RegistryError::Io {
+                path: path.display().to_string(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
+        Ok(raw.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()))
+    }
+
     /// Remove one alias from the registry at `path`.
     ///
     /// The other half of [`Self::register`], and absent until the

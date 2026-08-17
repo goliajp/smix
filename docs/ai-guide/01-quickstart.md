@@ -30,6 +30,20 @@ ls target/release/smix
 
 One binary, one product: `smix`. All subcommands (boot, runner, run a flow, low-level probes) live under it.
 
+## Start here: a dedicated device for your project
+
+The one command to reach for first is `smix init` — it registers a device
+**for this project**, derives an alias from the project directory, and records
+it as the project's default, so `smix run` here needs no `--device`:
+
+```bash
+smix init --device <UDID> --app ./YourApp.app   # register this project's device + install
+smix run examples/hello.yaml                     # no --device: resolves the project's default
+```
+
+Everything below is the same steps by hand, when you want the low-level control
+`smix init` wraps.
+
 ## iOS path: boot → run → teardown
 
 ```bash
