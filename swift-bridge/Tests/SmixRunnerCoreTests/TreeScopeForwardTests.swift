@@ -96,7 +96,7 @@ final class TreeScopeForwardTests: XCTestCase {
     XCTAssertEqual((legacyResp as? HTTPURLResponse)?.statusCode, 200)
     let scope1 = await received.value
     XCTAssertNil(scope1, "no ?include= ⇒ scope nil")
-    let expected = TreeRoute.serialize(root, appFrame: appFrame, logSink: nil)
+    let expected = TreeRoute.serialize(root, logSink: nil)
     XCTAssertEqual(legacyBody, expected,
       "no-param /tree body MUST equal legacy TreeRoute.serialize bytes")
 
@@ -118,8 +118,8 @@ final class TreeScopeForwardTests: XCTestCase {
   func test_legacySerialize_byteShapeUnchanged() {
     let root = leaf()
     let appFrame = CGRect(x: 0, y: 0, width: 393, height: 852)
-    let a = TreeRoute.serialize(root, appFrame: appFrame, logSink: nil)
-    let b = TreeRoute.serialize(root, appFrame: appFrame, logSink: nil)
+    let a = TreeRoute.serialize(root, logSink: nil)
+    let b = TreeRoute.serialize(root, logSink: nil)
     XCTAssertEqual(a, b)
     let obj = try? JSONSerialization.jsonObject(with: a) as? [String: Any]
     XCTAssertEqual(obj?["identifier"] as? String, "com.example.app")

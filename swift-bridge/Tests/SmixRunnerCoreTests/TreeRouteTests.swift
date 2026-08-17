@@ -69,7 +69,7 @@ final class TreeRouteTests: XCTestCase {
       frame: CGRect(x: 10, y: 20, w: 100, h: 44),
       enabled: true
     )
-    let data = TreeRoute.serialize(node, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(node, logSink: nil)
     let obj = parse(data)
     XCTAssertEqual(obj["rawType"] as? String, "button")
     XCTAssertEqual(obj["label"] as? String, "OK")
@@ -87,7 +87,7 @@ final class TreeRouteTests: XCTestCase {
 
   func test_serialize_omitsEmptyIdentifierLabelValue() {
     let node = mkData(type: 9, identifier: "", label: "", value: nil)
-    let data = TreeRoute.serialize(node, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(node, logSink: nil)
     let obj = parse(data)
     XCTAssertNil(obj["identifier"], "identifier key should be omitted when empty")
     XCTAssertNil(obj["label"], "label key should be omitted when empty")
@@ -106,7 +106,7 @@ final class TreeRouteTests: XCTestCase {
       frame: CGRect(x: 0, y: 0, w: 393, h: 852),
       children: [cell]
     )
-    let data = TreeRoute.serialize(app, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(app, logSink: nil)
     let obj = parse(data)
     XCTAssertEqual(obj["rawType"] as? String, "application")
     XCTAssertEqual(obj["identifier"] as? String, "com.apple.Preferences")
@@ -119,25 +119,45 @@ final class TreeRouteTests: XCTestCase {
     XCTAssertEqual((cb["y"] as? NSNumber)?.doubleValue, 100)
   }
 
-  func test_serialize_visibleHeuristic_inAppFrameTrue() {
-    let node = mkData(frame: CGRect(x: 10, y: 100, w: 200, h: 44))
-    let data = TreeRoute.serialize(node, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
-    let obj = parse(data)
-    XCTAssertEqual(obj["visible"] as? Bool, true)
+  // Visibility is a child-vs-root judgement now, so these pass a root with
+  // a child rather than a lone node (a lone node is trivially visible
+  // against itself). The "can say false" teeth are kept: a child outside
+  // the root, and a zero-frame child, must still be false.
+  func test_serialize_visibleHeuristic_childInsideRoot_true() {
+    let child = mkData(frame: CGRect(x: 10, y: 100, w: 200, h: 44))
+    let root = mkData(frame: CGRect(x: 0, y: 0, w: 393, h: 852), children: [child])
+    let data = TreeRoute.serialize(root, logSink: nil)
+    let kids = parse(data)["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(kids.first?["visible"] as? Bool, true)
   }
 
-  func test_serialize_visibleHeuristic_outOfFrameFalse() {
-    let node = mkData(frame: CGRect(x: -500, y: -500, w: 10, h: 10))
-    let data = TreeRoute.serialize(node, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
-    let obj = parse(data)
-    XCTAssertEqual(obj["visible"] as? Bool, false)
+  func test_serialize_visibleHeuristic_childOutsideRoot_false() {
+    let child = mkData(frame: CGRect(x: 900, y: 100, w: 10, h: 10))
+    let root = mkData(frame: CGRect(x: 0, y: 0, w: 393, h: 852), children: [child])
+    let data = TreeRoute.serialize(root, logSink: nil)
+    let kids = parse(data)["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(kids.first?["visible"] as? Bool, false)
   }
 
-  func test_serialize_visibleHeuristic_zeroFrame_false() {
-    let node = mkData(frame: CGRect(x: 0, y: 0, w: 0, h: 0))
-    let data = TreeRoute.serialize(node, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+  func test_serialize_visibleHeuristic_zeroFrameChild_false() {
+    let child = mkData(frame: CGRect(x: 0, y: 0, w: 0, h: 0))
+    let root = mkData(frame: CGRect(x: 0, y: 0, w: 393, h: 852), children: [child])
+    let data = TreeRoute.serialize(root, logSink: nil)
+    let kids = parse(data)["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(kids.first?["visible"] as? Bool, false)
+  }
+
+  // C6c: in landscape the app root is 874 wide; a node at x=407 is well
+  // inside it. Visibility judged against a portrait appFrame (402 wide,
+  // the stale value cached at portrait startup) wrongly calls it
+  // off-screen. The judgement must be against the snapshot's own root.
+  func test_serialize_visible_childBeyondPortraitWidthButInsideLandscapeRoot_true() {
+    let child = mkData(identifier: "landscape-counter", frame: CGRect(x: 407, y: 73, w: 59, h: 114))
+    let root = mkData(frame: CGRect(x: 0, y: 0, w: 874, h: 402), children: [child])
+    let data = TreeRoute.serialize(root, logSink: nil)
     let obj = parse(data)
-    XCTAssertEqual(obj["visible"] as? Bool, false)
+    let kids = obj["children"] as? [[String: Any]] ?? []
+    XCTAssertEqual(kids.first?["visible"] as? Bool, true, "a node inside the landscape root is visible")
   }
 
   func test_serialize_truncatesAtMaxDepth() {
@@ -150,7 +170,7 @@ final class TreeRouteTests: XCTestCase {
     }
     var logs: [String] = []
     let logSink: (String) -> Void = { logs.append($0) }
-    let data = TreeRoute.serialize(chain, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: logSink)
+    let data = TreeRoute.serialize(chain, logSink: logSink)
     // Walk down to MAX_DEPTH — at the cliff children must be an empty
     // array. Use [Any] cast (not [[String:Any]]) so we keep
     // walking while non-empty AND stop as soon as kids = [].
@@ -178,7 +198,7 @@ final class TreeRouteTests: XCTestCase {
     // sets hasFocus=true on the matching node.
     let inner = mkData(type: 9, label: "inner", hasFocus: false)
     let outer = mkData(type: 2, hasFocus: true, children: [inner])
-    let data = TreeRoute.serialize(outer, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(outer, logSink: nil)
     let obj = parse(data)
     XCTAssertEqual(obj["hasFocus"] as? Bool, true)
     let kids = obj["children"] as? [[String: Any]] ?? []
@@ -187,21 +207,21 @@ final class TreeRouteTests: XCTestCase {
 
   func test_serialize_selectedFieldReflectsInput() {
     let node = mkData(type: 9, label: "Btn", selected: true)
-    let data = TreeRoute.serialize(node, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(node, logSink: nil)
     let obj = parse(data)
     XCTAssertEqual(obj["selected"] as? Bool, true)
   }
 
   func test_serialize_valueFieldKept_whenNonEmpty() {
     let node = mkData(type: 49, label: "Email", value: "user@example.com")
-    let data = TreeRoute.serialize(node, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(node, logSink: nil)
     let obj = parse(data)
     XCTAssertEqual(obj["value"] as? String, "user@example.com")
   }
 
   func test_serialize_fractionalBoundsPreserved() {
     let node = mkData(frame: CGRect(x: 10.0, y: 20.5, w: 300.0, h: 44.0))
-    let data = TreeRoute.serialize(node, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(node, logSink: nil)
     let obj = parse(data)
     let bounds = obj["bounds"] as? [String: Any] ?? [:]
     XCTAssertEqual((bounds["y"] as? NSNumber)?.doubleValue, 20.5)
@@ -219,7 +239,7 @@ final class TreeRouteTests: XCTestCase {
     let cancelBtn = mkData(type: 1, label: "Cancel")
     let okBtn = mkData(type: 1, label: "OK")
     let alert = mkData(type: 7, label: "Confirm", children: [cancelBtn, okBtn])
-    let data = TreeRoute.serialize(alert, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(alert, logSink: nil)
     let obj = parse(data)
     XCTAssertEqual(obj["rawType"] as? String, "alert")
     let children = obj["children"] as? [[String: Any]] ?? []
@@ -232,7 +252,7 @@ final class TreeRouteTests: XCTestCase {
   func test_serialize_alertStaticTextChildWithLabel_promotedToButton() {
     let btn = mkData(type: 48, label: "Reload")
     let alert = mkData(type: 7, label: "Update", children: [btn])
-    let data = TreeRoute.serialize(alert, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(alert, logSink: nil)
     let obj = parse(data)
     let children = obj["children"] as? [[String: Any]] ?? []
     XCTAssertEqual(children[0]["rawType"] as? String, "button", ".staticText with label under .alert must promote")
@@ -243,7 +263,7 @@ final class TreeRouteTests: XCTestCase {
     let deepBtn = mkData(type: 1, label: "Retry")
     let inner = mkData(type: 3, children: [deepBtn])  // group wrapper
     let dialog = mkData(type: 8, label: "Error", children: [inner])
-    let data = TreeRoute.serialize(dialog, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(dialog, logSink: nil)
     let obj = parse(data)
     let dialogChildren = obj["children"] as? [[String: Any]] ?? []
     let innerChildren = dialogChildren[0]["children"] as? [[String: Any]] ?? []
@@ -256,7 +276,7 @@ final class TreeRouteTests: XCTestCase {
     // background views.
     let deco = mkData(type: 1, label: "")
     let alert = mkData(type: 7, label: "X", children: [deco])
-    let data = TreeRoute.serialize(alert, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(alert, logSink: nil)
     let obj = parse(data)
     let children = obj["children"] as? [[String: Any]] ?? []
     XCTAssertEqual(children[0]["rawType"] as? String, "other", "no-label .other under alert stays other")
@@ -267,7 +287,7 @@ final class TreeRouteTests: XCTestCase {
     // remain `other` — promotion is scoped to action containers only.
     let leaf = mkData(type: 1, label: "just some other")
     let root = mkData(type: 2, children: [leaf])  // application
-    let data = TreeRoute.serialize(root, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(root, logSink: nil)
     let obj = parse(data)
     let children = obj["children"] as? [[String: Any]] ?? []
     XCTAssertEqual(children[0]["rawType"] as? String, "other", ".other with label outside action container stays other")
@@ -279,7 +299,7 @@ final class TreeRouteTests: XCTestCase {
     // pre-existing buttons.
     let btn = mkData(type: 9, label: "Yes")
     let alert = mkData(type: 7, label: "?", children: [btn])
-    let data = TreeRoute.serialize(alert, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(alert, logSink: nil)
     let obj = parse(data)
     let children = obj["children"] as? [[String: Any]] ?? []
     XCTAssertEqual(children[0]["rawType"] as? String, "button")
@@ -290,7 +310,7 @@ final class TreeRouteTests: XCTestCase {
     // .confirmationDialog / actionSheet exposure.
     let btn = mkData(type: 1, label: "Delete")
     let sheet = mkData(type: 5, label: "Delete confirm", children: [btn])
-    let data = TreeRoute.serialize(sheet, appFrame: CGRect(x: 0, y: 0, w: 393, h: 852), logSink: nil)
+    let data = TreeRoute.serialize(sheet, logSink: nil)
     let obj = parse(data)
     let children = obj["children"] as? [[String: Any]] ?? []
     XCTAssertEqual(children[0]["rawType"] as? String, "button", ".other under .sheet must promote")
@@ -321,7 +341,7 @@ final class TreeRouteTests: XCTestCase {
   func test_isVisible_intersectingFrame_true() {
     XCTAssertTrue(TreeRoute.isVisible(
       CGRect(x: 0, y: 800, w: 393, h: 100),
-      appFrame: CGRect(x: 0, y: 0, w: 393, h: 852)
+      CGRect(x: 0, y: 0, w: 393, h: 852)
     ))
   }
 }

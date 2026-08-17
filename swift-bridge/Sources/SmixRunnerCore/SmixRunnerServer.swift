@@ -1712,7 +1712,6 @@ public actor SmixRunnerServer {
         let refreshCount = treeServeCounter.advance()
         let payload = TreeRoute.serialize(
           snap.root,
-          appFrame: snap.appFrame,
           logSink: { line in
             FileHandle.standardError.write(Data((line + "\n").utf8))
           }
