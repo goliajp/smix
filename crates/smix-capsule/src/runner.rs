@@ -1340,7 +1340,40 @@ pub fn up(
 /// `Copy` — to say something only the physical path says. The target
 /// carries the signing team, which only exists in that world.
 #[allow(clippy::too_many_arguments)]
+/// Thin shell over [`up_on_with`] using the real bring-up (a live
+/// `xcodebuild`). Production `smix runner up` always comes through here,
+/// so the shipped binary has no way to substitute the attempter — the
+/// seam is a compile-time injection point, not a runtime switch.
 pub fn up_on(
+    root: &Path,
+    udid: &str,
+    port: u16,
+    bundle: Option<&str>,
+    runner_project: Option<&Path>,
+    opts: UpOptions,
+    target: RunnerTarget<'_>,
+) -> Result<(), String> {
+    up_on_with(
+        &mut RealBringUp,
+        root,
+        udid,
+        port,
+        bundle,
+        runner_project,
+        opts,
+        target,
+    )
+}
+
+/// Bring the runner up, retrying once as an attach if the first attempt
+/// times out. `attempter` performs a single bring-up; production passes
+/// [`RealBringUp`], and a test passes a fake that can make the first
+/// attempt time out deterministically (so "really timed out, really
+/// retried, really attached" can be watched on a device) without a
+/// fragile clock race or a hidden switch on the production path.
+#[allow(clippy::too_many_arguments)]
+pub fn up_on_with(
+    attempter: &mut dyn BringUpAttempter,
     root: &Path,
     udid: &str,
     port: u16,
@@ -1420,7 +1453,7 @@ pub fn up_on(
     let mut attach = attach_without_relaunch;
     let mut attach_already_tried = false;
     loop {
-        match one_bring_up(
+        match attempter.attempt(
             root,
             udid,
             port,
@@ -1474,13 +1507,70 @@ pub fn up_on(
     }
 }
 
+/// Performs a single runner bring-up. The seam that lets a device test
+/// inject a first-attempt timeout while keeping the second attempt real.
+pub trait BringUpAttempter {
+    /// Run one bring-up and report whether the runner came up or the
+    /// deadline passed.
+    #[allow(clippy::too_many_arguments)]
+    fn attempt(
+        &mut self,
+        root: &Path,
+        udid: &str,
+        port: u16,
+        bundle: Option<&str>,
+        runner_project: Option<&Path>,
+        target: RunnerTarget<'_>,
+        record_enabled: bool,
+        supervise: bool,
+        attach: bool,
+        timeout_secs: u64,
+    ) -> Result<Attempt, String>;
+}
+
+/// The production attempter: one real `xcodebuild` bring-up.
+pub struct RealBringUp;
+
+impl BringUpAttempter for RealBringUp {
+    #[allow(clippy::too_many_arguments)]
+    fn attempt(
+        &mut self,
+        root: &Path,
+        udid: &str,
+        port: u16,
+        bundle: Option<&str>,
+        runner_project: Option<&Path>,
+        target: RunnerTarget<'_>,
+        record_enabled: bool,
+        supervise: bool,
+        attach: bool,
+        timeout_secs: u64,
+    ) -> Result<Attempt, String> {
+        one_bring_up(
+            root,
+            udid,
+            port,
+            bundle,
+            runner_project,
+            target,
+            record_enabled,
+            supervise,
+            attach,
+            timeout_secs,
+        )
+    }
+}
+
 /// How one bring-up ended.
-enum Attempt {
+pub enum Attempt {
     /// The runner is up and its session answers.
     Up,
     /// The deadline passed. `last_session_gap` is what the last
     /// otherwise-healthy poll was still missing, when there was one.
-    TimedOut { last_session_gap: Option<String> },
+    TimedOut {
+        /// What the last otherwise-healthy poll was still missing.
+        last_session_gap: Option<String>,
+    },
 }
 
 /// One bring-up: spawn `xcodebuild`, write the handles down, and wait
