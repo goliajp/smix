@@ -73,6 +73,8 @@ LOCAL = {
     "a-tap-proves-aim-not-arrival harness": "a-tap-proves-aim-not-arrival.test",
     "no-script-picks-a-device-by-accident": "no-script-picks-a-device-by-accident",
     "no-script-picks-a-device-by-accident harness": "no-script-picks-a-device-by-accident.test",
+    "generated-artifacts-are-load-bearing": "generated-artifacts-are-load-bearing",
+    "generated-artifacts-are-load-bearing harness": "generated-artifacts-are-load-bearing.test",
     "portable tier selftest": "portable-tier.sh --selftest",
     "guide corpus in step with the guides": "guide-corpus-sync.py --check",
     "fence check": "fence-check.sh",

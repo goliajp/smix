@@ -211,6 +211,10 @@ jobs:
         run: python3 scripts/dev/no-script-picks-a-device-by-accident.py
       - name: no-script-picks-a-device-by-accident harness
         run: python3 scripts/dev/no-script-picks-a-device-by-accident.test.py
+      - name: generated-artifacts-are-load-bearing
+        run: python3 scripts/dev/generated-artifacts-are-load-bearing.py
+      - name: generated-artifacts-are-load-bearing harness
+        run: python3 scripts/dev/generated-artifacts-are-load-bearing.test.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the
