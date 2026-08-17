@@ -91,7 +91,7 @@ appId: $APPID
 - inputText: "$WORD_FLOW"
 FLOW
 FLOW_RC=0
-if ! SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/flow.yaml" >/dev/null 2>&1; then FLOW_RC=$?; fi
+SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/flow.yaml" >/dev/null 2>&1 || FLOW_RC=$?
 [ "$FLOW_RC" -eq 0 ] || fail "flow entrance run exited $FLOW_RC"
 GOT_FLOW="$(field_text fixture_input)"
 [ "$GOT_FLOW" = "$WORD_FLOW" ] || fail "flow entrance: field holds '$GOT_FLOW', expected '$WORD_FLOW'"
@@ -102,7 +102,7 @@ WORD_CLI="cliWORD2"
 step "CLI entrance: smix fill '$WORD_CLI' → field must hold it"
 launch_fresh
 FILL_RC=0
-if ! SMIX_RUNNER_PORT="$PORT" "$SMIX" fill 'id:fixture_input' --text "$WORD_CLI" --device "$SERIAL" >/dev/null 2>&1; then FILL_RC=$?; fi
+SMIX_RUNNER_PORT="$PORT" "$SMIX" fill 'id:fixture_input' --text "$WORD_CLI" --device "$SERIAL" >/dev/null 2>&1 || FILL_RC=$?
 [ "$FILL_RC" -eq 0 ] || fail "CLI fill exited $FILL_RC (this is the 501 the fix removes)"
 GOT_CLI="$(field_text fixture_input)"
 [ "$GOT_CLI" = "$WORD_CLI" ] || fail "CLI entrance: field holds '$GOT_CLI', expected '$WORD_CLI' — content did not land"
@@ -112,7 +112,7 @@ log "CLI entrance OK: field == '$GOT_CLI'"
 # ---- find, proved on a present AND an absent needle -------------------
 step "CLI find: present → exists=true, absent → exists=false"
 FIND_P_RC=0
-if ! SMIX_RUNNER_PORT="$PORT" "$SMIX" find 'text:SUBMIT' --device "$SERIAL" >"$WORK/find_present.out" 2>&1; then FIND_P_RC=$?; fi
+SMIX_RUNNER_PORT="$PORT" "$SMIX" find 'text:SUBMIT' --device "$SERIAL" >"$WORK/find_present.out" 2>&1 || FIND_P_RC=$?
 [ "$FIND_P_RC" -eq 0 ] || fail "find (present) exited $FIND_P_RC (the 501 the fix removes): $(grep -v '^kevy:' "$WORK/find_present.out" | tail -2)"
 grep -q '^exists=true' <(grep -v '^kevy:' "$WORK/find_present.out") || fail "find 'text:SUBMIT' did not report exists=true"
 log "find present: exists=true"
