@@ -770,6 +770,18 @@ to be JSON files you could `cat`; this is what replaces that. A value
 that is not valid JSON is shown as hex rather than stopping the dump,
 because this is what you run when something is already wrong.
 
+### `smix session state` — which runner this session would dial
+
+```bash
+smix session state                    # the resolved runner port + device, and the runner's open sessions if reachable
+smix session state --port 22088       # ask about a specific port
+smix session state --device sim-smix-02
+```
+
+Read-only. The CLI counterpart of the `smix_session_state` MCP tool —
+the one query answerable before anything is bound. An unreachable runner
+is reported as a state, not an error.
+
 ## Common command recipes
 
 ### Smoke test the running sim quickly

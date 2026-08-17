@@ -1056,6 +1056,39 @@ impl SmixMcpService {
         let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
         Ok(CallToolResult::success(vec![Content::text(b64)]))
     }
+
+    #[tool(description = "Snapshot the runner's runtime state: recent simctl \
+            invocations, open app sessions, sim-health, supervisor pid, uptime, \
+            and the app-alive / session lifecycle counters. Read-only diagnosis. \
+            Needs a device bound (smix_use); does not need an app session.")]
+    /// CLI: smix diagnostic dump
+    async fn smix_diagnostic_dump(&self) -> Result<CallToolResult, McpError> {
+        let app = self.bound_app().await?;
+        let client = app.http_runner_client().ok_or_else(|| {
+            McpError::internal_error(
+                "this session's driver is not backed by an HTTP runner",
+                None,
+            )
+        })?;
+        let dump = client
+            .diagnostic_dump()
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let json = serde_json::to_string_pretty(&dump).unwrap_or_default();
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    #[tool(
+        description = "Which device this session is bound to (udid, port), and \
+            whether anything is bound yet. Read-only, and the one tool that \
+            works with nothing bound — it answers 'what am I driving?' that \
+            smix_use sets up. Does not open or close sessions."
+    )]
+    /// CLI: smix session state
+    async fn smix_session_state(&self) -> Result<CallToolResult, McpError> {
+        let json = smix_mcp::session_state_report(self.session.current().as_ref());
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
 }
 
 /// Read a swipe direction the way an agent writes one.

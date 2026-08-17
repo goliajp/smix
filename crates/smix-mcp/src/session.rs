@@ -88,9 +88,46 @@ impl SessionState {
     }
 }
 
+/// A read-only JSON report of what this session is bound to, for the
+/// `smix_session_state` MCP tool and the `smix session state` CLI. It is
+/// the one report answerable with nothing bound — that is the point:
+/// "what am I driving?" before any tool that needs a binding.
+pub fn session_state_report(bound: Option<&Bound>) -> String {
+    let value = match bound {
+        None => serde_json::json!({ "bound": false }),
+        Some(b) => serde_json::json!({
+            "bound": true,
+            "udid": b.udid,
+            "port": b.port,
+        }),
+    };
+    serde_json::to_string_pretty(&value).unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_state_unbound_reports_bound_false() {
+        let json = session_state_report(None);
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert_eq!(v["bound"], serde_json::json!(false), "got: {json}");
+        assert!(v.get("udid").is_none(), "no udid when unbound: {json}");
+        assert!(v.get("port").is_none(), "no port when unbound: {json}");
+    }
+
+    #[test]
+    fn session_state_bound_reports_udid_and_port() {
+        let json = session_state_report(Some(&Bound {
+            udid: "AAAA".into(),
+            port: 22087,
+        }));
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert_eq!(v["bound"], serde_json::json!(true), "got: {json}");
+        assert_eq!(v["udid"], serde_json::json!("AAAA"), "got: {json}");
+        assert_eq!(v["port"], serde_json::json!(22087), "got: {json}");
+    }
 
     #[test]
     fn an_unbound_session_names_the_tool_that_binds_one() {
