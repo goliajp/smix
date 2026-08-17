@@ -612,17 +612,32 @@ pub async fn fetch_tree_json(port: u16) -> Result<serde_json::Value, ActError> {
     serde_json::to_value(&tree).map_err(|e| ActError::Transport(format!("serialize tree: {e}")))
 }
 
-fn print_tree_outline(node: &smix_screen::A11yNode, depth: usize) {
+fn outline_line(node: &smix_screen::A11yNode, depth: usize) -> String {
     let indent = "  ".repeat(depth);
     let id = node.identifier.as_deref().unwrap_or("");
     let label = node.label.as_deref().unwrap_or("");
+    let text = node.text.as_deref().unwrap_or("");
     let visible = if node.visible { "✓" } else { "·" };
     let note = if smix_screen::is_keyboard(node) && node.children.is_empty() {
         "  (keys collapsed — --keyboard to include them)"
     } else {
         ""
     };
-    println!("{indent}{visible} id={id:?} label={label:?}{note}");
+    // Print text only when it carries something. iOS puts its semantics in
+    // label/value/title and leaves text empty; Android puts it in text with
+    // label often empty. Appending unconditionally would fill iOS output
+    // with `text=""` noise; the guard keeps iOS unchanged and surfaces
+    // Android's text (the ⑤ that made SUBMIT invisible in the human tree).
+    let text_field = if text.is_empty() {
+        String::new()
+    } else {
+        format!(" text={text:?}")
+    };
+    format!("{indent}{visible} id={id:?} label={label:?}{text_field}{note}")
+}
+
+fn print_tree_outline(node: &smix_screen::A11yNode, depth: usize) {
+    println!("{}", outline_line(node, depth));
     for child in &node.children {
         print_tree_outline(child, depth + 1);
     }
@@ -810,6 +825,67 @@ mod tests {
     }
 
     use super::*;
+
+    fn node_with(
+        id: Option<&str>,
+        label: Option<&str>,
+        text: Option<&str>,
+    ) -> smix_screen::A11yNode {
+        smix_screen::A11yNode {
+            raw_type: "other".into(),
+            element_type_raw: 1,
+            role: None,
+            identifier: id.map(String::from),
+            label: label.map(String::from),
+            title: None,
+            placeholder_value: None,
+            value: None,
+            text: text.map(String::from),
+            bounds: smix_screen::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 10.0,
+                h: 10.0,
+            },
+            enabled: true,
+            selected: false,
+            has_focus: false,
+            visible: true,
+            children: vec![],
+        }
+    }
+
+    // ⑤: the Android human tree showed only id + label, so `SUBMIT` (which
+    // lives in `text` on Android, with label empty) was invisible while
+    // present in --json. text has to print in its own position — not folded
+    // into id/label — and an empty text must not leave a `text=` ghost.
+    #[test]
+    fn outline_line_shows_text_in_its_own_position() {
+        let submit = node_with(Some("fixture_submit"), None, Some("SUBMIT"));
+        let line = outline_line(&submit, 0);
+        assert!(
+            line.contains(r#"id="fixture_submit""#),
+            "id in its place: {line}"
+        );
+        assert!(
+            line.contains(r#"text="SUBMIT""#),
+            "text in its place: {line}"
+        );
+        assert!(line.contains(r#"label="""#), "label still printed: {line}");
+        assert!(
+            !line.contains(r#"id="SUBMIT""#),
+            "text must not bleed into id: {line}"
+        );
+
+        // A node with no text must not grow a `text=` field.
+        let bare = node_with(Some("statusBarBackground"), None, None);
+        assert!(
+            !outline_line(&bare, 0).contains("text="),
+            "empty text prints nothing: {}",
+            outline_line(&bare, 0)
+        );
+    }
+
     use std::sync::Mutex;
 
     /// Serialize env-touching tests. SMIX_RUNNER_PORT is a
