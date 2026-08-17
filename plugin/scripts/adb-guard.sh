@@ -44,10 +44,12 @@ esac
 
 deny() {
   echo "adb-guard: $1" >&2
-  echo "adb-guard: name an emulator explicitly — 'adb -s emulator-5554 …' or 'ANDROID_SERIAL=emulator-5554 ./gradlew …'; never an unpinned mutation (it reaches a physical phone) and never a physical serial" >&2
   # A guard that only says no gets worked around rather than obeyed. Name
-  # the way to do the same thing safely.
-  echo "adb-guard: or drive it through smix, which requires the device up front: smix runner up --platform android --device emulator-5554" >&2
+  # the way to do the same thing safely — and the intended way is smix,
+  # which names the device up front so a bare command can never reach a
+  # phone by accident.
+  echo "adb-guard: drive the device through smix, not raw adb — smix takes the device explicitly, so it cannot fall through to an attached phone: 'smix run <flow> --device emulator-5554', 'smix fill/find/tree --device emulator-5554', 'smix runner up --platform android --device emulator-5554', 'smix sim boot <alias>'. A physical device must be registered first ('smix sim register')." >&2
+  echo "adb-guard: if you must use raw adb, pin an emulator — 'adb -s emulator-5554 …' or 'ANDROID_SERIAL=emulator-5554 ./gradlew …'; never an unpinned mutation (it reaches a physical phone) and never a physical serial" >&2
   exit 2
 }
 
