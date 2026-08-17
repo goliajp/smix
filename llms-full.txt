@@ -1249,7 +1249,7 @@ smix run [FLAGS] <FLOW.yaml>
 | `--device <DEVICE>` | `SMIX_UDID` | (none, required) | Target simulator UDID or Android device id (e.g. `emulator-5554`) |
 | `--bundle-id <ID>` | `SMIX_BUNDLE_ID` | (unset) | Default app under test (overrideable by `appId:` in YAML) |
 | `--runner-port <PORT>` | `SMIX_RUNNER_PORT` | `22087` | Runner HTTP port. iOS = 22087, Android = 28080 by convention |
-| `--platform <ios\|android>` | `SMIX_PLATFORM` | `ios` | Target platform |
+| `--platform <ios\|android>` | `SMIX_PLATFORM` | inferred from `--device` | Optional. Read from the named device's registered kind (emulator / physical-android → android, simulator / physical-ios → ios). An explicit value wins and is **required** when naming a device that is not registered — an unregistered bare name with no platform is an error, not a silent iOS default |
 | `--apps-config <PATH>` | `SMIX_APPS_CONFIG` | (unset) | Path to `apps.yaml` for cross-platform `app:` logical key resolution |
 | `--no-launch` | — | (off) | Skip initial `foreground()` call. Use when you launched the app via other means |
 | `--trace-dir <PATH>` | — | `./.smix/trace/<runid>` | Where screenshots / video / JSON traces go |
