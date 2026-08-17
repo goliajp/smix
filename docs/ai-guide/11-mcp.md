@@ -150,6 +150,7 @@ what it did before 4.3.
 **Act** — `smix_tap` · `smix_tap_then_screenshot` · `smix_fill` · `smix_press_key` · `smix_swipe` · `smix_scroll`
 **Lifecycle** — `smix_launch_app` · `smix_stop_app`
 **Assert** — `smix_assert_visible` · `smix_assert_not_visible`
+**Diagnose** — `smix_session_state` · `smix_diagnostic_dump`
 
 `smix_find` returns true/false; `smix_assert_visible` fails. Use `find` to
 decide what to do next, `assert` when absence is a problem.

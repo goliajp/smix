@@ -166,6 +166,14 @@ enum Cmd {
         #[command(subcommand)]
         action: DiagnosticAction,
     },
+    /// Report which runner this session would dial and what it has open.
+    ///
+    /// Read-only. The CLI counterpart of the `smix_session_state` MCP
+    /// tool — the one query answerable before anything is bound.
+    Session {
+        #[command(subcommand)]
+        action: SessionAction,
+    },
     /// Manage simulators. `<DEVICE>` = explicit UDID, or an alias /
     /// deviceName in the workspace's `.smix` registry (env SMIX_SIMS_JSON
     /// overrides discovery).
@@ -2059,6 +2067,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .map_err(CliError::Other)?;
         }
         Cmd::Diagnostic { action } => cmd_diagnostic(action).await?,
+        Cmd::Session { action } => cmd_session(action).await?,
         Cmd::Sim { action } => {
             // One gate for every `sim` verb, before any of them runs.
             // Putting it inside the arms would mean remembering it in
@@ -4497,6 +4506,22 @@ async fn cmd_sim_exec(device: &str, verb: &str, args: &[String]) -> Result<ExitC
 }
 
 #[derive(Subcommand, Debug)]
+enum SessionAction {
+    /// The runner port and device this invocation resolves to, plus the
+    /// runner's open sessions when it is reachable.
+    State {
+        /// Runner port. Overrides the flag/env/registry ladder; without
+        /// it the same resolution `smix run` uses applies.
+        #[arg(long)]
+        port: Option<u16>,
+        /// Device UDID or registry alias, used only to resolve the
+        /// runner port it is registered on. Read-only.
+        #[arg(long)]
+        device: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 enum DiagnosticAction {
     /// Print everything smix has persisted, as JSON.
     ///
@@ -4622,6 +4647,31 @@ fn tail_lines(path: &Path, n: usize) -> std::io::Result<Vec<String>> {
         lines = lines.split_off(lines.len() - n);
     }
     Ok(lines)
+}
+
+async fn cmd_session(action: SessionAction) -> Result<(), CliError> {
+    match action {
+        SessionAction::State { port, device } => {
+            let p = runner_dial_port(port, device.as_deref());
+            let client = smix_runner_client::HttpRunnerClient::new(p);
+            let sessions = match client.list_sessions().await {
+                Ok(resp) => serde_json::to_value(&resp.sessions).unwrap_or(serde_json::Value::Null),
+                // Read-only: an unreachable runner is a state to report,
+                // not an error to fail on — say so rather than pretend.
+                Err(e) => serde_json::json!({ "unreachable": e.to_string() }),
+            };
+            let report = serde_json::json!({
+                "port": p,
+                "device": device,
+                "sessions": sessions,
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).unwrap_or_default()
+            );
+            Ok(())
+        }
+    }
 }
 
 async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {

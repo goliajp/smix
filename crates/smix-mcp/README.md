@@ -68,6 +68,13 @@ smix runner up <udid> --soft
 | `smix_assert_visible` | Fails, with the visible elements and near-miss suggestions, when the element isn't there. |
 | `smix_assert_not_visible` | The inverse. |
 
+**Diagnose**
+
+| | |
+|---|---|
+| `smix_session_state` | Which device this session is bound to. The one tool that answers with nothing bound. |
+| `smix_diagnostic_dump` | The runner's runtime state — recent subprocesses, open sessions, sim-health, counters. |
+
 ## Naming an element
 
 Every tool that touches an element takes the same shape — exactly one of:

@@ -59,7 +59,6 @@ BESIDE = {
     "perf/": "perf decomposition ground truth",
     "audit-ledger.md": "internal defect accounting",
     "scope-evidence.md": "internal scope accounting",
-    "scope-decisions-pending.md": "scope decisions awaiting the owner's call",
     "guide-executability.md": "what the guides claim versus what runs",
 }
 

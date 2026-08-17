@@ -2004,6 +2004,18 @@ to be JSON files you could `cat`; this is what replaces that. A value
 that is not valid JSON is shown as hex rather than stopping the dump,
 because this is what you run when something is already wrong.
 
+### `smix session state` — which runner this session would dial
+
+```bash
+smix session state                    # the resolved runner port + device, and the runner's open sessions if reachable
+smix session state --port 22088       # ask about a specific port
+smix session state --device sim-smix-02
+```
+
+Read-only. The CLI counterpart of the `smix_session_state` MCP tool —
+the one query answerable before anything is bound. An unreachable runner
+is reported as a state, not an error.
+
 ## Common command recipes
 
 ### Smoke test the running sim quickly
@@ -3617,6 +3629,7 @@ what it did before 4.3.
 **Act** — `smix_tap` · `smix_tap_then_screenshot` · `smix_fill` · `smix_press_key` · `smix_swipe` · `smix_scroll`
 **Lifecycle** — `smix_launch_app` · `smix_stop_app`
 **Assert** — `smix_assert_visible` · `smix_assert_not_visible`
+**Diagnose** — `smix_session_state` · `smix_diagnostic_dump`
 
 `smix_find` returns true/false; `smix_assert_visible` fails. Use `find` to
 decide what to do next, `assert` when absence is a problem.

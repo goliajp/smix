@@ -231,12 +231,15 @@ def check_mcp_capabilities(block, rows, failures):
 def main():
     failures = []
 
-    for path in (EVIDENCE, PENDING):
-        if not os.path.isfile(os.path.join(ROOT, path)):
-            failures.append(
-                f"{path} does not exist. With nothing to re-evaluate this scan is "
-                f"indistinguishable from a clean bill of health, so it fails."
-            )
+    if not os.path.isfile(os.path.join(ROOT, EVIDENCE)):
+        failures.append(
+            f"{EVIDENCE} does not exist. With nothing to re-evaluate this scan is "
+            f"indistinguishable from a clean bill of health, so it fails."
+        )
+    # PENDING is required only while something is pending. Its own footnote
+    # says it should disappear once the last item is decided, so forcing it
+    # to exist forever contradicts the document — and the two gates that did
+    # (this one and contract-scan) were themselves the bug C6b closed.
 
     rows = []
     if os.path.isfile(os.path.join(ROOT, EVIDENCE)):
@@ -283,6 +286,14 @@ def main():
 
         check_flag_promises(block, rows, failures)
         check_mcp_capabilities(block, rows, failures)
+
+        # Pending rows need their material file; zero pending, no file needed.
+        pending_rows = [r for r in rows if r["status"] == "pending"]
+        if pending_rows and not os.path.isfile(os.path.join(ROOT, PENDING)):
+            failures.append(
+                f"{len(pending_rows)} promise(s) are pending but {PENDING} does not "
+                f"exist. Pending without material is a decision nobody can make."
+            )
 
         # Pending means material exists, in the shape someone can decide from.
         if os.path.isfile(os.path.join(ROOT, PENDING)):
