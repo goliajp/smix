@@ -387,16 +387,24 @@ silent no-op that reads as success.
 
 ### First run (`smix init`)
 
-`smix init` is the bootstrap: it registers a simulator under an alias, creating
-the `.smix` registry that alias-form device refs resolve against. Give it an
-`.app` and it boots the device, installs the app, and reads the bundle id out of
-the bundle, so the command it prints next is runnable as it stands.
+`smix init` is the bootstrap: it registers a **dedicated device for this
+project** under an alias, and records that alias as the project's default — so
+later commands here need no `--device` at all. The alias, omitted, is derived
+from the project directory's name (two projects no longer both silently become
+`dev`). It creates the `.smix` workspace, and given an `.app` it boots the
+device, installs the app, and reads the bundle id out of the bundle, so the
+command it prints next is runnable as it stands.
 
 ```bash
-smix init --device <UDID>                      # register it as `dev`
+smix init --device <UDID>                      # alias derived from the project dir; recorded as this project's default
 smix init --device <UDID> --app ./MyApp.app    # …and install the app on it
-smix init --device <UDID> --alias staging      # a name other than `dev`
+smix init --device <UDID> --alias staging      # a name of your own instead of the derived one
 ```
+
+Afterwards, `smix run <flow>` in this project needs no `--device` — it resolves
+the project's default device (the pointer lives in the machine store, keyed by
+the project path; only the pointer is per-project — the device's facts stay in
+the machine registry). An explicit `--device` still wins.
 
 It does not choose between devices: with several simulators available and no
 `--device`, it lists them and exits non-zero. It also never repoints an alias

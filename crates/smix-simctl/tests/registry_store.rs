@@ -102,3 +102,29 @@ fn a_smix_directory_works_as_well_as_a_sims_json_path() {
     let registry = SimRegistry::load(&root.join(".smix/sims.json")).expect("loads via file path");
     assert!(registry.resolve("dir-form").is_ok());
 }
+
+#[test]
+fn project_alias_round_trips_and_is_per_project() {
+    let root = temp_root("project-alias");
+    let p = root.as_path();
+    SimRegistry::set_project_alias(p, "/Users/dev/app-one", "app-one").expect("set one");
+    SimRegistry::set_project_alias(p, "/Users/dev/app-two", "app-two").expect("set two");
+    assert_eq!(
+        SimRegistry::project_alias(p, "/Users/dev/app-one").expect("get one"),
+        Some("app-one".to_string())
+    );
+    assert_eq!(
+        SimRegistry::project_alias(p, "/Users/dev/app-two").expect("get two"),
+        Some("app-two".to_string())
+    );
+    assert_eq!(
+        SimRegistry::project_alias(p, "/Users/dev/absent").expect("get none"),
+        None
+    );
+    // same key overwrites to the latest
+    SimRegistry::set_project_alias(p, "/Users/dev/app-one", "app-one-b").expect("reset");
+    assert_eq!(
+        SimRegistry::project_alias(p, "/Users/dev/app-one").expect("get one again"),
+        Some("app-one-b".to_string())
+    );
+}

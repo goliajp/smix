@@ -257,6 +257,10 @@ log "generated-artifacts-are-load-bearing"
 python3 "$ROOT/scripts/dev/generated-artifacts-are-load-bearing.py" > /tmp/smix-ship-generated-artifacts.log 2>&1 \
   || fail "generated-artifacts-are-load-bearing FAILED — see /tmp/smix-ship-generated-artifacts.log"
 
+log "project-pointer-holds-no-facts"
+python3 "$ROOT/scripts/dev/project-pointer-holds-no-facts.py" > /tmp/smix-ship-project-pointer.log 2>&1 \
+  || fail "project-pointer-holds-no-facts FAILED — see /tmp/smix-ship-project-pointer.log"
+
 log "a retired sentence is off the surfaces"
 python3 "$ROOT/scripts/dev/retired-claims-scan.py" > /tmp/smix-ship-retired-claims.log 2>&1 \
   || fail "retired-claims scan FAILED — see /tmp/smix-ship-retired-claims.log"

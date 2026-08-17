@@ -45,6 +45,11 @@ mod prefix {
     pub const SETS: &str = "set:";
     /// Live-stream session records, keyed by device UDID.
     pub const SESSIONS: &str = "session:";
+    /// A project's default device: the alias a project resolves to when
+    /// no --device is given, keyed by the project's path. The value is
+    /// the alias string only — a pointer into the sims namespace, never a
+    /// device fact (no UDID / kind / opt-in lives here).
+    pub const PROJECT_DEVICES: &str = "project-device:";
 }
 
 /// What can go wrong touching the store.
@@ -318,6 +323,16 @@ impl Store {
         Namespace {
             store: self,
             prefix: prefix::SIMS,
+        }
+    }
+
+    /// A project's default device — its path keyed to an alias string.
+    /// The value is a pointer into `sims`, not a device fact.
+    #[must_use]
+    pub fn project_devices(&self) -> Namespace<'_> {
+        Namespace {
+            store: self,
+            prefix: prefix::PROJECT_DEVICES,
         }
     }
 
