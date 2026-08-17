@@ -2,7 +2,151 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [6.0.0] — unreleased
+## [6.2.0] — 2026-08-17
+
+Two releases in one. The device under your hand belongs to someone, and
+Android was being driven as if it were an iOS simulator with a different
+name.
+
+A second person driving smix on the same machine took its emulator out
+from under a release a dozen times in one day, and two release gates
+picked their device instead of ours — because the ledger that answers
+"did smix boot this" existed for simulators and had no Android half.
+Separately, a consumer moving an app off raw adb hit five gaps that were
+two design faults wearing five hats: the platform was an argument that
+defaulted to iOS rather than a property of the device you named, and the
+same capability was reachable through a flow and refused from the CLI.
+
+The v6.1 device-ownership work is folded into this release and is not
+published on its own.
+
+### Added
+
+- **The boot-ownership ledger covers Android emulators.** "Did smix boot
+  this device, and may it stop it" had an answer for simulators and none
+  for Android: `Boot` and `Shutdown` were `simctl`-only, so an emulator
+  had no smix-owned boot path and nothing recorded who started it. smix
+  now boots and shuts an emulator it owns, records that it did, and
+  refuses to stop one a person booted by hand. The ledger was already
+  platform-neutral; only the wiring was missing.
+- **`smix session state`** — a read-only report of which device the
+  session is bound to (`bound` / `udid` / `port`). It is the one verb
+  that answers without a bound app, reading the session directly rather
+  than through an open app.
+- **`smix diagnostic dump`** — surfaces what the bound runner has open,
+  as a thin pass-through to the runner's diagnostic endpoint.
+- **MCP `diagnostic-dump` and `session-state` tools** — the two verbs
+  above through the external-agent surface. `session-state` is the only
+  tool that answers unbound; neither opens nor closes a session, so they
+  do not overlap the write path `launch_app` already owns.
+- **`smix run --platform` is optional and inferred from `--device`.**
+  When omitted, the platform is read from the named device's registered
+  kind — emulator or physical-Android to Android, simulator or
+  physical-iOS to iOS. An explicit `--platform` still wins, for a device
+  that is not registered.
+
+### Changed
+
+- **`smix run` reads the platform from the device, not a default of iOS.**
+  `--platform` used to default to iOS regardless of `--device`, so an
+  Android flow's `launchApp` was dispatched to `simctl` (`Invalid
+  device: emulator-5560`) even when the registry knew the device was an
+  emulator. Naming an unregistered device with no `--platform` is now an
+  error that says to register it or pass `--platform`, rather than
+  silently guessing iOS. With the platform inferred, Android `launchApp`
+  runs `am start` as it always could and brings the app to the front —
+  the earlier `ok: true` with nothing foregrounded was the mis-inferred
+  platform, not a missing capability.
+- **CLI verbs dial their driver from the device, as flows always did.**
+  `fill`, `find`, `tap`, `tap-then-screenshot`, `wait-for`, `scroll`,
+  `swipe`, `swipe-between`, `press-key` and `hide-keyboard` went through
+  a hardcoded simctl driver regardless of `--device`, so `smix fill` and
+  `smix find text:` answered `501` on an Android runner while the same
+  device's flow `inputText` worked. Each now selects the driver by the
+  device's platform. `tree`, `describe` and system-popup reads stay
+  platform-neutral — they already spoke the same wire on both.
+- **`tree`'s human-readable outline prints element text.** It read only
+  identifier and label, which was enough for iOS (whose serializer sends
+  label/value/title and no `text`) and blind on Android (whose `text`
+  attribute carries the words, so a button reading "SUBMIT" showed
+  nothing). Text now prints when non-empty; iOS output is unchanged.
+- **A device is the ledger's answer or the caller's, never the first one
+  `adb` lists.** Resolution no longer falls through to whatever emulator
+  `adb` happens to enumerate first, and the six smoke scripts stopped
+  defaulting to `emulator-5554` and `emu kill`-ing it on teardown,
+  whoever it belonged to. One teardown rule now covers both platforms.
+- **The `--device` help no longer claims it does not change dispatch.**
+  For verbs that behave differently by platform, `--device` now decides
+  the driver, and the help says so.
+
+### Fixed
+
+- **Landscape visibility is judged in the right space.** The tree
+  serializer intersected a live landscape node's frame against a portrait
+  `appFrame` cached at launch, so nodes past the portrait width were
+  reported `visible: false` on a landscape-locked app (a counter at
+  x=407 went false while siblings inside 402 stayed true). Visibility is
+  now computed against the snapshot's own root frame, mirroring the
+  Rust `is_visible_enough`, and the stale cached-frame path is removed.
+  This is the sense-side companion to 6.0.0's act-side coordinate-space
+  fix.
+- **A stale lease no longer locks smix out of a device it owns.** Device
+  ownership is decided through `smix_lease::assess`, which already
+  distinguishes "someone is using it" from "someone used it and left",
+  so a lease whose holder has exited no longer refuses a legitimate
+  shutdown.
+- **`smix sim shutdown` reads the boot row it claimed to.** A comment
+  said the boot row recorded who may shut the device down; the code shut
+  it down without ever reading the row. The rule now lives in the
+  behaviour, not only in the prose.
+
+### Gates
+
+- `v6.1-c1-who-booted-this-emulator-e2e` — on a real device: smix boots,
+  the ledger answers `booted by smix`, smix shuts it and the row
+  disappears; the same emulator booted by hand is refused, `rc=1`, and
+  stays up.
+- `v6.1-c5-two-devices-one-is-not-yours-e2e` and
+  `no-script-picks-a-device-by-accident` — a second person's device is
+  not the one a smix script reaches for.
+- `contract-scan` runs on a bare checkout — a gate that reads `.claude/`
+  used to error where that tree is absent, which is any clone but the
+  development machine.
+- `v6.2-c1-platform-from-device-e2e` — a byte-identical flow (only the
+  appId differs) runs on iOS and Android with no `--platform` and both
+  foreground the app.
+- `v6.2-c3-capability-parity-e2e` — `fill` and `find` reach the CLI on
+  Android (`rc` 0, not `501`) exactly as through a flow.
+- `v6.2-c4-env-interpolation-e2e` — `--env` and `${NAME}` on both sides:
+  a supplied variable lands as its value, an undefined one fails with
+  `undefined variable` and leaves the field untouched rather than typing
+  the literal. Both sides are proved by mutation. (The single-machine
+  interpolation path was already sound on `develop`; the symptom a
+  consumer reported was against a 5.1.0 build that was never published.
+  This gate keeps the path from regressing.)
+- `v6.2-c5-tree-text-e2e` — the outline carries `text` on Android and
+  does not sprout an empty `text=` where a node has none.
+- `generated-artifacts-are-load-bearing` and `napi-dts-fresh` — every
+  file that declares itself auto-generated is covered by a freshness
+  gate. The napi loader's `index.d.ts` drifted between two ships
+  (`swipeAtCoord` reached the Rust binding and not the `.d.ts`) with no
+  gate watching it; now regenerate-and-diff catches that shape.
+- `v6.2-c6c-landscape-visible-e2e` — three nodes on a landscape stage
+  assert `visible: true`; the pre-fix portrait rectangle makes the gate
+  red.
+- `v6.2-c6d-attach-on-device-e2e` — the attach retry, watched on a
+  simulator through a compile-time injection seam (`up_on_with`, not a
+  runtime switch on the shipped path): an injected first-attempt timeout
+  drives a real `simctl launch` foreground and a real second attach, and
+  the runner it brings up then drives the fixture. This closes the
+  [5.0.0] "not watched on a device" note.
+- `v6.2-c7-two-platform-flow-e2e` — the exit gate: one byte-identical
+  flow (only the appId differs, portable selectors only) runs end to end
+  on both platforms, with no `--platform`, threading launch-to-front,
+  platform inference, CLI `fill`/`find`, `--env` supply, and Android's
+  text-bearing outline.
+
+## [6.0.0] — 2026-08-16
 
 A tap that reported success while nothing moved, and the half of an
 escape hatch that never reached a surface.
@@ -117,13 +261,6 @@ same way — the reader saw the ones on commands they happened to run.
   description, `hide = true` exempted by name. It found five of the
   twenty by reading the source rather than the rendered help, which is
   where the last five were invisible.
-- `v6.2-c6d-attach-on-device-e2e` — the attach retry, watched on a
-  simulator at last. An injected first-attempt timeout (through the
-  `up_on_with` bring-up seam — a compile-time injection point, not a
-  runtime switch on the shipped path) lets the real bring-up foreground
-  the app with `simctl launch` and attach; the runner it brings up then
-  drives the fixture. This closes the [5.0.0] "not watched on a device"
-  note: it has now been.
 
 ## [5.0.0] — 2026-08-14
 

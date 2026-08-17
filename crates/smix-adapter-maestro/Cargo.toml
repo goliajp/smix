@@ -21,15 +21,15 @@ name = "smix-maestro"
 path = "src/bin/smix-maestro.rs"
 
 [dependencies]
-smix-lease = { path = "../smix-lease", version = "6.0.0" }
-smix-metro-log = { path = "../smix-metro-log", version = "6.0.0" }
-smix-fixture = { path = "../smix-fixture", version = "6.0.0" }
-smix-verbs = { path = "../smix-verbs", version = "6.0.0" }
-smix-annotate = { path = "../smix-annotate", version = "6.0.0" }
+smix-lease = { path = "../smix-lease", version = "6.2.0" }
+smix-metro-log = { path = "../smix-metro-log", version = "6.2.0" }
+smix-fixture = { path = "../smix-fixture", version = "6.2.0" }
+smix-verbs = { path = "../smix-verbs", version = "6.2.0" }
+smix-annotate = { path = "../smix-annotate", version = "6.2.0" }
 # The AI-assertion tier. The runtime dispatches to it; the sense path must
 # not — see the fence test in crates/smix-ai-tier.
-smix-ai-tier = { path = "../smix-ai-tier", version = "6.0.0" }
-smix-simctl = { path = "../smix-simctl", version = "6.0.0" }
+smix-ai-tier = { path = "../smix-ai-tier", version = "6.2.0" }
+smix-simctl = { path = "../smix-simctl", version = "6.2.0" }
 dirs = "5"
 async-trait.workspace = true
 clap = { workspace = true, features = ["env"] }
@@ -39,12 +39,12 @@ serde_json.workspace = true
 serde_norway.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time", "rt-multi-thread", "macros", "signal"] }
-smix-sdk = { path = "../smix-sdk", version = "6.0.0" }
-smix-driver = { path = "../smix-driver", version = "6.0.0" }
-smix-selector = { path = "../smix-selector", version = "6.0.0" }
+smix-sdk = { path = "../smix-sdk", version = "6.2.0" }
+smix-driver = { path = "../smix-driver", version = "6.2.0" }
+smix-selector = { path = "../smix-selector", version = "6.2.0" }
 
 [dev-dependencies]
-smix-migrate = { path = "../smix-migrate", version = "6.0.0" }
+smix-migrate = { path = "../smix-migrate", version = "6.2.0" }
 serde_json.workspace = true
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
