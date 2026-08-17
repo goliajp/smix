@@ -253,6 +253,10 @@ log "no-script-picks-a-device-by-accident"
 python3 "$ROOT/scripts/dev/no-script-picks-a-device-by-accident.py" > /tmp/smix-ship-no-script-picks-a-device-by-accident.log 2>&1 \
   || fail "no-script-picks-a-device-by-accident FAILED — see /tmp/smix-ship-no-script-picks-a-device-by-accident.log"
 
+log "generated-artifacts-are-load-bearing"
+python3 "$ROOT/scripts/dev/generated-artifacts-are-load-bearing.py" > /tmp/smix-ship-generated-artifacts.log 2>&1 \
+  || fail "generated-artifacts-are-load-bearing FAILED — see /tmp/smix-ship-generated-artifacts.log"
+
 log "a retired sentence is off the surfaces"
 python3 "$ROOT/scripts/dev/retired-claims-scan.py" > /tmp/smix-ship-retired-claims.log 2>&1 \
   || fail "retired-claims scan FAILED — see /tmp/smix-ship-retired-claims.log"
@@ -406,6 +410,10 @@ SMIX_BIN="$ROOT/target/release/smix" \
 log "ffi bindings"
 "$ROOT/scripts/dev/ffi-bindings-fresh.sh" > /tmp/smix-ship-ffi-bindings.log 2>&1 \
   || fail "FFI bindings are not what smix-ffi generates — see /tmp/smix-ship-ffi-bindings.log"
+
+log "napi loader"
+"$ROOT/scripts/dev/napi-dts-fresh.sh" > /tmp/smix-ship-napi-dts.log 2>&1 \
+  || fail "napi loader (index.d.ts/index.js) is not what napi generates — see /tmp/smix-ship-napi-dts.log"
 
 # --- fuzz smoke -------------------------------------------------------
 # 15 fuzz targets existed with nothing running them; two had bit-rotted
