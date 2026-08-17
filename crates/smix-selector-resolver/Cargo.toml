@@ -17,8 +17,8 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-screen = { path = "../smix-screen", version = "6.0.0" }
-smix-selector = { path = "../smix-selector", version = "6.0.0" }
+smix-screen = { path = "../smix-screen", version = "6.2.0" }
+smix-selector = { path = "../smix-selector", version = "6.2.0" }
 
 [dev-dependencies]
 serde_json.workspace = true
