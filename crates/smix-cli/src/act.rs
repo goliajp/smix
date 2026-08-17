@@ -21,8 +21,7 @@
 //!   $ smix wait-for 'id:home-counter-label' --timeout 5
 //!   visible id=home-counter-label (waited 12ms)
 
-use smix_driver::Driver as _;
-use smix_driver::SimctlDriver;
+use smix_driver::{AndroidDriver, Driver, Platform, SimctlDriver};
 use smix_input::{KeyName, SwipeDirection};
 use smix_runner_client::HttpRunnerClient;
 use smix_selector::{Modifiers, Pattern, Selector};
@@ -146,7 +145,7 @@ pub fn parse_selector(s: &str) -> Result<Selector, String> {
 /// resolving, and forgetting to is a silent miss on text that is plainly
 /// on screen rather than an error anyone would see.
 async fn ocr_frame(
-    d: &SimctlDriver,
+    d: &dyn Driver,
     needle: &str,
     locales: &[String],
 ) -> Result<Option<smix_driver::OcrFrame>, ActError> {
@@ -173,8 +172,40 @@ pub enum ActError {
     Timeout { selector: String, timeout_ms: u64 },
 }
 
-fn driver(port: u16) -> SimctlDriver {
-    SimctlDriver::new(HttpRunnerClient::new(port))
+/// Dial the driver a CLI verb should drive through, by platform. The act
+/// verbs used to build a `SimctlDriver` unconditionally, so `fill` and
+/// `find text:` were 501 on Android while the flow path — which already
+/// picks `AndroidDriver` — worked on the same device. This is the driver
+/// half of C3: the same capability reaches the same driver from every
+/// entrance. iOS-only sense (`describe`) stays on `SimctlDriver` because
+/// it is an inherent method, not on the `Driver` trait.
+fn driver_for(platform: Platform, port: u16) -> Box<dyn Driver> {
+    let client = HttpRunnerClient::new(port);
+    match platform {
+        Platform::Android => Box::new(AndroidDriver::new(client)),
+        Platform::Ios => Box::new(SimctlDriver::new(client)),
+    }
+}
+
+#[cfg(test)]
+mod driver_for {
+    use super::*;
+
+    // C3: the act verbs must reach the driver the device's platform
+    // names, not always the simctl one. Building it and asking its
+    // platform back pins the dispatch without a device.
+    #[test]
+    fn dispatches_android_to_the_android_driver() {
+        assert_eq!(
+            driver_for(Platform::Android, 22088).platform(),
+            Platform::Android
+        );
+    }
+
+    #[test]
+    fn dispatches_ios_to_the_ios_driver() {
+        assert_eq!(driver_for(Platform::Ios, 22087).platform(), Platform::Ios);
+    }
 }
 
 /// Parse a KeyName shorthand mirroring the wire camelCase form
@@ -223,6 +254,7 @@ pub fn parse_direction(s: &str) -> Option<SwipeDirection> {
 pub async fn cmd_tap_then_screenshot(
     selector_str: String,
     port: u16,
+    platform: Platform,
     out: &std::path::Path,
 ) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
@@ -237,8 +269,9 @@ pub async fn cmd_tap_then_screenshot(
                 .to_string(),
         ));
     }
-    let d = driver(port);
-    let (outcome, captured) = smix_sdk::tap_then_capture_with(&d, Some(d.runner()), &selector)
+    let d = driver_for(platform, port);
+    let raw = HttpRunnerClient::new(port);
+    let (outcome, captured) = smix_sdk::tap_then_capture_with(d.as_ref(), Some(&raw), &selector)
         .await
         .map_err(|e| ActError::Transport(e.to_prompt()))?;
     // Only now: a tap that failed returned above, so nothing on disk can
@@ -261,16 +294,17 @@ pub async fn cmd_tap_then_screenshot(
 pub async fn cmd_tap(
     selector_str: String,
     port: u16,
+    platform: Platform,
     ocr_locales: Vec<String>,
 ) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
-    let d = driver(port);
+    let d = driver_for(platform, port);
     // A place, not a thing: the resolver has nothing to match, and its own
     // comment says so — reaching it means a caller forgot to dispatch. The
     // touch goes straight to the coordinate, the same as `tapOn: { point }`.
     if let Some(needle) = ocr_needle(&selector) {
-        return match ocr_frame(&d, needle, &ocr_locales).await? {
+        return match ocr_frame(d.as_ref(), needle, &ocr_locales).await? {
             Some(f) => {
                 d.tap_at_norm_coord(f.mid_x(), f.mid_y())
                     .await
@@ -342,6 +376,7 @@ pub async fn cmd_tap(
 pub async fn cmd_find(
     selector_str: String,
     port: u16,
+    platform: Platform,
     ocr_locales: Vec<String>,
 ) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
@@ -354,9 +389,9 @@ pub async fn cmd_find(
                 .into(),
         ));
     }
-    let d = driver(port);
+    let d = driver_for(platform, port);
     if let Some(needle) = ocr_needle(&selector) {
-        let exists = ocr_frame(&d, needle, &ocr_locales).await?.is_some();
+        let exists = ocr_frame(d.as_ref(), needle, &ocr_locales).await?.is_some();
         println!("exists={exists}");
         return Ok(());
     }
@@ -370,7 +405,12 @@ pub async fn cmd_find(
 
 /// `smix fill <selector> --text <text>` — type `text` into the matched field.
 /// Mirrors maestro `inputText:`.
-pub async fn cmd_fill(selector_str: String, text: String, port: u16) -> Result<(), ActError> {
+pub async fn cmd_fill(
+    selector_str: String,
+    text: String,
+    port: u16,
+    platform: Platform,
+) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
     if ocr_needle(&selector).is_some() {
@@ -389,7 +429,7 @@ pub async fn cmd_fill(selector_str: String, text: String, port: u16) -> Result<(
                 .into(),
         ));
     }
-    let d = driver(port);
+    let d = driver_for(platform, port);
     // Same rule as the SDK: a named field is replaced, the focused one
     // is typed into. See `App::fill`.
     let names_a_field = !matches!(selector, smix_selector::Selector::Focused { .. });
@@ -416,11 +456,11 @@ pub async fn cmd_fill(selector_str: String, text: String, port: u16) -> Result<(
 /// `tab`, `space`, `escape` / `esc`, `arrowUp` / `up`, `arrowDown` /
 /// `down`, `arrowLeft` / `left`, `arrowRight` / `right`, `home`, `lock`,
 /// `volumeUp` / `volume-up`, `volumeDown` / `volume-down`.
-pub async fn cmd_press_key(key_str: String, port: u16) -> Result<(), ActError> {
+pub async fn cmd_press_key(key_str: String, port: u16, platform: Platform) -> Result<(), ActError> {
     let key = parse_key_name(&key_str).ok_or_else(|| {
         ActError::BadSelector(format!("key:{key_str}"), "unknown key name".into())
     })?;
-    let d = driver(port);
+    let d = driver_for(platform, port);
     d.press_key(key)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
@@ -434,6 +474,7 @@ pub async fn cmd_scroll(
     selector_str: String,
     direction_str: String,
     port: u16,
+    platform: Platform,
 ) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
@@ -459,7 +500,7 @@ pub async fn cmd_scroll(
             "expected up / down / left / right".into(),
         )
     })?;
-    let d = driver(port);
+    let d = driver_for(platform, port);
     d.scroll(&selector, direction)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
@@ -479,7 +520,12 @@ pub async fn cmd_scroll(
 /// between leaves a flow author with no other move. Two points rather
 /// than one, because a swipe is a path — tap's single-point shape does
 /// not describe it.
-pub async fn cmd_swipe_between(from: &str, to: &str, port: u16) -> Result<(), ActError> {
+pub async fn cmd_swipe_between(
+    from: &str,
+    to: &str,
+    port: u16,
+    platform: Platform,
+) -> Result<(), ActError> {
     // The same parser the `point:` selector uses, so `50%,80%` and
     // `0.5,0.8` mean the same thing here as everywhere else and pixels
     // are refused with the same sentence.
@@ -487,7 +533,7 @@ pub async fn cmd_swipe_between(from: &str, to: &str, port: u16) -> Result<(), Ac
         .map_err(|why| ActError::BadSelector(format!("--from {from}"), why))?;
     let to_pt = smix_selector::point_from_str(to)
         .map_err(|why| ActError::BadSelector(format!("--to {to}"), why))?;
-    let d = driver(port);
+    let d = driver_for(platform, port);
     d.swipe_at_norm_coord(from_pt, to_pt)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
@@ -498,14 +544,18 @@ pub async fn cmd_swipe_between(from: &str, to: &str, port: u16) -> Result<(), Ac
     Ok(())
 }
 
-pub async fn cmd_swipe(direction_str: String, port: u16) -> Result<(), ActError> {
+pub async fn cmd_swipe(
+    direction_str: String,
+    port: u16,
+    platform: Platform,
+) -> Result<(), ActError> {
     let direction = parse_direction(&direction_str).ok_or_else(|| {
         ActError::BadSelector(
             format!("direction:{direction_str}"),
             "expected up / down / left / right".into(),
         )
     })?;
-    let d = driver(port);
+    let d = driver_for(platform, port);
     d.swipe_once(direction)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
@@ -518,7 +568,7 @@ pub async fn cmd_swipe(direction_str: String, port: u16) -> Result<(), ActError>
 /// typical app screen); default emits an indented text outline keyed by
 /// id + label per node.
 pub async fn cmd_tree(json: bool, port: u16, keyboard: bool) -> Result<(), ActError> {
-    let d = driver(port);
+    let d = SimctlDriver::new(HttpRunnerClient::new(port));
     let mut tree = d
         .tree(None)
         .await
@@ -554,7 +604,7 @@ fn collapse_keyboards(node: &mut smix_screen::A11yNode) -> usize {
 /// Helper for authoring subcommand to fetch the a11y
 /// tree as raw JSON (bypasses print_tree_outline).
 pub async fn fetch_tree_json(port: u16) -> Result<serde_json::Value, ActError> {
-    let d = driver(port);
+    let d = SimctlDriver::new(HttpRunnerClient::new(port));
     let tree = d
         .tree(None)
         .await
@@ -587,7 +637,7 @@ fn print_tree_outline(node: &smix_screen::A11yNode, depth: usize) {
 /// in the tree, and two of the three metadata fields were empty on top
 /// of that — the help described a richer thing than the code produced.
 pub async fn cmd_describe(json: bool, port: u16) -> Result<(), ActError> {
-    let d = driver(port);
+    let d = SimctlDriver::new(HttpRunnerClient::new(port));
     let desc = d
         .describe()
         .await
@@ -607,7 +657,7 @@ pub async fn cmd_describe(json: bool, port: u16) -> Result<(), ActError> {
 /// `--json` emits the wire JSON; default emits a pretty-printed Debug
 /// summary keyed by popup id + buttons.
 pub async fn cmd_system_popups(json: bool, port: u16) -> Result<(), ActError> {
-    let d = driver(port);
+    let d = SimctlDriver::new(HttpRunnerClient::new(port));
     let popups = d
         .system_popups(None)
         .await
@@ -635,7 +685,7 @@ pub async fn cmd_system_popup_action(
     button_id: &str,
     port: u16,
 ) -> Result<(), ActError> {
-    let d = driver(port);
+    let d = SimctlDriver::new(HttpRunnerClient::new(port));
     let pressed = d
         .system_popup_action(popup_id, button_id)
         .await
@@ -651,8 +701,8 @@ pub async fn cmd_system_popup_action(
 }
 
 /// `smix hide-keyboard` — dismiss the soft keyboard if visible.
-pub async fn cmd_hide_keyboard(port: u16) -> Result<(), ActError> {
-    let d = driver(port);
+pub async fn cmd_hide_keyboard(port: u16, platform: Platform) -> Result<(), ActError> {
+    let d = driver_for(platform, port);
     d.hide_keyboard()
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
@@ -667,6 +717,7 @@ pub async fn cmd_wait_for(
     selector_str: String,
     timeout_secs: u64,
     port: u16,
+    platform: Platform,
     absent: bool,
     ocr_locales: Vec<String>,
 ) -> Result<(), ActError> {
@@ -680,7 +731,7 @@ pub async fn cmd_wait_for(
                 .into(),
         ));
     }
-    let d = driver(port);
+    let d = driver_for(platform, port);
     let timeout = Duration::from_secs(timeout_secs);
     // Waiting for text to appear is what the vision path is for, so this
     // polls rather than refusing. It cannot go through `wait_for`: that
@@ -688,7 +739,7 @@ pub async fn cmd_wait_for(
     if let Some(needle) = ocr_needle(&selector) {
         let deadline = std::time::Instant::now() + timeout;
         loop {
-            let seen = ocr_frame(&d, needle, &ocr_locales).await?.is_some();
+            let seen = ocr_frame(d.as_ref(), needle, &ocr_locales).await?.is_some();
             if seen != absent {
                 println!("{} {selector_str}", if absent { "gone" } else { "visible" });
                 return Ok(());
