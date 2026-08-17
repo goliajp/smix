@@ -218,10 +218,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
         /// Write a frame to this path the moment the tap returns.
@@ -254,10 +255,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -280,10 +282,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
         /// Wait until the element is gone, instead of until it appears.
@@ -306,10 +309,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -325,10 +329,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -355,10 +360,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -375,10 +381,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -388,10 +395,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -405,10 +413,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
         /// Print the software keyboard's keys.
@@ -432,10 +441,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -448,10 +458,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -467,10 +478,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -486,10 +498,11 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -827,10 +840,11 @@ enum AuthoringAction {
         #[arg(long, env = "SMIX_RUNNER_PORT")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -842,10 +856,11 @@ enum AuthoringAction {
         #[arg(long, env = "SMIX_RUNNER_PORT")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -859,10 +874,11 @@ enum AuthoringAction {
         #[arg(long, env = "SMIX_RUNNER_PORT")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
     },
@@ -897,10 +913,11 @@ enum AuthoringAction {
         #[arg(long, env = "SMIX_RUNNER_PORT")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
-        /// `.smix` registry. Used here only to find the runner port
-        /// that device is registered on — it does not change which
-        /// simulator or app the call is dispatched to, because the
-        /// port already names the runner.
+        /// `.smix` registry. It finds the runner port that device is
+        /// registered on, and — where a verb behaves differently by
+        /// platform (fill, find, tap and the rest of the act surface) —
+        /// reads the driver from the device's registered kind, so an
+        /// Android device is driven through its own runner, not simctl.
         #[arg(long)]
         device: Option<String>,
         /// Bundle id to write into the recorded flow. Without it the
@@ -971,6 +988,70 @@ impl RunPlatform {
         match self {
             Self::Ios => smix_adapter_maestro::FlowPlatform::Ios,
             Self::Android => smix_adapter_maestro::FlowPlatform::Android,
+        }
+    }
+}
+
+impl RunPlatform {
+    fn to_driver(self) -> smix_driver::Platform {
+        match self {
+            Self::Ios => smix_driver::Platform::Ios,
+            Self::Android => smix_driver::Platform::Android,
+        }
+    }
+}
+
+/// What the caller learned about a `--device` flag before dialing a
+/// driver for a CLI verb. `Registered` carries the kind the registry
+/// classified it as; `Unregistered` means `--device X` named something
+/// the registry does not know. Absent `--device` is `None` — then the
+/// dialed port's registered holder decides, the same way the consumer's
+/// `--port 22088` usage does (5560 was registered with `--runner-port
+/// 22088`).
+enum DeviceDial {
+    Registered(smix_simctl::registry::DeviceKind),
+    Unregistered,
+}
+
+/// Dial the platform a CLI verb should drive, so `fill` / `find` reach
+/// the same driver the flow path already uses instead of always the
+/// simctl one. This is C1's rule — the platform is a property of the
+/// device — brought to the act verbs' entrance: one rule, both entrances.
+///
+/// `--device` given and registered: its kind decides (reusing C1's
+/// mapping). `--device` given but unknown to the registry: an error
+/// naming the fix, never a silent iOS guess. No `--device`: the dialed
+/// port's registered holders decide — one platform among them wins, none
+/// keeps the bare-port iOS default (a wrong guess there ends in a loud
+/// 501 from the Android runner, not a silent mis-drive), and two
+/// different platforms on one port is an error rather than a coin toss.
+fn dial_platform(
+    device: Option<DeviceDial>,
+    port_holder_kinds: &[smix_simctl::registry::DeviceKind],
+) -> Result<RunPlatform, String> {
+    match device {
+        Some(DeviceDial::Registered(k)) => resolve_run_platform(None, Some(k)),
+        Some(DeviceDial::Unregistered) => Err(
+            "cannot tell which platform this --device is — it is not in the              registry, so its kind is unknown. Register it (`smix sim register              <alias> --udid <id> --kind emulator|simulator`) so the platform is              read from the device."
+                .to_string(),
+        ),
+        None => {
+            let mut platforms: Vec<RunPlatform> = Vec::new();
+            for k in port_holder_kinds {
+                let p = resolve_run_platform(None, Some(*k))
+                    .expect("a known device kind always classifies");
+                if !platforms.contains(&p) {
+                    platforms.push(p);
+                }
+            }
+            match platforms.as_slice() {
+                [] => Ok(RunPlatform::Ios),
+                [one] => Ok(*one),
+                _ => Err(
+                    "this runner port has devices of more than one platform                      registered on it (both an iOS and an Android device name it),                      so which one a verb without --device should drive is a coin                      toss. Pass --device to say which."
+                        .to_string(),
+                ),
+            }
         }
     }
 }
@@ -2909,12 +2990,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             device,
             then_screenshot,
         } => {
-            let p = runner_dial_port(port, device.as_deref());
+            let (p, plat) = runner_dial_target(port, device.as_deref())?;
             match then_screenshot {
-                Some(out) => act::cmd_tap_then_screenshot(selector, p, &out)
+                Some(out) => act::cmd_tap_then_screenshot(selector, p, plat, &out)
                     .await
                     .map_err(|e| CliError::Other(e.to_string()))?,
-                None => act::cmd_tap(selector, p, ocr_locale)
+                None => act::cmd_tap(selector, p, plat, ocr_locale)
                     .await
                     .map_err(|e| CliError::Other(e.to_string()))?,
             }
@@ -2925,8 +3006,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             port,
             device,
         } => {
-            let p = runner_dial_port(port, device.as_deref());
-            act::cmd_find(selector, p, ocr_locale)
+            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            act::cmd_find(selector, p, plat, ocr_locale)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
@@ -2938,8 +3019,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             device,
             absent,
         } => {
-            let p = runner_dial_port(port, device.as_deref());
-            act::cmd_wait_for(selector, timeout, p, absent, ocr_locale)
+            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            act::cmd_wait_for(selector, timeout, p, plat, absent, ocr_locale)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
@@ -2949,14 +3030,14 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             port,
             device,
         } => {
-            let p = runner_dial_port(port, device.as_deref());
-            act::cmd_fill(selector, text, p)
+            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            act::cmd_fill(selector, text, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
         Cmd::PressKey { key, port, device } => {
-            let p = runner_dial_port(port, device.as_deref());
-            act::cmd_press_key(key, p)
+            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            act::cmd_press_key(key, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
@@ -2966,8 +3047,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             port,
             device,
         } => {
-            let p = runner_dial_port(port, device.as_deref());
-            act::cmd_scroll(selector, direction, p)
+            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            act::cmd_scroll(selector, direction, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
@@ -2978,16 +3059,16 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             port,
             device,
         } => {
-            let p = runner_dial_port(port, device.as_deref());
+            let (p, plat) = runner_dial_target(port, device.as_deref())?;
             // Two ways in, and saying which was meant is the caller's
             // job: a swipe given both a direction and a pair of points
             // has two answers, and picking one silently is how a flow
             // ends up doing something nobody asked for.
             match (direction, from_point, to_point) {
-                (Some(d), None, None) => act::cmd_swipe(d, p)
+                (Some(d), None, None) => act::cmd_swipe(d, p, plat)
                     .await
                     .map_err(|e| CliError::Other(e.to_string()))?,
-                (None, Some(from), Some(to)) => act::cmd_swipe_between(&from, &to, p)
+                (None, Some(from), Some(to)) => act::cmd_swipe_between(&from, &to, p, plat)
                     .await
                     .map_err(|e| CliError::Other(e.to_string()))?,
                 (None, None, None) => {
@@ -3010,8 +3091,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             }
         }
         Cmd::HideKeyboard { port, device } => {
-            let p = runner_dial_port(port, device.as_deref());
-            act::cmd_hide_keyboard(p)
+            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            act::cmd_hide_keyboard(p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
@@ -3050,8 +3131,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
         Cmd::RunScript { path, port, device } => {
-            let p = runner_dial_port(port, device.as_deref());
-            script::cmd_run_script(&path, p)
+            let (p, plat) = runner_dial_target(port, device.as_deref())?;
+            script::cmd_run_script(&path, p, plat)
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }
@@ -5415,6 +5496,37 @@ fn runner_dial_port(flag: Option<u16>, device: Option<&str>) -> u16 {
     })
 }
 
+/// Dial both the port and the platform a CLI verb should drive, so
+/// `fill` / `find` reach the driver the flow path already uses. The port
+/// keeps `runner_dial_port`'s flag → env → registry → default ladder;
+/// the platform is read from the device the same way `smix run` reads it
+/// (C1) — one rule at both entrances. No `--device` lets the dialed
+/// port's registered holder decide (the consumer's `--port 22088`
+/// usage). An unclassifiable target is an error, not a silent iOS drive
+/// that would 501 on Android.
+fn runner_dial_target(
+    flag: Option<u16>,
+    device: Option<&str>,
+) -> Result<(u16, smix_driver::Platform), CliError> {
+    let port = runner_dial_port(flag, device);
+    let dial = device.map(|d| match lookup_registered(d) {
+        Some(sim) => DeviceDial::Registered(sim.kind),
+        None => DeviceDial::Unregistered,
+    });
+    let holders: Vec<smix_simctl::registry::DeviceKind> = if device.is_none() {
+        load_registry()
+            .registry
+            .all()
+            .filter(|(_, sim)| sim.runner_port == Some(port))
+            .map(|(_, sim)| sim.kind)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let plat = dial_platform(dial, &holders).map_err(CliError::Other)?;
+    Ok((port, plat.to_driver()))
+}
+
 /// Refuse `runner up` flags that only the iOS path implements.
 ///
 /// The Android branch reads `--runner-port` and nothing else. It used to
@@ -5699,6 +5811,86 @@ mod platform_from_device {
         assert!(
             err.to_lowercase().contains("register"),
             "and the durable fix: {err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod dial_platform {
+    use super::*;
+    use smix_simctl::registry::DeviceKind;
+
+    // C3: the same capability has to reach the same driver from every
+    // entrance. The CLI act verbs always built a SimctlDriver, so `fill`
+    // and `find text:` were 501 on Android while the flow's inputText
+    // worked on the same device. dial_platform brings C1's rule — the
+    // platform is a property of the device — to the verb entrance.
+
+    #[test]
+    fn a_registered_device_decides_by_its_kind() {
+        assert_eq!(
+            dial_platform(Some(DeviceDial::Registered(DeviceKind::Emulator)), &[]).unwrap(),
+            RunPlatform::Android,
+            "an emulator names the Android driver"
+        );
+        assert_eq!(
+            dial_platform(Some(DeviceDial::Registered(DeviceKind::Simulator)), &[]).unwrap(),
+            RunPlatform::Ios,
+            "a simulator names the iOS driver"
+        );
+        assert_eq!(
+            dial_platform(
+                Some(DeviceDial::Registered(DeviceKind::PhysicalAndroid)),
+                &[]
+            )
+            .unwrap(),
+            RunPlatform::Android,
+        );
+    }
+
+    /// The same judgement `smix run` makes: a --device the registry does
+    /// not know is an error naming the fix, not a silent iOS guess. The
+    /// two entrances must not carry two rules.
+    #[test]
+    fn an_unregistered_device_refuses_and_names_register() {
+        let err = dial_platform(Some(DeviceDial::Unregistered), &[]).unwrap_err();
+        assert!(
+            err.to_lowercase().contains("register"),
+            "the error must name the durable fix: {err}"
+        );
+    }
+
+    /// The consumer dialed by port (`--port 22088`, no --device); 5560
+    /// was registered with `--runner-port 22088`, so the port's holder
+    /// classifies it.
+    #[test]
+    fn a_ports_single_holder_decides_when_no_device() {
+        assert_eq!(
+            dial_platform(None, &[DeviceKind::Emulator]).unwrap(),
+            RunPlatform::Android,
+        );
+        assert_eq!(
+            dial_platform(None, &[DeviceKind::Simulator, DeviceKind::Simulator]).unwrap(),
+            RunPlatform::Ios,
+            "two holders of the same platform is not a conflict",
+        );
+    }
+
+    /// A bare port nobody registered keeps the old iOS default. A wrong
+    /// guess here ends in a loud 501 from the Android runner, not a
+    /// silent mis-drive — so the default is safe to keep.
+    #[test]
+    fn a_bare_port_keeps_the_ios_default() {
+        assert_eq!(dial_platform(None, &[]).unwrap(), RunPlatform::Ios);
+    }
+
+    /// Two platforms on one port is a coin toss, so refuse instead.
+    #[test]
+    fn two_platforms_on_one_port_refuses() {
+        let err = dial_platform(None, &[DeviceKind::Emulator, DeviceKind::Simulator]).unwrap_err();
+        assert!(
+            err.to_lowercase().contains("--device"),
+            "the error must name the way out: {err}"
         );
     }
 }

@@ -241,7 +241,11 @@ fn parse_step(idx: usize, v: &Value) -> Result<Step, String> {
 
 /// `smix run-script <path> [--port <port>]` — dispatch each step in order.
 /// First step error aborts; subsequent steps are not run.
-pub async fn cmd_run_script(path: &Path, port: u16) -> Result<(), ScriptError> {
+pub async fn cmd_run_script(
+    path: &Path,
+    port: u16,
+    platform: smix_driver::Platform,
+) -> Result<(), ScriptError> {
     let yaml = std::fs::read_to_string(path).map_err(|source| ScriptError::Read {
         path: path.display().to_string(),
         source,
@@ -251,12 +255,17 @@ pub async fn cmd_run_script(path: &Path, port: u16) -> Result<(), ScriptError> {
         reason,
     })?;
     for (idx, step) in steps.iter().enumerate() {
-        run_step(idx, step, port).await?;
+        run_step(idx, step, port, platform).await?;
     }
     Ok(())
 }
 
-async fn run_step(idx: usize, step: &Step, port: u16) -> Result<(), ScriptError> {
+async fn run_step(
+    idx: usize,
+    step: &Step,
+    port: u16,
+    platform: smix_driver::Platform,
+) -> Result<(), ScriptError> {
     let cmd = step.cmd_name();
     // Lifecycle steps (launch / terminate / install / uninstall) go through
     // simctl, not the runner; they don't take a port. Branch on those first
@@ -317,20 +326,30 @@ async fn run_step(idx: usize, step: &Step, port: u16) -> Result<(), ScriptError>
         _ => {}
     }
     let res = match step {
-        Step::Tap { selector } => cmd_tap(selector.clone(), port, Vec::new()).await,
-        Step::Find { selector } => cmd_find(selector.clone(), port, Vec::new()).await,
+        Step::Tap { selector } => cmd_tap(selector.clone(), port, platform, Vec::new()).await,
+        Step::Find { selector } => cmd_find(selector.clone(), port, platform, Vec::new()).await,
         // Flow yaml's `wait-for` is the presence form; absence is
         // `extendedWaitUntil: { notVisible: … }`, a different step.
         Step::WaitFor { selector, timeout } => {
-            cmd_wait_for(selector.clone(), *timeout, port, false, Vec::new()).await
+            cmd_wait_for(
+                selector.clone(),
+                *timeout,
+                port,
+                platform,
+                false,
+                Vec::new(),
+            )
+            .await
         }
-        Step::Fill { selector, text } => cmd_fill(selector.clone(), text.clone(), port).await,
-        Step::PressKey { key } => cmd_press_key(key.clone(), port).await,
+        Step::Fill { selector, text } => {
+            cmd_fill(selector.clone(), text.clone(), port, platform).await
+        }
+        Step::PressKey { key } => cmd_press_key(key.clone(), port, platform).await,
         Step::Scroll {
             selector,
             direction,
-        } => cmd_scroll(selector.clone(), direction.clone(), port).await,
-        Step::HideKeyboard => cmd_hide_keyboard(port).await,
+        } => cmd_scroll(selector.clone(), direction.clone(), port, platform).await,
+        Step::HideKeyboard => cmd_hide_keyboard(port, platform).await,
         Step::Tree { json } => cmd_tree(*json, port, false).await,
         Step::Describe { json } => cmd_describe(*json, port).await,
         Step::SystemPopups { json } => cmd_system_popups(*json, port).await,
