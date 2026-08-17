@@ -24,7 +24,7 @@ fn each_namespace_writes_its_documented_prefix() {
     store.attempts().put("flow-abc", b"{}").expect("put");
     store
         .project_devices()
-        .put("/abs/proj", b"dev")
+        .put("/Users/dev/proj", b"dev")
         .expect("put");
 
     let mut keys = store.raw_keys();
@@ -33,7 +33,7 @@ fn each_namespace_writes_its_documented_prefix() {
         keys,
         vec![
             "attempt:flow-abc".to_string(),
-            "project-device:/abs/proj".to_string(),
+            "project-device:/Users/dev/proj".to_string(),
             "runner:UDID-1".to_string(),
             "sim:UDID-1".to_string(),
         ],
