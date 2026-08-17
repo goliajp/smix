@@ -1141,12 +1141,17 @@ impl ServerHandler for SmixMcpService {
         // smix_tap_text until those tools were generalized away — an
         // introduction advertising tools that no longer exist.
         info.instructions = Some(
-            "smix drives an iOS Simulator. Call smix_launch_app first — it brings the \
-             app to the front and opens the runner session the other tools drive \
-             through. Then smix_describe to see what is on screen and learn the element \
-             ids, smix_tap / smix_fill / smix_press_key to interact, and \
-             smix_assert_visible to check. Name elements with exactly one of id / text / \
-             label / role / ocrText — prefer id, which survives copy edits and \
+            "This MCP server drives one iOS Simulator, bound by SMIX_UDID. smix \
+             itself reaches further — its CLI drives Android emulators and \
+             registered physical devices too (`smix run`, `smix fill`, `smix find`, \
+             `smix tree` take a `--device`, and the platform is read from the \
+             device); use the `smix` CLI directly when you need Android or a phone. \
+             Through this server: call smix_launch_app first — it brings the app to \
+             the front and opens the runner session the other tools drive through. \
+             Then smix_describe to see what is on screen and learn the element ids, \
+             smix_tap / smix_fill / smix_press_key to interact, and \
+             smix_assert_visible to check. Name elements with exactly one of id / \
+             text / label / role / ocrText — prefer id, which survives copy edits and \
              translation. Failures come back with near-miss suggestions and the \
              elements that were on screen; read them rather than guessing again. \
              The SMIX_UDID env var binds this server to one simulator and is \
