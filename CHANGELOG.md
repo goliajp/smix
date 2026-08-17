@@ -44,6 +44,19 @@ published on its own.
   kind — emulator or physical-Android to Android, simulator or
   physical-iOS to iOS. An explicit `--platform` still wins, for a device
   that is not registered.
+- **A dedicated device per project, resolved without `--device`.** `smix
+  init`'s alias, omitted, is now derived from the project directory's
+  name rather than always `"dev"` (two projects no longer register as the
+  same alias), and init records that alias as the project's default. The
+  record is a pointer, not a fact: a `project-device:` namespace in the
+  machine store maps the project's path to an alias string. What the
+  alias resolves to (UDID, kind, opt-in) stays in the machine registry —
+  the pointer may live with a project, the facts may not (§9 #9), and it
+  is machine-scoped, not committed. `smix run` with no `--device` then
+  resolves the project's default: explicit `--device` wins, then the
+  pointer, then the old iOS-default behaviour for anyone without one. It
+  never reaches for whatever is attached, and the platform is still read
+  from the resolved device.
 
 ### Changed
 
@@ -78,6 +91,16 @@ published on its own.
 - **The `--device` help no longer claims it does not change dispatch.**
   For verbs that behave differently by platform, `--device` now decides
   the driver, and the help says so.
+- **The MCP server says what smix drives, not just what it drives.** Its
+  introduction opened "smix drives an iOS Simulator" — true of that one
+  server (it binds one simulator via `SMIX_UDID`) but read as the whole
+  product. It now says so: this server drives one iOS Simulator, and
+  smix's CLI drives Android emulators and registered physical devices
+  too, with a `--device` and the platform read from it.
+- **The adb-guard refusal leads with smix.** Blocking an unpinned adb
+  command, it now names smix first — the intended way to drive a device,
+  which takes the device up front so a bare command cannot fall through to
+  an attached phone — and keeps pinned raw adb as the fallback.
 
 ### Fixed
 
@@ -145,6 +168,10 @@ published on its own.
   on both platforms, with no `--platform`, threading launch-to-front,
   platform inference, CLI `fill`/`find`, `--env` supply, and Android's
   text-bearing outline.
+- `project-pointer-holds-no-facts` — the per-project device pointer holds
+  only the alias string; a paired scan refuses any device fact (UDID,
+  kind, opt-in, runner port, lease) in its writer, so the pointer cannot
+  quietly become a second place facts live.
 
 ## [6.0.0] — 2026-08-16
 
