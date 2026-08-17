@@ -154,18 +154,24 @@ public enum TreeRoute {
   // MARK: - serialize
 
   /// Serialize a snapshot tree into A11yNode-shaped JSON. The serializer is
-  /// pure: no global state, no live XCUI queries. `appFrame` is used solely
-  /// to compute the `visible` heuristic; `logSink`, when non-nil, receives
+  /// pure: no global state, no live XCUI queries. Visibility is judged
+  /// against the root's own frame; `logSink`, when non-nil, receives
   /// one warning line if truncation occurs.
   public static func serialize(
     _ root: A11ySnapshotData,
-    appFrame: CGRect,
     logSink: ((String) -> Void)?
   ) -> Data {
     var truncated = false
+    // Judge visibility against the snapshot's OWN root frame, taken from
+    // the same live snapshot as the node frames — not a value cached at
+    // startup. A portrait-startup cache went stale the moment the app
+    // locked to landscape, and every node past the portrait width was
+    // wrongly called off-screen (C6c). This mirrors the Rust side's
+    // `is_visible_enough(node, tree)`, which already ∩'s `tree.bounds`.
+    let rootFrame = root.frame
     let dict = nodeToDict(
       root,
-      appFrame: appFrame,
+      rootFrame: rootFrame,
       depth: 0,
       truncated: &truncated,
       logSink: logSink
@@ -187,7 +193,7 @@ public enum TreeRoute {
 
   private static func nodeToDict(
     _ d: A11ySnapshotData,
-    appFrame: CGRect,
+    rootFrame: CGRect,
     depth: Int,
     truncated: inout Bool,
     logSink: ((String) -> Void)?,
@@ -241,7 +247,7 @@ public enum TreeRoute {
     // which KVC-walks the `_hasKeyboardFocus` ivar and matches the
     // focusHint identifier. See the POCO field's doc comment.
     out["hasFocus"] = d.hasFocus
-    out["visible"] = isVisible(d.frame, appFrame: appFrame)
+    out["visible"] = isVisible(d.frame, rootFrame)
 
     // Mark child recursion "in action container" once we hit an alert /
     // dialog / sheet at any depth. Use the ORIGINAL
@@ -259,7 +265,7 @@ public enum TreeRoute {
       out["children"] = d.children.map {
         nodeToDict(
           $0,
-          appFrame: appFrame,
+          rootFrame: rootFrame,
           depth: depth + 1,
           truncated: &truncated,
           logSink: logSink,
@@ -271,11 +277,16 @@ public enum TreeRoute {
   }
 
   /// `visible` heuristic. Snapshots are dead frames so no live `isHittable`
-  /// is available. Use frame ∩ appFrame as a cheap (~µs/node) proxy:
-  /// empty frames or frames entirely outside the app rect map to false.
-  static func isVisible(_ frame: CGRect, appFrame: CGRect) -> Bool {
+  /// is available. Use frame ∩ the snapshot's own root frame as a cheap
+  /// (~µs/node) proxy: empty frames map to false; a node entirely outside
+  /// the root maps to false. When the root frame is itself empty/null (a
+  /// synthesized all-windows root can be a zero or union rect), pass
+  /// conservatively rather than hide everything — mirrors the Rust
+  /// `is_visible_enough` "unknown root → conservative pass".
+  static func isVisible(_ frame: CGRect, _ rootFrame: CGRect) -> Bool {
     guard !frame.isEmpty else { return false }
-    let inter = frame.intersection(appFrame)
+    guard !rootFrame.isNull && !rootFrame.isEmpty else { return true }
+    let inter = frame.intersection(rootFrame)
     return !inter.isNull && !inter.isEmpty
   }
 

@@ -66,6 +66,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v6.1-c1-who-booted-this-emulator-e2e.sh",
     "v6.1-c5-two-devices-one-is-not-yours-e2e.sh",
     "v6.2-c1-platform-from-device-e2e.sh",
+    "v6.2-c6c-landscape-visible-e2e.sh",
 }
 
 # Scripts that name a shutdown without performing one, and why.
