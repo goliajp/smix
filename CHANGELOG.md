@@ -117,6 +117,13 @@ same way — the reader saw the ones on commands they happened to run.
   description, `hide = true` exempted by name. It found five of the
   twenty by reading the source rather than the rendered help, which is
   where the last five were invisible.
+- `v6.2-c6d-attach-on-device-e2e` — the attach retry, watched on a
+  simulator at last. An injected first-attempt timeout (through the
+  `up_on_with` bring-up seam — a compile-time injection point, not a
+  runtime switch on the shipped path) lets the real bring-up foreground
+  the app with `simctl launch` and attach; the runner it brings up then
+  drives the fixture. This closes the [5.0.0] "not watched on a device"
+  note: it has now been.
 
 ## [5.0.0] — 2026-08-14
 
@@ -209,14 +216,6 @@ its case go red:
 ending in a flag is checked by the flag being listed in that command's
 help, rather than by the command running with `--help` appended — which
 a value-taking flag cannot survive.
-
-### Not done
-
-The attach retry is asserted from a pure decision table and a TCP stub.
-**"It really timed out, really retried, and really attached" has not been
-watched on a device.** The cold plan expected an injection point for
-that; the checkpoint meant to build one became something else, and no
-test-only switch was added to a production path to manufacture it.
 
 ## [4.2.0] — 2026-08-12
 
