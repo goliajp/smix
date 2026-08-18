@@ -819,24 +819,24 @@ dependencies = [
 
 [[package]]
 name = "kevy-bytes"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "556d2d0126464fc102a07e754616bfd58640c8b2a55a8df3938c57e1cd5eb982"
+checksum = "0ec5aa5fcc0a0fb41bc6bf7fd200a8e55fbd9d9d7c38266055f922eef20974f6"
 dependencies = [
  "kevy-hash",
 ]
 
 [[package]]
 name = "kevy-compress"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e76e099b038b3204ec67b859c79aff9b0f718f95fcf2510b8472d8ee89669d7"
+checksum = "fb5205101a053950980fcb2911d2833269d1c5e7830e761c16608996468fedc2"
 
 [[package]]
 name = "kevy-embedded"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d82b300eb370b3c5f46fe469d63766568853ab551b9dbfa1f1f5f445102a4899"
+checksum = "e5d7040f49495d7da348aa2434aa014ba5409313646e48103a66b5ecb8378a93"
 dependencies = [
  "kevy-hash",
  "kevy-index",
@@ -852,30 +852,30 @@ dependencies = [
 
 [[package]]
 name = "kevy-hash"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0c78dbd37382c5c3c4b6bb367bdd2f5a58afefaf218bda282074729c1ec7119"
+checksum = "c726cd89a39b2c6bb5b9aaef9fb2d20d118301197692a19432ffc5925c2335da"
 
 [[package]]
 name = "kevy-index"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c87a3ebc2dd8596b3f5b1e51ea8545f14e3bfb44070fb4698caf9458aaac473"
+checksum = "29fbdfd2a28ca6e27e2b64402f8a0fd307b289d8b374b7b5840ea3ab6c8871e7"
 dependencies = [
  "kevy-time",
 ]
 
 [[package]]
 name = "kevy-madvise"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d38afb5f3b658c729d9c1ff7de98267eb16f6122cf4402fda161592b185ea312"
+checksum = "b376b5c32201cf6d43912c82743ca8bb8dd118a49cf4b80d1ca5db48ea89df46"
 
 [[package]]
 name = "kevy-map"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12ee14f658048ea40b98922b90e287687c6493051b03792fe513ffb8a9a3f52b"
+checksum = "3361feabd638d5bc58464ef9cd3b5b64bf0b49c660dbc6e844967de2e5a098c7"
 dependencies = [
  "kevy-hash",
  "kevy-madvise",
@@ -883,9 +883,9 @@ dependencies = [
 
 [[package]]
 name = "kevy-persist"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99dbe149a25f2bf9656c1ba59c2e19f14196c2559bb8fe94a7d05539b19a625c"
+checksum = "85cd8d4371b690fef85c689f8d99fabb6c7b404c64f09b34870b53a926136e63"
 dependencies = [
  "kevy-resp",
  "kevy-store",
@@ -894,42 +894,42 @@ dependencies = [
 
 [[package]]
 name = "kevy-ranktree"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24d736f1ade09868e7a08e418e0246123fcaf4ffe522140cf7deb76cd2d52854"
+checksum = "ae34ec47172c5781ae1bc4639939a0285c07e0e4cbe9c823b562d49d2ef26843"
 
 [[package]]
 name = "kevy-replicate"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8479743147d0bf1a04f82c7e296a868c205db84b0f9934a1da79e3222e317141"
+checksum = "b884f01936e3aa88d11bbee6cc28e5130e52e8aa2a9cc39349322b99f873a6c8"
 dependencies = [
  "kevy-resp",
 ]
 
 [[package]]
 name = "kevy-resp"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d37e6a49dab7db537872ef163268ad42958b69c5356d93f4f0e76a53e24e1971"
+checksum = "88b3738df2af628917d606ebc14b48724edca1e589fae6f29c93525f67db8520"
 dependencies = [
  "kevy-bytes",
 ]
 
 [[package]]
 name = "kevy-seg"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6c088686a58884e9917f5fabd7dc50bb48bdb738d64e896aa1a953c8a3b7e09"
+checksum = "23a50d4d711eed2058807e64abee3ae4baa63a37246d1ddddc84181b0c825b98"
 dependencies = [
  "kevy-sys",
 ]
 
 [[package]]
 name = "kevy-store"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b3ab9d0e47bb362b1c5ade263e2f8b3bbdafd8a96226ace2754dabd457c2da1"
+checksum = "63c71892bd6cee8a2b96c563a8978b67b48c7f9d23d0f47e0422f1df2ed9bf51"
 dependencies = [
  "kevy-bytes",
  "kevy-hash",
@@ -941,33 +941,33 @@ dependencies = [
 
 [[package]]
 name = "kevy-sys"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd2d6f0469fddef16c9768e92f12b30d99135d4538999cae0cdf8a05b58440e0"
+checksum = "269e12b5c262bef2bd32565d6d2ee171aed3af69fb3044ff4773ebb9c8cdb5c7"
 
 [[package]]
 name = "kevy-text"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99e54b85aeb19453afbf16359f1087914e6b12d7e62cd5fddf612fceb426ee7d"
+checksum = "f663610fedbada6a9fc592f75779a4cedacf88fa651c72f8244f12bf47bd25e3"
 
 [[package]]
 name = "kevy-time"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b768a3f5efd6626eeb9565f939151c8eed403a684e4c6517e8bc060e00ca0b9"
+checksum = "bbada972504b3cf8d317466d99b8dd0d6b72e6ec8fb2611ca0c7b28eba7bcf9a"
 
 [[package]]
 name = "kevy-vector"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f0e838eea699ec8953cc9108a46a917a3244a41d4e5bd56ad690897fab2b13c"
+checksum = "77e35e81019aed019601d978308a5251b5067cc8ecd7fe2bb31024d3e3dabd6c"
 
 [[package]]
 name = "kevy-vlog"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1a14bcc2d5fd7a699a5920dccd35a9aaa2fd1f78b6e625df7d27eb0bddb6738"
+checksum = "59b2cbf84784cadf88808e6689639509da5665a2d20c359c0d41d9f95e894788"
 dependencies = [
  "kevy-compress",
  "kevy-sys",
@@ -975,9 +975,9 @@ dependencies = [
 
 [[package]]
 name = "kevy-window"
-version = "5.2.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ab03cd06cb2af7be9adaf68e31d9e7e4a76b77e672a71478dff32c46b68827"
+checksum = "91358c191004f0eaa1494f4997ee945b9a1c7fb66e98168477a0eda19e333812"
 dependencies = [
  "kevy-index",
  "kevy-seg",
@@ -1602,7 +1602,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "smix-adapter-maestro"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "async-trait",
  "clap",
@@ -1635,7 +1635,7 @@ dependencies = [
 
 [[package]]
 name = "smix-adb"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1646,7 +1646,7 @@ dependencies = [
 
 [[package]]
 name = "smix-ai-tier"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1656,7 +1656,7 @@ dependencies = [
 
 [[package]]
 name = "smix-annotate"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "ab_glyph",
  "image",
@@ -1667,7 +1667,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "async-trait",
  "serde_json",
@@ -1685,7 +1685,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -1694,7 +1694,7 @@ dependencies = [
 
 [[package]]
 name = "smix-fixture"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1703,7 +1703,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1713,14 +1713,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-lease"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1730,7 +1730,7 @@ dependencies = [
 
 [[package]]
 name = "smix-metro-log"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "futures-util",
  "regex",
@@ -1743,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1761,7 +1761,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1772,14 +1772,14 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-sdk"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1802,7 +1802,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "regex",
  "serde",
@@ -1811,7 +1811,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1819,14 +1819,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "libc",
  "serde",
@@ -1841,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "6.2.0"
+version = "6.3.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -1851,7 +1851,7 @@ dependencies = [
 
 [[package]]
 name = "smix-verbs"
-version = "6.2.0"
+version = "6.3.0"
 
 [[package]]
 name = "socket2"
@@ -2499,9 +2499,9 @@ dependencies = [
 
 [[package]]
 name = "zerovec-derive"
-version = "0.11.4"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47402523226a02bfe5230160dc3ccc089aa6f6f19e7fcbb4e6f824bbb1b4aa62"
+checksum = "9f212a141d820099d57ffafb9569be9617a6f27d3dc881fbee8fb56642f917a9"
 dependencies = [
  "proc-macro2",
  "quote",

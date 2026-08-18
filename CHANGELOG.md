@@ -2,6 +2,60 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [6.3.0] — 2026-08-18
+
+A flow that ran green came back as `left no attempt record` in the middle
+of a release, and the gate was right to stop: the record it reads had
+been overwritten by another smix on the same machine.
+
+Flow attempts were one machine-global blob, rewritten whole, on a write
+that skipped itself when someone else held the store lock. Three ways to
+lose a record fall out of that shape, and the gate cannot tell any of
+them from a flow that never ran — a write skipped as busy, with no next
+attempt to persist it, because `smix run` records once and exits; a
+read-modify-write split across two lock intervals, so the second writer
+put its own snapshot back over the first; and a 32-entry cap on a shared
+list, where a neighbour's traffic could evict a record before its reader
+arrived.
+
+### Changed
+
+- **A flow's attempt record moved from the shared blob `one:flow-attempts`
+  to a key of its own, `attempt:<flowName>`.** Put, trim and sync now
+  happen inside a single `Store::open` — blocking, not best-effort.
+  Waiting a few milliseconds behind a neighbour is what makes the record
+  exist at all. Two smix processes recording different flows no longer
+  overwrite each other, and the cap evicts by age rather than by whoever
+  wrote last.
+- **Reads merge the old blob, so upgrading keeps the history.** The
+  singleton is read, never rewritten — migrating it would mean writing a
+  whole blob again, which is the shape being removed. Records written
+  before this version have no timestamp and are treated as the oldest.
+- **Downgrading is one-way for this data.** A 6.2.x smix reads only the
+  old blob, so diagnostic records written by 6.3.0 are not visible to it.
+  Nothing else is affected: this is `smix diagnostic dump`'s recent-flows
+  section and the retry attribution a release gate reads from it. Older
+  records stay readable in both directions.
+- **kevy-embedded 5.1 → 5.3.** Both intervening releases state nothing
+  changed on the wire and that a 5.1 data directory opens as-is in either
+  direction; what moved is the wasm feature set and the Lua dialect, and
+  smix uses neither.
+
+### Gates
+
+- Two concurrency gates that fail on the parent commit with their own
+  wording rather than a compile error: a neighbour's record surviving
+  this process recording its own, and a record written while a neighbour
+  holds the store lock.
+- The cap gate cannot be red on the parent commit — the old in-process
+  cap satisfied it — so its three assertions were each falsified by
+  mutation instead: raising the limit, reversing the trim order, and
+  reversing the returned order.
+
+`subprocess_ring` keeps its best-effort write. It runs after every
+`xcrun simctl` call, losing one diagnostic record there is acceptable,
+and blocking that path behind another process is not.
+
 ## [6.2.0] — 2026-08-17
 
 Two releases in one. The device under your hand belongs to someone, and
