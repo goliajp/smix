@@ -830,13 +830,24 @@ pub fn reset_app_data_counters_snapshot() -> ResetAppDataCounters {
 // Flow-attempt persistence for retry attribution. Called by `smix run`
 // after each flow completes (all its attempts done); read by
 // `smix diagnostic dump` to render the attribution table.
-// Backed by `~/.local/share/smix/flow-attempts.json`; capped at the
-// last 32 flows — enough history to diagnose a batch or two while
-// keeping the dump snapshot cheap to serialize.
+// One record per flow, under `attempt:<flowName>`, written while this
+// process holds the store's own lock.
+//
+// It was a single machine-global blob rewritten whole, on a write that
+// skipped itself when another smix held the lock. `smix run` records
+// once and exits, so "the next attempt will persist" was never true:
+// a busy neighbour meant the record simply did not exist — and the gate
+// that reads these back cannot tell that from a flow that never ran.
 mod flow_attempts {
     use serde::{Deserialize, Serialize};
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
     use std::sync::{Mutex, OnceLock};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Enough history to diagnose a batch or two while keeping the dump
+    /// snapshot cheap to serialize.
+    const MAX_PERSISTED_FLOWS: usize = 32;
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct PersistedAttempt {
@@ -851,12 +862,14 @@ mod flow_attempts {
     pub struct PersistedFlow {
         pub flow_name: String,
         pub attempts: Vec<PersistedAttempt>,
+        /// `serde(default)` is load-bearing: the blob written before
+        /// this field existed has no such key, and without a default the
+        /// merge in [`snapshot`] would call that history corrupt —
+        /// losing it to the very change that exists to keep it.
+        #[serde(default)]
+        pub recorded_at_ms: u64,
     }
 
-    fn cell() -> &'static Mutex<Vec<PersistedFlow>> {
-        static INSTANCE: OnceLock<Mutex<Vec<PersistedFlow>>> = OnceLock::new();
-        INSTANCE.get_or_init(|| Mutex::new(Vec::new()))
-    }
     fn persist_cell() -> &'static Mutex<Option<PathBuf>> {
         static INSTANCE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
         INSTANCE.get_or_init(|| Mutex::new(None))
@@ -878,64 +891,110 @@ mod flow_attempts {
         g.clone()
     }
 
-    fn loaded_flag() -> &'static OnceLock<Mutex<bool>> {
-        static INSTANCE: OnceLock<Mutex<bool>> = OnceLock::new();
-        &INSTANCE
+    fn now_ms() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
     }
 
-    fn ensure_loaded() {
-        super::diag_store::ensure_loaded(loaded_flag(), persist_cell(), load_persisted);
-    }
-
-    pub fn load_persisted() {
-        let Some(path) = persist_path_copy() else {
-            return;
-        };
-        let Some(loaded) = super::diag_store::load::<Vec<PersistedFlow>>(&path, "flow-attempts")
-        else {
-            return;
-        };
-        let mut g = match cell().lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        *g = loaded;
+    /// Blocking, not best-effort. Waiting a few milliseconds behind a
+    /// neighbour is the price of the record existing at all.
+    fn open() -> Option<smix_store::Store> {
+        let path = persist_path_copy()?;
+        match smix_store::Store::open(&super::diag_store::root_of(&path)) {
+            Ok(store) => Some(store),
+            Err(e) => {
+                eprintln!("smix: flow-attempts: {e}");
+                None
+            }
+        }
     }
 
     pub fn record(flow_name: &str, attempts: &[PersistedAttempt]) {
-        ensure_loaded();
-        {
-            let mut g = match cell().lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            g.push(PersistedFlow {
-                flow_name: flow_name.to_string(),
-                attempts: attempts.to_vec(),
-            });
-            if g.len() > 32 {
-                let drop = g.len() - 32;
-                g.drain(0..drop);
+        let Some(store) = open() else {
+            return;
+        };
+        let flow = PersistedFlow {
+            flow_name: flow_name.to_string(),
+            attempts: attempts.to_vec(),
+            recorded_at_ms: now_ms(),
+        };
+        if let Err(e) = store.attempts().put_json(flow_name, &flow) {
+            eprintln!("smix: persist flow-attempts: {e}");
+            return;
+        }
+        trim(&store);
+        if let Err(e) = store.sync() {
+            eprintln!("smix: persist flow-attempts: {e}");
+        }
+    }
+
+    /// Under the lock [`record`] already holds. Opening the store again
+    /// here would be a second read-modify-write window — the shape this
+    /// module exists to no longer have.
+    fn trim(store: &smix_store::Store) {
+        let ns = store.attempts();
+        let mut dated: Vec<(u64, String)> = Vec::new();
+        for id in ns.list() {
+            match ns.get_json::<PersistedFlow>(&id) {
+                Ok(Some(flow)) => dated.push((flow.recorded_at_ms, id)),
+                Ok(None) => {}
+                // Unreadable is not a candidate for eviction: deleting it
+                // erases the evidence of whatever wrote it.
+                Err(e) => eprintln!("smix: read flow-attempts {id}: {e}"),
             }
         }
-        persist_best_effort();
+        let Some(excess) = dated.len().checked_sub(MAX_PERSISTED_FLOWS) else {
+            return;
+        };
+        if excess == 0 {
+            return;
+        }
+        dated.sort();
+        for (_, id) in dated.into_iter().take(excess) {
+            if let Err(e) = ns.delete(&id) {
+                eprintln!("smix: trim flow-attempts {id}: {e}");
+            }
+        }
     }
 
     pub fn snapshot() -> Vec<PersistedFlow> {
-        ensure_loaded();
-        let g = match cell().lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
+        let Some(store) = open() else {
+            return Vec::new();
         };
-        g.clone()
-    }
-
-    fn persist_best_effort() {
-        let Some(path) = persist_path_copy() else {
-            return;
-        };
-        let flows = snapshot();
-        super::diag_store::store(&path, "flow-attempts", &flows);
+        let mut by_name: BTreeMap<String, PersistedFlow> = BTreeMap::new();
+        // The blob this used to be: read, never rewritten. Migrating it
+        // would mean writing a whole blob again, which is the thing that
+        // lost records in the first place.
+        match store
+            .singleton("flow-attempts")
+            .get_json::<Vec<PersistedFlow>>()
+        {
+            Ok(Some(old)) => {
+                for flow in old {
+                    by_name.insert(flow.flow_name.clone(), flow);
+                }
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("smix: read flow-attempts: {e}"),
+        }
+        let ns = store.attempts();
+        for id in ns.list() {
+            match ns.get_json::<PersistedFlow>(&id) {
+                Ok(Some(flow)) => {
+                    by_name.insert(flow.flow_name.clone(), flow);
+                }
+                Ok(None) => {}
+                Err(e) => eprintln!("smix: read flow-attempts {id}: {e}"),
+            }
+        }
+        let mut flows: Vec<PersistedFlow> = by_name.into_values().collect();
+        flows.sort_by(|a, b| {
+            a.recorded_at_ms
+                .cmp(&b.recorded_at_ms)
+                .then_with(|| a.flow_name.cmp(&b.flow_name))
+        });
+        flows
     }
 }
 
