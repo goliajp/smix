@@ -580,31 +580,44 @@ README_GRADLE_VERSION="$(grep 'jp.golia.smix:smix-sdk:' "$ROOT/README.md" | sed 
 [[ "$README_GRADLE_VERSION" == "$VERSION" ]] \
   || fail "README.md gradle coordinate=$README_GRADLE_VERSION doesn't match arg $VERSION (update the Install section)"
 
+SHIP_DRY="${SMIX_SHIP_DRYRUN:-0}"
+
 # --- npm write preflight ---------------------------------------------
 
 # Nine npm packages go out after crates.io, and crates.io cannot be
 # unpublished. `npm whoami` is not the predicate that matters: 6.3.0 had a
 # working whoami and still stopped dead at the first publish with EOTP,
 # by which point all 30 crates were already out. Read permission is not
-# write permission, so ask the registry for a write that can be taken
-# back — a throwaway dist-tag on an already-published version — and
-# refuse to start publishing anything if that write needs a human.
+# write permission, so this asks the registry for a real write before the
+# first crate goes out.
+#
+# The write is `latest` set to the version it already holds, sent as a raw
+# PUT. Two earlier shapes of this check were wrong and both are worth
+# remembering. A throwaway tag writes fine but cannot be cleaned up: the
+# token can PUT a dist-tag and not DELETE one (403), so every run would
+# leave another tag nothing can remove. Going through `npm dist-tag add`
+# writes nothing at all when the tag already holds that version — it says
+# "already set" and skips the request, which is green on a token that
+# cannot publish. curl does not short-circuit, so the PUT is always real,
+# and writing the value back over itself needs no cleanup.
 if [ "$SHIP_DRY" != 1 ]; then
-  log "npm write preflight (throwaway dist-tag)"
+  log "npm write preflight (PUT latest over itself)"
   PREFLIGHT_PKG="@goliapkg/smix"
   PREFLIGHT_VER="$(npm view "$PREFLIGHT_PKG" version 2>/dev/null)"
   [ -n "$PREFLIGHT_VER" ] \
     || fail "npm write preflight: cannot read $PREFLIGHT_PKG from the registry"
-  if npm dist-tag add "$PREFLIGHT_PKG@$PREFLIGHT_VER" ship-preflight \
-       >/tmp/smix-npm-preflight.log 2>&1; then
-    npm dist-tag rm "$PREFLIGHT_PKG" ship-preflight \
-        >>/tmp/smix-npm-preflight.log 2>&1 \
-      || log "  WARNING: the ship-preflight dist-tag is still there; remove it by hand"
-    log "  npm accepts a write without prompting"
-  else
-    cat /tmp/smix-npm-preflight.log >&2
-    fail "npm write preflight failed: the token in ~/.npmrc cannot publish without a prompt (EOTP asks for a one-time password on every write). Generate an automation token at https://www.npmjs.com/settings/goliapanda/tokens and set it as //registry.npmjs.org/:_authToken= in ~/.npmrc"
-  fi
+  PREFLIGHT_TOKEN="$(grep -m1 '_authToken=' "$HOME/.npmrc" 2>/dev/null | sed -E 's/.*_authToken=//' || true)"
+  [ -n "$PREFLIGHT_TOKEN" ] \
+    || fail "npm write preflight: no //registry.npmjs.org/:_authToken= in ~/.npmrc"
+  PREFLIGHT_CODE="$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
+    -H "Authorization: Bearer $PREFLIGHT_TOKEN" \
+    -H 'Content-Type: application/json' \
+    --data "\"$PREFLIGHT_VER\"" \
+    "https://registry.npmjs.org/-/package/@goliapkg%2fsmix/dist-tags/latest")"
+  case "$PREFLIGHT_CODE" in
+    2*) log "  npm accepts a write without prompting (latest still $PREFLIGHT_VER)" ;;
+    *)  fail "npm write preflight: the registry answered $PREFLIGHT_CODE to a dist-tag write. The token in ~/.npmrc cannot publish without a human — an EOTP token asks for a one-time password on every write. Generate one that bypasses 2FA at https://www.npmjs.com/settings/goliapanda/tokens and set it as //registry.npmjs.org/:_authToken= in ~/.npmrc" ;;
+  esac
 fi
 
 # --- publish crates.io (DAG order) -----------------------------------
@@ -649,7 +662,6 @@ index_has_version() {
     | grep -qE "\"vers\":\"$want\""
 }
 
-SHIP_DRY="${SMIX_SHIP_DRYRUN:-0}"
 [ "$SHIP_DRY" = 1 ] && export SMIX_SHIP_NAPI_DRYRUN=1
 
 for c in "${CRATES[@]}"; do
