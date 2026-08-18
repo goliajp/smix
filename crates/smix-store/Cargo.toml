@@ -8,7 +8,7 @@ repository.workspace = true
 description = "The one place smix persists anything — an embedded kevy store with a typed key schema."
 
 [dependencies]
-kevy-embedded = "5.1"
+kevy-embedded = "5.3"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
