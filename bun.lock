@@ -7,19 +7,19 @@
     },
     "crates/smix-node": {
       "name": "@goliapkg/smix-node",
-      "version": "6.2.0",
+      "version": "6.3.0",
       "devDependencies": {
         "@napi-rs/cli": "^3",
       },
       "optionalDependencies": {
-        "@goliapkg/smix-node-darwin-arm64": "6.2.0",
-        "@goliapkg/smix-node-darwin-x64": "6.2.0",
-        "@goliapkg/smix-node-linux-x64-gnu": "6.2.0",
+        "@goliapkg/smix-node-darwin-arm64": "6.3.0",
+        "@goliapkg/smix-node-darwin-x64": "6.3.0",
+        "@goliapkg/smix-node-linux-x64-gnu": "6.3.0",
       },
     },
     "npm/smix-cli": {
       "name": "@goliapkg/smix-cli",
-      "version": "6.2.0",
+      "version": "6.3.0",
       "bin": {
         "smix": "bin/smix.mjs",
         "smix-mcp": "bin/smix-mcp.mjs",
@@ -29,14 +29,14 @@
         "vitest": "^3",
       },
       "optionalDependencies": {
-        "@goliapkg/smix-cli-darwin-arm64": "6.2.0",
-        "@goliapkg/smix-cli-darwin-x64": "6.2.0",
-        "@goliapkg/smix-cli-linux-x64-gnu": "6.2.0",
+        "@goliapkg/smix-cli-darwin-arm64": "6.3.0",
+        "@goliapkg/smix-cli-darwin-x64": "6.3.0",
+        "@goliapkg/smix-cli-linux-x64-gnu": "6.3.0",
       },
     },
     "npm/smix-rn": {
       "name": "@goliapkg/smix",
-      "version": "6.2.0",
+      "version": "6.3.0",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "typescript": "^5.5.0",
@@ -48,7 +48,7 @@
     },
     "npm/smix-web-record": {
       "name": "@goliapkg/smix-web-record",
-      "version": "6.2.0",
+      "version": "6.3.0",
       "devDependencies": {
         "@types/node": "^20.14.0",
         "playwright": "^1.48.0",

@@ -1,6 +1,6 @@
 {
   "name": "@goliapkg/smix-web-record",
-  "version": "6.2.0",
+  "version": "6.3.0",
   "description": "smix web recording bridge — captures browser interactions via Playwright and maps them to the platform-neutral smix IRAction, the web capture leg of the cross-platform recorder.",
   "type": "module",
   "private": true,
