@@ -607,6 +607,21 @@ CRATES=(
 # --dry-run`'d (a dependent's dry-run cannot find a sibling that is not on
 # crates.io yet), so its validation is CI's `cargo test --workspace` + the
 # version and DAG gates above, not a dry-run.
+# Does the sparse index already carry this exact version? The index lays
+# names out by length: 1/2 char names sit in /1/ and /2/, 3 char names in
+# /3/<first>/, everything longer under <first two>/<next two>/.
+index_has_version() {
+  local name="$1" want="$2" path
+  case ${#name} in
+    1) path="1/$name" ;;
+    2) path="2/$name" ;;
+    3) path="3/${name:0:1}/$name" ;;
+    *) path="${name:0:2}/${name:2:2}/$name" ;;
+  esac
+  curl -sf -A "smix-ship" "https://index.crates.io/$path" 2>/dev/null \
+    | grep -qE "\"vers\":\"$want\""
+}
+
 SHIP_DRY="${SMIX_SHIP_DRYRUN:-0}"
 [ "$SHIP_DRY" = 1 ] && export SMIX_SHIP_NAPI_DRYRUN=1
 
@@ -615,12 +630,30 @@ for c in "${CRATES[@]}"; do
     log "cargo publish -p $c — SKIPPED (dry-run; interdependent crates validated by CI)"
     continue
   fi
+  # A ship that dies after crate 17 has to be re-runnable, and re-running
+  # means most of the DAG is already on the index. Ask the index first:
+  # packaging and verifying a crate only to be told the version exists
+  # costs a minute each, thirty times over. A curl that fails answers
+  # "not there" and falls through to the publish below, so a network
+  # hiccup degrades to the slow path rather than skipping a real upload.
+  if index_has_version "$c" "$VERSION"; then
+    log "cargo publish -p $c — already $VERSION on crates.io, skipping"
+    continue
+  fi
   log "cargo publish -p $c"
   # v1.0.4+ pattern from prior ship cycles: crates.io rate-limits at
   # ~1-2 publishes per 90s window under aggressive sequential publish.
   # Retry-with-backoff on 429/already-in-progress until success.
+  #
+  # The verdict is read from the log file, not from the pipeline's status:
+  # `set -o pipefail` at the top of this script hands back cargo's exit
+  # code even when the grep matched, which made the "already exists"
+  # tolerance dead code — 6.3.0 hit it, retried five times against a crate
+  # that was already published, and aborted the run.
   attempt=0
-  until ( cd "$ROOT" && cargo publish -p "$c" ) 2>&1 | tee /tmp/pub-$c.log | grep -qE "Published|already exists|already uploaded"; do
+  while :; do
+    ( cd "$ROOT" && cargo publish -p "$c" ) 2>&1 | tee /tmp/pub-$c.log || true
+    grep -qE "Published|already exists|already uploaded" /tmp/pub-$c.log && break
     attempt=$((attempt+1))
     if grep -qE "429|rate limit|too many requests" /tmp/pub-$c.log; then
       log "  rate-limited ($attempt), sleeping 90s"
