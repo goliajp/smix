@@ -580,6 +580,33 @@ README_GRADLE_VERSION="$(grep 'jp.golia.smix:smix-sdk:' "$ROOT/README.md" | sed 
 [[ "$README_GRADLE_VERSION" == "$VERSION" ]] \
   || fail "README.md gradle coordinate=$README_GRADLE_VERSION doesn't match arg $VERSION (update the Install section)"
 
+# --- npm write preflight ---------------------------------------------
+
+# Nine npm packages go out after crates.io, and crates.io cannot be
+# unpublished. `npm whoami` is not the predicate that matters: 6.3.0 had a
+# working whoami and still stopped dead at the first publish with EOTP,
+# by which point all 30 crates were already out. Read permission is not
+# write permission, so ask the registry for a write that can be taken
+# back — a throwaway dist-tag on an already-published version — and
+# refuse to start publishing anything if that write needs a human.
+if [ "$SHIP_DRY" != 1 ]; then
+  log "npm write preflight (throwaway dist-tag)"
+  PREFLIGHT_PKG="@goliapkg/smix"
+  PREFLIGHT_VER="$(npm view "$PREFLIGHT_PKG" version 2>/dev/null)"
+  [ -n "$PREFLIGHT_VER" ] \
+    || fail "npm write preflight: cannot read $PREFLIGHT_PKG from the registry"
+  if npm dist-tag add "$PREFLIGHT_PKG@$PREFLIGHT_VER" ship-preflight \
+       >/tmp/smix-npm-preflight.log 2>&1; then
+    npm dist-tag rm "$PREFLIGHT_PKG" ship-preflight \
+        >>/tmp/smix-npm-preflight.log 2>&1 \
+      || log "  WARNING: the ship-preflight dist-tag is still there; remove it by hand"
+    log "  npm accepts a write without prompting"
+  else
+    cat /tmp/smix-npm-preflight.log >&2
+    fail "npm write preflight failed: the token in ~/.npmrc cannot publish without a prompt (EOTP asks for a one-time password on every write). Generate an automation token at https://www.npmjs.com/settings/goliapanda/tokens and set it as //registry.npmjs.org/:_authToken= in ~/.npmrc"
+  fi
+fi
+
 # --- publish crates.io (DAG order) -----------------------------------
 
 # `smix-lease` sits before `smix-simctl` and `smix-adapter-maestro`,
@@ -688,6 +715,26 @@ NODE_DIR="$ROOT/crates/smix-node"
 NAPI_DRY=""
 [ "${SMIX_SHIP_NAPI_DRYRUN:-0}" = 1 ] && NAPI_DRY="--dry-run"
 
+# Does the registry already carry this exact version? Nine publish legs
+# run in sequence and any one of them can fail late; without this a rerun
+# dies on the first package that already went out — the same defect the
+# crates leg carried until 6.3.0 walked into it.
+npm_has_version() {
+  local pkg="$1" want="$2" esc
+  esc="$(printf '%s' "$pkg" | sed 's|/|%2f|')"
+  curl -sf -o /dev/null -A "smix-ship" "https://registry.npmjs.org/$esc/$want"
+}
+
+npm_publish_dir() {
+  local dir="$1" pkg="$2"
+  if [ -z "$NAPI_DRY" ] && npm_has_version "$pkg" "$VERSION"; then
+    log "  npm publish $pkg@$VERSION — already published, skipping"
+    return 0
+  fi
+  log "  npm publish $pkg@$VERSION${NAPI_DRY:+ (dry-run)}"
+  ( cd "$dir" && bun publish --access public $NAPI_DRY ) || fail "npm publish $pkg"
+}
+
 HEAD_SHA="$(cd "$ROOT" && git rev-parse HEAD)"
 RUN_ID="$(gh run list --repo goliajp/smix --workflow ci.yml --commit "$HEAD_SHA" \
   --json databaseId,conclusion --jq '[.[] | select(.conclusion=="success")][0].databaseId')" \
@@ -718,13 +765,9 @@ done < <(find "$ART_DIR" -name '*.node')
 
 # Publish the three per-triple subpackages, then the main loader package.
 for plat in darwin-arm64 darwin-x64 linux-x64-gnu; do
-  log "  npm publish @goliapkg/smix-node-$plat@$VERSION"
-  ( cd "$NODE_DIR/npm/$plat" && bun publish --access public $NAPI_DRY ) \
-    || fail "bun publish smix-node-$plat"
+  npm_publish_dir "$NODE_DIR/npm/$plat" "@goliapkg/smix-node-$plat"
 done
-log "  npm publish @goliapkg/smix-node@$VERSION"
-( cd "$NODE_DIR" && bun publish --access public $NAPI_DRY ) \
-  || fail "bun publish smix-node"
+npm_publish_dir "$NODE_DIR" "@goliapkg/smix-node"
 
 # --- publish the CLI as prebuilt binaries -----------------------------
 
@@ -757,25 +800,16 @@ done
 ( cd "$CLI_DIR" && bun x tsc ) || fail "smix-cli launcher build"
 
 for plat in darwin-arm64 darwin-x64 linux-x64-gnu; do
-  log "  npm publish @goliapkg/smix-cli-$plat@$VERSION"
-  ( cd "$CLI_DIR/npm/$plat" && bun publish --access public $NAPI_DRY ) \
-    || fail "bun publish smix-cli-$plat"
+  npm_publish_dir "$CLI_DIR/npm/$plat" "@goliapkg/smix-cli-$plat"
 done
-log "  npm publish @goliapkg/smix-cli@$VERSION"
-( cd "$CLI_DIR" && bun publish --access public $NAPI_DRY ) \
-  || fail "bun publish smix-cli"
+npm_publish_dir "$CLI_DIR" "@goliapkg/smix-cli"
 
 # --- publish npm ------------------------------------------------------
 
-log "npm publish @goliapkg/smix@$VERSION${NAPI_DRY:+ (dry-run)}"
 # v0.1.0 SDK ship cycle finding: `npm publish` crashes on nvm 26.5.0
 # node ("Cannot find module npm.js"), `bun publish` works. Prefer bun.
-if command -v bun >/dev/null 2>&1; then
-  ( cd "$ROOT/npm/smix-rn" && bun run build && bun publish --access public $NAPI_DRY ) \
-    || fail "bun publish"
-else
-  ( cd "$ROOT/npm/smix-rn" && npm publish --access public ${NAPI_DRY:+--dry-run} ) || fail "npm publish"
-fi
+( cd "$ROOT/npm/smix-rn" && bun run build ) || fail "smix-rn build"
+npm_publish_dir "$ROOT/npm/smix-rn" "@goliapkg/smix"
 
 # --- publish Maven Central -------------------------------------------
 
