@@ -115,6 +115,98 @@ fn get_body(port: u16, path: &str) -> Result<String, ()> {
 /// Read from `/windows`, which is the route that exists to tell "not
 /// attached" from "attached but unreadable" apart. A runner too old to
 /// serve it is not judged — an unknown answer is not a failing one.
+/// The package of whatever the platform says is resumed.
+///
+/// Two spellings appear in one `dumpsys activity activities` dump:
+/// `topResumedActivity=` and `ResumedActivity:`. They differ when more
+/// than one display reports, and the top one is the one in front, so it
+/// wins. Both wrap an `ActivityRecord{<hash> <user> <pkg>/<activity>}`,
+/// and the package is what precedes the slash.
+///
+/// Anything it cannot take apart yields None rather than a fragment: an
+/// unknown foreground is what makes the comparison downstream stand
+/// down, and half a package name would make it lie instead.
+pub fn parse_resumed_package(dump: &str) -> Option<String> {
+    fn package_after(marker: &str, dump: &str) -> Option<String> {
+        let at = dump.find(marker)?;
+        let rest = &dump[at + marker.len()..];
+        let record = rest.find("ActivityRecord{")?;
+        let inside = &rest[record + "ActivityRecord{".len()..];
+        let end = inside.find('}')?;
+        let fields = &inside[..end];
+        // `<hash> <user> <pkg>/<activity>` — the slash-bearing field is
+        // the only one that carries a package, whatever precedes it.
+        let slashed = fields.split_whitespace().find(|f| f.contains('/'))?;
+        let pkg = slashed.split('/').next()?;
+        if pkg.is_empty() {
+            return None;
+        }
+        Some(pkg.to_string())
+    }
+    // The markers carry their punctuation on purpose: "ResumedActivity"
+    // is a substring of "topResumedActivity", so the bare spelling would
+    // match the top line's tail and the two branches would never be
+    // distinguishable — a mutation that deleted the preference passed
+    // every test until these were pinned to `=` and `:`.
+    package_after("topResumedActivity=", dump).or_else(|| package_after("ResumedActivity:", dump))
+}
+
+/// Is the runner's view of the device the device's current one?
+///
+/// `automation_sees_an_app` asks whether *an* application window is
+/// attached and readable. That is a weaker question than it looks: an
+/// instrumentation whose accessibility connection went stale keeps
+/// serving the windows it saw before, and a leftover consumer app is a
+/// readable type-1 window like any other — so the runner passes that
+/// check while every tree it serves describes a screen nobody is
+/// looking at. Reproduced on emulator-5554: `dev.smix.fixture` in
+/// front, `/windows` listing systemui plus a consumer app installed
+/// hours earlier, `/tree` carrying no package at all.
+///
+/// Telling those apart needs a second source that cannot be wrong in
+/// the same direction, so this one comes from the device rather than
+/// from the runner: whatever the platform says is resumed has to be
+/// among the windows the runner can see.
+///
+/// An unknown answer is not a failing one. A runner too old for the
+/// route, a transport hiccup, an unparseable body, or no foreground to
+/// compare against all return Ok — this exists to catch a runner shown
+/// to be behind, not to invent a verdict it could not reach.
+pub fn runner_view_is_current(port: u16, foreground_package: &str) -> Result<(), String> {
+    if foreground_package.is_empty() {
+        return Ok(());
+    }
+    let Ok(body) = get_body(port, "/windows") else {
+        return Ok(());
+    };
+    let Some(start) = body.find('{') else {
+        return Ok(());
+    };
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(&body[start..]) else {
+        return Ok(());
+    };
+    let Some(windows) = doc.get("windows").and_then(|w| w.as_array()) else {
+        return Ok(());
+    };
+    let seen: Vec<&str> = windows
+        .iter()
+        .filter_map(|w| w.get("package").and_then(serde_json::Value::as_str))
+        .collect();
+    if seen.is_empty() {
+        return Ok(());
+    }
+    if seen.contains(&foreground_package) {
+        return Ok(());
+    }
+    Err(format!(
+        "the runner does not see the app that is in front. \
+         {foreground_package} is resumed on the device; the runner's windows \
+         are {}. Its accessibility connection is behind the device — every \
+         tree it serves describes a screen nobody is looking at",
+        seen.join(", ")
+    ))
+}
+
 fn automation_sees_an_app(port: u16) -> Result<(), String> {
     // The crate's own socket read rather than an HTTP client crate:
     // `read_health_bytes` next door does exactly this, and a dependency
