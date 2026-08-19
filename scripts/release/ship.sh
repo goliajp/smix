@@ -580,6 +580,29 @@ README_GRADLE_VERSION="$(grep 'jp.golia.smix:smix-sdk:' "$ROOT/README.md" | sed 
 [[ "$README_GRADLE_VERSION" == "$VERSION" ]] \
   || fail "README.md gradle coordinate=$README_GRADLE_VERSION doesn't match arg $VERSION (update the Install section)"
 
+# The CLI's three per-platform packages are hand-written files, unlike
+# the napi ones that `create-npm-dirs` regenerates from the crate version
+# every run. 6.3.0 walked into the difference: the parent was bumped and
+# already listed 6.3.0 in optionalDependencies while all three platform
+# packages still said 6.2.0, so the publish tried to overwrite 6.2.0 and
+# npm refused — after four packages had already gone out. Left unnoticed
+# it is worse than a failed publish: a parent that resolves to platform
+# versions nobody published installs as nothing at all.
+for cli_pkg in "$ROOT/npm/smix-cli/package.json" \
+               "$ROOT/npm/smix-cli/npm"/*/package.json; do
+  cli_pkg_version="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['version'])" "$cli_pkg")"
+  [ "$cli_pkg_version" = "$VERSION" ] \
+    || fail "$cli_pkg is version $cli_pkg_version, not $VERSION — bump it with the rest"
+done
+cli_opt_mismatch="$(python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+want = sys.argv[2]
+print(' '.join(f'{k}@{v}' for k, v in d.get('optionalDependencies', {}).items() if v != want))
+" "$ROOT/npm/smix-cli/package.json" "$VERSION")"
+[ -z "$cli_opt_mismatch" ] \
+  || fail "npm/smix-cli optionalDependencies point at $cli_opt_mismatch, not $VERSION"
+
 SHIP_DRY="${SMIX_SHIP_DRYRUN:-0}"
 
 # --- npm write preflight ---------------------------------------------
