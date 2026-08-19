@@ -57,6 +57,15 @@ fn stub(windows_body: &'static str) -> (u16, Arc<Mutex<Vec<String>>>) {
                 "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
+            let _ = sock.flush();
+            // The real runner says `Connection: close` and then keeps the
+            // socket open. A reader that waits for EOF waits for its own
+            // timeout instead, and every one of these predicates then
+            // answers "cannot tell" against every real device — which is
+            // how the one already in the file has been passing since it
+            // was written. Holding the socket here is what makes these
+            // tests describe the runner that exists.
+            std::thread::sleep(std::time::Duration::from_secs(30));
         }
     });
     (port, seen)
@@ -121,6 +130,37 @@ fn a_runner_seeing_nothing_but_system_windows_is_stale() {
         runner_view_is_current(port, "dev.smix.fixture").is_err(),
         "this is the shape the consumer reported — a tree carrying only \
          com.android.systemui — and it has to be refused too"
+    );
+}
+
+const NO_WINDOWS_AT_ALL: &str = r#"{"ok":true,"windows":[]}"#;
+
+const NO_WINDOWS_FIELD: &str = r#"{"ok":true}"#;
+
+#[test]
+fn a_runner_that_sees_no_windows_at_all_is_stale() {
+    // Observed on emulator-5554 after a forced replacement: /health 200,
+    // `dumpsys accessibility` reporting `Bound services:{}`, and /windows
+    // an empty list. The HTTP face is alive and the sensing face is dead,
+    // which is the worst shape of this bug — an empty list is not a
+    // missing answer, it is the runner saying it sees nothing.
+    let (port, _seen) = stub(NO_WINDOWS_AT_ALL);
+    assert!(
+        runner_view_is_current(port, "dev.smix.fixture").is_err(),
+        "an empty window list is the runner answering, and the answer is \
+         that it is blind"
+    );
+}
+
+#[test]
+fn a_runner_too_old_for_the_route_is_not_called_stale() {
+    // No `windows` key at all: the route is not served. That is not an
+    // answer about the device, so it cannot be read as a bad one.
+    let (port, _seen) = stub(NO_WINDOWS_FIELD);
+    assert_eq!(
+        runner_view_is_current(port, "dev.smix.fixture"),
+        Ok(()),
+        "a runner that does not serve the route has not been shown to be stale"
     );
 }
 
