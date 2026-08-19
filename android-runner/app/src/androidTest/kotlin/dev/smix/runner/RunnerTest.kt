@@ -134,6 +134,14 @@ class SmixHttpServer(
         return bmp
     }
 
+    /// How long `input-text` waits for a field to take focus.
+    ///
+    /// The tap that focuses it lands immediately before, and on a cold
+    /// screen the IME needs a moment. Two seconds is well past what that
+    /// takes on emulator-5554 and still short enough that a genuinely
+    /// unfocused field fails while the caller is watching.
+    private val FOCUS_SETTLE_MS = 2000L
+
     // NanoHTTPD serves each connection on its own thread, so the body
     // drained in `serve` reaches that request's handler and no other.
     private val drainedBody = ThreadLocal<String>()
@@ -642,14 +650,85 @@ class SmixHttpServer(
 
     private fun serveInputText(session: IHTTPSession): Response {
         val text = RunnerWire.decodeInputText(readBodyString(session))
-        // `adb shell input text` (mirrored via Instrumentation
-        // executeShellCommand) types into whichever field is currently
-        // focused. Caller must have tapped to focus first (AndroidDriver
-        // orchestrates host-resolve → tap → input-text).
+        // `adb shell input text` types into whichever field is focused,
+        // and says nothing about whether one was. Its exit code means
+        // "the key events were dispatched", not "the characters landed"
+        // — so this used to answer OK unconditionally, and a consumer
+        // reported the first named fill on a screen typing nothing while
+        // reporting success. Reproduced on emulator-5554 with the
+        // fixture: `smix fill` said "17 chars", the field held none.
+        //
+        // The clear handler next door has always done this properly:
+        // find the focused editable node, act on it, report what
+        // happened. This is that, for the other half of the same job.
+        //
+        // Waiting for the focus rather than sampling once: the caller
+        // taps to focus immediately before, and an IME that has not
+        // finished coming up has no focused editable node yet. That gap
+        // is the whole defect — the second fill on a screen always
+        // worked because by then the keyboard was already open.
+        val focused = awaitEditableFocus(FOCUS_SETTLE_MS)
+            ?: return errorJson(
+                Response.Status.INTERNAL_ERROR,
+                "no_focused_field",
+                "input-text: no editable field had focus after " +
+                    "${FOCUS_SETTLE_MS}ms. `input text` types into the focused " +
+                    "field and there was none, so the characters would have " +
+                    "gone nowhere while this reported success.",
+            )
+
+        val before = focused.text?.toString() ?: ""
         runShellCommand(RunnerWire.inputTextCommand(text))
         device.waitForIdle(500)
+
+        // Read the field back. `input text` cannot report a miss, so the
+        // only honest evidence that the characters arrived is the node
+        // saying so.
+        val after = readFocusedText() ?: ""
+        focused.recycle()
+        if (!after.contains(text)) {
+            return errorJson(
+                Response.Status.INTERNAL_ERROR,
+                "text_did_not_land",
+                "input-text: dispatched ${text.length} characters and the " +
+                    "focused field holds ${after.length} " +
+                    "(before: ${before.length}). The keys went somewhere " +
+                    "other than the field.",
+            )
+        }
         val body = RunnerWire.inputTextBody(text)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    /// The focused editable node, waited for rather than sampled.
+    ///
+    /// Returns null when none appears in time. The caller recycles.
+    private fun awaitEditableFocus(budgetMs: Long): AccessibilityNodeInfo? {
+        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
+        while (true) {
+            val node = instrumentation.uiAutomation.findFocus(
+                AccessibilityNodeInfo.FOCUS_INPUT,
+            )
+            if (node != null && node.isEditable) {
+                return node
+            }
+            node?.recycle()
+            if (android.os.SystemClock.elapsedRealtime() >= deadline) {
+                return null
+            }
+            device.waitForIdle(100)
+            Thread.sleep(50)
+        }
+    }
+
+    /// Current text of whatever holds input focus, read fresh.
+    private fun readFocusedText(): String? {
+        val node = instrumentation.uiAutomation.findFocus(
+            AccessibilityNodeInfo.FOCUS_INPUT,
+        ) ?: return null
+        val text = node.text?.toString()
+        node.recycle()
+        return text
     }
 
     /// Empty the focused field in one request.

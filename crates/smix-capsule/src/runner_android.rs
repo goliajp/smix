@@ -520,7 +520,25 @@ pub fn up(
             // actually cares about, and the answer comes from the
             // platform rather than from the runner.
             let foreground = resumed_package(serial);
-            match runner_view_is_current(port, foreground.as_deref().unwrap_or("")) {
+            // Retried rather than asked once, and the retry lives here
+            // rather than inside the predicate: a window list that has
+            // not caught up with an `am start` from a moment ago is not
+            // a broken runner, it is a runner mid-update. What separates
+            // the two is whether time fixes it. Three seconds of asking
+            // is enough for a foreground switch to land and far short of
+            // anything a dead accessibility connection recovers in —
+            // without this the release gate's own `am start; runner up`
+            // sequence was refused, which is the false positive this
+            // predicate has to not have.
+            let mut verdict = runner_view_is_current(port, foreground.as_deref().unwrap_or(""));
+            for _ in 0..3 {
+                if verdict.is_ok() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                verdict = runner_view_is_current(port, foreground.as_deref().unwrap_or(""));
+            }
+            match verdict {
                 Ok(()) => {
                     println!("runner up: already healthy on http://localhost:{port}");
                     return Ok(());
