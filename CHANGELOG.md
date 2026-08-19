@@ -2,6 +2,72 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [6.4.0] — 2026-08-19
+
+Three answers that came back `ok` without having been asked anything. A
+consumer driving a fresh Android emulator reported the first two; the
+third turned up underneath them, and it is the one that had been hiding
+the others.
+
+`input text` types into whatever holds focus and cannot report that
+nothing did, so the handler dispatched it and answered OK unconditionally
+— a fill onto a screen with no focused field typed into nothing and said
+success. `hideKeyboard` had no keyboard to hide and pressed back anyway,
+which with nothing to close closes the app: `ok:true`, and the fixture
+app on the launcher. And `runner up` read `/health`, which says the HTTP
+server answers and nothing about whether the instrumentation still sees
+the device — so a runner whose accessibility connection had gone stale
+was reported as already up.
+
+Underneath all three: the socket read those predicates are built on never
+got an answer. It waited for a close the runner does not send, on a
+deadline that raced the runner's own five-second one. `automation_sees_an_app`
+has been passing everything since the day it was written, because it had
+nothing to judge.
+
+### Changed
+
+- **`hideKeyboard` does nothing when no keyboard is up, instead of
+  pressing back.** The old behaviour pressed back unconditionally; with a
+  keyboard up that closes the keyboard, and with none it closes whatever
+  is in front. A flow that dismisses a keyboard defensively — iOS needs
+  it, the keyboard covers the button the next step taps — was backing out
+  of the app on Android and reporting success. It now reads the IME's own
+  window from the same list `/windows` serves, and still hides a keyboard
+  that is up.
+- **`/input-text` waits for a focused editable field and reads the field
+  back afterwards.** It used to answer OK whatever happened. It now
+  answers `no_focused_field` when nothing takes focus within two seconds
+  — the tap that focuses it lands immediately before, and a cold IME
+  needs a moment, which is why the second fill on a screen always worked
+  — and `text_did_not_land` when the characters are not in the field
+  afterwards. A flow whose fill was going nowhere now fails where it used
+  to go green.
+- **`runner up --platform android` refuses a runner whose view of the
+  device is stale, and `--force` recovers it.** The flag was documented
+  in the shared CLI help and never reached the Android path. The refusal
+  names what is in front, what the runner sees instead, and the command
+  that fixes it.
+
+### Fixed
+
+- **The runner-facing socket read now reads to `Content-Length` on a
+  deadline past the runner's own.** It read to EOF, and the runner
+  announces `Connection: close` and then leaves the socket open; its
+  five-second deadline raced NanoHTTPD's five-second `SOCKET_READ_TIMEOUT`,
+  which is how long a connection is held waiting for a second request on
+  it. Every predicate built on that read has been answering "cannot tell"
+  on every real device.
+
+### Notes
+
+- No migration. Nothing on disk or on the wire changed shape; the CLI
+  surface gained no verb and lost none.
+- Flows that were passing while typing nothing, or while backing out of
+  the app, will now fail. That is the point of the release, and it is
+  worth expecting: a green flow built on either defect was green without
+  having done the thing it describes.
+
 ## [6.3.0] — 2026-08-18
 
 A flow that ran green came back as `left no attempt record` in the middle
