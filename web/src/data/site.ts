@@ -1,10 +1,10 @@
 // Single source of the version + external links used across the page.
-// VERSION traces to the workspace Cargo.toml (`version = "6.3.0"`); the SDK
+// VERSION traces to the workspace Cargo.toml (`version = "6.4.0"`); the SDK
 // coordinates trace to README.md's Install section + the brief. Links point
 // at GitHub `HEAD` (the repo default branch) so they resolve regardless of
 // how this static bundle is deployed.
 
-export const VERSION = '6.3.0'
+export const VERSION = '6.4.0'
 
 const REPO = 'https://github.com/goliajp/smix'
 const BLOB = `${REPO}/blob/HEAD`
@@ -24,7 +24,7 @@ export const LINKS = {
   dashboard: `${TREE}/dashboard`,
 } as const
 
-// SDK install coordinates — all four ship the same 6.3.0 release surface.
+// SDK install coordinates — all four ship the same 6.4.0 release surface.
 export const SDKS = [
   {
     id: 'rust',
@@ -39,7 +39,7 @@ export const SDKS = [
     name: 'TypeScript / Node / Bun',
     registry: 'npm',
     coordinate: '@goliapkg/smix',
-    install: 'npm install @goliapkg/smix@6.3.0',
+    install: 'npm install @goliapkg/smix@6.4.0',
     lang: 'bash',
   },
   {
@@ -47,15 +47,15 @@ export const SDKS = [
     name: 'Kotlin / Java',
     registry: 'Maven Central',
     coordinate: 'jp.golia.smix:smix-sdk',
-    install: 'implementation("jp.golia.smix:smix-sdk:6.3.0")',
+    install: 'implementation("jp.golia.smix:smix-sdk:6.4.0")',
     lang: 'kotlin',
   },
   {
     id: 'swift',
     name: 'Swift Package Manager',
     registry: 'SwiftPM',
-    coordinate: 'goliajp/smix @ swift-v6.3.0',
-    install: '.package(url: "https://github.com/goliajp/smix", from: "6.3.0")',
+    coordinate: 'goliajp/smix @ swift-v6.4.0',
+    install: '.package(url: "https://github.com/goliajp/smix", from: "6.4.0")',
     lang: 'swift',
   },
 ] as const

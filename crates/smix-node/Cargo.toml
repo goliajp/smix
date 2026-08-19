@@ -19,11 +19,11 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "3", default-features = false, features = ["napi9", "tokio_rt"] }
 napi-derive = "3"
-smix-runner-client = { path = "../smix-runner-client", version = "6.3.0" }
-smix-input = { path = "../smix-input", version = "6.3.0" }
-smix-screen = { path = "../smix-screen", version = "6.3.0" }
-smix-selector = { path = "../smix-selector", version = "6.3.0" }
-smix-selector-resolver = { path = "../smix-selector-resolver", version = "6.3.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "6.4.0" }
+smix-input = { path = "../smix-input", version = "6.4.0" }
+smix-screen = { path = "../smix-screen", version = "6.4.0" }
+smix-selector = { path = "../smix-selector", version = "6.4.0" }
+smix-selector-resolver = { path = "../smix-selector-resolver", version = "6.4.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
