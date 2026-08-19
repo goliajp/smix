@@ -93,21 +93,81 @@ fn newest_source_mtime(dir: &Path) -> Option<std::time::SystemTime> {
 const WINDOW_TYPE_APPLICATION: u64 = 1;
 
 /// One GET against the forwarded runner port, response and all.
+/// One GET against the forwarded runner port, headers and body.
+///
+/// Reads to `Content-Length` rather than to EOF. The runner announces
+/// `Connection: close` and then leaves the socket open, so a reader that
+/// waits for the close waits for its own timeout — five seconds, and
+/// then an error, on every request against every real device. Both
+/// predicates below are built on this, which is why the older of them
+/// has been answering "cannot tell" since the day it was written:
+/// verified against emulator-5554, where the full 166-byte response
+/// arrived immediately and the socket stayed open until the deadline.
 fn get_body(port: u16, path: &str) -> Result<String, ()> {
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::time::Duration;
     let mut s = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_secs(2))
         .map_err(|_| ())?;
-    s.set_read_timeout(Some(Duration::from_secs(5)))
+    // Longer than the runner's own SOCKET_READ_TIMEOUT, which is five
+    // seconds: NanoHTTPD holds a connection open waiting for a second
+    // request on it and only lets go when that elapses, so a request
+    // issued right behind another one waits out that window before it is
+    // answered. A five-second deadline here races the runner's five and
+    // loses about as often as it wins — measured on emulator-5554, where
+    // a /windows asked straight after a /health took exactly 5.0s to
+    // answer, and this read gave up at 5.0s and reported "cannot tell".
+    // Which is why the predicate built on it, and the older one beside
+    // it, have been passing everything: they never got an answer to
+    // judge. Ten seconds is past the runner's window, not a guess at how
+    // slow a device might be.
+    s.set_read_timeout(Some(Duration::from_secs(10)))
         .map_err(|_| ())?;
     s.write_all(
         format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").as_bytes(),
     )
     .map_err(|_| ())?;
-    let mut out = String::new();
-    s.read_to_string(&mut out).map_err(|_| ())?;
-    Ok(out)
+
+    let mut raw: Vec<u8> = Vec::new();
+    let mut scratch = [0u8; 4096];
+    loop {
+        // A closed socket is still a legitimate ending — this reads to
+        // whichever comes first, the declared length or the close.
+        let n = match s.read(&mut scratch) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        raw.extend_from_slice(&scratch[..n]);
+        let Some(head_end) = find_header_end(&raw) else {
+            continue;
+        };
+        let Some(len) = content_length(&raw[..head_end]) else {
+            // No length to wait for: the close is the only ending there
+            // is, so keep reading until it comes.
+            continue;
+        };
+        if raw.len() >= head_end + len {
+            break;
+        }
+    }
+    if raw.is_empty() {
+        return Err(());
+    }
+    String::from_utf8(raw).map_err(|_| ())
+}
+
+/// Index just past the blank line that ends the headers.
+fn find_header_end(raw: &[u8]) -> Option<usize> {
+    raw.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4)
+}
+
+/// `Content-Length` off a header block, when it declares one.
+fn content_length(head: &[u8]) -> Option<usize> {
+    let text = std::str::from_utf8(head).ok()?;
+    text.lines()
+        .find_map(|l| l.split_once(':').filter(|(k, _)| k.eq_ignore_ascii_case("content-length")))
+        .and_then(|(_, v)| v.trim().parse::<usize>().ok())
 }
 
 /// Does the runner's automation see any application window at all?
@@ -151,6 +211,18 @@ pub fn parse_resumed_package(dump: &str) -> Option<String> {
     package_after("topResumedActivity=", dump).or_else(|| package_after("ResumedActivity:", dump))
 }
 
+/// What `dumpsys activity activities` says is in front, if it says.
+fn resumed_package(serial: &str) -> Option<String> {
+    let out = adb(serial)
+        .args(["shell", "dumpsys", "activity", "activities"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_resumed_package(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// Is the runner's view of the device the device's current one?
 ///
 /// `automation_sees_an_app` asks whether *an* application window is
@@ -192,11 +264,22 @@ pub fn runner_view_is_current(port: u16, foreground_package: &str) -> Result<(),
         .iter()
         .filter_map(|w| w.get("package").and_then(serde_json::Value::as_str))
         .collect();
-    if seen.is_empty() {
-        return Ok(());
-    }
     if seen.contains(&foreground_package) {
         return Ok(());
+    }
+    // An empty list is not a missing answer. Reaching here means the
+    // route was served and the runner named nothing — seen on
+    // emulator-5554 with /health at 200 and `dumpsys accessibility`
+    // reporting `Bound services:{}`: the HTTP face alive, the sensing
+    // face dead. Reading that as "cannot tell" is how the blindest
+    // runner of all would pass.
+    if seen.is_empty() {
+        return Err(format!(
+            "the runner sees no windows at all while {foreground_package} is \
+             resumed on the device. Its HTTP server answers and its \
+             accessibility connection does not — every tree it serves would \
+             be empty"
+        ));
     }
     Err(format!(
         "the runner does not see the app that is in front. \
@@ -387,7 +470,13 @@ fn device_present(serial: &str) -> bool {
 
 /// Bring the Kotlin runner up on `serial` and block until `/health`
 /// answers or `timeout_secs` elapses.
-pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(), String> {
+pub fn up(
+    root: &Path,
+    serial: &str,
+    port: u16,
+    timeout_secs: u64,
+    force: bool,
+) -> Result<(), String> {
     if !device_present(serial) {
         return Err(format!(
             "adb has no ready device {serial:?}. `adb devices` lists what is \
@@ -423,8 +512,31 @@ pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(),
     // emulator in front of it, and none without one.
     if health_ok(port) {
         if !rebuilt {
-            println!("runner up: already healthy on http://localhost:{port}");
-            return Ok(());
+            // /health says the HTTP server answers. It cannot say the
+            // instrumentation still sees this device: an accessibility
+            // connection that went stale keeps serving the windows it
+            // saw before, and that reads as healthy from here. So the
+            // question asked before reporting up is the one a caller
+            // actually cares about, and the answer comes from the
+            // platform rather than from the runner.
+            let foreground = resumed_package(serial);
+            match runner_view_is_current(port, foreground.as_deref().unwrap_or("")) {
+                Ok(()) => {
+                    println!("runner up: already healthy on http://localhost:{port}");
+                    return Ok(());
+                }
+                Err(why) if force => {
+                    println!("[runner] {why}");
+                    println!("[runner] --force: replacing it");
+                }
+                Err(why) => {
+                    return Err(format!(
+                        "port {port} answers /health, but {why}.\n\n\
+                         Bring it back in place:\n  \
+                         smix runner up {serial} --platform android --force"
+                    ));
+                }
+            }
         }
         println!("[runner] a runner from the previous APK is answering — replacing it");
         let _ = adb(serial)

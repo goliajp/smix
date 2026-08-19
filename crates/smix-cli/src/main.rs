@@ -2664,7 +2664,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         // has to be a device smix was invited to touch:
                         // this installs an APK.
                         let serial = resolve_android_serial(&device)?;
-                        smix_capsule::runner_android::up(&root, &serial, port, 180)
+                        smix_capsule::runner_android::up(&root, &serial, port, 180, force)
                             .map_err(CliError::Other)?;
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
