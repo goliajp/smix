@@ -470,7 +470,18 @@ fn device_present(serial: &str) -> bool {
 
 /// Bring the Kotlin runner up on `serial` and block until `/health`
 /// answers or `timeout_secs` elapses.
-pub fn up(
+/// Bring the runner up, reporting an already-serving one as up.
+///
+/// Kept at its original arity because it is a published entry point;
+/// the flag lives on `up_with`, the way the iOS side grew `up_on_with`
+/// beside `up_on`.
+pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(), String> {
+    up_with(root, serial, port, timeout_secs, false)
+}
+
+/// `up`, with the flag that says what to do about a runner of ours whose
+/// view of the device has gone stale: refuse and name the fix, or run it.
+pub fn up_with(
     root: &Path,
     serial: &str,
     port: u16,
