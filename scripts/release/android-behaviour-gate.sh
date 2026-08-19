@@ -289,4 +289,36 @@ if not walk(tree):
 print(f"  A4b: the fixture's field is in the tree (unreadableWindows={unreadable})")
 PY
 
-echo "android behaviour gate: 5/5 assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"
+# A5 — a named fill puts the text where it says it did.
+#
+# A consumer reported `inputText: { id, text }` reporting ok while the
+# field stayed empty — the first fill on a screen, every time, with the
+# tap-then-type form working on the same screen in the same run.
+# Reproduced here before this was written: `smix fill` printed
+# "filled id:fixture_input (17 chars)" and the field held nothing.
+#
+# The verdict reads fixture_result rather than the field, deliberately.
+# The field's own value comes back through the same path being tested;
+# the label only changes when Submit hands the app what it actually
+# received, so it says what arrived rather than what smix believes it
+# sent.
+adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
+adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+  || die "A5: could not foreground $FIXTURE_APP_ID"
+sleep 3
+
+MARKER="a5-first-fill"
+"$SMIX_BIN" fill "id:fixture_input" --text "$MARKER" --device "$SERIAL" \
+  --port "$PROXY_PORT" > "$WORK/a5-fill.log" 2>&1 \
+  || die "A5: the fill itself failed. Log: $WORK/a5-fill.log"
+"$SMIX_BIN" tap "id:fixture_submit" --device "$SERIAL" --port "$PROXY_PORT" \
+  > "$WORK/a5-submit.log" 2>&1 \
+  || die "A5: could not press Submit. Log: $WORK/a5-submit.log"
+sleep 1
+
+curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a5-tree.json" \
+  || die "A5: /tree did not answer"
+python3 "$REPO_ROOT/scripts/release/android-a5-verdict.py" \
+  "$WORK/a5-tree.json" "$MARKER" || die "A5: see above. $WORK/a5-tree.json"
+
+echo "android behaviour gate: 6/6 assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"
