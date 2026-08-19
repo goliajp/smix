@@ -866,8 +866,16 @@ npm_publish_dir "$ROOT/npm/smix-rn" "@goliapkg/smix"
 GRADLE_PUB_TASK=":sdk:publish"
 [ "$SHIP_DRY" = 1 ] && GRADLE_PUB_TASK=":sdk:publishToMavenLocal"
 log "gradle $GRADLE_PUB_TASK jp.golia.smix:smix-sdk:$VERSION"
+# `|| fail` is not enough here. 6.3.0 found gpg exiting 0 while printing
+# nothing at all — its database was held by a lock whose owner had died,
+# so the export was empty and that empty string went to gradle as the
+# signing key. Gradle then failed with "no configured signatory" a screen
+# later, naming neither gpg nor the lock. An empty key is a failure even
+# when the command that produced it says it succeeded.
 GPG_KEY="$(gpg --export-secret-keys --armor FBD802632CFAD78B 2>/dev/null)" \
   || fail "gpg export failed for signing key FBD802632CFAD78B"
+[ -n "$GPG_KEY" ] \
+  || fail "gpg exported an empty key for FBD802632CFAD78B — a dead process may still hold the keybox lock (look for .#lk* under ~/.gnupg/public-keys.d, check each owner with ps, then gpgconf --kill all)"
 ( cd "$ROOT/android-runner" && \
   ORG_GRADLE_PROJECT_signingInMemoryKey="$GPG_KEY" \
   ORG_GRADLE_PROJECT_signingInMemoryKeyId=2CFAD78B \
