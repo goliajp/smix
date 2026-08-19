@@ -321,4 +321,39 @@ curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a5-tree.json
 python3 "$REPO_ROOT/scripts/release/android-a5-verdict.py" \
   "$WORK/a5-tree.json" "$MARKER" || die "A5: see above. $WORK/a5-tree.json"
 
-echo "android behaviour gate: 6/6 assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"
+# A6 — hideKeyboard with no keyboard up leaves the screen alone.
+#
+# On Android there is no first-class hide-keyboard, so the handler
+# pressed back. Back with a keyboard up closes the keyboard; back with
+# none closes whatever is in front. A consumer reported the failure
+# shapes; the worse one is here — with nothing focused it answered
+# ok:true and sent the fixture to the launcher, so a flow that dismisses
+# a keyboard defensively (iOS needs it, the keyboard covers the next
+# button) silently backs out of the app on Android and reports success.
+#
+# maestro treats it as a no-op when there is no keyboard, and a flow
+# written once for both platforms cannot ask "is a keyboard up" first.
+adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
+adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+  || die "A6: could not foreground $FIXTURE_APP_ID"
+sleep 3
+
+curl -sS --max-time 15 -X POST "http://localhost:$PROXY_PORT/hide-keyboard" \
+  -H "App-Bundle-Id: $FIXTURE_APP_ID" -d '{}' > "$WORK/a6-hide.json" 2>&1 \
+  || die "A6: /hide-keyboard did not answer"
+sleep 2
+
+RESUMED="$(adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null \
+  | grep -m1 'ResumedActivity' || true)"
+case "$RESUMED" in
+  *"$FIXTURE_APP_ID"*)
+    echo "  A6: hideKeyboard with no keyboard up left $FIXTURE_APP_ID in front"
+    ;;
+  *)
+    die "A6: hideKeyboard with no keyboard up took $FIXTURE_APP_ID off the
+  screen. It answered $(cat "$WORK/a6-hide.json") and pressed back, which with
+  no keyboard to close closes the app instead. Resumed now: $RESUMED"
+    ;;
+esac
+
+echo "android behaviour gate: 7/7 assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"

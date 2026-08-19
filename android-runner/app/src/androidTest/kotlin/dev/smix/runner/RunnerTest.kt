@@ -390,14 +390,44 @@ class SmixHttpServer(
     }
 
     private fun serveHideKeyboard(): Response {
-        // No first-class UiAutomator2 hide-keyboard; closest is pressBack
-        // (closes IME without dismissing app). Mirror iOS swift handler
-        // semantics (no harm if no keyboard is up).
+        // There is no first-class UiAutomator2 hide-keyboard, and the
+        // closest thing is back. Back closes a keyboard when one is up
+        // and closes whatever is in front when none is — so the comment
+        // that used to sit here, claiming "no harm if no keyboard is
+        // up", described an intent the code did not carry out. Measured
+        // on emulator-5554: with nothing focused this answered ok:true
+        // and sent the fixture app to the launcher.
+        //
+        // That matters beyond the surprise. iOS needs the dismissal (the
+        // keyboard covers the button the next step taps) and maestro
+        // treats it as a no-op when there is no keyboard, so a flow
+        // written once for both platforms cannot be asked to know
+        // whether a keyboard is up before saying "put it away". The
+        // no-op is what makes the verb portable.
+        //
+        // An input-method window is the evidence, and it is the same
+        // window list /windows already serves.
+        if (!keyboardIsUp()) {
+            val body = RunnerWire.hideKeyboardBody(true)
+            return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+        }
         val ok = device.pressBack()
         device.waitForIdle(500)
         val body = RunnerWire.hideKeyboardBody(ok)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
+
+    /// Is an input-method window on screen?
+    ///
+    /// `TYPE_INPUT_METHOD` is what the IME's own window reports, so this
+    /// asks the same source /windows does rather than guessing from
+    /// focus — a focused text field with the keyboard dismissed is an
+    /// ordinary state, and it is exactly the one that used to send back
+    /// through to the app.
+    private fun keyboardIsUp(): Boolean =
+        instrumentation.uiAutomation.windows.any {
+            it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+        }
 
     private fun serveSetOrientation(session: IHTTPSession): Response {
         val orientation = RunnerWire.decodeSetOrientation(readBodyString(session))
