@@ -46,6 +46,109 @@ else
   log "WARNING: bypass smoke gate via --i-know-what-im-doing"
 fi
 
+# --- version match ---------------------------------------------------
+
+WORKSPACE_VERSION="$(grep '^version' "$ROOT/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')"
+[[ "$WORKSPACE_VERSION" == "$VERSION" ]] \
+  || fail "workspace Cargo.toml version=$WORKSPACE_VERSION doesn't match arg $VERSION"
+
+# python3, not `node -p`: under nvm, `node` is a shell function that only
+# exists in an interactive shell, so a ship started from a script or a
+# non-interactive context died here with "node: command not found" after
+# every gate had already passed. python3 is what the rest of this script
+# already relies on.
+NPM_VERSION="$(python3 -c 'import json;print(json.load(open("'"$ROOT"'/npm/smix-rn/package.json"))["version"])')"
+[[ "$NPM_VERSION" == "$VERSION" ]] \
+  || fail "npm package.json version=$NPM_VERSION doesn't match arg $VERSION"
+
+# v1.0.26 — Android side version gates. Two spots historically drifted:
+#   1. android-runner Kotlin runner VERSION (froze at v6.0-c3b for
+#      multiple releases while the workspace advanced — /health lied).
+#   2. android-runner/sdk gradle mavenCentralVersion.
+KOTLIN_RUNNER_VERSION="$(grep 'const val VERSION' "$ROOT/android-runner/app/src/main/kotlin/dev/smix/runner/SmixRunner.kt" | sed 's/.*"\(.*\)".*/\1/')"
+[[ "$KOTLIN_RUNNER_VERSION" == "$VERSION" ]] \
+  || fail "android-runner SmixRunner.VERSION=$KOTLIN_RUNNER_VERSION doesn't match arg $VERSION (bump android-runner/app/src/main/kotlin/dev/smix/runner/SmixRunner.kt)"
+
+GRADLE_VERSION="$(grep 'val mavenCentralVersion' "$ROOT/android-runner/sdk/build.gradle.kts" | sed 's/.*"\(.*\)".*/\1/')"
+[[ "$GRADLE_VERSION" == "$VERSION" ]] \
+  || fail "android-runner sdk mavenCentralVersion=$GRADLE_VERSION doesn't match arg $VERSION"
+
+# v1.0.26 — README install snippet shows the current gradle release
+# coordinate; gate it so it can't silently go stale across releases.
+README_GRADLE_VERSION="$(grep 'jp.golia.smix:smix-sdk:' "$ROOT/README.md" | sed 's/.*smix-sdk:\([0-9.]*\).*/\1/' | head -1)"
+[[ "$README_GRADLE_VERSION" == "$VERSION" ]] \
+  || fail "README.md gradle coordinate=$README_GRADLE_VERSION doesn't match arg $VERSION (update the Install section)"
+
+# The CLI's three per-platform packages are hand-written files, unlike
+# the napi ones that `create-npm-dirs` regenerates from the crate version
+# every run. 6.3.0 walked into the difference: the parent was bumped and
+# already listed 6.3.0 in optionalDependencies while all three platform
+# packages still said 6.2.0, so the publish tried to overwrite 6.2.0 and
+# npm refused — after four packages had already gone out. Left unnoticed
+# it is worse than a failed publish: a parent that resolves to platform
+# versions nobody published installs as nothing at all.
+for cli_pkg in "$ROOT/npm/smix-cli/package.json" \
+               "$ROOT/npm/smix-cli/npm"/*/package.json; do
+  cli_pkg_version="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['version'])" "$cli_pkg")"
+  [ "$cli_pkg_version" = "$VERSION" ] \
+    || fail "$cli_pkg is version $cli_pkg_version, not $VERSION — bump it with the rest"
+done
+cli_opt_mismatch="$(python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+want = sys.argv[2]
+print(' '.join(f'{k}@{v}' for k, v in d.get('optionalDependencies', {}).items() if v != want))
+" "$ROOT/npm/smix-cli/package.json" "$VERSION")"
+[ -z "$cli_opt_mismatch" ] \
+  || fail "npm/smix-cli optionalDependencies point at $cli_opt_mismatch, not $VERSION"
+
+SHIP_DRY="${SMIX_SHIP_DRYRUN:-0}"
+
+# --- npm write preflight ---------------------------------------------
+
+# Nine npm packages go out after crates.io, and crates.io cannot be
+# unpublished. `npm whoami` is not the predicate that matters: 6.3.0 had a
+# working whoami and still stopped dead at the first publish with EOTP,
+# by which point all 30 crates were already out. Read permission is not
+# write permission, so this asks the registry for a real write before the
+# first crate goes out.
+#
+# The write is `latest` set to the version it already holds, sent as a raw
+# PUT. Two earlier shapes of this check were wrong and both are worth
+# remembering. A throwaway tag writes fine but cannot be cleaned up: the
+# token can PUT a dist-tag and not DELETE one (403), so every run would
+# leave another tag nothing can remove. Going through `npm dist-tag add`
+# writes nothing at all when the tag already holds that version — it says
+# "already set" and skips the request, which is green on a token that
+# cannot publish. curl does not short-circuit, so the PUT is always real,
+# and writing the value back over itself needs no cleanup.
+if [ "$SHIP_DRY" != 1 ]; then
+  log "npm write preflight (PUT latest over itself)"
+  PREFLIGHT_PKG="@goliapkg/smix"
+  PREFLIGHT_VER="$(npm view "$PREFLIGHT_PKG" version 2>/dev/null)"
+  [ -n "$PREFLIGHT_VER" ] \
+    || fail "npm write preflight: cannot read $PREFLIGHT_PKG from the registry"
+  PREFLIGHT_TOKEN="$(grep -m1 '_authToken=' "$HOME/.npmrc" 2>/dev/null | sed -E 's/.*_authToken=//' || true)"
+  [ -n "$PREFLIGHT_TOKEN" ] \
+    || fail "npm write preflight: no //registry.npmjs.org/:_authToken= in ~/.npmrc"
+  PREFLIGHT_CODE="$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
+    -H "Authorization: Bearer $PREFLIGHT_TOKEN" \
+    -H 'Content-Type: application/json' \
+    --data "\"$PREFLIGHT_VER\"" \
+    "https://registry.npmjs.org/-/package/@goliapkg%2fsmix/dist-tags/latest")"
+  case "$PREFLIGHT_CODE" in
+    2*) log "  npm accepts a write without prompting (latest still $PREFLIGHT_VER)" ;;
+    *)  fail "npm write preflight: the registry answered $PREFLIGHT_CODE to a dist-tag write. The token in ~/.npmrc cannot publish without a human — an EOTP token asks for a one-time password on every write. Generate one that bypasses 2FA at https://www.npmjs.com/settings/goliapanda/tokens and set it as //registry.npmjs.org/:_authToken= in ~/.npmrc" ;;
+  esac
+fi
+
+# Everything above this line reads files and makes one HTTP request; it
+# finishes in seconds. It used to sit at gate 50 of 53, behind an hour of
+# `cargo test`, a release build and two device suites — so 6.3.0 spent
+# four separate 90-minute runs discovering, at the very end, that a
+# version string was stale or a token could not write. A check that costs
+# a second belongs before the ones that cost an hour.
+
 # --- swift-bridge unit tests ------------------------------------------
 # NOT bypassable. This suite sat outside the gate long enough for a test
 # asserting a two-release-old contract to fail unnoticed for 15+ releases.
@@ -103,6 +206,18 @@ log "android unit tests + androidTest compile (sdk + app; compiles kotlin bindin
 ( cd "$ROOT/android-runner" && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain ) \
     > /tmp/smix-ship-kotlin-test.log 2>&1 \
   || fail "Android unit tests / androidTest compile FAILED — see /tmp/smix-ship-kotlin-test.log"
+# Built here rather than just before the corpus gate: the android gates
+# run first and used to fall back to whatever smix was on PATH, so a
+# 6.2.0 binary spent this release verifying 6.3.0. The corpus gate had
+# already been fixed for exactly that; the device gates above it had not.
+# Build the workspace's own smix release for the gate — a global `smix` on
+# PATH is whatever version was installed some other day, and a mismatch
+# between it and the runner sources this workspace ships is exactly how a
+# pre-fold binary drove the post-fold runner in dry-run and the gate turned
+# red on a real driver/runner drift.
+log "cargo build -p smix-cli --release (for corpus gate)"
+( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release"
+
 
 # --- android instrumentation (device) ----------------------------------
 # The :sdk assertion suite on a pinned emulator. Placed early — before
@@ -127,7 +242,8 @@ bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
 # Adjacent to the instrumentation gate because they share the emulator:
 # a missing device should fail once, in one place, early.
 log "android behaviour (device)"
-bash "$ROOT/scripts/release/android-behaviour-gate.sh" \
+SMIX_BIN="$ROOT/target/release/smix" \
+  bash "$ROOT/scripts/release/android-behaviour-gate.sh" \
   || fail "android behaviour gate FAILED — see the verdict above"
 
 # --- route conformance ------------------------------------------------
@@ -391,13 +507,6 @@ if [[ -z "${SMIX_CORPUS_SIM:-}" ]]; then
 fi
 [[ -n "$SMIX_CORPUS_SIM" ]] \
   || fail "corpus gate needs SMIX_CORPUS_SIM or a booted dev sim"
-# Build the workspace's own smix release for the gate — a global `smix` on
-# PATH is whatever version was installed some other day, and a mismatch
-# between it and the runner sources this workspace ships is exactly how a
-# pre-fold binary drove the post-fold runner in dry-run and the gate turned
-# red on a real driver/runner drift.
-log "cargo build -p smix-cli --release (for corpus gate)"
-( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release"
 
 log "corpus gate on $SMIX_CORPUS_SIM"
 SMIX_CORPUS_SIM="$SMIX_CORPUS_SIM" \
@@ -545,102 +654,6 @@ if command -v cargo-semver-checks >/dev/null 2>&1; then
   fi
 else
   fail "cargo-semver-checks not installed — cargo install cargo-semver-checks (required for a 2.0.0 ship)"
-fi
-
-# --- version match ---------------------------------------------------
-
-WORKSPACE_VERSION="$(grep '^version' "$ROOT/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')"
-[[ "$WORKSPACE_VERSION" == "$VERSION" ]] \
-  || fail "workspace Cargo.toml version=$WORKSPACE_VERSION doesn't match arg $VERSION"
-
-# python3, not `node -p`: under nvm, `node` is a shell function that only
-# exists in an interactive shell, so a ship started from a script or a
-# non-interactive context died here with "node: command not found" after
-# every gate had already passed. python3 is what the rest of this script
-# already relies on.
-NPM_VERSION="$(python3 -c 'import json;print(json.load(open("'"$ROOT"'/npm/smix-rn/package.json"))["version"])')"
-[[ "$NPM_VERSION" == "$VERSION" ]] \
-  || fail "npm package.json version=$NPM_VERSION doesn't match arg $VERSION"
-
-# v1.0.26 — Android side version gates. Two spots historically drifted:
-#   1. android-runner Kotlin runner VERSION (froze at v6.0-c3b for
-#      multiple releases while the workspace advanced — /health lied).
-#   2. android-runner/sdk gradle mavenCentralVersion.
-KOTLIN_RUNNER_VERSION="$(grep 'const val VERSION' "$ROOT/android-runner/app/src/main/kotlin/dev/smix/runner/SmixRunner.kt" | sed 's/.*"\(.*\)".*/\1/')"
-[[ "$KOTLIN_RUNNER_VERSION" == "$VERSION" ]] \
-  || fail "android-runner SmixRunner.VERSION=$KOTLIN_RUNNER_VERSION doesn't match arg $VERSION (bump android-runner/app/src/main/kotlin/dev/smix/runner/SmixRunner.kt)"
-
-GRADLE_VERSION="$(grep 'val mavenCentralVersion' "$ROOT/android-runner/sdk/build.gradle.kts" | sed 's/.*"\(.*\)".*/\1/')"
-[[ "$GRADLE_VERSION" == "$VERSION" ]] \
-  || fail "android-runner sdk mavenCentralVersion=$GRADLE_VERSION doesn't match arg $VERSION"
-
-# v1.0.26 — README install snippet shows the current gradle release
-# coordinate; gate it so it can't silently go stale across releases.
-README_GRADLE_VERSION="$(grep 'jp.golia.smix:smix-sdk:' "$ROOT/README.md" | sed 's/.*smix-sdk:\([0-9.]*\).*/\1/' | head -1)"
-[[ "$README_GRADLE_VERSION" == "$VERSION" ]] \
-  || fail "README.md gradle coordinate=$README_GRADLE_VERSION doesn't match arg $VERSION (update the Install section)"
-
-# The CLI's three per-platform packages are hand-written files, unlike
-# the napi ones that `create-npm-dirs` regenerates from the crate version
-# every run. 6.3.0 walked into the difference: the parent was bumped and
-# already listed 6.3.0 in optionalDependencies while all three platform
-# packages still said 6.2.0, so the publish tried to overwrite 6.2.0 and
-# npm refused — after four packages had already gone out. Left unnoticed
-# it is worse than a failed publish: a parent that resolves to platform
-# versions nobody published installs as nothing at all.
-for cli_pkg in "$ROOT/npm/smix-cli/package.json" \
-               "$ROOT/npm/smix-cli/npm"/*/package.json; do
-  cli_pkg_version="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['version'])" "$cli_pkg")"
-  [ "$cli_pkg_version" = "$VERSION" ] \
-    || fail "$cli_pkg is version $cli_pkg_version, not $VERSION — bump it with the rest"
-done
-cli_opt_mismatch="$(python3 -c "
-import json,sys
-d = json.load(open(sys.argv[1]))
-want = sys.argv[2]
-print(' '.join(f'{k}@{v}' for k, v in d.get('optionalDependencies', {}).items() if v != want))
-" "$ROOT/npm/smix-cli/package.json" "$VERSION")"
-[ -z "$cli_opt_mismatch" ] \
-  || fail "npm/smix-cli optionalDependencies point at $cli_opt_mismatch, not $VERSION"
-
-SHIP_DRY="${SMIX_SHIP_DRYRUN:-0}"
-
-# --- npm write preflight ---------------------------------------------
-
-# Nine npm packages go out after crates.io, and crates.io cannot be
-# unpublished. `npm whoami` is not the predicate that matters: 6.3.0 had a
-# working whoami and still stopped dead at the first publish with EOTP,
-# by which point all 30 crates were already out. Read permission is not
-# write permission, so this asks the registry for a real write before the
-# first crate goes out.
-#
-# The write is `latest` set to the version it already holds, sent as a raw
-# PUT. Two earlier shapes of this check were wrong and both are worth
-# remembering. A throwaway tag writes fine but cannot be cleaned up: the
-# token can PUT a dist-tag and not DELETE one (403), so every run would
-# leave another tag nothing can remove. Going through `npm dist-tag add`
-# writes nothing at all when the tag already holds that version — it says
-# "already set" and skips the request, which is green on a token that
-# cannot publish. curl does not short-circuit, so the PUT is always real,
-# and writing the value back over itself needs no cleanup.
-if [ "$SHIP_DRY" != 1 ]; then
-  log "npm write preflight (PUT latest over itself)"
-  PREFLIGHT_PKG="@goliapkg/smix"
-  PREFLIGHT_VER="$(npm view "$PREFLIGHT_PKG" version 2>/dev/null)"
-  [ -n "$PREFLIGHT_VER" ] \
-    || fail "npm write preflight: cannot read $PREFLIGHT_PKG from the registry"
-  PREFLIGHT_TOKEN="$(grep -m1 '_authToken=' "$HOME/.npmrc" 2>/dev/null | sed -E 's/.*_authToken=//' || true)"
-  [ -n "$PREFLIGHT_TOKEN" ] \
-    || fail "npm write preflight: no //registry.npmjs.org/:_authToken= in ~/.npmrc"
-  PREFLIGHT_CODE="$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
-    -H "Authorization: Bearer $PREFLIGHT_TOKEN" \
-    -H 'Content-Type: application/json' \
-    --data "\"$PREFLIGHT_VER\"" \
-    "https://registry.npmjs.org/-/package/@goliapkg%2fsmix/dist-tags/latest")"
-  case "$PREFLIGHT_CODE" in
-    2*) log "  npm accepts a write without prompting (latest still $PREFLIGHT_VER)" ;;
-    *)  fail "npm write preflight: the registry answered $PREFLIGHT_CODE to a dist-tag write. The token in ~/.npmrc cannot publish without a human — an EOTP token asks for a one-time password on every write. Generate one that bypasses 2FA at https://www.npmjs.com/settings/goliapanda/tokens and set it as //registry.npmjs.org/:_authToken= in ~/.npmrc" ;;
-  esac
 fi
 
 # --- publish crates.io (DAG order) -----------------------------------
