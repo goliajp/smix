@@ -525,7 +525,11 @@ log "ffi bindings"
   || fail "FFI bindings are not what smix-ffi generates — see /tmp/smix-ship-ffi-bindings.log"
 
 log "napi loader"
-"$ROOT/scripts/dev/napi-dts-fresh.sh" > /tmp/smix-ship-napi-dts.log 2>&1 \
+# --verbose, because the quiet form reports a line COUNT. "104 lines
+# differ" cannot be read after the fact, and this gate went red once
+# during 6.4.0's ship and clean on the next hand-run with the tree
+# unchanged — with only a count in the log there was nothing to compare.
+"$ROOT/scripts/dev/napi-dts-fresh.sh" --verbose > /tmp/smix-ship-napi-dts.log 2>&1 \
   || fail "napi loader (index.d.ts/index.js) is not what napi generates — see /tmp/smix-ship-napi-dts.log"
 
 # --- fuzz smoke -------------------------------------------------------
