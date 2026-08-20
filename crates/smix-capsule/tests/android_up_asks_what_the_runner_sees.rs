@@ -12,7 +12,7 @@
 //!
 //! Reproduced on emulator-5554 before this was written: the foreground
 //! was `dev.smix.fixture`, `/windows` listed only `com.android.systemui`
-//! and a `com.qualcomm.insight.consumer` installed hours earlier, and
+//! and another app installed hours earlier, and
 //! `/tree` carried no package at all. `runner up` — with and without
 //! `--force` — said "already healthy" both times.
 //!
@@ -75,7 +75,7 @@ fn stub(windows_body: &'static str) -> (u16, Arc<Mutex<Vec<String>>>) {
 const STALE_VIEW: &str = concat!(
     r#"{"ok":true,"windows":["#,
     r#"{"package":"com.android.systemui","type":3,"rootReadable":true},"#,
-    r#"{"package":"com.qualcomm.insight.consumer","type":1,"rootReadable":true}"#,
+    r#"{"package":"com.other.app","type":1,"rootReadable":true}"#,
     r#"]}"#
 );
 
@@ -107,14 +107,14 @@ fn a_runner_seeing_only_some_other_app_is_stale() {
     let (port, _seen) = stub(STALE_VIEW);
     let Err(message) = runner_view_is_current(port, "dev.smix.fixture") else {
         panic!(
-            "the runner listed com.qualcomm.insight.consumer while \
+            "the runner listed com.other.app while \
              dev.smix.fixture was in front, and this said its view was \
              current — that is the emulator-5554 reproduction, and it is \
              exactly what `automation_sees_an_app` cannot tell apart, \
              because the stale window is a readable application window"
         );
     };
-    for wanted in ["dev.smix.fixture", "com.qualcomm.insight.consumer"] {
+    for wanted in ["dev.smix.fixture", "com.other.app"] {
         assert!(
             message.contains(wanted),
             "the refusal has to name both what is in front and what the \
@@ -220,14 +220,20 @@ mod foreground {
 
     #[test]
     fn says_nothing_rather_than_guessing_when_there_is_no_such_line() {
-        assert_eq!(parse_resumed_package("Activity Resolver Table:\n  none"), None);
+        assert_eq!(
+            parse_resumed_package("Activity Resolver Table:\n  none"),
+            None
+        );
     }
 
     #[test]
     fn says_nothing_on_a_line_it_cannot_split() {
         // A malformed record must not yield half a package name — an
         // empty foreground is what makes the comparison stand down.
-        assert_eq!(parse_resumed_package("ResumedActivity: ActivityRecord{}"), None);
+        assert_eq!(
+            parse_resumed_package("ResumedActivity: ActivityRecord{}"),
+            None
+        );
         // No slash anywhere: a reader that fell back to the whole field
         // would answer "u0" here, which is not a package.
         assert_eq!(
