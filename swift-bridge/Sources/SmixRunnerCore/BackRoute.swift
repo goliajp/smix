@@ -61,14 +61,28 @@ public enum BackRoute {
     case gaveUp
   }
 
-  public static func success(ok: Bool, settledBy: SettledBy? = nil) -> HTTPResponse {
-    let body: Data
-    if let settledBy {
-      body = Data(#"{"ok":\#(ok),"settledBy":"\#(settledBy.rawValue)"}"#.utf8)
-    } else {
-      body = Data(#"{"ok":\#(ok)}"#.utf8)
-    }
-    return envelope(.ok, body)
+  /// `saw` is the readings behind the verdict, and it exists because
+  /// `gaveUp` alone names no branch.
+  ///
+  /// The enum says which path decided; on the give-up path there is no
+  /// path — the same word covers "there was no back button to tap",
+  /// "it was tapped and the title never moved", and "the edge gesture
+  /// did nothing". `portable-nav-detail-and-back` has come back
+  /// refused on CI since 2026-08-19, four runs, passing on retry and
+  /// never once on the author's machine, and no change could be aimed
+  /// at it: the refusal reports a budget, not an observation.
+  ///
+  /// Written only when there is something to report. An empty string on
+  /// every ordinary success is how a field stops being read.
+  public static func success(
+    ok: Bool,
+    settledBy: SettledBy? = nil,
+    saw: String? = nil
+  ) -> HTTPResponse {
+    var fields = [#""ok":\#(ok)"#]
+    if let settledBy { fields.append(#""settledBy":"\#(settledBy.rawValue)""#) }
+    if let saw, !saw.isEmpty { fields.append(#""saw":"\#(jsonEscape(saw))""#) }
+    return envelope(.ok, Data("{\(fields.joined(separator: ","))}".utf8))
   }
 
   public static func badRequest(reason: String) -> HTTPResponse {

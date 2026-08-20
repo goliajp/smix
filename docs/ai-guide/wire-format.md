@@ -183,7 +183,21 @@ Response: `{ ok: bool }`
 ### `POST /back`
 
 Body: `{}` — empty.
-Response: `{ ok: bool }`
+Response: `{ ok: bool, settledBy?: string, saw?: string }`
+
+`ok:false` here means the runner tapped, gestured, and did not observe
+the screen change within its budget. It is a statement about what was
+observed, not a proof that nothing moved — treat it as a refusal to
+confirm rather than as evidence of a stuck screen.
+
+`settledBy` names which branch decided: `titleChanged` (the navigation
+bar's identifier moved), `sustainedAbsence` (no bar for long enough to
+mean the destination has none), `noIdentity` (there was no title to
+watch, so a fixed settle was used and nothing was verified), or
+`gaveUp`. `saw` accompanies a refusal and carries the readings behind
+it — whether a back button was there, the title before, the last title
+read, and how many consecutive frames had no bar. Both fields are
+diagnostic: an implementation may ignore them, and neither changes `ok`.
 
 ### `GET /screenshot`
 

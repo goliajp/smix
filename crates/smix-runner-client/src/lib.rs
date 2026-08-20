@@ -2018,6 +2018,14 @@ impl HttpRunnerClient {
             ok: Option<bool>,
             #[serde(default, rename = "settledBy")]
             settled_by: Option<String>,
+            /// What the runner's own readings were, present only when
+            /// it refused. `gaveUp` names no branch — it covers "there
+            /// was no back button", "it was tapped and the title never
+            /// moved" and "the edge gesture did nothing" with one word,
+            /// which is why four red CI runs on
+            /// `portable-nav-detail-and-back` could not be aimed at.
+            #[serde(default)]
+            saw: Option<String>,
         }
         let body: BackEnvelope = self
             .json_post("/back", &serde_json::json!({}), None)
@@ -2028,7 +2036,10 @@ impl HttpRunnerClient {
         // instead of in a facility someone has to switch on before the
         // one run in ten that matters.
         if let Some(why) = body.settled_by.as_deref() {
-            eprintln!("smix: back settled by {why}");
+            match body.saw.as_deref() {
+                Some(saw) => eprintln!("smix: back settled by {why} — saw {saw}"),
+                None => eprintln!("smix: back settled by {why}"),
+            }
         }
         OkEnvelope { ok: body.ok }.require_ok("/back")?;
         Ok(())
