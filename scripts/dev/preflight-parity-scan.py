@@ -115,6 +115,10 @@ NOT_LOCAL = {
     "what runtimes this runner has": "a runner's image is not this machine; printed there, meaningless here",
     "build smix": "CI setup for the job below, not a check",
     "boot a simulator": "CI setup; locally you already have one",
+    "the logs of whatever went red": (
+        "carries the corpus gate's own log directory out of a runner that is "
+        "about to be destroyed; locally that directory is still there to read"
+    ),
     "portable corpus tier": (
         "needs a booted simulator, so it stays out of a device-free preflight; "
         "run `scripts/release/portable-tier.sh` yourself when working on it"
