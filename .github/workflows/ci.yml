@@ -288,6 +288,20 @@ jobs:
           xcrun simctl boot "$UDID" || true
       - name: portable corpus tier
         run: SMIX_BIN=$PWD/target/release/smix bash scripts/release/portable-tier.sh
+      - name: the logs of whatever went red
+        # `portable-nav-detail-and-back` has been failing here since at
+        # least 2026-08-19 and passing on the author's machine every
+        # time. Four runs went by without anyone reading what it said,
+        # because the gate prints its verdict to the job log and writes
+        # the flow's own output to a directory that dies with the
+        # runner. A verdict without its evidence cannot be diagnosed —
+        # so the evidence comes out.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-gate-logs
+          path: .tmp/release-gate/
+          if-no-files-found: error
 
   server-integration:
     # The wiring suite needs nothing running: both stores are embedded.
