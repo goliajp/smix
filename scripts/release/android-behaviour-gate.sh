@@ -356,4 +356,59 @@ case "$RESUMED" in
     ;;
 esac
 
-echo "android behaviour gate: 7/7 assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"
+# A7-A8 — the same questions, asked of a Compose screen.
+#
+# A5 and A6 drove an android.widget.EditText, and 6.4.0's read-back
+# predicates were true of that and false of a Compose field: the text
+# reaches the accessibility node asynchronously, and the node handed
+# over by findFocus carries the fields it had when it was fetched. Both
+# read as failures on fills that had worked, and a consumer's entire
+# Android suite went red on the release meant to fix its fills.
+#
+# The subject is the finding. A gate that only ever drives the toolkit
+# with the simplest semantics cannot see a predicate that holds only
+# there.
+adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.ComposeActivity" >/dev/null 2>&1 \
+  || die "A7: could not foreground the Compose screen"
+sleep 3
+
+COMPOSE_MARKER="a7-compose-fill"
+
+# A7 — a fill into a Compose field lands, and is read back as landed.
+"$SMIX_BIN" fill "id:compose_input" --text "$COMPOSE_MARKER" --device "$SERIAL" \
+  --port "$PROXY_PORT" > "$WORK/a7-fill.log" 2>&1 \
+  || die "A7: a fill into a Compose field was refused: $(tail -2 "$WORK/a7-fill.log")
+  The characters may well be in the field. 6.4.0 refused this exact fill while
+  the tree showed all of them there, because the read-back read a node it had
+  not refreshed."
+
+curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a7-tree.json" \
+  || die "A7: /tree did not answer after the Compose fill"
+python3 "$REPO_ROOT/scripts/release/android-a7-verdict.py" \
+  "$WORK/a7-tree.json" "$COMPOSE_MARKER" || die "A7: see above"
+
+# A8 — hideKeyboard with a keyboard up answers ok AND the IME goes.
+#
+# The fill above focused the field, so the keyboard is up. pressBack()
+# reports whether the key event was injected, not whether the keyboard
+# went, and a consumer measured it answering false with the IME gone
+# from the window list one call later.
+curl -sS --max-time 15 "http://localhost:$PROXY_PORT/windows" > "$WORK/a8-before.json" \
+  || die "A8: /windows did not answer"
+python3 "$REPO_ROOT/scripts/release/android-a8-verdict.py" before "$WORK/a8-before.json" \
+  || die "A8: see above"
+
+curl -sS --max-time 15 -X POST "http://localhost:$PROXY_PORT/hide-keyboard" \
+  -H "App-Bundle-Id: $FIXTURE_APP_ID" -d '{}' > "$WORK/a8-hide.json" 2>&1 \
+  || die "A8: /hide-keyboard did not answer"
+grep -q '"ok":true' "$WORK/a8-hide.json" \
+  || die "A8: hideKeyboard with a keyboard up answered $(cat "$WORK/a8-hide.json").
+  If the IME is gone from /windows, that is the boolean being wrong rather than
+  the dismissal failing — which is exactly what a consumer measured."
+
+curl -sS --max-time 15 "http://localhost:$PROXY_PORT/windows" > "$WORK/a8-after.json" \
+  || die "A8: /windows did not answer after the dismissal"
+python3 "$REPO_ROOT/scripts/release/android-a8-verdict.py" after "$WORK/a8-after.json" \
+  || die "A8: see above"
+
+echo "android behaviour gate: 9/9 assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"

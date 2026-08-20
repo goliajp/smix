@@ -1,6 +1,6 @@
 {
   "name": "@goliapkg/smix-cli-linux-x64-gnu",
-  "version": "6.4.0",
+  "version": "6.5.0",
   "description": "smix prebuilt binaries for linux/x64.",
   "license": "Apache-2.0 OR MIT",
   "homepage": "https://github.com/goliajp/smix",

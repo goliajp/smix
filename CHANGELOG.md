@@ -2,6 +2,74 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [6.5.0] — 2026-08-21
+
+6.4.0 replaced three answers that came back `ok` without being asked with
+predicates that read the result back. On a Compose app those read-backs
+returned false failures: a consumer's Android suite went from 11 of 20
+passing to 20 of 20 red, and every action judged failed had in fact been
+performed. That is worse than what it replaced — "did it and said it did
+not" blocks everyone, where "did not and said it did" only misleads.
+
+Three separate causes, each reproduced here on a Compose screen before
+being touched:
+
+- the read-back never refreshed the node, so it read the value the field
+  held when the framework handed the node over — the value from before
+  the typing. The tree walk in the same file has carried a comment about
+  exactly this since it was written.
+- `findFocus(FOCUS_INPUT)` is the wrong instrument on Compose, which
+  keeps focus in its own semantics layer. On a freshly composed screen it
+  comes back empty about a field the tree reports as focused in the same
+  instant, with the IME already up. That is the "first fill on a screen"
+  shape.
+- `pressBack()` returns whether the key event was injected, not whether
+  the keyboard went. It answered false with the IME gone from the window
+  list one call later.
+
+### Fixed
+
+- **`/input-text` no longer refuses fills that landed.** The node is
+  refreshed before it is read, the read is repeated until the characters
+  are there or two seconds pass, and it is the same node that was typed
+  into rather than a fresh focus query. A Compose field publishes to its
+  accessibility node asynchronously; a consumer measured 17, 15 and 0
+  characters from one action, so no single instant can answer the
+  question.
+- **`/input-text` finds focus a second way when the first has nothing.**
+  The framework's input-focus query is still asked first. When it is
+  empty, the window tree is walked for a focused node that accepts text —
+  which is what the tree route already does, and it costs a traversal
+  only where the cheap answer failed.
+- **`/hide-keyboard` judges by the window list, not by `pressBack`.**
+  The IME's own window is the evidence, and it is the same evidence the
+  no-op decision already reads. The wait is because the dismissal is
+  animated and outlives the key press by a frame or two.
+
+### Changed
+
+- **Step lines print as each step starts.** They were all written before
+  the first one ran — a listing wearing the words "per-step progress".
+  A failure then landed after the whole list and read as having happened
+  at the last step; a consumer attributed a failure to the wrong verb on
+  that evidence and reported it against the wrong route. The last `STEP`
+  line in a log is now the step that was in flight. The count moves to
+  one `flow: N steps` line, and `STEP N: … → SKIPPED: <reason>` is
+  unchanged.
+- **`hideKeyboard` answering `ok` now means the keyboard is gone**, not
+  that a key event was injected. Flows that treated its `ok:false` as
+  informational will see fewer of them.
+
+### Notes
+
+- The fixture app gained a Compose screen, and the release gates drive
+  it. That is the root fix rather than a test addition: 6.4.0's gates
+  only ever drove an `android.widget.EditText`, whose accessibility
+  semantics are the simple case, so a predicate true of that and false
+  of Compose could not be seen. A gate cannot find what its subject
+  cannot exhibit.
+- No migration. Nothing on disk or on the wire changed shape.
+
 ## [6.4.0] — 2026-08-19
 
 Three answers that came back `ok` without having been asked anything. A

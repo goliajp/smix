@@ -142,6 +142,17 @@ class SmixHttpServer(
     /// unfocused field fails while the caller is watching.
     private val FOCUS_SETTLE_MS = 2000L
 
+    /// How long to keep watching for the characters to appear.
+    ///
+    /// The field publishes to its accessibility node asynchronously, so
+    /// this is a deadline on an event that has usually already
+    /// happened, not a settle everyone pays. A fill that lands returns
+    /// as soon as the reading matches — typically on the first look.
+    private val TEXT_LAND_MS = 2000L
+
+    /// How long to wait for the IME window to leave after back.
+    private val KEYBOARD_GONE_MS = 2000L
+
     // NanoHTTPD serves each connection on its own thread, so the body
     // drained in `serve` reaches that request's handler and no other.
     private val drainedBody = ThreadLocal<String>()
@@ -411,10 +422,36 @@ class SmixHttpServer(
             val body = RunnerWire.hideKeyboardBody(true)
             return newFixedLengthResponse(Response.Status.OK, "application/json", body)
         }
-        val ok = device.pressBack()
+        // `pressBack()` returns whether the key event was injected, and
+        // a consumer measured it answering false while the keyboard
+        // came down — `{"ok":false}` with the IME gone from the window
+        // list one call later. Its boolean is about the injection, not
+        // about the outcome, and this route was reporting the wrong one
+        // of those.
+        //
+        // The outcome has its own evidence, and it is the same evidence
+        // the no-op decision above already uses. Ask it afterwards.
+        device.pressBack()
         device.waitForIdle(500)
-        val body = RunnerWire.hideKeyboardBody(ok)
+        val gone = awaitKeyboardGone(KEYBOARD_GONE_MS)
+        val body = RunnerWire.hideKeyboardBody(gone)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    /// Wait for the input-method window to leave, up to a budget.
+    ///
+    /// The dismissal is animated, so the window outlives the key press
+    /// by a frame or two; a single look straight afterwards can catch
+    /// it still there and call a working dismissal a failure. Same
+    /// shape as the text read-back next door — one instant cannot
+    /// answer a question about a transition.
+    private fun awaitKeyboardGone(budgetMs: Long): Boolean {
+        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
+        while (true) {
+            if (!keyboardIsUp()) return true
+            if (android.os.SystemClock.elapsedRealtime() >= deadline) return false
+            Thread.sleep(50)
+        }
     }
 
     /// Is an input-method window on screen?
@@ -714,7 +751,7 @@ class SmixHttpServer(
         // Read the field back. `input text` cannot report a miss, so the
         // only honest evidence that the characters arrived is the node
         // saying so.
-        val after = readFocusedText() ?: ""
+        val after = awaitText(focused, text, TEXT_LAND_MS)
         focused.recycle()
         if (!after.contains(text)) {
             return errorJson(
@@ -722,8 +759,8 @@ class SmixHttpServer(
                 "text_did_not_land",
                 "input-text: dispatched ${text.length} characters and the " +
                     "focused field holds ${after.length} " +
-                    "(before: ${before.length}). The keys went somewhere " +
-                    "other than the field.",
+                    "(before: ${before.length}) after waiting ${TEXT_LAND_MS}ms. " +
+                    "The keys went somewhere other than the field.",
             )
         }
         val body = RunnerWire.inputTextBody(text)
@@ -733,16 +770,19 @@ class SmixHttpServer(
     /// The focused editable node, waited for rather than sampled.
     ///
     /// Returns null when none appears in time. The caller recycles.
+    ///
+    /// `refresh()` before reading `isEditable`, for the reason
+    /// `nodeToJson` already gives: a node handed out by the framework
+    /// carries the fields it had when it was fetched, and a Compose
+    /// field that has just taken focus is exactly the case where those
+    /// are out of date. Without it this reported "no editable field had
+    /// focus" for two seconds about a field the tree showed as focused
+    /// in the same instant — the two reads disagreed because only one
+    /// of them was current.
     private fun awaitEditableFocus(budgetMs: Long): AccessibilityNodeInfo? {
         val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
         while (true) {
-            val node = instrumentation.uiAutomation.findFocus(
-                AccessibilityNodeInfo.FOCUS_INPUT,
-            )
-            if (node != null && node.isEditable) {
-                return node
-            }
-            node?.recycle()
+            focusedTextNode()?.let { return it }
             if (android.os.SystemClock.elapsedRealtime() >= deadline) {
                 return null
             }
@@ -751,14 +791,102 @@ class SmixHttpServer(
         }
     }
 
+    /// Whatever holds focus and can be typed into, asked two ways.
+    ///
+    /// `findFocus(FOCUS_INPUT)` is the framework's answer and it is the
+    /// right question to ask first. It is not the only place the answer
+    /// lives: Compose keeps focus in its own semantics layer, and on a
+    /// freshly composed screen it comes back empty about a field the
+    /// tree reports as focused in the same instant — with the IME
+    /// window already up. Measured on emulator-5554, twice, on the
+    /// first fill after the activity starts. That "first fill on a
+    /// screen" is exactly the shape a consumer reported.
+    ///
+    /// So when the direct query has nothing, walk for it. The walk is
+    /// what the tree route already does, and it costs a traversal only
+    /// on the path where the cheap answer failed.
+    private fun focusedTextNode(): AccessibilityNodeInfo? {
+        val direct = instrumentation.uiAutomation.findFocus(
+            AccessibilityNodeInfo.FOCUS_INPUT,
+        )
+        if (direct != null) {
+            direct.refresh()
+            if (direct.isEditable || direct.canTakeText()) return direct
+            direct.recycle()
+        }
+        for (window in instrumentation.uiAutomation.windows) {
+            val root = window.root ?: continue
+            searchFocusedTextNode(root)?.let { return it }
+        }
+        return null
+    }
+
+    /// Depth-first for a focused node that accepts text.
+    private fun searchFocusedTextNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        node.refresh()
+        if (node.isFocused && (node.isEditable || node.canTakeText())) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val hit = searchFocusedTextNode(child)
+            if (hit != null) return hit
+            child.recycle()
+        }
+        return null
+    }
+
+    /// Does this node accept text, whatever it says about being editable?
+    ///
+    /// `isEditable` is a claim a toolkit has to make about itself, and
+    /// a Compose text field does not always make it. What is not
+    /// optional is the action: a node that will take `ACTION_SET_TEXT`
+    /// is a node characters can be put into, and that is the thing
+    /// being asked about.
+    private fun AccessibilityNodeInfo.canTakeText(): Boolean =
+        actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
+
     /// Current text of whatever holds input focus, read fresh.
+    ///
+    /// "Fresh" is what `refresh()` buys: without it this returned the
+    /// value the node carried when the framework handed it over, which
+    /// on a field that had just been typed into is the value from
+    /// before the typing. It read 0 characters, every time, about a
+    /// field the tree showed holding all seventeen.
     private fun readFocusedText(): String? {
         val node = instrumentation.uiAutomation.findFocus(
             AccessibilityNodeInfo.FOCUS_INPUT,
         ) ?: return null
+        node.refresh()
         val text = node.text?.toString()
         node.recycle()
         return text
+    }
+
+    /// Wait for the field to be holding `text`, up to a budget.
+    ///
+    /// One read after a fixed settle is not enough and cannot be made
+    /// enough by lengthening the settle: a Compose field publishes to
+    /// its accessibility node asynchronously, and a consumer measured
+    /// 17, 15 and 0 characters from the same action. Any single instant
+    /// can catch it mid-publish, so the question "did the characters
+    /// arrive" is answered by watching until they have, or until there
+    /// is no more time to wait.
+    ///
+    /// Returns the last reading either way, so a refusal can say what
+    /// it actually saw.
+    private fun awaitText(
+        node: AccessibilityNodeInfo,
+        text: String,
+        budgetMs: Long,
+    ): String {
+        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
+        var last = ""
+        while (true) {
+            node.refresh()
+            last = node.text?.toString() ?: ""
+            if (last.contains(text)) return last
+            if (android.os.SystemClock.elapsedRealtime() >= deadline) return last
+            Thread.sleep(50)
+        }
     }
 
     /// Empty the focused field in one request.

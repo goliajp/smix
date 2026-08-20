@@ -86,10 +86,10 @@ cargo install smix-cli --locked
 npm install @goliapkg/smix
 
 # Swift Package Manager
-# add https://github.com/goliajp/smix (product: SmixSDK, from: "6.4.0")
+# add https://github.com/goliajp/smix (product: SmixSDK, from: "6.5.0")
 
 # Gradle / Maven (Kotlin / Java) — current release:
-# implementation("jp.golia.smix:smix-sdk:6.4.0")
+# implementation("jp.golia.smix:smix-sdk:6.5.0")
 ```
 
 Prerequisites: macOS with Xcode + Simulator (iOS); Android SDK with an emulator image (Android).
