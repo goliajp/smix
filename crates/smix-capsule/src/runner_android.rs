@@ -166,7 +166,10 @@ fn find_header_end(raw: &[u8]) -> Option<usize> {
 fn content_length(head: &[u8]) -> Option<usize> {
     let text = std::str::from_utf8(head).ok()?;
     text.lines()
-        .find_map(|l| l.split_once(':').filter(|(k, _)| k.eq_ignore_ascii_case("content-length")))
+        .find_map(|l| {
+            l.split_once(':')
+                .filter(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+        })
         .and_then(|(_, v)| v.trim().parse::<usize>().ok())
 }
 
