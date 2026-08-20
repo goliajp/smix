@@ -629,9 +629,16 @@ public actor SmixRunnerServer {
   public struct BackOutcome: Sendable {
     public let ok: Bool
     public let settledBy: BackRoute.SettledBy?
-    public init(ok: Bool, settledBy: BackRoute.SettledBy? = nil) {
+    /// The readings behind the verdict. See `BackRoute.success`.
+    public let saw: String?
+    public init(
+      ok: Bool,
+      settledBy: BackRoute.SettledBy? = nil,
+      saw: String? = nil
+    ) {
       self.ok = ok
       self.settledBy = settledBy
+      self.saw = saw
     }
   }
   public typealias BackHandler = @Sendable () async -> BackOutcome
@@ -2029,7 +2036,11 @@ public actor SmixRunnerServer {
           fallback: BackRoute.success(ok: false)
         ) {
           let outcome = await backHandler()
-          return BackRoute.success(ok: outcome.ok, settledBy: outcome.settledBy)
+          return BackRoute.success(
+            ok: outcome.ok,
+            settledBy: outcome.settledBy,
+            saw: outcome.saw
+          )
         }
       }
     }

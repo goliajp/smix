@@ -2055,6 +2055,10 @@ final class SmixRunnerUITests: XCTestCase {
         //   interactive pop gesture; works for RN react-navigation
         //   Modal screens off the nav stack when the modal has
         //   `gestureEnabled: true`.
+        // Written by the give-up path inside the closure and read
+        // after it, because `smixGuarded` yields only the enum — and
+        // the enum is exactly what has too few words.
+        nonisolated(unsafe) var gaveUpSaw: String? = nil
         let outcome: BackRoute.SettledBy? = smixGuarded("back") {
           // The navigation bar's identifier is the screen title, so a
           // change in it IS the "did navigate" signal. Both strategies
@@ -2084,11 +2088,22 @@ final class SmixRunnerUITests: XCTestCase {
           // wrong once in ten corpus runs and a fix made from reading
           // the source did not change the rate. The next change attacks
           // the branch the data names.
+          //
+          // The third return is what the last look produced. Nothing
+          // reads it on the paths that land; it exists for the one that
+          // does not, where `gaveUp` reports a spent budget and no
+          // observation at all.
           func navigated(from previous: String?)
-            -> (Bool, BackRoute.SettledBy)
+            -> (Bool, BackRoute.SettledBy, String)
           {
             var settle = NavigationSettle(before: previous)
             var sawAbsence = false
+            var lastTitle: String? = nil
+            var absences = 0
+            func record() -> String {
+              "before=\(previous ?? "<none>") "
+                + "last=\(lastTitle ?? "<none>") absences=\(absences)"
+            }
             // 50ms, and slowing it down was tried and measured.
             //
             // Each look costs an accessibility round trip into the app
@@ -2107,7 +2122,10 @@ final class SmixRunnerUITests: XCTestCase {
               if !bar.exists {
                 reading = .absent
                 sawAbsence = true
+                absences += 1
               } else if let now = (try? bar.snapshot())?.identifier {
+                lastTitle = now
+                absences = 0
                 // NOT asking whether the departing bar is still there.
                 //
                 // That query — `app.navigationBars[previous].exists`,
@@ -2129,24 +2147,36 @@ final class SmixRunnerUITests: XCTestCase {
               }
               switch settle.observe(reading) {
               case .arrived:
-                return (true, sawAbsence ? .sustainedAbsence : .titleChanged)
+                return (
+                  true, sawAbsence ? .sustainedAbsence : .titleChanged, record()
+                )
               case .noIdentity:
                 // Nothing to watch. Keep the old fixed settle and the
                 // old optimistic answer rather than inventing a signal —
                 // and say so, so the correlation is visible.
                 Thread.sleep(forTimeInterval: 0.5)
-                return (true, .noIdentity)
+                return (true, .noIdentity, record())
               case .notYet: continue
               }
             }
-            return (false, .gaveUp)
+            return (false, .gaveUp, record())
           }
 
           // Strategy 1: navigation bar back button
+          //
+          // Whether this strategy ran at all is half the diagnosis and
+          // the refusal never carried it: a screen whose back button
+          // was not there when it was looked for, and a screen where it
+          // was tapped and nothing moved, both came back as the single
+          // word `gaveUp`.
+          var trail: [String] = []
           let firstButton = navBars.buttons.firstMatch
-          if firstButton.exists {
+          let hadButton = firstButton.exists
+          trail.append("button=\(hadButton ? "yes" : "no")")
+          if hadButton {
             firstButton.tap()
-            let (landed, why) = navigated(from: beforeTitle)
+            let (landed, why, seen) = navigated(from: beforeTitle)
+            trail.append("afterTap[\(seen)]")
             if landed { return why }
           }
           // Strategy 2: iOS interactive pop gesture (swipe right from left
@@ -2155,15 +2185,21 @@ final class SmixRunnerUITests: XCTestCase {
           let leftEdge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
           let rightTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
           leftEdge.press(forDuration: 0.1, thenDragTo: rightTarget)
-          let (landed, why) = navigated(from: beforeTitle)
+          let (landed, why, seen) = navigated(from: beforeTitle)
+          trail.append("afterGesture[\(seen)]")
           if landed { return why }
           // Neither strategy moved the screen. A refusal reaches the
           // caller, which is the honest answer — the old code returned
           // true here without looking.
+          gaveUpSaw = trail.joined(separator: " ")
           return .gaveUp
         }
         guard let outcome, outcome != .gaveUp else {
-          return SmixRunnerServer.BackOutcome(ok: false, settledBy: outcome ?? .gaveUp)
+          return SmixRunnerServer.BackOutcome(
+            ok: false,
+            settledBy: outcome ?? .gaveUp,
+            saw: gaveUpSaw
+          )
         }
         return SmixRunnerServer.BackOutcome(ok: true, settledBy: outcome)
       },

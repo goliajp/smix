@@ -58,4 +58,37 @@ final class BackRouteTests: XCTestCase {
     let json = try await parse(resp)
     XCTAssertEqual(json["ok"] as? Bool, false)
   }
+
+  // A refusal has to carry what it saw.
+  //
+  // `gaveUp` says the budget ran out and nothing was observed, and that
+  // is the whole of it — the same word covers "the back button was not
+  // there to tap", "it was tapped and the title never moved" and "the
+  // edge gesture did nothing". On CI this refusal has come back on
+  // `portable-nav-detail-and-back` since 2026-08-19, four runs, and no
+  // change could be aimed at it because the word names no branch. The
+  // route's own doc says the next change attacks the branch the data
+  // names; this is that field.
+  func test_a_refusal_carries_what_it_saw() async throws {
+    let resp = BackRoute.success(
+      ok: false,
+      settledBy: .gaveUp,
+      saw: "button=yes before=Detail last=Detail absences=0"
+    )
+    let json = try await parse(resp)
+    XCTAssertEqual(json["ok"] as? Bool, false)
+    XCTAssertEqual(json["settledBy"] as? String, "gaveUp")
+    XCTAssertEqual(
+      json["saw"] as? String,
+      "button=yes before=Detail last=Detail absences=0"
+    )
+  }
+
+  // And an answer with nothing to report must not invent the field —
+  // an empty `saw` on every success would train the reader to skip it.
+  func test_an_answer_with_nothing_to_report_omits_the_field() async throws {
+    let resp = BackRoute.success(ok: true, settledBy: .titleChanged)
+    let json = try await parse(resp)
+    XCTAssertNil(json["saw"])
+  }
 }
