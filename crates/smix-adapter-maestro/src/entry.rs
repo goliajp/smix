@@ -388,11 +388,15 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
         return 3;
     }
 
-    // Dispatch every step. Per-step progress to stderr.
-    let total = flow.steps.len();
-    for (idx, step) in flow.steps.iter().enumerate() {
-        eprintln!("STEP {}/{}: {}", idx + 1, total, summarize_step(step));
-    }
+    // The step lines are written by the runtime as each one starts.
+    //
+    // They used to be written here, all of them, before the first one
+    // ran — a listing wearing the words "per-step progress". A failure
+    // then landed after the whole list, so it read as having happened
+    // at the last step. A consumer attributed a failure to the wrong
+    // verb on exactly that evidence, and reported it against the wrong
+    // route; the misreading was the log's, not theirs.
+    eprintln!("flow: {} steps", flow.steps.len());
 
     let base_dir = args
         .flow
@@ -726,7 +730,11 @@ fn run_error_to_exit(e: &RunError) -> u8 {
     }
 }
 
-fn summarize_step(step: &Step) -> String {
+/// A step's one-line description, richer than its verb.
+///
+/// `runtime::run_steps` writes it as each step starts; the debug record
+/// keys off the bare verb next door.
+pub(crate) fn summarize_step(step: &Step) -> String {
     match step {
         Step::RepeatTap { times, .. } => format!("repeatTap x{times}"),
         Step::TapOn { optional, .. } => {

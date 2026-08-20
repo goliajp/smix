@@ -1158,6 +1158,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             self.step_index += 1;
             let idx = self.step_index;
             let step_summary = summarize_step_verb(step);
+            // Before it runs, not after and not all of them up front:
+            // the last line in the log is then the step that was in
+            // flight when the run stopped.
+            eprintln!("STEP {idx}: {}", crate::entry::summarize_step(step));
             let step_start = std::time::Instant::now();
             let outcome_result = self.run_step(step, &mut report.warnings).await;
             let wall_ms = step_start.elapsed().as_millis() as u64;
