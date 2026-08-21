@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [6.6.0] — 2026-08-21
 
 ### Added
 
@@ -72,6 +72,18 @@ All notable changes to the `smix` workspace are documented here. The format foll
   It is a second strategy, not a replacement. The ordinary tap runs
   first and unchanged, so nothing that works today takes a different
   path.
+
+- **`runner cycle` says it has no Android path instead of answering
+  about iOS.** It took neither a platform nor a device, dispatched into
+  the iOS path, and read iOS's `state.json` — so typed against an
+  Android runner it looked in another platform's records, found
+  nothing, and answered "no runner recorded". A consumer reported that
+  sentence as a state problem, because that is what it reads as. The
+  verb had never worked there: there is no `cycle` in the Android
+  runner at all.
+
+  It takes `--platform` now, the same shape `down` and `up` use, and
+  refuses Android by name with the two commands that do the job.
 
 - **`/back` says what it saw.** `settledBy: gaveUp` reported a spent
   budget and nothing else, covering "there was no back button", "it was
