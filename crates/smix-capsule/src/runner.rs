@@ -416,7 +416,6 @@ pub enum SessionProbe {
 /// re-attached, the runner may be answering about something other than
 /// the app that was asked for, and a probe that does not say a name
 /// cannot tell those apart.
-
 impl SessionProbe {
     /// The reason this session cannot be driven, or `None` when it can.
     pub fn unusable_because(&self) -> Option<&str> {
