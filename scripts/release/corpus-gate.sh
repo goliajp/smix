@@ -148,7 +148,22 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 LOG_DIR="$REPO_ROOT/.tmp/release-gate/$STAMP"
 mkdir -p "$LOG_DIR"
 
-echo "corpus gate: sim=$SMIX_CORPUS_SIM corpus=$CORPUS_DIR yamls=${#YAMLS[@]} port=$SMIX_RUNNER_PORT log=$LOG_DIR"
+# Which runtime this ran against, because a verdict without it cannot be
+# attributed. `portable-nav-detail-and-back` fails on CI and passes here
+# every time, and the logs could not say whether that is a runtime
+# difference: this machine has only 26.5 and the runner has 18.5 through
+# 26.2, but nothing recorded which one the gate's own sim landed on.
+SIM_RUNTIME="$(xcrun simctl list devices -j 2>/dev/null | python3 -c '
+import json, sys
+udid = sys.argv[1]
+for runtime, devices in json.load(sys.stdin)["devices"].items():
+    for d in devices:
+        if d["udid"] == udid:
+            print(runtime.rsplit(".", 1)[-1], d.get("name", ""))
+            raise SystemExit
+print("unknown")
+' "$SMIX_CORPUS_SIM" 2>/dev/null || echo unknown)"
+echo "corpus gate: sim=$SMIX_CORPUS_SIM runtime=$SIM_RUNTIME corpus=$CORPUS_DIR yamls=${#YAMLS[@]} port=$SMIX_RUNNER_PORT log=$LOG_DIR"
 
 # --- teardown ------------------------------------------------------------
 
