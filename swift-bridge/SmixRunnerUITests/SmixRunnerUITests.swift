@@ -2186,7 +2186,21 @@ final class SmixRunnerUITests: XCTestCase {
             ? ((try? firstButton.snapshot())
                 .map { "\($0.identifier)/\($0.label)" } ?? "unreadable")
             : "-"
-          trail.append("button=\(hadButton ? "yes" : "no")(\(buttonName))")
+          // Hittable at the moment of the tap.
+          //
+          // The trail now says the right button was tapped —
+          // identifier BackButton, label carrying the previous screen's
+          // title — and that nothing moved for the full budget on
+          // either strategy, while the retry of the same flow passed.
+          // What separates "the tap landed and was ignored" from "the
+          // tap went at a button that was not yet interactive" is
+          // whether it was hittable, and that is one read on a path
+          // taken once per back.
+          let wasHittable = hadButton && firstButton.isHittable
+          trail.append(
+            "button=\(hadButton ? "yes" : "no")(\(buttonName)) "
+              + "hittable=\(wasHittable)"
+          )
           if hadButton {
             firstButton.tap()
             let (landed, why, seen) = navigated(from: beforeTitle)
