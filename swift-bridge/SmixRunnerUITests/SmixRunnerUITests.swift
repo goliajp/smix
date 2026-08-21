@@ -2172,7 +2172,21 @@ final class SmixRunnerUITests: XCTestCase {
           var trail: [String] = []
           let firstButton = navBars.buttons.firstMatch
           let hadButton = firstButton.exists
-          trail.append("button=\(hadButton ? "yes" : "no")")
+          // WHICH button, not just whether there was one.
+          //
+          // `firstMatch` is positional rather than label-based — that is
+          // deliberate, it is what makes this work in any language. It
+          // also means the first button need not be the back button, and
+          // then this taps something else and nothing moves. The trail
+          // said `button=yes` about a tap that changed nothing on CI,
+          // twice, with the title unmoved for the full budget and the
+          // bar never once absent; "a button was there" cannot tell that
+          // apart from "the wrong button was there".
+          let buttonName = hadButton
+            ? ((try? firstButton.snapshot())
+                .map { "\($0.identifier)/\($0.label)" } ?? "unreadable")
+            : "-"
+          trail.append("button=\(hadButton ? "yes" : "no")(\(buttonName))")
           if hadButton {
             firstButton.tap()
             let (landed, why, seen) = navigated(from: beforeTitle)
