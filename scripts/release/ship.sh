@@ -27,7 +27,38 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMOKE="$ROOT/scripts/release/smoke-v1.smoke.sh"
 STAMP="$ROOT/.smoke-passed-at"
 
-log() { printf '[ship] %s\n' "$*"; }
+# Each gate's name, and how long the one before it took.
+#
+# 6.3.0 died four times on second-level judgements sitting at gate 50 of
+# 53 — a stale version, an undefined variable, three platform packages
+# left behind, an empty gpg key — each costing ninety minutes to reach.
+# Moving them to the front fixed that release; nothing records the cost
+# of the ones that remain, so the next gate added in the wrong place is
+# invisible until it is paid for.
+#
+# The profile is written beside the log, one line per gate, so an
+# ordering that has drifted can be read rather than remembered.
+SHIP_T0="$(date +%s)"
+SHIP_TPREV="$SHIP_T0"
+SHIP_PROFILE="${SHIP_PROFILE:-/tmp/smix-ship-profile.tsv}"
+: > "$SHIP_PROFILE"
+SHIP_LAST=""
+log() {
+  local now elapsed since
+  now="$(date +%s)"
+  if [[ -n "$SHIP_LAST" ]]; then
+    printf '%s\t%s\n' "$(( now - SHIP_TPREV ))" "$SHIP_LAST" >> "$SHIP_PROFILE"
+  fi
+  SHIP_TPREV="$now"
+  SHIP_LAST="$*"
+  elapsed=$(( now - SHIP_T0 ))
+  printf '[ship] %3dm%02ds  %s\n' $(( elapsed / 60 )) $(( elapsed % 60 )) "$*"
+}
+# The last gate has no successor to close it out, so the summary does.
+ship_profile_close() {
+  [[ -n "$SHIP_LAST" ]] && printf '%s\t%s\n' "$(( $(date +%s) - SHIP_TPREV ))" "$SHIP_LAST" >> "$SHIP_PROFILE"
+}
+trap ship_profile_close EXIT
 fail() { printf '[ship] FAIL: %s\n' "$*" >&2; exit 1; }
 
 # --- pre-flight -------------------------------------------------------
@@ -709,6 +740,22 @@ fi
 # which now depend on it: the machine root — where this machine keeps
 # smix's data — is resolved in one place, and that place is there. It
 # used to come after them, back when nothing above the capsule needed it.
+# --- gate ordering ----------------------------------------------------
+# Every gate has now run and the profile is complete. Before anything
+# irreversible, read it: a judgement costing seconds that sat behind an
+# hour of compiling is the shape that cost 6.3.0 four ninety-minute
+# rounds, and until now the only thing preventing a recurrence was
+# somebody remembering.
+log "the ordering gate can still go red"
+python3 "$ROOT/scripts/dev/cheap-gates-come-first.test.py" > /tmp/smix-ship-ordertest.log 2>&1 \
+  || fail "cheap-gates-come-first no longer goes red on a bad ordering (see /tmp/smix-ship-ordertest.log)"
+
+log "gate ordering"
+ship_profile_close
+python3 "$ROOT/scripts/dev/cheap-gates-come-first.py" "$SHIP_PROFILE" \
+  > /tmp/smix-ship-ordering.log 2>&1 \
+  || fail "gate ordering FAILED — a cheap judgement sits behind expensive work (see /tmp/smix-ship-ordering.log)"
+
 log "publish crates.io DAG at $VERSION"
 CRATES=(
   smix-sim-health smix-runner-sources
