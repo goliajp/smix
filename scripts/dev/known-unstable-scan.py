@@ -69,12 +69,30 @@ for cells in entries:
         )
 
 # A parser that finds nothing agrees with any list at all — including one
-# that has quietly grown.
-if os.path.isfile(LIST) and not entries:
-    problems.append(
-        f"no rows parsed out of {os.path.relpath(LIST, ROOT)} — the table's "
-        "shape changed and this scan is now reading air"
-    )
+# that has quietly grown. But an empty table is also the state this file
+# is trying to reach, and the two must be told apart by something other
+# than the parse that is in doubt.
+#
+# The witness is the raw text: a row is a line beginning and ending with
+# a pipe, counted without the parser. If there are pipe-rows and the
+# parser found none, the parser is broken. If there are none either way,
+# the table is empty — which happened on 2026-08-22, when the last
+# excused flow was fixed and this branch refused the good news.
+if os.path.isfile(LIST):
+    raw_rows = [
+        line
+        for line in open(LIST, encoding="utf-8").read().splitlines()
+        if line.strip().startswith("|")
+        and line.strip().endswith("|")
+        and not set(line.strip()) <= set("|- ")
+        and "Measured rate" not in line
+    ]
+    if raw_rows and not entries:
+        problems.append(
+            f"{os.path.relpath(LIST, ROOT)} has {len(raw_rows)} table row(s) and "
+            f"this scan parsed none — the table's shape changed and the scan is "
+            f"reading air"
+        )
 
 if problems:
     print("known-unstable-scan: FAIL")

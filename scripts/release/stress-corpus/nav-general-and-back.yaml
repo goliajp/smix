@@ -5,4 +5,20 @@ appId: com.apple.Preferences
     element: { id: "com.apple.settings.general" }
 - tapOn: { id: "com.apple.settings.general" }
 - back
-- assertVisible: { id: "com.apple.settings.primaryAppleAccount" }
+# Assert the destination, not a row that happens to be on screen.
+#
+# This asserted on the account row at the top of Settings — after a
+# step that scrolled DOWN to reach the cell it taps. Settings restores
+# the scroll position on the way back, so whether the top row is
+# visible depends on where scrollUntilVisible overshot to. That is a
+# few percent of runs, which is exactly the rate this flow was carried
+# on the known-unstable list at for twelve days, with four attacks
+# aimed at `back` and none of them moving it.
+#
+# `back` was working. The trail it prints since 6.6.0 says
+# `last=Settings` on the failing runs: the pop completed and the title
+# was already the destination's. The assertion was the wrong one.
+#
+# The navigation bar is what "we are back on Settings" means, and it
+# does not move with the list.
+- assertVisible: { id: "Settings" }
