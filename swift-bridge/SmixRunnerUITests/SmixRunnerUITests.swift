@@ -2207,6 +2207,50 @@ final class SmixRunnerUITests: XCTestCase {
             trail.append("afterTap[\(seen)]")
             if landed { return why }
           }
+          // Strategy 1b: the same button, tapped the way /tap taps.
+          //
+          // `XCUIElement.tap()` dispatches through Apple's gesture
+          // recognizer chain, and this repository has measured that
+          // chain failing to reach handlers that a raw IOKit touch
+          // does — it is why /tap carries a daemonProxySynthesize mode
+          // at all. `back` never got it.
+          //
+          // What made this the next thing to try rather than a guess:
+          // on the runner's iOS 26.2, the trail reported the right
+          // button (identifier BackButton, label carrying the previous
+          // screen's title), hittable, tapped, and the title unmoved
+          // for the full budget — while the same flow passed on retry.
+          // A hittable correct button that a tap does not move is the
+          // shape that mode exists for.
+          if hadButton, let frame = (try? firstButton.snapshot())?.frame {
+            let center = CGPoint(
+              x: frame.origin.x + frame.size.width / 2,
+              y: frame.origin.y + frame.size.height / 2
+            )
+            let delivery = smixDelivery(of: center, appFrame: app.frame.size)
+            if let record = SmixEventRecord(orientation: delivery.orientation),
+               record.addPointerTouchEvent(at: delivery.point) {
+              let sema = DispatchSemaphore(value: 0)
+              var synthesized = false
+              Task {
+                do {
+                  try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
+                  synthesized = true
+                } catch {
+                  FileHandle.standardError.write(
+                    Data("smix-runner: back synthesize error: \(error)\n".utf8))
+                }
+                sema.signal()
+              }
+              _ = sema.wait(timeout: .now() + 5)
+              trail.append("synth=\(synthesized)")
+              if synthesized {
+                let (landed, why, seen) = navigated(from: beforeTitle)
+                trail.append("afterSynth[\(seen)]")
+                if landed { return why }
+              }
+            }
+          }
           // Strategy 2: iOS interactive pop gesture (swipe right from left
           // edge). RN screens with `gestureEnabled:true` (default for stack
           // navigator screens, including Modal-presented screens) accept it.
