@@ -492,6 +492,11 @@ log "actions pinned"
 python3 "$ROOT/scripts/dev/actions-are-pinned.py" > /tmp/smix-ship-actions.log 2>&1 \
   || fail "actions pinned FAILED — a workflow names a moving ref (see /tmp/smix-ship-actions.log)"
 
+# --- job ceilings ------------------------------------------------------
+log "job ceilings"
+python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.py" > /tmp/smix-ship-ceilings.log 2>&1 \
+  || fail "job ceilings FAILED — a CI job may run for six hours (see /tmp/smix-ship-ceilings.log)"
+
 # --- workflow scan -----------------------------------------------------
 # The development contract survives a clone: charter and rule cards
 # tracked, hook scripts present and wired, guards tested, no GNU-only

@@ -37,6 +37,7 @@ LOCAL = {
     "hygiene scan": "hygiene-scan",
     "publish dag is complete": "publish-dag-is-complete",
     "actions are pinned": "actions-are-pinned",
+    "jobs have a ceiling": "jobs-have-a-ceiling",
     "route conformance": "route-conformance",
     "fact scan": "fact-scan",
     "workflow scan": "workflow-scan",
