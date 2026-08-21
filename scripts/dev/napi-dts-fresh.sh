@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
-# Check that the checked-in napi loader is what NAPI-RS generates today.
+# Check that the napi loader on disk is what NAPI-RS generates today.
 #
-# `crates/smix-node/index.d.ts` and `index.js` are committed and
-# auto-generated from the crate's `#[napi]` annotations, but nothing
-# regenerated and compared them: they were produced once at ship time
-# (ship.sh runs `napi build`), so between ships the committed copy drifts
-# from the crate. Before 6.0.0, `swipeAtCoord` reached the Rust bindings
-# but not `index.d.ts`, and only the dry-run caught it.
+# `crates/smix-node/index.d.ts` and `index.js` are generated from the
+# crate's `#[napi]` annotations and are NOT in git (see the crate's
+# .gitignore) — they are build output, produced at ship time and left
+# lying around between ships, where they drift from the crate. Before
+# 6.0.0, `swipeAtCoord` reached the Rust bindings but not `index.d.ts`,
+# and only the dry-run caught it.
+#
+# This said "checked-in" for two releases and nothing is checked in.
+# That wrong word cost a diagnosis: at 6.4.0 the gate reported 104
+# differing lines, a hand-run of `napi build` made it clean, and the
+# episode was written off as unexplained. The 104 lines were the version
+# string, which the loader embeds in 52 places — so this goes red after
+# every version bump until the loader is rebuilt, and the release
+# procedure did not list rebuilding it.
 #
 # This regenerates the loader and diffs. A difference means the loader and
 # the crate have parted ways — the exact shape of that swipeAtCoord drift.
