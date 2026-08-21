@@ -2800,6 +2800,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smix-contract"
+version = "6.5.0"
+dependencies = [
+ "serde",
+ "serde_norway",
+]
+
+[[package]]
 name = "smix-core"
 version = "6.5.0"
 dependencies = [
