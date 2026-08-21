@@ -21,8 +21,10 @@
 #![forbid(unsafe_code)]
 
 pub mod reconcile;
+pub mod scan;
 
 pub use reconcile::{Claim, PartialClaim, Reconciliation, reconcile};
+pub use scan::scan_claims;
 
 use serde::Deserialize;
 use std::fmt;
