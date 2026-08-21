@@ -164,6 +164,13 @@ jobs:
       # still go red runs on every push instead of every release.
       - name: the ordering gate can still go red
         run: python3 scripts/dev/cheap-gates-come-first.test.py
+      # cargo package verifies by building the library and never builds
+      # the tests, so a crate whose tests read files the package does
+      # not carry publishes cleanly and fails the first time a stranger
+      # types cargo test. Measured: the published smix-runner-wire does
+      # not compile its suite.
+      - name: a published crate can run its tests
+        run: python3 scripts/dev/a-published-crate-can-run-its-tests.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan
