@@ -296,7 +296,12 @@ jobs:
         # the flow's own output to a directory that dies with the
         # runner. A verdict without its evidence cannot be diagnosed —
         # so the evidence comes out.
-        if: failure()
+        # always(), not failure(). A green run is where you find out
+        # WHICH rung carried it — the ordinary tap, or the synthesized
+        # touch added for the tap that lands on a hittable button and
+        # moves nothing. Uploading only on red means a fix and a lucky
+        # run look identical.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: corpus-gate-logs
