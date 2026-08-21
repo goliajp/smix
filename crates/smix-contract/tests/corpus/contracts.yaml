@@ -1,0 +1,31 @@
+# One requirement per user-visible outcome — the granularity this corpus
+# was written to test. Finer (one per interaction) and nobody writes
+# them; coarser (one per screen) and two platforms can both claim the
+# same id while covering different halves of it.
+
+- id: CTR-MENU-0001
+  statement: Every section of the menu is separated from the next when none are hidden
+
+- id: CTR-MENU-0002
+  statement: Hiding part of a section leaves that section's separator in place
+
+- id: CTR-MENU-0003
+  statement: A middle section that is entirely hidden takes its separator with it
+
+- id: CTR-MENU-0004
+  statement: No separator leads the list when the first section is hidden
+
+- id: CTR-MENU-0005
+  statement: No separator trails the list when the last section is hidden
+
+- id: CTR-MENU-0006
+  statement: A single surviving section stands alone with no separators at all
+
+- id: CTR-CALLOUT-0001
+  statement: A callout sits below the thing it points at when there is room below
+
+- id: CTR-CALLOUT-0002
+  statement: A callout flips above the thing it points at when it would not fit below
+
+- id: CTR-OFFLINE-0001
+  statement: A device that has stopped reporting says so on its own card

@@ -1,0 +1,15 @@
+# What the Android suite means to cover. The menu rules, in a suite
+# whose test names are the same English sentences as the other
+# platform's — and which nothing could join to them until these ids.
+- contract: CTR-MENU-0001
+  platform: android
+- contract: CTR-MENU-0002
+  platform: android
+- contract: CTR-MENU-0003
+  platform: android
+- contract: CTR-MENU-0004
+  platform: android
+- contract: CTR-MENU-0005
+  platform: android
+- contract: CTR-MENU-0006
+  platform: android
