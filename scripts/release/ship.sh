@@ -1022,5 +1022,22 @@ fi
 if [ "$SHIP_DRY" = 1 ]; then
   log "SHIP DRY-RUN COMPLETE — all gates green, every publish leg dry-run (cargo skipped, validated by CI)"
 else
-  log "SHIP COMPLETE — v$VERSION live on crates.io + npm + Maven Central + Swift Package"
+  # Ask the registries rather than assert on their behalf.
+  #
+  # This line used to read "live on crates.io + npm + Maven Central +
+  # Swift Package", printed from control flow having asked none of
+  # them. It was not merely unverified: Maven Central took three hours
+  # to publish 6.5.0, so the sentence was false at the moment it was
+  # printed, and every release since has been checked by hand instead.
+  #
+  # Maven is allowed to be late and never allowed to be claimed — the
+  # verifier reports it as still to come and says so in the summary.
+  log "verify what the registries took"
+  if bash "$ROOT/scripts/release/verify-published.sh" "$VERSION" \
+       2>&1 | tee /tmp/smix-ship-verify.log; then
+    log "SHIP COMPLETE — see the line above for what was confirmed"
+  else
+    fail "published, but a channel does not have v$VERSION — see /tmp/smix-ship-verify.log. \
+The publish legs ran; this is about what the registries actually serve."
+  fi
 fi
