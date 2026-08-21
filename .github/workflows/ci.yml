@@ -145,6 +145,14 @@ jobs:
       # targets and with a hygiene scan named only in comments.
       - name: no self-test is left unrun
         run: python3 scripts/dev/a-selftest-nobody-runs.py
+      # Each of today's gates, proved able to go red. They build their
+      # own trees and need nothing from outside the checkout.
+      - name: the pinning gate can still go red
+        run: python3 scripts/dev/actions-are-pinned.test.py
+      - name: the ceiling gate can still go red
+        run: python3 scripts/dev/jobs-have-a-ceiling.test.py
+      - name: the orphan-self-test gate can still go red
+        run: python3 scripts/dev/a-selftest-nobody-runs.test.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan

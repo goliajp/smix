@@ -502,6 +502,18 @@ log "the publish-dag gate can still go red"
 python3 "$ROOT/scripts/dev/publish-dag-is-complete.test.py" > /tmp/smix-ship-dagtest.log 2>&1 \
   || fail "the publish-dag gate no longer goes red on a broken list (see /tmp/smix-ship-dagtest.log)"
 
+# Named one by one rather than looped: workflow-scan reads this file
+# for the gate it is looking for, and a name assembled from a loop
+# variable is a name it cannot find. A scan that cannot see an
+# invocation reports it missing, which is the right way round.
+log "today's gates can still go red"
+python3 "$ROOT/scripts/dev/actions-are-pinned.test.py" > /tmp/smix-ship-gatetests.log 2>&1 \
+  || fail "actions-are-pinned no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
+python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
+  || fail "jobs-have-a-ceiling no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
+python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
+  || fail "a-selftest-nobody-runs no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
+
 log "self-tests are wired"
 python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests.log 2>&1 \
   || fail "a self-test is invoked by nothing (see /tmp/smix-ship-selftests.log)"
