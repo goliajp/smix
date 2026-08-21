@@ -16,9 +16,59 @@ flow someone got tired of.
 
 | Flow | Symptom | Measured rate | Attempts | Since |
 |---|---|---|---|---|
-| `nav-accessibility-and-back` | `assertVisible` after `back` finds the departing screen still up: `NOT_VISIBLE` on `com.apple.settings.primaryAppleAccount`, with `navigationBar id="Accessibility"` still in the tree. Passes on retry. | ~10% of runs (2/20, 1/10, 1/10, 0/10 across builds) | 4, all measured — see below | 2026-08-10 |
 
-## `nav-accessibility-and-back` — what was tried
+No flow is excused today. `nav-accessibility-and-back` was, from
+2026-08-10 to 2026-08-22; what happened to it is below, and it is the
+reason this file keeps its history instead of deleting rows.
+
+## `nav-accessibility-and-back` — fixed 2026-08-22, and the cause was never `back`
+
+**2026-08-22.** Four attacks were aimed at `back`, each measured over
+10–30 runs, none of which moved the rate. The trail `back` prints since
+6.6.0 says why: they were aimed at the half that works.
+
+```
+back settled by titleChanged — saw button=no(-) hittable=false
+     afterGesture[before=Accessibility last=Settings absences=0]
+```
+
+`last=Settings`. The pop completed, the title is already the
+destination's, and `back` reported success truthfully. The row above
+says the assertion "finds the departing screen still up, with
+navigationBar id=Accessibility still in the tree" — that description
+was written before there was any evidence about what `back` saw, and it
+is not what happens.
+
+What happens is in the flow. It scrolls DOWN to reach Accessibility,
+taps in, comes back — and Settings restores the scroll position it left
+from, so the account row it then asserts on is off-screen. Nothing to do
+with the transition. The flow asserts on the top of a list it scrolled
+away from.
+
+That also explains the shape of the flake: whether the row is visible
+after the pop depends on where the scroll landed, which depends on the
+`scrollUntilVisible` overshoot — a few percent of runs, exactly as
+measured.
+
+**Fixed by changing the assertion.** The flow now asserts the navigation
+bar — `id: "Settings"`, which is what "we are back on Settings" means and
+does not move with the list — instead of a row whose visibility depends
+on where the scroll landed. Its sibling `nav-general-and-back` asserted
+the same row and was equally fragile; it happened to pass because
+General sits higher in the list. Both changed. Measured after: 24/24
+green, both first-try, no flake.
+
+**What this cost.** Twelve days on this list and four measured attacks,
+all aimed at `back`, none of which moved the rate — because `back` was
+doing its job. The thing that broke the deadlock was not another attack:
+it was `back` being made to report what it saw. `last=Settings` on a
+failing run says, in one word, that the half everybody was attacking had
+already finished.
+
+A wrong cause on a known-unstable list is worse than no cause. It reads
+as knowledge, and it buys four more attacks on the same wrong half.
+
+## `nav-accessibility-and-back` — what was tried (all against `back`)
 
 `back` reports success before the pop transition lands. Four attacks,
 each measured over 10–30 corpus runs:

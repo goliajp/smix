@@ -2275,6 +2275,53 @@ final class SmixRunnerUITests: XCTestCase {
             gaveUpSaw = trail.joined(separator: " ")
             return why
           }
+          // Strategy 2b: the same gesture, dispatched the way /swipe
+          // dispatches.
+          //
+          // The synthesized touch was added for the tap and gated on a
+          // back button existing — so on a screen with no back button
+          // in the bar it never ran, and the whole of `back` was one
+          // XCUIElement gesture with no second chance. The corpus said
+          // so within a day: nav-general-and-back went red with
+          // `button=no` and a gesture that did not move the title, and
+          // passed on retry with the identical trail. A screen that
+          // needs a second attempt of the same gesture is a screen
+          // whose first attempt went through a chain that dropped it.
+          //
+          // Same mechanism as strategy 1b, one path over: XCUIElement
+          // gestures go through Apple's recognizer chain, and a raw
+          // IOKit drag does not.
+          if let record = SmixEventRecord(orientation: .portrait) {
+            let frame = app.frame
+            let from = CGPoint(x: frame.origin.x + frame.size.width * 0.01,
+                               y: frame.origin.y + frame.size.height * 0.5)
+            let to = CGPoint(x: frame.origin.x + frame.size.width * 0.6,
+                             y: frame.origin.y + frame.size.height * 0.5)
+            if record.addPointerSwipeEvent(from: from, to: to, duration: 0.25) {
+              let sema = DispatchSemaphore(value: 0)
+              var synthesized = false
+              Task {
+                do {
+                  try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
+                  synthesized = true
+                } catch {
+                  FileHandle.standardError.write(
+                    Data("smix-runner: back synth-swipe error: \(error)\n".utf8))
+                }
+                sema.signal()
+              }
+              _ = sema.wait(timeout: .now() + 5)
+              trail.append("synthSwipe=\(synthesized)")
+              if synthesized {
+                let (landed, why, seen) = navigated(from: beforeTitle)
+                trail.append("afterSynthSwipe[\(seen)]")
+                if landed {
+                  gaveUpSaw = trail.joined(separator: " ")
+                  return why
+                }
+              }
+            }
+          }
           // Neither strategy moved the screen. A refusal reaches the
           // caller, which is the honest answer — the old code returned
           // true here without looking.
