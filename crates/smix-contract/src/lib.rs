@@ -22,9 +22,11 @@
 
 pub mod reconcile;
 pub mod scan;
+pub mod tree;
 
 pub use reconcile::{Claim, PartialClaim, Reconciliation, reconcile};
 pub use scan::scan_claims;
+pub use tree::{platform_of, reconcile_tree};
 
 use serde::Deserialize;
 use std::fmt;
@@ -83,6 +85,20 @@ pub enum ContractError {
     /// over an empty corpus is the shape of perfect coverage, and it is
     /// an agreement nobody earned.
     NothingToReconcile { detail: String },
+    /// One id defined in two contract files. Every claim on it is
+    /// ambiguous, and the reader needs to know which two files.
+    DuplicateAcrossFiles {
+        id: String,
+        first: String,
+        second: String,
+    },
+    /// A source file claims something and nothing in its path says
+    /// which platform it is. Guessing would let a requirement covered
+    /// on one platform read as covered on both.
+    PlatformNotInPath {
+        origin: String,
+        expected: Vec<String>,
+    },
 }
 
 impl fmt::Display for ContractError {
@@ -132,6 +148,19 @@ impl fmt::Display for ContractError {
                 "{origin}: claims platform `{platform}`, which is not one of the \
                  expected platforms ({}). A misspelt platform claims nothing, and \
                  the one it meant goes on looking unclaimed",
+                expected.join(", ")
+            ),
+            Self::DuplicateAcrossFiles { id, first, second } => write!(
+                f,
+                "id `{id}` is defined in {first} and in {second}. One id in two \
+                 files makes every claim on it ambiguous — there is no answer to \
+                 which of the two a claim covers"
+            ),
+            Self::PlatformNotInPath { origin, expected } => write!(
+                f,
+                "{origin} claims a contract and nothing in its path says which \
+                 platform it is (looked for {}). Guessing would let a requirement \
+                 covered on one platform read as covered on both",
                 expected.join(", ")
             ),
             Self::NothingToReconcile { detail } => write!(
