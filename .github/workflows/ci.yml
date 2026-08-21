@@ -101,6 +101,13 @@ jobs:
           fetch-depth: 0
       - name: hygiene scan
         run: python3 scripts/dev/hygiene-scan.py
+      # A new crate joins the workspace by existing (members = crates/*)
+      # and joins the release by being typed into a hand-written array.
+      # Nothing compared the two, and the quiet half of that gap is a
+      # crate nothing depends on yet: the ship says COMPLETE and the
+      # crate is not on crates.io.
+      - name: publish dag is complete
+        run: python3 scripts/dev/publish-dag-is-complete.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan
