@@ -22,6 +22,10 @@ jobs:
     # macOS because the workspace is inseparable from the Swift runner:
     # tap_route_shape.rs / schema_negotiation.rs include_str! the Swift
     # sources, and the runner suite itself is swift-test.
+    # Ceiling, not a target: measured max 8m or less.
+    # Without one a hung job holds a runner for GitHub's default
+    # six hours and blocks everything behind it.
+    timeout-minutes: 25
     runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -47,6 +51,10 @@ jobs:
             -destination 'generic/platform=iOS Simulator'
 
   ts-sdk:
+    # Ceiling, not a target: measured max 5m or less.
+    # Without one a hung job holds a runner for GitHub's default
+    # six hours and blocks everything behind it.
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -74,6 +82,10 @@ jobs:
   # tests are all Android has. Instrumentation runs at ship, on a pinned
   # emulator — android-gate-scan prints that downgrade on every run.
   android-no-device:
+    # Ceiling, not a target: measured max 5m or less.
+    # Without one a hung job holds a runner for GitHub's default
+    # six hours and blocks everything behind it.
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -89,6 +101,10 @@ jobs:
         run: ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain
 
   source-gates:
+    # Ceiling, not a target: measured max 3m or less.
+    # Without one a hung job holds a runner for GitHub's default
+    # six hours and blocks everything behind it.
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -114,6 +130,10 @@ jobs:
       # 2026-08-21 and nothing here could name a version.
       - name: actions are pinned
         run: python3 scripts/dev/actions-are-pinned.py
+      # Without a ceiling a hung job holds a runner for the default six
+      # hours and the only signal is that nothing finished.
+      - name: jobs have a ceiling
+        run: python3 scripts/dev/jobs-have-a-ceiling.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan
@@ -279,6 +299,10 @@ jobs:
     # simulator, and a new device job that can block every push before
     # anyone has seen it behave is how a gate gets disabled rather than
     # fixed. It comes off once the runs are boring.
+    # Ceiling, not a target: measured max 10m or less.
+    # Without one a hung job holds a runner for GitHub's default
+    # six hours and blocks everything behind it.
+    timeout-minutes: 30
     runs-on: macos-15
     continue-on-error: true
     steps:
@@ -325,6 +349,10 @@ jobs:
     # The wiring suite needs nothing running: both stores are embedded.
     # It used to need a postgres and a valkey, and without them every
     # test returned early and reported PASS.
+    # Ceiling, not a target: measured max 5m or less.
+    # Without one a hung job holds a runner for GitHub's default
+    # six hours and blocks everything behind it.
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -337,6 +365,10 @@ jobs:
     # PATH without cargo, then drives both executables. Distribution breaks
     # quietly — a missing `files` entry or a launcher that mangles stdio
     # installs cleanly and only fails for the person who trusted it.
+    # Ceiling, not a target: measured max 5m or less.
+    # Without one a hung job holds a runner for GitHub's default
+    # six hours and blocks everything behind it.
+    timeout-minutes: 15
     runs-on: macos-14
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -354,6 +386,10 @@ jobs:
     # asks for a Rust toolchain and a 27-crate compile from someone whose
     # app is Swift or Kotlin; this is what lets them npm install instead.
     # Wires the machinery only — it never publishes.
+    # Ceiling, not a target: measured max 8m or less.
+    # Without one a hung job holds a runner for GitHub's default
+    # six hours and blocks everything behind it.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -387,6 +423,10 @@ jobs:
     # runner, and validates the npm distribution structure. Wires the
     # distribution machinery only — it never publishes (that is deferred and
     # user-gated); it uploads artifacts a later release step would collect.
+    # Ceiling, not a target: measured max 8m or less.
+    # Without one a hung job holds a runner for GitHub's default
+    # six hours and blocks everything behind it.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
