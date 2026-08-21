@@ -52,7 +52,17 @@ fn marked_ids(line: &str) -> Option<Vec<String>> {
     let body = trimmed.strip_prefix("//")?.trim_start();
     // Match the mark case-insensitively without allocating a lowercase
     // copy of every line in every file.
-    if body.len() < MARK.len() || !body[..MARK.len()].eq_ignore_ascii_case(MARK) {
+    //
+    // Byte-sliced with `get`, not `[..]`. The first version indexed
+    // directly and panicked on the first comment line beginning with a
+    // multi-byte character — an em dash, which this repository's own
+    // prose is full of. Every `//` line in every scanned file goes
+    // through here, so the one that is not a claim must cost nothing
+    // and must not be able to bring the scan down.
+    let Some(head) = body.get(..MARK.len()) else {
+        return None;
+    };
+    if !head.eq_ignore_ascii_case(MARK) {
         return None;
     }
     let ids: Vec<String> = body[MARK.len()..]
