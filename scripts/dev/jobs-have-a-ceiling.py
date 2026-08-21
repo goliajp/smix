@@ -110,6 +110,30 @@ def main() -> int:
             f"file it cannot parse."
         )
 
+    # A witness that does not come from the same reading.
+    #
+    # A floor catches a reader that has gone completely blind and misses
+    # one that reads half — which is the shape that actually happened
+    # this week, in a sibling gate that read 3 of 29 references and
+    # reported perfect compliance. Every job has exactly one `runs-on:`,
+    # counted by a different means than the structural walk, so the two
+    # numbers must agree. When they do not, the disagreement is the
+    # finding, whichever side is wrong.
+    runs_on = sum(
+        1
+        for name in sorted(os.listdir(wf_dir))
+        if name.endswith((".yml", ".yaml"))
+        for line in open(os.path.join(wf_dir, name), encoding="utf-8")
+        if line.strip().startswith("runs-on:")
+    )
+    if runs_on != seen:
+        problems.append(
+            f"the structural walk found {seen} job(s) and there are {runs_on} "
+            f"`runs-on:` lines. Every job has exactly one, so these must agree — "
+            f"one of the two readings is wrong, and a walk that has stopped "
+            f"matching reports perfect compliance."
+        )
+
     if problems:
         print("jobs-have-a-ceiling: FAIL")
         for p in problems:
