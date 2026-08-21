@@ -43,6 +43,29 @@ for crate in "${CRATES[@]}"; do
         --target "$HOST_TRIPLE" -- \
         -max_total_time="$SECONDS_PER_TARGET" -print_final_stats=0) \
         > "/tmp/smix-fuzz-$target.log" 2>&1; then
+      # Tell "the target found something" from "the toolchain moved
+      # under us".
+      #
+      # cargo-fuzz runs `rustc --version` and requires it to begin with
+      # "rustc". While rustup is replacing a toolchain it does not, and
+      # cargo-fuzz exits before compiling anything with a one-line log
+      # that reads exactly like a broken target. Measured on 2026-08-22:
+      # this machine's rustup updated nightly to 1.100.0 at 03:03 and a
+      # ship an hour later died here, on a target that passes by hand
+      # and passed on the next run of the same script.
+      #
+      # A retry is the right answer for this one and only this one: the
+      # apparatus was unavailable, not the subject wrong.
+      if grep -q "Rust version string does not start with" \
+           "/tmp/smix-fuzz-$target.log" 2>/dev/null; then
+        echo "fuzz-smoke: $name — rustc was unreadable (rustup mid-update?); retrying once"
+        if (cd "$crate" && cargo +nightly fuzz run "$target" \
+            --target "$HOST_TRIPLE" -- \
+            -max_total_time="$SECONDS_PER_TARGET" -print_final_stats=0) \
+            > "/tmp/smix-fuzz-$target.log" 2>&1; then
+          continue
+        fi
+      fi
       failed+=("$name (/tmp/smix-fuzz-$target.log)")
     fi
   done
