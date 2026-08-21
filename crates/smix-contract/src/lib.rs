@@ -20,6 +20,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod reconcile;
+
+pub use reconcile::{Claim, PartialClaim, Reconciliation, reconcile};
+
 use serde::Deserialize;
 use std::fmt;
 
@@ -66,6 +70,17 @@ pub enum ContractError {
     /// would leave a requirement looking unclaimed while somebody
     /// believes they are covering it.
     UnknownContract { origin: String, id: String },
+    /// A claim names a platform nobody expects — the same shape as a
+    /// mistyped id, one level up.
+    UnexpectedPlatform {
+        origin: String,
+        platform: String,
+        expected: Vec<String>,
+    },
+    /// There is nothing for a reconciliation to say. Three empty sets
+    /// over an empty corpus is the shape of perfect coverage, and it is
+    /// an agreement nobody earned.
+    NothingToReconcile { detail: String },
 }
 
 impl fmt::Display for ContractError {
@@ -106,6 +121,22 @@ impl fmt::Display for ContractError {
                  pointing at two requirements makes every claim on it ambiguous — \
                  there is no answer to which of the two a claim covers"
             ),
+            Self::UnexpectedPlatform {
+                origin,
+                platform,
+                expected,
+            } => write!(
+                f,
+                "{origin}: claims platform `{platform}`, which is not one of the \
+                 expected platforms ({}). A misspelt platform claims nothing, and \
+                 the one it meant goes on looking unclaimed",
+                expected.join(", ")
+            ),
+            Self::NothingToReconcile { detail } => write!(
+                f,
+                "nothing to reconcile: {detail}. A comparison that holds on empty \
+                 input is not a comparison"
+            ),
             Self::UnknownContract { origin, id } => write!(
                 f,
                 "{origin}: claims `{id}`, which no contract carries. A mistyped id \
@@ -117,6 +148,34 @@ impl fmt::Display for ContractError {
 }
 
 impl std::error::Error for ContractError {}
+
+#[derive(Deserialize)]
+struct RawClaim {
+    contract: Option<String>,
+    platform: Option<String>,
+}
+
+/// Read a claim file: which platform means to cover which contract.
+pub fn parse_claims(text: &str, origin: &str) -> Result<Vec<Claim>, ContractError> {
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let raw: Vec<RawClaim> =
+        serde_norway::from_str(text).map_err(|e| ContractError::Malformed {
+            origin: origin.to_string(),
+            detail: e.to_string(),
+        })?;
+    let mut out = Vec::with_capacity(raw.len());
+    for (i, entry) in raw.into_iter().enumerate() {
+        let n = i + 1;
+        out.push(Claim {
+            contract_id: required(entry.contract, "contract", origin, n)?,
+            platform: required(entry.platform, "platform", origin, n)?,
+            origin: origin.to_string(),
+        });
+    }
+    Ok(out)
+}
 
 #[derive(Deserialize)]
 struct RawContract {
