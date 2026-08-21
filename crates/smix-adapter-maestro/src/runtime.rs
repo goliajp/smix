@@ -1299,7 +1299,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                                     fail["annotated"] = serde_json::json!(true);
                                 }
                                 Err(e) => {
-                                    fail["annotateError"] = serde_json::json!(format!("{e}"));
+                                    fail["annotateError"] = serde_json::json!(e.to_string());
                                 }
                             }
                         }
@@ -1320,7 +1320,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         }
                     }
                     Err(e) => {
-                        fail["screenshotError"] = serde_json::json!(format!("{e}"));
+                        fail["screenshotError"] = serde_json::json!(e.to_string());
                     }
                 }
                 // Snapshot the a11y tree alongside the fail PNG so
@@ -1350,7 +1350,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         }
                     }
                     Err(e) => {
-                        fail["treeError"] = serde_json::json!(format!("{e}"));
+                        fail["treeError"] = serde_json::json!(e.to_string());
                     }
                 }
                 record["outcome"] = serde_json::json!({ "failed": fail });
