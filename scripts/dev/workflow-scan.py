@@ -278,6 +278,11 @@ def read_without_comments(rel):
 
 
 SOURCE_GATE_LOOP = re.compile(r"^\s*for gate in (.+?);\s*do", re.M)
+# The same set, written as an array — which is how it is kept now that
+# forty-four names no longer fit on a line anybody can read. Both forms
+# are accepted: the loop is what runs, and the array is what the loop
+# runs over.
+SOURCE_GATE_ARRAY = re.compile(r"^SOURCE_GATES=\(\s*$(.*?)^\)\s*$", re.M | re.S)
 PREFLIGHT = "scripts/dev/preflight.sh"
 DOWNSTREAM = (".github/workflows/ci.yml", "scripts/release/ship.sh")
 
@@ -329,8 +334,10 @@ def check_source_gates_wired(failures):
     is here to catch. `read()` drops whole-line comments; do not
     "simplify" this back to matching raw text.
     """
-    loop = SOURCE_GATE_LOOP.search(read_without_comments(PREFLIGHT))
-    if not loop:
+    text = read_without_comments(PREFLIGHT)
+    array = SOURCE_GATE_ARRAY.search(text)
+    loop = SOURCE_GATE_ARRAY if array else SOURCE_GATE_LOOP.search(text)
+    if not array and not loop:
         failures.append(
             f"{PREFLIGHT}: could not find the `for gate in …; do` loop that "
             f"defines the source-gate set. Without it this check compares "
@@ -338,7 +345,8 @@ def check_source_gates_wired(failures):
         )
         return
 
-    names = [n for n in loop.group(1).split() if n and not n.startswith("$")]
+    raw = array.group(1) if array else loop.group(1)
+    names = [n for n in raw.split() if n and not n.startswith("$")]
     if len(names) < MIN_SOURCE_GATES:
         failures.append(
             f"{PREFLIGHT}: parsed {len(names)} source gates from the loop, "

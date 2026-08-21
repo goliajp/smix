@@ -37,9 +37,14 @@ CALLERS = [
     os.path.join("scripts", "release", "ship.sh"),
 ]
 
-# Self-tests that are driven by something other than a named call —
-# each with the reason, because silence must not be how one becomes
-# exempt.
+# Self-tests driven by something other than a named call — each with
+# the reason, because silence must not be how one becomes exempt.
+#
+# Empty, and checked for still being warranted below. An exemption list
+# is the hatch that becomes a hiding place: whoever adds an entry has a
+# reason that day, and nobody reads it again. So an entry naming a file
+# that no longer exists is itself a failure — the exemption outlived
+# its subject and would go on excusing a name that means nothing.
 DRIVEN_ELSEWHERE: dict[str, str] = {}
 
 MIN_SELFTESTS = 10
@@ -81,6 +86,21 @@ def main() -> int:
             f"still go red, and that proof is worth what it was worth the last time "
             f"it ran — which, wired nowhere, is the day somebody ran it by hand."
         )
+
+    # The exemptions, checked against reality. An entry for a file that
+    # is gone excuses nothing and hides that it excuses nothing.
+    for name, reason in DRIVEN_ELSEWHERE.items():
+        if not os.path.isfile(os.path.join(dev, name)):
+            problems.append(
+                f"{DEV}/{name} is exempt (\"{reason}\") and does not exist. An "
+                f"exemption that outlived its subject reads as a considered "
+                f"decision and is a leftover."
+            )
+        elif not reason.strip():
+            problems.append(
+                f"{DEV}/{name} is exempt with no reason given. An exemption "
+                f"nobody can read is indistinguishable from an oversight."
+            )
 
     if len(selftests) < MIN_SELFTESTS:
         problems.append(

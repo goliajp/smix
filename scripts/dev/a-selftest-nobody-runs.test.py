@@ -79,6 +79,28 @@ def main() -> int:
         "is invoked by nothing",
     )
 
+    # An exemption that outlived its subject. The list is empty today,
+    # and empty is when this matters most: whoever adds the first entry
+    # has a reason that day, and nobody reads it again. A name that no
+    # longer exists then goes on excusing nothing while reading as a
+    # considered decision.
+    d = tree()
+    gate_copy = os.path.join(d, "scripts", "dev", "a-selftest-nobody-runs.py")
+    src = open(gate_copy, encoding="utf-8").read()
+    open(gate_copy, "w", encoding="utf-8").write(
+        src.replace(
+            "DRIVEN_ELSEWHERE: dict[str, str] = {}",
+            'DRIVEN_ELSEWHERE: dict[str, str] = {"gone-long-ago.test.py": "an e2e"}',
+            1,
+        )
+    )
+    q = subprocess.run([sys.executable, gate_copy, d], capture_output=True, text=True)
+    if q.returncode == 0 or "outlived its subject" not in q.stdout:
+        print(f"  FAIL a stale exemption\n{q.stdout}{q.stderr}")
+        ok = False
+    else:
+        print("  ok   a stale exemption")
+
     p = subprocess.run([sys.executable, GATE, ROOT], capture_output=True, text=True)
     if p.returncode != 0:
         print(f"  FAIL the real tree: red on a tree that is correct\n{p.stdout}")

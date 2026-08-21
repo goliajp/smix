@@ -155,7 +155,60 @@ echo "--- android: unit tests + androidTest compile"
 ( cd android-runner && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain )
 
 echo "--- source gates"
-for gate in hygiene-scan route-conformance fact-scan workflow-scan android-gate-scan audit-ledger-scan scope-promise-scan release-record-scan guide-claims-scan gate-subject-diversity route-context-scan gate-port-scan preflight-parity-scan mcp-cli-parity-scan known-unstable-scan corpus-portability-scan portable-tier-parity yield-is-not-failure-scan teardown-restores-scan android-subject-scan device-facts-are-machine-scoped leases-are-machine-scoped no-second-ledger-path retired-claims-scan contract-scan selector-surface-scan health-is-not-a-session-check probes-name-the-app tap-then-capture-is-one-path every-flag-says-what-it-does an-authorised-hatch-reaches-every-surface a-tap-proves-aim-not-arrival v5.1-c10-ground-truth-is-complete no-script-picks-a-device-by-accident generated-artifacts-are-load-bearing project-pointer-holds-no-facts publish-dag-is-complete publish-dag-is-complete.test actions-are-pinned actions-are-pinned.test jobs-have-a-ceiling jobs-have-a-ceiling.test a-selftest-nobody-runs a-selftest-nobody-runs.test; do
+# One per line, in the order they run.
+#
+# This was a single line of 1043 characters. A gate added to it
+# needed horizontal scrolling to see, and a gate removed from it
+# left almost no trace in a diff — a poor place to keep the list of
+# everything that has to be true.
+SOURCE_GATES=(
+  hygiene-scan
+  route-conformance
+  fact-scan
+  workflow-scan
+  android-gate-scan
+  audit-ledger-scan
+  scope-promise-scan
+  release-record-scan
+  guide-claims-scan
+  gate-subject-diversity
+  route-context-scan
+  gate-port-scan
+  preflight-parity-scan
+  mcp-cli-parity-scan
+  known-unstable-scan
+  corpus-portability-scan
+  portable-tier-parity
+  yield-is-not-failure-scan
+  teardown-restores-scan
+  android-subject-scan
+  device-facts-are-machine-scoped
+  leases-are-machine-scoped
+  no-second-ledger-path
+  retired-claims-scan
+  contract-scan
+  selector-surface-scan
+  health-is-not-a-session-check
+  probes-name-the-app
+  tap-then-capture-is-one-path
+  every-flag-says-what-it-does
+  an-authorised-hatch-reaches-every-surface
+  a-tap-proves-aim-not-arrival
+  v5.1-c10-ground-truth-is-complete
+  no-script-picks-a-device-by-accident
+  generated-artifacts-are-load-bearing
+  project-pointer-holds-no-facts
+  publish-dag-is-complete
+  publish-dag-is-complete.test
+  actions-are-pinned
+  actions-are-pinned.test
+  jobs-have-a-ceiling
+  jobs-have-a-ceiling.test
+  a-selftest-nobody-runs
+  a-selftest-nobody-runs.test
+)
+
+for gate in "${SOURCE_GATES[@]}"; do
     python3 "scripts/dev/$gate.py"
 done
 

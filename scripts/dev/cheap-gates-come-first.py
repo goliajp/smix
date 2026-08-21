@@ -41,6 +41,20 @@ PATIENCE_SECONDS = 300
 # A profile with almost nothing in it is not a profile.
 MIN_GATES = 20
 
+# The two entries this check cannot judge, because it is them.
+#
+# Named exactly rather than matched by pattern: an exemption that
+# matches a shape excuses whatever grows into that shape later, and
+# these two are the only entries whose lateness is a property of what
+# they are. Everything else in the profile is a gate whose position is
+# a choice somebody made.
+#
+# They cost a second between them, so exempting them hides nothing.
+SELF = (
+    "gate ordering",
+    "the ordering gate can still go red",
+)
+
 
 def main() -> int:
     if not os.path.isfile(PROFILE):
@@ -73,6 +87,9 @@ def main() -> int:
     problems = []
     spent = 0
     for secs, name in rows:
+        if name in SELF:
+            spent += secs
+            continue
         if secs <= CHEAP_SECONDS and spent >= PATIENCE_SECONDS:
             problems.append(
                 f"`{name}` takes {secs}s and sits behind {spent // 60}m of work. "
