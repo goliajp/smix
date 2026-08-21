@@ -325,16 +325,22 @@ jobs:
     # version and device model; this machine's 26.5 is not what a runner
     # has, so those would go red for reasons unrelated to smix.
     #
-    # `continue-on-error` for now: this is the first job here to boot a
-    # simulator, and a new device job that can block every push before
-    # anyone has seen it behave is how a gate gets disabled rather than
-    # fixed. It comes off once the runs are boring.
+    # It gates. `continue-on-error` came off on 2026-08-21 after five
+    # consecutive uncancelled green runs, which was the bar written down
+    # when the flag was left on rather than a number chosen once the
+    # runs looked good.
+    #
+    # The flag was there because a new device job that can block every
+    # push before anyone has seen it behave is how a gate gets disabled
+    # rather than fixed. What it cost while it was on: this job was red
+    # on three of six runs for a real product defect — back tapping a
+    # hittable button that did not move — and the run said success each
+    # time, so "CI is green" was true of the run and false of the gate.
     # Ceiling, not a target: measured max 10m or less.
     # Without one a hung job holds a runner for GitHub's default
     # six hours and blocks everything behind it.
     timeout-minutes: 30
     runs-on: macos-15
-    continue-on-error: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable branch, 2026-08-21
