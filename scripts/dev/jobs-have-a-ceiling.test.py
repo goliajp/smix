@@ -85,6 +85,21 @@ def main() -> int:
         "this is not reading the workflows",
     )
 
+    # Partial blindness: the walk reads one job fewer while the file
+    # still has all its `runs-on:` lines. A floor cannot catch this —
+    # eight of nine is well above it — and without a second reading the
+    # gate would report perfect compliance over a job it never saw.
+    #
+    # The first attempt at this mutation did not land: it changed a job
+    # key to mixed case, which the walk accepts, so nothing was hidden
+    # and nothing went red. Indenting by three spaces makes it genuinely
+    # unreadable as a job while leaving its runs-on in place.
+    ok &= case(
+        "the walk reads one job fewer than the file has",
+        REAL.replace("\n  ts-sdk:\n", "\n   ts-sdk:\n", 1),
+        "must agree",
+    )
+
     # And the mutation that has to land: removing one job's ceiling must
     # name THAT job, not another.
     p = subprocess.run(
