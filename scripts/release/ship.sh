@@ -680,7 +680,7 @@ log "publish crates.io DAG at $VERSION"
 CRATES=(
   smix-sim-health smix-runner-sources
   smix-screen smix-selector smix-input smix-error
-  smix-verbs smix-metro-log smix-adb smix-ai-tier
+  smix-verbs smix-metro-log smix-adb smix-ai-tier smix-contract
   smix-runner-wire smix-selector-resolver smix-fixture
   smix-annotate smix-migrate smix-authoring-ir
   smix-store smix-lease smix-simctl smix-runner-client
