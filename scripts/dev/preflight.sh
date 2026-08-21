@@ -210,6 +210,7 @@ SOURCE_GATES=(
   cheap-gates-come-first.test
   a-published-crate-can-run-its-tests
   a-verb-does-not-assume-a-platform
+  a-hand-copied-table-says-a-number
 )
 
 for gate in "${SOURCE_GATES[@]}"; do

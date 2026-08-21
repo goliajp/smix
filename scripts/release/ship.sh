@@ -632,6 +632,11 @@ python3 "$ROOT/scripts/dev/a-verb-does-not-assume-a-platform.py" \
   > /tmp/smix-ship-verbplatform.log 2>&1 \
   || fail "a runner verb reaches one platform without saying so (see /tmp/smix-ship-verbplatform.log)"
 
+log "a hand-copied table says a number"
+python3 "$ROOT/scripts/dev/a-hand-copied-table-says-a-number.py" \
+  > /tmp/smix-ship-verbcount.log 2>&1 \
+  || fail "a written verb-table count disagrees with the table (see /tmp/smix-ship-verbcount.log)"
+
 log "self-tests are wired"
 python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests.log 2>&1 \
   || fail "a self-test is invoked by nothing (see /tmp/smix-ship-selftests.log)"

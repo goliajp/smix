@@ -177,6 +177,11 @@ jobs:
       # platform must say so rather than answer about the other.
       - name: a verb does not assume a platform
         run: python3 scripts/dev/a-verb-does-not-assume-a-platform.py
+      # The release procedure says of web/src/data/verbs.ts, in as many
+      # words, that it is checked here or nowhere. It states how large
+      # VERB_TABLE is; so does llms.txt; neither is generated from it.
+      - name: a hand-copied table says a number
+        run: python3 scripts/dev/a-hand-copied-table-says-a-number.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan

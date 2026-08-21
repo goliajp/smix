@@ -47,6 +47,7 @@ LOCAL = {
     "the ordering gate can still go red": "cheap-gates-come-first.test",
     "a published crate can run its tests": "a-published-crate-can-run-its-tests",
     "a verb does not assume a platform": "a-verb-does-not-assume-a-platform",
+    "a hand-copied table says a number": "a-hand-copied-table-says-a-number",
     "route conformance": "route-conformance",
     "fact scan": "fact-scan",
     "workflow scan": "workflow-scan",
