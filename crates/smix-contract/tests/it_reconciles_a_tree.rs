@@ -269,3 +269,127 @@ fn the_baseline_lists_ids_rather_than_a_number() {
     let round_tripped: Baseline = text.parse().expect("a baseline reads back");
     assert_eq!(round_tripped.to_string(), text);
 }
+
+// ---- the verdict, written for whoever reads it next -------------------
+
+use smix_contract::render;
+
+#[test]
+fn the_verdict_names_the_requirement_and_where_it_was_read() {
+    let now = reconciled(&[
+        ("app.contracts.yaml", CONTRACTS),
+        ("ios/T.swift", "// covers: CTR-0001, CTR-0002\n"),
+        ("android/T.kt", "// covers: CTR-0001\n"),
+    ]);
+    let out = render(&now, &[]);
+
+    // The id, so it can be looked up.
+    assert!(out.contains("CTR-0002"), "{out}");
+    // The sentence, so the reader does not have to.
+    assert!(out.contains("The second thing the app owes"), "{out}");
+    // Which platform is missing — the part anybody acts on.
+    assert!(out.contains("android"), "{out}");
+    // And where the claim that does exist was read, so the reader can
+    // go straight there rather than searching.
+    assert!(out.contains("ios/T.swift"), "{out}");
+}
+
+#[test]
+fn the_verdict_carries_no_percentage() {
+    // Written as an assertion so that adding one later is a deliberate
+    // act against a test rather than a tidy-looking afternoon.
+    //
+    // A percentage turns this into a score, and a score is met by
+    // writing claims. The three sets say which requirements are in
+    // which state; a number says none of that and invites being
+    // targeted.
+    let now = reconciled(&[
+        ("app.contracts.yaml", CONTRACTS),
+        ("ios/T.swift", "// covers: CTR-0001\n"),
+        ("android/T.kt", "// covers: CTR-0001\n"),
+    ]);
+    let out = render(&now, &[]);
+    assert!(!out.contains('%'), "a percentage crept in: {out}");
+    for word in ["coverage:", "covered %", "score", "percent"] {
+        assert!(
+            !out.to_lowercase().contains(word),
+            "a score crept in as `{word}`: {out}"
+        );
+    }
+}
+
+#[test]
+fn a_regression_is_rendered_first_because_it_is_the_thing_to_act_on() {
+    let base = baseline_of_expected(&reconciled(&BOTH_SIDES));
+    let now = reconciled(&[
+        ("app.contracts.yaml", CONTRACTS),
+        ("ios/T.swift", "// covers: CTR-0001, CTR-0002\n"),
+        ("android/T.kt", "// covers: CTR-0001\n"),
+    ]);
+    let regs = regressions(&base, &now, &["ios", "android"]);
+    let out = render(&now, &regs);
+    let reg_at = out
+        .find("was claimed by")
+        .expect("the regression is rendered");
+    let sets_at = out.find("claimed by some").unwrap_or(usize::MAX);
+    assert!(
+        reg_at < sets_at,
+        "what was lost comes before what merely is: {out}"
+    );
+}
+
+#[test]
+fn a_clean_tree_says_so_without_pretending_it_proved_anything() {
+    let now = reconciled(&BOTH_SIDES);
+    let out = render(&now, &[]);
+    // It says what it checked...
+    assert!(out.contains("2"), "the count of contracts is stated: {out}");
+    // ...and never that anything is verified. The whole crate reports
+    // who CLAIMED, and the rendering must not be where that slips.
+    assert!(!out.to_lowercase().contains("verified"), "{out}");
+    assert!(!out.to_lowercase().contains("proven"), "{out}");
+}
+
+#[test]
+fn the_whole_verdict_reads_as_something_to_act_on() {
+    // The rendering asserted line by line above, read once as a whole.
+    // Written because "each part is present" and "the thing is usable"
+    // are different claims, and only one of them was being tested.
+    let now = reconciled(&[
+        (
+            "app.contracts.yaml",
+            "- id: CTR-MENU-0001\n  statement: Every section is separated from the next when none are hidden\n\
+             - id: CTR-CALLOUT-0002\n  statement: A callout flips above the thing it points at when it would not fit below\n\
+             - id: CTR-OFFLINE-0001\n  statement: A device that has stopped reporting says so on its own card\n",
+        ),
+        (
+            "ios/MenuTests.swift",
+            "// covers: CTR-MENU-0001\n// covers: CTR-CALLOUT-0002\n",
+        ),
+        ("android/MenuTest.kt", "// covers: CTR-MENU-0001\n"),
+    ]);
+    let out = render(&now, &[]);
+
+    // Every section a reader needs, in the order they need them.
+    let nobody = out
+        .find("claimed by nobody")
+        .expect("the unclaimed section");
+    let some = out.find("claimed by some").expect("the partial section");
+    assert!(
+        nobody < some,
+        "nothing at all comes before not enough:\n{out}"
+    );
+
+    // The partial entry carries all four things somebody acts on.
+    assert!(out.contains("CTR-CALLOUT-0002"), "{out}");
+    assert!(out.contains("flips above"), "{out}");
+    assert!(out.contains("missing android"), "{out}");
+    assert!(out.contains("ios/MenuTests.swift:2"), "{out}");
+
+    // And the closing sentence, which is the crate's own limit stated
+    // in its output rather than only in its documentation.
+    assert!(
+        out.contains("It does not say the test is good"),
+        "the limit must travel with the verdict:\n{out}"
+    );
+}

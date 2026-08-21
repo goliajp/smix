@@ -22,11 +22,13 @@
 
 pub mod ratchet;
 pub mod reconcile;
+pub mod render;
 pub mod scan;
 pub mod tree;
 
 pub use ratchet::{Baseline, Regression, baseline_of, regressions};
 pub use reconcile::{Claim, PartialClaim, Reconciliation, reconcile};
+pub use render::render;
 pub use scan::scan_claims;
 pub use tree::{platform_of, reconcile_tree};
 

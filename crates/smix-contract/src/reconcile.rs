@@ -27,6 +27,9 @@ pub struct PartialClaim {
     /// The expected platforms that did not. This is the part a reader
     /// acts on, so it is carried rather than left to be worked out.
     pub missing: Vec<String>,
+    /// Where the claims that do exist were read, so the reader can go
+    /// straight there instead of searching for them.
+    pub origins: Vec<String>,
 }
 
 /// Who claimed what.
@@ -115,10 +118,16 @@ pub fn reconcile(
         } else if missing.is_empty() {
             out.fully_claimed.push(contract.clone());
         } else {
+            let origins: Vec<String> = claims
+                .iter()
+                .filter(|c| c.contract_id == contract.id)
+                .map(|c| c.origin.clone())
+                .collect();
             out.partially_claimed.push(PartialClaim {
                 contract: contract.clone(),
                 claimed_by,
                 missing,
+                origins,
             });
         }
     }
