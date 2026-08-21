@@ -1,0 +1,19 @@
+# What the iOS suite means to cover.
+- contract: CTR-MENU-0001
+  platform: ios
+- contract: CTR-MENU-0002
+  platform: ios
+- contract: CTR-MENU-0003
+  platform: ios
+- contract: CTR-MENU-0004
+  platform: ios
+- contract: CTR-MENU-0005
+  platform: ios
+- contract: CTR-MENU-0006
+  platform: ios
+# The callout placement rules have a suite here and none on the other
+# side. This is the fact the crate exists to make sayable.
+- contract: CTR-CALLOUT-0001
+  platform: ios
+- contract: CTR-CALLOUT-0002
+  platform: ios
