@@ -617,6 +617,11 @@ python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.test.py" >> /tmp/smix-ship-gatete
 python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
   || fail "a-selftest-nobody-runs no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
 
+log "the publication verifier asks the right things"
+python3 "$ROOT/scripts/dev/verify-published-reads-registries.test.py" \
+  > /tmp/smix-ship-verifytest.log 2>&1 \
+  || fail "the publication verifier no longer asks the right things (see /tmp/smix-ship-verifytest.log)"
+
 log "self-tests are wired"
 python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests.log 2>&1 \
   || fail "a self-test is invoked by nothing (see /tmp/smix-ship-selftests.log)"

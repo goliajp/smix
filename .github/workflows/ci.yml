@@ -153,6 +153,11 @@ jobs:
         run: python3 scripts/dev/jobs-have-a-ceiling.test.py
       - name: the orphan-self-test gate can still go red
         run: python3 scripts/dev/a-selftest-nobody-runs.test.py
+      # The publication verifier decides what gets asked of four
+      # registries. Its list-building and its "Maven may be late" state
+      # are checkable here; the registries themselves are not.
+      - name: the publication verifier asks the right things
+        run: python3 scripts/dev/verify-published-reads-registries.test.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan

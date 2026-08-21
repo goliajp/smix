@@ -206,6 +206,7 @@ SOURCE_GATES=(
   jobs-have-a-ceiling.test
   a-selftest-nobody-runs
   a-selftest-nobody-runs.test
+  verify-published-reads-registries.test
 )
 
 for gate in "${SOURCE_GATES[@]}"; do
