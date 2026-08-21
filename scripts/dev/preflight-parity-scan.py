@@ -36,6 +36,7 @@ LOCAL = {
     "unit tests + androidTest compile (no device — instrumentation runs at ship)": "assembleDebugAndroidTest",
     "hygiene scan": "hygiene-scan",
     "publish dag is complete": "publish-dag-is-complete",
+    "actions are pinned": "actions-are-pinned",
     "route conformance": "route-conformance",
     "fact scan": "fact-scan",
     "workflow scan": "workflow-scan",

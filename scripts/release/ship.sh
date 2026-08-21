@@ -485,6 +485,13 @@ log "publish dag"
 python3 "$ROOT/scripts/dev/publish-dag-is-complete.py" > /tmp/smix-ship-publish-dag.log 2>&1 \
   || fail "publish dag FAILED — the crates.io list and the workspace disagree (see /tmp/smix-ship-publish-dag.log)"
 
+# --- actions pinned ----------------------------------------------------
+# What CI ran is part of what this release was tested by, and a moving
+# action tag means that cannot be stated. Seconds, so it runs here.
+log "actions pinned"
+python3 "$ROOT/scripts/dev/actions-are-pinned.py" > /tmp/smix-ship-actions.log 2>&1 \
+  || fail "actions pinned FAILED — a workflow names a moving ref (see /tmp/smix-ship-actions.log)"
+
 # --- workflow scan -----------------------------------------------------
 # The development contract survives a clone: charter and rule cards
 # tracked, hook scripts present and wired, guards tested, no GNU-only
