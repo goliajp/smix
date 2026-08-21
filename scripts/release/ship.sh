@@ -475,6 +475,16 @@ log "hygiene scan"
 python3 "$ROOT/scripts/dev/hygiene-scan.py" > /tmp/smix-ship-hygiene.log 2>&1 \
   || fail "hygiene scan FAILED — shipped sources carry development noise or dead doc pointers (see /tmp/smix-ship-hygiene.log)"
 
+# --- publish dag ------------------------------------------------------
+# Before anything is built, ask whether the publish list below covers
+# the workspace. A crate that something depends on and is missing fails
+# at cargo publish, forty minutes in; a crate nothing depends on yet —
+# every crate, on the release that introduces it — is simply never
+# published, and the ship says COMPLETE. Seconds, so it runs early.
+log "publish dag"
+python3 "$ROOT/scripts/dev/publish-dag-is-complete.py" > /tmp/smix-ship-publish-dag.log 2>&1 \
+  || fail "publish dag FAILED — the crates.io list and the workspace disagree (see /tmp/smix-ship-publish-dag.log)"
+
 # --- workflow scan -----------------------------------------------------
 # The development contract survives a clone: charter and rule cards
 # tracked, hook scripts present and wired, guards tested, no GNU-only
