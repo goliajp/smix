@@ -26,8 +26,34 @@ All notable changes to the `smix` workspace are documented here. The format foll
   somebody believes they are covering it. Each refusal names the field
   and where it was read.
 
-  The declaration forms each platform's tests use land in a later
-  checkpoint; this release is the format, the parser and the arithmetic.
+  **A test declares what it covers in a comment:** `// covers: CTR-0001`,
+  above the case. A comment rather than an annotation, because an
+  annotation would require the product's unit-test target to depend on
+  smix — which inverts what this is for. One line may claim several ids,
+  case and spacing are forgiven, and `coverage:` is not: forgiving a
+  different word would stop "looks like a claim" and "is a claim" being
+  tellable apart.
+
+  **The whole tree reconciles at once**, in every notation it holds —
+  contracts in a file, claims in a file, claims in the source. A source
+  file's platform is read from its path and refused when the path does
+  not say, because guessing wrong makes a requirement covered on one
+  platform read as covered on both.
+
+  **A ratchet forbids losing coverage without demanding more of it.** A
+  platform that used to claim a requirement and does not is a failure. A
+  new requirement nobody covers yet is not — that is work to do, and
+  calling it a failure would be a coverage target wearing another name.
+  A deleted requirement is said out loud and does not block. The baseline
+  lists ids and platforms rather than a count, so losing one shows up in
+  a diff as a line with a name on it.
+
+  **The verdict names what to act on and carries no percentage.** Each
+  line gives the requirement, the sentence it stands for, which platform
+  is missing, and where the claim that exists was read. There is no score,
+  and a test asserts there is none: a percentage is met by writing claims
+  rather than by covering anything, and adding one later should be a
+  deliberate act against a test.
 
 ### Fixed
 

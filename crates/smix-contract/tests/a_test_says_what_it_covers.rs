@@ -63,8 +63,12 @@ fn a_comment_that_is_not_a_claim_cannot_bring_the_scan_down() {
     // real source rather than like a test input, which is the whole
     // reason to write fixtures that way.
     for line in [
+        // The bytes are the subject here, not the language. A CJK line
+        // would do as well and the repository's hygiene scan cannot tell
+        // a comment from a fixture that looks like one — which is the
+        // right way for that scan to be wrong.
         "// — a dash begins this line\n",
-        "// 契約について\n",
+        "// ¡mult\u{00ed}byte, en el primer car\u{00e1}cter!\n",
         "//\n",
         "//c\n",
         "// cov\n",
