@@ -2055,9 +2055,15 @@ final class SmixRunnerUITests: XCTestCase {
         //   interactive pop gesture; works for RN react-navigation
         //   Modal screens off the nav stack when the modal has
         //   `gestureEnabled: true`.
-        // Written by the give-up path inside the closure and read
-        // after it, because `smixGuarded` yields only the enum — and
-        // the enum is exactly what has too few words.
+        // Written inside the closure and read after it, because
+        // `smixGuarded` yields only the enum — and the enum is exactly
+        // what has too few words.
+        //
+        // Written on EVERY path, not only on give-up. It carried the
+        // give-up path first, and then a green run could not say which
+        // strategy had carried it: a fix and a lucky ordinary tap read
+        // identically. "Which rung took the weight" is a question about
+        // successes.
         nonisolated(unsafe) var gaveUpSaw: String? = nil
         let outcome: BackRoute.SettledBy? = smixGuarded("back") {
           // The navigation bar's identifier is the screen title, so a
@@ -2205,7 +2211,10 @@ final class SmixRunnerUITests: XCTestCase {
             firstButton.tap()
             let (landed, why, seen) = navigated(from: beforeTitle)
             trail.append("afterTap[\(seen)]")
-            if landed { return why }
+            if landed {
+              gaveUpSaw = trail.joined(separator: " ")
+              return why
+            }
           }
           // Strategy 1b: the same button, tapped the way /tap taps.
           //
@@ -2247,7 +2256,10 @@ final class SmixRunnerUITests: XCTestCase {
               if synthesized {
                 let (landed, why, seen) = navigated(from: beforeTitle)
                 trail.append("afterSynth[\(seen)]")
-                if landed { return why }
+                if landed {
+                  gaveUpSaw = trail.joined(separator: " ")
+                  return why
+                }
               }
             }
           }
@@ -2259,7 +2271,10 @@ final class SmixRunnerUITests: XCTestCase {
           leftEdge.press(forDuration: 0.1, thenDragTo: rightTarget)
           let (landed, why, seen) = navigated(from: beforeTitle)
           trail.append("afterGesture[\(seen)]")
-          if landed { return why }
+          if landed {
+            gaveUpSaw = trail.joined(separator: " ")
+            return why
+          }
           // Neither strategy moved the screen. A refusal reaches the
           // caller, which is the honest answer — the old code returned
           // true here without looking.
@@ -2273,7 +2288,11 @@ final class SmixRunnerUITests: XCTestCase {
             saw: gaveUpSaw
           )
         }
-        return SmixRunnerServer.BackOutcome(ok: true, settledBy: outcome)
+        return SmixRunnerServer.BackOutcome(
+          ok: true,
+          settledBy: outcome,
+          saw: gaveUpSaw
+        )
       },
       // POST /swipe-once handler. Single XCUITest swipe gesture, no probe,
       // no selector. The driver-side host loop scrollUntilVisible
