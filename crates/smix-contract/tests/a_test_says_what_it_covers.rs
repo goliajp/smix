@@ -224,3 +224,57 @@ fn the_two_platforms_reconcile_into_the_three_sets() {
     let none: Vec<&str> = r.unclaimed.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(none, vec!["CTR-MENU-0006"]);
 }
+
+// ---- both notations at once -------------------------------------------
+
+#[test]
+fn a_contract_claimed_in_source_and_by_hand_is_claimed_once() {
+    // The two notations will coexist: a hand-written claim file is how
+    // a team starts, and comments in the source is where it ends up.
+    // While both are present the same platform may say the same thing
+    // twice, and two sayings are not two platforms — the same
+    // arithmetic the reconciler already refuses one level up.
+    use smix_contract::{parse_claims, parse_contracts, reconcile};
+
+    let contracts = parse_contracts(
+        "- id: CTR-0001\n  statement: The app owes one thing\n",
+        "fixture",
+    )
+    .unwrap();
+
+    let mut claims = scan_claims("// covers: CTR-0001\n", "T.swift", "ios");
+    claims.extend(parse_claims("- contract: CTR-0001\n  platform: ios\n", "claims.yaml").unwrap());
+    assert_eq!(claims.len(), 2, "two notations, two claims on the way in");
+
+    let r = reconcile(&contracts, &claims, &["ios", "android"]).expect("reconciles");
+    let partial = &r.partially_claimed[0];
+    assert_eq!(
+        partial.claimed_by,
+        vec!["ios"],
+        "one platform said it twice; that is still one platform"
+    );
+    assert_eq!(partial.missing, vec!["android"]);
+}
+
+#[test]
+fn the_two_notations_disagree_loudly_rather_than_quietly() {
+    // A comment claiming an id the contract file does not carry is the
+    // mistyped-id case, and it must be refused whichever notation it
+    // came from. Silently dropping the source-scanned one would be
+    // worse than dropping a hand-written one: nobody edits a claim file
+    // by accident, and everybody edits source.
+    use smix_contract::{parse_contracts, reconcile};
+
+    let contracts = parse_contracts(
+        "- id: CTR-0001\n  statement: The app owes one thing\n",
+        "fixture",
+    )
+    .unwrap();
+    let claims = scan_claims("// covers: CTR-0002\n", "T.kt", "android");
+    let err = reconcile(&contracts, &claims, &["ios", "android"]).expect_err("refused");
+    let said = err.to_string();
+    assert!(said.contains("CTR-0002"), "said: {said}");
+    // And it names the line, because the point of scanning source is
+    // that the reader can go straight there.
+    assert!(said.contains("T.kt:1"), "said: {said}");
+}
