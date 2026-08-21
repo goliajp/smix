@@ -4,10 +4,12 @@
 `cargo package` verifies by BUILDING the library. It never builds the
 tests, so a crate whose tests read files that are not in the package
 publishes cleanly and fails the first time somebody downloads it and
-types `cargo test`. Measured on 2026-08-21: the published
-smix-runner-wire does not compile its test suite, because seven of its
-tests `include_str!` Swift sources three directories above the crate
-root.
+types `cargo test`. Measured on 2026-08-21, against the crate crates.io actually serves
+rather than one built here: `smix-runner-wire-6.5.0.crate` downloaded
+from static.crates.io, unpacked, `cargo test --no-run` — exit 101, on
+seven Swift sources its tests `include_str!` from three directories
+above the crate root. A locally built package ought to be identical,
+and "ought to" is not evidence; the bytes a stranger receives are.
 
 Those tests are RIGHT to do that. Pinning a Rust assertion directly to
 the Swift file it describes is how this repository keeps the two in
