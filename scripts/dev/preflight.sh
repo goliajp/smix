@@ -209,6 +209,7 @@ SOURCE_GATES=(
   verify-published-reads-registries.test
   cheap-gates-come-first.test
   a-published-crate-can-run-its-tests
+  a-verb-does-not-assume-a-platform
 )
 
 for gate in "${SOURCE_GATES[@]}"; do

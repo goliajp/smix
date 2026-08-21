@@ -627,6 +627,11 @@ python3 "$ROOT/scripts/dev/a-published-crate-can-run-its-tests.py" \
   > /tmp/smix-ship-packagetests.log 2>&1 \
   || fail "a crate's tests read files its package will not carry, undeclared (see /tmp/smix-ship-packagetests.log)"
 
+log "a verb does not assume a platform"
+python3 "$ROOT/scripts/dev/a-verb-does-not-assume-a-platform.py" \
+  > /tmp/smix-ship-verbplatform.log 2>&1 \
+  || fail "a runner verb reaches one platform without saying so (see /tmp/smix-ship-verbplatform.log)"
+
 log "self-tests are wired"
 python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests.log 2>&1 \
   || fail "a self-test is invoked by nothing (see /tmp/smix-ship-selftests.log)"

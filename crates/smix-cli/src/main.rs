@@ -1341,7 +1341,15 @@ enum RunnerAction {
     /// Preserves the per-udid derived-data directory so the warm re-up
     /// finishes in ~3 s. Errors if no runner state.json exists — use
     /// `runner up` for a cold start.
+    ///
+    /// iOS only, and it says so when handed anything else. It took no
+    /// device at all until 6.6, which is how it came to read one
+    /// platform's records about the other's runner.
     Cycle {
+        /// Which platform. iOS only — Android is refused by name
+        /// rather than by reading the wrong platform's records.
+        #[arg(long, value_enum, default_value_t = RunPlatform::Ios)]
+        platform: RunPlatform,
         /// Explicit path to `SmixRunner.xcodeproj`. Same cascade as
         /// `runner up` — see `resolve_runner_project`.
         #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
@@ -2823,7 +2831,38 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     }
                     .map_err(CliError::Other)?;
                 }
-                RunnerAction::Cycle { runner_project } => {
+                RunnerAction::Cycle {
+                    platform,
+                    runner_project,
+                } => {
+                    // The platform is a flag here, the same shape as
+                    // `down` and `up`, rather than a second notation
+                    // invented for this verb.
+                    //
+                    // It used to take neither platform nor device,
+                    // dispatch straight into the iOS path, and read
+                    // iOS's state.json — so typed against an Android
+                    // runner it went looking in another platform's
+                    // records, found nothing, and answered "no runner
+                    // recorded". A consumer reported that sentence as a
+                    // state problem, because that is what it reads as.
+                    // The verb had never worked there: `fn cycle` does
+                    // not exist in the Android runner at all.
+                    //
+                    // §9 #1 (iii): a capability that is not available is
+                    // a loud error, never a quiet wrong answer.
+                    if platform == RunPlatform::Android {
+                        return Err(CliError::Other(
+                            "runner cycle has no Android path. Cycling restarts the \
+                             xcodebuild test host, and the Android runner is an \
+                             instrumentation with no counterpart to restart. Use \
+                             `smix runner down --platform android --device <serial>` \
+                             then `smix runner up --platform android --device \
+                             <serial>`. Until 6.6 this read iOS's records and told \
+                             you no runner was recorded."
+                                .to_string(),
+                        ));
+                    }
                     let port = runner_port();
                     smix_capsule::runner::cycle(&root, port, runner_project.as_deref())
                         .map_err(CliError::Other)?;

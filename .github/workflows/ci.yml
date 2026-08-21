@@ -171,6 +171,12 @@ jobs:
       # not compile its suite.
       - name: a published crate can run its tests
         run: python3 scripts/dev/a-published-crate-can-run-its-tests.py
+      # `runner cycle` read iOS's records when handed an Android runner
+      # and answered "no runner recorded" — a consumer reported that as
+      # a state problem because it reads as one. A verb that reaches one
+      # platform must say so rather than answer about the other.
+      - name: a verb does not assume a platform
+        run: python3 scripts/dev/a-verb-does-not-assume-a-platform.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan
