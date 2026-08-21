@@ -19,24 +19,26 @@ use smix_contract::{parse_claims, parse_contracts, reconcile};
 const EXPECTED: [&str; 2] = ["ios", "android"];
 
 fn corpus() -> (Vec<smix_contract::Contract>, Vec<smix_contract::Claim>) {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus");
-    let contracts = parse_contracts(
-        &std::fs::read_to_string(format!("{dir}/contracts.yaml")).expect("contracts.yaml"),
-        "tests/corpus/contracts.yaml",
-    )
-    .expect("the corpus parses");
-    let mut claims = parse_claims(
-        &std::fs::read_to_string(format!("{dir}/claims-ios.yaml")).expect("claims-ios.yaml"),
-        "tests/corpus/claims-ios.yaml",
-    )
-    .expect("ios claims parse");
+    // Joined rather than concatenated, and not only for portability:
+    // a literal beginning with a slash is what an HTTP route looks
+    // like, and route-conformance reads every source file in this repo
+    // for exactly that shape. It refused this file, correctly by its
+    // own rule. The alternative was an entry in its exemption list,
+    // which switches the whole file off — a blunt instrument for a
+    // string that did not need to exist.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("corpus");
+    let read = |name: &str| {
+        std::fs::read_to_string(dir.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"))
+    };
+    let contracts =
+        parse_contracts(&read("contracts.yaml"), "corpus/contracts.yaml").expect("corpus parses");
+    let mut claims =
+        parse_claims(&read("claims-ios.yaml"), "corpus/claims-ios.yaml").expect("ios claims parse");
     claims.extend(
-        parse_claims(
-            &std::fs::read_to_string(format!("{dir}/claims-android.yaml"))
-                .expect("claims-android.yaml"),
-            "tests/corpus/claims-android.yaml",
-        )
-        .expect("android claims parse"),
+        parse_claims(&read("claims-android.yaml"), "corpus/claims-android.yaml")
+            .expect("android claims parse"),
     );
     (contracts, claims)
 }
