@@ -22,7 +22,7 @@ publish = false
 workspace = true
 
 [dependencies]
-smix-ffi = { path = "../smix-ffi", version = "6.5.0" }
+smix-ffi = { path = "../smix-ffi", version = "6.6.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

@@ -19,9 +19,9 @@ checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
 name = "cc"
-version = "1.4.3"
+version = "1.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "509591b7bcd67f4ef775afad7662703b4935daaa6ec0e5605cfb1090b32a2b6d"
+checksum = "0ad534f4357a5264cce5019c989cf66a4f0dc4e0d1b1d15f8aacec0ff7360273"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -194,7 +194,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "smix-error"
-version = "6.5.0"
+version = "6.6.0"
 dependencies = [
  "serde",
  "smix-screen",
@@ -212,14 +212,14 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "6.5.0"
+version = "6.6.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-selector"
-version = "6.5.0"
+version = "6.6.0"
 dependencies = [
  "regex",
  "serde",
