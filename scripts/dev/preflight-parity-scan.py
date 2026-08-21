@@ -43,6 +43,7 @@ LOCAL = {
     "the pinning gate can still go red": "actions-are-pinned.test",
     "the ceiling gate can still go red": "jobs-have-a-ceiling.test",
     "the orphan-self-test gate can still go red": "a-selftest-nobody-runs.test",
+    "the publication verifier asks the right things": "verify-published-reads-registries.test",
     "route conformance": "route-conformance",
     "fact scan": "fact-scan",
     "workflow scan": "workflow-scan",
