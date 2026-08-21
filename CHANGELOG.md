@@ -2,6 +2,59 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Added
+
+- **`smix-contract`** — what an app owes, with an id, so coverage can be
+  reconciled. It reads contract files and per-platform claims and
+  answers three sets: which requirements nobody claims, which some but
+  not all of the expected platforms claim, and which all of them do.
+
+  It reports who **claimed** a requirement and never that anyone
+  verified it. Those are different words: a claim says a suite means to
+  cover something, not that the test is good, that it passed, or that
+  two platforms' tests check the same thing — the last of which is not
+  mechanically decidable. Reporting it as coverage would make this one
+  more cheap signal standing in for the thing to be proven.
+
+  What it refuses matters more than what it parses. An entry with no id
+  cannot be claimed by anything. An entry with an empty statement passes
+  a check for the field and stands for nothing. One id on two entries
+  makes every claim on it ambiguous. A claim naming an id no contract
+  carries leaves the requirement it meant looking unclaimed while
+  somebody believes they are covering it. Each refusal names the field
+  and where it was read.
+
+  The declaration forms each platform's tests use land in a later
+  checkpoint; this release is the format, the parser and the arithmetic.
+
+### Fixed
+
+- **`back` now taps the way `tap` taps.** `XCUIElement.tap()` dispatches
+  through Apple's gesture recognizer chain, and this repository has
+  measured that chain failing to reach handlers a raw IOKit touch
+  reaches — which is why `/tap` carries a synthesized-touch mode at all.
+  `back` never had it.
+
+  The failure it fixes was a corpus flow that failed on CI and passed
+  everywhere else: the right button (identifier `BackButton`), hittable,
+  tapped, and the title unmoved for the full budget on both strategies,
+  while the same flow passed on retry. A hittable correct button that a
+  tap does not move is the shape that mode exists for.
+
+  It is a second strategy, not a replacement. The ordinary tap runs
+  first and unchanged, so nothing that works today takes a different
+  path.
+
+- **`/back` says what it saw.** `settledBy: gaveUp` reported a spent
+  budget and nothing else, covering "there was no back button", "it was
+  tapped and the title never moved" and "the edge gesture did nothing"
+  with one word. The response now carries a `saw` field — which button,
+  whether it was hittable, the title before and last seen, and how many
+  frames had no navigation bar — on every path, not only the refusals.
+  A green run is where you find out which strategy carried it.
+
 ## [6.5.0] — 2026-08-21
 
 6.4.0 replaced three answers that came back `ok` without being asked with

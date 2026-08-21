@@ -54,6 +54,18 @@ log() {
   elapsed=$(( now - SHIP_T0 ))
   printf '[ship] %3dm%02ds  %s\n' $(( elapsed / 60 )) $(( elapsed % 60 )) "$*"
 }
+# A line that reports rather than judges.
+#
+# It prints like a gate and must not be timed like one: a report costs
+# nothing and, by definition, comes after the work it describes. The
+# ordering check reads the profile and would otherwise see four
+# zero-second entries sitting behind seventeen minutes and call each of
+# them a gate in the wrong place — which is what it did on its first
+# contact with a real profile.
+note() {
+  local elapsed=$(( $(date +%s) - SHIP_T0 ))
+  printf '[ship] %3dm%02ds  %s\n' $(( elapsed / 60 )) $(( elapsed % 60 )) "$*"
+}
 # The last gate has no successor to close it out, so the summary does.
 ship_profile_close() {
   [[ -n "$SHIP_LAST" ]] && printf '%s\t%s\n' "$(( $(date +%s) - SHIP_TPREV ))" "$SHIP_LAST" >> "$SHIP_PROFILE"
@@ -179,6 +191,66 @@ fi
 # four separate 90-minute runs discovering, at the very end, that a
 # version string was stale or a token could not write. A check that costs
 # a second belongs before the ones that cost an hour.
+
+# --- the seconds-long judgements, before anything expensive --------
+#
+# Moved here from between gate 40 and gate 55, where the profile found
+# them: napi loader (0s) sat behind six minutes, and fact scan,
+# llms.txt freshness, fence check and clippy (0-3s) behind thirteen.
+# The napi one is not hypothetical — it went red forty minutes into
+# both 6.4.0 and 6.5.0, over a version string embedded in a generated
+# file, and costs nothing to ask.
+#
+# They were placed correctly once, by hand, at 6.3.0. Nothing kept
+# them there; the ordering check does now.
+
+
+log "napi loader"
+# --verbose, because the quiet form reports a line COUNT. "104 lines
+# differ" cannot be read after the fact, and this gate went red once
+# during 6.4.0's ship and clean on the next hand-run with the tree
+# unchanged — with only a count in the log there was nothing to compare.
+"$ROOT/scripts/dev/napi-dts-fresh.sh" --verbose > /tmp/smix-ship-napi-dts.log 2>&1 \
+  || fail "napi loader (index.d.ts/index.js) is not what napi generates — see /tmp/smix-ship-napi-dts.log"
+
+
+# --- fact scan --------------------------------------------------------
+# hygiene-scan asks "does it read as internal?"; fact-scan asks "is it
+# true?" — install coordinates vs the workspace version, tool-count
+# claims vs #[tool(] registrations, and noise inside the quoted strings
+# hygiene-scan structurally cannot see.
+log "fact scan"
+python3 "$ROOT/scripts/dev/fact-scan.py" > /tmp/smix-ship-facts.log 2>&1 \
+  || fail "fact-scan FAILED — a user-facing surface states something untrue (see /tmp/smix-ship-facts.log)"
+# renames, which the version bump covers.
+
+# --- llms.txt freshness ----------------------------------------------
+# llms.txt / llms-full.txt are a projection of VERB_TABLE + the Selector
+# enum + the workspace version. Gate them like the FFI bindings so the
+# AI-facing index can't drift from the sources it mirrors.
+log "llms.txt freshness"
+# Confirms the crates' API changes are the major break the 2.0.0 bump
+# claims. Runs when the tool is installed; a ship must have it. It
+# validates in-place breaks like SimctlError → DeviceControlError, not
+# The AI tier sits beside the resolver, not inside it. Nothing in the
+# type system says so, and the check that does say so was running in no
+# gate at all when this line was added.
+log "fence check"
+bash "$ROOT/scripts/dev/fence-check.sh" > /tmp/smix-ship-fence.log 2>&1 \
+  || fail "fence-check FAILED — the sense path reaches smix-ai-tier (see /tmp/smix-ship-fence.log)"
+
+python3 "$ROOT/scripts/dev/gen-llms.py" --check > /tmp/smix-ship-llms.log 2>&1 \
+  || fail "llms.txt/llms-full.txt are stale — run scripts/dev/gen-llms.py and commit (see /tmp/smix-ship-llms.log)"
+# --- cargo-semver-checks ----------------------------------------------
+
+# --- clippy -----------------------------------------------------------
+# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
+# nothing ran clippy — so four lints sat in the tree, one of them a doc
+# comment detached from the type it described in a stone crate. Clean at
+# the time this was added; here so it stays that way.
+log "clippy"
+( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
+  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
 
 # --- swift-bridge unit tests ------------------------------------------
 # NOT bypassable. This suite sat outside the gate long enough for a test
@@ -597,15 +669,6 @@ SMIX_BIN="$ROOT/target/release/smix" \
 log "ffi bindings"
 "$ROOT/scripts/dev/ffi-bindings-fresh.sh" > /tmp/smix-ship-ffi-bindings.log 2>&1 \
   || fail "FFI bindings are not what smix-ffi generates — see /tmp/smix-ship-ffi-bindings.log"
-
-log "napi loader"
-# --verbose, because the quiet form reports a line COUNT. "104 lines
-# differ" cannot be read after the fact, and this gate went red once
-# during 6.4.0's ship and clean on the next hand-run with the tree
-# unchanged — with only a count in the log there was nothing to compare.
-"$ROOT/scripts/dev/napi-dts-fresh.sh" --verbose > /tmp/smix-ship-napi-dts.log 2>&1 \
-  || fail "napi loader (index.d.ts/index.js) is not what napi generates — see /tmp/smix-ship-napi-dts.log"
-
 # --- fuzz smoke -------------------------------------------------------
 # 15 fuzz targets existed with nothing running them; two had bit-rotted
 # to the point of not compiling. A short budget per target keeps them
@@ -613,45 +676,6 @@ log "napi loader"
 log "fuzz smoke"
 "$ROOT/scripts/dev/fuzz-smoke.sh" > /tmp/smix-ship-fuzz.log 2>&1 \
   || fail "fuzz smoke FAILED — see /tmp/smix-ship-fuzz.log"
-
-# --- fact scan --------------------------------------------------------
-# hygiene-scan asks "does it read as internal?"; fact-scan asks "is it
-# true?" — install coordinates vs the workspace version, tool-count
-# claims vs #[tool(] registrations, and noise inside the quoted strings
-# hygiene-scan structurally cannot see.
-log "fact scan"
-python3 "$ROOT/scripts/dev/fact-scan.py" > /tmp/smix-ship-facts.log 2>&1 \
-  || fail "fact-scan FAILED — a user-facing surface states something untrue (see /tmp/smix-ship-facts.log)"
-
-# --- llms.txt freshness ----------------------------------------------
-# llms.txt / llms-full.txt are a projection of VERB_TABLE + the Selector
-# enum + the workspace version. Gate them like the FFI bindings so the
-# AI-facing index can't drift from the sources it mirrors.
-log "llms.txt freshness"
-# The AI tier sits beside the resolver, not inside it. Nothing in the
-# type system says so, and the check that does say so was running in no
-# gate at all when this line was added.
-log "fence check"
-bash "$ROOT/scripts/dev/fence-check.sh" > /tmp/smix-ship-fence.log 2>&1 \
-  || fail "fence-check FAILED — the sense path reaches smix-ai-tier (see /tmp/smix-ship-fence.log)"
-
-python3 "$ROOT/scripts/dev/gen-llms.py" --check > /tmp/smix-ship-llms.log 2>&1 \
-  || fail "llms.txt/llms-full.txt are stale — run scripts/dev/gen-llms.py and commit (see /tmp/smix-ship-llms.log)"
-
-# --- clippy -----------------------------------------------------------
-# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
-# nothing ran clippy — so four lints sat in the tree, one of them a doc
-# comment detached from the type it described in a stone crate. Clean at
-# the time this was added; here so it stays that way.
-log "clippy"
-( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
-  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
-
-# --- cargo-semver-checks ----------------------------------------------
-# Confirms the crates' API changes are the major break the 2.0.0 bump
-# claims. Runs when the tool is installed; a ship must have it. It
-# validates in-place breaks like SimctlError → DeviceControlError, not
-# renames, which the version bump covers.
 #
 # A crate with no published baseline is EXCLUDED, not tolerated. The
 # comment here used to say the tool was "blind to brand-new crates" —
@@ -715,8 +739,16 @@ if command -v cargo-semver-checks >/dev/null 2>&1; then
       if [ -z "$UNCHECKABLE" ]; then
           fail "cargo-semver-checks FAILED — see $SEMVER_LOG"
       fi
+      # The reason, taken now. Each attempt truncates $SEMVER_LOG, so by
+      # the time the loop succeeds the refusal that caused an exclusion
+      # is gone and only the name survives. The comment above promised
+      # the reason was logged; it was not, and an exclusion without one
+      # reads as a decision somebody made rather than a tool that
+      # stopped.
+      SEMVER_WHY="$(grep -m1 -E 'not found in registry|failed to build rustdoc' "$SEMVER_LOG" \
+                    | sed 's/^[[:space:]]*//' | cut -c1-120)"
       SEMVER_EXCLUDE+=(--exclude "$UNCHECKABLE")
-      SEMVER_SKIPPED+=("$UNCHECKABLE")
+      SEMVER_SKIPPED+=("$UNCHECKABLE (${SEMVER_WHY:-no reason line found})")
   done
   # Report coverage from the run's own output, not from the exclusion
   # count. The tool also skips crates silently — anything with
@@ -726,9 +758,9 @@ if command -v cargo-semver-checks >/dev/null 2>&1; then
   SEMVER_CHECKED=$(grep -c '^ *Checking ' "$SEMVER_LOG" || true)
   SEMVER_TOTAL=$(cd "$ROOT" && cargo metadata --no-deps --format-version 1 |
       python3 -c 'import json,sys; print(len(json.load(sys.stdin)["packages"]))')
-  log "semver-checks: $SEMVER_CHECKED of $SEMVER_TOTAL crates checked"
+  note "semver-checks: $SEMVER_CHECKED of $SEMVER_TOTAL crates checked"
   if [ ${#SEMVER_SKIPPED[@]} -gt 0 ]; then
-      log "semver-checks: excluded by name after the tool refused them: ${SEMVER_SKIPPED[*]}"
+      note "semver-checks: excluded by name after the tool refused them: ${SEMVER_SKIPPED[*]}"
   fi
 else
   fail "cargo-semver-checks not installed — cargo install cargo-semver-checks (required for a 2.0.0 ship)"
