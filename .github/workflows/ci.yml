@@ -158,6 +158,12 @@ jobs:
       # are checkable here; the registries themselves are not.
       - name: the publication verifier asks the right things
         run: python3 scripts/dev/verify-published-reads-registries.test.py
+      # The ordering gate itself only runs inside a ship, which happens a
+      # few times a month. Its self-test builds its own profiles and
+      # needs neither a device nor a real one, so the proof that it can
+      # still go red runs on every push instead of every release.
+      - name: the ordering gate can still go red
+        run: python3 scripts/dev/cheap-gates-come-first.test.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan
