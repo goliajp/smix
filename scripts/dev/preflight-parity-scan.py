@@ -45,6 +45,7 @@ LOCAL = {
     "the orphan-self-test gate can still go red": "a-selftest-nobody-runs.test",
     "the publication verifier asks the right things": "verify-published-reads-registries.test",
     "the ordering gate can still go red": "cheap-gates-come-first.test",
+    "a published crate can run its tests": "a-published-crate-can-run-its-tests",
     "route conformance": "route-conformance",
     "fact scan": "fact-scan",
     "workflow scan": "workflow-scan",

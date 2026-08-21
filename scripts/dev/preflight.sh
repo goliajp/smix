@@ -208,6 +208,7 @@ SOURCE_GATES=(
   a-selftest-nobody-runs.test
   verify-published-reads-registries.test
   cheap-gates-come-first.test
+  a-published-crate-can-run-its-tests
 )
 
 for gate in "${SOURCE_GATES[@]}"; do
