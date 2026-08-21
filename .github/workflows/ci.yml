@@ -134,6 +134,17 @@ jobs:
       # hours and the only signal is that nothing finished.
       - name: jobs have a ceiling
         run: python3 scripts/dev/jobs-have-a-ceiling.py
+      # The gate that keeps the publish list honest, kept honest: five
+      # mutations of the list, each of which must produce a sentence.
+      # It builds its own trees from this checkout and needs nothing
+      # else.
+      - name: the publish-dag gate can still go red
+        run: python3 scripts/dev/publish-dag-is-complete.test.py
+      # A self-test wired nowhere is a claim about the day somebody ran
+      # it by hand. This repository has been here with fifteen fuzz
+      # targets and with a hygiene scan named only in comments.
+      - name: no self-test is left unrun
+        run: python3 scripts/dev/a-selftest-nobody-runs.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: fact scan

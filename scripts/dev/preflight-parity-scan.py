@@ -38,6 +38,8 @@ LOCAL = {
     "publish dag is complete": "publish-dag-is-complete",
     "actions are pinned": "actions-are-pinned",
     "jobs have a ceiling": "jobs-have-a-ceiling",
+    "the publish-dag gate can still go red": "publish-dag-is-complete.test",
+    "no self-test is left unrun": "a-selftest-nobody-runs",
     "route conformance": "route-conformance",
     "fact scan": "fact-scan",
     "workflow scan": "workflow-scan",
