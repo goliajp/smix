@@ -59,10 +59,7 @@ fn marked_ids(line: &str) -> Option<Vec<String>> {
     // prose is full of. Every `//` line in every scanned file goes
     // through here, so the one that is not a claim must cost nothing
     // and must not be able to bring the scan down.
-    let Some(head) = body.get(..MARK.len()) else {
-        return None;
-    };
-    if !head.eq_ignore_ascii_case(MARK) {
+    if !body.get(..MARK.len())?.eq_ignore_ascii_case(MARK) {
         return None;
     }
     let ids: Vec<String> = body[MARK.len()..]
