@@ -1,6 +1,6 @@
 {
   "name": "@goliapkg/smix-cli",
-  "version": "6.6.0",
+  "version": "6.7.0",
   "description": "The smix CLI and MCP server as prebuilt binaries \u2014 no Rust toolchain required.",
   "type": "module",
   "license": "Apache-2.0 OR MIT",
@@ -18,9 +18,9 @@
     "dist"
   ],
   "optionalDependencies": {
-    "@goliapkg/smix-cli-darwin-arm64": "6.6.0",
-    "@goliapkg/smix-cli-darwin-x64": "6.6.0",
-    "@goliapkg/smix-cli-linux-x64-gnu": "6.6.0"
+    "@goliapkg/smix-cli-darwin-arm64": "6.7.0",
+    "@goliapkg/smix-cli-darwin-x64": "6.7.0",
+    "@goliapkg/smix-cli-linux-x64-gnu": "6.7.0"
   },
   "devDependencies": {
     "typescript": "^5",

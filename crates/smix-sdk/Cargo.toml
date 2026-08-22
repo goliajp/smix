@@ -17,16 +17,16 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-screen = { path = "../smix-screen", version = "6.6.0" }
-smix-selector = { path = "../smix-selector", version = "6.6.0" }
-smix-input = { path = "../smix-input", version = "6.6.0" }
-smix-error = { path = "../smix-error", version = "6.6.0" }
-smix-runner-client = { path = "../smix-runner-client", version = "6.6.0" }
-smix-driver = { path = "../smix-driver", version = "6.6.0" }
+smix-screen = { path = "../smix-screen", version = "6.7.0" }
+smix-selector = { path = "../smix-selector", version = "6.7.0" }
+smix-input = { path = "../smix-input", version = "6.7.0" }
+smix-error = { path = "../smix-error", version = "6.7.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "6.7.0" }
+smix-driver = { path = "../smix-driver", version = "6.7.0" }
 thiserror.workspace = true
-smix-lease = { path = "../smix-lease", version = "6.6.0" }
-smix-simctl = { path = "../smix-simctl", version = "6.6.0" }
-smix-adb = { path = "../smix-adb", version = "6.6.0" }
+smix-lease = { path = "../smix-lease", version = "6.7.0" }
+smix-simctl = { path = "../smix-simctl", version = "6.7.0" }
+smix-adb = { path = "../smix-adb", version = "6.7.0" }
 tokio = { workspace = true, features = ["time", "macros"] }
 # SIGINT to the Android recorder — screenrecord only finalizes a playable mp4
 # on interrupt, so stopping it means signalling rather than killing.
@@ -45,7 +45,7 @@ wiremock = "0.6"
 serde_json.workspace = true
 serde_norway.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "6.6.0" }
+smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "6.7.0" }
 criterion.workspace = true
 
 [[bench]]
