@@ -2,6 +2,46 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [6.8.0] — 2026-08-23
+
+### Added
+
+- **Every verb now says what it does with every selector spelling.**
+  `ocrText:`, `localizedText:` and `anchored:` describe something the
+  accessibility tree cannot show, so a verb either reads them above the
+  resolver or refuses them by name — and the refusal says what to write
+  instead. Which verb does which is one table, generated into
+  [the selector guide](docs/ai-guide/03-selectors.md) from the one the
+  code decides by, so the two cannot drift apart.
+
+  Eight cells that used to fail silently are dispatches now:
+  `assertVisible`, `doubleTapOn`, `longPressOn` and `inputText` read
+  OCR; `doubleTapOn`, `longPressOn` and `inputText` take an anchor and
+  a shift; `repeatTap` reads a locale map. The rest refuse — an OCR
+  miss is not evidence of absence, and `copyTextFrom` reads what an
+  element holds rather than what its pixels look like.
+
+- `App::double_tap_at_coord` and `App::long_press_at_coord`, the
+  counterparts of `tap_at_coord` for the verbs that reach a place
+  rather than an element.
+
+### Changed
+
+- **`anchored:` parses wherever a selector parses.** It used to be
+  readable only inside a `fallback:` chain, so the same spelling was
+  writable in one verb and a parse error in another, and nothing said
+  which. Whether a verb *reads* it is now decided in the table rather
+  than by which parser happened to see it.
+
+- **`inputText`'s mapping form takes any selector, not only `id:`.**
+  `text:` is what to type, so it cannot also name the element — but a
+  field addressed by label, role, OCR or a fallback chain simply could
+  not be typed into, and the guides said otherwise.
+
+- A verb handed a form it does not read now fails with that reason
+  before it does anything, rather than resolving against the tree,
+  finding nothing, and reporting the target absent.
+
 ## [6.7.1] — 2026-08-22
 
 ### Fixed

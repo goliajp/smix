@@ -19,7 +19,7 @@ workspace = true
 [dependencies]
 serde.workspace = true
 regex.workspace = true
-smix-screen = { path = "../smix-screen", version = "6.7.1" }
+smix-screen = { path = "../smix-screen", version = "6.8.0" }
 
 [dev-dependencies]
 serde_json.workspace = true

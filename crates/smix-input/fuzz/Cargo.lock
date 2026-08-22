@@ -156,7 +156,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "smix-input"
-version = "6.7.1"
+version = "6.8.0"
 dependencies = [
  "serde",
 ]
