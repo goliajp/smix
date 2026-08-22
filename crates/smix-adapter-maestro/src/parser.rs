@@ -797,9 +797,27 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
                 let chain = parse_fallback_chain(raw, "visible.fallback")?;
                 return Ok(Selector::Fallback { fallback: chain });
             }
+            // `anchored:` parsed inside a fallback chain and nowhere
+            // else, so the same spelling was writable in `tapOn`'s
+            // chain and a parse error in `doubleTapOn` — which form you
+            // may write depended on which verb you were writing, and
+            // nothing said so. Parsing is uniform now; whether a verb
+            // reads the form is decided in `selector_support`, once,
+            // and refused there by name.
+            if let Some(raw) = map
+                .get(Value::String("anchored".into()))
+                .or_else(|| map.get(Value::String("anchorRelative".into())))
+            {
+                let (anchor, dx, dy) = parse_anchored(raw, "visible.anchored")?;
+                return Ok(Selector::AnchorRelative {
+                    anchor: Box::new(anchor),
+                    dx,
+                    dy,
+                });
+            }
             Err(ParseError::InvalidValue {
                 field: "visible".into(),
-                reason: "expected one of `text`, `id`, `label`, `role`, `ocrText`, `localizedText`, `fallback` keys".into(),
+                reason: "expected one of `text`, `id`, `label`, `role`, `ocrText`, `localizedText`, `anchored` (alias `anchorRelative`), `fallback` keys".into(),
             })
         }
         other => Err(ParseError::InvalidValue {
@@ -1238,28 +1256,32 @@ fn parse_input_text(v: &Value) -> Result<Step, ParseError> {
                     field: "inputText".into(),
                     reason: "mapping form requires `text:` (what to type)".into(),
                 })?;
-            let id = map
-                .get(Value::String("id".into()))
-                .and_then(Value::as_str)
-                .ok_or_else(|| ParseError::InvalidValue {
-                    field: "inputText".into(),
-                    reason: "mapping form requires `id:` (the target field); \
-                             for the focused field use the scalar form"
-                        .into(),
-                })?;
-            for key in map.keys() {
-                if let Some(k) = key.as_str().filter(|k| *k != "id" && *k != "text") {
-                    return Err(ParseError::InvalidValue {
-                        field: "inputText".into(),
-                        reason: format!("unknown key `{k}`; accepted: id, text"),
-                    });
+            // Everything but `text:` names the target, and `text:` is
+            // the value — which is why this used to accept `id:` and
+            // nothing else. The narrow rule was right about the
+            // ambiguity and wrong about the remedy: a field addressed
+            // by label, role, OCR or a fallback chain simply could not
+            // be typed into, and the verb table said otherwise.
+            let mut target = serde_norway::Mapping::new();
+            for (key, value) in map {
+                if key.as_str() == Some("text") {
+                    continue;
                 }
+                target.insert(key.clone(), value.clone());
+            }
+            if target.is_empty() {
+                return Err(ParseError::InvalidValue {
+                    field: "inputText".into(),
+                    reason: "mapping form needs a target beside `text:` — `id:`, \
+                             `label:`, `role:`, `ocrText:` or a `fallback:` chain. \
+                             For the focused field use the scalar form. (`text:` \
+                             is what to type here, so it cannot also name the \
+                             element.)"
+                        .into(),
+                });
             }
             Ok(Step::InputTextInto {
-                selector: Selector::Id {
-                    id: id.to_string(),
-                    modifiers: Modifiers::default(),
-                },
+                selector: visible_to_selector(&Value::Mapping(target))?,
                 text: text.to_string(),
             })
         }

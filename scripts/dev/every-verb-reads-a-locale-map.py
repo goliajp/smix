@@ -33,7 +33,6 @@ EXEMPT = {
     # already desugared what it was given.
     "Repeat": "the selector is a loop condition evaluated by check_selector_visible, "
     "which desugars for itself",
-    "RepeatTap": "same probe path as Repeat",
     # Its `when.visible` / `when.notVisible` are gate selectors, evaluated
     # by evaluate_run_flow_gate → check_selector_visible, which desugars
     # before it looks at anything.

@@ -352,14 +352,13 @@ Full selector taxonomy is in [03-selectors.md](03-selectors.md).
 ## OCR behavior in verbs
 
 `ocrText:` parses anywhere a selector does, standalone or inside a
-`fallback:` chain — but **only the verbs below fire Vision (iOS) / ML Kit
-(Android)**. Elsewhere it reaches the tree resolver, which has no image to
-read, and matches nothing: `assertVisible` fails with `ELEMENT_NOT_FOUND`
-and names the part it could not evaluate, and the absence checks
-(`assertNotVisible`, `waitForNotVisible`, `extendedWaitUntil.notVisible`)
-refuse outright rather than reporting an absence they never looked for.
+`fallback:` chain. Which verbs actually fire Vision (iOS) / ML Kit
+(Android) for it is one table, in
+[03-selectors](03-selectors.md#11-fallback-chain) — generated from the
+one the code decides by. A verb that does not read it says so and says
+what to write instead; none of them quietly matches nothing.
 
-The verbs that do fire OCR:
+The verbs that fire OCR, and what they do with it:
 
 - `extendedWaitUntil.visible` — polls tree + OCR per iteration until timeout.
 - `tapOn` with `fallback: [..., ocrText]` — polls the whole chain within `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) before failing, closing tap-vs-mount races.
