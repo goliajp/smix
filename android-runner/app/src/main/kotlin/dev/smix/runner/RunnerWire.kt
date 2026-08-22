@@ -66,8 +66,63 @@ object RunnerWire {
         )
     }
 
-    fun decodeInputText(payload: String): String =
-        JSONObject(payload).getString("text")
+    /// What to type, and — when the caller named a field — where they
+    /// tapped to focus it.
+    ///
+    /// `focusAt` absent means "wherever focus is". That is what a bare
+    /// `inputText` step means, and what a client older than this field
+    /// sends, so it is a decision rather than an omission; see
+    /// `focusAccepts`.
+    data class InputTextRequest(val text: String, val focusAt: NormCoord?)
+
+    fun decodeInputText(payload: String): InputTextRequest {
+        val req = JSONObject(payload)
+        return InputTextRequest(req.getString("text"), focusPoint(req))
+    }
+
+    /// The clear that precedes a fill needs the same target, or it
+    /// empties the field that happened to have focus — measured on
+    /// emulator-5554, a fill naming one field erased another.
+    fun decodeClearText(payload: String): NormCoord? =
+        if (payload.isBlank()) null else focusPoint(JSONObject(payload))
+
+    private fun focusPoint(req: JSONObject): NormCoord? =
+        if (req.has("focusNx") && req.has("focusNy")) {
+            NormCoord(req.getDouble("focusNx"), req.getDouble("focusNy"))
+        } else {
+            null
+        }
+
+    /// Screen-pixel containment, edges included. A tap on the boundary
+    /// focuses the field, so a point on the boundary belongs to it.
+    fun nodeHoldsPoint(
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        x: Int,
+        y: Int,
+    ): Boolean = x in left..right && y in top..bottom
+
+    /// Is this focused field the one the caller meant?
+    ///
+    /// With no point, yes — every focused field qualifies, which is the
+    /// documented meaning of a fill with no selector. With a point,
+    /// only the field holding it. The two halves belong together: the
+    /// permissive one alone would be a hole rather than a rule.
+    fun focusAccepts(
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        atX: Int?,
+        atY: Int?,
+    ): Boolean =
+        if (atX == null || atY == null) {
+            true
+        } else {
+            nodeHoldsPoint(left, top, right, bottom, atX, atY)
+        }
 
     fun decodeForeground(payload: String): String =
         JSONObject(payload).getString("bundleId")

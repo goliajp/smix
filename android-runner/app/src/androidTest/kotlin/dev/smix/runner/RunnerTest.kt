@@ -211,7 +211,7 @@ class SmixHttpServer(
                 uri == "/long-press-at-norm-coord" && session.method == Method.POST ->
                     serveLongPressAtNormCoord(session)
                 uri == "/input-text" && session.method == Method.POST -> serveInputText(session)
-                uri == "/clear-text" && session.method == Method.POST -> serveClearText()
+                uri == "/clear-text" && session.method == Method.POST -> serveClearText(session)
                 uri == "/windows" && session.method == Method.GET -> serveWindows()
                 uri == "/foreground" && session.method == Method.POST -> serveForeground(session)
                 uri == "/find-text-by-ocr" && session.method == Method.POST ->
@@ -716,7 +716,9 @@ class SmixHttpServer(
     }
 
     private fun serveInputText(session: IHTTPSession): Response {
-        val text = RunnerWire.decodeInputText(readBodyString(session))
+        val req = RunnerWire.decodeInputText(readBodyString(session))
+        val text = req.text
+        val focusPx = focusPixels(req.focusAt)
         // `adb shell input text` types into whichever field is focused,
         // and says nothing about whether one was. Its exit code means
         // "the key events were dispatched", not "the characters landed"
@@ -734,7 +736,7 @@ class SmixHttpServer(
         // finished coming up has no focused editable node yet. That gap
         // is the whole defect — the second fill on a screen always
         // worked because by then the keyboard was already open.
-        val focused = awaitEditableFocus(FOCUS_SETTLE_MS)
+        val focused = awaitEditableFocus(FOCUS_SETTLE_MS, focusPx)
             ?: return errorJson(
                 Response.Status.INTERNAL_ERROR,
                 "no_focused_field",
@@ -804,10 +806,23 @@ class SmixHttpServer(
     /// focus" for two seconds about a field the tree showed as focused
     /// in the same instant — the two reads disagreed because only one
     /// of them was current.
-    private fun awaitEditableFocus(budgetMs: Long): AccessibilityNodeInfo? {
+    /// Convert the caller's tap point to screen pixels, or null when
+    /// they did not name a field.
+    private fun focusPixels(at: RunnerWire.NormCoord?): Pair<Int, Int>? =
+        at?.let {
+            Pair(
+                RunnerWire.normToPixel(it.nx, device.displayWidth),
+                RunnerWire.normToPixel(it.ny, device.displayHeight),
+            )
+        }
+
+    private fun awaitEditableFocus(
+        budgetMs: Long,
+        focusPx: Pair<Int, Int>? = null,
+    ): AccessibilityNodeInfo? {
         val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
         while (true) {
-            focusedTextNode()?.let { return it }
+            focusedTextNode(focusPx)?.let { return it }
             if (android.os.SystemClock.elapsedRealtime() >= deadline) {
                 return null
             }
@@ -830,29 +845,57 @@ class SmixHttpServer(
     /// So when the direct query has nothing, walk for it. The walk is
     /// what the tree route already does, and it costs a traversal only
     /// on the path where the cheap answer failed.
-    private fun focusedTextNode(): AccessibilityNodeInfo? {
+    private fun focusedTextNode(focusPx: Pair<Int, Int>?): AccessibilityNodeInfo? {
         val direct = instrumentation.uiAutomation.findFocus(
             AccessibilityNodeInfo.FOCUS_INPUT,
         )
         if (direct != null) {
             direct.refresh()
-            if (direct.isEditable || direct.canTakeText()) return direct
+            if ((direct.isEditable || direct.canTakeText()) && holdsFocusPoint(direct, focusPx)) {
+                return direct
+            }
             direct.recycle()
         }
         for (window in instrumentation.uiAutomation.windows) {
             val root = window.root ?: continue
-            searchFocusedTextNode(root)?.let { return it }
+            searchFocusedTextNode(root, focusPx)?.let { return it }
         }
         return null
     }
 
+    /// Is this the field the caller named?
+    ///
+    /// Focus in Compose does not move synchronously with the tap that
+    /// moves it, so "some editable node has focus" is true before the
+    /// tap as well as after — and a fill naming one field was measured
+    /// clearing and typing into another. With a tap point the answer is
+    /// no until focus reaches the field containing it; without one,
+    /// every focused field qualifies, which is what a fill with no
+    /// selector means.
+    private fun holdsFocusPoint(
+        node: AccessibilityNodeInfo,
+        focusPx: Pair<Int, Int>?,
+    ): Boolean {
+        if (focusPx == null) return true
+        val r = android.graphics.Rect()
+        node.getBoundsInScreen(r)
+        return RunnerWire.focusAccepts(r.left, r.top, r.right, r.bottom, focusPx.first, focusPx.second)
+    }
+
     /// Depth-first for a focused node that accepts text.
-    private fun searchFocusedTextNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+    private fun searchFocusedTextNode(
+        node: AccessibilityNodeInfo,
+        focusPx: Pair<Int, Int>?,
+    ): AccessibilityNodeInfo? {
         node.refresh()
-        if (node.isFocused && (node.isEditable || node.canTakeText())) return node
+        if (node.isFocused && (node.isEditable || node.canTakeText()) &&
+            holdsFocusPoint(node, focusPx)
+        ) {
+            return node
+        }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val hit = searchFocusedTextNode(child)
+            val hit = searchFocusedTextNode(child, focusPx)
             if (hit != null) return hit
             child.recycle()
         }
@@ -941,10 +984,14 @@ class SmixHttpServer(
     /// address is exactly the case the key-event path exists for —
     /// fall back to delete keys, still in one shell exec, and say
     /// which path ran so the caller knows whether the answer is exact.
-    private fun serveClearText(): Response {
-        val focused = instrumentation.uiAutomation.findFocus(
-            android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT,
-        )
+    private fun serveClearText(session: IHTTPSession): Response {
+        // The clear that precedes a fill needs the same target as the
+        // typing. Without it a fill naming one field empties whichever
+        // field happened to hold focus — measured on emulator-5554,
+        // compose_password went from ten characters to none while the
+        // caller had named compose_input.
+        val focusPx = focusPixels(RunnerWire.decodeClearText(readBodyString(session)))
+        val focused = awaitEditableFocus(FOCUS_SETTLE_MS, focusPx)
         if (focused != null && focused.isEditable) {
             val args = android.os.Bundle()
             args.putCharSequence(

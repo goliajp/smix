@@ -64,8 +64,21 @@ impl AndroidDriver {
     ///
     /// The runner does it now, exactly, through the focused node's
     /// `ACTION_SET_TEXT`.
-    async fn clear_focused_field(&self, stage: &str) -> Result<(), ExpectationFailure> {
-        self.runner.clear_text().await.map(|_| ()).map_err(|e| {
+    ///
+    /// `at` names the field by where it was tapped. Without it the
+    /// runner empties whatever holds focus, and focus does not move
+    /// synchronously with the tap that moves it — a fill naming one
+    /// Compose field was measured emptying another.
+    async fn clear_focused_field(
+        &self,
+        stage: &str,
+        at: Option<(f64, f64)>,
+    ) -> Result<(), ExpectationFailure> {
+        let done = match at {
+            Some((nx, ny)) => self.runner.clear_text_at(nx, ny).await,
+            None => self.runner.clear_text().await,
+        };
+        done.map(|_| ()).map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
                 message: format!("{stage}: clear-first failed: {e}"),
@@ -498,7 +511,9 @@ impl Driver for AndroidDriver {
             // cannot address, so resolving first would fail for exactly
             // the callers who asked for it.
             if clear_first {
-                self.clear_focused_field("AndroidDriver::fill (key-events)")
+                // force-key-events resolves nothing by design, so there
+                // is no field to name: type where focus already is.
+                self.clear_focused_field("AndroidDriver::fill (key-events)", None)
                     .await?;
             }
             return self.runner.input_text(text).await.map_err(|e| {
@@ -521,9 +536,10 @@ impl Driver for AndroidDriver {
             })
         })?;
         if clear_first {
-            self.clear_focused_field("AndroidDriver::fill").await?;
+            self.clear_focused_field("AndroidDriver::fill", Some((nx, ny)))
+                .await?;
         }
-        self.runner.input_text(text).await.map_err(|e| {
+        self.runner.input_text_at(text, nx, ny).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
                 message: format!("AndroidDriver::fill: input_text failed: {e}"),
@@ -547,7 +563,8 @@ impl Driver for AndroidDriver {
                 ..Default::default()
             })
         })?;
-        self.clear_focused_field("AndroidDriver::clear").await
+        self.clear_focused_field("AndroidDriver::clear", Some((nx, ny)))
+            .await
     }
 
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure> {

@@ -1527,6 +1527,47 @@ impl HttpRunnerClient {
         Ok(())
     }
 
+    /// `POST /input-text`, naming the field by where it was tapped.
+    ///
+    /// [`Self::input_text`] types into whatever holds focus, which is
+    /// ambiguous straight after a focus tap: focus does not move
+    /// synchronously with the tap that moves it, so the runner could
+    /// still find the previously focused field and type there. Measured
+    /// on emulator-5554 — a fill naming one Compose field cleared and
+    /// filled another.
+    ///
+    /// Passing the tap point makes the request say which field it
+    /// means, and the runner waits for focus to reach the field
+    /// containing that point rather than for any field to have it.
+    pub async fn input_text_at(
+        &self,
+        text: &str,
+        nx: f64,
+        ny: f64,
+    ) -> Result<(), RunnerTransportError> {
+        #[derive(Serialize)]
+        struct Req<'a> {
+            text: &'a str,
+            #[serde(rename = "focusNx")]
+            focus_nx: f64,
+            #[serde(rename = "focusNy")]
+            focus_ny: f64,
+        }
+        let body: OkEnvelope = self
+            .json_post(
+                "/input-text",
+                &Req {
+                    text,
+                    focus_nx: nx,
+                    focus_ny: ny,
+                },
+                None,
+            )
+            .await?;
+        body.require_ok("/input-text")?;
+        Ok(())
+    }
+
     /// `POST /clear-text` — empty the focused field, Android only.
     ///
     /// Returns how the runner did it: `set-text` is exact, `key-events`
@@ -1547,6 +1588,42 @@ impl HttpRunnerClient {
             method: Option<String>,
         }
         let body: Res = self.json_post("/clear-text", &Req {}, None).await?;
+        if body.status.as_deref() != Some("ok") {
+            return Err(RunnerTransportError::Refused {
+                endpoint: "/clear-text".to_string(),
+            });
+        }
+        Ok(body.method.unwrap_or_else(|| "unknown".to_string()))
+    }
+
+    /// `POST /clear-text`, naming the field by where it was tapped.
+    ///
+    /// The clear that precedes a fill needs the same target as the
+    /// typing, or it empties whichever field happened to hold focus.
+    /// See [`Self::input_text_at`].
+    pub async fn clear_text_at(&self, nx: f64, ny: f64) -> Result<String, RunnerTransportError> {
+        #[derive(Serialize)]
+        struct Req {
+            #[serde(rename = "focusNx")]
+            focus_nx: f64,
+            #[serde(rename = "focusNy")]
+            focus_ny: f64,
+        }
+        #[derive(Deserialize)]
+        struct Res {
+            status: Option<String>,
+            method: Option<String>,
+        }
+        let body: Res = self
+            .json_post(
+                "/clear-text",
+                &Req {
+                    focus_nx: nx,
+                    focus_ny: ny,
+                },
+                None,
+            )
+            .await?;
         if body.status.as_deref() != Some("ok") {
             return Err(RunnerTransportError::Refused {
                 endpoint: "/clear-text".to_string(),
