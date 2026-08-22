@@ -901,6 +901,62 @@ pub async fn tap_then_capture_with(
     ))
 }
 
+/// Which part of this selector this layer cannot evaluate, if any.
+///
+/// The tree resolver reads an accessibility tree. Three selector forms
+/// describe something it cannot see there: `ocrText` is pixels,
+/// `localizedText` is a locale map that has to be picked from first,
+/// and `anchorRelative` resolves to a shifted coordinate rather than to
+/// a node. Each is dispatched above the resolver by the verbs that
+/// support it, and matched by nothing when a verb does not.
+///
+/// Matching nothing is a fine answer to "is it there" — it becomes a
+/// wrong one for "is it absent". `assertNotVisible: { ocrText: 'smix
+/// fixture' }` passed against a screen showing those words, measured on
+/// emulator-5554 next to two controls: the same string as `text:` was
+/// found, and `assertNotVisible` with `text:` correctly failed. Nothing
+/// had been checked, and the verb reported success.
+///
+/// A chain counts. `fallback: [id, ocrText]` whose id misses has not
+/// been evaluated to the end, so its silence is not evidence either.
+#[must_use]
+pub fn unevaluable_form(selector: &Selector) -> Option<&'static str> {
+    match selector {
+        Selector::OcrText { .. } => Some("ocrText"),
+        Selector::LocalizedText { .. } => Some("localizedText"),
+        Selector::AnchorRelative { .. } => Some("anchorRelative"),
+        Selector::Fallback { fallback } => fallback.iter().find_map(unevaluable_form),
+        Selector::Text { .. }
+        | Selector::Id { .. }
+        | Selector::Label { .. }
+        | Selector::Role { .. }
+        | Selector::Focused { .. }
+        | Selector::Anchor { .. }
+        | Selector::Point { .. } => None,
+    }
+}
+
+/// Refuse to call something absent when part of the question went
+/// unasked. See [`unevaluable_form`].
+fn absence_must_be_looked_for(verb: &str, selector: &Selector) -> Result<(), ExpectationFailure> {
+    let Some(form) = unevaluable_form(selector) else {
+        return Ok(());
+    };
+    Err(ExpectationFailure::new(FailureInit {
+        code: Some(FailureCode::DriverError),
+        message: format!(
+            "{verb}: this selector contains `{form}`, which is not read from the \
+             accessibility tree, and {verb} has no path that evaluates it. Nothing \
+             was checked, so reporting the element absent would be a pass with no \
+             evidence behind it. `tapOn`, `extendedWaitUntil` and \
+             `scrollUntilVisible` do evaluate it; for an absence check, name the \
+             element by `id`, `text`, `label` or `role`."
+        ),
+        selector: Some(selector.clone()),
+        ..Default::default()
+    }))
+}
+
 impl App {
     /// Construct from a fully-wired driver + simctl client. Use this when
     /// you already manage Cell / UDID lifecycle externally.
@@ -2139,6 +2195,7 @@ impl App {
         selector: &Selector,
         timeout: Duration,
     ) -> Result<(), ExpectationFailure> {
+        absence_must_be_looked_for("waitForNotVisible", selector)?;
         // Delegated rather than looped here. `App::find` is already a
         // pass-through to the driver's, so this held a second copy of
         // the same poll — and it was the only copy, which is why the
@@ -2179,6 +2236,7 @@ impl App {
     }
 
     pub async fn assert_not_visible(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
+        absence_must_be_looked_for("expect.toNotBeVisible", selector)?;
         if self.find(selector).await? {
             Err(ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::AssertionFailed),
@@ -2596,10 +2654,19 @@ impl App {
             Ok(_) => Ok(()),
             Err(e) if e.code == FailureCode::Timeout => Err(ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::NotVisible),
-                message: format!(
-                    "expect.toBeVisible: not visible — {}",
-                    describe_selector(selector)
-                ),
+                message: match unevaluable_form(selector) {
+                    // A false red rather than a false green — but the
+                    // reader still deserves to know that part of what
+                    // they wrote was never looked at.
+                    Some(form) => format!(
+                        "expect.toBeVisible: not visible — {}. Note: `{form}` is not                          read from the accessibility tree and this verb has no path                          that evaluates it, so that part was never checked. `tapOn`,                          `extendedWaitUntil` and `scrollUntilVisible` do evaluate it.",
+                        describe_selector(selector)
+                    ),
+                    None => format!(
+                        "expect.toBeVisible: not visible — {}",
+                        describe_selector(selector)
+                    ),
+                },
                 selector: Some(selector.clone()),
                 visible_elements: e.visible_elements,
                 suggestions: e.suggestions,

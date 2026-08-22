@@ -240,6 +240,13 @@ itself.
 - A layer whose pattern cannot compile is skipped; the layers after it
   still get their turn.
 - Handy for production code where the same logical button might have testid in dev builds but not release builds.
+- `ocrText`, `localizedText` and `anchorRelative` are read above the
+  tree resolver, and only some verbs do that — `tapOn`,
+  `extendedWaitUntil` and `scrollUntilVisible`. Elsewhere they match
+  nothing, so **`assertNotVisible` and `waitForNotVisible` refuse them
+  rather than passing**: an absence check that never looked is not
+  evidence of absence. `assertVisible` still fails, and says which part
+  went unchecked. This applies to a chain containing one of them too.
 
 ### 12. (Implicit shortcut) String
 

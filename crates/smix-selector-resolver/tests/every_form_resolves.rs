@@ -102,22 +102,41 @@ fn sample(discriminant: &Selector) -> Result<Selector, Exempt> {
             index: IndexModifiers::default(),
         }),
         Selector::LocalizedText { .. } => Err(Exempt {
-            selector: discriminant.clone(),
+            // Populated on purpose. An empty locale map matches nothing
+            // whatever the rule is, so exempting it would prove only
+            // that emptiness is empty.
+            selector: Selector::LocalizedText {
+                localized_text: [("en".to_string(), "Submit".to_string())]
+                    .into_iter()
+                    .collect(),
+                modifiers: Modifiers::default(),
+            },
             why: "a locale map is desugared to a Text selector by the adapter \
                   before any resolver sees it; there is no locale here to pick with",
         }),
         Selector::OcrText { .. } => Err(Exempt {
-            selector: discriminant.clone(),
+            selector: Selector::OcrText {
+                ocr_text: "Submit".into(),
+                locales: vec!["en-US".into()],
+                modifiers: Modifiers::default(),
+            },
             why: "pixels, not the accessibility tree — the resolver has no image \
                   to read and the verb that uses it says so",
         }),
         Selector::AnchorRelative { .. } => Err(Exempt {
-            selector: discriminant.clone(),
+            selector: Selector::AnchorRelative {
+                anchor: Box::new(Selector::Id {
+                    id: "target".into(),
+                    modifiers: Modifiers::default(),
+                }),
+                dx: 0.0,
+                dy: 30.0,
+            },
             why: "resolves to a shifted coordinate rather than to a node; the \
                   callers that accept it act on the coordinate",
         }),
         Selector::Point { .. } => Err(Exempt {
-            selector: discriminant.clone(),
+            selector: Selector::Point { nx: 0.25, ny: 0.5 },
             why: "a coordinate is not a description of a node",
         }),
         Selector::Fallback { .. } => Ok(Selector::Fallback {

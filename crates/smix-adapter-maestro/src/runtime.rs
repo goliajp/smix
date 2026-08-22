@@ -2809,6 +2809,21 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 modifiers: modifiers.clone(),
             });
         }
+        // Chains too. A `fallback: [{localizedText: …}, {id: …}]` used
+        // to leave the first layer un-desugared, so it matched nothing
+        // and the chain quietly fell through to the second — the locale
+        // the author wrote was never consulted.
+        if let Selector::Fallback { fallback } = selector {
+            let desugared: Vec<Selector> = fallback
+                .iter()
+                .map(|layer| self.desugar_localized_text(layer).into_owned())
+                .collect();
+            if desugared != *fallback {
+                return Cow::Owned(Selector::Fallback {
+                    fallback: desugared,
+                });
+            }
+        }
         Cow::Borrowed(selector)
     }
 
