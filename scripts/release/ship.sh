@@ -243,112 +243,17 @@ python3 "$ROOT/scripts/dev/gen-llms.py" --check > /tmp/smix-ship-llms.log 2>&1 \
   || fail "llms.txt/llms-full.txt are stale — run scripts/dev/gen-llms.py and commit (see /tmp/smix-ship-llms.log)"
 # --- cargo-semver-checks ----------------------------------------------
 
-# --- clippy -----------------------------------------------------------
-# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
-# nothing ran clippy — so four lints sat in the tree, one of them a doc
-# comment detached from the type it described in a stone crate. Clean at
-# the time this was added; here so it stays that way.
-log "clippy"
-( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
-  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
-
-# --- swift-bridge unit tests ------------------------------------------
-# NOT bypassable. This suite sat outside the gate long enough for a test
-# asserting a two-release-old contract to fail unnoticed for 15+ releases.
-# ~18 s.
-log "swift-bridge unit tests"
-( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
-  || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
-
-# --- SmixRunner UITest compile ----------------------------------------
-# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
-# the XCUITest body that ships in the runner sources and is what actually
-# drives a device. It went uncompiled by any gate. build-for-testing on a
-# generic simulator destination compiles it without booting a simulator.
-log "SmixRunner UITest build"
-( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
-    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
-    > /tmp/smix-ship-uitest-build.log 2>&1 \
-  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
-
-# --- rust workspace tests ---------------------------------------------
-# The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
-# + lints while `cargo test` was left to whoever remembered. That is how
-# /tap shipped a response body the wire crate deserialized to all-None
-# without one red test. Non-bypassable, like the swift suite above.
-log "cargo test --workspace"
-( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1 \
-  || fail "cargo test FAILED — see /tmp/smix-ship-cargo-test.log"
-
-# --- TS SDK tests ------------------------------------------------------
-log "npm/smix-rn typecheck + vitest"
-( cd "$ROOT/npm/smix-rn" && bun run typecheck && bun run test ) \
-    > /tmp/smix-ship-ts-test.log 2>&1 \
-  || fail "TS SDK tests FAILED — see /tmp/smix-ship-ts-test.log"
-
-# --- Android unit tests + androidTest compile --------------------------
-# Compiles the generated Kotlin bindings AND runs the unit suites.
-# The bindings previously first compiled during `gradlew :sdk:publish` —
-# publish-time was the first compile, which is exactly how the
-# DriveError field/Throwable.message collision reached a release branch.
+# --- source-only judgements -------------------------------------------
+# Everything below reads files. No build, no device, no network — which
+# is why it belongs here rather than after six minutes of compiling.
 #
-# The task name is bare rather than `:sdk:`-qualified because it used to
-# be qualified, and the app module's eight test files were consequently
-# run by nothing at all — including the ones written to cover the empty
-# set_target_bundle_id and the placeholder package in the view-id lookup.
-#
-# assembleDebugAndroidTest is the Android counterpart of the
-# `xcodebuild build-for-testing` step above: it compiles the runner body
-# that ships to users without starting a device.
-#
-# :app's connectedDebugAndroidTest is NOT here and will not be. It was
-# measured sitting at "Tests 0/1 completed" for three minutes forty
-# while /health answered 200: it does not fail, it never returns, and in
-# a release script that is a hang. :sdk's runs below, via the delegate.
-log "android unit tests + androidTest compile (sdk + app; compiles kotlin bindings)"
-( cd "$ROOT/android-runner" && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain ) \
-    > /tmp/smix-ship-kotlin-test.log 2>&1 \
-  || fail "Android unit tests / androidTest compile FAILED — see /tmp/smix-ship-kotlin-test.log"
-# Built here rather than just before the corpus gate: the android gates
-# run first and used to fall back to whatever smix was on PATH, so a
-# 6.2.0 binary spent this release verifying 6.3.0. The corpus gate had
-# already been fixed for exactly that; the device gates above it had not.
-# Build the workspace's own smix release for the gate — a global `smix` on
-# PATH is whatever version was installed some other day, and a mismatch
-# between it and the runner sources this workspace ships is exactly how a
-# pre-fold binary drove the post-fold runner in dry-run and the gate turned
-# red on a real driver/runner drift.
-log "cargo build -p smix-cli --release (for corpus gate)"
-( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release"
-
-
-# --- android instrumentation (device) ----------------------------------
-# The :sdk assertion suite on a pinned emulator. Placed early — before
-# fuzz, clippy, semver and anything that publishes — so a missing
-# emulator costs seconds rather than being discovered after the long
-# work. Device selection and the deadline live in the delegate, not
-# here: keeping them inline would put an adb call in a script the
-# PreToolUse guard can no longer read, and the delegate carries the same
-# emulator-only rule the guard enforces.
-log "android instrumentation (device)"
-bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
-  || fail "android instrumentation gate FAILED — see the verdict above; start an emulator with \
-\"\$ANDROID_HOME/emulator/emulator\" -avd sim-smix-android-01 -port 5554 -no-snapshot-save &"
-
-# --- android behaviour (device) ----------------------------------------
-# Three assertions that each go red when their fix is reverted: the
-# key-events flag actually changing the driver's path, every driving
-# request carrying the app under test, and the qualified view-id
-# spelling being what found the node. All three shipped broken once
-# without failing anything.
-#
-# Adjacent to the instrumentation gate because they share the emulator:
-# a missing device should fail once, in one place, early.
-log "android behaviour (device)"
-SMIX_BIN="$ROOT/target/release/smix" \
-  bash "$ROOT/scripts/release/android-behaviour-gate.sh" \
-  || fail "android behaviour gate FAILED — see the verdict above"
-
+# It used to sit after the workspace tests. That was inside tolerance
+# until this release's tests pushed `cargo test --workspace` past five
+# minutes on its own, and the ordering gate said so: forty-six
+# second-level judgements waiting behind work that has nothing to do
+# with them. The answer is the same one 6.3.0 reached by hand — move
+# them to the front — and this time a gate will notice if they drift
+# back.
 # --- route conformance ------------------------------------------------
 # Derives the served-route list from both runner sources and sweeps every
 # shipped file for phantom endpoints. It caught 13 fictional routes in
@@ -658,6 +563,113 @@ python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 
 log "scope promise scan"
 python3 "$ROOT/scripts/dev/scope-promise-scan.py" > /tmp/smix-ship-scope.log 2>&1 \
   || fail "scope promise scan FAILED — the scope file and the tree disagree (see /tmp/smix-ship-scope.log)"
+
+# --- clippy -----------------------------------------------------------
+# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
+# nothing ran clippy — so four lints sat in the tree, one of them a doc
+# comment detached from the type it described in a stone crate. Clean at
+# the time this was added; here so it stays that way.
+log "clippy"
+( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
+  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
+
+# --- swift-bridge unit tests ------------------------------------------
+# NOT bypassable. This suite sat outside the gate long enough for a test
+# asserting a two-release-old contract to fail unnoticed for 15+ releases.
+# ~18 s.
+log "swift-bridge unit tests"
+( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
+  || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
+
+# --- SmixRunner UITest compile ----------------------------------------
+# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
+# the XCUITest body that ships in the runner sources and is what actually
+# drives a device. It went uncompiled by any gate. build-for-testing on a
+# generic simulator destination compiles it without booting a simulator.
+log "SmixRunner UITest build"
+( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
+    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
+    > /tmp/smix-ship-uitest-build.log 2>&1 \
+  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
+
+# --- rust workspace tests ---------------------------------------------
+# The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
+# + lints while `cargo test` was left to whoever remembered. That is how
+# /tap shipped a response body the wire crate deserialized to all-None
+# without one red test. Non-bypassable, like the swift suite above.
+log "cargo test --workspace"
+( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1 \
+  || fail "cargo test FAILED — see /tmp/smix-ship-cargo-test.log"
+
+# --- TS SDK tests ------------------------------------------------------
+log "npm/smix-rn typecheck + vitest"
+( cd "$ROOT/npm/smix-rn" && bun run typecheck && bun run test ) \
+    > /tmp/smix-ship-ts-test.log 2>&1 \
+  || fail "TS SDK tests FAILED — see /tmp/smix-ship-ts-test.log"
+
+# --- Android unit tests + androidTest compile --------------------------
+# Compiles the generated Kotlin bindings AND runs the unit suites.
+# The bindings previously first compiled during `gradlew :sdk:publish` —
+# publish-time was the first compile, which is exactly how the
+# DriveError field/Throwable.message collision reached a release branch.
+#
+# The task name is bare rather than `:sdk:`-qualified because it used to
+# be qualified, and the app module's eight test files were consequently
+# run by nothing at all — including the ones written to cover the empty
+# set_target_bundle_id and the placeholder package in the view-id lookup.
+#
+# assembleDebugAndroidTest is the Android counterpart of the
+# `xcodebuild build-for-testing` step above: it compiles the runner body
+# that ships to users without starting a device.
+#
+# :app's connectedDebugAndroidTest is NOT here and will not be. It was
+# measured sitting at "Tests 0/1 completed" for three minutes forty
+# while /health answered 200: it does not fail, it never returns, and in
+# a release script that is a hang. :sdk's runs below, via the delegate.
+log "android unit tests + androidTest compile (sdk + app; compiles kotlin bindings)"
+( cd "$ROOT/android-runner" && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain ) \
+    > /tmp/smix-ship-kotlin-test.log 2>&1 \
+  || fail "Android unit tests / androidTest compile FAILED — see /tmp/smix-ship-kotlin-test.log"
+# Built here rather than just before the corpus gate: the android gates
+# run first and used to fall back to whatever smix was on PATH, so a
+# 6.2.0 binary spent this release verifying 6.3.0. The corpus gate had
+# already been fixed for exactly that; the device gates above it had not.
+# Build the workspace's own smix release for the gate — a global `smix` on
+# PATH is whatever version was installed some other day, and a mismatch
+# between it and the runner sources this workspace ships is exactly how a
+# pre-fold binary drove the post-fold runner in dry-run and the gate turned
+# red on a real driver/runner drift.
+log "cargo build -p smix-cli --release (for corpus gate)"
+( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release"
+
+
+# --- android instrumentation (device) ----------------------------------
+# The :sdk assertion suite on a pinned emulator. Placed early — before
+# fuzz, clippy, semver and anything that publishes — so a missing
+# emulator costs seconds rather than being discovered after the long
+# work. Device selection and the deadline live in the delegate, not
+# here: keeping them inline would put an adb call in a script the
+# PreToolUse guard can no longer read, and the delegate carries the same
+# emulator-only rule the guard enforces.
+log "android instrumentation (device)"
+bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
+  || fail "android instrumentation gate FAILED — see the verdict above; start an emulator with \
+\"\$ANDROID_HOME/emulator/emulator\" -avd sim-smix-android-01 -port 5554 -no-snapshot-save &"
+
+# --- android behaviour (device) ----------------------------------------
+# Three assertions that each go red when their fix is reverted: the
+# key-events flag actually changing the driver's path, every driving
+# request carrying the app under test, and the qualified view-id
+# spelling being what found the node. All three shipped broken once
+# without failing anything.
+#
+# Adjacent to the instrumentation gate because they share the emulator:
+# a missing device should fail once, in one place, early.
+log "android behaviour (device)"
+SMIX_BIN="$ROOT/target/release/smix" \
+  bash "$ROOT/scripts/release/android-behaviour-gate.sh" \
+  || fail "android behaviour gate FAILED — see the verdict above"
+
 
 # --- corpus gate (real sim) -------------------------------------------
 # Runs the bootstrap corpus end-to-end on a simulator. Device selection
