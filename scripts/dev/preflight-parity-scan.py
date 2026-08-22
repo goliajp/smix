@@ -49,6 +49,7 @@ LOCAL = {
     "a verb does not assume a platform": "a-verb-does-not-assume-a-platform",
     "a hand-copied table says a number": "a-hand-copied-table-says-a-number",
     "route conformance": "route-conformance",
+    "every verb reads a locale map": "every-verb-reads-a-locale-map",
     "fact scan": "fact-scan",
     "workflow scan": "workflow-scan",
     "gate subject diversity": "gate-subject-diversity",

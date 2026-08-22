@@ -262,6 +262,15 @@ log "route conformance"
 python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&1 \
   || fail "route conformance FAILED — see /tmp/smix-ship-routes.log"
 
+# --- every verb reads a locale map ------------------------------------
+# `localizedText:` is rewritten to a Text selector by a pure function.
+# Three of twelve verbs called it; the rest handed the locale map to the
+# resolver, which matches nothing against it — the same element found by
+# `assertVisible` and not by `longPressOn`, measured on emulator-5554.
+log "every verb reads a locale map"
+python3 "$ROOT/scripts/dev/every-verb-reads-a-locale-map.py" > /tmp/smix-ship-locale.log 2>&1 \
+  || fail "every verb reads a locale map FAILED — see /tmp/smix-ship-locale.log"
+
 # Twenty corpus flows against one system app is one subject walked
 # twenty ways, and a defect that only shows on an ordinary app was
 # invisible to every device gate at once — which is how a consumer

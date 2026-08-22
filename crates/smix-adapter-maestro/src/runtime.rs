@@ -1671,7 +1671,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::InputTextInto { selector, text } => {
                 let expanded = self.expand_template(text)?;
-                self.app.fill(selector, &expanded).await?;
+                let desugared = self.desugar_localized_text(selector);
+                self.app.fill(&desugared, &expanded).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::Back => {
@@ -1721,7 +1722,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 if self.selector_contains_ocr(selector) {
                     self.scroll_until_visible_with_ocr(selector, dir).await?;
                 } else {
-                    self.app.scroll(selector, dir).await?;
+                    self.app
+                        .scroll(&self.desugar_localized_text(selector), dir)
+                        .await?;
                 }
                 Ok(RunStepReport::Ok)
             }
@@ -1738,12 +1741,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::AssertNotVisible { selector } => {
+                let desugared = self.desugar_localized_text(selector);
                 // Match maestro CLI implicit retry semantics: wait up
                 // to 5s for the element to disappear. SwiftUI sheet/alert/
                 // confirmation-dialog dismiss animations take 200-700ms, and
                 // a bare one-shot assert_not_visible races them.
                 self.app
-                    .wait_for_not_visible(selector, Duration::from_secs(5))
+                    .wait_for_not_visible(&desugared, Duration::from_secs(5))
                     .await?;
                 Ok(RunStepReport::Ok)
             }
@@ -1977,11 +1981,15 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::CopyTextFrom { selector } => {
-                self.app.copy_text_from(selector).await?;
+                self.app
+                    .copy_text_from(&self.desugar_localized_text(selector))
+                    .await?;
                 Ok(RunStepReport::Ok)
             }
             Step::DoubleTapOn { selector } => {
-                self.app.double_tap(selector).await?;
+                self.app
+                    .double_tap(&self.desugar_localized_text(selector))
+                    .await?;
                 Ok(RunStepReport::Ok)
             }
             Step::RepeatTap {
@@ -2002,10 +2010,15 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             } => {
                 let duration = Duration::from_millis(*duration_ms);
                 if !*capture_during {
-                    self.app.long_press(selector, duration).await?;
+                    self.app
+                        .long_press(&self.desugar_localized_text(selector), duration)
+                        .await?;
                     return Ok(RunStepReport::Ok);
                 }
-                let capture = self.app.long_press_capturing(selector, duration).await?;
+                let capture = self
+                    .app
+                    .long_press_capturing(&self.desugar_localized_text(selector), duration)
+                    .await?;
                 self.write_press_frames(selector, &capture)?;
                 Ok(RunStepReport::Ok)
             }
@@ -3220,6 +3233,11 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// by tapOn poll + scrollUntilVisible poll. Uses `App::find` for
     /// tree-based subs and `App::find_by_text_ocr` for OcrText subs.
     async fn check_selector_visible(&mut self, sel: &Selector) -> Result<bool, RunError> {
+        // A locale map reaching the resolver matches nothing, and this
+        // probe answers a gate: `when.notVisible` would fire because
+        // the question was never asked, which is a wrong branch taken
+        // in silence rather than an error anyone sees.
+        let sel = &*self.desugar_localized_text(sel);
         match sel {
             Selector::OcrText {
                 ocr_text, locales, ..

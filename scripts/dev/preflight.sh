@@ -164,6 +164,7 @@ echo "--- source gates"
 SOURCE_GATES=(
   hygiene-scan
   route-conformance
+  every-verb-reads-a-locale-map
   fact-scan
   workflow-scan
   android-gate-scan
