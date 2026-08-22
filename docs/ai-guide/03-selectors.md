@@ -228,7 +228,17 @@ itself.
       - point: "50%,75%"                # last resort
 ```
 
-- Iterates entries in order; uses the first that resolves.
+- Iterates entries in order; uses the first that resolves. Order is a
+  promise, not a tiebreak: `[id, text]` prefers the id even when both
+  match, so a chain keeps picking the same element as an app's copy
+  changes.
+- Works in any selector position, in every verb that takes a selector —
+  `assertVisible`, `tapOn`, `extendedWaitUntil`, `fill`, and the rest —
+  and on both platforms.
+- Where a verb returns every match rather than one, a chain gives you
+  the first layer that matched, not the union of the layers.
+- A layer whose pattern cannot compile is skipped; the layers after it
+  still get their turn.
 - Handy for production code where the same logical button might have testid in dev builds but not release builds.
 
 ### 12. (Implicit shortcut) String

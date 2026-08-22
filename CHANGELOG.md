@@ -2,6 +2,54 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **A fill into a masked field is no longer judged to have landed
+  nowhere.** A password field's accessibility node reports one bullet
+  per character and never the characters, so the read-back — which
+  compares the node's text with what was typed — was false for every
+  such fill that ever worked. Masked fields are now judged by how much
+  longer they got, keyed on the node reporting itself as a password
+  rather than on the text looking like a mask: a plaintext field holding
+  `aaaa` is still checked by content.
+
+- **A named fill goes to the field it names.** `fill` taps the field to
+  focus it and then asks the runner to clear and type, and the runner
+  acted on whatever held focus at that instant. Focus does not move
+  synchronously with the tap, so both halves could still reach the
+  previously focused field — the characters landed in the wrong field
+  and the wrong field was emptied first. The request now carries where
+  the caller tapped, and the runner waits for focus to reach that field.
+  A scalar `inputText`, which names no field, still means "wherever
+  focus is". `clear` had the same shape and is fixed with it.
+
+- **A `fallback:` chain is tried layer by layer in every verb.** It
+  worked in `extendedWaitUntil`, `tapOn` and the OCR probe, and matched
+  nothing anywhere else — `assertVisible` with a chain failed on both
+  platforms. Order is a promise: `[id, text]` prefers the id even when
+  both match. Where a verb returns every match, a chain now gives the
+  first layer that matched rather than the union. A layer whose pattern
+  cannot compile no longer discards the layers after it.
+
+- **A failure says which step it happened at.** Errors read
+  `step N (verb): …`, and a `STEP N: verb → FAILED` line joins the
+  skipped one. A subflow's inner step is named once; the `runFlow`
+  containing it does not claim the failure.
+
+### Added
+
+- A test that every selector form either resolves or is listed as
+  unresolvable with a reason — and that each listed reason is still
+  true. `Fallback` spent its whole existence matching nothing because
+  the resolver said the adapter would handle it and nothing checked.
+
+- The Android behaviour gate drives a masked field (A9) and a fill that
+  names a second field while another holds focus (A10). Its assertion
+  count is derived rather than typed; it said 9/9 while the file held
+  nine and would have gone on saying it while holding ten.
+
 ## [6.6.0] — 2026-08-21
 
 ### Added
