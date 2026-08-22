@@ -217,11 +217,17 @@ impl ResolverContext {
             }
             Selector::Point { .. } => true,
             Selector::Fallback { fallback } => {
-                // Compile every chain element's patterns; the adapter
-                // iterates chain in dispatch but each sub-selector may need
-                // its own pattern cache. Returns false on first compile
-                // failure (matches LocalizedText / OcrText semantics).
-                fallback.iter().all(|s| Self::compile_selector(s, out))
+                // Compile what each layer needs, and do not let one
+                // layer's unusable pattern take the chain down with it.
+                // `all` short-circuited on the first failure, so a
+                // chain whose first layer held a malformed regex
+                // resolved to nothing — including the layers written
+                // precisely so that something would still match.
+                // A layer that did not compile simply never matches.
+                for layer in fallback {
+                    Self::compile_selector(layer, out);
+                }
+                true
             }
         }
     }
@@ -304,6 +310,23 @@ fn resolve_inner<'tree>(
     selector: &Selector,
     ctx: &ResolverContext,
 ) -> Vec<&'tree A11yNode> {
+    if let Selector::Fallback { fallback } = selector {
+        // Layer by layer, in order, and the first one that matches is
+        // the answer — never the union. A chain means "use the first of
+        // these that works", so `[id, text]` with both matching is one
+        // element, and which one is a promise the caller made.
+        //
+        // Here rather than at the public entry points because
+        // `wait_for` polls through the compiled variant, which is
+        // exactly the path `assertVisible` takes. Putting it in one of
+        // the two would have left the other answering as before — the
+        // shape of the defect this fixes.
+        return fallback
+            .iter()
+            .map(|layer| resolve_inner(tree, layer, ctx))
+            .find(|found| !found.is_empty())
+            .unwrap_or_default();
+    }
     let raw = dfs_collect(tree, |n| matches_base(n, selector, ctx));
     let visible: Vec<&A11yNode> = raw
         .into_iter()
@@ -332,6 +355,13 @@ fn resolve_inner_no_index<'tree>(
     selector: &Selector,
     ctx: &ResolverContext,
 ) -> Vec<&'tree A11yNode> {
+    if let Selector::Fallback { fallback } = selector {
+        return fallback
+            .iter()
+            .map(|layer| resolve_inner_no_index(tree, layer, ctx))
+            .find(|found| !found.is_empty())
+            .unwrap_or_default();
+    }
     let raw = dfs_collect(tree, |n| matches_base(n, selector, ctx));
     let visible: Vec<&A11yNode> = raw
         .into_iter()
@@ -535,9 +565,16 @@ fn match_base_form(node: &A11yNode, selector: &Selector, ctx: &ResolverContext) 
         // never reaches here through the standard pipeline; if it somehow
         // does, no node matches.
         Selector::AnchorRelative { .. } => false,
-        // Point + Fallback are dispatched by the adapter without
-        // resolver involvement. Reaching matches_base means a caller
-        // forgot to dispatch; no node matches.
+        // A point is a coordinate, not a description of a node, so
+        // nothing here can match it; the callers that accept one act on
+        // the coordinate directly.
+        //
+        // A chain is resolved at the entry points above, layer by
+        // layer, so it never reaches here. It used to be listed
+        // alongside the point with a comment saying the adapter
+        // dispatched it — an invariant three verbs kept and every other
+        // one had never heard of, which is how `assertVisible` with a
+        // chain came to match nothing on either platform.
         Selector::Point { .. } | Selector::Fallback { .. } => false,
     }
 }
