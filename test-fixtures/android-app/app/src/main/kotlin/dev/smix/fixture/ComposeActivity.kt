@@ -2,7 +2,9 @@ package dev.smix.fixture
 
 import android.app.Activity
 import android.os.Bundle
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -42,6 +44,7 @@ class ComposeActivity : ComponentActivity() {
         setContent {
             var typed by remember { mutableStateOf("") }
             var secret by remember { mutableStateOf("") }
+            var wrapped by remember { mutableStateOf("") }
             var submitted by remember { mutableStateOf("nothing submitted") }
             Column(
                 modifier = Modifier
@@ -68,6 +71,26 @@ class ComposeActivity : ComponentActivity() {
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.testTag("compose_password"),
                 )
+                // A field named by its wrapper, not by itself. A
+                // consumer's Kotlin views carry a contentDescription on
+                // the surrounding layout and nothing on the input, so a
+                // selector resolves to the wrapper and the tap lands at
+                // its centre — which need not be inside the field that
+                // then takes focus. 6.7.1 required the focused field to
+                // contain the tap point and refused every fill in that
+                // app.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp)
+                        .testTag("compose_wrapper"),
+                ) {
+                    TextField(
+                        value = wrapped,
+                        onValueChange = { wrapped = it },
+                        modifier = Modifier.testTag("compose_wrapped_input"),
+                    )
+                }
                 Button(
                     onClick = { submitted = typed },
                     modifier = Modifier.testTag("compose_submit"),

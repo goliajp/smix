@@ -73,22 +73,26 @@ object RunnerWire {
     /// `inputText` step means, and what a client older than this field
     /// sends, so it is a decision rather than an omission; see
     /// `focusAccepts`.
-    data class InputTextRequest(val text: String, val focusAt: NormCoord?)
+    data class InputTextRequest(val text: String, val focusIn: NormRect?)
+
+    /// The named element's own box, viewport-normalized.
+    data class NormRect(val nx: Double, val ny: Double, val nw: Double, val nh: Double)
 
     fun decodeInputText(payload: String): InputTextRequest {
         val req = JSONObject(payload)
-        return InputTextRequest(req.getString("text"), focusPoint(req))
+        return InputTextRequest(req.getString("text"), focusRect(req))
     }
 
     /// The clear that precedes a fill needs the same target, or it
     /// empties the field that happened to have focus — measured on
     /// emulator-5554, a fill naming one field erased another.
-    fun decodeClearText(payload: String): NormCoord? =
-        if (payload.isBlank()) null else focusPoint(JSONObject(payload))
+    fun decodeClearText(payload: String): NormRect? =
+        if (payload.isBlank()) null else focusRect(JSONObject(payload))
 
-    private fun focusPoint(req: JSONObject): NormCoord? =
-        if (req.has("focusNx") && req.has("focusNy")) {
-            NormCoord(req.getDouble("focusNx"), req.getDouble("focusNy"))
+    private fun focusRect(req: JSONObject): NormRect? =
+        if (req.has("focusRect")) {
+            val a = req.getJSONArray("focusRect")
+            NormRect(a.getDouble(0), a.getDouble(1), a.getDouble(2), a.getDouble(3))
         } else {
             null
         }
@@ -104,24 +108,49 @@ object RunnerWire {
         y: Int,
     ): Boolean = x in left..right && y in top..bottom
 
+    /// Do these two boxes share any area?
+    ///
+    /// Strictly: touching along an edge is not overlapping. Stacked
+    /// fields share an edge by construction — a Compose column puts one
+    /// input's bottom exactly on the next input's top — so counting
+    /// contact as overlap accepted the field below the one that was
+    /// named, which is the defect this check exists to stop. Measured:
+    /// naming compose_input while compose_password held focus typed
+    /// into the password field.
+    fun boxesOverlap(
+        aLeft: Int,
+        aTop: Int,
+        aRight: Int,
+        aBottom: Int,
+        bLeft: Int,
+        bTop: Int,
+        bRight: Int,
+        bBottom: Int,
+    ): Boolean = aLeft < bRight && bLeft < aRight && aTop < bBottom && bTop < aBottom
+
     /// Is this focused field the one the caller meant?
     ///
-    /// With no point, yes — every focused field qualifies, which is the
-    /// documented meaning of a fill with no selector. With a point,
-    /// only the field holding it. The two halves belong together: the
+    /// With no box, yes — every focused field qualifies, which is the
+    /// documented meaning of a fill with no selector. With a box, only a
+    /// field that lies within what was named.
+    ///
+    /// Within, not containing the centre. A field named by the layout
+    /// around it — the contentDescription on the wrapper and nothing on
+    /// the input — resolves to the wrapper, whose centre can sit on a
+    /// label; requiring the field to hold that point refused every fill
+    /// in an app built that way. The two halves belong together: the
     /// permissive one alone would be a hole rather than a rule.
     fun focusAccepts(
         left: Int,
         top: Int,
         right: Int,
         bottom: Int,
-        atX: Int?,
-        atY: Int?,
+        target: IntArray?,
     ): Boolean =
-        if (atX == null || atY == null) {
+        if (target == null) {
             true
         } else {
-            nodeHoldsPoint(left, top, right, bottom, atX, atY)
+            boxesOverlap(left, top, right, bottom, target[0], target[1], target[2], target[3])
         }
 
     fun decodeForeground(payload: String): String =

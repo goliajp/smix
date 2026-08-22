@@ -58,7 +58,12 @@ FLOW_APP="$(grep -m1 '^appId:' "$SCRIPT_DIR/android-behaviour/force-key-events.y
 FIXTURE_APP_ID="dev.smix.fixture"
 FLOW="$SCRIPT_DIR/android-behaviour/force-key-events.yaml"
 PROXY_PORT=28090
-RUNNER_PORT=28080
+# Overridable because the runner port is a *host* port: an adb forward
+# claims it for one device, and a second emulator on the same machine
+# then finds it answering and refuses — with a message about the app in
+# front, which is not what went wrong. Measured here with an
+# emulator-5556 nobody in this session started holding 28080.
+RUNNER_PORT="${SMIX_GATE_RUNNER_PORT:-28080}"
 
 # From `uiautomator dump` on sim-smix-android-01 (android-33): the only
 # clickable node whose short id mentions search. Re-derive it if the
@@ -457,6 +462,37 @@ curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a10-tree.jso
 python3 "$REPO_ROOT/scripts/release/android-a10-verdict.py" \
   "$WORK/a10-tree.json" compose_input 'a10-second-field' compose_password 10 \
   || die "A10: see above"
+
+# A11 — a field named by the layout around it can be typed into.
+#
+# 6.7.1 asked the runner for a focused field containing the tap point.
+# A consumer's hand-written Kotlin views carry the contentDescription on
+# the wrapper and nothing on the input, so a selector resolves to the
+# wrapper — whose centre sits on a label as often as on the field. Every
+# fill in that app stopped working, and they reported it against the
+# release meant to make fills reliable.
+adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
+adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+  || die "A11: could not foreground the view screen"
+sleep 2
+
+# Focus somewhere else first: the fill has to reach the field inside
+# what was named, not the field that happened to hold focus.
+"$SMIX_BIN" tap "id:fixture_input" --device "$SERIAL" --port "$PROXY_PORT" \
+  > "$WORK/a11-tap.log" 2>&1 \
+  || die "A11: could not focus the first field"
+
+WRAPPED="a11-through-wrapper"
+"$SMIX_BIN" fill "text:wrapped-field" --text "$WRAPPED" --device "$SERIAL" \
+  --port "$PROXY_PORT" > "$WORK/a11-fill.log" 2>&1 \
+  || die "A11: a fill naming the layout around a field was refused: $(tail -2 "$WORK/a11-fill.log")
+  The wrapper's centre is not inside the input, which is the shape of every
+  field in an app that names them from the outside."
+
+curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a11-tree.json" \
+  || die "A11: /tree did not answer after the wrapped fill"
+python3 "$REPO_ROOT/scripts/release/android-a11-verdict.py" \
+  "$WORK/a11-tree.json" "$WRAPPED" || die "A11: see above"
 
 ASSERTIONS=$(grep -cE '^# A[0-9]+( control)? —' "$0")
 echo "android behaviour gate: $ASSERTIONS/$ASSERTIONS assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"

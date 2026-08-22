@@ -34,10 +34,35 @@ class MainActivity : Activity() {
             setOnClickListener { result.text = input.text.toString() }
         }
 
+        // A field named by the layout around it, with nothing on the
+        // field itself. A consumer's hand-written Kotlin views are all
+        // this shape: the contentDescription sits on the wrapper, so a
+        // selector resolves to the wrapper and the tap lands at its
+        // centre — which is not inside the input, because the wrapper
+        // is taller. 6.7.1 required the focused field to contain the
+        // tap point and refused every fill in that app.
+        val wrappedInput = EditText(this).apply { hint = "wrapped" }
+        val wrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            contentDescription = "wrapped-field"
+            // The field sits at the top and a tall block of help text
+            // below it, so the wrapper's centre lands on the text and
+            // not on the field. That is the geometry that matters: a
+            // wrapper whose centre happens to fall inside its input
+            // would pass whatever the rule is.
+            addView(wrappedInput)
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = (1..8).joinToString("\n") { "help line $it" }
+                },
+            )
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@MainActivity).apply { text = "smix fixture" })
             addView(input)
+            addView(wrapper)
             addView(submit)
             addView(result)
             layoutParams = ViewGroup.LayoutParams(

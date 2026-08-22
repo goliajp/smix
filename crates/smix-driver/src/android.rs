@@ -72,10 +72,10 @@ impl AndroidDriver {
     async fn clear_focused_field(
         &self,
         stage: &str,
-        at: Option<(f64, f64)>,
+        at: Option<(f64, f64, f64, f64)>,
     ) -> Result<(), ExpectationFailure> {
         let done = match at {
-            Some((nx, ny)) => self.runner.clear_text_at(nx, ny).await,
+            Some(rect) => self.runner.clear_text_in(rect).await,
             None => self.runner.clear_text().await,
         };
         done.map(|_| ()).map_err(|e| {
@@ -91,6 +91,73 @@ impl AndroidDriver {
 /// Host-resolve loop with 5s implicit-wait + 250ms poll.
 /// Returns viewport-normalized centroid coord. Shared by tap / double_tap
 /// / long_press / fill / clear.
+/// The element's own box, viewport-normalized, alongside its centre.
+///
+/// A fill needs the box, not just the point. A field named by the
+/// layout around it — a consumer's views carry the contentDescription
+/// on the wrapper and nothing on the input — resolves to the wrapper,
+/// and the wrapper's centre can sit on a label rather than on the
+/// field. What identifies the field is that it lies *inside* what was
+/// named.
+async fn resolve_rect_with_implicit_wait(
+    driver: &AndroidDriver,
+    selector: &Selector,
+    include: Option<IncludeScope>,
+) -> Result<((f64, f64), (f64, f64, f64, f64)), ExpectationFailure> {
+    let coord = resolve_with_implicit_wait(driver, selector, include).await?;
+    let tree = driver.tree(include).await?;
+    let frame = tree.bounds;
+    let Some(named) = smix_selector_resolver::resolve_selector(&tree, selector)
+        .filter(|_| frame.w > 0.0 && frame.h > 0.0)
+    else {
+        return Ok((coord, (coord.0, coord.1, 0.0, 0.0)));
+    };
+    let rect = (
+        (named.bounds.x - frame.x) / frame.w,
+        (named.bounds.y - frame.y) / frame.h,
+        named.bounds.w / frame.w,
+        named.bounds.h / frame.h,
+    );
+    // Aim at the field, not at the middle of what names it. A layout
+    // whose contentDescription names the field it wraps has its centre
+    // wherever its tallest child is — often a label — and tapping a
+    // label focuses nothing, so the fill that followed had no field to
+    // type into. If what was named is not itself typeable and holds
+    // exactly one thing that is, that is what the caller meant.
+    let aim = if named.role == Some(smix_screen::Role::TextField) {
+        coord
+    } else {
+        match sole_text_field(named) {
+            Some(field) => (
+                (field.bounds.x + field.bounds.w / 2.0 - frame.x) / frame.w,
+                (field.bounds.y + field.bounds.h / 2.0 - frame.y) / frame.h,
+            ),
+            None => coord,
+        }
+    };
+    Ok((aim, rect))
+}
+
+/// The one typeable descendant, when there is exactly one.
+///
+/// Exactly one on purpose: with two, which the caller meant is a guess,
+/// and a guess that types into the wrong field is the defect this whole
+/// line of work is about. They can name the field itself.
+fn sole_text_field(node: &smix_screen::A11yNode) -> Option<&smix_screen::A11yNode> {
+    let mut found: Option<&smix_screen::A11yNode> = None;
+    let mut stack: Vec<&smix_screen::A11yNode> = node.children.iter().collect();
+    while let Some(n) = stack.pop() {
+        if n.role == Some(smix_screen::Role::TextField) {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(n);
+        }
+        stack.extend(n.children.iter());
+    }
+    found
+}
+
 async fn resolve_with_implicit_wait(
     driver: &AndroidDriver,
     selector: &Selector,
@@ -560,7 +627,7 @@ impl Driver for AndroidDriver {
         // Host-resolve → tap to focus → /input-text. Mirror
         // of swift FlyingFox /fill semantics (selector resolves; client
         // types text into focused field).
-        let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
+        let ((nx, ny), rect) = resolve_rect_with_implicit_wait(self, selector, include).await?;
         self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
@@ -569,10 +636,10 @@ impl Driver for AndroidDriver {
             })
         })?;
         if clear_first {
-            self.clear_focused_field("AndroidDriver::fill", Some((nx, ny)))
+            self.clear_focused_field("AndroidDriver::fill", Some(rect))
                 .await?;
         }
-        self.runner.input_text_at(text, nx, ny).await.map_err(|e| {
+        self.runner.input_text_in(text, rect).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
                 message: format!("AndroidDriver::fill: input_text failed: {e}"),
@@ -588,7 +655,7 @@ impl Driver for AndroidDriver {
     ) -> Result<(), ExpectationFailure> {
         // Host-resolve → tap to focus → the runner's one-request clear,
         // the same one `fill` reaches once it already holds focus.
-        let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
+        let ((nx, ny), rect) = resolve_rect_with_implicit_wait(self, selector, include).await?;
         self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::DriverError),
@@ -596,7 +663,7 @@ impl Driver for AndroidDriver {
                 ..Default::default()
             })
         })?;
-        self.clear_focused_field("AndroidDriver::clear", Some((nx, ny)))
+        self.clear_focused_field("AndroidDriver::clear", Some(rect))
             .await
     }
 

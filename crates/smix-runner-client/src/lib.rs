@@ -1527,6 +1527,72 @@ impl HttpRunnerClient {
         Ok(())
     }
 
+    /// `POST /input-text`, naming the field by the box it lies in.
+    ///
+    /// The point form ([`Self::input_text_at`]) asks the runner for a
+    /// focused field containing that point, which is wrong whenever the
+    /// caller named the layout around a field rather than the field:
+    /// the wrapper's centre can sit on a label, and requiring the field
+    /// to contain it refused every fill in an app built that way. What
+    /// identifies the field is lying inside what was named.
+    pub async fn input_text_in(
+        &self,
+        text: &str,
+        rect: (f64, f64, f64, f64),
+    ) -> Result<(), RunnerTransportError> {
+        #[derive(Serialize)]
+        struct Req<'a> {
+            text: &'a str,
+            #[serde(rename = "focusRect")]
+            focus_rect: [f64; 4],
+        }
+        let body: OkEnvelope = self
+            .json_post(
+                "/input-text",
+                &Req {
+                    text,
+                    focus_rect: [rect.0, rect.1, rect.2, rect.3],
+                },
+                None,
+            )
+            .await?;
+        body.require_ok("/input-text")?;
+        Ok(())
+    }
+
+    /// `POST /clear-text`, naming the field by the box it lies in.
+    /// See [`Self::input_text_in`].
+    pub async fn clear_text_in(
+        &self,
+        rect: (f64, f64, f64, f64),
+    ) -> Result<String, RunnerTransportError> {
+        #[derive(Serialize)]
+        struct Req {
+            #[serde(rename = "focusRect")]
+            focus_rect: [f64; 4],
+        }
+        #[derive(Deserialize)]
+        struct Res {
+            status: Option<String>,
+            method: Option<String>,
+        }
+        let body: Res = self
+            .json_post(
+                "/clear-text",
+                &Req {
+                    focus_rect: [rect.0, rect.1, rect.2, rect.3],
+                },
+                None,
+            )
+            .await?;
+        if body.status.as_deref() != Some("ok") {
+            return Err(RunnerTransportError::Refused {
+                endpoint: "/clear-text".to_string(),
+            });
+        }
+        Ok(body.method.unwrap_or_else(|| "unknown".to_string()))
+    }
+
     /// `POST /input-text`, naming the field by where it was tapped.
     ///
     /// [`Self::input_text`] types into whatever holds focus, which is
