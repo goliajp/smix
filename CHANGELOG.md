@@ -4,6 +4,24 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [6.8.0] — 2026-08-23
 
+### Fixed
+
+- **A field named by the layout around it can be typed into again.**
+  6.7.1 asked the runner for a focused field containing the tap point,
+  to stop a named fill reaching whichever field held focus before. An
+  app that carries the contentDescription on the wrapping layout and
+  nothing on the input — how hand-written Kotlin views are written —
+  resolves to the wrapper, whose centre sits on whichever child is
+  tallest. Tapping a label focuses nothing, so every fill in such an
+  app answered `no_focused_field`. Reported against 6.7.1 the day it
+  shipped.
+
+  A fill aimed at something not itself typeable, holding exactly one
+  thing that is, now taps that one — exactly one, because with two the
+  choice is a guess. And the focus check takes the named element's box
+  rather than its centre: the field meant is the one lying inside what
+  was named, which is still not the field stacked below it.
+
 ### Added
 
 - **Every verb now says what it does with every selector spelling.**
