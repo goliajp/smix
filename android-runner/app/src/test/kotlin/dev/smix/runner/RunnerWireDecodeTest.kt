@@ -142,7 +142,10 @@ class RunnerWireDecodeTest {
 
     @Test
     fun inputTextDecodesText() {
-        assertEquals("hello world", RunnerWire.decodeInputText("""{"text":"hello world"}"""))
+        assertEquals(
+            "hello world",
+            RunnerWire.decodeInputText("""{"text":"hello world"}""").text,
+        )
     }
 
     @Test

@@ -418,18 +418,12 @@ python3 "$REPO_ROOT/scripts/release/android-a8-verdict.py" after "$WORK/a8-after
 # that comparison is false for every fill that ever worked, and a
 # consumer's twenty-flow suite stopped at the flow that signs in.
 #
-# From a fresh screen, deliberately. A9 is about one thing: whether a
-# masked field can be judged at all. Run straight after A8 it fails for
-# an unrelated reason — the focus tap lands on the masked field while
-# the clear and the typing still go to whatever held focus before, so
-# the characters land in the previous field and erase it. That is a
-# second defect with its own subject (A10) and its own fix; letting it
-# fail A9 would mean neither is being tested.
-adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
-adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.ComposeActivity" >/dev/null 2>&1 \
-  || die "A9: could not foreground the Compose screen"
-sleep 3
-
+# Straight on from A8, with compose_input still filled and the keyboard
+# just dismissed. This ran from a fresh screen while the focus handoff
+# was broken — the tap landed on the masked field while the clear and
+# the typing still went to the previous one — and it is the sequence
+# again now that A10 covers that. A9 and A10 back to back are what a
+# flow does: fill a field, dismiss the keyboard, fill another.
 SECRET='Sunroom!24'
 "$SMIX_BIN" fill "id:compose_password" --text "$SECRET" --device "$SERIAL" \
   --port "$PROXY_PORT" > "$WORK/a9-fill.log" 2>&1 \
@@ -446,5 +440,23 @@ python3 "$REPO_ROOT/scripts/release/android-a9-verdict.py" \
 # assertions and would have gone on saying it while holding ten — a
 # number nobody re-counts is a claim with nothing behind it, which is
 # the same shape as the defect A9 exists for.
+# A10 — a named fill goes to the field it names, and leaves the rest
+# alone.
+#
+# A9 left compose_password focused and holding ten characters. Naming a
+# different field now is the case the wait cannot see: it asks whether
+# some editable node has focus, and one already does, so it returns the
+# old one — the characters land there and the clear that precedes them
+# empties it.
+"$SMIX_BIN" fill "id:compose_input" --text 'a10-second-field' --device "$SERIAL" \
+  --port "$PROXY_PORT" > "$WORK/a10-fill.log" 2>&1 \
+  || die "A10: a fill naming a second field was refused: $(tail -2 "$WORK/a10-fill.log")"
+
+curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a10-tree.json" \
+  || die "A10: /tree did not answer after the second fill"
+python3 "$REPO_ROOT/scripts/release/android-a10-verdict.py" \
+  "$WORK/a10-tree.json" compose_input 'a10-second-field' compose_password 10 \
+  || die "A10: see above"
+
 ASSERTIONS=$(grep -cE '^# A[0-9]+( control)? —' "$0")
 echo "android behaviour gate: $ASSERTIONS/$ASSERTIONS assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"
