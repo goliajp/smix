@@ -184,6 +184,8 @@ jobs:
         run: python3 scripts/dev/a-hand-copied-table-says-a-number.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
+      - name: every verb reads a locale map
+        run: python3 scripts/dev/every-verb-reads-a-locale-map.py
       - name: fact scan
         run: python3 scripts/dev/fact-scan.py
       - name: workflow scan
