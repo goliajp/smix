@@ -493,6 +493,11 @@ Full selector taxonomy is in [03-selectors.md](03-selectors.md).
 - `runFlow` with `when: { visible: ... }`: include a sub-flow only when a condition holds at runtime (e.g., "if Need Login is shown, run the login subflow").
 - `runFlow` with `when: { notVisible: ... }` (v1.0.24): inverse gate — enter only when the selector is NOT visible ("run the ceremony unless its end state is already on screen").
 - Skipped conditionals emit `STEP N: … → SKIPPED: <reason>` to stderr with the checked selector + evaluation outcome, so batch logs show WHY a gate short-circuited.
+- Step lines are printed as each step starts, so the last one in the log
+  is the step that was in flight. A failure also names itself: the error
+  reads `step N (verb): …`, and a `STEP N: verb → FAILED` line joins the
+  skipped one. A subflow's inner step is named once — the `runFlow` that
+  contains it does not claim the failure.
 
 ## OCR behavior in verbs
 
@@ -770,7 +775,17 @@ itself.
       - point: "50%,75%"                # last resort
 ```
 
-- Iterates entries in order; uses the first that resolves.
+- Iterates entries in order; uses the first that resolves. Order is a
+  promise, not a tiebreak: `[id, text]` prefers the id even when both
+  match, so a chain keeps picking the same element as an app's copy
+  changes.
+- Works in any selector position, in every verb that takes a selector —
+  `assertVisible`, `tapOn`, `extendedWaitUntil`, `fill`, and the rest —
+  and on both platforms.
+- Where a verb returns every match rather than one, a chain gives you
+  the first layer that matched, not the union of the layers.
+- A layer whose pattern cannot compile is skipped; the layers after it
+  still get their turn.
 - Handy for production code where the same logical button might have testid in dev builds but not release builds.
 
 ### 12. (Implicit shortcut) String
@@ -1070,6 +1085,19 @@ already have: `tapOn` it, then the scalar form.
 
 - iOS: XCUI `typeText` after explicit field tap (focus + type).
 - Android: Kotlin `/input-text` → `am instrument` shell input (UiAutomation.executeShellCommand wraps `input text`).
+- Android read-back: the runner checks that the characters arrived
+  before answering. A field that masks its contents cannot be asked
+  that question — its accessibility node reports one bullet per
+  character and never the characters — so a masked field is judged by
+  how much longer it got instead. The masked branch is keyed on the
+  node reporting itself as a password, never on the text looking like
+  one, so a plaintext field holding `aaaa` is still checked by content.
+- Android targeting: a named fill tells the runner where the field was
+  tapped, and the runner waits for focus to reach *that* field rather
+  than for any field to have focus. Without it, a fill naming one field
+  could clear and type into whichever field had focus a moment earlier.
+  A scalar `inputText` names no field and still means "wherever focus
+  is".
 - Special chars: spaces, unicode are handled; backslash-escaping is internal.
 - Important Android quirk: UiAutomation.executeShellCommand does NOT use `sh -c`, so quote-wrapping the text causes literal quotes. The runner handles this; do not pre-quote yourself.
 

@@ -343,6 +343,11 @@ Full selector taxonomy is in [03-selectors.md](03-selectors.md).
 - `runFlow` with `when: { visible: ... }`: include a sub-flow only when a condition holds at runtime (e.g., "if Need Login is shown, run the login subflow").
 - `runFlow` with `when: { notVisible: ... }` (v1.0.24): inverse gate — enter only when the selector is NOT visible ("run the ceremony unless its end state is already on screen").
 - Skipped conditionals emit `STEP N: … → SKIPPED: <reason>` to stderr with the checked selector + evaluation outcome, so batch logs show WHY a gate short-circuited.
+- Step lines are printed as each step starts, so the last one in the log
+  is the step that was in flight. A failure also names itself: the error
+  reads `step N (verb): …`, and a `STEP N: verb → FAILED` line joins the
+  skipped one. A subflow's inner step is named once — the `runFlow` that
+  contains it does not claim the failure.
 
 ## OCR behavior in verbs
 

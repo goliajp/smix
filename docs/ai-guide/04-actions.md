@@ -199,6 +199,19 @@ already have: `tapOn` it, then the scalar form.
 
 - iOS: XCUI `typeText` after explicit field tap (focus + type).
 - Android: Kotlin `/input-text` → `am instrument` shell input (UiAutomation.executeShellCommand wraps `input text`).
+- Android read-back: the runner checks that the characters arrived
+  before answering. A field that masks its contents cannot be asked
+  that question — its accessibility node reports one bullet per
+  character and never the characters — so a masked field is judged by
+  how much longer it got instead. The masked branch is keyed on the
+  node reporting itself as a password, never on the text looking like
+  one, so a plaintext field holding `aaaa` is still checked by content.
+- Android targeting: a named fill tells the runner where the field was
+  tapped, and the runner waits for focus to reach *that* field rather
+  than for any field to have focus. Without it, a fill naming one field
+  could clear and type into whichever field had focus a moment earlier.
+  A scalar `inputText` names no field and still means "wherever focus
+  is".
 - Special chars: spaces, unicode are handled; backslash-escaping is internal.
 - Important Android quirk: UiAutomation.executeShellCommand does NOT use `sh -c`, so quote-wrapping the text causes literal quotes. The runner handles this; do not pre-quote yourself.
 
