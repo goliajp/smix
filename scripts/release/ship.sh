@@ -243,6 +243,15 @@ python3 "$ROOT/scripts/dev/gen-llms.py" --check > /tmp/smix-ship-llms.log 2>&1 \
   || fail "llms.txt/llms-full.txt are stale — run scripts/dev/gen-llms.py and commit (see /tmp/smix-ship-llms.log)"
 # --- cargo-semver-checks ----------------------------------------------
 
+# --- TS SDK tests ------------------------------------------------------
+# A second, and it needs node_modules rather than a Rust build — so it
+# belongs with the other judgements that can be paid for in seconds.
+# It sat after `cargo test --workspace` and the ordering gate said so.
+log "npm/smix-rn typecheck + vitest"
+( cd "$ROOT/npm/smix-rn" && bun run typecheck && bun run test ) \
+    > /tmp/smix-ship-ts-test.log 2>&1 \
+  || fail "TS SDK tests FAILED — see /tmp/smix-ship-ts-test.log"
+
 # --- source-only judgements -------------------------------------------
 # Everything below reads files. No build, no device, no network — which
 # is why it belongs here rather than after six minutes of compiling.
@@ -609,12 +618,6 @@ log "SmixRunner UITest build"
 log "cargo test --workspace"
 ( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1 \
   || fail "cargo test FAILED — see /tmp/smix-ship-cargo-test.log"
-
-# --- TS SDK tests ------------------------------------------------------
-log "npm/smix-rn typecheck + vitest"
-( cd "$ROOT/npm/smix-rn" && bun run typecheck && bun run test ) \
-    > /tmp/smix-ship-ts-test.log 2>&1 \
-  || fail "TS SDK tests FAILED — see /tmp/smix-ship-ts-test.log"
 
 # --- Android unit tests + androidTest compile --------------------------
 # Compiles the generated Kotlin bindings AND runs the unit suites.
