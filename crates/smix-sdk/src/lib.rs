@@ -2017,6 +2017,31 @@ impl App {
         self.driving()?.tap_at_norm_coord(nx, ny).await
     }
 
+    /// Double-tap at a viewport-normalized coordinate.
+    ///
+    /// The counterpart of [`Self::tap_at_coord`] for the verbs that
+    /// reach a place rather than an element: OCR returns a box and an
+    /// anchor plus a shift returns a point, and neither is a node to
+    /// hand to `double_tap`.
+    pub async fn double_tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
+        self.ledger.record_tap_at_coord(now_ms(), nx, ny);
+        self.driving()?.double_tap_at_norm_coord(nx, ny).await
+    }
+
+    /// Long-press at a viewport-normalized coordinate. See
+    /// [`Self::double_tap_at_coord`].
+    pub async fn long_press_at_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+        duration_ms: u64,
+    ) -> Result<(), ExpectationFailure> {
+        self.ledger.record_tap_at_coord(now_ms(), nx, ny);
+        self.driving()?
+            .long_press_at_norm_coord(nx, ny, duration_ms)
+            .await
+    }
+
     /// Tap via `XCUIElement.tap()` over the XCTest gesture-recognizer
     /// chain instead of the default host-HID-at-coord path. The id
     /// selector is resolved runner-side via

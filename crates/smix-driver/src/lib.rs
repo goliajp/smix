@@ -1036,6 +1036,31 @@ impl IosDriver {
     ///
     /// **Escape hatch only — the selector path (`tap(&selector)`) is the
     /// canonical surface.** This bypasses a11y resolve entirely.
+    pub async fn double_tap_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+    ) -> Result<(), ExpectationFailure> {
+        self.runner
+            .double_tap_at_norm_coord(nx, ny)
+            .await
+            .map_err(transport_to_failure)?;
+        Ok(())
+    }
+
+    pub async fn long_press_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+        duration_ms: u64,
+    ) -> Result<(), ExpectationFailure> {
+        self.runner
+            .long_press_at_norm_coord(nx, ny, duration_ms)
+            .await
+            .map_err(transport_to_failure)?;
+        Ok(())
+    }
+
     pub async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
         self.runner
             .tap_at_norm_coord(nx, ny)

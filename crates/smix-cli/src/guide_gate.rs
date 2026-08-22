@@ -205,6 +205,17 @@ impl AppLike for MockApp {
     async fn tap_at_coord(&self, _nx: f64, _ny: f64) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn double_tap_at_coord(&self, _nx: f64, _ny: f64) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
+    async fn long_press_at_coord(
+        &self,
+        _nx: f64,
+        _ny: f64,
+        _duration_ms: u64,
+    ) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     /// Always a hit, centred.
     ///
     /// `None` means "the text is not on screen", which is a fact about

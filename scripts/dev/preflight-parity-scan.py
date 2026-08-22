@@ -50,6 +50,8 @@ LOCAL = {
     "a hand-copied table says a number": "a-hand-copied-table-says-a-number",
     "route conformance": "route-conformance",
     "every verb reads a locale map": "every-verb-reads-a-locale-map",
+    "every cell is declared": "every-cell-is-declared",
+    "selector matrix in the guide": "gen-selector-matrix",
     "fact scan": "fact-scan",
     "workflow scan": "workflow-scan",
     "gate subject diversity": "gate-subject-diversity",

@@ -132,6 +132,9 @@ if printf '%s\n' "$CHANGED_DOCS" | grep -q '^swift-bridge/'; then
     (cd swift-bridge && swift test)
 fi
 
+echo "--- selector matrix in the guide"
+python3 "$ROOT/scripts/dev/gen-selector-matrix.py" --check || exit 1
+
 echo "--- android: unit tests + androidTest compile"
 # Unconditional, unlike the crate steps above. Those narrow by git diff
 # because a whole-workspace clippy is too slow to be a habit; this is a
@@ -165,6 +168,7 @@ SOURCE_GATES=(
   hygiene-scan
   route-conformance
   every-verb-reads-a-locale-map
+  every-cell-is-declared
   fact-scan
   workflow-scan
   android-gate-scan

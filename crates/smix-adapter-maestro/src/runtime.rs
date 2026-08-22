@@ -35,6 +35,14 @@ use crate::{Flow, ParseError, RepeatMode, Step, parse_flow_file};
 /// read-only during a flow, so an expression-driven repeat whose
 /// condition never changes would run forever. Hitting this cap
 /// surfaces an explicit DriverError naming the condition expression.
+/// How long a verb waits for a form the tree cannot read.
+///
+/// The same five seconds the tree-based path already waits — a step
+/// should not become flakier for having been given a spelling this
+/// layer can read. Measured on emulator-5554: a single snapshot missed
+/// text that a polling verb found on the same screen.
+const IMPLICIT_WAIT: Duration = Duration::from_secs(5);
+
 const MAX_REPEAT_ITERATIONS: u32 = 1000;
 use async_trait::async_trait;
 use smix_sdk::{
@@ -341,6 +349,15 @@ pub trait AppLike: Send + Sync {
     async fn copy_text_from(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
     /// Double-tap an element. Mirrors [`App::double_tap`].
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
+    /// Double-tap a place. Mirrors [`App::double_tap_at_coord`].
+    async fn double_tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
+    /// Long-press a place. Mirrors [`App::long_press_at_coord`].
+    async fn long_press_at_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+        duration_ms: u64,
+    ) -> Result<(), ExpectationFailure>;
     /// Tap one element several times, spaced on the event timeline.
     async fn tap_burst(
         &self,
@@ -578,6 +595,17 @@ impl AppLike for App {
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         App::double_tap(self, selector).await
     }
+    async fn double_tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
+        App::double_tap_at_coord(self, nx, ny).await
+    }
+    async fn long_press_at_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+        duration_ms: u64,
+    ) -> Result<(), ExpectationFailure> {
+        App::long_press_at_coord(self, nx, ny, duration_ms).await
+    }
     async fn tap_burst(
         &self,
         selector: &Selector,
@@ -795,6 +823,44 @@ fn recurses_into_steps(step: &Step) -> bool {
         step,
         Step::RunFlow(_) | Step::RunFlowInline { .. } | Step::RunFlowConditional { .. }
     )
+}
+
+/// Say so, before doing anything, when a verb was handed a selector
+/// spelling it does not read.
+///
+/// Without this the verb resolves against the accessibility tree, which
+/// has no idea what to do with pixels or a locale map or a coordinate,
+/// finds nothing, and reports the target absent — indistinguishable
+/// from a target that really is absent. The table in
+/// `selector_support` says which slot reads which form, and the reason
+/// it gives is written for the author rather than about the code.
+///
+/// Only a form standing on its own. A `fallback:` chain whose readable
+/// layers match is a working flow, and refusing it because a later
+/// layer names something unreadable would break flows that never
+/// needed that layer.
+fn refuse_what_this_verb_cannot_read(step: &Step) -> Result<(), RunError> {
+    for (slot, selector) in crate::selector_support::slot_selectors(step) {
+        let Some(form) = crate::selector_support::standalone_unreadable(selector) else {
+            continue;
+        };
+        if let crate::selector_support::Support::Refused(why) =
+            crate::selector_support::support(slot, form)
+        {
+            return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!(
+                    "{}: `{}` is not read from the accessibility tree, and this verb \
+                     does not read it. {why}.",
+                    summarize_step_verb(step),
+                    form.as_written(),
+                ),
+                selector: Some(selector.clone()),
+                ..Default::default()
+            })));
+        }
+    }
+    Ok(())
 }
 
 fn summarize_step_verb(step: &Step) -> String {
@@ -1510,6 +1576,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         step: &Step,
         warnings: &mut Vec<String>,
     ) -> Result<RunStepReport, RunError> {
+        refuse_what_this_verb_cannot_read(step)?;
         match step {
             Step::TapOn {
                 selector,
@@ -1661,6 +1728,27 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             Step::AssertVisible { selector } => {
                 // Desugar LocalizedText by current locale.
                 let desugared = self.desugar_localized_text(selector);
+                if matches!(&*desugared, Selector::OcrText { .. }) {
+                    // "Are these words on screen" is a question OCR can
+                    // answer; asking the tree instead answers a
+                    // different one and always says no.
+                    if self
+                        .point_for_unreadable(&desugared, IMPLICIT_WAIT)
+                        .await?
+                        .is_none()
+                    {
+                        return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                            code: Some(FailureCode::NotVisible),
+                            message: format!(
+                                "expect.toBeVisible: OCR did not find it — {}",
+                                smix_selector::describe_selector(&desugared)
+                            ),
+                            selector: Some((*desugared).clone()),
+                            ..Default::default()
+                        })));
+                    }
+                    return Ok(RunStepReport::Ok);
+                }
                 self.app.assert_visible(&desugared).await?;
                 Ok(RunStepReport::Ok)
             }
@@ -1672,7 +1760,16 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             Step::InputTextInto { selector, text } => {
                 let expanded = self.expand_template(text)?;
                 let desugared = self.desugar_localized_text(selector);
-                self.app.fill(&desugared, &expanded).await?;
+                // A place rather than an element: tap it to take focus,
+                // then type where the focus went. That is what a fill
+                // is once the target is a coordinate.
+                if let Some((nx, ny)) = self.point_for_unreadable(&desugared, IMPLICIT_WAIT).await?
+                {
+                    self.app.tap_at_coord(nx, ny).await?;
+                    self.app.fill(&smix_sdk::focused(), &expanded).await?;
+                } else {
+                    self.app.fill(&desugared, &expanded).await?;
+                }
                 Ok(RunStepReport::Ok)
             }
             Step::Back => {
@@ -1987,9 +2084,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::DoubleTapOn { selector } => {
-                self.app
-                    .double_tap(&self.desugar_localized_text(selector))
-                    .await?;
+                let desugared = self.desugar_localized_text(selector);
+                if let Some((nx, ny)) = self.point_for_unreadable(&desugared, IMPLICIT_WAIT).await?
+                {
+                    self.app.double_tap_at_coord(nx, ny).await?;
+                } else {
+                    self.app.double_tap(&desugared).await?;
+                }
                 Ok(RunStepReport::Ok)
             }
             Step::RepeatTap {
@@ -1999,7 +2100,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 hold_ms,
             } => {
                 self.app
-                    .tap_burst(selector, *times, *interval_ms, *hold_ms)
+                    .tap_burst(
+                        &self.desugar_localized_text(selector),
+                        *times,
+                        *interval_ms,
+                        *hold_ms,
+                    )
                     .await?;
                 Ok(RunStepReport::Ok)
             }
@@ -2010,9 +2116,16 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             } => {
                 let duration = Duration::from_millis(*duration_ms);
                 if !*capture_during {
-                    self.app
-                        .long_press(&self.desugar_localized_text(selector), duration)
-                        .await?;
+                    let desugared = self.desugar_localized_text(selector);
+                    if let Some((nx, ny)) =
+                        self.point_for_unreadable(&desugared, IMPLICIT_WAIT).await?
+                    {
+                        self.app
+                            .long_press_at_coord(nx, ny, duration.as_millis() as u64)
+                            .await?;
+                    } else {
+                        self.app.long_press(&desugared, duration).await?;
+                    }
                     return Ok(RunStepReport::Ok);
                 }
                 let capture = self
@@ -3232,6 +3345,65 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// selector matches on the current screen (via tree or OCR). Used
     /// by tapOn poll + scrollUntilVisible poll. Uses `App::find` for
     /// tree-based subs and `App::find_by_text_ocr` for OcrText subs.
+    /// Where on screen a selector the tree cannot read points to.
+    ///
+    /// `ocrText:` recognises the words and gives back their box; an
+    /// anchor plus a shift resolves the anchor and moves from it. Both
+    /// end at a point, which is what the coordinate acts take. `None`
+    /// means the form was read and nothing was there — distinct from a
+    /// form this layer does not read at all, which is refused before
+    /// any of this runs.
+    async fn point_for_unreadable(
+        &mut self,
+        sel: &Selector,
+        budget: Duration,
+    ) -> Result<Option<(f64, f64)>, RunError> {
+        let deadline = std::time::Instant::now() + budget;
+        loop {
+            if let Some(point) = self.point_for_unreadable_once(sel).await? {
+                return Ok(Some(point));
+            }
+            if std::time::Instant::now() >= deadline {
+                return Ok(None);
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
+    /// One look. The polling wrapper above is what the verbs use:
+    /// every tree-based verb has an implicit wait, and an OCR branch
+    /// that snapshots once would make the same step flakier for having
+    /// been given a form it can read — measured, `assertVisible` with
+    /// `ocrText:` missed text that `extendedWaitUntil` found on the
+    /// same screen because one polled and the other did not.
+    async fn point_for_unreadable_once(
+        &mut self,
+        sel: &Selector,
+    ) -> Result<Option<(f64, f64)>, RunError> {
+        match sel {
+            Selector::OcrText {
+                ocr_text, locales, ..
+            } => {
+                let eff: Vec<String> = if locales.is_empty() {
+                    vec![self.last_locale.clone()]
+                } else {
+                    locales.clone()
+                };
+                Ok(self
+                    .app
+                    .find_by_text_ocr(ocr_text, &eff)
+                    .await?
+                    .map(|frame| (frame.mid_x(), frame.mid_y())))
+            }
+            Selector::AnchorRelative { anchor, dx, dy } => Ok(self
+                .app
+                .find_norm_coord(anchor)
+                .await?
+                .map(|(nx, ny)| ((nx + dx).clamp(0.0, 1.0), (ny + dy).clamp(0.0, 1.0)))),
+            _ => Ok(None),
+        }
+    }
+
     async fn check_selector_visible(&mut self, sel: &Selector) -> Result<bool, RunError> {
         // A locale map reaching the resolver matches nothing, and this
         // probe answers a gate: `when.notVisible` would fire because

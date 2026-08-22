@@ -17,6 +17,7 @@
 //! - `App::mark_fixture_action()` — pure ledger record, no platform dispatch
 
 use async_trait::async_trait;
+use smix_error::{FailureCode, FailureInit};
 use std::time::Duration;
 
 use smix_error::ExpectationFailure;
@@ -226,6 +227,41 @@ pub trait Driver: Send + Sync {
 
     /// Tap at viewport-normalized coordinate (escape hatch).
     async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
+
+    /// Double-tap at a viewport-normalized coordinate.
+    ///
+    /// Defaulted so an implementor outside this workspace keeps
+    /// compiling, and the default refuses rather than doing nothing:
+    /// a gesture that silently does not happen is the failure mode this
+    /// whole line of work is about. Both drivers here override it.
+    async fn double_tap_at_norm_coord(&self, _nx: f64, _ny: f64) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "double_tap_at_norm_coord: this driver has no coordinate \
+                      double-tap. The caller resolved a point and there is no way \
+                      to act on it here."
+                .into(),
+            ..Default::default()
+        }))
+    }
+
+    /// Long-press at a viewport-normalized coordinate. Defaulted for
+    /// the same reason as [`Driver::double_tap_at_norm_coord`].
+    async fn long_press_at_norm_coord(
+        &self,
+        _nx: f64,
+        _ny: f64,
+        _duration_ms: u64,
+    ) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "long_press_at_norm_coord: this driver has no coordinate \
+                      long press. The caller resolved a point and there is no way \
+                      to act on it here."
+                .into(),
+            ..Default::default()
+        }))
+    }
 
     /// Tap by accessibility identifier via the swift `/tap-by-id`
     /// route (IOHID synthesize at element-frame center).

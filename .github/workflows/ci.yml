@@ -186,6 +186,10 @@ jobs:
         run: python3 scripts/dev/route-conformance.py
       - name: every verb reads a locale map
         run: python3 scripts/dev/every-verb-reads-a-locale-map.py
+      - name: every cell is declared
+        run: python3 scripts/dev/every-cell-is-declared.py
+      - name: selector matrix in the guide
+        run: python3 scripts/dev/gen-selector-matrix.py --check
       - name: fact scan
         run: python3 scripts/dev/fact-scan.py
       - name: workflow scan

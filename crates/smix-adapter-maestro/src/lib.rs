@@ -257,6 +257,7 @@ mod expr;
 mod output;
 mod parser;
 mod runtime;
+pub mod selector_support;
 
 pub use emitter::{EmitError, emit_flow_yaml};
 

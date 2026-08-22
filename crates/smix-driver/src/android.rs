@@ -404,6 +404,39 @@ impl Driver for AndroidDriver {
         Err(dispatch_unsupported_err())
     }
 
+    async fn double_tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
+        self.runner
+            .double_tap_at_norm_coord(nx, ny)
+            .await
+            .map(|_| ())
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("AndroidDriver::double_tap_at_norm_coord: {e}"),
+                    ..Default::default()
+                })
+            })
+    }
+
+    async fn long_press_at_norm_coord(
+        &self,
+        nx: f64,
+        ny: f64,
+        duration_ms: u64,
+    ) -> Result<(), ExpectationFailure> {
+        self.runner
+            .long_press_at_norm_coord(nx, ny, duration_ms)
+            .await
+            .map(|_| ())
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("AndroidDriver::long_press_at_norm_coord: {e}"),
+                    ..Default::default()
+                })
+            })
+    }
+
     async fn tap_at_norm_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure> {
         // Direct passthru to Kotlin runner /tap-at-norm-coord.
         self.runner

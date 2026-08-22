@@ -280,6 +280,24 @@ log "every verb reads a locale map"
 python3 "$ROOT/scripts/dev/every-verb-reads-a-locale-map.py" > /tmp/smix-ship-locale.log 2>&1 \
   || fail "every verb reads a locale map FAILED — see /tmp/smix-ship-locale.log"
 
+# --- every cell is declared -------------------------------------------
+# The verb-by-form table has to agree with the code rather than with
+# itself: a slot handed out and not listed is one the tests walk past,
+# and a cell claiming a dispatch runtime.rs does not perform is the
+# shape of the defect the table exists for.
+log "every cell is declared"
+python3 "$ROOT/scripts/dev/every-cell-is-declared.py" > /tmp/smix-ship-cells.log 2>&1 \
+  || fail "every cell is declared FAILED — see /tmp/smix-ship-cells.log"
+
+# --- selector matrix in the guide -------------------------------------
+# The guide's verb-by-form table is generated from the one the code
+# decides by. It said "any selector position accepts `ocrText:`"
+# directly above the list of the four verbs that read it — a sentence
+# and a list disagreeing in the same paragraph, both written by hand.
+log "selector matrix in the guide"
+python3 "$ROOT/scripts/dev/gen-selector-matrix.py" --check > /tmp/smix-ship-matrix.log 2>&1 \
+  || fail "the guide's selector matrix is not what the table says — see /tmp/smix-ship-matrix.log"
+
 # Twenty corpus flows against one system app is one subject walked
 # twenty ways, and a defect that only shows on an ordinary app was
 # invisible to every device gate at once — which is how a consumer
