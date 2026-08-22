@@ -745,22 +745,47 @@ class SmixHttpServer(
             )
 
         val before = focused.text?.toString() ?: ""
+        // The node says whether it masks. Nothing here guesses it from
+        // the text: `aaaa` is four of the same character and is not a
+        // mask, and a guess would quietly stop checking content for
+        // anyone whose password repeats one.
+        val masked = focused.isPassword
+        // Name the field. "The focused field holds 0" was a claim about
+        // a node the reader could not identify, and the node it meant
+        // was not always the one they had asked for — a walk over every
+        // window returns the first focused editable node, and while an
+        // IME is up that need not be the app's.
+        val whichField = focused.viewIdResourceName
+            ?: focused.className?.toString()
+            ?: "an unnamed node"
         runShellCommand(RunnerWire.inputTextCommand(text))
         device.waitForIdle(500)
 
         // Read the field back. `input text` cannot report a miss, so the
         // only honest evidence that the characters arrived is the node
         // saying so.
-        val after = awaitText(focused, text, TEXT_LAND_MS)
+        val after = awaitLanded(focused, before, text, masked, TEXT_LAND_MS)
         focused.recycle()
-        if (!after.contains(text)) {
+        if (!RunnerWire.textLanded(before, after, text, masked)) {
             return errorJson(
                 Response.Status.INTERNAL_ERROR,
                 "text_did_not_land",
-                "input-text: dispatched ${text.length} characters and the " +
-                    "focused field holds ${after.length} " +
-                    "(before: ${before.length}) after waiting ${TEXT_LAND_MS}ms. " +
-                    "The keys went somewhere other than the field.",
+                if (masked) {
+                    "input-text: dispatched ${text.length} characters into a " +
+                        "masked field and it grew by " +
+                        "${after.length - before.length} (from ${before.length} " +
+                        "to ${after.length}) after waiting ${TEXT_LAND_MS}ms. " +
+                        "The field was $whichField. A " +
+                        "masked node reports one character per character held " +
+                        "and never the characters, so the length difference is " +
+                        "the only evidence there is, and it does not add up."
+                } else {
+                    "input-text: dispatched ${text.length} characters and the " +
+                        "focused field holds ${after.length} " +
+                        "(before: ${before.length}) after waiting ${TEXT_LAND_MS}ms. " +
+                        "The field was $whichField (masked: $masked). " +
+                        "The keys went somewhere other than the field."
+                },
             )
         }
         val body = RunnerWire.inputTextBody(text)
@@ -873,9 +898,21 @@ class SmixHttpServer(
     ///
     /// Returns the last reading either way, so a refusal can say what
     /// it actually saw.
-    private fun awaitText(
+    /// Poll until the field says the characters arrived, by whatever
+    /// question that field can answer.
+    ///
+    /// This used to poll on `contains`, which a masked field can never
+    /// satisfy: every masked fill burned the whole budget and then
+    /// reported the last thing it read. That is also why the same
+    /// defect showed two faces — a slow publication read back as
+    /// nothing at all, a settled one as the right number of bullets.
+    /// Polling on the verdict itself returns as soon as it is true and
+    /// gives the slow case the full budget it was already spending.
+    private fun awaitLanded(
         node: AccessibilityNodeInfo,
-        text: String,
+        before: String,
+        dispatched: String,
+        masked: Boolean,
         budgetMs: Long,
     ): String {
         val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
@@ -883,7 +920,7 @@ class SmixHttpServer(
         while (true) {
             node.refresh()
             last = node.text?.toString() ?: ""
-            if (last.contains(text)) return last
+            if (RunnerWire.textLanded(before, last, dispatched, masked)) return last
             if (android.os.SystemClock.elapsedRealtime() >= deadline) return last
             Thread.sleep(50)
         }

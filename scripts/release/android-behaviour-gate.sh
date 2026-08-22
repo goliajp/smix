@@ -411,4 +411,40 @@ curl -sS --max-time 15 "http://localhost:$PROXY_PORT/windows" > "$WORK/a8-after.
 python3 "$REPO_ROOT/scripts/release/android-a8-verdict.py" after "$WORK/a8-after.json" \
   || die "A8: see above"
 
-echo "android behaviour gate: 9/9 assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"
+# A9 — a fill into a masked field is judged by what a mask can tell you.
+#
+# The predicate 6.4.0 shipped compares the node's text with what was
+# typed. A password field's node reports one bullet per character, so
+# that comparison is false for every fill that ever worked, and a
+# consumer's twenty-flow suite stopped at the flow that signs in.
+#
+# From a fresh screen, deliberately. A9 is about one thing: whether a
+# masked field can be judged at all. Run straight after A8 it fails for
+# an unrelated reason — the focus tap lands on the masked field while
+# the clear and the typing still go to whatever held focus before, so
+# the characters land in the previous field and erase it. That is a
+# second defect with its own subject (A10) and its own fix; letting it
+# fail A9 would mean neither is being tested.
+adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
+adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.ComposeActivity" >/dev/null 2>&1 \
+  || die "A9: could not foreground the Compose screen"
+sleep 3
+
+SECRET='Sunroom!24'
+"$SMIX_BIN" fill "id:compose_password" --text "$SECRET" --device "$SERIAL" \
+  --port "$PROXY_PORT" > "$WORK/a9-fill.log" 2>&1 \
+  || die "A9: a fill into a masked field was refused: $(tail -2 "$WORK/a9-fill.log")
+  The characters are very likely in the field. A masked node cannot report them,
+  so a predicate that asks for them refuses every such fill."
+
+curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a9-tree.json" \
+  || die "A9: /tree did not answer after the masked fill"
+python3 "$REPO_ROOT/scripts/release/android-a9-verdict.py" \
+  "$WORK/a9-tree.json" compose_password "$SECRET" 0 || die "A9: see above"
+
+# The count is derived, not typed. It said 9/9 while this file held nine
+# assertions and would have gone on saying it while holding ten — a
+# number nobody re-counts is a claim with nothing behind it, which is
+# the same shape as the defect A9 exists for.
+ASSERTIONS=$(grep -cE '^# A[0-9]+( control)? —' "$0")
+echo "android behaviour gate: $ASSERTIONS/$ASSERTIONS assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"
