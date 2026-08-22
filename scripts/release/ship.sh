@@ -205,15 +205,6 @@ fi
 # them there; the ordering check does now.
 
 
-log "napi loader"
-# --verbose, because the quiet form reports a line COUNT. "104 lines
-# differ" cannot be read after the fact, and this gate went red once
-# during 6.4.0's ship and clean on the next hand-run with the tree
-# unchanged — with only a count in the log there was nothing to compare.
-"$ROOT/scripts/dev/napi-dts-fresh.sh" --verbose > /tmp/smix-ship-napi-dts.log 2>&1 \
-  || fail "napi loader (index.d.ts/index.js) is not what napi generates — see /tmp/smix-ship-napi-dts.log"
-
-
 # --- fact scan --------------------------------------------------------
 # hygiene-scan asks "does it read as internal?"; fact-scan asks "is it
 # true?" — install coordinates vs the workspace version, tool-count
@@ -406,83 +397,19 @@ log "scope promise scan"
 python3 "$ROOT/scripts/dev/scope-promise-scan.py" > /tmp/smix-ship-scope.log 2>&1 \
   || fail "scope promise scan FAILED — the scope file and the tree disagree (see /tmp/smix-ship-scope.log)"
 
-# --- clippy -----------------------------------------------------------
-# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
-# nothing ran clippy — so four lints sat in the tree, one of them a doc
-# comment detached from the type it described in a stone crate. Clean at
-# the time this was added; here so it stays that way.
-log "clippy"
-( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
-  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
+# Measured 482s on a cold cache and 0s on a warm one: it runs a napi
+# build. Kept first — where 6.6 put it, reading the warm number — it
+# pushed every seconds-long judgement eight minutes down the run, and
+# the ordering gate said so. A build belongs with the builds.
+log "napi loader"
+# --verbose, because the quiet form reports a line COUNT. "104 lines
+# differ" cannot be read after the fact, and this gate went red once
+# during 6.4.0's ship and clean on the next hand-run with the tree
+# unchanged — with only a count in the log there was nothing to compare.
+"$ROOT/scripts/dev/napi-dts-fresh.sh" --verbose > /tmp/smix-ship-napi-dts.log 2>&1 \
+  || fail "napi loader (index.d.ts/index.js) is not what napi generates — see /tmp/smix-ship-napi-dts.log"
 
-# --- swift-bridge unit tests ------------------------------------------
-# NOT bypassable. This suite sat outside the gate long enough for a test
-# asserting a two-release-old contract to fail unnoticed for 15+ releases.
-# ~18 s.
-log "swift-bridge unit tests"
-( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
-  || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
 
-# --- SmixRunner UITest compile ----------------------------------------
-# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
-# the XCUITest body that ships in the runner sources and is what actually
-# drives a device. It went uncompiled by any gate. build-for-testing on a
-# generic simulator destination compiles it without booting a simulator.
-log "SmixRunner UITest build"
-( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
-    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
-    > /tmp/smix-ship-uitest-build.log 2>&1 \
-  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
-
-# --- rust workspace tests ---------------------------------------------
-# The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
-# + lints while `cargo test` was left to whoever remembered. That is how
-# /tap shipped a response body the wire crate deserialized to all-None
-# without one red test. Non-bypassable, like the swift suite above.
-log "cargo test --workspace"
-( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1 \
-  || fail "cargo test FAILED — see /tmp/smix-ship-cargo-test.log"
-
-# --- judgements that need a build ------------------------------------
-# These three are not seconds-long source reads. Two compile the adapter
-# to ask the compiled table what it says, and the workflow scan takes a
-# minute and a half on its own. Kept at the front they made the
-# fail-fast block cost seven minutes, and the ordering gate reported the
-# genuinely cheap judgements that followed them — correctly. Here the
-# adapter is already built, so the two cost nothing, and nothing cheap
-# waits behind them.
-
-# --- every cell is declared -------------------------------------------
-# The verb-by-form table has to agree with the code rather than with
-# itself: a slot handed out and not listed is one the tests walk past,
-# and a cell claiming a dispatch runtime.rs does not perform is the
-# shape of the defect the table exists for.
-log "every cell is declared"
-python3 "$ROOT/scripts/dev/every-cell-is-declared.py" > /tmp/smix-ship-cells.log 2>&1 \
-  || fail "every cell is declared FAILED — see /tmp/smix-ship-cells.log"
-
-# --- selector matrix in the guide -------------------------------------
-# The guide's verb-by-form table is generated from the one the code
-# decides by. It said "any selector position accepts `ocrText:`"
-# directly above the list of the four verbs that read it — a sentence
-# and a list disagreeing in the same paragraph, both written by hand.
-log "selector matrix in the guide"
-python3 "$ROOT/scripts/dev/gen-selector-matrix.py" --check > /tmp/smix-ship-matrix.log 2>&1 \
-  || fail "the guide's selector matrix is not what the table says — see /tmp/smix-ship-matrix.log"
-
-# Twenty corpus flows against one system app is one subject walked
-# twenty ways, and a defect that only shows on an ordinary app was
-# invisible to every device gate at once — which is how a consumer
-# found `/tree` returning only the SystemUI windows while everything
-# here was green. This asks whether the gates below are pointed at more
-# than the platform's own app; it does not ask whether they pass.
-# A route that drives the app and does not read `App-Bundle-Id` uses
-# whichever app the runner booted with, in silence. Three did.
-# A gate any bystander process can turn red judges nothing.
-# preflight promises to run what CI runs. Nothing checked, and two
-# steps had no local counterpart at all.
-# The plugin adds initiative, not capability. Nothing checked that
-# direction, and two MCP tools had no CLI behind them.
 # The corpus gate's verdict, driven with fabricated records. FLAKE is
 # not green, and that rule is otherwise only reachable by booting a sim.
 log "flake classifier + corpus verdict self-tests"
@@ -682,6 +609,84 @@ log "cargo build -p smix-cli --release (for corpus gate)"
 ( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release"
 
 
+
+# --- clippy -----------------------------------------------------------
+# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
+# nothing ran clippy — so four lints sat in the tree, one of them a doc
+# comment detached from the type it described in a stone crate. Clean at
+# the time this was added; here so it stays that way.
+log "clippy"
+( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
+  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
+
+# --- swift-bridge unit tests ------------------------------------------
+# NOT bypassable. This suite sat outside the gate long enough for a test
+# asserting a two-release-old contract to fail unnoticed for 15+ releases.
+# ~18 s.
+log "swift-bridge unit tests"
+( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
+  || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
+
+# --- SmixRunner UITest compile ----------------------------------------
+# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
+# the XCUITest body that ships in the runner sources and is what actually
+# drives a device. It went uncompiled by any gate. build-for-testing on a
+# generic simulator destination compiles it without booting a simulator.
+log "SmixRunner UITest build"
+( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
+    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
+    > /tmp/smix-ship-uitest-build.log 2>&1 \
+  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
+
+# --- rust workspace tests ---------------------------------------------
+# The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
+# + lints while `cargo test` was left to whoever remembered. That is how
+# /tap shipped a response body the wire crate deserialized to all-None
+# without one red test. Non-bypassable, like the swift suite above.
+log "cargo test --workspace"
+( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1 \
+  || fail "cargo test FAILED — see /tmp/smix-ship-cargo-test.log"
+
+# --- judgements that need a build ------------------------------------
+# These three are not seconds-long source reads. Two compile the adapter
+# to ask the compiled table what it says, and the workflow scan takes a
+# minute and a half on its own. Kept at the front they made the
+# fail-fast block cost seven minutes, and the ordering gate reported the
+# genuinely cheap judgements that followed them — correctly. Here the
+# adapter is already built, so the two cost nothing, and nothing cheap
+# waits behind them.
+
+# --- every cell is declared -------------------------------------------
+# The verb-by-form table has to agree with the code rather than with
+# itself: a slot handed out and not listed is one the tests walk past,
+# and a cell claiming a dispatch runtime.rs does not perform is the
+# shape of the defect the table exists for.
+log "every cell is declared"
+python3 "$ROOT/scripts/dev/every-cell-is-declared.py" > /tmp/smix-ship-cells.log 2>&1 \
+  || fail "every cell is declared FAILED — see /tmp/smix-ship-cells.log"
+
+# --- selector matrix in the guide -------------------------------------
+# The guide's verb-by-form table is generated from the one the code
+# decides by. It said "any selector position accepts `ocrText:`"
+# directly above the list of the four verbs that read it — a sentence
+# and a list disagreeing in the same paragraph, both written by hand.
+log "selector matrix in the guide"
+python3 "$ROOT/scripts/dev/gen-selector-matrix.py" --check > /tmp/smix-ship-matrix.log 2>&1 \
+  || fail "the guide's selector matrix is not what the table says — see /tmp/smix-ship-matrix.log"
+
+# Twenty corpus flows against one system app is one subject walked
+# twenty ways, and a defect that only shows on an ordinary app was
+# invisible to every device gate at once — which is how a consumer
+# found `/tree` returning only the SystemUI windows while everything
+# here was green. This asks whether the gates below are pointed at more
+# than the platform's own app; it does not ask whether they pass.
+# A route that drives the app and does not read `App-Bundle-Id` uses
+# whichever app the runner booted with, in silence. Three did.
+# A gate any bystander process can turn red judges nothing.
+# preflight promises to run what CI runs. Nothing checked, and two
+# steps had no local counterpart at all.
+# The plugin adds initiative, not capability. Nothing checked that
+# direction, and two MCP tools had no CLI behind them.
 # --- android instrumentation (device) ----------------------------------
 # The :sdk assertion suite on a pinned emulator. Placed early — before
 # fuzz, clippy, semver and anything that publishes — so a missing
