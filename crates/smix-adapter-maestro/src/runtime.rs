@@ -755,6 +755,48 @@ enum StepOutcome<'a> {
 /// `entry::summarize_step` (which is human-readable) so the file name
 /// only carries the verb noun. Falls back to `step` on any variant we
 /// have not listed — safe against future Step additions.
+/// Say which step failed, in the failure itself.
+///
+/// The step lines already name each step as it starts, so the last one
+/// printed is the one that was in flight. That is only true of a reader
+/// who has both lines: a consumer reading the error alone attributed an
+/// `eraseText` failure to `hideKeyboard`, because the error said
+/// neither which step nor which verb.
+///
+/// Only the `Sdk` variant carries a message this can be written into,
+/// and it is the one every device and assertion failure arrives as. The
+/// others are authoring errors — an unknown key, a bad direction, a
+/// subflow cycle — which name their own cause; the stderr line above
+/// gives them their step.
+///
+/// A subflow's steps run through this same loop, so an inner failure is
+/// already attributed by the time the outer loop sees it. Attributing
+/// again would produce `step 5 (runFlow): step 3 (tapOn): …`, naming a
+/// step that did not fail — so the steps that recurse do not attribute,
+/// and they are identified by which ones they are rather than by
+/// sniffing the message for a prefix it might legitimately carry.
+fn attribute_to_step(err: RunError, idx: usize, step: &Step, verb: &str) -> RunError {
+    if recurses_into_steps(step) {
+        return err;
+    }
+    match err {
+        RunError::Sdk(mut f) => {
+            f.message = format!("step {idx} ({verb}): {}", f.message);
+            RunError::Sdk(f)
+        }
+        other => other,
+    }
+}
+
+/// Steps whose failure comes from a nested `run_steps`, already
+/// carrying the inner step's number.
+fn recurses_into_steps(step: &Step) -> bool {
+    matches!(
+        step,
+        Step::RunFlow(_) | Step::RunFlowInline { .. } | Step::RunFlowConditional { .. }
+    )
+}
+
 fn summarize_step_verb(step: &Step) -> String {
     match step {
         Step::LaunchApp { .. } => "launchApp",
@@ -1178,7 +1220,17 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             if let Some(rec) = debug_record {
                 self.debug_records.push(rec);
             }
-            let outcome = outcome_result?;
+            let outcome = match outcome_result {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    // Symmetric with the SKIPPED line below, and for
+                    // the variants whose text this cannot reach: an
+                    // authoring error names its own cause but not the
+                    // step it happened at.
+                    eprintln!("STEP {idx}: {step_summary} → FAILED");
+                    return Err(attribute_to_step(e, idx, step, &step_summary));
+                }
+            };
             // Surface a Skipped `reason` on stderr as each step
             // completes. The reason otherwise only lands in
             // `--debug-output/step-N.json`, so consumers running under
@@ -3659,4 +3711,72 @@ fn resolve_std_subflow(name: &str, base_dir: &Path) -> Option<PathBuf> {
             .unwrap_or_default(),
     ];
     candidates.into_iter().find(|c| c.exists())
+}
+
+#[cfg(test)]
+mod step_attribution_tests {
+    use super::*;
+
+    fn sdk_failure(message: &str) -> RunError {
+        RunError::Sdk(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::NotVisible),
+            message: message.into(),
+            ..Default::default()
+        }))
+    }
+
+    #[test]
+    fn a_failure_says_which_step_and_which_verb() {
+        let step = Step::Back;
+        let err = attribute_to_step(sdk_failure("not visible — { id=\"x\" }"), 3, &step, "back");
+        let RunError::Sdk(f) = err else {
+            panic!("the variant must be preserved");
+        };
+        assert!(
+            f.message.starts_with("step 3 (back): "),
+            "got {}",
+            f.message
+        );
+        assert!(
+            f.message.contains("not visible"),
+            "the original message must survive: {}",
+            f.message
+        );
+    }
+
+    #[test]
+    fn a_subflow_step_does_not_attribute_over_its_inner_step() {
+        // The inner loop already named the step that failed. Naming the
+        // runFlow as well would produce `step 5 (runFlow): step 3
+        // (tapOn): …` and point at a step that did nothing wrong.
+        let inner = sdk_failure("step 3 (tapOn): not visible");
+        let step = Step::RunFlow("sub.yaml".into());
+        let RunError::Sdk(f) = attribute_to_step(inner, 5, &step, "runFlow") else {
+            panic!("the variant must be preserved");
+        };
+        assert_eq!(f.message, "step 3 (tapOn): not visible");
+    }
+
+    #[test]
+    fn a_message_that_happens_to_begin_with_step_is_still_attributed() {
+        // The rule is which step kind it is, not what the text looks
+        // like. An app whose own copy starts with "step " must not
+        // silently lose its attribution.
+        let step = Step::Back;
+        let RunError::Sdk(f) =
+            attribute_to_step(sdk_failure("step counter not visible"), 7, &step, "back")
+        else {
+            panic!("the variant must be preserved");
+        };
+        assert_eq!(f.message, "step 7 (back): step counter not visible");
+    }
+
+    #[test]
+    fn an_authoring_error_is_left_alone() {
+        // It names its own cause and carries no message field to write
+        // into; the stderr line gives it its step.
+        let step = Step::Back;
+        let err = attribute_to_step(RunError::UnknownKey("nope".into()), 2, &step, "pressKey");
+        assert!(matches!(err, RunError::UnknownKey(k) if k == "nope"));
+    }
 }
