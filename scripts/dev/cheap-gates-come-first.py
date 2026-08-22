@@ -55,6 +55,23 @@ SELF = (
     "the ordering gate can still go red",
 )
 
+# Steps that make something a later step consumes. Their position is a
+# dependency rather than a choice, and their measured cost is whatever
+# the build cache happened to hold: `cargo build --release` read 0s on
+# a warm run and 28s on a cold one, and this check asked for the 0s one
+# to be moved to the front. A build is not a judgement — nothing about
+# it fails cheaply and early, which is the whole premise here.
+#
+# Each is verified to still exist in ship.sh below, so a renamed or
+# deleted step cannot leave a line here excusing nothing in particular.
+PRODUCES = {
+    "cargo build -p smix-cli --release (for corpus gate)": "the corpus and android "
+    "behaviour gates drive the binary it writes",
+    "android unit tests + androidTest compile (sdk + app; compiles kotlin bindings)": "the "
+    "kotlin bindings it compiles are what the publish leg publishes",
+    "SmixRunner UITest build": "the corpus gate drives the runner it builds",
+}
+
 
 def main() -> int:
     if not os.path.isfile(PROFILE):
@@ -85,9 +102,28 @@ def main() -> int:
         return 1
 
     problems = []
+
+    # The exemptions are checked from the other side: a name here that
+    # ship.sh no longer logs is excusing nothing, and would go on
+    # excusing it silently.
+    ship = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "scripts",
+        "release",
+        "ship.sh",
+    )
+    if os.path.isfile(ship):
+        ship_src = open(ship, encoding="utf-8").read()
+        for name, why in PRODUCES.items():
+            if name not in ship_src:
+                problems.append(
+                    f"`{name}` is exempt on the grounds that {why} — but ship.sh no "
+                    f"longer logs a step by that name. Re-verify the exemption."
+                )
+
     spent = 0
     for secs, name in rows:
-        if name in SELF:
+        if name in SELF or name in PRODUCES:
             spent += secs
             continue
         if secs <= CHEAP_SECONDS and spent >= PATIENCE_SECONDS:

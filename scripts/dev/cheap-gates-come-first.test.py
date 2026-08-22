@@ -58,6 +58,26 @@ def main():
         "sits behind",
     )
 
+    # A build read as cheap because the cache was warm. Its position is
+    # a dependency, not a choice, and `cargo build --release` measured
+    # 0s on a warm run and 28s on a cold one — this check asked for the
+    # 0s one to move to the front.
+    ok &= case(
+        "a warm-cache build late in the run is not a misplaced judgement",
+        cheap + dear + [(0, "cargo build -p smix-cli --release (for corpus gate)")],
+        0,
+        "no seconds-long",
+    )
+
+    # The other half, so the exemption above is a rule rather than a
+    # hole: an ordinary judgement in the same position is still flagged.
+    ok &= case(
+        "an ordinary judgement in that same position still is",
+        cheap + dear + [(0, "some other scan")],
+        1,
+        "sits behind",
+    )
+
     # A profile short enough to agree with anything.
     ok &= case(
         "a profile too short to mean anything",
