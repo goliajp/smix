@@ -2,6 +2,26 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [6.7.1] — 2026-08-22
+
+### Fixed
+
+- **`localizedText:` now works in every verb that takes a selector.** It
+  is rewritten to a plain `Text` selector by a pure function of the
+  current locale, and three of the twelve verbs called it — the rest
+  handed the locale map to the resolver, which matches nothing against
+  one. Measured: the same element found by `assertVisible` and not by
+  `longPressOn`, same selector, same screen.
+
+  The gate selectors are the more serious half. `when.visible` /
+  `when.notVisible` probe through the same path, so a gate written
+  against a locale map fired because the question went unasked — a
+  wrong branch taken in silence rather than an error anyone sees.
+
+- The guides said "any selector position accepts `ocrText:`" directly
+  above the list of the four verbs that fire it. They now say which
+  verbs read it, and what the others do instead.
+
 ## [6.7.0] — 2026-08-22
 
 ### Fixed

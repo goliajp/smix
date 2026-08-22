@@ -17,6 +17,20 @@ export function Install() {
           for iOS, or the Android SDK with an emulator image for Android.
         </p>
 
+        {/* Covers the gap between a version being written down here and the
+            registries serving it, and comes out with the release — fact-scan
+            fails both ways round now. The number below is the binding, not a
+            literal — a literal is the part that goes stale. */}
+        <p className="mt-5 max-w-[68ch] border border-accent bg-bg-elev px-4 py-3 text-[13px] text-fg-muted">
+          <span className="font-mono font-600 text-fg">{VERSION} is not published yet.</span>{' '}
+          The coordinates below are what {VERSION} will be. Until it lands, install whatever the
+          registries currently serve — or build from{' '}
+          <a href={LINKS.repo} target="_blank" rel="noreferrer">
+            source
+          </a>
+          .
+        </p>
+
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           {SDKS.map((sdk) => (
             <div key={sdk.id} className="flex flex-col border border-border bg-bg-elev">
