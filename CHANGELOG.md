@@ -38,6 +38,28 @@ All notable changes to the `smix` workspace are documented here. The format foll
   skipped one. A subflow's inner step is named once; the `runFlow`
   containing it does not claim the failure.
 
+### Changed
+
+- **An absence check refuses to pass on a question it never asked.**
+  `assertNotVisible` and `waitForNotVisible` now fail loudly when the
+  selector contains `ocrText`, `localizedText` or `anchorRelative` —
+  forms this layer does not read from the accessibility tree. They
+  matched nothing, and "matched nothing" was reported as "absent":
+  `assertNotVisible: { ocrText: 'smix fixture' }` passed against a
+  screen showing those words. A chain counts too, since a chain that
+  was not evaluated to the end says nothing either. `assertVisible`
+  keeps failing as before but now says which part was never checked.
+
+  If a flow relies on one of those passing, it was not checking
+  anything; name the element by `id`, `text`, `label` or `role`, or use
+  a verb that evaluates the form — `tapOn`, `extendedWaitUntil`,
+  `scrollUntilVisible`.
+
+- `localizedText` inside a `fallback:` chain is now desugared. The layer
+  used to stay a locale map, match nothing, and let the chain fall
+  through to the next one, so the locale the author wrote was never
+  consulted.
+
 ### Added
 
 - A test that every selector form either resolves or is listed as
