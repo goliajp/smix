@@ -15,7 +15,7 @@ appId: com.apple.Preferences
 # on the known-unstable list at for twelve days, with four attacks
 # aimed at `back` and none of them moving it.
 #
-# `back` was working. The trail it prints since 6.6.0 says
+# `back` was working. The trail it prints since 6.7.0 says
 # `last=Settings` on the failing runs: the pop completed and the title
 # was already the destination's. The assertion was the wrong one.
 #
