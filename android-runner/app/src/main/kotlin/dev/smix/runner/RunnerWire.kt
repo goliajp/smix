@@ -466,6 +466,37 @@ object RunnerWire {
             matched == "dev.smix.runner.test:id/$shortId" -> "runner-test"
             else -> "other-package"
         }
+
+    /// Did the characters reach the field?
+    ///
+    /// A plain field can be asked directly: its accessibility node
+    /// carries what it holds, so the honest evidence is that the node
+    /// now contains what was typed.
+    ///
+    /// A masked field cannot answer that question at all. Its node
+    /// reports one bullet per character and never the characters, so
+    /// `contains` is false for every fill that ever worked — the
+    /// verdict 6.4.0 shipped, and the one that stopped a consumer's
+    /// twenty-flow suite at the flow that signs in. What a mask can
+    /// still tell you is how much longer it got, so that is what is
+    /// asked of it.
+    ///
+    /// `isPassword` comes from the node saying so
+    /// (`AccessibilityNodeInfo.isPassword`), never from the text
+    /// looking like a mask. A field holding `aaaa` is not masked, and a
+    /// predicate that guessed would quietly stop checking content for
+    /// anyone whose password repeats a character.
+    fun textLanded(
+        before: String,
+        after: String,
+        dispatched: String,
+        isPassword: Boolean,
+    ): Boolean =
+        if (isPassword) {
+            after.length - before.length == dispatched.length
+        } else {
+            after.contains(dispatched)
+        }
 }
 
 /// Map smix KeyName camelCase (per `smix_input::KeyName` serde rename) →

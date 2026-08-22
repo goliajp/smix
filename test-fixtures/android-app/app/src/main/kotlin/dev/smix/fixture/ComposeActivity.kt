@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -40,6 +41,7 @@ class ComposeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             var typed by remember { mutableStateOf("") }
+            var secret by remember { mutableStateOf("") }
             var submitted by remember { mutableStateOf("nothing submitted") }
             Column(
                 modifier = Modifier
@@ -51,6 +53,20 @@ class ComposeActivity : ComponentActivity() {
                     value = typed,
                     onValueChange = { typed = it },
                     modifier = Modifier.testTag("compose_input"),
+                )
+                // A masked field. Its accessibility node reports one
+                // bullet per character and never the characters, so a
+                // predicate that compares the node's text with what was
+                // typed is asking a question this field cannot answer:
+                // ten characters read back as ten dots and the fill is
+                // judged to have landed nowhere. That verdict blocked a
+                // consumer's entire Android suite, because the first
+                // flow of twenty signs in.
+                TextField(
+                    value = secret,
+                    onValueChange = { secret = it },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.testTag("compose_password"),
                 )
                 Button(
                     onClick = { submitted = typed },
