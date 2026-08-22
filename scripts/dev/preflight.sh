@@ -133,7 +133,7 @@ if printf '%s\n' "$CHANGED_DOCS" | grep -q '^swift-bridge/'; then
 fi
 
 echo "--- selector matrix in the guide"
-python3 "$ROOT/scripts/dev/gen-selector-matrix.py" --check || exit 1
+python3 scripts/dev/gen-selector-matrix.py --check || exit 1
 
 echo "--- android: unit tests + androidTest compile"
 # Unconditional, unlike the crate steps above. Those narrow by git diff

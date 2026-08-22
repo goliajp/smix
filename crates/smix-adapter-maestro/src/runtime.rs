@@ -350,14 +350,40 @@ pub trait AppLike: Send + Sync {
     /// Double-tap an element. Mirrors [`App::double_tap`].
     async fn double_tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
     /// Double-tap a place. Mirrors [`App::double_tap_at_coord`].
-    async fn double_tap_at_coord(&self, nx: f64, ny: f64) -> Result<(), ExpectationFailure>;
+    ///
+    /// Defaulted so an implementor outside this workspace keeps
+    /// compiling — the trait is public and adding a required method to
+    /// one is a major version. The default refuses rather than doing
+    /// nothing: a gesture that silently does not happen is the failure
+    /// mode this whole line of work is about. Everything in this tree
+    /// overrides it.
+    async fn double_tap_at_coord(&self, _nx: f64, _ny: f64) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "double_tap_at_coord: this App has no coordinate double-tap. \
+                      The verb resolved a place and there is nothing here to act on \
+                      it with."
+                .into(),
+            ..Default::default()
+        }))
+    }
     /// Long-press a place. Mirrors [`App::long_press_at_coord`].
+    /// Defaulted for the same reason as [`AppLike::double_tap_at_coord`].
     async fn long_press_at_coord(
         &self,
-        nx: f64,
-        ny: f64,
-        duration_ms: u64,
-    ) -> Result<(), ExpectationFailure>;
+        _nx: f64,
+        _ny: f64,
+        _duration_ms: u64,
+    ) -> Result<(), ExpectationFailure> {
+        Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "long_press_at_coord: this App has no coordinate long press. \
+                      The verb resolved a place and there is nothing here to act on \
+                      it with."
+                .into(),
+            ..Default::default()
+        }))
+    }
     /// Tap one element several times, spaced on the event timeline.
     async fn tap_burst(
         &self,
