@@ -280,6 +280,178 @@ log "every verb reads a locale map"
 python3 "$ROOT/scripts/dev/every-verb-reads-a-locale-map.py" > /tmp/smix-ship-locale.log 2>&1 \
   || fail "every verb reads a locale map FAILED — see /tmp/smix-ship-locale.log"
 
+# --- guide claims + corpus ---------------------------------------------
+# The guides are the release's user-facing half, and this is the last
+# place before they reach anybody. Both of these ran nowhere until
+# 2026-08-06 — a check that never runs reads as coverage while providing
+# none, and the version of that which matters is the one on the path to
+# users.
+log "guide claims scan"
+python3 "$ROOT/scripts/dev/guide-claims-scan.py" > /tmp/smix-ship-guide-claims.log 2>&1 \
+  || fail "guide claims scan FAILED — a guide claims something the code does not do (see /tmp/smix-ship-guide-claims.log)"
+log "guide corpus in step with the guides"
+python3 "$ROOT/scripts/dev/guide-corpus-sync.py" --check > /tmp/smix-ship-guide-corpus.log 2>&1 \
+  || fail "guide corpus is out of step with the guides — run scripts/dev/guide-corpus-sync.py (see /tmp/smix-ship-guide-corpus.log)"
+
+# --- android gate scan -------------------------------------------------
+# Re-derives the Android modules and checks each one's test tasks are run
+# by preflight, CI and this script. The app module's unit tests were
+# outside all three for the whole of v1 and v2, which is how a header
+# nobody read and a placeholder package both shipped.
+log "android gate scan"
+python3 "$ROOT/scripts/dev/android-gate-scan.py" > /tmp/smix-ship-android-gate.log 2>&1 \
+  || fail "android gate scan FAILED — an Android test task is outside the gates (see /tmp/smix-ship-android-gate.log)"
+
+# --- audit ledger ------------------------------------------------------
+# Re-evaluates every citation in .claude/docs/audit-ledger.md. That table records
+# which known defects are still live, and its predecessor drifted badly
+# enough that three of five sampled entries had been fixed while still
+# reading as open. Shipping against a stale account of what is broken is
+# how a defect reaches users with a note saying someone already knew.
+log "audit ledger"
+python3 "$ROOT/scripts/dev/audit-ledger-scan.py" > /tmp/smix-ship-ledger.log 2>&1 \
+  || fail "audit ledger scan FAILED — a citation no longer holds; re-verify that row (see /tmp/smix-ship-ledger.log)"
+
+# --- release record ----------------------------------------------------
+# The breaking-change table and the CHANGELOG's Breaking section are two
+# lists of the same thing, and they once held six entries and eight. Also
+# checks that every behaviour change reached the release notes, and that
+# the publish DAG below still covers the workspace in a topological order
+# — a crate missing from it is discovered seventeen publishes in, when the
+# earlier steps cannot be taken back.
+log "release record"
+python3 "$ROOT/scripts/dev/release-record-scan.py" > /tmp/smix-ship-record.log 2>&1 \
+  || fail "release record scan FAILED — the release's several lists disagree (see /tmp/smix-ship-record.log)"
+
+
+# --- hygiene scan ------------------------------------------------------
+# Development noise and dead doc pointers in everything a reader outside
+# this repo can see. Its own docstring says it exits non-zero "so it can
+# gate a release" — and until now this script mentioned it only in the
+# two comments below, never calling it. preflight ran it, CI ran it, the
+# release did not.
+log "hygiene scan"
+python3 "$ROOT/scripts/dev/hygiene-scan.py" > /tmp/smix-ship-hygiene.log 2>&1 \
+  || fail "hygiene scan FAILED — shipped sources carry development noise or dead doc pointers (see /tmp/smix-ship-hygiene.log)"
+
+# --- publish dag ------------------------------------------------------
+# Before anything is built, ask whether the publish list below covers
+# the workspace. A crate that something depends on and is missing fails
+# at cargo publish, forty minutes in; a crate nothing depends on yet —
+# every crate, on the release that introduces it — is simply never
+# published, and the ship says COMPLETE. Seconds, so it runs early.
+log "publish dag"
+python3 "$ROOT/scripts/dev/publish-dag-is-complete.py" > /tmp/smix-ship-publish-dag.log 2>&1 \
+  || fail "publish dag FAILED — the crates.io list and the workspace disagree (see /tmp/smix-ship-publish-dag.log)"
+
+# --- actions pinned ----------------------------------------------------
+# What CI ran is part of what this release was tested by, and a moving
+# action tag means that cannot be stated. Seconds, so it runs here.
+log "actions pinned"
+python3 "$ROOT/scripts/dev/actions-are-pinned.py" > /tmp/smix-ship-actions.log 2>&1 \
+  || fail "actions pinned FAILED — a workflow names a moving ref (see /tmp/smix-ship-actions.log)"
+
+# --- job ceilings ------------------------------------------------------
+log "job ceilings"
+python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.py" > /tmp/smix-ship-ceilings.log 2>&1 \
+  || fail "job ceilings FAILED — a CI job may run for six hours (see /tmp/smix-ship-ceilings.log)"
+
+# --- self-tests are wired ----------------------------------------------
+log "the publish-dag gate can still go red"
+python3 "$ROOT/scripts/dev/publish-dag-is-complete.test.py" > /tmp/smix-ship-dagtest.log 2>&1 \
+  || fail "the publish-dag gate no longer goes red on a broken list (see /tmp/smix-ship-dagtest.log)"
+
+# Named one by one rather than looped: workflow-scan reads this file
+# for the gate it is looking for, and a name assembled from a loop
+# variable is a name it cannot find. A scan that cannot see an
+# invocation reports it missing, which is the right way round.
+log "today's gates can still go red"
+python3 "$ROOT/scripts/dev/actions-are-pinned.test.py" > /tmp/smix-ship-gatetests.log 2>&1 \
+  || fail "actions-are-pinned no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
+python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
+  || fail "jobs-have-a-ceiling no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
+python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
+  || fail "a-selftest-nobody-runs no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
+
+log "the publication verifier asks the right things"
+python3 "$ROOT/scripts/dev/verify-published-reads-registries.test.py" \
+  > /tmp/smix-ship-verifytest.log 2>&1 \
+  || fail "the publication verifier no longer asks the right things (see /tmp/smix-ship-verifytest.log)"
+
+log "a published crate can run its tests"
+python3 "$ROOT/scripts/dev/a-published-crate-can-run-its-tests.py" \
+  > /tmp/smix-ship-packagetests.log 2>&1 \
+  || fail "a crate's tests read files its package will not carry, undeclared (see /tmp/smix-ship-packagetests.log)"
+
+log "a verb does not assume a platform"
+python3 "$ROOT/scripts/dev/a-verb-does-not-assume-a-platform.py" \
+  > /tmp/smix-ship-verbplatform.log 2>&1 \
+  || fail "a runner verb reaches one platform without saying so (see /tmp/smix-ship-verbplatform.log)"
+
+log "a hand-copied table says a number"
+python3 "$ROOT/scripts/dev/a-hand-copied-table-says-a-number.py" \
+  > /tmp/smix-ship-verbcount.log 2>&1 \
+  || fail "a written verb-table count disagrees with the table (see /tmp/smix-ship-verbcount.log)"
+
+log "self-tests are wired"
+python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests.log 2>&1 \
+  || fail "a self-test is invoked by nothing (see /tmp/smix-ship-selftests.log)"
+
+# --- scope promise scan ------------------------------------------------
+# Every promise in the scope file still matches what exists. `--stable`
+# was promised, never built, never withdrawn, and agreed with by four
+# documents — three of them gitignored — for seven months. A shipped
+# promise may not cite a document as evidence it was implemented.
+log "scope promise scan"
+python3 "$ROOT/scripts/dev/scope-promise-scan.py" > /tmp/smix-ship-scope.log 2>&1 \
+  || fail "scope promise scan FAILED — the scope file and the tree disagree (see /tmp/smix-ship-scope.log)"
+
+# --- clippy -----------------------------------------------------------
+# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
+# nothing ran clippy — so four lints sat in the tree, one of them a doc
+# comment detached from the type it described in a stone crate. Clean at
+# the time this was added; here so it stays that way.
+log "clippy"
+( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
+  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
+
+# --- swift-bridge unit tests ------------------------------------------
+# NOT bypassable. This suite sat outside the gate long enough for a test
+# asserting a two-release-old contract to fail unnoticed for 15+ releases.
+# ~18 s.
+log "swift-bridge unit tests"
+( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
+  || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
+
+# --- SmixRunner UITest compile ----------------------------------------
+# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
+# the XCUITest body that ships in the runner sources and is what actually
+# drives a device. It went uncompiled by any gate. build-for-testing on a
+# generic simulator destination compiles it without booting a simulator.
+log "SmixRunner UITest build"
+( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
+    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
+    > /tmp/smix-ship-uitest-build.log 2>&1 \
+  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
+
+# --- rust workspace tests ---------------------------------------------
+# The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
+# + lints while `cargo test` was left to whoever remembered. That is how
+# /tap shipped a response body the wire crate deserialized to all-None
+# without one red test. Non-bypassable, like the swift suite above.
+log "cargo test --workspace"
+( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1 \
+  || fail "cargo test FAILED — see /tmp/smix-ship-cargo-test.log"
+
+# --- judgements that need a build ------------------------------------
+# These three are not seconds-long source reads. Two compile the adapter
+# to ask the compiled table what it says, and the workflow scan takes a
+# minute and a half on its own. Kept at the front they made the
+# fail-fast block cost seven minutes, and the ordering gate reported the
+# genuinely cheap judgements that followed them — correctly. Here the
+# adapter is already built, so the two cost nothing, and nothing cheap
+# waits behind them.
+
 # --- every cell is declared -------------------------------------------
 # The verb-by-form table has to agree with the code rather than with
 # itself: a slot handed out and not listed is one the tests walk past,
@@ -465,123 +637,6 @@ log "gate subject diversity"
 python3 "$ROOT/scripts/dev/gate-subject-diversity.py" > /tmp/smix-ship-subjects.log 2>&1 \
   || fail "gate subject diversity FAILED — see /tmp/smix-ship-subjects.log"
 
-# --- guide claims + corpus ---------------------------------------------
-# The guides are the release's user-facing half, and this is the last
-# place before they reach anybody. Both of these ran nowhere until
-# 2026-08-06 — a check that never runs reads as coverage while providing
-# none, and the version of that which matters is the one on the path to
-# users.
-log "guide claims scan"
-python3 "$ROOT/scripts/dev/guide-claims-scan.py" > /tmp/smix-ship-guide-claims.log 2>&1 \
-  || fail "guide claims scan FAILED — a guide claims something the code does not do (see /tmp/smix-ship-guide-claims.log)"
-log "guide corpus in step with the guides"
-python3 "$ROOT/scripts/dev/guide-corpus-sync.py" --check > /tmp/smix-ship-guide-corpus.log 2>&1 \
-  || fail "guide corpus is out of step with the guides — run scripts/dev/guide-corpus-sync.py (see /tmp/smix-ship-guide-corpus.log)"
-
-# --- android gate scan -------------------------------------------------
-# Re-derives the Android modules and checks each one's test tasks are run
-# by preflight, CI and this script. The app module's unit tests were
-# outside all three for the whole of v1 and v2, which is how a header
-# nobody read and a placeholder package both shipped.
-log "android gate scan"
-python3 "$ROOT/scripts/dev/android-gate-scan.py" > /tmp/smix-ship-android-gate.log 2>&1 \
-  || fail "android gate scan FAILED — an Android test task is outside the gates (see /tmp/smix-ship-android-gate.log)"
-
-# --- audit ledger ------------------------------------------------------
-# Re-evaluates every citation in .claude/docs/audit-ledger.md. That table records
-# which known defects are still live, and its predecessor drifted badly
-# enough that three of five sampled entries had been fixed while still
-# reading as open. Shipping against a stale account of what is broken is
-# how a defect reaches users with a note saying someone already knew.
-log "audit ledger"
-python3 "$ROOT/scripts/dev/audit-ledger-scan.py" > /tmp/smix-ship-ledger.log 2>&1 \
-  || fail "audit ledger scan FAILED — a citation no longer holds; re-verify that row (see /tmp/smix-ship-ledger.log)"
-
-# --- release record ----------------------------------------------------
-# The breaking-change table and the CHANGELOG's Breaking section are two
-# lists of the same thing, and they once held six entries and eight. Also
-# checks that every behaviour change reached the release notes, and that
-# the publish DAG below still covers the workspace in a topological order
-# — a crate missing from it is discovered seventeen publishes in, when the
-# earlier steps cannot be taken back.
-log "release record"
-python3 "$ROOT/scripts/dev/release-record-scan.py" > /tmp/smix-ship-record.log 2>&1 \
-  || fail "release record scan FAILED — the release's several lists disagree (see /tmp/smix-ship-record.log)"
-
-
-# --- hygiene scan ------------------------------------------------------
-# Development noise and dead doc pointers in everything a reader outside
-# this repo can see. Its own docstring says it exits non-zero "so it can
-# gate a release" — and until now this script mentioned it only in the
-# two comments below, never calling it. preflight ran it, CI ran it, the
-# release did not.
-log "hygiene scan"
-python3 "$ROOT/scripts/dev/hygiene-scan.py" > /tmp/smix-ship-hygiene.log 2>&1 \
-  || fail "hygiene scan FAILED — shipped sources carry development noise or dead doc pointers (see /tmp/smix-ship-hygiene.log)"
-
-# --- publish dag ------------------------------------------------------
-# Before anything is built, ask whether the publish list below covers
-# the workspace. A crate that something depends on and is missing fails
-# at cargo publish, forty minutes in; a crate nothing depends on yet —
-# every crate, on the release that introduces it — is simply never
-# published, and the ship says COMPLETE. Seconds, so it runs early.
-log "publish dag"
-python3 "$ROOT/scripts/dev/publish-dag-is-complete.py" > /tmp/smix-ship-publish-dag.log 2>&1 \
-  || fail "publish dag FAILED — the crates.io list and the workspace disagree (see /tmp/smix-ship-publish-dag.log)"
-
-# --- actions pinned ----------------------------------------------------
-# What CI ran is part of what this release was tested by, and a moving
-# action tag means that cannot be stated. Seconds, so it runs here.
-log "actions pinned"
-python3 "$ROOT/scripts/dev/actions-are-pinned.py" > /tmp/smix-ship-actions.log 2>&1 \
-  || fail "actions pinned FAILED — a workflow names a moving ref (see /tmp/smix-ship-actions.log)"
-
-# --- job ceilings ------------------------------------------------------
-log "job ceilings"
-python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.py" > /tmp/smix-ship-ceilings.log 2>&1 \
-  || fail "job ceilings FAILED — a CI job may run for six hours (see /tmp/smix-ship-ceilings.log)"
-
-# --- self-tests are wired ----------------------------------------------
-log "the publish-dag gate can still go red"
-python3 "$ROOT/scripts/dev/publish-dag-is-complete.test.py" > /tmp/smix-ship-dagtest.log 2>&1 \
-  || fail "the publish-dag gate no longer goes red on a broken list (see /tmp/smix-ship-dagtest.log)"
-
-# Named one by one rather than looped: workflow-scan reads this file
-# for the gate it is looking for, and a name assembled from a loop
-# variable is a name it cannot find. A scan that cannot see an
-# invocation reports it missing, which is the right way round.
-log "today's gates can still go red"
-python3 "$ROOT/scripts/dev/actions-are-pinned.test.py" > /tmp/smix-ship-gatetests.log 2>&1 \
-  || fail "actions-are-pinned no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
-python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
-  || fail "jobs-have-a-ceiling no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
-python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
-  || fail "a-selftest-nobody-runs no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
-
-log "the publication verifier asks the right things"
-python3 "$ROOT/scripts/dev/verify-published-reads-registries.test.py" \
-  > /tmp/smix-ship-verifytest.log 2>&1 \
-  || fail "the publication verifier no longer asks the right things (see /tmp/smix-ship-verifytest.log)"
-
-log "a published crate can run its tests"
-python3 "$ROOT/scripts/dev/a-published-crate-can-run-its-tests.py" \
-  > /tmp/smix-ship-packagetests.log 2>&1 \
-  || fail "a crate's tests read files its package will not carry, undeclared (see /tmp/smix-ship-packagetests.log)"
-
-log "a verb does not assume a platform"
-python3 "$ROOT/scripts/dev/a-verb-does-not-assume-a-platform.py" \
-  > /tmp/smix-ship-verbplatform.log 2>&1 \
-  || fail "a runner verb reaches one platform without saying so (see /tmp/smix-ship-verbplatform.log)"
-
-log "a hand-copied table says a number"
-python3 "$ROOT/scripts/dev/a-hand-copied-table-says-a-number.py" \
-  > /tmp/smix-ship-verbcount.log 2>&1 \
-  || fail "a written verb-table count disagrees with the table (see /tmp/smix-ship-verbcount.log)"
-
-log "self-tests are wired"
-python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests.log 2>&1 \
-  || fail "a self-test is invoked by nothing (see /tmp/smix-ship-selftests.log)"
-
 # --- workflow scan -----------------------------------------------------
 # The development contract survives a clone: charter and rule cards
 # tracked, hook scripts present and wired, guards tested, no GNU-only
@@ -590,52 +645,6 @@ python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests
 log "workflow scan"
 python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 \
   || fail "workflow scan FAILED — see /tmp/smix-ship-workflow.log"
-
-# --- scope promise scan ------------------------------------------------
-# Every promise in the scope file still matches what exists. `--stable`
-# was promised, never built, never withdrawn, and agreed with by four
-# documents — three of them gitignored — for seven months. A shipped
-# promise may not cite a document as evidence it was implemented.
-log "scope promise scan"
-python3 "$ROOT/scripts/dev/scope-promise-scan.py" > /tmp/smix-ship-scope.log 2>&1 \
-  || fail "scope promise scan FAILED — the scope file and the tree disagree (see /tmp/smix-ship-scope.log)"
-
-# --- clippy -----------------------------------------------------------
-# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
-# nothing ran clippy — so four lints sat in the tree, one of them a doc
-# comment detached from the type it described in a stone crate. Clean at
-# the time this was added; here so it stays that way.
-log "clippy"
-( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
-  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
-
-# --- swift-bridge unit tests ------------------------------------------
-# NOT bypassable. This suite sat outside the gate long enough for a test
-# asserting a two-release-old contract to fail unnoticed for 15+ releases.
-# ~18 s.
-log "swift-bridge unit tests"
-( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
-  || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
-
-# --- SmixRunner UITest compile ----------------------------------------
-# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
-# the XCUITest body that ships in the runner sources and is what actually
-# drives a device. It went uncompiled by any gate. build-for-testing on a
-# generic simulator destination compiles it without booting a simulator.
-log "SmixRunner UITest build"
-( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
-    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
-    > /tmp/smix-ship-uitest-build.log 2>&1 \
-  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
-
-# --- rust workspace tests ---------------------------------------------
-# The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
-# + lints while `cargo test` was left to whoever remembered. That is how
-# /tap shipped a response body the wire crate deserialized to all-None
-# without one red test. Non-bypassable, like the swift suite above.
-log "cargo test --workspace"
-( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1 \
-  || fail "cargo test FAILED — see /tmp/smix-ship-cargo-test.log"
 
 # --- Android unit tests + androidTest compile --------------------------
 # Compiles the generated Kotlin bindings AND runs the unit suites.
