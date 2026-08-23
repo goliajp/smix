@@ -11,10 +11,19 @@
 //!
 //! # Which kevy
 //!
-//! Built against **crates.io `kevy-embedded` 3.18**, not the version in
-//! a sibling checkout. The two differ — 4.0 has a `shutdown` that 3.18
-//! does not — and code written against a local path dependency does not
-//! compile for anyone else.
+//! `kevy-embedded` from crates.io, at whatever version `Cargo.toml` pins —
+//! never the sibling checkout, because code written against a local path
+//! dependency does not compile for anyone else. Which version that is does
+//! not belong here: this paragraph named 3.18 across five bumps after it
+//! stopped being true, and a comment cannot be the second place a fact
+//! lives without eventually being the wrong one.
+//!
+//! What is worth stating is what the embed cannot reach. kevy's storage
+//! work lands server-first: 5.4's packed row is a `[server]` config key,
+//! and the embedded facade neither exposes it nor names the `kevy-store`
+//! setter behind it, so a row here keeps the general representation
+//! whatever the server's default becomes. It would take a declared table
+//! as well, and this crate declares none.
 
 #![forbid(unsafe_code)]
 
