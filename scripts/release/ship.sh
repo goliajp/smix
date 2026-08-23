@@ -548,6 +548,18 @@ log "mcp cli parity scan"
 python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \
   || fail "mcp cli parity scan FAILED — see /tmp/smix-ship-mcp-parity.log"
 
+# A fuzz lockfile that no longer satisfies the manifests above it is
+# not a lockfile: the next cargo command resolves something else and
+# writes it back. Four of them sat that way after kevy 5.3 -> 5.4.1
+# and nothing said so.
+log "fuzz lockfiles are usable"
+python3 "$ROOT/scripts/dev/fuzz-lockfiles-are-usable.py" > /tmp/smix-ship-fuzz-locks.log 2>&1 \
+  || fail "fuzz lockfiles are usable FAILED — see /tmp/smix-ship-fuzz-locks.log"
+
+log "the fuzz-lockfile gate can still go red"
+python3 "$ROOT/scripts/dev/fuzz-lockfiles-are-usable.test.py" > /tmp/smix-ship-fuzz-locks-selftest.log 2>&1 \
+  || fail "fuzz-lockfile gate self-test FAILED — see /tmp/smix-ship-fuzz-locks-selftest.log"
+
 log "preflight parity scan"
 python3 "$ROOT/scripts/dev/preflight-parity-scan.py" > /tmp/smix-ship-parity.log 2>&1 \
   || fail "preflight parity scan FAILED — see /tmp/smix-ship-parity.log"
