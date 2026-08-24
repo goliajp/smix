@@ -76,6 +76,19 @@ pub enum DeviceKind {
 }
 
 impl DeviceKind {
+    /// Every kind, so nothing has to keep its own copy of the list.
+    ///
+    /// It lived as a local `const ALL` inside a CLI helper, which meant a
+    /// fifth kind would have compiled everywhere and been silently
+    /// missing from that one table. The list belongs beside the enum it
+    /// lists (`code/derive-dont-copy`).
+    pub const ALL: [DeviceKind; 4] = [
+        DeviceKind::Simulator,
+        DeviceKind::Emulator,
+        DeviceKind::PhysicalIos,
+        DeviceKind::PhysicalAndroid,
+    ];
+
     /// Is this a device somebody might be carrying around?
     #[must_use]
     pub fn is_physical(self) -> bool {

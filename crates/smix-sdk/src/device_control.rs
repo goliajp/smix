@@ -8,6 +8,7 @@
 //! Sense+act methods (tap/find/etc) live on [`smix_driver::Driver`].
 
 use async_trait::async_trait;
+use smix_simctl::registry::DeviceKind;
 use smix_simctl::{DeviceControlError, SimctlClient, SimctlPermission};
 use std::path::Path;
 
@@ -210,6 +211,333 @@ pub fn action_level(method: &str) -> Option<ActionLevel> {
 ///
 /// # Levels
 ///
+/// Whether one action can be carried out on one kind of device.
+///
+/// Two answers, never three. A cell either works or refuses by name, and
+/// "refuses by name" means it can say what it refused, why, and what to
+/// do instead — a message with only the first is a dead end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Availability {
+    /// There is an implementation for this kind of device.
+    Works,
+    /// There is not, and here is what to say about it.
+    RefusedByName {
+        /// Why this device cannot do it.
+        why: &'static str,
+        /// What to do instead. Never empty: `adb-guard` and the
+        /// destructive gate both learned that a refusal without a way
+        /// out gets worked around rather than read.
+        instead: &'static str,
+    },
+}
+
+/// Which actions each kind of device can carry out.
+///
+/// The gap this closes is not that the refusals were missing —
+/// `DevicectlClient` already refused seventeen of these by name. It is
+/// that they were seventeen sentences in seventeen method bodies, with
+/// nothing able to say whether the set was complete, and with the other
+/// three kinds of device never asked the question at all. §9 #1 has
+/// required loud refusal since physical devices landed, and nothing was
+/// watching it.
+///
+/// Rows are in [`DeviceKind::ALL`] order. The reconciliation tests below
+/// hold three things: every trait method has a row, no row names a
+/// method that does not exist, and every refusal on `PhysicalIos` is one
+/// `DevicectlClient` actually makes — so the table cannot drift from the
+/// code it describes.
+///
+/// What a cell encodes is a **fact about the code**: is there an
+/// implementation for this kind of device. Whether it works on hardware
+/// somebody is holding is a different question, and e2e answers that
+/// one. Filling cells with "nobody has measured this" would refuse
+/// paths that work today.
+pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
+    use Availability::{RefusedByName as No, Works as Yes};
+
+    // Reasons, written once. Several actions are refused for the same
+    // reason on the same device, and repeating the sentence is how two
+    // of them come to disagree.
+    const NO_DEVICECTL_VERB: &str = "devicectl has no verb for it, and it is a CoreSimulator                                      facility with no counterpart on a device";
+    const THROUGH_RUNNER: &str = "do it through the runner session, which behaves the same on a                                   phone as on a simulator";
+    const USERS_OWN_DEVICE: &str = "on a device this is the owner's own data, and Apple exposes                                     no way to take it away from outside";
+    const BY_HAND: &str = "do it by hand on the device, or use a simulator for the run that                            needs it set";
+    const ANDROID_HAS_NO_SUCH_IDEA: &str = "Android has no equivalent of this iOS facility";
+    const EMULATOR_CONSOLE_ONLY: &str = "the emulator console provides this and a handset does                                          not";
+    const ANDROID_CLIPBOARD_IS_SEALED: &str = "since Android 10 the clipboard is readable and writable only by the app in the foreground, and the test runner is not it";
+
+    &[
+        // Metadata about the binding, not an action on a device.
+        ("platform", [Yes, Yes, Yes, Yes]),
+        ("as_ios_simctl", [Yes, Yes, Yes, Yes]),
+        // The app under test. This half is what "physical devices are a
+        // first-class backend" rests on, and it is whole.
+        ("launch", [Yes, Yes, Yes, Yes]),
+        ("launch_with_args", [Yes, Yes, Yes, Yes]),
+        ("install", [Yes, Yes, Yes, Yes]),
+        ("uninstall", [Yes, Yes, Yes, Yes]),
+        ("open_url", [Yes, Yes, Yes, Yes]),
+        (
+            "terminate",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: "devicectl stops processes by pid and cannot find the pid of a                           running app from its bundle id",
+                    instead: THROUGH_RUNNER,
+                },
+                Yes,
+            ],
+        ),
+        (
+            "send_push",
+            [
+                Yes,
+                No {
+                    why: ANDROID_HAS_NO_SUCH_IDEA,
+                    instead: "deliver the notification through the app's own push path",
+                },
+                No {
+                    why: "a real push has to come from APNs; devicectl cannot inject one",
+                    instead: "send it through APNs, or use a simulator",
+                },
+                No {
+                    why: ANDROID_HAS_NO_SUCH_IDEA,
+                    instead: "deliver the notification through the app's own push path",
+                },
+            ],
+        ),
+        // Reads.
+        (
+            "screenshot",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: "devicectl has no screenshot verb",
+                    instead: THROUGH_RUNNER,
+                },
+                Yes,
+            ],
+        ),
+        (
+            "capture_bgra",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: "surface capture is a CoreSimulator facility with no device                           counterpart",
+                    instead: THROUGH_RUNNER,
+                },
+                Yes,
+            ],
+        ),
+        // The device's own state. This is where the gap is, and it is
+        // wide: driving is complete, arranging the device is nearly
+        // absent.
+        (
+            "set_animations_quiet",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: NO_DEVICECTL_VERB,
+                    instead: BY_HAND,
+                },
+                Yes,
+            ],
+        ),
+        (
+            "pasteboard_set",
+            [
+                Yes,
+                No {
+                    why: ANDROID_CLIPBOARD_IS_SEALED,
+                    instead: "type the text into the field instead of pasting it",
+                },
+                No {
+                    why: NO_DEVICECTL_VERB,
+                    instead: "type the text into the field instead of pasting it",
+                },
+                No {
+                    why: ANDROID_CLIPBOARD_IS_SEALED,
+                    instead: "type the text into the field instead of pasting it",
+                },
+            ],
+        ),
+        (
+            "pasteboard_get",
+            [
+                Yes,
+                No {
+                    why: ANDROID_CLIPBOARD_IS_SEALED,
+                    instead: "assert on what the app renders instead of on the clipboard",
+                },
+                No {
+                    why: NO_DEVICECTL_VERB,
+                    instead: "read it from the screen through the runner",
+                },
+                No {
+                    why: ANDROID_CLIPBOARD_IS_SEALED,
+                    instead: "assert on what the app renders instead of on the clipboard",
+                },
+            ],
+        ),
+        (
+            "add_media",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: NO_DEVICECTL_VERB,
+                    instead: "put the file on the device by hand, or use a simulator",
+                },
+                Yes,
+            ],
+        ),
+        (
+            "location_set",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: "Xcode's GUI can simulate a location on a device and devicectl                           cannot",
+                    instead: BY_HAND,
+                },
+                No {
+                    why: EMULATOR_CONSOLE_ONLY,
+                    instead: BY_HAND,
+                },
+            ],
+        ),
+        (
+            "location_start",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: "Xcode's GUI can simulate a route on a device and devicectl cannot",
+                    instead: BY_HAND,
+                },
+                No {
+                    why: EMULATOR_CONSOLE_ONLY,
+                    instead: BY_HAND,
+                },
+            ],
+        ),
+        (
+            "set_permission",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: "TCC grants on a device are the owner's, and devicectl has no                           equivalent of `simctl privacy`",
+                    instead: "grant it on the device the first time the app asks",
+                },
+                Yes,
+            ],
+        ),
+        (
+            "start_recording",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: NO_DEVICECTL_VERB,
+                    instead: "record the screen from the device itself, or use a simulator",
+                },
+                Yes,
+            ],
+        ),
+        (
+            "stop_recording",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: "nothing was started — recording is not available on a physical                           device",
+                    instead: "record the screen from the device itself, or use a simulator",
+                },
+                Yes,
+            ],
+        ),
+        ("recording_pid", [Yes, Yes, Yes, Yes]),
+        // Taking data away. Most of these should not exist on somebody's
+        // own phone, which is a reason and not an accident.
+        (
+            "keychain_reset",
+            [
+                Yes,
+                No {
+                    why: ANDROID_HAS_NO_SUCH_IDEA,
+                    instead: "clear the app's data, which takes its credentials with it",
+                },
+                No {
+                    why: USERS_OWN_DEVICE,
+                    instead: "sign out inside the app, or use a simulator",
+                },
+                No {
+                    why: ANDROID_HAS_NO_SUCH_IDEA,
+                    instead: "clear the app's data, which takes its credentials with it",
+                },
+            ],
+        ),
+        (
+            "privacy_reset_all",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: USERS_OWN_DEVICE,
+                    instead: "revoke the permissions in Settings, or use a simulator",
+                },
+                Yes,
+            ],
+        ),
+        (
+            "clear_app_sandbox",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: "devicectl can uninstall an app but cannot empty its container in                           place",
+                    instead: "uninstall and install again, which empties it",
+                },
+                Yes,
+            ],
+        ),
+        (
+            "user_defaults_delete",
+            [
+                Yes,
+                No {
+                    why: ANDROID_HAS_NO_SUCH_IDEA,
+                    instead: "clear the app's data, which takes its preferences with it",
+                },
+                No {
+                    why: "a device's defaults live inside the app container, which devicectl                           cannot write",
+                    instead: "uninstall and install again, which empties them",
+                },
+                No {
+                    why: ANDROID_HAS_NO_SUCH_IDEA,
+                    instead: "clear the app's data, which takes its preferences with it",
+                },
+            ],
+        ),
+    ]
+};
+
+/// What one action does on one kind of device, or `None` if the table
+/// has never heard of the action.
+#[must_use]
+pub fn availability(action: &str, kind: DeviceKind) -> Option<Availability> {
+    let idx = DeviceKind::ALL.iter().position(|k| *k == kind)?;
+    ACTION_PLATFORMS
+        .iter()
+        .find(|(name, _)| *name == action)
+        .map(|(_, row)| row[idx])
+}
+
 /// Every method here is classified in [`ACTION_LEVELS`], and the two
 /// heavier classes have a gated counterpart on
 /// [`crate::leased::Leased`], which can only be obtained by taking the
@@ -280,12 +608,26 @@ pub trait DeviceControl: Send + Sync {
     /// that reports success while the device kept animating is worse
     /// than no switch — the run that follows looks deterministic and is
     /// not.
+    ///
+    /// The default refuses. It used to answer `Ok(())`, three lines under
+    /// the sentence above saying that a switch reporting success while
+    /// the device keeps animating is worse than no switch — the comment
+    /// was right and the code was the thing it warned about. Every
+    /// backend in the tree overrides this, so the default was only ever
+    /// waiting for the next one, which would have inherited a silent
+    /// no-op for free (§9 #1: loud error, never quiet degradation).
     async fn set_animations_quiet(
         &self,
         _id: &str,
         _quiet: bool,
     ) -> Result<(), DeviceControlError> {
-        Ok(())
+        Err(DeviceControlError::non_zero_exit(
+            "set_animations_quiet",
+            -1,
+            "this device backend has not said whether it can quiet animations. \
+             Answering yes without doing anything would make the run that \
+             follows look deterministic when it is not.",
+        ))
     }
 
     /// Revoke every privacy permission the app has been granted.
@@ -500,6 +842,82 @@ mod action_level_tests {
             "DeviceControl methods with no level: {missing:?}\n\
              An unclassified action is one nobody decided the cost of."
         );
+    }
+
+    #[test]
+    fn every_trait_method_says_what_it_does_on_every_kind_of_device() {
+        let missing: Vec<_> = trait_methods()
+            .into_iter()
+            .filter(|m| !ACTION_PLATFORMS.iter().any(|(name, _)| name == m))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "DeviceControl methods with no platform row: {missing:?}\n\
+             §9 #1 requires a loud refusal when a capability is not there. A \
+             method nobody answered for is the quiet degradation it forbids."
+        );
+    }
+
+    #[test]
+    fn the_platform_table_names_no_method_that_does_not_exist() {
+        let methods = trait_methods();
+        let phantom: Vec<_> = ACTION_PLATFORMS
+            .iter()
+            .map(|(m, _)| *m)
+            .filter(|m| !methods.iter().any(|t| t == m))
+            .collect();
+        assert!(
+            phantom.is_empty(),
+            "the platform table names methods the trait does not have: {phantom:?}"
+        );
+    }
+
+    #[test]
+    fn a_refusal_that_cannot_say_what_to_do_instead_is_a_dead_end() {
+        let mut mute = Vec::new();
+        for (name, row) in ACTION_PLATFORMS {
+            for (idx, cell) in row.iter().enumerate() {
+                if let Availability::RefusedByName { why, instead } = cell
+                    && (why.trim().is_empty() || instead.trim().is_empty())
+                {
+                    mute.push(format!("{name} on {:?}", DeviceKind::ALL[idx]));
+                }
+            }
+        }
+        assert!(
+            mute.is_empty(),
+            "refusals with nothing to say: {mute:?}\n\
+             'Refused by name' means it can name what it refused, why, and \
+             what to do instead. Two out of three is a dead end."
+        );
+    }
+
+    #[test]
+    fn the_table_is_indexed_the_way_it_says_it_is() {
+        // The rows are `[Availability; 4]` and the reader is told they
+        // are in `DeviceKind::ALL` order. Nothing in the type says so,
+        // so a fifth kind — or a reordering — would silently shift every
+        // cell by one, and each cell would still be a valid answer to
+        // the wrong question.
+        assert_eq!(
+            DeviceKind::ALL.len(),
+            4,
+            "the platform rows are fixed-width; a new DeviceKind needs a column, \
+             and every row filled in for it"
+        );
+        assert_eq!(
+            availability("send_push", DeviceKind::Simulator),
+            Some(Availability::Works),
+            "a simulator can be sent a push"
+        );
+        assert!(
+            matches!(
+                availability("send_push", DeviceKind::PhysicalIos),
+                Some(Availability::RefusedByName { .. })
+            ),
+            "a phone cannot; if this passes as Works the row is off by one"
+        );
+        assert_eq!(availability("no_such_action", DeviceKind::Simulator), None);
     }
 
     #[test]
