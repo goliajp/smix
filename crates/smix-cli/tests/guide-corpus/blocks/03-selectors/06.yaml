@@ -1,3 +1,9 @@
-- inputText: "hello"      # the scalar form types into the focused field, appending
-
-- pressKey: ENTER     # often used after focused: true to submit
+- assertNotVisible: { role: "keyboard" }
+- tapOn: { id: "email" }
+- extendedWaitUntil:
+    visible: { role: "keyboard" }
+    timeout: 5000
+- hideKeyboard
+- extendedWaitUntil:
+    notVisible: { role: "keyboard" }
+    timeout: 5000

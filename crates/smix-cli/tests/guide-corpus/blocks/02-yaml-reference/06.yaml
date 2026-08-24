@@ -16,3 +16,19 @@
     start: "10%,50%"
     end: "90%,50%"
     duration: 400
+
+# `over:` — swipe INSIDE one element, by shares of ITS box.
+#
+# The two forms above take shares of the SCREEN, which is what you reach
+# for when there is nothing nameable to swipe between. When there is
+# something nameable, `over:` names it and the numbers stop meaning
+# anything about the display:
+- swipe:
+    over: { id: "view-timeline" }
+    from: 0.3                            # three tenths along, halfway across
+    to: 0.8
+
+- swipe:
+    over: { id: "view-timeline" }
+    from: { x: 0.1, y: 0.5 }             # both axes, when the drag is not along one
+    to: { x: 0.9, y: 0.5 }

@@ -1,10 +1,3 @@
-- tapOn:
-    text: "Edit"
-    below: { text: "Settings" }   # the Edit below the Settings row
+- inputText: "hello"      # the scalar form types into the focused field, appending
 
-# Pixel-offset form — anchor plus a dx/dy nudge, all three required:
-- tapOn:
-    anchored:
-      anchor: { text: "Settings" }
-      dx: 0.0
-      dy: 40.0
+- pressKey: ENTER     # often used after focused: true to submit
