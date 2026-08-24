@@ -1,0 +1,28 @@
+# The keyboard is a thing a flow can wait for, and this is the proof.
+#
+# A consumer reached for a pause because "the iOS keyboard slides in and
+# the keys are not in the a11y tree, so there is nothing to
+# extendedWaitUntil". The keys are not, and the keyboard is: Apple types
+# the software keyboard 19 and `role:keyboard` has always resolved it
+# here. Nothing said so — the guides never mentioned the role and
+# `describe` filters the keyboard out of its summary by default, so the
+# one way to find it was to already know.
+#
+# Its Android counterpart is A12 in the android behaviour gate, where the
+# same five questions are asked of `dev.smix.fixture`. Until 7.1 that
+# side timed out: the runner knew (`keyboardIsUp()` reads the
+# input-method window) and the tree did not carry it.
+appId: jp.golia.smix.fixture
+---
+- launchApp:
+    appId: jp.golia.smix.fixture
+    clearState: true
+- assertNotVisible: { role: "keyboard" }
+- tapOn: { id: "fixture-input" }
+- extendedWaitUntil:
+    visible: { role: "keyboard" }
+    timeout: 5000
+- hideKeyboard
+- extendedWaitUntil:
+    notVisible: { role: "keyboard" }
+    timeout: 5000

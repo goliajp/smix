@@ -49,13 +49,13 @@ if [[ -z "$SERIAL" ]]; then
   # drove it. pick-dev-emulator asks this machine's ledger whether smix
   # booted a device, and refuses rather than guesses.
   SERIAL="$(bash "$REPO_ROOT/scripts/dev/pick-dev-emulator.sh" 2>&1)" || {
-    die "no emulator this machine's ledger answers for:
-$SERIAL
-  Boot one through smix — \`smix sim boot <alias>\` — or claim one that is
-  already up and idle: \`smix lease claim <serial>\`. The claim is written
-  down, so the next run does not have to make the same decision blind.
-  SMIX_ANDROID_SERIAL still pins one for a single command, and records
-  nothing — which is why it is no longer the first thing offered."
+    # The picker already prints how to fix this, in full, to stderr —
+    # `$SERIAL` holds that text. Restating it here is what let the two
+    # gates drift: the instrumentation gate learned about `lease claim`
+    # in 7.0 and this one kept telling people to set an environment
+    # variable that records nothing. One place says it now.
+    die "no emulator this gate may drive:
+$SERIAL"
   }
 fi
 
