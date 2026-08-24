@@ -214,7 +214,7 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
         ),
 
         // A locale map is a rewrite, not a capability: every slot that
-        // resolves a selector does it, since 6.8.0.
+        // resolves a selector does it, since 6.8.1.
         (_, F::LocalizedText) => Support::Dispatched,
 
         // Tapping is where a coordinate is enough. OCR gives a box and
