@@ -165,6 +165,63 @@ pub enum Resource {
     },
 }
 
+/// One ledger row: something this binary can name, or something it cannot.
+///
+/// The second case is not a defect to be tolerated, it is the normal
+/// state of a machine with two versions of smix on it. `Resource` is
+/// internally tagged and serde rejects a tag it has never heard of, so
+/// before this existed a newer smix's row stopped an older one dead —
+/// which is exactly what 7.0's claim row did to every 6.x on the same
+/// machine.
+///
+/// Nothing 7.0 could write would have helped: 6.x's parser had already
+/// shipped. The only place forward-compatibility can live is the
+/// reader, and the only time it can be added is before the writer needs
+/// it. That is what this is.
+///
+/// `Unnamed` keeps the row's whole object rather than just its tag,
+/// because a reader that remembers the name and forgets the contents
+/// has turned "I cannot read this" into "I destroyed this" the next
+/// time it writes the file back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Row {
+    /// A row this binary understands.
+    Known(Resource),
+    /// A row written by a smix that knows a kind this one does not.
+    Unnamed(serde_json::Value),
+}
+
+impl From<Resource> for Row {
+    fn from(r: Resource) -> Self {
+        Row::Known(r)
+    }
+}
+
+impl Row {
+    /// The resource, when this binary can name it.
+    #[must_use]
+    pub fn known(&self) -> Option<&Resource> {
+        match self {
+            Row::Known(r) => Some(r),
+            Row::Unnamed(_) => None,
+        }
+    }
+
+    /// The row's `kind` when this binary cannot name it.
+    #[must_use]
+    pub fn unnamed_kind(&self) -> Option<&str> {
+        match self {
+            Row::Known(_) => None,
+            Row::Unnamed(v) => Some(
+                v.get("kind")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or(""),
+            ),
+        }
+    }
+}
+
 /// One device's ledger: a holder, and what it opened.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -178,7 +235,19 @@ pub struct Lease {
     /// RFC3339. Last heartbeat.
     pub heartbeat_at: String,
     /// What the holder opened on the device, in the order it opened them.
-    pub resources: Vec<Resource>,
+    pub resources: Vec<Row>,
+}
+
+impl Lease {
+    /// The rows this binary can name.
+    ///
+    /// Spelled out at every call site on purpose: a caller that means
+    /// "all of them" and a caller that means "the ones I understand"
+    /// were the same expression before, and that is how a teardown came
+    /// to look complete while skipping what it could not read.
+    pub fn known_resources(&self) -> impl Iterator<Item = &Resource> {
+        self.resources.iter().filter_map(Row::known)
+    }
 }
 
 /// What a probe found at the holder's pid.
@@ -258,8 +327,7 @@ pub fn prune_verdict(held: &Held, device_is_on: Option<bool>) -> PruneVerdict {
     }
     let booted_by_us = held
         .lease
-        .resources
-        .iter()
+        .known_resources()
         .any(|r| matches!(r, Resource::Booted { by_us: true }));
     if booted_by_us {
         return match device_is_on {
@@ -280,8 +348,7 @@ pub fn prune_verdict(held: &Held, device_is_on: Option<bool>) -> PruneVerdict {
     // off is what ends it, with `lease release` for ending it sooner.
     let claimed = held
         .lease
-        .resources
-        .iter()
+        .known_resources()
         .any(|r| matches!(r, Resource::Claimed { .. }));
     if claimed {
         return match device_is_on {
@@ -317,6 +384,19 @@ pub struct Facts {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
 pub enum CleanupAction {
+    /// A ledger row this binary has no name for.
+    ///
+    /// It carries no action because there is none to take: closing
+    /// something requires knowing what it is. It is in the plan so that
+    /// a teardown cannot report itself complete while a row it could
+    /// not read goes unmentioned — a plan that silently drops what it
+    /// did not understand reads exactly like a plan that had nothing
+    /// left to do.
+    #[serde(rename_all = "camelCase")]
+    CannotClose {
+        /// The `kind` the row gave, verbatim.
+        kind: String,
+    },
     /// SIGINT the `simctl` child and wait, so the mp4 keeps its trailer.
     #[serde(rename_all = "camelCase")]
     StopRecording {
@@ -496,7 +576,15 @@ pub fn assess(facts: &Facts) -> Admission {
         // not a service, and adopting past it would let a second
         // session run over whatever the first was capturing.
         if held.any_resource_alive {
-            if lease.resources.iter().all(is_service) {
+            // A row nobody can read is not a service: "service" is a
+            // claim about what the thing is for, and this one has not
+            // said. Adopting past it would hand the device to a second
+            // session over the top of whatever the first opened.
+            if lease
+                .resources
+                .iter()
+                .all(|row| row.known().is_some_and(is_service))
+            {
                 return Admission::Adoptable;
             }
             return deny(false);
@@ -508,7 +596,15 @@ pub fn assess(facts: &Facts) -> Admission {
         // next command shut the device down again, which is what the
         // person just asked for the opposite of. The boot row exists to
         // record who may shut it down later, not to claim the device.
-        if !lease.resources.iter().any(is_process_backed) {
+        // Same asymmetry the other way up: an unreadable row counts as
+        // something that could still be running, so it withholds the
+        // cheap "this device is free" and sends the question down the
+        // reclaim path where a person can see it.
+        if !lease
+            .resources
+            .iter()
+            .any(|row| row.known().is_none_or(is_process_backed))
+        {
             return Admission::Granted;
         }
         return reclaim(if held.holder.pid_exists {
@@ -687,12 +783,30 @@ pub fn may_address(device: &str, known: Known) -> Result<(), NotAddressable> {
 /// against a registered simulator lost it to a sweep of somebody else's
 /// work. The boot row is the record of entitlement, and `None` (no ledger
 /// at all) means no.
+/// The `kind` of every row this binary could not name, in ledger order.
+///
+/// A refusal that cannot say WHAT it failed to read is a refusal nobody
+/// can act on, so this is what the messages quote.
+#[must_use]
+pub fn unnamed_kinds(lease: &Lease) -> Vec<String> {
+    lease
+        .resources
+        .iter()
+        .filter_map(|r| r.unnamed_kind().map(str::to_string))
+        .collect()
+}
+
 #[must_use]
 pub fn may_shut_down(lease: Option<&Lease>) -> bool {
     lease.is_some_and(|l| {
-        l.resources
-            .iter()
-            .any(|r| matches!(r, Resource::Booted { by_us: true }))
+        // Entitlement is necessary and no longer sufficient. A row this
+        // binary cannot read is something open on the device that
+        // nothing here can close, and switching the device off would
+        // strand it — so having booted it does not settle the question
+        // on its own.
+        unnamed_kinds(l).is_empty()
+            && l.known_resources()
+                .any(|r| matches!(r, Resource::Booted { by_us: true }))
     })
 }
 
@@ -763,8 +877,7 @@ pub fn plan_cleanup(lease: &Lease) -> Vec<CleanupAction> {
     // it in the plan means a reconcile running hours later, from a
     // different process, does not have to rediscover it.
     let mut plan: Vec<CleanupAction> = lease
-        .resources
-        .iter()
+        .known_resources()
         .filter_map(|r| match r {
             Resource::Supervisor { proc } => {
                 Some(CleanupAction::StopSupervisor { proc: proc.clone() })
@@ -777,7 +890,7 @@ pub fn plan_cleanup(lease: &Lease) -> Vec<CleanupAction> {
     // the runner's closing requests still travel through the pipe, and
     // pulling it early turns a clean teardown into a connection error
     // that reads like the runner misbehaved.
-    plan.extend(lease.resources.iter().filter_map(|r| match r {
+    plan.extend(lease.known_resources().filter_map(|r| match r {
         Resource::PortForward {
             local_port, proc, ..
         } => Some(CleanupAction::StopPortForward {
@@ -795,37 +908,51 @@ fn plan_rest(lease: &Lease) -> Vec<CleanupAction> {
         .resources
         .iter()
         .rev()
-        .filter_map(|r| match r {
-            // Handled ahead of everything else by `plan_cleanup`.
-            Resource::Supervisor { .. } => None,
-            // Handled after everything else by `plan_cleanup`.
-            Resource::PortForward { .. } => None,
-            Resource::Recording { path, proc } => Some(CleanupAction::StopRecording {
-                path: path.clone(),
-                proc: proc.clone(),
-            }),
-            Resource::Runner { port, proc } => Some(CleanupAction::StopRunner {
-                port: *port,
-                proc: proc.clone(),
-            }),
-            Resource::AndroidRunner { port, serial, proc } => {
-                Some(CleanupAction::StopAndroidRunner {
-                    port: *port,
-                    serial: serial.clone(),
+        .filter_map(|row| {
+            // In the plan, in position, carrying no action — because
+            // there is none. A teardown that quietly omitted the row it
+            // could not read would report itself complete, which is the
+            // one thing it must not be able to do here.
+            let r = match row {
+                Row::Unnamed(_) => {
+                    return Some(CleanupAction::CannotClose {
+                        kind: row.unnamed_kind().unwrap_or_default().to_string(),
+                    });
+                }
+                Row::Known(r) => r,
+            };
+            match r {
+                // Handled ahead of everything else by `plan_cleanup`.
+                Resource::Supervisor { .. } => None,
+                // Handled after everything else by `plan_cleanup`.
+                Resource::PortForward { .. } => None,
+                Resource::Recording { path, proc } => Some(CleanupAction::StopRecording {
+                    path: path.clone(),
                     proc: proc.clone(),
-                })
+                }),
+                Resource::Runner { port, proc } => Some(CleanupAction::StopRunner {
+                    port: *port,
+                    proc: proc.clone(),
+                }),
+                Resource::AndroidRunner { port, serial, proc } => {
+                    Some(CleanupAction::StopAndroidRunner {
+                        port: *port,
+                        serial: serial.clone(),
+                        proc: proc.clone(),
+                    })
+                }
+                // Not ours to shut down. Finding the device already up and
+                // then turning it off would take away someone else's session
+                // as the price of cleaning up our own.
+                Resource::Booted { by_us: false } => None,
+                // A claim is the statement that this holder did NOT boot it.
+                // Closing it by switching the device off would be the one
+                // thing the claim promised not to do.
+                Resource::Claimed { .. } => None,
+                Resource::Booted { by_us: true } => Some(CleanupAction::ShutdownSim {
+                    udid: lease.device_id.clone(),
+                }),
             }
-            // Not ours to shut down. Finding the device already up and
-            // then turning it off would take away someone else's session
-            // as the price of cleaning up our own.
-            Resource::Booted { by_us: false } => None,
-            // A claim is the statement that this holder did NOT boot it.
-            // Closing it by switching the device off would be the one
-            // thing the claim promised not to do.
-            Resource::Claimed { .. } => None,
-            Resource::Booted { by_us: true } => Some(CleanupAction::ShutdownSim {
-                udid: lease.device_id.clone(),
-            }),
         })
         .collect()
 }
@@ -842,13 +969,85 @@ mod tests {
         }
     }
 
+    // A ledger row this binary has no name for.
+    //
+    // 7.0 taught 6.x machines what this costs: `Resource` is internally
+    // tagged, serde rejects a tag it does not know, and a 6.x smix
+    // meeting a claimed device stopped dead. Nothing 7.0 wrote could
+    // have prevented that — 6.x's parser had already shipped. What can
+    // be prevented is the next one, and only by the reader, and only if
+    // the reader is ready before the writer needs it.
+    const FUTURE_ROW: &str = r#"{"kind":"somethingFromTheFuture","port":9,"note":"x"}"#;
+
+    fn ledger_json(rows: &str) -> String {
+        format!(
+            r#"{{"deviceId":"D1","holder":{{"pid":4242,"startedAt":"Thu Aug  6 10:00:00 2026",
+               "cmd":"smix run examples/hello.yaml"}},"acquiredAt":"2026-08-25T00:00:00Z",
+               "heartbeatAt":"2026-08-25T00:00:00Z","resources":[{rows}]}}"#
+        )
+    }
+
+    #[test]
+    fn a_row_this_binary_cannot_name_still_parses() {
+        let json = ledger_json(&format!(r#"{{"kind":"booted","byUs":true}},{FUTURE_ROW}"#));
+        let lease: Lease = serde_json::from_str(&json)
+            .expect("an unknown row must be readable — refusing to parse is the 6.x failure");
+        assert_eq!(lease.resources.len(), 2);
+    }
+
+    #[test]
+    fn a_row_this_binary_cannot_name_survives_a_rewrite() {
+        let json = ledger_json(&format!(r#"{{"kind":"booted","byUs":true}},{FUTURE_ROW}"#));
+        let lease: Lease = serde_json::from_str(&json).unwrap();
+        let back = serde_json::to_string(&lease).unwrap();
+        let reread: serde_json::Value = serde_json::from_str(&back).unwrap();
+        let row = &reread["resources"][1];
+        // Every field, not just the tag: a reader that keeps the name
+        // and drops the contents has turned "I cannot read this" into
+        // "I destroyed this".
+        assert_eq!(row["kind"], "somethingFromTheFuture", "row: {row}");
+        assert_eq!(row["port"], 9, "row: {row}");
+        assert_eq!(row["note"], "x", "row: {row}");
+    }
+
+    #[test]
+    fn a_row_this_binary_cannot_name_withholds_shutdown() {
+        let json = ledger_json(&format!(r#"{{"kind":"booted","byUs":true}},{FUTURE_ROW}"#));
+        let lease: Lease = serde_json::from_str(&json).unwrap();
+        assert!(
+            !may_shut_down(Some(&lease)),
+            "we booted it, so the entitlement is there — but something is open on \
+             this device that nothing here can close, and switching it off would \
+             strand whatever that is"
+        );
+        assert!(
+            unnamed_kinds(&lease).contains(&"somethingFromTheFuture".to_string()),
+            "a refusal that cannot say WHAT it could not name is a refusal nobody \
+             can act on"
+        );
+    }
+
+    #[test]
+    fn a_row_this_binary_cannot_name_appears_in_the_cleanup_plan() {
+        let json = ledger_json(&format!(r#"{{"kind":"booted","byUs":true}},{FUTURE_ROW}"#));
+        let lease: Lease = serde_json::from_str(&json).unwrap();
+        assert!(
+            plan_cleanup(&lease).iter().any(|a| matches!(
+                a,
+                CleanupAction::CannotClose { kind } if kind == "somethingFromTheFuture"
+            )),
+            "a plan that silently omits the row it could not read reads exactly \
+             like a complete teardown"
+        );
+    }
+
     fn lease_with(resources: Vec<Resource>) -> Lease {
         Lease {
             device_id: "UDID-1".into(),
             holder: holder(),
             acquired_at: "2026-08-06T10:00:00Z".into(),
             heartbeat_at: "2026-08-06T10:00:00Z".into(),
-            resources,
+            resources: resources.into_iter().map(Row::Known).collect(),
         }
     }
 
@@ -1115,7 +1314,9 @@ mod tests {
                         "no start time to verify against"
                     );
                 }
-                CleanupAction::ShutdownSim { .. } => {}
+                // Carries no process by design: there is nothing to
+                // signal for a row nobody can read.
+                CleanupAction::ShutdownSim { .. } | CleanupAction::CannotClose { .. } => {}
             }
         }
     }
@@ -1155,7 +1356,7 @@ mod boot_only_tests {
             },
             acquired_at: "2026-08-06T10:00:00Z".into(),
             heartbeat_at: "2026-08-06T10:00:00Z".into(),
-            resources: vec![Resource::Booted { by_us: true }],
+            resources: vec![Row::Known(Resource::Booted { by_us: true })],
         };
         let facts = Facts {
             existing: Some(Held {
@@ -1185,15 +1386,15 @@ mod boot_only_tests {
             acquired_at: "2026-08-06T10:00:00Z".into(),
             heartbeat_at: "2026-08-06T10:00:00Z".into(),
             resources: vec![
-                Resource::Booted { by_us: true },
-                Resource::Runner {
+                Row::Known(Resource::Booted { by_us: true }),
+                Row::Known(Resource::Runner {
                     port: 1,
                     proc: ProcIdentity {
                         pid: 0,
                         started_at: "Thu Aug  6 10:00:05 2026".into(),
                         cmd: "xcodebuild".into(),
                     },
-                },
+                }),
             ],
         };
         let facts = Facts {
@@ -1235,7 +1436,7 @@ mod ordering_tests {
             holder: proc(4242, "smix runner up"),
             acquired_at: "2026-08-06T10:00:00Z".into(),
             heartbeat_at: "2026-08-06T10:00:00Z".into(),
-            resources,
+            resources: resources.into_iter().map(Row::Known).collect(),
         }
     }
 
@@ -1337,7 +1538,7 @@ mod entitlement_tests {
             },
             acquired_at: "2026-08-06T10:00:00Z".into(),
             heartbeat_at: "2026-08-06T10:00:00Z".into(),
-            resources,
+            resources: resources.into_iter().map(Row::Known).collect(),
         }
     }
 
@@ -1496,7 +1697,7 @@ mod forward_ordering_tests {
             holder: proc(4242, "smix runner up"),
             acquired_at: "2026-08-06T10:00:00Z".into(),
             heartbeat_at: "2026-08-06T10:00:00Z".into(),
-            resources,
+            resources: resources.into_iter().map(Row::Known).collect(),
         }
     }
 
@@ -1548,6 +1749,7 @@ mod forward_ordering_tests {
                 CleanupAction::StopRecording { .. } => "recording",
                 CleanupAction::StopAndroidRunner { .. } => "android",
                 CleanupAction::ShutdownSim { .. } => "shutdown",
+                CleanupAction::CannotClose { .. } => "unnamed",
             })
             .collect();
         assert_eq!(kinds, vec!["supervisor", "runner", "forward"]);

@@ -20,7 +20,7 @@
 //! all six.
 
 use smix_lease::store::{self, LeaseDir};
-use smix_lease::{Lease, ProcIdentity, Resource};
+use smix_lease::{Lease, ProcIdentity, Resource, Row};
 
 fn dead_holder() -> ProcIdentity {
     // A pid that exists nowhere, with a start time nothing can match. The
@@ -41,7 +41,7 @@ fn ledger(dir: &LeaseDir, device: &str, resources: Vec<Resource>) {
             holder: dead_holder(),
             acquired_at: store::now_rfc3339(),
             heartbeat_at: store::now_rfc3339(),
-            resources,
+            resources: resources.into_iter().map(Row::Known).collect(),
         },
     )
     .expect("write ledger");
@@ -56,8 +56,7 @@ fn runner_row() -> Resource {
 
 fn booted_by_us(dir: &LeaseDir, device: &str) -> bool {
     store::read(dir, device).expect("read").is_some_and(|l| {
-        l.resources
-            .iter()
+        l.known_resources()
             .any(|r| matches!(r, Resource::Booted { by_us: true }))
     })
 }

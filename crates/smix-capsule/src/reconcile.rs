@@ -237,6 +237,15 @@ pub fn execute(root: &Path, actions: &[CleanupAction]) -> Vec<Outcome> {
             CleanupAction::StopAndroidRunner { port, serial, proc } => {
                 stop_android_runner(root, *port, serial, proc)
             }
+            // Failed, not Skipped: `is_ok` is what a caller reads to
+            // decide the teardown finished, and a device still holding
+            // something nothing here can close has not finished. The
+            // sentence names the kind so the answer — run the smix that
+            // wrote it — is in the message rather than in someone's head.
+            CleanupAction::CannotClose { kind } => Outcome::Failed(format!(
+                "a ledger row of kind `{kind}` was written by a newer smix than this \
+                 one; it cannot be closed from here, so this teardown is incomplete"
+            )),
             CleanupAction::ShutdownSim { udid } => shutdown_sim(udid),
         })
         .collect()

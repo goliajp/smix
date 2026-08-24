@@ -151,8 +151,7 @@ impl<'a> Leased<'a> {
                 if let Some(held) = &facts.existing {
                     inherited = held
                         .lease
-                        .resources
-                        .iter()
+                        .known_resources()
                         .filter(|r| smix_lease::is_process_backed(r))
                         .cloned()
                         .collect();
@@ -625,7 +624,7 @@ mod tests {
             holder: store::identify_self(),
             acquired_at: store::now_rfc3339(),
             heartbeat_at: store::now_rfc3339(),
-            resources: vec![Resource::Booted { by_us: true }],
+            resources: vec![smix_lease::Row::Known(Resource::Booted { by_us: true })],
         }
     }
 
@@ -645,15 +644,15 @@ mod tests {
             acquired_at: store::now_rfc3339(),
             heartbeat_at: store::now_rfc3339(),
             resources: vec![
-                Resource::Booted { by_us: true },
-                Resource::Runner {
+                smix_lease::Row::Known(Resource::Booted { by_us: true }),
+                smix_lease::Row::Known(Resource::Runner {
                     port: 22087,
                     proc: ProcIdentity {
                         pid: 0,
                         started_at: "Thu Aug  6 10:00:05 2026".into(),
                         cmd: "xcodebuild test".into(),
                     },
-                },
+                }),
             ],
         }
     }
@@ -817,7 +816,10 @@ mod tests {
         let after = store::read(&LeaseDir::at(tmp.path()), "UDID-BOOT")
             .expect("read")
             .expect("ledger kept");
-        assert_eq!(after.resources, vec![Resource::Booted { by_us: true }]);
+        assert_eq!(
+            after.resources,
+            vec![smix_lease::Row::Known(Resource::Booted { by_us: true })]
+        );
     }
 
     #[tokio::test]
@@ -838,7 +840,7 @@ mod tests {
         let lease = store::read(&LeaseDir::at(tmp.path()), "UDID-REC")
             .expect("read")
             .expect("ledger");
-        match lease.resources.as_slice() {
+        match lease.known_resources().collect::<Vec<_>>().as_slice() {
             [Resource::Recording { path, proc }] => {
                 assert_eq!(path, "/tmp/run.mov", "the row must say where it is writing");
                 assert!(
@@ -895,8 +897,7 @@ mod tests {
             .expect("the ledger survives release");
         assert!(
             after
-                .resources
-                .iter()
+                .known_resources()
                 .any(|r| matches!(r, smix_lease::Resource::Runner { .. })),
             "release kept the inherited runner row"
         );

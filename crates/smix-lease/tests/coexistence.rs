@@ -19,7 +19,7 @@
 //! decision, and a checkout's book has exactly one power — to stop one.
 
 use smix_lease::store::{CheckoutLedgers, LeaseDir, LedgerDivergence, compare, survey};
-use smix_lease::{Lease, ProcIdentity, Resource};
+use smix_lease::{Lease, ProcIdentity, Resource, Row};
 
 fn proc(pid: u32, started: &str) -> ProcIdentity {
     ProcIdentity {
@@ -36,11 +36,11 @@ fn lease(device: &str, runner_pid: u32) -> Lease {
         acquired_at: "2026-08-09T07:18:59Z".into(),
         heartbeat_at: "2026-08-11T08:00:55Z".into(),
         resources: vec![
-            Resource::Booted { by_us: true },
-            Resource::Runner {
+            Row::Known(Resource::Booted { by_us: true }),
+            Row::Known(Resource::Runner {
                 port: 22087,
                 proc: proc(runner_pid, "Tue Aug 11 19:54:21 2026"),
-            },
+            }),
         ],
     }
 }

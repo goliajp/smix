@@ -2,7 +2,7 @@
 //! make that safe.
 
 use smix_lease::store::{self, LeaseDir, LeaseError};
-use smix_lease::{Admission, Lease, ProcIdentity, Resource, StaleReason};
+use smix_lease::{Admission, Lease, ProcIdentity, Resource, Row, StaleReason};
 
 fn lease(device_id: &str, holder: ProcIdentity) -> Lease {
     Lease {
@@ -10,7 +10,7 @@ fn lease(device_id: &str, holder: ProcIdentity) -> Lease {
         holder,
         acquired_at: store::now_rfc3339(),
         heartbeat_at: store::now_rfc3339(),
-        resources: vec![Resource::Booted { by_us: true }],
+        resources: vec![Row::Known(Resource::Booted { by_us: true })],
     }
 }
 
@@ -115,14 +115,14 @@ fn facts_from_a_dead_holder_reclaim_with_cleanup() {
     // A dead process-backed row is what makes this an abandoned session.
     // A ledger holding only a boot is a device left on, not an orphan —
     // see `boot_only_tests` in the crate.
-    l.resources.push(Resource::Runner {
+    l.resources.push(Row::Known(Resource::Runner {
         port: 1,
         proc: ProcIdentity {
             pid: 0,
             started_at: "Thu Aug  6 10:00:05 2026".into(),
             cmd: "xcodebuild test".into(),
         },
-    });
+    }));
     store::write(&dir, &l).expect("write");
     let facts = store::collect_facts(&dir, "UDID-D").expect("facts");
     match smix_lease::assess(&facts) {
@@ -152,7 +152,7 @@ fn a_second_resource_of_the_same_kind_replaces_the_first() {
     assert_eq!(lease.resources.len(), 1, "one runner per device");
     assert!(matches!(
         lease.resources[0],
-        Resource::Runner { port: 2, .. }
+        Row::Known(Resource::Runner { port: 2, .. })
     ));
 }
 

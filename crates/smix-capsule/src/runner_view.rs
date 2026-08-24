@@ -69,6 +69,20 @@ pub enum Seen {
         /// A checkout that names this device, with its path.
         named_by: Option<String>,
     },
+    /// The ledger records it and the process it recorded is gone.
+    ///
+    /// The Android counterpart of `LedgerOnly`, and a separate verdict
+    /// because the evidence is different and the sentence must say
+    /// which. An iOS row is judged by whether anything is listening on
+    /// the port; an Android one has no listener, so it is judged by
+    /// whether the recorded process is still that process — pid AND
+    /// start time, so a recycled number reads as gone rather than as
+    /// the runner. Rendering "nothing is listening there" over this
+    /// would describe a probe nobody ran.
+    ProcessGone {
+        /// The session the ledger names, now ended.
+        ledger_pid: u32,
+    },
     /// The ledger records it and this command has no probe for it.
     ///
     /// Said rather than left out. §9 #1 ③: a capability that is not
@@ -102,6 +116,20 @@ pub struct RunnerRow {
 /// the compiler rather than to a scan, after a cycle in which changing
 /// what an argument meant left twenty-five call sites compiling.
 ///
+/// `live_pids` is the Android half of the same rule. An iOS runner is
+/// found by its listener; an Android one has none to find, and the
+/// command answered `not-probed` about every Android row — always, by
+/// construction. A consumer read four of those and checked each pid by
+/// hand; all four were long dead. The ledger held the answer the whole
+/// time: `AndroidRunner` records a `ProcIdentity`, which is a pid AND the
+/// start time that tells a recycled pid from the real one.
+///
+/// Membership means "a process at that pid exists AND its start time
+/// still matches the ledger" — the caller does that check, because it is
+/// I/O and this function reads nothing. A bare pid set would report
+/// whoever inherited the number, which is the failure `ProcIdentity`
+/// exists to prevent.
+///
 /// `checkout` never classifies anything. It can appear in `named_by` and
 /// nowhere else: a tree's book is evidence about where a runner came
 /// from, and the rule since 2026-08-11 is that it may stop a decision,
@@ -111,21 +139,35 @@ pub fn attribute(
     machine: &[(String, Lease)],
     listeners: &[Listener],
     checkout: &[(String, Lease)],
+    live_pids: &std::collections::HashSet<u32>,
 ) -> Vec<RunnerRow> {
     let mut rows: Vec<RunnerRow> = Vec::new();
 
     for (device_id, lease) in machine {
-        for resource in &lease.resources {
+        for resource in lease.known_resources() {
             let (port, ledger_pid, probe) = match resource {
                 Resource::Runner { port, proc } => (*port, proc.pid, Probe::Ios),
-                Resource::AndroidRunner { port, proc, .. } => (*port, proc.pid, Probe::None),
+                Resource::AndroidRunner { port, proc, .. } => (
+                    *port,
+                    proc.pid,
+                    if live_pids.contains(&proc.pid) {
+                        Probe::AndroidAlive
+                    } else {
+                        Probe::AndroidGone
+                    },
+                ),
                 _ => continue,
             };
             let seen = match probe {
-                Probe::None => Seen::NotProbed {
-                    ledger_pid,
-                    why: "android runner — this command probes iOS listeners only",
+                // The process the ledger recorded is still that process.
+                // There is no listener to pair it with, so the pid is
+                // both halves: it is the session and it is running.
+                Probe::AndroidAlive => Seen::Both {
+                    app_pid: ledger_pid,
+                    ledger_session_pid: ledger_pid,
+                    live_session_pid: Some(ledger_pid),
                 },
+                Probe::AndroidGone => Seen::ProcessGone { ledger_pid },
                 Probe::Ios => match listeners
                     .iter()
                     .find(|l| l.port == port && l.device_id.eq_ignore_ascii_case(device_id))
@@ -260,8 +302,14 @@ fn pgrep_f(pattern: &str) -> Vec<u32> {
 }
 
 enum Probe {
+    /// Find the listener on the port and pair it with the ledger.
     Ios,
-    None,
+    /// The recorded process is still that process. An Android runner has
+    /// no listener to find, so its own pid is the evidence.
+    AndroidAlive,
+    /// The recorded process is gone, or its pid now belongs to something
+    /// else. Either way this row describes a session that has ended.
+    AndroidGone,
 }
 
 #[cfg(test)]
@@ -285,7 +333,7 @@ mod tests {
                 holder: proc(36931),
                 acquired_at: "2026-08-11T20:32:00Z".into(),
                 heartbeat_at: "2026-08-11T20:32:00Z".into(),
-                resources: vec![resource],
+                resources: vec![smix_lease::Row::Known(resource)],
             },
         )
     }
@@ -312,6 +360,7 @@ mod tests {
             )],
             &[listener("D", 22087, 14209, Some(14176))],
             &[],
+            &std::collections::HashSet::new(),
         );
         assert_eq!(rows.len(), 1, "one runner, one row: {rows:?}");
         assert_eq!(
@@ -343,6 +392,7 @@ mod tests {
             )],
             &[listener("D", 22087, 14209, Some(14176))],
             &[],
+            &std::collections::HashSet::new(),
         );
         assert_eq!(rows.len(), 1, "still one runner: {rows:?}");
         match &rows[0].seen {
@@ -371,6 +421,7 @@ mod tests {
             )],
             &[],
             &[],
+            &std::collections::HashSet::new(),
         );
         assert_eq!(rows[0].seen, Seen::LedgerOnly { ledger_pid: 99120 });
     }
@@ -378,7 +429,12 @@ mod tests {
     /// The incident: listening, and no ledger on this machine has it.
     #[test]
     fn a_listener_no_machine_ledger_knows_is_process_only() {
-        let rows = attribute(&[], &[listener("E", 22300, 14209, Some(14176))], &[]);
+        let rows = attribute(
+            &[],
+            &[listener("E", 22300, 14209, Some(14176))],
+            &[],
+            &std::collections::HashSet::new(),
+        );
         assert_eq!(
             rows[0].seen,
             Seen::ProcessOnly {
@@ -402,6 +458,7 @@ mod tests {
                     proc: proc(14176),
                 },
             )],
+            &std::collections::HashSet::new(),
         );
         match &rows[0].seen {
             Seen::ProcessOnly { named_by, .. } => {
@@ -415,9 +472,14 @@ mod tests {
         assert_eq!(rows.len(), 1, "the checkout must not add a row: {rows:?}");
     }
 
-    /// Android is said, not omitted.
+    /// Android is said, not omitted — and now it is answered.
+    ///
+    /// This asserted `NotProbed` until 7.1, which is what the command
+    /// said about every Android row. Saying "I did not look" is better
+    /// than silence and worse than looking, and the ledger held what was
+    /// needed all along. The intent survives; the answer changed.
     #[test]
-    fn an_android_runner_says_it_was_not_probed() {
+    fn an_android_runner_with_a_dead_process_is_answered_not_deferred() {
         let rows = attribute(
             &[ledger(
                 "F",
@@ -429,16 +491,113 @@ mod tests {
             )],
             &[],
             &[],
+            &std::collections::HashSet::new(),
         );
         match &rows[0].seen {
-            Seen::NotProbed { ledger_pid, why } => {
-                assert_eq!(*ledger_pid, 4242);
-                assert!(why.contains("android"), "the reason has to name it: {why}");
-            }
+            Seen::ProcessGone { ledger_pid } => assert_eq!(*ledger_pid, 4242),
+            Seen::NotProbed { .. } => panic!(
+                "still deferring. The pid and its start time are in the ledger; \
+                 answering `not-probed` sends the reader to `ps`, which is what \
+                 a consumer did four times in one session."
+            ),
             other => panic!(
-                "an Android runner filed as {other:?} would read as 'it has gone \
-                 away' — §9 #1 ③ says a missing capability is loud"
+                "a dead Android runner filed as {other:?} would read as in use: \
+                 {other:?}"
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod android_liveness {
+    use super::*;
+    use smix_lease::{Lease, ProcIdentity, Resource};
+    use std::collections::HashSet;
+
+    // `runner list` describes itself as the command you run before
+    // touching anything, so the question it exists to answer is "is this
+    // row still alive". The Android rows answered `not-probed` — always,
+    // by construction: `Resource::AndroidRunner` mapped to `Probe::None`
+    // with "this command probes iOS listeners only".
+    //
+    // A consumer read four of those and checked each pid by hand. All
+    // four processes were long dead. The ledger had what was needed the
+    // whole time: `AndroidRunner` records a ProcIdentity, which is a pid
+    // AND the start time that tells a recycled pid from the real one —
+    // strictly better evidence than the `kill -0` they suggested.
+
+    fn proc(pid: u32) -> ProcIdentity {
+        ProcIdentity {
+            pid,
+            started_at: "Mon Aug 25 00:00:00 2026".into(),
+            cmd: "smix runner up emulator-5554".into(),
+        }
+    }
+
+    fn android_ledger(device: &str, port: u16, pid: u32) -> (String, Lease) {
+        (
+            device.into(),
+            Lease {
+                device_id: device.into(),
+                holder: proc(pid),
+                acquired_at: "2026-08-25T00:00:00Z".into(),
+                heartbeat_at: "2026-08-25T00:00:00Z".into(),
+                resources: vec![smix_lease::Row::Known(Resource::AndroidRunner {
+                    port,
+                    serial: device.into(),
+                    proc: proc(pid),
+                })],
+            },
+        )
+    }
+
+    #[test]
+    fn an_android_runner_whose_process_is_gone_reads_as_gone() {
+        let rows = attribute(
+            &[android_ledger("emulator-5554", 28080, 63329)],
+            &[],
+            &[],
+            &HashSet::new(),
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].seen,
+            Seen::ProcessGone { ledger_pid: 63329 },
+            "a dead process is a dead row, not an unanswered question: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn an_android_runner_still_running_says_so() {
+        let rows = attribute(
+            &[android_ledger("emulator-5556", 28080, 4242)],
+            &[],
+            &[],
+            &HashSet::from([4242u32]),
+        );
+        assert!(
+            matches!(rows[0].seen, Seen::Both { .. }),
+            "a live process is the row being in use: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn the_pid_alone_is_not_the_evidence() {
+        // Membership means "a process at this pid exists AND its start
+        // time still matches the ledger". The caller does that check;
+        // handing this a bare pid set that included a recycled one would
+        // report somebody else's process as the runner, which is the
+        // failure `ProcIdentity` exists to prevent.
+        let rows = attribute(
+            &[android_ledger("emulator-5558", 28080, 999)],
+            &[],
+            &[],
+            &HashSet::from([1000u32]),
+        );
+        assert_eq!(
+            rows[0].seen,
+            Seen::ProcessGone { ledger_pid: 999 },
+            "a different pid being alive says nothing about this one: {rows:?}"
+        );
     }
 }

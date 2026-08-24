@@ -323,7 +323,7 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
 #[cfg(test)]
 mod teardown_verdict_tests {
     use super::*;
-    use smix_lease::{Admission, Contention, Lease, ProcIdentity, Resource};
+    use smix_lease::{Admission, Contention, Lease, ProcIdentity, Resource, Row};
 
     fn proc(pid: u32) -> ProcIdentity {
         ProcIdentity {
@@ -339,7 +339,7 @@ mod teardown_verdict_tests {
             holder: proc(1),
             acquired_at: String::new(),
             heartbeat_at: String::new(),
-            resources: vec![Resource::Booted { by_us: true }],
+            resources: vec![Row::Known(Resource::Booted { by_us: true })],
         }
     }
 

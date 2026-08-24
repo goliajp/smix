@@ -256,10 +256,9 @@ fn owner(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
     };
     let booted_by_us = held
         .lease
-        .resources
-        .iter()
+        .known_resources()
         .any(|r| matches!(r, smix_lease::Resource::Booted { by_us: true }));
-    let claimed_at = held.lease.resources.iter().find_map(|r| match r {
+    let claimed_at = held.lease.known_resources().find_map(|r| match r {
         smix_lease::Resource::Claimed { at } => Some(at.clone()),
         _ => None,
     });
@@ -314,8 +313,7 @@ fn claim(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
     }
     if facts.existing.as_ref().is_some_and(|h| {
         h.lease
-            .resources
-            .iter()
+            .known_resources()
             .any(|r| matches!(r, smix_lease::Resource::Booted { by_us: true }))
     }) {
         println!("{udid}: smix booted this one — it is already answered for");
@@ -336,8 +334,7 @@ fn release(leases: &LeaseDir, device: &str) -> Result<(), crate::CliError> {
     let had = store::read(leases, &udid)
         .map_err(to_cli_error)?
         .is_some_and(|l| {
-            l.resources
-                .iter()
+            l.known_resources()
                 .any(|r| matches!(r, smix_lease::Resource::Claimed { .. }))
         });
     if !had {

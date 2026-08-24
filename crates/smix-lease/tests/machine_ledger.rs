@@ -74,7 +74,9 @@ fn an_unrecognised_state_reads_as_running() {
 /// a wait; reclaiming costs somebody their work.
 #[test]
 fn a_live_holder_that_stopped_beating_is_not_reclaimable() {
-    use smix_lease::{Admission, Facts, Held, HolderProbe, Lease, ProcIdentity, Resource, assess};
+    use smix_lease::{
+        Admission, Facts, Held, HolderProbe, Lease, ProcIdentity, Resource, Row, assess,
+    };
     let holder = ProcIdentity {
         pid: 50057,
         started_at: "Sun Aug  9 07:18:59 2026".into(),
@@ -87,7 +89,7 @@ fn a_live_holder_that_stopped_beating_is_not_reclaimable() {
                 holder: holder.clone(),
                 acquired_at: "2026-08-09T07:18:59Z".into(),
                 heartbeat_at: "2026-08-11T08:00:55Z".into(),
-                resources: vec![Resource::Booted { by_us: true }],
+                resources: vec![Row::Known(Resource::Booted { by_us: true })],
             },
             holder: HolderProbe {
                 pid_exists: true,
