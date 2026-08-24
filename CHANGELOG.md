@@ -25,9 +25,18 @@ on a device gate that was right, and fixing what it found is the rest of it.
   next kind of thing a holder can open. Downstream Rust matching on
   `Resource` needs a `_` arm; nothing else is affected.
 
-  An older smix reading a ledger that contains a claim row will not parse
-  it. Ledgers are this machine's live session state, not your data —
-  `smix lease prune` clears them and the next command writes what it needs.
+  **An older smix stops against a device whose ledger holds a claim**, and
+  it is worth being exact about this rather than calling it a parse
+  detail. It does not skip the row: it reports `unknown variant
+  'claimed'` and refuses the command. That is the safe direction — a
+  reader that silently ignored a resource row it did not understand could
+  tear down a device while blind to something still open — but on a
+  machine running both versions, 6.x will stop on any device 7.x has
+  claimed. Measured rather than reasoned about: a 6.8.0 on this machine
+  refused `emulator-5554` the moment 7.0.0 claimed it.
+  `smix lease release <device>` with the newer binary, or removing that
+  device's file under `~/.local/share/smix/leases/`, restores it. Nothing
+  else in a ledger is affected, and no data of yours is in one.
 
 ### Added
 
@@ -96,6 +105,23 @@ on a device gate that was right, and fixing what it found is the rest of it.
   Two of the fifteen fuzz crates shipped with cargo-fuzz's default
   `.gitignore`, which ignores `Cargo.lock`. Both are tracked now —
   otherwise the way to pass this gate is to stop tracking the file.
+
+- **The A4 window verdict can report what it finds.** It died as a
+  `TypeError` with this release's own ship at thirty-one minutes:
+  `sorted({...})` over window packages, one of which was `None`. A window
+  whose root cannot be read has no package to report — which is also why
+  the branch written to tell "not attached" from "attached but unreadable"
+  could never be reached, since readability was only ever asked of windows
+  already matched by package. Both are fixed, readability is asked first,
+  and the judgement moved into `android-a4-verdict.py` so a self-test can
+  drive it on the exact payload that killed it, with no device.
+
+- **A4 waits for the window instead of assuming three seconds.** The same
+  red was a race: nine seconds after the instrumentation gate finished
+  driving the same emulator, the fixture's window was attached and its
+  root not yet readable. It now polls to a deadline
+  (`SMIX_A4_SETTLE_S`, 30s), so a red says the window never became
+  readable rather than that nothing waited long enough.
 
 ## [6.8.0] — 2026-08-23
 

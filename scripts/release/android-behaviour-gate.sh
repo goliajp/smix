@@ -248,34 +248,33 @@ adb -s "$SERIAL" install -r "$FIXTURE_APK" >/dev/null 2>&1 \
   || die "A4: could not install the fixture on $SERIAL"
 adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A4: could not foreground $FIXTURE_APP_ID on $SERIAL"
-sleep 3
 
-curl -sS --max-time 15 "http://localhost:$PROXY_PORT/windows" > "$WORK/windows.json" \
-  || die "A4: /windows did not answer"
-python3 - "$WORK/windows.json" "$FIXTURE_APP_ID" <<'PY' || die "A4: see above. $WORK/windows.json"
-import json, sys
-doc = json.load(open(sys.argv[1]))
-app = sys.argv[2]
-rows = doc.get("windows", [])
-if not rows:
-    print("A4: /windows listed no windows at all — nothing here proves anything",
-          file=sys.stderr)
-    sys.exit(1)
-mine = [r for r in rows if r.get("package") == app]
-if not mine:
-    seen = sorted({r.get("package") for r in rows})
-    print(f"A4: no window belongs to {app}. Attached: {seen}. Its window is not "
-          "attached for accessibility — which reads, from /tree alone, exactly "
-          "like an app with no accessibility nodes.", file=sys.stderr)
-    sys.exit(1)
-unreadable = [r for r in mine if not r.get("rootReadable")]
-if unreadable:
-    print(f"A4: {app} has {len(unreadable)} window(s) attached whose root could "
-          "not be read, so they are absent from the tree while present on screen.",
-          file=sys.stderr)
-    sys.exit(1)
-print(f"  A4a: {app} has {len(mine)} readable window(s) among {len(rows)}")
-PY
+# A window is attached a moment before its root becomes readable, and
+# "a moment" is not a constant: idle, it is under a second; nine seconds
+# after the instrumentation gate finished driving this same device, it
+# was past three. `sleep 3` made that a coin toss and the 7.0.0 ship lost
+# it at thirty-one minutes — reporting a product failure where the truth
+# was that nothing had waited long enough.
+#
+# Polling turns the red back into a verdict: not "was unreadable at the
+# instant I looked" but "never became readable in A4_SETTLE_S seconds".
+A4_SETTLE_S="${SMIX_A4_SETTLE_S:-30}"
+a4_deadline=$(( SECONDS + A4_SETTLE_S ))
+while :; do
+  curl -sS --max-time 15 "http://localhost:$PROXY_PORT/windows" > "$WORK/windows.json" \
+    || die "A4: /windows did not answer"
+  python3 "$SCRIPT_DIR/android-a4-verdict.py" "$WORK/windows.json" "$FIXTURE_APP_ID" \
+    >/dev/null 2>&1 && break
+  [ "$SECONDS" -ge "$a4_deadline" ] && break
+  sleep 1
+done
+# The judgement lives in its own file so it can be tested without a
+# device: it died here as a TypeError on 2026-08-24 with the ship at
+# thirty-one minutes, and a verdict that cannot report its own finding
+# is worth less than no verdict. `android-a4-verdict.test.py` drives it
+# on that exact payload.
+python3 "$SCRIPT_DIR/android-a4-verdict.py" "$WORK/windows.json" "$FIXTURE_APP_ID" \
+  || die "A4: see above. $WORK/windows.json"
 
 curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/fixture-tree.json" \
   || die "A4: /tree did not answer for the fixture"

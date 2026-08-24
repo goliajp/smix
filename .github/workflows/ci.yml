@@ -223,6 +223,12 @@ jobs:
         run: python3 scripts/dev/fuzz-lockfiles-are-usable.py
       - name: the fuzz-lockfile gate can still go red
         run: python3 scripts/dev/fuzz-lockfiles-are-usable.test.py
+      # A4's verdict died as a TypeError with the 7.0.0 ship at thirty-one
+      # minutes, on a device this job does not have. The judgement is a
+      # pure function over `/windows` now, so the shape that killed it is
+      # a fixture here rather than something only a device can reach.
+      - name: the A4 window verdict can still speak
+        run: python3 scripts/dev/android-a4-verdict.test.py
       # Reads the corpus and its excuse list, both in the checkout.
       - name: known-unstable list scan
         run: python3 scripts/dev/known-unstable-scan.py
