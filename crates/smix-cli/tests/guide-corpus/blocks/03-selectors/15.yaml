@@ -1,11 +1,19 @@
 - tapOn:
-    text: "Item.*"
-    nth: 2          # 0-indexed: 3rd match
+    text: "Cancel"
+    near: "Login"            # closest visible "Cancel" to "Login" anchor
 
 - tapOn:
-    text: "Card.*"
-    first: true     # equivalent to nth: 0
+    role: button
+    below: "Header"          # button below the Header element
 
 - tapOn:
-    text: "Page.*"
-    last: true      # last in document order
+    role: textfield
+    rightOf: "Email"         # textfield to the right of "Email" label
+
+- tapOn:
+    id: "list-row-content"
+    inside: "modal-list"     # row that is descendant of modal-list
+
+- tapOn:
+    role: button
+    ancestor: "modal-overlay"  # button anywhere in the modal subtree

@@ -240,6 +240,44 @@ impl AppLike for MockApp {
     ) -> Result<Option<(f64, f64)>, ExpectationFailure> {
         Ok(Some((0.5, 0.5)))
     }
+    /// A tree with one named box in it.
+    ///
+    /// `swipe: { over: … }` resolves both ends inside a named element,
+    /// so it reads the tree — and the default `AppLike::tree` errors,
+    /// which made the guide's own `over:` example the one documented
+    /// example that could not reach a route. What the box is does not
+    /// matter here; that it exists does, because this gate asks whether
+    /// a printed example dispatches, not what the screen then did.
+    async fn tree(&self) -> Result<smix_sdk::A11yNode, ExpectationFailure> {
+        fn box_named(id: &str, children: Vec<smix_sdk::A11yNode>) -> smix_sdk::A11yNode {
+            smix_sdk::A11yNode {
+                raw_type: "other".into(),
+                element_type_raw: 1,
+                role: None,
+                identifier: Some(id.into()),
+                label: None,
+                title: None,
+                placeholder_value: None,
+                value: None,
+                text: None,
+                bounds: smix_screen::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 400.0,
+                    h: 800.0,
+                },
+                enabled: true,
+                selected: false,
+                has_focus: false,
+                visible: true,
+                children,
+            }
+        }
+        Ok(box_named(
+            "root",
+            vec![box_named("view-timeline", Vec::new())],
+        ))
+    }
     async fn webview_eval(&self, _js: &str) -> Result<serde_json::Value, ExpectationFailure> {
         Ok(serde_json::Value::Null)
     }

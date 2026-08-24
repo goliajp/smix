@@ -1,2 +1,7 @@
 - tapOn:
-    point: "50%,80%"        # X%,Y% of viewport
+    ocrText: "Done"
+
+- tapOn:
+    ocrText: "Confirm"
+    locales: ["en", "ja"]         # optional recognition language list
+    recognition_level: accurate   # iOS Vision (fast | accurate); ignored on Android
