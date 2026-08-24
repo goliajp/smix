@@ -233,6 +233,8 @@ pub async fn run(
                 }
             }
         }
+        LeaseAction::Claim { device } => return claim(leases, &device),
+        LeaseAction::Release { device } => release(leases, &device)?,
         LeaseAction::Owner { device } => return owner(leases, &device),
         LeaseAction::Migrate { from, dry_run } => migrate(leases, &from, dry_run)?,
         LeaseAction::Prune { dry_run } => prune(leases, dry_run).await?,
@@ -257,21 +259,101 @@ fn owner(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
         .resources
         .iter()
         .any(|r| matches!(r, smix_lease::Resource::Booted { by_us: true }));
-    if !booted_by_us {
+    let claimed_at = held.lease.resources.iter().find_map(|r| match r {
+        smix_lease::Resource::Claimed { at } => Some(at.clone()),
+        _ => None,
+    });
+    if !booted_by_us && claimed_at.is_none() {
         println!(
-            "{udid}: a ledger exists (holder pid {}) but no row says smix booted it",
+            "{udid}: a ledger exists (holder pid {}) but no row says smix booted \
+             or claimed it",
             held.lease.holder.pid
         );
         return Ok(3);
     }
     let alive = held.holder.pid_exists && held.holder.identity_matches;
+    // Both answer 0 and the sentence says which. A caller acting on the
+    // code gets the entitlement it asked about — may I drive this — and
+    // one that needs the stricter question reads the words, because a
+    // claim is deliberately not a licence to switch the device off.
+    if booted_by_us {
+        println!(
+            "{udid}: booted by smix — holder pid {} ({}), {}",
+            held.lease.holder.pid,
+            held.lease.holder.cmd,
+            if alive { "still running" } else { "exited" }
+        );
+    } else {
+        println!(
+            "{udid}: claimed at {} — holder pid {} ({}), {}. Nothing here booted \
+             it, so it is this machine's to drive and not to shut down.",
+            claimed_at.unwrap_or_default(),
+            held.lease.holder.pid,
+            held.lease.holder.cmd,
+            if alive { "still running" } else { "exited" }
+        );
+    }
+    Ok(0)
+}
+
+/// Answer for a device this machine did not boot.
+///
+/// Admission first, and not as politeness: a claim is a statement about
+/// a device nobody is using, and making one over somebody's live session
+/// would be the escape hatch this exists to replace, wearing a better
+/// name.
+fn claim(leases: &LeaseDir, device: &str) -> Result<u8, crate::CliError> {
+    let udid = crate::resolve_device(device)?;
+    let facts = store::collect_facts(leases, &udid).map_err(to_cli_error)?;
+    if let Admission::Denied(c) = smix_lease::assess(&facts) {
+        println!(
+            "{udid}: held by pid {} ({}) since {} — not a device to claim",
+            c.holder.pid, c.holder.cmd, c.acquired_at
+        );
+        return Ok(3);
+    }
+    if facts.existing.as_ref().is_some_and(|h| {
+        h.lease
+            .resources
+            .iter()
+            .any(|r| matches!(r, smix_lease::Resource::Booted { by_us: true }))
+    }) {
+        println!("{udid}: smix booted this one — it is already answered for");
+        return Ok(0);
+    }
+    store::record_claim(leases, &udid).map_err(to_cli_error)?;
     println!(
-        "{udid}: booted by smix — holder pid {} ({}), {}",
-        held.lease.holder.pid,
-        held.lease.holder.cmd,
-        if alive { "still running" } else { "exited" }
+        "{udid}: claimed. Yours to drive; not yours to shut down, because \
+         nothing here booted it. `smix lease release {udid}` ends it, and so \
+         does the device going off."
     );
     Ok(0)
+}
+
+/// Give up a claim, leaving every other row alone.
+fn release(leases: &LeaseDir, device: &str) -> Result<(), crate::CliError> {
+    let udid = crate::resolve_device(device)?;
+    let had = store::read(leases, &udid)
+        .map_err(to_cli_error)?
+        .is_some_and(|l| {
+            l.resources
+                .iter()
+                .any(|r| matches!(r, smix_lease::Resource::Claimed { .. }))
+        });
+    if !had {
+        println!("{udid}: no claim here to release");
+        return Ok(());
+    }
+    store::drop_resource_kind(
+        leases,
+        &udid,
+        &smix_lease::Resource::Claimed {
+            at: String::new(),
+        },
+    )
+    .map_err(to_cli_error)?;
+    println!("{udid}: claim released");
+    Ok(())
 }
 
 /// Fold per-checkout ledgers into this machine's.

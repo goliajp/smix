@@ -49,10 +49,13 @@ if [[ -z "$SERIAL" ]]; then
   # drove it. pick-dev-emulator asks this machine's ledger whether smix
   # booted a device, and refuses rather than guesses.
   SERIAL="$(bash "$REPO_ROOT/scripts/dev/pick-dev-emulator.sh" 2>&1)" || {
-    die "no emulator this machine's ledger says smix booted:
+    die "no emulator this machine's ledger answers for:
 $SERIAL
-  Boot one through smix — \`smix sim boot <alias>\` — or pin one with
-  SMIX_ANDROID_SERIAL to say it is yours."
+  Boot one through smix — \`smix sim boot <alias>\` — or claim one that is
+  already up and idle: \`smix lease claim <serial>\`. The claim is written
+  down, so the next run does not have to make the same decision blind.
+  SMIX_ANDROID_SERIAL still pins one for a single command, and records
+  nothing — which is why it is no longer the first thing offered."
   }
 fi
 

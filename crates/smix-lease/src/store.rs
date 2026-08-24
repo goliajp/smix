@@ -210,6 +210,7 @@ pub fn compare(
                             format!("recording pid {}", proc.pid)
                         }
                         Resource::Booted { by_us } => format!("booted by_us={by_us}"),
+                        Resource::Claimed { at } => format!("claimed at {at}"),
                     })
                     .collect()
             };
@@ -577,6 +578,23 @@ pub fn record_boot(dir: &LeaseDir, device_id: &str, by_us: bool) -> Result<(), L
     )
 }
 
+/// Write down that this holder answers for a device it did not boot.
+///
+/// The one row `record_boot` cannot write. `by_us` is about a transition
+/// this holder did not make, and saying `true` about it would hand the
+/// teardown path a device to switch off that somebody else switched on —
+/// which is the harm `by_us` exists to prevent, reached by lying to it.
+///
+/// Same kind replaces same kind, as everywhere else here, so claiming a
+/// device twice restates when rather than accumulating rows.
+pub fn record_claim(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
+    add_resource(
+        dir,
+        device_id,
+        Resource::Claimed { at: now_rfc3339() },
+    )
+}
+
 /// Forget every resource of one kind, and the ledger itself once nothing
 /// worth tearing down is left.
 ///
@@ -712,7 +730,10 @@ pub fn collect_facts(dir: &LeaseDir, device_id: &str) -> Result<Facts, LeaseErro
             Resource::Supervisor { .. }
             | Resource::Recording { .. }
             | Resource::PortForward { .. }
-            | Resource::Booted { .. } => false,
+            // Neither is a claim: it is a statement about who answers for
+            // a device, and nothing about it can be probed for liveness.
+            | Resource::Booted { .. }
+            | Resource::Claimed { .. } => false,
         });
         Held {
             lease,
