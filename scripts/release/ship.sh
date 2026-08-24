@@ -567,6 +567,22 @@ log "the A4 window verdict can still speak"
 python3 "$ROOT/scripts/dev/android-a4-verdict.test.py" > /tmp/smix-ship-a4-selftest.log 2>&1 \
   || fail "A4 verdict self-test FAILED — see /tmp/smix-ship-a4-selftest.log"
 
+log "every verdict answers in sentences"
+python3 "$ROOT/scripts/dev/a-verdict-answers-in-sentences.py" > /tmp/smix-ship-verdict-sentences.log 2>&1 \
+  || fail "a verdict cannot report its own finding — see /tmp/smix-ship-verdict-sentences.log"
+
+log "no gate says yes with its subject gone"
+python3 "$ROOT/scripts/dev/a-gate-without-its-subject.py" > /tmp/smix-ship-gate-subject.log 2>&1 \
+  || fail "a gate passes without its subject — see /tmp/smix-ship-gate-subject.log"
+
+log "the subject sweep can still go red"
+python3 "$ROOT/scripts/dev/a-gate-without-its-subject.test.py" > /tmp/smix-ship-gate-subject-selftest.log 2>&1 \
+  || fail "the subject sweep cannot go red — see /tmp/smix-ship-gate-subject-selftest.log"
+
+log "the verdict sweep can still go red"
+python3 "$ROOT/scripts/dev/a-verdict-answers-in-sentences.test.py" > /tmp/smix-ship-verdict-sweep-selftest.log 2>&1 \
+  || fail "verdict sweep self-test FAILED — see /tmp/smix-ship-verdict-sweep-selftest.log"
+
 log "preflight parity scan"
 python3 "$ROOT/scripts/dev/preflight-parity-scan.py" > /tmp/smix-ship-parity.log 2>&1 \
   || fail "preflight parity scan FAILED — see /tmp/smix-ship-parity.log"
@@ -656,6 +672,22 @@ log "SmixRunner UITest build"
     -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
     > /tmp/smix-ship-uitest-build.log 2>&1 \
   || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
+
+# The runner tarballs are compared against the trees they were built
+# from, and that comparison lived inside `cargo test --workspace` — which
+# is where it was found, twice in one cycle, at thirteen and thirty-one
+# minutes. Both times the fix was one command and the cost was the wait.
+#
+# Buried inside an expensive check it is also invisible to
+# `cheap-gates-come-first`: that gate reads a profile of named gates, and
+# a judgement with no name of its own cannot be said to be in the wrong
+# place. Naming it is what makes its position a choice somebody made.
+#
+# Measured at 64s on a warm tree, against ~40 minutes for the suite it
+# used to hide in.
+log "runner tarballs match their sources"
+( cd "$ROOT" && cargo test -p smix-runner-sources ) > /tmp/smix-ship-tarball.log 2>&1 \
+  || fail "runner tarballs are stale — run scripts/release/build-runner-tarball.sh and build-android-runner-tarball.sh (see /tmp/smix-ship-tarball.log)"
 
 # --- rust workspace tests ---------------------------------------------
 # The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
@@ -883,7 +915,13 @@ python3 "$ROOT/scripts/dev/cheap-gates-come-first.py" "$SHIP_PROFILE" \
   > /tmp/smix-ship-ordering.log 2>&1 \
   || fail "gate ordering FAILED — a cheap judgement sits behind expensive work (see /tmp/smix-ship-ordering.log)"
 
-log "publish crates.io DAG at $VERSION"
+# `note`, not `log`: publishing is an action, not a judgement, and the
+# ordering check reads the profile looking for cheap judgements stranded
+# behind expensive ones. Every publish is seconds long and comes last by
+# necessity, so each one read as a gate in the wrong place — thirteen
+# complaints, none of them about a gate. Same reason `note` exists at
+# all; this is the second kind of line that is not a gate.
+note "publish crates.io DAG at $VERSION"
 CRATES=(
   smix-sim-health smix-runner-sources
   smix-screen smix-selector smix-input smix-error
@@ -997,10 +1035,10 @@ npm_has_version() {
 npm_publish_dir() {
   local dir="$1" pkg="$2"
   if [ -z "$NAPI_DRY" ] && npm_has_version "$pkg" "$VERSION"; then
-    log "  npm publish $pkg@$VERSION — already published, skipping"
+    note "  npm publish $pkg@$VERSION — already published, skipping"
     return 0
   fi
-  log "  npm publish $pkg@$VERSION${NAPI_DRY:+ (dry-run)}"
+  note "  npm publish $pkg@$VERSION${NAPI_DRY:+ (dry-run)}"
   ( cd "$dir" && bun publish --access public $NAPI_DRY ) || fail "npm publish $pkg"
 }
 
@@ -1107,9 +1145,9 @@ GPG_KEY="$(gpg --export-secret-keys --armor FBD802632CFAD78B 2>/dev/null)" \
 # --- tag Swift Package + push ----------------------------------------
 
 if [ "$SHIP_DRY" = 1 ]; then
-  log "tag swift-v$VERSION — SKIPPED (dry-run)"
+  note "tag swift-v$VERSION — SKIPPED (dry-run)"
 else
-  log "tag swift-v$VERSION + push"
+  note "tag swift-v$VERSION + push"
   ( cd "$ROOT" && git tag -a "swift-v$VERSION" -m "Swift Package v$VERSION" && git push origin "swift-v$VERSION" ) \
     || fail "git tag + push"
 fi
@@ -1130,7 +1168,7 @@ else
   log "verify what the registries took"
   if bash "$ROOT/scripts/release/verify-published.sh" "$VERSION" \
        2>&1 | tee /tmp/smix-ship-verify.log; then
-    log "SHIP COMPLETE — see the line above for what was confirmed"
+    note "SHIP COMPLETE — see the line above for what was confirmed"
   else
     fail "published, but a channel does not have v$VERSION — see /tmp/smix-ship-verify.log. \
 The publish legs ran; this is about what the registries actually serve."

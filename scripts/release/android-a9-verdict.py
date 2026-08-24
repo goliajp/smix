@@ -21,11 +21,12 @@ then nothing here would be testing the masked case at all.
 
 import json
 import sys
+from verdict_io import read_json
 
 
 def main() -> int:
     tag, secret, before_len = sys.argv[2], sys.argv[3], int(sys.argv[4])
-    tree = json.load(open(sys.argv[1]))
+    tree = read_json(sys.argv[1], "the tree")
     found: dict[str, object] = {}
 
     def walk(node: dict) -> None:

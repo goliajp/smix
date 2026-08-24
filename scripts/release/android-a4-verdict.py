@@ -29,6 +29,7 @@ Exit:   0 with the finding on stdout; 1 with the reason on stderr.
 
 import json
 import sys
+from verdict_io import read_json
 
 # What a window is called when it cannot say. Not "None", and not an
 # empty string: the reader needs to know the blank is a symptom rather
@@ -37,7 +38,7 @@ UNNAMED = "«root unreadable, so it cannot say»"
 
 
 def main() -> int:
-    doc = json.load(open(sys.argv[1]))
+    doc = read_json(sys.argv[1], "/windows")
     app = sys.argv[2]
     rows = doc.get("windows", [])
 

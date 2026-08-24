@@ -132,6 +132,15 @@ if printf '%s\n' "$CHANGED_DOCS" | grep -q '^swift-bridge/'; then
     (cd swift-bridge && swift test)
 fi
 
+echo "--- runner tarballs match their sources"
+# Unconditional, and that is the point. The embedder rule above selects
+# `smix-runner-sources` into $CRATES when something under `swift-bridge/`
+# or `android-runner/` changed — and that rule has already missed once
+# (its own comment, forty lines up, records the ship finding both
+# tarballs stale an hour later). A condition that has failed is a worse
+# deal than 64 seconds.
+cargo test -p smix-runner-sources
+
 echo "--- selector matrix in the guide"
 python3 scripts/dev/gen-selector-matrix.py --check || exit 1
 
@@ -184,6 +193,10 @@ SOURCE_GATES=(
   fuzz-lockfiles-are-usable
   fuzz-lockfiles-are-usable.test
   android-a4-verdict.test
+  a-verdict-answers-in-sentences
+  a-verdict-answers-in-sentences.test
+  a-gate-without-its-subject
+  a-gate-without-its-subject.test
   known-unstable-scan
   corpus-portability-scan
   portable-tier-parity

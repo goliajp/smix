@@ -21,6 +21,7 @@ Exit:   0 with the finding on stdout; 1 with the reason on stderr.
 
 import json
 import sys
+from verdict_io import read_json
 
 
 def has_keyboard(node) -> bool:
@@ -30,7 +31,7 @@ def has_keyboard(node) -> bool:
 
 
 def main() -> int:
-    tree = json.load(open(sys.argv[1]))
+    tree = read_json(sys.argv[1], "the tree")
     want = sys.argv[2]
     if want not in ("present", "absent"):
         print(f"A12: bad expectation {want!r} — want present|absent", file=sys.stderr)

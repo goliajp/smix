@@ -10,10 +10,11 @@ fix did, measured.
 
 import json
 import sys
+from verdict_io import read_json
 
 
 def main() -> int:
-    tree, expected = json.load(open(sys.argv[1])), sys.argv[2]
+    tree, expected = read_json(sys.argv[1], "the tree"), sys.argv[2]
     fields: list[dict] = []
 
     def walk(node: dict) -> None:

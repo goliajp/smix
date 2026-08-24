@@ -1,0 +1,28 @@
+# A swipe aimed inside a named element, not across a share of the screen.
+#
+# A consumer with a nameable timeline still had to measure it: 45.3–50.5%
+# of screen height on Android, 47.7–53.2% on iOS, 49% taken as the
+# overlap, and a note that a device of a different shape would need
+# measuring again. `swipe --from/--to` is documented as the hatch for
+# screens with nothing nameable to swipe between; theirs had a name.
+#
+# The assertion is that the swipe reached the list rather than the
+# screen: a row far enough down to be off-screen at rest is on screen
+# after it. Aiming at shares of the display would have moved whatever
+# happened to be under those points.
+appId: jp.golia.smix.fixture
+---
+- launchApp:
+    appId: jp.golia.smix.fixture
+    clearState: true
+- assertVisible: { id: "fixture-list" }
+- assertNotVisible: { id: "fixture-row-30" }
+- swipe:
+    over: { id: "fixture-list" }
+    from: 0.85
+    to: 0.15
+- swipe:
+    over: { id: "fixture-list" }
+    from: 0.85
+    to: 0.15
+- assertVisible: { id: "fixture-row-30" }
