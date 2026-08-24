@@ -323,9 +323,26 @@ impl SmixMcpService {
         .map_err(|e| McpError::internal_error(format!("runner up panicked: {e}"), None))?
         .map_err(|e| McpError::internal_error(format!("runner up: {e}"), None))?;
 
+        // `up` has just built the forward, so this is the one moment on
+        // the lazy path where asking who holds the port is both
+        // meaningful and answerable — at server startup nobody holds it
+        // yet, and warning there would fire every session until it
+        // taught everyone to ignore it.
+        {
+            use smix_sdk::port_owner::{Verdict, ask_ios, decide};
+            if let Verdict::Refuse { reason } =
+                decide(port, Some(params.udid.as_str()), &ask_ios(port))
+            {
+                return Err(McpError::internal_error(
+                    format!("runner up: port {port} is not this device's: {reason}"),
+                    None,
+                ));
+            }
+        }
+
         // Rebuild rather than reconfigure: an App is bound to its port at
         // construction, so switching device means a new one.
-        let mut next = App::connect_to_runner_lazy(port);
+        let mut next = App::connect_to_runner_lazy(port, Some(params.udid.as_str()));
         next = next.with_udid(params.udid.clone());
 
         // A runner on a port is not yet something the driving tools can
@@ -1191,7 +1208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // startup, usually before anyone has run `smix runner up`. Dying
     // here left a dead server for the whole client session; now the
     // first tool call reports the runner story instead.
-    let mut app = App::connect_to_runner_lazy(port);
+    let mut app = App::connect_to_runner_lazy(port, std::env::var("SMIX_UDID").ok().as_deref());
 
     if let Ok(udid) = std::env::var("SMIX_UDID") {
         app = app.with_udid(udid);

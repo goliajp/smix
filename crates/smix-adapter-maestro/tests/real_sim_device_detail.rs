@@ -36,7 +36,7 @@ async fn real_sim_device_detail_end_to_end_pass() {
 
     eprintln!("real_sim_device_detail: port={port} udid={udid:?} bundle={bundle_id}");
 
-    let mut app = match App::connect_to_runner(port).await {
+    let mut app = match App::connect_to_runner(port, udid.as_deref()).await {
         Ok(a) => a,
         Err(e) => {
             eprintln!("real_sim_device_detail SKIP: runner unreachable on :{port}: {e}");

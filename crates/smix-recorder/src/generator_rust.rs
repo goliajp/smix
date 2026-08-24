@@ -21,7 +21,7 @@ use smix_selector::{Modifiers, Pattern, Selector};
 ///
 /// `test_fn_name` becomes the function identifier (must be a valid Rust
 /// identifier — caller responsibility). `bundle_id` is the app under
-/// test; an `App::connect_to_runner(22087) + .with_udid(...) + .launch +
+/// test; an `App::connect_to_runner(22087, Some(&udid)) + .with_udid(...) + .launch +
 /// .open_session` preamble is rendered — iOS driving goes through a
 /// runner session (v2 break #1), so the sample binds one before acting.
 pub fn generate_rust(
@@ -50,7 +50,8 @@ pub fn generate_rust(
     out.push_str("        .unwrap_or(22087);\n");
     out.push_str("    let udid = std::env::var(\"SMIX_UDID\")\n");
     out.push_str("        .expect(\"SMIX_UDID env var required\");\n");
-    out.push_str("    let app = App::connect_to_runner(port).await?.with_udid(udid);\n");
+    out.push_str("    let app = App::connect_to_runner(port, Some(&udid)).await?;\n");
+    out.push_str("    let app = app.with_udid(udid);\n");
     out.push_str(&format!("    app.launch(\"{bundle_id}\").await?;\n"));
     out.push_str(&format!(
         "    let session = app.open_session(\"{bundle_id}\", true).await?;\n"

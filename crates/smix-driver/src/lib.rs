@@ -59,9 +59,12 @@ impl Orientation {
     }
 }
 
+/// Which device a runner port actually reaches. Lives with the client
+/// because that is the layer that opens the connection.
+pub use smix_runner_client::port_owner;
 pub use smix_runner_client::{
-    HttpRunnerClient, IncludeScope, OcrFrame, RunnerScrollSelector, RunnerTransportError,
-    SystemPopup, TapMode,
+    HttpRunnerClient, IncludeScope, OcrFrame, OwnerProbe, RunnerScrollSelector,
+    RunnerTransportError, SystemPopup, TapMode,
 };
 
 const POLL_INTERVAL_MS: u64 = 250;
@@ -1794,6 +1797,22 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
                 ),
             }),
         ),
+        // The runner answering "I looked and it is not there" is not the
+        // transport failing, and the two want opposite fixes. It reached
+        // callers as DRIVER_ERROR carrying the wire body verbatim —
+        // `{"ok":false,"error":"not_found","selector":{"text":"_focused_"}}`
+        // — which is an internal spelling shown to someone who cannot act
+        // on it, under a code that says something is broken. Android has
+        // always answered ELEMENT_NOT_FOUND to the same situation.
+        //
+        // Narrow on purpose: a 404 whose body does NOT say `not_found` is
+        // a route this runner does not have, which is a version mismatch
+        // and genuinely a driver error.
+        RunnerTransportError::NonSuccessStatus { status, body, .. }
+            if *status == 404 && body.contains("\"not_found\"") =>
+        {
+            (FailureCode::ElementNotFound, None)
+        }
         _ => (FailureCode::DriverError, None),
     };
     ExpectationFailure::new(FailureInit {

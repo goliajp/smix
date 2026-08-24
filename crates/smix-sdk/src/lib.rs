@@ -8,7 +8,8 @@
 //! use std::time::Duration;
 //!
 //! # async fn demo() -> Result<(), smix_sdk::ExpectationFailure> {
-//! let app = App::connect_to_runner(22087).await?;
+//! let udid = std::env::var("SMIX_UDID").expect("SMIX_UDID env var required");
+//! let app = App::connect_to_runner(22087, Some(&udid)).await?;
 //! app.launch("com.example.app").await?;
 //! app.wait_for(&text("Login"), Duration::from_secs(5)).await?;
 //! app.tap(&text("Login")).await?;
@@ -85,6 +86,9 @@ fn swipe_endpoint(start: (f64, f64), direction: SwipeDirection) -> (f64, f64) {
 
 // -- re-exports for downstream user convenience ------------------------
 
+/// Which device a runner port actually reaches — the check that
+/// stands between `--device` and acting on somebody else's machine.
+pub use smix_driver::port_owner;
 pub use smix_driver::{
     ActOutcome, ActVerdict, AndroidDriver, HitElement, HttpRunnerClient, IncludeScope, OcrFrame,
     RunnerScrollSelector, RunnerTransportError, SimctlDriver, SystemPopup, TapMode,
@@ -537,7 +541,8 @@ impl SessionState {
 /// ```ignore
 /// use smix_sdk::App;
 /// # async fn demo() -> Result<(), smix_sdk::ExpectationFailure> {
-/// let mut app = App::connect_to_runner(22087).await?;
+/// let udid = std::env::var("SMIX_UDID").expect("SMIX_UDID env var required");
+/// let mut app = App::connect_to_runner(22087, Some(&udid)).await?;
 /// let mut session = app.open_session("com.example.app", true).await?;
 /// session.app_mut().tap(&smix_sdk::text("Sign In")).await?;
 /// session.close().await?;
@@ -957,6 +962,46 @@ fn absence_must_be_looked_for(verb: &str, selector: &Selector) -> Result<(), Exp
     }))
 }
 
+/// Turn "element not found: { focused }" into something a caller can act on.
+///
+/// `inputText: "..."` targets `_focused_`, and when nothing can receive
+/// the text both platforms refuse. The sentence they refuse with names
+/// the runner's internal spelling of the selector, which tells the
+/// person reading it nothing they can do. Two things they can do exist:
+/// name the field, or — for a field the accessibility tree cannot
+/// address, a React Native hidden input being the usual one — pass
+/// `--force-key-events`, which is documented as exactly that and is now
+/// the only way to get it.
+///
+/// Above both drivers on purpose. Android has answered this refusal for
+/// releases and iOS reached it in 7.1; writing the sentence into each of
+/// them is how the two Android gates' refusals came to disagree, one of
+/// them still recommending an environment variable that records nothing.
+///
+/// Only the not-found code is touched. A transport failure from the same
+/// call is a different thing, and hanging focus advice on it would send
+/// someone to check their selector while the runner is unreachable.
+#[must_use]
+pub fn focused_fill_refusal(f: ExpectationFailure) -> ExpectationFailure {
+    if f.code != FailureCode::ElementNotFound {
+        return f;
+    }
+    let mut out = f;
+    out.message = format!(
+        "{} — nothing has keyboard focus and no keyboard is up, so there \
+         is nothing here to type into",
+        out.message
+    );
+    out.hint = Some(
+        "Name the field — `inputText: { id: \"...\", text: \"...\" }` — or tap \
+         it first. If the accessibility tree cannot address it (a React \
+         Native hidden input is the usual case), pass --force-key-events, \
+         which types into whatever holds focus without asking."
+            .into(),
+    );
+    out
+}
+
 impl App {
     /// Construct from a fully-wired driver + simctl client. Use this when
     /// you already manage Cell / UDID lifecycle externally.
@@ -1190,9 +1235,48 @@ impl App {
         Ok(state)
     }
 
+    /// Refuse, or say what went unverified, before the first request.
+    ///
+    /// The check is host-side and happens BEFORE `ensure_reachable`, so
+    /// a port pointing at somebody else's device is turned away before
+    /// anything is sent to it. Ordering is the whole point: a guard
+    /// that runs after the connection has already acted is a report,
+    /// not a guard.
+    fn check_port_owner(
+        port: u16,
+        named: Option<&str>,
+        authority: &smix_driver::port_owner::Authority,
+    ) -> Result<(), ExpectationFailure> {
+        use smix_driver::port_owner::Verdict;
+        match smix_driver::port_owner::decide(port, named, authority) {
+            Verdict::Proceed { unchecked, .. } => {
+                if let Some(said) = unchecked {
+                    eprintln!("warning: {said}");
+                }
+                Ok(())
+            }
+            Verdict::Refuse { reason } => Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("refusing to drive port {port}: {reason}"),
+                hint: Some(
+                    "`adb forward --list` (Android) or the process on the port (iOS) \
+                     decides which device a port reaches. Pass the --runner-port that \
+                     belongs to the device you named, or bring one up with \
+                     `smix runner up`."
+                        .into(),
+                ),
+                ..Default::default()
+            })),
+        }
+    }
+
     /// Convenience: connect to a runner on `127.0.0.1:{port}` and probe
     /// `GET /health` once. Returns App ready for sense+act calls.
-    pub async fn connect_to_runner(port: u16) -> Result<Self, ExpectationFailure> {
+    pub async fn connect_to_runner(
+        port: u16,
+        named_device: Option<&str>,
+    ) -> Result<Self, ExpectationFailure> {
+        Self::check_port_owner(port, named_device, &smix_driver::port_owner::ask_ios(port))?;
         let client = HttpRunnerClient::new(port);
         client.ensure_reachable().await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
@@ -1223,10 +1307,17 @@ impl App {
     /// runner's — the MCP server is launched by the MCP client at
     /// client startup, and dying there left a permanently dead server
     /// in every session where `smix runner up` came second.
+    /// The port-ownership judgement rides along, deferred to the first
+    /// real request. It cannot happen here: at MCP startup nobody holds
+    /// the port yet, and answering then would refuse every session.
     #[must_use]
-    pub fn connect_to_runner_lazy(port: u16) -> Self {
+    pub fn connect_to_runner_lazy(port: u16, named_device: Option<&str>) -> Self {
+        let client = HttpRunnerClient::new(port).with_port_owner_check(
+            named_device.map(str::to_string),
+            smix_driver::OwnerProbe::Ios,
+        );
         App {
-            driver: Box::new(SimctlDriver::new(HttpRunnerClient::new(port))),
+            driver: Box::new(SimctlDriver::new(client)),
             device: Box::new(IosDeviceControl::new()),
             udid: None,
             ledger: IssuedLedger::new(),
@@ -1240,8 +1331,16 @@ impl App {
     /// (the host-forwarded port that proxies to the device-side
     /// runner instrumentation). Returns App ready for cross-platform
     /// sense+act calls dispatched via AndroidDriver + AndroidDeviceControl.
-    pub async fn connect_to_runner_android(port: u16) -> Result<Self, ExpectationFailure> {
+    pub async fn connect_to_runner_android(
+        port: u16,
+        named_device: Option<&str>,
+    ) -> Result<Self, ExpectationFailure> {
         use smix_driver::AndroidDriver;
+        Self::check_port_owner(
+            port,
+            named_device,
+            &smix_driver::port_owner::ask_android(port),
+        )?;
         let client = HttpRunnerClient::new(port);
         client.ensure_reachable().await.map_err(|e| {
             ExpectationFailure::new(FailureInit {
@@ -1967,9 +2066,16 @@ impl App {
         self.ledger
             .record_fill(now_ms(), Some(format!("{selector:?}")));
         let names_a_field = !matches!(selector, Selector::Focused { .. });
-        self.driving()?
+        let out = self
+            .driving()?
             .fill(selector, text, None, names_a_field)
-            .await
+            .await;
+        // A fill that named nothing and was refused has two ways out and
+        // the driver's sentence mentions neither.
+        match (out, names_a_field) {
+            (Err(e), false) => Err(focused_fill_refusal(e)),
+            (other, _) => other,
+        }
     }
 
     pub async fn clear(&self, selector: &Selector) -> Result<(), ExpectationFailure> {

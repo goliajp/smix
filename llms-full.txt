@@ -35,6 +35,28 @@ cargo build --release   # ~30s cold, <5s warm
 ls target/release/smix
 ```
 
+### If you are scripting smix, resolve it from PATH
+
+The three lines above install to three different places — npm's global
+prefix, cargo's `~/.cargo/bin`, and a build tree — and none of them is
+"where smix lives". A consumer's runner hard-coded `~/.local/bin/smix`,
+the machine had the npm one, and the whole line failed with `smix not
+found` before a single flow ran.
+
+```bash
+SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
+[ -n "$SMIX_BIN" ] || { echo "smix is not on PATH" >&2; exit 1; }
+```
+
+Keep the `SMIX_BIN` override: it is how you point a script at a build
+tree without reinstalling, and it is what smix's own gates use.
+
+**A gate in your own tree should pass its build, not whatever is on
+PATH.** The two are different questions and the difference is a released
+version: running a gate bare here once tested the globally installed
+6.8.0 while the change under test sat in `target/release`. The gate said
+green about a binary nobody was changing.
+
 One binary, one product: `smix`. All subcommands (boot, runner, run a flow, low-level probes) live under it.
 
 ## Start here: a dedicated device for your project
@@ -311,7 +333,40 @@ one that stops.
     start: "10%,50%"
     end: "90%,50%"
     duration: 400
+
+# `over:` — swipe INSIDE one element, by shares of ITS box.
+#
+# The two forms above take shares of the SCREEN, which is what you reach
+# for when there is nothing nameable to swipe between. When there is
+# something nameable, `over:` names it and the numbers stop meaning
+# anything about the display:
+- swipe:
+    over: { id: "view-timeline" }
+    from: 0.3                            # three tenths along, halfway across
+    to: 0.8
+
+- swipe:
+    over: { id: "view-timeline" }
+    from: { x: 0.1, y: 0.5 }             # both axes, when the drag is not along one
+    to: { x: 0.9, y: 0.5 }
 ```
+
+A bare number is the share along the axis with the cross axis centred —
+a drag along a strip has one interesting axis, and guessing the other as
+`0` would run along its edge.
+
+**Percent strings are refused here.** `"30%"` of an element and `"30%"`
+of the screen are the two things this form exists to keep apart, and one
+spelling meaning both is how a flow ends up measuring the display again.
+
+**It does not fall back to the screen.** If the element is not there, the
+step fails and says so — swiping across the middle of whatever is showing
+would do something the flow did not ask for and report it as done.
+
+Reported by a consumer who had a nameable timeline and still had to
+measure it: 45.3–50.5% of screen height on Android, 47.7–53.2% on iOS,
+49% taken as the overlap, and a note that a device of a different shape
+would need measuring again.
 
 ### Keyboard / hardware keys
 
@@ -434,10 +489,31 @@ one that stops.
 #
 # On iOS nothing is quietened — no host-side lever exists — so this
 # verb keeps its full value there.
-- waitForAnimationToEnd                  # bare form: 400 ms (maestro-compat)
-- waitForAnimationToEnd: 500             # integer: sleep N ms
+- waitForAnimationToEnd                  # bare form: ceiling 400 ms (maestro-compat)
+- waitForAnimationToEnd: 500             # integer: ceiling 500 ms
 - waitForAnimationToEnd:
-    timeout: 5000                        # maestro-canonical map form
+    timeout: 5000                        # map form: ceiling 5000 ms (maestro-canonical)
+
+# The number is a CEILING in all three forms, never a sleep. The verb
+# samples the screen and returns as soon as two frames match, so a still
+# screen costs two captures and not the number written here. It used to
+# sleep, which charged for an animation whether or not one ran; this note
+# said "sleep N ms" for longer than that was true, and a consumer wrote
+# `waitForAnimationToEnd: 500` meaning "pause here" on the strength of it.
+#
+# There is no bare sleep verb, deliberately. To wait for something, name
+# it: `extendedWaitUntil` for an element. The keyboard is an element —
+# `extendedWaitUntil: { visible: { role: "keyboard" } }` — which is the
+# wait people most often reach for a pause instead of, because the keys
+# are not in the tree and `describe` leaves the keyboard out of its
+# summary. See "role: keyboard" in the selectors guide.
+#
+# If the thing you are waiting for really is not in the tree, that is a
+# gap worth reporting rather than routing around with a pause.
+#
+# A screen that never settles is a warning, not a failure — so is a window
+# in which the device refused every capture (see CAPTURE_BACKPRESSURE in
+# the errors guide). The verb waits refusals out inside its own ceiling.
 
 - extendedWaitUntil:
     visible: "Loading complete"
@@ -686,6 +762,41 @@ itself.
 - Supported roles (docs-friendly lowercase and camelCase both accepted; wire is camelCase): button, link, textField, secureTextField, searchField, switch, toggle, checkBox, radio, image, staticText (accepts `heading` as an alias), tab, tabBar, navigationBar, cell, alert, dialog, slider, progressBar, picker, menu, menuItem, scrollView, segmentedControl, table, collectionView, webView, keyboard.
 - iOS: derived from XCUIElement type + traits. Android: from AccessibilityNodeInfo class name + roleDescription.
 - `role:` and its optional `name:` work anywhere a selector map does — `tapOn:`, `assertVisible:`, `extendedWaitUntil.visible:`, `scrollUntilVisible:`, etc.
+
+#### `role: keyboard` — waiting for the software keyboard
+
+The last entry in that list is the one people ask for without finding.
+The software keyboard is an element, so it can be waited for like any
+other — which is what you want when a field is focused by a tap and the
+keyboard slides in over the button the next step means to press:
+
+```yaml
+- assertNotVisible: { role: "keyboard" }
+- tapOn: { id: "email" }
+- extendedWaitUntil:
+    visible: { role: "keyboard" }
+    timeout: 5000
+- hideKeyboard
+- extendedWaitUntil:
+    notVisible: { role: "keyboard" }
+    timeout: 5000
+```
+
+Both platforms answer, and it is asked of both on every release —
+`keyboard-comes-and-goes.yaml` in the portable corpus and A12 in the
+Android behaviour gate. On Android it was unanswerable until 7.1: the
+runner knew (an input-method window is the keyboard, which is what
+`hideKeyboard` has always decided on) and the tree did not carry it, so
+the same flow that passed on iOS timed out there.
+
+Two things about it are worth knowing, because both have sent people
+looking for a pause instead:
+
+- **The keys are not in the tree, and the keyboard is.** Do not wait for
+  `text: "A"`; wait for the keyboard.
+- **`smix describe` leaves the keyboard out of its summary**, so it is
+  invisible in exactly the place you would look for it. `smix find
+  "role:keyboard"` answers regardless, and so does `/tree`.
 
 ### 5. Focused
 
@@ -2603,6 +2714,30 @@ point, which is why it has its own code.
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
 
+### CAPTURE_BACKPRESSURE
+
+**Trigger**: the simulator's capture path is under load and is refusing
+frames for a stated window. `xcrun simctl io … screenshot` at high
+frequency can crash `SimRenderServer`, so smix paces those calls; when
+recent captures run long, or one fails, the pacer opens a circuit for a
+few seconds and refuses rather than pushing a degraded render server
+further.
+
+**Not a `DRIVER_ERROR`**: nothing is broken. It means *not now, shortly* —
+the `hint` carries the window. Before 7.1 it arrived as a driver error and
+a consumer's release gate could not tell the two apart.
+
+**What to do**:
+- **A verb that waits already handles it.** `waitForAnimationToEnd` keeps
+  waiting inside its own ceiling and only gives up when the ceiling does,
+  reporting that it could not observe the screen — not the pacer's state.
+- **Anywhere else**: retry after the window in the hint. A run that meets
+  this repeatedly is telling you about the simulator, not about the flow —
+  the usual cause is a long-lived simulator under accumulated load, and a
+  clean restart clears it.
+- It cannot be turned off, and that is deliberate: the alternative it
+  replaced was a crashed simulator mid-flow.
+
 ## Device access errors
 
 These fire before any flow step runs — they are about whether smix may
@@ -3253,7 +3388,8 @@ Sessions are mandatory on iOS in v2 — the legacy per-request rebind path is go
 ```rust
 use smix_sdk::{App, text};
 
-let app = App::connect_to_runner(22087).await?
+let udid = std::env::var("SMIX_UDID").expect("SMIX_UDID env var required");
+let app = App::connect_to_runner(22087, Some(&udid)).await?
     .with_bundle_id("com.example.app");
 
 let mut session = app.open_session("com.example.app", true).await?;
