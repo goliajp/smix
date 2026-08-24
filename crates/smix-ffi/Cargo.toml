@@ -49,9 +49,9 @@ default = []
 bindgen-cli = ["uniffi/cli"]
 
 [dependencies]
-smix-screen = { path = "../smix-screen", version = "7.0.0" }
-smix-selector = { path = "../smix-selector", version = "7.0.0" }
-smix-selector-resolver = { path = "../smix-selector-resolver", version = "7.0.0" }
+smix-screen = { path = "../smix-screen", version = "8.0.0" }
+smix-selector = { path = "../smix-selector", version = "8.0.0" }
+smix-selector-resolver = { path = "../smix-selector-resolver", version = "8.0.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -59,8 +59,8 @@ uniffi = { version = "0.29", features = ["tokio"] }
 # The one implementation of the wire. This crate wraps it rather than
 # restating it: three SDKs each wrote their own and three drifted into
 # calling routes no runner serves.
-smix-runner-client = { path = "../smix-runner-client", version = "7.0.0" }
-smix-input = { path = "../smix-input", version = "7.0.0" }
+smix-runner-client = { path = "../smix-runner-client", version = "8.0.0" }
+smix-input = { path = "../smix-input", version = "8.0.0" }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 tokio-util = "0.7"
 

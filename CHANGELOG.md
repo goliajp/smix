@@ -2,9 +2,55 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [8.0.0] — 2026-08-25
+
+**Flows and CLI are unchanged.** No verb was renamed, no flag removed,
+nothing moves on the wire. The major is four Rust signatures and six new
+enum variants, and two answers that are different on purpose. If you
+write YAML and run `smix`, read the two behaviours below; if you depend
+on the crates, [Migrating to smix 8.0](docs/migrating-to-8.md) is short.
 
 ### Changed
+
+- **A port is checked against the device you named, before anything is
+  driven.** `--device` is what a caller aims with, and nothing checked
+  that the port it was paired with went anywhere near that device. An
+  adb forward can point a local port at a different emulator — or at a
+  phone on the desk — while every guard in §9 #1 passes, because they
+  all read the `--device` string rather than asking who answers.
+
+  It cost an hour of this cycle to find out: an investigation ran
+  against `localhost:28080` believing it was `emulator-5554`, and it was
+  forwarded to `emulator-5556`. Two second-hand facts disagreed for that
+  hour and both were telling the truth about different machines.
+
+  The runner cannot settle it — both runners' `/health` are byte
+  identical across devices — so the authority is host-side and live:
+  `adb forward --list` on Android, the process bound to the device on
+  Apple. Mismatch names both sides and says which device it would have
+  acted on. Nothing askable proceeds with a warning rather than a
+  refusal, because refusing there would turn away every route that
+  cannot be interrogated, and the danger is a *named* device being
+  silently replaced.
+
+- **`inputText` on iOS refuses when nothing has focus.** It reported
+  success — eighteen characters, no warnings, no field changed — while
+  Android refused the same flow by name. The wire has carried
+  `Input-Dispatch-Mode` since v1 and no runner read it, so
+  `--force-key-events` changed nothing; and the condition deciding
+  whether to resolve focus excluded `_focused_`, the one selector the
+  mode is about. Both platforms now say the same sentence.
+
+- **`waitForAnimationToEnd` tells "could not look" from "still
+  moving".** Capture backpressure inside the wait is absorbed and
+  retried; a capture that never succeeds is reported as such rather than
+  as motion.
+
+- **`DeviceControl::set_animations_quiet` no longer defaults to
+  success.** It returned `Ok(())` three lines under a comment saying
+  that a switch reporting success while the device keeps animating is
+  worse than no switch. Every backend overrides it, so the default was
+  waiting for the next one to inherit a silent no-op.
 
 - **A ledger row written by a newer smix is now read, kept, and refused —
   not choked on.** 7.0.0's release notes described an older smix stopping
@@ -37,6 +83,48 @@ All notable changes to the `smix` workspace are documented here. The format foll
   Rust API: `Lease::resources` is `Vec<Row>` rather than `Vec<Resource>`,
   `Lease::known_resources()` iterates the ones this binary understands,
   `unnamed_kinds()` names the rest, and `CleanupAction` gained a variant.
+
+### Added
+
+- **`swipe: { over: <selector>, from: …, to: … }`** — a swipe aimed
+  inside a named element, by shares of *its* box rather than of the
+  screen. A consumer with a nameable timeline still had to measure it
+  (45.3–50.5% of screen height on Android, 47.7–53.2% on iOS, 49% taken
+  as the overlap, and a note that a differently shaped device would need
+  measuring again). Both ends resolve from one tree read, and a missing
+  element is refused rather than falling back to a share of the display
+  — which is how a drag that missed comes to look like one that worked.
+
+- **`role:keyboard` in the Android tree.** The runner already knew:
+  `keyboardIsUp()` reads the window type and `hide-keyboard` decides on
+  it. Nothing lifted it into the tree, which is the one place every verb
+  can reach, so `extendedWaitUntil { visible: { role: keyboard } }`
+  worked on iOS and timed out on Android with the keyboard on screen.
+
+- **`ACTION_PLATFORMS`** — what each kind of device can and cannot do,
+  in one table both backends read. §9 #1 has required a loud refusal
+  since physical devices landed; `DevicectlClient` did refuse seventeen
+  actions by name, but they were seventeen sentences in seventeen method
+  bodies with nothing able to say whether the set was complete, and the
+  other three kinds of device were never asked. Two answers per cell,
+  never three, and "refuses by name" means it can say what, why, and
+  what to do instead.
+
+### Fixed
+
+- A runner answering 404 with `{"error":"not_found"}` reached the reader
+  as `DRIVER_ERROR` with the wire body attached. It is an element that
+  was not found, and says so — narrowly, so a genuinely broken route
+  stays a driver error.
+
+- `known-unstable-scan` returned an empty list when its file was
+  missing, looped over nothing and exited 0. An empty table states that
+  nothing is excused; a missing file states nothing while the corpus
+  gate goes on excusing.
+
+- Both Android clipboard actions were documented as working and have
+  been refused since Android 10 sealed the clipboard to the foreground
+  app.
 
 ## [7.0.0] — 2026-08-24
 
