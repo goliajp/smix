@@ -588,11 +588,7 @@ pub fn record_boot(dir: &LeaseDir, device_id: &str, by_us: bool) -> Result<(), L
 /// Same kind replaces same kind, as everywhere else here, so claiming a
 /// device twice restates when rather than accumulating rows.
 pub fn record_claim(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
-    add_resource(
-        dir,
-        device_id,
-        Resource::Claimed { at: now_rfc3339() },
-    )
+    add_resource(dir, device_id, Resource::Claimed { at: now_rfc3339() })
 }
 
 /// Forget every resource of one kind, and the ledger itself once nothing

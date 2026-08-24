@@ -30,10 +30,10 @@ npm install -g @goliapkg/smix-cli
 cargo install smix-cli --locked
 
 # Swift Package Manager
-# add https://github.com/goliajp/smix (product: SmixSDK, from: "6.8.1")
+# add https://github.com/goliajp/smix (product: SmixSDK, from: "7.0.0")
 
 # Gradle / Maven (Kotlin / Java)
-# implementation("jp.golia.smix:smix-sdk:6.8.1")
+# implementation("jp.golia.smix:smix-sdk:7.0.0")
 
 # TypeScript / Node / Bun (drives a simulator through the native addon)
 npm install @goliapkg/smix

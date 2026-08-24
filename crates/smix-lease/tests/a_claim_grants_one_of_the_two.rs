@@ -144,12 +144,8 @@ fn releasing_a_claim_leaves_a_real_boot_row_alone() {
     let (_t, d) = dir();
     store::record_boot(&d, "UDID-BOTH", true).expect("boot");
     store::record_claim(&d, "UDID-BOTH").expect("claim");
-    store::drop_resource_kind(
-        &d,
-        "UDID-BOTH",
-        &Resource::Claimed { at: String::new() },
-    )
-    .expect("release");
+    store::drop_resource_kind(&d, "UDID-BOTH", &Resource::Claimed { at: String::new() })
+        .expect("release");
     let l = store::read(&d, "UDID-BOTH")
         .expect("read")
         .expect("ledger survives");
@@ -181,7 +177,10 @@ fn a_lone_claim_is_worth_a_ledger() {
     assert!(
         store::read(&d, "emulator-5554")
             .expect("read")
-            .is_some_and(|l| l.resources.iter().any(|r| matches!(r, Resource::Claimed { .. }))),
+            .is_some_and(|l| l
+                .resources
+                .iter()
+                .any(|r| matches!(r, Resource::Claimed { .. }))),
         "the claim did not outlive a teardown that closed no processes"
     );
 }

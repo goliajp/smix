@@ -1793,7 +1793,9 @@ instead of the runner dying by SIGABRT and macOS raising a crash-report dialog.
 ```bash
 smix lease list                # every device with a ledger, and whether it is in use
 smix lease status <DEVICE>     # the holder, what is open, and what is owed
-smix lease owner <DEVICE>      # who booted it — exit 0 yes, 3 no record, 1 cannot ask
+smix lease owner <DEVICE>      # who answers for it — exit 0 yes, 3 no record, 1 cannot ask
+smix lease claim <DEVICE>      # answer for one this machine did not boot
+smix lease release <DEVICE>    # give that up again
 smix lease reconcile <DEVICE>  # close what an abandoned session left open
 smix lease prune               # drop ledgers that no longer describe anything
 smix lease prune --dry-run     # ...or say what it would drop, and drop nothing
@@ -1815,6 +1817,29 @@ Two things it will not do, both deliberate:
 - **It only shuts down a device it booted.** Finding a device already up and
   turning it off would take away someone else's session as the price of
   cleaning up after yours.
+
+### Claiming a device nothing here booted
+
+Gates and scripts ask `lease owner` before they drive anything, and until
+7.0 the only answer that let them through was "smix booted it". A machine's
+own dedicated emulator, started by hand and sitting idle, was therefore
+drivable by nobody — and the way past it was an environment variable that
+means "this one is mine" to a single command and is gone when that command
+exits. The next run had to decide again, and nobody could read what was
+decided last time.
+
+```bash
+smix lease claim emulator-5554     # yours to drive; still not yours to switch off
+smix lease owner emulator-5554     # exit 0, and says "claimed", not "booted"
+smix lease release emulator-5554   # or let the device going off end it
+```
+
+A claim grants exactly one of the two things a boot row grants. `lease
+reconcile` and every teardown path still refuse to switch off a device this
+machine did not boot, because the claim says in as many words that it did
+not. It is refused while somebody else's live session holds the device:
+claiming is a statement about a device nobody is using, not a way past one
+that is.
 
 ### Perf regression (`smix bench`)
 

@@ -347,9 +347,7 @@ fn release(leases: &LeaseDir, device: &str) -> Result<(), crate::CliError> {
     store::drop_resource_kind(
         leases,
         &udid,
-        &smix_lease::Resource::Claimed {
-            at: String::new(),
-        },
+        &smix_lease::Resource::Claimed { at: String::new() },
     )
     .map_err(to_cli_error)?;
     println!("{udid}: claim released");
