@@ -3,27 +3,12 @@
 version = 4
 
 [[package]]
-name = "adler2"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "android_system_properties"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -50,22 +35,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "autocfg"
-version = "1.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
-
-[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
-
-[[package]]
-name = "bitflags"
-version = "1.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitflags"
@@ -104,35 +77,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "chrono"
-version = "0.4.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
-dependencies = [
- "iana-time-zone",
- "js-sys",
- "num-traits",
- "serde",
- "wasm-bindgen",
- "windows-link",
-]
-
-[[package]]
-name = "core-foundation-sys"
-version = "0.8.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
-
-[[package]]
-name = "crc32fast"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "displaydoc"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -154,29 +98,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "fdeflate"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
-dependencies = [
- "simd-adler32",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
-
-[[package]]
-name = "flate2"
-version = "1.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
-dependencies = [
- "crc32fast",
- "miniz_oxide",
-]
 
 [[package]]
 name = "form_urlencoded"
@@ -311,30 +236,6 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "iana-time-zone"
-version = "0.1.65"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e31bc9ad994ba00e440a8aa5c9ef0ec67d5cb5e5cb0cc7f8b744a35b389cc470"
-dependencies = [
- "android_system_properties",
- "core-foundation-sys",
- "iana-time-zone-haiku",
- "js-sys",
- "log",
- "wasm-bindgen",
- "windows-core",
-]
-
-[[package]]
-name = "iana-time-zone-haiku"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
-dependencies = [
- "cc",
 ]
 
 [[package]]
@@ -475,173 +376,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kevy-bytes"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03f73a126616952cbef5f42a27ef69cda6c5d45f9374936e742f4dfb74ec65a2"
-dependencies = [
- "kevy-hash",
-]
-
-[[package]]
-name = "kevy-compress"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dddaeb5c5cc69fbaabd1ea10c7ad23219f508052729abd854d8b77a8eb01b71c"
-
-[[package]]
-name = "kevy-embedded"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a817df2dd046113069107e0481e4c4c93aeefd9f6d35c404dc9bbf36717c20c"
-dependencies = [
- "kevy-hash",
- "kevy-index",
- "kevy-persist",
- "kevy-replicate",
- "kevy-resp",
- "kevy-store",
- "kevy-sys",
- "kevy-text",
- "kevy-vector",
- "kevy-window",
-]
-
-[[package]]
-name = "kevy-hash"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faf2f5d37565f1d4087978353892abde44806994a27f53ea29c6de7d12a83727"
-
-[[package]]
-name = "kevy-index"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5ace4fc38faedad95551777dd8f6a1f1e275e04628c426662d8b1cd4c5a70fd"
-dependencies = [
- "kevy-time",
-]
-
-[[package]]
-name = "kevy-madvise"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf93449ceb4c1630ec072d3f9268a345ec2d7d0ea930523396938fa7f990b62f"
-
-[[package]]
-name = "kevy-map"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23aeee6755dec71ea8c892ce65a2e3500db932cdaa2f727e1ef3ee50f51d2c58"
-dependencies = [
- "kevy-hash",
- "kevy-madvise",
-]
-
-[[package]]
-name = "kevy-persist"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a7dcbe7f5222e4b092086962cb78ebd05297c69979cb87454cb204e1121e373"
-dependencies = [
- "kevy-resp",
- "kevy-store",
- "kevy-sys",
-]
-
-[[package]]
-name = "kevy-ranktree"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8eae8204863d32b64c8812ff745c76e4945e2dd3024340b9116a2dbc5dc0743"
-
-[[package]]
-name = "kevy-replicate"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d287a4ce338c6a94aef7228a8216a5727a69146152e932191ef3dd8dd057454a"
-dependencies = [
- "kevy-resp",
-]
-
-[[package]]
-name = "kevy-resp"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f89a9867e708fb20d29c2be3116ab450cfa6b6e075abbf495e3d59a7656aba03"
-dependencies = [
- "kevy-bytes",
-]
-
-[[package]]
-name = "kevy-seg"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d3fea2c646cf712a6bbc15a0069b09a6c4cf0a0ac5a671d9d9d2ca6555ad58f"
-dependencies = [
- "kevy-sys",
-]
-
-[[package]]
-name = "kevy-store"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2406091574e1682a968b253a1bbdf1099b1038f925d321d9be5321562300b146"
-dependencies = [
- "kevy-bytes",
- "kevy-hash",
- "kevy-map",
- "kevy-ranktree",
- "kevy-seg",
- "kevy-vlog",
-]
-
-[[package]]
-name = "kevy-sys"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91f233207a6800af3d9438700ccf8d9bab8a55c12b91345ff695982220935278"
-
-[[package]]
-name = "kevy-text"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f82d16d3b69dbcc9dd3d3a184c747895c1548ec68dd3b8fcbd8c9c82c46307f"
-
-[[package]]
-name = "kevy-time"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "371967d97c0af6d65b6990d9cd496c7cecb608bad2f09d360e730217db35ef61"
-
-[[package]]
-name = "kevy-vector"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf4d63e5873b6b895eb11a2e5fdd01988c13049841a3ab7e0a044160bf6c12be"
-
-[[package]]
-name = "kevy-vlog"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2370a55cae65b36ee148130f361718b1488825bd1779afba3b0d431a93ecf47"
-dependencies = [
- "kevy-compress",
- "kevy-sys",
-]
-
-[[package]]
-name = "kevy-window"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40f73ba546ee6f760585ff55cb2c840ed339b4c4478e28181e0f327a35bfe525"
-dependencies = [
- "kevy-index",
- "kevy-seg",
- "kevy-text",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -676,16 +410,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "miniz_oxide"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
-dependencies = [
- "adler2",
- "simd-adler32",
-]
-
-[[package]]
 name = "mio"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -694,15 +418,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys",
-]
-
-[[package]]
-name = "num-traits"
-version = "0.2.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
-dependencies = [
- "autocfg",
 ]
 
 [[package]]
@@ -722,19 +437,6 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
-
-[[package]]
-name = "png"
-version = "0.17.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82151a2fc869e011c153adc57cf2789ccb8d9906ce52c0b39a6b5697749d7526"
-dependencies = [
- "bitflags 1.3.2",
- "crc32fast",
- "fdeflate",
- "flate2",
- "miniz_oxide",
-]
 
 [[package]]
 name = "potential_utf"
@@ -914,12 +616,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "simd-adler32"
-version = "0.3.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
-
-[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -930,17 +626,6 @@ name = "smallvec"
 version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
-
-[[package]]
-name = "smix-adb"
-version = "6.8.0"
-dependencies = [
- "serde",
- "serde_json",
- "smix-error",
- "thiserror",
- "tokio",
-]
 
 [[package]]
 name = "smix-driver"
@@ -958,6 +643,17 @@ dependencies = [
  "smix-selector-resolver",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "smix-driver-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "serde_json",
+ "smix-driver",
+ "smix-runner-wire",
+ "smix-selector",
 ]
 
 [[package]]
@@ -984,16 +680,6 @@ name = "smix-input"
 version = "6.8.0"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "smix-lease"
-version = "6.8.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]
@@ -1033,38 +719,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "smix-sdk"
-version = "6.8.0"
-dependencies = [
- "async-trait",
- "chrono",
- "libc",
- "png",
- "serde",
- "serde_json",
- "smix-adb",
- "smix-driver",
- "smix-error",
- "smix-input",
- "smix-lease",
- "smix-runner-client",
- "smix-screen",
- "smix-selector",
- "smix-simctl",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "smix-sdk-fuzz"
-version = "0.0.0"
-dependencies = [
- "libfuzzer-sys",
- "serde_json",
- "smix-sdk",
-]
-
-[[package]]
 name = "smix-selector"
 version = "6.8.0"
 dependencies = [
@@ -1086,31 +740,6 @@ name = "smix-sim-health"
 version = "6.8.0"
 dependencies = [
  "tokio",
-]
-
-[[package]]
-name = "smix-simctl"
-version = "6.8.0"
-dependencies = [
- "libc",
- "serde",
- "serde_json",
- "smix-error",
- "smix-lease",
- "smix-sim-health",
- "smix-store",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "smix-store"
-version = "6.8.0"
-dependencies = [
- "kevy-embedded",
- "serde",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]
@@ -1249,7 +878,7 @@ version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
- "bitflags 2.13.1",
+ "bitflags",
  "bytes",
  "futures-util",
  "http",
@@ -1415,63 +1044,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows-core"
-version = "0.62.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb"
-dependencies = [
- "windows-implement",
- "windows-interface",
- "windows-link",
- "windows-result",
- "windows-strings",
-]
-
-[[package]]
-name = "windows-implement"
-version = "0.60.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "windows-interface"
-version = "0.59.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f316c4a2570ba26bbec722032c4099d8c8bc095efccdc15688708623367e358"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "windows-link"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
-
-[[package]]
-name = "windows-result"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5"
-dependencies = [
- "windows-link",
-]
-
-[[package]]
-name = "windows-strings"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091"
-dependencies = [
- "windows-link",
-]
 
 [[package]]
 name = "windows-sys"

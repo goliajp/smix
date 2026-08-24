@@ -181,6 +181,8 @@ SOURCE_GATES=(
   gate-port-scan
   preflight-parity-scan
   mcp-cli-parity-scan
+  fuzz-lockfiles-are-usable
+  fuzz-lockfiles-are-usable.test
   known-unstable-scan
   corpus-portability-scan
   portable-tier-parity

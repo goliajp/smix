@@ -59,6 +59,8 @@ LOCAL = {
     "gate port scan": "gate-port-scan",
     "preflight parity scan": "preflight-parity-scan",
     "mcp cli parity scan": "mcp-cli-parity-scan",
+    "fuzz lockfiles are usable": "fuzz-lockfiles-are-usable",
+    "the fuzz-lockfile gate can still go red": "fuzz-lockfiles-are-usable.test",
     "known-unstable list scan": "known-unstable-scan",
     "corpus portability scan": "corpus-portability-scan",
     "portable tier parity": "portable-tier-parity",
