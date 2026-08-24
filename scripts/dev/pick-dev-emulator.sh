@@ -10,11 +10,19 @@
 # on teardown. Nobody did anything wrong. Nothing asked whose it was.
 #
 # Eligible = adb lists it as `device` AND `smix lease owner <serial>`
-# exits 0, meaning a ledger records smix booting it. An
-# emulator somebody started by hand, or from Android Studio, or from a
-# tool that writes no ledger, has no such record and is left alone.
-# The cost of refusing is a message telling you to boot it through smix;
+# exits 0, meaning a ledger says smix booted it OR somebody said out loud
+# that this machine answers for it. An emulator started by hand, from
+# Android Studio, or from a tool that writes no ledger has neither and is
+# left alone. The cost of refusing is a message telling you what to run;
 # the cost of claiming is somebody's session.
+#
+# The second half of that used to be missing, and the gap had a shape:
+# this machine's own dedicated AVD, running, started by a hand that wrote
+# no ledger, was drivable by nobody. The way through was
+# SMIX_ANDROID_SERIAL, which records nothing and is gone when the command
+# exits — so every release made the same decision again and none of them
+# could be read afterwards. `smix lease claim <serial>` is that decision
+# with somewhere to live. This script did not change to gain it.
 #
 # Usage:  SERIAL="$(bash scripts/dev/pick-dev-emulator.sh)" || exit 1
 # Exit:   0 with the serial on stdout; 1 with a reason on stderr.
@@ -96,8 +104,10 @@ case "$COUNT" in
 saying smix booted it:" >&2
         printf '%s' "$UNCLAIMED" >&2
         echo "pick-dev-emulator: an emulator started by hand is not smix's to \
-drive. Boot one through smix — \`smix sim boot <alias>\` — or pass the serial \
-explicitly to say it is yours." >&2
+drive. Either boot one through smix — \`smix sim boot <alias>\` — or, if one \
+of the above is this machine's and nobody is using it, say so once and it \
+stays said: \`smix lease claim <serial>\`. That grants driving and not \
+shutting down, and the ledger ends it when the device goes off." >&2
         exit 1
         ;;
     *)

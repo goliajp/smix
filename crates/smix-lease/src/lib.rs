@@ -67,8 +67,16 @@ pub struct ProcIdentity {
 /// confirm the pid is still that process before signalling it.
 /// [`CleanupAction`] carries the identity onward — the executor cannot
 /// forget what it was never given.
+///
+/// `#[non_exhaustive]` because this list has grown five times and will
+/// grow again: a runner, a recording, a supervisor, an Android runner, a
+/// forward, a boot row, and now a claim. Adding the claim cost a major
+/// version on its own — the one thing an exhaustive public enum charges
+/// for — so the charge is paid once here rather than again at the next
+/// kind of thing a holder can open.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Resource {
     /// An XCUITest runner session: the host-side `xcodebuild` process and
     /// the port its HTTP face answers on.
@@ -134,6 +142,26 @@ pub enum Resource {
         /// True when this holder ran the boot. False when it found the
         /// device already up.
         by_us: bool,
+    },
+    /// This holder took responsibility for a device it did not boot.
+    ///
+    /// The ledger could already say "I booted it" and "I found it up".
+    /// Both are observations. The decision that sits between them had
+    /// nowhere to go: a machine's own dedicated emulator, running,
+    /// started by a hand that wrote no ledger is drivable by nobody,
+    /// because the only row that made a device drivable was the one that
+    /// also made it shut-downable — and nothing may claim to have booted
+    /// what it did not.
+    ///
+    /// So this row grants exactly one of the two. The device is this
+    /// holder's to drive; it is not its to switch off. [`may_shut_down`]
+    /// does not read it, which is the whole point of it being a separate
+    /// row rather than a cheaper `by_us: true`.
+    #[serde(rename_all = "camelCase")]
+    Claimed {
+        /// RFC3339. When the claim was made — later than the lease's own
+        /// `acquired_at` whenever a holder claims a device mid-session.
+        at: String,
     },
 }
 
@@ -240,6 +268,28 @@ pub fn prune_verdict(held: &Held, device_is_on: Option<bool>) -> PruneVerdict {
             ),
             None => PruneVerdict::Keep(
                 "says smix booted it and this machine cannot tell whether it is still on",
+            ),
+            Some(false) => PruneVerdict::Remove,
+        };
+    }
+    // A claim is kept on exactly the same terms as a boot row, and for
+    // the same reason: while the device is on, this ledger is the only
+    // record that anybody answered for it. The terms matter more here
+    // than for a boot, because a claim that outlived its device would be
+    // an escape hatch nobody checks the far side of — the device going
+    // off is what ends it, with `lease release` for ending it sooner.
+    let claimed = held
+        .lease
+        .resources
+        .iter()
+        .any(|r| matches!(r, Resource::Claimed { .. }));
+    if claimed {
+        return match device_is_on {
+            Some(true) => PruneVerdict::Keep(
+                "still switched on and this ledger is the only record of who answered for it",
+            ),
+            None => PruneVerdict::Keep(
+                "claimed, and this machine cannot tell whether it is still on",
             ),
             Some(false) => PruneVerdict::Remove,
         };
@@ -661,6 +711,7 @@ pub fn is_service(r: &Resource) -> bool {
             | Resource::PortForward { .. }
             | Resource::Supervisor { .. }
             | Resource::Booted { .. }
+            | Resource::Claimed { .. }
     )
 }
 
@@ -768,6 +819,10 @@ fn plan_rest(lease: &Lease) -> Vec<CleanupAction> {
             // then turning it off would take away someone else's session
             // as the price of cleaning up our own.
             Resource::Booted { by_us: false } => None,
+            // A claim is the statement that this holder did NOT boot it.
+            // Closing it by switching the device off would be the one
+            // thing the claim promised not to do.
+            Resource::Claimed { .. } => None,
             Resource::Booted { by_us: true } => Some(CleanupAction::ShutdownSim {
                 udid: lease.device_id.clone(),
             }),

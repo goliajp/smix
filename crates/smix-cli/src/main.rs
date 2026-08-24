@@ -1136,13 +1136,43 @@ enum LeaseAction {
     /// Close what a dead holder left open, by the graceful path it never
     /// got to take. A live holder is reported, never preempted.
     Reconcile { device: String },
-    /// Who booted this device, in one line and an exit code.
+    /// Answer for a device this machine did not boot.
+    ///
+    /// The decision every release was already making and leaving
+    /// nowhere. A dedicated emulator started by hand has no ledger, so
+    /// nothing here may drive it — and the only way through was an
+    /// environment variable that says "it is mine" to one command and is
+    /// forgotten the moment it exits. The next run makes the same
+    /// decision again, and no one can read who made it last time.
+    ///
+    /// A claim grants exactly one of the two things a boot row grants:
+    /// this device is yours to drive, and is not yours to switch off.
+    /// `lease owner` reports it as a claim rather than a boot, so the
+    /// difference is never invisible, and the ledger ends it when the
+    /// device goes off.
+    ///
+    /// Refused while somebody else's live session holds the device —
+    /// claiming is a statement about an unheld device, not a way past
+    /// a held one.
+    Claim { device: String },
+    /// Give up a claim made by `lease claim`.
+    ///
+    /// Removes only the claim. A device this machine really did boot
+    /// keeps saying so, because that row answers a different question.
+    Release { device: String },
+    /// Who answers for this device, in one line and an exit code.
     ///
     /// `0` means a ledger says smix booted it, and names the session;
     /// `3` means no ledger says that — somebody else turned it on, or
     /// nobody wrote it down; `1` means the question could not be asked.
     /// Three codes rather than two: a check that answers "safe" when it
     /// means "I do not know" is the shape this cycle keeps finding.
+    ///
+    /// A claim answers `0` as well, and says so in words: it is the same
+    /// entitlement to drive and deliberately not the same entitlement to
+    /// shut down. Callers that act on the exit code inherit claims
+    /// without being changed; a caller that cares which it is has the
+    /// sentence.
     ///
     /// Not a teardown permission. It answers "did smix boot this",
     /// which is not "did *you* boot this" — a shell script's `smix sim

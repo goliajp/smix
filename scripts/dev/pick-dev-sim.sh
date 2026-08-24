@@ -86,7 +86,9 @@ if [ -z "$BOOTED" ]; then
     exit 1
 fi
 
-# Of those, the ones a ledger says smix booted.
+# Of those, the ones a ledger answers for — smix booted it, or somebody
+# claimed it with `smix lease claim <udid>`, which says this machine
+# answers for a sim it did not boot without pretending it did.
 #
 # `lease owner` exits 0 when a ledger records the boot, 3 when nothing
 # does, 1 when the question could not be asked. Only 0 is eligible: 3 is
