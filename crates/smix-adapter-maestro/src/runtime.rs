@@ -909,6 +909,7 @@ fn refuse_what_this_verb_cannot_read(step: &Step) -> Result<(), RunError> {
 
 fn summarize_step_verb(step: &Step) -> String {
     match step {
+        Step::SwipeOver { .. } => "swipe",
         Step::LaunchApp { .. } => "launchApp",
         Step::StopApp => "stopApp",
         Step::ClearAppData { .. } => "clearAppData",
@@ -1927,6 +1928,45 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::Swipe { from, to } => {
                 self.app.swipe_at_coord(*from, *to).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::SwipeOver { selector, from, to } => {
+                let desugared = self.desugar_localized_text(selector);
+                let tree = self.app.tree().await?;
+                // Both ends come from one reading of the tree. Resolving
+                // twice would let the element move between them and swipe
+                // from one place to somewhere else's four fifths.
+                let ends = smix_host_coord_resolver::resolve_to_norm_point_in_box(
+                    &tree, &desugared, *from,
+                )
+                .and_then(|a| {
+                    smix_host_coord_resolver::resolve_to_norm_point_in_box(&tree, &desugared, *to)
+                        .map(|b| (a, b))
+                });
+                let (a, b) = match ends {
+                    Ok(pair) => pair,
+                    // Not a fall back to shares of the screen. That is
+                    // the form this one exists to replace, and silently
+                    // swiping across the middle of the display instead
+                    // would do something the flow did not ask for and
+                    // report it as done.
+                    Err(e) => {
+                        return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                            code: Some(FailureCode::ElementNotFound),
+                            message: format!(
+                                "swipe over {}: {e:?}",
+                                smix_sdk::describe_selector(&desugared)
+                            ),
+                            selector: Some(desugared.as_ref().clone()),
+                            hint: Some(
+                                "`over:` swipes between two points inside the named                                  element's box, so it needs that box. If the element                                  has no accessibility identity to name,                                  `swipe: { from, to }` takes shares of the screen                                  instead — that is the form `over:` exists to let                                  you stop using."
+                                    .into(),
+                            ),
+                            ..Default::default()
+                        })));
+                    }
+                };
+                self.app.swipe_at_coord(a, b).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::Scroll => {

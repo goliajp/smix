@@ -161,7 +161,40 @@ one that stops.
     start: "10%,50%"
     end: "90%,50%"
     duration: 400
+
+# `over:` — swipe INSIDE one element, by shares of ITS box.
+#
+# The two forms above take shares of the SCREEN, which is what you reach
+# for when there is nothing nameable to swipe between. When there is
+# something nameable, `over:` names it and the numbers stop meaning
+# anything about the display:
+- swipe:
+    over: { id: "view-timeline" }
+    from: 0.3                            # three tenths along, halfway across
+    to: 0.8
+
+- swipe:
+    over: { id: "view-timeline" }
+    from: { x: 0.1, y: 0.5 }             # both axes, when the drag is not along one
+    to: { x: 0.9, y: 0.5 }
 ```
+
+A bare number is the share along the axis with the cross axis centred —
+a drag along a strip has one interesting axis, and guessing the other as
+`0` would run along its edge.
+
+**Percent strings are refused here.** `"30%"` of an element and `"30%"`
+of the screen are the two things this form exists to keep apart, and one
+spelling meaning both is how a flow ends up measuring the display again.
+
+**It does not fall back to the screen.** If the element is not there, the
+step fails and says so — swiping across the middle of whatever is showing
+would do something the flow did not ask for and report it as done.
+
+Reported by a consumer who had a nameable timeline and still had to
+measure it: 45.3–50.5% of screen height on Android, 47.7–53.2% on iOS,
+49% taken as the overlap, and a note that a device of a different shape
+would need measuring again.
 
 ### Keyboard / hardware keys
 

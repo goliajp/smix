@@ -1363,6 +1363,30 @@ fn parse_swipe(v: &Value) -> Result<Step, ParseError> {
         };
         return Ok(Step::Swipe { from, to });
     }
+    // `over:` — the swipe happens inside one element's box, and the
+    // numbers are shares of THAT box rather than of the screen. Checked
+    // before from/to because its from/to mean something different: 0.3
+    // is three tenths of the element, not of the display.
+    //
+    // The selector comes from `visible_to_selector`, the one function
+    // every selector position calls, so a two-key map cannot mean one
+    // thing here and another in `tapOn`.
+    if let Some(over) = map.get(Value::String("over".into())) {
+        let selector = visible_to_selector(over)?;
+        let from = parse_share(
+            map.get(Value::String("from".into()))
+                .or_else(|| map.get(Value::String("start".into())))
+                .ok_or_else(|| ParseError::MissingField("swipe.from".into()))?,
+            "swipe.from",
+        )?;
+        let to = parse_share(
+            map.get(Value::String("to".into()))
+                .or_else(|| map.get(Value::String("end".into())))
+                .ok_or_else(|| ParseError::MissingField("swipe.to".into()))?,
+            "swipe.to",
+        )?;
+        return Ok(Step::SwipeOver { selector, from, to });
+    }
     // `start`/`end` are the spelling the yaml reference documents;
     // `from`/`to` is what the parser has always accepted. Both work —
     // the doc and the code disagreed, and the doc's form was the one
@@ -1380,6 +1404,48 @@ fn parse_swipe(v: &Value) -> Result<Step, ParseError> {
         "swipe.to",
     )?;
     Ok(Step::Swipe { from, to })
+}
+
+/// A share of an element's box: a bare number is the along-axis share
+/// with the cross axis centred, and `{x, y}` gives both.
+///
+/// `from: 0.3` is what a caller writes when dragging a timeline, and it
+/// means "three tenths along, halfway across" — the cross axis defaulting
+/// to the middle because a drag along a strip has one interesting axis
+/// and guessing the other as 0 would run along its edge.
+///
+/// Percent strings are refused rather than accepted: `"30%"` of an
+/// element and `"30%"` of the screen are the two things this form exists
+/// to keep apart, and one spelling meaning both is how a caller ends up
+/// measuring the display again.
+fn parse_share(v: &Value, field: &str) -> Result<(f64, f64), ParseError> {
+    if let Some(n) = v.as_f64() {
+        return Ok((0.5, n));
+    }
+    if let Some(s) = v.as_str() {
+        return Err(ParseError::InvalidValue {
+            field: field.into(),
+            reason: format!(
+                "`over:` takes shares of the element's box as numbers — \
+                 `{field}: 0.3` — not {s:?}. A percent string is the spelling \
+                 for shares of the screen, which is `swipe: {{ from, to }}` \
+                 without `over:`"
+            ),
+        });
+    }
+    let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
+        field: field.into(),
+        reason: "expected a number (share along the axis) or `{x, y}`".into(),
+    })?;
+    let x = map
+        .get(Value::String("x".into()))
+        .and_then(Value::as_f64)
+        .ok_or_else(|| ParseError::MissingField(format!("{field}.x")))?;
+    let y = map
+        .get(Value::String("y".into()))
+        .and_then(Value::as_f64)
+        .ok_or_else(|| ParseError::MissingField(format!("{field}.y")))?;
+    Ok((x, y))
 }
 
 fn parse_xy(v: &Value, field: &str) -> Result<(f64, f64), ParseError> {

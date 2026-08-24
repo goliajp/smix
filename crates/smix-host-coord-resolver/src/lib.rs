@@ -90,6 +90,53 @@ pub enum HostResolveError {
     },
 }
 
+/// A point at a share of the matched node's box, in app-frame
+/// normalized coords.
+///
+/// [`resolve_to_norm_coord`] answers with the centre, which is what a
+/// tap wants. A swipe inside an element wants two points that are not
+/// the centre: `(0.5, 0.3)` is halfway across and three tenths down its
+/// box. That is the difference between a flow that says "drag this
+/// timeline from a third to four fifths" and one that measured 49% of
+/// the screen on two devices and took the overlap.
+///
+/// Same guards as the centre, and for the same reasons: an empty node
+/// frame or an unknown app frame is refused rather than divided by, and
+/// a point outside the app frame is refused rather than clamped —
+/// clamping would swipe somewhere the caller did not ask for and report
+/// success.
+///
+/// `share` is not clamped either. `(1.5, 0.5)` is a caller asking for a
+/// point outside the element it named, which is a mistake worth saying
+/// out loud rather than quietly turning into the edge.
+///
+/// # Errors
+///
+/// [`HostResolveError`], as [`resolve_to_norm_coord`].
+#[must_use = "the coordinate should be passed to an injector"]
+pub fn resolve_to_norm_point_in_box(
+    tree: &A11yNode,
+    selector: &Selector,
+    share: (f64, f64),
+) -> Result<(f64, f64), HostResolveError> {
+    let node = resolve_selector(tree, selector).ok_or(HostResolveError::NotFound)?;
+    let app_frame = tree.bounds;
+    if app_frame.w <= 0.0 || app_frame.h <= 0.0 {
+        return Err(HostResolveError::UnknownAppFrame);
+    }
+    if node.bounds.w <= 0.0 || node.bounds.h <= 0.0 {
+        return Err(HostResolveError::EmptyMatchedFrame);
+    }
+    let x = node.bounds.x + node.bounds.w * share.0;
+    let y = node.bounds.y + node.bounds.h * share.1;
+    let nx = x / app_frame.w;
+    let ny = y / app_frame.h;
+    if !(0.0..=1.0).contains(&nx) || !(0.0..=1.0).contains(&ny) {
+        return Err(HostResolveError::CentroidOutOfFrame { nx, ny });
+    }
+    Ok((nx, ny))
+}
+
 /// Resolve `selector` against `tree` and produce a normalized tap
 /// coordinate `(nx, ny)` in `(0, 1)`.
 ///

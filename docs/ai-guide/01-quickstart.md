@@ -28,6 +28,28 @@ cargo build --release   # ~30s cold, <5s warm
 ls target/release/smix
 ```
 
+### If you are scripting smix, resolve it from PATH
+
+The three lines above install to three different places — npm's global
+prefix, cargo's `~/.cargo/bin`, and a build tree — and none of them is
+"where smix lives". A consumer's runner hard-coded `~/.local/bin/smix`,
+the machine had the npm one, and the whole line failed with `smix not
+found` before a single flow ran.
+
+```bash
+SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
+[ -n "$SMIX_BIN" ] || { echo "smix is not on PATH" >&2; exit 1; }
+```
+
+Keep the `SMIX_BIN` override: it is how you point a script at a build
+tree without reinstalling, and it is what smix's own gates use.
+
+**A gate in your own tree should pass its build, not whatever is on
+PATH.** The two are different questions and the difference is a released
+version: running a gate bare here once tested the globally installed
+6.8.0 while the change under test sat in `target/release`. The gate said
+green about a binary nobody was changing.
+
 One binary, one product: `smix`. All subcommands (boot, runner, run a flow, low-level probes) live under it.
 
 ## Start here: a dedicated device for your project
