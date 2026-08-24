@@ -80,6 +80,17 @@ pub enum FailureCode {
     CoordinateSpaceMismatch,
     /// Catch-all for runner / driver / IO failures.
     DriverError,
+    /// The device's capture path is under load and refusing frames for a
+    /// stated window — the screenshot pacer's circuit is open.
+    ///
+    /// Separate from [`Self::DriverError`] because the two want opposite
+    /// responses and only one of them is a defect. A driver error means
+    /// something is broken; this means "not now, try again shortly", and
+    /// a caller with time left can simply keep waiting. It arrived as a
+    /// `DriverError` until 7.1, which is how a consumer's release gate
+    /// met it: `FAIL [DRIVER_ERROR]` from `waitForAnimationToEnd`, a
+    /// verb whose entire meaning is to wait.
+    CaptureBackpressure,
 }
 
 /// Structured failure thrown by SDK matchers and driver calls. Shape
@@ -254,6 +265,7 @@ fn format_code(c: FailureCode) -> &'static str {
         FailureCode::TapMissed => "TAP_MISSED",
         FailureCode::CoordinateSpaceMismatch => "COORDINATE_SPACE_MISMATCH",
         FailureCode::DriverError => "DRIVER_ERROR",
+        FailureCode::CaptureBackpressure => "CAPTURE_BACKPRESSURE",
     }
 }
 
@@ -392,6 +404,39 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
     dp[b_len]
 }
 
+impl FailureCode {
+    /// Every code, once.
+    ///
+    /// Exported because the alternative is a second hand-written copy,
+    /// and there was one: `tests/sdk_failure_code_parity.rs` kept its
+    /// own `all_variants()` list, and every assertion in that file —
+    /// the three SDK declarations and the errors guide — is derived
+    /// from it. Its docstring said adding a variant would stop the file
+    /// compiling. That stopped being true when the exhaustiveness guard
+    /// moved in here, because `#[non_exhaustive]` makes an outside
+    /// `match` accept anything; adding `CaptureBackpressure` in 7.1 left
+    /// all seven of those assertions green while no SDK declared it.
+    ///
+    /// [`Self::ALL`] is the one list. The exhaustive match in
+    /// `the_vocabulary_is_pinned` guards it from in here, where
+    /// `non_exhaustive` cannot weaken the match, and everything else
+    /// reads it rather than repeating it.
+    pub const ALL: &'static [FailureCode] = &[
+        FailureCode::ElementNotFound,
+        FailureCode::NotVisible,
+        FailureCode::NotEnabled,
+        FailureCode::Ambiguous,
+        FailureCode::Timeout,
+        FailureCode::AssertionFailed,
+        FailureCode::AppNotRunning,
+        FailureCode::SimulatorNotBooted,
+        FailureCode::TapMissed,
+        FailureCode::CoordinateSpaceMismatch,
+        FailureCode::DriverError,
+        FailureCode::CaptureBackpressure,
+    ];
+}
+
 #[cfg(test)]
 mod vocabulary {
     use super::*;
@@ -408,20 +453,8 @@ mod vocabulary {
     /// parity test reads, then the errors guide.
     #[test]
     fn the_vocabulary_is_pinned() {
-        let every = [
-            FailureCode::ElementNotFound,
-            FailureCode::NotVisible,
-            FailureCode::NotEnabled,
-            FailureCode::Ambiguous,
-            FailureCode::Timeout,
-            FailureCode::AssertionFailed,
-            FailureCode::AppNotRunning,
-            FailureCode::SimulatorNotBooted,
-            FailureCode::TapMissed,
-            FailureCode::CoordinateSpaceMismatch,
-            FailureCode::DriverError,
-        ];
-        for code in every {
+        let every = FailureCode::ALL;
+        for &code in every {
             match code {
                 FailureCode::ElementNotFound
                 | FailureCode::NotVisible
@@ -433,7 +466,8 @@ mod vocabulary {
                 | FailureCode::SimulatorNotBooted
                 | FailureCode::TapMissed
                 | FailureCode::CoordinateSpaceMismatch
-                | FailureCode::DriverError => {}
+                | FailureCode::DriverError
+                | FailureCode::CaptureBackpressure => {}
             }
             // Every code renders as a wire string, and a code whose
             // string nobody wrote would reach a consumer as whatever
@@ -442,7 +476,7 @@ mod vocabulary {
         }
         assert_eq!(
             every.len(),
-            11,
+            12,
             "counted off the list above, not remembered"
         );
     }

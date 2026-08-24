@@ -284,10 +284,26 @@ one that stops.
 #
 # On iOS nothing is quietened — no host-side lever exists — so this
 # verb keeps its full value there.
-- waitForAnimationToEnd                  # bare form: 400 ms (maestro-compat)
-- waitForAnimationToEnd: 500             # integer: sleep N ms
+- waitForAnimationToEnd                  # bare form: ceiling 400 ms (maestro-compat)
+- waitForAnimationToEnd: 500             # integer: ceiling 500 ms
 - waitForAnimationToEnd:
-    timeout: 5000                        # maestro-canonical map form
+    timeout: 5000                        # map form: ceiling 5000 ms (maestro-canonical)
+
+# The number is a CEILING in all three forms, never a sleep. The verb
+# samples the screen and returns as soon as two frames match, so a still
+# screen costs two captures and not the number written here. It used to
+# sleep, which charged for an animation whether or not one ran; this note
+# said "sleep N ms" for longer than that was true, and a consumer wrote
+# `waitForAnimationToEnd: 500` meaning "pause here" on the strength of it.
+#
+# There is no bare sleep verb, deliberately. To wait for something, name
+# it: `extendedWaitUntil` for an element. If the thing you are waiting for
+# is not in the tree at all, that is a gap worth reporting rather than
+# routing around with a pause.
+#
+# A screen that never settles is a warning, not a failure — so is a window
+# in which the device refused every capture (see CAPTURE_BACKPRESSURE in
+# the errors guide). The verb waits refusals out inside its own ceiling.
 
 - extendedWaitUntil:
     visible: "Loading complete"

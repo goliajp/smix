@@ -16,30 +16,19 @@ use std::collections::BTreeSet;
 
 /// Every variant, listed once.
 ///
-/// The exhaustive match below is the mechanical link: adding a variant to
-/// `FailureCode` stops this file compiling until the variant is added
-/// here too, and every assertion in this test file is derived from this
-/// list by serializing it — no wire string is spelled out by hand.
+/// Every code, read from the crate rather than copied.
+///
+/// This was a hand-written list whose docstring promised the mechanical
+/// link it no longer had: the exhaustiveness guard moved into the crate
+/// (`the_vocabulary_is_pinned`), and `#[non_exhaustive]` means a `match`
+/// out here would accept a new variant silently — so nothing connected
+/// this file to the enum at all. Adding `CaptureBackpressure` in 7.1
+/// left all seven assertions below green while no SDK declared it.
+///
+/// A second copy of a list is not a check on the first one. There is one
+/// list now, [`FailureCode::ALL`], guarded from inside the crate.
 fn all_variants() -> Vec<FailureCode> {
-    let all = vec![
-        FailureCode::ElementNotFound,
-        FailureCode::NotVisible,
-        FailureCode::NotEnabled,
-        FailureCode::Ambiguous,
-        FailureCode::Timeout,
-        FailureCode::AssertionFailed,
-        FailureCode::AppNotRunning,
-        FailureCode::SimulatorNotBooted,
-        FailureCode::TapMissed,
-        FailureCode::CoordinateSpaceMismatch,
-        FailureCode::DriverError,
-    ];
-    // The exhaustiveness guard moved into the crate — see
-    // `the_vocabulary_is_pinned` in src/lib.rs. `FailureCode` is
-    // `#[non_exhaustive]`, so a `match` out here would accept a new
-    // variant silently, which is the opposite of what that guard is
-    // for. This list is still the one every SDK is compared against.
-    all
+    FailureCode::ALL.to_vec()
 }
 
 /// The wire strings, straight off serde.
@@ -76,8 +65,31 @@ fn block<'a>(src: &'a str, opener: &str, closer: &str, what: &str) -> &'a str {
     &rest[..end]
 }
 
+/// Drop comment bodies before anything counts quotes.
+///
+/// An apostrophe in prose is a quote character to a splitter. One
+/// `device's` in a `//` doc line above `| 'CAPTURE_BACKPRESSURE'` flipped
+/// the parity of every quote after it, and the union read eleven codes
+/// out of twelve — a loud red, but one that blamed the declaration for
+/// something a sentence above it had done. Comments describe the codes;
+/// they are never a declaration of one.
+fn without_comments(s: &str) -> String {
+    s.lines()
+        .map(|line| {
+            let t = line.trim_start();
+            if t.starts_with("//") || t.starts_with("/*") || t.starts_with('*') {
+                ""
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Every `"..."`-quoted string in `s`, using `quote` as the delimiter.
 fn quoted(s: &str, quote: char) -> Vec<String> {
+    let s = &without_comments(s);
     let mut out = Vec::new();
     let mut it = s.split(quote);
     // Odd indices are the insides of the quotes.

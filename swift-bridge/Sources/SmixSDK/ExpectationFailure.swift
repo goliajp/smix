@@ -82,4 +82,6 @@ public enum FailureCode: String, Sendable, Codable, Equatable, CaseIterable {
     case coordinateSpaceMismatch = "COORDINATE_SPACE_MISMATCH"
     /// Catch-all for runner / driver / IO failures.
     case driverError = "DRIVER_ERROR"
+    /// The device's capture path is under load and refusing frames for a stated window. Not a defect and not a driver error: it means "not now, try again shortly", so a caller with time left can keep waiting rather than fail.
+    case captureBackpressure = "CAPTURE_BACKPRESSURE"
 }

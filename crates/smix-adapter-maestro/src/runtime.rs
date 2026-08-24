@@ -154,6 +154,24 @@ fn launch_fresh_app_path_from_env(bundle_id: &str) -> Option<String> {
     std::env::var(&key).ok().filter(|s| !s.is_empty())
 }
 
+/// How a stillness wait ended.
+///
+/// Three, not two. A bool said "settled or not", and a window in which
+/// nothing could be looked at is neither — reporting it as "still
+/// moving" would claim an observation nobody made, and reporting it as
+/// a failure is what stopped a consumer's release pipeline on a verb
+/// that exists in order to wait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stillness {
+    /// Two consecutive frames matched within tolerance.
+    Settled,
+    /// The ceiling expired with the screen still changing.
+    StillMoving,
+    /// The ceiling expired without one usable pair of frames: every
+    /// capture in the window was refused as backpressure.
+    NeverObserved,
+}
+
 // ----------------------------------------------------------------------
 // AppLike trait + blanket impl for smix_sdk::App
 // ----------------------------------------------------------------------
@@ -1577,21 +1595,68 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// motion: a frame we cannot compare is a broken toolchain, and silently
     /// treating it as "still moving" would burn the whole ceiling on every
     /// step and look like a slow device.
-    async fn wait_until_still(&self, ceiling_ms: u64) -> Result<bool, RunError> {
-        // No sleep between samples: the capture is the interval. The raw-BGRA
-        // capture path grabs a frame directly from the resident IOSurface host
-        // (~sub-ms) and compares grayscale in place — no PNG encode/decode. It
-        // falls back to a simctl PNG frame when the surface is unavailable, and
-        // `frames_still` compares BGRA and PNG frames interchangeably.
+    /// Whether a stillness wait ended settled, still moving, or without
+    /// ever getting a look.
+    ///
+    /// The third one is the point. Screenshot backpressure means "not
+    /// now, shortly" — the device's capture path is under load and the
+    /// pacer is refusing frames to keep from crashing the render server.
+    /// This verb owns a budget, so it spends it waiting rather than
+    /// failing, which is what a verb whose entire meaning is "wait"
+    /// should do when told to wait. It arrived as a step failure until
+    /// 7.1 and stopped a consumer's release pipeline, while the same
+    /// verb has always treated a screen that never settles as a warning.
+    /// Those two answers could not both be right.
+    ///
+    /// Only that one code is absorbed. An undecodable frame, an
+    /// unreachable runner — everything else is still a real failure and
+    /// still ends the step.
+    async fn wait_until_still(&self, ceiling_ms: u64) -> Result<Stillness, RunError> {
+        // No sleep between successful samples: the capture is the
+        // interval. The raw-BGRA capture path grabs a frame directly from
+        // the resident IOSurface host (~sub-ms) and compares grayscale in
+        // place — no PNG encode/decode. It falls back to a simctl PNG
+        // frame when the surface is unavailable, and `frames_still`
+        // compares BGRA and PNG frames interchangeably.
+        //
+        // A refusal is different: re-asking a loaded capture path
+        // immediately is what put it under pressure, so a refused sample
+        // does sleep. The interval is ours rather than the window the
+        // pacer states, because the deadline below is what actually ends
+        // this — reading a duration back out of a message would be
+        // parsing prose for a decision.
+        const REFUSED_RETRY: Duration = Duration::from_millis(100);
         let deadline = std::time::Instant::now() + Duration::from_millis(ceiling_ms);
-        let mut previous = self.app.capture_frame().await?;
+
+        let mut previous = loop {
+            match self.app.capture_frame().await {
+                Ok(frame) => break frame,
+                Err(e) if e.code == FailureCode::CaptureBackpressure => {
+                    if std::time::Instant::now() >= deadline {
+                        return Ok(Stillness::NeverObserved);
+                    }
+                    tokio::time::sleep(REFUSED_RETRY).await;
+                }
+                Err(e) => return Err(RunError::Sdk(e)),
+            }
+        };
         loop {
-            let next = self.app.capture_frame().await?;
+            let next = match self.app.capture_frame().await {
+                Ok(frame) => frame,
+                Err(e) if e.code == FailureCode::CaptureBackpressure => {
+                    if std::time::Instant::now() >= deadline {
+                        return Ok(Stillness::NeverObserved);
+                    }
+                    tokio::time::sleep(REFUSED_RETRY).await;
+                    continue;
+                }
+                Err(e) => return Err(RunError::Sdk(e)),
+            };
             if smix_sdk::quiescence::frames_still(&previous, &next, &self.quiescence)? {
-                return Ok(true);
+                return Ok(Stillness::Settled);
             }
             if std::time::Instant::now() >= deadline {
-                return Ok(false);
+                return Ok(Stillness::StillMoving);
             }
             previous = next;
         }
@@ -1669,14 +1734,23 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::WaitForAnimationToEnd { ceiling_ms } => {
-                if !self.wait_until_still(*ceiling_ms).await? {
+                match self.wait_until_still(*ceiling_ms).await? {
+                    Stillness::Settled => {}
                     // Not a failure. A screen that never settles is usually
                     // a spinner or a caret the flow doesn't care about, and
                     // failing here would make the verb unusable on any screen
                     // with one.
-                    warnings.push(format!(
+                    Stillness::StillMoving => warnings.push(format!(
                         "waitForAnimationToEnd: the screen was still moving after {ceiling_ms}ms; carrying on. Raise the ceiling if the animation really is longer."
-                    ));
+                    )),
+                    // Same answer, different reason, and the reason has to
+                    // be in the caller's terms: the pacer's internal state
+                    // is not something a flow author can act on, and
+                    // reporting it sent one consumer looking at their own
+                    // image diffs for a day.
+                    Stillness::NeverObserved => warnings.push(format!(
+                        "waitForAnimationToEnd: never got a look at the screen in {ceiling_ms}ms — the device's capture path was refusing frames for the whole window, so nothing here saw whether it settled. Carrying on. This is about the device, not the flow: a simulator that has been up long enough to go slow is the usual cause."
+                    )),
                 }
                 Ok(RunStepReport::Ok)
             }

@@ -179,6 +179,30 @@ point, which is why it has its own code.
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
 
+### CAPTURE_BACKPRESSURE
+
+**Trigger**: the simulator's capture path is under load and is refusing
+frames for a stated window. `xcrun simctl io … screenshot` at high
+frequency can crash `SimRenderServer`, so smix paces those calls; when
+recent captures run long, or one fails, the pacer opens a circuit for a
+few seconds and refuses rather than pushing a degraded render server
+further.
+
+**Not a `DRIVER_ERROR`**: nothing is broken. It means *not now, shortly* —
+the `hint` carries the window. Before 7.1 it arrived as a driver error and
+a consumer's release gate could not tell the two apart.
+
+**What to do**:
+- **A verb that waits already handles it.** `waitForAnimationToEnd` keeps
+  waiting inside its own ceiling and only gives up when the ceiling does,
+  reporting that it could not observe the screen — not the pacer's state.
+- **Anywhere else**: retry after the window in the hint. A run that meets
+  this repeatedly is telling you about the simulator, not about the flow —
+  the usual cause is a long-lived simulator under accumulated load, and a
+  clean restart clears it.
+- It cannot be turned off, and that is deliberate: the alternative it
+  replaced was a crashed simulator mid-flow.
+
 ## Device access errors
 
 These fire before any flow step runs — they are about whether smix may
