@@ -19,6 +19,6 @@ workspace = true
 [dependencies]
 serde.workspace = true
 serde_norway.workspace = true
-smix-verbs = { path = "../smix-verbs", version = "6.8.0" }
+smix-verbs = { path = "../smix-verbs", version = "6.8.1" }
 thiserror.workspace = true
 

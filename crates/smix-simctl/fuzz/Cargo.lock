@@ -497,7 +497,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -537,7 +537,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smix-error"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "serde",
  "smix-screen",
@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "smix-lease"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "chrono",
  "serde",
@@ -556,14 +556,14 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-selector"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "regex",
  "serde",
@@ -572,14 +572,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "libc",
  "serde",
@@ -603,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -634,9 +634,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.3"
+version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
+checksum = "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -660,7 +660,7 @@ checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -687,7 +687,7 @@ checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]

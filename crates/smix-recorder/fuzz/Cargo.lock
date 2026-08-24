@@ -40,7 +40,7 @@ checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -125,9 +125,9 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "crc32fast"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
+checksum = "8498c871161e1742aaa9d52551b2d6ebdd4c3d45a3be423e3728f33b955be550"
 dependencies = [
  "cfg-if",
 ]
@@ -140,7 +140,7 @@ checksum = "c6232dd377dcc64799954cbd3a9bb882e9cdc1308ccd87b1c098f1fb2eaf82a8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -891,7 +891,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -968,7 +968,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "smix-adb"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -979,7 +979,7 @@ dependencies = [
 
 [[package]]
 name = "smix-authoring-ir"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "serde",
  "smix-input",
@@ -988,7 +988,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "async-trait",
  "serde_json",
@@ -1006,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "serde",
  "smix-screen",
@@ -1015,7 +1015,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1025,14 +1025,14 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-lease"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "chrono",
  "serde",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "smix-recorder"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1068,7 +1068,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "reqwest",
  "serde",
@@ -1086,7 +1086,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1097,14 +1097,14 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-sdk"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "regex",
  "serde",
@@ -1136,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "smix-screen",
  "smix-selector",
@@ -1144,14 +1144,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "libc",
  "serde",
@@ -1166,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "6.8.0"
+version = "6.8.1"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -1203,9 +1203,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.3"
+version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
+checksum = "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1249,7 +1249,7 @@ checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -1286,7 +1286,7 @@ checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -1629,7 +1629,7 @@ checksum = "34df6fc39dbd26ddc9c10e6a2984476e13acce22e64e4487636ef494369225da"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]

@@ -2,6 +2,51 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [6.8.1] — 2026-08-24
+
+Nothing here changes what smix does. It is a dependency move, and the gate
+that would have caught what the move left behind.
+
+### Changed
+
+- **The embedded store is built against `kevy-embedded` 5.4.1.** 5.4's
+  headline is the packed row — a declared table's row stored as one
+  allocation rather than a per-row hash table — and the reason to mention
+  it is that it does not reach an embed. `packed-rows` is a `[server]`
+  config key in kevy's server binary; the published `kevy-embedded` does
+  not contain the word, and the setter behind it is neither called nor
+  re-exported by the facade. A declared table would be needed on top of
+  that, and smix declares none. A row here keeps the general
+  representation whatever the server's default becomes.
+
+  Nothing moves on the wire or on disk, and that was checked rather than
+  read off a release note — both directions, against the 7.3 MB store one
+  machine has been writing for months rather than a fixture. 5.4.1 and 5.3
+  each read the same bytes to the same 258 records, byte for byte; then
+  5.4.1 wrote to a copy, 5.3 reopened it, replayed clean, and returned all
+  35 keys, the only one changed being the record that write touches. **A
+  6.8.0 smix still opens a data directory a 6.8.1 smix has written.**
+
+### Gates
+
+- **Every fuzz lockfile must still satisfy the manifests above it.** The
+  kevy bump left four of them pinning 5.3.0 against a requirement that now
+  reads 5.4.1, and a full green CI run said nothing: no gate read those
+  files, and `--locked` appeared nowhere in the workflow. The bump before
+  it left the same wreck and was tidied by the next release regenerating
+  everything — which reads like a convention and is really the next
+  person's cargo command rewriting a file nobody checked. An unsatisfiable
+  lockfile pins nothing.
+
+  The check is `cargo metadata --locked` over every `crates/*/fuzz`. It
+  deliberately does not compare versions against the workspace lockfile:
+  those trees resolve independently and 332 transitive packages differ
+  between them today, every one of them a valid resolution.
+
+  Two of the fifteen fuzz crates shipped with cargo-fuzz's default
+  `.gitignore`, which ignores `Cargo.lock`. Both are tracked now —
+  otherwise the way to pass this gate is to stop tracking the file.
+
 ## [6.8.0] — 2026-08-23
 
 ### Fixed
