@@ -9,11 +9,12 @@ reports what arrived instead of what smix believes it sent.
 
 import json
 import sys
+from verdict_io import read_json
 
 
 def main() -> int:
     tree_path, marker = sys.argv[1], sys.argv[2]
-    tree = json.load(open(tree_path))
+    tree = read_json(tree_path, "the tree")
 
     found: dict[str, str] = {}
 

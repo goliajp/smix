@@ -93,6 +93,22 @@ if os.path.isfile(LIST):
             f"this scan parsed none — the table's shape changed and the scan is "
             f"reading air"
         )
+else:
+    # The witness above only ran when the file was there, so its absence
+    # fell straight through: `rows()` answered `[]`, the loop did
+    # nothing, and the gate said yes about a list it had never seen.
+    # Found by taking the file away and watching this stay green.
+    #
+    # An empty list and a missing list are not the same statement. An
+    # empty table says "nothing is excused right now"; a missing file
+    # says nothing at all, while the corpus gate goes on reading it for
+    # excuses.
+    problems.append(
+        f"{os.path.relpath(LIST, ROOT)} is not here. The corpus gate excuses "
+        f"FLAKE for the flows this file names, so its absence is not the same "
+        f"as it being empty — an empty table states that nothing is excused, "
+        f"and a missing file states nothing while the excusing continues."
+    )
 
 if problems:
     print("known-unstable-scan: FAIL")

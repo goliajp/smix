@@ -37,6 +37,20 @@ jobs:
         run: cargo fmt --all --check
       - name: clippy
         run: cargo clippy --workspace --all-targets
+      # The runner tarballs are compared against the trees they were built
+      # from, and that comparison lived inside `cargo test --workspace` — which
+      # is where it was found, twice in one cycle, at thirteen and thirty-one
+      # minutes. Both times the fix was one command and the cost was the wait.
+      #
+      # Buried inside an expensive check it is also invisible to
+      # `cheap-gates-come-first`: that gate reads a profile of named gates, and
+      # a judgement with no name of its own cannot be said to be in the wrong
+      # place. Naming it is what makes its position a choice somebody made.
+      #
+      # Measured at 64s on a warm tree, against ~40 minutes for the suite it
+      # used to hide in.
+      - name: runner tarballs match their sources
+        run: cargo test -p smix-runner-sources
       - name: cargo test
         run: cargo test --workspace
       - name: swift test
@@ -229,6 +243,20 @@ jobs:
       # a fixture here rather than something only a device can reach.
       - name: the A4 window verdict can still speak
         run: python3 scripts/dev/android-a4-verdict.test.py
+      # Eight verdicts existed and one had a self-test. Seven more by hand
+      # would test seven behaviours and miss the property they share, so
+      # this drives all of them against inputs designed to break a parser.
+      - name: every verdict answers in sentences
+        run: python3 scripts/dev/a-verdict-answers-in-sentences.py
+      - name: the verdict sweep can still go red
+        run: python3 scripts/dev/a-verdict-answers-in-sentences.test.py
+      # Takes each gate's subject away — the files it was observed to
+      # open — and checks it stops being green. Slow by nature: it copies
+      # the checkout once and runs every gate twice.
+      - name: no gate says yes with its subject gone
+        run: python3 scripts/dev/a-gate-without-its-subject.py
+      - name: the subject sweep can still go red
+        run: python3 scripts/dev/a-gate-without-its-subject.test.py
       # Reads the corpus and its excuse list, both in the checkout.
       - name: known-unstable list scan
         run: python3 scripts/dev/known-unstable-scan.py

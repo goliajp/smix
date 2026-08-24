@@ -13,10 +13,11 @@ does not come from the path under test.
 
 import json
 import sys
+from verdict_io import read_json
 
 
 def main() -> int:
-    tree, marker = json.load(open(sys.argv[1])), sys.argv[2]
+    tree, marker = read_json(sys.argv[1], "the tree"), sys.argv[2]
     found: dict[str, object] = {}
 
     def walk(node: dict) -> None:

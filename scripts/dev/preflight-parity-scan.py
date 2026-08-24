@@ -32,6 +32,10 @@ LOCAL = {
     "rustfmt": "cargo fmt --all --check",
     "clippy": "cargo clippy",
     "cargo test": "cargo test",
+    # preflight reaches this crate through the embedder rule near the
+    # top of the file — a change under `swift-bridge/` or
+    # `android-runner/` selects `smix-runner-sources` into $CRATES.
+    "runner tarballs match their sources": "smix-runner-sources",
     "swift test": "swift test",
     "unit tests + androidTest compile (no device — instrumentation runs at ship)": "assembleDebugAndroidTest",
     "hygiene scan": "hygiene-scan",
@@ -62,6 +66,10 @@ LOCAL = {
     "fuzz lockfiles are usable": "fuzz-lockfiles-are-usable",
     "the fuzz-lockfile gate can still go red": "fuzz-lockfiles-are-usable.test",
     "the A4 window verdict can still speak": "android-a4-verdict.test",
+    "every verdict answers in sentences": "a-verdict-answers-in-sentences",
+    "the verdict sweep can still go red": "a-verdict-answers-in-sentences.test",
+    "no gate says yes with its subject gone": "a-gate-without-its-subject",
+    "the subject sweep can still go red": "a-gate-without-its-subject.test",
     "known-unstable list scan": "known-unstable-scan",
     "corpus portability scan": "corpus-portability-scan",
     "portable tier parity": "portable-tier-parity",

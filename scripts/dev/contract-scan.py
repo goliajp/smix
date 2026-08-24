@@ -60,6 +60,8 @@ BESIDE = {
     "audit-ledger.md": "internal defect accounting",
     "scope-evidence.md": "internal scope accounting",
     "guide-executability.md": "what the guides claim versus what runs",
+    "open-items.md": "the open ones, grouped by root cause rather than by symptom",
+    "scope-decisions-pending.md": "scope calls waiting on the owner; empty is a state, not an absence",
 }
 
 

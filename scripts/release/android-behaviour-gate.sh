@@ -542,5 +542,75 @@ done
 python3 "$REPO_ROOT/scripts/release/android-a12-verdict.py" "$WORK/a12-up.json" present \
   || die "A12: see above. $WORK/a12-up.json"
 
+# A13 — a swipe aimed inside a named element reaches this platform too.
+#
+# Weaker than its iOS counterpart, and deliberately so rather than by
+# omission. `keyboard-comes-and-goes.yaml` asserts an effect — a row far
+# enough down to be off-screen at rest is on screen after two swipes
+# inside the list — and this fixture has no scrollable list to make that
+# assertion against.
+#
+# What differs by platform here is only the driver's swipe dispatch: the
+# resolution and the arithmetic that turns shares of a box into points
+# are host-side and shared. So this asks the part that is actually
+# per-platform — the element resolves against the Android tree and the
+# swipe goes — and the control asks the failure that matters, which is
+# that an element it cannot find produces no swipe at all rather than a
+# sweep across the middle of the screen.
+# A file rather than `/dev/stdin`: a heredoc is an fd the child cannot
+# reopen by name, and `smix run` takes a path.
+cat > "$WORK/a13-over.yaml" <<'A13FLOW'
+appId: dev.smix.fixture
+---
+# The assertions before this one leave the app wherever they left it, so
+# this says what it wants in front — and then waits for it. `launchApp`
+# returning is not the tree being ready on Android: a flow that asserts
+# straight after it fails with the element not found while `/tree` a
+# moment later has it. That is its own defect (open-items B9) and not
+# this assertion's subject, so this waits the way the iOS corpus flow
+# does rather than racing it.
+- launchApp
+- extendedWaitUntil:
+    visible: { id: "fixture_input" }
+    timeout: 10000
+- swipe:
+    over: { id: "fixture_input" }
+    from: 0.2
+    to: 0.8
+A13FLOW
+# Through the proxy, like every other driving call here: the rest of
+# this gate passes --port "$PROXY_PORT", and a call that does not
+# reaches a different endpoint with a different view of the app.
+"$SMIX_BIN" run "$WORK/a13-over.yaml" --platform android --device "$SERIAL" \
+  --port "$PROXY_PORT" > "$WORK/a13-over.log" 2>&1
+if [ $? -ne 0 ]; then
+  die "A13: a swipe over a named element failed: $(tail -3 "$WORK/a13-over.log")"
+fi
+echo "  A13a: a swipe aimed inside fixture_input reached the device"
+
+cat > "$WORK/a13-absent.yaml" <<'A13ABSENT'
+appId: dev.smix.fixture
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: "fixture_input" }
+    timeout: 10000
+- swipe:
+    over: { id: "no-such-element" }
+    from: 0.2
+    to: 0.8
+A13ABSENT
+# Through the proxy, like every other driving call here: the rest of
+# this gate passes --port "$PROXY_PORT", and a call that does not
+# reaches a different endpoint with a different view of the app.
+"$SMIX_BIN" run "$WORK/a13-absent.yaml" --platform android --device "$SERIAL" \
+  --port "$PROXY_PORT" > "$WORK/a13-absent.log" 2>&1
+if [ $? -eq 0 ]; then
+  die "A13: a swipe over an element that is not there reported success. \
+Falling back to shares of the screen would swipe across whatever is showing \
+and call the step done — which is the form \`over:\` exists to replace."
+fi
+echo "  A13b: an element that is not there is refused, not swept over"
+
 ASSERTIONS=$(grep -cE '^# A[0-9]+( control)? —' "$0")
 echo "android behaviour gate: $ASSERTIONS/$ASSERTIONS assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"

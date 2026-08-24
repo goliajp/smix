@@ -251,8 +251,49 @@ def main():
     dead = [] if noise_only else scan_dead_pointers(files)
     grand = sum(totals.values())
 
+    # An exemption for something that is not there is an escape hatch
+    # nobody checks the far side of: it satisfies this check forever
+    # while describing a file that has gone. `scope-decisions-pending.md`
+    # sat here after the file it names was removed, printing "0 left"
+    # about nothing at all.
+    #
+    # A path, not a prefix: `research/` and the rest are directories that
+    # may legitimately be empty, and `.gitignore` and the docs are files
+    # that must exist to be excused.
+    #
+    # Layer three is the exception, and it is an exception about SHAPE
+    # rather than about this file. The charter (§9 #7) says exactly one
+    # of `plan-hot.md` and `plan-hot.awaiting.md` exists at any moment —
+    # the second is what "archived, waiting for someone to speak" looks
+    # like written down. An exemption naming one of them by path is
+    # therefore wrong half the time, and it went red here the moment a
+    # checkpoint was archived. What is excused is the layer, so what is
+    # asked is whether the layer is there at all.
+    ALTERNATES = {
+        ".claude/docs/plan-hot.md": ".claude/docs/plan-hot.awaiting.md",
+        ".claude/docs/plan-hot.awaiting.md": ".claude/docs/plan-hot.md",
+    }
+
+    def present(rel: str) -> bool:
+        if os.path.exists(os.path.join(ROOT, rel)):
+            return True
+        other = ALTERNATES.get(rel)
+        return bool(other) and os.path.exists(os.path.join(ROOT, other))
+
+    ghosts = [p for p, _ in EXCLUSIONS if not p.endswith("/") and not present(p)]
+
     for path, reason in EXCLUSIONS:
         print(f"hygiene-scan: {owed[path]:4d} left in {path} — not swept ({reason})")
+
+    if ghosts:
+        print("\nhygiene-scan: FAIL — excused a file that is not here")
+        for g in ghosts:
+            print(f"  {g}: exempted from the sweep, and there is nothing at that path.")
+        print(
+            "  An exemption outliving its subject passes forever while "
+            "describing nothing. Remove the line, or restore the file."
+        )
+        return 1
 
     if grand == 0 and not dead:
         scope = "no development noise" if noise_only else "no development noise, no dead doc pointers"

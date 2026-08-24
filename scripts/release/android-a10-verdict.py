@@ -20,10 +20,11 @@ on the way.
 
 import json
 import sys
+from verdict_io import read_json
 
 
 def main() -> int:
-    tree = json.load(open(sys.argv[1]))
+    tree = read_json(sys.argv[1], "the tree")
     named, expected = sys.argv[2], sys.argv[3]
     bystander, bystander_len = sys.argv[4], int(sys.argv[5])
     seen: dict[str, str] = {}
