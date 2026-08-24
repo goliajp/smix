@@ -44,6 +44,7 @@ Usage:  a-gate-without-its-subject.py [repo-root]
 import os
 import re
 import shutil
+import time
 import subprocess
 import sys
 import tempfile
@@ -60,6 +61,19 @@ SHIP = os.path.join("scripts", "release", "ship.sh")
 # shells out to cargo will hit this and be reported as unjudgeable
 # rather than silently counted either way.
 PER_RUN_TIMEOUT = 180
+
+# Paths that are not a subject: the interpreter reading itself, and the
+# kernel's randomness. Without this every gate "reads files outside the
+# tree" and nothing is ever judged.
+NOT_A_SUBJECT = (
+    "/lib/python",
+    "/site-packages/",
+    "Python.framework",
+    "/encodings/",
+    # Randomness, not evidence: `workflow-scan` reads it and taking it
+    # away would prove nothing about what the gate judges.
+    "/dev/",
+)
 
 AUDIT = '''
 import sys, os
@@ -168,6 +182,20 @@ def run_gate(tree, lang, rel, audit_dir):
         open(out_file, "w").close()
         env["SMIX_AUDIT_OUT"] = out_file
         env["PYTHONPATH"] = audit_dir + os.pathsep + env.get("PYTHONPATH", "")
+    started = time.time()
+    # macOS resolves /var to /private/var, so a path inside the copy can
+    # come back with a prefix the copy's own name does not match — three
+    # gates were filed as reading "outside the tree" while reading the
+    # tree. And a gate that builds a fixture with `copy2` carries the
+    # originals' mtimes into it, so "newer than the run" cannot see that
+    # the directory is the gate's own: what can is which temp entries
+    # existed before it started.
+    real_tree = os.path.realpath(tree)
+    tmp_root = os.path.realpath(tempfile.gettempdir())
+    try:
+        tmp_before = set(os.listdir(tmp_root))
+    except OSError:
+        tmp_before = set()
     try:
         done = subprocess.run(
             [lang, os.path.join(tree, rel)],
@@ -188,18 +216,53 @@ def run_gate(tree, lang, rel, audit_dir):
         )
     except subprocess.TimeoutExpired:
         code, said = None, ""
-    opened = set()
+    opened, elsewhere = set(), set()
     if out_file and os.path.exists(out_file):
         for line in open(out_file, encoding="utf-8", errors="replace"):
             p = line.strip()
-            if not p.startswith(tree + os.sep):
+            if p.startswith(tree + os.sep) or p.startswith(real_tree + os.sep):
+                base = tree if p.startswith(tree + os.sep) else real_tree
+                r = os.path.relpath(p, base)
+                if r.startswith(".git" + os.sep) or r == rel:
+                    continue
+                if os.path.isfile(os.path.join(tree, r)):
+                    opened.add(r)
                 continue
-            r = os.path.relpath(p, tree)
-            if r.startswith(".git" + os.sep) or r == rel:
+            if not p:
                 continue
-            if os.path.isfile(os.path.join(tree, r)):
-                opened.add(r)
-    return code, opened, said
+            if not os.path.isabs(p):
+                # The gate runs with cwd=tree, so a relative path is an
+                # in-tree path spelled the short way. Reading it as
+                # "outside" made nine gates unjudgeable that were not.
+                r = os.path.normpath(p)
+                if os.path.isfile(os.path.join(tree, r)) and r != rel:
+                    opened.add(r)
+                continue
+            if not any(seg in p for seg in NOT_A_SUBJECT):
+                rp = os.path.realpath(p)
+                born_here = False
+                if rp.startswith(tmp_root + os.sep):
+                    entry = rp[len(tmp_root) + 1 :].split(os.sep)[0]
+                    born_here = entry not in tmp_before
+                if not born_here:
+                    try:
+                        born_here = os.path.getmtime(p) >= started
+                    except OSError:
+                        born_here = True
+                # A file the gate wrote during its own run is not a
+                # subject it reads — most gates spool through a temp
+                # file, and counting those made eighteen of them
+                # unjudgeable. What matters is a subject that was
+                # already there and that this sweep cannot take away.
+                if born_here:
+                    continue
+                # A subject this sweep cannot take away. `cheap-gates-
+                # come-first` reads the ship's profile from /tmp, so
+                # taking every in-tree file away left it green and this
+                # reported it as hollow — a finding about the
+                # instrument's reach, not about the gate.
+                elsewhere.add(p)
+    return code, opened, said, elsewhere
 
 
 def main() -> int:
@@ -233,7 +296,7 @@ def main() -> int:
             if lang != "python3":
                 not_observable.append(rel)
                 continue
-            base, opened, said = run_gate(tree, lang, rel, audit_dir)
+            base, opened, said, elsewhere = run_gate(tree, lang, rel, audit_dir)
             if base is None:
                 unjudgeable.append((rel, "timed out before it answered"))
                 continue
@@ -249,6 +312,17 @@ def main() -> int:
             if not opened:
                 no_subject.append(rel)
                 continue
+            if elsewhere:
+                # Judged only if everything it reads can be taken away.
+                unjudgeable.append(
+                    (
+                        rel,
+                        f"also reads {len(elsewhere)} file(s) outside the tree "
+                        f"(e.g. {sorted(elsewhere)[0]}) — taking the in-tree ones "
+                        f"away proves nothing about it",
+                    )
+                )
+                continue
             moved = []
             for r in sorted(opened):
                 src = os.path.join(tree, r)
@@ -259,7 +333,7 @@ def main() -> int:
                     moved.append(r)
                 except OSError:
                     pass
-            after, _, _ = run_gate(tree, lang, rel, None)
+            after, _, _, _ = run_gate(tree, lang, rel, None)
             for r in moved:
                 dst = os.path.join(tree, r)
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
