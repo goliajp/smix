@@ -269,6 +269,26 @@ def main():
     # therefore wrong half the time, and it went red here the moment a
     # checkpoint was archived. What is excused is the layer, so what is
     # asked is whether the layer is there at all.
+    def deliberately_absent(rel: str) -> bool:
+        """Is this path one git is told to ignore?
+
+        `.claude/` is development record and by the 2026-07-29 decision
+        is not version-controlled, so it is absent from every checkout —
+        CI's included. Reading that as "the exemption outlived its
+        subject" turned this check red on the first push that carried
+        it, for eleven paths that had not gone anywhere.
+
+        Asked of git rather than pattern-matched on the path, so the
+        answer moves when `.gitignore` does. A path that is simply gone
+        is not ignored, and still counts as a ghost.
+        """
+        r = subprocess.run(
+            ["git", "check-ignore", "--quiet", rel],
+            cwd=ROOT,
+            capture_output=True,
+        )
+        return r.returncode == 0
+
     ALTERNATES = {
         ".claude/docs/plan-hot.md": ".claude/docs/plan-hot.awaiting.md",
         ".claude/docs/plan-hot.awaiting.md": ".claude/docs/plan-hot.md",
@@ -280,10 +300,27 @@ def main():
         other = ALTERNATES.get(rel)
         return bool(other) and os.path.exists(os.path.join(ROOT, other))
 
-    ghosts = [p for p, _ in EXCLUSIONS if not p.endswith("/") and not present(p)]
+    ghosts = [
+        p
+        for p, _ in EXCLUSIONS
+        if not p.endswith("/") and not present(p) and not deliberately_absent(p)
+    ]
+    # Reported, not silently skipped: an exemption whose subject this
+    # checkout never carries is still an exemption nobody here can check.
+    unshipped = [
+        p
+        for p, _ in EXCLUSIONS
+        if not p.endswith("/") and not present(p) and deliberately_absent(p)
+    ]
 
     for path, reason in EXCLUSIONS:
         print(f"hygiene-scan: {owed[path]:4d} left in {path} — not swept ({reason})")
+    if unshipped:
+        print(
+            f"hygiene-scan: {len(unshipped)} exemption(s) name paths this checkout "
+            f"deliberately does not carry (development record, not version-controlled) "
+            f"— unchecked here, checked where that record lives"
+        )
 
     if ghosts:
         print("\nhygiene-scan: FAIL — excused a file that is not here")
