@@ -9,7 +9,7 @@ to Kotlin via UniFFI 0.29 bindings + a lazy lambda injection pattern.
 ```kotlin
 // android-runner/app/build.gradle.kts (consumer side)
 dependencies {
-    androidTestImplementation("jp.golia.smix:smix-sdk:7.0.0")
+    androidTestImplementation("jp.golia.smix:smix-sdk:8.0.0")
 }
 ```
 

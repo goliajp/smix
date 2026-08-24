@@ -194,14 +194,14 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "smix-screen"
-version = "7.0.0"
+version = "8.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "smix-selector"
-version = "7.0.0"
+version = "8.0.0"
 dependencies = [
  "regex",
  "serde",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "7.0.0"
+version = "8.0.0"
 dependencies = [
  "smix-screen",
  "smix-selector",

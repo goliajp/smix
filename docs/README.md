@@ -14,6 +14,7 @@ directory](#what-is-not-in-this-directory).
 |---|---|
 | [`ai-guide/01-quickstart.md`](./ai-guide/01-quickstart.md) | First flow, end to end. |
 | [`migrating-to-4.md`](./migrating-to-4.md) | Coming from 3.x. Device records moved to the machine; two SDK signatures changed. |
+| [`migrating-to-8.md`](./migrating-to-8.md) | Coming from 7.x. Four Rust signatures, and two answers that changed: a port is checked against the device you named, and `inputText` no longer succeeds with nothing focused. |
 | [`ai-guide/08-cookbook.md`](./ai-guide/08-cookbook.md) | Recipes for the situations that actually come up. |
 | [`ai-guide/07-errors.md`](./ai-guide/07-errors.md) | What a failure means and what to change. |
 
