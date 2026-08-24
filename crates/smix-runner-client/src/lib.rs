@@ -30,6 +30,21 @@
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-runner-client")]
 
+pub mod port_owner;
+
+/// Which host-side authority can say who holds a port.
+///
+/// The two platforms keep the mapping in different books — adb owns
+/// Android's forwards, and on Apple it is the process bound to the
+/// device — so the caller says which one to open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerProbe {
+    /// Ask `adb forward --list`.
+    Android,
+    /// Ask the process listening on the port.
+    Ios,
+}
+
 use serde::{Deserialize, Serialize};
 use smix_input::{KeyName, SwipeDirection};
 use smix_screen::{A11yNode, derive_roles_recursive};
@@ -67,6 +82,11 @@ pub enum RunnerTransportError {
     MalformedBody { endpoint: String, detail: String },
     #[error("runner {endpoint} unreachable: {message}")]
     Unreachable { endpoint: String, message: String },
+    /// The port this client talks to does not reach the device the
+    /// caller named. Raised before the request leaves, because a guard
+    /// that runs afterwards is a report.
+    #[error("refusing to drive this port: {reason}")]
+    WrongDevice { reason: String },
     /// The runner answered HTTP 200 with `{"ok":false}` — the handler
     /// ran and reports the action failed (element synthesis failed,
     /// unknown orientation, in-handler exception fallback, …). Eleven
@@ -380,6 +400,14 @@ pub struct HttpRunnerClient {
     /// the session's cached `XCUIApplication` binding — this is what
     /// eliminates the activation storm on long-running gates.
     session_id: Option<String>,
+    /// The device the caller aimed at, when it named one. Compared
+    /// against whoever actually holds the port, once, on first use.
+    expected_device: Option<String>,
+    /// Which authority to ask. `None` = do not ask, which is what every
+    /// eager path uses because it has already judged before connecting.
+    owner_probe: Option<OwnerProbe>,
+    /// The refusal, or its absence, computed once.
+    port_verdict: Arc<std::sync::OnceLock<Option<String>>>,
     /// Rolling-window state for liveness observability. `None` when
     /// disabled (default). See [`Self::with_liveness_window`].
     liveness: Arc<std::sync::Mutex<Option<LivenessState>>>,
@@ -548,6 +576,20 @@ impl HttpRunnerClient {
         Self::with_base(format!("http://127.0.0.1:{port}"))
     }
 
+    /// Judge, on the first request, whether this port reaches the named
+    /// device.
+    ///
+    /// Deferred rather than done here because the lazy construction path
+    /// exists for hosts that start before any runner does: at that
+    /// moment nobody holds the port, and judging it would refuse every
+    /// startup.
+    #[must_use]
+    pub fn with_port_owner_check(mut self, device: Option<String>, probe: OwnerProbe) -> Self {
+        self.expected_device = device;
+        self.owner_probe = Some(probe);
+        self
+    }
+
     /// Construct with an explicit base URL (test / non-localhost cases).
     pub fn with_base<S: Into<String>>(base: S) -> Self {
         let client = reqwest::Client::builder()
@@ -562,6 +604,9 @@ impl HttpRunnerClient {
             auto_activate: false,
             input_dispatch_mode: None,
             session_id: None,
+            expected_device: None,
+            owner_probe: None,
+            port_verdict: Arc::new(std::sync::OnceLock::new()),
             liveness: Arc::new(std::sync::Mutex::new(None)),
             sim_health: None,
             session_state: Arc::new(std::sync::Mutex::new(None)),
@@ -809,6 +854,9 @@ impl HttpRunnerClient {
         // Preflight: if liveness is enabled and previously observed the
         // runner died, short-circuit until the caller resets it (via a
         // successful direct `/health`).
+        if let Some(err) = self.preflight_port_owner() {
+            return Err(err);
+        }
         if let Some(err) = self.preflight_liveness() {
             return Err(err);
         }
@@ -860,6 +908,45 @@ impl HttpRunnerClient {
         if let Some(state) = guard.as_mut() {
             state.record(endpoint, success, err);
         }
+    }
+
+    /// The refusal from the port-ownership judgement, computed once.
+    fn preflight_port_owner(&self) -> Option<RunnerTransportError> {
+        let probe = self.owner_probe?;
+        let refusal = self.port_verdict.get_or_init(|| {
+            let port = self
+                .base
+                .trim_end_matches('/')
+                .rsplit(':')
+                .next()
+                .and_then(|s| s.parse::<u16>().ok());
+            // No port to ask about is a refusal rather than a pass: this
+            // code only runs because a caller asked for the check, and
+            // answering "fine" to a question that could not be put is
+            // the empty predicate.
+            let Some(port) = port else {
+                return Some(format!(
+                    "{} carries no port, so there is nothing to ask who it reaches",
+                    self.base
+                ));
+            };
+            let authority = match probe {
+                OwnerProbe::Android => port_owner::ask_android(port),
+                OwnerProbe::Ios => port_owner::ask_ios(port),
+            };
+            match port_owner::decide(port, self.expected_device.as_deref(), &authority) {
+                port_owner::Verdict::Proceed { unchecked, .. } => {
+                    if let Some(said) = unchecked {
+                        eprintln!("warning: {said}");
+                    }
+                    None
+                }
+                port_owner::Verdict::Refuse { reason } => Some(reason),
+            }
+        });
+        refusal
+            .clone()
+            .map(|reason| RunnerTransportError::WrongDevice { reason })
     }
 
     fn preflight_liveness(&self) -> Option<RunnerTransportError> {

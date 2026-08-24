@@ -248,37 +248,41 @@ pub async fn run_flow_code(args: FlowArgs) -> u8 {
 
     // 2. connect runner — iOS swift smix-runner OR Android Kotlin runner.
     let app = match args.platform {
-        FlowPlatform::Ios => App::connect_to_runner(args.runner_port).await.map(|app| {
-            // A phone's sense and act go through the runner exactly like
-            // a simulator's; its *device tooling* does not — `simctl`
-            // answers "Invalid device" for a physical UDID, which is how
-            // the first full flow ever run against one died on step 1's
-            // launchApp. Which world the device lives in is a registry
-            // fact, and this crate already depends on the registry — so
-            // it asks, rather than making every caller thread the answer
-            // through. (A first draft did exactly that, as a new pub
-            // field on `FlowArgs`: one bit the registry could supply,
-            // priced at every existing constructor downstream.)
-            let physical = args
-                .udid
-                .as_deref()
-                .and_then(|u| {
-                    let cwd = std::env::current_dir().ok()?;
-                    let dir = smix_simctl::registry::SimRegistry::discover(&cwd)?;
-                    let reg = smix_simctl::registry::SimRegistry::load(&dir).ok()?;
-                    Some(reg.lookup(u)?.kind)
-                })
-                .is_some_and(|k| k == smix_simctl::registry::DeviceKind::PhysicalIos);
-            if physical {
-                let udid = args.udid.as_deref().unwrap_or_default();
-                app.with_device_control(Box::new(smix_sdk::devicectl_device::DevicectlClient::new(
-                    udid,
-                )))
-            } else {
-                app
-            }
-        }),
-        FlowPlatform::Android => App::connect_to_runner_android(args.runner_port).await,
+        FlowPlatform::Ios => App::connect_to_runner(args.runner_port, args.udid.as_deref())
+            .await
+            .map(|app| {
+                // A phone's sense and act go through the runner exactly like
+                // a simulator's; its *device tooling* does not — `simctl`
+                // answers "Invalid device" for a physical UDID, which is how
+                // the first full flow ever run against one died on step 1's
+                // launchApp. Which world the device lives in is a registry
+                // fact, and this crate already depends on the registry — so
+                // it asks, rather than making every caller thread the answer
+                // through. (A first draft did exactly that, as a new pub
+                // field on `FlowArgs`: one bit the registry could supply,
+                // priced at every existing constructor downstream.)
+                let physical = args
+                    .udid
+                    .as_deref()
+                    .and_then(|u| {
+                        let cwd = std::env::current_dir().ok()?;
+                        let dir = smix_simctl::registry::SimRegistry::discover(&cwd)?;
+                        let reg = smix_simctl::registry::SimRegistry::load(&dir).ok()?;
+                        Some(reg.lookup(u)?.kind)
+                    })
+                    .is_some_and(|k| k == smix_simctl::registry::DeviceKind::PhysicalIos);
+                if physical {
+                    let udid = args.udid.as_deref().unwrap_or_default();
+                    app.with_device_control(Box::new(
+                        smix_sdk::devicectl_device::DevicectlClient::new(udid),
+                    ))
+                } else {
+                    app
+                }
+            }),
+        FlowPlatform::Android => {
+            App::connect_to_runner_android(args.runner_port, args.udid.as_deref()).await
+        }
     };
     let app = match app {
         Ok(a) => a,
@@ -737,6 +741,13 @@ fn run_error_to_exit(e: &RunError) -> u8 {
 pub(crate) fn summarize_step(step: &Step) -> String {
     match step {
         Step::RepeatTap { times, .. } => format!("repeatTap x{times}"),
+        Step::SwipeOver { from, to, .. } => format!(
+            "swipe over element {:.0}%,{:.0}% → {:.0}%,{:.0}%",
+            from.0 * 100.0,
+            from.1 * 100.0,
+            to.0 * 100.0,
+            to.1 * 100.0
+        ),
         Step::TapOn { optional, .. } => {
             if *optional {
                 "tapOn (optional)".into()

@@ -24,7 +24,8 @@ Sessions are mandatory on iOS in v2 — the legacy per-request rebind path is go
 ```rust
 use smix_sdk::{App, text};
 
-let app = App::connect_to_runner(22087).await?
+let udid = std::env::var("SMIX_UDID").expect("SMIX_UDID env var required");
+let app = App::connect_to_runner(22087, Some(&udid)).await?
     .with_bundle_id("com.example.app");
 
 let mut session = app.open_session("com.example.app", true).await?;

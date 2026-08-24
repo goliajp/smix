@@ -321,7 +321,7 @@ async fn a_lazily_connected_app_works_once_the_runner_exists() {
         .await;
     // Mirror the MCP server's real order: construct lazily, then the
     // first tool call (launch_app) opens the session, then sense works.
-    let mut app = smix_sdk::App::connect_to_runner_lazy(server.address().port());
+    let mut app = smix_sdk::App::connect_to_runner_lazy(server.address().port(), None);
     app.open_session_in_place("com.example.app", false)
         .await
         .expect("session opens once the runner exists");
@@ -333,7 +333,7 @@ async fn a_lazily_connected_app_reports_unreachable_on_first_use_not_at_birth() 
     // Port 1 answers nothing. Construction must succeed; the first
     // real call — session open, same as MCP's launch_app — must fail
     // with the runner-unreachable story.
-    let mut app = smix_sdk::App::connect_to_runner_lazy(1);
+    let mut app = smix_sdk::App::connect_to_runner_lazy(1, None);
     let err = app
         .open_session_in_place("com.example.app", false)
         .await

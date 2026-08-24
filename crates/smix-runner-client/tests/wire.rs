@@ -5,7 +5,9 @@
 //! in c-final capstone alongside swift-bridge build verification.
 
 use smix_input::{KeyName, SwipeDirection};
-use smix_runner_client::{HttpRunnerClient, IncludeScope, RunnerScrollSelector, TapMode};
+use smix_runner_client::{
+    HttpRunnerClient, IncludeScope, OwnerProbe, RunnerScrollSelector, TapMode,
+};
 use smix_screen::{A11yNode, Rect};
 use smix_selector::{Modifiers, Pattern, Selector};
 use wiremock::matchers::{body_json, method, path, query_param};
@@ -708,5 +710,40 @@ fn webview_bridge_url_uses_given_port() {
     assert_eq!(
         smix_runner_client::webview_bridge_url(29999),
         "http://127.0.0.1:29999/eval"
+    );
+}
+
+// ---- port ownership ----------------------------------------------------
+
+#[tokio::test]
+async fn a_port_that_reaches_another_device_is_refused_before_the_request() {
+    // The eager connect paths judge this at `connect_to_runner`; the lazy
+    // one cannot, because it exists so the MCP server can be constructed
+    // before any runner is up — and at that moment nobody holds the port,
+    // so judging there would refuse every startup. So it is judged here,
+    // once, on the first request that actually goes out.
+    //
+    // The mock is mounted with `.expect(0)`: the point is that nothing
+    // reaches it. A guard that runs after the request has already been
+    // sent is a report, not a guard.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let client = HttpRunnerClient::with_base(server.uri())
+        .with_port_owner_check(Some("emulator-9999".into()), OwnerProbe::Android);
+
+    let err = client
+        .get_tree(None)
+        .await
+        .expect_err("a port nothing says reaches emulator-9999 must not be driven as it");
+    let said = format!("{err}");
+    assert!(
+        said.contains("emulator-9999"),
+        "the refusal must name the device that was asked for — {said}"
     );
 }

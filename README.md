@@ -69,7 +69,8 @@ Equivalent Rust SDK:
 use smix_sdk::{App, text, KeyName};
 use std::time::Duration;
 
-let app = App::connect_to_runner(22087).await?
+let udid = std::env::var("SMIX_UDID").expect("SMIX_UDID env var required");
+let app = App::connect_to_runner(22087, Some(&udid)).await?
     .with_bundle_id("com.example.app");
 app.launch("com.example.app").await?;
 app.wait_for(&text("Dashboard"), Duration::from_secs(5)).await?;
