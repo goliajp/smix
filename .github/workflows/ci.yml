@@ -213,6 +213,16 @@ jobs:
         run: cargo build -p smix-cli
       - name: mcp cli parity scan
         run: python3 scripts/dev/mcp-cli-parity-scan.py
+      # A fuzz crate depends on the workspace by path, so a version bump
+      # in a crate can leave the fuzz lockfile beside it unsatisfiable.
+      # `kevy-embedded 5.3 -> 5.4.1` did exactly that to four of them and
+      # a full green run said nothing: nothing here read those files.
+      # Placed after the build so the registry index is already warm —
+      # it is a second of work once cargo has fetched anything at all.
+      - name: fuzz lockfiles are usable
+        run: python3 scripts/dev/fuzz-lockfiles-are-usable.py
+      - name: the fuzz-lockfile gate can still go red
+        run: python3 scripts/dev/fuzz-lockfiles-are-usable.test.py
       # Reads the corpus and its excuse list, both in the checkout.
       - name: known-unstable list scan
         run: python3 scripts/dev/known-unstable-scan.py
