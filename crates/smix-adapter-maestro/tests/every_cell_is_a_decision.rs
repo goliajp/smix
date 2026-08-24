@@ -36,7 +36,7 @@ fn every_refusal_says_what_this_verb_does() {
 
 #[test]
 fn a_locale_map_is_read_wherever_a_selector_is_resolved() {
-    // It is a rewrite, not a capability. 6.8.1 closed the last nine
+    // It is a rewrite, not a capability. 7.0.0 closed the last nine
     // call sites; a cell going back to Refused here would mean one of
     // them was dropped.
     //

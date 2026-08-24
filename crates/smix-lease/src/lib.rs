@@ -288,9 +288,9 @@ pub fn prune_verdict(held: &Held, device_is_on: Option<bool>) -> PruneVerdict {
             Some(true) => PruneVerdict::Keep(
                 "still switched on and this ledger is the only record of who answered for it",
             ),
-            None => PruneVerdict::Keep(
-                "claimed, and this machine cannot tell whether it is still on",
-            ),
+            None => {
+                PruneVerdict::Keep("claimed, and this machine cannot tell whether it is still on")
+            }
             Some(false) => PruneVerdict::Remove,
         };
     }

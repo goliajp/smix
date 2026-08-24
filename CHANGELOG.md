@@ -2,10 +2,60 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [6.8.1] — 2026-08-24
+## [7.0.0] — 2026-08-24
 
-Nothing here changes what smix does. It is a dependency move, and the gate
-that would have caught what the move left behind.
+**Nothing moves on the wire, in the YAML verb table, or on the CLI.** The
+major is one Rust API change in `smix-lease`, which is not one of the ten
+ABI-frozen crates: `Resource` gained a variant and became
+`#[non_exhaustive]`. A flow, a runner, a `smix` command line and a data
+directory written by 6.8.0 all mean exactly what they meant. If you do not
+match on `smix_lease::Resource` in your own Rust, this is a patch wearing a
+larger number, and the number is the arbiter's rather than a claim about
+your upgrade.
+
+This release began as a dependency move. The ship stopped forty minutes in
+on a device gate that was right, and fixing what it found is the rest of it.
+
+### Breaking
+
+- **`smix_lease::Resource` is `#[non_exhaustive]` and gained `Claimed`.**
+  This is the whole of the major. The list has grown five times
+  and adding to an exhaustive public enum is what `cargo semver-checks`
+  charges a major for, so the charge is paid once rather than again at the
+  next kind of thing a holder can open. Downstream Rust matching on
+  `Resource` needs a `_` arm; nothing else is affected.
+
+  An older smix reading a ledger that contains a claim row will not parse
+  it. Ledgers are this machine's live session state, not your data —
+  `smix lease prune` clears them and the next command writes what it needs.
+
+### Added
+
+- **`smix lease claim <device>` / `smix lease release <device>` — answer for
+  a device this machine did not boot.**
+
+  Gates and scripts ask `lease owner` before driving anything, and the only
+  answer that let them through was "smix booted it". So a machine's own
+  dedicated emulator, started by hand and sitting idle, was drivable by
+  nobody: the row that made a device drivable was the same row that made it
+  shut-downable, and nothing may claim to have booted what it did not.
+
+  The way past it was `SMIX_ANDROID_SERIAL`, a per-command environment
+  variable — it records nothing, it is gone when the command exits, and so
+  every run made the same decision again with no way to read the last one.
+
+  A claim grants exactly one of the two things a boot row grants: **yours to
+  drive, still not yours to switch off.** `may_shut_down` and every teardown
+  path keep reading only the boot row, because the claim's own content is
+  "nothing here booted this". It is refused while a live session holds the
+  device, and the ledger ends it when the device goes off.
+
+  `lease owner` answers `0` for a claim as well as a boot and says which in
+  words, so callers acting on its exit code inherit this without changing —
+  `pick-dev-emulator` and `pick-dev-sim` were not touched, and the Android
+  instrumentation gate now passes with no environment pin at all. The
+  refusal messages point at the claim first and say plainly that the
+  environment variable records nothing.
 
 ### Changed
 
