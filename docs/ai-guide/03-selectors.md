@@ -133,6 +133,41 @@ itself.
 - iOS: derived from XCUIElement type + traits. Android: from AccessibilityNodeInfo class name + roleDescription.
 - `role:` and its optional `name:` work anywhere a selector map does — `tapOn:`, `assertVisible:`, `extendedWaitUntil.visible:`, `scrollUntilVisible:`, etc.
 
+#### `role: keyboard` — waiting for the software keyboard
+
+The last entry in that list is the one people ask for without finding.
+The software keyboard is an element, so it can be waited for like any
+other — which is what you want when a field is focused by a tap and the
+keyboard slides in over the button the next step means to press:
+
+```yaml
+- assertNotVisible: { role: "keyboard" }
+- tapOn: { id: "email" }
+- extendedWaitUntil:
+    visible: { role: "keyboard" }
+    timeout: 5000
+- hideKeyboard
+- extendedWaitUntil:
+    notVisible: { role: "keyboard" }
+    timeout: 5000
+```
+
+Both platforms answer, and it is asked of both on every release —
+`keyboard-comes-and-goes.yaml` in the portable corpus and A12 in the
+Android behaviour gate. On Android it was unanswerable until 7.1: the
+runner knew (an input-method window is the keyboard, which is what
+`hideKeyboard` has always decided on) and the tree did not carry it, so
+the same flow that passed on iOS timed out there.
+
+Two things about it are worth knowing, because both have sent people
+looking for a pause instead:
+
+- **The keys are not in the tree, and the keyboard is.** Do not wait for
+  `text: "A"`; wait for the keyboard.
+- **`smix describe` leaves the keyboard out of its summary**, so it is
+  invisible in exactly the place you would look for it. `smix find
+  "role:keyboard"` answers regardless, and so does `/tree`.
+
 ### 5. Focused
 
 ```yaml

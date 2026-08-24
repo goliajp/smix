@@ -1667,6 +1667,14 @@ object TreeBuilder {
             }
             try {
                 val obj = nodeToJson(node)
+                // A window's own type decides one role that no node class
+                // can: the input-method window is the software keyboard.
+                // Without this the tree had no keyboard in it at all,
+                // while `keyboardIsUp()` two hundred lines up has been
+                // reading the very same window type for releases — the
+                // capability was in the driver and not in the tree, which
+                // is the one place every verb can reach it from.
+                TreeWire.roleForWindowType(window.type)?.let { obj.put("role", it) }
                 rootChildren.put(obj)
                 val bounds = Rect()
                 node.getBoundsInScreen(bounds)

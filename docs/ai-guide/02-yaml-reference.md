@@ -297,9 +297,14 @@ one that stops.
 # `waitForAnimationToEnd: 500` meaning "pause here" on the strength of it.
 #
 # There is no bare sleep verb, deliberately. To wait for something, name
-# it: `extendedWaitUntil` for an element. If the thing you are waiting for
-# is not in the tree at all, that is a gap worth reporting rather than
-# routing around with a pause.
+# it: `extendedWaitUntil` for an element. The keyboard is an element —
+# `extendedWaitUntil: { visible: { role: "keyboard" } }` — which is the
+# wait people most often reach for a pause instead of, because the keys
+# are not in the tree and `describe` leaves the keyboard out of its
+# summary. See "role: keyboard" in the selectors guide.
+#
+# If the thing you are waiting for really is not in the tree, that is a
+# gap worth reporting rather than routing around with a pause.
 #
 # A screen that never settles is a warning, not a failure — so is a window
 # in which the device refused every capture (see CAPTURE_BACKPRESSURE in

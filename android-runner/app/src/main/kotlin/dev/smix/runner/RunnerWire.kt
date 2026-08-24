@@ -655,6 +655,22 @@ object TreeWire {
     /// Map android widget class → smix Role camelCase string. Returns
     /// null when no clean mapping (caller omits the role field). Matches
     /// the curated Role enum in smix-screen.
+    /// The role a window's own type decides, regardless of what class
+    /// its root node happens to be.
+    ///
+    /// Only one so far, and it is the one that was missing: an
+    /// input-method window is the software keyboard. `keyboardIsUp()`
+    /// and `hide-keyboard` have read this window type for releases; the
+    /// tree never carried it, so `role:keyboard` — which answers on iOS,
+    /// where Apple types the keyboard 19 — timed out here while the
+    /// keyboard was on screen. A form that works on one platform and
+    /// silently does not on the other is the shape this project keeps
+    /// finding, and the fix is always to make the quiet side answer.
+    ///
+    /// `AccessibilityWindowInfo.TYPE_INPUT_METHOD` is 2.
+    fun roleForWindowType(windowType: Int): String? =
+        if (windowType == 2) "keyboard" else null
+
     fun deriveRole(cls: String): String? {
         val tail = cls.substringAfterLast('.')
         return when {

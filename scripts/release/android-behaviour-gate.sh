@@ -107,10 +107,13 @@ if [[ -z "$SERIAL" ]]; then
   # else's device once. pick-dev-emulator asks the ledger whether smix
   # booted a device, and refuses rather than guesses.
   SERIAL="$(bash "$REPO_ROOT/scripts/dev/pick-dev-emulator.sh" 2>&1)" || {
-    die "no emulator this machine's ledger says smix booted:
-$SERIAL
-  Boot one through smix — \`smix sim boot <alias>\` — or pin one with
-  SMIX_ANDROID_SERIAL to say it is yours."
+    # The picker already prints how to fix this, in full, to stderr —
+    # `$SERIAL` holds that text. Restating it here is what let the two
+    # gates drift: the instrumentation gate learned about `lease claim`
+    # in 7.0 and this one kept telling people to set an environment
+    # variable that records nothing. One place says it now.
+    die "no emulator this gate may drive:
+$SERIAL"
   }
 fi
 
@@ -492,6 +495,52 @@ curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a11-tree.jso
   || die "A11: /tree did not answer after the wrapped fill"
 python3 "$REPO_ROOT/scripts/release/android-a11-verdict.py" \
   "$WORK/a11-tree.json" "$WRAPPED" || die "A11: see above"
+
+# A12 — the keyboard is a thing a flow can wait for, here too.
+#
+# `role:keyboard` answers on iOS and timed out here, while a screenshot
+# showed the QWERTY and /windows listed the IME. The runner knew and the
+# tree did not carry it, so no verb could see it — and a consumer,
+# reading that as "there is no way to wait for the keyboard", reached for
+# a pause. Asked with both expectations, because a tree that never
+# carries it would pass the "gone" half forever.
+adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
+  || die "A12: could not foreground $FIXTURE_APP_ID on $SERIAL"
+# `|| true` here would be the bug this gate is about: a setup step that
+# silently does nothing leaves A11's keyboard up, and the "absent" half
+# then fails for a reason that has nothing to do with what it asks. Ask
+# the verb that exists, and let it fail out loud.
+"$SMIX_BIN" hide-keyboard --device "$SERIAL" --port "$PROXY_PORT" \
+  > "$WORK/a12-hide.log" 2>&1 \
+  || die "A12: could not put the keyboard away before asking whether it is gone: $(tail -2 "$WORK/a12-hide.log")"
+# The IME window detaches a moment after the dismissal, the same way it
+# attaches a moment after the tap.
+a12_down_deadline=$(( SECONDS + 15 ))
+while :; do
+  curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a12-down.json" || true
+  python3 "$REPO_ROOT/scripts/release/android-a12-verdict.py" "$WORK/a12-down.json" absent \
+    >/dev/null 2>&1 && break
+  [ "$SECONDS" -ge "$a12_down_deadline" ] && break
+  sleep 1
+done
+
+python3 "$REPO_ROOT/scripts/release/android-a12-verdict.py" "$WORK/a12-down.json" absent \
+  || die "A12: see above. $WORK/a12-down.json"
+
+"$SMIX_BIN" tap "id:fixture_input" --device "$SERIAL" --port "$PROXY_PORT" \
+  > "$WORK/a12-tap.log" 2>&1 \
+  || die "A12: could not focus the fixture field: $(tail -2 "$WORK/a12-tap.log")"
+# The window attaches a moment after the tap, the same way A4's does.
+a12_deadline=$(( SECONDS + 15 ))
+while :; do
+  curl -sS --max-time 20 "http://localhost:$PROXY_PORT/tree" > "$WORK/a12-up.json" || true
+  python3 "$REPO_ROOT/scripts/release/android-a12-verdict.py" "$WORK/a12-up.json" present \
+    >/dev/null 2>&1 && break
+  [ "$SECONDS" -ge "$a12_deadline" ] && break
+  sleep 1
+done
+python3 "$REPO_ROOT/scripts/release/android-a12-verdict.py" "$WORK/a12-up.json" present \
+  || die "A12: see above. $WORK/a12-up.json"
 
 ASSERTIONS=$(grep -cE '^# A[0-9]+( control)? —' "$0")
 echo "android behaviour gate: $ASSERTIONS/$ASSERTIONS assertions on $SERIAL ($APP + $FIXTURE_APP_ID)"

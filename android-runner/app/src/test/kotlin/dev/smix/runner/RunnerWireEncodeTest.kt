@@ -253,3 +253,40 @@ class RunnerWireEncodeTest {
         assertEquals(false, JSONObject(RunnerWire.hideKeyboardBody(false)).getBoolean("ok"))
     }
 }
+
+// --- the keyboard is a thing you can ask about, on both platforms -------
+//
+// `role:keyboard` answers on iOS — Apple types the software keyboard 19
+// and the tree carries it, so `extendedWaitUntil { visible: { role:
+// keyboard } }` has always worked there. Measured on the fixture: six
+// steps, keyboard in and out, all green.
+//
+// On Android the same flow timed out with ELEMENT_NOT_FOUND while the
+// keyboard was unmistakably on screen — screenshot and `/windows` both
+// said so. The runner already knew: `keyboardIsUp()` reads exactly the
+// window type below and `hide-keyboard` has been deciding on it for
+// releases. Nothing lifted it into the tree, so no verb could see it.
+//
+// A consumer read that as "there is no way to wait for the keyboard" and
+// reached for a pause instead. Half of that was right.
+
+class KeyboardRoleTest {
+    @Test
+    fun anInputMethodWindowIsTheKeyboard() {
+        // AccessibilityWindowInfo.TYPE_INPUT_METHOD == 2. The literal is
+        // used rather than the constant because this test runs on the
+        // JVM, where the android framework classes are stubs — and the
+        // wire value is the thing that has to stay put anyway.
+        assertEquals("keyboard", TreeWire.roleForWindowType(2))
+    }
+
+    @Test
+    fun everyOtherWindowKeepsWhateverItsClassSaid() {
+        // 1 = application, 3 = system, 4 = accessibility overlay. None
+        // of them is a keyboard, and a role invented here would override
+        // the one derived from the node's class.
+        for (t in listOf(1, 3, 4, 5, 6)) {
+            assertEquals("window type $t", null, TreeWire.roleForWindowType(t))
+        }
+    }
+}
