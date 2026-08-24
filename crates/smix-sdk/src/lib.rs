@@ -2766,7 +2766,12 @@ pub fn simctl_to_failure(e: DeviceControlError) -> ExpectationFailure {
             Some(format!("subprocess timeout after {ms}ms")),
         ),
         DeviceControlError::CaptureBackpressure { retry_after } => (
-            FailureCode::DriverError,
+            // Its own code, because "not now, try again shortly" and
+            // "something is broken" want opposite responses from a
+            // caller — and only one of them is a defect. The window
+            // stays in the hint for the person reading; nothing should
+            // have to parse it back out.
+            FailureCode::CaptureBackpressure,
             Some(format!(
                 "screenshot pacer circuit open — SimRenderServer under load; retry after {}ms",
                 retry_after.as_millis()

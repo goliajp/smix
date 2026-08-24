@@ -194,6 +194,10 @@ struct MockApp {
     /// models a screen that never settles — a spinner — which repeating
     /// cannot express, since a repeated frame is by definition still.
     screenshot_cycles: Mutex<bool>,
+    /// Refuse this many captures with `CAPTURE_BACKPRESSURE` before
+    /// serving frames — the shape a loaded simulator presents when the
+    /// screenshot pacer's circuit is open.
+    screenshot_backpressure_n: Mutex<usize>,
 }
 
 impl MockApp {
@@ -213,12 +217,20 @@ impl MockApp {
             screenshot_frames: Mutex::new(Vec::new()),
             screenshot_calls: Mutex::new(0),
             screenshot_cycles: Mutex::new(false),
+            screenshot_backpressure_n: Mutex::new(0),
         }
     }
 
     /// Hand `screenshot()` a frame sequence. The last frame repeats once the
     /// sequence runs out, so the screen settles and stays settled.
     #[allow(dead_code)]
+    /// Refuse the first `n` captures the way a paced simulator does.
+    /// `usize::MAX` never lets one through.
+    fn with_screenshot_backpressure(self, n: usize) -> Self {
+        *self.screenshot_backpressure_n.lock().unwrap() = n;
+        self
+    }
+
     fn with_screenshot_frames(self, frames: Vec<Vec<u8>>) -> Self {
         *self.screenshot_frames.lock().unwrap() = frames;
         self
@@ -649,6 +661,20 @@ impl AppLike for MockApp {
     }
     async fn screenshot(&self) -> Result<Vec<u8>, ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::Screenshot);
+        {
+            let mut left = self.screenshot_backpressure_n.lock().unwrap();
+            if *left > 0 {
+                if *left != usize::MAX {
+                    *left -= 1;
+                }
+                return Err(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::CaptureBackpressure),
+                    message: "screenshot pacer circuit open; retry after 2.999s".into(),
+                    hint: Some("SimRenderServer under load; retry after 2999ms".into()),
+                    ..Default::default()
+                }));
+            }
+        }
         let frames = self.screenshot_frames.lock().unwrap();
         if frames.is_empty() {
             // A real screenshot is a real PNG, and waitForAnimationToEnd
@@ -3056,4 +3082,96 @@ async fn wait_for_animation_surfaces_an_undecodable_frame() {
         .await
         .expect_err("a broken frame must surface");
     assert!(format!("{err:?}").contains("PNG decode"), "got: {err:?}");
+}
+
+// --- backpressure is something a verb that waits can wait out ----------
+//
+// A consumer's release pipeline met `FAIL [DRIVER_ERROR]: step 18
+// (waitForAnimationToEnd): screenshot pacer circuit open; retry after
+// 2.999988875s`, on a simulator that had been running long enough to go
+// slow. The verb's whole meaning is to wait, and it gave up on being
+// told to wait three more seconds — while the same verb treats a screen
+// that never settles as a warning and carries on. Those two answers
+// cannot both be right.
+//
+// The internal name is the other half. `screenshot pacer circuit open`
+// is smix's mechanism; the caller cannot act on it, and reading it as a
+// product failure is what sent them looking at their own image diffs.
+
+#[tokio::test]
+async fn wait_for_animation_waits_out_backpressure_and_then_settles() {
+    // Three refusals, then a still screen. Inside the ceiling, so the
+    // step should simply succeed — no warning, because nothing went
+    // wrong that the flow author has to know about.
+    let still = mock_png_sized(64, 64, |_, _| 128);
+    let app = MockApp::new()
+        .with_screenshot_frames(vec![still.clone(), still])
+        .with_screenshot_backpressure(3);
+    let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd: 5000\n").unwrap();
+
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let report = adapter
+        .run(&flow)
+        .await
+        .expect("backpressure is not a failure");
+
+    assert!(matches!(report.steps[0], RunStepReport::Ok));
+    assert!(
+        report.warnings.is_empty(),
+        "the wait absorbed it inside its ceiling; nothing to report: {:?}",
+        report.warnings
+    );
+}
+
+#[tokio::test]
+async fn wait_for_animation_that_never_gets_to_look_says_that_and_not_the_mechanism() {
+    // Refused for the whole window. Still not a failure — the same
+    // answer the verb already gives a screen that never settles — but
+    // the warning has to say what happened in the caller's terms.
+    let app = MockApp::new().with_screenshot_backpressure(usize::MAX);
+    let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd: 300\n").unwrap();
+
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let report = adapter
+        .run(&flow)
+        .await
+        .expect("never getting to look is not a flow failure");
+
+    assert!(matches!(report.steps[0], RunStepReport::Ok));
+    let w = report.warnings.join(" | ");
+    assert!(
+        w.contains("300"),
+        "the ceiling is the number the author can act on: {w}"
+    );
+    assert!(
+        !w.contains("circuit"),
+        "the pacer's internal state is not the caller's business: {w}"
+    );
+    // And it must not borrow the other outcome's sentence. "Still
+    // moving after 300ms" claims an observation nobody made — nothing
+    // here ever saw the screen at all, and a flow author told the wrong
+    // one of those two goes looking in the wrong place.
+    assert!(
+        !w.contains("still moving"),
+        "collapsing 'never got a look' into 'still moving' asserts a \
+         reading that was never taken: {w}"
+    );
+    assert!(
+        w.contains("refusing frames"),
+        "the warning has to say why nothing was seen: {w}"
+    );
+}
+
+#[tokio::test]
+async fn a_capture_error_that_is_not_backpressure_still_fails_the_step() {
+    // The other side of the pair. Absorbing one code must not have
+    // turned the verb into something that ignores a broken capture.
+    let app = MockApp::new().with_screenshot_frames(vec![b"not a png".to_vec()]);
+    let flow = parse_flow_yaml("appId: com.t\n---\n- waitForAnimationToEnd: 300\n").unwrap();
+
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    assert!(
+        adapter.run(&flow).await.is_err(),
+        "an undecodable frame is a real failure and must stay one"
+    );
 }
