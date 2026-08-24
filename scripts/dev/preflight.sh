@@ -183,6 +183,7 @@ SOURCE_GATES=(
   mcp-cli-parity-scan
   fuzz-lockfiles-are-usable
   fuzz-lockfiles-are-usable.test
+  android-a4-verdict.test
   known-unstable-scan
   corpus-portability-scan
   portable-tier-parity

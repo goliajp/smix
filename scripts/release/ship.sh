@@ -560,6 +560,13 @@ log "the fuzz-lockfile gate can still go red"
 python3 "$ROOT/scripts/dev/fuzz-lockfiles-are-usable.test.py" > /tmp/smix-ship-fuzz-locks-selftest.log 2>&1 \
   || fail "fuzz-lockfile gate self-test FAILED — see /tmp/smix-ship-fuzz-locks-selftest.log"
 
+# The device gates run an hour in. This one's judgement is a pure
+# function now, so the shape that made it crash rather than speak is
+# checked here, before anything is compiled.
+log "the A4 window verdict can still speak"
+python3 "$ROOT/scripts/dev/android-a4-verdict.test.py" > /tmp/smix-ship-a4-selftest.log 2>&1 \
+  || fail "A4 verdict self-test FAILED — see /tmp/smix-ship-a4-selftest.log"
+
 log "preflight parity scan"
 python3 "$ROOT/scripts/dev/preflight-parity-scan.py" > /tmp/smix-ship-parity.log 2>&1 \
   || fail "preflight parity scan FAILED — see /tmp/smix-ship-parity.log"
