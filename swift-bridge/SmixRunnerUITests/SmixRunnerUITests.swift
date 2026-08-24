@@ -1597,6 +1597,43 @@ final class SmixRunnerUITests: XCTestCase {
         // a11y tree first would fail for exactly the callers who asked
         // for it.
         let resolveFocus = dispatch != .keyEvents
+        // The selector that names nothing is the one this mode is about,
+        // and it was the one excluded from it: `_focused_` skipped focus
+        // resolution whatever `dispatch` said, so the documented default
+        // never applied to it and `--force-key-events` changed nothing
+        // for the case it exists for. The daemon send below then went
+        // ahead unconditionally and answered ok — measured on the iOS
+        // fixture with nothing focused: ok, 18 characters, no warnings,
+        // the field still empty and no keyboard on screen. Android
+        // answers not-found to the same flow.
+        //
+        // What counts as evidence is in `FillFocusPolicy`; what is
+        // observed is here, because only this side can look.
+        if selectorText == "_focused_" {
+          let evidence = smixGuarded("fill-focus-evidence") { () -> [Bool] in
+            let focusedPred = NSPredicate(format: "hasKeyboardFocus == true")
+            let anyFocused = app.descendants(matching: .any)
+              .matching(focusedPred).firstMatch.exists
+            return [anyFocused, app.keyboards.firstMatch.exists]
+          } ?? [false, false]
+          let policyDispatch: FillFocusPolicy.Dispatch
+          switch dispatch {
+          case .keyEvents: policyDispatch = .keyEvents
+          case .auto: policyDispatch = .auto
+          case .a11y: policyDispatch = .a11y
+          }
+          if FillFocusPolicy.decide(
+            dispatch: policyDispatch,
+            isFocusedSelector: true,
+            somethingFocused: evidence[0],
+            keyboardUp: evidence[1]
+          ) == .refuse {
+            // A guard that caught reads as no evidence, deliberately:
+            // "I could not look" and "there is nothing there" both mean
+            // this fill cannot be reported as having landed.
+            return .notFound
+          }
+        }
         if resolveFocus && !selectorText.isEmpty && selectorText != "_focused_" {
           // Focus-tap can hit a vanished element (same
           // root cause as tapHandler). Guard the resolve+tap span; a
