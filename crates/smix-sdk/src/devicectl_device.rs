@@ -42,16 +42,35 @@ pub struct DevicectlClient {
 /// message with only the first is a dead end; smix's own guards learned
 /// this twice already (`adb-guard`'s remedy line, the destructive-action
 /// gate naming `allow-destructive`).
-fn unavailable(action: &str, why: &str, instead: &str) -> DeviceControlError {
-    DeviceControlError::non_zero_exit(
-        action,
-        -1,
-        format!(
-            "{action} is not available on a physical device: {why}\n\
-             Instead: {instead}"
-        )
-        .as_str(),
-    )
+fn refused(action: &str) -> DeviceControlError {
+    use crate::device_control::{Availability, availability};
+    use smix_simctl::registry::DeviceKind;
+
+    match availability(action, DeviceKind::PhysicalIos) {
+        Some(Availability::RefusedByName { why, instead }) => DeviceControlError::non_zero_exit(
+            action,
+            -1,
+            format!(
+                "{action} is not available on a physical device: {why}\n\
+                 Instead: {instead}"
+            )
+            .as_str(),
+        ),
+        // The table says this works here and this code refuses it. One of
+        // them is wrong and neither can be trusted, so the message says
+        // so rather than inventing a reason — the seventeen sentences
+        // that used to live in these method bodies were exactly the kind
+        // of second copy that drifts (`code/derive-dont-copy`).
+        other => DeviceControlError::non_zero_exit(
+            action,
+            -1,
+            format!(
+                "{action} was refused on a physical device, but the platform table \
+                 says {other:?}. The table and this code disagree; fix one."
+            )
+            .as_str(),
+        ),
+    }
 }
 
 impl DevicectlClient {
@@ -243,13 +262,7 @@ impl DeviceControl for DevicectlClient {
         // the pid needs a listing that only reports installed apps —
         // not running ones. The runner ends the app under test through
         // XCUIApplication, which is the path smix actually uses.
-        Err(unavailable(
-            "terminate",
-            "devicectl stops processes by pid, and offers no way to find the pid of a \
-             running app by its bundle id",
-            "end the app through the runner session (XCUIApplication.terminate), which is \
-             what smix does on both platforms",
-        ))
+        Err(refused("terminate"))
     }
 
     // === The fifteen that do not ========================================
@@ -267,23 +280,11 @@ impl DeviceControl for DevicectlClient {
         // racing them, and the failures land somewhere else entirely.
         // A parity test in this file caught it, which is what that test
         // is for.
-        Err(unavailable(
-            "set_animations_quiet",
-            "the Reduce Motion setting on a phone is the owner's, and nothing in devicectl \
-             writes it",
-            "turn Reduce Motion on by hand in Settings > Accessibility > Motion, or use a \
-             simulator where smix sets it for you",
-        ))
+        Err(refused("set_animations_quiet"))
     }
 
     async fn keychain_reset(&self, _udid: &str) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "keychain_reset",
-            "a phone's keychain belongs to the person holding it; nothing in devicectl \
-             touches it",
-            "use a simulator for tests that need a clean keychain, or have the app clear \
-             its own items on launch",
-        ))
+        Err(refused("keychain_reset"))
     }
 
     async fn privacy_reset_all(
@@ -291,12 +292,7 @@ impl DeviceControl for DevicectlClient {
         _udid: &str,
         _bundle_id: &str,
     ) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "privacy_reset_all",
-            "TCC grants on a device are the user's, and devicectl has no equivalent of \
-             `simctl privacy`",
-            "use a simulator, or reinstall the app — a fresh install starts with no grants",
-        ))
+        Err(refused("privacy_reset_all"))
     }
 
     async fn clear_app_sandbox(
@@ -304,12 +300,7 @@ impl DeviceControl for DevicectlClient {
         _udid: &str,
         _bundle_id: &str,
     ) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "clear_app_sandbox",
-            "there is no device-side equivalent of reaching into a container and deleting \
-             its contents",
-            "uninstall and install again, which takes the container with it",
-        ))
+        Err(refused("clear_app_sandbox"))
     }
 
     async fn user_defaults_delete(
@@ -318,11 +309,7 @@ impl DeviceControl for DevicectlClient {
         _bundle_id: &str,
         _key: &str,
     ) -> Result<bool, DeviceControlError> {
-        Err(unavailable(
-            "user_defaults_delete",
-            "a phone exposes no way to edit another app's defaults",
-            "have the app clear the key itself under a launch argument, or use a simulator",
-        ))
+        Err(refused("user_defaults_delete"))
     }
 
     async fn send_push(
@@ -331,12 +318,7 @@ impl DeviceControl for DevicectlClient {
         _bundle_id: &str,
         _payload_path: &str,
     ) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "send_push",
-            "a real device takes pushes from APNs, not from the machine it is plugged into",
-            "send through APNs with a development certificate, or use a simulator, which \
-             accepts a payload file directly",
-        ))
+        Err(refused("send_push"))
     }
 
     async fn set_permission(
@@ -346,35 +328,19 @@ impl DeviceControl for DevicectlClient {
         _permission: Permission,
         _action: PermissionAction,
     ) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "set_permission",
-            "permission grants on a phone are the user's to give, by design",
-            "grant it by hand once on the device, or use a simulator where TCC is scriptable",
-        ))
+        Err(refused("set_permission"))
     }
 
     async fn pasteboard_set(&self, _udid: &str, _text: &str) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "pasteboard_set",
-            "devicectl offers no pasteboard access",
-            "type the text through the runner, or use a simulator",
-        ))
+        Err(refused("pasteboard_set"))
     }
 
     async fn pasteboard_get(&self, _udid: &str) -> Result<String, DeviceControlError> {
-        Err(unavailable(
-            "pasteboard_get",
-            "devicectl offers no pasteboard access",
-            "read it from the app's own UI through the runner, or use a simulator",
-        ))
+        Err(refused("pasteboard_get"))
     }
 
     async fn add_media(&self, _udid: &str, _paths: &[String]) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "add_media",
-            "nothing in devicectl writes to the photo library",
-            "put the fixtures in the app bundle, or use a simulator",
-        ))
+        Err(refused("add_media"))
     }
 
     async fn location_set(
@@ -383,13 +349,7 @@ impl DeviceControl for DevicectlClient {
         _lat: f64,
         _lon: f64,
     ) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "location_set",
-            "Xcode can simulate a location on a device through its own UI, but devicectl \
-             exposes no way to do it from a script",
-            "use a simulator for location tests, or drive the app's own location override \
-             if it has one",
-        ))
+        Err(refused("location_set"))
     }
 
     async fn location_start(
@@ -398,11 +358,7 @@ impl DeviceControl for DevicectlClient {
         _points: &[(f64, f64)],
         _speed_mps: Option<f64>,
     ) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "location_start",
-            "same as location_set: no scriptable path on a device",
-            "use a simulator for route playback",
-        ))
+        Err(refused("location_start"))
     }
 
     async fn start_recording(
@@ -410,20 +366,11 @@ impl DeviceControl for DevicectlClient {
         _udid: &str,
         _output_path: &Path,
     ) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "start_recording",
-            "there is no device-side `simctl io recordVideo`",
-            "record the phone's screen from the device itself (Control Centre), or use a \
-             simulator, where smix records through the ledger",
-        ))
+        Err(refused("start_recording"))
     }
 
     async fn stop_recording(&self) -> Result<(), DeviceControlError> {
-        Err(unavailable(
-            "stop_recording",
-            "nothing was started — recording is not available on a physical device",
-            "see start_recording",
-        ))
+        Err(refused("stop_recording"))
     }
 
     async fn screenshot(&self, _udid: &str) -> Result<Vec<u8>, DeviceControlError> {
@@ -431,23 +378,14 @@ impl DeviceControl for DevicectlClient {
         // screenshots through XCUIScreen on both platforms, and that is
         // the path smix uses. Refusing here points at it rather than
         // implying the capability is missing.
-        Err(unavailable(
-            "screenshot",
-            "devicectl has no screenshot verb",
-            "take it through the runner session, which does this on a phone exactly as it \
-             does on a simulator",
-        ))
+        Err(refused("screenshot"))
     }
 
     async fn capture_bgra(
         &self,
         _udid: &str,
     ) -> Result<smix_simctl::surface_capture::CapturedFrame, DeviceControlError> {
-        Err(unavailable(
-            "capture_bgra",
-            "surface capture is a CoreSimulator facility with no device counterpart",
-            "use the runner's screenshot route, which returns PNG bytes on both platforms",
-        ))
+        Err(refused("capture_bgra"))
     }
 }
 
@@ -487,6 +425,51 @@ fn parse_pid(stdout: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_refusal_this_backend_makes_comes_from_the_table() {
+        // Walks the table rather than a list of method names: a list
+        // here would be the second copy the table was built to remove,
+        // and it would be the copy that went stale.
+        use crate::device_control::{ACTION_PLATFORMS, Availability};
+        use smix_simctl::registry::DeviceKind;
+
+        let idx = DeviceKind::ALL
+            .iter()
+            .position(|k| *k == DeviceKind::PhysicalIos)
+            .expect("PhysicalIos is a kind");
+
+        let mut checked = 0;
+        for (action, row) in ACTION_PLATFORMS {
+            if let Availability::RefusedByName { why, instead } = row[idx] {
+                let msg = format!("{}", refused(action));
+                assert!(
+                    !msg.contains("disagree"),
+                    "{action}: the table and this backend disagree — {msg}"
+                );
+                assert!(
+                    msg.contains(why),
+                    "{action}: the refusal lost its reason — {msg}"
+                );
+                assert!(
+                    msg.contains(instead),
+                    "{action}: the refusal lost the way out — {msg}"
+                );
+                checked += 1;
+            }
+        }
+        // Exact, not a floor. `>=` would have let a row quietly vanish
+        // and still passed. The number is a fact about the devices —
+        // fifteen actions with no counterpart
+        // (research/physical-device-obtainability.md §R4), plus
+        // `terminate` and `capture_bgra`, which devicectl refuses for
+        // reasons of its own — so if it moves, either a gap closed (say
+        // so here, deliberately) or a row went missing.
+        assert_eq!(
+            checked, 17,
+            "the phone refuses 17 of these; this says {checked}"
+        );
+    }
+
     use super::*;
 
     const UDID: &str = "00008120-001410C11A42201E";

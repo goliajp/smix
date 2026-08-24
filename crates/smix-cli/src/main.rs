@@ -225,7 +225,8 @@ enum Cmd {
         #[arg(long = "ocr-locale")]
         ocr_locale: Vec<String>,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -262,7 +263,8 @@ enum Cmd {
         #[arg(long = "ocr-locale")]
         ocr_locale: Vec<String>,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -289,7 +291,8 @@ enum Cmd {
         #[arg(long = "ocr-locale")]
         ocr_locale: Vec<String>,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -316,7 +319,8 @@ enum Cmd {
         #[arg(long)]
         text: String,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -336,7 +340,8 @@ enum Cmd {
         /// KeyName shorthand (see help text).
         key: String,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -367,7 +372,8 @@ enum Cmd {
         #[arg(long = "to")]
         to_point: Option<String>,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -388,7 +394,8 @@ enum Cmd {
         #[arg(long)]
         direction: String,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -402,7 +409,8 @@ enum Cmd {
     /// Dismiss the soft keyboard if visible.
     HideKeyboard {
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -420,7 +428,8 @@ enum Cmd {
         #[arg(long)]
         json: bool,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -448,7 +457,8 @@ enum Cmd {
         #[arg(long)]
         json: bool,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -465,7 +475,8 @@ enum Cmd {
         #[arg(long)]
         json: bool,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -485,7 +496,8 @@ enum Cmd {
         /// Which button on it, as that same listing reports it.
         button_id: String,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -505,7 +517,8 @@ enum Cmd {
         /// Path to the script yaml file.
         path: PathBuf,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
-        #[arg(long)]
+        /// `--runner-port` is accepted too — `smix run` spells it that way.
+        #[arg(long, alias = "runner-port")]
         port: Option<u16>,
         /// Device UDID, or an alias / deviceName in the workspace's
         /// `.smix` registry. It finds the runner port that device is
@@ -596,7 +609,13 @@ Documentation: docs/AI_GUIDE.md
         #[arg(long)]
         bundle_id: Option<String>,
         /// Runner port. iOS default 22087, Android 28080 by convention.
-        #[arg(long, env = "SMIX_RUNNER_PORT")]
+        ///
+        /// `--port` is accepted too: the act verbs (`tap`, `find`, `fill`)
+        /// spell the same thing that way, and a caller moving between
+        /// them met `error: unexpected argument '--port'` with a
+        /// suggestion of `--format`. One concept, two spellings, and
+        /// nothing said which belonged where.
+        #[arg(long, alias = "port", env = "SMIX_RUNNER_PORT")]
         runner_port: Option<u16>,
         /// Skip the initial foreground call. Use when the app is
         /// already on screen (e.g. launched via `smix sim launch` or
@@ -1408,10 +1427,31 @@ enum RunnerAction {
     /// side by side, because a runner nobody wrote down is exactly the
     /// one you cannot decide about.
     ///
-    /// Reads only. It never signals a process or writes a ledger, and
-    /// always exits 0: a command meant to be run before touching
-    /// anything has to be safe to run.
-    List,
+    /// Reads only by default. It never signals a process, and without
+    /// `--prune` it never writes a ledger, and always exits 0: a command
+    /// meant to be run before touching anything has to be safe to run.
+    List {
+        /// Delete the rows whose recorded process is gone.
+        ///
+        /// A read-mostly command gets one explicit write rather than a
+        /// tidy-up nobody asked for — the same shape as
+        /// `--include-unrecorded`: clearing up is a thing somebody says
+        /// out loud.
+        ///
+        /// Only `process-gone` rows, which are the ones this command can
+        /// prove ended: the recorded pid, and the start time that tells
+        /// a recycled number from the real process. A row that is merely
+        /// not listening is left alone — that is `lease reconcile`'s
+        /// question, and it has closes to perform that this does not.
+        ///
+        /// Reported by a consumer: four rows, four dead pids, and
+        /// nothing that cleared them. `down` refuses a runner this
+        /// workspace never recorded, so the ledger is what decides
+        /// whether a device can be shut down — and a ledger filling with
+        /// dead rows makes that decision rest on a list nobody maintains.
+        #[arg(long, default_value_t = false)]
+        prune: bool,
+    },
     /// Extract the CLI's embedded Swift runner sources
     /// into `~/.local/share/smix/runner/`. Normally auto-invoked by
     /// `smix runner up` when the on-disk `.smix-runner-version` file
@@ -1903,7 +1943,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
 fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::registry::DeviceKind]> {
     use DeviceKind::{Emulator, PhysicalAndroid, PhysicalIos, Simulator};
     use smix_simctl::registry::DeviceKind;
-    const ALL: &[DeviceKind] = &[Simulator, Emulator, PhysicalIos, PhysicalAndroid];
+    const ALL: &[DeviceKind] = &DeviceKind::ALL;
     const SIMCTL: &[DeviceKind] = &[Simulator];
     // Powering a device on and off, which is not an Apple-only idea.
     // Physical devices are absent on purpose: section 9 #1 gates them
@@ -2901,9 +2941,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     smix_capsule::runner::supervise(&root, runner_project.as_deref())
                         .map_err(CliError::Other)?;
                 }
-                RunnerAction::List => {
+                RunnerAction::List { prune } => {
                     let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
-                    return Ok(std::process::ExitCode::from(runner_list::run(&leases)?));
+                    return Ok(std::process::ExitCode::from(runner_list::run(
+                        &leases, prune,
+                    )?));
                 }
                 RunnerAction::ListSessions => {
                     let port = runner_port();
@@ -5810,8 +5852,7 @@ fn ownership_of(serial: &str) -> Ownership {
     // session is alive on it are two questions.
     let booted_by_us = facts.existing.as_ref().is_some_and(|h| {
         h.lease
-            .resources
-            .iter()
+            .known_resources()
             .any(|r| matches!(r, smix_lease::Resource::Booted { by_us: true }))
     });
     match smix_lease::assess(&facts) {

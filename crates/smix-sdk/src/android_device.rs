@@ -279,6 +279,50 @@ pub fn parse_resolved_activity(text: &str, bundle_id: &str) -> Option<String> {
         .filter(|a| a.len() > 1)
 }
 
+fn android_kind(serial: &str) -> smix_simctl::registry::DeviceKind {
+    use smix_simctl::registry::DeviceKind;
+    // adb names emulators `emulator-<port>`; everything else attached is
+    // something somebody is holding. Derived from the serial rather than
+    // passed in, because this backend is handed a serial and nothing
+    // else — and picking a column arbitrarily would report having read
+    // an answer it never looked at.
+    if serial.starts_with("emulator-") {
+        DeviceKind::Emulator
+    } else {
+        DeviceKind::PhysicalAndroid
+    }
+}
+
+/// The refusal for something this backend cannot do, read from the one
+/// table that says so.
+///
+/// These sentences used to be written here, and `DevicectlClient` had
+/// seventeen more of its own. Two sets of prose about the same question,
+/// with nothing able to say whether they agreed — and they did not: the
+/// platform table's first draft had both clipboard cells as `Works` on
+/// Android, taken from a research note rather than from this file, which
+/// has refused them since Android 10 sealed the clipboard.
+fn refused_here(action: &str, kind: smix_simctl::registry::DeviceKind) -> DeviceControlError {
+    use crate::device_control::{Availability, availability};
+
+    match availability(action, kind) {
+        Some(Availability::RefusedByName { why, instead }) => DeviceControlError::non_zero_exit(
+            action,
+            -1,
+            format!("{action} is not available on Android: {why}\nInstead: {instead}").as_str(),
+        ),
+        other => DeviceControlError::non_zero_exit(
+            action,
+            -1,
+            format!(
+                "{action} was refused on Android, but the platform table says {other:?}. \
+                 The table and this code disagree; fix one."
+            )
+            .as_str(),
+        ),
+    }
+}
+
 #[async_trait]
 impl DeviceControl for AndroidDeviceControl {
     fn platform(&self) -> Platform {
@@ -389,19 +433,13 @@ impl DeviceControl for AndroidDeviceControl {
             .map_err(|e| adb_to_simctl_err(e, "uninstall"))
     }
 
-    async fn keychain_reset(&self, _serial: &str) -> Result<(), DeviceControlError> {
+    async fn keychain_reset(&self, serial: &str) -> Result<(), DeviceControlError> {
         // This used to return Ok(()) and call itself a no-op "matching the
         // expectation that Android silently no-ops rather than crashing".
         // A flow that clears the keychain does it so the next step meets a
         // signed-out app; succeeding without doing it hands that step a
         // logged-in one and blames the step.
-        Err(DeviceControlError::non_zero_exit(
-            "keychain_reset",
-            -1,
-            "clearKeychain has no Android equivalent: credentials live in each app's own \
-             KeyStore, which the host cannot reach. Use clearAppData to wipe the app's \
-             state, or have the app expose a sign-out path.",
-        ))
+        Err(refused_here("keychain_reset", android_kind(serial)))
     }
 
     async fn privacy_reset_all(
@@ -456,7 +494,7 @@ impl DeviceControl for AndroidDeviceControl {
 
     async fn send_push(
         &self,
-        _serial: &str,
+        serial: &str,
         _bundle_id: &str,
         _apns_json_path: &str,
     ) -> Result<(), DeviceControlError> {
@@ -464,11 +502,7 @@ impl DeviceControl for AndroidDeviceControl {
         // Android requires FCM credentials + Firebase project setup —
         // deferred. Surface an explicit error so yaml authors know it
         // is not silently no-op.
-        Err(DeviceControlError::non_zero_exit(
-            "send_push",
-            -1,
-            "Android FCM push not implemented (cross-platform yaml `sendPush:` is iOS APNs only)",
-        ))
+        Err(refused_here("send_push", android_kind(serial)))
     }
 
     async fn screenshot(&self, serial: &str) -> Result<Vec<u8>, DeviceControlError> {
@@ -501,24 +535,12 @@ impl DeviceControl for AndroidDeviceControl {
     //
     // So this is a platform limit, and the honest thing is to say so rather
     // than keep a skeleton that reads as unfinished work.
-    async fn pasteboard_set(&self, _serial: &str, _text: &str) -> Result<(), DeviceControlError> {
-        Err(DeviceControlError::non_zero_exit(
-            "pasteboard_set",
-            -1,
-            "Android does not let a test runner write the clipboard: since Android 10 the \
-             clipboard serves only the focused app, and the runner cannot be focused while \
-             driving your app. Pass the text via inputText, or have the app expose it another way.",
-        ))
+    async fn pasteboard_set(&self, serial: &str, _text: &str) -> Result<(), DeviceControlError> {
+        Err(refused_here("pasteboard_set", android_kind(serial)))
     }
 
-    async fn pasteboard_get(&self, _serial: &str) -> Result<String, DeviceControlError> {
-        Err(DeviceControlError::non_zero_exit(
-            "pasteboard_get",
-            -1,
-            "Android does not let a test runner read the clipboard: since Android 10 the \
-             clipboard serves only the focused app, and the runner cannot be focused while \
-             driving your app. Assert on what the app renders instead.",
-        ))
+    async fn pasteboard_get(&self, serial: &str) -> Result<String, DeviceControlError> {
+        Err(refused_here("pasteboard_get", android_kind(serial)))
     }
 
     async fn add_media(&self, serial: &str, paths: &[String]) -> Result<(), DeviceControlError> {
@@ -768,6 +790,58 @@ impl DeviceControl for AndroidDeviceControl {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn what_android_refuses_is_what_the_table_says_it_refuses() {
+        // Walks the table, not a list of method names. The first draft
+        // of the platform table had both clipboard cells as `Works` on
+        // Android because they were filled in from a research note
+        // instead of from this file — which has refused them since
+        // Android 10 sealed the clipboard. Nothing would have said so.
+        use crate::device_control::{ACTION_PLATFORMS, Availability};
+        use smix_simctl::registry::DeviceKind;
+
+        for kind in [DeviceKind::Emulator, DeviceKind::PhysicalAndroid] {
+            let idx = DeviceKind::ALL.iter().position(|k| *k == kind).unwrap();
+            let mut checked = 0;
+            for (action, row) in ACTION_PLATFORMS {
+                if let Availability::RefusedByName { why, instead } = row[idx] {
+                    let serial = if kind == DeviceKind::Emulator {
+                        "emulator-5554"
+                    } else {
+                        "R5CT52DF07D"
+                    };
+                    assert_eq!(
+                        android_kind(serial),
+                        kind,
+                        "the serial shape no longer picks the column it used to"
+                    );
+                    let msg = format!("{}", refused_here(action, kind));
+                    assert!(
+                        !msg.contains("disagree"),
+                        "{action} on {kind:?}: the table and this backend disagree — {msg}"
+                    );
+                    assert!(msg.contains(why), "{action}: the refusal lost its reason");
+                    assert!(
+                        msg.contains(instead),
+                        "{action}: the refusal lost the way out"
+                    );
+                    checked += 1;
+                }
+            }
+            // Exact, not `> 0`. The first version only walked the cells
+            // that already said "refused", so flipping one to `Works`
+            // simply skipped it and the test stayed green — proved by
+            // flipping `pasteboard_get` and watching nothing happen. A
+            // walk over a set cannot notice something leaving the set.
+            let expected = if kind == DeviceKind::Emulator { 5 } else { 7 };
+            assert_eq!(
+                checked, expected,
+                "{kind:?} refuses {expected} of these; this walk saw {checked}. Either a \
+                 gap closed — say so here, deliberately — or a row quietly changed."
+            );
+        }
+    }
+
     use super::*;
 
     /// Spans whose length follows from the sphere itself, so a wrong
