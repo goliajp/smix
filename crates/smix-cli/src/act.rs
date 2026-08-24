@@ -435,6 +435,15 @@ pub async fn cmd_fill(
     let names_a_field = !matches!(selector, smix_selector::Selector::Focused { .. });
     d.fill(&selector, &text, None, names_a_field)
         .await
+        // Same refusal, same sentence, one definition of it — see
+        // `smix_sdk::focused_fill_refusal`.
+        .map_err(|e| {
+            if names_a_field {
+                e
+            } else {
+                smix_sdk::focused_fill_refusal(e)
+            }
+        })
         .map_err(|e| ActError::Transport(format!("{e}")))?;
     // The value never comes back out. smix's output is a transcript that
     // persists and is read by an AI, so a password typed through here
