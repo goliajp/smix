@@ -147,6 +147,10 @@ struct ContentView: View {
     // else would exercise a different path and answer a different
     // question.
     NavigationStack {
+      // Named so a swipe can be aimed inside it. `swipe: { over: ... }`
+      // takes shares of an element's box, and a box needs an element
+      // that can be addressed — which is the whole difference between
+      // that form and measuring the screen.
       List {
         Section {
           Text("smix fixture").font(.headline)
@@ -188,6 +192,7 @@ struct ContentView: View {
           }
         }
       }
+      .accessibilityIdentifier("fixture-list")
       .navigationTitle("smix fixture")
     }
   }

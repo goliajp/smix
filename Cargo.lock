@@ -2672,6 +2672,7 @@ dependencies = [
  "smix-annotate",
  "smix-driver",
  "smix-fixture",
+ "smix-host-coord-resolver",
  "smix-lease",
  "smix-metro-log",
  "smix-migrate",

@@ -506,6 +506,29 @@ pub enum Step {
         /// End point (normalized coords).
         to: (f64, f64),
     },
+    /// Swipe inside one element's box, by proportion of that box.
+    ///
+    /// The opposite of the coordinate escape hatch rather than more of
+    /// it. `swipe --from/--to` takes a share of the *screen*, which is
+    /// what a caller reaches for when there is nothing nameable to
+    /// swipe between; a consumer with a nameable timeline still had to
+    /// measure it, getting 45.3–50.5% of screen height on Android and
+    /// 47.7–53.2% on iOS, taking 49% as the overlap and knowing it would
+    /// have to be measured again on a device of a different shape.
+    ///
+    /// `over:` names the element and the numbers are shares of *its*
+    /// box, so the flow stops depending on the geometry. §9 #3 forbids
+    /// xpath and coordinates on the selector surface; this puts a
+    /// selector where the coordinates used to be.
+    SwipeOver {
+        /// The element whose box the swipe happens inside.
+        selector: Selector,
+        /// Start, as a share of the element's box. `(0.5, 0.3)` is
+        /// halfway across and three tenths down.
+        from: (f64, f64),
+        /// End, same frame of reference.
+        to: (f64, f64),
+    },
     /// Launch / relaunch the app under test. Supports the full maestro
     /// yaml sub-parameter set: appId / clearState / clearKeychain /
     /// permissions / arguments / stopApp.

@@ -268,6 +268,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::TapAtPoint { .. } => "tapAtPoint",
         Step::WebViewEval { .. } => "webViewEval",
         Step::WaitForAnimationToEnd { .. } => "waitForAnimationToEnd",
+        Step::SwipeOver { .. } => "swipe",
         Step::ExtendedWaitUntil { .. } => "extendedWaitUntil",
         Step::AssertVisible { .. } => "assertVisible",
         Step::InputText(_) => "inputText",

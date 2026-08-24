@@ -692,6 +692,54 @@ impl AppLike for MockApp {
         *n += 1;
         Ok(frames[idx].clone())
     }
+    /// A tree with one named element in it, so a verb that resolves a
+    /// box has a box to resolve.
+    ///
+    /// `swipe: { over: ... }` was the first verb here to read the tree
+    /// rather than ask for a point, and the default `AppLike::tree`
+    /// refuses — so its tests failed with "not implemented on this
+    /// backend", which says the mock is thin rather than that the verb
+    /// is wrong. The two look the same from a red test.
+    async fn tree(&self) -> Result<smix_sdk::A11yNode, ExpectationFailure> {
+        fn node(
+            id: Option<&str>,
+            b: smix_sdk::Rect,
+            children: Vec<smix_sdk::A11yNode>,
+        ) -> smix_sdk::A11yNode {
+            smix_sdk::A11yNode {
+                raw_type: if id.is_some() {
+                    "textField".into()
+                } else {
+                    "application".into()
+                },
+                element_type_raw: 1,
+                role: None,
+                identifier: id.map(String::from),
+                label: None,
+                title: None,
+                placeholder_value: None,
+                value: None,
+                text: None,
+                bounds: b,
+                enabled: true,
+                selected: false,
+                has_focus: false,
+                visible: true,
+                children,
+            }
+        }
+        let r = |x: f64, y: f64, w: f64, h: f64| smix_sdk::Rect { x, y, w, h };
+        Ok(node(
+            None,
+            r(0.0, 0.0, 1000.0, 1000.0),
+            vec![node(
+                Some("fixture-input"),
+                r(100.0, 200.0, 800.0, 400.0),
+                vec![],
+            )],
+        ))
+    }
+
     async fn get_clipboard(&self) -> Result<String, ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::GetClipboard);
         Ok(self.clipboard.lock().unwrap().clone())
@@ -3173,5 +3221,90 @@ async fn a_capture_error_that_is_not_backpressure_still_fails_the_step() {
     assert!(
         adapter.run(&flow).await.is_err(),
         "an undecodable frame is a real failure and must stay one"
+    );
+}
+
+// --- swipe over an element ---------------------------------------------
+//
+// A consumer with a nameable timeline still had to measure it: 45.3–50.5%
+// of screen height on Android, 47.7–53.2% on iOS, 49% taken as the
+// overlap, and a note that a device of a different shape would need
+// measuring again. `swipe --from/--to` is documented as the hatch for
+// screens with nothing nameable to swipe between; theirs had a name and
+// no way to use it.
+
+#[tokio::test]
+async fn swipe_over_lands_inside_the_named_element() {
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- swipe: { over: { id: \"fixture-input\" }, from: 0.3, to: 0.8 }\n",
+    )
+    .unwrap();
+
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("run ok");
+
+    let calls = app.calls.lock().unwrap().clone();
+    let swipes: Vec<_> = calls
+        .iter()
+        .filter_map(|c| match c {
+            MockCall::SwipeAtCoord(from, to) => Some((*from, *to)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(swipes.len(), 1, "one swipe: {calls:?}");
+    let (from, to) = swipes[0];
+    // The mock's tree puts `fixture-input` somewhere; whatever its box,
+    // both ends must sit inside it and in the order asked for.
+    assert!(from.1 < to.1, "0.3 → 0.8 runs downward: {from:?} → {to:?}");
+    assert!(
+        (0.0..=1.0).contains(&from.0) && (0.0..=1.0).contains(&from.1),
+        "start is on the screen: {from:?}"
+    );
+}
+
+#[tokio::test]
+async fn swipe_over_something_that_is_not_there_refuses_rather_than_sweeping_the_screen() {
+    // The failure that matters. Falling back to shares of the display
+    // would swipe across the middle of whatever is showing and report
+    // the step done — which is the form `over:` exists to replace.
+    let app = MockApp::new();
+    let flow = parse_flow_yaml(
+        "appId: com.t\n---\n- swipe: { over: { id: \"no-such-thing\" }, from: 0.3, to: 0.8 }\n",
+    )
+    .unwrap();
+
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let err = adapter
+        .run(&flow)
+        .await
+        .expect_err("must not report a swipe it did not aim");
+
+    let calls = app.calls.lock().unwrap().clone();
+    assert!(
+        !calls
+            .iter()
+            .any(|c| matches!(c, MockCall::SwipeAtCoord(..))),
+        "it swiped anyway: {calls:?}"
+    );
+    let text = format!("{err:?}");
+    assert!(
+        text.contains("no-such-thing"),
+        "the refusal names what could not be found: {text}"
+    );
+}
+
+#[tokio::test]
+async fn a_percent_string_is_refused_because_it_means_the_other_thing() {
+    // `"30%"` of an element and `"30%"` of the screen are exactly what
+    // this form exists to keep apart.
+    let e = parse_flow_yaml(
+        "appId: com.t\n---\n- swipe: { over: { id: \"x\" }, from: \"30%\", to: \"80%\" }\n",
+    )
+    .expect_err("must not parse");
+    let text = format!("{e:?}");
+    assert!(
+        text.contains("share"),
+        "says which spelling belongs where: {text}"
     );
 }

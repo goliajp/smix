@@ -90,6 +90,9 @@ pub enum Slot {
     RunFlowGate,
     /// `takeScreenshot: { annotations: [{ at: <selector> }] }`.
     AnnotationAnchor,
+    /// `swipe: { over: <selector>, from, to }` — the element whose box
+    /// the swipe happens inside.
+    SwipeOverTarget,
 }
 
 /// What a slot does with a form it cannot read from the tree.
@@ -122,6 +125,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         Step::ScrollUntilVisible { .. } => &[Slot::ScrollTarget],
         Step::RunFlowInline { .. } | Step::RunFlowConditional { .. } => &[Slot::RunFlowGate],
         Step::TakeScreenshot { .. } => &[Slot::AnnotationAnchor],
+        Step::SwipeOver { .. } => &[Slot::SwipeOverTarget],
         Step::TapAtPoint { .. }
         | Step::WebViewEval { .. }
         | Step::WaitForAnimationToEnd { .. }
@@ -173,7 +177,7 @@ impl Slot {
     /// this list against the `Slot::` names `slots()` actually hands
     /// out, because a list written by hand beside a list derived from
     /// the code is two truths waiting to disagree.
-    pub const ALL: [Slot; 13] = [
+    pub const ALL: [Slot; 14] = [
         Slot::TapOnTarget,
         Slot::RepeatTapTarget,
         Slot::DoubleTapTarget,
@@ -187,6 +191,7 @@ impl Slot {
         Slot::ScrollTarget,
         Slot::RunFlowGate,
         Slot::AnnotationAnchor,
+        Slot::SwipeOverTarget,
     ];
 }
 
@@ -216,6 +221,20 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
         // A locale map is a rewrite, not a capability: every slot that
         // resolves a selector does it, since 7.0.0.
         (_, F::LocalizedText) => Support::Dispatched,
+
+        // `over:` needs the element's BOX — the swipe runs between two
+        // points inside it — and OCR gives exactly that. The point of
+        // the form is to stop a flow measuring the screen, and a text
+        // found by its pixels has a box to measure against.
+        (S::SwipeOverTarget, F::OcrText) => Support::Dispatched,
+        // An anchor plus a shift resolves to a point, and a point has no
+        // width to take three tenths of. Name the element whose box you
+        // mean; if it has no accessibility identity at all, `swipe` with
+        // `from`/`to` shares of the screen is the form for that, and it
+        // is the one `over:` exists to let you stop using.
+        (S::SwipeOverTarget, F::AnchorRelative) => Support::Refused(
+            "an anchor plus a shift is a point, and a swipe inside a box needs              the box: there is nothing to take a share of. Name the element              itself, or use `swipe: { from, to }` if it has no identity to name",
+        ),
 
         // Tapping is where a coordinate is enough. OCR gives a box and
         // an anchor plus a shift gives a point, and a tap is the one
@@ -292,6 +311,7 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
 pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
     match step {
         Step::TapOn { selector, .. } => vec![(Slot::TapOnTarget, selector)],
+        Step::SwipeOver { selector, .. } => vec![(Slot::SwipeOverTarget, selector)],
         Step::RepeatTap { selector, .. } => vec![(Slot::RepeatTapTarget, selector)],
         Step::DoubleTapOn { selector, .. } => vec![(Slot::DoubleTapTarget, selector)],
         Step::LongPressOn { selector, .. } => vec![(Slot::LongPressTarget, selector)],
