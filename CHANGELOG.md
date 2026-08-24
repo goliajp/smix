@@ -2,6 +2,42 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Changed
+
+- **A ledger row written by a newer smix is now read, kept, and refused —
+  not choked on.** 7.0.0's release notes described an older smix stopping
+  dead against a device whose ledger held a claim, and called that the
+  safe direction. It was, and it was also not the whole answer, because
+  nothing stopped the same thing happening again at the next row.
+
+  Being exact about which half was inherent: **for 6.x it was.**
+  `Resource` is internally tagged, serde rejects a tag it has never heard
+  of, and 6.x's parser had already shipped — no row 7.0.0 could write
+  would have changed that. **For 7.x onward it is not.** Forward
+  compatibility can only live in the reader, and can only be added before
+  the writer needs it, so it is added now: a row this binary cannot name
+  parses into `Row::Unnamed` holding the row's whole object.
+
+  It keeps the object rather than just the tag, because a reader that
+  remembers the name and forgets the contents destroys the row the next
+  time it writes the file back. Every `retain` in the store defaults an
+  unreadable row to kept for the same reason.
+
+  What it does not do is act. An unnamed row withholds `may_shut_down`
+  even from a holder that booted the device — something is open there that
+  nothing here can close — it is not a service, so nothing adopts past it,
+  it counts as possibly-alive rather than dead, and it appears in the
+  cleanup plan as `CleanupAction::CannotClose { kind }`. A teardown
+  carrying one reports `Outcome::Failed` naming the kind, because a plan
+  that silently omitted what it could not read would report itself
+  complete.
+
+  Rust API: `Lease::resources` is `Vec<Row>` rather than `Vec<Resource>`,
+  `Lease::known_resources()` iterates the ones this binary understands,
+  `unnamed_kinds()` names the rest, and `CleanupAction` gained a variant.
+
 ## [7.0.0] — 2026-08-24
 
 **Nothing moves on the wire, in the YAML verb table, or on the CLI.** The

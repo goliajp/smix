@@ -5,7 +5,7 @@
 //! `assess` be tested without a filesystem, and it is why this module is
 //! deliberately dull.
 
-use crate::{Facts, Held, HolderProbe, Lease, ProcIdentity, Resource};
+use crate::{Facts, Held, HolderProbe, Lease, ProcIdentity, Resource, Row};
 use std::path::{Path, PathBuf};
 
 /// Why a ledger operation failed.
@@ -195,22 +195,30 @@ pub fn compare(
             let procs = |l: &Lease| -> Vec<String> {
                 l.resources
                     .iter()
-                    .map(|r| match r {
-                        Resource::Runner { port, proc } => {
+                    .map(|row| match row {
+                        // Listed, not skipped: two ledgers differing
+                        // only in a row neither side can read would
+                        // otherwise print as identical.
+                        Row::Unnamed(_) => {
+                            format!("unnamed {}", row.unnamed_kind().unwrap_or_default())
+                        }
+                        Row::Known(Resource::Runner { port, proc }) => {
                             format!("runner :{port} pid {}", proc.pid)
                         }
-                        Resource::AndroidRunner { port, proc, .. } => {
+                        Row::Known(Resource::AndroidRunner { port, proc, .. }) => {
                             format!("android runner :{port} pid {}", proc.pid)
                         }
-                        Resource::PortForward {
+                        Row::Known(Resource::PortForward {
                             local_port, proc, ..
-                        } => format!("forward :{local_port} pid {}", proc.pid),
-                        Resource::Supervisor { proc } => format!("supervisor pid {}", proc.pid),
-                        Resource::Recording { proc, .. } => {
+                        }) => format!("forward :{local_port} pid {}", proc.pid),
+                        Row::Known(Resource::Supervisor { proc }) => {
+                            format!("supervisor pid {}", proc.pid)
+                        }
+                        Row::Known(Resource::Recording { proc, .. }) => {
                             format!("recording pid {}", proc.pid)
                         }
-                        Resource::Booted { by_us } => format!("booted by_us={by_us}"),
-                        Resource::Claimed { at } => format!("claimed at {at}"),
+                        Row::Known(Resource::Booted { by_us }) => format!("booted by_us={by_us}"),
+                        Row::Known(Resource::Claimed { at }) => format!("claimed at {at}"),
                     })
                     .collect()
             };
@@ -539,10 +547,16 @@ pub fn add_resource(dir: &LeaseDir, device_id: &str, resource: Resource) -> Resu
         resources: Vec::new(),
     });
     let same_kind = std::mem::discriminant(&resource);
-    lease
-        .resources
-        .retain(|r| std::mem::discriminant(r) != same_kind);
-    lease.resources.push(resource);
+    // A row this binary cannot read is never what is being replaced, so
+    // it survives the de-duplication. Every `retain` in this file
+    // defaults the unnamed row to kept for the same reason: dropping
+    // what you could not read is the one outcome worse than refusing to
+    // read it.
+    lease.resources.retain(|row| {
+        row.known()
+            .is_none_or(|r| std::mem::discriminant(r) != same_kind)
+    });
+    lease.resources.push(Row::Known(resource));
     lease.heartbeat_at = now;
     write(dir, &lease)
 }
@@ -565,8 +579,7 @@ pub fn add_resource(dir: &LeaseDir, device_id: &str, resource: Resource) -> Resu
 /// and only a shutdown — which drops the row outright — ends it.
 pub fn record_boot(dir: &LeaseDir, device_id: &str, by_us: bool) -> Result<(), LeaseError> {
     let already = read(dir, device_id)?.is_some_and(|l| {
-        l.resources
-            .iter()
+        l.known_resources()
             .any(|r| matches!(r, Resource::Booted { by_us: true }))
     });
     add_resource(
@@ -606,13 +619,14 @@ pub fn drop_resource_kind(
         return Ok(());
     };
     let kind = std::mem::discriminant(sample);
-    lease
-        .resources
-        .retain(|r| std::mem::discriminant(r) != kind);
-    let worth_keeping = lease
-        .resources
-        .iter()
-        .any(|r| !matches!(r, Resource::Booted { by_us: false }));
+    lease.resources.retain(|row| {
+        row.known()
+            .is_none_or(|r| std::mem::discriminant(r) != kind)
+    });
+    let worth_keeping = lease.resources.iter().any(|row| {
+        row.known()
+            .is_none_or(|r| !matches!(r, Resource::Booted { by_us: false }))
+    });
     if worth_keeping {
         write(dir, &lease)
     } else {
@@ -631,11 +645,13 @@ pub fn drop_process_rows(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseErr
     let Some(mut lease) = read(dir, device_id)? else {
         return Ok(());
     };
-    lease.resources.retain(|r| !crate::is_process_backed(r));
-    let worth_keeping = lease
+    lease
         .resources
-        .iter()
-        .any(|r| !matches!(r, Resource::Booted { by_us: false }));
+        .retain(|row| row.known().is_none_or(|r| !crate::is_process_backed(r)));
+    let worth_keeping = lease.resources.iter().any(|row| {
+        row.known()
+            .is_none_or(|r| !matches!(r, Resource::Booted { by_us: false }))
+    });
     if worth_keeping {
         write(dir, &lease)
     } else {
@@ -661,13 +677,14 @@ pub fn drop_process_rows_except(
     let Some(mut lease) = read(dir, device_id)? else {
         return Ok(());
     };
-    lease
-        .resources
-        .retain(|r| !crate::is_process_backed(r) || keep.contains(r));
-    let worth_keeping = lease
-        .resources
-        .iter()
-        .any(|r| !matches!(r, Resource::Booted { by_us: false }));
+    lease.resources.retain(|row| {
+        row.known()
+            .is_none_or(|r| !crate::is_process_backed(r) || keep.contains(r))
+    });
+    let worth_keeping = lease.resources.iter().any(|row| {
+        row.known()
+            .is_none_or(|r| !matches!(r, Resource::Booted { by_us: false }))
+    });
     if worth_keeping {
         write(dir, &lease)
     } else {
@@ -709,7 +726,14 @@ pub fn collect_facts(dir: &LeaseDir, device_id: &str) -> Result<Facts, LeaseErro
         //
         // A recording nobody is left to stop is exactly an orphan, and
         // orphans are what reconcile is for.
-        let any_resource_alive = lease.resources.iter().any(|r| match r {
+        let any_resource_alive = lease.resources.iter().any(|row| match row {
+            // "I cannot read this row" is not "this row is dead". Answering
+            // dead would let a reconcile reclaim a device on the strength
+            // of something it could not examine — the shape of an empty
+            // predicate, and here it would take a newer smix's session
+            // with it.
+            Row::Unnamed(_) => true,
+            Row::Known(r) => match r {
             // A runner — either platform's — is the session itself.
             Resource::Runner { proc, .. } | Resource::AndroidRunner { proc, .. } => {
                 let p = probe(proc);
@@ -730,6 +754,7 @@ pub fn collect_facts(dir: &LeaseDir, device_id: &str) -> Result<Facts, LeaseErro
             // a device, and nothing about it can be probed for liveness.
             | Resource::Booted { .. }
             | Resource::Claimed { .. } => false,
+            },
         });
         Held {
             lease,

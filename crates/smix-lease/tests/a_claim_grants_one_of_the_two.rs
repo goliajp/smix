@@ -19,7 +19,9 @@
 //! Each test falsifies one judgement on its own.
 
 use smix_lease::store::{self, LeaseDir};
-use smix_lease::{CleanupAction, Held, HolderProbe, Lease, ProcIdentity, PruneVerdict, Resource};
+use smix_lease::{
+    CleanupAction, Held, HolderProbe, Lease, ProcIdentity, PruneVerdict, Resource, Row,
+};
 
 fn holder() -> ProcIdentity {
     ProcIdentity {
@@ -35,7 +37,7 @@ fn lease_with(resources: Vec<Resource>) -> Lease {
         holder: holder(),
         acquired_at: "2026-08-24T00:00:00Z".into(),
         heartbeat_at: "2026-08-24T00:00:00Z".into(),
-        resources,
+        resources: resources.into_iter().map(Row::Known).collect(),
     }
 }
 
@@ -132,8 +134,7 @@ fn claiming_twice_restates_when_rather_than_stacking_rows() {
         .expect("read")
         .expect("ledger");
     let claims = l
-        .resources
-        .iter()
+        .known_resources()
         .filter(|r| matches!(r, Resource::Claimed { .. }))
         .count();
     assert_eq!(claims, 1, "got {:?}", l.resources);
@@ -150,15 +151,13 @@ fn releasing_a_claim_leaves_a_real_boot_row_alone() {
         .expect("read")
         .expect("ledger survives");
     assert!(
-        l.resources
-            .iter()
+        l.known_resources()
             .any(|r| matches!(r, Resource::Booted { by_us: true })),
         "releasing a claim took the answer to a different question with it: {:?}",
         l.resources
     );
     assert!(
-        !l.resources
-            .iter()
+        !l.known_resources()
             .any(|r| matches!(r, Resource::Claimed { .. })),
         "the claim survived its own release"
     );
@@ -178,8 +177,7 @@ fn a_lone_claim_is_worth_a_ledger() {
         store::read(&d, "emulator-5554")
             .expect("read")
             .is_some_and(|l| l
-                .resources
-                .iter()
+                .known_resources()
                 .any(|r| matches!(r, Resource::Claimed { .. }))),
         "the claim did not outlive a teardown that closed no processes"
     );

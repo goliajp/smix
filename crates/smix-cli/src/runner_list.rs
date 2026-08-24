@@ -23,7 +23,7 @@ use smix_lease::store::{self, CheckoutLedgers, LeaseDir};
 ///
 /// Only a ledger that will not parse. A machine with no ledgers and
 /// nothing listening is a normal answer, not a failure.
-pub fn run(leases: &LeaseDir) -> Result<u8, crate::CliError> {
+pub fn run(leases: &LeaseDir, prune: bool) -> Result<u8, crate::CliError> {
     let machine = ledgers_in(leases);
     // The tree underfoot, read for one purpose: to say which checkout
     // has a record of a runner this machine's ledgers do not. It names
@@ -43,7 +43,32 @@ pub fn run(leases: &LeaseDir) -> Result<u8, crate::CliError> {
     };
 
     let listeners = runner_view::listeners();
-    let rows = runner_view::attribute(&machine, &listeners, &checkout);
+    // The Android half of "is this row still alive". An iOS runner is
+    // found by its listener; an Android one has none, and this command
+    // used to answer `not-probed` about every Android row — so a reader
+    // was sent to `ps` with a bare pid, which a consumer did four times
+    // in one session and found four dead processes.
+    //
+    // `store::probe` is the right instrument rather than `kill -0`: it
+    // compares the recorded start time too, so a pid that now belongs to
+    // something else reads as gone instead of as the runner. The I/O
+    // lives here because `attribute` reads nothing.
+    let live_pids: std::collections::HashSet<u32> = machine
+        .iter()
+        .flat_map(|(_, lease)| lease.known_resources())
+        .filter_map(|r| match r {
+            smix_lease::Resource::AndroidRunner { proc, .. } => Some(proc),
+            _ => None,
+        })
+        .filter(|proc| {
+            let p = smix_lease::store::probe(proc);
+            p.pid_exists && p.identity_matches
+        })
+        .map(|proc| proc.pid)
+        .collect();
+    let rows = runner_view::attribute(&machine, &listeners, &checkout, &live_pids);
+    let mut pruned = 0usize;
+    let mut failed_prunes = 0usize;
 
     if rows.is_empty() {
         println!(
@@ -91,6 +116,43 @@ pub fn run(leases: &LeaseDir) -> Result<u8, crate::CliError> {
                     row.port, row.device_id
                 );
             }
+            Seen::ProcessGone { ledger_pid } => {
+                println!(
+                    ":{:<6} {:<40} process-gone  recorded at pid {ledger_pid}; that \
+                     process is no longer running",
+                    row.port, row.device_id
+                );
+                if prune {
+                    // Only the runner row. A device may also carry a boot
+                    // row or a claim, and those answer a different
+                    // question — who may switch it off — which this
+                    // command has said nothing about.
+                    match smix_lease::store::drop_resource_kind(
+                        leases,
+                        &row.device_id,
+                        &smix_lease::Resource::AndroidRunner {
+                            port: row.port,
+                            serial: row.device_id.clone(),
+                            proc: smix_lease::store::identify_self(),
+                        },
+                    ) {
+                        Ok(()) => {
+                            pruned += 1;
+                            println!("{:>8} pruned.", "");
+                        }
+                        Err(e) => {
+                            println!("{:>8} could not prune it: {e}", "");
+                            failed_prunes += 1;
+                        }
+                    }
+                } else {
+                    println!(
+                        "{:>8} nothing to stop. `smix runner list --prune` clears \
+                         rows like this one.",
+                        ""
+                    );
+                }
+            }
             Seen::ProcessOnly {
                 app_pid,
                 session_pid,
@@ -121,6 +183,23 @@ pub fn run(leases: &LeaseDir) -> Result<u8, crate::CliError> {
                 );
             }
         }
+    }
+    if prune {
+        println!();
+        if failed_prunes > 0 {
+            // Kept visible rather than folded into the count: a row that
+            // would not go is the one worth looking at.
+            println!(
+                "pruned {pruned} row(s); {failed_prunes} would not go — \
+                 the ledger still holds them and the next run will say so again"
+            );
+            return Ok(1);
+        }
+        println!(
+            "pruned {pruned} row(s) whose recorded process had ended. \
+             Boot rows and claims are untouched: they answer who may switch a \
+             device off, which this command has not looked at."
+        );
     }
     Ok(0)
 }

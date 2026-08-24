@@ -23,7 +23,7 @@ use std::path::Path;
 /// going, and a yes/no answer sends them to `ls` to guess.
 pub fn describe_status(device_id: &str, lease: Option<&smix_lease::Lease>) -> String {
     let recording = lease.and_then(|l| {
-        l.resources.iter().find_map(|r| match r {
+        l.known_resources().find_map(|r| match r {
             Resource::Recording { path, proc } => Some((path, proc)),
             _ => None,
         })
@@ -105,7 +105,7 @@ pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliErro
                 println!("{udid}: not recording");
                 return Ok(());
             };
-            let row = lease.resources.iter().find_map(|r| match r {
+            let row = lease.known_resources().find_map(|r| match r {
                 Resource::Recording { path, proc } => Some((path.clone(), proc.clone())),
                 _ => None,
             });
@@ -163,7 +163,7 @@ mod tests {
             holder: store::identify_self(),
             acquired_at: "2026-08-06T10:00:00Z".into(),
             heartbeat_at: "2026-08-06T10:00:00Z".into(),
-            resources,
+            resources: resources.into_iter().map(smix_lease::Row::Known).collect(),
         }
     }
 

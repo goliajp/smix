@@ -1982,7 +1982,7 @@ fn down_with(root: &Path, port: u16, consent: bool) -> Result<(), String> {
             && let Ok(facts) = smix_lease::store::collect_facts(&leases, &st.udid)
             && let Some(held) = facts.existing
         {
-            for r in &held.lease.resources {
+            for r in held.lease.known_resources() {
                 if let smix_lease::Resource::PortForward {
                     local_port, proc, ..
                 } = r
