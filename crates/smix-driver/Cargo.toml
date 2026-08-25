@@ -32,6 +32,9 @@ async-trait.workspace = true
 
 [dev-dependencies]
 wiremock = "0.6"
+# The transport errors this crate translates are reqwest's, and telling a
+# refused connection from a slow one means constructing both.
+reqwest.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 serde_json.workspace = true
 criterion.workspace = true

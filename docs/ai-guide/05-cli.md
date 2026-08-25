@@ -598,6 +598,31 @@ smix system-popups                         # list active popups
 smix system-popup-action <popup-id> <button-id>
 ```
 
+### What `bounds` is measured in, and why the two platforms differ
+
+Every node in `smix tree --json` carries `bounds: {x, y, w, h}`. **The
+unit is not the same on both platforms**, and nothing about the number
+says which one you have:
+
+| | unit | on a device |
+|---|---|---|
+| iOS | **points** | iPhone 17 Pro sim: root `402×874`, screenshot `1206×2622` px (3×) |
+| Android | **pixels** | Pixel-class AVD: root `1080×2340`, which is the physical size |
+
+So a size rule written against one does not port to the other by
+changing the constant:
+
+* **iOS** — Apple's 44pt minimum compares **directly** against `w`/`h`.
+* **Android** — Material's 48dp does not. Divide by the density first:
+  `dp = px / (densityDpi / 160)`. On a 440dpi device that is 2.75×, so
+  48dp is **132px**, and comparing `w >= 48` would pass a target a third
+  of the required size.
+
+The failure is silent in both directions — a checker ported without the
+conversion either passes everything or fails everything, and both look
+like a working checker. Read the density from the device
+(`adb shell wm density`) rather than assuming a number.
+
 **`--then-screenshot` is for UI that does not wait.** A control bar that
 hides itself after a few seconds outlives neither a second command nor
 the turn between two tool calls, and the usual answer is to change the

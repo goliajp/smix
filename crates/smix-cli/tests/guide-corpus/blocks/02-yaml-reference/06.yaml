@@ -25,10 +25,22 @@
 # anything about the display:
 - swipe:
     over: { id: "view-timeline" }
-    from: 0.3                            # three tenths along, halfway across
-    to: 0.8
+    from: 0.3                            # three tenths DOWN, halfway across
+    to: 0.8                              # four fifths down
 
 - swipe:
     over: { id: "view-timeline" }
     from: { x: 0.1, y: 0.5 }             # both axes, when the drag is not along one
     to: { x: 0.9, y: 0.5 }
+
+# `over:` takes any selector form, `fallback:` included — which is what a
+# flow driving both platforms needs when the same element is named
+# differently on each:
+- swipe:
+    over:
+      fallback:
+        - id: "view-timeline"            # iOS accessibilityIdentifier
+        - id: "view_timeline"            # Android resource id
+    from: { x: 0.3, y: 0.5 }
+    to: { x: 0.8, y: 0.5 }
+    duration: 600

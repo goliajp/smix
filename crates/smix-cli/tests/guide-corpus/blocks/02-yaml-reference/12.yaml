@@ -45,3 +45,14 @@
 # On timeout, extendedWaitUntil auto-captures a screenshot + tree JSON
 # to `.smix/timeouts/` (or `--debug-output` dir when set) and appends
 # the written paths to the failure hint — no flag needed.
+
+# Inside a flow, this is the verb. Driving the runner from OUTSIDE one —
+# a shell harness deciding whether the app is up before it starts —
+# reach for `smix wait-for` instead (see 05-cli):
+#
+#     smix wait-for --device <d> --port <p> --timeout 30 id:tab-device
+#
+# Same question, no yaml. A consumer wrote a one-step `ready.yaml` and
+# ran `smix run` on it before finding `wait-for` in `--help`; the two
+# belong beside each other because the choice is "am I in a flow or
+# around one", not "which is better".
