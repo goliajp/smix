@@ -1813,6 +1813,29 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
         {
             (FailureCode::ElementNotFound, None)
         }
+        // Nothing answered the port. Said plainly, because the shape a
+        // reader meets is seven steps in a row each reporting
+        // `error sending request for url (http://127.0.0.1:22089/tree)`
+        // — which reads as seven problems and is one: the runner is not
+        // there any more. A consumer spent a while on that before
+        // finding the real cause (an AVD with 500 MB free; the system
+        // killed the instrumentation).
+        //
+        // Narrow on purpose. `is_connect` is the connection being
+        // refused or reset; a timeout or a half-read body is a runner
+        // that IS there and struggling, and telling that reader to
+        // restart it would send them the wrong way.
+        RunnerTransportError::FetchFailed { endpoint, source } if source.is_connect() => (
+            FailureCode::DriverError,
+            Some(format!(
+                "nothing is listening for {endpoint} any more. The runner answered \
+                 earlier in this run, so it went away mid-flight — on Android the \
+                 usual cause is the system killing the instrumentation under memory \
+                 pressure (check `adb logcat` for `binderDied`, and the emulator's \
+                 RAM). Bring it back with `smix runner up`; every step after this \
+                 one will report the same thing until you do."
+            )),
+        ),
         _ => (FailureCode::DriverError, None),
     };
     ExpectationFailure::new(FailureInit {

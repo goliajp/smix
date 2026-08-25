@@ -170,18 +170,37 @@ one that stops.
 # anything about the display:
 - swipe:
     over: { id: "view-timeline" }
-    from: 0.3                            # three tenths along, halfway across
-    to: 0.8
+    from: 0.3                            # three tenths DOWN, halfway across
+    to: 0.8                              # four fifths down
 
 - swipe:
     over: { id: "view-timeline" }
     from: { x: 0.1, y: 0.5 }             # both axes, when the drag is not along one
     to: { x: 0.9, y: 0.5 }
+
+# `over:` takes any selector form, `fallback:` included — which is what a
+# flow driving both platforms needs when the same element is named
+# differently on each:
+- swipe:
+    over:
+      fallback:
+        - id: "view-timeline"            # iOS accessibilityIdentifier
+        - id: "view_timeline"            # Android resource id
+    from: { x: 0.3, y: 0.5 }
+    to: { x: 0.8, y: 0.5 }
+    duration: 600
 ```
 
-A bare number is the share along the axis with the cross axis centred —
-a drag along a strip has one interesting axis, and guessing the other as
-`0` would run along its edge.
+A bare number is the share along **y** — down the element — with `x`
+centred: `from: 0.85, to: 0.15` drags upward through the middle of the
+box, which is what scrolling a list looks like. A drag along a strip has
+one interesting axis, and guessing the other as `0` would run along its
+edge.
+
+**A horizontal drag needs the `{x, y}` form.** `from: 0.1, to: 0.9`
+would drag *down* the middle, not across — the same two numbers with a
+different meaning, which is the kind of mistake that produces a swipe
+that ran and did the wrong thing.
 
 **Percent strings are refused here.** `"30%"` of an element and `"30%"`
 of the screen are the two things this form exists to keep apart, and one
@@ -354,6 +373,17 @@ would need measuring again.
 # On timeout, extendedWaitUntil auto-captures a screenshot + tree JSON
 # to `.smix/timeouts/` (or `--debug-output` dir when set) and appends
 # the written paths to the failure hint — no flag needed.
+
+# Inside a flow, this is the verb. Driving the runner from OUTSIDE one —
+# a shell harness deciding whether the app is up before it starts —
+# reach for `smix wait-for` instead (see 05-cli):
+#
+#     smix wait-for --device <d> --port <p> --timeout 30 id:tab-device
+#
+# Same question, no yaml. A consumer wrote a one-step `ready.yaml` and
+# ran `smix run` on it before finding `wait-for` in `--help`; the two
+# belong beside each other because the choice is "am I in a flow or
+# around one", not "which is better".
 ```
 
 ### Media (file upload simulators)

@@ -2831,6 +2831,7 @@ version = "8.0.0"
 dependencies = [
  "async-trait",
  "criterion",
+ "reqwest",
  "serde_json",
  "smix-error",
  "smix-host-coord-resolver",

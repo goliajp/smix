@@ -2,6 +2,43 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Changed
+
+- **A runner that went away says so, once, instead of leaking a socket
+  error per step.** A consumer's Android instrumentation was killed
+  mid-suite under memory pressure, and every step after that reported
+  `error sending request for url (http://127.0.0.1:22089/tree)` — seven
+  in a row, reading as seven problems when it was one. A refused
+  connection now names the runner, the usual Android cause, and the way
+  back, and says that the steps after it will report the same thing.
+  Narrow: a timeout is a runner that IS there and struggling, and
+  "restart it" is the wrong instruction for that.
+
+### Documentation
+
+- **`smix tree --json` says what `bounds` is measured in**, which is not
+  the same on both platforms: iOS frames are **points** and Android
+  bounds are **pixels**. A 44pt rule compares directly on iOS; a 48dp
+  rule needs `px / (densityDpi / 160)` first, which on a 440dpi device
+  makes it 132px. Ported without the conversion, a size checker either
+  passes everything or fails everything, and both look like a working
+  checker. Asked by a consumer porting theirs from Android to iOS.
+- **`smix wait-for` is named beside `extendedWaitUntil`.** The flow verb
+  was the only one documented, so a harness driving the runner from
+  outside a flow wrote a one-step yaml to ask "is the app up" before
+  finding `wait-for` in `--help`. The choice is "in a flow or around
+  one", not which is better.
+- **`swipe: { over: … }` takes `fallback:`**, with an example — a flow
+  driving both platforms needs it when the same element is named
+  differently on each. A consumer wrote it on a guess because neither
+  the guide nor the support matrix said so.
+- **A bare `from:`/`to:` share is the **y** axis** with `x` centred. The
+  guide said "the axis" without naming it, and a horizontal drag written
+  with bare numbers runs down the middle instead — two numbers that mean
+  something else rather than an error.
+
 ## [8.0.0] — 2026-08-25
 
 **Flows and CLI are unchanged.** No verb was renamed, no flag removed,
