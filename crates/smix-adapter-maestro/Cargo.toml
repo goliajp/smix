@@ -21,15 +21,15 @@ name = "smix-maestro"
 path = "src/bin/smix-maestro.rs"
 
 [dependencies]
-smix-lease = { path = "../smix-lease", version = "8.0.0" }
-smix-metro-log = { path = "../smix-metro-log", version = "8.0.0" }
-smix-fixture = { path = "../smix-fixture", version = "8.0.0" }
-smix-verbs = { path = "../smix-verbs", version = "8.0.0" }
-smix-annotate = { path = "../smix-annotate", version = "8.0.0" }
+smix-lease = { path = "../smix-lease", version = "8.0.1" }
+smix-metro-log = { path = "../smix-metro-log", version = "8.0.1" }
+smix-fixture = { path = "../smix-fixture", version = "8.0.1" }
+smix-verbs = { path = "../smix-verbs", version = "8.0.1" }
+smix-annotate = { path = "../smix-annotate", version = "8.0.1" }
 # The AI-assertion tier. The runtime dispatches to it; the sense path must
 # not — see the fence test in crates/smix-ai-tier.
-smix-ai-tier = { path = "../smix-ai-tier", version = "8.0.0" }
-smix-simctl = { path = "../smix-simctl", version = "8.0.0" }
+smix-ai-tier = { path = "../smix-ai-tier", version = "8.0.1" }
+smix-simctl = { path = "../smix-simctl", version = "8.0.1" }
 dirs = "5"
 async-trait.workspace = true
 clap = { workspace = true, features = ["env"] }
@@ -39,15 +39,15 @@ serde_json.workspace = true
 serde_norway.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time", "rt-multi-thread", "macros", "signal"] }
-smix-sdk = { path = "../smix-sdk", version = "8.0.0" }
-smix-driver = { path = "../smix-driver", version = "8.0.0" }
-smix-selector = { path = "../smix-selector", version = "8.0.0" }
+smix-sdk = { path = "../smix-sdk", version = "8.0.1" }
+smix-driver = { path = "../smix-driver", version = "8.0.1" }
+smix-selector = { path = "../smix-selector", version = "8.0.1" }
 # The box-share resolver for `swipe: { over: ... }`. Already in the tree
 # below this one — `smix-driver` calls its centre-point sibling.
-smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "8.0.0" }
+smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "8.0.1" }
 
 [dev-dependencies]
-smix-migrate = { path = "../smix-migrate", version = "8.0.0" }
+smix-migrate = { path = "../smix-migrate", version = "8.0.1" }
 serde_json.workspace = true
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }

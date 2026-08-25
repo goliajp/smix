@@ -25,14 +25,14 @@ name = "smix-mcp"
 path = "src/main.rs"
 
 [dependencies]
-smix-lease = { path = "../smix-lease", version = "8.0.0" }
-smix-capsule = { path = "../smix-capsule", version = "8.0.0" }
-smix-simctl = { path = "../smix-simctl", version = "8.0.0" }
-smix-error = { path = "../smix-error", version = "8.0.0" }
-smix-sdk = { path = "../smix-sdk", version = "8.0.0" }
-smix-screen = { path = "../smix-screen", version = "8.0.0" }
-smix-selector = { path = "../smix-selector", version = "8.0.0" }
-smix-input = { path = "../smix-input", version = "8.0.0" }
+smix-lease = { path = "../smix-lease", version = "8.0.1" }
+smix-capsule = { path = "../smix-capsule", version = "8.0.1" }
+smix-simctl = { path = "../smix-simctl", version = "8.0.1" }
+smix-error = { path = "../smix-error", version = "8.0.1" }
+smix-sdk = { path = "../smix-sdk", version = "8.0.1" }
+smix-screen = { path = "../smix-screen", version = "8.0.1" }
+smix-selector = { path = "../smix-selector", version = "8.0.1" }
+smix-input = { path = "../smix-input", version = "8.0.1" }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 rmcp = { workspace = true }
 schemars.workspace = true
