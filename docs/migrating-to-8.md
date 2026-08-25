@@ -30,11 +30,15 @@ emulator-5554.
 Before this, `--device` was not checked against the port at all, and a
 forward could point a named device's commands at a different machine.
 
-Two cases deliberately do **not** refuse. If nothing on the machine can
-be asked (a tunnel, a test double), the run proceeds and says on stderr
-that the pairing went unverified. If you named no device and nothing
-holds the port, the connection attempt reports "no runner is listening",
-which is the more useful sentence.
+It refuses **only** when the port reaches someone else. Two cases
+deliberately do not:
+
+* Something serves the port and cannot say which device it reaches — a
+  tunnel, a recording proxy, a test double. The run proceeds and says on
+  stderr that the pairing went unverified.
+* Nothing holds the port at all. No action can reach any device through
+  it, so the connection attempt reports "no runner is listening", which
+  is both true and the thing you can act on.
 
 ### `inputText` on iOS refuses when nothing has focus
 

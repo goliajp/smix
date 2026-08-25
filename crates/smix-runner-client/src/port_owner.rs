@@ -115,12 +115,18 @@ pub fn decide(port: u16, named: Option<&str>, authority: &Authority) -> Verdict 
             device: Some(only.to_string()),
             unchecked: None,
         },
-        (Some(want), []) => Verdict::Refuse {
-            reason: format!(
-                "nothing on this machine claims port {port}, so there is no \
-                 evidence it reaches {want}. An unclaimed port is not the \
-                 port being yours."
-            ),
+        // Nothing holds the port and nothing serves it. No action can
+        // reach any device through it, so there is no misdirection to
+        // catch — and refusing here buried the true sentence twice: a
+        // runner that died mid-corpus came back as "no evidence it
+        // reaches <udid>" on the retry, when what a reader needed was
+        // "nothing is listening on that port".
+        //
+        // This guard is for a port that reaches SOMEONE ELSE. A port
+        // that reaches nobody is the connection's story to tell.
+        (Some(want), []) => Verdict::Proceed {
+            device: Some(want.to_string()),
+            unchecked: None,
         },
         // Nothing named and nothing claiming it: there is no aim to
         // protect, and the connection attempt is about to tell a better
@@ -377,11 +383,21 @@ mod tests {
     }
 
     #[test]
-    fn no_owner_is_not_agreement() {
-        let v = decide(28080, Some("emulator-5554"), &NONE);
-        assert!(
-            matches!(v, Verdict::Refuse { .. }),
-            "nothing claiming the port must not read as the port being ours"
+    fn a_port_that_reaches_nobody_is_the_connections_story() {
+        // The first cut refused here, and it cost two true sentences:
+        // an iOS runner that died mid-corpus produced "no evidence it
+        // reaches <udid>" on the retry, where "nothing is listening on
+        // that port" was both true and actionable.
+        //
+        // Nothing is given up. This guard exists to catch a port that
+        // reaches SOMEONE ELSE; a port that reaches nobody carries no
+        // action to any device, so there is nothing to protect.
+        assert_eq!(
+            decide(28080, Some("emulator-5554"), &NONE),
+            Verdict::Proceed {
+                device: Some("emulator-5554".into()),
+                unchecked: None
+            }
         );
     }
 
