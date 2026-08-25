@@ -716,32 +716,24 @@ fn webview_bridge_url_uses_given_port() {
 // ---- port ownership ----------------------------------------------------
 
 #[tokio::test]
-async fn a_port_nothing_claims_is_refused_before_the_request() {
-    // The eager connect paths judge this at `connect_to_runner`; the
-    // lazy one cannot, because it exists so the MCP server can be built
-    // before any runner is up — and at that moment nobody holds the
-    // port, so judging there would refuse every startup. So it is
-    // judged here, once, on the first request that actually goes out.
+async fn a_port_that_reaches_nobody_is_left_to_the_connection() {
+    // Port 1: adb forwards nothing to it and nothing listens on it. The
+    // guard stands aside, so what the caller reads is the connection's
+    // own story rather than a remark about claims — which is what an
+    // iOS runner dying mid-corpus needed and did not get.
     //
-    // Port 1: adb forwards nothing to it and nothing listens on it, so
-    // both authorities answer "nobody", and naming a device against
-    // that is refused. A plain connection error would not name the
-    // device, which is what this asserts on.
+    // The refusal half is judged in `port_owner`'s own tests and driven
+    // end to end from the CLI, because producing "this port reaches a
+    // DIFFERENT device" here would mean standing up a process whose
+    // command line names a simulator.
     let client = HttpRunnerClient::with_base("http://127.0.0.1:1")
         .with_port_owner_check(Some("emulator-9999".into()), OwnerProbe::Android);
 
-    let err = client
-        .get_tree(None)
-        .await
-        .expect_err("a port nothing says reaches emulator-9999 must not be driven as it");
+    let err = client.get_tree(None).await.expect_err("nothing is there");
     let said = format!("{err}");
     assert!(
-        said.contains("emulator-9999"),
-        "the refusal must name the device that was asked for — {said}"
-    );
-    assert!(
-        said.contains("refusing"),
-        "and it must be a refusal rather than a connection error — {said}"
+        !said.contains("refusing"),
+        "a port that reaches nobody is not a misdirected port — {said}"
     );
 }
 

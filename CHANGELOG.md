@@ -28,10 +28,12 @@ on the crates, [Migrating to smix 8.0](docs/migrating-to-8.md) is short.
   identical across devices — so the authority is host-side and live:
   `adb forward --list` on Android, the process bound to the device on
   Apple. Mismatch names both sides and says which device it would have
-  acted on. Nothing askable proceeds with a warning rather than a
-  refusal, because refusing there would turn away every route that
-  cannot be interrogated, and the danger is a *named* device being
-  silently replaced.
+  acted on. It refuses only for that: something serving the port that
+  cannot say which device it reaches (a tunnel, the behaviour gate's
+  recording proxy) proceeds with a warning, and a port nothing holds at
+  all is left to the connection, which reports "no runner is listening"
+  — the sentence a reader can act on. Both narrowings were taught by a
+  real setup this guard had wrongly stopped.
 
 - **`inputText` on iOS refuses when nothing has focus.** It reported
   success — eighteen characters, no warnings, no field changed — while
