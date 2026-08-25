@@ -716,25 +716,18 @@ fn webview_bridge_url_uses_given_port() {
 // ---- port ownership ----------------------------------------------------
 
 #[tokio::test]
-async fn a_port_that_reaches_another_device_is_refused_before_the_request() {
-    // The eager connect paths judge this at `connect_to_runner`; the lazy
-    // one cannot, because it exists so the MCP server can be constructed
-    // before any runner is up — and at that moment nobody holds the port,
-    // so judging there would refuse every startup. So it is judged here,
-    // once, on the first request that actually goes out.
+async fn a_port_nothing_claims_is_refused_before_the_request() {
+    // The eager connect paths judge this at `connect_to_runner`; the
+    // lazy one cannot, because it exists so the MCP server can be built
+    // before any runner is up — and at that moment nobody holds the
+    // port, so judging there would refuse every startup. So it is
+    // judged here, once, on the first request that actually goes out.
     //
-    // The mock is mounted with `.expect(0)`: the point is that nothing
-    // reaches it. A guard that runs after the request has already been
-    // sent is a report, not a guard.
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/tree"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
-        .expect(0)
-        .mount(&server)
-        .await;
-
-    let client = HttpRunnerClient::with_base(server.uri())
+    // Port 1: adb forwards nothing to it and nothing listens on it, so
+    // both authorities answer "nobody", and naming a device against
+    // that is refused. A plain connection error would not name the
+    // device, which is what this asserts on.
+    let client = HttpRunnerClient::with_base("http://127.0.0.1:1")
         .with_port_owner_check(Some("emulator-9999".into()), OwnerProbe::Android);
 
     let err = client
@@ -746,4 +739,33 @@ async fn a_port_that_reaches_another_device_is_refused_before_the_request() {
         said.contains("emulator-9999"),
         "the refusal must name the device that was asked for — {said}"
     );
+    assert!(
+        said.contains("refusing"),
+        "and it must be a refusal rather than a connection error — {said}"
+    );
+}
+
+#[tokio::test]
+async fn a_relay_that_cannot_name_its_device_is_driven_and_said_out_loud() {
+    // The Android behaviour gate reaches its runner through a
+    // wire-recording proxy, which `adb forward --list` cannot see.
+    // Refusing there stopped a dry run against a setup doing nothing
+    // wrong, so a port served by something that cannot say which device
+    // it reaches is driven — the request must arrive.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(minimal_tree()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = HttpRunnerClient::with_base(server.uri())
+        .with_port_owner_check(Some("emulator-5554".into()), OwnerProbe::Android);
+
+    client
+        .get_tree(None)
+        .await
+        .expect("a relay that cannot name its device must still be driven");
+    // wiremock verifies .expect(1) on drop — the request arrived.
 }
