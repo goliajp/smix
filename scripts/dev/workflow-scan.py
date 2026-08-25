@@ -315,6 +315,12 @@ LOCAL_ONLY = {
     # in CI that refusal would fire on every build. Its harness DOES run
     # in CI, on trees it builds itself.
     "contract-scan",
+    # Reads `.claude/dogfood/` — our side of the consumer correspondence,
+    # which is not in the checkout either. It answers "did this letter
+    # reach the thread it names", and the threads live on the authoring
+    # machine, so on a checkout it refuses rather than passing.
+    "a-reply-nobody-sent",
+    "a-reply-nobody-sent.test",
     # Reads the C10 ground-truth doc under `.claude/docs/research/`, which
     # is not in the checkout. Same as release-record-scan: absent from CI
     # on purpose, present at ship because ship runs on the authoring
