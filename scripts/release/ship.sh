@@ -571,6 +571,14 @@ log "every verdict answers in sentences"
 python3 "$ROOT/scripts/dev/a-verdict-answers-in-sentences.py" > /tmp/smix-ship-verdict-sentences.log 2>&1 \
   || fail "a verdict cannot report its own finding — see /tmp/smix-ship-verdict-sentences.log"
 
+log "no reply is waiting in our own records"
+python3 "$ROOT/scripts/dev/a-reply-nobody-sent.py" > /tmp/smix-ship-reply-sent.log 2>&1 \
+  || fail "a consumer letter nobody can show was sent — see /tmp/smix-ship-reply-sent.log"
+
+log "the delivery sweep can still go red"
+python3 "$ROOT/scripts/dev/a-reply-nobody-sent.test.py" > /tmp/smix-ship-reply-sent-selftest.log 2>&1 \
+  || fail "the delivery sweep cannot go red — see /tmp/smix-ship-reply-sent-selftest.log"
+
 log "no gate says yes with its subject gone"
 python3 "$ROOT/scripts/dev/a-gate-without-its-subject.py" > /tmp/smix-ship-gate-subject.log 2>&1 \
   || fail "a gate passes without its subject — see /tmp/smix-ship-gate-subject.log"

@@ -197,6 +197,8 @@ SOURCE_GATES=(
   a-verdict-answers-in-sentences.test
   a-gate-without-its-subject
   a-gate-without-its-subject.test
+  a-reply-nobody-sent
+  a-reply-nobody-sent.test
   known-unstable-scan
   corpus-portability-scan
   portable-tier-parity
