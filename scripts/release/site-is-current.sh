@@ -21,6 +21,10 @@
 set -euo pipefail
 
 SITE="${SMIX_SITE_URL:-https://smix.golia.jp}"
+# The tree this check compares the site against. Resolved from the
+# script rather than the caller's cwd: the ship runs it from the repo
+# root, a person may not.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # Captured, then matched. `curl | grep -q` reads as "not found" when it
 # means "grep closed the pipe and curl took SIGPIPE".
@@ -85,8 +89,28 @@ success code and a page about nothing." >&2
         echo "site-is-current: FAIL — $SITE/$f does not look like the generated \
 file" >&2
         fail=1
+    elif [ -f "$ROOT/$f" ] && \
+         [ "$(printf '%s' "$BODY" | shasum -a 256 | cut -d' ' -f1)" \
+           != "$(printf '%s' "$(cat "$ROOT/$f")" | shasum -a 256 | cut -d' ' -f1)" ]; then
+        # Both sides go through a command substitution on purpose: it
+        # strips trailing newlines, and comparing a stripped body with an
+        # unstripped file reported a one-byte difference as the site
+        # being behind. A measurement artefact and a real finding look
+        # identical from the exit code.
+        #
+        # Naming the right version is not the same as being current. A
+        # selector-guide fix landed the day after 8.0.0 shipped and the
+        # site went on serving the generation before it — the version
+        # coordinate was right, so nothing here said a word. The whole
+        # point of that fix was that a reader stops losing an afternoon,
+        # and an undeployed fix helps nobody who reads the site.
+        echo "site-is-current: FAIL — $SITE/$f is not what this tree generates \
+(served $(printf '%s' "$BODY" | wc -c | tr -d ' ') bytes, tree has \
+$(wc -c < "$ROOT/$f" | tr -d ' ')). Rebuild web/ and rsync — see the release \
+checklist, doc upgrade." >&2
+        fail=1
     else
-        echo "site-is-current: $SITE/$f is the real file"
+        echo "site-is-current: $SITE/$f is the real file, and is what this tree generates"
     fi
 done
 
