@@ -297,6 +297,31 @@ def main() -> int:
         if not os.path.exists(os.path.join(docs, entry.rstrip("/"))):
             problems.append(f"BESIDE lists {entry} and it is gone — drop the line")
 
+    # `open-items.md` is registered as "the open ones", and after a long
+    # round it is mostly closed ones with a line through them. A reader
+    # has to scan for what is not struck out to answer the question the
+    # file's name asks.
+    #
+    # Counted here rather than written at the top of the file, because a
+    # number stored beside the thing it counts is the copy that goes
+    # stale — the root cause this repo spent a whole round on. Nothing to
+    # forge and nothing to forget: the gate says it every time it runs.
+    items = os.path.join(docs, "open-items.md")
+    if os.path.isfile(items):
+        rows = [
+            l
+            for l in read(items).splitlines()
+            if re.match(r"^\|\s*(~~)?[A-Z]\d+", l.strip())
+        ]
+        still_open = [l for l in rows if not l.lstrip("| ").startswith("~~")]
+        open_note = (
+            f"open-items.md: {len(still_open)} of {len(rows)} still open"
+            if rows
+            else "open-items.md: no item rows to count"
+        )
+    else:
+        open_note = ""
+
     # The rule and the gate have to agree on what layer three is.
     rules = os.path.join(root, ".claude", "CLAUDE.md")
     rule_note = ""
@@ -327,6 +352,8 @@ def main() -> int:
         print("  - reached a state where no layer was read at all — this gate is broken")
         return 1
 
+    if open_note:
+        print(f"contract-scan: {open_note}")
     print(
         f"contract-scan: clean — layer three is {where}, all four present, "
         f"{len(archives)} archived{rule_note}"
