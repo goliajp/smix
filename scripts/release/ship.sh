@@ -1142,7 +1142,7 @@ log "gradle $GRADLE_PUB_TASK jp.golia.smix:smix-sdk:$VERSION"
 GPG_KEY="$(gpg --export-secret-keys --armor FBD802632CFAD78B 2>/dev/null)" \
   || fail "gpg export failed for signing key FBD802632CFAD78B"
 [ -n "$GPG_KEY" ] \
-  || fail "gpg exported an empty key for FBD802632CFAD78B — a dead process may still hold the keybox lock (look for .#lk* under ~/.gnupg/public-keys.d, check each owner with ps, then gpgconf --kill all)"
+  || fail "gpg exported an empty key for FBD802632CFAD78B — a dead process still holds the keybox lock. There are TWO files and they are hardlinks of each other: ~/.gnupg/public-keys.d/pubring.db.lock and the .#lk* beside it. Removing one leaves the other, and gpg goes on naming the dead pid. Check the pid inside the lock is gone (\`cat\` it, then \`ps -p\`), remove BOTH, and \`gpgconf --kill keyboxd\`."
 ( cd "$ROOT/android-runner" && \
   ORG_GRADLE_PROJECT_signingInMemoryKey="$GPG_KEY" \
   ORG_GRADLE_PROJECT_signingInMemoryKeyId=2CFAD78B \
