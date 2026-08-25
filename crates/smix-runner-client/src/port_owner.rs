@@ -199,10 +199,27 @@ pub fn ask_android(port: u16) -> Authority {
         .args(["forward", "--list"])
         .output()
     {
-        Ok(out) if out.status.success() => Authority::Consulted(parse_adb_forwards(
-            &String::from_utf8_lossy(&out.stdout),
-            port,
-        )),
+        Ok(out) if out.status.success() => {
+            let held = parse_adb_forwards(&String::from_utf8_lossy(&out.stdout), port);
+            if !held.is_empty() {
+                return Authority::Consulted(held);
+            }
+            // adb naming nobody is not the same as nobody being there.
+            // The Android behaviour gate reaches its runner through a
+            // wire-recording proxy — `runner up` forwards 28080, the
+            // proxy listens on 28090 and relays — and a host process is
+            // invisible to `adb forward --list`. Refusing there broke a
+            // setup doing nothing wrong, seventeen minutes into a dry
+            // run.
+            //
+            // Safety is unchanged: adb naming a DIFFERENT device still
+            // refuses, because that returns above. Only when adb has no
+            // answer at all does the question move to whoever is
+            // listening, and a relay that cannot say which device it
+            // reaches is treated the way a tunnel is on Apple — driven,
+            // and said out loud.
+            ask_ios(port)
+        }
         Ok(out) => Authority::Unavailable {
             why: format!(
                 "`adb forward --list` exited {}",
@@ -270,6 +287,26 @@ mod tests {
     }
 
     const NONE: Authority = Authority::Consulted(Vec::new());
+
+    #[test]
+    fn a_relay_on_the_port_is_asked_about_rather_than_refused() {
+        // What `ask_android` does when adb names nobody, expressed over
+        // the decision rather than the shell: a port served by something
+        // that cannot say which device it reaches is driven with a
+        // warning, not refused. The gate's wire-recording proxy is
+        // exactly that, and refusing it stopped a dry run.
+        let v = decide(
+            28090,
+            Some("emulator-5554"),
+            &Authority::Unavailable {
+                why: "1 process(es) serve the port and none of them names a device".into(),
+            },
+        );
+        let Verdict::Proceed { unchecked, .. } = v else {
+            panic!("a relay that cannot name its device must not be refused");
+        };
+        assert!(unchecked.is_some(), "and it must not be silent about it");
+    }
 
     #[test]
     fn adb_forwards_are_read_by_local_port_not_remote() {
