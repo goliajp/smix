@@ -1,7 +1,7 @@
 {
   "name": "smix",
   "description": "Drive an iOS Simulator or Android emulator from the session you are already developing in: pick a device, bring a runner up, sense the screen, act on it, and turn what you did into a flow.",
-  "version": "8.0.0",
+  "version": "8.0.1",
   "author": {
     "name": "Golia",
     "email": "takagi@golia.jp"
