@@ -707,9 +707,19 @@ itself.
     id: "home-increment-btn"
 ```
 
-- Matches `accessibilityIdentifier` (iOS) / `testTag` via `testTagsAsResourceId` (Android Compose).
+- Matches `accessibilityIdentifier` (iOS). On Android it matches the
+  **resource id**: `android:id` on a View, or a Compose `testTag` exposed
+  through `testTagsAsResourceId`.
+- **It never matches `contentDescription`.** A hand-written View layer
+  that names its elements with `contentDescription` and no `android:id`
+  is reachable by `text:` or `label:` and not by `id:` — which reads as
+  "the element is not there" rather than "you asked by the wrong name".
+  A consumer lost an afternoon to this, and the line above named only
+  the Compose half, so nothing they read said otherwise.
 - Strict equality on id string.
-- Use this whenever you can add a testid to the app under test.
+- Use this whenever you can add a testid to the app under test. Where you
+  cannot, `fallback: [{ id: … }, { text: … }]` covers both shapes in one
+  flow — the first form that resolves wins.
 
 ### 2. Text (literal or regex)
 
