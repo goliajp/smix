@@ -616,6 +616,22 @@ log "workflow scan"
 python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 \
   || fail "workflow scan FAILED — see /tmp/smix-ship-workflow.log"
 
+# --- clippy -----------------------------------------------------------
+# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
+# nothing ran clippy — so four lints sat in the tree, one of them a doc
+# comment detached from the type it described in a stone crate. Clean at
+# the time this was added; here so it stays that way.
+#
+# Here rather than after the release build, where it used to be: nothing
+# before it is a precondition — it reads source — and on an already-built
+# tree it costs three seconds. `cheap-gates-come-first` measured those
+# three seconds sitting behind eleven minutes of Gradle and device work,
+# which is what that gate exists to say. A lint error is now found before
+# anything has been compiled for it.
+log "clippy"
+( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
+  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
+
 # --- Android unit tests + androidTest compile --------------------------
 # Compiles the generated Kotlin bindings AND runs the unit suites.
 # The bindings previously first compiled during `gradlew :sdk:publish` —
@@ -652,15 +668,6 @@ log "cargo build -p smix-cli --release (for corpus gate)"
 ( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release"
 
 
-
-# --- clippy -----------------------------------------------------------
-# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
-# nothing ran clippy — so four lints sat in the tree, one of them a doc
-# comment detached from the type it described in a stone crate. Clean at
-# the time this was added; here so it stays that way.
-log "clippy"
-( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
-  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
 
 # --- swift-bridge unit tests ------------------------------------------
 # NOT bypassable. This suite sat outside the gate long enough for a test
