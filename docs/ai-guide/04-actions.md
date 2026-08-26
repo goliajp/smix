@@ -231,8 +231,17 @@ already have: `tapOn` it, then the scalar form.
 - hideKeyboard
 ```
 
-- iOS: tap outside any text field area (the "tap outside" trick).
+- iOS: several strategies in order — dismiss/return keys, a tap outside
+  any text field, and a tap just above the keyboard's own frame — until
+  the keyboard is gone.
 - Android: Kotlin runner `/hide-keyboard` → `IME.hide()`.
+
+**It answers about the keyboard, not about itself.** No keyboard present
+is success (there is nothing to hide). A keyboard still up after every
+strategy ran is `keyboard_did_not_close`, and a runner that raised while
+looking is `keyboard_state_unknown` — see
+[07 — Error codes](07-errors.md). Until 9.0.0 all four cases answered
+`ok: true`.
 
 ## Scroll
 

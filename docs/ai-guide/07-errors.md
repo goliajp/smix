@@ -275,6 +275,42 @@ attempt that was already `--no-launch`.
 after a version bump can genuinely need more than the default 300 s —
 `SMIX_RUNNER_UP_TIMEOUT_SECS` raises it.
 
+### "nothing is listening for … any more"
+
+The runner answered earlier in this run and then stopped answering. That
+is a different failure from "the runner never started", and until 9.0.0
+both arrived as the same bare connection error, so the message told a
+reader to start a runner they had already started.
+
+On Android the usual cause is the system killing the instrumentation
+under memory pressure — `adb logcat` shows `binderDied` around the time
+the flow stopped, and the emulator's RAM is the thing to raise.
+
+**Fix**: `smix runner up`. Every step after this one reports the same
+thing until you do, so the first occurrence is the one to read.
+
+### "runner … refused: keyboard_did_not_close"
+
+The keyboard was on screen, every dismiss strategy ran, and it was still
+there afterwards. The `saw` field names what was tried and which element
+still holds focus.
+
+Before 9.0.0 this answered `ok: true`, because the handler returned a
+`Bool` that meant "I ran" rather than "it closed".
+
+**Fix**: tapping the next control often works when a field will not give
+focus up. Do not guard the call — `hideKeyboard` is already a no-op when
+no keyboard is present, which is a *different* answer from this one.
+
+### "runner … refused: keyboard_state_unknown"
+
+The runner raised while looking at the keyboard, so nothing was
+established either way. **This is not evidence the keyboard is still
+up.**
+
+**Fix**: retry the step. If it repeats, the runner is the thing to look
+at rather than the screen.
+
 ## Common failure patterns + fixes
 
 ### "Cannot find 'FooScreen' in scope" (iOS build)

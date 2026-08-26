@@ -77,3 +77,37 @@ async fn a_runner_that_is_merely_slow_is_not_called_gone() {
          restart it sends them the wrong way — {said}"
     );
 }
+
+#[test]
+fn the_two_keyboard_refusals_point_opposite_ways() {
+    // "It would not close" and "we never established whether it is up"
+    // are not the same finding, and a reader acts on them differently —
+    // one is about the screen, the other about the runner. They reached
+    // a consumer as the same sentence.
+    let did_not_close = transport_to_failure(RunnerTransportError::RefusedNaming {
+        endpoint: "/hide-keyboard".into(),
+        kind: "keyboard_did_not_close".into(),
+        saw: "tried key:Return, tap-above, swipe-down; focus: input-password".into(),
+    });
+    let unknown = transport_to_failure(RunnerTransportError::RefusedNaming {
+        endpoint: "/hide-keyboard".into(),
+        kind: "keyboard_state_unknown".into(),
+        saw: "XCUITest raised while dismissing".into(),
+    });
+
+    let a = did_not_close.to_prompt();
+    let b = unknown.to_prompt();
+    assert!(
+        a.contains("input-password"),
+        "what it saw has to survive — {a}"
+    );
+    assert!(
+        a.contains("Tapping the next control"),
+        "the screen case needs the screen's next step — {a}"
+    );
+    assert!(
+        b.contains("not evidence it is still up"),
+        "an exception must not read as the keyboard being up — {b}"
+    );
+    assert_ne!(a, b, "two findings that read identically are one finding");
+}

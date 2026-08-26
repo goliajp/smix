@@ -2422,8 +2422,11 @@ final class SmixRunnerUITests: XCTestCase {
         // robust: swipeDown alone sometimes fails to dismiss an RN
         // TextInput keyboard. Hence a multi-strategy chain that verifies
         // the keyboard is actually dismissed after each strategy.
-        let outcome: Bool? = smixGuarded("hide-keyboard") {
-          guard app.keyboards.firstMatch.exists else { return true }
+        // Every strategy records itself, so a failure can say what was
+        // attempted rather than only that something was.
+        var tried: [String] = []
+        let outcome: HideKeyboardRoute.Outcome? = smixGuarded("hide-keyboard") {
+          guard app.keyboards.firstMatch.exists else { return .alreadyGone }
           // Each strategy already knew how to check its own work — it
           // just slept a flat 0.5s first and then looked exactly once.
           // Polling the same check returns as soon as the keyboard is
@@ -2441,19 +2444,52 @@ final class SmixRunnerUITests: XCTestCase {
           for keyName in ["Return", "Done", "Continue", "Search", "Go", "Next", "Enter"] {
             let key = app.keyboards.buttons[keyName]
             if key.exists {
+              tried.append("key:\(keyName)")
               key.tap()
-              if keyboardGone() { return true }
+              if keyboardGone() { return .dismissed }
             }
           }
-          // Strategy 2: tap above keyboard (RN Keyboard.dismiss responds to outside touch)
+          // Strategy 2: touch outside the keyboard, just above its own top
+          // edge. RN's Keyboard.dismiss responds to an outside touch, and
+          // this used to aim at a flat 15% of the app frame — which on a
+          // login form is where the OTHER field is, so the touch moved
+          // focus instead of releasing it and the keyboard stayed up. The
+          // keyboard knows where it is; ask it.
+          let kbFrame = app.keyboards.firstMatch.frame
+          let appFrame = app.frame
+          if kbFrame.height > 0, appFrame.height > 0, kbFrame.minY > appFrame.minY {
+            tried.append("tap-just-above-keyboard")
+            let dy = ((kbFrame.minY - 24) - appFrame.minY) / appFrame.height
+            if dy > 0, dy < 1 {
+              app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: dy)).tap()
+              if keyboardGone() { return .dismissed }
+            }
+          }
+          // Strategy 3: the old fixed point, kept because a keyboard whose
+          // frame reads as empty leaves nothing else to aim at.
+          tried.append("tap-at-15-percent")
           let above = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
           above.tap()
-          if keyboardGone() { return true }
-          // Strategy 3: swipeDown (fallback)
+          if keyboardGone() { return .dismissed }
+          // Strategy 4: swipeDown (fallback)
+          tried.append("swipe-down")
           app.keyboards.firstMatch.swipeDown()
-          return keyboardGone()
+          if keyboardGone() { return .dismissed }
+          // Name what still holds the keyboard up, because "it did not
+          // close" and "this field is still first responder" send the
+          // caller to different places.
+          let focused = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
+            .firstMatch
+          let who = focused.exists
+            ? (focused.identifier.isEmpty ? focused.label : focused.identifier)
+            : "nothing reports keyboard focus"
+          return .stillPresent(
+            tried: "tried \(tried.joined(separator: ", ")); focus: \(who)")
         }
-        return outcome ?? false
+        // A caught exception is not evidence the keyboard is up.
+        return outcome ?? .couldNotTell(
+          why: "XCUITest raised while dismissing; the keyboard's state was never established")
       },
       // POST /input-text handler. Submits the text to whatever element
       // currently has keyboard focus via the daemon fast path — the exact

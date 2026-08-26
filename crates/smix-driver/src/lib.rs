@@ -1836,6 +1836,30 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
                  one will report the same thing until you do."
             )),
         ),
+        // The runner named its refusal, so the hint can name the next
+        // step — and the two keyboard cases send a reader in opposite
+        // directions, which is the whole reason the name exists.
+        RunnerTransportError::RefusedNaming { kind, .. } => (
+            FailureCode::DriverError,
+            Some(match kind.as_str() {
+                "keyboard_did_not_close" => "the keyboard was there and every dismiss \
+                     strategy ran without closing it — the `saw` above names what was \
+                     tried and what still holds focus. Tapping the next control often \
+                     works when the field will not give focus up; `hideKeyboard` is \
+                     already a no-op when no keyboard is present, so a guard around it \
+                     is not what this needs."
+                    .to_string(),
+                "keyboard_state_unknown" => "the runner raised while looking, so nothing \
+                     was established about the keyboard — this is not evidence it is \
+                     still up. Retry the step; if it repeats, the runner is the thing \
+                     to look at, not the screen."
+                    .to_string(),
+                other => format!(
+                    "the runner refused with `{other}` — the `saw` above is what it \
+                     observed"
+                ),
+            }),
+        ),
         _ => (FailureCode::DriverError, None),
     };
     ExpectationFailure::new(FailureInit {

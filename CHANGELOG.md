@@ -2,6 +2,58 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [9.0.0] — 2026-08-26
+
+**Flows and CLI are unchanged.** The major is one Rust enum:
+`RunnerTransportError` is now `#[non_exhaustive]` and has a variant for a
+refusal that names itself. If you do not match on it in your own Rust,
+this is a patch wearing a major's number.
+
+### Changed
+
+- **`hideKeyboard` says WHICH failure it was.** A consumer met
+  `runner /hide-keyboard answered ok:false — the action did not happen`
+  with the keyboard unmistakably on screen, and could not tell it from
+  the answer they would have got for no keyboard at all. Three
+  situations reached them as that one sentence: every dismiss strategy
+  ran and the keyboard stayed, XCUITest raised while looking, and the
+  request context was lost. They want opposite responses — look at the
+  screen, look at the runner, or do nothing.
+
+  The route names its case now (`keyboard_did_not_close` /
+  `keyboard_state_unknown`), carries what it observed (which strategies
+  ran, and which element still holds keyboard focus), and the failure
+  hint points at the next step for that case. An exception is no longer
+  reported as evidence the keyboard is up.
+
+  The two successes stay one answer: whether the keyboard was already
+  gone or was just dismissed, the caller's next step is the same.
+  **`hideKeyboard` was already idempotent** — no keyboard is `ok:true`,
+  and has been — so a guard around it was never needed. The old failure
+  just made it look that way.
+
+- **The outside touch aims at the keyboard's own edge.** The strategy
+  that dismisses a React Native keyboard by touching outside it used a
+  flat 15% of the app frame, which on a login form is where the *other*
+  field is: the touch moved focus rather than releasing it, and the
+  keyboard stayed. It now taps just above the keyboard's own top edge,
+  and falls back to the fixed point only when the keyboard's frame reads
+  as empty.
+
+### Breaking
+
+- **Transport errors are `#[non_exhaustive]`.** An exhaustive `match`
+  on it needs a `_` arm.
+- **A refusal can name itself: `RefusedNaming { endpoint, kind, saw }`.**
+  Handled by the `_` arm above; match it if you want the detail.
+- **The hide-keyboard handler returns an `Outcome`, not a `Bool`.**
+  Swift only, and only if you construct the server yourself.
+
+`#[non_exhaustive]` is the "pay once" move, and it is the right one here
+for the reason it was wrong for `Step`: a transport error a caller has
+not heard of lands in their `_` arm, which is where it would have landed
+anyway — while a verb they have not heard of would be silently skipped.
+
 ## [8.0.1] — 2026-08-25
 
 ### Changed

@@ -53,16 +53,40 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # live under `.claude/`, which is not version-controlled. A checkout without
 # them cannot run this gate, and saying so is the honest outcome — quietly
 # passing would report agreement between lists it never read.
-BOUNDARY = ".claude/docs/v2.md"
 CLAIMS = ".claude/docs/guide-executability.md"
 CHANGELOG = "CHANGELOG.md"
 SHIP = "scripts/release/ship.sh"
 WORKSPACE = "Cargo.toml"
 
-# The breaking changes belong to v2's first release. Later 2.x releases add
-# entries under their own headings; the boundary table is about what v2 *is*,
-# so this stays pinned rather than tracking the newest section.
-BREAKING_RELEASE = "## [2.0.0]"
+
+def _major():
+    """The workspace major, which is which boundary this gate is about.
+
+    It used to be written here as `v2.md` and `## [2.0.0]`, with a comment
+    explaining that v2's table is about what v2 *is* — true, and it stopped
+    being about the current version the moment the workspace moved on. By
+    v9 this was reconciling a new boundary file against v2's phrases and
+    reporting them as disagreements.
+
+    Third time this shape has cost something in one cycle: the charter
+    named `v2.md` for the decision log, the site check compared a version
+    coordinate and called that current, and this. A gate that names a
+    version is a gate that goes stale on a schedule nobody set.
+    """
+    try:
+        text = open(os.path.join(ROOT, WORKSPACE), encoding="utf-8").read()
+    except OSError:
+        return "2"
+    m = re.search(r'^version\s*=\s*"(\d+)\.', text, re.M)
+    return m.group(1) if m else "2"
+
+
+BOUNDARY = f".claude/docs/v{_major()}.md"
+
+# The breaking changes belong to the major's FIRST release: later patches
+# add their own headings, and the boundary table is about what the major
+# *is*.
+BREAKING_RELEASE = f"## [{_major()}.0.0]"
 
 
 problems = []
@@ -156,16 +180,15 @@ def changelog_breaking_phrases(changelog):
 
 
 def changelog_release_phrases(changelog):
-    """Every bold phrase anywhere under the pinned release heading.
+    """Every bold phrase anywhere in the changelog.
 
-    All three subsections, because a reader does not care which one a change
-    was filed under.
+    All subsections and all releases, because an executability row cites the
+    entry that introduced the behaviour — which is whichever release that
+    was, not the current major's first one. Reading only one release's
+    section made every row written before the last major look like a
+    citation to nothing.
     """
-    parts = changelog.split(BREAKING_RELEASE)
-    if len(parts) < 2:
-        problems.append(f"CHANGELOG has no `{BREAKING_RELEASE}` section")
-        return []
-    return bold_phrases(parts[1].split("\n## [")[0])
+    return bold_phrases(changelog)
 
 
 def boundary_rows_of(text, rel):
@@ -296,15 +319,20 @@ def check_release_being_made(changelog):
 def check_breaking_lists(boundary, changelog):
     rows = boundary_rows(boundary)
     phrases = changelog_breaking_phrases(changelog)
-    if len(rows) < 6:
+    # How many breaking changes a release has is a fact about that release,
+    # so a fixed floor here would be a copy of one release's world going
+    # stale beside the thing it counted. What does not go stale: two
+    # independent readers of the same set must both find something, and the
+    # matching below then makes them agree item by item.
+    if not rows:
         problems.append(
-            f"only {len(rows)} rows read out of the boundary table — the "
-            f"shape changed and this would pass by knowing nothing"
+            "no rows read out of the boundary table — the shape changed and "
+            "the matching below would pass by comparing nothing"
         )
-    if len(phrases) < 6:
+    if not phrases:
         problems.append(
-            f"only {len(phrases)} bold phrases read out of the CHANGELOG's "
-            f"Breaking section — same"
+            "no bold phrases read out of the CHANGELOG's Breaking section — "
+            "same"
         )
     for n, phrase in rows:
         if phrase not in phrases:
@@ -330,14 +358,20 @@ def check_behaviour_changes(claims, changelog):
     agree, and that a `behaviour` row names an entry that exists.
     """
     phrases = changelog_release_phrases(changelog)
-    if len(phrases) < 20:
+    if not phrases:
         problems.append(
-            f"only {len(phrases)} bold phrases read out of the "
-            f"{BREAKING_RELEASE} section — the shape changed and this would "
-            f"pass by knowing nothing"
+            f"no bold phrases read out of the {BREAKING_RELEASE} section — "
+            f"the shape changed and every citation below would red for the "
+            f"wrong reason"
         )
     behaviour = 0
-    for cells in claim_rows(claims):
+    rows = claim_rows(claims)
+    if not rows:
+        problems.append(
+            "no rows read out of the claims table — the shape changed and "
+            "the kind column below would be judged on nothing"
+        )
+    for cells in rows:
         cid, kind, citation = cells[0], cells[9], cells[10]
         if kind == "docs":
             if citation != "—":
@@ -353,11 +387,6 @@ def check_behaviour_changes(claims, changelog):
             problems.append(
                 f"{cid} has kind `{kind}` — the vocabulary is docs / behaviour"
             )
-    if behaviour < 5:
-        problems.append(
-            f"only {behaviour} rows marked as behaviour changes — the column "
-            f"emptied and this would pass by knowing nothing"
-        )
     return behaviour
 
 
@@ -522,7 +551,8 @@ def main():
         return 1
 
     print(
-        f"release-record: {n_breaking} v2 breaking changes and {n_now} in the "
+        f"release-record: {n_breaking} breaking changes in {BOUNDARY} and "
+        f"{n_now} in the "
         f"release being made, both lists agree · "
         f"{n_behaviour} behaviour changes in the release notes · publish list "
         f"{len(listed)} crates, topological"

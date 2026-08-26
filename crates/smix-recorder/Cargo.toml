@@ -17,11 +17,11 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-input = { path = "../smix-input", version = "8.0.1" }
-smix-selector = { path = "../smix-selector", version = "8.0.1" }
-smix-authoring-ir = { path = "../smix-authoring-ir", version = "8.0.1" }
-smix-error = { path = "../smix-error", version = "8.0.1" }
-smix-sdk = { path = "../smix-sdk", version = "8.0.1" }
+smix-input = { path = "../smix-input", version = "9.0.0" }
+smix-selector = { path = "../smix-selector", version = "9.0.0" }
+smix-authoring-ir = { path = "../smix-authoring-ir", version = "9.0.0" }
+smix-error = { path = "../smix-error", version = "9.0.0" }
+smix-sdk = { path = "../smix-sdk", version = "9.0.0" }
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true
@@ -31,7 +31,7 @@ thiserror.workspace = true
 [dev-dependencies]
 # The generated yaml has to be yaml the maestro adapter accepts. Nothing
 # depends on smix-recorder, so this dev-edge closes no cycle.
-smix-adapter-maestro = { path = "../smix-adapter-maestro", version = "8.0.1" }
+smix-adapter-maestro = { path = "../smix-adapter-maestro", version = "9.0.0" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 criterion.workspace = true
 
