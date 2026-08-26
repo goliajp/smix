@@ -39,6 +39,7 @@ Exit non-zero on any mismatch, so it can gate a release.
 """
 
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -111,16 +112,18 @@ DISCOVERED_COORDINATE_PATTERNS = [
 ]
 
 # Paths whose version coordinates are HISTORY and must not be rewritten:
-# shipped-version notes to a consumer, and design records, are true as
-# of their date. Reported like hygiene-scan's exemptions so a directory
-# cannot be quietly excused.
+# a shipped-version note to a consumer is true as of its date.
+#
+# Everything this check walks comes from `git ls-files`, so a prefix under
+# `.claude/` can never exclude anything — that whole directory is ignored.
+# Four such entries sat here until 9.0.0 printing "coordinates not swept"
+# for directories the walk had never reached, which reads exactly like the
+# gate looked at them and decided. An exemption that excuses nothing is
+# checked below rather than trusted, so this list cannot grow another one.
 COORDINATE_EXEMPT = [
-    (".claude/docs/archive/dogfood-archive/", "shipping notes, true as of the version they announce"),
-    (".claude/docs/archive/plan-history/", "archived plans, kept as written"),
-    (".claude/docs/v2.md", "decision log; quotes the coordinates it discusses"),
-    (".claude/rfcs/", "design records dated to the version they targeted"),
     ("CHANGELOG.md", "every release's coordinates, by definition"),
 ]
+
 
 # Check 6 — a coordinate can name the wrong THING, not just the wrong
 # version. llms.txt, which is the file agents read, told them to depend
@@ -279,6 +282,26 @@ def mcp_tool_count():
     return read("crates/smix-mcp/src/main.rs").count("#[tool(")
 
 
+def verb_table_count():
+    """Entries in VERB_TABLE, the one authority for how many verbs exist.
+
+    `web/src/data/verbs.ts` is a hand-curated subset whose header states the
+    full table's size, and nothing asked whether that number was still true —
+    the release list says so in as many words. `llms.txt` states it too, but
+    is generated. A number written beside the thing it counts is the one that
+    goes stale, so it is derived here instead of trusted there.
+    """
+    src = read("crates/smix-verbs/src/lib.rs")
+    marker = "pub static VERB_TABLE: &[VerbEntry] = &["
+    if marker not in src:
+        return 0
+    body = src.split(marker, 1)[1].split("\n];", 1)[0]
+    return len(re.findall(r"^\s{4}v\(", body, re.M))
+
+
+VERB_COUNT_CLAIM = re.compile(r"table is (\d+) entries|verb table \((\d+) entries\)")
+
+
 def iter_surface_files():
     for base in STRING_SURFACES:
         full = os.path.join(ROOT, base)
@@ -370,6 +393,31 @@ def main():
                         f"{rel}:{lineno}: claims {m.group(1)} tools, smix-mcp registers {tools}"
                     )
 
+    verbs = verb_table_count()
+    if verbs == 0:
+        failures.append(
+            "crates/smix-verbs/src/lib.rs: no VERB_TABLE entries found — "
+            "extraction broke"
+        )
+    verb_claims = 0
+    for rel in ["web/src/data/verbs.ts", "llms.txt", "llms-full.txt"]:
+        if not os.path.isfile(os.path.join(ROOT, rel)):
+            continue
+        for lineno, line in enumerate(read(rel).splitlines(), 1):
+            for m in VERB_COUNT_CLAIM.finditer(line):
+                verb_claims += 1
+                stated = int(m.group(1) or m.group(2))
+                if stated != verbs:
+                    failures.append(
+                        f"{rel}:{lineno}: claims {stated} verbs, VERB_TABLE "
+                        f"holds {verbs}"
+                    )
+    if verb_claims == 0:
+        failures.append(
+            "no surface states the verb table's size — the pattern stopped "
+            "matching and this check would pass by knowing nothing"
+        )
+
     for rel in iter_surface_files():
         for lineno, line in enumerate(read(rel).splitlines(), 1):
             for name, pattern in NOISE.items():
@@ -408,6 +456,13 @@ def main():
             f"stopped matching and this check would pass by knowing nothing"
         )
     for prefix, why in COORDINATE_EXEMPT:
+        if not any(rel.startswith(prefix) for rel in tracked):
+            failures.append(
+                f"the exemption for `{prefix}` excuses nothing — no file the "
+                f"sweep walks starts with it, so it reads as a decision that "
+                f"was never made"
+            )
+            continue
         print(f"fact-scan: {prefix} — coordinates not swept ({why})")
 
     # Check 6 — SPM product names.
@@ -530,7 +585,8 @@ def main():
         return 1
     print(
         f"fact-scan: clean — coordinates all say {version}, "
-        f"tool claims all say {tools}, no noise in user-facing strings"
+        f"tool claims all say {tools}, {verb_claims} verb-count claims "
+        f"all say {verbs}, no noise in user-facing strings"
     )
     return 0
 

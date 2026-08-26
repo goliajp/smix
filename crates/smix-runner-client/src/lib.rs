@@ -58,7 +58,14 @@ use thiserror::Error;
 
 /// Transport-level failure (network, non-2xx, malformed body). Mirrors
 /// TS `RunnerTransportError` 1:1.
+/// `#[non_exhaustive]` because this list grows whenever a route learns to
+/// say something more precise than "no", and every such addition would
+/// otherwise cost a major on its own. Unlike a new verb — which an
+/// external executor must handle or silently skip — a transport error a
+/// caller has not heard of degrades into its `_` arm, which is the same
+/// place it would have landed before. The charge is paid once here.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum RunnerTransportError {
     #[error("runner {endpoint} fetch failed: {source}")]
     FetchFailed {
@@ -146,6 +153,23 @@ pub enum RunnerTransportError {
     RunnerDied {
         last_seen_ms: u64,
         last_error: String,
+    },
+    /// The runner refused AND said which refusal it was.
+    ///
+    /// `ok:false` alone is one sentence for several situations. A consumer
+    /// met it from `/hide-keyboard` with the keyboard unmistakably on
+    /// screen and could not tell it from the answer for no keyboard at
+    /// all — nor from XCUITest raising while it looked. Those want
+    /// opposite responses, so the route names its case and this carries
+    /// the name through instead of flattening it back to a bool.
+    #[error("runner {endpoint} refused: {kind} — {saw}")]
+    RefusedNaming {
+        endpoint: String,
+        /// The runner's own word for this refusal, e.g.
+        /// `keyboard_did_not_close` / `keyboard_state_unknown`.
+        kind: String,
+        /// What it observed while refusing. The half a reader acts on.
+        saw: String,
     },
 }
 
@@ -557,11 +581,28 @@ impl InputDispatchMode {
 struct OkEnvelope {
     #[serde(default)]
     ok: Option<bool>,
+    /// The route's own name for this refusal, when it has one. Absent on
+    /// the routes that only ever said yes or no, which stay unchanged.
+    #[serde(default)]
+    error: Option<String>,
+    /// What the route observed while refusing.
+    #[serde(default)]
+    saw: Option<String>,
 }
 
 impl OkEnvelope {
     fn require_ok(self, endpoint: &str) -> Result<(), RunnerTransportError> {
         if self.ok == Some(false) {
+            // A body that names its refusal keeps the name. One that does
+            // not reads exactly as it did — inventing a name for it would
+            // be a sentence with no evidence behind it.
+            if let Some(kind) = self.error {
+                return Err(RunnerTransportError::RefusedNaming {
+                    endpoint: endpoint.to_string(),
+                    kind,
+                    saw: self.saw.unwrap_or_else(|| "no detail given".to_string()),
+                });
+            }
             return Err(RunnerTransportError::Refused {
                 endpoint: endpoint.to_string(),
             });
@@ -1545,7 +1586,12 @@ impl HttpRunnerClient {
                 None,
             )
             .await?;
-        OkEnvelope { ok: body.ok }.require_ok("/tap-at-norm-coord")?;
+        OkEnvelope {
+            ok: body.ok,
+            error: None,
+            saw: None,
+        }
+        .require_ok("/tap-at-norm-coord")?;
         Ok(body.result)
     }
 
@@ -2271,7 +2317,12 @@ impl HttpRunnerClient {
                 None => eprintln!("smix: back settled by {why}"),
             }
         }
-        OkEnvelope { ok: body.ok }.require_ok("/back")?;
+        OkEnvelope {
+            ok: body.ok,
+            error: None,
+            saw: None,
+        }
+        .require_ok("/back")?;
         Ok(())
     }
 

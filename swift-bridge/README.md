@@ -9,7 +9,7 @@ bindings, packaged as a Swift Package Manager binary target.
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/goliajp/smix", from: "8.0.1"),
+    .package(url: "https://github.com/goliajp/smix", from: "9.0.0"),
 ]
 
 targets: [

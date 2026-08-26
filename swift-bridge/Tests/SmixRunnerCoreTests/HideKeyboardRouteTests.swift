@@ -50,3 +50,51 @@ final class HideKeyboardRouteTests: XCTestCase {
     XCTAssertEqual(json["ok"] as? Bool, true)
   }
 }
+
+// A failure that cannot say which failure it was.
+//
+// A consumer met `ok:false — the action did not happen` with the keyboard
+// unmistakably on screen, and could not tell it from the answer they would
+// have got if there had been no keyboard at all. Three different situations
+// reached them as the same sentence: the strategies ran and the keyboard
+// stayed, an XCUITest exception was caught, and the request context was
+// lost. What a caller should do next differs in each.
+//
+// The typealias even documented one of them ("ok:false when smixGuarded
+// caught an NSException") while the handler had a second path to false.
+final class HideKeyboardOutcomeTests: XCTestCase {
+
+  private func parse(_ resp: HTTPResponse) async throws -> [String: Any] {
+    let data = try await resp.bodyData
+    return (try? JSONSerialization.jsonObject(with: data, options: []))
+      as? [String: Any] ?? [:]
+  }
+
+  func test_absent_keyboard_is_success() async throws {
+    let json = try await parse(HideKeyboardRoute.outcome(.alreadyGone))
+    XCTAssertEqual(json["ok"] as? Bool, true)
+  }
+
+  func test_dismissed_is_success() async throws {
+    let json = try await parse(HideKeyboardRoute.outcome(.dismissed))
+    XCTAssertEqual(json["ok"] as? Bool, true)
+  }
+
+  func test_still_present_says_what_was_tried() async throws {
+    let json = try await parse(
+      HideKeyboardRoute.outcome(.stillPresent(tried: "Return, tap-above, swipe-down")))
+    XCTAssertEqual(json["ok"] as? Bool, false)
+    XCTAssertEqual(json["error"] as? String, "keyboard_did_not_close")
+    let saw = json["saw"] as? String ?? ""
+    XCTAssertTrue(saw.contains("swipe-down"), "the caller needs to know what was attempted: \(saw)")
+  }
+
+  func test_could_not_tell_is_not_the_same_as_did_not_close() async throws {
+    let json = try await parse(
+      HideKeyboardRoute.outcome(.couldNotTell(why: "XCUITest raised mid-interaction")))
+    XCTAssertEqual(json["ok"] as? Bool, false)
+    XCTAssertEqual(json["error"] as? String, "keyboard_state_unknown",
+                   "an exception is not evidence the keyboard is still up")
+    XCTAssertNotEqual(json["error"] as? String, "keyboard_did_not_close")
+  }
+}

@@ -753,9 +753,15 @@ public actor SmixRunnerServer {
   // calls `.swipeDown()` (XCUITest standard portable API; no private API).
   // Idempotent: if no keyboard is on screen, returns `ok:true` (no-op).
   // No selector / no scope / no bundleId — keyboard is frontmost-app scope.
-  // Returns `ok:true` when the dismiss dispatched (or keyboard absent =
-  // already-dismissed), `ok:false` when smixGuarded caught an NSException.
-  public typealias HideKeyboardHandler = @Sendable () async -> Bool
+  //
+  // Returns an `Outcome` rather than a Bool. The Bool had three ways to be
+  // false — the strategies ran and the keyboard stayed, smixGuarded caught
+  // an NSException, and the context guard tripped — and the doc that used to
+  // sit here named only the second, while the handler had a path to the
+  // first. A caller met `ok:false` with the keyboard unmistakably on screen
+  // and could not tell it from the answer for no keyboard at all.
+  public typealias HideKeyboardHandler =
+    @Sendable () async -> HideKeyboardRoute.Outcome
 
   // POST /input-text handler. Types the given text into the
   // CURRENTLY FOCUSED element (no selector, no focus-tap — the caller
@@ -2329,10 +2335,10 @@ public actor SmixRunnerServer {
           return HideKeyboardRoute.badRequest(reason: "\(error)")
         }
         return await Self.contextGuardedResponse(request: request,
-          fallback: HideKeyboardRoute.success(ok: false)
+          fallback: HideKeyboardRoute.outcome(
+            .couldNotTell(why: "the request context was lost before the keyboard was looked at"))
         ) {
-          let ok = await hideKeyboardHandler()
-          return HideKeyboardRoute.success(ok: ok)
+          return HideKeyboardRoute.outcome(await hideKeyboardHandler())
         }
       }
     }
