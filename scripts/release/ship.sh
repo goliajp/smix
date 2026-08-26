@@ -1146,6 +1146,29 @@ log "gradle $GRADLE_PUB_TASK jp.golia.smix:smix-sdk:$VERSION"
 # signing key. Gradle then failed with "no configured signatory" a screen
 # later, naming neither gpg nor the lock. An empty key is a failure even
 # when the command that produced it says it succeeded.
+# A lock this ship's own gpg left behind stops the NEXT ship, every time:
+# 9.0.0 was held by pid 26149 from the 8.0.1 release the night before.
+# Reporting it was not enough — the remedy is mechanical, so it is done
+# here, but ONLY when the holder is provably gone. A live holder is
+# somebody else's gpg and is left alone; the export below then fails as
+# it always did.
+#
+# The two files are hardlinks of the same inode, so both names go or
+# neither does. This says what it removed rather than doing it quietly:
+# a lock disappearing without a word is indistinguishable from there
+# never having been one.
+GPG_LOCK="$HOME/.gnupg/public-keys.d/pubring.db.lock"
+if [ -f "$GPG_LOCK" ]; then
+  LOCK_PID="$(awk 'NR==1{print $1}' "$GPG_LOCK" 2>/dev/null)"
+  if [ -n "$LOCK_PID" ] && ! ps -p "$LOCK_PID" >/dev/null 2>&1; then
+    log "gpg keybox lock held by pid $LOCK_PID, which is gone — removing it and its hardlink"
+    rm -f "$GPG_LOCK" "$HOME"/.gnupg/public-keys.d/.#lk*
+    gpgconf --kill keyboxd >/dev/null 2>&1 || true
+  else
+    log "gpg keybox lock held by pid ${LOCK_PID:-?}, which is alive — leaving it"
+  fi
+fi
+
 GPG_KEY="$(gpg --export-secret-keys --armor FBD802632CFAD78B 2>/dev/null)" \
   || fail "gpg export failed for signing key FBD802632CFAD78B"
 [ -n "$GPG_KEY" ] \
