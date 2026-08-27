@@ -26,6 +26,7 @@ fn id_selector(id: &str) -> Selector {
 }
 
 const SEMANTICS: &str = include_str!("fixtures/dialog-semantics.json");
+const NO_MODAL: &str = include_str!("fixtures/base-semantics.json");
 const A11Y: &str = include_str!("fixtures/dialog-a11y.json");
 
 fn a11y_tree() -> smix_screen::A11yNode {
@@ -84,7 +85,12 @@ fn the_converted_tree_keeps_screen_coordinates() {
 fn every_tag_the_probe_saw_survives_the_conversion() {
     // A precise count, not "more than none": a conversion that dropped half
     // a screen would still resolve something.
-    let tree = probe_tree_to_a11y(SEMANTICS).expect("converts");
+    //
+    // Counted on a payload with NO modal, because the dialog one is
+    // deliberately narrowed — that narrowing is asserted separately below,
+    // and folding the two questions into one number would have let either
+    // change hide behind the other.
+    let tree = probe_tree_to_a11y(NO_MODAL).expect("converts");
     let mut ids = vec![];
     fn walk(n: &smix_screen::A11yNode, out: &mut Vec<String>) {
         if let Some(i) = &n.identifier {
@@ -97,9 +103,9 @@ fn every_tag_the_probe_saw_survives_the_conversion() {
     walk(&tree, &mut ids);
     assert_eq!(
         ids.len(),
-        17,
-        "the recorded payload has 17 tags (1 in the dialog's root, 16 in the \
-         screen's); the conversion produced {ids:?}"
+        16,
+        "the screen carries 16 tags with no dialog open; the conversion \
+         produced {ids:?}"
     );
 }
 
@@ -135,4 +141,104 @@ fn a_payload_that_is_not_the_probes_shape_is_refused_rather_than_emptied() {
     assert!(probe_tree_to_a11y("not json at all").is_none());
     assert!(probe_tree_to_a11y(r#"{"source":"a11y","root":{}}"#).is_none(),
         "the a11y envelope was accepted as a probe payload");
+}
+
+// --- what the probe may reach ------------------------------------------
+
+#[test]
+fn a_modal_hides_what_is_behind_it_from_the_probe_too() {
+    // The probe sees both roots — the dialog and the screen under it — and
+    // that is correct: it reads what Compose knows. What must not follow is
+    // smix acting on the second one.
+    //
+    // Android already hides a modal's background from accessibility, and
+    // that is not a defect to route around: a user cannot touch those
+    // controls either. Letting the probe reach them would make smix able to
+    // do what the person it is standing in for cannot, which is the same
+    // line C2 drew when it refused semantics OnClick.
+    let tree = probe_tree_to_a11y(SEMANTICS).expect("converts");
+    let behind = resolve_selector(&tree, &id_selector("compose_submit"));
+    assert!(
+        behind.is_none(),
+        "a control behind the open dialog resolved — the probe reached past \
+         what a user could touch"
+    );
+    // And the paired half: the modal's own control still resolves, or this
+    // rule has simply switched the probe off.
+    assert!(
+        resolve_selector(&tree, &id_selector("compose_dialog_confirm")).is_some(),
+        "nothing in the dialog resolves either — this is not modality, it is \
+         the conversion being broken"
+    );
+}
+
+#[test]
+fn with_no_modal_every_root_is_reachable() {
+    // The rule is about modality, not about root count. A screen whose
+    // popup has closed must be fully addressable again, or every flow
+    // would break after its first dialog.
+    let payload = r#"[{"id":1,"bounds":[0,0,1080,2000],"focused":false,
+        "enabled":true,"actions":[],"children":[
+          {"id":2,"testTag":"a","bounds":[0,0,100,40],"focused":false,
+           "enabled":true,"actions":[],"children":[]}]},
+        {"id":3,"bounds":[0,0,1080,2000],"focused":false,
+        "enabled":true,"actions":[],"children":[
+          {"id":4,"testTag":"b","bounds":[0,0,100,40],"focused":false,
+           "enabled":true,"actions":[],"children":[]}]}]"#;
+    let tree = probe_tree_to_a11y(payload).expect("converts");
+    assert!(resolve_selector(&tree, &id_selector("a")).is_some());
+    assert!(
+        resolve_selector(&tree, &id_selector("b")).is_some(),
+        "two same-sized roots are not a modal — neither covers the other"
+    );
+}
+
+#[test]
+fn two_roots_of_equal_size_are_not_a_modal() {
+    // Exactly-equal rectangles: one contains the other in every inequality
+    // that is not strict. A mutation relaxing `>` to `>=` passed against
+    // every other payload here, and would have made the FIRST of two
+    // same-sized roots swallow the screen.
+    let payload = r#"[{"id":1,"bounds":[0,0,1080,2000],"focused":false,
+        "enabled":true,"actions":[],"children":[
+          {"id":2,"testTag":"a","bounds":[0,0,10,10],"focused":false,
+           "enabled":true,"actions":[],"children":[]}]},
+        {"id":3,"bounds":[0,0,1080,2000],"focused":false,
+        "enabled":true,"actions":[],"children":[
+          {"id":4,"testTag":"b","bounds":[0,0,10,10],"focused":false,
+           "enabled":true,"actions":[],"children":[]}]}]"#;
+    let tree = probe_tree_to_a11y(payload).expect("converts");
+    assert!(resolve_selector(&tree, &id_selector("a")).is_some());
+    assert!(
+        resolve_selector(&tree, &id_selector("b")).is_some(),
+        "one of two identical roots was treated as a modal over the other"
+    );
+}
+
+#[test]
+fn two_things_that_both_look_like_the_modal_mean_neither_is() {
+    // Two small roots inside one big one — a dialog and a snackbar, say.
+    // Picking one would make the other unreachable for a reason nobody
+    // could see. Saying nothing leaves smix where it was, which is the
+    // safe direction to be wrong in.
+    let payload = r#"[{"id":1,"bounds":[0,0,1080,2000],"focused":false,
+        "enabled":true,"actions":[],"children":[
+          {"id":2,"testTag":"screen","bounds":[0,0,10,10],"focused":false,
+           "enabled":true,"actions":[],"children":[]}]},
+        {"id":3,"bounds":[100,100,300,300],"focused":false,
+        "enabled":true,"actions":[],"children":[
+          {"id":4,"testTag":"dialog","bounds":[100,100,110,110],"focused":false,
+           "enabled":true,"actions":[],"children":[]}]},
+        {"id":5,"bounds":[100,900,300,1000],"focused":false,
+        "enabled":true,"actions":[],"children":[
+          {"id":6,"testTag":"snackbar","bounds":[100,900,110,910],"focused":false,
+           "enabled":true,"actions":[],"children":[]}]}]"#;
+    let tree = probe_tree_to_a11y(payload).expect("converts");
+    for tag in ["screen", "dialog", "snackbar"] {
+        assert!(
+            resolve_selector(&tree, &id_selector(tag)).is_some(),
+            "`{tag}` became unreachable because two roots both looked like \
+             the modal and one was picked"
+        );
+    }
 }
