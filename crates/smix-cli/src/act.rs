@@ -406,13 +406,13 @@ pub async fn cmd_find(
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
     println!("exists={}", node.is_some());
-    if let Some(n) = node {
-        if n.hittable == Some(false) {
-            println!(
-                "reachable=false  it is on screen and something is on top of it; \
-                 a tap here would be refused"
-            );
-        }
+    if let Some(n) = node
+        && n.hittable == Some(false)
+    {
+        println!(
+            "reachable=false  it is on screen and something is on top of it; \
+             a tap here would be refused"
+        );
     }
     Ok(())
 }
