@@ -29,6 +29,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -319,6 +320,20 @@ def main():
              "meaning something after the blindness is fixed.",
     )
     args = ap.parse_args()
+
+    # Put the subject on screen before reading it.
+    #
+    # The other v10 device gates do this and this one did not, so in the
+    # ship it would go red on whatever the previous gate happened to leave
+    # in front — "only 0 tags on both sides" is true and is about the wrong
+    # thing. A gate that depends on the one before it having tidied up is a
+    # gate that fails for reasons nobody can act on.
+    if args.device and not (args.a11y or args.semantics):
+        subprocess.run(["adb", "-s", args.device, "shell", "am", "force-stop", args.app],
+                       capture_output=True, text=True)
+        subprocess.run(["adb", "-s", args.device, "shell", "am", "start", "-n",
+                        f"{args.app}/.ComposeActivity"], capture_output=True, text=True)
+        time.sleep(2)
 
     if args.a11y and args.semantics:
         a11y_tree = unwrap(json.load(open(args.a11y)))
