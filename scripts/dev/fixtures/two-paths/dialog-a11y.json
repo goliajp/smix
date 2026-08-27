@@ -1,0 +1,888 @@
+{
+  "rawType": "android.view.WindowRoot",
+  "elementTypeRaw": 1,
+  "bounds": {
+    "x": 0.0,
+    "y": 0.0,
+    "w": 1080.0,
+    "h": 2340.0
+  },
+  "enabled": true,
+  "selected": false,
+  "hasFocus": false,
+  "visible": true,
+  "children": [
+    {
+      "rawType": "android.widget.FrameLayout",
+      "elementTypeRaw": 1,
+      "identifier": "navigation_bar_frame",
+      "bounds": {
+        "x": 0.0,
+        "y": 2208.0,
+        "w": 1080.0,
+        "h": 132.0
+      },
+      "enabled": true,
+      "selected": false,
+      "hasFocus": false,
+      "visible": true,
+      "children": [
+        {
+          "rawType": "android.widget.FrameLayout",
+          "elementTypeRaw": 1,
+          "identifier": "navigation_bar_view",
+          "bounds": {
+            "x": 0.0,
+            "y": 2208.0,
+            "w": 1080.0,
+            "h": 132.0
+          },
+          "enabled": true,
+          "selected": false,
+          "hasFocus": false,
+          "visible": true,
+          "children": [
+            {
+              "rawType": "android.widget.FrameLayout",
+              "elementTypeRaw": 1,
+              "identifier": "navigation_inflater",
+              "bounds": {
+                "x": 0.0,
+                "y": 2208.0,
+                "w": 1080.0,
+                "h": 132.0
+              },
+              "enabled": true,
+              "selected": false,
+              "hasFocus": false,
+              "visible": true,
+              "children": [
+                {
+                  "rawType": "android.widget.FrameLayout",
+                  "elementTypeRaw": 1,
+                  "identifier": "horizontal",
+                  "bounds": {
+                    "x": 50.0,
+                    "y": 2208.0,
+                    "w": 980.0,
+                    "h": 132.0
+                  },
+                  "enabled": true,
+                  "selected": false,
+                  "hasFocus": false,
+                  "visible": true,
+                  "children": [
+                    {
+                      "rawType": "android.widget.FrameLayout",
+                      "elementTypeRaw": 1,
+                      "identifier": "nav_buttons",
+                      "bounds": {
+                        "x": 72.0,
+                        "y": 2208.0,
+                        "w": 936.0,
+                        "h": 132.0
+                      },
+                      "enabled": true,
+                      "selected": false,
+                      "hasFocus": false,
+                      "visible": true,
+                      "children": [
+                        {
+                          "rawType": "android.widget.LinearLayout",
+                          "elementTypeRaw": 1,
+                          "identifier": "ends_group",
+                          "bounds": {
+                            "x": 72.0,
+                            "y": 2208.0,
+                            "w": 936.0,
+                            "h": 132.0
+                          },
+                          "enabled": true,
+                          "selected": false,
+                          "hasFocus": false,
+                          "visible": true,
+                          "children": [
+                            {
+                              "rawType": "android.widget.RelativeLayout",
+                              "elementTypeRaw": 1,
+                              "bounds": {
+                                "x": 72.0,
+                                "y": 2208.0,
+                                "w": 93.0,
+                                "h": 132.0
+                              },
+                              "enabled": true,
+                              "selected": false,
+                              "hasFocus": false,
+                              "visible": true,
+                              "children": []
+                            },
+                            {
+                              "rawType": "android.widget.RelativeLayout",
+                              "elementTypeRaw": 1,
+                              "bounds": {
+                                "x": 165.0,
+                                "y": 2208.0,
+                                "w": 187.0,
+                                "h": 132.0
+                              },
+                              "enabled": true,
+                              "selected": false,
+                              "hasFocus": false,
+                              "visible": true,
+                              "children": [
+                                {
+                                  "rawType": "android.widget.ImageView",
+                                  "elementTypeRaw": 1,
+                                  "role": "image",
+                                  "identifier": "back",
+                                  "label": "Back",
+                                  "bounds": {
+                                    "x": 165.0,
+                                    "y": 2208.0,
+                                    "w": 187.0,
+                                    "h": 132.0
+                                  },
+                                  "enabled": true,
+                                  "selected": false,
+                                  "hasFocus": false,
+                                  "visible": true,
+                                  "children": []
+                                }
+                              ]
+                            },
+                            {
+                              "rawType": "android.widget.RelativeLayout",
+                              "elementTypeRaw": 1,
+                              "bounds": {
+                                "x": 726.0,
+                                "y": 2208.0,
+                                "w": 188.0,
+                                "h": 132.0
+                              },
+                              "enabled": true,
+                              "selected": false,
+                              "hasFocus": false,
+                              "visible": true,
+                              "children": [
+                                {
+                                  "rawType": "android.widget.ImageView",
+                                  "elementTypeRaw": 1,
+                                  "role": "image",
+                                  "identifier": "recent_apps",
+                                  "label": "Overview",
+                                  "bounds": {
+                                    "x": 726.0,
+                                    "y": 2208.0,
+                                    "w": 188.0,
+                                    "h": 132.0
+                                  },
+                                  "enabled": true,
+                                  "selected": false,
+                                  "hasFocus": false,
+                                  "visible": true,
+                                  "children": []
+                                }
+                              ]
+                            },
+                            {
+                              "rawType": "android.widget.RelativeLayout",
+                              "elementTypeRaw": 1,
+                              "bounds": {
+                                "x": 914.0,
+                                "y": 2208.0,
+                                "w": 94.0,
+                                "h": 132.0
+                              },
+                              "enabled": true,
+                              "selected": false,
+                              "hasFocus": false,
+                              "visible": true,
+                              "children": []
+                            }
+                          ]
+                        },
+                        {
+                          "rawType": "android.widget.LinearLayout",
+                          "elementTypeRaw": 1,
+                          "identifier": "center_group",
+                          "bounds": {
+                            "x": 430.0,
+                            "y": 2208.0,
+                            "w": 220.0,
+                            "h": 132.0
+                          },
+                          "enabled": true,
+                          "selected": false,
+                          "hasFocus": false,
+                          "visible": true,
+                          "children": [
+                            {
+                              "rawType": "android.widget.ImageView",
+                              "elementTypeRaw": 1,
+                              "role": "image",
+                              "identifier": "home",
+                              "label": "Home",
+                              "bounds": {
+                                "x": 430.0,
+                                "y": 2208.0,
+                                "w": 220.0,
+                                "h": 132.0
+                              },
+                              "enabled": true,
+                              "selected": false,
+                              "hasFocus": false,
+                              "visible": true,
+                              "children": []
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rawType": "android.widget.FrameLayout",
+      "elementTypeRaw": 1,
+      "bounds": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 1080.0,
+        "h": 136.0
+      },
+      "enabled": true,
+      "selected": false,
+      "hasFocus": false,
+      "visible": true,
+      "children": [
+        {
+          "rawType": "android.widget.FrameLayout",
+          "elementTypeRaw": 1,
+          "identifier": "status_bar_launch_animation_container",
+          "bounds": {
+            "x": 0.0,
+            "y": 0.0,
+            "w": 1080.0,
+            "h": 136.0
+          },
+          "enabled": true,
+          "selected": false,
+          "hasFocus": false,
+          "visible": true,
+          "children": []
+        },
+        {
+          "rawType": "android.widget.FrameLayout",
+          "elementTypeRaw": 1,
+          "identifier": "status_bar_container",
+          "bounds": {
+            "x": 0.0,
+            "y": 0.0,
+            "w": 1080.0,
+            "h": 136.0
+          },
+          "enabled": true,
+          "selected": false,
+          "hasFocus": false,
+          "visible": true,
+          "children": [
+            {
+              "rawType": "android.widget.FrameLayout",
+              "elementTypeRaw": 1,
+              "identifier": "status_bar",
+              "bounds": {
+                "x": 0.0,
+                "y": 0.0,
+                "w": 1080.0,
+                "h": 136.0
+              },
+              "enabled": true,
+              "selected": false,
+              "hasFocus": false,
+              "visible": true,
+              "children": [
+                {
+                  "rawType": "android.widget.LinearLayout",
+                  "elementTypeRaw": 1,
+                  "identifier": "status_bar_contents",
+                  "bounds": {
+                    "x": 136.0,
+                    "y": 0.0,
+                    "w": 889.0,
+                    "h": 136.0
+                  },
+                  "enabled": true,
+                  "selected": false,
+                  "hasFocus": false,
+                  "visible": true,
+                  "children": [
+                    {
+                      "rawType": "android.widget.FrameLayout",
+                      "elementTypeRaw": 1,
+                      "identifier": "status_bar_start_side_container",
+                      "bounds": {
+                        "x": 158.0,
+                        "y": 6.0,
+                        "w": 422.0,
+                        "h": 130.0
+                      },
+                      "enabled": true,
+                      "selected": false,
+                      "hasFocus": false,
+                      "visible": true,
+                      "children": [
+                        {
+                          "rawType": "android.widget.FrameLayout",
+                          "elementTypeRaw": 1,
+                          "identifier": "status_bar_start_side_content",
+                          "bounds": {
+                            "x": 158.0,
+                            "y": 6.0,
+                            "w": 82.0,
+                            "h": 130.0
+                          },
+                          "enabled": true,
+                          "selected": false,
+                          "hasFocus": false,
+                          "visible": true,
+                          "children": [
+                            {
+                              "rawType": "android.widget.LinearLayout",
+                              "elementTypeRaw": 1,
+                              "identifier": "status_bar_start_side_except_heads_up",
+                              "bounds": {
+                                "x": 158.0,
+                                "y": 6.0,
+                                "w": 82.0,
+                                "h": 130.0
+                              },
+                              "enabled": true,
+                              "selected": false,
+                              "hasFocus": false,
+                              "visible": true,
+                              "children": [
+                                {
+                                  "rawType": "android.widget.TextView",
+                                  "elementTypeRaw": 1,
+                                  "role": "staticText",
+                                  "identifier": "clock",
+                                  "label": "9:36 PM",
+                                  "text": "9:36",
+                                  "bounds": {
+                                    "x": 158.0,
+                                    "y": 6.0,
+                                    "w": 82.0,
+                                    "h": 130.0
+                                  },
+                                  "enabled": true,
+                                  "selected": false,
+                                  "hasFocus": false,
+                                  "visible": true,
+                                  "children": []
+                                },
+                                {
+                                  "rawType": "android.widget.FrameLayout",
+                                  "elementTypeRaw": 1,
+                                  "identifier": "notification_icon_area",
+                                  "bounds": {
+                                    "x": 240.0,
+                                    "y": 6.0,
+                                    "w": 0.0,
+                                    "h": 130.0
+                                  },
+                                  "enabled": true,
+                                  "selected": false,
+                                  "hasFocus": false,
+                                  "visible": false,
+                                  "children": [
+                                    {
+                                      "rawType": "android.view.ViewGroup",
+                                      "elementTypeRaw": 1,
+                                      "identifier": "notificationIcons",
+                                      "bounds": {
+                                        "x": 240.0,
+                                        "y": 6.0,
+                                        "w": 0.0,
+                                        "h": 130.0
+                                      },
+                                      "enabled": true,
+                                      "selected": false,
+                                      "hasFocus": false,
+                                      "visible": false,
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "rawType": "android.widget.FrameLayout",
+                      "elementTypeRaw": 1,
+                      "identifier": "status_bar_end_side_container",
+                      "bounds": {
+                        "x": 580.0,
+                        "y": 6.0,
+                        "w": 423.0,
+                        "h": 130.0
+                      },
+                      "enabled": true,
+                      "selected": false,
+                      "hasFocus": false,
+                      "visible": true,
+                      "children": [
+                        {
+                          "rawType": "android.widget.LinearLayout",
+                          "elementTypeRaw": 1,
+                          "identifier": "status_bar_end_side_content",
+                          "bounds": {
+                            "x": 876.0,
+                            "y": 6.0,
+                            "w": 127.0,
+                            "h": 130.0
+                          },
+                          "enabled": true,
+                          "selected": false,
+                          "hasFocus": false,
+                          "visible": true,
+                          "children": [
+                            {
+                              "rawType": "android.widget.LinearLayout",
+                              "elementTypeRaw": 1,
+                              "identifier": "system_icons",
+                              "bounds": {
+                                "x": 876.0,
+                                "y": 6.0,
+                                "w": 127.0,
+                                "h": 130.0
+                              },
+                              "enabled": true,
+                              "selected": false,
+                              "hasFocus": false,
+                              "visible": true,
+                              "children": [
+                                {
+                                  "rawType": "android.widget.LinearLayout",
+                                  "elementTypeRaw": 1,
+                                  "identifier": "statusIcons",
+                                  "bounds": {
+                                    "x": 876.0,
+                                    "y": 6.0,
+                                    "w": 106.0,
+                                    "h": 130.0
+                                  },
+                                  "enabled": true,
+                                  "selected": false,
+                                  "hasFocus": false,
+                                  "visible": true,
+                                  "children": [
+                                    {
+                                      "rawType": "android.widget.FrameLayout",
+                                      "elementTypeRaw": 1,
+                                      "identifier": "wifi_combo",
+                                      "label": "Wifi signal full.",
+                                      "bounds": {
+                                        "x": 876.0,
+                                        "y": 40.0,
+                                        "w": 48.0,
+                                        "h": 61.0
+                                      },
+                                      "enabled": true,
+                                      "selected": false,
+                                      "hasFocus": false,
+                                      "visible": true,
+                                      "children": [
+                                        {
+                                          "rawType": "android.widget.LinearLayout",
+                                          "elementTypeRaw": 1,
+                                          "identifier": "wifi_group",
+                                          "bounds": {
+                                            "x": 883.0,
+                                            "y": 40.0,
+                                            "w": 41.0,
+                                            "h": 61.0
+                                          },
+                                          "enabled": true,
+                                          "selected": false,
+                                          "hasFocus": false,
+                                          "visible": true,
+                                          "children": [
+                                            {
+                                              "rawType": "android.widget.FrameLayout",
+                                              "elementTypeRaw": 1,
+                                              "identifier": "wifi_combo",
+                                              "bounds": {
+                                                "x": 883.0,
+                                                "y": 50.0,
+                                                "w": 41.0,
+                                                "h": 41.0
+                                              },
+                                              "enabled": true,
+                                              "selected": false,
+                                              "hasFocus": false,
+                                              "visible": true,
+                                              "children": [
+                                                {
+                                                  "rawType": "android.widget.ImageView",
+                                                  "elementTypeRaw": 1,
+                                                  "role": "image",
+                                                  "identifier": "wifi_signal",
+                                                  "bounds": {
+                                                    "x": 883.0,
+                                                    "y": 50.0,
+                                                    "w": 41.0,
+                                                    "h": 41.0
+                                                  },
+                                                  "enabled": true,
+                                                  "selected": false,
+                                                  "hasFocus": false,
+                                                  "visible": true,
+                                                  "children": []
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "rawType": "android.widget.FrameLayout",
+                                      "elementTypeRaw": 1,
+                                      "identifier": "mobile_combo",
+                                      "label": "Phone signal full.",
+                                      "bounds": {
+                                        "x": 924.0,
+                                        "y": 40.0,
+                                        "w": 41.0,
+                                        "h": 61.0
+                                      },
+                                      "enabled": true,
+                                      "selected": false,
+                                      "hasFocus": false,
+                                      "visible": true,
+                                      "children": [
+                                        {
+                                          "rawType": "android.widget.LinearLayout",
+                                          "elementTypeRaw": 1,
+                                          "identifier": "mobile_group",
+                                          "bounds": {
+                                            "x": 924.0,
+                                            "y": 40.0,
+                                            "w": 41.0,
+                                            "h": 61.0
+                                          },
+                                          "enabled": true,
+                                          "selected": false,
+                                          "hasFocus": false,
+                                          "visible": true,
+                                          "children": [
+                                            {
+                                              "rawType": "android.widget.FrameLayout",
+                                              "elementTypeRaw": 1,
+                                              "bounds": {
+                                                "x": 924.0,
+                                                "y": 50.0,
+                                                "w": 41.0,
+                                                "h": 41.0
+                                              },
+                                              "enabled": true,
+                                              "selected": false,
+                                              "hasFocus": false,
+                                              "visible": true,
+                                              "children": [
+                                                {
+                                                  "rawType": "android.widget.ImageView",
+                                                  "elementTypeRaw": 1,
+                                                  "role": "image",
+                                                  "identifier": "mobile_signal",
+                                                  "bounds": {
+                                                    "x": 924.0,
+                                                    "y": 50.0,
+                                                    "w": 41.0,
+                                                    "h": 41.0
+                                                  },
+                                                  "enabled": true,
+                                                  "selected": false,
+                                                  "hasFocus": false,
+                                                  "visible": true,
+                                                  "children": []
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "rawType": "android.widget.LinearLayout",
+                                  "elementTypeRaw": 1,
+                                  "identifier": "battery",
+                                  "label": "Battery 100 percent.",
+                                  "bounds": {
+                                    "x": 982.0,
+                                    "y": 6.0,
+                                    "w": 21.0,
+                                    "h": 130.0
+                                  },
+                                  "enabled": true,
+                                  "selected": false,
+                                  "hasFocus": false,
+                                  "visible": true,
+                                  "children": [
+                                    {
+                                      "rawType": "android.widget.ImageView",
+                                      "elementTypeRaw": 1,
+                                      "role": "image",
+                                      "bounds": {
+                                        "x": 982.0,
+                                        "y": 53.0,
+                                        "w": 21.0,
+                                        "h": 36.0
+                                      },
+                                      "enabled": true,
+                                      "selected": false,
+                                      "hasFocus": false,
+                                      "visible": true,
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rawType": "android.widget.FrameLayout",
+      "elementTypeRaw": 1,
+      "bounds": {
+        "x": 155.0,
+        "y": 913.0,
+        "w": 770.0,
+        "h": 517.0
+      },
+      "enabled": true,
+      "selected": false,
+      "hasFocus": false,
+      "visible": true,
+      "children": [
+        {
+          "rawType": "android.widget.FrameLayout",
+          "elementTypeRaw": 1,
+          "bounds": {
+            "x": 155.0,
+            "y": 913.0,
+            "w": 770.0,
+            "h": 517.0
+          },
+          "enabled": true,
+          "selected": false,
+          "hasFocus": false,
+          "visible": true,
+          "children": [
+            {
+              "rawType": "android.widget.FrameLayout",
+              "elementTypeRaw": 1,
+              "identifier": "content",
+              "bounds": {
+                "x": 155.0,
+                "y": 913.0,
+                "w": 770.0,
+                "h": 517.0
+              },
+              "enabled": true,
+              "selected": false,
+              "hasFocus": false,
+              "visible": true,
+              "children": [
+                {
+                  "rawType": "android.view.ViewGroup",
+                  "elementTypeRaw": 1,
+                  "bounds": {
+                    "x": 155.0,
+                    "y": 913.0,
+                    "w": 770.0,
+                    "h": 517.0
+                  },
+                  "enabled": true,
+                  "selected": false,
+                  "hasFocus": false,
+                  "visible": true,
+                  "children": [
+                    {
+                      "rawType": "android.view.View",
+                      "elementTypeRaw": 1,
+                      "bounds": {
+                        "x": 155.0,
+                        "y": 913.0,
+                        "w": 770.0,
+                        "h": 517.0
+                      },
+                      "enabled": true,
+                      "selected": false,
+                      "hasFocus": false,
+                      "visible": true,
+                      "children": [
+                        {
+                          "rawType": "android.view.View",
+                          "elementTypeRaw": 1,
+                          "bounds": {
+                            "x": 155.0,
+                            "y": 913.0,
+                            "w": 770.0,
+                            "h": 517.0
+                          },
+                          "enabled": true,
+                          "selected": false,
+                          "hasFocus": false,
+                          "visible": true,
+                          "children": [
+                            {
+                              "rawType": "android.view.View",
+                              "elementTypeRaw": 1,
+                              "bounds": {
+                                "x": 155.0,
+                                "y": 913.0,
+                                "w": 770.0,
+                                "h": 517.0
+                              },
+                              "enabled": true,
+                              "selected": false,
+                              "hasFocus": false,
+                              "visible": true,
+                              "children": [
+                                {
+                                  "rawType": "android.view.View",
+                                  "elementTypeRaw": 1,
+                                  "bounds": {
+                                    "x": 155.0,
+                                    "y": 913.0,
+                                    "w": 770.0,
+                                    "h": 517.0
+                                  },
+                                  "enabled": true,
+                                  "selected": false,
+                                  "hasFocus": false,
+                                  "visible": true,
+                                  "children": [
+                                    {
+                                      "rawType": "android.widget.TextView",
+                                      "elementTypeRaw": 1,
+                                      "role": "staticText",
+                                      "text": "A dialog",
+                                      "bounds": {
+                                        "x": 221.0,
+                                        "y": 979.0,
+                                        "w": 239.0,
+                                        "h": 88.0
+                                      },
+                                      "enabled": true,
+                                      "selected": false,
+                                      "hasFocus": false,
+                                      "visible": true,
+                                      "children": []
+                                    },
+                                    {
+                                      "rawType": "android.widget.TextView",
+                                      "elementTypeRaw": 1,
+                                      "role": "staticText",
+                                      "text": "hosted in its own window",
+                                      "bounds": {
+                                        "x": 221.0,
+                                        "y": 1111.0,
+                                        "w": 441.0,
+                                        "h": 55.0
+                                      },
+                                      "enabled": true,
+                                      "selected": false,
+                                      "hasFocus": false,
+                                      "visible": true,
+                                      "children": []
+                                    },
+                                    {
+                                      "rawType": "android.view.View",
+                                      "elementTypeRaw": 1,
+                                      "bounds": {
+                                        "x": 675.0,
+                                        "y": 1232.0,
+                                        "w": 184.0,
+                                        "h": 132.0
+                                      },
+                                      "enabled": true,
+                                      "selected": false,
+                                      "hasFocus": false,
+                                      "visible": true,
+                                      "children": [
+                                        {
+                                          "rawType": "android.widget.TextView",
+                                          "elementTypeRaw": 1,
+                                          "role": "staticText",
+                                          "text": "OK",
+                                          "bounds": {
+                                            "x": 741.0,
+                                            "y": 1271.0,
+                                            "w": 52.0,
+                                            "h": 55.0
+                                          },
+                                          "enabled": true,
+                                          "selected": false,
+                                          "hasFocus": false,
+                                          "visible": true,
+                                          "children": []
+                                        },
+                                        {
+                                          "rawType": "android.widget.Button",
+                                          "elementTypeRaw": 1,
+                                          "role": "button",
+                                          "bounds": {
+                                            "x": 675.0,
+                                            "y": 1243.0,
+                                            "w": 184.0,
+                                            "h": 110.0
+                                          },
+                                          "enabled": true,
+                                          "selected": false,
+                                          "hasFocus": false,
+                                          "visible": true,
+                                          "children": []
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

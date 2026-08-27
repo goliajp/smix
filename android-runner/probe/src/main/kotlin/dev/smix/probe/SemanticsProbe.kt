@@ -57,7 +57,16 @@ object SemanticsProbe {
 
 internal fun SemanticsNode.toProbeNode(): ProbeNode {
     val c = config
-    val rect = boundsInWindow
+    // Screen coordinates, not `boundsInWindow`.
+    //
+    // A dialog composes into its OWN window, and `boundsInWindow` is
+    // relative to whichever window the node is in — so the fixture's dialog
+    // reported itself at y=0 and the status bar's clock landed geometrically
+    // "inside" it. Anything that compares two roots, or turns a node into a
+    // tap, needs one coordinate space, and the only one shared across
+    // windows is the screen's.
+    val origin = positionOnScreen
+    val dimensions = size
     return ProbeNode(
         id = id,
         testTag = c.getOrElseNullable(SemanticsProperties.TestTag) { null },
@@ -77,7 +86,10 @@ internal fun SemanticsNode.toProbeNode(): ProbeNode {
             ?.ifEmpty { null },
         role = c.getOrElseNullable(SemanticsProperties.Role) { null }?.toString(),
         bounds = Bounds(
-            rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt(),
+            origin.x.toInt(),
+            origin.y.toInt(),
+            origin.x.toInt() + dimensions.width,
+            origin.y.toInt() + dimensions.height,
         ),
         // Compose keeps focus in its own semantics layer. Asking the
         // accessibility side instead is the wrong instrument, and reading

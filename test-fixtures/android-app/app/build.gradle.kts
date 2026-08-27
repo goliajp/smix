@@ -35,6 +35,9 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.08.00"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
+    // LazyColumn: a list whose far rows are never composed, which is one
+    // of the three ways the two perception paths part company.
+    implementation("androidx.compose.foundation:foundation")
     implementation("androidx.activity:activity-compose:1.9.3")
     // The probe. Debug only, and the fixture keeps `testTagsAsResourceId`
     // on alongside it: the two-paths reconciliation needs BOTH paths
