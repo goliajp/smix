@@ -42,11 +42,48 @@ CASES = [
 ]
 
 
-def run_with(script_body):
+# A helper that touches a device, so a caller can reach one without ever
+# spelling `adb`. Factoring three gates onto one of these took all three
+# out of the gate's sight, and nothing said so: the count fell and the
+# verdict stayed clean.
+TOUCHING_MODULE = (
+    "import subprocess\n"
+    "def call(device):\n"
+    "    subprocess.run(['adb', '-s', device, 'shell', 'echo'])\n"
+)
+
+IMPORT_CASES = [
+    ("a caller that reaches for a device through a helper",
+     "import _helper\n_helper.call('emulator-5554')\n", True),
+    # The caller here is beyond reproach, so a refusal can only come from
+    # the helper writing a serial into itself. Without that rule a library
+    # is excused from proving anything, and this passes.
+    ("a helper that writes a serial into itself",
+     "import argparse, _helper\n"
+     "ap = argparse.ArgumentParser()\nap.add_argument('--device')\n"
+     "_helper.call(ap.parse_args().device)\n", True, "hardcoding"),
+    ("a caller that passes the helper what it was given",
+     "import argparse, _helper\n"
+     "ap = argparse.ArgumentParser()\nap.add_argument('--device')\n"
+     "_helper.call(ap.parse_args().device)\n", False),
+]
+
+HARDCODING_MODULE = (
+    "import subprocess\n"
+    "def call(device):\n"
+    "    subprocess.run(['adb', '-s', 'emulator-5554', 'shell', 'echo'])\n"
+)
+
+
+def run_with(script_body, extra=None):
     with tempfile.TemporaryDirectory() as root:
         d = os.path.join(root, "scripts", "dev")
         os.makedirs(d)
-        with open(os.path.join(d, "probe.sh"), "w") as fh:
+        for n, b in (extra or {}).items():
+            with open(os.path.join(d, n), "w") as fh:
+                fh.write(b)
+        with open(os.path.join(d, "probe.sh" if extra is None else "caller.py"),
+                  "w") as fh:
             fh.write(script_body)
         # The gate reads REPO from its own location; point it at the fixture.
         env = dict(os.environ, SMIX_GATE_ROOT=root)
@@ -77,7 +114,21 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print(f"no-script-picks-a-device-by-accident.test: {len(CASES) + 1} cases pass")
+    for case in IMPORT_CASES:
+        name, body, must_refuse = case[0], case[1], case[2]
+        helper = HARDCODING_MODULE if len(case) > 3 else TOUCHING_MODULE
+        r = run_with(body, extra={"_helper.py": helper})
+        if (r.returncode != 0) != must_refuse:
+            failures.append(
+                f"{name}: expected {'a refusal' if must_refuse else 'a pass'}, "
+                f"got {(r.stdout + r.stderr).strip().splitlines()[-1][:90]}")
+    if failures:
+        print("no-script-picks-a-device-by-accident.test: FAIL")
+        for f in failures:
+            print(f"  - {f}")
+        return 1
+    print(f"no-script-picks-a-device-by-accident.test: "
+          f"{len(CASES) + len(IMPORT_CASES) + 1} cases pass")
     return 0
 
 
