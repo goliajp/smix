@@ -36,4 +36,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.activity:activity-compose:1.9.3")
+    // The probe. Debug only, and the fixture keeps `testTagsAsResourceId`
+    // on alongside it: the two-paths reconciliation needs BOTH paths
+    // answering at once, so removing the opt-in here would leave nothing
+    // to compare against.
+    debugImplementation("jp.golia.smix:smix-probe")
 }

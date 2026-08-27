@@ -25,3 +25,4 @@ rootProject.name = "smix-android-runner"
 
 include(":app")
 include(":sdk")
+include(":probe")

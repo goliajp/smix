@@ -22,5 +22,18 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
+// The probe comes in the way a consumer's app takes it — a debug-only
+// dependency on the published coordinate — with a composite build standing
+// in for the registry so the fixture exercises the real wiring without a
+// publish round-trip.
+includeBuild("../../android-runner") {
+    // Substitution rather than renaming the gradle module: the coordinate
+    // in app/build.gradle.kts stays the one a real consumer writes, and
+    // only this line knows it is being served from a sibling checkout.
+    dependencySubstitution {
+        substitute(module("jp.golia.smix:smix-probe")).using(project(":probe"))
+    }
+}
+
 rootProject.name = "smix-android-fixture"
 include(":app")
