@@ -63,7 +63,12 @@ def workspace_version():
 # A file listed here that stops matching is an error, not a skip — a
 # coordinate that silently vanishes from the check is how drift starts.
 VERSION_COORDINATES = [
-    ("README.md", r'jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)'),
+    # Any artifact under the group, not `smix-sdk` by name. `smix-probe`
+    # was documented in the README, the guides and the Android SDK README
+    # for a whole release with the pattern naming only the other one, so
+    # writing the wrong version beside it went unnoticed — the coordinate a
+    # consumer is told to copy is exactly the one that must not go stale.
+    ("README.md", r'jp\.golia\.smix:[a-z-]+:([0-9][0-9a-zA-Z.\-]*)'),
     ("README.md", r'from: "([0-9][0-9a-zA-Z.\-]*)"'),
     ("npm/smix-rn/package.json", r'"version":\s*"([^"]+)"'),
     (
@@ -76,8 +81,8 @@ VERSION_COORDINATES = [
     # stops the copy going stale.
     ("android-runner/gradle.properties", r'smixVersion=([0-9][0-9a-zA-Z.\-]*)'),
     ("web/src/data/site.ts", r'@goliapkg/smix@([0-9][0-9a-zA-Z.\-]*)'),
-    ("web/src/data/site.ts", r'jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)'),
-    ("llms.txt", r'jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)'),
+    ("web/src/data/site.ts", r'jp\.golia\.smix:[a-z-]+:([0-9][0-9a-zA-Z.\-]*)'),
+    ("llms.txt", r'jp\.golia\.smix:[a-z-]+:([0-9][0-9a-zA-Z.\-]*)'),
     # The lockfile records the workspace packages' own versions, and
     # nothing here looked at it: it sat at 2.3.0 through three majors
     # while every `package.json` moved. It stayed invisible because a
@@ -108,7 +113,7 @@ VERSION_COORDINATES = [
 # one level up: the Swift Package coordinate went stale at 0.1.0 while
 # the swept Maven and npm ones beside it were correct.
 DISCOVERED_COORDINATE_PATTERNS = [
-    r"jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)",
+    r"jp\.golia\.smix:[a-z-]+:([0-9][0-9a-zA-Z.\-]*)",
     r"@goliapkg/smix@([0-9][0-9a-zA-Z.\-]*)",
     r"smix-cli --version ([0-9][0-9a-zA-Z.\-]*)",
     r'from: "([0-9][0-9a-zA-Z.\-]*)"',  # Swift Package Manager
