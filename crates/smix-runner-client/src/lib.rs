@@ -2704,3 +2704,32 @@ impl ProbeStatus {
         WaitStrategy::decide(if self.present { self.idle } else { None })
     }
 }
+
+/// Whether a resolved element may be tapped.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TouchVerdict {
+    /// Go ahead — either it is touchable, or nobody said otherwise.
+    Proceed,
+    /// It is there and cannot be reached. Carries what to tell the caller.
+    Refuse(String),
+}
+
+/// Turn what the runner said about hit-testing into a decision.
+///
+/// Three inputs, not two. `None` means the runner did not answer — an older
+/// one that predates the field — and treating that as "cannot be touched"
+/// would take tapping away from everyone who has not upgraded. Being wrong
+/// towards Proceed leaves smix where it has always been; being wrong the
+/// other way is a silent, total regression.
+pub fn touch_verdict(hittable: Option<bool>) -> TouchVerdict {
+    match hittable {
+        Some(false) => TouchVerdict::Refuse(
+            "the element is in the tree and cannot be touched where it is — \
+             something is on top of it, usually a modal or a sheet. Dismiss \
+             what is covering it first; a tap sent anyway would be swallowed \
+             and reported as a success."
+                .to_string(),
+        ),
+        Some(true) | None => TouchVerdict::Proceed,
+    }
+}

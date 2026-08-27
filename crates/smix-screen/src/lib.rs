@@ -494,6 +494,16 @@ pub struct A11yNode {
     pub has_focus: bool,
     /// Whether Apple's accessibility runtime reports this element as visible.
     pub visible: bool,
+    /// Whether a touch aimed here would actually reach it.
+    ///
+    /// Three-valued on purpose. `None` is a runner that did not say, which
+    /// is not the same as `Some(false)` — a modal leaves what is behind it
+    /// in the tree and blocks touches to it, and smix reported those taps
+    /// as successes. Reading an older runner's silence as "cannot" would
+    /// take tapping away from everyone who has not upgraded, so absence
+    /// proceeds and only an explicit no refuses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hittable: Option<bool>,
     /// Child nodes in stable DFS pre-order.
     #[serde(default)]
     pub children: Vec<A11yNode>,
