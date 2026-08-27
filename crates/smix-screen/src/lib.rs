@@ -795,7 +795,12 @@ pub fn probe_tree_to_a11y(json: &str) -> Option<A11yNode> {
     // report a size, which is wrong by the same amount but no worse than
     // before it was asked.
     parent.bounds = match screen {
-        Some([w, h]) if w > 0.0 && h > 0.0 => Rect { x: 0.0, y: 0.0, w, h },
+        Some([w, h]) if w > 0.0 && h > 0.0 => Rect {
+            x: 0.0,
+            y: 0.0,
+            w,
+            h,
+        },
         _ => union_bounds(&converted),
     };
     parent.children = converted;
@@ -849,7 +854,10 @@ impl ProbeNodeWire {
         // `inputText` first: it is what was typed, where `editableText` is
         // what is shown. A predicate comparing a masked field with what a
         // flow typed asks a question only the first can answer.
-        n.value = self.input_text.clone().or_else(|| self.editable_text.clone());
+        n.value = self
+            .input_text
+            .clone()
+            .or_else(|| self.editable_text.clone());
         n.enabled = self.enabled;
         n.has_focus = self.focused;
         n.bounds = Rect {
@@ -881,9 +889,10 @@ fn modal_index(roots: &[A11yNode]) -> Option<usize> {
     }
     let candidates: Vec<usize> = (0..roots.len())
         .filter(|&i| {
-            roots.iter().enumerate().all(|(j, other)| {
-                j == i || strictly_contains(&other.bounds, &roots[i].bounds)
-            })
+            roots
+                .iter()
+                .enumerate()
+                .all(|(j, other)| j == i || strictly_contains(&other.bounds, &roots[i].bounds))
         })
         .collect();
     // Exactly one, or none. There cannot be two: strict containment runs
@@ -940,9 +949,19 @@ fn union_bounds(nodes: &[A11yNode]) -> Rect {
         y1 = y1.max(n.bounds.y + n.bounds.h);
     }
     if nodes.is_empty() {
-        return Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 };
+        return Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+            h: 0.0,
+        };
     }
-    Rect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+    Rect {
+        x: x0,
+        y: y0,
+        w: x1 - x0,
+        h: y1 - y0,
+    }
 }
 
 #[cfg(test)]

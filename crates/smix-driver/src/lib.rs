@@ -483,10 +483,7 @@ impl IosDriver {
                         {
                             return Err(ExpectationFailure::new(FailureInit {
                                 code: Some(FailureCode::NotVisible),
-                                message: format!(
-                                    "{}: {why}",
-                                    describe_selector(selector)
-                                ),
+                                message: format!("{}: {why}", describe_selector(selector)),
                                 selector: Some(selector.clone()),
                                 visible_elements: collect_visible_summaries(&tree, 10),
                                 ..Default::default()

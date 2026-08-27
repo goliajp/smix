@@ -289,13 +289,17 @@ impl Driver for AndroidDriver {
         // Delegates to Kotlin runner GET /tree (UiAutomator2
         // dumpWindowHierarchy → A11yNode JSON shape). HttpRunnerClient
         // is platform-agnostic; same wire as iOS.
-        self.runner.get_tree(include).await.map(|t| t.root).map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::tree: {e}"),
-                ..Default::default()
+        self.runner
+            .get_tree(include)
+            .await
+            .map(|t| t.root)
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("AndroidDriver::tree: {e}"),
+                    ..Default::default()
+                })
             })
-        })
     }
 
     async fn find(

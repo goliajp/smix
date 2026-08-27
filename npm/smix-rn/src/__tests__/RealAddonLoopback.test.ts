@@ -56,8 +56,14 @@ describe('smix-rn drives through the real napi addon (C4)', () => {
     const wire = await startFakeWire()
     try {
       const driver = await loadNodeDriver(wire.port)
-      const tree = JSON.parse(await driver.snapshotTree())
-      expect(tree.identifier).toBe('root')
+      const answer = JSON.parse(await driver.snapshotTree())
+      // Since v10 the tree arrives with the reader that produced it. The
+      // two are not interchangeable: a screen the accessibility reader has
+      // gone blind on and a screen with nothing on it are the same shape
+      // without the source, which is why it travels with the tree rather
+      // than beside it.
+      expect(answer.source).toBe('a11y')
+      expect(answer.root.identifier).toBe('root')
     } finally {
       await wire.close()
     }
