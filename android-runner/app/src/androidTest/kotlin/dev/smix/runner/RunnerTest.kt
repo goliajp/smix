@@ -195,6 +195,7 @@ class SmixHttpServer(
                 uri == "/record/stop" && session.method == Method.POST -> serveRecordStop()
                 uri == "/tree" && session.method == Method.GET -> serveTree()
                 uri == "/probe" && session.method == Method.GET -> serveProbe(session)
+                uri == "/probe/tree" && session.method == Method.GET -> serveProbeTree(session)
                 uri == "/tap-at-norm-coord" && session.method == Method.POST ->
                     serveTapAtNormCoord(session)
                 uri == "/swipe-at-norm-coord" && session.method == Method.POST ->
@@ -331,6 +332,35 @@ class SmixHttpServer(
             """{"present":false,"why":"$app has a smix probe and it refused this caller"}"""
         } catch (e: Exception) {
             """{"present":false,"why":"asking $app.smixprobe raised ${e.javaClass.simpleName}"}"""
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    /** The probe's semantics tree, verbatim. */
+    private fun serveProbeTree(session: NanoHTTPD.IHTTPSession): Response {
+        val app = session.parameters["app"]?.firstOrNull().orEmpty()
+        if (app.isEmpty()) {
+            return newFixedLengthResponse(
+                Response.Status.OK, "application/json", "[]",
+            )
+        }
+        val body = try {
+            val ctx = InstrumentationRegistry.getInstrumentation().context
+            val b = ctx.contentResolver
+                .call(Uri.parse("content://$app.smixprobe"), "tree", null, null)
+            if (b == null) "[]" else {
+                // The screen's size travels with the tree because the
+                // consumer normalises against the root's rectangle, and the
+                // probe's roots cover only what Compose occupies.
+                """{"screen":[${b.getInt("screenW", 0)},${b.getInt("screenH", 0)}],""" +
+                    """"roots":${b.getString("tree") ?: "[]"}}"""
+            }
+        } catch (_: Exception) {
+            // Separate from /probe on purpose: that route reports WHETHER
+            // there is a probe and why not, and this one only carries the
+            // tree. Folding them would make asking "is it there" cost a
+            // whole screen's worth of JSON.
+            "[]"
         }
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }

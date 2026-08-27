@@ -1,0 +1,41 @@
+# A control inside a Compose dialog, addressed by id.
+#
+# Until v10 this flow could not be written. A Compose dialog composes into
+# its own root, `testTagsAsResourceId` is a property of the subtree it is
+# written on and does not reach there, so the dialog's content arrives in
+# the accessibility tree as eleven anonymous `View`s. `smix find
+# id:compose_dialog_confirm` answered exists=false about a button plainly
+# on screen, and a consumer whose sign-in has a confirmation step had to
+# drop to coordinates for that one tap.
+#
+# It works now because the app carries the probe, and smix reads the
+# semantics tree when it is there. Without the probe this flow fails — and
+# that is the intended shape: it says which line to add rather than
+# quietly finding nothing.
+appId: dev.smix.fixture
+---
+- launchApp:
+    appId: dev.smix.fixture
+    clearState: true
+# `launchApp` starts the launcher activity, which is the View screen. The
+# behaviour gate reaches Compose with `am start -n .ComposeActivity`, and a
+# flow has no such verb — so the fixture carries a control that gets there
+# the way a person would.
+- tapOn: { label: "open-compose" }
+- extendedWaitUntil:
+    visible: { id: "compose_input" }
+    timeout: 5000
+- fill:
+    id: "compose_input"
+    text: "dialog-corpus"
+# The fill raised the keyboard, and the button that opens the dialog sits
+# under it. Every real sign-in flow does this for the same reason.
+- hideKeyboard
+- tapOn: { id: "compose_open_dialog" }
+- extendedWaitUntil:
+    visible: { id: "compose_dialog_confirm" }
+    timeout: 5000
+- tapOn: { id: "compose_dialog_confirm" }
+- extendedWaitUntil:
+    notVisible: { id: "compose_dialog_confirm" }
+    timeout: 5000
