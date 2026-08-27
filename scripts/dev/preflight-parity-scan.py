@@ -30,6 +30,11 @@ PREFLIGHT = os.path.join(ROOT, "scripts", "dev", "preflight.sh")
 # CI step name -> a fragment that must appear in preflight.sh.
 LOCAL = {
     "rustfmt": "cargo fmt --all --check",
+    # Three hand-written readers of one recorded document, one per host
+    # language. Runs in preflight, in the ship, and in CI — three places,
+    # because a gate that runs in one of them makes the other two green
+    # about something they never checked.
+    "three readers agree": "three-readers-agree",
     "clippy": "cargo clippy",
     "cargo test": "cargo test",
     # preflight reaches this crate through the embedder rule near the
