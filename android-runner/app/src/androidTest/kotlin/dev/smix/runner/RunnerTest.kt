@@ -307,10 +307,15 @@ class SmixHttpServer(
             if (hello == null) {
                 """{"present":false,"why":"$app has no smix probe in this build"}"""
             } else {
-                val idle = ctx.contentResolver.call(uri, "idle", null, null)?.getBoolean("idle")
+                // Milliseconds the semantics tree has looked unchanged, or
+                // -1 for "never looked". Not a boolean: the caller decides
+                // how still is still enough, and a boolean would bake that
+                // threshold in here where nobody can see it.
+                val quiet = ctx.contentResolver.call(uri, "idle", null, null)
+                    ?.getLong("quietMs") ?: -1L
                 val roots = hello.getInt("roots", 0)
                 val version = hello.getString("version") ?: "?"
-                """{"present":true,"version":"$version","roots":$roots,"idle":${idle ?: "null"}}"""
+                """{"present":true,"version":"$version","roots":$roots,"quietMs":$quiet}"""
             }
         } catch (e: IllegalArgumentException) {
             // Resolving an authority nothing declares throws rather than
