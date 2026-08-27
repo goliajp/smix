@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="smix" tests="1" failures="1" errors="0" skipped="0">
+  <testcase name="failing" classname="smix.flow" time="0">
+      <failure type="smix.sdk" message="sdk: FAIL [ELEMENT_NOT_FOUND]: step 2 (tapOn): AndroidDriver: element not found: { id=&quot;no-such-control&quot; }
+  smix: 10.0.0
+  selector: { id=&quot;no-such-control&quot; }"><![CDATA[sdk: FAIL [ELEMENT_NOT_FOUND]: step 2 (tapOn): AndroidDriver: element not found: { id="no-such-control" }
+  smix: 10.0.0
+  selector: { id="no-such-control" }]]></failure>
+  </testcase>
+</testsuite>
+
