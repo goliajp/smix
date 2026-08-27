@@ -129,7 +129,7 @@ else
   # that goes stale, and here the stale half is the half that verifies.
   ARTIFACTS=()
   while IFS= read -r a; do ARTIFACTS+=("$a"); done < <(
-    grep -oE '^GRADLE_PUB_TASK=":[^"]+"' "$(dirname "${BASH_SOURCE[0]}")/ship.sh" \
+    grep -oE '^GRADLE_PUB_TASKS=\(.*\)' "$(dirname "${BASH_SOURCE[0]}")/ship.sh" \
       | head -1 | grep -oE ':[a-z-]+:publish' | sed 's/^://; s/:publish$//' \
       | sed 's/^sdk$/smix-sdk/; s/^probe$/smix-probe/'
   )
