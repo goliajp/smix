@@ -12,6 +12,7 @@ use smix_screen::{A11yNode, Rect, is_visible_enough, visible_area};
 
 fn mk(bounds: Rect) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,

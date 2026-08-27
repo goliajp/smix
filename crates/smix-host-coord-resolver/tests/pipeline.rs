@@ -10,6 +10,7 @@ fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {
 
 fn mk(label: Option<&str>, bounds: Rect) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,

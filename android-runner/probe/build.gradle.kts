@@ -15,6 +15,10 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    // Published: the guides tell a consumer to write
+    // `debugImplementation("jp.golia.smix:smix-probe:…")`, and a line that
+    // resolves to nothing is worse than no line at all.
+    id("com.vanniktech.maven.publish") version "0.30.0"
 }
 
 group = "jp.golia.smix"
@@ -28,6 +32,39 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+mavenPublishing {
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
+    signAllPublications()
+    coordinates("jp.golia.smix", "smix-probe", providers.gradleProperty("smixVersion").get())
+    pom {
+        name.set("smix-probe")
+        description.set(
+            "Optional in-process probe for smix — lets an Android app hand " +
+                "smix its Compose semantics tree instead of the accessibility " +
+                "projection. Debug builds only."
+        )
+        url.set("https://github.com/goliajp/smix")
+        licenses {
+            license {
+                name.set("Apache-2.0 OR MIT")
+                distribution.set("repo")
+            }
+        }
+        developers {
+            developer {
+                id.set("doracawl")
+                name.set("GOLIA K.K.")
+                email.set("lihao@golia.jp")
+            }
+        }
+        scm {
+            url.set("https://github.com/goliajp/smix")
+            connection.set("scm:git:git://github.com/goliajp/smix.git")
+            developerConnection.set("scm:git:ssh://git@github.com/goliajp/smix.git")
+        }
     }
 }
 

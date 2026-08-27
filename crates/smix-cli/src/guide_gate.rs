@@ -251,6 +251,7 @@ impl AppLike for MockApp {
     async fn tree(&self) -> Result<smix_sdk::A11yNode, ExpectationFailure> {
         fn box_named(id: &str, children: Vec<smix_sdk::A11yNode>) -> smix_sdk::A11yNode {
             smix_sdk::A11yNode {
+                hittable: None,
                 raw_type: "other".into(),
                 element_type_raw: 1,
                 role: None,

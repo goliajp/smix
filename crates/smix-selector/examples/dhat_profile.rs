@@ -16,6 +16,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 
 fn synth_node(label: &str) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,

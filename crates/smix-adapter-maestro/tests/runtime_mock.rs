@@ -707,6 +707,7 @@ impl AppLike for MockApp {
             children: Vec<smix_sdk::A11yNode>,
         ) -> smix_sdk::A11yNode {
             smix_sdk::A11yNode {
+                hittable: None,
                 raw_type: if id.is_some() {
                     "textField".into()
                 } else {

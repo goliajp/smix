@@ -2,6 +2,64 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [10.0.0] — 2026-08-28
+
+**Compose apps can be driven by id everywhere, including inside a dialog** —
+if the app opts in. Everything works exactly as before without it, and says
+so rather than answering worse.
+
+smix has always perceived through the accessibility tree. For React Native
+that is a faithful mirror: N real views, one node each. For Jetpack Compose
+it is not — the whole UI is one `AndroidComposeView` and the nodes are
+synthesised from semantics, asynchronously and lossily. That assumption cost
+a shipped regression at 6.4.0, where a consumer's Android suite went from
+eleven passing to twenty red while every action it judged had worked.
+
+### Added
+
+- **An optional in-process probe: `jp.golia.smix:smix-probe`.** One line in
+  an app's debug build (`debugImplementation`), no app code, no release
+  footprint. smix then reads the semantics tree itself. Measured on the
+  fixture: with a Compose dialog open the accessibility tree carries **zero**
+  of the app's ids and the probe carries seventeen, and `smix find
+  id:compose_submit` answered `exists=false` about a button plainly on
+  screen.
+- **`smix tree` says which reader answered**, in `--json` as `source` and in
+  the outline as a header line naming what that reader cannot see.
+- **A flow can be run from XCTest and from JUnit.** `SmixFlow.parse` in both
+  Swift and Kotlin reads the report `smix run --format junit` already writes,
+  so a failure arrives as whatever the host framework calls one and the flow
+  executes on exactly the path CI uses.
+
+### Changed
+
+- **A tap that cannot land is refused instead of reported as a success.** On
+  iOS a modal leaves what is behind it in the accessibility tree and the
+  presentation swallows touches aimed there; smix exited 0 and the app did
+  not move. It now fails and names what is covering the element. A runner
+  that does not report hit-testing says nothing, and silence still proceeds.
+- **`smix find` adds `reachable=false`** for an element that is on screen and
+  covered. It still answers `exists=true`, because it is there.
+- **The probe stages the screen; the touch stays real.** Its action surface
+  is only what brings a node within reach of a real touch. A semantics
+  `OnClick` fires the composable's lambda with no hit-testing at all —
+  measured firing through a dialog's scrim onto a button a real touch could
+  not reach — so it is refused, and the refusal names what to use instead.
+- **With a modal open, what is behind it is not addressable through the
+  probe.** The probe can see it; a user cannot touch it.
+
+### Breaking
+
+- **Reading the tree returns the reader with it.** `HttpRunnerClient::get_tree`
+  hands back `PerceivedTree { source, root }`.
+- **Screen nodes carry whether a touch would land.** `A11yNode` has a
+  `hittable` field.
+
+`PerceivedTree` is breaking on purpose: the compiler asking each call site
+which reader answered is the mechanism, not a side effect. A screen the
+accessibility reader has gone blind on and a screen with nothing on it print
+identically otherwise.
+
 ## [9.0.0] — 2026-08-26
 
 **Flows and CLI are unchanged.** The major is one Rust enum:

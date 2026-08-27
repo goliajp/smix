@@ -19,6 +19,7 @@ use smix_selector_resolver::resolve_selector;
 
 fn leaf(id: &str, label: &str, y: f64) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "button".into(),
         element_type_raw: 9,
         role: Some(NodeRole::Button),

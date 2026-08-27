@@ -35,6 +35,7 @@ use std::hint::black_box;
 
 fn mk_leaf(label: &str, y: f64) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,
@@ -60,6 +61,7 @@ fn mk_leaf(label: &str, y: f64) -> A11yNode {
 
 fn mk_app(children: Vec<A11yNode>) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "application".into(),
         element_type_raw: 1,
         role: None,

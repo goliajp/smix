@@ -24,6 +24,7 @@ use std::hint::black_box;
 
 fn make_node(text: &str) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "any".into(),
         element_type_raw: 1,
         role: None,

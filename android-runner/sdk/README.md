@@ -13,6 +13,29 @@ dependencies {
 }
 ```
 
+## `smix-probe` — letting smix read the semantics tree
+
+A second, optional artifact under the same coordinate. On Compose the
+accessibility tree is a lossy projection: `testTagsAsResourceId` is a
+property of the subtree it is written on, so a dialog's own controls arrive
+as unnamed views and cannot be addressed by id.
+
+```kotlin
+dependencies {
+    debugImplementation("jp.golia.smix:smix-probe:10.0.0")
+}
+```
+
+Debug only, never in a release build, and no app code — a content provider
+arms it before `Application.onCreate`, ahead of the first `setContent`.
+Without it everything works as before, and smix says which tree answered
+rather than quietly giving the lesser one.
+
+It answers three callers: adb, the host app, and smix's own instrumentation.
+Anything else is refused by name — what it reports includes a password
+field's actual characters, and a debug build is not a reason to hand those
+to whatever else is installed.
+
 Maven `groupId` is `jp.golia.smix` (reverse DNS of the `smix.golia.jp`
 subdomain of GOLIA K.K.). The Kotlin import qualifier `dev.smix.sdk` is
 the AAR's internal package namespace per the gradle `android.namespace`

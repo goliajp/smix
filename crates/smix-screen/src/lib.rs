@@ -575,6 +575,7 @@ mod tests {
         children: Vec<A11yNode>,
     ) -> A11yNode {
         A11yNode {
+            hittable: None,
             raw_type: raw_type.into(),
             element_type_raw: 1,
             role: role_from_raw_type(raw_type),

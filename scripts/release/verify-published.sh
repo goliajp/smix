@@ -123,17 +123,39 @@ fi
 if [ "${SMIX_VERIFY_SKIP_MAVEN:-0}" = 1 ]; then
   say "maven — skipped by request"
 else
-  M="https://repo1.maven.org/maven2/jp/golia/smix/smix-sdk"
-  REL="$(curl -sf "$M/maven-metadata.xml" 2>/dev/null | sed -n 's:.*<release>\(.*\)</release>.*:\1:p')"
-  AAR="$(curl -s -o /dev/null -w '%{http_code}' "$M/$VERSION/smix-sdk-$VERSION.aar" 2>/dev/null)"
-  ASC="$(curl -s -o /dev/null -w '%{http_code}' "$M/$VERSION/smix-sdk-$VERSION.aar.asc" 2>/dev/null)"
-  if [ "$REL" = "$VERSION" ] && [ "$AAR" = "200" ] && [ "$ASC" = "200" ]; then
-    say "maven central <release>=$VERSION, aar and asc both 200"
-    CONFIRMED+=("Maven Central")
+  # Which artifacts, read off the ship's publish task rather than listed
+  # again here. `smix-probe` shipped for a release before this line was
+  # derived and nothing asked about it — a second copy of a list is the one
+  # that goes stale, and here the stale half is the half that verifies.
+  ARTIFACTS=()
+  while IFS= read -r a; do ARTIFACTS+=("$a"); done < <(
+    grep -oE '^GRADLE_PUB_TASK=":[^"]+"' "$(dirname "${BASH_SOURCE[0]}")/ship.sh" \
+      | head -1 | grep -oE ':[a-z-]+:publish' | sed 's/^://; s/:publish$//' \
+      | sed 's/^sdk$/smix-sdk/; s/^probe$/smix-probe/'
+  )
+  if [ ${#ARTIFACTS[@]} -eq 0 ]; then
+    say "maven — could not read the publish list out of ship.sh, so this would"
+    say "  be verifying a list of nothing"
+    FAILED=1
+  fi
+  MAVEN_OK=1
+  for ART in "${ARTIFACTS[@]}"; do
+    M="https://repo1.maven.org/maven2/jp/golia/smix/$ART"
+    REL="$(curl -sf "$M/maven-metadata.xml" 2>/dev/null | sed -n 's:.*<release>\(.*\)</release>.*:\1:p' | head -1)"
+    AAR="$(curl -s -o /dev/null -w '%{http_code}' "$M/$VERSION/$ART-$VERSION.aar" 2>/dev/null)"
+    ASC="$(curl -s -o /dev/null -w '%{http_code}' "$M/$VERSION/$ART-$VERSION.aar.asc" 2>/dev/null)"
+    if [ "$REL" = "$VERSION" ] && [ "$AAR" = "200" ] && [ "$ASC" = "200" ]; then
+      say "maven central $ART <release>=$VERSION, aar and asc both 200"
+    else
+      say "maven central $ART NOT YET — <release>=${REL:-unknown}, aar=$AAR, asc=$ASC"
+      MAVEN_OK=0
+    fi
+  done
+  if [ "$MAVEN_OK" = 1 ] && [ ${#ARTIFACTS[@]} -gt 0 ]; then
+    CONFIRMED+=("Maven Central (${#ARTIFACTS[@]} artifacts)")
   else
-    say "maven central NOT YET — <release>=${REL:-unknown}, aar=$AAR, asc=$ASC"
     say "  (propagation is minutes to hours and cannot be hurried; re-run this"
-    say "   later. It is not claimed below until it answers.)"
+    say "   later. It is not claimed below until every artifact answers.)"
     PENDING+=("Maven Central")
   fi
 fi
