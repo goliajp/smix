@@ -481,13 +481,13 @@ impl IosDriver {
                         && let TouchVerdict::Refuse(why) =
                             smix_runner_client::touch_verdict(n.hittable)
                     {
-                            return Err(ExpectationFailure::new(FailureInit {
-                                code: Some(FailureCode::NotVisible),
-                                message: format!("{}: {why}", describe_selector(selector)),
-                                selector: Some(selector.clone()),
-                                visible_elements: collect_visible_summaries(&tree, 10),
-                                ..Default::default()
-                            }));
+                        return Err(ExpectationFailure::new(FailureInit {
+                            code: Some(FailureCode::NotVisible),
+                            message: format!("{}: {why}", describe_selector(selector)),
+                            selector: Some(selector.clone()),
+                            visible_elements: collect_visible_summaries(&tree, 10),
+                            ..Default::default()
+                        }));
                     }
                     let aimed = node.map(|n| HitElement {
                         identifier: n.identifier.clone().unwrap_or_default(),
