@@ -21,15 +21,15 @@ name = "smix-maestro"
 path = "src/bin/smix-maestro.rs"
 
 [dependencies]
-smix-lease = { path = "../smix-lease", version = "9.0.0" }
-smix-metro-log = { path = "../smix-metro-log", version = "9.0.0" }
-smix-fixture = { path = "../smix-fixture", version = "9.0.0" }
-smix-verbs = { path = "../smix-verbs", version = "9.0.0" }
-smix-annotate = { path = "../smix-annotate", version = "9.0.0" }
+smix-lease = { path = "../smix-lease", version = "10.0.0" }
+smix-metro-log = { path = "../smix-metro-log", version = "10.0.0" }
+smix-fixture = { path = "../smix-fixture", version = "10.0.0" }
+smix-verbs = { path = "../smix-verbs", version = "10.0.0" }
+smix-annotate = { path = "../smix-annotate", version = "10.0.0" }
 # The AI-assertion tier. The runtime dispatches to it; the sense path must
 # not — see the fence test in crates/smix-ai-tier.
-smix-ai-tier = { path = "../smix-ai-tier", version = "9.0.0" }
-smix-simctl = { path = "../smix-simctl", version = "9.0.0" }
+smix-ai-tier = { path = "../smix-ai-tier", version = "10.0.0" }
+smix-simctl = { path = "../smix-simctl", version = "10.0.0" }
 dirs = "5"
 async-trait.workspace = true
 clap = { workspace = true, features = ["env"] }
@@ -39,15 +39,15 @@ serde_json.workspace = true
 serde_norway.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time", "rt-multi-thread", "macros", "signal"] }
-smix-sdk = { path = "../smix-sdk", version = "9.0.0" }
-smix-driver = { path = "../smix-driver", version = "9.0.0" }
-smix-selector = { path = "../smix-selector", version = "9.0.0" }
+smix-sdk = { path = "../smix-sdk", version = "10.0.0" }
+smix-driver = { path = "../smix-driver", version = "10.0.0" }
+smix-selector = { path = "../smix-selector", version = "10.0.0" }
 # The box-share resolver for `swipe: { over: ... }`. Already in the tree
 # below this one — `smix-driver` calls its centre-point sibling.
-smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "9.0.0" }
+smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "10.0.0" }
 
 [dev-dependencies]
-smix-migrate = { path = "../smix-migrate", version = "9.0.0" }
+smix-migrate = { path = "../smix-migrate", version = "10.0.0" }
 serde_json.workspace = true
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }

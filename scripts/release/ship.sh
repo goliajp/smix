@@ -311,7 +311,11 @@ python3 "$ROOT/scripts/dev/audit-ledger-scan.py" > /tmp/smix-ship-ledger.log 2>&
 # — a crate missing from it is discovered seventeen publishes in, when the
 # earlier steps cannot be taken back.
 log "release record"
-python3 "$ROOT/scripts/dev/release-record-scan.py" > /tmp/smix-ship-record.log 2>&1 \
+# `--shipping` is what makes the CHANGELOG entry mandatory. Bare, this gate
+# runs during development, where the current major has no entry yet and the
+# reconciliation stands down; passing the version says a release is what is
+# happening, and then the entry's absence is the failure.
+python3 "$ROOT/scripts/dev/release-record-scan.py" --shipping "$VERSION" > /tmp/smix-ship-record.log 2>&1 \
   || fail "release record scan FAILED — the release's several lists disagree (see /tmp/smix-ship-record.log)"
 
 

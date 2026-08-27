@@ -17,9 +17,9 @@ categories = ["development-tools::testing"]
 workspace = true
 
 [dependencies]
-smix-screen = { path = "../smix-screen", version = "9.0.0" }
-smix-selector = { path = "../smix-selector", version = "9.0.0" }
-smix-selector-resolver = { path = "../smix-selector-resolver", version = "9.0.0" }
+smix-screen = { path = "../smix-screen", version = "10.0.0" }
+smix-selector = { path = "../smix-selector", version = "10.0.0" }
+smix-selector-resolver = { path = "../smix-selector-resolver", version = "10.0.0" }
 thiserror.workspace = true
 
 [dev-dependencies]
