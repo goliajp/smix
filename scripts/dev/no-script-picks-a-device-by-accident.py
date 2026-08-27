@@ -31,7 +31,28 @@ REPO = os.path.abspath(os.environ.get("SMIX_GATE_ROOT") or os.path.join(HERE, ".
 SCAN_DIRS = ["scripts/dev", "scripts/release", "android-runner/scripts"]
 
 # Touching an Android device.
-TOUCHES = re.compile(r"\badb\s+(-s\s+\S+\s+)?(shell|install|emu|forward|uninstall|push|pull)\b")
+# Two spellings. The shell one was the only one for a long time, and it
+# reads `adb` and `shell` as neighbouring words -- which a Python argv list
+# never is, because commas and quotes sit between them. Five scripts ran
+# adb through subprocess and none of them was ever in this gate's sight;
+# the one that was got there through a sentence in its docstring.
+TOUCHES = re.compile(
+    r"\badb\s+(-s\s+\S+\s+)?(shell|install|emu|forward|uninstall|push|pull)\b"
+    r"""|\[\s*["']adb["']\s*,""")
+
+# ...or importing something that does. Factoring three copies of an `adb`
+# invocation into one helper took all three callers out of this gate's
+# sight in the same move: they stopped spelling `adb`, so they stopped
+# looking like scripts that touch a device. A set you walk cannot show you
+# something leaving it.
+IMPORTS_A_TOUCHER = re.compile(r"^\s*(?:from|import)\s+(_[a-z_]+)", re.M)
+
+# A module with no entry point is imported, never run. It has no argv to
+# take a serial from, so the serial is its parameter -- which is the
+# caller's choice, the very thing this gate asks for. The accidents below
+# are still checked against it: receiving a device is deliberate, reaching
+# for one is not, and a library can do either.
+IS_A_LIBRARY = re.compile(r'if\s+__name__\s*==\s*[\'"]__main__[\'"]')
 
 # The accidents.
 ACCIDENTS = [
@@ -39,6 +60,10 @@ ACCIDENTS = [
     (re.compile(r"adb\s+devices[^\n]*\|\s*(head|grep)[^\n]*emulator"), "scans `adb devices` for an emulator"),
     (re.compile(r":-emulator-5554\b"), "falls back to emulator-5554"),
     (re.compile(r"^\s*SERIAL=[\"']?emulator-\d+"), "hard-codes a serial"),
+    # The same accident spelled in Python. A library takes its device from
+    # the caller -- that is why it is excused from proving it -- so a serial
+    # written into one is the accident, not the exception.
+    (re.compile(r"[\"']emulator-\d+[\"']"), "hard-codes a serial"),
 ]
 
 # What a deliberate choice looks like.
@@ -55,6 +80,10 @@ DELIBERATE = [
     # that. A script that takes its device from the lifecycle has
     # chosen it exactly as deliberately as one that calls smix itself.
     re.compile(r"lib/emulator-lifecycle\.sh"),
+    # A Python entry point that declares the device as an argument takes it
+    # from whoever ran it -- the same answer `$SERIAL` gives in a shell
+    # script, spelled the way argparse spells it.
+    re.compile(r'add_argument\(\s*[\'"]--device[\'"]'),
 ]
 
 # Scripts whose subject IS the accident — a guard test feeding it inputs
@@ -82,14 +111,20 @@ def main() -> int:
             with open(path, encoding="utf-8") as fh:
                 body = fh.read()
             code = "\n".join(l for l in body.splitlines() if not l.lstrip().startswith("#"))
-            if not TOUCHES.search(code):
+            imported = {m for m in IMPORTS_A_TOUCHER.findall(code)
+                        if os.path.exists(os.path.join(base, m + ".py"))
+                        and TOUCHES.search(open(os.path.join(base, m + ".py"),
+                                               encoding="utf-8").read())}
+            if not TOUCHES.search(code) and not imported:
                 continue
             touched += 1
             rel = f"{d}/{name}"
             hits = [why for pat, why in ACCIDENTS if pat.search(code)]
             for why in hits:
                 problems.append(f"{rel} {why} — a device is either the ledger's answer or the caller's, never the first one adb lists")
-            if not hits and not any(p.search(code) for p in DELIBERATE):
+            if not hits and name.endswith(".py") and not IS_A_LIBRARY.search(code):
+                careful += 1
+            elif not hits and not any(p.search(code) for p in DELIBERATE):
                 problems.append(f"{rel} touches a device and neither asks the ledger nor takes a serial from the caller — where does its device come from?")
             elif not hits:
                 careful += 1
