@@ -863,6 +863,7 @@ mod tests {
         text: Option<&str>,
     ) -> smix_screen::A11yNode {
         smix_screen::A11yNode {
+            hittable: None,
             raw_type: "other".into(),
             element_type_raw: 1,
             role: None,

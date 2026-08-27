@@ -1141,8 +1141,11 @@ npm_publish_dir "$ROOT/npm/smix-rn" "@goliapkg/smix"
 
 # In dry-run, publish to the local Maven repo (validates POM + signing +
 # artifact assembly) instead of Maven Central.
-GRADLE_PUB_TASK=":sdk:publish"
-[ "$SHIP_DRY" = 1 ] && GRADLE_PUB_TASK=":sdk:publishToMavenLocal"
+# Both artifacts. `smix-probe` is the line the guides tell a consumer to
+# write, and a coordinate that resolves to nothing is worse than no line:
+# they would add it, see no change, and conclude the feature does not work.
+GRADLE_PUB_TASK=":sdk:publish :probe:publish"
+[ "$SHIP_DRY" = 1 ] && GRADLE_PUB_TASK=":sdk:publishToMavenLocal :probe:publishToMavenLocal"
 log "gradle $GRADLE_PUB_TASK jp.golia.smix:smix-sdk:$VERSION"
 # `|| fail` is not enough here. 6.3.0 found gpg exiting 0 while printing
 # nothing at all — its database was held by a lock whose owner had died,

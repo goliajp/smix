@@ -11,6 +11,7 @@ use smix_selector::{Modifiers, Pattern, Selector};
 
 fn mk(label: Option<String>, bounds: Rect) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,

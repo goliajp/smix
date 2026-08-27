@@ -17,6 +17,7 @@ use std::hint::black_box;
 
 fn mk(raw_type: &str, label: &str, bounds: Rect) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: raw_type.into(),
         element_type_raw: 1,
         role: None,

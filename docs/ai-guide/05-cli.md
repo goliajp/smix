@@ -736,6 +736,66 @@ These live in a store rather than a file you edit. `smix sim register` and
 not read, except for a pre-2.1 `.smix/sims.json`, which is imported once and
 then left alone.
 
+## The probe — reading the toolkit's own tree
+
+smix perceives through the accessibility tree. On iOS that is what SwiftUI
+publishes, and it is faithful. On Android with Jetpack Compose it is not:
+the whole UI is one `AndroidComposeView` and the nodes are synthesised from
+semantics, so a `testTag` arrives only when the app opted in with
+`testTagsAsResourceId` — and that opt-in is a property of the subtree it is
+written on. A dialog composes into its own, so its controls arrive as
+unnamed views and `smix find id:…` answers `exists=false` about a button
+plainly on screen.
+
+An app can hand smix the semantics tree instead. One line, debug only:
+
+```kotlin
+dependencies {
+    debugImplementation("jp.golia.smix:smix-probe:10.0.0")
+}
+```
+
+No app code — a content provider arms it before `Application.onCreate`, which
+is what puts it ahead of the first `setContent`. It is never in a release
+build.
+
+**Without it everything works exactly as before.** What changes is that smix
+says which tree answered instead of quietly giving the lesser one:
+
+```bash
+smix tree --device <d> --port <p> --json | jq -r .source   # a11y | semantics
+```
+
+The human outline prints the same thing as a header when the answer came from
+the accessibility reader, along with what that reader cannot see.
+
+### What the probe does and does not do
+
+It widens what smix can **see**, never what it can **reach**.
+
+- With a modal open, controls behind it are not addressable through the
+  probe. It can see them; a user cannot touch them.
+- Its action surface is only what brings a node within reach of a real
+  touch. A Compose semantics `OnClick` fires the composable's lambda with no
+  hit-testing — measured firing through a dialog's scrim onto a button no
+  touch could reach — so smix refuses it and names what to use instead.
+
+### Whether a touch would land
+
+`smix find` answers two questions now, because they are two facts:
+
+```
+exists=true
+reachable=false  it is on screen and something is on top of it; a tap here would be refused
+```
+
+`exists` is about the tree; `reachable` is about hit-testing. A `tap` at
+something reported unreachable fails and names what is covering it, rather
+than dispatching an event the presentation swallows and reporting success.
+
+A runner that predates this says nothing about reachability, and silence is
+not a refusal — taps proceed as they always did.
+
 ## Migration and authoring
 
 ### `smix migrate` — maestro yaml to smix

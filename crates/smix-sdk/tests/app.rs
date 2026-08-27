@@ -20,6 +20,7 @@ fn mk_app_for(server: &MockServer) -> App {
 
 fn login_tree() -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "application".into(),
         element_type_raw: 1,
         role: None,
@@ -40,6 +41,7 @@ fn login_tree() -> A11yNode {
         has_focus: false,
         visible: true,
         children: vec![A11yNode {
+            hittable: None,
             raw_type: "button".into(),
             element_type_raw: 1,
             role: Some(Role::Button),

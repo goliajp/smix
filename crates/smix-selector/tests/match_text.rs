@@ -8,6 +8,7 @@ use smix_selector::{Pattern, match_text};
 
 fn mk(partial: NodePartial) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,

@@ -15,6 +15,7 @@ use smix_selector_resolver::resolve_selector_all as resolve;
 
 fn node(id: &str, label: &str) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "staticText".into(),
         element_type_raw: 48,
         role: None,

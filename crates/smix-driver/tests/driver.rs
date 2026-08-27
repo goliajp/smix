@@ -12,6 +12,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn mk_node(label: Option<&str>, bounds: Rect, children: Vec<A11yNode>) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,

@@ -2122,6 +2122,7 @@ mod describe_meta_tests {
 
     fn node_with_identifier(id: Option<&str>) -> A11yNode {
         A11yNode {
+            hittable: None,
             raw_type: "application".into(),
             element_type_raw: 1,
             role: None,

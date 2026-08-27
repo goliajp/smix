@@ -22,6 +22,7 @@ fn rect() -> Rect {
 
 fn mk(raw_type: &str, role: Option<Role>, children: Vec<A11yNode>) -> A11yNode {
     A11yNode {
+        hittable: None,
         raw_type: raw_type.into(),
         element_type_raw: 1,
         role,
