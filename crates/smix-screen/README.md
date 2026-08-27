@@ -31,7 +31,7 @@ let node = A11yNode {
     label: Some("Log in".into()),
     title: None, placeholder_value: None, value: None, text: None,
     bounds: Rect { x: 50.0, y: 100.0, w: 200.0, h: 40.0 },
-    enabled: true, selected: false, has_focus: false, visible: true,
+    enabled: true, selected: false, has_focus: false, visible: true, hittable: None,
     children: vec![],
 };
 let viewport = Rect { x: 0.0, y: 0.0, w: 390.0, h: 844.0 };

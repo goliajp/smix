@@ -68,7 +68,7 @@ let node = A11yNode { /* ... */
 #    identifier: None, label: Some("Login".into()),
 #    title: None, placeholder_value: None, value: None, text: None,
 #    bounds: Rect { x: 0.0, y: 0.0, w: 10.0, h: 10.0 },
-#    enabled: true, selected: false, has_focus: false, visible: true,
+#    enabled: true, selected: false, has_focus: false, visible: true, hittable: None,
 #    children: vec![],
 };
 assert!(match_text_compiled(&node, &compiled));
