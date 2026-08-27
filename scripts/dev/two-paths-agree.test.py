@@ -152,12 +152,30 @@ def main():
     check("superset should red when the probe drops a node", rc != 0, out.strip()[:160])
     check("superset should name the dropped node", "compose_input" in out, out.strip()[:160])
 
+    # 8. The fixtures are recorded, and recorded fixtures go stale in
+    #    silence: this suite stayed green for a whole checkpoint while the
+    #    gate was blind to the live wire, because the payloads it was
+    #    recorded from pre-dated the envelope `smix tree --json` grew. So
+    #    the shape is asserted, both ways.
+    check(
+        "the recorded a11y payload should be in the envelope the wire "
+        "actually emits — re-record it if the wire changed",
+        "source" in load("base-a11y.json"),
+        "base-a11y.json has no `source`, so it is older than the wire",
+    )
+    rc, out = run({"nothing": "resembling a tree"}, base_s, tmp=tmp)
+    check(
+        "a payload that is not a tree should red, and say so",
+        rc != 0 and "not a tree" in out,
+        out.strip()[:180],
+    )
+
     if failures:
         print("two-paths-agree.test: FAIL")
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("two-paths-agree.test: clean — 13 assertions over 4 recorded payloads")
+    print("two-paths-agree.test: clean — 15 assertions over 4 recorded payloads")
     return 0
 
 

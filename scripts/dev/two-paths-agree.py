@@ -44,9 +44,26 @@ def fetch_a11y(binary, device, port):
         return None
     body = "\n".join(l for l in out.splitlines() if not l.startswith("kevy:"))
     try:
-        return json.loads(body)
+        payload = json.loads(body)
     except json.JSONDecodeError:
         return None
+    return unwrap(payload)
+
+
+def unwrap(payload):
+    """Take the tree out of the envelope smix now answers with.
+
+    Since v10 `smix tree --json` emits `{"source": …, "root": …}`. A reader
+    that walks the envelope as if it were the tree finds no `identifier`
+    anywhere and reports every tag as missing from the accessibility side —
+    which is what this did for the length of one checkpoint while its own
+    self-test stayed green, because the payloads it was recorded from
+    pre-dated the envelope. Recorded fixtures go stale in silence; the
+    shape is asserted below rather than assumed.
+    """
+    if isinstance(payload, dict) and "root" in payload and "children" not in payload:
+        return payload["root"]
+    return payload
 
 
 def fetch_semantics(device, app):
@@ -190,6 +207,13 @@ RULES = []
 
 
 def reconcile(a11y_tree, sem_roots, prove):
+    if not isinstance(a11y_tree, dict) or "children" not in a11y_tree:
+        problems.append(
+            "the accessibility payload is not a tree — it has no `children`. "
+            "If the wire grew an envelope again, `unwrap` is where that is "
+            "known, and the recorded fixtures need re-recording with it"
+        )
+        return 0, {}
     a11y = a11y_tags(a11y_tree)
     sem = semantics_tags(sem_roots)
 
@@ -301,7 +325,7 @@ def main():
     args = ap.parse_args()
 
     if args.a11y and args.semantics:
-        a11y_tree = json.load(open(args.a11y))
+        a11y_tree = unwrap(json.load(open(args.a11y)))
         sem_roots = json.load(open(args.semantics))
     elif args.device:
         a11y_tree = fetch_a11y(args.binary, args.device, args.port)
