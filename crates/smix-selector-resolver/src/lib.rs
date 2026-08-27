@@ -796,3 +796,112 @@ fn apply_index<'tree>(list: Vec<&'tree A11yNode>, selector: &Selector) -> Vec<&'
         None => vec![],
     }
 }
+
+/// Turn the probe's semantics payload into the tree everything downstream
+/// already speaks.
+///
+/// Not a second kind of node, and not a second resolver. The semantics tree
+/// carries the same facts — an identifier, some text, a rectangle, whether
+/// it is enabled — from a source that can see things the accessibility
+/// projection cannot. Converting keeps one resolution pipeline, which is
+/// what stops "the probe path" and "the a11y path" from drifting into two
+/// products.
+///
+/// The probe reports several roots (a dialog composes into its own), so the
+/// result is a synthetic parent over them. Its bounds are the union, which
+/// is what a spatial modifier would expect of a screen.
+///
+/// Returns `None` when the payload is not the shape the probe emits, rather
+/// than an empty tree: "nothing on screen" and "I could not read this" want
+/// different answers, and one value for both is how a caller learns to
+/// distrust the field.
+pub fn probe_tree_to_a11y(json: &str) -> Option<A11yNode> {
+    let roots: Vec<ProbeNodeWire> = serde_json::from_str(json).ok()?;
+    let converted: Vec<A11yNode> = roots.iter().map(ProbeNodeWire::to_a11y).collect();
+    let mut parent = blank_node();
+    parent.raw_type = "SemanticsRoots".to_string();
+    parent.bounds = union_bounds(&converted);
+    parent.children = converted;
+    Some(parent)
+}
+
+#[derive(serde::Deserialize)]
+struct ProbeNodeWire {
+    #[serde(default)]
+    #[allow(dead_code)]
+    id: i64,
+    #[serde(default, rename = "testTag")]
+    test_tag: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default, rename = "editableText")]
+    editable_text: Option<String>,
+    /// What a field actually holds. Separate from `editableText`, which on
+    /// a masked field reads back as bullets — Compose applies the visual
+    /// transformation before semantics sees it.
+    #[serde(default, rename = "inputText")]
+    input_text: Option<String>,
+    #[serde(default, rename = "contentDescription")]
+    content_description: Option<String>,
+    #[serde(default)]
+    bounds: [f64; 4],
+    #[serde(default)]
+    focused: bool,
+    #[serde(default = "yes")]
+    enabled: bool,
+    #[serde(default)]
+    children: Vec<ProbeNodeWire>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl ProbeNodeWire {
+    fn to_a11y(&self) -> A11yNode {
+        let mut n = blank_node();
+        n.identifier = self.test_tag.clone();
+        n.label = self.content_description.clone();
+        n.text = self.text.clone();
+        // `inputText` first: it is what was typed, where `editableText` is
+        // what is shown. A predicate comparing a masked field with what a
+        // flow typed asks a question only the first can answer.
+        n.value = self.input_text.clone().or_else(|| self.editable_text.clone());
+        n.enabled = self.enabled;
+        n.has_focus = self.focused;
+        n.bounds = smix_screen::Rect {
+            x: self.bounds[0],
+            y: self.bounds[1],
+            w: (self.bounds[2] - self.bounds[0]).max(0.0),
+            h: (self.bounds[3] - self.bounds[1]).max(0.0),
+        };
+        n.children = self.children.iter().map(ProbeNodeWire::to_a11y).collect();
+        n
+    }
+}
+
+fn blank_node() -> A11yNode {
+    serde_json::from_str(
+        r#"{"rawType":"Other","bounds":{"x":0.0,"y":0.0,"w":0.0,"h":0.0},
+            "enabled":true,"selected":false,"hasFocus":false,"visible":true,
+            "children":[]}"#,
+    )
+    .expect("the blank node is well formed")
+}
+
+fn union_bounds(nodes: &[A11yNode]) -> smix_screen::Rect {
+    let mut x0 = f64::MAX;
+    let mut y0 = f64::MAX;
+    let mut x1 = f64::MIN;
+    let mut y1 = f64::MIN;
+    for n in nodes {
+        x0 = x0.min(n.bounds.x);
+        y0 = y0.min(n.bounds.y);
+        x1 = x1.max(n.bounds.x + n.bounds.w);
+        y1 = y1.max(n.bounds.y + n.bounds.h);
+    }
+    if nodes.is_empty() {
+        return smix_screen::Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 };
+    }
+    smix_screen::Rect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+}
