@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- INTERNET opens port 28080 inside the emulator for the runner's
          HTTP server. Accessibility is granted at install time instead,
          by `adb shell settings put`. -->
@@ -8,5 +9,16 @@
     <!-- The runner proxies /webview-eval to the fixture's shim on
          localhost:28081. Cleartext HTTP is blocked by default from API 28,
          so the loopback hop has to be allowed explicitly. -->
+    <!-- The probe lives in the app under test, behind a content provider,
+         and from Android 11 one app cannot see another's providers without
+         saying so. The app is named per request — smix drives whatever it
+         is pointed at — so there is no fixed authority to list here, and a
+         `<queries>` block cannot be written for an unknown name.
+
+         This APK is instrumentation: it is installed by the test harness,
+         never shipped, and already drives the device through UiAutomator.
+         Reaching one more provider is not the boundary that matters. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
     <application android:usesCleartextTraffic="true" />
 </manifest>

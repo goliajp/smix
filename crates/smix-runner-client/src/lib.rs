@@ -1440,6 +1440,21 @@ impl HttpRunnerClient {
         Ok(PerceivedTree { source: TreeSource::Accessibility, root })
     }
 
+    /// `GET /probe?app=` — what the app under test says about itself.
+    ///
+    /// A transport failure is not "no probe": the runner may be gone, and
+    /// telling a caller "this app has no probe" when the truth is "nothing
+    /// answered" sends them to edit a build file over a dead port.
+    pub async fn probe_status(
+        &self,
+        app: &str,
+    ) -> Result<ProbeStatus, RunnerTransportError> {
+        // `json_get` builds its own query from `include`, and this route
+        // takes a different one. Passing the whole thing as the endpoint is
+        // what the url builder does with `None` anyway.
+        self.json_get(&format!("/probe?app={app}"), None).await
+    }
+
     /// `GET /system-popups?include=` — list system popups.
     pub async fn system_popups(
         &self,
@@ -2571,5 +2586,91 @@ impl PerceivedTree {
         self.source.limitation().map(|why| {
             format!("this tree came from the {} reader, which {}", self.source.as_str(), why)
         })
+    }
+}
+
+/// What to do while waiting for the screen to settle.
+///
+/// smix has always polled: every 250 ms it asks whether a selector resolves
+/// yet, and between those asks it knows nothing. Compose knows directly —
+/// whether a frame still has measure or layout outstanding is a question it
+/// can answer — and the probe puts that answer within reach.
+///
+/// Kept as a plan rather than a duration so the difference is visible at the
+/// call site. A number alone would make "the screen told me" and "I guessed
+/// 250 ms" the same value, which is the shape this release keeps finding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitPlan {
+    /// The screen says it has no layout work outstanding. Stop waiting.
+    Settled,
+    /// The screen says it is still working. Wait to be told again.
+    AskAgainWhenTold,
+    /// Nothing is there to ask, so ask the old way, this often.
+    PollEvery(u64),
+}
+
+impl WaitPlan {
+    /// Why this plan and not a better one, or `None` when it is the best one.
+    pub fn why(self) -> Option<&'static str> {
+        match self {
+            WaitPlan::PollEvery(_) => Some(
+                "no probe answered, so this waits by asking again rather than \
+                 by being told. Add `debugImplementation(\"jp.golia.smix:\
+                 smix-probe\")` to the app's debug build and the screen \
+                 reports when it has settled.",
+            ),
+            WaitPlan::Settled | WaitPlan::AskAgainWhenTold => None,
+        }
+    }
+}
+
+/// Turns what the probe said (or did not say) into a plan.
+pub struct WaitStrategy;
+
+impl WaitStrategy {
+    /// The interval smix has polled at since it existed. Not a tuning knob:
+    /// a fallback that quietly changed the cadence would be a different
+    /// product for everyone without the probe.
+    pub const LEGACY_POLL_MS: u64 = 250;
+
+    /// `None` means no probe answered — which is not the same as a probe
+    /// answering "busy", and the two want different plans.
+    pub fn decide(idle: Option<bool>) -> WaitPlan {
+        match idle {
+            Some(true) => WaitPlan::Settled,
+            Some(false) => WaitPlan::AskAgainWhenTold,
+            None => WaitPlan::PollEvery(Self::LEGACY_POLL_MS),
+        }
+    }
+}
+
+/// What the runner found when it asked the app for a probe.
+///
+/// Three answers, not two. "Present and busy", "present and settled" and
+/// "not there at all" want different waits, and collapsing the third into
+/// either of the first two is how a fallback stops being visible.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProbeStatus {
+    /// Whether the app under test carries the probe.
+    pub present: bool,
+    /// Why not, when it is not. Absent when it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
+    /// The probe's wire version, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// How many Compose roots it can see. Zero with a probe present means
+    /// the app has no Compose on screen — a different thing from no probe.
+    #[serde(default)]
+    pub roots: u32,
+    /// Whether the screen has settled. `None` when there is no probe to ask.
+    #[serde(default)]
+    pub idle: Option<bool>,
+}
+
+impl ProbeStatus {
+    /// The wait this status implies.
+    pub fn plan(&self) -> WaitPlan {
+        WaitStrategy::decide(if self.present { self.idle } else { None })
     }
 }
