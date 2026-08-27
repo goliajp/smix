@@ -42,7 +42,7 @@
 //!         label: Some(label.into()),
 //!         title: None, placeholder_value: None, value: None, text: None,
 //!         bounds, enabled: true, selected: false, has_focus: false,
-//!         visible: true, children: vec![],
+//!         visible: true, hittable: None, children: vec![],
 //!     }
 //! }
 //!
