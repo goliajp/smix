@@ -56,6 +56,8 @@ jobs:
       - name: swift test
         working-directory: swift-bridge
         run: swift test
+      - name: three readers agree (swift)
+        run: python3 scripts/dev/three-readers-agree.py --suites swift
       - name: SmixRunner UITest build
         # Compiles the XCUITest body that actually drives a device —
         # `swift test` covers only the SwiftPM library targets.
@@ -230,8 +232,14 @@ jobs:
       # Three hand-written readers of one recorded document, one per host
       # language. They drift quietly — each keeps its own green suite — so
       # the payloads are checked byte-identical across all three trees.
-      - name: three readers agree
-        run: python3 scripts/dev/three-readers-agree.py
+      # The Swift half cannot run here: the package carries an .xcframework
+      # and SwiftPM on Linux refuses one outright. It runs on the macOS job;
+      # --assert-ci-union reads this file back and reds if any of the three
+      # ends up named by nobody.
+      - name: three readers agree (rust, kotlin)
+        run: python3 scripts/dev/three-readers-agree.py --suites rust,kotlin
+      - name: every reader is exercised somewhere in CI
+        run: python3 scripts/dev/three-readers-agree.py --assert-ci-union
       # A fuzz crate depends on the workspace by path, so a version bump
       # in a crate can leave the fuzz lockfile beside it unsatisfiable.
       # `kevy-embedded 5.3 -> 5.4.1` did exactly that to four of them and

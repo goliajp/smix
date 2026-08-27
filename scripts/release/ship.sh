@@ -559,6 +559,8 @@ python3 "$ROOT/scripts/dev/known-unstable-scan.py" > /tmp/smix-ship-known-unstab
 log "three readers agree"
 python3 "$ROOT/scripts/dev/three-readers-agree.py" > /tmp/smix-ship-three-readers.log 2>&1 \
   || fail "three-readers-agree FAILED — the recorded reports differ across the three host trees (see /tmp/smix-ship-three-readers.log)"
+python3 "$ROOT/scripts/dev/three-readers-agree.py" --assert-ci-union >> /tmp/smix-ship-three-readers.log 2>&1 \
+  || fail "three-readers-agree --assert-ci-union FAILED — a reader is named by no CI job (see /tmp/smix-ship-three-readers.log)"
 
 log "mcp cli parity scan"
 python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \

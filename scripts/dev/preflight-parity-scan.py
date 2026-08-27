@@ -34,7 +34,12 @@ LOCAL = {
     # language. Runs in preflight, in the ship, and in CI — three places,
     # because a gate that runs in one of them makes the other two green
     # about something they never checked.
-    "three readers agree": "three-readers-agree",
+    # Split across two runners: the Swift package carries an .xcframework
+    # and SwiftPM on Linux refuses it. Preflight, on a Mac, runs all three
+    # in one go, so both CI halves map onto the same local gate.
+    "three readers agree (rust, kotlin)": "three-readers-agree",
+    "three readers agree (swift)": "three-readers-agree",
+    "every reader is exercised somewhere in CI": "three-readers-agree",
     "clippy": "cargo clippy",
     "cargo test": "cargo test",
     # preflight reaches this crate through the embedder rule near the
