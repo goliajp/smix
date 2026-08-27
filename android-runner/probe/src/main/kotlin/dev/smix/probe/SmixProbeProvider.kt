@@ -61,6 +61,20 @@ class SmixProbeProvider : ContentProvider() {
                 // pay for a tree dump to find out.
                 METHOD_TREE -> putString(KEY_TREE, SemanticsProbe.dumpWireJson())
                 METHOD_IDLE -> putBoolean(KEY_IDLE, SemanticsProbe.isIdle())
+                // Experimental, and named so. Whether it survives depends on
+                // what it is measured to do to a node nothing can touch.
+                METHOD_ACT -> putString(
+                    KEY_RESULT,
+                    SemanticsProbe.act(arg ?: "", extras?.getString(KEY_ACTION) ?: "OnClick"),
+                )
+                // Not on the offered surface. It is here so a gate can show
+                // that the refusal above refuses something real — a rule
+                // whose subject has never been observed is a rule nobody
+                // has checked.
+                METHOD_ACT_UNSAFE -> putString(
+                    KEY_RESULT,
+                    SemanticsProbe.unsafeAct(arg ?: "", extras?.getString(KEY_ACTION) ?: "OnClick"),
+                )
                 METHOD_HELLO -> {
                     putString(KEY_VERSION, PROBE_WIRE_VERSION)
                     putInt(KEY_ROOTS, SemanticsProbe.rootCount())
@@ -112,6 +126,10 @@ class SmixProbeProvider : ContentProvider() {
         const val METHOD_HELLO = "hello"
         const val METHOD_TREE = "tree"
         const val METHOD_IDLE = "idle"
+        const val METHOD_ACT = "act"
+        const val METHOD_ACT_UNSAFE = "act-unsafe-for-gates"
+        const val KEY_ACTION = "action"
+        const val KEY_RESULT = "result"
         const val KEY_VERSION = "version"
         const val KEY_ROOTS = "roots"
         const val KEY_TREE = "tree"

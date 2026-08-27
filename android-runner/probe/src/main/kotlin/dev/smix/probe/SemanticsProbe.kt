@@ -2,6 +2,7 @@ package dev.smix.probe
 
 import androidx.compose.ui.node.RootForTest
 import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
@@ -50,6 +51,66 @@ object SemanticsProbe {
 
     /** Whether anything is there to read — the honest answer to "is the probe live". */
     fun rootCount(): Int = attached().size
+
+    /**
+     * Actions the probe will perform, and the ones it refuses.
+     *
+     * **The probe stages the screen; the touch stays real.**
+     *
+     * Measured on the fixture, 2026-08-27, with a dialog's scrim over
+     * `compose_submit`: a real touch at that node's screen coordinates left
+     * the app unchanged — correctly blocked — while semantics `OnClick`
+     * returned true and the submit went through. A semantics action calls
+     * the composable's own lambda and nothing in that path does hit-testing.
+     *
+     * Offering it as smix's tap would manufacture passes for taps a user
+     * could not make, which is worse than the false-pass class the error
+     * guide already names: there, an action did nothing and said it worked;
+     * here, an impossible action works.
+     *
+     * So the surface is only what PREPARES a real touch — bringing a row
+     * that was never composed into existence — after which the touch does
+     * the touching. `unsafeAct` exists so the refusal above can be shown to
+     * be refusing something real, and is not on the offered surface.
+     */
+    fun act(tag: String, action: String): String = when (action) {
+        in STAGING_ACTIONS -> perform(tag, action)
+        "OnClick", "PerformImeAction", "SetText" ->
+            "the probe refuses `$action`: it calls the composable's lambda " +
+                "without hit-testing, so it fires on a node nothing could " +
+                "touch. Use smix's own tap/fill — the probe is for staging " +
+                "the screen, not for acting on it."
+        else -> "unknown action: $action"
+    }
+
+    /** The refused half, reachable only so a gate can show what it refuses. */
+    fun unsafeAct(tag: String, action: String): String = perform(tag, action)
+
+    /** Actions that bring a node within reach of a real touch. */
+    val STAGING_ACTIONS = setOf("ScrollToIndex", "ScrollBy")
+
+    private fun perform(tag: String, action: String): String {
+        val node = attached()
+            .asSequence()
+            .map { (it as RootForTest).semanticsOwner.unmergedRootSemanticsNode }
+            .mapNotNull { find(it, tag) }
+            .firstOrNull()
+            ?: return "no node carries the tag `$tag`"
+        val c = node.config
+        return when (action) {
+            "OnClick" -> c.getOrElseNullable(SemanticsActions.OnClick) { null }
+                ?.action?.invoke()
+                ?.let { "OnClick returned $it" }
+                ?: "this node has no OnClick action"
+            else -> "unknown action: $action"
+        }
+    }
+
+    private fun find(node: SemanticsNode, tag: String): SemanticsNode? {
+        if (node.config.getOrElseNullable(SemanticsProperties.TestTag) { null } == tag) return node
+        for (c in node.children) find(c, tag)?.let { return it }
+        return null
+    }
 
     private fun attached(): List<ViewRootForTest> =
         synchronized(roots) { roots.toList() }.filter { it.view.isAttachedToWindow }
