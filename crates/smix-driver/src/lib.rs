@@ -477,10 +477,10 @@ impl IosDriver {
                     // fill the field says nothing, and treating silence as
                     // a refusal would take tapping away from everyone who
                     // has not upgraded.
-                    if let Some(n) = node {
-                        if let TouchVerdict::Refuse(why) =
+                    if let Some(n) = node
+                        && let TouchVerdict::Refuse(why) =
                             smix_runner_client::touch_verdict(n.hittable)
-                        {
+                    {
                             return Err(ExpectationFailure::new(FailureInit {
                                 code: Some(FailureCode::NotVisible),
                                 message: format!("{}: {why}", describe_selector(selector)),
@@ -488,7 +488,6 @@ impl IosDriver {
                                 visible_elements: collect_visible_summaries(&tree, 10),
                                 ..Default::default()
                             }));
-                        }
                     }
                     let aimed = node.map(|n| HitElement {
                         identifier: n.identifier.clone().unwrap_or_default(),
