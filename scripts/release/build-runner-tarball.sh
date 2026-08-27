@@ -108,3 +108,14 @@ echo "smix-runner-sources: wrote $DST_TAR ($SIZE bytes)"
 if [[ -f "$DST_SHA" ]]; then
   cat "$DST_SHA"
 fi
+
+# The CLI EMBEDS this tarball, so writing it is only half the job.
+#
+# `runner install` compares the installed sources against the bytes the
+# CLI carries — correctly — and a CLI built before this rebuild still
+# carries the old ones. It then reports "already at vX — nothing to do",
+# which is true about the CLI and reads as a statement about the repo. A
+# Swift change then sits in git, in the tarball, and nowhere on the
+# device, while the runner keeps serving the old behaviour.
+echo "smix-runner-sources: the CLI embeds this — rebuild it or the device keeps the old runner:"
+echo "  cargo build --release -p smix-cli && smix runner install --force"
