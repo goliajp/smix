@@ -270,6 +270,7 @@ python3 scripts/dev/retired-claims-scan.test.py
 # And that the contract gate can tell a claimed gap from a lost one. Its
 # whole point is one file's worth of difference between the two, so a
 # harness is the only thing that can show it still reads that difference.
+python3 scripts/dev/three-readers-agree.test.py
 python3 scripts/dev/contract-scan.test.py
 # And that the selector-surface gate can still go red. Its subject is an
 # axis nothing watched: `point` worked in flows and four SDKs and was
