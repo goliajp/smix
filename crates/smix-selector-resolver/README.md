@@ -27,13 +27,13 @@ let tree = A11yNode {
 #            label: Some("Login".into()),
 #            title: None, placeholder_value: None, value: None, text: None,
             bounds: Rect { x: 50.0, y: 100.0, w: 200.0, h: 40.0 },
-            enabled: true, selected: false, has_focus: false, visible: true,
+            enabled: true, selected: false, has_focus: false, visible: true, hittable: None,
             children: vec![],
         },
     ],
 #    role: None, identifier: None, label: None, title: None,
 #    placeholder_value: None, value: None, text: None,
-#    enabled: true, selected: false, has_focus: false, visible: true,
+#    enabled: true, selected: false, has_focus: false, visible: true, hittable: None,
 };
 
 let selector = Selector::Text {

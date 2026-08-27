@@ -27,7 +27,7 @@ use smix_selector::{Modifiers, Pattern, Selector};
 #         raw_type: "other".into(), element_type_raw: 1, role: None, identifier: None,
 #         label: Some(label.into()), title: None, placeholder_value: None,
 #         value: None, text: None, bounds, enabled: true, selected: false,
-#         has_focus: false, visible: true, children: vec![],
+#         has_focus: false, visible: true, hittable: None, children: vec![],
 #     }
 # }
 let mut root = mk("root", Rect { x: 0.0, y: 0.0, w: 390.0, h: 844.0 });
