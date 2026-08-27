@@ -61,6 +61,19 @@ grep -qi 'on top of it' <<<"$OUT" \
 MID="$(result)"
 [ "$MID" = "$MARK" ] && fail "the app changed anyway — the tap was dispatched despite the refusal"
 
+# `find` keeps saying it exists — it does — and adds the second fact, so a
+# reader learns it there rather than from a tap refused a moment later.
+FOUND="$("$SMIX" find 'id:fixture-submit' --device "$UDID" --port "$PORT" 2>&1 | grep -v '^kevy:')"
+grep -q 'exists=true' <<<"$FOUND" \
+  || fail "find stopped reporting the element as existing — it is there, and \
+saying otherwise is a different lie: $FOUND"
+grep -q 'reachable=false' <<<"$FOUND" \
+  || fail "find did not mention that it cannot be reached: $FOUND"
+# And the modal's own control must NOT carry that line, or it means nothing.
+INSIDE="$("$SMIX" find 'id:fixture-alert-confirm' --device "$UDID" --port "$PORT" 2>&1 | grep -v '^kevy:')"
+grep -q 'reachable=false' <<<"$INSIDE" \
+  && fail "the alert's own button was reported unreachable: $INSIDE"
+
 # Half two: with the modal gone the same tap must actually work. A rule
 # that refused everything would satisfy half one on its own.
 "$SMIX" tap 'id:fixture-alert-confirm' --device "$UDID" --port "$PORT" >/dev/null 2>&1 \
