@@ -1185,3 +1185,83 @@ pub enum ParseError {
         stack: Vec<PathBuf>,
     },
 }
+
+/// Reading back what [`emit_junit`] writes.
+///
+/// Beside the writer on purpose. Three host adapters read this — an XCTest
+/// helper, a JUnit rule, and whatever comes next — and a shape that drifts
+/// on the writing side has to break the reader in the same commit, not in
+/// somebody else's repository a release later.
+///
+/// Deliberately not an XML library: this is our own document, its shape is
+/// ours to keep, and the two host languages each need a reader small enough
+/// to be written twice more without a dependency.
+pub mod report {
+    /// What a host framework needs out of a run, and nothing else.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct FlowReport {
+        /// The flow's name, as the report names it.
+        pub flow: String,
+        /// Whether it passed.
+        pub passed: bool,
+        /// Why not. `None` exactly when `passed`.
+        pub failure: Option<String>,
+    }
+
+    /// Why a report could not be read.
+    ///
+    /// Separate from "it failed": a run that never happened and a run that
+    /// failed want different things from a reader, and a single value for
+    /// both is how an empty string becomes a green test.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum ReadError {
+        /// Not a smix report at all — usually the CLI never ran.
+        NotAReport,
+        /// A report, with no flow in it.
+        NoFlowInIt,
+    }
+
+    /// Parse the JUnit XML `smix run --format junit` writes.
+    pub fn parse_junit(xml: &str) -> Result<FlowReport, ReadError> {
+        if !xml.contains("<testsuite") {
+            return Err(ReadError::NotAReport);
+        }
+        let Some(flow) = attr(xml, "<testcase", "name") else {
+            return Err(ReadError::NoFlowInIt);
+        };
+        let failure = between(xml, "<![CDATA[", "]]>")
+            .or_else(|| attr(xml, "<failure", "message"))
+            .map(|m| unescape(&m));
+        Ok(FlowReport { flow, passed: failure.is_none(), failure })
+    }
+
+    /// One attribute of the first element whose text starts with `tag`.
+    fn attr(xml: &str, tag: &str, name: &str) -> Option<String> {
+        let start = xml.find(tag)?;
+        let rest = &xml[start..];
+        let end = rest.find('>')?;
+        let head = &rest[..end];
+        let key = format!("{name}=\"");
+        let at = head.find(&key)? + key.len();
+        let close = head[at..].find('"')?;
+        Some(head[at..at + close].to_string())
+    }
+
+    fn between(xml: &str, open: &str, close: &str) -> Option<String> {
+        let a = xml.find(open)? + open.len();
+        let b = xml[a..].find(close)?;
+        Some(xml[a..a + b].to_string())
+    }
+
+    /// Undo the escaping the writer applies.
+    ///
+    /// A reader that hands `&quot;` to a developer has made the failure
+    /// harder to read than the stdout it replaced.
+    fn unescape(s: &str) -> String {
+        s.replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+    }
+}
