@@ -2657,7 +2657,7 @@ checksum = "e8e2fb0f499abb4d162f2bedad68f5ef91a1682b5a03596ddb67efd37768d100"
 
 [[package]]
 name = "smix-adapter-maestro"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "async-trait",
  "clap",
@@ -2688,7 +2688,7 @@ dependencies = [
 
 [[package]]
 name = "smix-adb"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2700,7 +2700,7 @@ dependencies = [
 
 [[package]]
 name = "smix-ai-tier"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2711,7 +2711,7 @@ dependencies = [
 
 [[package]]
 name = "smix-annotate"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "ab_glyph",
  "image",
@@ -2722,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "smix-authoring-ir"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "serde",
@@ -2733,7 +2733,7 @@ dependencies = [
 
 [[package]]
 name = "smix-authoring-propose"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2747,7 +2747,7 @@ dependencies = [
 
 [[package]]
 name = "smix-capsule"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2764,7 +2764,7 @@ dependencies = [
 
 [[package]]
 name = "smix-cli"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2802,7 +2802,7 @@ dependencies = [
 
 [[package]]
 name = "smix-contract"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "serde",
  "serde_norway",
@@ -2810,14 +2810,14 @@ dependencies = [
 
 [[package]]
 name = "smix-core"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
 ]
 
 [[package]]
 name = "smix-core-conformance"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -2827,7 +2827,7 @@ dependencies = [
 
 [[package]]
 name = "smix-driver"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "async-trait",
  "criterion",
@@ -2848,7 +2848,7 @@ dependencies = [
 
 [[package]]
 name = "smix-error"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "dhat",
@@ -2860,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "smix-ffi"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2878,7 +2878,7 @@ dependencies = [
 
 [[package]]
 name = "smix-fixture"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2888,7 +2888,7 @@ dependencies = [
 
 [[package]]
 name = "smix-host-coord-resolver"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "proptest",
@@ -2900,7 +2900,7 @@ dependencies = [
 
 [[package]]
 name = "smix-input"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "serde",
@@ -2909,7 +2909,7 @@ dependencies = [
 
 [[package]]
 name = "smix-lease"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "chrono",
  "serde",
@@ -2920,7 +2920,7 @@ dependencies = [
 
 [[package]]
 name = "smix-mcp"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "base64",
  "criterion",
@@ -2941,7 +2941,7 @@ dependencies = [
 
 [[package]]
 name = "smix-metro-log"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "futures-util",
  "regex",
@@ -2954,7 +2954,7 @@ dependencies = [
 
 [[package]]
 name = "smix-migrate"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "serde",
  "serde_norway",
@@ -2964,7 +2964,7 @@ dependencies = [
 
 [[package]]
 name = "smix-node"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -2980,7 +2980,7 @@ dependencies = [
 
 [[package]]
 name = "smix-recorder"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "serde",
@@ -2998,7 +2998,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-client"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "reqwest",
@@ -3018,7 +3018,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-sources"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "flate2",
  "tar",
@@ -3028,7 +3028,7 @@ dependencies = [
 
 [[package]]
 name = "smix-runner-wire"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "serde",
@@ -3040,7 +3040,7 @@ dependencies = [
 
 [[package]]
 name = "smix-screen"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "dhat",
@@ -3051,7 +3051,7 @@ dependencies = [
 
 [[package]]
 name = "smix-sdk"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3079,7 +3079,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "dhat",
@@ -3092,7 +3092,7 @@ dependencies = [
 
 [[package]]
 name = "smix-selector-resolver"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "dhat",
@@ -3103,7 +3103,7 @@ dependencies = [
 
 [[package]]
 name = "smix-server"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3128,14 +3128,14 @@ dependencies = [
 
 [[package]]
 name = "smix-sim-health"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "smix-simctl"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "criterion",
  "libc",
@@ -3152,7 +3152,7 @@ dependencies = [
 
 [[package]]
 name = "smix-store"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "kevy-embedded",
  "serde",
@@ -3162,14 +3162,14 @@ dependencies = [
 
 [[package]]
 name = "smix-usbmux"
-version = "9.0.0"
+version = "10.0.0"
 dependencies = [
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "smix-verbs"
-version = "9.0.0"
+version = "10.0.0"
 
 [[package]]
 name = "socket2"

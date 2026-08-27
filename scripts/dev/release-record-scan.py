@@ -89,6 +89,17 @@ BOUNDARY = f".claude/docs/v{_major()}.md"
 BREAKING_RELEASE = f"## [{_major()}.0.0]"
 
 
+# The version being shipped, when a ship is what is running. Bare, this
+# gate runs during development, where the current major legitimately has
+# no CHANGELOG entry yet — the entry is written as part of the release.
+# Silence about that would be a hole, so the two halves are paired: with
+# --shipping the entry MUST exist; without it, its absence is reported as
+# "not written yet" and the half that reconciles it stands down.
+SHIPPING = None
+for _i, _a in enumerate(sys.argv):
+    if _a == "--shipping" and _i + 1 < len(sys.argv):
+        SHIPPING = sys.argv[_i + 1]
+
 problems = []
 missing = []
 
@@ -150,6 +161,28 @@ def bold_phrases(section):
     return out
 
 
+def release_entry_exists(heading):
+    cl = read("CHANGELOG.md")
+    return cl is not None and heading in cl
+
+
+def check_release_entry_exists(changelog):
+    """The pair for every "not written yet" below.
+
+    Without this, standing the reconciliation down during development
+    would also stand it down for a release whose CHANGELOG entry was
+    never written — the entry's absence would satisfy the check and the
+    check would stop looking, which is the shape §14.7 names.
+    """
+    if not SHIPPING:
+        return
+    if f"## [{SHIPPING}]" not in changelog:
+        problems.append(
+            f"shipping {SHIPPING} and the CHANGELOG has no `## [{SHIPPING}]` "
+            f"entry — the entry is the release"
+        )
+
+
 def breaking_section(changelog, release):
     """The `### Breaking` block inside one release's entry.
 
@@ -172,9 +205,10 @@ def breaking_section(changelog, release):
 def changelog_breaking_phrases(changelog):
     section = breaking_section(changelog, BREAKING_RELEASE)
     if section is None:
-        problems.append(
-            f"CHANGELOG's {BREAKING_RELEASE} entry has no `### Breaking` section"
-        )
+        if SHIPPING or release_entry_exists(BREAKING_RELEASE):
+            problems.append(
+                f"CHANGELOG's {BREAKING_RELEASE} entry has no `### Breaking` section"
+            )
         return []
     return bold_phrases(section)
 
@@ -224,7 +258,10 @@ def boundary_rows(boundary):
     """Each breaking-change row: its number and the CHANGELOG phrase it claims."""
     parts = boundary.split("## 破坏性变更")
     if len(parts) < 2:
-        problems.append(f"{BOUNDARY} has no breaking-change table")
+        # A major with no release entry yet has nothing to tabulate. Once
+        # the entry exists, the reconciliation below demands the table.
+        if SHIPPING or release_entry_exists(BREAKING_RELEASE):
+            problems.append(f"{BOUNDARY} has no breaking-change table")
         return []
     table = parts[1].split("\n## ")[0]
     out = []
@@ -282,10 +319,18 @@ def check_release_being_made(changelog):
     about nothing.
     """
     heading = newest_release_heading(changelog)
-    major = workspace_major()
+    # The major comes from the HEADING, not from the workspace. It used to
+    # come from the workspace, and those two are the same thing only
+    # between a release and the next version being entered — which is the
+    # one moment nobody is working. For the whole of every cycle after
+    # that, this reconciled the NEW boundary file (empty, by definition)
+    # against the PREVIOUS release's Breaking list and reported every
+    # entry as unclaimed. Entering v10 hit it within the minute.
+    m = re.match(r"## \[(\d+)\.", heading) if heading else None
+    major = m.group(1) if m else None
     if heading is None or major is None:
         problems.append(
-            "cannot read the newest release heading or the workspace major — "
+            "cannot read the newest release heading or its major — "
             "this half of the gate would be checking one list against nothing"
         )
         return 0
@@ -324,12 +369,22 @@ def check_breaking_lists(boundary, changelog):
     # stale beside the thing it counted. What does not go stale: two
     # independent readers of the same set must both find something, and the
     # matching below then makes them agree item by item.
-    if not rows:
+    pending = not SHIPPING and not release_entry_exists(BREAKING_RELEASE)
+    if pending:
+        # Not a hole: `check_release_entry_exists` red-flags a ship whose
+        # entry never got written, and a boundary table that already has
+        # rows is still reconciled below — that asymmetry CAN be wrong now.
+        print(
+            f"release-record: {BREAKING_RELEASE} is not written yet — "
+            f"reconciliation stands down until it is (--shipping makes it "
+            f"mandatory)"
+        )
+    if not rows and not pending:
         problems.append(
             "no rows read out of the boundary table — the shape changed and "
             "the matching below would pass by comparing nothing"
         )
-    if not phrases:
+    if not phrases and not pending:
         problems.append(
             "no bold phrases read out of the CHANGELOG's Breaking section — "
             "same"
@@ -537,6 +592,7 @@ def main():
             )
         return 2
 
+    check_release_entry_exists(changelog)
     n_breaking = check_breaking_lists(boundary, changelog)
     n_now = check_release_being_made(changelog)
     n_behaviour = check_behaviour_changes(claims, changelog)

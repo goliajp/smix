@@ -17,10 +17,10 @@ categories = ["development-tools::testing", "command-line-utilities"]
 workspace = true
 
 [dependencies]
-smix-lease = { path = "../smix-lease", version = "9.0.0" }
-smix-store = { path = "../smix-store", version = "9.0.0" }
-smix-error = { path = "../smix-error", version = "9.0.0" }
-smix-sim-health = { path = "../smix-sim-health", version = "9.0.0" }
+smix-lease = { path = "../smix-lease", version = "10.0.0" }
+smix-store = { path = "../smix-store", version = "10.0.0" }
+smix-error = { path = "../smix-error", version = "10.0.0" }
+smix-sim-health = { path = "../smix-sim-health", version = "10.0.0" }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["process", "macros", "rt-multi-thread", "io-util", "sync", "time"] }
