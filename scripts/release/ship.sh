@@ -1191,9 +1191,15 @@ npm_publish_dir "$ROOT/npm/smix-rn" "@goliapkg/smix"
 # Both artifacts. `smix-probe` is the line the guides tell a consumer to
 # write, and a coordinate that resolves to nothing is worse than no line:
 # they would add it, see no change, and conclude the feature does not work.
-GRADLE_PUB_TASK=":sdk:publish :probe:publish"
-[ "$SHIP_DRY" = 1 ] && GRADLE_PUB_TASK=":sdk:publishToMavenLocal :probe:publishToMavenLocal"
-log "gradle $GRADLE_PUB_TASK jp.golia.smix:smix-sdk:$VERSION"
+# An ARRAY, not a string. Quoted as one word, gradle reads two tasks as a
+# single task name and answers "cannot locate tasks that match
+# ':sdk:publish :probe:publish'" — the whole publish leg fails, an hour in,
+# on a shell quoting mistake rather than on anything about the release.
+GRADLE_PUB_TASKS=(":sdk:publish" ":probe:publish")
+[ "$SHIP_DRY" = 1 ] && GRADLE_PUB_TASKS=(":sdk:publishToMavenLocal" ":probe:publishToMavenLocal")
+# Names both artifacts. Publishing two and logging one is the shape §14
+# is about: the record has to say what happened, not half of it.
+log "gradle ${GRADLE_PUB_TASKS[*]} — jp.golia.smix:{smix-sdk,smix-probe}:$VERSION"
 # `|| fail` is not enough here. 6.3.0 found gpg exiting 0 while printing
 # nothing at all — its database was held by a lock whose owner had died,
 # so the export was empty and that empty string went to gradle as the
@@ -1231,8 +1237,8 @@ GPG_KEY="$(gpg --export-secret-keys --armor FBD802632CFAD78B 2>/dev/null)" \
   ORG_GRADLE_PROJECT_signingInMemoryKey="$GPG_KEY" \
   ORG_GRADLE_PROJECT_signingInMemoryKeyId=2CFAD78B \
   ORG_GRADLE_PROJECT_signingInMemoryKeyPassword="" \
-  ./gradlew "$GRADLE_PUB_TASK" --console=plain ) \
-  || fail "gradle publish"
+  ./gradlew "${GRADLE_PUB_TASKS[@]}" --console=plain ) \
+  || fail "gradle publish (${GRADLE_PUB_TASKS[*]})"
 
 # --- tag Swift Package + push ----------------------------------------
 
