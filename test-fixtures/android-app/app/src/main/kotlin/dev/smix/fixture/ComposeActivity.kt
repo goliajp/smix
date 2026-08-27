@@ -3,6 +3,10 @@ package dev.smix.fixture
 import android.app.Activity
 import android.os.Bundle
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -46,6 +50,7 @@ class ComposeActivity : ComponentActivity() {
             var secret by remember { mutableStateOf("") }
             var wrapped by remember { mutableStateOf("") }
             var submitted by remember { mutableStateOf("nothing submitted") }
+            var dialogOpen by remember { mutableStateOf(false) }
             Column(
                 modifier = Modifier
                     .padding(16.dp)
@@ -96,6 +101,46 @@ class ComposeActivity : ComponentActivity() {
                     modifier = Modifier.testTag("compose_submit"),
                 ) { Text("Submit") }
                 Text(submitted, modifier = Modifier.testTag("compose_result"))
+
+                // Below here: the three ways the accessibility projection
+                // and the semantics tree part company. They are here so
+                // the reconciliation門 has something to reconcile — a
+                // list of "known differences" on a screen that exhibits
+                // none of them excludes the empty set, and prints that it
+                // considered them.
+                Button(
+                    onClick = { dialogOpen = true },
+                    modifier = Modifier.testTag("compose_open_dialog"),
+                ) { Text("Open dialog") }
+
+                // (2) A lazy list. Rows past the viewport are never
+                // composed, so they generate no accessibility node at
+                // all — `compose_row_39` is absent from one tree and
+                // present in neither until it scrolls into view.
+                LazyColumn(modifier = Modifier.height(120.dp).testTag("compose_rows")) {
+                    items(40) { i ->
+                        Text("row $i", modifier = Modifier.testTag("compose_row_$i"))
+                    }
+                }
+            }
+
+            // (1) A dialog. Compose hosts it in a SEPARATE window, and
+            // `testTagsAsResourceId` set on the screen's root above does
+            // not reach into it — so this button's tag arrives on the
+            // semantics side and nowhere on the accessibility side. The
+            // guides have said so in prose since 6.x; nothing made it red.
+            if (dialogOpen) {
+                AlertDialog(
+                    onDismissRequest = { dialogOpen = false },
+                    title = { Text("A dialog") },
+                    text = { Text("hosted in its own window") },
+                    confirmButton = {
+                        Button(
+                            onClick = { dialogOpen = false },
+                            modifier = Modifier.testTag("compose_dialog_confirm"),
+                        ) { Text("OK") }
+                    },
+                )
             }
         }
     }
