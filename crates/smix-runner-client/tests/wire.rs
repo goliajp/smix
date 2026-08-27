@@ -101,7 +101,12 @@ async fn get_tree_no_include_no_query_param() {
         .await;
     let client = HttpRunnerClient::with_base(server.uri());
     let tree = client.get_tree(None).await.expect("tree");
-    assert_eq!(tree.bounds.w, 390.0);
+    assert_eq!(tree.root.bounds.w, 390.0);
+    // The wire boundary always says which reader answered. The runner does
+    // not offer the probe's tree yet, so this is the accessibility one —
+    // and saying so is the point: a caller that never sees the field is a
+    // caller that will assume the better answer.
+    assert_eq!(tree.source, smix_runner_client::TreeSource::Accessibility);
 }
 
 #[tokio::test]

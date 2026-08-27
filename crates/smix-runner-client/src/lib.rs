@@ -1428,10 +1428,16 @@ impl HttpRunnerClient {
     pub async fn get_tree(
         &self,
         include: Option<IncludeScope>,
-    ) -> Result<A11yNode, RunnerTransportError> {
-        let mut tree: A11yNode = self.json_get("/tree", include).await?;
-        derive_roles_recursive(&mut tree);
-        Ok(tree)
+    ) -> Result<PerceivedTree, RunnerTransportError> {
+        let mut root: A11yNode = self.json_get("/tree", include).await?;
+        derive_roles_recursive(&mut root);
+        // The runner does not yet offer the probe's answer, so this is the
+        // one reader there is — and it says so rather than leaving the
+        // caller to assume. Wiring the probe in is C3's; the type is here
+        // first so the call sites are already asking the question by then,
+        // rather than all needing to learn it on the day the second reader
+        // appears.
+        Ok(PerceivedTree { source: TreeSource::Accessibility, root })
     }
 
     /// `GET /system-popups?include=` — list system popups.
@@ -2487,5 +2493,83 @@ mod unavailable_category_tests {
                 "this client expects `{known}` and the runner no longer emits it"
             );
         }
+    }
+}
+
+
+/// Which reader answered a perception request.
+///
+/// smix has one perception primitive and two things that can satisfy it: the
+/// accessibility tree it has always read, and the UI toolkit's own semantics
+/// tree, read in the app's process when the app opted in. The two do not see
+/// the same screen — with a Compose dialog open the accessibility path sees
+/// none of the app while the probe sees all of it — so an answer that does
+/// not say which one produced it is an answer a caller cannot weigh.
+///
+/// Named for the reader rather than the platform: both platforms can answer
+/// from either, and a field spelling `Android` would describe the device
+/// instead of the evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TreeSource {
+    /// The accessibility tree. Always available; a projection of whatever
+    /// the UI toolkit knows, and on Compose a lossy one.
+    #[serde(rename = "a11y")]
+    Accessibility,
+    /// The toolkit's own semantics tree, from the in-process probe.
+    Semantics,
+}
+
+impl TreeSource {
+    /// The spelling that goes on the wire and into `--json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TreeSource::Accessibility => "a11y",
+            TreeSource::Semantics => "semantics",
+        }
+    }
+
+    /// What this reader is known not to see, for a caller holding its answer.
+    ///
+    /// `None` is a claim, not a default: a reader that grows a blind spot
+    /// has to come back here and say so, and the test for this asserts the
+    /// claim rather than accepting silence.
+    pub fn limitation(self) -> Option<&'static str> {
+        match self {
+            TreeSource::Accessibility => Some(
+                "reads one window, and a Compose dialog composes into its own \
+                 — with one open, nothing of the app is in this tree. Add \
+                 `debugImplementation(\"jp.golia.smix:smix-probe\")` to the \
+                 app's debug build to read the semantics tree instead.",
+            ),
+            TreeSource::Semantics => None,
+        }
+    }
+}
+
+/// A tree, and which reader produced it.
+///
+/// `get_tree` returns this rather than a bare root because a caller that can
+/// hold the answer without the source is a caller that will — and then a
+/// screen the accessibility path went blind on looks like a screen with
+/// nothing on it. Taking the field away from callers is a breaking change
+/// on purpose: the compiler asking every call site "which reader was this?"
+/// is the whole mechanism.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PerceivedTree {
+    /// Which reader answered. First on the wire so a reader of the JSON
+    /// meets it before the tree rather than after several thousand nodes.
+    pub source: TreeSource,
+    /// The tree it produced.
+    pub root: A11yNode,
+}
+
+impl PerceivedTree {
+    /// What to tell a reader who is about to act on this, or `None` when
+    /// the reader that answered has nothing to warn about.
+    pub fn caveat(&self) -> Option<String> {
+        self.source.limitation().map(|why| {
+            format!("this tree came from the {} reader, which {}", self.source.as_str(), why)
+        })
     }
 }
