@@ -1,5 +1,7 @@
 package dev.smix.probe
 
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.ui.node.RootForTest
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.SemanticsActions
@@ -41,13 +43,109 @@ object SemanticsProbe {
         }
     }
 
-    /** True once no root has layout work outstanding. */
-    fun isIdle(): Boolean = attached().none { it.hasPendingMeasureOrLayout }
+    /**
+     * How long the semantics tree has looked the same, in milliseconds.
+     *
+     * NOT `hasPendingMeasureOrLayout`, which was the first answer here and
+     * is the wrong one. Measured 2026-08-27: it read `true` throughout an
+     * active fling of a lazy list — it is only false during the microseconds
+     * a layout pass is actually pending, so any sample taken across a
+     * process boundary lands in the gap between them. A signal that is true
+     * whether or not the screen is moving cannot end a wait.
+     *
+     * Quiescence is the question a waiter is really asking: has anything
+     * changed lately. It is computed here, in the app's process, where
+     * looking is cheap, and it needs nothing internal to Compose.
+     *
+     * Returns -1 when nothing has been seen yet — "not settled" and "never
+     * looked" are different, and one value for both is how a waiter learns
+     * to trust a number that means nothing.
+     */
+    fun quiescentForMs(): Long {
+        startSamplerOnce()
+        synchronized(this) {
+            return if (lastChangedAtMs == 0L) -1 else System.currentTimeMillis() - lastChangedAtMs
+        }
+    }
+
+    /**
+     * Watch the tree on a timer rather than only when asked.
+     *
+     * Sampling at call time can only answer "different from what I last
+     * saw" — it cannot say WHEN it changed. Measured: after a scroll, the
+     * first ask three seconds later reported zero milliseconds of quiet,
+     * because the change had happened at some unknown point in between.
+     *
+     * Not a draw listener, which would have been cheaper: a Compose text
+     * field's caret blinks, and a screen with a focused input would then
+     * never look still. The semantics fingerprint ignores that — a caret
+     * changes no bounds, no text and no focus.
+     *
+     * Started on the first ask, so an app that carries the probe and never
+     * uses it pays nothing.
+     */
+    private fun startSamplerOnce() {
+        synchronized(this) {
+            if (sampler != null) return
+            val h = Handler(Looper.getMainLooper())
+            sampler = h
+            val tick = object : Runnable {
+                override fun run() {
+                    sample()
+                    h.postDelayed(this, SAMPLE_INTERVAL_MS)
+                }
+            }
+            h.post(tick)
+        }
+    }
+
+    private fun sample() {
+        val fp = try {
+            attached()
+                .map { (it as RootForTest).semanticsOwner.unmergedRootSemanticsNode }
+                .fold(17) { acc, n -> acc * 31 + fingerprint(n) }
+        } catch (_: Exception) {
+            // A root torn down mid-walk is not a change worth recording,
+            // and a sampler that dies takes the signal with it silently.
+            return
+        }
+        synchronized(this) {
+            if (fp != lastFingerprint || lastChangedAtMs == 0L) {
+                lastFingerprint = fp
+                lastChangedAtMs = System.currentTimeMillis()
+            }
+        }
+    }
+
+    private var sampler: Handler? = null
+    private var lastFingerprint: Int? = null
+    private var lastChangedAtMs: Long = 0
+
+    /** Fast enough to catch a fling, slow enough not to be the thing that moves. */
+    private const val SAMPLE_INTERVAL_MS = 50L
+
+    private fun fingerprint(node: SemanticsNode): Int {
+        val c = node.config
+        var h = node.id
+        val o = node.positionOnScreen
+        h = h * 31 + o.x.toInt()
+        h = h * 31 + o.y.toInt()
+        h = h * 31 + node.size.width
+        h = h * 31 + node.size.height
+        h = h * 31 + (c.getOrElseNullable(SemanticsProperties.Text) { null }?.toString()?.hashCode() ?: 0)
+        h = h * 31 + (c.getOrElseNullable(SemanticsProperties.EditableText) { null }?.toString()?.hashCode() ?: 0)
+        h = h * 31 + (c.getOrElseNullable(SemanticsProperties.Focused) { false }?.hashCode() ?: 0)
+        for (child in node.children) h = h * 31 + fingerprint(child)
+        return h
+    }
 
     /** Every attached root's unmerged tree, as smix's wire spells it. */
     fun dumpWireJson(): String = attached()
         .map { (it as RootForTest).semanticsOwner.unmergedRootSemanticsNode.toProbeNode() }
         .toWireJson()
+
+    /** The signal that was tried first, kept so its verdict can be re-checked. */
+    fun hasPendingLayout(): Boolean = attached().any { it.hasPendingMeasureOrLayout }
 
     /** Whether anything is there to read — the honest answer to "is the probe live". */
     fun rootCount(): Int = attached().size

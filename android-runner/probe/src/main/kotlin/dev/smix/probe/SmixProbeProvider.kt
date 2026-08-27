@@ -60,7 +60,10 @@ class SmixProbeProvider : ContentProvider() {
                 // a caller asking whether the probe is live must not have to
                 // pay for a tree dump to find out.
                 METHOD_TREE -> putString(KEY_TREE, SemanticsProbe.dumpWireJson())
-                METHOD_IDLE -> putBoolean(KEY_IDLE, SemanticsProbe.isIdle())
+                METHOD_IDLE -> {
+                    putLong(KEY_QUIET_MS, SemanticsProbe.quiescentForMs())
+                    putBoolean("pendingLayout", SemanticsProbe.hasPendingLayout())
+                }
                 // Experimental, and named so. Whether it survives depends on
                 // what it is measured to do to a node nothing can touch.
                 METHOD_ACT -> putString(
@@ -133,7 +136,7 @@ class SmixProbeProvider : ContentProvider() {
         const val KEY_VERSION = "version"
         const val KEY_ROOTS = "roots"
         const val KEY_TREE = "tree"
-        const val KEY_IDLE = "idle"
+        const val KEY_QUIET_MS = "quietMs"
         const val KEY_ERROR = "error"
     }
 }
