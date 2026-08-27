@@ -59,7 +59,7 @@ fi
 #
 # Then wait for the SESSION, not for the runner. `runner up` returning 0
 # means its server answers; it does not mean the app binding is drivable,
-# and `/tree`答 unreachable for a while after. A consumer taught us that
+# and `/tree` answers unreachable for a while after. A consumer taught us that
 # distinction — `/health` says 200 while `/tree` says 000 — and this gate
 # was reading the first as if it were the second, failing one run in three
 # on "the subject is not on screen" when the subject was simply not
