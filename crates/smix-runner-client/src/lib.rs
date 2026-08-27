@@ -1438,13 +1438,13 @@ impl HttpRunnerClient {
         // to the accessibility tree — and the answer says which, because a
         // screen the accessibility reader has gone blind on and a screen
         // with nothing on it print identically otherwise.
-        if let Some(app) = self.target_bundle_id.clone() {
-            if let Some(tree) = self.semantics_tree(&app).await {
-                return Ok(PerceivedTree {
-                    source: TreeSource::Semantics,
-                    root: tree,
-                });
-            }
+        if let Some(app) = self.target_bundle_id.clone()
+            && let Some(tree) = self.semantics_tree(&app).await
+        {
+            return Ok(PerceivedTree {
+                source: TreeSource::Semantics,
+                root: tree,
+            });
         }
         let mut root: A11yNode = self.json_get("/tree", include).await?;
         derive_roles_recursive(&mut root);
