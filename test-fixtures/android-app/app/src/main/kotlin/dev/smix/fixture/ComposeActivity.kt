@@ -104,7 +104,7 @@ class ComposeActivity : ComponentActivity() {
 
                 // Below here: the three ways the accessibility projection
                 // and the semantics tree part company. They are here so
-                // the reconciliation門 has something to reconcile — a
+                // the reconciliation gate has something to reconcile — a
                 // list of "known differences" on a screen that exhibits
                 // none of them excludes the empty set, and prints that it
                 // considered them.
