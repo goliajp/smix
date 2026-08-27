@@ -556,6 +556,10 @@ log "known-unstable list scan"
 python3 "$ROOT/scripts/dev/known-unstable-scan.py" > /tmp/smix-ship-known-unstable.log 2>&1 \
   || fail "known-unstable list scan FAILED — see /tmp/smix-ship-known-unstable.log"
 
+log "three readers agree"
+python3 "$ROOT/scripts/dev/three-readers-agree.py" > /tmp/smix-ship-three-readers.log 2>&1 \
+  || fail "three-readers-agree FAILED — the recorded reports differ across the three host trees (see /tmp/smix-ship-three-readers.log)"
+
 log "mcp cli parity scan"
 python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \
   || fail "mcp cli parity scan FAILED — see /tmp/smix-ship-mcp-parity.log"
