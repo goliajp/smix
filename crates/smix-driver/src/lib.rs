@@ -67,6 +67,8 @@ pub use smix_runner_client::{
     RunnerTransportError, SystemPopup, TapMode,
 };
 
+use smix_runner_client::TouchVerdict;
+
 const POLL_INTERVAL_MS: u64 = 250;
 const TOTAL_TIMEOUT_MS: u64 = 5000;
 const SCROLL_MAX_SWIPES: u32 = 30;
@@ -465,7 +467,33 @@ impl IosDriver {
                 // inside, and that is only worth anything next to what
                 // was aimed at.
                 Ok(coord) => {
-                    let aimed = resolve_selector(&tree, selector).map(|n| HitElement {
+                    let node = resolve_selector(&tree, selector);
+                    // Found, and out of reach. A modal leaves what is behind
+                    // it in the tree and swallows touches aimed there, so
+                    // this tap would be dispatched, land on nothing, and
+                    // report success — which is what it did until now.
+                    //
+                    // Only an explicit no refuses. A runner that does not
+                    // fill the field says nothing, and treating silence as
+                    // a refusal would take tapping away from everyone who
+                    // has not upgraded.
+                    if let Some(n) = node {
+                        if let TouchVerdict::Refuse(why) =
+                            smix_runner_client::touch_verdict(n.hittable)
+                        {
+                            return Err(ExpectationFailure::new(FailureInit {
+                                code: Some(FailureCode::NotVisible),
+                                message: format!(
+                                    "{}: {why}",
+                                    describe_selector(selector)
+                                ),
+                                selector: Some(selector.clone()),
+                                visible_elements: collect_visible_summaries(&tree, 10),
+                                ..Default::default()
+                            }));
+                        }
+                    }
+                    let aimed = node.map(|n| HitElement {
                         identifier: n.identifier.clone().unwrap_or_default(),
                         label: n.label.clone().unwrap_or_default(),
                         frame: (n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h),

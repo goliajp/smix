@@ -175,7 +175,9 @@ public enum TreeRoute {
       rootFrame: rootFrame,
       depth: 0,
       truncated: &truncated,
-      logSink: logSink
+      logSink: logSink,
+      inActionContainer: false,
+      modalPresent: modalPresent
     )
     if truncated {
       logSink?("tree: truncated at depth \(MAX_DEPTH)")
