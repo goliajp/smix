@@ -352,6 +352,14 @@ python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.py" > /tmp/smix-ship-ceilings.log
   || fail "job ceilings FAILED — a CI job may run for six hours (see /tmp/smix-ship-ceilings.log)"
 
 # --- self-tests are wired ----------------------------------------------
+# v10's reconciliation gate, on recorded payloads and no device. It went
+# blind to its own wire for a whole checkpoint while this suite stayed
+# green — the payloads it was recorded from pre-dated an envelope the CLI
+# grew — so the suite now asserts the recorded shape too.
+log "the two-paths gate can still go red"
+python3 "$ROOT/scripts/dev/two-paths-agree.test.py" > /tmp/smix-ship-twopaths.log 2>&1 \
+  || fail "the two-paths gate no longer goes red (see /tmp/smix-ship-twopaths.log)"
+
 log "the publish-dag gate can still go red"
 python3 "$ROOT/scripts/dev/publish-dag-is-complete.test.py" > /tmp/smix-ship-dagtest.log 2>&1 \
   || fail "the publish-dag gate no longer goes red on a broken list (see /tmp/smix-ship-dagtest.log)"
@@ -785,6 +793,37 @@ SMIX_BIN="$ROOT/target/release/smix" \
   || fail "android behaviour gate FAILED — see the verdict above"
 
 
+# --- v10's device gates ------------------------------------------------
+# The probe's four, run where they can go red for someone other than the
+# person who wrote them. Written during v10 and wired here in the same
+# release: a gate that only ever ran by hand stops running the day its
+# author stops typing it, and nothing says so.
+#
+# They need the fixture with `debugImplementation("jp.golia.smix:smix-probe")`
+# installed on the emulator; each says which line is missing when it is not.
+V10_DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"
+V10_PORT="${SMIX_V10_ANDROID_PORT:-22095}"
+log "v10: two perception paths agree"
+python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
+  --port "$V10_PORT" --min-both 16 \
+  || fail "two-paths-agree FAILED — the semantics and accessibility readers disagree"
+
+log "v10: the three that went red"
+python3 "$ROOT/scripts/dev/the-three-that-went-red.py" --device "$V10_DEVICE" \
+  --port "$V10_PORT" \
+  || fail "the-three-that-went-red FAILED — a 6.4.0 root cause is unguarded again"
+
+log "v10: a wait that does not end early"
+python3 "$ROOT/scripts/dev/a-wait-that-does-not-end-early.py" --device "$V10_DEVICE" \
+  --port "$V10_PORT" \
+  || fail "a-wait-that-does-not-end-early FAILED"
+
+log "v10: a semantics action is not a touch"
+python3 "$ROOT/scripts/dev/a-semantics-action-is-not-a-touch.py" --device "$V10_DEVICE" \
+  --port "$V10_PORT" \
+  || fail "a-semantics-action-is-not-a-touch FAILED — the probe's action surface grew a touch substitute"
+
+
 # --- corpus gate (real sim) -------------------------------------------
 # Runs the bootstrap corpus end-to-end on a simulator. Device selection
 # is explicit env first, else this repo's own booted dev sim.
@@ -799,6 +838,14 @@ if [[ -z "${SMIX_CORPUS_SIM:-}" ]]; then
 fi
 [[ -n "$SMIX_CORPUS_SIM" ]] \
   || fail "corpus gate needs SMIX_CORPUS_SIM or a booted dev sim"
+
+# v10's iOS gate, on the sim the corpus already picked — a control behind a
+# modal is still in the tree and a touch aimed at it is swallowed, and smix
+# used to report that as a success.
+log "v10: a tap that cannot land says so"
+bash "$ROOT/scripts/dev/a-tap-that-cannot-land-says-so.sh" "$SMIX_CORPUS_SIM" \
+  "${SMIX_V10_IOS_PORT:-22091}" \
+  || fail "a-tap-that-cannot-land-says-so FAILED — a tap nothing could receive was reported as one that landed"
 
 log "corpus gate on $SMIX_CORPUS_SIM"
 SMIX_CORPUS_SIM="$SMIX_CORPUS_SIM" \

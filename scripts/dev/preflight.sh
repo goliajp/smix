@@ -190,6 +190,7 @@ SOURCE_GATES=(
   gate-port-scan
   preflight-parity-scan
   mcp-cli-parity-scan
+  three-readers-agree
   fuzz-lockfiles-are-usable
   fuzz-lockfiles-are-usable.test
   android-a4-verdict.test
