@@ -78,6 +78,18 @@ const CARDS: Card[] = [
     meta: 'frame-diff · not a sleep',
   },
   {
+    title: 'Compose apps, addressed by id everywhere',
+    body: 'On Android the accessibility tree is a lossy projection of what Compose knows — a dialog composes into its own subtree, so its controls arrive unnamed and cannot be found by id. One debug-only line lets smix read the semantics tree instead. Without it everything works as before, and smix says which tree answered rather than quietly giving the lesser one.',
+    meta: 'smix-probe · debugImplementation · opt-in',
+    href: LINKS.cli,
+  },
+  {
+    title: 'A tap that cannot land says so',
+    body: 'A control behind a modal is still on screen and still in the tree, and a touch aimed at it is swallowed. smix refuses that tap and names what is covering the element, instead of dispatching an event nothing receives and reporting success.',
+    meta: 'exists ≠ reachable',
+    href: LINKS.cli,
+  },
+  {
     title: 'A phone is reachable only once you say so',
     body: 'Simulators, emulators and physical devices are all addressable — but a physical one must be registered by hand first, so smix never reaches whatever happens to be plugged in. Wiping it takes a second, per-device opt-in. Where a phone has no equivalent of a simulator verb, you get an error naming the gap rather than a silent no-op.',
     meta: 'register · allow-destructive · no silent degrade',
