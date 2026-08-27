@@ -64,7 +64,11 @@ let package = Package(
     .testTarget(
       name: "SmixSDKTests",
       dependencies: ["SmixSDK"],
-      path: "Tests/SmixSDKTests"
+      path: "Tests/SmixSDKTests",
+      // The same payloads the Rust reader runs against. Three readers of
+      // one document only stay honest if they are pointed at one set of
+      // recorded bytes.
+      resources: [.copy("fixtures")]
     ),
 
     // Cross-binary conformance fixture runner. Loads

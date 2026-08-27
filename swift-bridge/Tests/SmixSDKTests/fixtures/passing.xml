@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="smix" tests="1" failures="0" errors="0" skipped="0">
+  <testcase name="dialog-confirm" classname="smix.flow" time="0">
+  </testcase>
+</testsuite>
+
