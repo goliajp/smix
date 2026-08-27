@@ -395,11 +395,25 @@ pub async fn cmd_find(
         println!("exists={exists}");
         return Ok(());
     }
-    let exists = d
-        .find(&selector, None)
+    // Existence and reach are two facts, and `find` answers the first.
+    //
+    // It keeps answering `exists=true` for a control behind a modal,
+    // because it IS there — changing that would be a different lie. What
+    // it adds is the second fact, so a reader is not left to discover it
+    // from a tap that gets refused a moment later.
+    let node = d
+        .find_one(&selector, None)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
-    println!("exists={exists}");
+    println!("exists={}", node.is_some());
+    if let Some(n) = node {
+        if n.hittable == Some(false) {
+            println!(
+                "reachable=false  it is on screen and something is on top of it; \
+                 a tap here would be refused"
+            );
+        }
+    }
     Ok(())
 }
 
