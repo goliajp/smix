@@ -577,20 +577,28 @@ pub async fn cmd_swipe(
 /// typical app screen); default emits an indented text outline keyed by
 /// id + label per node.
 pub async fn cmd_tree(json: bool, port: u16, keyboard: bool) -> Result<(), ActError> {
-    let d = SimctlDriver::new(HttpRunnerClient::new(port));
-    let mut tree = d
-        .tree(None)
+    // The client rather than the driver, because the driver's `tree` hands
+    // back the root alone and the source is the half a reader needs most
+    // when the answer looks thin. A screen the accessibility reader has
+    // gone blind on and a screen with nothing on it print identically
+    // otherwise.
+    let client = HttpRunnerClient::new(port);
+    let mut perceived = client
+        .get_tree(None)
         .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
     if !keyboard {
-        collapse_keyboards(&mut tree);
+        collapse_keyboards(&mut perceived.root);
     }
     if json {
-        let s = serde_json::to_string_pretty(&tree)
+        let s = serde_json::to_string_pretty(&perceived)
             .map_err(|e| ActError::Transport(format!("serde: {e}")))?;
         println!("{s}");
     } else {
-        print_tree_outline(&tree, 0);
+        if let Some(caveat) = perceived.caveat() {
+            println!("# {caveat}");
+        }
+        print_tree_outline(&perceived.root, 0);
     }
     Ok(())
 }

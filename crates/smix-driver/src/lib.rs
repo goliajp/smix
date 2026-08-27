@@ -170,6 +170,7 @@ impl IosDriver {
         self.runner
             .get_tree(include)
             .await
+            .map(|t| t.root)
             .map_err(transport_to_failure)
     }
 
