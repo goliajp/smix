@@ -1429,15 +1429,45 @@ impl HttpRunnerClient {
         &self,
         include: Option<IncludeScope>,
     ) -> Result<PerceivedTree, RunnerTransportError> {
+        // The probe first, when there is an app to ask about. One
+        // perception primitive with two satisfiers, chosen at the source:
+        // every caller downstream keeps working against one tree, and none
+        // of them grows an `if probe { … } else { … }`.
+        //
+        // A probe that is not there, or an app nobody named, falls through
+        // to the accessibility tree — and the answer says which, because a
+        // screen the accessibility reader has gone blind on and a screen
+        // with nothing on it print identically otherwise.
+        if let Some(app) = self.target_bundle_id.clone() {
+            if let Some(tree) = self.semantics_tree(&app).await {
+                return Ok(PerceivedTree { source: TreeSource::Semantics, root: tree });
+            }
+        }
         let mut root: A11yNode = self.json_get("/tree", include).await?;
         derive_roles_recursive(&mut root);
-        // The runner does not yet offer the probe's answer, so this is the
-        // one reader there is — and it says so rather than leaving the
-        // caller to assume. Wiring the probe in is C3's; the type is here
-        // first so the call sites are already asking the question by then,
-        // rather than all needing to learn it on the day the second reader
-        // appears.
         Ok(PerceivedTree { source: TreeSource::Accessibility, root })
+    }
+
+    /// The app's own semantics tree, or `None` when there is no probe.
+    ///
+    /// Deliberately swallowing here, and only here: every reason this can
+    /// fail — no probe, an older probe, a runner without the route — means
+    /// the same thing to a caller, which is "carry on with the tree you
+    /// have always had". What must NOT be swallowed is which tree was used,
+    /// and that is the return value of the function above.
+    async fn semantics_tree(&self, app: &str) -> Option<A11yNode> {
+        let raw: serde_json::Value =
+            self.json_get(&format!("/probe?app={app}"), None).await.ok()?;
+        if raw.get("present")?.as_bool() != Some(true) {
+            return None;
+        }
+        let payload = self
+            .json_get::<serde_json::Value>(&format!("/probe/tree?app={app}"), None)
+            .await
+            .ok()?;
+        let mut root = smix_screen::probe_tree_to_a11y(&payload.to_string())?;
+        derive_roles_recursive(&mut root);
+        Some(root)
     }
 
     /// `GET /probe?app=` — what the app under test says about itself.

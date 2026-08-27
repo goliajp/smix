@@ -26,8 +26,12 @@ import argparse
 import json
 import re
 import subprocess
+import os
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _probe_wire  # noqa: E402
 
 APP = "dev.smix.fixture"
 problems = []
@@ -55,9 +59,7 @@ def probe(device, method, arg=None, extra=None):
 
 
 def tree(device):
-    out = probe(device, "tree")
-    m = re.search(r"tree=(\[.*\])\}\]", out, re.S)
-    return json.loads(m.group(1)) if m else None
+    return _probe_wire.probe_tree(device, APP)
 
 
 def find(roots, tag):

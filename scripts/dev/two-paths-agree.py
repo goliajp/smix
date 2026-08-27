@@ -26,9 +26,13 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _probe_wire  # noqa: E402
 
 problems = []
 
@@ -67,17 +71,9 @@ def unwrap(payload):
 
 
 def fetch_semantics(device, app):
-    out = sh("adb", "-s", device, "shell", "content", "call",
-             "--uri", f"content://{app}.smixprobe", "--method", "tree")
-    if out is None:
-        return None
-    m = re.search(r"tree=(\[.*\])\}\]", out, re.S)
-    if m is None:
-        return None
-    try:
-        return json.loads(m.group(1))
-    except json.JSONDecodeError:
-        return None
+    # Through the shared reader: three gates each carried this parse, and
+    # all three broke the day the probe added a field beside the tree.
+    return _probe_wire.probe_tree(device, app)
 
 
 def a11y_tags(tree):

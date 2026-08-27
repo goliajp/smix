@@ -3096,7 +3096,6 @@ version = "10.0.0"
 dependencies = [
  "criterion",
  "dhat",
- "serde",
  "serde_json",
  "smix-screen",
  "smix-selector",

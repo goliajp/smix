@@ -19,7 +19,8 @@
 //! that way.
 
 use smix_selector::Selector;
-use smix_selector_resolver::{probe_tree_to_a11y, resolve_selector};
+use smix_screen::probe_tree_to_a11y;
+use smix_selector_resolver::resolve_selector;
 
 fn id_selector(id: &str) -> Selector {
     Selector::Id { id: id.to_string(), modifiers: Default::default() }

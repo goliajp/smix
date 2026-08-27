@@ -719,3 +719,257 @@ mod keyboard_collapse_tests {
         assert_eq!(ids.len(), 29, "app + field + keyboard + 26 keys");
     }
 }
+
+/// Turn the probe's semantics payload into the tree everything downstream
+/// already speaks.
+///
+/// Not a second kind of node, and not a second resolver. The semantics tree
+/// carries the same facts — an identifier, some text, a rectangle, whether
+/// it is enabled — from a source that can see things the accessibility
+/// projection cannot. Converting keeps one resolution pipeline, which is
+/// what stops "the probe path" and "the a11y path" from drifting into two
+/// products.
+///
+/// The probe reports several roots (a dialog composes into its own), so the
+/// result is a synthetic parent over them. Its bounds are the union, which
+/// is what a spatial modifier would expect of a screen.
+///
+/// Returns `None` when the payload is not the shape the probe emits, rather
+/// than an empty tree: "nothing on screen" and "I could not read this" want
+/// different answers, and one value for both is how a caller learns to
+/// distrust the field.
+pub fn probe_tree_to_a11y(json: &str) -> Option<A11yNode> {
+    // Two shapes: a bare array of roots, and an envelope carrying the
+    // screen's size beside them. The envelope is what the runner sends
+    // since the tap arithmetic needed a denominator; the bare form is
+    // still accepted because the probe's own `tree` method answers that
+    // way and a gate reads it directly.
+    let (screen, roots): (Option<[f64; 2]>, Vec<ProbeNodeWire>) =
+        match serde_json::from_str::<ProbeEnvelope>(json) {
+            Ok(e) => (Some(e.screen), e.roots),
+            Err(_) => (None, serde_json::from_str(json).ok()?),
+        };
+    let mut converted: Vec<A11yNode> = roots.iter().map(ProbeNodeWire::to_a11y).collect();
+    // Nothing to say yet is absence, not an empty screen.
+    //
+    // For a moment after the app restarts the probe answers `[]` — its
+    // process is new and no Compose root has registered. Converting that
+    // into a tree let it SHADOW the accessibility tree, and a fill that had
+    // always worked reported ELEMENT_NOT_FOUND against a field plainly on
+    // screen. Caught by running the flow it was written for.
+    if converted.iter().all(|r| !carries_anything(r)) {
+        return None;
+    }
+    if let Some(modal) = modal_index(&converted) {
+        // A modal is showing, so what is behind it is not addressable —
+        // even though the probe can see it perfectly well.
+        //
+        // Android already hides a modal's background from accessibility and
+        // that is not a defect to route around: a user cannot touch those
+        // controls either. Reaching them would make smix able to do what
+        // the person it stands in for cannot, which is the line C2 drew
+        // when it refused a semantics OnClick through a scrim. The probe
+        // widens what smix can SEE, never what it can REACH.
+        converted = vec![converted.swap_remove(modal)];
+    }
+    let mut parent = blank_node();
+    parent.raw_type = "SemanticsRoots".to_string();
+    // The SCREEN, not the union of the roots.
+    //
+    // Everything downstream normalises a node's rectangle against the tree
+    // root's, and Compose occupies only part of the display — so a union
+    // here put a tap a fifth of a screen off, and `/input-text` answered
+    // `no_focused_field`: a message about the keyboard for a fault in the
+    // arithmetic. Falls back to the union when the probe is too old to
+    // report a size, which is wrong by the same amount but no worse than
+    // before it was asked.
+    parent.bounds = match screen {
+        Some([w, h]) if w > 0.0 && h > 0.0 => Rect { x: 0.0, y: 0.0, w, h },
+        _ => union_bounds(&converted),
+    };
+    parent.children = converted;
+    Some(parent)
+}
+
+#[derive(serde::Deserialize)]
+struct ProbeEnvelope {
+    screen: [f64; 2],
+    roots: Vec<ProbeNodeWire>,
+}
+
+#[derive(serde::Deserialize)]
+struct ProbeNodeWire {
+    #[serde(default)]
+    #[allow(dead_code)]
+    id: i64,
+    #[serde(default, rename = "testTag")]
+    test_tag: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default, rename = "editableText")]
+    editable_text: Option<String>,
+    /// What a field actually holds. Separate from `editableText`, which on
+    /// a masked field reads back as bullets — Compose applies the visual
+    /// transformation before semantics sees it.
+    #[serde(default, rename = "inputText")]
+    input_text: Option<String>,
+    #[serde(default, rename = "contentDescription")]
+    content_description: Option<String>,
+    #[serde(default)]
+    bounds: [f64; 4],
+    #[serde(default)]
+    focused: bool,
+    #[serde(default = "yes")]
+    enabled: bool,
+    #[serde(default)]
+    children: Vec<ProbeNodeWire>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl ProbeNodeWire {
+    fn to_a11y(&self) -> A11yNode {
+        let mut n = blank_node();
+        n.identifier = self.test_tag.clone();
+        n.label = self.content_description.clone();
+        n.text = self.text.clone();
+        // `inputText` first: it is what was typed, where `editableText` is
+        // what is shown. A predicate comparing a masked field with what a
+        // flow typed asks a question only the first can answer.
+        n.value = self.input_text.clone().or_else(|| self.editable_text.clone());
+        n.enabled = self.enabled;
+        n.has_focus = self.focused;
+        n.bounds = Rect {
+            x: self.bounds[0],
+            y: self.bounds[1],
+            w: (self.bounds[2] - self.bounds[0]).max(0.0),
+            h: (self.bounds[3] - self.bounds[1]).max(0.0),
+        };
+        n.children = self.children.iter().map(ProbeNodeWire::to_a11y).collect();
+        n
+    }
+}
+
+/// Which root, if any, is a modal covering the others.
+///
+/// By geometry rather than by count: two roots of the same size are two
+/// halves of a screen, not a dialog over one. A modal is strictly smaller
+/// than something it sits on top of, and Compose composes it into its own
+/// root — so the test is "is there exactly one root that every other root
+/// strictly contains".
+///
+/// Returns `None` for the ordinary case of a single root, and for anything
+/// ambiguous. Being wrong towards "no modal" leaves smix where it was
+/// before this release; being wrong the other way makes half a screen
+/// silently unaddressable.
+fn modal_index(roots: &[A11yNode]) -> Option<usize> {
+    if roots.len() < 2 {
+        return None;
+    }
+    let candidates: Vec<usize> = (0..roots.len())
+        .filter(|&i| {
+            roots.iter().enumerate().all(|(j, other)| {
+                j == i || strictly_contains(&other.bounds, &roots[i].bounds)
+            })
+        })
+        .collect();
+    // Exactly one, or none. There cannot be two: strict containment runs
+    // one way, so X inside Y and Y inside X is impossible.
+    //
+    // A first draft guarded against two candidates anyway, and a mutation
+    // sweep showed that guard could never be the reason for a verdict —
+    // an unreachable branch is a predicate that will never go red, which
+    // is the same emptiness as one that is always true. The same sweep
+    // showed relaxing the strictness below changes no outcome either, for
+    // the same reason: equal areas that contain each other are one
+    // rectangle twice.
+    match candidates.as_slice() {
+        [only] => Some(*only),
+        _ => None,
+    }
+}
+
+fn strictly_contains(outer: &Rect, inner: &Rect) -> bool {
+    let bigger = outer.w * outer.h > inner.w * inner.h;
+    bigger
+        && outer.x <= inner.x
+        && outer.y <= inner.y
+        && outer.x + outer.w >= inner.x + inner.w
+        && outer.y + outer.h >= inner.y + inner.h
+}
+
+fn blank_node() -> A11yNode {
+    serde_json::from_str(
+        r#"{"rawType":"Other","bounds":{"x":0.0,"y":0.0,"w":0.0,"h":0.0},
+            "enabled":true,"selected":false,"hasFocus":false,"visible":true,
+            "children":[]}"#,
+    )
+    .expect("the blank node is well formed")
+}
+
+/// Whether a converted root names anything at all.
+fn carries_anything(n: &A11yNode) -> bool {
+    n.identifier.is_some()
+        || n.text.is_some()
+        || n.label.is_some()
+        || n.children.iter().any(carries_anything)
+}
+
+fn union_bounds(nodes: &[A11yNode]) -> Rect {
+    let mut x0 = f64::MAX;
+    let mut y0 = f64::MAX;
+    let mut x1 = f64::MIN;
+    let mut y1 = f64::MIN;
+    for n in nodes {
+        x0 = x0.min(n.bounds.x);
+        y0 = y0.min(n.bounds.y);
+        x1 = x1.max(n.bounds.x + n.bounds.w);
+        y1 = y1.max(n.bounds.y + n.bounds.h);
+    }
+    if nodes.is_empty() {
+        return Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 };
+    }
+    Rect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+}
+
+#[cfg(test)]
+mod probe_conversion_guards {
+    use super::probe_tree_to_a11y;
+
+    #[test]
+    fn an_empty_payload_is_not_a_tree() {
+        // The probe answers `[]` for a moment after the app restarts: its
+        // process is new and no Compose root has registered yet. Returning
+        // an empty tree there let it SHADOW the accessibility tree, and a
+        // fill that had always worked reported ELEMENT_NOT_FOUND against a
+        // field plainly on screen.
+        //
+        // That is the silent downgrade §9 #1 forbids, written by the same
+        // hand that wrote the rule. "Nothing to say yet" has to be absence,
+        // so the caller falls back to the reader that does have something.
+        assert!(probe_tree_to_a11y("[]").is_none());
+    }
+
+    #[test]
+    fn a_payload_whose_roots_carry_nothing_is_not_a_tree_either() {
+        // A root with no identifiers anywhere is the same situation one
+        // frame later: registered, not yet composed. Shadowing on that is
+        // the same defect with a bigger payload.
+        let empty_roots = r#"[{"id":1,"bounds":[0,0,100,100],"focused":false,
+            "enabled":true,"actions":[],"children":[]}]"#;
+        assert!(probe_tree_to_a11y(empty_roots).is_none());
+    }
+
+    #[test]
+    fn a_payload_with_something_in_it_converts() {
+        // The paired half: a rule that refused everything would also make
+        // both tests above pass.
+        let real = r#"[{"id":1,"bounds":[0,0,100,100],"focused":false,
+            "enabled":true,"actions":[],"children":[
+              {"id":2,"testTag":"a","bounds":[0,0,10,10],"focused":false,
+               "enabled":true,"actions":[],"children":[]}]}]"#;
+        assert!(probe_tree_to_a11y(real).is_some());
+    }
+}

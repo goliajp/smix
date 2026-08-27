@@ -31,8 +31,12 @@ import argparse
 import json
 import re
 import subprocess
+import os
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _probe_wire  # noqa: E402
 import urllib.request
 
 APP = "dev.smix.fixture"
@@ -154,12 +158,9 @@ def main():
 
 
 def probe_bounds(device, tag):
-    out = adb(device, "content", "call", "--uri",
-              f"content://{APP}.smixprobe", "--method", "tree")
-    m = re.search(r"tree=(\[.*\])\}\]", out, re.S)
-    if not m:
+    roots = _probe_wire.probe_tree(device, APP)
+    if roots is None:
         return None
-    roots = json.loads(m.group(1))
     stack = list(roots)
     while stack:
         n = stack.pop()

@@ -2,6 +2,8 @@ package dev.smix.fixture
 
 import android.app.Activity
 import android.os.Bundle
+import android.content.Intent
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -58,6 +60,22 @@ class MainActivity : Activity() {
             )
         }
 
+        // A way into the Compose screen that a FLOW can take.
+        //
+        // The behaviour gate reaches it with `am start -n .ComposeActivity`,
+        // which is a shell command; a yaml flow has no such verb, and the
+        // corpus flow for the dialog needs to get there the way a person
+        // would. `launchApp` starts the launcher activity, which is this
+        // one — so without a control here, no flow can reach Compose at all.
+        val toCompose = Button(this).apply {
+            text = "Compose screen"
+            contentDescription = "open-compose"
+            id = View.generateViewId()
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, ComposeActivity::class.java))
+            }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@MainActivity).apply { text = "smix fixture" })
@@ -65,6 +83,7 @@ class MainActivity : Activity() {
             addView(wrapper)
             addView(submit)
             addView(result)
+            addView(toCompose)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,

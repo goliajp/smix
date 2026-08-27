@@ -59,7 +59,12 @@ class SmixProbeProvider : ContentProvider() {
                 // Deliberately not one "status" call returning everything:
                 // a caller asking whether the probe is live must not have to
                 // pay for a tree dump to find out.
-                METHOD_TREE -> putString(KEY_TREE, SemanticsProbe.dumpWireJson())
+                METHOD_TREE -> {
+                    putString(KEY_TREE, SemanticsProbe.dumpWireJson())
+                    val (w, h) = SemanticsProbe.screenSize()
+                    putInt("screenW", w)
+                    putInt("screenH", h)
+                }
                 METHOD_IDLE -> {
                     putLong(KEY_QUIET_MS, SemanticsProbe.quiescentForMs())
                     putBoolean("pendingLayout", SemanticsProbe.hasPendingLayout())

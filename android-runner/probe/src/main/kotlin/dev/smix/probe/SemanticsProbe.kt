@@ -1,6 +1,7 @@
 package dev.smix.probe
 
 import android.os.Handler
+import android.view.WindowManager
 import android.os.Looper
 import androidx.compose.ui.node.RootForTest
 import androidx.compose.ui.platform.ViewRootForTest
@@ -137,6 +138,31 @@ object SemanticsProbe {
         h = h * 31 + (c.getOrElseNullable(SemanticsProperties.Focused) { false }?.hashCode() ?: 0)
         for (child in node.children) h = h * 31 + fingerprint(child)
         return h
+    }
+
+    /**
+     * The display's size, in the same pixels the node bounds are in.
+     *
+     * Reported because everything downstream normalises a node's rectangle
+     * against the tree ROOT's, and the probe's roots cover only what
+     * Compose occupies. Normalising a tap against that put it a fifth of a
+     * screen off, and `/input-text` answered `no_focused_field` — a failure
+     * whose message pointed at the keyboard rather than at the arithmetic.
+     */
+    fun screenSize(): Pair<Int, Int> {
+        val v = attached().firstOrNull()?.view ?: return 0 to 0
+        // `displayMetrics` is the app's USABLE area — it excludes the
+        // status and navigation bars. The accessibility tree's root is the
+        // whole display, and everything downstream divides by the root's
+        // rectangle, so the two denominators differed by the height of the
+        // system bars: 2072 against 2340, and a tap aimed thirteen percent
+        // too far down. The button that opens a dialog was missed
+        // silently, and the wait that followed timed out looking for
+        // something that had never appeared.
+        val wm = v.context.getSystemService(WindowManager::class.java)
+            ?: return 0 to 0
+        val b = wm.currentWindowMetrics.bounds
+        return b.width() to b.height()
     }
 
     /** Every attached root's unmerged tree, as smix's wire spells it. */
