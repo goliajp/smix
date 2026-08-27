@@ -644,6 +644,16 @@ python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 
 # three seconds sitting behind eleven minutes of Gradle and device work,
 # which is what that gate exists to say. A lint error is now found before
 # anything has been compiled for it.
+# Beside clippy, and for the same reason: both read source and neither needs
+# anything compiled first. `preflight.sh` has had this check since it existed
+# and the ship did not, so every path that reached a release without going
+# through preflight reached it unformatted. v10 lost two CI rounds that way —
+# once after a field went into fifty struct literals, once after an `if let`
+# was collapsed by hand. The code was right both times; the round was gone.
+log "rustfmt"
+( cd "$ROOT" && cargo fmt --all --check ) > /tmp/smix-ship-fmt.log 2>&1 \
+  || fail "rustfmt FAILED — run \`cargo fmt --all\` (see /tmp/smix-ship-fmt.log)"
+
 log "clippy"
 ( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
   || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
