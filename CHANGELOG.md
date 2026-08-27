@@ -54,6 +54,8 @@ eleven passing to twenty red while every action it judged had worked.
   hands back `PerceivedTree { source, root }`.
 - **Screen nodes carry whether a touch would land.** `A11yNode` has a
   `hittable` field.
+- **The TypeScript addon's tree arrives in the same envelope.**
+  `snapshotTree()` returns `{ source, root }`. Take `.root` for the tree.
 
 `PerceivedTree` is breaking on purpose: the compiler asking each call site
 which reader answered is the mechanism, not a side effect. A screen the

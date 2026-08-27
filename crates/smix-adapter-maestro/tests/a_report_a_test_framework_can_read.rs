@@ -13,7 +13,7 @@
 //! fixture goes stale in silence, and this release already had a gate blind
 //! for a whole checkpoint that way.
 
-use smix_adapter_maestro::report::{parse_junit, ReadError};
+use smix_adapter_maestro::report::{ReadError, parse_junit};
 
 const PASSING: &str = include_str!("fixtures/reports/passing.xml");
 const FAILING: &str = include_str!("fixtures/reports/failing.xml");
@@ -22,7 +22,10 @@ const FAILING: &str = include_str!("fixtures/reports/failing.xml");
 fn a_passing_run_names_the_flow_and_claims_nothing_else() {
     let r = parse_junit(PASSING).expect("the recorded passing report parses");
     assert_eq!(r.flow, "dialog-confirm");
-    assert!(r.passed, "a report with zero failures was read as a failure");
+    assert!(
+        r.passed,
+        "a report with zero failures was read as a failure"
+    );
     assert!(r.failure.is_none());
 }
 
@@ -53,8 +56,14 @@ fn the_reason_arrives_unescaped() {
     // it replaced.
     let r = parse_junit(FAILING).expect("parses");
     let f = r.failure.unwrap();
-    assert!(!f.contains("&quot;"), "the reason still carries XML escapes: {f}");
-    assert!(f.contains('"'), "the quotes were dropped rather than unescaped: {f}");
+    assert!(
+        !f.contains("&quot;"),
+        "the reason still carries XML escapes: {f}"
+    );
+    assert!(
+        f.contains('"'),
+        "the quotes were dropped rather than unescaped: {f}"
+    );
 }
 
 #[test]
@@ -63,7 +72,10 @@ fn nothing_is_not_a_pass() {
     // value for both is the shape this release keeps finding. An empty
     // report usually means the CLI never ran.
     assert!(matches!(parse_junit(""), Err(ReadError::NotAReport)));
-    assert!(matches!(parse_junit("total nonsense"), Err(ReadError::NotAReport)));
+    assert!(matches!(
+        parse_junit("total nonsense"),
+        Err(ReadError::NotAReport)
+    ));
 }
 
 #[test]
@@ -105,7 +117,10 @@ fn a_report_without_a_cdata_block_is_read_from_the_attribute() {
     let r = parse_junit(attribute_only).expect("parses");
     assert!(!r.passed, "a failure in the attribute was read as a pass");
     let f = r.failure.expect("the attribute carries the reason");
-    assert!(f.contains("step 2"), "the attribute path lost the step: {f}");
+    assert!(
+        f.contains("step 2"),
+        "the attribute path lost the step: {f}"
+    );
     assert!(
         f.contains(r#"id="x""#),
         "the attribute path did not unescape: {f}"

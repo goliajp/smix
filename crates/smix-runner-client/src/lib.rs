@@ -1440,12 +1440,18 @@ impl HttpRunnerClient {
         // with nothing on it print identically otherwise.
         if let Some(app) = self.target_bundle_id.clone() {
             if let Some(tree) = self.semantics_tree(&app).await {
-                return Ok(PerceivedTree { source: TreeSource::Semantics, root: tree });
+                return Ok(PerceivedTree {
+                    source: TreeSource::Semantics,
+                    root: tree,
+                });
             }
         }
         let mut root: A11yNode = self.json_get("/tree", include).await?;
         derive_roles_recursive(&mut root);
-        Ok(PerceivedTree { source: TreeSource::Accessibility, root })
+        Ok(PerceivedTree {
+            source: TreeSource::Accessibility,
+            root,
+        })
     }
 
     /// The app's own semantics tree, or `None` when there is no probe.
@@ -1456,8 +1462,10 @@ impl HttpRunnerClient {
     /// have always had". What must NOT be swallowed is which tree was used,
     /// and that is the return value of the function above.
     async fn semantics_tree(&self, app: &str) -> Option<A11yNode> {
-        let raw: serde_json::Value =
-            self.json_get(&format!("/probe?app={app}"), None).await.ok()?;
+        let raw: serde_json::Value = self
+            .json_get(&format!("/probe?app={app}"), None)
+            .await
+            .ok()?;
         if raw.get("present")?.as_bool() != Some(true) {
             return None;
         }
@@ -1475,10 +1483,7 @@ impl HttpRunnerClient {
     /// A transport failure is not "no probe": the runner may be gone, and
     /// telling a caller "this app has no probe" when the truth is "nothing
     /// answered" sends them to edit a build file over a dead port.
-    pub async fn probe_status(
-        &self,
-        app: &str,
-    ) -> Result<ProbeStatus, RunnerTransportError> {
+    pub async fn probe_status(&self, app: &str) -> Result<ProbeStatus, RunnerTransportError> {
         // `json_get` builds its own query from `include`, and this route
         // takes a different one. Passing the whole thing as the endpoint is
         // what the url builder does with `None` anyway.
@@ -2541,7 +2546,6 @@ mod unavailable_category_tests {
     }
 }
 
-
 /// Which reader answered a perception request.
 ///
 /// smix has one perception primitive and two things that can satisfy it: the
@@ -2614,7 +2618,11 @@ impl PerceivedTree {
     /// the reader that answered has nothing to warn about.
     pub fn caveat(&self) -> Option<String> {
         self.source.limitation().map(|why| {
-            format!("this tree came from the {} reader, which {}", self.source.as_str(), why)
+            format!(
+                "this tree came from the {} reader, which {}",
+                self.source.as_str(),
+                why
+            )
         })
     }
 }

@@ -23,7 +23,10 @@ fn an_idle_signal_ends_the_wait_now() {
 
 #[test]
 fn a_busy_signal_keeps_waiting() {
-    assert_eq!(WaitStrategy::decide(Some(false)), WaitPlan::AskAgainWhenTold);
+    assert_eq!(
+        WaitStrategy::decide(Some(false)),
+        WaitPlan::AskAgainWhenTold
+    );
 }
 
 #[test]

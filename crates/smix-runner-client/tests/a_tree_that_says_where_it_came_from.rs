@@ -51,16 +51,27 @@ use smix_runner_client::PerceivedTree;
 use smix_screen::A11yNode;
 
 fn empty_root() -> A11yNode {
-    serde_json::from_str(r#"{"rawType":"Window","bounds":{"x":0.0,"y":0.0,"w":1.0,"h":1.0},
+    serde_json::from_str(
+        r#"{"rawType":"Window","bounds":{"x":0.0,"y":0.0,"w":1.0,"h":1.0},
            "enabled":true,"selected":false,"hasFocus":false,"visible":true,
-           "children":[]}"#).expect("a root parses")
+           "children":[]}"#,
+    )
+    .expect("a root parses")
 }
 
 #[test]
 fn an_accessibility_answer_arrives_with_its_caveat() {
-    let t = PerceivedTree { source: TreeSource::Accessibility, root: empty_root() };
-    let c = t.caveat().expect("an accessibility answer must carry its caveat");
-    assert!(c.contains("a11y"), "the caveat does not say which reader: {c}");
+    let t = PerceivedTree {
+        source: TreeSource::Accessibility,
+        root: empty_root(),
+    };
+    let c = t
+        .caveat()
+        .expect("an accessibility answer must carry its caveat");
+    assert!(
+        c.contains("a11y"),
+        "the caveat does not say which reader: {c}"
+    );
     assert!(
         c.contains("smix-probe"),
         "the caveat says what is wrong and not what to do about it: {c}"
@@ -69,7 +80,10 @@ fn an_accessibility_answer_arrives_with_its_caveat() {
 
 #[test]
 fn a_semantics_answer_has_nothing_to_apologise_for() {
-    let t = PerceivedTree { source: TreeSource::Semantics, root: empty_root() };
+    let t = PerceivedTree {
+        source: TreeSource::Semantics,
+        root: empty_root(),
+    };
     assert!(t.caveat().is_none());
 }
 

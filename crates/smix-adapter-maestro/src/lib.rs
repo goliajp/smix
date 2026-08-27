@@ -1232,7 +1232,11 @@ pub mod report {
         let failure = between(xml, "<![CDATA[", "]]>")
             .or_else(|| attr(xml, "<failure", "message"))
             .map(|m| unescape(&m));
-        Ok(FlowReport { flow, passed: failure.is_none(), failure })
+        Ok(FlowReport {
+            flow,
+            passed: failure.is_none(),
+            failure,
+        })
     }
 
     /// One attribute of the first element whose text starts with `tag`.

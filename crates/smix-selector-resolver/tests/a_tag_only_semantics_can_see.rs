@@ -18,12 +18,15 @@
 //! and this release has already had a gate blind for a whole checkpoint
 //! that way.
 
-use smix_selector::Selector;
 use smix_screen::probe_tree_to_a11y;
+use smix_selector::Selector;
 use smix_selector_resolver::resolve_selector;
 
 fn id_selector(id: &str) -> Selector {
-    Selector::Id { id: id.to_string(), modifiers: Default::default() }
+    Selector::Id {
+        id: id.to_string(),
+        modifiers: Default::default(),
+    }
 }
 
 const SEMANTICS: &str = include_str!("fixtures/dialog-semantics.json");
@@ -140,8 +143,10 @@ fn a_payload_that_is_not_the_probes_shape_is_refused_rather_than_emptied() {
     // field — and an empty tree resolves nothing, which reads exactly like
     // a screen that has nothing on it.
     assert!(probe_tree_to_a11y("not json at all").is_none());
-    assert!(probe_tree_to_a11y(r#"{"source":"a11y","root":{}}"#).is_none(),
-        "the a11y envelope was accepted as a probe payload");
+    assert!(
+        probe_tree_to_a11y(r#"{"source":"a11y","root":{}}"#).is_none(),
+        "the a11y envelope was accepted as a probe payload"
+    );
 }
 
 // --- what the probe may reach ------------------------------------------
