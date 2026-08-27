@@ -139,6 +139,10 @@ struct ContentView: View {
   @State private var typed = ""
   @State private var submitted = ""
   @State private var longPressed = false
+  // A modal, to answer the question Compose answered badly: does SwiftUI
+  // keep an identifier on a control inside an alert, or does the modal
+  // cost it the way `testTagsAsResourceId` does on Android?
+  @State private var alertShown = false
 
   var body: some View {
     // NavigationStack, and the back button it provides, rather than a
@@ -162,11 +166,20 @@ struct ContentView: View {
           Button("Submit") { submitted = typed }
             .accessibilityIdentifier("fixture-submit")
 
+          Button("Open alert") { alertShown = true }
+            .accessibilityIdentifier("fixture-open-alert")
+
           // Empty until Submit is pressed, so an assertion on it
           // distinguishes "the tap landed" from "the field merely holds
           // text".
           Text(submitted.isEmpty ? "nothing submitted" : submitted)
             .accessibilityIdentifier("fixture-result")
+            .alert("An alert", isPresented: $alertShown) {
+              Button("OK") { alertShown = false }
+                .accessibilityIdentifier("fixture-alert-confirm")
+            } message: {
+              Text("hosted by the system")
+            }
 
           NavigationLink("Open detail") { DetailView() }
             .accessibilityIdentifier("fixture-detail-link")
