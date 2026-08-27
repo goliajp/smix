@@ -817,7 +817,19 @@ fn apply_index<'tree>(list: Vec<&'tree A11yNode>, selector: &Selector) -> Vec<&'
 /// distrust the field.
 pub fn probe_tree_to_a11y(json: &str) -> Option<A11yNode> {
     let roots: Vec<ProbeNodeWire> = serde_json::from_str(json).ok()?;
-    let converted: Vec<A11yNode> = roots.iter().map(ProbeNodeWire::to_a11y).collect();
+    let mut converted: Vec<A11yNode> = roots.iter().map(ProbeNodeWire::to_a11y).collect();
+    if let Some(modal) = modal_index(&converted) {
+        // A modal is showing, so what is behind it is not addressable —
+        // even though the probe can see it perfectly well.
+        //
+        // Android already hides a modal's background from accessibility and
+        // that is not a defect to route around: a user cannot touch those
+        // controls either. Reaching them would make smix able to do what
+        // the person it stands in for cannot, which is the line C2 drew
+        // when it refused a semantics OnClick through a scrim. The probe
+        // widens what smix can SEE, never what it can REACH.
+        converted = vec![converted.swap_remove(modal)];
+    }
     let mut parent = blank_node();
     parent.raw_type = "SemanticsRoots".to_string();
     parent.bounds = union_bounds(&converted);
@@ -878,6 +890,54 @@ impl ProbeNodeWire {
         n.children = self.children.iter().map(ProbeNodeWire::to_a11y).collect();
         n
     }
+}
+
+/// Which root, if any, is a modal covering the others.
+///
+/// By geometry rather than by count: two roots of the same size are two
+/// halves of a screen, not a dialog over one. A modal is strictly smaller
+/// than something it sits on top of, and Compose composes it into its own
+/// root — so the test is "is there exactly one root that every other root
+/// strictly contains".
+///
+/// Returns `None` for the ordinary case of a single root, and for anything
+/// ambiguous. Being wrong towards "no modal" leaves smix where it was
+/// before this release; being wrong the other way makes half a screen
+/// silently unaddressable.
+fn modal_index(roots: &[A11yNode]) -> Option<usize> {
+    if roots.len() < 2 {
+        return None;
+    }
+    let candidates: Vec<usize> = (0..roots.len())
+        .filter(|&i| {
+            roots.iter().enumerate().all(|(j, other)| {
+                j == i || strictly_contains(&other.bounds, &roots[i].bounds)
+            })
+        })
+        .collect();
+    // Exactly one, or none. There cannot be two: strict containment runs
+    // one way, so X inside Y and Y inside X is impossible.
+    //
+    // A first draft guarded against two candidates anyway, and a mutation
+    // sweep showed that guard could never be the reason for a verdict —
+    // an unreachable branch is a predicate that will never go red, which
+    // is the same emptiness as one that is always true. The same sweep
+    // showed relaxing the strictness below changes no outcome either, for
+    // the same reason: equal areas that contain each other are one
+    // rectangle twice.
+    match candidates.as_slice() {
+        [only] => Some(*only),
+        _ => None,
+    }
+}
+
+fn strictly_contains(outer: &smix_screen::Rect, inner: &smix_screen::Rect) -> bool {
+    let bigger = outer.w * outer.h > inner.w * inner.h;
+    bigger
+        && outer.x <= inner.x
+        && outer.y <= inner.y
+        && outer.x + outer.w >= inner.x + inner.w
+        && outer.y + outer.h >= inner.y + inner.h
 }
 
 fn blank_node() -> A11yNode {
