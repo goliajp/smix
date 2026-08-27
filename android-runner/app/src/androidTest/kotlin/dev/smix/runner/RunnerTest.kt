@@ -22,6 +22,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.CountDownLatch as JCountDownLatch
 import java.util.concurrent.TimeUnit
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import android.net.Uri
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Configurator
@@ -193,6 +194,7 @@ class SmixHttpServer(
                 uri == "/record/poll" && session.method == Method.GET -> serveRecordPoll()
                 uri == "/record/stop" && session.method == Method.POST -> serveRecordStop()
                 uri == "/tree" && session.method == Method.GET -> serveTree()
+                uri == "/probe" && session.method == Method.GET -> serveProbe(session)
                 uri == "/tap-at-norm-coord" && session.method == Method.POST ->
                     serveTapAtNormCoord(session)
                 uri == "/swipe-at-norm-coord" && session.method == Method.POST ->
@@ -269,6 +271,62 @@ class SmixHttpServer(
     private fun recordEventsResponse(actions: List<String>): Response {
         // Each action is already an IRAction JSON object string.
         val body = "{\"events\":[" + actions.joinToString(",") + "]}"
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
+
+    /**
+     * What the in-process probe says, or that there is not one.
+     *
+     * The probe lives in the app under test, not here — it can read the
+     * semantics tree because it is in that process, and this runner cannot.
+     * So this asks across a content provider and reports the answer
+     * verbatim, including its absence.
+     *
+     * Absence is an answer, not an error: most apps will not carry the
+     * probe and everything works without it. What must never happen is the
+     * two being confused. "The screen is busy" and "nobody told me
+     * anything" want different waits, and one value for both is how 250 ms
+     * of guessing became indistinguishable from being told.
+     *
+     * The app is named by the caller. This runner has no notion of a
+     * current app — sessions are per-id and the target arrives per request
+     * — so inventing one here would answer about whichever app it guessed.
+     */
+    private fun serveProbe(session: NanoHTTPD.IHTTPSession): Response {
+        val app = session.parameters["app"]?.firstOrNull().orEmpty()
+        if (app.isEmpty()) {
+            return newFixedLengthResponse(
+                Response.Status.OK, "application/json",
+                """{"present":false,"why":"no app was named; ask /probe?app=<applicationId>"}""",
+            )
+        }
+        val uri = Uri.parse("content://$app.smixprobe")
+        val body = try {
+            val ctx = InstrumentationRegistry.getInstrumentation().context
+            val hello = ctx.contentResolver.call(uri, "hello", null, null)
+            if (hello == null) {
+                """{"present":false,"why":"$app has no smix probe in this build"}"""
+            } else {
+                val idle = ctx.contentResolver.call(uri, "idle", null, null)?.getBoolean("idle")
+                val roots = hello.getInt("roots", 0)
+                val version = hello.getString("version") ?: "?"
+                """{"present":true,"version":"$version","roots":$roots,"idle":${idle ?: "null"}}"""
+            }
+        } catch (e: IllegalArgumentException) {
+            // Resolving an authority nothing declares throws rather than
+            // returning null, and this is the ORDINARY case: almost no app
+            // carries the probe. Reading it back as an exception would make
+            // the normal state look like a fault, which is how a caller
+            // learns to ignore the field.
+            """{"present":false,"why":"$app declares no smix probe — it is not in this build"}"""
+        } catch (e: SecurityException) {
+            // There and refusing. A different problem from not being there,
+            // and the caller can act on the difference: the probe answers
+            // adb, the host app, and smix's own instrumentation.
+            """{"present":false,"why":"$app has a smix probe and it refused this caller"}"""
+        } catch (e: Exception) {
+            """{"present":false,"why":"asking $app.smixprobe raised ${e.javaClass.simpleName}"}"""
+        }
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
