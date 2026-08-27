@@ -71,6 +71,10 @@ VERSION_COORDINATES = [
         r'const val VERSION[^=]*= "([^"]+)"',
     ),
     ("android-runner/sdk/build.gradle.kts", r'val mavenCentralVersion = "([^"]+)"'),
+    # The probe publishes under the same coordinate and reads it from here.
+    # Two files stating one version is a copy; both being swept is what
+    # stops the copy going stale.
+    ("android-runner/gradle.properties", r'smixVersion=([0-9][0-9a-zA-Z.\-]*)'),
     ("web/src/data/site.ts", r'@goliapkg/smix@([0-9][0-9a-zA-Z.\-]*)'),
     ("web/src/data/site.ts", r'jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)'),
     ("llms.txt", r'jp\.golia\.smix:smix-sdk:([0-9][0-9a-zA-Z.\-]*)'),

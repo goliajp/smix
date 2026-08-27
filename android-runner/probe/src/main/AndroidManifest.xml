@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Exported so the runner, which is a different process, can ask.
+             This artifact is debugImplementation and never reaches a release
+             build; an app that ships it has made a mistake this manifest
+             cannot catch, which is what the `debug` source set is for. -->
+        <provider
+            android:name="dev.smix.probe.SmixProbeProvider"
+            android:authorities="${applicationId}.smixprobe"
+            android:exported="true"
+            android:enabled="true" />
+    </application>
+</manifest>
