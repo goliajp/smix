@@ -169,6 +169,7 @@ public enum TreeRoute {
     // wrongly called off-screen (C6c). This mirrors the Rust side's
     // `is_visible_enough(node, tree)`, which already ∩'s `tree.bounds`.
     let rootFrame = root.frame
+    let modalPresent = containsModal(root)
     let dict = nodeToDict(
       root,
       rootFrame: rootFrame,
@@ -191,13 +192,40 @@ public enum TreeRoute {
     return 1 + root.children.reduce(0) { $0 + countNodes($1) }
   }
 
+  /// Whether a modal is anywhere in this tree.
+  ///
+  /// Needed before the walk starts, because a node is unreachable by
+  /// virtue of something ELSE being present, and the walk meets nodes
+  /// before it meets the alert that covers them.
+  ///
+  /// Structural rather than per-element: `XCUIElement.isHittable` is a
+  /// live query, and under a modal those cost about a second each — the
+  /// reason this file reads a snapshot in the first place. What the OS
+  /// does is exactly this rule, so asking it once about the shape beats
+  /// asking it once per node about the same fact.
+  static func containsModal(_ d: A11ySnapshotData) -> Bool {
+    let t = elementTypeName(d.elementTypeRawValue)
+    if t == "alert" || t == "dialog" || t == "sheet" { return true }
+    return d.children.contains(where: containsModal)
+  }
+
+  /// Test seam for the node serialiser, which is otherwise private.
+  static func nodeToDictForTesting(
+    _ d: A11ySnapshotData, rootFrame: CGRect, truncated: inout Bool
+  ) -> [String: Any] {
+    nodeToDict(
+      d, rootFrame: rootFrame, depth: 0, truncated: &truncated,
+      logSink: nil, inActionContainer: false, modalPresent: containsModal(d))
+  }
+
   private static func nodeToDict(
     _ d: A11ySnapshotData,
     rootFrame: CGRect,
     depth: Int,
     truncated: inout Bool,
     logSink: ((String) -> Void)?,
-    inActionContainer: Bool = false
+    inActionContainer: Bool = false,
+    modalPresent: Bool = false
   ) -> [String: Any] {
     var out: [String: Any] = [:]
     let rawRawType = elementTypeName(d.elementTypeRawValue)
@@ -248,6 +276,20 @@ public enum TreeRoute {
     // focusHint identifier. See the POCO field's doc comment.
     out["hasFocus"] = d.hasFocus
     out["visible"] = isVisible(d.frame, rootFrame)
+    // Whether a touch aimed here would reach it.
+    //
+    // Only stated when a modal is up: with nothing covering the screen the
+    // question has no interesting answer, and saying `true` everywhere
+    // would turn a field that means "asked and no" into one that means
+    // "asked" — the reader downstream distinguishes absence from a no, and
+    // filling the absence with noise costs it that.
+    //
+    // A consumer measured the defect this closes: with a SwiftUI alert
+    // open, the button behind it is still in the tree, a tap at it is
+    // swallowed by the presentation, and smix exited 0.
+    if modalPresent {
+      out["hittable"] = inActionContainer
+    }
 
     // Mark child recursion "in action container" once we hit an alert /
     // dialog / sheet at any depth. Use the ORIGINAL
@@ -269,7 +311,8 @@ public enum TreeRoute {
           depth: depth + 1,
           truncated: &truncated,
           logSink: logSink,
-          inActionContainer: childInActionContainer
+          inActionContainer: childInActionContainer,
+          modalPresent: modalPresent
         )
       }
     }
