@@ -818,7 +818,42 @@ SMIX_BIN="$ROOT/target/release/smix" \
 # They need the fixture with `debugImplementation("jp.golia.smix:smix-probe")`
 # installed on the emulator; each says which line is missing when it is not.
 V10_DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"
-V10_PORT="${SMIX_V10_ANDROID_PORT:-22095}"
+
+# These five need a runner and none of them starts one. They passed for
+# weeks because a runner happened to be up on 22095 from a hand-run, and
+# the first ship without one said the two readers disagreed -- when what
+# had happened is that one of them was never asked. A gate whose
+# precondition nobody owns is a gate that reports on the wrong thing.
+#
+# The port comes from the OS for the reason written at gate-port-scan:
+# a literal is a socket somebody else can be holding.
+if [[ -z "${SMIX_V10_ANDROID_PORT:-}" ]]; then
+  V10_PORT="$(python3 -c 'import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()')"
+  log "v10: runner up on $V10_DEVICE:$V10_PORT"
+  SMIX_RUNNER_PORT="$V10_PORT" "$ROOT/target/release/smix" runner up "$V10_DEVICE" \
+    --platform android --runner-port "$V10_PORT" > /tmp/smix-ship-v10-runner.log 2>&1 \
+    || fail "v10: runner up failed on $V10_DEVICE (see /tmp/smix-ship-v10-runner.log)"
+  V10_RUNNER_OURS=1
+else
+  V10_PORT="$SMIX_V10_ANDROID_PORT"
+  V10_RUNNER_OURS=0
+fi
+
+v10_runner_down() {
+  [[ "${V10_RUNNER_OURS:-0}" == "1" ]] || return 0
+  SMIX_RUNNER_PORT="$V10_PORT" "$ROOT/target/release/smix" runner down \
+    --platform android --device "$V10_DEVICE" >> /tmp/smix-ship-v10-runner.log 2>&1 || true
+  V10_RUNNER_OURS=0
+}
+# ship_profile_close already owns EXIT (line ~73). Replacing it would have
+# silently dropped the profile written at the end of every run, so this
+# chains rather than overwrites.
+trap 'v10_runner_down; ship_profile_close' EXIT
+
 log "v10: two perception paths agree"
 python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
   --port "$V10_PORT" --min-both 16 \
@@ -838,6 +873,9 @@ log "v10: a semantics action is not a touch"
 python3 "$ROOT/scripts/dev/a-semantics-action-is-not-a-touch.py" --device "$V10_DEVICE" \
   --port "$V10_PORT" \
   || fail "a-semantics-action-is-not-a-touch FAILED — the probe's action surface grew a touch substitute"
+
+v10_runner_down
+trap ship_profile_close EXIT
 
 
 # --- corpus gate (real sim) -------------------------------------------
