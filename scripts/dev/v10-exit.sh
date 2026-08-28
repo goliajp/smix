@@ -63,6 +63,10 @@ step "three readers agree" python3 scripts/dev/three-readers-agree.py
 if [ -n "$IOS" ]; then
   step "a tap that cannot land says so" \
     bash scripts/dev/a-tap-that-cannot-land-says-so.sh "$IOS" "$IPORT"
+  # 8 — the same shape one layer up: a request for an app that is not on
+  #     the device. It refuses, and the runner is still there afterwards.
+  step "a foreground that cannot happen says so" \
+    bash scripts/dev/a-foreground-that-cannot-happen-says-so.sh "$IOS"
 else
   printf 'v10-exit: NOT RUN  a tap that cannot land says so\n'
   printf '          set SMIX_EXIT_IOS=<udid> to include it. Until then this\n'

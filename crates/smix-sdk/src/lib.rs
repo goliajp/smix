@@ -2759,7 +2759,35 @@ impl App {
         ))
     }
 
+    /// Bring an app to the front.
+    ///
+    /// On iOS this asks the simulator whether the bundle is installed
+    /// before asking the runner to activate it. XCUITest's `.activate()`
+    /// does not fail on a bundle that is not there -- it waits on the
+    /// main actor for an app that will never arrive, and everything the
+    /// runner is asked afterwards waits with it until XCTest's watchdog
+    /// kills the whole test. One flow naming an Android package did that
+    /// to the release corpus on 2026-08-29 and took twenty-three later
+    /// flows down with it, each reporting `runner unreachable` -- true,
+    /// and about the wrong thing.
+    ///
+    /// The runner cannot defend itself once `.activate()` is called, so
+    /// the question is asked here, where the device is known.
     pub async fn foreground(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
+        if let (Some(simctl), Some(udid)) = (self.device.as_ios_simctl(), self.udid.as_deref()) {
+            let installed = simctl
+                .app_is_installed(udid, bundle_id)
+                .await
+                .map_err(simctl_to_failure)?;
+            if !installed {
+                return Err(simctl_to_failure(
+                    smix_simctl::DeviceControlError::AppNotInstalled {
+                        bundle_id: bundle_id.to_string(),
+                        udid: udid.to_string(),
+                    },
+                ));
+            }
+        }
         self.driving()?.foreground(bundle_id).await
     }
 
