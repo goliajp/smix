@@ -219,8 +219,28 @@ print(f"  A2: {len(driving)}/{len(driving)} driving requests carried App-Bundle-
 PY
 
 # A3 — the qualified spelling is what found the node.
+#
+# Two questions live here and a fixed wait ran them together: whether the
+# homepage arrived, and which spelling found the node on it. A slow launch
+# made the second one fail and the verdict blamed the spelling. So wait for
+# the node to exist first -- bounded, and through the runner port rather
+# than the recorder, because this is a precondition and not what A3
+# measures -- and say so plainly when it never shows up.
 adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
-sleep 3
+PROBE_SEEN=""
+for _ in $(seq 1 30); do
+  if curl -sS --max-time 5 "http://localhost:$RUNNER_PORT/tree" \
+       -H "App-Bundle-Id: $APP" 2>/dev/null | grep -q "\"$PROBE_ID\""; then
+    PROBE_SEEN=yes
+    break
+  fi
+  sleep 1
+done
+[[ -n "$PROBE_SEEN" ]] || die "A3: $PROBE_ID never appeared in the tree of $APP
+  within 30s of starting Settings. This is not about spellings -- the screen
+  the probe lives on never arrived, so there was nothing to match.
+  Current activity:
+    $(adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity)"
 MATCH="$(curl -sS -D- -o /dev/null -X POST "http://localhost:$PROXY_PORT/tap-by-id" \
   -H "App-Bundle-Id: $APP" -d "{\"id\":\"$PROBE_ID\"}" \
   | awk -F': ' 'tolower($1) == "x-view-id-match" { print $2 }' | tr -d '\r')"
