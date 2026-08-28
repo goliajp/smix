@@ -50,6 +50,11 @@ STARTS_A_RUNNER = re.compile(
         \s+runner\ up\b""",
     re.VERBOSE,
 )
+# A port written as a number: `PORT=28080`, or a default for an override
+# (`${SMIX_GATE_RUNNER_PORT:-28080}`). Four or five digits, so a `-p 80`
+# or an index is not mistaken for one.
+PINS_A_PORT = re.compile(r"[A-Z_]*PORT[A-Z_]*=\s*\"?(?:\$\{[A-Za-z_]+:-)?\s*\d{4,5}\b")
+
 # Prose about the command, in any of the forms this repo writes it.
 MENTIONS_ONLY = re.compile(r"^\s*(?:#|log\b|echo\b|printf\b|\*[\"'])")
 
@@ -75,6 +80,24 @@ for dirpath, _dirs, files in os.walk(SCRIPTS):
         if not starts:
             continue
         checked += 1
+        # A literal is not a port of one's own, however it is spelled. The
+        # first version of this check looked for the string
+        # `SMIX_RUNNER_PORT=` and found it in a teardown line that merely
+        # passed a hardcoded 28080 along -- so a gate pinned to a fixed
+        # port counted as covered, and died when an unrelated emulator's
+        # adb forward held that port during a ship.
+        pinned = [
+            ln.strip() for ln in body.splitlines()
+            if not MENTIONS_ONLY.match(ln) and PINS_A_PORT.search(ln)
+        ]
+        if pinned:
+            problems.append(
+                f"{rel} pins a host port to a literal. An adb forward or "
+                f"another checkout can hold it, and then this gate is red "
+                f"about something else entirely. Ask the OS: source "
+                f"scripts/lib/gate-port.sh.\n      {pinned[0]}"
+            )
+            continue
         if "gate-port.sh" in body or "SMIX_RUNNER_PORT=" in body:
             covered += 1
             continue
