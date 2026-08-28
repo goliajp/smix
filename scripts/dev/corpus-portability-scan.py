@@ -87,8 +87,26 @@ flows = sorted(f for f in os.listdir(CORPUS) if f.endswith(".yaml")) if os.path.
 portable: list[str] = []
 runtime_locked: list[str] = []
 
+# This gate drives an iOS simulator, so every flow here has to name an app
+# that exists on one. The split below used to read "the portable app, or
+# else runtime-locked" -- and an Android flow, filed under `else`, counted
+# as a system app. It asked the iOS runner to foreground a bundle that was
+# not installed; the runner crashed, and the twenty-three flows after it
+# reported `runner unreachable`. Twenty-four red for one misplaced file.
+def reachable_on_a_sim(app: str) -> bool:
+    return app == PORTABLE_APP or app.startswith("com.apple.")
+
+
 for name in flows:
     app = app_of(os.path.join(CORPUS, name))
+    if app and not reachable_on_a_sim(app):
+        problems.append(
+            f"{name} drives {app}, which is not on an iOS simulator — this "
+            f"gate runs there, so the flow cannot pass and will take the "
+            f"runner down with it. Android flows belong in "
+            f"scripts/release/android-behaviour/"
+        )
+        continue
     if app == PORTABLE_APP:
         portable.append(name[:-5])
     else:

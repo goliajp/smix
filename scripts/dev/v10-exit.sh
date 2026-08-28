@@ -49,7 +49,7 @@ step "a semantics action is not a touch" \
 # 5 — the headline: a control inside a Compose dialog, addressed by id.
 step "dialog-confirm flow" \
   ./target/release/smix run --device "$ANDROID" --platform android \
-    --runner-port "$APORT" scripts/release/stress-corpus/dialog-confirm.yaml
+    --runner-port "$APORT" scripts/release/android-behaviour/dialog-confirm.yaml
 
 # 6 — three readers of one report say the same thing.
 step "three readers agree" python3 scripts/dev/three-readers-agree.py
