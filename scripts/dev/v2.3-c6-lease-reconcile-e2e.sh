@@ -27,7 +27,12 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 ALIAS="${SMIX_E2E_DEVICE:-sim-smix-02}"
 BUNDLE="com.apple.Preferences"
-PORT="${SMIX_RUNNER_PORT:-22087}"
+# The literal fallback here was 22087 -- the very default this gate
+# exists to avoid. Ask the OS instead; SMIX_RUNNER_PORT reaches
+# startup, every flow and teardown alike through clap's env.
+# shellcheck source=/dev/null
+. "$ROOT/scripts/lib/gate-port.sh"
+PORT="$SMIX_RUNNER_PORT"
 REPORTS="$HOME/Library/Logs/DiagnosticReports"
 
 log()  { printf '[c6-lease] %s\n' "$*"; }
@@ -89,8 +94,8 @@ if [ "$WAS_BOOTED" = "yes" ]; then
 fi
 # The default runner port is shared with every other smix session on this
 # machine, so a busy port is not this test's failure to report.
-if curl -s -m 2 "http://127.0.0.1:${SMIX_RUNNER_PORT:-22087}/health" >/dev/null 2>&1; then
-  log "port ${SMIX_RUNNER_PORT:-22087} already answers /health — another session is using it"
+if curl -s -m 2 "http://127.0.0.1:${SMIX_RUNNER_PORT}/health" >/dev/null 2>&1; then
+  log "port ${SMIX_RUNNER_PORT} already answers /health — another session is using it"
   log "re-run with SMIX_RUNNER_PORT=<free port>"
   echo "C6-LEASE-RECONCILE-SKIP"
   exit 0
@@ -160,7 +165,7 @@ esac
 RECON="$("$SMIX" lease reconcile "$UDID" 2>/dev/null)"
 echo "$RECON" | grep -qE "not touching it|runner serving" \
   || fail "reconcile did not leave the live session alone: $RECON"
-curl -s -m 3 "http://127.0.0.1:${SMIX_RUNNER_PORT:-22087}/health" >/dev/null 2>&1 \
+curl -s -m 3 "http://127.0.0.1:${SMIX_RUNNER_PORT}/health" >/dev/null 2>&1 \
   || fail "reconcile closed a serving runner"
 ps -p "$RUNNER_PID" >/dev/null 2>&1 \
   || fail "reconcile ended a live session — the one thing it must never do"

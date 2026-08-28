@@ -57,13 +57,22 @@ FLOW_APP="$(grep -m1 '^appId:' "$SCRIPT_DIR/android-behaviour/force-key-events.y
 # system window layer, which the fixture cannot.
 FIXTURE_APP_ID="dev.smix.fixture"
 FLOW="$SCRIPT_DIR/android-behaviour/force-key-events.yaml"
-PROXY_PORT=28090
-# Overridable because the runner port is a *host* port: an adb forward
-# claims it for one device, and a second emulator on the same machine
-# then finds it answering and refuses — with a message about the app in
-# front, which is not what went wrong. Measured here with an
-# emulator-5556 nobody in this session started holding 28080.
-RUNNER_PORT="${SMIX_GATE_RUNNER_PORT:-28080}"
+# Both are *host* ports. An adb forward claims one for one device, and a
+# second emulator on the same machine then finds it answering and refuses
+# -- with a message about the app in front, which is not what went wrong.
+# That was measured once with an emulator-5556 nobody in this session
+# started, and the answer then was to make the port overridable. Nothing
+# set the override, so the next bystander holding 28080 killed a ship the
+# same way. Ask the OS instead: a port nobody else can be holding is the
+# only kind that is one's own.
+# shellcheck source=/dev/null
+. "$REPO_ROOT/scripts/lib/gate-port.sh"
+RUNNER_PORT="${SMIX_GATE_RUNNER_PORT:-$SMIX_RUNNER_PORT}"
+PROXY_PORT="${SMIX_GATE_PROXY_PORT:-$(python3 -c 'import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()')}"
 
 # From `uiautomator dump` on sim-smix-android-01 (android-33): the only
 # clickable node whose short id mentions search. Re-derive it if the

@@ -9,7 +9,12 @@
 set -euo pipefail
 
 BUNDLE=com.apple.Preferences
-PORT="${SMIX_RUNNER_PORT:-22087}"
+# The literal fallback here was 22087 -- the very default this gate
+# exists to avoid. Ask the OS instead; SMIX_RUNNER_PORT reaches
+# startup, every flow and teardown alike through clap's env.
+# shellcheck source=/dev/null
+. "$ROOT/scripts/lib/gate-port.sh"
+PORT="$SMIX_RUNNER_PORT"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 log()  { printf '[ts-e2e] %s\n' "$*"; }
