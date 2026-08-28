@@ -901,6 +901,14 @@ bash "$ROOT/scripts/dev/a-tap-that-cannot-land-says-so.sh" "$SMIX_CORPUS_SIM" \
   "${SMIX_V10_IOS_PORT:-}" \
   || fail "a-tap-that-cannot-land-says-so FAILED — a tap nothing could receive was reported as one that landed"
 
+# The same shape one layer up. A request naming an app that is not on the
+# device used to hang XCUITest's `.activate()` on the main actor until the
+# watchdog killed the runner; the corpus then reported `runner unreachable`
+# about twenty-three flows that never got to run.
+log "v10: a foreground that cannot happen says so"
+bash "$ROOT/scripts/dev/a-foreground-that-cannot-happen-says-so.sh" "$SMIX_CORPUS_SIM" \
+  || fail "a-foreground-that-cannot-happen-says-so FAILED — either the refusal did not name the missing app, or the runner did not survive it"
+
 log "corpus gate on $SMIX_CORPUS_SIM"
 SMIX_CORPUS_SIM="$SMIX_CORPUS_SIM" \
 SMIX_BIN="$ROOT/target/release/smix" \

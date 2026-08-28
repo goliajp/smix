@@ -263,6 +263,17 @@ on the crates, [Migrating to smix 8.0](docs/migrating-to-8.md) is short.
 
 ### Fixed
 
+- **On iOS, asking to foreground an app that is not on the device is now
+  refused instead of hanging the runner.** XCUITest's `.activate()` does
+  not fail on a missing bundle — it waits on the main actor for an app
+  that will never arrive, so every later request waits with it while
+  `/health` goes on reporting `ok:true`, until XCTest's watchdog kills the
+  test. Measured: one flow naming an Android package took twenty-three
+  later flows down with it, each reporting `runner unreachable` — true,
+  and about the wrong thing. smix now asks the simulator whether the
+  bundle is there before asking the runner to activate it, and answers
+  `APP_NOT_RUNNING` naming the app and what to type next.
+
 - A runner answering 404 with `{"error":"not_found"}` reached the reader
   as `DRIVER_ERROR` with the wire body attached. It is an element that
   was not found, and says so — narrowly, so a genuinely broken route

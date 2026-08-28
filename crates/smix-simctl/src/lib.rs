@@ -1609,6 +1609,46 @@ impl SimctlClient {
         Ok(())
     }
 
+    /// Whether the bundle is installed on the sim, without touching it.
+    ///
+    /// `get_app_container` is the canonical probe -- it exits non-zero
+    /// for a bundle that is not there. `clear_app_sandbox` already knew
+    /// that, but it wipes the sandbox on its way past, so nothing that
+    /// only wanted to ask could use it.
+    ///
+    /// The caller that needs this is `foreground`. XCUITest's
+    /// `.activate()` does not fail on a missing bundle -- it waits for
+    /// an app that will never come to the front, and it waits on the
+    /// main actor, so every later request that needs the app waits with
+    /// it. On 2026-08-29 one flow naming an Android package did that to
+    /// the release corpus: the runner wedged, XCTest's watchdog killed
+    /// it, and the twenty-three flows after it reported `runner
+    /// unreachable`. The runner cannot defend itself once `.activate()`
+    /// is called, so the question has to be asked before it is.
+    pub async fn app_is_installed(
+        &self,
+        udid: &str,
+        bundle_id: &str,
+    ) -> Result<bool, DeviceControlError> {
+        match simctl_run(&["get_app_container", udid, bundle_id, "app"]).await {
+            Ok(_) => Ok(true),
+            // Only the message that means the app is absent. simctl exits
+            // non-zero for a udid it does not know too, and answering
+            // `false` there would say "that app is not installed" about a
+            // device that does not exist -- a plausible sentence, and the
+            // wrong one. Measured on 2026-08-29: a missing app gives
+            // `NSPOSIXErrorDomain, code=2` / `No such file or directory`,
+            // a missing device gives `Invalid device: <udid>`. Anything
+            // else is an unknown and stays loud.
+            Err(DeviceControlError::NonZeroExit { ref stderr, .. })
+                if stderr.contains("No such file or directory") =>
+            {
+                Ok(false)
+            }
+            Err(other) => Err(other),
+        }
+    }
+
     /// Wipe the app's sandbox on the sim: locate the
     /// Data container via `simctl get_app_container <udid> <bundle>
     /// data`, then `simctl spawn <udid> rm -rf <container>/Documents
