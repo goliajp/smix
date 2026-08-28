@@ -898,7 +898,7 @@ fi
 # used to report that as a success.
 log "v10: a tap that cannot land says so"
 bash "$ROOT/scripts/dev/a-tap-that-cannot-land-says-so.sh" "$SMIX_CORPUS_SIM" \
-  "${SMIX_V10_IOS_PORT:-22091}" \
+  "${SMIX_V10_IOS_PORT:-}" \
   || fail "a-tap-that-cannot-land-says-so FAILED — a tap nothing could receive was reported as one that landed"
 
 log "corpus gate on $SMIX_CORPUS_SIM"

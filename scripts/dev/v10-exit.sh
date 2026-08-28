@@ -11,7 +11,10 @@ cd "$ROOT"
 ANDROID="${SMIX_EXIT_ANDROID:-emulator-5554}"
 APORT="${SMIX_EXIT_ANDROID_PORT:-22095}"
 IOS="${SMIX_EXIT_IOS:-}"
-IPORT="${SMIX_EXIT_IOS_PORT:-22091}"
+# No literal: the iOS gate asks the OS for a port of its own, and an
+# empty argument leaves it that choice. A number here would be one
+# more thing a bystander can hold.
+IPORT="${SMIX_EXIT_IOS_PORT:-}"
 FAILED=0
 
 step() {
