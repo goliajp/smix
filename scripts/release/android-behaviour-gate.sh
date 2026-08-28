@@ -186,6 +186,25 @@ run_flow() {
   return $?
 }
 
+# Wait until a node is in the tree, rather than guessing how long a screen
+# takes. Five steps here started an activity, slept a fixed three seconds
+# and acted; when a screen was slower than the guess the step failed about
+# whatever it was testing -- a spelling, a read-back -- and never about the
+# screen. Both shapes killed a ship at random before this existed.
+await_node() {
+  local step="$1" app="$2" node="$3" what="$4" i
+  for i in $(seq 1 30); do
+    if curl -sS --max-time 5 "http://localhost:$RUNNER_PORT/tree" \
+         -H "App-Bundle-Id: $app" 2>/dev/null | grep -q "\"$node\""; then
+      return 0
+    fi
+    sleep 1
+  done
+  die "$step: $node never appeared in the tree of $app within 30s. This is
+  about $what, not about what $step asks. Current activity:
+    $(adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity)"
+}
+
 # A1 — with the flag, the flow passes.
 adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
 sleep 3
@@ -236,20 +255,7 @@ PY
 # than the recorder, because this is a precondition and not what A3
 # measures -- and say so plainly when it never shows up.
 adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
-PROBE_SEEN=""
-for _ in $(seq 1 30); do
-  if curl -sS --max-time 5 "http://localhost:$RUNNER_PORT/tree" \
-       -H "App-Bundle-Id: $APP" 2>/dev/null | grep -q "\"$PROBE_ID\""; then
-    PROBE_SEEN=yes
-    break
-  fi
-  sleep 1
-done
-[[ -n "$PROBE_SEEN" ]] || die "A3: $PROBE_ID never appeared in the tree of $APP
-  within 30s of starting Settings. This is not about spellings -- the screen
-  the probe lives on never arrived, so there was nothing to match.
-  Current activity:
-    $(adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity)"
+await_node A3 "$APP" "$PROBE_ID" "the homepage arriving"
 MATCH="$(curl -sS -D- -o /dev/null -X POST "http://localhost:$PROXY_PORT/tap-by-id" \
   -H "App-Bundle-Id: $APP" -d "{\"id\":\"$PROBE_ID\"}" \
   | awk -F': ' 'tolower($1) == "x-view-id-match" { print $2 }' | tr -d '\r')"
@@ -341,7 +347,7 @@ PY
 adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
 adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A5: could not foreground $FIXTURE_APP_ID"
-sleep 3
+await_node A5 "$FIXTURE_APP_ID" fixture_input "the screen arriving"
 
 MARKER="a5-first-fill"
 "$SMIX_BIN" fill "id:fixture_input" --text "$MARKER" --device "$SERIAL" \
@@ -372,7 +378,7 @@ python3 "$REPO_ROOT/scripts/release/android-a5-verdict.py" \
 adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
 adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A6: could not foreground $FIXTURE_APP_ID"
-sleep 3
+await_node A6 "$FIXTURE_APP_ID" fixture_input "the screen arriving"
 
 curl -sS --max-time 15 -X POST "http://localhost:$PROXY_PORT/hide-keyboard" \
   -H "App-Bundle-Id: $FIXTURE_APP_ID" -d '{}' > "$WORK/a6-hide.json" 2>&1 \
@@ -406,7 +412,14 @@ esac
 # there.
 adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.ComposeActivity" >/dev/null 2>&1 \
   || die "A7: could not foreground the Compose screen"
-sleep 3
+
+# Composition is not done when am start returns, and a fixed wait that is
+# usually long enough is the worst kind: it fails a ship at random and the
+# verdict blames whatever the step was about. This one refused a fill with
+# ELEMENT_NOT_FOUND -- the field was not in the tree yet -- under a message
+# about read-backs on fills that had worked. Wait for the field, then fill
+# it, and say plainly when the screen never arrives.
+await_node A7 "$FIXTURE_APP_ID" compose_input "composition finishing"
 
 COMPOSE_MARKER="a7-compose-fill"
 
@@ -505,7 +518,7 @@ python3 "$REPO_ROOT/scripts/release/android-a10-verdict.py" \
 adb -s "$SERIAL" shell am force-stop "$FIXTURE_APP_ID" >/dev/null 2>&1
 adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A11: could not foreground the view screen"
-sleep 2
+await_node A11 "$FIXTURE_APP_ID" fixture_input "the screen arriving"
 
 # Focus somewhere else first: the fill has to reach the field inside
 # what was named, not the field that happened to hold focus.
