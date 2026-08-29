@@ -112,7 +112,10 @@ def main():
     d = a.device
 
     adb(d, "am", "start", "-n", f"{APP}/.ComposeActivity")
-    time.sleep(2)
+    # Not a fixed wait: see `wait_for_probe`. Two seconds was the
+    # boundary this screen actually arrives on, and under load it fell
+    # on the wrong side and the verdict blamed the feature.
+    _probe_wire.wait_for_probe(d, APP)
     if tree(d) is None:
         print("a-semantics-action-is-not-a-touch: CANNOT RUN — the probe did "
               "not answer. Is it in the fixture's debug build?")
