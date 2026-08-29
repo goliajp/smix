@@ -53,6 +53,14 @@ jobs:
         run: cargo test -p smix-runner-sources
       - name: cargo test
         run: cargo test --workspace
+      # Here rather than in source-gates: it compiles. A fuzz crate is
+      # outside the workspace, so nothing else builds one until the
+      # ship's fuzz smoke hours in -- but asking on a machine with no
+      # Rust and no target dir cost that job its whole ten minutes and
+      # cancelled it three pushes running. This one has just built the
+      # workspace, so the fuzz crates' dependency graph is already there.
+      - name: fuzz targets compile
+        run: python3 scripts/dev/fuzz-targets-compile.py
       - name: swift test
         working-directory: swift-bridge
         run: swift test
@@ -250,12 +258,6 @@ jobs:
       # a full green run said nothing: nothing here read those files.
       # Placed after the build so the registry index is already warm —
       # it is a second of work once cargo has fetched anything at all.
-      # Satisfiable is not the same as compiling. The lockfile gate below
-      # asks whether the deps resolve; this asks whether the target still
-      # builds against the crate it fuzzes. Nothing else compiles a fuzz
-      # crate until the ship's fuzz smoke, hours in.
-      - name: fuzz targets compile
-        run: python3 scripts/dev/fuzz-targets-compile.py
       - name: fuzz lockfiles are usable
         run: python3 scripts/dev/fuzz-lockfiles-are-usable.py
       - name: the fuzz-lockfile gate can still go red
