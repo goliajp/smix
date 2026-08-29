@@ -1325,6 +1325,17 @@ enum RunnerAction {
         /// on purpose.
         #[arg(long = "force", default_value_t = false)]
         force: bool,
+        /// Android: also replace a runner a live process other than this
+        /// one is holding.
+        ///
+        /// `--force` is not this. It means "cycle a runner of ours whose
+        /// session has stopped working", and the case here is a runner
+        /// that is working fine and belongs to somebody else. An Android
+        /// device has one runner, so bringing ours up ends theirs;
+        /// without this flag that is refused and their command line is
+        /// printed instead.
+        #[arg(long = "take-over", default_value_t = false)]
+        take_over: bool,
     },
     /// Stop the runner (SIGINT-first to avoid the crash-report dialog).
     Down {
@@ -1347,6 +1358,18 @@ enum RunnerAction {
         /// happens.
         #[arg(long = "include-unrecorded", default_value_t = false)]
         include_unrecorded: bool,
+        /// Android: also end a runner a live process other than this one
+        /// is holding.
+        ///
+        /// An Android device has one runner -- one instrumentation
+        /// package, one device-side port -- so there is no version of
+        /// this that ends only ours. Without the flag, a device somebody
+        /// else is driving is refused and their command line is printed.
+        /// This is not `--include-unrecorded`, which means "one the
+        /// ledger does not know about"; the case here is one the ledger
+        /// knows perfectly well and says is not yours.
+        #[arg(long = "take-over", default_value_t = false)]
+        take_over: bool,
         /// Which runner's port, when it is not the default.
         ///
         /// `runner up` has taken this flag all along and `down` did
@@ -2723,6 +2746,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     team,
                     no_launch,
                     force,
+                    take_over,
                 } => {
                     // clap has already refused the case where neither
                     // is given, and the case where both are.
@@ -2742,8 +2766,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         // has to be a device smix was invited to touch:
                         // this installs an APK.
                         let serial = resolve_android_serial(&device)?;
-                        smix_capsule::runner_android::up_with(&root, &serial, port, 180, force)
-                            .map_err(CliError::Other)?;
+                        smix_capsule::runner_android::up_with_takeover(
+                            &root, &serial, port, 180, force, take_over,
+                        )
+                        .map_err(CliError::Other)?;
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
                     // Port priority chain:
@@ -2871,6 +2897,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     platform,
                     device,
                     include_unrecorded,
+                    take_over,
                     runner_port: port_flag,
                 } => {
                     if platform == RunPlatform::Android {
@@ -2889,7 +2916,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 .unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT)
                         });
                         let serial = resolve_android_serial(&serial)?;
-                        smix_capsule::runner_android::down(&root, &serial, port)
+                        smix_capsule::runner_android::down_with(&root, &serial, port, take_over)
                             .map_err(CliError::Other)?;
                         return Ok(std::process::ExitCode::SUCCESS);
                     }

@@ -263,6 +263,27 @@ on the crates, [Migrating to smix 8.0](docs/migrating-to-8.md) is short.
 
 ### Fixed
 
+- **`runner up` and `runner down` on Android stop when the device is
+  somebody else's, and say whose.** An Android device has exactly one
+  runner: one instrumentation package, one fixed device-side port, every
+  host port forwarding onto the same in-process server. Neither verb was
+  ever scoped by port -- `down` did not read its `port` argument at all
+  -- so `runner down --device <serial>` ended whatever runner that
+  device had. Measured: it printed `host ports 60752, 28080 closed`, and
+  28080 belonged to a consumer's suite, mid-batch. The ledger had
+  recorded whose it was the whole time; nothing on this path read it.
+  Both verbs now refuse, printing the holder's command line, and
+  `--take-over` is where somebody says they meant it.
+
+- **"Already up" now means "ours is up".** A runner another install put
+  on the device answers `/health` perfectly, and `up` reported success
+  while driving it. Measured: this smix is 10.0.0, what answered was
+  9.0.0, and v10's `/probe` came back `not_implemented` -- which read
+  out as "the probe is missing from the fixture's build". The probe was
+  in the fixture. `up` now compares the running runner's version with
+  its own and replaces it on a mismatch; a runner too old to report one
+  is left alone, as it always was.
+
 - **Release gates no longer leave a runner behind for the next one to
   fight.** Two `xcodebuild test` sessions against one simulator terminate
   each other's runner app; the second `Activate` then waits for an app

@@ -491,12 +491,36 @@ pub fn up_with(
     timeout_secs: u64,
     force: bool,
 ) -> Result<(), String> {
+    up_with_takeover(root, serial, port, timeout_secs, force, false)
+}
+
+/// [`up_with`], and with `take_over` also replace a runner a live
+/// process other than this one is holding. An Android device has one
+/// runner, so bringing ours up necessarily ends theirs; the flag is
+/// where somebody says that is what they meant.
+pub fn up_with_takeover(
+    root: &Path,
+    serial: &str,
+    port: u16,
+    timeout_secs: u64,
+    force: bool,
+    take_over: bool,
+) -> Result<(), String> {
     if !device_present(serial) {
         return Err(format!(
             "adb has no ready device {serial:?}. `adb devices` lists what is \
              attached; start the emulator first (`emulator -avd <name>`), or \
              pass the serial of a running one."
         ));
+    }
+
+    // Before anything is installed, forwarded or force-stopped: is this
+    // device somebody else's right now? One device, one runner -- see
+    // `live_foreign_holder`. `--force` is not consent for this: it means
+    // "cycle a runner of ours whose session has stopped working", and
+    // the runner in question is not ours.
+    if !take_over && let Some(holder) = live_foreign_holder(serial) {
+        return Err(foreign_holder_refusal(serial, &holder, "up"));
     }
 
     // Which APK we would serve has to be settled before "is something
@@ -524,8 +548,34 @@ pub fn up_with(
     // to a live Android runner, and that is a claim about a device this
     // was not run against (§9 #1 ③). It is a two-line change with an
     // emulator in front of it, and none without one.
+    // What is answering may be a runner somebody else installed. One
+    // package, one device-side port: `up` from this checkout would then
+    // "succeed" and drive theirs. Measured 2026-08-29 -- ours is 10.0.0,
+    // what answered was 9.0.0, and v10's `/probe` came back
+    // `not_implemented`, which a gate read as "the probe is missing from
+    // the fixture's build". The probe was in the fixture. The runner was
+    // not ours.
+    //
+    // `find_test_apk` asks whether the APK in this tree needs rebuilding
+    // (its mtime against the Kotlin beside it). That is a different
+    // question from whether the thing RUNNING is that APK, and only the
+    // second one is what "already up" claims. The answer was in the
+    // health body the whole time.
+    //
+    // A runner too old to report a version says `None`; that is "cannot
+    // tell", not "mismatch", and it keeps the old behaviour rather than
+    // reinstalling on a runner this cannot judge.
+    let ours = env!("CARGO_PKG_VERSION");
+    let running = crate::runner::health_runner_version(port);
+    let version_drifted = runner_is_not_ours(running.as_deref(), ours);
+    if version_drifted {
+        println!(
+            "[runner] {serial} is running runner {} and this smix is {ours} — replacing it",
+            running.as_deref().unwrap_or("?"),
+        );
+    }
     if health_ok(port) {
-        if !rebuilt {
+        if !rebuilt && !version_drifted {
             // /health says the HTTP server answers. It cannot say the
             // instrumentation still sees this device: an accessibility
             // connection that went stale keeps serving the windows it
@@ -570,7 +620,15 @@ pub fn up_with(
                 }
             }
         }
-        println!("[runner] a runner from the previous APK is answering — replacing it");
+        // Two ways to get here and they are not the same sentence: our
+        // APK was just rebuilt, or what is answering was built by
+        // something else. Saying "the previous APK" about the second
+        // sends the reader looking in their own build.
+        if version_drifted {
+            println!("[runner] the runner answering on {port} is not this smix's — replacing it");
+        } else {
+            println!("[runner] a runner from the previous APK is answering — replacing it");
+        }
         let _ = adb(serial)
             .args(["shell", "am", "force-stop", TEST_PACKAGE])
             .output();
@@ -847,6 +905,16 @@ fn remove_our_forwards(serial: &str) -> Vec<u16> {
 
 /// Stop the instrumentation, drop the port forward, and clear the rows.
 pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
+    down_with(root, serial, port, false)
+}
+
+/// [`down`], and with `take_over` also end a runner a live process other
+/// than this one is holding. The consent lives in the flag: only a
+/// person who can see whose run it is can decide it should end.
+pub fn down_with(root: &Path, serial: &str, port: u16, take_over: bool) -> Result<(), String> {
+    if !take_over && let Some(holder) = live_foreign_holder(serial) {
+        return Err(foreign_holder_refusal(serial, &holder, "down"));
+    }
     // `am force-stop` on the instrumentation package is what actually
     // ends the server; killing the host-side adb client would leave the
     // on-device process running and the port still answering.
@@ -889,6 +957,113 @@ pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
     }
     let _ = port;
     Ok(())
+}
+
+/// Whether this device is being driven by a live process that is not us.
+///
+/// An Android device has exactly one runner: the instrumentation is one
+/// package, the device-side port is fixed, and every host port forwards
+/// onto the same in-process server. So `up` and `down` are not scoped by
+/// port however they are called -- `down` ignores its `port` argument
+/// entirely and force-stops the package. Two sessions on one emulator
+/// share one runner whether they meant to or not.
+///
+/// Measured 2026-08-29: `runner down --device emulator-5554` printed
+/// `host ports 60752, 28080 closed`. 60752 was ours. 28080 belonged to a
+/// consumer's suite, mid-batch, and its two `smix run` processes went
+/// with it.
+///
+/// The ledger already recorded who that was -- `holder.cmd` is the
+/// driving process's whole command line -- and nothing on this path ever
+/// read it. §9 #9 gives the ledger two powers, to stop a decision and to
+/// be evidence; neither was being used here.
+///
+/// Returns the holder to refuse for, or `None` when the device is ours
+/// to act on. A holder whose pid is gone, or whose pid was reused by
+/// something else, is not a holder: a flow exits when it is done, so
+/// tearing down after one is the ordinary case and must stay quiet.
+pub fn live_foreign_holder(serial: &str) -> Option<smix_lease::ProcIdentity> {
+    let leases = crate::runner::machine_leases().ok()?;
+    live_foreign_holder_in(&leases, serial)
+}
+
+/// [`live_foreign_holder`], against a named ledger.
+///
+/// Split out so the decision can be put in front of a fabricated lease.
+/// The only other way to test it is to have another process really
+/// holding a real device, and then the way to see it fail is to let it
+/// through -- which is the accident.
+pub fn live_foreign_holder_in(
+    leases: &smix_lease::store::LeaseDir,
+    serial: &str,
+) -> Option<smix_lease::ProcIdentity> {
+    let lease = smix_lease::store::read(leases, serial).ok()??;
+    let probe = smix_lease::store::probe(&lease.holder);
+    if !(probe.pid_exists && probe.identity_matches) {
+        return None;
+    }
+    if is_self_or_ancestor(lease.holder.pid) {
+        return None;
+    }
+    Some(lease.holder)
+}
+
+/// Is `pid` this process or one it descends from?
+///
+/// `ship.sh` runs `smix runner down` from a shell that may itself be the
+/// recorded holder. Refusing there would refuse the caller its own
+/// device.
+fn is_self_or_ancestor(pid: u32) -> bool {
+    let mut cur = std::process::id();
+    for _ in 0..32 {
+        if cur == pid {
+            return true;
+        }
+        let Ok(out) = std::process::Command::new("ps")
+            .args(["-o", "ppid=", "-p", &cur.to_string()])
+            .output()
+        else {
+            return false;
+        };
+        let Ok(parent) = String::from_utf8_lossy(&out.stdout).trim().parse::<u32>() else {
+            return false;
+        };
+        if parent <= 1 {
+            return false;
+        }
+        cur = parent;
+    }
+    false
+}
+
+/// The refusal text, in one place so `up` and `down` say the same thing.
+pub fn foreign_holder_refusal(
+    serial: &str,
+    holder: &smix_lease::ProcIdentity,
+    verb: &str,
+) -> String {
+    format!(
+        "{serial} is being driven by another process, so `runner {verb}` would \
+         end a run that is not ours.\n\n  pid {}: {}\n\n\
+         An Android device has one runner -- one instrumentation package, one \
+         device-side port -- so there is no version of this that touches only \
+         ours. Wait for it, or say `--take-over` to replace it deliberately.",
+        holder.pid, holder.cmd,
+    )
+}
+
+/// Is the runner answering on this port built from a different smix?
+///
+/// `None` is "too old to say", not "different". A runner that predates
+/// the `runnerVersion` field answers the legacy body, and reading that
+/// as a mismatch would reinstall on every `up` against it -- turning a
+/// runner this cannot judge into one it keeps replacing.
+///
+/// Named and separate so it can be put in front of both answers without
+/// a device: the way to see this decide wrong on a real one is to let it
+/// drive somebody else's runner, which is the thing it exists to stop.
+pub fn runner_is_not_ours(running: Option<&str>, ours: &str) -> bool {
+    running.is_some_and(|v| v != ours)
 }
 
 #[cfg(test)]
