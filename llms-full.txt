@@ -1694,6 +1694,41 @@ If it should go, say so:
 agree deliberately: ending somebody else's runner used to be one keystroke
 away, and silent.
 
+On Android the unit is the **device**, not the port. The instrumentation is
+one package and the device-side port is fixed, so every host port forwards
+onto the same server: a device has exactly one runner, and `runner down`
+ends it whoever started it. Both verbs read the machine's lease ledger
+first and stop when the device is being driven by a live process that is
+not this one, printing its command line:
+
+```
+$ smix runner down --device emulator-5554 --platform android
+error: emulator-5554 is being driven by another process, so `runner down`
+would end a run that is not ours.
+
+  pid 928: smix run --device emulator-5554 --platform android
+           --runner-port 28080 flows/playback.yaml
+
+An Android device has one runner -- one instrumentation package, one
+device-side port -- so there is no version of this that touches only ours.
+Wait for it, or say `--take-over` to replace it deliberately.
+```
+
+`--take-over` is not `--force` and not `--include-unrecorded`. `--force`
+cycles a runner of yours whose session has stopped working; the runner here
+is working fine and is not yours. `--include-unrecorded` is for a runner the
+ledger does not know about; this one it knows and says is somebody else's.
+
+A holder whose process has exited is not a holder, so the ordinary teardown
+after a flow is unaffected.
+
+`runner up` also checks that the runner already answering is one this smix
+built. Another install's runner answers `/health` perfectly, and `up` used
+to report success while driving it — a 10.0.0 CLI drove a 9.0.0 runner and
+the routes added in between came back `not_implemented`. It now compares
+`runnerVersion` with its own and replaces on a mismatch. A runner too old to
+report a version is left alone.
+
 They take the same `--runner-port` too. They did not until 2.4.0 —
 `down` read `SMIX_RUNNER_PORT` and rejected the flag — so a teardown
 written as the obvious mirror of the bring-up failed its argument parse
