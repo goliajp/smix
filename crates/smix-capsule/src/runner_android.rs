@@ -542,12 +542,6 @@ pub fn up_with_takeover(
     // just changed, in which case whatever is answering is the old one
     // and has to go.
     //
-    // health-decider: whether this port is already serving — deferred:
-    // the answer to ask instead is right below, in the wait loop:
-    // `automation_sees_an_app`. Moving it up here changes what happens
-    // to a live Android runner, and that is a claim about a device this
-    // was not run against (§9 #1 ③). It is a two-line change with an
-    // emulator in front of it, and none without one.
     // What is answering may be a runner somebody else installed. One
     // package, one device-side port: `up` from this checkout would then
     // "succeed" and drive theirs. Measured 2026-08-29 -- ours is 10.0.0,
@@ -574,6 +568,17 @@ pub fn up_with_takeover(
             running.as_deref().unwrap_or("?"),
         );
     }
+    // health-decider: whether this port is already serving, and whether
+    // what serves it is ours — deferred: whether the session behind it
+    // still works is asked below, in the wait loop, by
+    // `automation_sees_an_app`. Moving that up here changes what happens
+    // to a live Android runner, and that is a claim about a device this
+    // was not run against (§9 #1 ③).
+    //
+    // What /health could never tell on its own is whose runner answered.
+    // It answers just as well for one another install put on the device,
+    // and that is how `up` reported success while driving a 9.0.0 runner
+    // from a 10.0.0 checkout. `runnerVersion` was in the body all along.
     if health_ok(port) {
         if !rebuilt && !version_drifted {
             // /health says the HTTP server answers. It cannot say the
