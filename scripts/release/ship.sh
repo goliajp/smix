@@ -617,6 +617,10 @@ log "gate port scan"
 python3 "$ROOT/scripts/dev/gate-port-scan.py" > /tmp/smix-ship-gate-port.log 2>&1 \
   || fail "gate port scan FAILED — see /tmp/smix-ship-gate-port.log"
 
+log "fuzz targets compile"
+python3 "$ROOT/scripts/dev/fuzz-targets-compile.py" > /tmp/smix-ship-fuzz-compile.log 2>&1 \
+  || fail "fuzz-targets-compile FAILED — a fuzz crate no longer builds against the crate it fuzzes. See /tmp/smix-ship-fuzz-compile.log"
+
 log "every runner a gate starts comes down"
 python3 "$ROOT/scripts/dev/every-runner-a-gate-starts-comes-down.py" \
   > /tmp/smix-ship-teardown.log 2>&1 \

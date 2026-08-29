@@ -250,6 +250,12 @@ jobs:
       # a full green run said nothing: nothing here read those files.
       # Placed after the build so the registry index is already warm —
       # it is a second of work once cargo has fetched anything at all.
+      # Satisfiable is not the same as compiling. The lockfile gate below
+      # asks whether the deps resolve; this asks whether the target still
+      # builds against the crate it fuzzes. Nothing else compiles a fuzz
+      # crate until the ship's fuzz smoke, hours in.
+      - name: fuzz targets compile
+        run: python3 scripts/dev/fuzz-targets-compile.py
       - name: fuzz lockfiles are usable
         run: python3 scripts/dev/fuzz-lockfiles-are-usable.py
       - name: the fuzz-lockfile gate can still go red
