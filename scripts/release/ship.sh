@@ -852,10 +852,16 @@ android_free_for_60s() {
   done
   return 0
 }
+# A deadline, not a number of attempts. Counting attempts made the budget
+# depend on which branch each one took: fifteen busy attempts are 150
+# seconds, fifteen free ones are fifteen minutes, and the log said "up to
+# 15m" either way. Measured 2026-08-30: it gave up after three minutes
+# and said it had waited fifteen.
 if android_device_is_busy; then
   log "android: $ANDROID_DEVICE is held by another process — waiting for a clear minute, up to 15m"
 fi
-for _ in $(seq 1 15); do
+android_wait_until=$(( SECONDS + 900 ))
+while [ "$SECONDS" -lt "$android_wait_until" ]; do
   android_free_for_60s && break
 done
 android_device_is_busy \
