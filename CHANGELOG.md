@@ -263,6 +263,17 @@ on the crates, [Migrating to smix 8.0](docs/migrating-to-8.md) is short.
 
 ### Fixed
 
+- **Release gates no longer leave a runner behind for the next one to
+  fight.** Two `xcodebuild test` sessions against one simulator terminate
+  each other's runner app; the second `Activate` then waits for an app
+  that keeps being killed until XCTest's watchdog ends the session.
+  Measured: the corpus gate is 26/26 green run alone and 23/26 red run
+  after a gate that left its runner up — every one of those failures
+  saying `runner unreachable`, which was true and about the wrong thing.
+  One gate had no teardown at all; another passed `--port`, which `runner
+  down` does not accept, and the argument error had been going to
+  /dev/null behind `|| true` since the day it was written.
+
 - **On iOS, asking to foreground an app that is not on the device is now
   refused instead of hanging the runner.** XCUITest's `.activate()` does
   not fail on a missing bundle — it waits on the main actor for an app

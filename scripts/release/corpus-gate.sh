@@ -169,7 +169,17 @@ echo "corpus gate: sim=$SMIX_CORPUS_SIM runtime=$SIM_RUNTIME corpus=$CORPUS_DIR 
 
 cleanup() {
   echo "corpus gate: tearing down runner"
-  "$SMIX_BIN" runner down >/dev/null 2>&1 || true
+  # Not silenced. A teardown that fails leaves a runner on this sim, and
+  # the next thing to start one there gets two xcodebuild sessions
+  # terminating each other's runner app -- measured 2026-08-29 from the
+  # other side: 23 of these 26 flows red, every one of them blaming
+  # `runner unreachable`. The failure that caused it was an argument
+  # error, and it had been going to /dev/null for a whole cycle.
+  local down_said
+  if ! down_said="$("$SMIX_BIN" runner down 2>&1)"; then
+    echo "corpus gate: WARNING — the runner was not taken down. What it said:"
+    printf '%s\n' "$down_said" | tail -3 | sed 's/^/  /'
+  fi
   # The corpus's `takeScreenshot` steps write to the working directory,
   # which for the release gate is the repo root — so a gate run left six
   # untracked PNGs behind every time. They are named by the flows, so

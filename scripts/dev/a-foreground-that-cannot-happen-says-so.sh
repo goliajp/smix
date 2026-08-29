@@ -39,7 +39,30 @@ if ! "$SMIX" runner up "$UDID" --runner-port "$PORT" --bundle "$APP" --force >/d
   "$SMIX" runner up "$UDID" --runner-port "$PORT" --bundle "$APP" --force >/dev/null 2>&1 \
     || fail "the runner would not come up on $UDID:$PORT, twice"
 fi
-trap '"$SMIX" runner down --device "$UDID" --port "$PORT" >/dev/null 2>&1 || true' EXIT
+# A runner left behind is not a tidiness problem. The next gate that
+# brings one up on this sim gets a second xcodebuild test session against
+# the same device, the two terminate each other's runner app, and
+# `Activate` hangs -- measured 2026-08-29: 23 of the 26 corpus flows red,
+# every one of them saying `runner unreachable`, which is true and about
+# the wrong thing.
+#
+# So teardown is checked, and it is loud. The first version of this in
+# the sibling gate passed `--port`, which `runner down` does not take;
+# the argument error went to /dev/null behind `|| true`, and a teardown
+# that did nothing read exactly like one that worked.
+teardown() {
+  local rc=$?
+  local out
+  if ! out="$("$SMIX" runner down --device "$UDID" 2>&1)"; then
+    echo "a-foreground-that-cannot-happen-says-so: FAIL"
+    echo "  - the runner was not taken down; it stays on $UDID and the next gate"
+    echo "    to bring one up there will fight it. What down said:"
+    printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
+    exit 1
+  fi
+  exit $rc
+}
+trap teardown EXIT
 
 FLOW="$(mktemp -t smix-absent-app-XXXXXX).yaml"
 printf 'appId: %s\n---\n- launchApp\n' "$ABSENT" > "$FLOW"
