@@ -798,6 +798,49 @@ python3 "$ROOT/scripts/dev/gen-selector-matrix.py" --check > /tmp/smix-ship-matr
 # here: keeping them inline would put an adb call in a script the
 # PreToolUse guard can no longer read, and the delegate carries the same
 # emulator-only rule the guard enforces.
+# Three legs need this emulator -- instrumentation, behaviour, and v10's
+# four gates -- and it is the one the dogfood consumer runs its suites
+# on. Their `smix run` takes a lease, and ours refuses a device somebody
+# else holds; that refusal is correct and it is not what a release wants
+# to discover at minute 250. So: wait here, before the first of the
+# three, rather than in front of each.
+#
+# This decides whether to WAIT, not whether it is safe. `smix run` and
+# `runner up` decide that from the lease and name the holder (see
+# .claude/rfcs/10.0-android-runner-ownership.md); a second copy of that
+# judgement here would be the copy that goes stale. So it asks the
+# cheaper question off the same ledger -- is anything holding this
+# device -- and when the wait ends, lets the product speak.
+android_device_is_busy() {
+  "$ROOT/target/release/smix" runner list 2>/dev/null \
+    | grep -qE "[[:space:]]$ANDROID_DEVICE[[:space:]]" && return 0
+  python3 - "$ANDROID_DEVICE" <<'PYBUSY'
+import json, os, subprocess, sys
+serial = sys.argv[1]
+path = os.path.join(
+    os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")),
+    "smix", "leases", f"{serial}.json",
+)
+try:
+    holder = json.load(open(path))["holder"]
+except Exception:
+    sys.exit(1)
+alive = subprocess.run(["ps", "-p", str(holder["pid"])], capture_output=True).returncode == 0
+sys.exit(0 if alive and holder["pid"] != os.getpid() else 1)
+PYBUSY
+}
+ANDROID_DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"
+if android_device_is_busy; then
+  log "android: $ANDROID_DEVICE is held by another process — waiting up to 15m"
+  for _ in $(seq 1 90); do
+    android_device_is_busy || break
+    sleep 10
+  done
+  android_device_is_busy \
+    && log "android: $ANDROID_DEVICE still held after 15m — letting the gates judge it" \
+    || log "android: $ANDROID_DEVICE is free"
+fi
+
 log "android instrumentation (device)"
 bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
   || fail "android instrumentation gate FAILED — see the verdict above; start an emulator with \
@@ -844,28 +887,6 @@ V10_DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"
 # was on this serial while the ship was still four hours from needing it.
 #
 # So: wait for it to go quiet, then say who has it rather than taking it.
-# This decides whether to WAIT. It does not decide whether it is safe:
-# `runner up` does that now, from the lease, and refuses naming whoever
-# holds the device (see .claude/rfcs/10.0-android-runner-ownership.md).
-# Keeping a second copy of that judgement here would be the copy that
-# goes stale -- so this asks the cheaper question, off the same ledger:
-# is there a runner on this device at all? If there is, wait; when the
-# wait ends, let the product speak.
-v10_device_is_busy() {
-  "$ROOT/target/release/smix" runner list 2>/dev/null \
-    | grep -qE "[[:space:]]$V10_DEVICE[[:space:]]"
-}
-if v10_device_is_busy; then
-  log "v10: $V10_DEVICE is being driven by someone else — waiting up to 15m"
-  for _ in $(seq 1 90); do
-    v10_device_is_busy || break
-    sleep 10
-  done
-fi
-if v10_device_is_busy; then
-  log "v10: $V10_DEVICE still has a runner after 15m — letting runner up judge it"
-fi
-
 if [[ -z "${SMIX_V10_ANDROID_PORT:-}" ]]; then
   V10_PORT="$(python3 -c 'import socket
 s = socket.socket()
