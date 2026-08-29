@@ -830,16 +830,37 @@ sys.exit(0 if alive and holder["pid"] != os.getpid() else 1)
 PYBUSY
 }
 ANDROID_DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"
-if android_device_is_busy; then
-  log "android: $ANDROID_DEVICE is held by another process — waiting up to 15m"
-  for _ in $(seq 1 90); do
-    android_device_is_busy || break
+# Free once is not free enough. The consumer's batch runs flows back to
+# back with gaps of seconds, and these three legs take minutes: a check
+# that proceeds on the first idle sample walks into the next flow.
+# Measured 2026-08-30 -- the ledger said free, the instrumentation gate
+# passed, and `runner up` in the behaviour gate a minute later was
+# refused by name. So: the device has to stay free for a whole minute
+# before this goes on.
+android_free_for_60s() {
+  local i
+  for i in $(seq 1 6); do
+    # Sleeping on the busy branch too, or this waits for nothing: the
+    # first draft returned immediately when the device was held and the
+    # caller retried immediately, so fifteen "attempts" went by in under
+    # a second and the fifteen-minute wait was a fifteen-minute claim.
+    if android_device_is_busy; then
+      sleep 10
+      return 1
+    fi
     sleep 10
   done
-  android_device_is_busy \
-    && log "android: $ANDROID_DEVICE still held after 15m — letting the gates judge it" \
-    || log "android: $ANDROID_DEVICE is free"
+  return 0
+}
+if android_device_is_busy; then
+  log "android: $ANDROID_DEVICE is held by another process — waiting for a clear minute, up to 15m"
 fi
+for _ in $(seq 1 15); do
+  android_free_for_60s && break
+done
+android_device_is_busy \
+  && log "android: $ANDROID_DEVICE still held after 15m — letting the gates judge it" \
+  || log "android: $ANDROID_DEVICE has been free for a minute"
 
 log "android instrumentation (device)"
 bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
