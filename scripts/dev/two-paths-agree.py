@@ -333,7 +333,51 @@ def main():
                        capture_output=True, text=True)
         subprocess.run(["adb", "-s", args.device, "shell", "am", "start", "-n",
                         f"{args.app}/.ComposeActivity"], capture_output=True, text=True)
-        time.sleep(2)
+        # Wait for the screen, do not guess at it. This was `sleep(2)`,
+        # which is enough on an idle machine and not enough after two and
+        # a half hours of ship -- and then the accessibility side reads
+        # the system status bar while the probe, which lives in the app's
+        # process, answers with the app's tags whatever is in front. The
+        # reconciliation compares two different screens and blames the
+        # feature. Measured 2026-08-29: sixteen tags "on the semantics
+        # side and not the accessibility side", and the app was not up.
+        if _probe_wire.wait_for_front(args.device, args.app) is None:
+            print("two-paths-agree: FAIL")
+            print(f"  - {args.app} never came to the front on {args.device} "
+                  f"within 30s, so the two trees would be of different "
+                  f"screens. This is about the app starting, not about "
+                  f"what the two readers see.")
+            return 1
+        # The resumed activity is set before Compose has projected itself
+        # into the accessibility tree. Measured 2026-08-29 on this
+        # emulator: at t=0 the tree is 40 nodes of system UI, at t=1 it is
+        # 72 with the app's; the ids the readers share appear about three
+        # seconds after a force-stop. What was here was `sleep(2)` --
+        # right on that boundary, so it passed on an idle machine and
+        # failed after two and a half hours of ship, and then the gate
+        # said sixteen tags were "on the semantics side and not the
+        # accessibility side": a sentence about the release's headline
+        # feature, about a screen that had not arrived.
+        #
+        # Waiting for the tree to STOP CHANGING does not work either --
+        # the system-only tree is perfectly stable too. A stable wrong
+        # state looks exactly like a stable right one.
+        #
+        # So wait for the thing that actually distinguishes them: one id
+        # present on BOTH sides, which is what "the two readers are
+        # looking at the same screen" means. It is strictly weaker than
+        # what this gate asserts (all of them, with every difference
+        # named), and if it never happens the loop simply ends and the
+        # reconciliation below runs and reports it exactly as before. The
+        # wait removes the race; it does not remove the finding.
+        for _ in range(60):
+            early_a11y = fetch_a11y(args.binary, args.device, args.port)
+            early_sem = fetch_semantics(args.device, args.app)
+            if early_a11y is not None and early_sem is not None:
+                shared = set(a11y_tags(early_a11y)) & set(semantics_tags(early_sem))
+                if shared:
+                    break
+            time.sleep(0.5)
 
     if args.a11y and args.semantics:
         a11y_tree = unwrap(json.load(open(args.a11y)))

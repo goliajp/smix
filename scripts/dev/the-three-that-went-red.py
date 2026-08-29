@@ -168,7 +168,10 @@ def main():
 
     adb(a.device, "am", "force-stop", APP)
     adb(a.device, "am", "start", "-n", f"{APP}/.ComposeActivity")
-    time.sleep(2)
+    # Not a fixed wait: see `wait_for_probe`. Two seconds was the
+    # boundary this screen actually arrives on, and under load it fell
+    # on the wrong side and the verdict blamed the feature.
+    _probe_wire.wait_for_probe(a.device, APP)
 
     present = _probe_wire.probe_tree(a.device, APP) is not None
     if want and not present:
