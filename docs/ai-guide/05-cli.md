@@ -239,7 +239,7 @@ error: emulator-5554 is being driven by another process, so `runner down`
 would end a run that is not ours.
 
   pid 928: smix run --device emulator-5554 --platform android
-           --runner-port 28080 flows/playback.yaml
+           --runner-port 28080 ~/their-project/qa/playback.yaml
 
 An Android device has one runner -- one instrumentation package, one
 device-side port -- so there is no version of this that touches only ours.
