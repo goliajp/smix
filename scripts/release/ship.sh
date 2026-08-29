@@ -617,6 +617,11 @@ log "gate port scan"
 python3 "$ROOT/scripts/dev/gate-port-scan.py" > /tmp/smix-ship-gate-port.log 2>&1 \
   || fail "gate port scan FAILED — see /tmp/smix-ship-gate-port.log"
 
+log "every runner a gate starts comes down"
+python3 "$ROOT/scripts/dev/every-runner-a-gate-starts-comes-down.py" \
+  > /tmp/smix-ship-teardown.log 2>&1 \
+  || fail "every-runner-a-gate-starts-comes-down FAILED — a gate leaves a runner behind, or hides what its teardown said. See /tmp/smix-ship-teardown.log"
+
 log "route context scan"
 python3 "$ROOT/scripts/dev/route-context-scan.py" > /tmp/smix-ship-route-context.log 2>&1 \
   || fail "route context scan FAILED — see /tmp/smix-ship-route-context.log"

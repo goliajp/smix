@@ -188,6 +188,7 @@ SOURCE_GATES=(
   gate-subject-diversity
   route-context-scan
   gate-port-scan
+  every-runner-a-gate-starts-comes-down
   preflight-parity-scan
   mcp-cli-parity-scan
   three-readers-agree

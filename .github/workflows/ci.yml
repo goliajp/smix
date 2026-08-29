@@ -220,6 +220,10 @@ jobs:
       # Reads only the gate scripts, which are in the checkout.
       - name: gate port scan
         run: python3 scripts/dev/gate-port-scan.py
+      # Reads the gate scripts and the release path's entry points; all
+      # in the checkout, no device needed.
+      - name: every runner a gate starts comes down
+        run: python3 scripts/dev/every-runner-a-gate-starts-comes-down.py
       # Reads ci.yml and preflight.sh; both are in the checkout.
       - name: preflight parity scan
         run: python3 scripts/dev/preflight-parity-scan.py

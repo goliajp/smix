@@ -71,6 +71,7 @@ LOCAL = {
     "gate subject diversity": "gate-subject-diversity",
     "route context scan": "route-context-scan",
     "gate port scan": "gate-port-scan",
+    "every runner a gate starts comes down": "every-runner-a-gate-starts-comes-down",
     "preflight parity scan": "preflight-parity-scan",
     "mcp cli parity scan": "mcp-cli-parity-scan",
     "fuzz lockfiles are usable": "fuzz-lockfiles-are-usable",

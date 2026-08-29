@@ -88,7 +88,15 @@ fi
 [ -n "$SIM" ] || { echo "error: --sim <ref> or SMIX_CORPUS_SIM required for a device run" >&2; exit 2; }
 STAMP="$(date +%Y%m%d-%H%M%S)"
 LOG_DIR="$REPO_ROOT/.tmp/stress-gate/$STAMP"; mkdir -p "$LOG_DIR"
-cleanup() { "$SMIX_BIN" runner down --device "$SIM" >/dev/null 2>&1 || true; }
+# Not silenced: a teardown that fails leaves a runner on $SIM, and what
+# it costs is not this gate but the next one to start one there.
+cleanup() {
+  local down_said
+  if ! down_said="$("$SMIX_BIN" runner down --device "$SIM" 2>&1)"; then
+    echo "stress gate: WARNING — the runner was not taken down. What it said:"
+    printf '%s\n' "$down_said" | tail -3 | sed 's/^/  /'
+  fi
+}
 trap cleanup EXIT
 
 "$SMIX_BIN" sim boot "$SIM" >"$LOG_DIR/boot.log" 2>&1 || true
