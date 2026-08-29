@@ -143,6 +143,29 @@ echo "android behaviour gate: $APP on $SERIAL (timeout ${TIMEOUT_S}s)"
 adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1 \
   || die "could not foreground $APP on $SERIAL"
 
+# `am start` returns when the intent is dispatched, not when the window
+# exists, and `runner up` asks `getWindows()` for a readable application
+# window before it will call itself up. Straight after the
+# instrumentation gate -- which has just been tearing its own package
+# down on this device -- that gap is wide enough to lose: measured
+# 2026-08-30, `runner up` refused with "the runner answers /health but
+# its automation is not usable", which reads as a crashed
+# instrumentation and was a window that had not arrived. Running the
+# same gate alone a minute later: 14/14.
+#
+# So wait for the window rather than for a number of seconds. A fixed
+# sleep here would be the same bet with a different face.
+for _ in $(seq 1 30); do
+  adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null \
+    | grep -q "topResumedActivity.*$APP" && break
+  sleep 1
+done
+adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null \
+  | grep -q "topResumedActivity.*$APP" \
+  || die "$APP never became the resumed activity on $SERIAL within 30s.
+  This is about the app arriving, not about the runner. Current:
+    $(adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity)"
+
 # --runner-port stated, not inherited: this gate's proxy forwards a
 # port it chose, and a SMIX_RUNNER_PORT exported for the iOS gates
 # (22087 was once occupied by another session's runner) silently moved
@@ -548,6 +571,17 @@ python3 "$REPO_ROOT/scripts/release/android-a11-verdict.py" \
 # carries it would pass the "gone" half forever.
 adb -s "$SERIAL" shell am start -n "$FIXTURE_APP_ID/.MainActivity" >/dev/null 2>&1 \
   || die "A12: could not foreground $FIXTURE_APP_ID on $SERIAL"
+# The one `am start` in this gate that had no `await_node` after it. Five
+# others do; this one went straight on to `hide-keyboard`, so on a device
+# still busy from the instrumentation gate the whole block ran against a
+# screen that had not arrived: the "absent" half passed trivially, the tap
+# landed without resolving a field, and the keyboard never came -- reported
+# as `no node in the tree has role=keyboard while the keyboard is up`,
+# which is this gate's finding about the product and was not what
+# happened. Measured 2026-08-30: red in that sequence, 14/14 alone
+# minutes later, and a hand-run of the same steps with two seconds after
+# `am start` had the keyboard in the tree at t=2s.
+await_node A12 "$FIXTURE_APP_ID" fixture_input "the screen arriving"
 # `|| true` here would be the bug this gate is about: a setup step that
 # silently does nothing leaves A11's keyboard up, and the "absent" half
 # then fails for a reason that has nothing to do with what it asks. Ask
