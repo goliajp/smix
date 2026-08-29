@@ -844,16 +844,16 @@ V10_DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"
 # was on this serial while the ship was still four hours from needing it.
 #
 # So: wait for it to go quiet, then say who has it rather than taking it.
-# Two signals, because each alone has a blind spot. A live `smix run`
-# only exists while a flow is executing -- between two flows of the same
-# batch it is gone, and a check that asked only that would wave the ship
-# through into the gap. The ledger row for their runner outlives the
-# gap; it is the one that answers "is a batch in progress here".
+# This decides whether to WAIT. It does not decide whether it is safe:
+# `runner up` does that now, from the lease, and refuses naming whoever
+# holds the device (see .claude/rfcs/10.0-android-runner-ownership.md).
+# Keeping a second copy of that judgement here would be the copy that
+# goes stale -- so this asks the cheaper question, off the same ledger:
+# is there a runner on this device at all? If there is, wait; when the
+# wait ends, let the product speak.
 v10_device_is_busy() {
-  pgrep -f "smix run --device $V10_DEVICE" > /dev/null 2>&1 && return 0
   "$ROOT/target/release/smix" runner list 2>/dev/null \
-    | grep -qE "[[:space:]]$V10_DEVICE[[:space:]]" && return 0
-  return 1
+    | grep -qE "[[:space:]]$V10_DEVICE[[:space:]]"
 }
 if v10_device_is_busy; then
   log "v10: $V10_DEVICE is being driven by someone else — waiting up to 15m"
@@ -863,10 +863,7 @@ if v10_device_is_busy; then
   done
 fi
 if v10_device_is_busy; then
-  fail "v10: $V10_DEVICE has been driven by another process for 15 minutes:
-    $(pgrep -fl "smix run --device $V10_DEVICE" | head -2)
-  Bringing a runner up there now would end that run. Wait for it, or point
-  this leg at a device of its own with SMIX_V10_ANDROID."
+  log "v10: $V10_DEVICE still has a runner after 15m — letting runner up judge it"
 fi
 
 if [[ -z "${SMIX_V10_ANDROID_PORT:-}" ]]; then
