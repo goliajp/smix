@@ -920,6 +920,22 @@ s = socket.socket()
 s.bind(("127.0.0.1", 0))
 print(s.getsockname()[1])
 s.close()')"
+  # `adb` has to still be able to see it. This emulator is managed by
+  # another session and went away and came back twice during dry-run
+  # nineteen; the third time it was gone for the one minute this leg
+  # needed, and `runner up` refused with `adb has no ready device` --
+  # after the instrumentation gate had passed 4/4 and the behaviour gate
+  # 14/14 on it, minutes earlier. Waiting for the device to be free is
+  # not the same as waiting for it to be there.
+  for _ in $(seq 1 60); do
+    adb devices 2>/dev/null | grep -qE "^${V10_DEVICE}[[:space:]]+device" && break
+    sleep 5
+  done
+  adb devices 2>/dev/null | grep -qE "^${V10_DEVICE}[[:space:]]+device" \
+    || fail "v10: adb still does not list $V10_DEVICE as ready after 5m.
+    This is about the emulator being attached, not about the runner.
+    Attached now: $(adb devices 2>/dev/null | tail -n +2 | tr '\n' ' ')"
+
   log "v10: runner up on $V10_DEVICE:$V10_PORT"
   SMIX_RUNNER_PORT="$V10_PORT" "$ROOT/target/release/smix" runner up "$V10_DEVICE" \
     --platform android --runner-port "$V10_PORT" > /tmp/smix-ship-v10-runner.log 2>&1 \
