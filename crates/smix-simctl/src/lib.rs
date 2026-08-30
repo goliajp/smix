@@ -610,14 +610,32 @@ mod subprocess_ring {
                 let mut g = cell().lock().unwrap();
                 g.clear();
             }
-            assert!(snapshot().is_empty());
+
+            // Asked about OUR record, not about the ring's length.
+            //
+            // The ring is process-global and every subprocess this
+            // binary runs writes to it, so `len() == 1` and
+            // `is_empty()` were claims about what every other test in
+            // the process happened to be doing. They held for as long
+            // as no sibling ran a subprocess; the day one did, this
+            // test failed twice in three runs and named nothing that
+            // had changed. What it is for -- a record survives a
+            // restart -- is true regardless of who else is recording.
+            let ours =
+                |r: &SubprocessRecord| r.argv == vec!["shutdown".to_string(), "UDID-A".to_string()];
+            assert!(
+                !snapshot().iter().any(ours),
+                "the clear did not take our record out of the ring"
+            );
 
             load_persisted();
             let after = snapshot();
-            assert_eq!(after.len(), 1);
-            assert_eq!(after[0].argv, vec!["shutdown".to_string(), "UDID-A".into()]);
-            assert_eq!(after[0].exit_code, Some(0));
-            assert_eq!(after[0].wall_ms, 42);
+            let found = after
+                .iter()
+                .find(|r| ours(r))
+                .expect("our record did not come back from the persisted ring");
+            assert_eq!(found.exit_code, Some(0));
+            assert_eq!(found.wall_ms, 42);
         }
     }
 }
