@@ -558,7 +558,12 @@ python3 "$ROOT/scripts/dev/known-unstable-scan.py" > /tmp/smix-ship-known-unstab
 
 log "three readers agree"
 python3 "$ROOT/scripts/dev/three-readers-agree.py" > /tmp/smix-ship-three-readers.log 2>&1 \
-  || fail "three-readers-agree FAILED — the recorded reports differ across the three host trees (see /tmp/smix-ship-three-readers.log)"
+  || fail "three-readers-agree FAILED (see /tmp/smix-ship-three-readers.log)
+$(tail -6 /tmp/smix-ship-three-readers.log 2>/dev/null | sed 's/^/  /')
+
+  Two different findings wear this name: the three readers disagreeing
+  about a recorded report, and one of the three suites not running at
+  all. This line used to assert the first whichever it was."
 python3 "$ROOT/scripts/dev/three-readers-agree.py" --assert-ci-union >> /tmp/smix-ship-three-readers.log 2>&1 \
   || fail "three-readers-agree --assert-ci-union FAILED — a reader is named by no CI job (see /tmp/smix-ship-three-readers.log)"
 
