@@ -39,7 +39,14 @@ fi
 
 cleanup() {
   log "teardown: runner down + simx-sweep (own sim only)"
-  smix runner down >/dev/null 2>&1 || true
+  # Not silenced. A teardown that fails leaves a runner on this device,
+  # and an Android device has only one -- so the next thing to start one
+  # there gets two instrumentations, or two xcodebuild sessions on one
+  # sim, and every failure after that is about the wrong thing. What it
+  # cost when it was silent, measured 2026-08-29: 23 of 26 corpus flows.
+  if ! down_said="$(smix runner down 2>&1)"; then
+    printf 'warning: the runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
+  fi
   bash "$ROOT/scripts/dev/simx-sweep.sh" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT

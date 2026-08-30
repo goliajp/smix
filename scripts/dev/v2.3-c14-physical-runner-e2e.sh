@@ -22,7 +22,17 @@ log()  { printf '[c14-phys] %s\n' "$*"; }
 step() { printf '[c14-phys] --- %s\n' "$*"; }
 fail() { printf '[c14-phys] FAIL: %s\n' "$*" >&2; exit 1; }
 
-cleanup() { "$SMIX" runner down >/dev/null 2>&1 || true; rm -f "$OUT"; }
+cleanup() {
+  # Not silenced. A teardown that fails leaves a runner on this device,
+  # and an Android device has only one -- so the next thing to start one
+  # there gets two instrumentations, or two xcodebuild sessions on one
+  # sim, and every failure after that is about the wrong thing. What it
+  # cost when it was silent, measured 2026-08-29: 23 of 26 corpus flows.
+  if ! down_said="$("$SMIX" runner down 2>&1)"; then
+    printf 'warning: the runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
+  fi
+  rm -f "$OUT"
+}
 trap cleanup EXIT
 cd "$ROOT"
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"

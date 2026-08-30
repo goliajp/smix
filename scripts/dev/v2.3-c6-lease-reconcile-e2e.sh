@@ -103,7 +103,12 @@ fi
 
 
 cleanup() {
-  "$SMIX" runner down >/dev/null 2>&1 || true
+  # Not silenced: a teardown that fails leaves a runner behind, and the
+  # next thing to start one on this device fights it. The failure then
+  # reads as whatever that next thing was asking about.
+  if ! down_said="$("$SMIX" runner down 2>&1)"; then
+    printf 'warning: the runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
+  fi
   # Through smix, not `xcrun simctl` — a shutdown that goes around
   # smix leaves the boot row behind, pointing at a device that is
   # already off. Our own scripts should not be the example of the

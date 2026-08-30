@@ -74,8 +74,11 @@ skip() { printf '[c1c] SKIP: %s\n' "$*" >&2; exit 0; }
 started_runner=0
 cleanup() {
   if [ "$started_runner" = 1 ]; then
-    "$SMIX" runner down >/dev/null 2>&1 \
-      || log "warning: runner down did not exit clean"
+    # The warning was here; what down said was not, and that is the half
+    # a reader needs -- "did not exit clean" names no cause.
+    if ! down_said="$("$SMIX" runner down 2>&1)"; then
+      log "warning: runner down did not exit clean: $(printf '%s' "$down_said" | tail -2 | tr '\n' ' ')"
+    fi
   fi
   rm -rf "$WORK"
 }

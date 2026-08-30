@@ -69,7 +69,12 @@ fi
 
 
 cleanup() {
-  "$SMIX" runner down >/dev/null 2>&1 || true
+  # Not silenced: a teardown that fails leaves a runner behind, and the
+  # next thing to start one on this device fights it. The failure then
+  # reads as whatever that next thing was asking about.
+  if ! down_said="$("$SMIX" runner down 2>&1)"; then
+    printf 'warning: the runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
+  fi
   "$SMIX" lease reconcile "$UDID" >/dev/null 2>&1 || true
   # Through smix, not `xcrun simctl` — a shutdown that goes around
   # smix leaves the boot row behind, pointing at a device that is
@@ -158,7 +163,12 @@ curl -s -m 3 "http://127.0.0.1:${SMIX_RUNNER_PORT:-22087}/health" >/dev/null 2>&
 log "session still healthy"
 
 step "6. once the session ends, the device is free again"
-"$SMIX" runner down >/dev/null 2>&1 || fail "runner down failed"
+# `|| fail` catches the exit code and throws away the reason, so the
+# verdict is "runner down failed" and nothing else. Keep both.
+if ! down_said="$("$SMIX" runner down 2>&1)"; then
+  printf '%s\n' "$down_said" | tail -3 >&2
+  fail "runner down failed"
+fi
 OUT="$("$SMIX" sim keychain-reset "$UDID" 2>&1)" \
   || fail "still refused after the session ended: $OUT"
 log "allowed again"

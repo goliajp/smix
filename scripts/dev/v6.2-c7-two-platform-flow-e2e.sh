@@ -40,13 +40,25 @@ skip() { printf '[c7] SKIP: %s\n' "$*" >&2; exit 0; }
 IOS_UDID="" AND_SERIAL=""
 IOS_WE_BOOTED=0 IOS_WE_UPPED=0 AND_WE_BOOTED=0 AND_WE_UPPED=0
 cleanup() {
-  [ "$IOS_WE_UPPED" = 1 ]  && "$SMIX" down --device "$IOS_UDID" >/dev/null 2>&1 || true
+  # Not silenced: a teardown that fails leaves a runner on the device,
+  # and what it costs is not this script but the next one to start one
+  # there. Measured elsewhere in this repo: 23 of 26 corpus flows red,
+  # every one of them blaming the runner.
+  if [ "$IOS_WE_UPPED" = 1 ]; then
+    if ! down_said="$("$SMIX" down --device "$IOS_UDID" 2>&1)"; then
+      printf 'warning: the iOS runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
+    fi
+  fi
   if [ -n "$IOS_UDID" ]; then
     P="$(pgrep -f "xcodebuild.*$IOS_UDID" 2>/dev/null || true)"
     [ -n "$P" ] && { kill -INT $P 2>/dev/null || true; sleep 1; kill -9 $P 2>/dev/null || true; }
   fi
   [ "$IOS_WE_BOOTED" = 1 ] && "$SMIX" sim shutdown "$IOS_UDID" >/dev/null 2>&1 || true
-  [ "$AND_WE_UPPED" = 1 ]  && "$SMIX" down --platform android --device "$AND_SERIAL" >/dev/null 2>&1 || true
+  if [ "$AND_WE_UPPED" = 1 ]; then
+    if ! down_said="$("$SMIX" down --platform android --device "$AND_SERIAL" 2>&1)"; then
+      printf 'warning: the Android runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
+    fi
+  fi
   [ "$AND_WE_BOOTED" = 1 ] && "$SMIX" sim shutdown "$AND_SERIAL" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
@@ -129,7 +141,7 @@ run_android() {
   port_free "$AND_PORT" || skip "Android port $AND_PORT already serves a runner — set SMIX_C7_ANDROID_PORT"
 
   step "Android: ensure $AND_ALIAS up, install, runner up"
-  if ! adb devices 2>/dev/null | grep -q "^$AND_SERIAL[[:space:]]*device"; then
+  if ! adb devices 2>/dev/null | grep -q "^${AND_SERIAL}[[:space:]]*device"; then
     "$SMIX" sim boot "$AND_SERIAL" >"$WORK/and-boot.log" 2>&1 || fail "emulator boot: $(tail -3 "$WORK/and-boot.log")"
     AND_WE_BOOTED=1
   fi
