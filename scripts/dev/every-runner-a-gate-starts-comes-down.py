@@ -19,18 +19,24 @@ Hence both halves. A missing teardown is the first; a teardown whose
 stderr is discarded is the second, because that is what let the first
 one hide for a whole cycle.
 
-Scope: the scripts the release path actually runs -- derived by reading
-ship.sh, preflight.sh, the version's exit acceptance and the CI
-workflows for the `.sh` files they name, not by a list kept here that
-would go stale. The harm this scan exists for is "the next gate on the
-same device", and that only exists where gates run one after another.
+Scope: every script under `scripts/` that brings a runner up.
 
-Thirteen older per-version e2e scripts discard their teardown's stderr
-too, and one of them (`v5.1-c11`) passes `--runner-port`, which `runner
-down` does not accept -- the same never-worked teardown. Nothing runs
-them today. They are named in `.claude/docs/open-items.md` rather than
-fixed in a release week and left unrun; when one is wired back into the
-release path this scan picks it up on its own.
+It was narrower for a day. Thirteen older per-version e2e scripts had
+the same silenced teardown, nothing runs them, and fixing thirteen
+scripts in a release week looked like trading one proven defect for
+thirteen unverified changes -- so the scan was scoped to the release
+path and the rest were named in `open-items.md` instead. That deferral
+was overruled; they are fixed, and the narrowing went with them,
+because a scope that exists to excuse work already done is just an
+exemption with a better name.
+
+Two of those thirteen findings were this scan being wrong, which is
+worth keeping: it required the word "runner" in the teardown and so read
+`smix down` -- the capsule's verb for the same act -- as no teardown at
+all, and it counted a `runner up` aimed at a serial that reaches
+nothing, whose next line asserts the refusal, as a runner that could be
+left running. A gate that reports work which does not need doing is the
+same failure as one that misses work: both say something untrue.
 """
 
 import os
@@ -48,43 +54,32 @@ STARTS_A_RUNNER = re.compile(
         \s+runner\ up\b""",
     re.VERBOSE,
 )
+# `runner down`, and the capsule's `down`, which is the same act through
+# a different verb. Requiring the word "runner" read two scripts as
+# having no teardown at all when they had one -- the finding named work
+# that did not need doing, which is the failure this file is otherwise
+# about.
 BRINGS_IT_DOWN = re.compile(
-    r"""\$?\{?(?:smix|SMIX_BIN|SMIX)\}?"?(?:/[\w/.\-]*smix)?\s+runner\ down\b""",
+    r"""\$?\{?(?:smix|SMIX_BIN|SMIX)\}?"?(?:/[\w/.\-]*smix)?\s+(?:runner\ )?down\b""",
 )
+# A `runner up` the script requires to be REFUSED never starts one, so
+# there is nothing for it to stop. Keyed on the assertion rather than on
+# the fixture's name: `v2.3-c15` aims one at a serial that reaches
+# nothing and then greps the output for the refusal.
+IS_A_REFUSAL_CASE = re.compile(r"did not refuse|refused:|may not address|is not a device")
 # `2>/dev/null` or `>/dev/null 2>&1` on the same line as the teardown.
 SWALLOWS_STDERR = re.compile(r"2>\s*/dev/null|>\s*/dev/null\s+2>&1")
 MENTIONS_ONLY = re.compile(r"^\s*(?:#|log\b|echo\b|printf\b|\*[\"'])")
 
-# The release path, read rather than remembered.
-ENTRY_POINTS = [
-    "scripts/release/ship.sh",
-    "scripts/dev/preflight.sh",
-    os.path.join(".github", "workflows", "ci.yml"),
-]
-_version = open(os.path.join(ROOT, "Cargo.toml"), encoding="utf-8").read()
-_major = re.search(r'^version\s*=\s*"(\d+)', _version, re.M)
-if _major:
-    ENTRY_POINTS.append(f"scripts/dev/v{_major.group(1)}-exit.sh")
-
-NAMED = re.compile(r"[\w./-]+\.sh")
-in_scope: set[str] = set()
-for entry in ENTRY_POINTS:
-    try:
-        text = open(os.path.join(ROOT, entry), encoding="utf-8").read()
-    except OSError:
-        continue
-    in_scope.add(os.path.basename(entry))
-    for hit in NAMED.findall(text):
-        in_scope.add(os.path.basename(hit))
-
 problems: list[str] = []
 checked = 0
+judged = 0
+refusal_cases: list[str] = []
+no_runner_survives: list[str] = []
 
 for dirpath, _dirs, files in os.walk(SCRIPTS):
     for name in sorted(files):
         if not name.endswith(".sh"):
-            continue
-        if name not in in_scope:
             continue
         path = os.path.join(dirpath, name)
         rel = os.path.relpath(path, ROOT)
@@ -98,6 +93,20 @@ for dirpath, _dirs, files in os.walk(SCRIPTS):
         ):
             continue
         checked += 1
+        # Only the ups that could actually leave something running.
+        real_ups = []
+        for idx, ln in enumerate(lines):
+            if not (STARTS_A_RUNNER.match(ln) and not MENTIONS_ONLY.match(ln)):
+                continue
+            near = " ".join(lines[idx : idx + 4])
+            if IS_A_REFUSAL_CASE.search(near):
+                refusal_cases.append(f"{rel}:{idx + 1}")
+                continue
+            real_ups.append(ln)
+        if not real_ups:
+            no_runner_survives.append(rel)
+            continue
+        judged += 1
         downs = [
             ln for ln in lines
             if BRINGS_IT_DOWN.search(ln) and not MENTIONS_ONLY.match(ln)
@@ -119,19 +128,30 @@ for dirpath, _dirs, files in os.walk(SCRIPTS):
                 f"      {silenced[0]}"
             )
 
+# The refusal carve-out has to exclude something, or it is a sentence
+# that reads like consideration and considers nothing (§14.7).
+if no_runner_survives and not refusal_cases:
+    problems.append(
+        "a script was excused as never starting a runner, but no `runner up` "
+        "in it was found to be a refusal case — the carve-out matched nothing "
+        "and excused something anyway"
+    )
+# And it has to leave something behind. Widened to match everything, the
+# carve-out excused every script in the repo and this still printed "22
+# gates, each takes one down": a true-sounding count of a set nothing was
+# checked against. Found by making it always fire; the guard above did not
+# catch it, because the carve-out having members is not the same as the
+# subject having any.
+if checked and not judged:
+    problems.append(
+        f"all {checked} runner-starting scripts were excused as refusal "
+        f"cases — the carve-out is swallowing the subject, and a summary "
+        f"over an empty set agrees with anything"
+    )
 if checked == 0:
     problems.append(
-        "no script on the release path was found starting a runner — either "
-        "the invocation shape changed or the entry points stopped naming the "
-        "gates, and this scan is now reading air"
-    )
-# The derivation is the part most likely to break quietly: an entry point
-# renamed, a gate invoked through a variable. Both would empty the scope
-# without emptying the repo, and an empty scope agrees with everything.
-if len(in_scope) < len(ENTRY_POINTS):
-    problems.append(
-        f"the release path named only {len(in_scope)} scripts — the entry "
-        f"points are not being read: {ENTRY_POINTS}"
+        "no script was found starting a runner — the invocation shape "
+        "changed and this scan is now reading air"
     )
 
 if problems:
@@ -140,7 +160,9 @@ if problems:
         print(f"  - {p}")
     sys.exit(1)
 
+excused = f", {len(no_runner_survives)} excused (every `up` in them is asserted to be refused)" if no_runner_survives else ""
 print(
-    f"every-runner-a-gate-starts-comes-down: clean — {checked} gates start a "
-    f"runner, each takes one down and lets the teardown speak"
+    f"every-runner-a-gate-starts-comes-down: clean — {judged} of {checked} "
+    f"runner-starting scripts judged; each takes one down and lets the "
+    f"teardown speak{excused}"
 )

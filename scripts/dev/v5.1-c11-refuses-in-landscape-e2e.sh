@@ -100,7 +100,12 @@ step "4. landscape under the repaired delivery: taps land"
 log "landscape taps proceed"
 
 step "5. the guard still fires when the delivery is not compensated"
-"$SMIX" runner down --runner-port "$PORT" >/dev/null 2>&1 || true
+# Mid-test, before bringing the runner back up under a different stamp
+# strategy. Silenced, this hid a `down` that had not worked and the
+# `up` below would then be talking to the old one.
+if ! down_said="$("$SMIX" runner down --runner-port "$PORT" 2>&1)"; then
+  printf '[c11] warning: the runner on %s was not stopped:\n%s\n' "$PORT" "$(printf '%s' "$down_said" | tail -3)" >&2
+fi
 TEST_RUNNER_SMIX_EVENT_STAMP=legacyAlwaysPortrait "$SMIX" runner up "$UDID" \
   --bundle "$BUNDLE" --runner-port "$PORT" > "$WORK/up-legacy.log" 2>&1 \
   || { tail -20 "$WORK/up-legacy.log"; fail "runner did not come up under the legacy delivery"; }

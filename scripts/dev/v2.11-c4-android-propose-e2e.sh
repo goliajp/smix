@@ -52,7 +52,14 @@ command -v claude >/dev/null 2>&1 || fail "claude CLI not found on PATH"
 WORK="$(mktemp -d)"
 cleanup() {
   log "teardown: runner down + rm work"
-  "$SMIX" runner down --platform android --device "$SERIAL" >/dev/null 2>&1 || true
+  # Not silenced. A teardown that fails leaves a runner on this device,
+  # and an Android device has only one -- so the next thing to start one
+  # there gets two instrumentations, or two xcodebuild sessions on one
+  # sim, and every failure after that is about the wrong thing. What it
+  # cost when it was silent, measured 2026-08-29: 23 of 26 corpus flows.
+  if ! down_said="$("$SMIX" runner down --platform android --device "$SERIAL" 2>&1)"; then
+    printf 'warning: the runner on %s was not stopped:\n%s\n' "$SERIAL" "$(printf '%s' "$down_said" | tail -3)" >&2
+  fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT

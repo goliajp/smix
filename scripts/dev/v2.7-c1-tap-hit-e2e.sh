@@ -60,7 +60,12 @@ SMIX_BIN="${SMIX_BIN:-$ROOT/target/release/smix}"
 OUT="$(mktemp)"
 cleanup() {
   log "teardown: runner down"
-  "$SMIX_BIN" runner down >/dev/null 2>&1 || true
+  # Not silenced: a teardown that fails leaves a runner behind, and the
+  # next thing to start one on this device fights it. The failure then
+  # reads as whatever that next thing was asking about.
+  if ! down_said="$("$SMIX_BIN" runner down 2>&1)"; then
+    printf 'warning: the runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
+  fi
   rm -f "$OUT"
 }
 trap cleanup EXIT
