@@ -752,8 +752,26 @@ log "runner tarballs match their sources"
 # /tap shipped a response body the wire crate deserialized to all-None
 # without one red test. Non-bypassable, like the swift suite above.
 log "cargo test --workspace"
-( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1 \
-  || fail "cargo test FAILED — see /tmp/smix-ship-cargo-test.log"
+# The exit code, not just the fact of one. A suite that fails names a
+# test; a `cargo` cut down by a signal names nothing, and the log's last
+# line is a passing test either way. Dry-run twenty-one ended with 76
+# binaries green, no `failures:` block anywhere in 1240 lines, and this
+# line saying the tests failed -- which is the one thing that had not
+# happened. 128+N is a signal; 101 is a real red.
+( cd "$ROOT" && cargo test --workspace ) > /tmp/smix-ship-cargo-test.log 2>&1
+CARGO_TEST_RC=$?
+if [ "$CARGO_TEST_RC" -ne 0 ]; then
+  if grep -q "^failures:" /tmp/smix-ship-cargo-test.log; then
+    fail "cargo test FAILED (exit $CARGO_TEST_RC) — see /tmp/smix-ship-cargo-test.log
+$(grep -A6 '^failures:' /tmp/smix-ship-cargo-test.log | head -12 | sed 's/^/  /')"
+  fi
+  fail "cargo test ended with exit $CARGO_TEST_RC and no test failed.
+  Nothing in /tmp/smix-ship-cargo-test.log says a test went red, so this is
+  the run being cut short rather than the tree being broken — a signal
+  (128+N), a killed child, or something taking the build out from under it.
+  Last lines:
+$(tail -4 /tmp/smix-ship-cargo-test.log | sed 's/^/    /')"
+fi
 
 # --- judgements that need a build ------------------------------------
 # These three are not seconds-long source reads. Two compile the adapter
