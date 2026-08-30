@@ -124,10 +124,19 @@ def main(suites):
         cmd = runnable[who]
         r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
         if r.returncode != 0:
+            # The last line, and only the last line, used to be the
+            # verdict. `cargo`'s is `process didn't exit successfully`,
+            # which says the suite failed and names nothing -- and when
+            # what actually happened was a wait on another session's
+            # build lock, the gate reported "the recorded reports differ
+            # across the three host trees". A sentence about this gate's
+            # subject, about something else entirely. Measured
+            # 2026-08-30: the same suite alone, seconds later, 7/7.
+            said = (r.stdout + r.stderr).strip().splitlines()
+            tail = "\n      ".join(ln[:160] for ln in said[-8:]) if said else "(it said nothing)"
             problems.append(
                 f"the {who} reader's suite did not pass — it is one of the "
-                f"three and cannot be excused: "
-                f"{(r.stdout + r.stderr).strip().splitlines()[-1][:120] if (r.stdout + r.stderr).strip() else 'no output'}"
+                f"three and cannot be excused. What it said:\n      {tail}"
             )
 
     if problems:
