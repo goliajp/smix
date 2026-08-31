@@ -138,10 +138,23 @@ class SmixHttpServer(
     /// How long `input-text` waits for a field to take focus.
     ///
     /// The tap that focuses it lands immediately before, and on a cold
-    /// screen the IME needs a moment. Two seconds is well past what that
-    /// takes on emulator-5554 and still short enough that a genuinely
-    /// unfocused field fails while the caller is watching.
-    private val FOCUS_SETTLE_MS = 2000L
+    /// screen the IME needs a moment.
+    ///
+    /// This said "two seconds is well past what that takes on
+    /// emulator-5554" and that had stopped being true. Measured
+    /// 2026-08-31 on a freshly booted emulator-5554: tap the Settings
+    /// search bar, and `mInputShown` flips at t=2s -- exactly the budget,
+    /// so whether a caller got a focused field was a coin toss. What came
+    /// out was `no_focused_field`, a sentence about this contract, from a
+    /// release gate that is about whether a flag changed the driver's
+    /// path.
+    ///
+    /// Six seconds instead: three times the slowest arrival measured
+    /// here, and still short enough that a genuinely unfocused field
+    /// fails while the caller is watching rather than at some timeout
+    /// nobody will sit through. A budget set to the measurement is a
+    /// budget that fails half the time.
+    private val FOCUS_SETTLE_MS = 6000L
 
     /// How long to keep watching for the characters to appear.
     ///
