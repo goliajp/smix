@@ -263,6 +263,20 @@ on the crates, [Migrating to smix 8.0](docs/migrating-to-8.md) is short.
 
 ### Fixed
 
+- **The embedded store moves to kevy 6.2.** smix has been on
+  `kevy-embedded` 5.4.1; 6.2.0 is current. Two majors, and no API to
+  change: kevy's own record says the 1,871 public names at 5.4.1 and at
+  6.0.0 are the same set, none removed and none added, and that the major
+  names a milestone rather than a break. 6.2.0's one behaviour change is
+  that `-0` and `0` are a single score in a sorted set, as they are in
+  Redis — smix keeps key-value state and an append-only log, and has no
+  sorted set.
+  
+  The half that could have broken quietly is the data already on disk.
+  Verified rather than reasoned about: the 10.0.0 binary, built against
+  6.2.0, read this machine's existing 15 MB append-only log — written by
+  5.4.1 — and answered with the lease rows in it.
+
 - **`runner up` and `runner down` on Android stop when the device is
   somebody else's, and say whose.** An Android device has exactly one
   runner: one instrumentation package, one fixed device-side port, every
