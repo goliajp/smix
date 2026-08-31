@@ -602,10 +602,6 @@ log "the delivery sweep can still go red"
 python3 "$ROOT/scripts/dev/a-reply-nobody-sent.test.py" > /tmp/smix-ship-reply-sent-selftest.log 2>&1 \
   || fail "the delivery sweep cannot go red — see /tmp/smix-ship-reply-sent-selftest.log"
 
-log "no gate says yes with its subject gone"
-python3 "$ROOT/scripts/dev/a-gate-without-its-subject.py" > /tmp/smix-ship-gate-subject.log 2>&1 \
-  || fail "a gate passes without its subject — see /tmp/smix-ship-gate-subject.log"
-
 log "the subject sweep can still go red"
 python3 "$ROOT/scripts/dev/a-gate-without-its-subject.test.py" > /tmp/smix-ship-gate-subject-selftest.log 2>&1 \
   || fail "the subject sweep cannot go red — see /tmp/smix-ship-gate-subject-selftest.log"
@@ -639,15 +635,6 @@ log "gate subject diversity"
 python3 "$ROOT/scripts/dev/gate-subject-diversity.py" > /tmp/smix-ship-subjects.log 2>&1 \
   || fail "gate subject diversity FAILED — see /tmp/smix-ship-subjects.log"
 
-# --- workflow scan -----------------------------------------------------
-# The development contract survives a clone: charter and rule cards
-# tracked, hook scripts present and wired, guards tested, no GNU-only
-# tools, and every source gate running in all three places. That last
-# check is what found this script missing two gates.
-log "workflow scan"
-python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 \
-  || fail "workflow scan FAILED — see /tmp/smix-ship-workflow.log"
-
 # --- clippy -----------------------------------------------------------
 # `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
 # nothing ran clippy — so four lints sat in the tree, one of them a doc
@@ -673,6 +660,27 @@ log "rustfmt"
 log "clippy"
 ( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
   || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
+
+# The mutation sweep runs every ship gate twice in a pristine copy, so
+# it costs minutes and grew when this release added two gates to the
+# ship. `cheap-gates-come-first` caught what that did to the ones
+# after it: eight judgements of nought to two seconds each, sitting
+# behind six minutes of work, any of which could have said no first.
+#
+# So the cheap ones go in front of it. Nothing about what they check
+# changes; what changes is when a reader finds out.
+log "no gate says yes with its subject gone"
+python3 "$ROOT/scripts/dev/a-gate-without-its-subject.py" > /tmp/smix-ship-gate-subject.log 2>&1 \
+  || fail "a gate passes without its subject — see /tmp/smix-ship-gate-subject.log"
+
+# --- workflow scan -----------------------------------------------------
+# The development contract survives a clone: charter and rule cards
+# tracked, hook scripts present and wired, guards tested, no GNU-only
+# tools, and every source gate running in all three places. That last
+# check is what found this script missing two gates.
+log "workflow scan"
+python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 \
+  || fail "workflow scan FAILED — see /tmp/smix-ship-workflow.log"
 
 # --- Android unit tests + androidTest compile --------------------------
 # Compiles the generated Kotlin bindings AND runs the unit suites.
