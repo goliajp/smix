@@ -100,9 +100,27 @@ def main():
     # Where the list actually is. Coordinates guessed from the screen's
     # middle missed it entirely once, and the scroll that never happened
     # was read as a signal that did not work.
-    tree = get(a.port, "/tree")
+    #
+    # And waiting for the probe to answer is not waiting for this. The
+    # probe lives in the app's process and answers as soon as that
+    # process is up; whether the list has been composed into the
+    # accessibility tree is a later moment. Measured 2026-08-31: the
+    # gate read the tree, found no `compose_rows`, and said "the
+    # fixture's lazy list is not on screen" -- true at that instant, and
+    # about a screen that had not arrived rather than about waiting
+    # ending early, which is what this gate asks. Same shape as the
+    # `am start` waits already taken out of the behaviour gate.
+    tree = ""
+    for _ in range(30):
+        tree = get(a.port, "/tree")
+        if "compose_rows" in tree:
+            break
+        time.sleep(1)
     if "compose_rows" not in tree:
-        problems.append("the fixture's lazy list is not on screen")
+        problems.append(
+            "the fixture's lazy list never reached the tree within 30s — this is "
+            "about the screen arriving, not about a wait ending early"
+        )
         return report()
     bounds = probe_bounds(d, "compose_rows")
     if bounds is None:
