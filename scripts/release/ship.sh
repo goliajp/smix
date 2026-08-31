@@ -556,17 +556,6 @@ log "known-unstable list scan"
 python3 "$ROOT/scripts/dev/known-unstable-scan.py" > /tmp/smix-ship-known-unstable.log 2>&1 \
   || fail "known-unstable list scan FAILED — see /tmp/smix-ship-known-unstable.log"
 
-log "three readers agree"
-python3 "$ROOT/scripts/dev/three-readers-agree.py" > /tmp/smix-ship-three-readers.log 2>&1 \
-  || fail "three-readers-agree FAILED (see /tmp/smix-ship-three-readers.log)
-$(tail -6 /tmp/smix-ship-three-readers.log 2>/dev/null | sed 's/^/  /')
-
-  Two different findings wear this name: the three readers disagreeing
-  about a recorded report, and one of the three suites not running at
-  all. This line used to assert the first whichever it was."
-python3 "$ROOT/scripts/dev/three-readers-agree.py" --assert-ci-union >> /tmp/smix-ship-three-readers.log 2>&1 \
-  || fail "three-readers-agree --assert-ci-union FAILED — a reader is named by no CI job (see /tmp/smix-ship-three-readers.log)"
-
 log "mcp cli parity scan"
 python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \
   || fail "mcp cli parity scan FAILED — see /tmp/smix-ship-mcp-parity.log"
@@ -660,6 +649,22 @@ log "rustfmt"
 log "clippy"
 ( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
   || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
+
+# Moved down past the cheap judgements below it. This step runs three
+# host suites and pays for whatever the tree last invalidated: after
+# the kevy bump it took 25 minutes, and `cheap-gates-come-first`
+# found seven judgements of nought to one second each sitting behind
+# it. What they check does not change; when a reader finds out does.
+log "three readers agree"
+python3 "$ROOT/scripts/dev/three-readers-agree.py" > /tmp/smix-ship-three-readers.log 2>&1 \
+  || fail "three-readers-agree FAILED (see /tmp/smix-ship-three-readers.log)
+$(tail -6 /tmp/smix-ship-three-readers.log 2>/dev/null | sed 's/^/  /')
+
+  Two different findings wear this name: the three readers disagreeing
+  about a recorded report, and one of the three suites not running at
+  all. This line used to assert the first whichever it was."
+python3 "$ROOT/scripts/dev/three-readers-agree.py" --assert-ci-union >> /tmp/smix-ship-three-readers.log 2>&1 \
+  || fail "three-readers-agree --assert-ci-union FAILED — a reader is named by no CI job (see /tmp/smix-ship-three-readers.log)"
 
 # The mutation sweep runs every ship gate twice in a pristine copy, so
 # it costs minutes and grew when this release added two gates to the
