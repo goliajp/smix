@@ -229,8 +229,30 @@ await_node() {
 }
 
 # A1 — with the flag, the flow passes.
+#
+# The last two fixed waits in this file. The comment further down already
+# says what they cost: "`sleep 3` made that a coin toss and the 7.0.0
+# ship lost it at thirty-one minutes". That lesson was applied to the
+# polling helper and not to these, and on 2026-08-31 the first of them
+# lost again -- on a freshly booted emulator the flow reached its
+# `inputText` before anything had focus, and the verdict was
+# `no_focused_field`: a statement about /input-text's contract, from a
+# gate that is about whether a flag changed the driver's path.
+#
+# Waiting for Settings to be the resumed activity, not for three seconds.
+await_settings() {
+  local i
+  for i in $(seq 1 30); do
+    adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null \
+      | grep -m1 topResumedActivity | grep -q "$APP" && return 0
+    sleep 1
+  done
+  die "A1: $APP never became the resumed activity on $SERIAL within 30s.
+  This is about the screen arriving, not about --force-key-events.
+  Current: $(adb -s "$SERIAL" shell dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity)"
+}
 adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
-sleep 3
+await_settings
 if ! run_flow with-flag --force-key-events; then
   die "A1: the flow failed WITH --force-key-events. Log: $WORK/with-flag.log"
 fi
@@ -238,7 +260,7 @@ echo "  A1a: flow passes with --force-key-events"
 
 # A1 control — without it, the flow must fail. This is a pass condition.
 adb -s "$SERIAL" shell am start -a android.settings.SETTINGS >/dev/null 2>&1
-sleep 3
+await_settings
 if run_flow without-flag; then
   die "A1: the flow ALSO passed without --force-key-events, so it no longer
   proves anything about that flag. Either the flow stopped depending on it, or
