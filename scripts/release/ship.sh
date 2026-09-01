@@ -258,6 +258,28 @@ log "npm/smix-rn typecheck + vitest"
 # Derives the served-route list from both runner sources and sweeps every
 # shipped file for phantom endpoints. It caught 13 fictional routes in
 # review, then sat unwired while ship.sh ran everything except it.
+# --- clippy -----------------------------------------------------------
+# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
+# nothing ran clippy — so four lints sat in the tree, one of them a doc
+# comment detached from the type it described in a stone crate. Clean at
+# the time this was added; here so it stays that way.
+#
+# Here rather than after the release build, where it used to be: nothing
+# before it is a precondition — it reads source — and on an already-built
+# tree it costs three seconds. `cheap-gates-come-first` measured those
+# three seconds sitting behind eleven minutes of Gradle and device work,
+# which is what that gate exists to say. A lint error is now found before
+# anything has been compiled for it.
+# Beside clippy, and for the same reason: both read source and neither needs
+# anything compiled first. `preflight.sh` has had this check since it existed
+# and the ship did not, so every path that reached a release without going
+# through preflight reached it unformatted. v10 lost two CI rounds that way —
+# once after a field went into fifty struct literals, once after an `if let`
+# was collapsed by hand. The code was right both times; the round was gone.
+log "rustfmt"
+( cd "$ROOT" && cargo fmt --all --check ) > /tmp/smix-ship-fmt.log 2>&1 \
+  || fail "rustfmt FAILED — run \`cargo fmt --all\` (see /tmp/smix-ship-fmt.log)"
+
 log "route conformance"
 python3 "$ROOT/scripts/dev/route-conformance.py" > /tmp/smix-ship-routes.log 2>&1 \
   || fail "route conformance FAILED — see /tmp/smix-ship-routes.log"
@@ -846,28 +868,6 @@ trap ship_profile_close EXIT
 log "clippy"
 ( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
   || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
-
-# --- clippy -----------------------------------------------------------
-# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
-# nothing ran clippy — so four lints sat in the tree, one of them a doc
-# comment detached from the type it described in a stone crate. Clean at
-# the time this was added; here so it stays that way.
-#
-# Here rather than after the release build, where it used to be: nothing
-# before it is a precondition — it reads source — and on an already-built
-# tree it costs three seconds. `cheap-gates-come-first` measured those
-# three seconds sitting behind eleven minutes of Gradle and device work,
-# which is what that gate exists to say. A lint error is now found before
-# anything has been compiled for it.
-# Beside clippy, and for the same reason: both read source and neither needs
-# anything compiled first. `preflight.sh` has had this check since it existed
-# and the ship did not, so every path that reached a release without going
-# through preflight reached it unformatted. v10 lost two CI rounds that way —
-# once after a field went into fifty struct literals, once after an `if let`
-# was collapsed by hand. The code was right both times; the round was gone.
-log "rustfmt"
-( cd "$ROOT" && cargo fmt --all --check ) > /tmp/smix-ship-fmt.log 2>&1 \
-  || fail "rustfmt FAILED — run \`cargo fmt --all\` (see /tmp/smix-ship-fmt.log)"
 
 # Moved down past the cheap judgements below it. This step runs three
 # host suites and pays for whatever the tree last invalidated: after
