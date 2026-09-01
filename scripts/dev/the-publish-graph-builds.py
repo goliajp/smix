@@ -28,12 +28,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SHIP = ROOT / "scripts" / "release" / "ship.sh"
+# A path argument is how the self-test hands this gate a ship.sh whose
+# task list it has falsified. Without one it reads the real release.
+SHIP = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "scripts" / "release" / "ship.sh"
 
 m = re.search(r'^GRADLE_PUB_TASKS=\(([^)]*)\)', SHIP.read_text(), re.M)
 if not m:
     print("the-publish-graph-builds: FAIL")
-    print(f"  - no GRADLE_PUB_TASKS=(...) line in {SHIP.relative_to(ROOT)};")
+    print(f"  - no GRADLE_PUB_TASKS=(...) line in {SHIP};")
     print("    the gate reads the real task names from there and cannot")
     print("    guess them. If the release moved them, point this gate at")
     print("    their new home rather than copying them in here.")
