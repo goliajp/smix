@@ -76,6 +76,23 @@ PRODUCES = {
     "SmixRunner UITest build": "the corpus gate drives the runner it builds",
 }
 
+# The permission to publish, rather than a judgement about the tree.
+#
+# Every gate in this profile ran because it passed, so there is nowhere
+# earlier to put anything: "behind the smoke gate" is where the whole
+# ship is. Counting its minutes towards what a later judgement could
+# have been paid before would ask for gates to run ahead of the thing
+# that allows them to run at all.
+#
+# It is also the one step whose cost is a coin toss on a stamp: it
+# re-runs when the last pass is over an hour old, so it read six minutes
+# on this run and nothing on the one before. Verified to still exist in
+# ship.sh with the others below.
+PERMISSION = {
+    "smoke gate stale or missing — running smoke first": "it is the permission to "
+    "publish; every gate after it runs because it passed",
+}
+
 
 def main() -> int:
     if not os.path.isfile(PROFILE):
@@ -118,7 +135,7 @@ def main() -> int:
     )
     if os.path.isfile(ship):
         ship_src = open(ship, encoding="utf-8").read()
-        for name, why in PRODUCES.items():
+        for name, why in {**PRODUCES, **PERMISSION}.items():
             if name not in ship_src:
                 problems.append(
                     f"`{name}` is exempt on the grounds that {why} — but ship.sh no "
@@ -127,6 +144,9 @@ def main() -> int:
 
     spent = 0
     for secs, name in rows:
+        if name in PERMISSION:
+            # Not added to `spent`: see PERMISSION.
+            continue
         if name in SELF or name in PRODUCES:
             spent += secs
             continue
