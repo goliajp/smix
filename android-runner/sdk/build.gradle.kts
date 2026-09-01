@@ -23,12 +23,12 @@ plugins {
     id("org.jetbrains.kotlin.android")
     // kotlinx.serialization for JSON wire encoding of Selector / A11yNode
     // (matches the Rust smix-selector wire shape via custom serializers).
-    kotlin("plugin.serialization") version "2.0.21"
+    kotlin("plugin.serialization")
     // vanniktech maven-publish plugin. Sonatype Central Portal via
     // vanniktech is the modern path (OSSRH EOL 2025). The plugin
     // auto-handles the javadoc + sources + dokka jars + Central Portal
     // upload.
-    id("com.vanniktech.maven.publish") version "0.30.0"
+    id("com.vanniktech.maven.publish")
 }
 
 android {

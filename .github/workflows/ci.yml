@@ -124,6 +124,13 @@ jobs:
         working-directory: android-runner
         run: ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain
 
+      # The dry run publishes to the local Maven repo, which never creates a
+      # staging repository — so it cannot see a build service that two
+      # sibling projects fail to share. 10.0.0's Maven leg died on exactly
+      # that, after crates.io and npm had gone out.
+      - name: the publish graph builds
+        run: python3 scripts/dev/the-publish-graph-builds.py
+
   source-gates:
     # Ceiling, not a target: measured max 3m or less.
     # Without one a hung job holds a runner for GitHub's default
