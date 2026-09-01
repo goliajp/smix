@@ -131,6 +131,9 @@ jobs:
       - name: the publish graph builds
         run: python3 scripts/dev/the-publish-graph-builds.py
 
+      - name: the publish-graph gate can still go red
+        run: python3 scripts/dev/the-publish-graph-builds.test.py
+
   source-gates:
     # Ceiling, not a target: measured max 3m or less.
     # Without one a hung job holds a runner for GitHub's default

@@ -73,6 +73,7 @@ LOCAL = {
     "gate port scan": "gate-port-scan",
     "every runner a gate starts comes down": "every-runner-a-gate-starts-comes-down",
     "the publish graph builds": "the-publish-graph-builds",
+    "the publish-graph gate can still go red": "the-publish-graph-builds.test",
     "fuzz targets compile": "fuzz-targets-compile",
     "preflight parity scan": "preflight-parity-scan",
     "mcp cli parity scan": "mcp-cli-parity-scan",

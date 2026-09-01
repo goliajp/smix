@@ -629,6 +629,10 @@ log "gate port scan"
 python3 "$ROOT/scripts/dev/gate-port-scan.py" > /tmp/smix-ship-gate-port.log 2>&1 \
   || fail "gate port scan FAILED — see /tmp/smix-ship-gate-port.log"
 
+log "the publish-graph gate can still go red"
+python3 "$ROOT/scripts/dev/the-publish-graph-builds.test.py" > /tmp/smix-ship-publish-graph-test.log 2>&1 \
+  || fail "the-publish-graph-builds no longer goes red on broken input — in particular it may have gone back to accepting publishToMavenLocal, which is the easier path that missed this in 10.0.0. See /tmp/smix-ship-publish-graph-test.log"
+
 log "the publish graph builds"
 python3 "$ROOT/scripts/dev/the-publish-graph-builds.py" > /tmp/smix-ship-publish-graph.log 2>&1 \
   || fail "the-publish-graph-builds FAILED — the real Maven tasks cannot build their task graph. The dry run would not have found this: it publishes to the local repo, which never creates a staging repository. See /tmp/smix-ship-publish-graph.log"
