@@ -27,9 +27,12 @@ Usage:
 """
 
 import os
+import re
 import sys
 
 PROFILE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/smix-ship-profile.tsv"
+# argv[2] is how the self-test hands this gate a ship.sh it has falsified.
+SHIP_ARG = sys.argv[2] if len(sys.argv) > 2 else None
 
 # A gate under this is cheap enough that reaching it should not cost
 # anything. One that takes longer has earned its place further down.
@@ -147,7 +150,7 @@ def main() -> int:
     # The exemptions are checked from the other side: a name here that
     # ship.sh no longer logs is excusing nothing, and would go on
     # excusing it silently.
-    ship = os.path.join(
+    ship = SHIP_ARG or os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         "scripts",
         "release",
@@ -161,19 +164,24 @@ def main() -> int:
                     f"`{name}` is exempt on the grounds that {why} — but ship.sh no "
                     f"longer logs a step by that name. Re-verify the exemption."
                 )
+        # Asked of ship.sh rather than of the profile, because this gate
+        # runs in the MIDDLE of a ship: publishing comes after it, so the
+        # profile it reads has never yet contained a publish step. Checking
+        # there made the gate red on every real run while passing on the
+        # complete profile a finished ship leaves behind — which is what it
+        # was verified against.
+        for prefix in PUBLISHING:
+            if not re.search(r'^\s*log "' + re.escape(prefix), ship_src, re.M):
+                problems.append(
+                    f"`{prefix}` is exempt as publishing, but ship.sh logs no step "
+                    f"beginning with it. An exemption that excuses nothing still "
+                    f"reads as one that looked."
+                )
 
     # How many rows the comparison actually looked at. A check that
     # examined nothing and printed "clean" is the shape this repository
     # keeps finding: found by making the comparison always false, which
     # left the summary unchanged.
-    for prefix in PUBLISHING:
-        if not any(name.startswith(prefix) for _, name in rows):
-            problems.append(
-                f"`{prefix}` is exempt as publishing, but no step in this profile "
-                f"starts with it. An exemption that excuses nothing still reads "
-                f"as one that looked."
-            )
-
     judged = 0
     spent = 0
     for secs, name in rows:
