@@ -624,88 +624,17 @@ log "gate subject diversity"
 python3 "$ROOT/scripts/dev/gate-subject-diversity.py" > /tmp/smix-ship-subjects.log 2>&1 \
   || fail "gate subject diversity FAILED — see /tmp/smix-ship-subjects.log"
 
-# --- clippy -----------------------------------------------------------
-# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
-# nothing ran clippy — so four lints sat in the tree, one of them a doc
-# comment detached from the type it described in a stone crate. Clean at
-# the time this was added; here so it stays that way.
+# --- devices first ---------------------------------------------------
 #
-# Here rather than after the release build, where it used to be: nothing
-# before it is a precondition — it reads source — and on an already-built
-# tree it costs three seconds. `cheap-gates-come-first` measured those
-# three seconds sitting behind eleven minutes of Gradle and device work,
-# which is what that gate exists to say. A lint error is now found before
-# anything has been compiled for it.
-# Beside clippy, and for the same reason: both read source and neither needs
-# anything compiled first. `preflight.sh` has had this check since it existed
-# and the ship did not, so every path that reached a release without going
-# through preflight reached it unformatted. v10 lost two CI rounds that way —
-# once after a field went into fifty struct literals, once after an `if let`
-# was collapsed by hand. The code was right both times; the round was gone.
-log "rustfmt"
-( cd "$ROOT" && cargo fmt --all --check ) > /tmp/smix-ship-fmt.log 2>&1 \
-  || fail "rustfmt FAILED — run \`cargo fmt --all\` (see /tmp/smix-ship-fmt.log)"
-
-# Moved down past the cheap judgements below it. This step runs three
-# host suites and pays for whatever the tree last invalidated: after
-# the kevy bump it took 25 minutes, and `cheap-gates-come-first`
-# found seven judgements of nought to one second each sitting behind
-# it. What they check does not change; when a reader finds out does.
-log "three readers agree"
-python3 "$ROOT/scripts/dev/three-readers-agree.py" > /tmp/smix-ship-three-readers.log 2>&1 \
-  || fail "three-readers-agree FAILED (see /tmp/smix-ship-three-readers.log)
-$(tail -6 /tmp/smix-ship-three-readers.log 2>/dev/null | sed 's/^/  /')
-
-  Two different findings wear this name: the three readers disagreeing
-  about a recorded report, and one of the three suites not running at
-  all. This line used to assert the first whichever it was."
-python3 "$ROOT/scripts/dev/three-readers-agree.py" --assert-ci-union >> /tmp/smix-ship-three-readers.log 2>&1 \
-  || fail "three-readers-agree --assert-ci-union FAILED — a reader is named by no CI job (see /tmp/smix-ship-three-readers.log)"
-
-# The mutation sweep runs every ship gate twice in a pristine copy, so
-# it costs minutes and grew when this release added two gates to the
-# ship. `cheap-gates-come-first` caught what that did to the ones
-# after it: eight judgements of nought to two seconds each, sitting
-# behind six minutes of work, any of which could have said no first.
+# The release binary these gates drive, and then the gates. Ahead of
+# every expensive judgement, because a device that is absent, held by
+# somebody else, or unregistered can say so in seconds -- and this
+# release found each of those three the hard way, hours in.
 #
-# So the cheap ones go in front of it. Nothing about what they check
-# changes; what changes is when a reader finds out.
-log "no gate says yes with its subject gone"
-python3 "$ROOT/scripts/dev/a-gate-without-its-subject.py" > /tmp/smix-ship-gate-subject.log 2>&1 \
-  || fail "a gate passes without its subject — see /tmp/smix-ship-gate-subject.log"
+# `cheap-gates-come-first` named this four runs in a row, and each
+# time moving them one step earlier only revealed the next expensive
+# thing in front of them. The answer was not another step.
 
-# --- workflow scan -----------------------------------------------------
-# The development contract survives a clone: charter and rule cards
-# tracked, hook scripts present and wired, guards tested, no GNU-only
-# tools, and every source gate running in all three places. That last
-# check is what found this script missing two gates.
-log "workflow scan"
-python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 \
-  || fail "workflow scan FAILED — see /tmp/smix-ship-workflow.log"
-
-# --- Android unit tests + androidTest compile --------------------------
-# Compiles the generated Kotlin bindings AND runs the unit suites.
-# The bindings previously first compiled during `gradlew :sdk:publish` —
-# publish-time was the first compile, which is exactly how the
-# DriveError field/Throwable.message collision reached a release branch.
-#
-# The task name is bare rather than `:sdk:`-qualified because it used to
-# be qualified, and the app module's eight test files were consequently
-# run by nothing at all — including the ones written to cover the empty
-# set_target_bundle_id and the placeholder package in the view-id lookup.
-#
-# assembleDebugAndroidTest is the Android counterpart of the
-# `xcodebuild build-for-testing` step above: it compiles the runner body
-# that ships to users without starting a device.
-#
-# :app's connectedDebugAndroidTest is NOT here and will not be. It was
-# measured sitting at "Tests 0/1 completed" for three minutes forty
-# while /health answered 200: it does not fail, it never returns, and in
-# a release script that is a hang. :sdk's runs below, via the delegate.
-log "android unit tests + androidTest compile (sdk + app; compiles kotlin bindings)"
-( cd "$ROOT/android-runner" && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain ) \
-    > /tmp/smix-ship-kotlin-test.log 2>&1 \
-  || fail "Android unit tests / androidTest compile FAILED — see /tmp/smix-ship-kotlin-test.log"
 # Built here rather than just before the corpus gate: the android gates
 # run first and used to fall back to whatever smix was on PATH, so a
 # 6.2.0 binary spent this release verifying 6.3.0. The corpus gate had
@@ -717,56 +646,6 @@ log "android unit tests + androidTest compile (sdk + app; compiles kotlin bindin
 # red on a real driver/runner drift.
 log "cargo build -p smix-cli --release (for corpus gate)"
 ( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release"
-
-
-
-# --- swift-bridge unit tests ------------------------------------------
-# NOT bypassable. This suite sat outside the gate long enough for a test
-# asserting a two-release-old contract to fail unnoticed for 15+ releases.
-# ~18 s.
-log "swift-bridge unit tests"
-( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
-  || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
-
-# --- SmixRunner UITest compile ----------------------------------------
-# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
-# the XCUITest body that ships in the runner sources and is what actually
-# drives a device. It went uncompiled by any gate. build-for-testing on a
-# generic simulator destination compiles it without booting a simulator.
-log "SmixRunner UITest build"
-( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
-    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
-    > /tmp/smix-ship-uitest-build.log 2>&1 \
-  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
-
-# The runner tarballs are compared against the trees they were built
-# from, and that comparison lived inside `cargo test --workspace` — which
-# is where it was found, twice in one cycle, at thirteen and thirty-one
-# minutes. Both times the fix was one command and the cost was the wait.
-#
-# Buried inside an expensive check it is also invisible to
-# `cheap-gates-come-first`: that gate reads a profile of named gates, and
-# a judgement with no name of its own cannot be said to be in the wrong
-# place. Naming it is what makes its position a choice somebody made.
-#
-# Measured at 64s on a warm tree, against ~40 minutes for the suite it
-# used to hide in.
-log "runner tarballs match their sources"
-( cd "$ROOT" && cargo test -p smix-runner-sources ) > /tmp/smix-ship-tarball.log 2>&1 \
-  || fail "runner tarballs are stale — run scripts/release/build-runner-tarball.sh and build-android-runner-tarball.sh (see /tmp/smix-ship-tarball.log)"
-
-# --- the device gates, ahead of the workspace suite ------------------
-#
-# These sat after `cargo test --workspace`, which is ninety-six
-# minutes. `cheap-gates-come-first` put it plainly: three judgements
-# of nought to three seconds each, behind a hundred and eleven minutes
-# of work. And the cost of being late here is not only the wait --
-# every device red this release (an emulator nobody had registered, a
-# consumer holding it, a focus budget equal to its own arrival time)
-# was reachable in seconds and was found after two hours.
-#
-# A device that is absent, held, or unregistered should say so before
-# anything is compiled for it.
 
 # --- android instrumentation (device) ----------------------------------
 # The :sdk assertion suite on a pinned emulator. Placed early — before
@@ -967,6 +846,138 @@ trap ship_profile_close EXIT
 log "clippy"
 ( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
   || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
+
+# --- clippy -----------------------------------------------------------
+# `warnings = "deny"` in the workspace lints covers rustc, not clippy, and
+# nothing ran clippy — so four lints sat in the tree, one of them a doc
+# comment detached from the type it described in a stone crate. Clean at
+# the time this was added; here so it stays that way.
+#
+# Here rather than after the release build, where it used to be: nothing
+# before it is a precondition — it reads source — and on an already-built
+# tree it costs three seconds. `cheap-gates-come-first` measured those
+# three seconds sitting behind eleven minutes of Gradle and device work,
+# which is what that gate exists to say. A lint error is now found before
+# anything has been compiled for it.
+# Beside clippy, and for the same reason: both read source and neither needs
+# anything compiled first. `preflight.sh` has had this check since it existed
+# and the ship did not, so every path that reached a release without going
+# through preflight reached it unformatted. v10 lost two CI rounds that way —
+# once after a field went into fifty struct literals, once after an `if let`
+# was collapsed by hand. The code was right both times; the round was gone.
+log "rustfmt"
+( cd "$ROOT" && cargo fmt --all --check ) > /tmp/smix-ship-fmt.log 2>&1 \
+  || fail "rustfmt FAILED — run \`cargo fmt --all\` (see /tmp/smix-ship-fmt.log)"
+
+# Moved down past the cheap judgements below it. This step runs three
+# host suites and pays for whatever the tree last invalidated: after
+# the kevy bump it took 25 minutes, and `cheap-gates-come-first`
+# found seven judgements of nought to one second each sitting behind
+# it. What they check does not change; when a reader finds out does.
+log "three readers agree"
+python3 "$ROOT/scripts/dev/three-readers-agree.py" > /tmp/smix-ship-three-readers.log 2>&1 \
+  || fail "three-readers-agree FAILED (see /tmp/smix-ship-three-readers.log)
+$(tail -6 /tmp/smix-ship-three-readers.log 2>/dev/null | sed 's/^/  /')
+
+  Two different findings wear this name: the three readers disagreeing
+  about a recorded report, and one of the three suites not running at
+  all. This line used to assert the first whichever it was."
+python3 "$ROOT/scripts/dev/three-readers-agree.py" --assert-ci-union >> /tmp/smix-ship-three-readers.log 2>&1 \
+  || fail "three-readers-agree --assert-ci-union FAILED — a reader is named by no CI job (see /tmp/smix-ship-three-readers.log)"
+
+# The mutation sweep runs every ship gate twice in a pristine copy, so
+# it costs minutes and grew when this release added two gates to the
+# ship. `cheap-gates-come-first` caught what that did to the ones
+# after it: eight judgements of nought to two seconds each, sitting
+# behind six minutes of work, any of which could have said no first.
+#
+# So the cheap ones go in front of it. Nothing about what they check
+# changes; what changes is when a reader finds out.
+log "no gate says yes with its subject gone"
+python3 "$ROOT/scripts/dev/a-gate-without-its-subject.py" > /tmp/smix-ship-gate-subject.log 2>&1 \
+  || fail "a gate passes without its subject — see /tmp/smix-ship-gate-subject.log"
+
+# --- workflow scan -----------------------------------------------------
+# The development contract survives a clone: charter and rule cards
+# tracked, hook scripts present and wired, guards tested, no GNU-only
+# tools, and every source gate running in all three places. That last
+# check is what found this script missing two gates.
+log "workflow scan"
+python3 "$ROOT/scripts/dev/workflow-scan.py" > /tmp/smix-ship-workflow.log 2>&1 \
+  || fail "workflow scan FAILED — see /tmp/smix-ship-workflow.log"
+
+# --- Android unit tests + androidTest compile --------------------------
+# Compiles the generated Kotlin bindings AND runs the unit suites.
+# The bindings previously first compiled during `gradlew :sdk:publish` —
+# publish-time was the first compile, which is exactly how the
+# DriveError field/Throwable.message collision reached a release branch.
+#
+# The task name is bare rather than `:sdk:`-qualified because it used to
+# be qualified, and the app module's eight test files were consequently
+# run by nothing at all — including the ones written to cover the empty
+# set_target_bundle_id and the placeholder package in the view-id lookup.
+#
+# assembleDebugAndroidTest is the Android counterpart of the
+# `xcodebuild build-for-testing` step above: it compiles the runner body
+# that ships to users without starting a device.
+#
+# :app's connectedDebugAndroidTest is NOT here and will not be. It was
+# measured sitting at "Tests 0/1 completed" for three minutes forty
+# while /health answered 200: it does not fail, it never returns, and in
+# a release script that is a hang. :sdk's runs below, via the delegate.
+log "android unit tests + androidTest compile (sdk + app; compiles kotlin bindings)"
+( cd "$ROOT/android-runner" && ./gradlew testDebugUnitTest assembleDebugAndroidTest --console=plain ) \
+    > /tmp/smix-ship-kotlin-test.log 2>&1 \
+  || fail "Android unit tests / androidTest compile FAILED — see /tmp/smix-ship-kotlin-test.log"
+
+
+# --- swift-bridge unit tests ------------------------------------------
+# NOT bypassable. This suite sat outside the gate long enough for a test
+# asserting a two-release-old contract to fail unnoticed for 15+ releases.
+# ~18 s.
+log "swift-bridge unit tests"
+( cd "$ROOT/swift-bridge" && swift test ) > /tmp/smix-ship-swift-test.log 2>&1 \
+  || fail "swift-bridge tests FAILED — see /tmp/smix-ship-swift-test.log"
+
+# --- SmixRunner UITest compile ----------------------------------------
+# `swift test` covers the SwiftPM library targets, not SmixRunnerUITests —
+# the XCUITest body that ships in the runner sources and is what actually
+# drives a device. It went uncompiled by any gate. build-for-testing on a
+# generic simulator destination compiles it without booting a simulator.
+log "SmixRunner UITest build"
+( cd "$ROOT/swift-bridge" && xcodebuild build-for-testing \
+    -scheme SmixRunner -destination 'generic/platform=iOS Simulator' ) \
+    > /tmp/smix-ship-uitest-build.log 2>&1 \
+  || fail "SmixRunnerUITests build FAILED — see /tmp/smix-ship-uitest-build.log"
+
+# The runner tarballs are compared against the trees they were built
+# from, and that comparison lived inside `cargo test --workspace` — which
+# is where it was found, twice in one cycle, at thirteen and thirty-one
+# minutes. Both times the fix was one command and the cost was the wait.
+#
+# Buried inside an expensive check it is also invisible to
+# `cheap-gates-come-first`: that gate reads a profile of named gates, and
+# a judgement with no name of its own cannot be said to be in the wrong
+# place. Naming it is what makes its position a choice somebody made.
+#
+# Measured at 64s on a warm tree, against ~40 minutes for the suite it
+# used to hide in.
+log "runner tarballs match their sources"
+( cd "$ROOT" && cargo test -p smix-runner-sources ) > /tmp/smix-ship-tarball.log 2>&1 \
+  || fail "runner tarballs are stale — run scripts/release/build-runner-tarball.sh and build-android-runner-tarball.sh (see /tmp/smix-ship-tarball.log)"
+
+# --- the device gates, ahead of the workspace suite ------------------
+#
+# These sat after `cargo test --workspace`, which is ninety-six
+# minutes. `cheap-gates-come-first` put it plainly: three judgements
+# of nought to three seconds each, behind a hundred and eleven minutes
+# of work. And the cost of being late here is not only the wait --
+# every device red this release (an emulator nobody had registered, a
+# consumer holding it, a focus budget equal to its own arrival time)
+# was reachable in seconds and was found after two hours.
+#
+# A device that is absent, held, or unregistered should say so before
+# anything is compiled for it.
 
 # --- rust workspace tests ---------------------------------------------
 # The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
