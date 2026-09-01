@@ -33,13 +33,26 @@ def profile(rows, publishing=True):
     return path
 
 
-def run(path):
-    p = subprocess.run([sys.executable, GATE, path], capture_output=True, text=True)
+def run(path, ship=None):
+    argv = [sys.executable, GATE, path] + ([ship] if ship else [])
+    p = subprocess.run(argv, capture_output=True, text=True)
     return p.returncode, p.stdout + p.stderr
 
 
-def case(name, rows, want_code, must_say, publishing=True):
-    code, out = run(profile(rows, publishing))
+def ship_without_publishing():
+    """A ship.sh that logs the exempt steps but never publishes."""
+    real = os.path.join(os.path.dirname(HERE), "release", "ship.sh")
+    kept = [ln for ln in open(real, encoding="utf-8")
+            if not ln.lstrip().startswith('log "cargo publish -p')
+            and not ln.lstrip().startswith('log "gradle ')]
+    fd, path = tempfile.mkstemp(suffix=".sh")
+    with os.fdopen(fd, "w") as fh:
+        fh.writelines(kept)
+    return path
+
+
+def case(name, rows, want_code, must_say, publishing=True, ship=None):
+    code, out = run(profile(rows, publishing), ship)
     if code != want_code:
         print(f"  FAIL {name}: exit {code}, wanted {want_code}\n{out}")
         return False
@@ -92,11 +105,25 @@ def main():
     # prefixes over thirty crates rather than names, so nothing else would
     # notice if a rename left them matching nothing — and an exemption
     # matching nothing still prints as one that looked and approved.
+    # Asked of ship.sh, not of the profile: this gate runs mid-ship, where
+    # no publish step has been logged yet. Checking the profile made it red
+    # on every real run — and green on the finished profile it was verified
+    # against, which is the shape of a check verified on the wrong subject.
     ok &= case(
         "a publishing exemption that excused nothing",
         cheap + dear,
         1,
         "excuses nothing",
+        ship=ship_without_publishing(),
+    )
+
+    # The profile a ship reads at the moment this gate runs: everything up
+    # to here, and no publishing at all.
+    ok &= case(
+        "the partial profile a ship actually hands it",
+        cheap + dear,
+        0,
+        "clean",
         publishing=False,
     )
 
