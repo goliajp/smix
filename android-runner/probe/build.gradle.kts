@@ -18,7 +18,7 @@ plugins {
     // Published: the guides tell a consumer to write
     // `debugImplementation("jp.golia.smix:smix-probe:…")`, and a line that
     // resolves to nothing is worse than no line at all.
-    id("com.vanniktech.maven.publish") version "0.30.0"
+    id("com.vanniktech.maven.publish")
 }
 
 group = "jp.golia.smix"

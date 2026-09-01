@@ -93,6 +93,26 @@ PERMISSION = {
     "publish; every gate after it runs because it passed",
 }
 
+# The publishing itself. These are the release, not a judgement about the
+# tree: there is no earlier place to put `cargo publish -p smix-verbs`,
+# and moving it would not make anything fail sooner.
+#
+# Prefixes rather than names, because there are thirty crates and a
+# hand-copied list of them is the one that goes stale. Each prefix must
+# match at least one row (checked below): a prefix that excuses nothing
+# reads exactly like one that has looked and approved.
+#
+# 10.0.0 is why these are here at all. Its gradle step read 0s — because
+# it had failed one second in — and this check reported a 0s step sitting
+# behind two hours of work, which is true and says nothing about ordering.
+# npm and the git tag are not here: they are logged with `note`, which
+# does not enter the profile, so a prefix for them would excuse nothing.
+# The check below is what said so.
+PUBLISHING = (
+    "cargo publish -p ",
+    "gradle ",
+)
+
 
 def main() -> int:
     if not os.path.isfile(PROFILE):
@@ -146,11 +166,22 @@ def main() -> int:
     # examined nothing and printed "clean" is the shape this repository
     # keeps finding: found by making the comparison always false, which
     # left the summary unchanged.
+    for prefix in PUBLISHING:
+        if not any(name.startswith(prefix) for _, name in rows):
+            problems.append(
+                f"`{prefix}` is exempt as publishing, but no step in this profile "
+                f"starts with it. An exemption that excuses nothing still reads "
+                f"as one that looked."
+            )
+
     judged = 0
     spent = 0
     for secs, name in rows:
         if name in PERMISSION:
             # Not added to `spent`: see PERMISSION.
+            continue
+        if name.startswith(PUBLISHING):
+            # Not added to `spent`: see PUBLISHING.
             continue
         if name in SELF or name in PRODUCES:
             # Not added to `spent`, for the reason written above PRODUCES:

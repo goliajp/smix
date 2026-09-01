@@ -629,6 +629,10 @@ log "gate port scan"
 python3 "$ROOT/scripts/dev/gate-port-scan.py" > /tmp/smix-ship-gate-port.log 2>&1 \
   || fail "gate port scan FAILED — see /tmp/smix-ship-gate-port.log"
 
+log "the publish graph builds"
+python3 "$ROOT/scripts/dev/the-publish-graph-builds.py" > /tmp/smix-ship-publish-graph.log 2>&1 \
+  || fail "the-publish-graph-builds FAILED — the real Maven tasks cannot build their task graph. The dry run would not have found this: it publishes to the local repo, which never creates a staging repository. See /tmp/smix-ship-publish-graph.log"
+
 log "fuzz targets compile"
 python3 "$ROOT/scripts/dev/fuzz-targets-compile.py" > /tmp/smix-ship-fuzz-compile.log 2>&1 \
   || fail "fuzz-targets-compile FAILED — a fuzz crate no longer builds against the crate it fuzzes. See /tmp/smix-ship-fuzz-compile.log"
@@ -1451,11 +1455,11 @@ GPG_LOCK="$HOME/.gnupg/public-keys.d/pubring.db.lock"
 if [ -f "$GPG_LOCK" ]; then
   LOCK_PID="$(awk 'NR==1{print $1}' "$GPG_LOCK" 2>/dev/null)"
   if [ -n "$LOCK_PID" ] && ! ps -p "$LOCK_PID" >/dev/null 2>&1; then
-    log "gpg keybox lock held by pid $LOCK_PID, which is gone — removing it and its hardlink"
+    note "gpg keybox lock held by pid $LOCK_PID, which is gone — removing it and its hardlink"
     rm -f "$GPG_LOCK" "$HOME"/.gnupg/public-keys.d/.#lk*
     gpgconf --kill keyboxd >/dev/null 2>&1 || true
   else
-    log "gpg keybox lock held by pid ${LOCK_PID:-?}, which is alive — leaving it"
+    note "gpg keybox lock held by pid ${LOCK_PID:-?}, which is alive — leaving it"
   fi
 fi
 

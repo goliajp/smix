@@ -15,10 +15,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GATE = os.path.join(HERE, "cheap-gates-come-first.py")
 
 
-def profile(rows):
+# Every profile the ship writes ends with the publishing, and the gate
+# refuses a publishing exemption that matched nothing — so a fixture
+# without those rows is not the file this gate reads, and the cases below
+# would be judging an instrument built differently from the real one.
+PUBLISHING_TAIL = [
+    (40, "cargo publish -p smix-verbs"),
+    (90, "gradle :sdk:publish :probe:publish — jp.golia.smix:{smix-sdk,smix-probe}:0.0.0"),
+]
+
+
+def profile(rows, publishing=True):
     fd, path = tempfile.mkstemp(suffix=".tsv")
     with os.fdopen(fd, "w") as fh:
-        for secs, name in rows:
+        for secs, name in list(rows) + (PUBLISHING_TAIL if publishing else []):
             fh.write(f"{secs}\t{name}\n")
     return path
 
@@ -28,8 +38,8 @@ def run(path):
     return p.returncode, p.stdout + p.stderr
 
 
-def case(name, rows, want_code, must_say):
-    code, out = run(profile(rows))
+def case(name, rows, want_code, must_say, publishing=True):
+    code, out = run(profile(rows, publishing))
     if code != want_code:
         print(f"  FAIL {name}: exit {code}, wanted {want_code}\n{out}")
         return False
@@ -76,6 +86,18 @@ def main():
         cheap + dear + [(0, "some other scan")],
         1,
         "sits behind",
+    )
+
+    # The publishing exemptions have to have excused something. They are
+    # prefixes over thirty crates rather than names, so nothing else would
+    # notice if a rename left them matching nothing — and an exemption
+    # matching nothing still prints as one that looked and approved.
+    ok &= case(
+        "a publishing exemption that excused nothing",
+        cheap + dear,
+        1,
+        "excuses nothing",
+        publishing=False,
     )
 
     # A profile short enough to agree with anything.

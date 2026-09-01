@@ -189,6 +189,7 @@ SOURCE_GATES=(
   route-context-scan
   gate-port-scan
   every-runner-a-gate-starts-comes-down
+  the-publish-graph-builds
   fuzz-targets-compile
   preflight-parity-scan
   mcp-cli-parity-scan
