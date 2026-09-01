@@ -142,14 +142,25 @@ def main() -> int:
                     f"longer logs a step by that name. Re-verify the exemption."
                 )
 
+    # How many rows the comparison actually looked at. A check that
+    # examined nothing and printed "clean" is the shape this repository
+    # keeps finding: found by making the comparison always false, which
+    # left the summary unchanged.
+    judged = 0
     spent = 0
     for secs, name in rows:
         if name in PERMISSION:
             # Not added to `spent`: see PERMISSION.
             continue
         if name in SELF or name in PRODUCES:
-            spent += secs
+            # Not added to `spent`, for the reason written above PRODUCES:
+            # a build is not a judgement, so its minutes are not minutes a
+            # later judgement could have been paid before. Counting them
+            # asked the device gates to run ahead of the binary they drive
+            # -- five runs of chasing that, and the last one had them five
+            # minutes late behind their own dependency.
             continue
+        judged += 1
         if secs <= CHEAP_SECONDS and spent >= PATIENCE_SECONDS:
             problems.append(
                 f"`{name}` takes {secs}s and sits behind {spent // 60}m of work. "
@@ -167,8 +178,21 @@ def main() -> int:
         )
         return 1
 
+    # The comparison has to have run. Exemptions could grow to cover the
+    # whole profile, or the condition could stop being asked, and either
+    # way the sentence below would go on saying nothing is waiting.
+    if judged < MIN_GATES:
+        print("cheap-gates-come-first: FAIL")
+        print(
+            f"  - only {judged} of {len(rows)} rows were compared against the "
+            f"budget; the rest are exempt or were never asked. A verdict about "
+            f"ordering that examined {judged} steps is not one."
+        )
+        return 1
+
     print(
-        f"cheap-gates-come-first: clean — {len(rows)} gates, {spent // 60}m total, "
+        f"cheap-gates-come-first: clean — {len(rows)} gates ({judged} judged), "
+        f"{spent // 60}m total, "
         f"no seconds-long judgement waiting behind minutes of work"
     )
     return 0
