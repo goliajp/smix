@@ -646,10 +646,6 @@ log "rustfmt"
 ( cd "$ROOT" && cargo fmt --all --check ) > /tmp/smix-ship-fmt.log 2>&1 \
   || fail "rustfmt FAILED — run \`cargo fmt --all\` (see /tmp/smix-ship-fmt.log)"
 
-log "clippy"
-( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
-  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
-
 # Moved down past the cheap judgements below it. This step runs three
 # host suites and pays for whatever the tree last invalidated: after
 # the kevy bump it took 25 minutes, and `cheap-gates-come-first`
@@ -962,6 +958,15 @@ python3 "$ROOT/scripts/dev/a-semantics-action-is-not-a-touch.py" --device "$V10_
 v10_runner_down
 trap ship_profile_close EXIT
 
+
+# After the device gates, not before them. clippy compiles the
+# workspace and took seven minutes this run; the device gates take
+# seconds and answer a question no amount of linting can: is the
+# device there, is it ours, is anyone else on it. Third finding of
+# this shape from `cheap-gates-come-first`.
+log "clippy"
+( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
+  || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
 
 # --- rust workspace tests ---------------------------------------------
 # The workspace suite (830+ tests) had NO gate: ship.sh ran smoke + swift
