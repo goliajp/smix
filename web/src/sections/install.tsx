@@ -17,16 +17,6 @@ export function Install() {
           for iOS, or the Android SDK with an emulator image for Android.
         </p>
 
-        {/* Pre-release notice. Comes out the moment the tag exists — see the
-            release checklist, section 6. It carries no version number on
-            purpose: the number is the part that went stale last time, and a
-            banner naming a version outlived its release by two majors while
-            telling visitors the registries served something they did not. */}
-        <p className="mt-3 max-w-[60ch] border-l-2 border-border pl-3 text-fg-muted">
-          This pre-release page is ahead of the registries: the coordinates below are
-          being published now and may not resolve for a few minutes yet.
-        </p>
-
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           {SDKS.map((sdk) => (
             <div key={sdk.id} className="flex flex-col border border-border bg-bg-elev">
