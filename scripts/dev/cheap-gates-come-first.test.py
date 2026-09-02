@@ -39,6 +39,26 @@ def run(path, ship=None):
     return p.returncode, p.stdout + p.stderr
 
 
+def ship_without_device_steps():
+    """A ship.sh whose steps no longer touch a build product or a device.
+
+    The dependency exemption is derived by a regex over ship.sh. Nothing
+    else notices when a reader stops matching, and a reader that matches
+    nothing puts every device gate back into a budget it cannot be moved
+    out of — while reading, from outside, as a stricter check.
+    """
+    real = os.path.join(os.path.dirname(HERE), "release", "ship.sh")
+    src = open(real, encoding="utf-8").read()
+    for token in ("cargo ", "./gradlew", "xcrun simctl", "adb ", "SMIX_BIN",
+                  "target/release", "xcodebuild", "swift test", "--device",
+                  "--serial", "_DEVICE", "_SERIAL", "_SIM"):
+        src = src.replace(token, "REDACTED")
+    fd, path = tempfile.mkstemp(suffix=".sh")
+    with os.fdopen(fd, "w") as fh:
+        fh.write(src)
+    return path
+
+
 def ship_without_publishing():
     """A ship.sh that logs the exempt steps but never publishes."""
     real = os.path.join(os.path.dirname(HERE), "release", "ship.sh")
@@ -115,6 +135,14 @@ def main():
         1,
         "excuses nothing",
         ship=ship_without_publishing(),
+    )
+
+    ok &= case(
+        "the dependency reader stops matching",
+        cheap + dear,
+        1,
+        "stopped matching",
+        ship=ship_without_device_steps(),
     )
 
     # The profile a ship reads at the moment this gate runs: everything up

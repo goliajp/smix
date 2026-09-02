@@ -108,6 +108,52 @@ PERMISSION = {
 # 10.0.0 is why these are here at all. Its gradle step read 0s — because
 # it had failed one second in — and this check reported a 0s step sitting
 # behind two hours of work, which is true and says nothing about ordering.
+# Steps that consume something built or booted. PRODUCES is about the
+# other direction — a step that makes what a later one reads — and this is
+# its mirror: `clippy` shares target/ with the build before it, the v10
+# gates drive a release binary against a running emulator. Their position
+# is settled by that dependency, not chosen.
+#
+# The measured cost is the same coin toss PRODUCES describes, and it came
+# up the other way this time: on the ship before this one clippy read
+# 4m27s and the device gates were slower still, so none of them tripped
+# this check. Every cache warm, they read 1s, 2s and 5s — the same
+# judgements, now reported as cheap ones sitting behind minutes of work.
+# A gate whose verdict flips with cache temperature is not measuring what
+# it names.
+#
+# Derived from ship.sh rather than listed: a step is dependent when the
+# commands under its `log` line touch a build product or a device. Three
+# names written out here would be the copy that goes stale the next time
+# a device gate is added — which is how 6.3.0's list was found wrong.
+DEPENDENT = re.compile(
+    r"\bcargo\b|\./gradlew|xcrun simctl|\badb\b|SMIX_BIN|target/release"
+    r"|xcodebuild|swift test|--device\b|--serial\b|_DEVICE\b|_SERIAL\b|_SIM\b"
+)
+
+# How many of ship.sh's steps must come out dependent for the parse to be
+# believable. Far below the 31 it finds today, and far above zero: a
+# regex that stopped matching would otherwise put every device gate back
+# into the budget and read as a stricter check rather than a broken one.
+MIN_DEPENDENT = 8
+
+
+def dependent_steps(ship_src):
+    """Step names whose commands touch a build product or a device."""
+    out, cur, name = set(), [], None
+    for ln in ship_src.splitlines():
+        m = re.match(r'^\s*log "(.+?)"', ln)
+        if m:
+            if name is not None and DEPENDENT.search("\n".join(cur)):
+                out.add(name)
+            name, cur = m.group(1), []
+        elif name is not None:
+            cur.append(ln)
+    if name is not None and DEPENDENT.search("\n".join(cur)):
+        out.add(name)
+    return out
+
+
 # npm and the git tag are not here: they are logged with `note`, which
 # does not enter the profile, so a prefix for them would excuse nothing.
 # The check below is what said so.
@@ -156,7 +202,13 @@ def main() -> int:
         "release",
         "ship.sh",
     )
-    if os.path.isfile(ship):
+    if not os.path.isfile(ship):
+        print("cheap-gates-come-first: CANNOT RUN")
+        print(f"  - no ship.sh at {ship}. The exemptions are all verified")
+        print("    against it, so without it this check would judge every")
+        print("    device gate as a misplaced one.")
+        return 2
+    if True:
         ship_src = open(ship, encoding="utf-8").read()
         for name, why in {**PRODUCES, **PERMISSION}.items():
             if name not in ship_src:
@@ -170,6 +222,15 @@ def main() -> int:
         # there made the gate red on every real run while passing on the
         # complete profile a finished ship leaves behind — which is what it
         # was verified against.
+        depends = dependent_steps(ship_src)
+        if len(depends) < MIN_DEPENDENT:
+            problems.append(
+                f"only {len(depends)} of ship.sh's steps parse as depending on "
+                f"something built or booted, fewer than {MIN_DEPENDENT}. The "
+                f"reader has stopped matching, and every device gate is back in "
+                f"a budget it cannot be moved out of."
+            )
+
         for prefix in PUBLISHING:
             if not re.search(r'^\s*log "' + re.escape(prefix), ship_src, re.M):
                 problems.append(
@@ -190,6 +251,12 @@ def main() -> int:
             continue
         if name.startswith(PUBLISHING):
             # Not added to `spent`: see PUBLISHING.
+            continue
+        if name in depends:
+            # Not added to `spent`: see DEPENDENT. Its seconds are not
+            # seconds an earlier judgement could have been paid before —
+            # moving it earlier means building or booting earlier, which
+            # is not earlier.
             continue
         if name in SELF or name in PRODUCES:
             # Not added to `spent`, for the reason written above PRODUCES:
