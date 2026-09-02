@@ -12,7 +12,11 @@
 # a proportionate answer to "one dependency is not installed yet".
 set -uo pipefail
 
-INSTALL_HINT='npm install -g @goliapkg/smix-cli   (or: cargo install smix-cli --locked)'
+# Both binaries, on both paths. The cargo line used to name smix-cli
+# alone — the very command whose result this hook exists to report, since
+# smix-mcp is a separate crate and `cargo install smix-cli` does not
+# bring it. It diagnosed the cause correctly and then prescribed it.
+INSTALL_HINT='npm install -g @goliapkg/smix-cli   (or: cargo install smix-cli smix-mcp --locked)'
 
 say() { printf 'smix plugin: %s\n' "$*"; }
 
