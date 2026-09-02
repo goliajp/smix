@@ -74,6 +74,7 @@ LOCAL = {
     "every runner a gate starts comes down": "every-runner-a-gate-starts-comes-down",
     "the publish graph builds": "the-publish-graph-builds",
     "the publish-graph gate can still go red": "the-publish-graph-builds.test",
+    "the ci-green gate can still go red": "ci-is-green-on-this-commit.test",
     "fuzz targets compile": "fuzz-targets-compile",
     "preflight parity scan": "preflight-parity-scan",
     "mcp cli parity scan": "mcp-cli-parity-scan",

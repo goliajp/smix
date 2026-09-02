@@ -96,18 +96,6 @@ PERMISSION = {
     "publish; every gate after it runs because it passed",
 }
 
-# The publishing itself. These are the release, not a judgement about the
-# tree: there is no earlier place to put `cargo publish -p smix-verbs`,
-# and moving it would not make anything fail sooner.
-#
-# Prefixes rather than names, because there are thirty crates and a
-# hand-copied list of them is the one that goes stale. Each prefix must
-# match at least one row (checked below): a prefix that excuses nothing
-# reads exactly like one that has looked and approved.
-#
-# 10.0.0 is why these are here at all. Its gradle step read 0s — because
-# it had failed one second in — and this check reported a 0s step sitting
-# behind two hours of work, which is true and says nothing about ordering.
 # Steps that consume something built or booted. PRODUCES is about the
 # other direction — a step that makes what a later one reads — and this is
 # its mirror: `clippy` shares target/ with the build before it, the v10
@@ -115,26 +103,23 @@ PERMISSION = {
 # is settled by that dependency, not chosen.
 #
 # The measured cost is the same coin toss PRODUCES describes, and it came
-# up the other way this time: on the ship before this one clippy read
-# 4m27s and the device gates were slower still, so none of them tripped
-# this check. Every cache warm, they read 1s, 2s and 5s — the same
-# judgements, now reported as cheap ones sitting behind minutes of work.
-# A gate whose verdict flips with cache temperature is not measuring what
-# it names.
+# up the other way once: on one ship clippy read 4m27s and the device
+# gates were slower still, so none of them tripped this check. Every cache
+# warm, they read 1s, 2s and 5s — the same judgements, now reported as
+# cheap ones sitting behind minutes of work. A gate whose verdict flips
+# with cache temperature is not measuring what it names.
 #
 # Derived from ship.sh rather than listed: a step is dependent when the
-# commands under its `log` line touch a build product or a device. Three
-# names written out here would be the copy that goes stale the next time
-# a device gate is added — which is how 6.3.0's list was found wrong.
+# commands under its `log` line touch a build product or a device.
 DEPENDENT = re.compile(
     r"\bcargo\b|\./gradlew|xcrun simctl|\badb\b|SMIX_BIN|target/release"
     r"|xcodebuild|swift test|--device\b|--serial\b|_DEVICE\b|_SERIAL\b|_SIM\b"
 )
 
 # How many of ship.sh's steps must come out dependent for the parse to be
-# believable. Far below the 31 it finds today, and far above zero: a
-# regex that stopped matching would otherwise put every device gate back
-# into the budget and read as a stricter check rather than a broken one.
+# believable. Far below what it finds today, and far above zero: a regex
+# that stopped matching would put every device gate back into the budget
+# and read as a stricter check rather than a broken one.
 MIN_DEPENDENT = 8
 
 
@@ -154,13 +139,35 @@ def dependent_steps(ship_src):
     return out
 
 
-# npm and the git tag are not here: they are logged with `note`, which
-# does not enter the profile, so a prefix for them would excuse nothing.
-# The check below is what said so.
-PUBLISHING = (
-    "cargo publish -p ",
-    "gradle ",
-)
+# Steps that can only run after the release has gone out.
+#
+# Publishing itself is no longer here: those lines are logged with `note`
+# now, exactly as the comment beside the loop in ship.sh always said they
+# should be, so they never reach the profile. An exemption for them would
+# excuse the empty set — which reads identically to one that looked.
+#
+# What remains is `verify what the registries took`: seconds long, and
+# last by necessity. Its position is settled by the publish before it, the
+# same way PRODUCES and DEPENDENT are settled by a build or a device.
+#
+# Found from the first real `cargo publish` in ship.sh rather than by
+# section name: there is a `# --- publish dag ---` gate four hundred lines
+# earlier that is a judgement and must keep facing the budget.
+FIRST_PUBLISH = re.compile(r'^\s*\(\s*cd "\$ROOT" && cargo publish -p')
+
+
+def after_publish_steps(ship_src):
+    """Step names that come after the release starts going out."""
+    lines = ship_src.splitlines()
+    at = next((i for i, ln in enumerate(lines) if FIRST_PUBLISH.match(ln)), None)
+    if at is None:
+        return None
+    out = set()
+    for ln in lines[at:]:
+        m = re.match(r'^\s*log "(.+?)"', ln)
+        if m:
+            out.add(m.group(1))
+    return out
 
 
 def main() -> int:
@@ -231,13 +238,15 @@ def main() -> int:
                 f"a budget it cannot be moved out of."
             )
 
-        for prefix in PUBLISHING:
-            if not re.search(r'^\s*log "' + re.escape(prefix), ship_src, re.M):
-                problems.append(
-                    f"`{prefix}` is exempt as publishing, but ship.sh logs no step "
-                    f"beginning with it. An exemption that excuses nothing still "
-                    f"reads as one that looked."
-                )
+        after_publish = after_publish_steps(ship_src)
+        if after_publish is None:
+            problems.append(
+                "no `cargo publish -p` call found in ship.sh, so this check "
+                "cannot tell which steps come after the release. It would "
+                "otherwise judge the post-publish verification as a misplaced "
+                "gate — which is where it must be."
+            )
+            after_publish = set()
 
     # How many rows the comparison actually looked at. A check that
     # examined nothing and printed "clean" is the shape this repository
@@ -249,8 +258,8 @@ def main() -> int:
         if name in PERMISSION:
             # Not added to `spent`: see PERMISSION.
             continue
-        if name.startswith(PUBLISHING):
-            # Not added to `spent`: see PUBLISHING.
+        if name in after_publish:
+            # Not added to `spent`: see FIRST_PUBLISH.
             continue
         if name in depends:
             # Not added to `spent`: see DEPENDENT. Its seconds are not

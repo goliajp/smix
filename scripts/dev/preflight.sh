@@ -191,6 +191,7 @@ SOURCE_GATES=(
   every-runner-a-gate-starts-comes-down
   the-publish-graph-builds
   the-publish-graph-builds.test
+  ci-is-green-on-this-commit.test
   fuzz-targets-compile
   preflight-parity-scan
   mcp-cli-parity-scan
