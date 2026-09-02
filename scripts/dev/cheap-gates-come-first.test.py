@@ -19,9 +19,12 @@ GATE = os.path.join(HERE, "cheap-gates-come-first.py")
 # refuses a publishing exemption that matched nothing — so a fixture
 # without those rows is not the file this gate reads, and the cases below
 # would be judging an instrument built differently from the real one.
+# The step that comes after the release has gone out: seconds long, last
+# by necessity, and a judgement rather than an action — so it reaches the
+# profile and must be exempted by position. The publish lines themselves
+# are logged with `note` and never appear here.
 PUBLISHING_TAIL = [
-    (40, "cargo publish -p smix-verbs"),
-    (90, "gradle :sdk:publish :probe:publish — jp.golia.smix:{smix-sdk,smix-probe}:0.0.0"),
+    (3, "verify what the registries took"),
 ]
 
 
@@ -60,14 +63,17 @@ def ship_without_device_steps():
 
 
 def ship_without_publishing():
-    """A ship.sh that logs the exempt steps but never publishes."""
+    """A ship.sh with no `cargo publish` call to find.
+
+    The post-publish exemption is located by that call. Without it the
+    gate cannot tell which steps come after the release, and would judge
+    the verification that must come last as a gate in the wrong place.
+    """
     real = os.path.join(os.path.dirname(HERE), "release", "ship.sh")
-    kept = [ln for ln in open(real, encoding="utf-8")
-            if not ln.lstrip().startswith('log "cargo publish -p')
-            and not ln.lstrip().startswith('log "gradle ')]
+    src = open(real, encoding="utf-8").read().replace("cargo publish -p", "REDACTED")
     fd, path = tempfile.mkstemp(suffix=".sh")
     with os.fdopen(fd, "w") as fh:
-        fh.writelines(kept)
+        fh.write(src)
     return path
 
 
@@ -125,15 +131,11 @@ def main():
     # prefixes over thirty crates rather than names, so nothing else would
     # notice if a rename left them matching nothing — and an exemption
     # matching nothing still prints as one that looked and approved.
-    # Asked of ship.sh, not of the profile: this gate runs mid-ship, where
-    # no publish step has been logged yet. Checking the profile made it red
-    # on every real run — and green on the finished profile it was verified
-    # against, which is the shape of a check verified on the wrong subject.
     ok &= case(
-        "a publishing exemption that excused nothing",
+        "a release with no publish call to locate",
         cheap + dear,
         1,
-        "excuses nothing",
+        "come after the release",
         ship=ship_without_publishing(),
     )
 

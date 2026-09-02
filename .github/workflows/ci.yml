@@ -134,6 +134,12 @@ jobs:
       - name: the publish-graph gate can still go red
         run: python3 scripts/dev/the-publish-graph-builds.test.py
 
+      # The gate itself belongs to the ship — CI cannot ask whether CI
+      # passed while it is still running. Its self-test is pure logic
+      # against a stubbed API, so it runs here like any other.
+      - name: the ci-green gate can still go red
+        run: python3 scripts/dev/ci-is-green-on-this-commit.test.py
+
   source-gates:
     # Ceiling, not a target: measured max 3m or less.
     # Without one a hung job holds a runner for GitHub's default

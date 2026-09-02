@@ -205,6 +205,29 @@ fi
 # them there; the ordering check does now.
 
 
+# --- CI is green on this commit ---------------------------------------
+# First, because the ship cannot publish without it and everything below
+# is wasted if it is false. It used to be asked at line 1349, beside the
+# `gh run download` that consumes its answer: 10.0.0's sixth run reached
+# it at 143m58s, having passed every gate, and failed on an unpushed
+# commit. The npm and crates.io legs had already gone out by then.
+#
+# It also reads per job now rather than the run-level conclusion, and it
+# refuses on a dirty worktree — CI judged HEAD, this publishes the
+# worktree.
+log "the ci-green gate can still go red"
+python3 "$ROOT/scripts/dev/ci-is-green-on-this-commit.test.py" > /tmp/smix-ship-cigreen-test.log 2>&1 \
+  || fail "ci-is-green-on-this-commit no longer goes red on broken input — in particular it may have gone back to reading the run-level conclusion, which is green while a continue-on-error job is red. See /tmp/smix-ship-cigreen-test.log"
+
+log "ci is green on this commit"
+CI_GREEN_OUT="$(python3 "$ROOT/scripts/dev/ci-is-green-on-this-commit.py" 2>&1)" || {
+  printf '%s\n' "$CI_GREEN_OUT"
+  fail "ci-is-green-on-this-commit FAILED — the release downloads the .node addons and CLI binaries from that run's artifacts, so there is nothing to publish until it is green"
+}
+printf '%s\n' "$CI_GREEN_OUT" | sed 's/^/  /'
+RUN_ID="$(printf '%s\n' "$CI_GREEN_OUT" | tail -1)"
+HEAD_SHA="$(cd "$ROOT" && git rev-parse HEAD)"
+
 # --- fact scan --------------------------------------------------------
 # hygiene-scan asks "does it read as internal?"; fact-scan asks "is it
 # true?" — install coordinates vs the workspace version, tool-count
@@ -1197,7 +1220,6 @@ else
   fail "cargo-semver-checks not installed — cargo install cargo-semver-checks (required for a 2.0.0 ship)"
 fi
 
-# --- publish crates.io (DAG order) -----------------------------------
 
 # `smix-lease` sits before `smix-simctl` and `smix-adapter-maestro`,
 # which now depend on it: the machine root — where this machine keeps
@@ -1225,6 +1247,7 @@ python3 "$ROOT/scripts/dev/cheap-gates-come-first.py" "$SHIP_PROFILE" \
 # necessity, so each one read as a gate in the wrong place — thirteen
 # complaints, none of them about a gate. Same reason `note` exists at
 # all; this is the second kind of line that is not a gate.
+# --- publish crates.io (DAG order) -----------------------------------
 note "publish crates.io DAG at $VERSION"
 CRATES=(
   smix-sim-health smix-runner-sources
@@ -1275,10 +1298,10 @@ for c in "${CRATES[@]}"; do
   # "not there" and falls through to the publish below, so a network
   # hiccup degrades to the slow path rather than skipping a real upload.
   if index_has_version "$c" "$VERSION"; then
-    log "cargo publish -p $c — already $VERSION on crates.io, skipping"
+    note "cargo publish -p $c — already $VERSION on crates.io, skipping"
     continue
   fi
-  log "cargo publish -p $c"
+  note "cargo publish -p $c"
   # v1.0.4+ pattern from prior ship cycles: crates.io rate-limits at
   # ~1-2 publishes per 90s window under aggressive sequential publish.
   # Retry-with-backoff on 429/already-in-progress until success.
@@ -1321,7 +1344,7 @@ done
 # missing or non-green run is a hard fail: no partial or stale publish.
 #
 # Set SMIX_SHIP_NAPI_DRYRUN=1 to run every publish here as `--dry-run`.
-log "napi smix-node — collect prebuilds + publish"
+note "napi smix-node — collect prebuilds + publish"
 NODE_DIR="$ROOT/crates/smix-node"
 NAPI_DRY=""
 [ "${SMIX_SHIP_NAPI_DRYRUN:-0}" = 1 ] && NAPI_DRY="--dry-run"
@@ -1346,11 +1369,9 @@ npm_publish_dir() {
   ( cd "$dir" && bun publish --access public $NAPI_DRY ) || fail "npm publish $pkg"
 }
 
-HEAD_SHA="$(cd "$ROOT" && git rev-parse HEAD)"
-RUN_ID="$(gh run list --repo goliajp/smix --workflow ci.yml --commit "$HEAD_SHA" \
-  --json databaseId,conclusion --jq '[.[] | select(.conclusion=="success")][0].databaseId')" \
-  || fail "gh run list failed — is gh authenticated for goliajp/smix?"
-[ -n "$RUN_ID" ] || fail "no green ci.yml run for HEAD ($HEAD_SHA): push HEAD and let napi-prebuild build the three .node addons before shipping"
+# RUN_ID comes from the gate at the top of this script. It used to be
+# fetched here, which is where it is consumed — 144 minutes in, after
+# every gate and after crates.io had gone out. See that gate.
 
 ART_DIR="$(mktemp -d)"
 gh run download "$RUN_ID" --repo goliajp/smix --dir "$ART_DIR" \
@@ -1437,7 +1458,7 @@ GRADLE_PUB_TASKS=(":sdk:publish" ":probe:publish")
 [ "$SHIP_DRY" = 1 ] && GRADLE_PUB_TASKS=(":sdk:publishToMavenLocal" ":probe:publishToMavenLocal")
 # Names both artifacts. Publishing two and logging one is the shape §14
 # is about: the record has to say what happened, not half of it.
-log "gradle ${GRADLE_PUB_TASKS[*]} — jp.golia.smix:{smix-sdk,smix-probe}:$VERSION"
+note "gradle ${GRADLE_PUB_TASKS[*]} — jp.golia.smix:{smix-sdk,smix-probe}:$VERSION"
 # `|| fail` is not enough here. 6.3.0 found gpg exiting 0 while printing
 # nothing at all — its database was held by a lock whose owner had died,
 # so the export was empty and that empty string went to gradle as the
