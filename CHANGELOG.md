@@ -2,6 +2,35 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Changed
+
+- **The embedded store moves to kevy 6.3.0.** smix has been on
+  `kevy-embedded` 6.2.2. Nineteen kevy crates moved together and nothing
+  in this workspace changed to meet them: kevy's upgrade note says every
+  crate and binding goes from 6.2.2 to 6.3.0 with no code change, and the
+  build agrees — the only edits are the version string and the lockfiles
+  that follow it.
+
+  Four things changed in 6.3.0 and none of them can reach smix, which is
+  worth writing down rather than assuming. `CONFIG SET
+  notify-keyspace-events` reaching the engine, five RESP3 replies
+  carrying their real types, and `GEOPOS` answering a wrong-typed key
+  with an error instead of an array containing one, are all changes to
+  the wire; smix holds `kevy_embedded::{Config, Store}` in-process and
+  opens no port. The fourth is `HRANDFIELD`, which adds a verb and takes
+  nothing away.
+
+  The half that could have broken quietly is the data already on disk,
+  because 10.0.0 shipped against 6.2.2 and users have stores written by
+  it. Verified rather than reasoned about, and in both directions: a
+  store written by 6.2.2 — a JSON record, a value holding bytes that are
+  not UTF-8, a singleton, a set, a capsule — was opened by 6.3.0 and
+  answered with all five intact, and a store written by 6.3.0 was opened
+  by 6.2.2 and did the same. Both append-only logs replayed six commands
+  from 326 bytes and reported clean.
+
 ## [10.0.0] — 2026-08-28
 
 **Compose apps can be driven by id everywhere, including inside a dialog** —
