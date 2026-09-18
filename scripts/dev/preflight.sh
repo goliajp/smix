@@ -242,6 +242,8 @@ SOURCE_GATES=(
   a-hand-copied-table-says-a-number
   an-app-that-is-gone
   an-app-that-is-gone.test
+  a-refusal-devicectl-outgrew
+  a-refusal-devicectl-outgrew.test
 )
 
 for gate in "${SOURCE_GATES[@]}"; do

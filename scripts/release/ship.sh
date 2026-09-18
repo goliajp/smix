@@ -449,6 +449,16 @@ python3 "$ROOT/scripts/dev/a-hand-copied-table-says-a-number.py" \
   > /tmp/smix-ship-verbcount.log 2>&1 \
   || fail "a written verb-table count disagrees with the table (see /tmp/smix-ship-verbcount.log)"
 
+# Ship only, never CI: its input is the devicectl installed on this
+# machine, and the ubuntu job has none to ask.
+log "a refusal that says devicectl cannot is checked against the installed devicectl"
+python3 "$ROOT/scripts/dev/a-refusal-devicectl-outgrew.test.py" \
+  > /tmp/smix-ship-devicectl-outgrew-selftest.log 2>&1 \
+  || fail "a-refusal-devicectl-outgrew no longer goes red on broken input (see /tmp/smix-ship-devicectl-outgrew-selftest.log)"
+python3 "$ROOT/scripts/dev/a-refusal-devicectl-outgrew.py" \
+  > /tmp/smix-ship-devicectl-outgrew.log 2>&1 \
+  || fail "a physical-device refusal says devicectl lacks a verb it has (see /tmp/smix-ship-devicectl-outgrew.log)"
+
 log "self-tests are wired"
 python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests.log 2>&1 \
   || fail "a self-test is invoked by nothing (see /tmp/smix-ship-selftests.log)"

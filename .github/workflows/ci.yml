@@ -222,6 +222,11 @@ jobs:
       # VERB_TABLE is; so does llms.txt; neither is generated from it.
       - name: a hand-copied table says a number
         run: python3 scripts/dev/a-hand-copied-table-says-a-number.py
+      # Only the self-test: the gate itself asks the installed devicectl,
+      # and this job is ubuntu. It runs at preflight and ship (LOCAL_ONLY
+      # in workflow-scan says so).
+      - name: the devicectl-refusal gate can still go red
+        run: python3 scripts/dev/a-refusal-devicectl-outgrew.test.py
       - name: route conformance
         run: python3 scripts/dev/route-conformance.py
       - name: every verb reads a locale map

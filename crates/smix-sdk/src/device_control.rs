@@ -252,6 +252,27 @@ pub enum Availability {
 /// somebody is holding is a different question, and e2e answers that
 /// one. Filling cells with "nobody has measured this" would refuse
 /// paths that work today.
+///
+/// The other direction holds too: a verb that devicectl has and smix does
+/// not drive is still a refusal, but the refusal has to name the verb.
+/// Xcode 27's devicectl grew `capture screenshot`, `pasteboard copy` and
+/// `simulate location route` while six cells here said devicectl could
+/// not; `a-refusal-devicectl-outgrew` asks the installed devicectl so
+/// that cannot happen quietly again.
+/// A refusal on a verb devicectl has: it names the verb, and says smix
+/// does not drive it. One expansion, so six cells cannot drift into six
+/// wordings — `why` is a `&'static str`, which is why this is a macro and
+/// not a `const` suffix.
+macro_rules! undriven_devicectl_verb {
+    ($verb:literal) => {
+        concat!(
+            "devicectl (Xcode 27) has `",
+            $verb,
+            "`; smix does not drive it yet and it is unverified on a phone"
+        )
+    };
+}
+
 pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
     use Availability::{RefusedByName as No, Works as Yes};
 
@@ -314,7 +335,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 Yes,
                 Yes,
                 No {
-                    why: "devicectl has no screenshot verb",
+                    why: undriven_devicectl_verb!("device capture screenshot"),
                     instead: THROUGH_RUNNER,
                 },
                 Yes,
@@ -356,7 +377,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                     instead: "type the text into the field instead of pasting it",
                 },
                 No {
-                    why: NO_DEVICECTL_VERB,
+                    why: undriven_devicectl_verb!("device pasteboard copy"),
                     instead: "type the text into the field instead of pasting it",
                 },
                 No {
@@ -374,7 +395,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                     instead: "assert on what the app renders instead of on the clipboard",
                 },
                 No {
-                    why: NO_DEVICECTL_VERB,
+                    why: undriven_devicectl_verb!("device pasteboard paste"),
                     instead: "read it from the screen through the runner",
                 },
                 No {
@@ -401,7 +422,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 Yes,
                 Yes,
                 No {
-                    why: "Xcode's GUI can simulate a location on a device and devicectl                           cannot",
+                    why: undriven_devicectl_verb!("device simulate location coordinate"),
                     instead: BY_HAND,
                 },
                 No {
@@ -416,7 +437,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 Yes,
                 Yes,
                 No {
-                    why: "Xcode's GUI can simulate a route on a device and devicectl cannot",
+                    why: undriven_devicectl_verb!("device simulate location route"),
                     instead: BY_HAND,
                 },
                 No {
@@ -443,7 +464,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 Yes,
                 Yes,
                 No {
-                    why: NO_DEVICECTL_VERB,
+                    why: undriven_devicectl_verb!("device capture screen-record"),
                     instead: "record the screen from the device itself, or use a simulator",
                 },
                 Yes,
