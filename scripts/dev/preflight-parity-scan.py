@@ -128,6 +128,10 @@ LOCAL = {
     "flake classifier self-test": "flake-classify.test.py",
     "corpus-gate verdict self-test": "corpus-gate.sh --selftest",
     "determinism verdict self-test": "v3.0-c3-determinism.sh --selftest",
+    "this-machine-is-current self-test": "this-machine-is-current.sh --selftest",
+    "every Simulator.app mention says which Xcode": "an-app-that-is-gone",
+    "the Simulator.app-mention gate can still go red": "an-app-that-is-gone.test",
+    "the devicectl-refusal gate can still go red": "a-refusal-devicectl-outgrew.test",
     "llms.txt freshness": "gen-llms.py --check",
     "smix-server wiring suite": "cargo test",
 }
