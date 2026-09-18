@@ -1105,18 +1105,20 @@ enum CapsuleAction {
         /// had it for longer.
         #[arg(long = "no-launch", default_value_t = false)]
         no_launch: bool,
-        /// Fail instead of degrading when Simulator.app is on screen.
+        /// Fail instead of degrading when a simulator window is on
+        /// screen (Simulator.app on Xcode <= 26; Device Hub on Xcode 27
+        /// does not react to a boot, so it never trips this).
         ///
         /// For CI, where a window means something is wrong. On a dev
-        /// machine `expo run:ios` opens Simulator.app by design, so a
+        /// machine `expo run:ios` opens the simulator UI by design, so a
         /// capsule there degrades to soft with a warning rather than
         /// refusing — a condition that is normal for a whole class of
         /// users reads as an error only once before it reads as noise.
         #[arg(long, default_value_t = false)]
         require_hard: bool,
-        /// Allow the "soft capsule" fallback when the Simulator UI is
-        /// open (otherwise the guard rejects the boot to avoid
-        /// contention with a user-visible Simulator session).
+        /// Allow the "soft capsule" fallback when a Simulator.app (Xcode <= 26)
+        /// window is open (otherwise the guard rejects the boot to avoid
+        /// contention with a user-visible simulator session).
         #[arg(long)]
         soft: bool,
         /// Skip the `/api/capture/start` request that starts the HLS
