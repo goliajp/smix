@@ -7,6 +7,7 @@ let package = Package(
   products: [
     .library(name: "SmixRunnerCore", targets: ["SmixRunnerCore"]),
     .library(name: "SmixIndigoHID", targets: ["SmixIndigoHID"]),
+    .library(name: "SmixDeveloperDir", targets: ["SmixDeveloperDir"]),
     .library(name: "SmixCoreFFIBindings", targets: ["SmixCoreFFIBindings"]),
     .library(name: "SmixSDK", targets: ["SmixSDK"]),
     .executable(name: "smix-host-hid", targets: ["SmixHostHID"]),
@@ -25,10 +26,18 @@ let package = Package(
       name: "SmixRunnerCoreTests",
       dependencies: ["SmixRunnerCore", .product(name: "FlyingFox", package: "FlyingFox")]
     ),
-    .target(name: "SmixIndigoHID", dependencies: ["SmixRunnerCore"]),
+    // Where the active Xcode is, asked once and answered the same way for
+    // every consumer. A stone: one file, no smix types, no smix imports.
+    // SmixCaptureHost used to carry a hard-coded /Applications/Xcode.app
+    // instead, because depending on SmixIndigoHID would have pulled
+    // SmixRunnerCore (FlyingFox, the xcframework) into a forty-line
+    // IOSurface reader.
+    .target(name: "SmixDeveloperDir"),
+    .testTarget(name: "SmixDeveloperDirTests", dependencies: ["SmixDeveloperDir"]),
+    .target(name: "SmixIndigoHID", dependencies: ["SmixRunnerCore", "SmixDeveloperDir"]),
     .testTarget(name: "SmixIndigoHIDTests", dependencies: ["SmixIndigoHID"]),
     .executableTarget(name: "SmixHostHID", dependencies: ["SmixIndigoHID"]),
-    .executableTarget(name: "SmixCaptureHost"),
+    .executableTarget(name: "SmixCaptureHost", dependencies: ["SmixDeveloperDir"]),
 
     // SmixCoreFFI binary target (Rust core via UniFFI 0.29.5)
     // built by `scripts/sdk/build-xcframework.sh` from `crates/smix-ffi`.

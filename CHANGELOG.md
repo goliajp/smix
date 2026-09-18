@@ -23,6 +23,20 @@ All notable changes to the `smix` workspace are documented here. The format foll
   written under the old name still loads, since `capsule down` reads what
   an older `capsule up` wrote.
 
+- **The Swift bridge's host tools find Xcode where it is.** Two developer
+  tools under `swift-bridge/` — not the runner, not `tap_at_coord`, which
+  goes through the runner's own event path and never broke — carried Xcode
+  internals as fixed strings. `smix-host-hid` dlopened SimulatorKit from
+  `Contents/Developer/Library/PrivateFrameworks/`, a directory Xcode 27 no
+  longer has (the framework moved to `Contents/SharedFrameworks/`), so on
+  Xcode 27 every `tap` and `probe` failed at dlopen. The location is now an
+  ordered candidate list derived from `xcode-select -p` — the Xcode 27
+  layout first, the Xcode <= 26 layout second — and a failure names every
+  path it tried. `smix-capture-host` passed a literal
+  `/Applications/Xcode.app/Contents/Developer` to CoreSimulator; it now
+  asks `xcode-select -p` through a new one-file target, `SmixDeveloperDir`,
+  that both tools share instead of each carrying its own copy.
+
 - **The embedded store moves to kevy 6.3.0.** smix has been on
   `kevy-embedded` 6.2.2. Nineteen kevy crates moved together and nothing
   in this workspace changed to meet them: kevy's upgrade note says every
