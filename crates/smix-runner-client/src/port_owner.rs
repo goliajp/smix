@@ -238,6 +238,28 @@ pub fn ask_android(port: u16) -> Authority {
     }
 }
 
+/// The arguments every `lsof` question about sockets starts with.
+///
+/// `-b` keeps lsof away from the kernel calls that can block — the
+/// `stat`/`readlink` it makes for paths and mount points, none of which
+/// a question about TCP listeners needs. Without it lsof is hostage to
+/// whatever is mounted on the machine: measured here at 151 s and ~0%
+/// CPU for a query that, with `-b`, answered in under a second with the
+/// same lines. `-w` silences the warnings `-b` would otherwise print
+/// about the lookups it skipped. `-nP` keeps it from resolving host and
+/// service names, which is the other way this question learns to wait.
+///
+/// One constructor, because there are two callers and a flag added to
+/// one of them is how the other goes on hanging.
+#[must_use]
+pub fn socket_lsof_args(question: &[&str]) -> Vec<String> {
+    ["-b", "-w", "-nP"]
+        .iter()
+        .chain(question)
+        .map(|s| (*s).to_string())
+        .collect()
+}
+
 /// Ask the machine which simulator or device the process on `port` is
 /// bound to.
 ///
@@ -247,7 +269,7 @@ pub fn ask_android(port: u16) -> Authority {
 /// only one of the two is safe to refuse on.
 pub fn ask_ios(port: u16) -> Authority {
     let pids = match std::process::Command::new("lsof")
-        .args(["-ti", &format!("tcp:{port}")])
+        .args(socket_lsof_args(&["-ti", &format!("tcp:{port}")]))
         .output()
     {
         Ok(out) => String::from_utf8_lossy(&out.stdout)
@@ -287,6 +309,19 @@ pub fn ask_ios(port: u16) -> Authority {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Measured 2026-09-19, inside a release dry-run: plain
+    // `lsof -nP -iTCP -sTCP:LISTEN` sat for 151 s at ~0% CPU while
+    // `lsof -b -w` with the same query answered in 0.97 s with the same
+    // 264 lines. Every `smix run` started in that window died at its
+    // 120 s ceiling before printing a step. Asking about sockets needs
+    // none of the path and mount lookups `-b` leaves out.
+    #[test]
+    fn a_socket_question_never_makes_the_blocking_kernel_calls() {
+        let args = socket_lsof_args(&["-iTCP", "-sTCP:LISTEN", "-FpPn"]);
+        assert_eq!(&args[..3], ["-b", "-w", "-nP"]);
+        assert_eq!(&args[3..], ["-iTCP", "-sTCP:LISTEN", "-FpPn"]);
+    }
 
     fn owners(v: &[&str]) -> Authority {
         Authority::Consulted(v.iter().map(|s| s.to_string()).collect())
