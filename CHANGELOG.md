@@ -37,6 +37,20 @@ All notable changes to the `smix` workspace are documented here. The format foll
   asks `xcode-select -p` through a new one-file target, `SmixDeveloperDir`,
   that both tools share instead of each carrying its own copy.
 
+- **Six refusals on a physical iPhone stop claiming devicectl cannot.**
+  `smix` refuses `screenshot`, `start_recording`, `pasteboard_set`,
+  `pasteboard_get`, `location_set` and `location_start` on a phone, and
+  the reason each gave was that `devicectl` had no verb for it. Xcode 27's
+  `devicectl` has one for each — `device capture screenshot`, `device
+  capture screen-record`, `device pasteboard copy` / `paste`, `device
+  simulate location coordinate` / `route`. The six actions are still
+  refused on a phone: smix does not drive those verbs yet, and none has
+  been exercised on hardware. What changed is the sentence, which now
+  names the verb and says exactly that. A gate,
+  `a-refusal-devicectl-outgrew`, asks the installed `devicectl` so a
+  refusal cannot outlive the fact it rests on again. Driving the six is
+  the next capability, not this release.
+
 - **The embedded store moves to kevy 6.3.0.** smix has been on
   `kevy-embedded` 6.2.2. Nineteen kevy crates moved together and nothing
   in this workspace changed to meet them: kevy's upgrade note says every

@@ -326,6 +326,11 @@ LOCAL_ONLY = {
     # on purpose, present at ship because ship runs on the authoring
     # machine where that doc lives.
     "v5.1-c10-ground-truth-is-complete",
+    # Unlike the rest, not about `.claude/`: its input is the devicectl
+    # installed with Xcode on the machine it runs on, and the CI job is
+    # ubuntu, where it can only answer "cannot run". Its self-test carries
+    # a fake devicectl and does run in CI.
+    "a-refusal-devicectl-outgrew",
 }
 CI_GATE = ".github/workflows/ci.yml"
 
