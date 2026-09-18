@@ -420,6 +420,14 @@ python3 "$ROOT/scripts/dev/jobs-have-a-ceiling.test.py" >> /tmp/smix-ship-gatete
   || fail "jobs-have-a-ceiling no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
 python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
   || fail "a-selftest-nobody-runs no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
+python3 "$ROOT/scripts/dev/an-app-that-is-gone.test.py" >> /tmp/smix-ship-gatetests.log 2>&1 \
+  || fail "an-app-that-is-gone no longer goes red on broken input (see /tmp/smix-ship-gatetests.log)"
+bash "$ROOT/scripts/dev/device-hub-shows-a-boot.sh" --selftest >> /tmp/smix-ship-gatetests.log 2>&1 \
+  || fail "device-hub-shows-a-boot cannot tell an unread window from an unmoved one (see /tmp/smix-ship-gatetests.log)"
+
+log "every Simulator.app mention says which Xcode"
+python3 "$ROOT/scripts/dev/an-app-that-is-gone.py" > /tmp/smix-ship-app-gone.log 2>&1 \
+  || fail "a Simulator.app mention does not say which Xcode — see /tmp/smix-ship-app-gone.log"
 
 log "the publication verifier asks the right things"
 python3 "$ROOT/scripts/dev/verify-published-reads-registries.test.py" \
@@ -476,6 +484,13 @@ bash "$ROOT/scripts/release/corpus-gate.sh" --selftest >> /tmp/smix-ship-flake.l
   || fail "corpus-gate verdict self-test FAILED — see /tmp/smix-ship-flake.log"
 bash "$ROOT/scripts/dev/v3.0-c3-determinism.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
   || fail "determinism verdict self-test FAILED — see /tmp/smix-ship-flake.log"
+
+# The last step of a real ship installs the release on this machine and
+# asks whether it landed. Prove here, before anything is published, that
+# the asking can still say no.
+log "this-machine-is-current self-test"
+bash "$ROOT/scripts/release/this-machine-is-current.sh" --selftest > /tmp/smix-ship-this-machine-selftest.log 2>&1 \
+  || fail "this-machine-is-current self-test FAILED — see /tmp/smix-ship-this-machine-selftest.log"
 
 # A flow excused from the gate must carry a measured rate and a
 # history, or "known unstable" is just a flow someone got tired of.
@@ -1525,9 +1540,23 @@ else
   log "verify what the registries took"
   if bash "$ROOT/scripts/release/verify-published.sh" "$VERSION" \
        2>&1 | tee /tmp/smix-ship-verify.log; then
-    note "SHIP COMPLETE — see the line above for what was confirmed"
+    note "published — see the line above for what was confirmed"
   else
     fail "published, but a channel does not have v$VERSION — see /tmp/smix-ship-verify.log. \
 The publish legs ran; this is about what the registries actually serve."
+  fi
+
+  # The machine that shipped it runs it. This was a paragraph in the
+  # release list, and sixteen days after 10.0.0 this machine had smix
+  # 9.0.0, no smix-mcp, and four different plugin versions across six
+  # Claude profiles. After the registries have answered, because it
+  # installs from them.
+  log "install v$VERSION on this machine"
+  if bash "$ROOT/scripts/release/install-on-this-machine.sh" "$VERSION" \
+       2>&1 | tee /tmp/smix-ship-this-machine.log; then
+    note "SHIP COMPLETE — published, and this machine runs v$VERSION"
+  else
+    fail "v$VERSION is published and nothing about that is in doubt; THIS MACHINE is not running it — \
+see /tmp/smix-ship-this-machine.log, then: bash scripts/release/install-on-this-machine.sh $VERSION"
   fi
 fi

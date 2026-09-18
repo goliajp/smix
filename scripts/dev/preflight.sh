@@ -240,6 +240,8 @@ SOURCE_GATES=(
   a-published-crate-can-run-its-tests
   a-verb-does-not-assume-a-platform
   a-hand-copied-table-says-a-number
+  an-app-that-is-gone
+  an-app-that-is-gone.test
 )
 
 for gate in "${SOURCE_GATES[@]}"; do
@@ -334,6 +336,13 @@ bash scripts/release/portable-tier.sh --selftest
 # The site check's own judgement: it has to recognise the SPA fallback,
 # because that is what a missing file answers with.
 bash scripts/release/site-is-current.sh --selftest
+# Whether the shipping machine runs what it shipped. The cases it has to
+# refuse are the ones this machine was actually in: `smix` without
+# `smix-mcp`, and a plugin current in one Claude profile and not the rest.
+bash scripts/release/this-machine-is-current.sh --selftest
+# The Device Hub instrument: it must tell "the window did not move" from
+# "the window could not be read", because only one of those is a fact.
+bash scripts/dev/device-hub-shows-a-boot.sh --selftest
 
 # The Claude Code plugin. Both are device-free and take under a second;
 # what they cover is a plugin that parses perfectly and does nothing —

@@ -336,6 +336,12 @@ jobs:
       # which half it therefore skipped.
       - name: a retired sentence is off the surfaces
         run: python3 scripts/dev/retired-claims-scan.py
+      # Simulator.app exists on Xcode 26 and not on 27; a mention that does
+      # not say which is true on one machine and false on the next.
+      - name: every Simulator.app mention says which Xcode
+        run: python3 scripts/dev/an-app-that-is-gone.py
+      - name: the Simulator.app-mention gate can still go red
+        run: python3 scripts/dev/an-app-that-is-gone.test.py
       - name: the retired-wording scan can still go red
         run: python3 scripts/dev/retired-claims-scan.test.py
       # contract-scan itself is deliberately NOT here. It reads the four
@@ -423,6 +429,10 @@ jobs:
         run: bash scripts/release/corpus-gate.sh --selftest
       - name: determinism verdict self-test
         run: bash scripts/dev/v3.0-c3-determinism.sh --selftest
+      # Device-free and machine-free: it builds a fake PATH and fake
+      # Claude profiles, then runs the real script against them.
+      - name: this-machine-is-current self-test
+        run: bash scripts/release/this-machine-is-current.sh --selftest
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check
 
