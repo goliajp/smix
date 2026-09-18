@@ -297,8 +297,10 @@ public enum IOHIDDigitizerTap {
 ///
 /// - Three live in IOKit (public framework, already in dyld shared cache —
 ///   resolvable through `dlsym(RTLD_DEFAULT)` sentinel).
-/// - One lives in SimulatorKit (private — requires explicit `dlopen` on
-///   `<dev>/Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit`).
+/// - One lives in SimulatorKit (private — loaded by the caller from the
+///   first of `CoreSimulatorBridge.simulatorKitCandidates` that opens;
+///   `Contents/SharedFrameworks/` on Xcode 27, `Contents/Developer/Library/
+///   PrivateFrameworks/` on Xcode <= 26).
 public struct DigitizerSymbols: Equatable {
   public let createDigitizerEvent: UnsafeMutableRawPointer
   public let createFingerEvent:    UnsafeMutableRawPointer

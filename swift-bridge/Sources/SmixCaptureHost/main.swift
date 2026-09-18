@@ -29,6 +29,7 @@ import CoreGraphics
 import Foundation
 import IOSurface
 import ImageIO
+import SmixDeveloperDir
 
 // MARK: - Argv
 
@@ -61,6 +62,10 @@ func call(_ obj: NSObject, _ name: String) -> NSObject? {
 /// Resolve the CoreSimulator `SimDevice` for `udid`. Held for the process
 /// lifetime; the framebuffer surface is fetched from it on demand.
 func resolveDevice(udid: String) -> NSObject? {
+  guard let dev = try? DeveloperDir.current() else {
+    fputs("xcode-select -p failed\n", stderr)
+    return nil
+  }
   guard let ctxClass = NSClassFromString("SimServiceContext") as? NSObject.Type else {
     fputs("SimServiceContext class missing\n", stderr)
     return nil
@@ -72,10 +77,7 @@ func resolveDevice(udid: String) -> NSObject? {
   let sharedImp = unsafeBitCast(ctxClass.method(for: sharedSel), to: SharedCtxFn.self)
   var err: NSError?
   guard
-    let ctx = sharedImp(
-      ctxClass, sharedSel,
-      "/Applications/Xcode.app/Contents/Developer" as NSString, &err
-    )
+    let ctx = sharedImp(ctxClass, sharedSel, dev as NSString, &err)
   else {
     fputs("ctx error: \(String(describing: err))\n", stderr)
     return nil

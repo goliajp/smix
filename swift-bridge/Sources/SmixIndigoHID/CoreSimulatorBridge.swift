@@ -1,4 +1,5 @@
 import Foundation
+import SmixDeveloperDir
 #if canImport(ObjectiveC)
 import ObjectiveC.runtime
 #endif
@@ -7,9 +8,34 @@ import ObjectiveC.runtime
 /// runtime — the framework is loaded dynamically; we never declare a module
 /// import for it (dlsym-only invariant for private frameworks).
 public enum CoreSimulatorBridge {
-  /// SimulatorKit lives per-Xcode under `xcode-select -p`.
-  public static let simulatorKitPath: (_ developerDir: String) -> String = { dev in
-    "\(dev)/Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"
+  /// Where SimulatorKit lives, in the order to try. Xcode 27 moved it from
+  /// `Contents/Developer/Library/PrivateFrameworks/` to
+  /// `Contents/SharedFrameworks/` and removed the old directory outright;
+  /// on Xcode <= 26 only the old one exists. Both are derived from
+  /// `xcode-select -p` (`<Xcode.app>/Contents/Developer`) — never from a
+  /// version test, which would be a second thing to keep true.
+  public static func simulatorKitCandidates(developerDir: String) -> [String] {
+    let contents = (developerDir as NSString).deletingLastPathComponent
+    return [
+      "\(contents)/SharedFrameworks/SimulatorKit.framework/SimulatorKit",  // Xcode 27
+      "\(developerDir)/Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit",  // Xcode <= 26
+    ]
+  }
+
+  /// dlopen the first candidate that opens. When none does, the error
+  /// names every path tried — a reader on a third layout needs the list,
+  /// not the last miss.
+  public static func openSimulatorKit(
+    developerDir: String, via resolver: DlsymResolver
+  ) throws -> UnsafeMutableRawPointer {
+    let candidates = simulatorKitCandidates(developerDir: developerDir)
+    for path in candidates {
+      if let handle = resolver.open(path) { return handle }
+    }
+    throw HostHIDError.dlopenFailed(
+      path: candidates.joined(separator: " | "),
+      detail: resolver.lastErrorDescription()
+    )
   }
 
   /// CoreSimulator is system-wide; path is independent of the active Xcode.
@@ -17,31 +43,13 @@ public enum CoreSimulatorBridge {
     "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator"
 
   /// `xcode-select -p` → developer dir (e.g. `/Applications/Xcode.app/Contents/Developer`).
+  /// The error code stays `init_failed`: that string is on the wire.
   public static func developerDir() throws -> String {
-    let proc = Process()
-    proc.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
-    proc.arguments = ["-p"]
-    let pipe = Pipe()
-    proc.standardOutput = pipe
-    proc.standardError = Pipe()  // swallow stderr
     do {
-      try proc.run()
+      return try DeveloperDir.current()
     } catch {
-      throw HostHIDError.initFailed(detail: "spawn xcode-select: \(error)")
+      throw HostHIDError.initFailed(detail: "\(error)")
     }
-    proc.waitUntilExit()
-    if proc.terminationStatus != 0 {
-      throw HostHIDError.initFailed(detail: "xcode-select -p exit \(proc.terminationStatus)")
-    }
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    guard let s = String(data: data, encoding: .utf8) else {
-      throw HostHIDError.initFailed(detail: "xcode-select -p output is not UTF-8")
-    }
-    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-    if trimmed.isEmpty {
-      throw HostHIDError.initFailed(detail: "xcode-select -p returned empty path")
-    }
-    return trimmed
   }
 
   /// Resolves a `SimDevice` by udid by going through CoreSimulator's

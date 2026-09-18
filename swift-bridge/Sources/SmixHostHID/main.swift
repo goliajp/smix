@@ -47,10 +47,7 @@ enum SmixHostHIDCLI {
     let resolver = SystemDlsymResolver()
     let dev = try CoreSimulatorBridge.developerDir()
 
-    let skPath = CoreSimulatorBridge.simulatorKitPath(dev)
-    guard let skHandle = resolver.open(skPath) else {
-      throw HostHIDError.dlopenFailed(path: skPath, detail: resolver.lastErrorDescription())
-    }
+    let skHandle = try CoreSimulatorBridge.openSimulatorKit(developerDir: dev, via: resolver)
     guard let csHandle = resolver.open(CoreSimulatorBridge.coreSimulatorPath) else {
       throw HostHIDError.dlopenFailed(
         path: CoreSimulatorBridge.coreSimulatorPath,
@@ -107,8 +104,7 @@ enum SmixHostHIDCLI {
     } catch {
       return allUnavailable()
     }
-    let skPath = CoreSimulatorBridge.simulatorKitPath(dev)
-    guard let skHandle = resolver.open(skPath) else {
+    guard let skHandle = try? CoreSimulatorBridge.openSimulatorKit(developerDir: dev, via: resolver) else {
       return allUnavailable()
     }
     return ChannelProbeReport.probe(
@@ -143,8 +139,7 @@ enum SmixHostHIDCLI {
       print(SidecarDaemon.formatPing(ok: false))
       exit(1)
     }
-    let skPath = CoreSimulatorBridge.simulatorKitPath(dev)
-    guard let skHandle = resolver.open(skPath) else {
+    guard let skHandle = try? CoreSimulatorBridge.openSimulatorKit(developerDir: dev, via: resolver) else {
       print(SidecarDaemon.formatPing(ok: false))
       exit(1)
     }
