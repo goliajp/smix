@@ -12,8 +12,8 @@
 //! boot, so its running is the condition. Device Hub, the simulator UI on
 //! Xcode 27, does not: measured 2026-09-19, a boot under an
 //! open Device Hub window moves neither its selection nor its title
-//! (`.claude/docs/research/xcode27-device-hub.md` §2), so it is probed
-//! and reported but never counts. On Xcode 27 a boot touches nothing on
+//! (its sidebar lists every simulator, booted or not, and a boot changes
+//! nothing on it), so it is probed and reported but never counts. On Xcode 27 a boot touches nothing on
 //! screen and the guard has nothing to refuse.
 
 use std::path::{Path, PathBuf};
@@ -137,9 +137,9 @@ pub fn probe_device_hub() -> DeviceHubProbe {
 /// touch?
 ///
 /// Simulator.app (Xcode <= 26) pops a window per boot, so its running is the
-/// whole answer. Device Hub does not move for a boot — measured, not assumed
-/// (`.claude/docs/research/xcode27-device-hub.md` §2, 2026-09-19) — so
-/// its probe never makes this true, whatever it found. It is still a
+/// whole answer. Device Hub does not move for a boot — measured on
+/// 2026-09-19 with `scripts/dev/device-hub-shows-a-boot.sh`, not assumed
+/// — so its probe never makes this true, whatever it found. It is still a
 /// parameter so that the decision is one table in one place: a
 /// different measurement on a later Xcode changes this function and
 /// nothing at the call site.
@@ -591,9 +591,9 @@ mod tests {
         );
     }
 
-    // Row B of the decision table (measured 2026-09-19, see
-    // .claude/docs/research/xcode27-device-hub.md §2): a Device Hub
-    // window does not move to a simulator that boots under it, so
+    // Row B of the decision table, measured 2026-09-19 with
+    // scripts/dev/device-hub-shows-a-boot.sh: a Device Hub window does
+    // not move to a simulator that boots under it, so
     // Device Hub running — with or without a window — puts nothing on
     // screen that a boot would touch. Only Simulator.app (Xcode <= 26) does.
     #[test]
