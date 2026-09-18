@@ -51,6 +51,23 @@ All notable changes to the `smix` workspace are documented here. The format foll
   refusal cannot outlive the fact it rests on again. Driving the six is
   the next capability, not this release.
 
+### Fixed
+
+- **`smix run` no longer waits on whatever the machine has mounted.** Before
+  it drives anything, smix asks `lsof` which process owns the runner's port
+  — and asked it plainly, which lets `lsof` make the `stat` and `readlink`
+  calls it uses for paths and mount points. A question about TCP listeners
+  needs none of them, and any one of them can block. Measured inside this
+  release's own dry-run: the query sat for 151 seconds at ~0% CPU while the
+  same query with `-b` answered in 0.97 s with the same 264 lines, and three
+  flows in a row died at their 120-second ceiling before printing a step —
+  on a simulator that was healthy and showing the right screen. Both places
+  smix asks (`smix run`'s port-owner check and `smix runner list`) now go
+  through one constructor that passes `-b -w -nP`. `runner list` on the
+  same machine went from 30–60 s to 2 s. What made `lsof` block that
+  morning was not identified — the machine has network volumes mounted,
+  which is the usual cause — and the fix does not depend on knowing.
+
 - **The embedded store moves to kevy 6.3.0.** smix has been on
   `kevy-embedded` 6.2.2. Nineteen kevy crates moved together and nothing
   in this workspace changed to meet them: kevy's upgrade note says every

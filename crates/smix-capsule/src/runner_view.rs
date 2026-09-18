@@ -230,7 +230,11 @@ pub fn attribute(
 #[must_use]
 pub fn listeners() -> Vec<Listener> {
     let Ok(out) = std::process::Command::new("lsof")
-        .args(["-nP", "-iTCP", "-sTCP:LISTEN", "-FpPn"])
+        .args(smix_runner_client::port_owner::socket_lsof_args(&[
+            "-iTCP",
+            "-sTCP:LISTEN",
+            "-FpPn",
+        ]))
         .output()
     else {
         return Vec::new();
