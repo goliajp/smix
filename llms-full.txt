@@ -2373,8 +2373,9 @@ reverse (`down`). The guard rejects a windowed session by default;
 `--soft` accepts the soft-capsule fallback.
 
 iOS Simulators only, and it says so rather than trying: all three of its
-legs — the Simulator.app guard, `simctl boot`, the `/live` capture — are
-simulator machinery with no counterpart on an emulator or a physical
+legs — the simulator-window guard (Simulator.app on Xcode <= 26; Device Hub on
+Xcode 27 does not react to a boot and never trips it), `simctl boot`, the
+`/live` capture — are simulator machinery with no counterpart on an emulator or a physical
 device. Those are brought up with `smix runner up` instead
 (`--platform android` for an emulator, `--physical` for a phone).
 

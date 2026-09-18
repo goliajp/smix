@@ -82,8 +82,9 @@ smix runner down --platform android --device emulator-5554
 Two things that look like device problems and are not:
 
 - `smix capsule up` refuses an emulator, and says so. It is simulator
-  machinery — the Simulator.app guard, `simctl boot`, the `/live` capture
-  — and none of it has an emulator counterpart. `runner up` above is the
+  machinery — the simulator-window guard (Simulator.app on Xcode <= 26; Device
+  Hub on Xcode 27 never trips it), `simctl boot`, the `/live` capture — and
+  none of it has an emulator counterpart. `runner up` above is the
   whole bring-up.
 - A screen that never goes idle, a video player above all, does not stop
   the tree from being readable. smix waits a bounded moment for the

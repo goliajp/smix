@@ -6,6 +6,23 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Changed
 
+- **The capsule guard knows which simulator UI it is looking at.** Xcode 27
+  removed Simulator.app and put Device Hub in its place; `smix capsule up`
+  watched for a process named `Simulator`, so on Xcode 27 the guard never
+  fired and a hard capsule was reported whatever was on screen. Measured
+  rather than assumed (2026-09-19): a Device Hub window does not move to a
+  simulator that boots under it — neither its selection nor its title — so
+  on Xcode 27 a boot touches nothing on screen and there is nothing for the
+  guard to refuse. The guard now probes both (`pgrep -x Simulator`, and
+  Device Hub with its window count), decides from one table
+  (`window_on_screen`), and says so in its messages: Simulator.app on
+  Xcode <= 26 is the window that pops; Device Hub on Xcode 27 is reported
+  and never counts. The refusal no longer prescribes `pkill -INT Simulator`,
+  which kills nothing on Xcode 27. The capsule state record's field
+  `simulator_app_was_running` is now `window_was_on_screen`; a record
+  written under the old name still loads, since `capsule down` reads what
+  an older `capsule up` wrote.
+
 - **The embedded store moves to kevy 6.3.0.** smix has been on
   `kevy-embedded` 6.2.2. Nineteen kevy crates moved together and nothing
   in this workspace changed to meet them: kevy's upgrade note says every

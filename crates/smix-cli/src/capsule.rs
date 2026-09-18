@@ -1,16 +1,20 @@
 //! `smix capsule up/down` subcommands (pure logic layer).
 //!
 //! The capsule has two modes:
-//!   Hard capsule — used when Simulator.app is NOT running. `simctl boot`
-//!     brings the sim up headless with no visible window; screenshot /
-//!     capture device-level APIs still work.
-//!   Soft capsule — used when Simulator.app IS running. Falls back to
-//!     the EventRecorder + SDK ledger reconciliation path.
+//!   Hard capsule — used when no simulator window is on screen. `simctl
+//!     boot` brings the sim up headless with no visible window;
+//!     screenshot / capture device-level APIs still work.
+//!   Soft capsule — used when a simulator window IS on screen. Falls
+//!     back to the EventRecorder + SDK ledger reconciliation path.
 //!
-//! `capsule up <DEVICE>` runs a guard: `pgrep -x Simulator` — a zero exit
-//! code means Simulator.app is on screen, which is refused by default
-//! (returns [`CapsuleGuardRejected`]). The user must pass `--soft` to
-//! accept the guarded fallback to soft mode.
+//! What counts as a window on screen is decided by [`window_on_screen`]
+//! from two probes. Simulator.app (Xcode <= 26) pops a window for every
+//! boot, so its running is the condition. Device Hub, the simulator UI on
+//! Xcode 27, does not: measured 2026-09-19, a boot under an
+//! open Device Hub window moves neither its selection nor its title
+//! (`.claude/docs/research/xcode27-device-hub.md` §2), so it is probed
+//! and reported but never counts. On Xcode 27 a boot touches nothing on
+//! screen and the guard has nothing to refuse.
 
 use std::path::{Path, PathBuf};
 
@@ -32,10 +36,14 @@ pub struct CapsuleState {
     /// down` posts to `{capture_endpoint}/api/capture/stop` to tear it
     /// back down.
     pub capture_endpoint: String,
-    /// Was Simulator.app running at `capsule up` time? True implies
-    /// mode = Soft, false implies mode = Hard. Retained on `down` for
-    /// audit; not re-read.
-    pub simulator_app_was_running: bool,
+    /// Was a simulator window on screen at `capsule up` time (see
+    /// [`window_on_screen`])? True implies mode = Soft, false implies
+    /// mode = Hard. Retained on `down` for audit; not re-read.
+    ///
+    /// The alias is the field's name before 10.1: `down` reads the
+    /// record `up` wrote, and that `up` may have been an older binary.
+    #[serde(alias = "simulator_app_was_running")]
+    pub window_was_on_screen: bool,
     /// True iff `capsule up --no-capture` was used, meaning we skipped
     /// the smix-server `/api/capture/start` call (and the long-running
     /// `simctl io recordVideo` capture pipeline on the host). This lets
@@ -51,11 +59,13 @@ pub struct CapsuleGuardRejected {
     pub hint: String,
 }
 
-pub const GUARD_HINT: &str = "Simulator.app is running — simctl boot will pop a window, \
-     which violates the hard-capsule precondition.\n\
-     Close it (`pkill -INT Simulator`) and retry, or pass `--soft` to \
-     explicitly accept the soft-capsule fallback (window visible, \
-     event-ledger reconciliation only; no headless entry point).";
+pub const GUARD_HINT: &str = "a simulator window is on screen (Simulator.app on Xcode <= 26; \
+     on Xcode 27 the simulator UI is Device Hub, which does not react to a boot \
+     and never trips this guard) — simctl boot would pop a window, which \
+     violates the hard-capsule precondition.\n\
+     Close that window and retry, or pass `--soft` to explicitly accept the \
+     soft-capsule fallback (window visible, event-ledger reconciliation only; \
+     no headless entry point).";
 
 /// Where the capture endpoint comes from, said in full.
 ///
@@ -77,7 +87,7 @@ pub fn state_path(workspace_root: &Path, udid: &str) -> PathBuf {
         .join(format!("{udid}.state.json"))
 }
 
-/// Guard probe: `pgrep -x Simulator` exit 0 => Simulator.app is running.
+/// Guard probe: `pgrep -x Simulator` exit 0 => Simulator.app (Xcode <= 26) is running.
 pub fn simulator_app_running() -> bool {
     std::process::Command::new("pgrep")
         .args(["-x", "Simulator"])
@@ -86,11 +96,63 @@ pub fn simulator_app_running() -> bool {
         .unwrap_or(false)
 }
 
+/// What the Device Hub probe found. Kept as a value, not a bool, so the
+/// state of the other generation's UI is on record even though it does
+/// not enter the decision (see [`window_on_screen`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceHubProbe {
+    NotRunning,
+    Running {
+        /// `None` when the process is there but its window count could
+        /// not be read (no Accessibility permission, System Events not
+        /// answering). Not zero: an unread window is not an absent one.
+        windows: Option<u32>,
+    },
+}
+
+/// Guard probe for Xcode 27's Device Hub: `pgrep -x DeviceHub`, then
+/// System Events for its window count.
+pub fn probe_device_hub() -> DeviceHubProbe {
+    let running = std::process::Command::new("pgrep")
+        .args(["-x", "DeviceHub"])
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false);
+    if !running {
+        return DeviceHubProbe::NotRunning;
+    }
+    let windows = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            "tell application \"System Events\" to tell process \"DeviceHub\" to count windows",
+        ])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8_lossy(&out.stdout).trim().parse().ok());
+    DeviceHubProbe::Running { windows }
+}
+
+/// Is there a simulator window on screen that a `simctl boot` would
+/// touch?
+///
+/// Simulator.app (Xcode <= 26) pops a window per boot, so its running is the
+/// whole answer. Device Hub does not move for a boot — measured, not assumed
+/// (`.claude/docs/research/xcode27-device-hub.md` §2, 2026-09-19) — so
+/// its probe never makes this true, whatever it found. It is still a
+/// parameter so that the decision is one table in one place: a
+/// different measurement on a later Xcode changes this function and
+/// nothing at the call site.
+pub fn window_on_screen(simulator_app_running: bool, device_hub: DeviceHubProbe) -> bool {
+    let _ = device_hub;
+    simulator_app_running
+}
+
 /// Decide capsule mode, and say so when it is not the one asked for.
 ///
 /// A window on screen used to be a refusal. But `expo run:ios` opens
-/// Simulator.app by design, so on any React Native dev machine the
-/// hard capsule was never available — and a condition that is normal
+/// the simulator UI (Simulator.app on Xcode <= 26) by design, so on any
+/// React Native dev machine the hard capsule was never available — and a condition that is normal
 /// for a whole class of users reads as an error only once before it
 /// reads as noise.
 ///
@@ -104,11 +166,11 @@ pub fn simulator_app_running() -> bool {
 /// function, which is what lets the table below test the decision
 /// instead of the plumbing.
 pub fn decide_mode(
-    sim_running: bool,
+    window_on_screen: bool,
     soft: bool,
     require_hard: bool,
 ) -> Result<(CapsuleMode, Option<String>), CapsuleGuardRejected> {
-    match (sim_running, soft, require_hard) {
+    match (window_on_screen, soft, require_hard) {
         (false, _, _) => Ok((CapsuleMode::Hard, None)),
         (true, _, true) => Err(CapsuleGuardRejected {
             hint: GUARD_HINT.to_string(),
@@ -117,9 +179,9 @@ pub fn decide_mode(
         (true, false, false) => Ok((
             CapsuleMode::Soft,
             Some(
-                "Simulator.app is on screen, so this is a soft capsule: the window \
-                 is visible and reconciliation is event-ledger only. Pass \
-                 `--require-hard` to make this a failure instead."
+                "a simulator window (Simulator.app, Xcode <= 26) is on screen, so this \
+                 is a soft capsule: the window is visible and reconciliation is \
+                 event-ledger only. Pass `--require-hard` to make this a failure instead."
                     .to_string(),
             ),
         )),
@@ -130,8 +192,8 @@ pub fn decide_mode(
 pub struct UpOptions<'a> {
     /// Refuse rather than degrade when a window is on screen.
     ///
-    /// For CI, where Simulator.app being open means something is wrong
-    /// rather than that someone is working.
+    /// For CI, where a simulator window being open means something is
+    /// wrong rather than that someone is working.
     pub require_hard: bool,
     pub root: &'a Path,
     pub udid: &'a str,
@@ -152,7 +214,7 @@ pub struct UpOptions<'a> {
 /// Refuse a device the capsule cannot bring up, naming what can.
 ///
 /// All three of the capsule's legs are simulator-shaped: the
-/// Simulator.app window guard, `simctl boot`, and the HLS capture that
+/// simulator-window guard, `simctl boot`, and the HLS capture that
 /// serves `/live`. Handed an emulator it used to run them anyway —
 /// `simctl boot emulator-5554` sits there until it times out 120
 /// seconds later, and the report ("boot timed out") describes the
@@ -184,7 +246,7 @@ pub fn capsule_supports(
     };
     Err(format!(
         "capsule up is for iOS Simulators, and {device} is {what}.\n\
-         The capsule boots through simctl, guards against a Simulator.app \
+         The capsule boots through simctl, guards against a simulator \
          window, and records the /live capture — none of which this device \
          has. Bring it up with:\n\
          \n    {instead}\n"
@@ -201,9 +263,9 @@ pub fn capsule_supports(
 /// error under tokio 1.x. The surface is async and `main` awaits it
 /// directly rather than spinning up a new runtime in the cement layer.
 pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
-    let sim_running = simulator_app_running();
+    let on_screen = window_on_screen(simulator_app_running(), probe_device_hub());
     let (mode, warning) =
-        decide_mode(sim_running, opts.soft, opts.require_hard).map_err(|e| e.hint)?;
+        decide_mode(on_screen, opts.soft, opts.require_hard).map_err(|e| e.hint)?;
     if let Some(w) = warning {
         eprintln!("capsule up: {w}");
     }
@@ -287,7 +349,7 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         started_at: chrono::Utc::now().to_rfc3339(),
         runner_port: opts.runner_port,
         capture_endpoint: opts.capture_endpoint.to_string(),
-        simulator_app_was_running: sim_running,
+        window_was_on_screen: on_screen,
         no_capture: opts.no_capture,
     };
     write_state(opts.root, opts.udid, &state)?;
@@ -508,9 +570,11 @@ mod tests {
     #[test]
     fn mode_requires_soft_flag_when_simulator_present() {
         let err = decide_mode(true, false, true).unwrap_err();
+        // Both generations by name: Simulator.app pops a window on Xcode <= 26,
+        // and a reader on Xcode 27 has only Device Hub.
         assert!(
-            err.hint.contains("Simulator.app is running"),
-            "guard hint should name the precondition, got {:?}",
+            err.hint.contains("Simulator.app on Xcode <= 26") && err.hint.contains("Device Hub"),
+            "guard hint should name both generations of the simulator UI, got {:?}",
             err.hint
         );
         assert!(
@@ -518,6 +582,44 @@ mod tests {
             "guard hint should suggest --soft, got {:?}",
             err.hint
         );
+        // `pkill -INT Simulator` kills nothing on Xcode 27; a command that
+        // works on one generation is not advice.
+        assert!(
+            !err.hint.contains("pkill"),
+            "guard hint must not prescribe a kill command, got {:?}",
+            err.hint
+        );
+    }
+
+    // Row B of the decision table (measured 2026-09-19, see
+    // .claude/docs/research/xcode27-device-hub.md §2): a Device Hub
+    // window does not move to a simulator that boots under it, so
+    // Device Hub running — with or without a window — puts nothing on
+    // screen that a boot would touch. Only Simulator.app (Xcode <= 26) does.
+    #[test]
+    fn device_hub_never_counts_as_a_window_on_screen() {
+        assert!(!window_on_screen(false, DeviceHubProbe::NotRunning));
+        assert!(!window_on_screen(
+            false,
+            DeviceHubProbe::Running { windows: Some(1) }
+        ));
+        assert!(!window_on_screen(
+            false,
+            DeviceHubProbe::Running { windows: Some(0) }
+        ));
+        assert!(!window_on_screen(
+            false,
+            DeviceHubProbe::Running { windows: None }
+        ));
+    }
+
+    #[test]
+    fn simulator_app_is_the_window_on_screen() {
+        assert!(window_on_screen(true, DeviceHubProbe::NotRunning));
+        assert!(window_on_screen(
+            true,
+            DeviceHubProbe::Running { windows: Some(1) }
+        ));
     }
 
     #[test]
@@ -533,7 +635,7 @@ mod tests {
             started_at: "2026-06-14T12:34:56+09:00".to_string(),
             runner_port: 22087,
             capture_endpoint: "http://127.0.0.1:8787".to_string(),
-            simulator_app_was_running: false,
+            window_was_on_screen: false,
             no_capture: false,
         };
         let j = serde_json::to_string(&s).unwrap();
@@ -543,8 +645,24 @@ mod tests {
         assert_eq!(r.started_at, s.started_at);
         assert_eq!(r.runner_port, 22087);
         assert_eq!(r.capture_endpoint, s.capture_endpoint);
-        assert!(!r.simulator_app_was_running);
+        assert!(!r.window_was_on_screen);
         assert!(!r.no_capture);
+    }
+
+    // `capsule down` reads the file `capsule up` wrote, and the `up` may
+    // have been an older binary: the field's old name must still load.
+    #[test]
+    fn state_written_under_the_old_field_name_still_loads() {
+        let legacy = r#"{
+            "mode": "soft",
+            "udid": "X",
+            "started_at": "2026-06-14T12:34:56+09:00",
+            "runner_port": 22087,
+            "capture_endpoint": "http://127.0.0.1:8787",
+            "simulator_app_was_running": true
+        }"#;
+        let r: CapsuleState = serde_json::from_str(legacy).unwrap();
+        assert!(r.window_was_on_screen);
     }
 
     // State round-trip honors --no-capture flag for scenario recording
@@ -558,7 +676,7 @@ mod tests {
             started_at: "2026-06-16T12:34:56+09:00".to_string(),
             runner_port: 22087,
             capture_endpoint: "http://127.0.0.1:8787".to_string(),
-            simulator_app_was_running: false,
+            window_was_on_screen: false,
             no_capture: true,
         };
         let j = serde_json::to_string(&s).unwrap();
@@ -601,7 +719,7 @@ mod store_tests {
             started_at: "2026-07-20T00:00:00Z".to_string(),
             runner_port: port,
             capture_endpoint: "http://127.0.0.1:9000".to_string(),
-            simulator_app_was_running: false,
+            window_was_on_screen: false,
             no_capture: false,
         }
     }
