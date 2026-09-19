@@ -56,6 +56,7 @@ KNOWS_PRIOR_STATE = re.compile(
 # verdict still clean. The set found must equal this one, both ways.
 SHUTS_DOWN_SCRIPTS = {
     "v10.2-c1-devicectl-capture-e2e.sh",
+    "v10.2-c2-devicectl-pasteboard-e2e.sh",
     "v2.12-c3-federation-single-node-e2e.sh",
     "v2.12-c4-federation-two-node-e2e.sh",
     "v2.12-c5-federation-cli-e2e.sh",

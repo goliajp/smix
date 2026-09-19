@@ -372,10 +372,9 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                     why: ANDROID_CLIPBOARD_IS_SEALED,
                     instead: "type the text into the field instead of pasting it",
                 },
-                No {
-                    why: undriven_devicectl_verb!("device pasteboard copy"),
-                    instead: "type the text into the field instead of pasting it",
-                },
+                // `devicectl device pasteboard copy`, text on stdin. Read back
+                // byte for byte on an iPhone (iOS 26.6.2, Xcode 27.0).
+                Yes,
                 No {
                     why: ANDROID_CLIPBOARD_IS_SEALED,
                     instead: "type the text into the field instead of pasting it",
@@ -390,10 +389,9 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                     why: ANDROID_CLIPBOARD_IS_SEALED,
                     instead: "assert on what the app renders instead of on the clipboard",
                 },
-                No {
-                    why: undriven_devicectl_verb!("device pasteboard paste"),
-                    instead: "read it from the screen through the runner",
-                },
+                // `devicectl device pasteboard paste`: stdout is the text, and
+                // its JSON says how many bytes that should be.
+                Yes,
                 No {
                     why: ANDROID_CLIPBOARD_IS_SEALED,
                     instead: "assert on what the app renders instead of on the clipboard",

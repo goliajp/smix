@@ -30,15 +30,28 @@ All notable changes to the `smix` workspace are documented here. The format foll
   iPhone on iOS 26.6.2 does not**, and says so — that is the only phone
   this was measured on.
 
+- **The clipboard verbs work on a registered iPhone.** `setClipboard`,
+  `copyTextFrom` and `pasteText` with no text go through Xcode 27's
+  `devicectl device pasteboard copy` (text on stdin) and `paste` (text on
+  stdout). What is read back is held against the byte count `devicectl`
+  reports and must be UTF-8 — it is the user's data, so nothing is
+  replaced with `U+FFFD` on the way. Written and read back byte for byte
+  on an iPhone on iOS 26.6.2, multi-byte characters and an inner newline
+  included. `DevicectlClient::on_pasteboard(name)` addresses a named
+  pasteboard instead of the general one. A phone's general pasteboard
+  travels by Universal Clipboard: setting it sets the one on the Mac
+  beside it too.
+
 ### Changed
 
-- **Three refusals on a physical iPhone became capabilities.** The
+- **Five refusals on a physical iPhone became capabilities.** The
   platform table's physical-iOS column refused seventeen actions; it
-  refuses fourteen. `screenshot`, `start_recording` and `stop_recording`
-  now say `Works`, and a test holds the list of what the backend carries
-  out against the table in both directions — for an afternoon during this
-  work the code implemented `screenshot` while the table still refused it,
-  and every test was green.
+  refuses twelve. `pasteboard_set` and `pasteboard_get` now say `Works`,
+  as do `screenshot`, `start_recording` and `stop_recording`, and a test
+  holds the list of what the backend carries out against the table in
+  both directions — for an afternoon during this work the code
+  implemented `screenshot` while the table still refused it, and every
+  test was green.
 
 - **The "no runner is answering" message says when it is true.** It said a
   physical device "has no other way to be seen — Apple exposes no screen

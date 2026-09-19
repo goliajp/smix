@@ -1,0 +1,27 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "device",
+      "pasteboard",
+      "paste",
+      "--device",
+      "5D087114-ECB3-443C-8DDB-40EEF9CFB90C",
+      "--json-output",
+      "out.json",
+      "-q"
+    ],
+    "commandType": "devicectl.device.pasteboard.paste",
+    "environment": {
+      "TERM": "xterm-256color"
+    },
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "642.16"
+  },
+  "result": {
+    "contentSize": 0,
+    "deviceIdentifier": "5D087114-ECB3-443C-8DDB-40EEF9CFB90C",
+    "pasteboardName": "general"
+  }
+}

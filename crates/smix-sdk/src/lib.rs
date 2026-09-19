@@ -2383,14 +2383,14 @@ impl App {
         }
     }
 
-    /// Write `text` to the iOS Simulator device pasteboard via
-    /// `xcrun simctl pbcopy <udid>`. Maps to maestro yaml
-    /// `setClipboard: "literal"`.
+    /// Write `text` to the device's general pasteboard. Maps to maestro
+    /// yaml `setClipboard: "literal"`.
     ///
-    /// Clipboard set is a core act primitive. Uses the simctl host-side
-    /// path (device-scoped, explicit UDID) rather than the swift sim-side
-    /// UIPasteboard wire — [`SimctlClient::pasteboard_set`] already has
-    /// a stable wire, no need to add a new swift route.
+    /// Goes through the device backend, host side and with an explicit
+    /// UDID — `simctl pbcopy` for a simulator, `devicectl device
+    /// pasteboard copy` for a registered iPhone — rather than a runner
+    /// route. Android refuses by name: its clipboard serves only the
+    /// focused app.
     pub async fn set_clipboard(&self, text: &str) -> Result<(), ExpectationFailure> {
         let udid = self.require_udid()?;
         self.device
@@ -2399,8 +2399,9 @@ impl App {
             .map_err(simctl_to_failure)
     }
 
-    /// Read the current iOS Simulator device pasteboard via
-    /// `xcrun simctl pbpaste <udid>`. Returns the raw string (may be empty).
+    /// Read the device's general pasteboard through the device backend
+    /// (`simctl pbpaste`, or `devicectl device pasteboard paste` for a
+    /// registered iPhone). The raw string; empty when it holds no text.
     pub async fn get_clipboard(&self) -> Result<String, ExpectationFailure> {
         let udid = self.require_udid()?;
         self.device
