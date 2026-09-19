@@ -118,7 +118,7 @@ smix sim resolve <ALIAS>       # alias → UDID
 smix sim boot <ALIAS|UDID>     # boot
 smix sim shutdown <ALIAS|UDID> # shutdown
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
-smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → the runner (must be up)
+smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up)
 smix sim launch <ALIAS|UDID> <bundle-id>
 smix sim terminate <ALIAS|UDID> <bundle-id>
 smix sim install <ALIAS|UDID> <path/to.app|.apk>   # simulator → simctl, Android → adb; a physical iPhone is refused

@@ -863,9 +863,10 @@ pub fn screenshot(port: u16) -> Result<Vec<u8>, ScreenshotError> {
 pub enum ScreenshotError {
     /// Nothing is answering on the port.
     #[error(
-        "no runner is answering on port {port}, and a physical device has no other way to \
-         be seen — Apple exposes no screen capture for one through simctl or devicectl.\n\
-         Bring it up first:\n  smix runner up <device> --bundle <id>"
+        "no runner is answering on port {port}, and this device has no other way to be \
+         seen: it does not offer devicectl's screenshot capability (a connected iPhone does \
+         under Xcode 27; nothing does under Xcode <= 26), and simctl does not reach a phone.\n\
+         Bring the runner up first:\n  smix runner up <device> --bundle <id>"
     )]
     NoRunner {
         /// The port that was dialed.

@@ -1586,7 +1586,7 @@ smix sim resolve <ALIAS>       # alias → UDID
 smix sim boot <ALIAS|UDID>     # boot
 smix sim shutdown <ALIAS|UDID> # shutdown
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
-smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → the runner (must be up)
+smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up)
 smix sim launch <ALIAS|UDID> <bundle-id>
 smix sim terminate <ALIAS|UDID> <bundle-id>
 smix sim install <ALIAS|UDID> <path/to.app|.apk>   # simulator → simctl, Android → adb; a physical iPhone is refused
@@ -2933,11 +2933,14 @@ once — recorded per device, not confirmed per command:
 smix sim allow-destructive <alias>
 ```
 
-### "no runner is answering on port …, and a physical device has no other way to be seen"
+### "no runner is answering on port …, and this device has no other way to be seen"
 
-A phone's screenshot comes from the runner (`XCUIScreen`); Apple exposes
-no capture for physical devices through `simctl` or `devicectl`. Bring
-the runner up first: `smix runner up <alias> --bundle <id>`.
+A phone's screenshot has two routes, and the phone says which. Under
+Xcode 27, `devicectl` has `device capture screenshot` and a connected
+iPhone lists the capability — smix asks it directly and no runner is
+needed. Under Xcode <= 26, or for a phone `devicectl` cannot reach, the
+picture comes from the runner (`XCUIScreen`), and this is what you see
+when it is not up. Bring it up first: `smix runner up <alias> --bundle <id>`.
 
 ### "device … is in use by pid …"
 

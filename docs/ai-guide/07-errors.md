@@ -228,11 +228,14 @@ once — recorded per device, not confirmed per command:
 smix sim allow-destructive <alias>
 ```
 
-### "no runner is answering on port …, and a physical device has no other way to be seen"
+### "no runner is answering on port …, and this device has no other way to be seen"
 
-A phone's screenshot comes from the runner (`XCUIScreen`); Apple exposes
-no capture for physical devices through `simctl` or `devicectl`. Bring
-the runner up first: `smix runner up <alias> --bundle <id>`.
+A phone's screenshot has two routes, and the phone says which. Under
+Xcode 27, `devicectl` has `device capture screenshot` and a connected
+iPhone lists the capability — smix asks it directly and no runner is
+needed. Under Xcode <= 26, or for a phone `devicectl` cannot reach, the
+picture comes from the runner (`XCUIScreen`), and this is what you see
+when it is not up. Bring it up first: `smix runner up <alias> --bundle <id>`.
 
 ### "device … is in use by pid …"
 

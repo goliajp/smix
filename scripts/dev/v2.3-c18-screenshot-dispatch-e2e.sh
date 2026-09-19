@@ -45,7 +45,7 @@ log "registry first, then shape"
 cd "$WORK"
 mkdir -p .smix
 
-step "1. a physical iPhone with no runner is told which of the two is missing"
+step "1. a physical iPhone with no runner: photographed if it offers capture, told what is missing if not"
 # This step asserted a different sentence until C20. Back then there was
 # no route to a phone's screen at all, and the honest answer was "this is
 # a gap in smix". C20 built the route, so that sentence became false and
@@ -57,15 +57,34 @@ step "1. a physical iPhone with no runner is told which of the two is missing"
 # *which* thing is absent rather than "no screenshot".
 smix sim register phone --udid 00008120-001410C11A42201E --kind physical-ios > "$OUT"
 grep -q "registered:" "$OUT" || { cat "$OUT"; fail "registration failed"; }
+# Since 10.2 there are two routes and the phone says which: Xcode 27's
+# devicectl has `capture screenshot`, and a connected iPhone lists the
+# capability. So the right outcome here depends on what the phone lists
+# right now — asked of devicectl, not assumed.
+PHONE_OFFERS_CAPTURE="$(xcrun devicectl list devices --json-output - 2>/dev/null | python3 -c '
+import json, sys
+for d in json.load(sys.stdin)["result"]["devices"]:
+    if d.get("properties", {}).get("hardware", {}).get("udid") == "00008120-001410C11A42201E":
+        caps = [c.get("featureIdentifier") for c in d.get("capabilities", [])]
+        print("yes" if "com.apple.coredevice.feature.capturescreenshot" in caps else "no"); break
+else:
+    print("no")' 2>/dev/null || echo no)"
 SMIX_RUNNER_PORT=22599 smix sim screenshot phone "$WORK/p.png" > "$OUT"
-grep -q "no runner is answering" "$OUT" || { cat "$OUT"; fail "did not name the missing runner"; }
-grep -q "smix runner up" "$OUT" || { cat "$OUT"; fail "no way forward named"; }
-# And it must still say why a phone needs one, or the instruction reads as
-# arbitrary to somebody used to simulators working without a runner.
-grep -q "no other way to be seen" "$OUT" \
-  || { cat "$OUT"; fail "does not say why a phone differs from a simulator"; }
-[ -f "$WORK/p.png" ] && fail "a failed screenshot still wrote a file"
-log "named the missing runner, said why, wrote nothing"
+if [ "$PHONE_OFFERS_CAPTURE" = "yes" ]; then
+  grep -q "screenshot:" "$OUT" || { cat "$OUT"; fail "a phone that offers capture was not photographed through devicectl"; }
+  file "$WORK/p.png" | grep -q "PNG image data" || fail "the phone's screenshot is not a PNG"
+  rm -f "$WORK/p.png"
+  log "the phone offers capture: photographed through devicectl, no runner needed"
+else
+  grep -q "no runner is answering" "$OUT" || { cat "$OUT"; fail "did not name the missing runner"; }
+  grep -q "smix runner up" "$OUT" || { cat "$OUT"; fail "no way forward named"; }
+  # And it must still say why a phone needs one, or the instruction reads
+  # as arbitrary to somebody used to simulators working without a runner.
+  grep -q "no other way to be seen" "$OUT" \
+    || { cat "$OUT"; fail "does not say why a phone differs from a simulator"; }
+  [ -f "$WORK/p.png" ] && fail "a failed screenshot still wrote a file"
+  log "the phone does not offer capture: named the missing runner, said why, wrote nothing"
+fi
 
 step "2. an Android device dispatches to adb, not simctl"
 SERIAL="$(adb devices 2>/dev/null | awk -F'\t' '$2=="device" && $1 ~ /^emulator-/ { print $1; exit }' || true)"

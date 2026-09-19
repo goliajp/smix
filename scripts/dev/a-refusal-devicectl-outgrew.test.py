@@ -21,29 +21,27 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
     const NO_DEVICECTL_VERB: &str = "devicectl has no verb for it";
     &[
         ("platform", [Yes, Yes, Yes, Yes]),
-        (
-            "screenshot",
-            [
-                Yes,
-                Yes,
-                No {
-                    why: "%(screenshot_why)s",
-                    instead: "take it through the runner",
-                },
-                Yes,
-            ],
-        ),
-        (
-            "start_recording",
-            [Yes, Yes, No { why: undriven_devicectl_verb!("device capture screen-record"), instead: "x" }, Yes],
-        ),
-        ("pasteboard_set", [Yes, Yes, No { why: "devicectl has `device pasteboard copy`; undriven", instead: "x" }, Yes]),
+        ("screenshot", [Yes, Yes, Yes, Yes]),
+        ("pasteboard_set", [Yes, Yes, No { why: undriven_devicectl_verb!("device pasteboard copy"), instead: "x" }, Yes]),
         ("pasteboard_get", [Yes, Yes, No { why: "devicectl has `device pasteboard paste`; undriven", instead: "x" }, Yes]),
         ("location_set", [Yes, Yes, No { why: "devicectl has `device simulate location coordinate`; undriven", instead: "x" }, Yes]),
         ("location_start", [Yes, Yes, No { why: "devicectl has `device simulate location route`; undriven", instead: "x" }, Yes]),
         ("set_animations_quiet", [Yes, Yes, No { why: NO_DEVICECTL_VERB, instead: "x" }, Yes]),
-        ("add_media", [Yes, Yes, No { why: NO_DEVICECTL_VERB, instead: "x" }, Yes]),
+        (
+            "add_media",
+            [
+                Yes,
+                Yes,
+                No {
+                    why: "%(media_why)s",
+                    instead: "x",
+                },
+                Yes,
+            ],
+        ),
         ("set_permission", [Yes, Yes, No { why: "no equivalent of simctl privacy", instead: "x" }, Yes]),
+        ("erase", [Yes, Yes, No { why: "a phone is not erased from a host", instead: "x" }, Yes]),
+        ("boot", [Yes, Yes, No { why: "a phone is switched on by hand", instead: "x" }, Yes]),
     ]
 };
 """
@@ -60,20 +58,21 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
 
 # Canned `devicectl <parent> --help` SUBCOMMANDS sections, one file per
 # parent path; the fake `xcrun` cats the one its arguments name.
-# `with_screenshot` decides whether capture lists it.
-def fake_xcrun(path: str, with_screenshot: bool) -> None:
+# `with_media` decides whether `device` lists a media subcommand. The row
+# this varies has to be one the gate still checks: it was `screenshot` until
+# 10.2 drove that verb and its refusal left the table.
+def fake_xcrun(path: str, with_media: bool) -> None:
     d = os.path.dirname(path)
-    capture = "OVERVIEW: x\n\nSUBCOMMANDS:\n  screen-record           Record the device's screen.\n"
-    if with_screenshot:
-        capture += "  screenshot              Capture a screenshot from the device.\n"
-    capture += "\n  See help.\n"
+    top = "OVERVIEW: x\n\nSUBCOMMANDS:\n  capture                 Capture the device's screen.\n  pasteboard  x\n  settings  x\n  simulate  x\n"
+    if with_media:
+        top += "  media                   Add media to the device.\n"
+    top += "\n  See help.\n"
     canned = {
-        "device_capture": capture,
         "device_pasteboard": "SUBCOMMANDS:\n  copy  x\n  paste  x\n  info  x\n\n",
         "device_simulate_location": "SUBCOMMANDS:\n  clear  x\n  coordinate  x\n  route  x\n\n",
         "device_simulate": "SUBCOMMANDS:\n  biometrics  x\n  location  x\n  statusBar  x\n\n",
         "device_settings": "SUBCOMMANDS:\n  appearance  x\n  audio  x\n  reset  x\n\n",
-        "device": "SUBCOMMANDS:\n  capture  x\n  pasteboard  x\n  settings  x\n  simulate  x\n\n",
+        "device": top,
     }
     for name, text in canned.items():
         with open(os.path.join(d, f"help_{name}.txt"), "w") as fh:
@@ -97,12 +96,12 @@ f="{d}/help_$key.txt"
     os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC)
 
 
-def build(root: str, table: str, with_screenshot: bool) -> str:
+def build(root: str, table: str, with_media: bool) -> str:
     os.makedirs(os.path.join(root, "crates", "smix-sdk", "src"))
     with open(os.path.join(root, "crates", "smix-sdk", "src", "device_control.rs"), "w") as fh:
         fh.write(table)
     xcrun = os.path.join(root, "xcrun")
-    fake_xcrun(xcrun, with_screenshot)
+    fake_xcrun(xcrun, with_media)
     return xcrun
 
 
@@ -115,35 +114,35 @@ def main() -> int:
     fail = 0
 
     with tempfile.TemporaryDirectory() as tmp:
-        x = build(tmp, TABLE % {"screenshot_why": "devicectl has no screenshot verb"}, with_screenshot=False)
+        x = build(tmp, TABLE % {"media_why": "devicectl has no verb for it"}, with_media=False)
         r = run(tmp, x)
         if r.returncode != 0:
             print(f"① verb absent, refusal says absent: expected green, exit {r.returncode}\n{r.stdout}")
             fail = 1
 
     with tempfile.TemporaryDirectory() as tmp:
-        x = build(tmp, TABLE % {"screenshot_why": "devicectl has no screenshot verb"}, with_screenshot=True)
+        x = build(tmp, TABLE % {"media_why": "devicectl has no verb for it"}, with_media=True)
         r = run(tmp, x)
-        if r.returncode != 1 or "screenshot" not in r.stdout or "capture screenshot" not in r.stdout:
+        if r.returncode != 1 or "add_media" not in r.stdout or "device media" not in r.stdout:
             print(f"② verb exists, refusal denies it: expected red naming the verb, exit {r.returncode}\n{r.stdout}")
             fail = 1
 
     with tempfile.TemporaryDirectory() as tmp:
-        x = build(tmp, TABLE % {"screenshot_why": "devicectl has `device capture screenshot`; smix does not drive it yet"}, with_screenshot=True)
+        x = build(tmp, TABLE % {"media_why": "devicectl has `device media`; smix does not drive it yet"}, with_media=True)
         r = run(tmp, x)
         if r.returncode != 0:
             print(f"③ verb exists and the refusal names it: expected green, exit {r.returncode}\n{r.stdout}")
             fail = 1
 
     with tempfile.TemporaryDirectory() as tmp:
-        build(tmp, TABLE % {"screenshot_why": "x"}, with_screenshot=False)
+        build(tmp, TABLE % {"media_why": "x"}, with_media=False)
         r = run(tmp, os.path.join(tmp, "no-such-xcrun"))
         if r.returncode != 2 or "cannot run" not in r.stdout:
             print(f"④ no xcrun: expected exit 2 'cannot run', exit {r.returncode}\n{r.stdout}")
             fail = 1
 
     with tempfile.TemporaryDirectory() as tmp:
-        x = build(tmp, EMPTY_TABLE, with_screenshot=False)
+        x = build(tmp, EMPTY_TABLE, with_media=False)
         r = run(tmp, x)
         if r.returncode != 1 or "read nothing" not in r.stdout:
             print(f"⑤ no refusals on PhysicalIos: expected red 'read nothing', exit {r.returncode}\n{r.stdout}")
