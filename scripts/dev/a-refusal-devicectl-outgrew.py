@@ -62,8 +62,6 @@ MIN_REFUSALS = 8
 # does not (`capture_bgra` talks about CoreSimulator's IOSurface,
 # `send_push` about APNs, `terminate` about finding a pid) is left alone.
 FALSIFIERS = {
-    "pasteboard_set": (["device", "pasteboard"], ("name", "copy"), "copy puts host data on the device pasteboard"),
-    "pasteboard_get": (["device", "pasteboard"], ("name", "paste"), "paste reads the device pasteboard back"),
     "location_set": (["device", "simulate", "location"], ("name", "coordinate"), "one coordinate is a set location"),
     "location_start": (["device", "simulate", "location"], ("name", "route"), "a route is a started location scenario"),
     "set_animations_quiet": (["device", "settings"], ("contains", "anim"), "animations would be a setting"),

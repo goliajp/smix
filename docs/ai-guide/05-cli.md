@@ -157,6 +157,15 @@ building one needs the registry and a signing team, which are the CLI's to
 resolve. Run `smix runner up <alias> --bundle <id>` first; every MCP tool then
 drives the phone through that runner exactly as it would a simulator.
 
+The clipboard verbs — `setClipboard`, `copyTextFrom`, and `pasteText` with no
+text — work on a registered iPhone from Xcode 27 on, through `devicectl device
+pasteboard copy` and `paste`. What comes back is checked against the byte count
+`devicectl` reports, and bytes that are not UTF-8 are an error rather than
+replacement characters. Under Xcode <= 26 `devicectl` has no such verb and the
+error is its own. Mind whose clipboard it is: a phone's general pasteboard
+travels by Universal Clipboard to every device on the same Apple ID, so a flow
+that sets it also sets the one on the Mac beside it.
+
 Apple identifiers are normalised to upper case, because `devicectl` will not
 match a lower-case spelling of a UDID it accepts in upper case. adb serials are
 stored and returned verbatim, because `adb` matches them byte for byte.

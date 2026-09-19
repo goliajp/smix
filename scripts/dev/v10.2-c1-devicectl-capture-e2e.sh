@@ -32,16 +32,15 @@ cleanup() {
 }
 trap cleanup EXIT
 cd "$ROOT"
+# shellcheck source=scripts/dev/lib/devicectl-e2e-device.sh
+. "$ROOT/scripts/dev/lib/devicectl-e2e-device.sh"
 
 case "${#UDID}" in
   36)
     # Shut down at the end only what this script booted. Inside the
     # device tier the simulator is somebody else's — the ship booted it
     # and the scripts after this one still need it.
-    was="$(xcrun simctl list devices -j | python3 -c '
-import json, sys
-u = sys.argv[1]
-print(next((d["state"] for v in json.load(sys.stdin)["devices"].values() for d in v if d["udid"] == u), "absent"))' "$UDID")"
+    was="$(simulator_state "$UDID")"
     if [ "$was" = "Booted" ]; then
       log "simulator $UDID — already booted, and not ours to shut down"
     else
@@ -51,14 +50,7 @@ print(next((d["state"] for v in json.load(sys.stdin)["devices"].values() for d i
     fi
     ;;
   25)
-    state="$(xcrun devicectl list devices --json-output - 2>/dev/null | python3 -c '
-import json, sys
-u = sys.argv[1]
-for d in json.load(sys.stdin)["result"]["devices"]:
-    if d.get("hardwareProperties", {}).get("udid") == u:
-        print(d.get("connectionProperties", {}).get("tunnelState", "unknown")); break
-else:
-    print("absent")' "$UDID")"
+    state="$(phone_tunnel_state "$UDID")"
     if [ "$state" = "disconnected" ] || [ "$state" = "absent" ]; then
       echo "[c1-capture] device not connected ($UDID is $state) — cannot judge" >&2
       exit 2
@@ -71,15 +63,7 @@ esac
 # What the device itself says it can do decides which verdict applies to
 # the recording. Not "phones cannot": a booted simulator lists the
 # capability, a phone on iOS 26.6.2 does not, and a later phone may.
-OFFERS_RECORDING="$(xcrun devicectl list devices --json-output - 2>/dev/null | python3 -c '
-import json, sys
-u = sys.argv[1]
-for d in json.load(sys.stdin)["result"]["devices"]:
-    if d.get("properties", {}).get("hardware", {}).get("udid") == u:
-        caps = [c.get("featureIdentifier") for c in d.get("capabilities", [])]
-        print("yes" if "com.apple.coredevice.feature.screenrecording" in caps else "no"); break
-else:
-    print("unlisted")' "$UDID")"
+OFFERS_RECORDING="$(device_offers "$UDID" com.apple.coredevice.feature.screenrecording)"
 [ "$OFFERS_RECORDING" != "unlisted" ] || { echo "[c1-capture] devicectl does not list $UDID — cannot judge" >&2; exit 2; }
 log "the device says it offers screen recording: $OFFERS_RECORDING"
 

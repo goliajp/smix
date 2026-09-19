@@ -1,0 +1,32 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "device",
+      "pasteboard",
+      "copy",
+      "--device",
+      "5D087114-ECB3-443C-8DDB-40EEF9CFB90C",
+      "--json-output",
+      "out.json",
+      "-q"
+    ],
+    "commandType": "devicectl.device.pasteboard.copy",
+    "environment": {
+      "TERM": "xterm-256color"
+    },
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "642.16"
+  },
+  "result": {
+    "deviceIdentifier": "5D087114-ECB3-443C-8DDB-40EEF9CFB90C",
+    "itemCount": 1,
+    "pasteboardName": "general",
+    "types": [
+      "public.utf8-plain-text",
+      "public.plain-text",
+      "public.text"
+    ]
+  }
+}

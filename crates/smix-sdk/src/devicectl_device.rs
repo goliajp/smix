@@ -10,7 +10,13 @@
 //! come from the runner, two do not apply to a phone at all (`boot` and
 //! `shutdown` — a phone that is on is on), and **fifteen have no
 //! equivalent**. Not a harder path: no path. `erase`, `recordVideo`,
-//! `location_set` and the pasteboard are among the fifteen.
+//! `location_set` and the pasteboard were among the fifteen.
+//!
+//! That survey was of Xcode 26. Xcode 27's `devicectl` grew `capture` and
+//! `pasteboard`, and the screenshot, the recording pair and the two
+//! pasteboard actions are carried out here now; the table in
+//! `device_control` holds the current count, and a test holds this file
+//! against it.
 //!
 //! So the design question is not "how do we cover the gap" but "what does
 //! smix say when asked for something a phone cannot do". §9#1's third
@@ -39,6 +45,8 @@ pub struct DevicectlClient {
     /// `devicectl … screen-record` child, which writes until it is told
     /// to stop. Same shape as the simulator's and Android's.
     recording: tokio::sync::Mutex<Option<DevicectlRecording>>,
+    /// `None` is the general pasteboard — the one the user copies to.
+    pasteboard: Option<String>,
 }
 
 /// A recording in progress: the child doing it, where it writes, and
@@ -227,6 +235,7 @@ impl DevicectlClient {
         Self {
             udid: udid.into(),
             recording: tokio::sync::Mutex::new(None),
+            pasteboard: None,
         }
     }
 
@@ -359,7 +368,41 @@ impl DevicectlClient {
                 "--destination".into(),
                 destination.to_string(),
             ],
+            DevicectlVerb::PasteboardCopy { json_output } => {
+                self.pasteboard_argv("copy", d, json_output)
+            }
+            DevicectlVerb::PasteboardPaste { json_output } => {
+                self.pasteboard_argv("paste", d, json_output)
+            }
         }
+    }
+
+    /// `copy` and `paste` differ in one word. With no `--device-pasteboard`
+    /// devicectl means the general one.
+    fn pasteboard_argv(&self, verb: &str, device: String, json_output: &str) -> Vec<String> {
+        let mut v = vec![
+            "device".into(),
+            "pasteboard".into(),
+            verb.into(),
+            "--device".into(),
+            device,
+        ];
+        if let Some(name) = &self.pasteboard {
+            v.push("--device-pasteboard".into());
+            v.push(name.clone());
+        }
+        v.push("--json-output".into());
+        v.push(json_output.to_string());
+        v
+    }
+
+    /// Read and write the pasteboard of this name instead of the general
+    /// one. A named pasteboard is the device's own notion: apps make them
+    /// to pass data without touching what the user copied.
+    #[must_use]
+    pub fn on_pasteboard(mut self, name: &str) -> Self {
+        self.pasteboard = Some(name.to_string());
+        self
     }
 }
 
@@ -421,6 +464,52 @@ pub enum DevicectlVerb<'a> {
         /// Where the movie goes, on this machine.
         destination: &'a str,
     },
+    /// Put text on the device's pasteboard. The text arrives on stdin.
+    PasteboardCopy {
+        /// Where devicectl writes what it did.
+        json_output: &'a str,
+    },
+    /// Read text off the device's pasteboard. The text is stdout, which
+    /// is why the JSON can only go to a file.
+    PasteboardPaste {
+        /// Where devicectl writes what it read.
+        json_output: &'a str,
+    },
+}
+
+/// The pasteboard capability, as a device lists it.
+pub const CAPABILITY_PASTEBOARD: &str = "com.apple.coredevice.feature.pasteboard";
+
+/// The text `devicectl device pasteboard paste` printed, checked against
+/// what its JSON says it printed.
+///
+/// The bytes are the user's data, so nothing here is lossy: a replacement
+/// character would make a round trip compare equal on bytes that were not.
+/// A pasteboard holding no text is `""` — devicectl exits 0 with nothing
+/// on stdout and a `contentSize` of 0.
+pub fn pasteboard_text(stdout: Vec<u8>, json: &str) -> Result<String, DeviceControlError> {
+    let malformed = |detail: String| DeviceControlError::Malformed {
+        subcommand: "devicectl device pasteboard paste".into(),
+        detail,
+    };
+    let doc: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| malformed(e.to_string()))?;
+    let outcome = doc["info"]["outcome"].as_str().unwrap_or("(absent)");
+    if outcome != "success" {
+        return Err(malformed(format!(
+            "outcome is {outcome:?}, not \"success\""
+        )));
+    }
+    let said = doc["result"]["contentSize"]
+        .as_u64()
+        .ok_or_else(|| malformed("result.contentSize is missing or not a byte count".into()))?;
+    if said != stdout.len() as u64 {
+        return Err(malformed(format!(
+            "result.contentSize is {said} and stdout carried {} byte(s)",
+            stdout.len()
+        )));
+    }
+    String::from_utf8(stdout).map_err(|e| malformed(format!("the pasted bytes are not UTF-8: {e}")))
 }
 
 /// What `devicectl device capture screenshot` says it wrote.
@@ -625,12 +714,33 @@ impl DeviceControl for DevicectlClient {
         Err(refused("set_permission"))
     }
 
-    async fn pasteboard_set(&self, _udid: &str, _text: &str) -> Result<(), DeviceControlError> {
-        Err(refused("pasteboard_set"))
+    async fn pasteboard_set(&self, _udid: &str, text: &str) -> Result<(), DeviceControlError> {
+        let (_, json) = capture_scratch("json");
+        let fed = run_feeding(
+            &self.argv(DevicectlVerb::PasteboardCopy {
+                json_output: &json.to_string_lossy(),
+            }),
+            text.as_bytes(),
+        )
+        .await;
+        // devicectl's account of the copy is not read; the file is only
+        // there because `--json-output` keeps its prose off stdout.
+        let _ = tokio::fs::remove_file(&json).await; // absent when devicectl failed before writing it
+        fed.map(|_| ())
     }
 
     async fn pasteboard_get(&self, _udid: &str) -> Result<String, DeviceControlError> {
-        Err(refused("pasteboard_get"))
+        let (_, json) = capture_scratch("json");
+        let stdout = run_feeding(
+            &self.argv(DevicectlVerb::PasteboardPaste {
+                json_output: &json.to_string_lossy(),
+            }),
+            &[],
+        )
+        .await?;
+        let said = tokio::fs::read_to_string(&json).await?;
+        tokio::fs::remove_file(&json).await?;
+        pasteboard_text(stdout, &said)
     }
 
     async fn add_media(&self, _udid: &str, _paths: &[String]) -> Result<(), DeviceControlError> {
@@ -814,15 +924,45 @@ async fn run(args: &[String]) -> Result<String, DeviceControlError> {
     for a in args {
         cmd.arg(a);
     }
-    let out = cmd.output().await?;
-    if !out.status.success() {
-        return Err(DeviceControlError::non_zero_exit(
-            args.first().map_or("devicectl", String::as_str),
-            out.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&out.stderr).as_ref(),
-        ));
-    }
+    let out = succeeded(args, cmd.output().await?)?;
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// `run` for the verbs whose stdin or stdout is the user's data: the
+/// bytes go in and come back as they are, never through a lossy string.
+async fn run_feeding(args: &[String], stdin: &[u8]) -> Result<Vec<u8>, DeviceControlError> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut child = tokio::process::Command::new("xcrun")
+        .arg("devicectl")
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    let mut pipe = child.stdin.take().expect("stdin was piped two lines up");
+    let written = pipe.write_all(stdin).await;
+    // devicectl reads to end of input; the pipe has to close for it to go on.
+    drop(pipe);
+    // A devicectl that refuses before reading closes the pipe, and its
+    // stderr says why — a broken pipe does not. Its exit is asked first.
+    let out = succeeded(args, child.wait_with_output().await?)?;
+    written?;
+    Ok(out.stdout)
+}
+
+fn succeeded(
+    args: &[String],
+    out: std::process::Output,
+) -> Result<std::process::Output, DeviceControlError> {
+    if out.status.success() {
+        return Ok(out);
+    }
+    Err(DeviceControlError::non_zero_exit(
+        args.first().map_or("devicectl", String::as_str),
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stderr).as_ref(),
+    ))
 }
 
 /// Pull a pid out of `devicectl process launch` output.
@@ -885,9 +1025,13 @@ mod tests {
         // and `screenshot`, `start_recording` and `stop_recording` are
         // driven through them — the first read back on an iPhone, the
         // pair refused by name on a phone that does not offer recording.
+        //
+        // 14 until the same release closed two more: `pasteboard_set` and
+        // `pasteboard_get` go through `device pasteboard copy` / `paste`,
+        // written and read back byte for byte on an iPhone.
         assert_eq!(
-            checked, 14,
-            "the phone refuses 14 of these; this says {checked}"
+            checked, 12,
+            "the phone refuses 12 of these; this says {checked}"
         );
     }
 
@@ -975,10 +1119,6 @@ mod tests {
             // only call what refuses before dialling.
             ("add_media", err(c.add_media(UDID, &[]).await)),
             ("location_set", err(c.location_set(UDID, 1.0, 2.0).await)),
-            (
-                "pasteboard_get",
-                err(c.pasteboard_get(UDID).await.map(|_| ())),
-            ),
             ("send_push", err(c.send_push(UDID, "b", "p").await)),
         ];
         for (name, msg) in refusals {
@@ -1008,7 +1148,6 @@ mod tests {
         assert!(c.privacy_reset_all(UDID, "b").await.is_err());
         assert!(c.clear_app_sandbox(UDID, "b").await.is_err());
         assert!(c.user_defaults_delete(UDID, "b", "k").await.is_err());
-        assert!(c.pasteboard_set(UDID, "x").await.is_err());
         assert!(c.stop_recording().await.is_err());
         // `screenshot` left this list when it stopped being a refusal:
         // an implemented method dials the device, and nothing in a unit
@@ -1055,6 +1194,8 @@ mod parity_tests {
         "screenshot",
         "start_recording",
         "stop_recording",
+        "pasteboard_set",
+        "pasteboard_get",
         "launch",
         "launch_with_args",
         "install",
@@ -1127,8 +1268,6 @@ mod parity_tests {
                     c.set_permission(&udid, "b", Permission::Camera, PermissionAction::Grant)
                         .await,
                 ),
-                "pasteboard_set" => err_of(c.pasteboard_set(&udid, "x").await),
-                "pasteboard_get" => err_of(c.pasteboard_get(&udid).await.map(|_| ())),
                 "add_media" => err_of(c.add_media(&udid, &[]).await),
                 "location_set" => err_of(c.location_set(&udid, 0.0, 0.0).await),
                 "location_start" => err_of(c.location_start(&udid, &[], None).await),
@@ -1342,5 +1481,82 @@ mod capture_tests {
         let err = parse_screenshot_result(r#"{"info":{"outcome":"failure"},"result":{}}"#)
             .expect_err("failure is not a screenshot");
         assert!(err.to_string().contains("outcome"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod pasteboard_tests {
+    use super::*;
+
+    const UDID: &str = "00000000-0000000000000000";
+    const PASTE_TEXT: &str =
+        include_str!("../tests/fixtures/devicectl/pasteboard-paste.text.sim.json");
+    const PASTE_NO_TEXT: &str =
+        include_str!("../tests/fixtures/devicectl/pasteboard-paste.no-text.sim.json");
+
+    // 30 bytes, as the fixture's contentSize says: multi-byte characters
+    // and an inner newline, no trailing one.
+    const THIRTY_BYTES: &str = "smix 剪贴板\nsecond line ✓";
+
+    #[test]
+    fn copy_and_paste_name_the_device_and_only_name_a_pasteboard_when_told_to() {
+        let general = DevicectlClient::new(UDID);
+        assert_eq!(
+            general.argv(DevicectlVerb::PasteboardCopy {
+                json_output: "/tmp/a.json"
+            }),
+            [
+                "device",
+                "pasteboard",
+                "copy",
+                "--device",
+                UDID,
+                "--json-output",
+                "/tmp/a.json"
+            ]
+        );
+        let named = DevicectlClient::new(UDID).on_pasteboard("smix.e2e.probe");
+        assert_eq!(
+            named.argv(DevicectlVerb::PasteboardPaste {
+                json_output: "/tmp/a.json"
+            }),
+            [
+                "device",
+                "pasteboard",
+                "paste",
+                "--device",
+                UDID,
+                "--device-pasteboard",
+                "smix.e2e.probe",
+                "--json-output",
+                "/tmp/a.json"
+            ]
+        );
+    }
+
+    #[test]
+    fn what_was_pasted_is_the_bytes_devicectl_says_it_sent() {
+        assert_eq!(THIRTY_BYTES.len(), 30);
+        let text = pasteboard_text(THIRTY_BYTES.as_bytes().to_vec(), PASTE_TEXT).expect("30 of 30");
+        assert_eq!(text, THIRTY_BYTES);
+
+        let short = pasteboard_text(THIRTY_BYTES.as_bytes()[..29].to_vec(), PASTE_TEXT)
+            .expect_err("29 bytes against a contentSize of 30");
+        assert!(short.to_string().contains("contentSize"), "{short}");
+    }
+
+    #[test]
+    fn a_pasteboard_with_no_text_on_it_reads_as_empty() {
+        assert_eq!(
+            pasteboard_text(Vec::new(), PASTE_NO_TEXT).expect("empty"),
+            ""
+        );
+    }
+
+    #[test]
+    fn bytes_that_are_not_text_are_not_turned_into_text() {
+        let json = r#"{"info":{"outcome":"success"},"result":{"contentSize":2}}"#;
+        let err = pasteboard_text(vec![0xff, 0xfe], json).expect_err("not UTF-8");
+        assert!(err.to_string().contains("UTF-8"), "{err}");
     }
 }

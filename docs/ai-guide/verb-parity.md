@@ -40,7 +40,7 @@ that is why.
 | `inputText` / `fill` | ✅ | ✅ | `--force-key-events` opt-in bypasses a11y-focus resolution for RN hidden-input patterns |
 | `eraseText` / `clear` | ✅ | ✅ | iOS deletes proportionally to the field's own length; Android empties the focused node exactly (`ACTION_SET_TEXT`), falling back to bounded deletes for a field the tree cannot address |
 | `pasteText` | ✅ | ❌ | Since Android 10 the clipboard serves only the focused app, and the runner cannot be focused while driving yours. Use `inputText` |
-| `setClipboard` | ✅ | ❌ | Same clipboard restriction as `pasteText` |
+| `setClipboard` | ✅ | ❌ | Same clipboard restriction as `pasteText`. On a registered physical iPhone it needs Xcode 27 (`devicectl device pasteboard`) |
 | `copyTextFrom` | ✅ | ❌ | Same clipboard restriction as `pasteText`. Assert on what the app renders instead |
 
 ## Assert family
