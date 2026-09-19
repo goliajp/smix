@@ -331,15 +331,11 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
         // Reads.
         (
             "screenshot",
-            [
-                Yes,
-                Yes,
-                No {
-                    why: undriven_devicectl_verb!("device capture screenshot"),
-                    instead: THROUGH_RUNNER,
-                },
-                Yes,
-            ],
+            // A phone answers this since 10.2: `devicectl device capture
+            // screenshot`, driven and read back on an iPhone on iOS 26.6.2
+            // (2026-09-19, 1179x2556). The device must list
+            // `com.apple.coredevice.feature.capturescreenshot`.
+            [Yes, Yes, Yes, Yes],
         ),
         (
             "capture_bgra",
@@ -460,28 +456,16 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
         ),
         (
             "start_recording",
-            [
-                Yes,
-                Yes,
-                No {
-                    why: undriven_devicectl_verb!("device capture screen-record"),
-                    instead: "record the screen from the device itself, or use a simulator",
-                },
-                Yes,
-            ],
+            // Implemented since 10.2 over `devicectl device capture
+            // screen-record`, and the cell says so. Whether a given
+            // device can be recorded is the device's to answer: it lists
+            // `com.apple.coredevice.feature.screenrecording` or it does
+            // not, and one that does not is refused by name before
+            // anything is started. Measured 2026-09-19: a booted simulator
+            // lists it; an iPhone on iOS 26.6.2 does not.
+            [Yes, Yes, Yes, Yes],
         ),
-        (
-            "stop_recording",
-            [
-                Yes,
-                Yes,
-                No {
-                    why: "nothing was started — recording is not available on a physical                           device",
-                    instead: "record the screen from the device itself, or use a simulator",
-                },
-                Yes,
-            ],
-        ),
+        ("stop_recording", [Yes, Yes, Yes, Yes]),
         ("recording_pid", [Yes, Yes, Yes, Yes]),
         // Taking data away. Most of these should not exist on somebody's
         // own phone, which is a reason and not an accident.

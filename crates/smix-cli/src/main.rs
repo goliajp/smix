@@ -2568,17 +2568,29 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 .map_err(|e| CliError::Other(e.to_string()))?
                         }
                         DeviceKind::PhysicalIos => {
-                            // Through the runner, because Apple exposes no
-                            // screen capture for a phone via simctl or
-                            // devicectl — but `XCUIScreen` runs inside the
-                            // runner and works on both. Until C20 this arm
-                            // was a refusal saying so; leaving that in place
-                            // once the route existed would have been a
-                            // message describing a hole that had been
-                            // filled.
-                            let port = runner_port();
-                            smix_capsule::runner::screenshot(port)
-                                .map_err(|e| CliError::Other(e.to_string()))?
+                            // Two routes, and the phone says which. Until
+                            // Xcode 27 Apple exposed no screen capture for
+                            // a phone through devicectl, and the runner's
+                            // `XCUIScreen` was the only one — which needs
+                            // the runner up. Xcode 27's devicectl has
+                            // `capture screenshot`, and a phone that lists
+                            // the capability is asked directly.
+                            use smix_sdk::device_control::DeviceControl;
+                            let phone = smix_sdk::devicectl_device::DevicectlClient::new(&udid);
+                            let offers = phone
+                                .offers(smix_sdk::devicectl_device::CAPABILITY_SCREENSHOT)
+                                .await
+                                .ok();
+                            match phone_screenshot_route(offers) {
+                                PhoneScreenshotRoute::Devicectl => phone
+                                    .screenshot(&udid)
+                                    .await
+                                    .map_err(|e| CliError::Other(e.to_string()))?,
+                                PhoneScreenshotRoute::Runner => {
+                                    smix_capsule::runner::screenshot(runner_port())
+                                        .map_err(|e| CliError::Other(e.to_string()))?
+                                }
+                            }
                         }
                     };
                     if out.as_os_str() == "-" {
@@ -4556,6 +4568,30 @@ impl DeviceKindArg {
     }
 }
 
+/// Which tool takes a physical iPhone's picture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PhoneScreenshotRoute {
+    /// `devicectl device capture screenshot` — nothing has to be up.
+    Devicectl,
+    /// The runner's `XCUIScreen` — the runner has to be up.
+    Runner,
+}
+
+/// Decide it from what the phone says it offers.
+///
+/// `offers_capture` is whether the device lists CoreDevice's screenshot
+/// capability, or `None` when devicectl could not be asked or does not
+/// list the phone. Xcode 27's devicectl lists it for a connected iPhone;
+/// Xcode <= 26's lists no such thing, and there the runner is the only
+/// way a phone is seen. A decision on evidence, taken before anything is
+/// tried — not one route attempted and the other reached by failing.
+fn phone_screenshot_route(offers_capture: Option<bool>) -> PhoneScreenshotRoute {
+    match offers_capture {
+        Some(true) => PhoneScreenshotRoute::Devicectl,
+        Some(false) | None => PhoneScreenshotRoute::Runner,
+    }
+}
+
 fn runner_port() -> u16 {
     std::env::var("SMIX_RUNNER_PORT")
         .ok()
@@ -6054,6 +6090,39 @@ mod platform_from_device {
             err.to_lowercase().contains("register"),
             "and the durable fix: {err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod phone_screenshot_routing {
+    use super::{PhoneScreenshotRoute, phone_screenshot_route};
+
+    // Which tool takes a phone's picture is decided by what the phone
+    // says it offers, not by trying one and falling back to the other.
+    #[test]
+    fn a_phone_that_offers_capture_is_asked_itself() {
+        assert_eq!(
+            phone_screenshot_route(Some(true)),
+            PhoneScreenshotRoute::Devicectl
+        );
+    }
+
+    // Xcode <= 26's devicectl lists no such capability, and there the
+    // runner's XCUIScreen is the only way a phone is seen.
+    #[test]
+    fn a_phone_that_does_not_is_seen_through_the_runner() {
+        assert_eq!(
+            phone_screenshot_route(Some(false)),
+            PhoneScreenshotRoute::Runner
+        );
+    }
+
+    // devicectl could not be asked, or does not list the phone: nothing
+    // was learned about capture, and the runner is the route that needs
+    // nothing from devicectl.
+    #[test]
+    fn a_phone_devicectl_cannot_speak_for_is_seen_through_the_runner() {
+        assert_eq!(phone_screenshot_route(None), PhoneScreenshotRoute::Runner);
     }
 }
 

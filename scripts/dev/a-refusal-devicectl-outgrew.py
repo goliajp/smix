@@ -55,12 +55,13 @@ MIN_REFUSALS = 8
 # action → (devicectl parent path, how the verb is recognised, why that
 # verb is the counterpart). `("name", verb)` means a subcommand of exactly
 # that name; `("contains", word)` means any subcommand whose name contains
-# the word. A refusal that speaks of devicectl at all is checked; one that
+# the word. `screenshot` and `start_recording` were rows here until 10.2
+# drove them; a row leaves when its cell stops being a refusal, and the
+# check below would say so if it did not.
+# A refusal that speaks of devicectl at all is checked; one that
 # does not (`capture_bgra` talks about CoreSimulator's IOSurface,
 # `send_push` about APNs, `terminate` about finding a pid) is left alone.
 FALSIFIERS = {
-    "screenshot": (["device", "capture"], ("name", "screenshot"), "a screenshot is a screenshot"),
-    "start_recording": (["device", "capture"], ("name", "screen-record"), "recording the screen is what start_recording begins"),
     "pasteboard_set": (["device", "pasteboard"], ("name", "copy"), "copy puts host data on the device pasteboard"),
     "pasteboard_get": (["device", "pasteboard"], ("name", "paste"), "paste reads the device pasteboard back"),
     "location_set": (["device", "simulate", "location"], ("name", "coordinate"), "one coordinate is a set location"),

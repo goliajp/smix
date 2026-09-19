@@ -102,7 +102,7 @@ it for you:
 ```bash
 smix sim register phone --udid <UDID> --kind physical-ios
 smix runner up phone --bundle com.example.app     # --team <TEAM_ID> if you have more than one
-smix sim screenshot phone shot.png                # served by the runner; a phone has no other way to be seen
+smix sim screenshot phone shot.png                # Xcode 27: straight from devicectl, no runner needed; Xcode <= 26: through the runner
 ```
 
 Erasing, uninstalling and keychain resets are refused on it until

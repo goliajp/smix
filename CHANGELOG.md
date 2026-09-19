@@ -2,6 +2,50 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Added
+
+- **A physical iPhone can be photographed without a runner.** Xcode 27's
+  `devicectl` has `device capture screenshot`, and smix drives it:
+  `smix sim screenshot <phone> out.png` asks the phone what it offers and,
+  when it lists CoreDevice's screenshot capability, takes the picture
+  directly — nothing has to be up. Under Xcode <= 26, or for a phone
+  `devicectl` cannot reach, the picture still comes from the runner, as
+  before. Which route is taken is decided from the capability the phone
+  lists, before anything is tried, not by trying one and falling back.
+  Driven and read back on an iPhone on iOS 26.6.2 (1179x2556).
+
+- **Screen recording through `devicectl`, where the device offers it.**
+  `start_recording` / `stop_recording` on a physical-iOS backend run
+  `devicectl device capture screen-record` until interrupted and leave a
+  playable `.mp4` — the only container devicectl writes; any other
+  extension is refused before anything starts, naming the path.
+  `start_recording` returns when devicectl says `Recording started.` and
+  not on the spawn: measured, that line comes 0.6 s after the spawn on a
+  quiet machine and seconds later on a busy one, and a recording
+  interrupted before it is an empty file with no complaint. A device that
+  does not list the screen-recording capability is refused by name before
+  anything is started. A booted simulator lists it and records; **an
+  iPhone on iOS 26.6.2 does not**, and says so — that is the only phone
+  this was measured on.
+
+### Changed
+
+- **Three refusals on a physical iPhone became capabilities.** The
+  platform table's physical-iOS column refused seventeen actions; it
+  refuses fourteen. `screenshot`, `start_recording` and `stop_recording`
+  now say `Works`, and a test holds the list of what the backend carries
+  out against the table in both directions — for an afternoon during this
+  work the code implemented `screenshot` while the table still refused it,
+  and every test was green.
+
+- **The "no runner is answering" message says when it is true.** It said a
+  physical device "has no other way to be seen — Apple exposes no screen
+  capture for one through simctl or devicectl". Under Xcode 27 that is
+  false for a connected iPhone. It now says the device does not offer
+  devicectl's screenshot capability, and which Xcode that depends on.
+
 ## [10.1.0] — 2026-09-19
 
 ### Changed

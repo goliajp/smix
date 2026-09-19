@@ -60,7 +60,7 @@ if ! "$SMIX" sim resolve "$ALIAS" >/dev/null 2>&1; then
   exit 0
 fi
 if ! curl -s -m 5 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
-  log "no runner answering on $PORT — a phone has no other way to be seen"
+  log "no runner answering on $PORT — this checks the runner's route to a phone's screen, which needs one (devicectl's route, Xcode 27, is v10.2-c1's)"
   log "smix runner up $ALIAS --bundle $BUNDLE   (then re-run)"
   echo "C20-PHYSICAL-SCREENSHOT-SKIP"
   exit 0
