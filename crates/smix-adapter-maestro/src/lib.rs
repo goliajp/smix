@@ -439,55 +439,48 @@ pub enum Step {
     /// as [`Step::RunFlowConditional`] (runtime evaluation belongs to
     /// the adapter `Adapter::run`, not the parser).
     RunFlow(String),
-    /// Conditional `runFlow: { when: { visible }, file, as }`. Parser stores
-    /// the path verbatim, the gating selector, and the optional outputs
-    /// alias name; `Adapter::run` checks visibility before invoking the
-    /// inner flow and captures the outputs alias.
+    /// `runFlow: { file, when?, env?, as?, label?, optional? }`. Parser
+    /// stores the path verbatim; `Adapter::run` evaluates `when` before
+    /// invoking the inner flow and captures the outputs alias.
     RunFlowConditional {
         /// Raw path string from the yaml (relative to invoking file).
         file: String,
-        /// Visibility precondition (`when.visible`). `None` would be a
-        /// degenerate yaml — current parser still accepts it for
-        /// forward-compat, mapping `None` to "run unconditionally".
-        #[serde(skip_serializing_if = "Option::is_none")]
-        when_visible: Option<Selector>,
-        /// Inverse gate (`when.notVisible`). Runs the
-        /// subflow only when the selector is NOT visible. Enables the
-        /// idempotency pattern "only enter conditional if the target
-        /// state hasn't already been reached" (e.g. `notVisible:
-        /// 'qa-bubble'` = enter the gate ceremony only if not already
-        /// past it). Exactly one of `when_visible` / `when_not_visible`
-        /// should be Some in idiomatic yaml; both Some is a parse
-        /// error, both None is unconditional (same as legacy).
+        /// Precondition. `None` runs unconditionally.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        when_not_visible: Option<Selector>,
+        when: Option<FlowCondition>,
         /// Outputs alias: after the subflow runs, read the device
         /// pasteboard (canonical "what the subflow captured via
         /// copyTextFrom") and write it into the parent flow's output map
-        /// under this name. None ⇒ no capture (legacy semantics). Mirrors
-        /// maestro yaml `runFlow: { file, as: <name> }` capture form.
+        /// under this name. None ⇒ no capture. Mirrors maestro yaml
+        /// `runFlow: { file, as: <name> }` capture form.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         as_name: Option<String>,
+        /// Variables visible to the subflow only, in yaml order. Values
+        /// are expanded against the caller's scope on entry.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        env: Vec<(String, String)>,
+        /// `label` / `optional`.
+        #[serde(default, skip_serializing_if = "BlockOptions::is_default")]
+        opts: BlockOptions,
     },
-    /// maestro `runFlow: { when: { visible }, commands: [...] }`
-    /// inline form. The body is a literal list of steps held in-place; no
-    /// child yaml file is referenced. `when.visible` gates execution
-    /// identically to [`Step::RunFlowConditional`]. Mirrors maestro's
-    /// `YamlRunFlow` `commands:` alternative to `file:` (used widely for
-    /// short conditional helpers that don't justify a separate file —
-    /// e.g. `dismiss-open-in` style SpringBoard popup dismissers).
-    /// `file` and `commands` are mutually exclusive at parse time.
+    /// maestro `runFlow: { when?, commands: [...] }` inline form. The
+    /// body is a literal list of steps held in-place; no child yaml file
+    /// is referenced. `file` and `commands` are mutually exclusive at
+    /// parse time.
     RunFlowInline {
-        /// Visibility precondition (`when.visible`). `None` ⇒ unconditional.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        when_visible: Option<Selector>,
-        /// Inverse gate (`when.notVisible`). See
-        /// [`Step::RunFlowConditional::when_not_visible`] for semantics.
+        /// Precondition. `None` runs unconditionally.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        when_not_visible: Option<Selector>,
+        when: Option<FlowCondition>,
         /// Inline step list. Runtime executes top-to-bottom under the
         /// same warning channel as the parent flow.
         steps: Vec<Step>,
+        /// Variables visible to the body only; see
+        /// [`Step::RunFlowConditional::env`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        env: Vec<(String, String)>,
+        /// `label` / `optional`.
+        #[serde(default, skip_serializing_if = "BlockOptions::is_default")]
+        opts: BlockOptions,
     },
     /// Scroll the screen until a selector becomes visible.
     /// Maps to a `swipe` loop + `find` polling.
@@ -763,13 +756,16 @@ pub enum Step {
     /// Looped subflow. maestro yaml `repeat: { ... }`.
     /// `RepeatMode::While { condition_expr }` evaluates the expression
     /// truthy before each iteration; `RepeatMode::Times(N)` runs fixed
-    /// N iterations. `repeat.while: { visible: <selector> }` maps to
-    /// [`RepeatMode::WhileVisible`].
+    /// N iterations. `repeat.while: { <condition> }` maps to
+    /// [`RepeatMode::WhileCondition`].
     Repeat {
         /// Loop mode. Chosen at parse time, so the runtime has no branch.
         mode: RepeatMode,
         /// Body to run per iteration (recursively parsed).
         commands: Vec<Step>,
+        /// `label` / `optional`.
+        #[serde(default, skip_serializing_if = "BlockOptions::is_default")]
+        opts: BlockOptions,
     },
     /// Retry body on failure up to `max_retries` extra attempts.
     /// Initial + max_retries = max attempts total. Last attempt's
@@ -1065,26 +1061,102 @@ pub enum RepeatMode {
         /// Expression source (raw; `${...}` wrapping handled).
         condition_expr: String,
     },
-    /// `repeat: { while: { visible: <selector> }, commands: [...] }`
-    /// mapping form. Loop continues while the selector resolves to a
-    /// visible element; exits when not visible. Bounded by
+    /// `repeat: { while: { <condition> }, commands: [...] }` mapping
+    /// form. Loop continues while the condition holds. Bounded by
     /// `MAX_REPEAT_ITERATIONS` runtime safety valve.
-    WhileVisible {
-        /// Element selector evaluated each iteration via App::find_first.
-        selector: smix_sdk::Selector,
-    },
-    /// `repeat: { while: { notVisible: <selector> }, commands: [...] }`
-    /// mapping form. Loop continues while the selector does NOT resolve
-    /// to a visible element; exits when the element appears. Bounded by
-    /// `MAX_REPEAT_ITERATIONS` runtime safety valve. Useful for "wait
-    /// until X is loaded" patterns where the body keeps triggering until
-    /// the watched element shows up.
-    WhileNotVisible {
-        /// Element selector evaluated each iteration via App::find.
-        selector: smix_sdk::Selector,
-    },
+    WhileCondition(Box<FlowCondition>),
     /// `repeat: { times: N, commands: [...] }` — fixed N iterations.
     Times(u32),
+}
+
+/// The keys a condition mapping (`runFlow.when`, `repeat.while`) may
+/// carry. maestro's `YamlCondition` has these five plus `optional`, which
+/// never reaches its `Condition` (`YamlFluentCommand.toCondition`), so
+/// smix refuses it rather than accept a key that does nothing.
+pub const CONDITION_KEYS: &[&str] = &["platform", "visible", "notVisible", "true", "label"];
+
+/// A precondition, as maestro's `when:` / `repeat.while:` spell it. Every
+/// present field must hold (AND); the runtime checks them in maestro's
+/// order — platform, `true`, visible, notVisible — and stops at the first
+/// that does not.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowCondition {
+    /// `platform:` — the device platform the block is for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<ConditionPlatform>,
+    /// `visible:` — holds when the selector is on screen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<Selector>,
+    /// `notVisible:` — holds when the selector is not on screen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_visible: Option<Selector>,
+    /// `true:` — a template (`${…}` expanded at check time) whose result
+    /// maestro reads as false when blank, `false`, `undefined`, `null` or
+    /// a zero number, and as true otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<String>,
+    /// `label:` — what reports call the condition instead of its checks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// `when.platform` values. maestro's `Platform.fromString` compares
+/// ignoring case, and so does the parser.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConditionPlatform {
+    /// `Android`.
+    Android,
+    /// `iOS`.
+    Ios,
+    /// `Web` — smix drives no web platform, so this never holds.
+    Web,
+}
+
+impl ConditionPlatform {
+    /// Whether a device of platform `p` is this one. `Web` never is:
+    /// smix drives no browser.
+    pub fn matches(self, p: smix_driver::Platform) -> bool {
+        matches!(
+            (self, p),
+            (Self::Android, smix_driver::Platform::Android) | (Self::Ios, smix_driver::Platform::Ios)
+        )
+    }
+
+    /// maestro's spelling.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Android => "Android",
+            Self::Ios => "iOS",
+            Self::Web => "Web",
+        }
+    }
+
+    /// maestro's spelling of a device platform.
+    pub fn name_of(p: smix_driver::Platform) -> &'static str {
+        match p {
+            smix_driver::Platform::Android => Self::Android.name(),
+            smix_driver::Platform::Ios => Self::Ios.name(),
+        }
+    }
+}
+
+/// `label:` and `optional:` on a block (`runFlow`, `repeat`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BlockOptions {
+    /// Name reports use for the block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// A failure inside the block is reported as a skip and the flow
+    /// continues.
+    #[serde(default)]
+    pub optional: bool,
+}
+
+impl BlockOptions {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// serde default for [`Step::ExtendedWaitUntil::expect_visible`] —

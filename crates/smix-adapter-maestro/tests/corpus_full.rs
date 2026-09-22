@@ -33,6 +33,11 @@ struct SilentMockApp {
 
 #[async_trait]
 impl AppLike for SilentMockApp {
+    // The corpus is maestro's own iOS-first sample set; a `platform:`
+    // condition in it is read against the platform it was written for.
+    fn platform(&self) -> smix_driver::Platform {
+        smix_driver::Platform::Ios
+    }
     async fn tap(&self, _: &Selector) -> Result<(), ExpectationFailure> {
         Ok(())
     }

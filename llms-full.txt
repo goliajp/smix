@@ -454,6 +454,17 @@ would need measuring again.
     commands:
       - waitForAnimationToEnd: 200
 
+# `repeat.while` takes the same conditions as `runFlow.when` (below),
+# and a block can be labelled and made optional
+- repeat:
+    while:
+      platform: Android
+      visible: "Load more"
+    label: "drain the list"
+    optional: true
+    commands:
+      - tapOn: "Load more"
+
 # Retry on failure
 - retry:
     maxRetries: 3
@@ -485,7 +496,41 @@ would need measuring again.
       - tapOn: "Open"
       - waitForAnimationToEnd
 
-# `visible` / `notVisible` are mutually exclusive within one `when:`.
+# Conditions combine: every one present must hold (AND), checked in
+# maestro's order — platform, true, visible, notVisible — and the first
+# that fails skips the block without checking the rest.
+- runFlow:
+    when:
+      platform: Android                # Android | iOS | Web, any case
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+# `true:` is a template, expanded when the gate is checked. It is false
+# when the result is blank, `false` (any case), `undefined`, `null` or a
+# number equal to zero, and true otherwise.
+- runFlow:
+    when:
+      true: ${output.skipOnboarding == 'yes'}
+      label: "onboarding already done"   # names the skip in the log
+    commands:
+      - tapOn: "Skip"
+
+# `env:` names values for the block only; each value is expanded in the
+# caller's scope on entry. `optional: true` turns a failure inside the
+# block into a skip with the failure's own words, and the flow goes on.
+- runFlow:
+    env:
+      GREETING: "hello"
+    label: "type the greeting"
+    optional: true
+    commands:
+      - tapOn: "Message"
+      - inputText: ${GREETING}
+
+# Every key of `runFlow:`, `repeat:`, `when:` and `while:` is one smix
+# acts on. A key it does not know — a typo, or `when.optional`, which
+# maestro accepts and ignores — is a parse error naming the key.
 # The gate selector supports the full selector table, including
 # `fallback:` chains with `ocrText` (OCR fires for the check).
 
@@ -598,6 +643,9 @@ Full selector taxonomy is in [03-selectors.md](03-selectors.md).
 - `optional: true` on tapOn/assertVisible: step never fails the flow; it is skipped silently if the element is absent (used for cross-platform yamls where a step is iOS-only or Android-only).
 - `runFlow` with `when: { visible: ... }`: include a sub-flow only when a condition holds at runtime (e.g., "if Need Login is shown, run the login subflow").
 - `runFlow` with `when: { notVisible: ... }` (v1.0.24): inverse gate — enter only when the selector is NOT visible ("run the ceremony unless its end state is already on screen").
+- `runFlow` with `when: { platform: Android }`: a block for one platform in a flow written for both. The platform is checked first, so a block for the other platform never looks at the screen.
+- `when:` conditions combine with AND; `visible` and `notVisible` may appear together.
+- `optional: true` on a `runFlow` or `repeat`: a failure on what the block checked (element not found, assertion failed, timeout, …) is reported as skipped with its own message. A failure of the machinery — the device or runner gone, a malformed flow — still fails the step.
 - Skipped conditionals emit `STEP N: … → SKIPPED: <reason>` to stderr with the checked selector + evaluation outcome, so batch logs show WHY a gate short-circuited.
 - Step lines are printed as each step starts, so the last one in the log
   is the step that was in flight. A failure also names itself: the error
@@ -4696,9 +4744,9 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `runFlow` | ✅ | ✅ | Path resolution: cwd → `std/` catalogue |
-| `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when.visible` / `when.notVisible` gates (mutually exclusive); OCR fires when the gate selector contains `ocrText`; skips emit `SKIPPED: <reason>` to stderr |
+| `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when` takes `platform` / `true` / `visible` / `notVisible` / `label`, combined with AND in maestro's order; OCR fires when a gate selector contains `ocrText`; `env` / `label` / `optional` on the block; unknown keys are parse errors; skips emit `SKIPPED: <reason>` to stderr |
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
-| `repeat` | ✅ | ✅ | |
+| `repeat` | ✅ | ✅ | `while:` takes the same conditions as `runFlow.when`; `label` / `optional` on the block |
 | `pressKey` | ✅ | ✅ | enter/return, delete, tab, space, escape, and the four arrows on both. home / lock / volumeUp / volumeDown reach Android; on the iOS simulator they report an explicit Skipped (Apple exposes no simulator path) |
 | `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. Not a keystroke: `pressKey: back` is not a spelling of it |
 

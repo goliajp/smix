@@ -198,6 +198,8 @@ struct MockApp {
     /// serving frames — the shape a loaded simulator presents when the
     /// screenshot pacer's circuit is open.
     screenshot_backpressure_n: Mutex<usize>,
+    /// What `platform()` answers. iOS unless a test says otherwise.
+    platform: Mutex<smix_driver::Platform>,
 }
 
 impl MockApp {
@@ -218,6 +220,7 @@ impl MockApp {
             screenshot_calls: Mutex::new(0),
             screenshot_cycles: Mutex::new(false),
             screenshot_backpressure_n: Mutex::new(0),
+            platform: Mutex::new(smix_driver::Platform::Ios),
         }
     }
 
@@ -321,6 +324,11 @@ impl MockApp {
         self
     }
 
+    fn with_platform(self, p: smix_driver::Platform) -> Self {
+        *self.platform.lock().unwrap() = p;
+        self
+    }
+
     fn calls(&self) -> Vec<MockCall> {
         self.calls.lock().unwrap().clone()
     }
@@ -328,6 +336,9 @@ impl MockApp {
 
 #[async_trait]
 impl AppLike for MockApp {
+    fn platform(&self) -> smix_driver::Platform {
+        *self.platform.lock().unwrap()
+    }
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         self.calls
             .lock()
@@ -3308,4 +3319,211 @@ async fn a_percent_string_is_refused_because_it_means_the_other_thing() {
         text.contains("share"),
         "says which spelling belongs where: {text}"
     );
+}
+
+// --------------------------------------------------------------------
+// Conditions (`runFlow.when`, `repeat.while`) and block options
+// (`env` / `label` / `optional`). Order and falsy rules follow maestro's
+// `Orchestra.evaluateCondition`.
+// --------------------------------------------------------------------
+
+fn taps(app: &MockApp) -> usize {
+    app.calls().iter().filter(|c| matches!(c, MockCall::Tap(_))).count()
+}
+
+fn finds(app: &MockApp) -> usize {
+    app.calls().iter().filter(|c| matches!(c, MockCall::Find(_))).count()
+}
+
+fn skip_reason(report: &smix_adapter_maestro::RunReport) -> String {
+    match &report.steps[0] {
+        RunStepReport::Skipped { reason } => reason.clone(),
+        other => panic!("expected the block to be skipped, got {other:?}"),
+    }
+}
+
+async fn run_with(app: &MockApp, yaml_body: &str) -> Result<smix_adapter_maestro::RunReport, RunError> {
+    let flow = parse_inline(&format!("appId: com.t.r\n---\n{yaml_body}"));
+    Adapter::new(app, fixtures_dir()).run(&flow).await
+}
+
+const ANDROID_ONLY: &str =
+    "- runFlow:\n    when:\n      platform: Android\n    commands:\n      - tapOn:\n          id: nope\n";
+
+#[tokio::test]
+async fn condition_platform_mismatch_skips_without_looking_at_the_screen() {
+    let app = MockApp::new();
+    let report = run_with(&app, ANDROID_ONLY).await.expect("run");
+    let reason = skip_reason(&report);
+    assert!(reason.contains("platform") && reason.contains("Android") && reason.contains("iOS"), "{reason}");
+    assert_eq!(taps(&app), 0);
+    assert_eq!(finds(&app), 0, "platform is checked before anything on screen");
+
+    let app = MockApp::new().with_platform(smix_driver::Platform::Android);
+    run_with(&app, ANDROID_ONLY).await.expect("run");
+    assert_eq!(taps(&app), 1);
+}
+
+#[tokio::test]
+async fn condition_platform_web_holds_on_neither_platform() {
+    for p in [smix_driver::Platform::Ios, smix_driver::Platform::Android] {
+        let app = MockApp::new().with_platform(p);
+        run_with(&app, "- runFlow:\n    when:\n      platform: Web\n    commands:\n      - tapOn: x\n")
+            .await
+            .expect("run");
+        assert_eq!(taps(&app), 0, "{p:?}");
+    }
+}
+
+#[tokio::test]
+async fn condition_true_follows_maestros_falsy_rules() {
+    use smix_adapter_maestro::ExprValue;
+    let cases: &[(&str, bool)] = &[
+        ("${output.flag}", false),
+        ("\"FALSE\"", false),
+        ("\"\"", false),
+        ("${output.zero}", false),
+        ("\"null\"", false),
+        ("\"undefined\"", false),
+        ("\"yes\"", true),
+        ("${output.two}", true),
+    ];
+    for (value, runs) in cases {
+        let app = MockApp::new();
+        let flow = parse_inline(&format!(
+            "appId: com.t.r\n---\n- runFlow:\n    when:\n      true: {value}\n    commands:\n      - tapOn: x\n"
+        ));
+        let output = [
+            ("flag".to_string(), ExprValue::String("false".into())),
+            ("zero".to_string(), ExprValue::Number(0.0)),
+            ("two".to_string(), ExprValue::Number(2.0)),
+        ]
+        .into_iter()
+        .collect();
+        Adapter::new(&app, fixtures_dir())
+            .with_output(output)
+            .run(&flow)
+            .await
+            .expect("run");
+        assert_eq!(taps(&app) == 1, *runs, "true: {value}");
+    }
+}
+
+#[tokio::test]
+async fn condition_true_with_a_broken_expression_fails_the_step() {
+    let app = MockApp::new();
+    let err = run_with(&app, "- runFlow:\n    when:\n      true: ${output.}\n    commands:\n      - tapOn: x\n")
+        .await
+        .expect_err("a broken expression is an error, not a skip");
+    match err {
+        RunError::Sdk(f) => assert_eq!(f.code, FailureCode::DriverError),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(taps(&app), 0);
+}
+
+#[tokio::test]
+async fn condition_every_part_must_hold() {
+    let body = "- runFlow:\n    when:\n      platform: iOS\n      visible: x\n    commands:\n      - tapOn: y\n";
+    let app = MockApp::new();
+    let reason = skip_reason(&run_with(&app, body).await.expect("run"));
+    assert!(reason.contains("platform") && reason.contains("visible"), "{reason}");
+    assert_eq!(taps(&app), 0);
+
+    let key = smix_sdk::describe_selector(&smix_sdk::text("x"));
+    let app = MockApp::new().with_find(&key, true);
+    run_with(&app, body).await.expect("run");
+    assert_eq!(taps(&app), 1);
+
+    let both = "- runFlow:\n    when:\n      visible: a\n      notVisible: b\n    commands:\n      - tapOn: y\n";
+    let a = smix_sdk::describe_selector(&smix_sdk::text("a"));
+    let b = smix_sdk::describe_selector(&smix_sdk::text("b"));
+    let app = MockApp::new().with_find(&a, true);
+    run_with(&app, both).await.expect("run");
+    assert_eq!(taps(&app), 1, "a visible, b not: runs");
+    let app = MockApp::new().with_find(&a, true).with_find(&b, true);
+    run_with(&app, both).await.expect("run");
+    assert_eq!(taps(&app), 0, "b visible: skipped");
+}
+
+#[tokio::test]
+async fn condition_label_names_the_skip() {
+    let app = MockApp::new();
+    let reason = skip_reason(
+        &run_with(
+            &app,
+            "- runFlow:\n    when:\n      platform: Android\n      label: dismiss promo\n    commands:\n      - tapOn: x\n",
+        )
+        .await
+        .expect("run"),
+    );
+    assert!(reason.contains("dismiss promo"), "{reason}");
+}
+
+#[tokio::test]
+async fn condition_repeat_while_on_the_other_platform_runs_zero_times() {
+    let app = MockApp::new();
+    run_with(
+        &app,
+        "- repeat:\n    while:\n      platform: Android\n      notVisible: done\n    commands:\n      - tapOn: x\n",
+    )
+    .await
+    .expect("run");
+    assert_eq!(taps(&app), 0);
+}
+
+fn filled(app: &MockApp) -> Vec<String> {
+    app.calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            MockCall::Fill(_, t) => Some(t),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn env_is_visible_inside_the_block_only() {
+    let app = MockApp::new();
+    let err = run_with(
+        &app,
+        "- runFlow:\n    env:\n      GREETING: hi\n    commands:\n      - inputText: ${GREETING}\n- inputText: ${GREETING}\n",
+    )
+    .await
+    .expect_err("GREETING is gone after the block");
+    assert_eq!(filled(&app), vec!["hi".to_string()]);
+    assert!(format!("{err}").contains("GREETING"), "{err}");
+}
+
+#[tokio::test]
+async fn env_shadows_an_outer_name_and_reads_the_outer_scope_on_entry() {
+    let app = MockApp::new();
+    let flow = parse_inline(
+        "appId: com.t.r\n---\n- runFlow:\n    env:\n      NAME: inner\n      DERIVED: ${NAME}-x\n    commands:\n      - inputText: ${NAME}\n      - inputText: ${DERIVED}\n- inputText: ${NAME}\n",
+    );
+    Adapter::new(&app, fixtures_dir())
+        .with_env([("NAME".to_string(), "outer".to_string())].into_iter().collect())
+        .run(&flow)
+        .await
+        .expect("run");
+    assert_eq!(filled(&app), vec!["inner", "outer-x", "outer"]);
+}
+
+#[tokio::test]
+async fn optional_block_turns_its_failure_into_a_skip_and_the_flow_goes_on() {
+    let nope = smix_sdk::describe_selector(&smix_sdk::id("nope"));
+    for body in [
+        "- runFlow:\n    optional: true\n    commands:\n      - tapOn:\n          id: nope\n- tapOn: next\n",
+        "- repeat:\n    times: 1\n    optional: true\n    commands:\n      - tapOn:\n          id: nope\n- tapOn: next\n",
+    ] {
+        let app = MockApp::new().with_tap_failure(&nope, FailureCode::ElementNotFound);
+        let report = run_with(&app, body).await.expect("optional block does not fail the flow");
+        let reason = skip_reason(&report);
+        assert!(reason.contains("optional") && reason.contains("nope"), "{reason}");
+        assert_eq!(taps(&app), 2, "the failing tap and the next step");
+
+        let strict = body.replace("    optional: true\n", "");
+        let app = MockApp::new().with_tap_failure(&nope, FailureCode::ElementNotFound);
+        run_with(&app, &strict).await.expect_err("without optional the flow fails");
+    }
 }

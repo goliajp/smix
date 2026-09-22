@@ -56,7 +56,33 @@ All notable changes to the `smix` workspace are documented here. The format foll
   phone until `xcrun devicectl device simulate location clear --device
   <UDID>`; no flow verb clears it.** Driven on an iPhone on iOS 26.6.2.
 
+- **`when:` reads every condition maestro defines.** `platform`
+  (`Android` / `iOS` / `Web`, any case) and `true` (a template, false when
+  it expands to blank, `false`, `undefined`, `null` or zero) join
+  `visible` and `notVisible`, and `label` names the condition in the
+  skip line. All present conditions must hold, checked in maestro's
+  order, so a block for the other platform never looks at the screen.
+  `repeat.while` takes the same conditions.
+
+- **`runFlow` reads `env`, `label` and `optional`; `repeat` reads `label`
+  and `optional`.** `env` names values for the block only, each expanded
+  in the caller's scope on entry. `optional: true` reports a failure on
+  what the block checked as a skip carrying the failure's message, and
+  the flow goes on; a failure of the device, the runner or the flow file
+  still fails the step. Until now these keys were read by nobody: a
+  `runFlow` with `env:` ran its subflow without the values and reported
+  green.
+
 ### Changed
+
+- **`visible` and `notVisible` in one `when:` combine instead of being
+  refused.** Both must hold, as in maestro.
+
+- **`repeat.while` checks visibility the way `runFlow.when` does.** It
+  asked the accessibility tree only, so an `ocrText` selector (alone or in
+  a `fallback:` chain) never matched and the loop ended on its first
+  check; it now goes through the same check as the `runFlow` gate, which
+  fires OCR for those selectors.
 
 - **Seven refusals on a physical iPhone became capabilities.** The
   platform table's physical-iOS column refused seventeen actions; it
@@ -73,6 +99,26 @@ All notable changes to the `smix` workspace are documented here. The format foll
   capture for one through simctl or devicectl". Under Xcode 27 that is
   false for a connected iPhone. It now says the device does not offer
   devicectl's screenshot capability, and which Xcode that depends on.
+
+### Breaking
+
+- **A key smix does not act on is a parse error in `runFlow:`, `repeat:`,
+  `when:`, `while:` and selector maps.** Before, such a key was dropped
+  without a word, and the most common case was a condition:
+  `when: { platform: Android }` read as no condition at all, so the block
+  ran on iOS too. A misspelt key (`platfrom:`), `when.optional` (which
+  maestro accepts and never applies) and a selector's unquoted `true:` or
+  numeric key now stop the flow at parse time, naming the key and the
+  keys that are read there. A `when:` with nothing to check (`{}`, or only
+  `label`) is refused as well.
+
+- **Rust API: `Step::RunFlowConditional`, `Step::RunFlowInline` and
+  `Step::Repeat` changed shape.** The two runFlow variants carry
+  `when: Option<FlowCondition>`, `env` and `opts: BlockOptions` in place of
+  `when_visible` / `when_not_visible`; `Repeat` carries `opts`; and
+  `RepeatMode::WhileVisible` / `WhileNotVisible` are replaced by
+  `RepeatMode::WhileCondition(Box<FlowCondition>)`. `AppLike` has a new
+  required method, `platform()`.
 
 ## [10.1.0] — 2026-09-19
 

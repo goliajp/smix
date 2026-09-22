@@ -19,6 +19,17 @@
     commands:
       - waitForAnimationToEnd: 200
 
+# `repeat.while` takes the same conditions as `runFlow.when` (below),
+# and a block can be labelled and made optional
+- repeat:
+    while:
+      platform: Android
+      visible: "Load more"
+    label: "drain the list"
+    optional: true
+    commands:
+      - tapOn: "Load more"
+
 # Retry on failure
 - retry:
     maxRetries: 3
@@ -50,7 +61,41 @@
       - tapOn: "Open"
       - waitForAnimationToEnd
 
-# `visible` / `notVisible` are mutually exclusive within one `when:`.
+# Conditions combine: every one present must hold (AND), checked in
+# maestro's order — platform, true, visible, notVisible — and the first
+# that fails skips the block without checking the rest.
+- runFlow:
+    when:
+      platform: Android                # Android | iOS | Web, any case
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+
+# `true:` is a template, expanded when the gate is checked. It is false
+# when the result is blank, `false` (any case), `undefined`, `null` or a
+# number equal to zero, and true otherwise.
+- runFlow:
+    when:
+      true: ${output.skipOnboarding == 'yes'}
+      label: "onboarding already done"   # names the skip in the log
+    commands:
+      - tapOn: "Skip"
+
+# `env:` names values for the block only; each value is expanded in the
+# caller's scope on entry. `optional: true` turns a failure inside the
+# block into a skip with the failure's own words, and the flow goes on.
+- runFlow:
+    env:
+      GREETING: "hello"
+    label: "type the greeting"
+    optional: true
+    commands:
+      - tapOn: "Message"
+      - inputText: ${GREETING}
+
+# Every key of `runFlow:`, `repeat:`, `when:` and `while:` is one smix
+# acts on. A key it does not know — a typo, or `when.optional`, which
+# maestro accepts and ignores — is a parse error naming the key.
 # The gate selector supports the full selector table, including
 # `fallback:` chains with `ocrText` (OCR fires for the check).
 

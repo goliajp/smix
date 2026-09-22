@@ -61,9 +61,9 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `runFlow` | ✅ | ✅ | Path resolution: cwd → `std/` catalogue |
-| `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when.visible` / `when.notVisible` gates (mutually exclusive); OCR fires when the gate selector contains `ocrText`; skips emit `SKIPPED: <reason>` to stderr |
+| `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when` takes `platform` / `true` / `visible` / `notVisible` / `label`, combined with AND in maestro's order; OCR fires when a gate selector contains `ocrText`; `env` / `label` / `optional` on the block; unknown keys are parse errors; skips emit `SKIPPED: <reason>` to stderr |
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
-| `repeat` | ✅ | ✅ | |
+| `repeat` | ✅ | ✅ | `while:` takes the same conditions as `runFlow.when`; `label` / `optional` on the block |
 | `pressKey` | ✅ | ✅ | enter/return, delete, tab, space, escape, and the four arrows on both. home / lock / volumeUp / volumeDown reach Android; on the iOS simulator they report an explicit Skipped (Apple exposes no simulator path) |
 | `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. Not a keystroke: `pressKey: back` is not a spelling of it |
 
