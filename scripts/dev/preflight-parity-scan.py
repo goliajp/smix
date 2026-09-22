@@ -90,6 +90,8 @@ LOCAL = {
     "portable tier parity": "portable-tier-parity",
     "a yield is not a failure": "yield-is-not-failure-scan",
     "teardown restores rather than imposes": "teardown-restores-scan",
+    "an act route says what ok means": "an-act-route-says-what-ok-means",
+    "the ok-means scan can still go red": "an-act-route-says-what-ok-means.test",
     "android gates drive our own app": "android-subject-scan",
     "device facts are machine-scoped": "device-facts-are-machine-scoped",
     "leases are machine-scoped": "leases-are-machine-scoped",

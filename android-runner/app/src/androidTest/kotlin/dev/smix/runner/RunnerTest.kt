@@ -14,6 +14,7 @@ package dev.smix.runner
 
 import android.app.UiAutomation
 import android.graphics.Rect
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.google.mlkit.vision.common.InputImage
@@ -165,7 +166,36 @@ class SmixHttpServer(
     private val TEXT_LAND_MS = 2000L
 
     /// How long to wait for the IME window to leave after back.
+    ///
+    /// Sibling of `BACK_SETTLE_MS` below and deliberately not merged
+    /// with it: both watch for something after a back key, but they
+    /// watch different things — the keyboard's window leaving, versus
+    /// the screen behind it changing. One parameterised loop would make
+    /// the reader work out which question it was asking today.
     private val KEYBOARD_GONE_MS = 2000L
+
+    /// How long `/back` watches the screen before giving up, and how
+    /// often it looks. The iOS runner's notes record that looking less
+    /// often (250ms) was measured and came back worse.
+    private val BACK_SETTLE_MS = 2000L
+    private val BACK_POLL_MS = 50L
+
+    /// How long to wait for the display to reach the rotation asked
+    /// for.
+    private val ROTATION_ARRIVES_MS = 3000L
+
+    /// How long to wait for the named package to own the foreground.
+    private val FOREGROUND_ARRIVES_MS = 3000L
+
+    /// The bound on one screen-structure reading — see `structureHash`.
+    ///
+    /// The cap is shared out per window rather than spent in order, and
+    /// no window gets less than the minimum: a screen is usually three
+    /// or four windows, and a share too small to reach past a layout
+    /// wrapper would make two different screens read the same.
+    private val STRUCTURE_DEPTH_CAP = 4
+    private val STRUCTURE_NODE_CAP = 160
+    private val STRUCTURE_MIN_SHARE = 24
 
     // NanoHTTPD serves each connection on its own thread, so the body
     // drained in `serve` reaches that request's handler and no other.
@@ -274,12 +304,17 @@ class SmixHttpServer(
     // JSON (streaming); /record/stop drains the remainder and deactivates.
 
     private fun serveRecordStart(): Response {
+        // OK MEANS: bookkeeping — the recorder started buffering. It
+        // watches events; it does not act on the device.
         RecordBuffer.start()
         return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
     }
 
     private fun serveRecordPoll(): Response = recordEventsResponse(RecordBuffer.poll())
 
+    // OK MEANS: bookkeeping — the buffer was drained and the recorder
+    // stopped. Above the function because it has no body to put a line
+    // inside.
     private fun serveRecordStop(): Response = recordEventsResponse(RecordBuffer.stop())
 
     private fun recordEventsResponse(actions: List<String>): Response {
@@ -441,6 +476,12 @@ class SmixHttpServer(
     }
 
     private fun serveTapAtNormCoord(session: IHTTPSession): Response {
+        // OK MEANS: injected — `UiDevice.click` is `clickNoSync`, which
+        // is `touchDown`/`touchUp` through `injectEventSync` and nothing
+        // else: the touch was delivered (and it refuses outright when the
+        // point is off the display). Whether the app did anything with it
+        // is the caller's next assertion, not a question this route can
+        // answer.
         val req = RunnerWire.decodeNormCoord(readBodyString(session))
         val w = device.displayWidth
         val h = device.displayHeight
@@ -455,6 +496,9 @@ class SmixHttpServer(
     }
 
     private fun serveSwipeAtNormCoord(session: IHTTPSession): Response {
+        // OK MEANS: injected — `UiDevice.swipe` hands the gesture to
+        // `InteractionController.swipe`; the boolean is whether the
+        // pointer events went in.
         val req = RunnerWire.decodeSwipeAtNormCoord(readBodyString(session))
         val w = device.displayWidth
         val h = device.displayHeight
@@ -473,6 +517,9 @@ class SmixHttpServer(
     }
 
     private fun serveSwipeOnce(session: IHTTPSession): Response {
+        // OK MEANS: injected — same call and same meaning as
+        // /swipe-at-norm-coord. The scroll loop driving this re-reads the
+        // tree afterwards, which is where "did anything move" is answered.
         val direction = RunnerWire.decodeSwipeOnce(readBodyString(session))
         val q = RunnerWire.swipeOnceCoords(direction, device.displayWidth, device.displayHeight)
             ?: return errorJson(
@@ -487,26 +534,162 @@ class SmixHttpServer(
     }
 
     private fun servePressKey(session: IHTTPSession): Response {
+        // OK MEANS: injected — `pressKeyCode` is `sendKeys` →
+        // `injectEventSync`. This route used to discard that boolean and
+        // answer `status: ok` to everything, so a key that never went in
+        // and a key that did read identically to the host.
         val key = RunnerWire.decodePressKey(readBodyString(session))
         val code = KeyMap.androidKeyCode(key) ?: return errorJson(
             Response.Status.BAD_REQUEST,
             "unknown_key",
             "no Android KeyEvent mapping for '$key'",
         )
-        device.pressKeyCode(code)
+        val injected = device.pressKeyCode(code)
         device.waitForIdle(500)
-        val body = RunnerWire.pressKeyBody(key, code)
+        val body = RunnerWire.pressKeyBody(injected, key, code)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveBack(): Response {
-        val ok = device.pressBack()
-        device.waitForIdle(500)
-        val body = RunnerWire.backBody(ok)
+        // OK MEANS: outcome — the screen that was on before the key is
+        // not the screen that is on after it. `UiDevice.pressBack()`'s
+        // own boolean answers a third question (its bytecode is
+        // `sendKeyAndWaitForEvent(KEYCODE_BACK, 0, TYPE_WINDOW_CONTENT_CHANGED, 1000)`,
+        // so the status bar's clock can carry it and a navigation that
+        // lands late cannot), which is why the key goes in by plain
+        // injection here and the answer is read afterwards. The
+        // injection result is reported as `injected`, never as `ok`.
+        val before = (readScreen() as? Reading.Screen)?.reading
+        val injected = injectBackKey()
+        val settle = BackSettle(before)
+        val verdict = if (!injected) {
+            BackSettle.Verdict.NotInjected
+        } else {
+            awaitBackVerdict(settle)
+        }
+        val body = RunnerWire.backBody(
+            ok = verdict.ok,
+            settledBy = verdict.settledBy,
+            saw = settle.saw(),
+            injected = injected,
+        )
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
+    /// Look until the verdict lands or the budget is spent.
+    ///
+    /// 50ms polls over 2s, the same cadence and budget the iOS runner
+    /// settled on for the same question — its notes record that looking
+    /// less often (250ms) was measured and was worse.
+    private fun awaitBackVerdict(settle: BackSettle): BackSettle.Verdict {
+        val deadline = android.os.SystemClock.elapsedRealtime() + BACK_SETTLE_MS
+        while (true) {
+            Thread.sleep(BACK_POLL_MS)
+            settle.observe(readScreen())?.let { return it }
+            if (android.os.SystemClock.elapsedRealtime() >= deadline) return settle.atDeadline()
+        }
+    }
+
+    /// One look at everything on screen.
+    ///
+    /// No window is chosen. Picking one — active, then focused, then
+    /// topmost — was the first version, and measured on emulator-5554
+    /// the pick moved between two looks 50ms apart: three runs of the
+    /// same script called one back key `packageLeft`, `gaveUp` and
+    /// `couldNotSee`. Hashing the whole set removes the choice, and
+    /// `currentPackageName` is read once, as a reading rather than as a
+    /// decision about which window matters.
+    private fun readScreen(): Reading {
+        val windows = instrumentation.uiAutomation.windows
+        var hash = 17
+        var readable = 0
+        val packages = LinkedHashSet<String>()
+        // Every window gets its own share of the budget. A single
+        // shared budget spent in window order is what the first version
+        // did, and the status bar and navigation bar — which sort
+        // first by id — ate all of it: the reading contained
+        // `com.android.systemui` and nothing else, so a back that
+        // genuinely left the Compose screen changed nothing the route
+        // could see and came back `gaveUp`.
+        val share = maxOf(STRUCTURE_MIN_SHARE, STRUCTURE_NODE_CAP / maxOf(1, windows.size))
+        // By id, because a window's id outlives the layer order that a
+        // transition shuffles.
+        for (window in windows.sortedBy { it.id }) {
+            val root = window.root ?: continue
+            readable += 1
+            try {
+                val pkg = root.packageName?.toString() ?: "<none>"
+                packages.add(pkg)
+                hash = hash * 31 + window.id
+                hash = hash * 31 + pkg.hashCode()
+                hash = hash * 31 + structureHash(root, share)
+            } finally {
+                root.recycle()
+            }
+        }
+        if (readable == 0) return Reading.Unreadable
+        // The packages are read from the roots already in hand.
+        // `UiDevice.currentPackageName` would name the one in front,
+        // and it waits for the screen to go idle to do it — ten
+        // seconds, measured, on a screen with a label ticking five
+        // times a second, which is the very screen this route has to
+        // answer for.
+        return Reading.Screen(ScreenReading(hash, packages.joinToString(" ")))
+    }
+
+    /// Put the back key in, and nothing else.
+    ///
+    /// Not `UiDevice.pressBack()`, whose answer is about an
+    /// accessibility event rather than about the screen, and not
+    /// `UiDevice.pressKeyCode` either: both call `waitForIdle()` first,
+    /// which on a screen that is animating or ticking waits out its
+    /// whole ten-second budget before the key goes anywhere. Measured:
+    /// one `/back` on the fixture's blocked screen took 30s, three idle
+    /// waits deep, while its own settle budget is 2s.
+    private fun injectBackKey(): Boolean {
+        val now = android.os.SystemClock.uptimeMillis()
+        val down = KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0)
+        val up = KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK, 0)
+        val automation = instrumentation.uiAutomation
+        return automation.injectInputEvent(down, true) && automation.injectInputEvent(up, true)
+    }
+
+    /// A hash of which nodes are under `root` — not of what they say.
+    ///
+    /// Text is left out on purpose: a clock, a spinner or a countdown
+    /// changes text on every frame while nothing has gone back, and
+    /// that is precisely the shape `pressBack()`'s boolean gets wrong.
+    /// Bounded because this runs every 50ms: four levels and a shared
+    /// budget of 120 nodes across every window are enough to tell two
+    /// screens apart and cheap enough to ask for forty times in a row.
+    private fun structureHash(root: AccessibilityNodeInfo, budget: Int): Int {
+        var hash = 17
+        var seen = 0
+        fun walk(node: AccessibilityNodeInfo, depth: Int) {
+            if (seen >= budget) return
+            seen += 1
+            val name = node.viewIdResourceName ?: node.className?.toString() ?: ""
+            hash = hash * 31 + name.hashCode()
+            hash = hash * 31 + node.childCount
+            if (depth >= STRUCTURE_DEPTH_CAP) return
+            for (i in 0 until node.childCount) {
+                if (seen >= budget) return
+                val child = node.getChild(i) ?: continue
+                try {
+                    walk(child, depth + 1)
+                } finally {
+                    child.recycle()
+                }
+            }
+        }
+        walk(root, 0)
+        return hash
+    }
+
     private fun serveHideKeyboard(): Response {
+        // OK MEANS: outcome — the input-method window is gone, read
+        // from the window list after the key rather than taken from the
+        // key press's own boolean (6.5).
         // There is no first-class UiAutomator2 hide-keyboard, and the
         // closest thing is back. Back closes a keyboard when one is up
         // and closes whatever is in front when none is — so the comment
@@ -544,6 +727,21 @@ class SmixHttpServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
+    /// How many characters the focused field holds, or -1 when no
+    /// focused editable node can be found to ask.
+    ///
+    /// -1 is not zero: "the field is empty" and "I could not find the
+    /// field" are different answers, and only one of them means a clear
+    /// worked.
+    private fun focusedTextLength(focusPx: IntArray?): Int {
+        val node = awaitEditableFocus(FOCUS_SETTLE_MS, focusPx) ?: return -1
+        return try {
+            node.text?.toString()?.length ?: 0
+        } finally {
+            node.recycle()
+        }
+    }
+
     /// Wait for the input-method window to leave, up to a budget.
     ///
     /// The dismissal is animated, so the window outlives the key press
@@ -573,16 +771,24 @@ class SmixHttpServer(
         }
 
     private fun serveSetOrientation(session: IHTTPSession): Response {
+        // OK MEANS: outcome — the display is left in the rotation that
+        // was asked for, read back from `displayRotation`. It used to
+        // answer `status: ok` unconditionally, including for the
+        // upside-down case it emulates with two rotations and cannot
+        // promise on every device.
         val orientation = RunnerWire.decodeSetOrientation(readBodyString(session))
         when (orientation) {
             "portrait" -> device.setOrientationNatural()
             "landscapeLeft" -> device.setOrientationLeft()
             "landscapeRight" -> device.setOrientationRight()
             "portraitUpsideDown" ->
-                // UiDevice has no direct "upside-down portrait"; emulate
-                // by rotating 180° from natural (best-effort, may vary
-                // by device).
-                device.setOrientationNatural().also { device.setOrientationLeft(); device.setOrientationLeft() }
+                // UiDevice has no upside-down call. The emulation that
+                // used to be here — natural, then two left rotations —
+                // lands at rotation 1 rather than 2 (measured,
+                // emulator-5554), and nothing checked, so this verb has
+                // been quietly doing something else and saying it
+                // worked. The settings route gets there.
+                RunnerWire.rotateUpsideDownCommands().forEach { runShellCommand(it) }
             else -> return errorJson(
                 Response.Status.BAD_REQUEST,
                 "bad_orientation",
@@ -590,11 +796,33 @@ class SmixHttpServer(
             )
         }
         device.waitForIdle(800)
-        val body = RunnerWire.setOrientationBody(orientation)
+        // A rotation is a transition, and one look cannot answer a
+        // question about a transition — the settings route in
+        // particular takes a moment longer than the window manager's
+        // own calls, and a single read right after it caught the
+        // display still at its old value.
+        val want = RunnerWire.rotationFor(orientation)
+        val deadline = android.os.SystemClock.elapsedRealtime() + ROTATION_ARRIVES_MS
+        var rotation = device.displayRotation
+        while (rotation != want && android.os.SystemClock.elapsedRealtime() < deadline) {
+            Thread.sleep(50)
+            rotation = device.displayRotation
+        }
+        val body = RunnerWire.setOrientationBody(
+            RunnerWire.rotationMatches(orientation, rotation),
+            orientation,
+            rotation,
+        )
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveTapById(session: IHTTPSession): Response {
+        // OK MEANS: action-performed — an accessibility ACTION_CLICK
+        // reported that it ran, or, on the touch fallback, a node
+        // matching the id was found and clicked. `UiObject2.click()`
+        // returns nothing, so on that path `ok` says a gesture was made
+        // on a node that existed, and `path` says which of the two it
+        // was. Neither is a claim about the app having reacted.
         val id = RunnerWire.decodeTapById(readBodyString(session))
         // NanoHTTPD lowercases header names.
         val targetPackage = session.headers["app-bundle-id"]
@@ -797,31 +1025,39 @@ class SmixHttpServer(
     }
 
     private fun serveDoubleTapAtNormCoord(session: IHTTPSession): Response {
+        // OK MEANS: injected — both taps went in. One of two landing is
+        // not a double tap, so the answer is the conjunction.
         val req = RunnerWire.decodeNormCoord(readBodyString(session))
         val px = RunnerWire.normToPixel(req.nx, device.displayWidth)
         val py = RunnerWire.normToPixel(req.ny, device.displayHeight)
-        device.click(px, py)
+        val first = device.click(px, py)
         // Standard double-tap inter-tap window — 150ms is below most
         // systems' DOUBLE_TAP_TIMEOUT (300ms) so events register as a
         // pair, not as two separate taps.
         Thread.sleep(150)
-        device.click(px, py)
+        val second = device.click(px, py)
         device.waitForIdle(500)
-        val body = RunnerWire.doubleTapBody(px, py)
+        val body = RunnerWire.doubleTapBody(first && second, px, py)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveLongPressAtNormCoord(session: IHTTPSession): Response {
+        // OK MEANS: injected — a long press is a swipe that does not
+        // travel, so this is `InteractionController.swipe`'s answer.
         val req = RunnerWire.decodeLongPressAtNormCoord(readBodyString(session))
         val px = RunnerWire.normToPixel(req.nx, device.displayWidth)
         val py = RunnerWire.normToPixel(req.ny, device.displayHeight)
-        device.swipe(px, py, px, py, RunnerWire.longPressSteps(req.durationMs))
+        val injected = device.swipe(px, py, px, py, RunnerWire.longPressSteps(req.durationMs))
         device.waitForIdle(500)
-        val body = RunnerWire.longPressBody(px, py, req.durationMs)
+        val body = RunnerWire.longPressBody(injected, px, py, req.durationMs)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveInputText(session: IHTTPSession): Response {
+        // OK MEANS: outcome — the characters are in the field, read
+        // back from the node afterwards (v6.4). `input text` cannot
+        // report a miss, so the node saying so is the only evidence
+        // there is.
         val req = RunnerWire.decodeInputText(readBodyString(session))
         val text = req.text
         val focusPx = focusRectPx(req.focusIn)
@@ -874,7 +1110,8 @@ class SmixHttpServer(
         // saying so.
         val after = awaitLanded(focused, before, text, masked, TEXT_LAND_MS)
         focused.recycle()
-        if (!RunnerWire.textLanded(before, after, text, masked)) {
+        val landed = RunnerWire.textLanded(before, after, text, masked)
+        if (!landed) {
             return errorJson(
                 Response.Status.INTERNAL_ERROR,
                 "text_did_not_land",
@@ -896,7 +1133,7 @@ class SmixHttpServer(
                 },
             )
         }
-        val body = RunnerWire.inputTextBody(text)
+        val body = RunnerWire.inputTextBody(landed, text)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -1149,6 +1386,8 @@ class SmixHttpServer(
     /// fall back to delete keys, still in one shell exec, and say
     /// which path ran so the caller knows whether the answer is exact.
     private fun serveClearText(session: IHTTPSession): Response {
+        // OK MEANS: outcome — the field is empty afterwards, and
+        // `method` says by which of the two routes it was emptied.
         // The clear that precedes a fill needs the same target as the
         // typing. Without it a fill naming one field empties whichever
         // field happened to hold focus — measured on emulator-5554,
@@ -1170,7 +1409,8 @@ class SmixHttpServer(
             focused.recycle()
             if (ok) {
                 device.waitForIdle(500)
-                val body = RunnerWire.clearTextBody("set-text", 0)
+                val held = focusedTextLength(focusPx)
+                val body = RunnerWire.clearTextBody(held == 0, "set-text", 0, held)
                 return newFixedLengthResponse(Response.Status.OK, "application/json", body)
             }
         } else {
@@ -1179,11 +1419,19 @@ class SmixHttpServer(
         val deletes = FALLBACK_DELETE_COUNT
         runShellCommand(RunnerWire.deleteKeysCommand(deletes))
         device.waitForIdle(500)
-        val body = RunnerWire.clearTextBody("key-events", deletes)
+        // Fifty delete keys with nothing checking what they did was the
+        // whole of this path's evidence. The field itself can say.
+        val held = focusedTextLength(focusPx)
+        val body = RunnerWire.clearTextBody(held == 0, "key-events", deletes, held)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
     private fun serveForeground(session: IHTTPSession): Response {
+        // OK MEANS: outcome — the named package owns the foreground
+        // afterwards, read from `currentPackageName`. Running an `am
+        // start` and reporting success is a different claim: the
+        // activity can fail to start, and the shell says so on a channel
+        // this route was not reading.
         // smix wire (HttpRunnerClient.foreground) sends {bundleId} per
         // iOS swift /foreground convention. Mirror that shape.
         val bundleId = RunnerWire.decodeForeground(readBodyString(session))
@@ -1193,7 +1441,19 @@ class SmixHttpServer(
         // semantic).
         runShellCommand(RunnerWire.foregroundCommand(bundleId, entryPoint(bundleId)))
         device.waitForIdle(500)
-        val body = RunnerWire.foregroundBody(bundleId)
+        // An activity takes a moment to come forward, so this is a
+        // deadline on something that has usually already happened.
+        val deadline = android.os.SystemClock.elapsedRealtime() + FOREGROUND_ARRIVES_MS
+        var current = device.currentPackageName
+        while (current != bundleId && android.os.SystemClock.elapsedRealtime() < deadline) {
+            Thread.sleep(50)
+            current = device.currentPackageName
+        }
+        val body = RunnerWire.foregroundBody(
+            current == bundleId,
+            bundleId,
+            "foreground=${current ?: "<none>"}",
+        )
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -1210,6 +1470,9 @@ class SmixHttpServer(
     private val sessions = SessionTable()
 
     private fun serveSessionOpen(session: IHTTPSession): Response {
+        // OK MEANS: bookkeeping — a session id was bound to a bundle id. Sessions on Android are
+        // record-keeping: there is no per-request activation here for
+        // them to succeed or fail at.
         val req = RunnerWire.decodeSessionOpen(readBodyString(session))
         if (req.bundleId.isEmpty()) {
             return sessionError(
@@ -1229,6 +1492,9 @@ class SmixHttpServer(
     }
 
     private fun serveSessionClose(session: IHTTPSession): Response {
+        // OK MEANS: bookkeeping — a session id was released. Sessions on Android are
+        // record-keeping: there is no per-request activation here for
+        // them to succeed or fail at.
         val sid = RunnerWire.decodeSessionId(readBodyString(session))
         if (sid.isEmpty()) {
             return sessionError(
@@ -1245,6 +1511,9 @@ class SmixHttpServer(
     }
 
     private fun serveSessionCloseAll(): Response {
+        // OK MEANS: bookkeeping — every session id was released. Sessions on Android are
+        // record-keeping: there is no per-request activation here for
+        // them to succeed or fail at.
         val closed = sessions.closeAll()
         return newFixedLengthResponse(
             Response.Status.OK,
@@ -1254,6 +1523,9 @@ class SmixHttpServer(
     }
 
     private fun serveSessionList(): Response {
+        // OK MEANS: bookkeeping — the runner's own session table was read. Sessions on Android are
+        // record-keeping: there is no per-request activation here for
+        // them to succeed or fail at.
         return newFixedLengthResponse(
             Response.Status.OK,
             "application/json",
@@ -1262,6 +1534,9 @@ class SmixHttpServer(
     }
 
     private fun serveSessionRenewActivation(session: IHTTPSession): Response {
+        // OK MEANS: bookkeeping — a session id was refreshed. Sessions on Android are
+        // record-keeping: there is no per-request activation here for
+        // them to succeed or fail at.
         val sid = RunnerWire.decodeSessionId(readBodyString(session))
         if (sid.isEmpty()) {
             return sessionError(
@@ -1283,6 +1558,9 @@ class SmixHttpServer(
     }
 
     private fun serveSessionAppLifecycle(session: IHTTPSession, terminate: Boolean): Response {
+        // OK MEANS: bookkeeping — a session id was resolved and the lifecycle command handed to the shell. Sessions on Android are
+        // record-keeping: there is no per-request activation here for
+        // them to succeed or fail at.
         // Body carries sessionId (+ args/env/waitFor*Ms, accepted and
         // ignored — XCUITest launch-injection has no `am` equivalent).
         val sid = RunnerWire.decodeSessionId(readBodyString(session))
@@ -1313,6 +1591,9 @@ class SmixHttpServer(
     }
 
     private fun serveSessionRelaunchApp(session: IHTTPSession): Response {
+        // OK MEANS: bookkeeping — a session id was resolved and the app relaunched through the shell path /foreground uses. Sessions on Android are
+        // record-keeping: there is no per-request activation here for
+        // them to succeed or fail at.
         val sid = RunnerWire.decodeSessionId(readBodyString(session))
         if (sid.isEmpty()) {
             return sessionError(
@@ -1374,6 +1655,9 @@ class SmixHttpServer(
     }
 
     private fun serveFindTextByOcr(session: IHTTPSession): Response {
+        // OK MEANS: reading — this answers where some text is and acts
+        // on nothing. `found` carries the answer; there is no act to
+        // succeed or fail.
         // locales + recognition_level are iOS-specific Apple Vision args;
         // the ML Kit Latin script package handles ASCII/Latin universally
         // so they are accepted but ignored here. Dedicated CJK packages
@@ -1480,6 +1764,9 @@ class SmixHttpServer(
     }
 
     private fun serveSystemPopupAction(session: IHTTPSession): Response {
+        // OK MEANS: action-performed — the button's ACTION_CLICK
+        // reported that it ran. The popup going away is the caller's
+        // next look.
         val (popupId, buttonId) = RunnerWire.decodeSystemPopupAction(readBodyString(session))
         // Re-walk to find the popup + button (mirror swift smix-runner
         // re-resolve semantics — stale ids surface as ok:false).
@@ -1517,6 +1804,8 @@ class SmixHttpServer(
     }
 
     private fun serveWebViewEvalProxy(session: IHTTPSession): Response {
+        // OK MEANS: reading — the script's own result is the answer;
+        // this route only carries it across the proxy.
         // Runner and app under test live in separate processes; the
         // runner can't access the app's WebView instance directly. Proxy
         // HTTP to the app's shim server on port 28081 (started by

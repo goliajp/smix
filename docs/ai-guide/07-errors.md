@@ -179,6 +179,31 @@ point, which is why it has its own code.
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
 
+### A refused `back`
+
+`back` fails when the screen it was on is still the screen it is on. The
+runner presses the key, then watches what is on screen for up to two
+seconds, and the message names which reading decided:
+
+| `settledBy` | what it means |
+|---|---|
+| `screenChanged` | what is on screen is not what was on screen — the ordinary success, and what leaving the app looks like too |
+| `couldNotSee` | nothing on screen could be read before the key, so there is nothing to compare against |
+| `gaveUp` | the key went in and nothing changed for two seconds |
+| `notInjected` | the key event never went in |
+
+`gaveUp` usually means the app consumed the key: a screen with its own
+back handling, a modal that ignores it, a root screen in a task the app
+does not leave. The reply's `saw` carries the readings behind the
+verdict, and `injected` says whether the key itself was delivered —
+"the key never went in" and "it went in and nothing moved" are
+different problems and used to arrive as the same sentence.
+
+What the runner compares is **which nodes are on screen**, not what they
+say. A clock, a spinner or a countdown changes text on every frame
+without anything having gone back, and taking that for navigation is
+the error the old answer made.
+
 ### CAPTURE_BACKPRESSURE
 
 **Trigger**: the simulator's capture path is under load and is refusing

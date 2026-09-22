@@ -210,6 +210,8 @@ SOURCE_GATES=(
   portable-tier-parity
   yield-is-not-failure-scan
   teardown-restores-scan
+  an-act-route-says-what-ok-means
+  an-act-route-says-what-ok-means.test
   android-subject-scan
   device-facts-are-machine-scoped
   leases-are-machine-scoped

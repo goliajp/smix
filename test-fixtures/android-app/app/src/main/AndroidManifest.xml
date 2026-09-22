@@ -17,5 +17,8 @@
         <activity
             android:name=".ScrollActivity"
             android:exported="true" />
+        <activity
+            android:name=".BlockedActivity"
+            android:exported="true" />
     </application>
 </manifest>
