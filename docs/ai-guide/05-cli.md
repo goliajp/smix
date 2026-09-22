@@ -844,6 +844,29 @@ It widens what smix can **see**, never what it can **reach**.
   hit-testing — measured firing through a dialog's scrim onto a button no
   touch could reach — so smix refuses it and names what to use instead.
 
+### What it reports about where things are
+
+Two things changed in 10.2, and an app that upgrades the probe will see
+both.
+
+**A View that Compose hosts is in the tree.** `AndroidView` puts a real
+View inside a composition, and the probe used to walk semantics only — so
+adding the probe to an app took its hosted controls *away*, while the
+accessibility reader still saw them. They are now reported with their own
+resource id, so `id: btn_player_fullscreen` addresses one, and with the
+same role the accessibility reader gives it (`role: button`).
+
+**A node's rectangle is the part of it on screen**, not the part the
+layout drew. A row half-scrolled out of a list reports the half that
+shows; one scrolled out entirely reports an empty rectangle and does not
+count as visible. A node the toolkit composed but never placed — the
+state a lazy list leaves a prefetched row in — is **not reported at
+all**, because the only position it has is one it never had.
+
+If a flow asserted on something in one of those last two states, it was
+passing on a node that was not on screen; it will now fail. That is the
+intended change.
+
 ### Whether a touch would land
 
 `smix find` answers two questions now, because they are two facts:

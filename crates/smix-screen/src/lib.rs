@@ -820,6 +820,11 @@ struct ProbeNodeWire {
     id: i64,
     #[serde(default, rename = "testTag")]
     test_tag: Option<String>,
+    /// A hosted View's own id. A Compose node has a `testTag` and a View
+    /// has this; one selector (`id:`) addresses both, because from a flow
+    /// they are the same question.
+    #[serde(default, rename = "resourceId")]
+    resource_id: Option<String>,
     #[serde(default)]
     text: Option<String>,
     #[serde(default, rename = "editableText")]
@@ -831,6 +836,24 @@ struct ProbeNodeWire {
     input_text: Option<String>,
     #[serde(default, rename = "contentDescription")]
     content_description: Option<String>,
+    /// The role, already spelled the way the accessibility wire spells it
+    /// — the runner fills it from the class using the one table that maps
+    /// them, rather than a second copy of it living here.
+    ///
+    /// A string rather than `Role`, and converted leniently below: a
+    /// spelling this build does not know must cost that node its role, not
+    /// cost the caller the whole tree.
+    #[serde(default)]
+    role: Option<String>,
+    /// The hosted View's class. Carried for the same reason the
+    /// accessibility path carries it: it is the fact, where the role is a
+    /// reading of it.
+    #[serde(default, rename = "className")]
+    class_name: Option<String>,
+    /// Whether any of the node shows. Absent from probes older than this
+    /// field, and absence is not a "no" — see the default.
+    #[serde(default = "yes")]
+    visible: bool,
     #[serde(default)]
     bounds: [f64; 4],
     #[serde(default)]
@@ -848,7 +871,10 @@ fn yes() -> bool {
 impl ProbeNodeWire {
     fn to_a11y(&self) -> A11yNode {
         let mut n = blank_node();
-        n.identifier = self.test_tag.clone();
+        // A Compose node names itself with a testTag and a hosted View
+        // with its resource id. Never both, and `id:` in a flow means
+        // whichever this node has.
+        n.identifier = self.test_tag.clone().or_else(|| self.resource_id.clone());
         n.label = self.content_description.clone();
         n.text = self.text.clone();
         // `inputText` first: it is what was typed, where `editableText` is
@@ -860,6 +886,14 @@ impl ProbeNodeWire {
             .or_else(|| self.editable_text.clone());
         n.enabled = self.enabled;
         n.has_focus = self.focused;
+        n.visible = self.visible;
+        if let Some(c) = &self.class_name {
+            n.raw_type = c.clone();
+        }
+        n.role = self
+            .role
+            .as_deref()
+            .and_then(|r| serde_json::from_value(serde_json::Value::String(r.to_string())).ok());
         n.bounds = Rect {
             x: self.bounds[0],
             y: self.bounds[1],
@@ -1001,5 +1035,120 @@ mod probe_conversion_guards {
               {"id":2,"testTag":"a","bounds":[0,0,10,10],"focused":false,
                "enabled":true,"actions":[],"children":[]}]}]"#;
         assert!(probe_tree_to_a11y(real).is_some());
+    }
+}
+
+#[cfg(test)]
+mod what_the_probe_says_about_a_node {
+    use super::{collect_visible_summaries, probe_tree_to_a11y, Role};
+
+    /// The one node, as the host reads it off the probe's wire.
+    ///
+    /// `probe_tree_to_a11y` puts the roots under a parent of its own (the
+    /// screen), so the node asked about is two levels down — the first
+    /// draft of this helper asserted about the ROOT and reported the
+    /// root's values as the node's.
+    fn node_from_wire(node_fields: &str) -> super::A11yNode {
+        let json = format!(
+            r#"[{{"id":1,"testTag":"root","bounds":[0,0,1080,2340],"focused":false,
+                 "enabled":true,"visible":true,"actions":[],
+                 "children":[{{{node_fields}}}]}}]"#
+        );
+        let screen = probe_tree_to_a11y(&json)
+            .expect("a root carrying a named node converts to a tree");
+        screen.children[0].children[0].clone()
+    }
+
+    #[test]
+    fn a_node_the_probe_says_is_not_showing_is_not_visible() {
+        // The probe reports a placed node that is clipped entirely away
+        // with an empty rectangle and `visible:false`. Reading that as
+        // visible — which a default of `true` does — puts it in the list
+        // of things a failure says were on screen.
+        let n = node_from_wire(
+            r#""id":2,"testTag":"row","bounds":[0,2340,1080,2340],"focused":false,
+               "enabled":true,"visible":false,"actions":[],"children":[]"#,
+        );
+        assert!(!n.visible, "a node reported as hidden reads as visible");
+    }
+
+    #[test]
+    fn an_older_probe_that_does_not_say_is_taken_as_visible() {
+        // Absence is not a "no". A probe from before this field existed
+        // says nothing about visibility, and reading its silence as hidden
+        // would empty the tree for everyone who has not upgraded.
+        let n = node_from_wire(
+            r#""id":2,"testTag":"row","bounds":[0,0,100,40],"focused":false,
+               "enabled":true,"actions":[],"children":[]"#,
+        );
+        assert!(n.visible, "a silent probe was read as reporting hidden");
+    }
+
+    #[test]
+    fn a_role_the_wire_spells_is_the_role_a_selector_matches() {
+        // The runner fills this from the View's class, with the one table
+        // that maps Android classes to roles (`RunnerWire.deriveRole`).
+        // `role:button` has to mean the same thing whichever reader
+        // answered, and a second copy of that table here is how the two
+        // would drift apart.
+        let n = node_from_wire(
+            r#""id":2,"resourceId":"btn_player_fullscreen","role":"button",
+               "className":"android.widget.ImageButton",
+               "bounds":[948,934,1039,1025],"focused":false,"enabled":true,
+               "visible":true,"actions":[],"children":[]"#,
+        );
+        assert_eq!(n.role, Some(Role::Button));
+        assert_eq!(n.raw_type, "android.widget.ImageButton");
+    }
+
+    #[test]
+    fn a_spelling_this_build_does_not_know_costs_that_node_its_role_and_nothing_else() {
+        // A probe newer than the host can name a role this build has never
+        // heard of. Failing the parse would cost the caller the whole
+        // screen over one field on one node.
+        let n = node_from_wire(
+            r#""id":2,"resourceId":"thing","role":"holodeck",
+               "bounds":[0,0,10,10],"focused":false,"enabled":true,
+               "visible":true,"actions":[],"children":[]"#,
+        );
+        assert_eq!(n.role, None);
+        assert_eq!(n.identifier.as_deref(), Some("thing"));
+    }
+
+    #[test]
+    fn a_hosted_view_is_addressable_by_its_own_id() {
+        let n = node_from_wire(
+            r#""id":2,"resourceId":"btn_player_fullscreen",
+               "className":"android.widget.ImageButton",
+               "bounds":[948,934,1039,1025],"focused":false,"enabled":true,
+               "visible":true,"actions":[],"children":[]"#,
+        );
+        assert_eq!(n.identifier.as_deref(), Some("btn_player_fullscreen"));
+    }
+
+    #[test]
+    fn what_compose_calls_a_node_wins_over_what_its_class_would_say() {
+        // A Compose node carries its own role. Deriving one from a class
+        // name as well would let the weaker source overwrite the stronger.
+        let n = node_from_wire(
+            r#""id":2,"testTag":"tab","role":"tab","className":"android.widget.TextView",
+               "bounds":[0,0,100,40],"focused":false,"enabled":true,
+               "visible":true,"actions":[],"children":[]"#,
+        );
+        assert_ne!(n.role, Some(Role::StaticText));
+    }
+
+    #[test]
+    fn a_node_with_nothing_showing_is_not_listed_among_what_was_on_screen() {
+        let json = r#"[{"id":1,"testTag":"root","bounds":[0,0,1080,2340],"focused":false,
+             "enabled":true,"visible":true,"actions":[],"children":[
+               {"id":2,"testTag":"row","bounds":[0,2340,1080,2340],"focused":false,
+                "enabled":true,"visible":false,"actions":[],"children":[]}]}]"#;
+        let t = probe_tree_to_a11y(json).expect("a root carrying a named node converts");
+        let listed = collect_visible_summaries(&t, 10);
+        assert!(
+            !listed.iter().any(|s| s.id.as_deref() == Some("row")),
+            "a node with an empty rectangle was listed as visible: {listed:?}"
+        );
     }
 }

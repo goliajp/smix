@@ -4,4 +4,6 @@
     <item name="fixture_submit" type="id" />
     <item name="fixture_result" type="id" />
     <item name="fixture_blocked_ticker" type="id" />
+    <item name="fixture_interop_button" type="id" />
+    <item name="fixture_interop_label" type="id" />
 </resources>

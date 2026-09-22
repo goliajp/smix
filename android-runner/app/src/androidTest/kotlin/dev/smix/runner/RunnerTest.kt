@@ -400,8 +400,15 @@ class SmixHttpServer(
                 // The screen's size travels with the tree because the
                 // consumer normalises against the root's rectangle, and the
                 // probe's roots cover only what Compose occupies.
-                """{"screen":[${b.getInt("screenW", 0)},${b.getInt("screenH", 0)}],""" +
-                    """"roots":${b.getString("tree") ?: "[]"}}"""
+                //
+                // Roles are named on the way past: the probe reports the
+                // class and Compose's own role, and the table that turns
+                // either into smix's word for it lives here, next to the
+                // accessibility path that needs the same table.
+                ProbeRoles.fill(
+                    """{"screen":[${b.getInt("screenW", 0)},${b.getInt("screenH", 0)}],""" +
+                        """"roots":${b.getString("tree") ?: "[]"}}""",
+                )
             }
         } catch (_: Exception) {
             // Separate from /probe on purpose: that route reports WHETHER

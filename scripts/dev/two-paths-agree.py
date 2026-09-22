@@ -139,11 +139,19 @@ def inside_any(node, rects):
 
 
 def semantics_tags(roots):
-    """Every testTag the semantics side carries, with its node and root index."""
+    """Every name the semantics side carries, with its node and root index.
+
+    Two kinds of name, and a flow cannot tell them apart: a Compose node
+    has a `testTag`, and a View that Compose hosts inside an `AndroidView`
+    has its own resource id. The second kind arrived in v10.2 — before it
+    the probe could not see hosted Views at all, which is the defect this
+    reader's own assertion was supposed to catch and could not, having
+    never been shown a screen with one on it.
+    """
     found = {}
 
     def walk(n, root_index):
-        t = n.get("testTag")
+        t = n.get("testTag") or n.get("resourceId")
         if t:
             found[t] = (n, root_index)
         for c in n.get("children") or []:
@@ -184,23 +192,79 @@ def _primary_root(sem):
     return max(counts, key=counts.get) if counts else 0
 
 
-# Empty, on purpose, and this is the interesting part.
+def clipped_away(tag, sem, a11y):
+    """The probe can see a node that is placed and entirely clipped.
+
+    A row scrolled past the end of its viewport is still composed and
+    still has a position; the accessibility path drops it, and the probe
+    reports it with an empty rectangle and `visible: false`. Both are
+    right, and the difference is one the probe is ALLOWED to have —
+    unlike the reverse, which is the defect this gate exists for.
+
+    Told from the data: the semantics side says nothing of it shows.
+    Exhibited by `.InteropActivity`, whose scrolling column has five rows
+    below its viewport.
+    """
+    node = sem.get(tag)
+    if node is None:
+        return False
+    n = node[0]
+    if n.get("visible") is False:
+        return True
+    b = n.get("bounds")
+    return isinstance(b, list) and len(b) == 4 and (b[2] <= b[0] or b[3] <= b[1])
+
+
+def hosts_a_view(tag, sem, a11y):
+    """A Compose node whose content is a View Compose hosts.
+
+    `AndroidView` does not project its own semantics node to
+    accessibility — the hosted View's nodes are projected in its place.
+    So the wrapper's testTag is on the semantics side and nowhere on the
+    other, while everything inside it is on both.
+
+    Told by geometry rather than by name: some hosted View node (one
+    carrying a `resourceId`, which only a View has) lies inside this
+    node's rectangle. Exhibited by `.InteropActivity`.
+    """
+    node = sem.get(tag)
+    if node is None:
+        return False
+    outer = probe_rect(node[0])
+    if outer is None:
+        return False
+    for other, (n, _) in sem.items():
+        if other == tag or not n.get("resourceId"):
+            continue
+        inner = probe_rect(n)
+        if inner is None:
+            continue
+        if (outer[0] <= inner[0] and outer[1] <= inner[1]
+                and outer[2] >= inner[2] and outer[3] >= inner[3]):
+            return True
+    return False
+
+
+# The named differences, each with a screen that produces it.
 #
-# The first draft carried a `secondary-compose-root` rule for dialogs. Driving
-# it showed the rule could not be exhibited without also destroying what it
-# was an exception TO: with a Compose dialog open, the accessibility path does
-# not lose the dialog, it loses THE WHOLE APP — 16 compose ids one second,
-# zero the next, while the probe still reports 17 and `smix find
-# id:compose_submit` answers `exists=false` about a button plainly on screen.
+# The first draft of this list carried a `secondary-compose-root` rule for
+# dialogs. Driving it showed the rule could not be exhibited without also
+# destroying what it was an exception TO: with a Compose dialog open, the
+# accessibility path does not lose the dialog, it loses THE WHOLE APP — 16
+# compose ids one second, zero the next, while the probe still reported 17.
+# That was not a difference to be excused; it was the defect v10 existed to
+# close, so the rule went rather than being kept as an exemption that
+# excludes the empty set while printing that it considered something.
 #
-# That is not a difference to be excused; it is the defect this version
-# exists to close. So the rule is gone rather than kept as an exemption that
-# excludes the empty set while printing that it considered something — which
-# is what its own failure message told us to do.
-#
-# When a real, exhibitable difference turns up, it goes here WITH a screen
-# that produces it.
-RULES = []
+# The two below are different: each is a case where the probe legitimately
+# sees MORE than the accessibility path, which is the direction this gate
+# allows, and `--prove-differences-exhibited` requires each to match on the
+# screen it names.
+RULES = [
+    ("clipped-away", "a placed node with nothing of it showing", clipped_away),
+    ("hosts-a-view", "an AndroidView wrapper, whose hosted View is projected instead",
+     hosts_a_view),
+]
 
 
 def reconcile(a11y_tree, sem_roots, prove):
@@ -297,6 +361,87 @@ def superset(a11y_tree, sem_roots):
     return 0
 
 
+def rect_of(node):
+    """A node's rectangle as (left, top, right, bottom), or None."""
+    b = node.get("bounds") or {}
+    try:
+        x, y = float(b["x"]), float(b["y"])
+        w, h = float(b["w"]), float(b["h"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (x, y, x + w, y + h)
+
+
+def probe_rect(node):
+    b = node.get("bounds")
+    if not isinstance(b, list) or len(b) != 4:
+        return None
+    try:
+        return tuple(float(v) for v in b)
+    except (TypeError, ValueError):
+        return None
+
+
+def centre(r):
+    return ((r[0] + r[2]) / 2, (r[1] + r[3]) / 2)
+
+
+def holds(r, point):
+    return r[0] <= point[0] <= r[2] and r[1] <= point[1] <= r[3]
+
+
+def bounds_agree(a11y_tree, sem_roots, min_compared):
+    """The two readers put the same element in the same place.
+
+    Presence was the only thing compared here, and the second half of what
+    a consumer reported was entirely about position: a row reported at
+    [0,533,1080,743] while the screen showed it nowhere. Both readers
+    naming a thing and disagreeing about where it is, is the same class of
+    fault as one of them not naming it at all — and it is the half that
+    decides where a tap lands.
+
+    Not compared edge by edge, and not with a tolerance. The two readers
+    report different rectangles for a good reason: the accessibility side
+    of Compose reports a node's TOUCH TARGET, padded out to the minimum
+    48dp, while semantics reports the visual box. Measured on the recorded
+    fixture payloads, `compose_open_dialog` is 132px tall to one reader and
+    110px to the other — a real 11px disagreement that means nothing, and
+    a threshold loose enough to forgive it would forgive a row-height
+    error too.
+
+    So the question asked is the one that has consequences: does each
+    reader's centre — where a tap is aimed — fall inside the other's
+    rectangle. Padding cannot break that, and being in the wrong place
+    cannot satisfy it.
+    """
+    a11y = a11y_tags(a11y_tree)
+    sem = semantics_tags(sem_roots)
+    compared = 0
+    for tag in sorted(set(a11y) & set(sem)):
+        theirs = rect_of(a11y[tag])
+        ours = probe_rect(sem[tag][0])
+        if theirs is None or ours is None:
+            continue
+        compared += 1
+        if not (holds(theirs, centre(ours)) and holds(ours, centre(theirs))):
+            problems.append(
+                f"`{tag}` is in two places: the accessibility path says "
+                f"{tuple(int(v) for v in theirs)} and the probe says "
+                f"{tuple(int(v) for v in ours)}, and neither contains the "
+                f"other's centre. A tap goes where the probe says."
+            )
+    # Non-empty: a comparison over nothing agrees with everything, and the
+    # two readers naming disjoint sets of things is itself the finding.
+    if compared < min_compared:
+        problems.append(
+            f"only {compared} element(s) had a rectangle on both sides, "
+            f"expected at least {min_compared} — either the screen is not "
+            f"the one this was pointed at, or the two readers are naming "
+            f"different things"
+        )
+    return compared
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device")
@@ -306,6 +451,16 @@ def main():
     ap.add_argument("--a11y")
     ap.add_argument("--semantics")
     ap.add_argument("--prove-differences-exhibited", action="store_true")
+    ap.add_argument(
+        "--activity", default=".ComposeActivity",
+        help="which screen to put in front before reading it. The reader "
+             "drove one screen for two majors, and the defects it exists "
+             "to catch were on the screens it never saw.",
+    )
+    ap.add_argument(
+        "--min-bounds-compared", type=int, default=1,
+        help="how many elements must have a rectangle on both sides.",
+    )
     ap.add_argument(
         "--min-both", type=int, default=1,
         help="how many tags must appear on BOTH sides. A count rather than "
@@ -332,7 +487,7 @@ def main():
         subprocess.run(["adb", "-s", args.device, "shell", "am", "force-stop", args.app],
                        capture_output=True, text=True)
         subprocess.run(["adb", "-s", args.device, "shell", "am", "start", "-n",
-                        f"{args.app}/.ComposeActivity"], capture_output=True, text=True)
+                        f"{args.app}/{args.activity}"], capture_output=True, text=True)
         # Wait for the screen, do not guess at it. This was `sleep(2)`,
         # which is enough on an idle machine and not enough after two and
         # a half hours of ship -- and then the accessibility side reads
@@ -408,6 +563,7 @@ def main():
     if args.superset_only:
         return superset(a11y_tree, sem_roots)
     both, matched = reconcile(a11y_tree, sem_roots, args.prove_differences_exhibited)
+    compared = bounds_agree(a11y_tree, sem_roots, args.min_bounds_compared)
     # The presence half, and the ONLY one: a first draft also carried an
     # `if not both` check, which never fired on its own because this
     # count's default of 1 already covered it. Two predicates saying one
@@ -425,7 +581,10 @@ def main():
         report()
         return 1
     named = ", ".join(f"{n}×{c}" for n, c in matched.items())
-    print(f"two-paths-agree: {both} tags on both sides, differences all named ({named})")
+    print(
+        f"two-paths-agree: {both} tags on both sides, {compared} of them "
+        f"in the same place, differences all named ({named})"
+    )
     return 0
 
 

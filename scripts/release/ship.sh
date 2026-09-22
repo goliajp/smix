@@ -900,8 +900,19 @@ trap 'v10_runner_down; ship_profile_close' EXIT
 
 log "v10: two perception paths agree"
 python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
-  --port "$V10_PORT" --min-both 16 \
+  --port "$V10_PORT" --min-both 16 --min-bounds-compared 16 \
   || fail "two-paths-agree FAILED — the semantics and accessibility readers disagree"
+
+# The same reader, on the screen that has a View hosted inside Compose.
+#
+# It drove one screen for two majors and passed the whole time, while the
+# probe could not see into an `AndroidView` at all — the claim was right
+# and its subject never appeared. A consumer found that for us.
+log "v10.2: the two paths agree where Compose hosts a View"
+python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
+  --port "$V10_PORT" --activity .InteropActivity --min-both 3 \
+  --min-bounds-compared 3 --prove-differences-exhibited \
+  || fail "two-paths-agree FAILED on the interop screen"
 
 log "v10: the three that went red"
 python3 "$ROOT/scripts/dev/the-three-that-went-red.py" --device "$V10_DEVICE" \

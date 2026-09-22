@@ -103,7 +103,7 @@ object SemanticsProbe {
     private fun sample() {
         val fp = try {
             attached()
-                .map { (it as RootForTest).semanticsOwner.unmergedRootSemanticsNode }
+                .map { it.semanticsRoot() }
                 .fold(17) { acc, n -> acc * 31 + fingerprint(n) }
         } catch (_: Exception) {
             // A root torn down mid-walk is not a change worth recording,
@@ -167,7 +167,15 @@ object SemanticsProbe {
 
     /** Every attached root's unmerged tree, as smix's wire spells it. */
     fun dumpWireJson(): String = attached()
-        .map { (it as RootForTest).semanticsOwner.unmergedRootSemanticsNode.toProbeNode() }
+        .mapNotNull { root ->
+            val node = root.semanticsRoot().toProbeNode() ?: return@mapNotNull null
+            // The Views this root hosts, as children of it. `AndroidView`
+            // content has no semantics node of its own, so it is reachable
+            // only from the View side — and a probe that leaves it out sees
+            // LESS than the accessibility path it replaces.
+            val hosted = root.view.hostedViews()
+            if (hosted.isEmpty()) node else node.copy(children = node.children + hosted)
+        }
         .toWireJson()
 
     /** The signal that was tried first, kept so its verdict can be re-checked. */
@@ -216,7 +224,7 @@ object SemanticsProbe {
     private fun perform(tag: String, action: String): String {
         val node = attached()
             .asSequence()
-            .map { (it as RootForTest).semanticsOwner.unmergedRootSemanticsNode }
+            .map { it.semanticsRoot() }
             .mapNotNull { find(it, tag) }
             .firstOrNull()
             ?: return "no node carries the tag `$tag`"
@@ -236,11 +244,23 @@ object SemanticsProbe {
         return null
     }
 
+    /// The unmerged tree of one root. Third use of the same cast chain.
+    private fun ViewRootForTest.semanticsRoot(): SemanticsNode =
+        (this as RootForTest).semanticsOwner.unmergedRootSemanticsNode
+
     private fun attached(): List<ViewRootForTest> =
         synchronized(roots) { roots.toList() }.filter { it.view.isAttachedToWindow }
 }
 
-internal fun SemanticsNode.toProbeNode(): ProbeNode {
+internal fun SemanticsNode.toProbeNode(): ProbeNode? {
+    // A node nobody has placed has no position, and reporting one means
+    // inventing it. A `LazyColumn` composes rows ahead of the ones it
+    // shows; `children` hands them over (it filters on attached and
+    // deactivated, not on placed — bytecode, Compose 1.9.3), and their
+    // coordinates are from wherever the layout last considered putting
+    // them. A consumer's `scrollUntilVisible` stopped on one of those and
+    // the tap that followed landed on the filter chips.
+    if (!layoutInfo.isPlaced) return null
     val c = config
     // Screen coordinates, not `boundsInWindow`.
     //
@@ -252,9 +272,27 @@ internal fun SemanticsNode.toProbeNode(): ProbeNode {
     // windows is the screen's.
     val origin = positionOnScreen
     val dimensions = size
+    val left = origin.x.toInt()
+    val top = origin.y.toInt()
+    val layout = Bounds(left, top, left + dimensions.width, top + dimensions.height)
+    // The window's origin on screen, from this node's own two positions.
+    val inWindow = positionInWindow
+    val clipped = boundsInWindow
+    val shown = visibleScreenRect(
+        layoutOnScreen = layout,
+        clippedInWindow = Bounds(
+            clipped.left.toInt(),
+            clipped.top.toInt(),
+            clipped.right.toInt(),
+            clipped.bottom.toInt(),
+        ),
+        windowLeftOnScreen = (origin.x - inWindow.x).toInt(),
+        windowTopOnScreen = (origin.y - inWindow.y).toInt(),
+    )
     return ProbeNode(
         id = id,
         testTag = c.getOrElseNullable(SemanticsProperties.TestTag) { null },
+        resourceId = null,
         // A label's text is a list because a node can carry several runs.
         text = c.getOrElseNullable(SemanticsProperties.Text) { null }
             ?.joinToString("") { it.text }
@@ -270,22 +308,19 @@ internal fun SemanticsNode.toProbeNode(): ProbeNode {
             ?.joinToString(", ")
             ?.ifEmpty { null },
         role = c.getOrElseNullable(SemanticsProperties.Role) { null }?.toString(),
-        bounds = Bounds(
-            origin.x.toInt(),
-            origin.y.toInt(),
-            origin.x.toInt() + dimensions.width,
-            origin.y.toInt() + dimensions.height,
-        ),
+        className = null,
+        bounds = shown,
         // Compose keeps focus in its own semantics layer. Asking the
         // accessibility side instead is the wrong instrument, and reading
         // it as "nothing has focus" cost a consumer their whole suite.
         focused = c.getOrElseNullable(SemanticsProperties.Focused) { false } ?: false,
         enabled = !c.contains(SemanticsProperties.Disabled),
+        visible = shown.right > shown.left && shown.bottom > shown.top,
         // What the node will accept, rather than what a toolkit says it is.
         // `isEditable` is a claim; taking SetText is a fact.
         actions = c.mapNotNull { entry ->
             entry.key.name.takeIf { entry.value is androidx.compose.ui.semantics.AccessibilityAction<*> }
         }.sorted(),
-        children = children.map { it.toProbeNode() },
+        children = children.mapNotNull { it.toProbeNode() },
     )
 }

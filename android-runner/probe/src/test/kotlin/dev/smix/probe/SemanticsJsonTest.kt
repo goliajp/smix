@@ -22,14 +22,17 @@ class SemanticsJsonTest {
     ) = ProbeNode(
         id = id,
         testTag = tag,
+        resourceId = null,
         text = text,
         editableText = editable,
         inputText = editable,
         contentDescription = null,
         role = null,
+        className = null,
         bounds = Bounds(0, 0, 100, 40),
         focused = focused,
         enabled = true,
+        visible = true,
         actions = actions,
         children = children,
     )
@@ -96,9 +99,11 @@ class SemanticsJsonTest {
 class WireEscapingTest {
     private fun typed(text: String) = listOf(
         ProbeNode(
-            id = 1, testTag = "compose_input", text = null, editableText = text, inputText = text,
-            contentDescription = null, role = null, bounds = Bounds(0, 0, 1, 1),
-            focused = false, enabled = true, actions = emptyList(), children = emptyList(),
+            id = 1, testTag = "compose_input", resourceId = null, text = null,
+            editableText = text, inputText = text,
+            contentDescription = null, role = null, className = null, bounds = Bounds(0, 0, 1, 1),
+            focused = false, enabled = true, visible = true,
+            actions = emptyList(), children = emptyList(),
         ),
     )
 

@@ -60,6 +60,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v10.2-c3-devicectl-location-e2e.sh",
     "v10.2-c5-scroll-reaches-e2e.sh",
     "v10.2-c6-back-answers-the-outcome-e2e.sh",
+    "v10.2-c7-probe-sees-the-screen-e2e.sh",
     "v2.12-c3-federation-single-node-e2e.sh",
     "v2.12-c4-federation-two-node-e2e.sh",
     "v2.12-c5-federation-cli-e2e.sh",
