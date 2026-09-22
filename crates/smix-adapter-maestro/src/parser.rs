@@ -8,7 +8,7 @@
 //! lets us surface a precise [`ParseError`] for every malformed shape,
 //! and mirrors the maestro Kotlin parser layout 1:1.
 
-use crate::{Flow, MaestroPermissionAction, ParseError, RepeatMode, Step};
+use crate::{BlockOptions, Flow, FlowCondition, MaestroPermissionAction, ParseError, RepeatMode, Step};
 use serde::Deserialize;
 use serde_norway::Value;
 use smix_selector::{Modifiers, Pattern, Role, Selector};
@@ -620,19 +620,53 @@ fn reject_unknown_selector_keys(
     map: &serde_norway::Mapping,
     field: &str,
 ) -> Result<(), ParseError> {
+    reject_unknown_keys(map, field, "selector", smix_verbs::SELECTOR_KEYS, &[])
+}
+
+/// A mapping key as a yaml author typed it. YAML 1.2 reads a bare
+/// `true:` as a boolean key and `1:` as a number, so a check that only
+/// looks at string keys walks straight past them — which is how a
+/// selector's `true: x` used to be ignored without a word.
+fn key_spelling(key: &Value) -> String {
+    match key {
+        Value::String(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
+/// The value under the key spelled `name`, whatever yaml type the key
+/// was read as.
+fn get_spelled<'a>(map: &'a serde_norway::Mapping, name: &str) -> Option<&'a Value> {
+    map.iter()
+        .find(|(k, _)| key_spelling(k) == name)
+        .map(|(_, v)| v)
+}
+
+/// Refuse every key of `map` that is not in `known`. `refused` names keys
+/// that exist elsewhere (maestro) but that smix deliberately does not
+/// take, each with the reason given instead of "unknown".
+fn reject_unknown_keys(
+    map: &serde_norway::Mapping,
+    field: &str,
+    what: &str,
+    known: &[&str],
+    refused: &[(&str, &str)],
+) -> Result<(), ParseError> {
     for key in map.keys() {
-        if let Some(k) = key
-            .as_str()
-            .filter(|k| !smix_verbs::SELECTOR_KEYS.contains(k))
-        {
-            return Err(ParseError::InvalidValue {
-                field: field.into(),
-                reason: format!(
-                    "unknown key `{k}`; selector keys are {}",
-                    smix_verbs::SELECTOR_KEYS.join(", ")
-                ),
-            });
+        let k = key_spelling(key);
+        if known.contains(&k.as_str()) {
+            continue;
         }
+        let reason = match refused.iter().find(|(name, _)| *name == k) {
+            Some((_, why)) => format!("`{k}`: {why}"),
+            None => format!("unknown key `{k}`; {what} keys are {}", known.join(", ")),
+        };
+        return Err(ParseError::InvalidValue {
+            field: field.into(),
+            reason,
+        });
     }
     Ok(())
 }
@@ -1077,6 +1111,7 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
         //   - `runFlow: { when: { visible }, file, as }`        → RunFlowConditional
         //   - `runFlow: { when: { visible }, commands: [...] }` → RunFlowInline
         Value::Mapping(map) => {
+            reject_unknown_keys(map, "runFlow", "runFlow", RUN_FLOW_KEYS, &[])?;
             let has_file = map.get(Value::String("file".into())).is_some();
             let has_commands = map.get(Value::String("commands".into())).is_some();
             if has_file && has_commands {
@@ -1086,17 +1121,15 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
                 });
             }
 
-            let when_visible = parse_run_flow_when_visible(map)?;
-            let when_not_visible = parse_run_flow_when_not_visible(map)?;
-            // Both gates set at once is ambiguous;
-            // reject at parse time with a clear message so consumers
-            // don't accidentally combine.
-            if when_visible.is_some() && when_not_visible.is_some() {
-                return Err(ParseError::InvalidValue {
-                    field: "runFlow.when".into(),
-                    reason: "`visible` and `notVisible` are mutually exclusive; use one".into(),
-                });
-            }
+            let when = match map.get(Value::String("when".into())) {
+                Some(w) => Some(parse_condition(w, "runFlow.when")?),
+                None => None,
+            };
+            let env = match map.get(Value::String("env".into())) {
+                Some(e) => parse_block_env(e, "runFlow.env")?,
+                None => Vec::new(),
+            };
+            let opts = parse_block_options(map, "runFlow")?;
 
             if has_commands {
                 // Inline commands form (maestro YamlRunFlow's
@@ -1116,9 +1149,10 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
                     .expect("has_commands true");
                 let steps = parse_step_sequence(commands_val, "runFlow.commands")?;
                 return Ok(Step::RunFlowInline {
-                    when_visible,
-                    when_not_visible,
+                    when,
                     steps,
+                    env,
+                    opts,
                 });
             }
 
@@ -1142,9 +1176,10 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
 
             Ok(Step::RunFlowConditional {
                 file,
-                when_visible,
-                when_not_visible,
+                when,
                 as_name,
+                env,
+                opts,
             })
         }
         other => Err(ParseError::InvalidValue {
@@ -1154,42 +1189,139 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
     }
 }
 
-// Shared `when.visible` parser for both `runFlow` arms
-// (file → RunFlowConditional, commands → RunFlowInline).
-fn parse_run_flow_when_visible(
-    map: &serde_norway::Mapping,
-) -> Result<Option<Selector>, ParseError> {
-    let Some(when) = map.get(Value::String("when".into())) else {
-        return Ok(None);
-    };
-    let when_map = when.as_mapping().ok_or_else(|| ParseError::InvalidValue {
-        field: "runFlow.when".into(),
+const RUN_FLOW_KEYS: &[&str] = &["file", "commands", "when", "as", "env", "label", "optional"];
+const REPEAT_KEYS: &[&str] = &["times", "while", "commands", "label", "optional"];
+
+/// maestro's own reading of `when.optional`: it is a field of
+/// `YamlCondition` that `toCondition` never copies, so it does nothing.
+const CONDITION_REFUSED: &[(&str, &str)] = &[(
+    "optional",
+    "maestro accepts `when.optional` but never applies it (`YamlFluentCommand.toCondition` drops it); \
+     put `optional: true` on the `runFlow` / `repeat` itself",
+)];
+
+// One condition shape for `runFlow.when` and `repeat.while`.
+fn parse_condition(v: &Value, field: &str) -> Result<FlowCondition, ParseError> {
+    let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
+        field: field.into(),
         reason: "expected a mapping".into(),
     })?;
-    match when_map.get(Value::String("visible".into())) {
-        Some(visible) => Ok(Some(visible_to_selector(visible)?)),
-        None => Ok(None),
+    reject_unknown_keys(map, field, "condition", crate::CONDITION_KEYS, CONDITION_REFUSED)?;
+    let selector_at = |key: &str| -> Result<Option<Selector>, ParseError> {
+        match map.get(Value::String(key.into())) {
+            Some(v) => visible_to_selector(v).map(Some).map_err(|e| match e {
+                ParseError::InvalidValue { field: inner, reason } => ParseError::InvalidValue {
+                    field: format!("{field}.{key}.{inner}"),
+                    reason,
+                },
+                other => other,
+            }),
+            None => Ok(None),
+        }
+    };
+    let platform = match map.get(Value::String("platform".into())) {
+        Some(p) => Some(parse_condition_platform(p, &format!("{field}.platform"))?),
+        None => None,
+    };
+    let script = match get_spelled(map, "true") {
+        Some(v) => Some(scalar_text(v, &format!("{field}.true"))?.trim().to_string()),
+        None => None,
+    };
+    let label = match map.get(Value::String("label".into())) {
+        Some(v) => Some(string_value(v, &format!("{field}.label"))?),
+        None => None,
+    };
+    let condition = FlowCondition {
+        platform,
+        visible: selector_at("visible")?,
+        not_visible: selector_at("notVisible")?,
+        script,
+        label,
+    };
+    if condition.platform.is_none()
+        && condition.visible.is_none()
+        && condition.not_visible.is_none()
+        && condition.script.is_none()
+    {
+        return Err(ParseError::InvalidValue {
+            field: field.into(),
+            reason: "no condition to check: a condition that always holds is a typo, not an intent; \
+                     name at least one of platform, visible, notVisible, true"
+                .into(),
+        });
+    }
+    Ok(condition)
+}
+
+fn parse_condition_platform(
+    v: &Value,
+    field: &str,
+) -> Result<crate::ConditionPlatform, ParseError> {
+    use crate::ConditionPlatform::{Android, Ios, Web};
+    let raw = string_value(v, field)?;
+    [(Android, "Android"), (Ios, "iOS"), (Web, "Web")]
+        .into_iter()
+        .find(|(_, name)| name.eq_ignore_ascii_case(&raw))
+        .map(|(p, _)| p)
+        .ok_or_else(|| ParseError::InvalidValue {
+            field: field.into(),
+            reason: format!("expected one of Android, iOS, Web (any case), got `{raw}`"),
+        })
+}
+
+fn string_value(v: &Value, field: &str) -> Result<String, ParseError> {
+    v.as_str()
+        .map(str::to_string)
+        .ok_or_else(|| ParseError::InvalidValue {
+            field: field.into(),
+            reason: format!("expected a string, got {v:?}"),
+        })
+}
+
+/// A scalar as text: strings verbatim, booleans and numbers as yaml
+/// prints them. `env: { N: 3 }` is `"3"` to the flow that reads it.
+fn scalar_text(v: &Value, field: &str) -> Result<String, ParseError> {
+    match v {
+        Value::String(s) => Ok(s.clone()),
+        Value::Bool(b) => Ok(b.to_string()),
+        Value::Number(n) => Ok(n.to_string()),
+        other => Err(ParseError::InvalidValue {
+            field: field.into(),
+            reason: format!("expected a string, number or boolean, got {other:?}"),
+        }),
     }
 }
 
-// Parse `runFlow.when.notVisible`. Same shape as
-// `when.visible` but the runtime gate fires when the selector is
-// NOT visible. Sibling helper to `parse_run_flow_when_visible` so
-// the parser dispatches both from one `when:` block.
-fn parse_run_flow_when_not_visible(
-    map: &serde_norway::Mapping,
-) -> Result<Option<Selector>, ParseError> {
-    let Some(when) = map.get(Value::String("when".into())) else {
-        return Ok(None);
-    };
-    let when_map = when.as_mapping().ok_or_else(|| ParseError::InvalidValue {
-        field: "runFlow.when".into(),
-        reason: "expected a mapping".into(),
+fn parse_block_env(v: &Value, field: &str) -> Result<Vec<(String, String)>, ParseError> {
+    let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
+        field: field.into(),
+        reason: "expected a mapping of names to values".into(),
     })?;
-    match when_map.get(Value::String("notVisible".into())) {
-        Some(not_visible) => Ok(Some(visible_to_selector(not_visible)?)),
-        None => Ok(None),
-    }
+    map.iter()
+        .map(|(k, v)| {
+            let name = key_spelling(k);
+            let value = scalar_text(v, &format!("{field}.{name}"))?;
+            Ok((name, value))
+        })
+        .collect()
+}
+
+fn parse_block_options(
+    map: &serde_norway::Mapping,
+    field: &str,
+) -> Result<BlockOptions, ParseError> {
+    let label = match map.get(Value::String("label".into())) {
+        Some(v) => Some(string_value(v, &format!("{field}.label"))?),
+        None => None,
+    };
+    let optional = match map.get(Value::String("optional".into())) {
+        Some(v) => v.as_bool().ok_or_else(|| ParseError::InvalidValue {
+            field: format!("{field}.optional"),
+            reason: format!("expected true or false, got {v:?}"),
+        })?,
+        None => false,
+    };
+    Ok(BlockOptions { label, optional })
 }
 
 fn parse_extended_wait_until(v: &Value) -> Result<Step, ParseError> {
@@ -2308,6 +2440,7 @@ fn parse_repeat(v: &Value) -> Result<Step, ParseError> {
         field: "repeat".into(),
         reason: "expected a mapping".into(),
     })?;
+    reject_unknown_keys(map, "repeat", "repeat", REPEAT_KEYS, &[])?;
     let commands_val = map
         .get(Value::String("commands".into()))
         .ok_or_else(|| ParseError::MissingField("repeat.commands".into()))?;
@@ -2349,42 +2482,8 @@ fn parse_repeat(v: &Value) -> Result<Step, ParseError> {
                 Value::String(s) => RepeatMode::While {
                     condition_expr: s.clone(),
                 },
-                Value::Mapping(while_map) => {
-                    let has_visible = while_map.get(Value::String("visible".into())).is_some();
-                    let has_not_visible =
-                        while_map.get(Value::String("notVisible".into())).is_some();
-                    match (has_visible, has_not_visible) {
-                        (true, true) => return Err(ParseError::InvalidValue {
-                            field: "repeat.while".into(),
-                            reason: "mapping form must contain exactly one of `visible` or `notVisible`, got both".into(),
-                        }),
-                        (false, false) => return Err(ParseError::InvalidValue {
-                            field: "repeat.while".into(),
-                            reason: "mapping form must contain `visible: <selector>` or `notVisible: <selector>`".into(),
-                        }),
-                        (true, false) => {
-                            let visible = while_map.get(Value::String("visible".into())).expect("checked");
-                            let selector = visible_to_selector(visible).map_err(|e| match e {
-                                ParseError::InvalidValue { field, reason } => ParseError::InvalidValue {
-                                    field: format!("repeat.while.visible.{field}"),
-                                    reason,
-                                },
-                                other => other,
-                            })?;
-                            RepeatMode::WhileVisible { selector }
-                        }
-                        (false, true) => {
-                            let not_visible = while_map.get(Value::String("notVisible".into())).expect("checked");
-                            let selector = visible_to_selector(not_visible).map_err(|e| match e {
-                                ParseError::InvalidValue { field, reason } => ParseError::InvalidValue {
-                                    field: format!("repeat.while.notVisible.{field}"),
-                                    reason,
-                                },
-                                other => other,
-                            })?;
-                            RepeatMode::WhileNotVisible { selector }
-                        }
-                    }
+                Value::Mapping(_) => {
+                    RepeatMode::WhileCondition(Box::new(parse_condition(w, "repeat.while")?))
                 }
                 other => {
                     return Err(ParseError::InvalidValue {
@@ -2397,7 +2496,11 @@ fn parse_repeat(v: &Value) -> Result<Step, ParseError> {
             }
         }
     };
-    Ok(Step::Repeat { mode, commands })
+    Ok(Step::Repeat {
+        mode,
+        commands,
+        opts: parse_block_options(map, "repeat")?,
+    })
 }
 
 // `retry: { maxRetries, commands }`.
@@ -3299,17 +3402,19 @@ fn parse_flow_file_body(abs: &Path, stack: &mut Vec<PathBuf>) -> Result<Flow, Pa
             // own base dir into `flow_b`'s conditional paths).
             Step::RunFlowConditional {
                 file,
-                when_visible,
-                when_not_visible,
+                when,
                 as_name,
+                env,
+                opts,
             } => {
                 let resolved = dir.join(&file);
                 let resolved_str = resolved.to_string_lossy().to_string();
                 expanded.push(Step::RunFlowConditional {
                     file: resolved_str,
-                    when_visible,
-                    when_not_visible,
+                    when,
                     as_name,
+                    env,
+                    opts,
                 });
             }
             other => expanded.push(other),

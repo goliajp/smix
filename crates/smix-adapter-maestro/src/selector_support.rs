@@ -334,18 +334,9 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
             selector,
         )],
         Step::ScrollUntilVisible { selector, .. } => vec![(Slot::ScrollTarget, selector)],
-        Step::RunFlowInline {
-            when_visible,
-            when_not_visible,
-            ..
-        }
-        | Step::RunFlowConditional {
-            when_visible,
-            when_not_visible,
-            ..
-        } => when_visible
+        Step::RunFlowInline { when, .. } | Step::RunFlowConditional { when, .. } => when
             .iter()
-            .chain(when_not_visible.iter())
+            .flat_map(|c| c.visible.iter().chain(c.not_visible.iter()))
             .map(|s| (Slot::RunFlowGate, s))
             .collect(),
         Step::TakeScreenshot { annotations, .. } => annotations

@@ -29,7 +29,7 @@
 //! ergonomics. A blanket impl forwards every method to the
 //! corresponding [`smix_sdk::App`] method 1:1.
 
-use crate::{Flow, ParseError, RepeatMode, Step, parse_flow_file};
+use crate::{Flow, FlowCondition, ParseError, RepeatMode, Step, parse_flow_file};
 
 /// Safety valve for `repeat.while: <expr>` loops. The output store is
 /// read-only during a flow, so an expression-driven repeat whose
@@ -181,6 +181,10 @@ enum Stillness {
 /// substitute capturing recorders for unit isolation.
 #[async_trait]
 pub trait AppLike: Send + Sync {
+    /// The platform of the device being driven — what `when.platform`
+    /// is compared against. Not async: the driver was chosen when the
+    /// app was built, and asking the device would answer the same thing.
+    fn platform(&self) -> smix_driver::Platform;
     /// Tap an element matched by selector. Mirrors [`App::tap`].
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
     /// Route tap via SDK [`App::tap_xcui`] (swift `/tap-by-id` →
@@ -464,6 +468,9 @@ pub trait AppLike: Send + Sync {
 
 #[async_trait]
 impl AppLike for App {
+    fn platform(&self) -> smix_driver::Platform {
+        self.driver().platform()
+    }
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         // The outcome stops at the AppLike boundary for now. Carrying
         // it into RunStepReport is what puts "what the tap landed on"
@@ -2293,95 +2300,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
                 Ok(RunStepReport::Ok)
             }
-            Step::Repeat { mode, commands } => {
-                match mode {
-                    RepeatMode::Times(n) => {
-                        for _ in 0..*n {
-                            Box::pin(self.run_steps_inner(commands, warnings)).await?;
-                        }
-                    }
-                    RepeatMode::While { condition_expr } => {
-                        let mut iter = 0u32;
-                        loop {
-                            let cond = self.eval_expr_or_driver(condition_expr)?;
-                            if !cond.is_truthy() {
-                                break;
-                            }
-                            Box::pin(self.run_steps_inner(commands, warnings)).await?;
-                            iter += 1;
-                            if iter >= MAX_REPEAT_ITERATIONS {
-                                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
-                                    code: Some(FailureCode::DriverError),
-                                    message: format!(
-                                        "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — condition `{condition_expr}` never became falsy; it has to depend on something that changes between iterations (of the stores it can read, only `output` changes, and only `extractWithAI` writes it)"
-                                    ),
-                                    suggestions: vec![
-                                        "Convert to `repeat: { times: N }` with a known bound"
-                                            .to_string(),
-                                    ],
-                                    ..Default::default()
-                                })));
-                            }
-                        }
-                    }
-                    RepeatMode::WhileVisible { selector } => {
-                        let mut iter = 0u32;
-                        loop {
-                            // Visible iff find returns Ok(true). `find`
-                            // maps to the driver's `find` route and
-                            // returns a bool rather than raising
-                            // ElementNotFound — exactly the truthy
-                            // probe this loop needs.
-                            let visible = self.app.find(selector).await.unwrap_or(false);
-                            if !visible {
-                                break;
-                            }
-                            Box::pin(self.run_steps_inner(commands, warnings)).await?;
-                            iter += 1;
-                            if iter >= MAX_REPEAT_ITERATIONS {
-                                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
-                                    code: Some(FailureCode::DriverError),
-                                    message: format!(
-                                        "repeat.while.visible: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — selector `{}` stayed visible; expected the loop body to hide / dismiss it eventually",
-                                        smix_sdk::describe_selector(selector)
-                                    ),
-                                    suggestions: vec![
-                                        "Convert to `repeat: { times: N }` with a known bound, or ensure the body dismisses the watched element".to_string(),
-                                    ],
-                                    ..Default::default()
-                                })));
-                            }
-                        }
-                    }
-                    RepeatMode::WhileNotVisible { selector } => {
-                        let mut iter = 0u32;
-                        loop {
-                            // Loop continues while element is NOT
-                            // visible; exits once it appears. Mirrors the
-                            // `WhileVisible` arm but inverts the truthy test.
-                            let visible = self.app.find(selector).await.unwrap_or(false);
-                            if visible {
-                                break;
-                            }
-                            Box::pin(self.run_steps_inner(commands, warnings)).await?;
-                            iter += 1;
-                            if iter >= MAX_REPEAT_ITERATIONS {
-                                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
-                                    code: Some(FailureCode::DriverError),
-                                    message: format!(
-                                        "repeat.while.notVisible: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — selector `{}` never became visible; expected the loop body to make it appear eventually",
-                                        smix_sdk::describe_selector(selector)
-                                    ),
-                                    suggestions: vec![
-                                        "Convert to `repeat: { times: N }` with a known bound, or ensure the body triggers the watched element to appear".to_string(),
-                                    ],
-                                    ..Default::default()
-                                })));
-                            }
-                        }
-                    }
-                }
-                Ok(RunStepReport::Ok)
+            Step::Repeat {
+                mode,
+                commands,
+                opts,
+            } => {
+                let result = Box::pin(self.run_repeat(mode, commands, warnings)).await;
+                block_outcome("repeat", opts, result.map(|()| RunStepReport::Ok))
             }
             Step::Retry {
                 max_retries,
@@ -2674,135 +2599,233 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::RunFlow(rel) => self.expand_subflow(rel, warnings).await,
             Step::RunFlowInline {
-                when_visible,
-                when_not_visible,
+                when,
                 steps,
+                env,
+                opts,
             } => {
-                // Inline-commands form. Same visibility gate as
-                // RunFlowConditional, but the body is the literal step
-                // list (no child file lookup). Mirrors maestro yaml
-                // `runFlow: { when: { visible }, commands: [...] }`.
-                //
-                // The visibility predicate goes through
-                // `check_selector_visible`, which fires OCR when the
-                // selector contains OcrText anywhere. Using
-                // `self.app.find(sel)` instead would route through the
-                // tree-only resolver, where `Selector::OcrText` is
-                // silently dropped (compile returns false): a
-                // `when.visible` with `fallback: [text, ocrText]`
-                // under a degraded a11y tree (RN Fabric on iOS 26.5)
-                // would return false and skip the whole conditional
-                // body with no signal — which surfaces downstream as a
-                // verb appearing to "silently no-op" when in fact the
-                // conditional was never entered.
-                //
-                // `when.notVisible` is the inverse gate, for the
-                // idempotency pattern: only enter the ceremony if the
-                // target state hasn't been reached yet.
-                let (should_run, gate_reason) = self
-                    .evaluate_run_flow_gate(when_visible.as_ref(), when_not_visible.as_ref())
-                    .await;
-                if should_run {
-                    Box::pin(self.run_steps_inner(steps, warnings)).await?;
-                    Ok(RunStepReport::Ok)
-                } else {
+                // The condition goes through `evaluate_condition`, whose
+                // visibility checks fire OCR when the selector contains
+                // OcrText anywhere; a tree-only `App::find` would drop
+                // those subs and skip the body with no signal under a
+                // degraded a11y tree (RN Fabric on iOS 26.5).
+                let (holds, gate) = self.evaluate_optional_condition(when.as_ref()).await?;
+                if !holds {
                     let reason = format!(
-                        "runFlow {}; skipped inline body ({} step{})",
-                        gate_reason,
+                        "runFlow{} {gate}; skipped inline body ({} step{})",
+                        label_suffix(opts),
                         steps.len(),
                         if steps.len() == 1 { "" } else { "s" }
                     );
-                    Ok(RunStepReport::Skipped { reason })
+                    return Ok(RunStepReport::Skipped { reason });
                 }
+                let outer = self.enter_env(env)?;
+                let result = Box::pin(self.run_steps_inner(steps, warnings)).await;
+                self.leave_env(outer);
+                block_outcome("runFlow", opts, result.map(|()| RunStepReport::Ok))
             }
             Step::RunFlowConditional {
                 file,
-                when_visible,
-                when_not_visible,
+                when,
                 as_name,
+                env,
+                opts,
             } => {
-                // Same OCR-aware gate as RunFlowInline.
-                let (should_run, gate_reason) = self
-                    .evaluate_run_flow_gate(when_visible.as_ref(), when_not_visible.as_ref())
-                    .await;
-                if should_run {
-                    let result = self.expand_subflow(file, warnings).await?;
-                    // `as: <name>` outputs alias capture. After the
-                    // subflow runs (which conventionally ends with a
-                    // copyTextFrom that wrote to the device pasteboard), read
-                    // the clipboard and write it into the parent's outputs
-                    // map under the alias. Mirrors maestro `runFlow.as: name`
-                    // capture: caller can then reference ${output.name}.
-                    if let Some(name) = as_name {
-                        match self.app.get_clipboard().await {
-                            Ok(captured) => {
-                                self.output
-                                    .insert(name.clone(), crate::ExprValue::String(captured));
-                            }
-                            Err(e) => {
-                                warnings.push(format!(
-                                    "runFlow.as=`{name}`: clipboard read failed ({}); output[{name}] left unset",
-                                    e.message
-                                ));
-                            }
+                let (holds, gate) = self.evaluate_optional_condition(when.as_ref()).await?;
+                if !holds {
+                    let reason = format!("runFlow{} {gate}; skipped subflow {file}", label_suffix(opts));
+                    return Ok(RunStepReport::Skipped { reason });
+                }
+                let outer = self.enter_env(env)?;
+                let result = self.expand_subflow(file, warnings).await;
+                self.leave_env(outer);
+                let result = block_outcome("runFlow", opts, result)?;
+                // `as: <name>` outputs alias capture. After the
+                // subflow runs (which conventionally ends with a
+                // copyTextFrom that wrote to the device pasteboard), read
+                // the clipboard and write it into the parent's outputs
+                // map under the alias. Mirrors maestro `runFlow.as: name`
+                // capture: caller can then reference ${output.name}.
+                if let Some(name) = as_name {
+                    match self.app.get_clipboard().await {
+                        Ok(captured) => {
+                            self.output
+                                .insert(name.clone(), crate::ExprValue::String(captured));
+                        }
+                        Err(e) => {
+                            warnings.push(format!(
+                                "runFlow.as=`{name}`: clipboard read failed ({}); output[{name}] left unset",
+                                e.message
+                            ));
                         }
                     }
-                    Ok(result)
-                } else {
-                    let reason = format!("runFlow {}; skipped subflow {file}", gate_reason);
-                    Ok(RunStepReport::Skipped { reason })
                 }
+                Ok(result)
             }
         }
     }
 
-    /// Evaluate a runFlow gate.
-    ///
-    /// Returns `(should_run, reason)` where `reason` is a human-readable
-    /// description of the outcome:
-    /// - No gate: `should_run=true`, reason `unconditional`.
-    /// - `when.visible` present + selector visible: `should_run=true`.
-    ///   The subflow proceeds and the reason is never surfaced.
-    /// - `when.visible` present + selector NOT visible: `should_run=false`,
-    ///   reason names the selector's describe form so consumers see
-    ///   exactly WHAT was checked and know to grep OCR logs or bump
-    ///   settle-wait.
-    /// - `when.notVisible` present: symmetric to above with inverted
-    ///   sense.
-    ///
-    /// Visibility check goes through `check_selector_visible`, which
-    /// fires OCR (`App::find_by_text_ocr`) when the selector contains
-    /// `OcrText` anywhere. A tree-only `App::find` would silently drop
-    /// OCR sub-selectors, which misfires the gate under an RN 0.86
-    /// Fabric a11y drop.
-    ///
-    /// Any driver error is treated as "not visible": on predicate
-    /// ambiguity, skipping is the caller-safe default.
-    async fn evaluate_run_flow_gate(
+    async fn run_repeat(
         &mut self,
-        when_visible: Option<&Selector>,
-        when_not_visible: Option<&Selector>,
-    ) -> (bool, String) {
-        if let Some(sel) = when_visible {
-            let visible = self.check_selector_visible(sel).await.unwrap_or(false);
-            let reason = format!(
-                "when.visible={} ({})",
-                visible,
-                smix_sdk::describe_selector(sel)
-            );
-            return (visible, reason);
+        mode: &RepeatMode,
+        commands: &[Step],
+        warnings: &mut Vec<String>,
+    ) -> Result<(), RunError> {
+        match mode {
+            RepeatMode::Times(n) => {
+                for _ in 0..*n {
+                    Box::pin(self.run_steps_inner(commands, warnings)).await?;
+                }
+            }
+            RepeatMode::While { condition_expr } => {
+                let mut iter = 0u32;
+                loop {
+                    let cond = self.eval_expr_or_driver(condition_expr)?;
+                    if !cond.is_truthy() {
+                        break;
+                    }
+                    Box::pin(self.run_steps_inner(commands, warnings)).await?;
+                    iter += 1;
+                    if iter >= MAX_REPEAT_ITERATIONS {
+                        return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                            code: Some(FailureCode::DriverError),
+                            message: format!(
+                                "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — condition `{condition_expr}` never became falsy; it has to depend on something that changes between iterations (of the stores it can read, only `output` changes, and only `extractWithAI` writes it)"
+                            ),
+                            suggestions: vec![
+                                "Convert to `repeat: { times: N }` with a known bound".to_string(),
+                            ],
+                            ..Default::default()
+                        })));
+                    }
+                }
+            }
+            RepeatMode::WhileCondition(c) => {
+                let mut iter = 0u32;
+                loop {
+                    let (holds, checked) = self.evaluate_condition(c).await?;
+                    if !holds {
+                        break;
+                    }
+                    Box::pin(self.run_steps_inner(commands, warnings)).await?;
+                    iter += 1;
+                    if iter >= MAX_REPEAT_ITERATIONS {
+                        return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                            code: Some(FailureCode::DriverError),
+                            message: format!(
+                                "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — the condition still held after the last pass ({checked}); the body has to change what it checks"
+                            ),
+                            suggestions: vec![
+                                "Convert to `repeat: { times: N }` with a known bound, or make the body change what the condition checks".to_string(),
+                            ],
+                            ..Default::default()
+                        })));
+                    }
+                }
+            }
         }
-        if let Some(sel) = when_not_visible {
-            let visible = self.check_selector_visible(sel).await.unwrap_or(false);
-            let reason = format!(
-                "when.notVisible visible={} ({})",
-                visible,
-                smix_sdk::describe_selector(sel)
-            );
-            // notVisible fires when the selector is NOT visible.
-            return (!visible, reason);
+        Ok(())
+    }
+
+    /// Scope a block's `env` over the caller's: every value is expanded
+    /// against the caller's scope first (so `B: ${A}` in the same block
+    /// reads the caller's `A`), then the names are laid over it. Returns
+    /// the caller's scope for [`Self::leave_env`], or `None` when the
+    /// block declares nothing.
+    fn enter_env(
+        &mut self,
+        env: &[(String, String)],
+    ) -> Result<Option<std::collections::BTreeMap<String, String>>, RunError> {
+        if env.is_empty() {
+            return Ok(None);
         }
-        (true, "unconditional".to_string())
+        let expanded = env
+            .iter()
+            .map(|(k, v)| Ok((k.clone(), self.expand_template(v)?)))
+            .collect::<Result<Vec<_>, RunError>>()?;
+        let outer = self.env.clone();
+        self.env.extend(expanded);
+        Ok(Some(outer))
+    }
+
+    fn leave_env(&mut self, outer: Option<std::collections::BTreeMap<String, String>>) {
+        if let Some(outer) = outer {
+            self.env = outer;
+        }
+    }
+
+    async fn evaluate_optional_condition(
+        &mut self,
+        when: Option<&FlowCondition>,
+    ) -> Result<(bool, String), RunError> {
+        match when {
+            Some(c) => self.evaluate_condition(c).await,
+            None => Ok((true, "unconditional".to_string())),
+        }
+    }
+
+    /// Whether a condition holds, and a reason naming every part that
+    /// was checked.
+    ///
+    /// maestro's order (`Orchestra.evaluateCondition`): platform, `true`,
+    /// visible, notVisible; the first that fails decides, so a block for
+    /// the other platform never looks at the screen.
+    ///
+    /// Asymmetry kept from before conditions had more than one part: a
+    /// driver error while checking visibility reads as "not visible",
+    /// while a broken `true:` expression fails the step. The first is an
+    /// ambiguous screen; the second is a mistake in the flow.
+    async fn evaluate_condition(&mut self, c: &FlowCondition) -> Result<(bool, String), RunError> {
+        let mut parts: Vec<String> = Vec::new();
+        let holds = 'check: {
+            if let Some(p) = c.platform {
+                let device = self.app.platform();
+                let ok = p.matches(device);
+                parts.push(format!(
+                    "when.platform={} (device is {})",
+                    p.name(),
+                    crate::ConditionPlatform::name_of(device)
+                ));
+                if !ok {
+                    break 'check false;
+                }
+            }
+            if let Some(script) = &c.script {
+                let expanded = self.expand_template(script)?;
+                let ok = script_condition_holds(&expanded);
+                parts.push(format!("when.true=`{script}` → `{expanded}` ({ok})"));
+                if !ok {
+                    break 'check false;
+                }
+            }
+            if let Some(sel) = &c.visible {
+                let visible = self.check_selector_visible(sel).await.unwrap_or(false);
+                parts.push(format!(
+                    "when.visible={visible} ({})",
+                    smix_sdk::describe_selector(sel)
+                ));
+                if !visible {
+                    break 'check false;
+                }
+            }
+            if let Some(sel) = &c.not_visible {
+                let visible = self.check_selector_visible(sel).await.unwrap_or(false);
+                parts.push(format!(
+                    "when.notVisible visible={visible} ({})",
+                    smix_sdk::describe_selector(sel)
+                ));
+                if visible {
+                    break 'check false;
+                }
+            }
+            true
+        };
+        let checked = parts.join("; ");
+        let reason = match &c.label {
+            Some(label) => format!("`{label}` ({checked})"),
+            None => checked,
+        };
+        Ok((holds, reason))
     }
 
     /// Dispatch [`Step::Fixture`].
@@ -4124,4 +4147,77 @@ mod step_attribution_tests {
         let err = attribute_to_step(RunError::UnknownKey("nope".into()), 2, &step, "pressKey");
         assert!(matches!(err, RunError::UnknownKey(k) if k == "nope"));
     }
+}
+
+/// `" \`label\`"` for a labelled block, empty otherwise.
+fn label_suffix(opts: &crate::BlockOptions) -> String {
+    opts.label
+        .as_ref()
+        .map(|l| format!(" `{l}`"))
+        .unwrap_or_default()
+}
+
+/// A block's result under its `optional:`. An optional block that
+/// failed on what it checked is reported as skipped with the failure's
+/// own words, and the flow goes on; a failure that says nothing about
+/// the block — the device or runner gone, the flow itself malformed —
+/// fails the step either way.
+fn block_outcome(
+    verb: &str,
+    opts: &crate::BlockOptions,
+    result: Result<RunStepReport, RunError>,
+) -> Result<RunStepReport, RunError> {
+    match result {
+        Err(RunError::Sdk(f)) if opts.optional && failure_is_a_verdict(f.code) => {
+            let target = f
+                .selector
+                .as_ref()
+                .map(|sel| format!(" [{}]", smix_sdk::describe_selector(sel)))
+                .unwrap_or_default();
+            Ok(RunStepReport::Skipped {
+                reason: format!(
+                    "optional {verb}{} failed and was skipped: {}{target}",
+                    label_suffix(opts),
+                    f.message
+                ),
+            })
+        }
+        other => other,
+    }
+}
+
+/// Whether a failure is a judgement about the screen (which `optional`
+/// exists to tolerate) rather than about the machinery.
+fn failure_is_a_verdict(code: FailureCode) -> bool {
+    match code {
+        FailureCode::ElementNotFound
+        | FailureCode::NotVisible
+        | FailureCode::NotEnabled
+        | FailureCode::Ambiguous
+        | FailureCode::Timeout
+        | FailureCode::AssertionFailed
+        | FailureCode::TapMissed
+        | FailureCode::CoordinateSpaceMismatch => true,
+        FailureCode::AppNotRunning
+        | FailureCode::SimulatorNotBooted
+        | FailureCode::DriverError
+        | FailureCode::CaptureBackpressure => false,
+        // `FailureCode` is `#[non_exhaustive]`. A code added later has
+        // not been judged to be about the screen, so it fails the step.
+        _ => false,
+    }
+}
+
+/// maestro's reading of an expanded `when.true:` (`Orchestra.kt`
+/// `evaluateCondition`): false when blank, `false` in any case,
+/// `undefined`, `null`, or a number equal to zero; true otherwise.
+/// Deliberately not [`crate::ExprValue::is_truthy`], which reads the
+/// string `"false"` as true.
+fn script_condition_holds(expanded: &str) -> bool {
+    let v = expanded.trim();
+    !(v.is_empty()
+        || v.eq_ignore_ascii_case("false")
+        || v == "undefined"
+        || v == "null"
+        || v.parse::<f64>().is_ok_and(|n| n == 0.0))
 }

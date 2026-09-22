@@ -132,6 +132,11 @@ impl MockApp {
 
 #[async_trait::async_trait]
 impl AppLike for MockApp {
+    // Android, the platform `a_configured_launch_activity_reaches_the_device`
+    // resolves against below: one mock, one platform.
+    fn platform(&self) -> smix_driver::Platform {
+        smix_driver::Platform::Android
+    }
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         self.record(MockCall::Tap(selector.clone()));
         Ok(())

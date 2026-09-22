@@ -734,6 +734,15 @@ fn run_error_to_exit(e: &RunError) -> u8 {
     }
 }
 
+/// ` "label"` for a labelled block — maestro reports a labelled command
+/// by its label.
+fn block_label(opts: &crate::BlockOptions) -> String {
+    opts.label
+        .as_ref()
+        .map(|l| format!(" \"{l}\""))
+        .unwrap_or_default()
+}
+
 /// A step's one-line description, richer than its verb.
 ///
 /// `runtime::run_steps` writes it as each step starts; the debug record
@@ -774,18 +783,20 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         }
         Step::PressKey(k) => format!("pressKey {k}"),
         Step::RunFlow(p) => format!("runFlow {p}"),
-        Step::RunFlowConditional { file, .. } => format!("runFlow {file} (conditional)"),
+        Step::RunFlowConditional { file, when, opts, .. } => format!(
+            "runFlow {file}{}{}",
+            if when.is_some() { " (conditional)" } else { "" },
+            block_label(opts)
+        ),
         Step::RunFlowInline {
-            steps,
-            when_visible,
-            when_not_visible,
+            steps, when, opts, ..
         } => {
-            let cond = if when_visible.is_some() || when_not_visible.is_some() {
+            let cond = if when.is_some() {
                 " (conditional)"
             } else {
                 ""
             };
-            format!("runFlow inline ({} cmds){cond}", steps.len())
+            format!("runFlow inline ({} cmds){cond}{}", steps.len(), block_label(opts))
         }
         Step::ScrollUntilVisible { direction, .. } => {
             format!("scrollUntilVisible ({direction})")
@@ -838,16 +849,18 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         Step::DoubleTapOn { .. } => "doubleTapOn".into(),
         Step::LongPressOn { duration_ms, .. } => format!("longPressOn ({duration_ms}ms)"),
         Step::AssertTrue { .. } => "assertTrue".into(),
-        Step::Repeat { mode, commands } => match mode {
-            crate::RepeatMode::Times(n) => format!("repeat × {n} ({} cmds)", commands.len()),
-            crate::RepeatMode::While { .. } => format!("repeat while ({} cmds)", commands.len()),
-            crate::RepeatMode::WhileVisible { .. } => {
-                format!("repeat while visible ({} cmds)", commands.len())
-            }
-            crate::RepeatMode::WhileNotVisible { .. } => {
-                format!("repeat while notVisible ({} cmds)", commands.len())
-            }
-        },
+        Step::Repeat {
+            mode,
+            commands,
+            opts,
+        } => {
+            let how = match mode {
+                crate::RepeatMode::Times(n) => format!("× {n}"),
+                crate::RepeatMode::While { .. } => "while".to_string(),
+                crate::RepeatMode::WhileCondition(_) => "while condition".to_string(),
+            };
+            format!("repeat {how} ({} cmds){}", commands.len(), block_label(opts))
+        }
         Step::Retry {
             max_retries,
             commands,

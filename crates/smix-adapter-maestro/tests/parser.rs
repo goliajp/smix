@@ -109,9 +109,10 @@ fn parse_ensure_login_with_runflow_when_clause() {
             // runFlow: { when: { visible: "Log in" }, file: ../subflows/login.yaml }
             Step::RunFlowConditional {
                 file: "../subflows/login.yaml".to_string(),
-                when_visible: Some(text_selector(Pattern::Text("Log in".to_string()))),
-                when_not_visible: None,
+                when: Some(visible_only(text_selector(Pattern::Text("Log in".to_string())))),
                 as_name: None,
+                env: Vec::new(),
+                opts: Default::default(),
             },
             // extendedWaitUntil: { visible: { id: "btn-open-menu" }, timeout: 30000 }
             Step::ExtendedWaitUntil {
@@ -147,8 +148,9 @@ fn parse_run_flow_inline_commands_with_when() {
         app: None,
         launch_activity: None,
         steps: vec![Step::RunFlowInline {
-            when_visible: Some(text_selector(Pattern::Text("Open in".to_string()))),
-            when_not_visible: None,
+            when: Some(visible_only(text_selector(Pattern::Text("Open in".to_string())))),
+            env: Vec::new(),
+            opts: Default::default(),
             steps: vec![
                 Step::TapOn {
                     selector: text_selector(Pattern::Text("Open".to_string())),
@@ -176,8 +178,9 @@ fn parse_run_flow_inline_commands_no_when() {
     assert_eq!(
         flow.steps,
         vec![Step::RunFlowInline {
-            when_visible: None,
-            when_not_visible: None,
+            when: None,
+            env: Vec::new(),
+            opts: Default::default(),
             steps: vec![Step::TapOn {
                 selector: text_selector(Pattern::Text("Hello".to_string())),
                 optional: false,
@@ -1528,9 +1531,14 @@ fn parse_run_flow_conditional_when_not_visible() {
     match &flow.steps[0] {
         Step::RunFlowConditional {
             file,
-            when_visible: None,
-            when_not_visible: Some(sel),
+            when:
+                Some(smix_adapter_maestro::FlowCondition {
+                    visible: None,
+                    not_visible: Some(sel),
+                    ..
+                }),
             as_name: None,
+            ..
         } => {
             assert!(file.ends_with("enter-qa.yaml"));
             match sel {
@@ -1560,34 +1568,20 @@ fn parse_run_flow_inline_when_not_visible() {
     let flow = parse_flow_yaml(yaml).expect("parse when.notVisible + inline");
     match &flow.steps[0] {
         Step::RunFlowInline {
-            when_visible: None,
-            when_not_visible: Some(Selector::Id { id, .. }),
+            when:
+                Some(smix_adapter_maestro::FlowCondition {
+                    visible: None,
+                    not_visible: Some(Selector::Id { id, .. }),
+                    ..
+                }),
             steps,
+            ..
         } => {
             assert_eq!(id, "qa-bubble");
             assert_eq!(steps.len(), 1);
         }
         other => panic!("expected RunFlowInline with when_not_visible, got: {other:?}"),
     }
-}
-
-#[test]
-fn parse_run_flow_when_visible_and_not_visible_together_rejects() {
-    let yaml = concat!(
-        "appId: com.t.r\n",
-        "---\n",
-        "- runFlow:\n",
-        "    when:\n",
-        "      visible: 'A'\n",
-        "      notVisible: 'B'\n",
-        "    file: subflow.yaml\n",
-    );
-    let err = parse_flow_yaml(yaml).expect_err("both visible + notVisible must error");
-    let msg = format!("{err:?}");
-    assert!(
-        msg.contains("mutually exclusive"),
-        "err msg should say mutually exclusive: {msg}"
-    );
 }
 
 // Regex-OR `A|B` auto-lift splits per alternative on OCR tier.
@@ -1914,4 +1908,220 @@ fn swipe_direction_form_desugars_to_finger_coords() {
             .is_err(),
         "unknown direction must be rejected"
     );
+}
+
+// ---------------------------------------------------------------------
+// Conditions: `runFlow.when` and `repeat.while` share one shape, and the
+// mappings around them name every key they read. A key nobody reads is
+// a parse error, not a silently unconditional block (insight 2026-09-22:
+// `when: { platform: Android }` ran on iOS).
+// ---------------------------------------------------------------------
+
+use smix_adapter_maestro::{BlockOptions, CONDITION_KEYS, ConditionPlatform, FlowCondition, RepeatMode};
+
+fn visible_only(sel: Selector) -> FlowCondition {
+    FlowCondition {
+        platform: None,
+        visible: Some(sel),
+        not_visible: None,
+        script: None,
+        label: None,
+    }
+}
+
+fn only_step(yaml_body: &str) -> Step {
+    let yaml = format!("appId: com.t.r\n---\n{yaml_body}");
+    let mut flow = parse_flow_yaml(&yaml).unwrap_or_else(|e| panic!("parse {yaml_body}: {e:?}"));
+    assert_eq!(flow.steps.len(), 1, "{yaml_body}");
+    flow.steps.remove(0)
+}
+
+fn parse_err(yaml_body: &str) -> (String, String) {
+    let yaml = format!("appId: com.t.r\n---\n{yaml_body}");
+    match parse_flow_yaml(&yaml) {
+        Err(ParseError::InvalidValue { field, reason }) => (field, reason),
+        other => panic!("expected InvalidValue for {yaml_body}, got {other:?}"),
+    }
+}
+
+fn inline_when(step: Step) -> FlowCondition {
+    match step {
+        Step::RunFlowInline { when: Some(c), .. } => c,
+        other => panic!("expected RunFlowInline with a condition, got {other:?}"),
+    }
+}
+
+#[test]
+fn condition_platform_is_read_case_insensitively() {
+    for (spelling, want) in [
+        ("Android", ConditionPlatform::Android),
+        ("android", ConditionPlatform::Android),
+        ("ANDROID", ConditionPlatform::Android),
+        ("iOS", ConditionPlatform::Ios),
+        ("ios", ConditionPlatform::Ios),
+        ("Web", ConditionPlatform::Web),
+    ] {
+        let c = inline_when(only_step(&format!(
+            "- runFlow:\n    when:\n      platform: {spelling}\n    commands:\n      - tapOn: x\n"
+        )));
+        assert_eq!(c.platform, Some(want), "{spelling}");
+    }
+}
+
+#[test]
+fn condition_platform_outside_the_three_is_refused_by_name() {
+    let (field, reason) = parse_err(
+        "- runFlow:\n    when:\n      platform: Linux\n    commands:\n      - tapOn: x\n",
+    );
+    assert_eq!(field, "runFlow.when.platform");
+    assert!(reason.contains("Android, iOS, Web"), "{reason}");
+}
+
+#[test]
+fn condition_true_is_read_in_all_three_yaml_spellings() {
+    for (spelling, want) in [
+        ("true: ${output.x == 'y'}", "${output.x == 'y'}"),
+        ("\"true\": false", "false"),
+        ("true: true", "true"),
+    ] {
+        let c = inline_when(only_step(&format!(
+            "- runFlow:\n    when:\n      {spelling}\n    commands:\n      - tapOn: x\n"
+        )));
+        assert_eq!(c.script.as_deref(), Some(want), "{spelling}");
+    }
+}
+
+#[test]
+fn condition_keys_combine_instead_of_excluding_each_other() {
+    let c = inline_when(only_step(
+        "- runFlow:\n    when:\n      platform: Android\n      visible: Allow\n    commands:\n      - tapOn: x\n",
+    ));
+    assert_eq!(c.platform, Some(ConditionPlatform::Android));
+    assert_eq!(c.visible, Some(text_selector(Pattern::Text("Allow".into()))));
+    let c = inline_when(only_step(
+        "- runFlow:\n    when:\n      visible: a\n      notVisible: b\n    commands:\n      - tapOn: x\n",
+    ));
+    assert_eq!(c.visible, Some(text_selector(Pattern::Text("a".into()))));
+    assert_eq!(c.not_visible, Some(text_selector(Pattern::Text("b".into()))));
+}
+
+#[test]
+fn condition_unknown_key_is_refused_listing_the_known_ones() {
+    let (field, reason) = parse_err(
+        "- runFlow:\n    when:\n      platfrom: Android\n    commands:\n      - tapOn: x\n",
+    );
+    assert_eq!(field, "runFlow.when");
+    assert!(reason.contains("`platfrom`"), "{reason}");
+    for k in CONDITION_KEYS {
+        assert!(reason.contains(k), "{reason} should list {k}");
+    }
+}
+
+#[test]
+fn condition_optional_is_refused_saying_maestro_does_not_read_it_either() {
+    let (field, reason) = parse_err(
+        "- runFlow:\n    when:\n      optional: true\n      visible: a\n    commands:\n      - tapOn: x\n",
+    );
+    assert_eq!(field, "runFlow.when");
+    assert!(reason.contains("`optional`") && reason.contains("maestro"), "{reason}");
+}
+
+#[test]
+fn condition_with_nothing_to_check_is_refused() {
+    for body in ["when: {}", "when:\n      label: x"] {
+        let (field, reason) = parse_err(&format!(
+            "- runFlow:\n    {body}\n    commands:\n      - tapOn: x\n"
+        ));
+        assert_eq!(field, "runFlow.when", "{body}");
+        assert!(reason.contains("no condition"), "{body}: {reason}");
+    }
+}
+
+#[test]
+fn condition_non_string_key_is_refused() {
+    let (field, reason) = parse_err(
+        "- runFlow:\n    when:\n      1: x\n    commands:\n      - tapOn: x\n",
+    );
+    assert_eq!(field, "runFlow.when");
+    assert!(reason.contains("`1`"), "{reason}");
+}
+
+#[test]
+fn condition_run_flow_reads_env_label_and_optional() {
+    match only_step(
+        "- runFlow:\n    env:\n      A: '1'\n      B: ${x}\n      C: 3\n    label: dismiss promo\n    optional: true\n    commands:\n      - tapOn: x\n",
+    ) {
+        Step::RunFlowInline { when: None, env, opts, .. } => {
+            assert_eq!(
+                env,
+                vec![("A".into(), "1".into()), ("B".into(), "${x}".into()), ("C".into(), "3".into())]
+            );
+            assert_eq!(opts, BlockOptions { label: Some("dismiss promo".into()), optional: true });
+        }
+        other => panic!("{other:?}"),
+    }
+    match only_step("- runFlow:\n    file: sub.yaml\n    env:\n      A: b\n") {
+        Step::RunFlowConditional { env, when: None, .. } => {
+            assert_eq!(env, vec![("A".into(), "b".into())]);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn condition_run_flow_refuses_what_it_does_not_read() {
+    let (field, reason) = parse_err("- runFlow:\n    fille: sub.yaml\n");
+    assert_eq!(field, "runFlow");
+    assert!(reason.contains("`fille`"), "{reason}");
+    for k in ["file", "commands", "when", "as", "env", "label", "optional"] {
+        assert!(reason.contains(k), "{reason} should list {k}");
+    }
+    let (field, _) = parse_err("- runFlow:\n    file: sub.yaml\n    env:\n      A: [1, 2]\n");
+    assert_eq!(field, "runFlow.env.A");
+    let (field, _) = parse_err("- runFlow:\n    file: sub.yaml\n    optional: maybe\n");
+    assert_eq!(field, "runFlow.optional");
+}
+
+#[test]
+fn condition_repeat_reads_label_optional_and_a_while_condition() {
+    match only_step(
+        "- repeat:\n    while:\n      platform: iOS\n      visible: x\n    label: drain\n    optional: true\n    commands:\n      - tapOn: y\n",
+    ) {
+        Step::Repeat { mode: RepeatMode::WhileCondition(c), opts, .. } => {
+            assert_eq!(c.platform, Some(ConditionPlatform::Ios));
+            assert_eq!(c.visible, Some(text_selector(Pattern::Text("x".into()))));
+            assert_eq!(opts, BlockOptions { label: Some("drain".into()), optional: true });
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn condition_repeat_refuses_unknown_keys_outside_and_inside_while() {
+    let (field, reason) = parse_err("- repeat:\n    tims: 2\n    commands:\n      - tapOn: y\n");
+    assert_eq!(field, "repeat");
+    assert!(reason.contains("`tims`"), "{reason}");
+    let (field, reason) =
+        parse_err("- repeat:\n    while:\n      foo: 1\n    commands:\n      - tapOn: y\n");
+    assert_eq!(field, "repeat.while");
+    assert!(reason.contains("`foo`"), "{reason}");
+}
+
+/// Five: maestro's `YamlCondition` has six fields (`platform`, `visible`,
+/// `notVisible`, `true`, `label`, `optional`), and `optional` never reaches
+/// its `Condition` (`YamlFluentCommand.toCondition`), so smix refuses it.
+#[test]
+fn condition_keys_are_exactly_maestros_five() {
+    assert_eq!(CONDITION_KEYS.len(), 5);
+    for k in ["platform", "visible", "notVisible", "true", "label"] {
+        assert!(CONDITION_KEYS.contains(&k), "{k}");
+    }
+}
+
+#[test]
+fn selector_map_refuses_non_string_keys() {
+    for body in ["- tapOn:\n    id: x\n    true: y\n", "- tapOn:\n    id: x\n    1: y\n"] {
+        let (_, reason) = parse_err(body);
+        assert!(reason.contains("unknown key"), "{body}: {reason}");
+    }
 }
