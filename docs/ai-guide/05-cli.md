@@ -181,6 +181,36 @@ xcrun devicectl device simulate location clear --device <UDID>
 what smix checks is `devicectl`'s own account of what it set against what was
 sent; a disagreement is an error, not a success.
 
+### Letting a device reach a server on this machine
+
+An app under test often has to talk to something running on your machine — a
+stub API, an asset server, a mock gateway. An emulator can reach it at the
+special address `10.0.2.2`; a phone on the cable has no address for it at all.
+
+```bash
+smix sim reverse <DEVICE> 8080            # device dials 127.0.0.1:8080 → this machine's 8080
+smix sim reverse <DEVICE> 8080 --to 3000  # → this machine's 3000 instead
+smix sim reverse <DEVICE> 8080 --remove   # close it
+```
+
+The app dials `127.0.0.1:<port>` on the device and lands here. It works the
+same on an emulator as on a registered phone, so a flow never has to know which
+one it is driving — that is the reason to use it on an emulator too rather than
+teaching the app about `10.0.2.2`.
+
+**What it opens stays open.** It outlives the command, the runner and the flow,
+and goes only when `--remove` names it, when the device is unplugged or shut
+down, or when a teardown closes the record smix keeps of it. That record is the
+device's ledger, the same place a runner and a recording are written down, so a
+route left behind by a session that died is closed by the next `smix lease
+reconcile` rather than lingering until someone notices.
+
+It is Android-only, and the two Apple kinds say why rather than doing nothing:
+a simulator already shares this machine's loopback, so `127.0.0.1:<port>` on it
+is already this machine's port; a physical iPhone has no such channel in that
+direction, so the service has to be on an address the phone can reach over the
+network.
+
 Apple identifiers are normalised to upper case, because `devicectl` will not
 match a lower-case spelling of a UDID it accepts in upper case. adb serials are
 stored and returned verbatim, because `adb` matches them byte for byte.

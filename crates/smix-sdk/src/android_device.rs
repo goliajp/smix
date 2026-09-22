@@ -751,6 +751,29 @@ impl DeviceControl for AndroidDeviceControl {
         Ok(())
     }
 
+    async fn reverse_port(
+        &self,
+        serial: &str,
+        device_port: u16,
+        host_port: u16,
+    ) -> Result<(), DeviceControlError> {
+        self.client
+            .reverse(serial, device_port, host_port)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "reverse"))
+    }
+
+    async fn reverse_port_remove(
+        &self,
+        serial: &str,
+        device_port: u16,
+    ) -> Result<(), DeviceControlError> {
+        self.client
+            .unreverse(serial, device_port)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "reverse --remove"))
+    }
+
     async fn stop_recording(&self) -> Result<(), DeviceControlError> {
         let mut guard = self.recording.lock().await;
         let mut rec = guard.take().ok_or_else(|| {

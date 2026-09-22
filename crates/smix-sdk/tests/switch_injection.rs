@@ -154,6 +154,14 @@ impl DeviceControl for RecordingDevice {
     async fn stop_recording(&self) -> Result<(), DeviceControlError> {
         unimplemented!()
     }
+
+    async fn reverse_port(&self, _: &str, _: u16, _: u16) -> Result<(), DeviceControlError> {
+        unreachable!()
+    }
+
+    async fn reverse_port_remove(&self, _: &str, _: u16) -> Result<(), DeviceControlError> {
+        unreachable!()
+    }
 }
 
 fn app_with_device(device: RecordingDevice) -> App {

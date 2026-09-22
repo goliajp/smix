@@ -211,6 +211,11 @@ pub fn compare(
                         Row::Known(Resource::PortForward {
                             local_port, proc, ..
                         }) => format!("forward :{local_port} pid {}", proc.pid),
+                        Row::Known(Resource::ReversePort {
+                            device_port,
+                            host_port,
+                            ..
+                        }) => format!("reverse :{device_port} -> :{host_port}"),
                         Row::Known(Resource::Supervisor { proc }) => {
                             format!("supervisor pid {}", proc.pid)
                         }
@@ -591,6 +596,71 @@ pub fn record_boot(dir: &LeaseDir, device_id: &str, by_us: bool) -> Result<(), L
     )
 }
 
+/// Record a route the device dials, keyed by the port it dials.
+///
+/// [`add_resource`] replaces a row of the same kind, which is right for
+/// the one-per-device resources it was written for and wrong here: a
+/// device can dial several host services at once, and a second route
+/// must not evict the first. Re-opening the same device port restates
+/// it, because that is what adb does with it.
+pub fn record_reverse(
+    dir: &LeaseDir,
+    device_id: &str,
+    serial: &str,
+    device_port: u16,
+    host_port: u16,
+) -> Result<(), LeaseError> {
+    let now = now_rfc3339();
+    let mut lease = read(dir, device_id)?.unwrap_or_else(|| Lease {
+        device_id: device_id.to_string(),
+        holder: identify_self(),
+        acquired_at: now.clone(),
+        heartbeat_at: now.clone(),
+        resources: Vec::new(),
+    });
+    lease.resources.retain(|row| !names_route(row, device_port));
+    lease.resources.push(Row::Known(Resource::ReversePort {
+        device_port,
+        host_port,
+        serial: serial.to_string(),
+    }));
+    lease.heartbeat_at = now;
+    write(dir, &lease)
+}
+
+/// Forget one route, named by the port the device dials.
+///
+/// Same ending as [`drop_resource_kind`]: a ledger left holding nothing
+/// worth tearing down is removed rather than kept as a husk that reads
+/// like an occupied device.
+pub fn drop_reverse(dir: &LeaseDir, device_id: &str, device_port: u16) -> Result<(), LeaseError> {
+    let Some(mut lease) = read(dir, device_id)? else {
+        return Ok(());
+    };
+    lease.resources.retain(|row| !names_route(row, device_port));
+    let worth_keeping = lease.resources.iter().any(|row| {
+        row.known()
+            .is_none_or(|r| !matches!(r, Resource::Booted { by_us: false }))
+    });
+    if worth_keeping {
+        write(dir, &lease)
+    } else {
+        remove(dir, device_id)
+    }
+}
+
+/// Is this row the route the device dials on `device_port`?
+///
+/// A row nobody can read is never it — the same default every `retain`
+/// in this file takes, for the same reason: dropping what you could not
+/// read is worse than refusing to read it.
+fn names_route(row: &Row, device_port: u16) -> bool {
+    matches!(
+        row.known(),
+        Some(Resource::ReversePort { device_port: p, .. }) if *p == device_port
+    )
+}
+
 /// Write down that this holder answers for a device it did not boot.
 ///
 /// The one row `record_boot` cannot write. `by_us` is about a transition
@@ -753,7 +823,11 @@ pub fn collect_facts(dir: &LeaseDir, device_id: &str) -> Result<Facts, LeaseErro
             // Neither is a claim: it is a statement about who answers for
             // a device, and nothing about it can be probed for liveness.
             | Resource::Booted { .. }
-            | Resource::Claimed { .. } => false,
+            | Resource::Claimed { .. }
+            // A route is a row in the adb server. There is no process
+            // to probe, so it can never make a device look busy — the
+            // same answer `PortForward` gets, for a nearer reason.
+            | Resource::ReversePort { .. } => false,
             },
         });
         Held {
