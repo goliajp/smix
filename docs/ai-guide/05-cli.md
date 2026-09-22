@@ -645,7 +645,8 @@ smix wait-for id:loading-spinner --absent  # wait until it is GONE
 
 smix fill id:form-email-input --text alice@example.com
 smix press-key return                      # positional key name
-smix scroll "text:Row #5000" --direction down
+smix scroll "text:Row #5000" --direction down   # stops when it is wholly in view
+smix scroll "ocrText:Row #5000" --direction down # looks with OCR too
 smix swipe down                            # one gesture; `down` reveals what is below
 smix hide-keyboard
 
@@ -711,9 +712,13 @@ is still there when time runs out. Use it for a spinner or a modal you
 need off the screen before the next step.
 
 **`swipe` is one gesture, `scroll` stops at something.** `smix scroll`
-takes a selector and keeps going until it is visible. `smix swipe` does
-a single swipe and returns. In both, the direction names what you want
-to see — `down` reveals what is below — not which way a finger travels.
+takes a selector and keeps going until that element is **wholly** on
+screen and has stopped moving — the same rule and the same loop
+`scrollUntilVisible` runs, with its defaults (100% visible, 20 s). An
+`ocrText:` selector works: every look reads the tree first, then OCR.
+`smix swipe` does a single swipe and returns. In both, the direction
+names what you want to see — `down` reveals what is below — not which
+way a finger travels.
 
 **The software keyboard's keys are collapsed.** A key per letter plus
 `Next keyboard`, `Dictate`, shift and delete is around sixty nodes that

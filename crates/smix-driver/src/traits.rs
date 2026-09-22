@@ -317,12 +317,12 @@ pub trait Driver: Send + Sync {
     /// Press a named key (Return / Tab / Backspace / etc).
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure>;
 
-    /// Scroll until a selector is visible.
-    async fn scroll(
-        &self,
-        selector: &Selector,
-        direction: SwipeDirection,
-    ) -> Result<(), ExpectationFailure>;
+    /// Whether any of these tree-matched nodes is on screen right now.
+    ///
+    /// Asked by [`crate::scroll_until`] before it trusts a tree match's
+    /// frame. A platform whose tree can hold a stale frame answers from
+    /// a live query; one whose tree is read live answers `true`.
+    async fn confirm_on_screen(&self, matched: &[&A11yNode]) -> bool;
 
     /// One-shot swipe in a direction (no probe loop).
     async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure>;

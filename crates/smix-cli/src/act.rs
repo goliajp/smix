@@ -491,8 +491,9 @@ pub async fn cmd_press_key(key_str: String, port: u16, platform: Platform) -> Re
     Ok(())
 }
 
-/// `smix scroll <selector> --direction <up|down|left|right>` — scroll
-/// until selector becomes visible.
+/// `smix scroll <selector> --direction <up|down|left|right>` — swipe
+/// until the selector's target is wholly in view. `ocrText:` works: the
+/// loop reads the tree and then OCR after every swipe.
 pub async fn cmd_scroll(
     selector_str: String,
     direction_str: String,
@@ -501,14 +502,6 @@ pub async fn cmd_scroll(
 ) -> Result<(), ActError> {
     let selector = parse_selector(&selector_str)
         .map_err(|why| ActError::BadSelector(selector_str.clone(), why))?;
-    if ocr_needle(&selector).is_some() {
-        return Err(ActError::BadSelector(
-            selector_str.clone(),
-            "scrolling needs an element the tree can follow; an OCR frame is where text was one look ago — find it with `smix find ocrText:…` or tap it, then act on \
-             what the tap put on screen"
-                .into(),
-        ));
-    }
     if matches!(selector, Selector::Point { .. }) {
         return Err(ActError::BadSelector(
             selector_str.clone(),
@@ -524,8 +517,13 @@ pub async fn cmd_scroll(
         )
     })?;
     let d = driver_for(platform, port);
-    d.scroll(&selector, direction)
-        .await
+    smix_driver::scroll_until(
+        d.as_ref(),
+        &selector,
+        direction,
+        &smix_driver::ScrollUntil::default(),
+    )
+    .await
         .map_err(|e| ActError::Transport(format!("{e}")))?;
     println!("scrolled {direction_str} to {selector_str}");
     Ok(())

@@ -76,6 +76,18 @@ class MainActivity : Activity() {
             }
         }
 
+        // The way into the scrolling screen, for the same reason as the
+        // Compose button above: a flow has no verb that starts an
+        // activity, so without a control here no flow can reach it.
+        val toScroll = Button(this).apply {
+            text = "Scroll screen"
+            contentDescription = "open-scroll"
+            id = View.generateViewId()
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, ScrollActivity::class.java))
+            }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@MainActivity).apply { text = "smix fixture" })
@@ -84,6 +96,7 @@ class MainActivity : Activity() {
             addView(submit)
             addView(result)
             addView(toCompose)
+            addView(toScroll)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,

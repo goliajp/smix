@@ -73,6 +73,19 @@ All notable changes to the `smix` workspace are documented here. The format foll
   `runFlow` with `env:` ran its subflow without the values and reported
   green.
 
+- **`scrollUntilVisible` reads every key maestro gives it.**
+  `visibilityPercentage` (1-100, default 100), `centerElement`, `timeout`,
+  `label` and `optional` now take effect; until now they were dropped
+  without a word, so a flow asking to stop at 60% got the default and a
+  flow marked `optional` failed. `visibilityPercentage` is taken at its
+  word — maestro divides it with integers, where every value under 100
+  means "any match at all". `speed` and `waitToSettleTimeoutMs` are
+  refused by name: one swipe is a fixed gesture on both runners.
+
+- **`smix scroll` and `smix_scroll` (MCP) take `ocrText:` and fallback
+  chains.** Both refused them because the loop behind them read only the
+  accessibility tree. It does not any more — the refusals went with it.
+
 ### Changed
 
 - **`visible` and `notVisible` in one `when:` combine instead of being
@@ -100,6 +113,35 @@ All notable changes to the `smix` workspace are documented here. The format foll
   false for a connected iPhone. It now says the device does not offer
   devicectl's screenshot capability, and which Xcode that depends on.
 
+- **A scroll stops when its target is wholly on screen and has stopped
+  moving.** Before, it stopped as soon as the target was in the tree and
+  overlapped the screen at all — on Android that was the whole rule, and
+  iOS added a live "is it on screen" query to it. A row crossing the
+  bottom edge satisfied both with its middle below the edge, so
+  `scrollUntilVisible` returned and the `tapOn` after it failed with
+  `CentroidOutOfFrame` (reported by a consumer at `ny: 1.02`; reproduced
+  on the Compose fixture at `ny: 1.0175`). The rule is now maestro's:
+  the visible share of the element must reach `visibilityPercentage`,
+  100% by default. The scroll also waits for the content to settle —
+  two looks in the same place — because a tap sent into a list that is
+  still gliding is spent stopping it, which looks exactly like a tap
+  that worked.
+
+- **One scroll loop for iOS, Android and OCR.** There were three, and the
+  fix for this defect had only ever been in the iOS one. The host-side
+  loop now lives in `smix_driver::scroll_until`, the stop rule is a pure
+  function (`smix_host_coord_resolver::verdict`), and what differs per
+  platform is only whether a tree match needs a live on-screen query.
+  A swipe-count limit (30) is gone: `timeout` was always the other limit,
+  and two limits are two stopping rules.
+
+### Fixed
+
+- **`scrollUntilVisible` on Android stopped without swiping at all when
+  the app carried the semantics probe.** The probe reports layout rather
+  than what is on screen, so an off-screen row is in the tree with its
+  real coordinates. See the stop rule above.
+
 ### Breaking
 
 - **A key smix does not act on is a parse error in `runFlow:`, `repeat:`,
@@ -111,6 +153,12 @@ All notable changes to the `smix` workspace are documented here. The format foll
   numeric key now stop the flow at parse time, naming the key and the
   keys that are read there. A `when:` with nothing to check (`{}`, or only
   `label`) is refused as well.
+
+- **Rust API: the scroll surface moved.** `Driver::scroll` is gone,
+  replaced by `smix_driver::scroll_until(driver, selector, direction,
+  &ScrollUntil)`; `Driver` gains `confirm_on_screen`. `App::scroll` and
+  `AppLike::scroll` take a `&ScrollUntil`, and `Step::ScrollUntilVisible`
+  carries `until` and `opts`.
 
 - **Rust API: `Step::RunFlowConditional`, `Step::RunFlowInline` and
   `Step::Repeat` changed shape.** The two runFlow variants carry

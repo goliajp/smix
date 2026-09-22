@@ -14,6 +14,10 @@ use std::path::PathBuf;
 const ROSTER: &[&str] = &[
     "back",
     "clear",
+    // Replaced `scroll` in v10.2-C5. The scroll loop moved out of the
+    // drivers into `smix_driver::scroll_until`, one for both platforms;
+    // what stayed per platform is whether a tree match is on screen now.
+    "confirm_on_screen",
     "double_tap",
     "double_tap_at_norm_coord",
     "fill",
@@ -27,7 +31,6 @@ const ROSTER: &[&str] = &[
     "long_press",
     "long_press_at_norm_coord",
     "press_key",
-    "scroll",
     "set_orientation",
     "swipe_at_norm_coord",
     "swipe_once",

@@ -49,7 +49,7 @@ enum MockCall {
     TapAtCoord(f64, f64),
     Fill(Selector, String),
     PressKey(KeyName),
-    Scroll(Selector, SwipeDirection),
+    Scroll(Selector, SwipeDirection, smix_driver::ScrollUntil),
     WaitFor(Selector, Duration),
     /// `App::wait_for_not_visible(selector, timeout)`.
     WaitForNotVisible(Selector, Duration),
@@ -200,6 +200,8 @@ struct MockApp {
     screenshot_backpressure_n: Mutex<usize>,
     /// What `platform()` answers. iOS unless a test says otherwise.
     platform: Mutex<smix_driver::Platform>,
+    /// When set, `scroll` fails with this code.
+    scroll_failure: Mutex<Option<FailureCode>>,
 }
 
 impl MockApp {
@@ -221,7 +223,13 @@ impl MockApp {
             screenshot_cycles: Mutex::new(false),
             screenshot_backpressure_n: Mutex::new(0),
             platform: Mutex::new(smix_driver::Platform::Ios),
+            scroll_failure: Mutex::new(None),
         }
+    }
+
+    fn with_scroll_failure(self, code: FailureCode) -> Self {
+        *self.scroll_failure.lock().unwrap() = Some(code);
+        self
     }
 
     /// Hand `screenshot()` a frame sequence. The last frame repeats once the
@@ -466,12 +474,21 @@ impl AppLike for MockApp {
         &self,
         selector: &Selector,
         direction: SwipeDirection,
+        until: &smix_driver::ScrollUntil,
     ) -> Result<(), ExpectationFailure> {
         self.calls
             .lock()
             .unwrap()
-            .push(MockCall::Scroll(selector.clone(), direction));
-        Ok(())
+            .push(MockCall::Scroll(selector.clone(), direction, *until));
+        match *self.scroll_failure.lock().unwrap() {
+            Some(code) => Err(ExpectationFailure::new(FailureInit {
+                code: Some(code),
+                message: "scroll: not reached".into(),
+                selector: Some(selector.clone()),
+                ..Default::default()
+            })),
+            None => Ok(()),
+        }
     }
     async fn wait_for(
         &self,
@@ -2778,7 +2795,10 @@ async fn mock_run_scroll_until_visible_uppercase_direction() {
     let calls = app.calls();
     assert_eq!(calls.len(), 1);
     match &calls[0] {
-        MockCall::Scroll(_, dir) => assert_eq!(*dir, SwipeDirection::Down),
+        MockCall::Scroll(_, dir, until) => {
+            assert_eq!(*dir, SwipeDirection::Down);
+            assert_eq!(*until, smix_driver::ScrollUntil::default());
+        }
         other => panic!("expected Scroll, got {other:?}"),
     }
 }
@@ -3526,4 +3546,73 @@ async fn optional_block_turns_its_failure_into_a_skip_and_the_flow_goes_on() {
         let app = MockApp::new().with_tap_failure(&nope, FailureCode::ElementNotFound);
         run_with(&app, &strict).await.expect_err("without optional the flow fails");
     }
+}
+
+// ---- scrollUntilVisible: one loop for every selector (v10.2-C5) ----
+
+fn scrolls(app: &MockApp) -> Vec<(Selector, smix_driver::ScrollUntil)> {
+    app.calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            MockCall::Scroll(sel, _, until) => Some((sel, until)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn scroll_until_visible_hands_the_flows_reach_to_the_one_loop() {
+    let app = MockApp::new();
+    run_with(
+        &app,
+        "- scrollUntilVisible:\n    element:\n      id: row\n    visibilityPercentage: 50\n    centerElement: true\n    timeout: 3000\n",
+    )
+    .await
+    .expect("run");
+    let got = scrolls(&app);
+    assert_eq!(got.len(), 1);
+    let until = got[0].1;
+    assert!((until.reach.visibility - 0.5).abs() < 1e-9);
+    assert!(until.reach.center_element);
+    assert_eq!(until.timeout, Duration::from_millis(3000));
+}
+
+#[tokio::test]
+async fn an_ocr_text_target_goes_through_the_same_loop_with_the_session_locale() {
+    let app = MockApp::new();
+    run_with(
+        &app,
+        "- scrollUntilVisible:\n    element:\n      fallback:\n        - id: no-such-row\n        - ocrText: Row 30\n",
+    )
+    .await
+    .expect("run");
+    let got = scrolls(&app);
+    assert_eq!(got.len(), 1, "the one loop, once");
+    let screen_swipes = app
+        .calls()
+        .iter()
+        .filter(|c| matches!(c, MockCall::ScrollScreen(_)))
+        .count();
+    assert_eq!(screen_swipes, 0, "no adapter-side swipe loop");
+    match &got[0].0 {
+        Selector::Fallback { fallback } => match &fallback[1] {
+            Selector::OcrText { locales, .. } => assert_eq!(locales, &vec!["en".to_string()]),
+            other => panic!("expected OcrText, got {other:?}"),
+        },
+        other => panic!("expected the chain, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn optional_scroll_until_visible_that_fails_is_skipped_and_the_flow_goes_on() {
+    let body = "- scrollUntilVisible:\n    element:\n      id: row\n    optional: true\n- tapOn: next\n";
+    let app = MockApp::new().with_scroll_failure(FailureCode::ElementNotFound);
+    let report = run_with(&app, body).await.expect("optional does not fail the flow");
+    let reason = skip_reason(&report);
+    assert!(reason.contains("optional") && reason.contains("not reached"), "{reason}");
+    assert_eq!(taps(&app), 1, "the next step ran");
+
+    let strict = body.replace("    optional: true\n", "");
+    let app = MockApp::new().with_scroll_failure(FailureCode::ElementNotFound);
+    run_with(&app, &strict).await.expect_err("without optional the flow fails");
 }

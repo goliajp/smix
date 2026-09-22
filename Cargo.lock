@@ -2892,6 +2892,7 @@ version = "10.1.0"
 dependencies = [
  "criterion",
  "proptest",
+ "smix-input",
  "smix-screen",
  "smix-selector",
  "smix-selector-resolver",

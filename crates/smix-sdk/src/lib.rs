@@ -91,8 +91,10 @@ fn swipe_endpoint(start: (f64, f64), direction: SwipeDirection) -> (f64, f64) {
 pub use smix_driver::port_owner;
 pub use smix_driver::{
     ActOutcome, ActVerdict, AndroidDriver, HitElement, HttpRunnerClient, IncludeScope, OcrFrame,
-    RunnerScrollSelector, RunnerTransportError, SimctlDriver, SystemPopup, TapMode,
+    RunnerScrollSelector, RunnerTransportError, ScrollUntil, SimctlDriver, SystemPopup, TapMode,
 };
+/// What a scroll-until-visible asks of its target; part of [`ScrollUntil`].
+pub use smix_driver::Reach;
 pub use smix_error::{
     ExpectationFailure, FailureCode, FailureInit, build_suggestions, edit_distance, similarity,
 };
@@ -2086,12 +2088,15 @@ impl App {
         self.driving()?.press_key(key).await
     }
 
+    /// Swipe `direction` until `selector`'s target is reached, per
+    /// `until` — see [`smix_driver::scroll_until`].
     pub async fn scroll(
         &self,
         selector: &Selector,
         direction: SwipeDirection,
+        until: &smix_driver::ScrollUntil,
     ) -> Result<(), ExpectationFailure> {
-        self.driving()?.scroll(selector, direction).await
+        smix_driver::scroll_until(self.driving()?, selector, direction, until).await
     }
 
     pub async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {

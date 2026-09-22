@@ -2,11 +2,18 @@
     element:
       text: "Row #5000"
     direction: DOWN
-    timeout: 30000
+    timeout: 30000              # ms; default 20000
 
-# OCR-aware variant — for virtualized lists whose off-screen items are
-# dropped from the a11y tree (RN Fabric LazyColumn/LazyRow etc.), add
-# an ocrText tier: tree + OCR are both probed between swipe strokes.
+# Stop earlier, or stop with the element near the middle of the screen.
+- scrollUntilVisible:
+    element:
+      id: "row-line_crossing"
+    visibilityPercentage: 60    # 1-100; default 100, the whole element
+    centerElement: true         # default false
+
+# OCR tier — for virtualized lists whose off-screen items are dropped
+# from the a11y tree (RN Fabric LazyColumn/LazyRow etc.). Every look
+# reads the tree first, then each ocrText in the chain's order.
 - scrollUntilVisible:
     element:
       fallback:

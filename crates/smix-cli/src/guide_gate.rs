@@ -297,6 +297,7 @@ impl AppLike for MockApp {
         &self,
         _selector: &Selector,
         _direction: SwipeDirection,
+        _until: &smix_driver::ScrollUntil,
     ) -> Result<(), ExpectationFailure> {
         Ok(())
     }

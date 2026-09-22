@@ -94,6 +94,25 @@ fn emit_core_steps_round_trip() {
         Step::ScrollUntilVisible {
             selector: id("target"),
             direction: "down".to_string(),
+            until: smix_driver::ScrollUntil::default(),
+            opts: smix_adapter_maestro::BlockOptions::default(),
+        },
+        // Every key the verb reads, away from its default, so a key the
+        // emitter forgets comes back as the default and fails the compare.
+        Step::ScrollUntilVisible {
+            selector: id("row"),
+            direction: "up".to_string(),
+            until: smix_driver::ScrollUntil {
+                reach: smix_driver::Reach {
+                    visibility: 0.5,
+                    center_element: true,
+                },
+                timeout: std::time::Duration::from_millis(3000),
+            },
+            opts: smix_adapter_maestro::BlockOptions {
+                label: Some("find the row".into()),
+                optional: true,
+            },
         },
         Step::StopApp,
         Step::HideKeyboard,

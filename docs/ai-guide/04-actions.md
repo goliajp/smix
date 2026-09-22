@@ -265,11 +265,18 @@ looking is `keyboard_state_unknown` — see
     element:
       text: "Row #5000"
     direction: DOWN
-    timeout: 30000
+    timeout: 30000              # ms; default 20000
 
-# OCR-aware variant — for virtualized lists whose off-screen items are
-# dropped from the a11y tree (RN Fabric LazyColumn/LazyRow etc.), add
-# an ocrText tier: tree + OCR are both probed between swipe strokes.
+# Stop earlier, or stop with the element near the middle of the screen.
+- scrollUntilVisible:
+    element:
+      id: "row-line_crossing"
+    visibilityPercentage: 60    # 1-100; default 100, the whole element
+    centerElement: true         # default false
+
+# OCR tier — for virtualized lists whose off-screen items are dropped
+# from the a11y tree (RN Fabric LazyColumn/LazyRow etc.). Every look
+# reads the tree first, then each ocrText in the chain's order.
 - scrollUntilVisible:
     element:
       fallback:
@@ -278,10 +285,24 @@ looking is `keyboard_state_unknown` — see
     direction: DOWN
 ```
 
-- Iteratively scrolls + checks for element visibility.
-- Default timeout 30s.
-- Useful for very long lists.
-- When the selector contains `ocrText`, each inter-swipe probe fires OCR in addition to the tree check (30-swipe / 20 s budget). Selectors without OCR keep the tree-only fast path.
+- Swipes until the element is reached, then stops.
+- **Reached means wholly on screen** (`visibilityPercentage: 100`, maestro's
+  default). An element that merely overlaps the screen is not reached: its
+  middle can be past the edge, and the `tapOn` after it would aim there.
+- `centerElement: true` stops once the element's middle has come past the
+  centre of the screen, from the side the content is arriving from. It gives
+  up centring after four swipes — the last row of a list cannot be centred —
+  and the visibility rule decides from there.
+- The scroll also waits for the content to stop: a list is still gliding
+  after a swipe, and a tap sent into the glide is spent stopping it.
+- `timeout` (default 20 s) is the only limit. There is no swipe count.
+- Failure says how much of the element the last look saw, and what was asked
+  for — or that it never appeared.
+- `speed` and `waitToSettleTimeoutMs` (maestro) are **refused by name**: one
+  swipe is a fixed gesture on both runners, so there is no duration to set,
+  and the settling above is not a number to tune.
+- `label` and `optional` work as they do on other steps: `optional: true`
+  turns "not reached" into a skip and the flow goes on.
 
 ### Custom swipe (explicit start/end)
 

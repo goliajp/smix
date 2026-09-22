@@ -1447,24 +1447,91 @@ fn parse_erase_text(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::EraseText(n as u32))
 }
 
+const SCROLL_UNTIL_VISIBLE_REFUSED: &[(&str, &str)] = &[
+    (
+        "speed",
+        "maestro's swipe duration; smix's single swipe is a fixed gesture on both \
+         runners and has no duration to set. Drop the key",
+    ),
+    (
+        "waitToSettleTimeoutMs",
+        "maestro's wait for the screen to settle after each swipe; smix looks \
+         again after every swipe and has no settle wait to tune. Drop the key",
+    ),
+];
+
 fn parse_scroll_until_visible(v: &Value) -> Result<Step, ParseError> {
     let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
         field: "scrollUntilVisible".into(),
         reason: "expected a mapping".into(),
     })?;
+    reject_unknown_keys(
+        map,
+        "scrollUntilVisible",
+        "scrollUntilVisible",
+        crate::SCROLL_UNTIL_VISIBLE_KEYS,
+        SCROLL_UNTIL_VISIBLE_REFUSED,
+    )?;
     let element = map
         .get(Value::String("element".into()))
         .ok_or_else(|| ParseError::MissingField("scrollUntilVisible.element".into()))?;
     let selector = visible_to_selector(element)?;
-    let direction = map
-        .get(Value::String("direction".into()))
-        .and_then(Value::as_str)
-        .unwrap_or("down")
-        .to_string();
+    let direction = match map.get(Value::String("direction".into())) {
+        Some(d) => string_value(d, "scrollUntilVisible.direction")?,
+        None => "down".to_string(),
+    };
+    let defaults = smix_driver::ScrollUntil::default();
+    let visibility = match map.get(Value::String("visibilityPercentage".into())) {
+        Some(p) => visibility_share(p)?,
+        None => defaults.reach.visibility,
+    };
+    let center_element = match map.get(Value::String("centerElement".into())) {
+        Some(c) => c.as_bool().ok_or_else(|| ParseError::InvalidValue {
+            field: "scrollUntilVisible.centerElement".into(),
+            reason: format!("expected true or false, got {c:?}"),
+        })?,
+        None => defaults.reach.center_element,
+    };
+    let timeout = match map.get(Value::String("timeout".into())) {
+        Some(t) => std::time::Duration::from_millis(millis(t, "scrollUntilVisible.timeout")?),
+        None => defaults.timeout,
+    };
     Ok(Step::ScrollUntilVisible {
         selector,
         direction,
+        until: smix_driver::ScrollUntil {
+            reach: smix_driver::Reach {
+                visibility,
+                center_element,
+            },
+            timeout,
+        },
+        opts: parse_block_options(map, "scrollUntilVisible")?,
     })
+}
+
+/// `visibilityPercentage` as a share. Taken at its word: maestro divides
+/// with integers (`visibilityPercentage / 100`), so every value below 100
+/// becomes 0 there and means "any match"; 50 here means half.
+fn visibility_share(v: &Value) -> Result<f64, ParseError> {
+    match v.as_u64() {
+        Some(p @ 1..=100) => Ok(p as f64 / 100.0),
+        _ => Err(ParseError::InvalidValue {
+            field: "scrollUntilVisible.visibilityPercentage".into(),
+            reason: format!("expected a whole number from 1 to 100, got {v:?}"),
+        }),
+    }
+}
+
+/// Milliseconds, written as a number or — maestro's schema types these
+/// as strings — a string of digits.
+fn millis(v: &Value, field: &str) -> Result<u64, ParseError> {
+    v.as_u64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+        .ok_or_else(|| ParseError::InvalidValue {
+            field: field.into(),
+            reason: format!("expected milliseconds as a whole number, got {v:?}"),
+        })
 }
 
 fn parse_swipe(v: &Value) -> Result<Step, ParseError> {

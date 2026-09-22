@@ -5,8 +5,11 @@
 - scrollUntilVisible:
     element:
       text: "Row #5000"
-    direction: DOWN
-    timeout: 30000                       # ms
+    direction: DOWN                      # UP / DOWN / LEFT / RIGHT
+    timeout: 30000                       # ms; default 20000
+    visibilityPercentage: 100            # 1-100; default 100 = wholly on screen
+    centerElement: false                 # stop once it is near the middle
+    optional: false                      # not reached -> skip, not failure
 
 - swipe:
     direction: LEFT
