@@ -1913,8 +1913,8 @@ fn swipe_direction_form_desugars_to_finger_coords() {
 // ---------------------------------------------------------------------
 // Conditions: `runFlow.when` and `repeat.while` share one shape, and the
 // mappings around them name every key they read. A key nobody reads is
-// a parse error, not a silently unconditional block (insight 2026-09-22:
-// `when: { platform: Android }` ran on iOS).
+// a parse error, not a silently unconditional block (from a consumer's
+// Android round, 2026-09-22: `when: { platform: Android }` ran on iOS).
 // ---------------------------------------------------------------------
 
 use smix_adapter_maestro::{BlockOptions, CONDITION_KEYS, ConditionPlatform, FlowCondition, RepeatMode};

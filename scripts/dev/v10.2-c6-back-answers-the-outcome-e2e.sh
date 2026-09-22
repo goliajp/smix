@@ -2,7 +2,8 @@
 # v10.2-C6: `/back` answers whether anything went back, and the act
 # routes' answers reach the host.
 #
-# The defect this is the instrument for (insight, 2026-09-22): `/back`
+# The defect this is the instrument for, from a consumer's Android
+# round (2026-09-22): `/back`
 # returned `UiDevice.pressBack()`, whose bytecode is
 # `sendKeyAndWaitForEvent(KEYCODE_BACK, 0, TYPE_WINDOW_CONTENT_CHANGED,
 # 1000)`. That boolean is "somebody's window content changed within a
@@ -34,7 +35,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 ALIAS="${SMIX_C6_ANDROID:-sim-smix-android-01}"
-PORT="${SMIX_C6_PORT:-22099}"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
+PORT="$SMIX_RUNNER_PORT"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
 WORK="$(mktemp -d)"

@@ -21,11 +21,38 @@
 # lane with a fixed mapping, or a debugging session against a runner
 # that is already up.
 
-if [[ -z "${SMIX_RUNNER_PORT:-}" ]]; then
-    SMIX_RUNNER_PORT="$(python3 -c 'import socket
+# A free port, asked of the OS, into the variable named by $1.
+#
+# Gates that drive both platforms need two ports at once, and writing
+# the second as a literal is how six scripts came to pin one: there was
+# one way to ask and it only ever answered about `SMIX_RUNNER_PORT`.
+#
+# It assigns rather than prints because it remembers what it handed out,
+# and a `$(…)` call would do that remembering inside a subshell that
+# exits immediately. The memory is needed: the socket it probes with is
+# closed before the number comes back, so nothing stops the OS offering
+# the same port to the next call.
+_gate_ports_handed_out="${_gate_ports_handed_out:-}"
+gate_free_port() {
+    local _into="$1" _port
+    while :; do
+        _port="$(python3 -c 'import socket
 s = socket.socket()
 s.bind(("127.0.0.1", 0))
 print(s.getsockname()[1])
 s.close()')"
+        case " $_gate_ports_handed_out " in
+            *" $_port "*) continue ;;
+        esac
+        _gate_ports_handed_out="$_gate_ports_handed_out $_port"
+        eval "$_into=\$_port"
+        return 0
+    done
+}
+
+if [[ -z "${SMIX_RUNNER_PORT:-}" ]]; then
+    gate_free_port SMIX_RUNNER_PORT
+else
+    _gate_ports_handed_out="$_gate_ports_handed_out ${SMIX_RUNNER_PORT}"
 fi
 export SMIX_RUNNER_PORT

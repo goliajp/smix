@@ -21,8 +21,11 @@ WORK="$(mktemp -d)"
 
 IOS_ALIAS="${SMIX_C1_IOS:-smix-ios}"
 AND_ALIAS="${SMIX_C1_ANDROID:-smix-android}"
-IOS_PORT="${SMIX_C1_IOS_PORT:-22090}"
-AND_PORT="${SMIX_C1_ANDROID_PORT:-22091}"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
+# One runner per platform, so two ports, both asked of the OS.
+IOS_PORT="$SMIX_RUNNER_PORT"
+gate_free_port AND_PORT
 
 IOS_FIXTURE="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
 IOS_APPID="jp.golia.smix.fixture"
