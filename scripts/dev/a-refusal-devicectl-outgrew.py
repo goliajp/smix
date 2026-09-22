@@ -62,8 +62,6 @@ MIN_REFUSALS = 8
 # does not (`capture_bgra` talks about CoreSimulator's IOSurface,
 # `send_push` about APNs, `terminate` about finding a pid) is left alone.
 FALSIFIERS = {
-    "location_set": (["device", "simulate", "location"], ("name", "coordinate"), "one coordinate is a set location"),
-    "location_start": (["device", "simulate", "location"], ("name", "route"), "a route is a started location scenario"),
     "set_animations_quiet": (["device", "settings"], ("contains", "anim"), "animations would be a setting"),
     "add_media": (["device"], ("contains", "media"), "media would be its own subcommand"),
     "set_permission": (["device", "settings"], ("contains", "privacy"), "TCC would be a setting"),
@@ -114,20 +112,13 @@ def cells_of(row_body: str) -> list:
 
 
 def why_of(cell_body: str, consts: dict) -> str:
-    """The refusal's text: a literal, a named const, or — for
-    `undriven_devicectl_verb!("…")` — the verb the macro names, which is
-    the part this gate reads."""
-    m = re.search(
-        r'why\s*:\s*(?:"((?:[^"\\]|\\.)*)"|([a-z_][a-z0-9_]*)!\(\s*"((?:[^"\\]|\\.)*)"\s*\)|([A-Z_][A-Z0-9_]*))',
-        cell_body,
-    )
+    """The refusal's text: a literal or a named const."""
+    m = re.search(r'why\s*:\s*(?:"((?:[^"\\]|\\.)*)"|([A-Z_][A-Z0-9_]*))', cell_body)
     if not m:
         return ""
     if m.group(1) is not None:
         return m.group(1)
-    if m.group(3) is not None:
-        return f"devicectl has `{m.group(3)}`"
-    return consts.get(m.group(4), "")
+    return consts.get(m.group(2), "")
 
 
 def physical_ios_refusals(source: str) -> dict:

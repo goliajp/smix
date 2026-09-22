@@ -42,12 +42,27 @@ All notable changes to the `smix` workspace are documented here. The format foll
   travels by Universal Clipboard: setting it sets the one on the Mac
   beside it too.
 
+- **`setLocation` and `travel` work on a registered iPhone.** Through
+  Xcode 27's `devicectl device simulate location coordinate` and `route`.
+  Coordinates are passed as `--latitude=<n>`: the spaced form is refused
+  for a negative number, which `devicectl` reads as another option. A
+  route goes in as a route file rather than `--waypoints`, a variadic
+  option that swallows every argument after it; without a speed it runs
+  at 20 m/s with a fix every second, which is what `simctl location start`
+  does when told nothing. `travel` returns at once (0.4 s on the phone)
+  and the device keeps moving. `devicectl` cannot read a simulated
+  location back, so its own account of what it set is held against what
+  was sent, and a disagreement is an error. **The location stays on the
+  phone until `xcrun devicectl device simulate location clear --device
+  <UDID>`; no flow verb clears it.** Driven on an iPhone on iOS 26.6.2.
+
 ### Changed
 
-- **Five refusals on a physical iPhone became capabilities.** The
+- **Seven refusals on a physical iPhone became capabilities.** The
   platform table's physical-iOS column refused seventeen actions; it
-  refuses twelve. `pasteboard_set` and `pasteboard_get` now say `Works`,
-  as do `screenshot`, `start_recording` and `stop_recording`, and a test
+  refuses ten. `location_set`, `location_start`, `pasteboard_set` and
+  `pasteboard_get` now say `Works`, as do `screenshot`,
+  `start_recording` and `stop_recording`, and a test
   holds the list of what the backend carries out against the table in
   both directions — for an afternoon during this work the code
   implemented `screenshot` while the table still refused it, and every

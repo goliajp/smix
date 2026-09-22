@@ -1,0 +1,30 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "device",
+      "simulate",
+      "location",
+      "coordinate",
+      "--latitude=37.7749",
+      "--longitude=-122.4194",
+      "--device",
+      "5D087114-ECB3-443C-8DDB-40EEF9CFB90C",
+      "--json-output",
+      "out.json",
+      "-q"
+    ],
+    "commandType": "devicectl.device.simulate.location.coordinate",
+    "environment": {
+      "TERM": "xterm-256color"
+    },
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "642.16"
+  },
+  "result": {
+    "deviceIdentifier": "5D087114-ECB3-443C-8DDB-40EEF9CFB90C",
+    "latitude": 37.7749,
+    "longitude": -122.4194
+  }
+}

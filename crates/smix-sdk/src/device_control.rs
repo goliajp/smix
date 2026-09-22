@@ -258,21 +258,8 @@ pub enum Availability {
 /// Xcode 27's devicectl grew `capture screenshot`, `pasteboard copy` and
 /// `simulate location route` while six cells here said devicectl could
 /// not; `a-refusal-devicectl-outgrew` asks the installed devicectl so
-/// that cannot happen quietly again.
-/// A refusal on a verb devicectl has: it names the verb, and says smix
-/// does not drive it. One expansion, so six cells cannot drift into six
-/// wordings — `why` is a `&'static str`, which is why this is a macro and
-/// not a `const` suffix.
-macro_rules! undriven_devicectl_verb {
-    ($verb:literal) => {
-        concat!(
-            "devicectl (Xcode 27) has `",
-            $verb,
-            "`; smix does not drive it yet and it is unverified on a phone"
-        )
-    };
-}
-
+/// that cannot happen quietly again. All six are driven as of 10.2, so no
+/// cell is in that state today; the rule is for the next one.
 pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
     use Availability::{RefusedByName as No, Works as Yes};
 
@@ -415,10 +402,10 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
             [
                 Yes,
                 Yes,
-                No {
-                    why: undriven_devicectl_verb!("device simulate location coordinate"),
-                    instead: BY_HAND,
-                },
+                // `devicectl device simulate location coordinate`; what devicectl
+                // says it set is held against what was sent. A phone keeps the
+                // location until `simulate location clear`.
+                Yes,
                 No {
                     why: EMULATOR_CONSOLE_ONLY,
                     instead: BY_HAND,
@@ -430,10 +417,9 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
             [
                 Yes,
                 Yes,
-                No {
-                    why: undriven_devicectl_verb!("device simulate location route"),
-                    instead: BY_HAND,
-                },
+                // `devicectl device simulate location route --route-file`: returns
+                // at once and the device keeps travelling.
+                Yes,
                 No {
                     why: EMULATOR_CONSOLE_ONLY,
                     instead: BY_HAND,
