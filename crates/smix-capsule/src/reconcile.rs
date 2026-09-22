@@ -200,6 +200,60 @@ pub(crate) fn stop_port_forward(local_port: u16, proc: &ProcIdentity) -> Outcome
     ))
 }
 
+/// `adb reverse --remove` the route the device was dialling.
+///
+/// There is no process here to signal: the route is a row in the adb
+/// server, which is why this is the one close in the plan that names
+/// only a device and a port.
+///
+/// A device that has gone — unplugged, or an emulator switched off —
+/// took its routes with it, so adb's "device not found" is the state
+/// this close wanted. Nothing else is read that way: an adb that is
+/// missing, or a route that refuses to go, is reported.
+fn remove_reverse_port(serial: &str, device_port: u16) -> Outcome {
+    let out = std::process::Command::new("adb")
+        .args(["-s", serial, "reverse", "--remove", &format!("tcp:{device_port}")])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => {
+            Outcome::Closed(format!("route {serial} tcp:{device_port} removed"))
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if device_is_gone(&stderr) {
+                Outcome::AlreadyGone(format!(
+                    "route {serial} tcp:{device_port} went with the device"
+                ))
+            } else {
+                Outcome::Failed(format!(
+                    "adb -s {serial} reverse --remove tcp:{device_port} failed: {}",
+                    stderr.trim()
+                ))
+            }
+        }
+        Err(e) => Outcome::Failed(format!(
+            "could not run adb -s {serial} reverse --remove tcp:{device_port}: {e}"
+        )),
+    }
+}
+
+/// Does adb's complaint mean the device itself is no longer there?
+///
+/// Read from stderr because adb exits 1 for both "no such device" and
+/// "that route is not open", and only the first is a close that already
+/// happened.
+fn device_is_gone(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    // Measured 2026-09-23: `adb -s emulator-9999 reverse --remove
+    // tcp:8080` answers `adb: error: device 'emulator-9999' not found`.
+    // The serial sits between the two words, so a match on "device not
+    // found" never fires — the first draft here had exactly that, and
+    // the test caught it.
+    (s.contains("device ") && s.contains(" not found"))
+        || s.contains("device offline")
+        || s.contains("no devices")
+}
+
 fn shutdown_sim(udid: &str) -> Outcome {
     let out = std::process::Command::new("xcrun")
         .args(["simctl", "shutdown", udid])
@@ -246,6 +300,10 @@ pub fn execute(root: &Path, actions: &[CleanupAction]) -> Vec<Outcome> {
                 "a ledger row of kind `{kind}` was written by a newer smix than this \
                  one; it cannot be closed from here, so this teardown is incomplete"
             )),
+            CleanupAction::RemoveReversePort {
+                serial,
+                device_port,
+            } => remove_reverse_port(serial, *device_port),
             CleanupAction::ShutdownSim { udid } => shutdown_sim(udid),
         })
         .collect()
@@ -254,6 +312,22 @@ pub fn execute(root: &Path, actions: &[CleanupAction]) -> Vec<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verbatim from adb, 2026-09-23, `-s emulator-5554` with nothing
+    /// attached and with a route that was never opened.
+    #[test]
+    fn only_a_missing_device_reads_as_a_close_that_already_happened() {
+        assert!(device_is_gone("adb: device 'emulator-5554' not found\n"));
+        assert!(device_is_gone("error: device offline\n"));
+        // A route that is not open is a failure to close, not a device
+        // that went away: something opened it and this could not shut
+        // it. Reading it as gone would report a clean teardown while
+        // the device still holds the route.
+        assert!(!device_is_gone("error: listener 'tcp:8080' not found\n"));
+        // The empty case is the one that matters: a close that produced
+        // no complaint at all must not be read as "the device left".
+        assert!(!device_is_gone(""));
+    }
 
     fn ghost() -> ProcIdentity {
         ProcIdentity {

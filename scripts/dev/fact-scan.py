@@ -167,7 +167,16 @@ CONSTANT_CLAIM = re.compile(
 )
 
 PINS = [
-    # (claim keyword, unit, source file, regex that must contain the number)
+    # (claim keyword, unit, source file, regex that must contain the number,
+    #  and optionally a subject regex the claim's own line must match)
+    #
+    # The subject is what lets two different facts share a phrasing. Both
+    # `runner up`'s wait and `scrollUntilVisible`'s limit are written
+    # "default N s" in the guides, and without a subject every pin for
+    # that pair judged every such claim: the scroll timeout was read as a
+    # claim about `runner up` and reported as a lie. A pin with no
+    # subject still applies to every claim of its pair, so nothing that
+    # was pinned before has been narrowed.
     ("polls", "ms", "swift-bridge/Sources/SmixSDK/Locator.swift", r"milliseconds\((\d+)\)"),
     (
         "polls",
@@ -201,6 +210,15 @@ PINS = [
         "s",
         "crates/smix-capsule/src/runner.rs",
         r"SMIX_RUNNER_UP_TIMEOUT_SECS[\s\S]{0,200}?unwrap_or\((\d+)\)",
+        r"runner up|SMIX_RUNNER_UP_TIMEOUT_SECS|rebuild",
+    ),
+    # `scrollUntilVisible`'s limit, the other "default N s" in the guides.
+    (
+        "default",
+        "s",
+        "crates/smix-driver/src/scroll_until.rs",
+        r"DEFAULT_SCROLL_TIMEOUT: Duration = Duration::from_millis\((\d+)_000\)",
+        r"timeout|scroll",
     ),
     # The parity page said long-press was 700 ms and not configurable;
     # it is 500 and takes `{ duration: N }`.
@@ -514,7 +532,13 @@ def main():
             text = read(rel)
         except (OSError, UnicodeDecodeError):
             continue
-        for lineno, line in enumerate(text.splitlines(), 1):
+        doc_lines = text.splitlines()
+        for lineno, line in enumerate(doc_lines, 1):
+            # A pin's subject is looked for around the claim, not on its
+            # own line: prose wraps, and "more than the default 300 s"
+            # sits a line below the sentence that says what it is the
+            # timeout for.
+            context = "\n".join(doc_lines[max(0, lineno - 4) : lineno + 2])
             for groups in CONSTANT_CLAIM.findall(line):
                 # One regex, three alternations: whichever matched
                 # leaves its three groups filled and the rest empty.
@@ -531,7 +555,13 @@ def main():
                 # Exact (keyword, unit): a looser match let "first N
                 # seconds" borrow the pin for "first N nodes" and report
                 # a drift where the real answer is "nothing pins this".
-                pins = [p for p in PINS if p[0] == keyword and p[1] == unit]
+                pins = [
+                    p
+                    for p in PINS
+                    if p[0] == keyword
+                    and p[1] == unit
+                    and (len(p) < 5 or re.search(p[4], context, re.I))
+                ]
                 if not pins:
                     failures.append(
                         f"{rel}:{lineno}: states `{keyword} {number} {unit}` and no "
@@ -540,13 +570,26 @@ def main():
                     )
                     continue
                 constant_claims += 1
-                for _, _, src_rel, src_pattern in pins:
+                # Backed by at least one pinned source, not by all of
+                # them. Two facts can share a phrasing — `runner up`'s
+                # wait and `scrollUntilVisible`'s limit are both
+                # "default N s" — and a claim about one is not a lie
+                # about the other. Requiring all of them called each
+                # true sentence false as soon as the second pin existed.
+                said = []
+                for pin in pins:
+                    src_rel, src_pattern = pin[2], pin[3]
                     literals = re.findall(src_pattern, read(src_rel))
-                    if number not in literals:
-                        failures.append(
-                            f"{rel}:{lineno}: states `{keyword} {number} {unit}`, "
-                            f"{src_rel} says {literals or 'nothing matching'}"
+                    said.append((src_rel, literals))
+                    if number in literals:
+                        break
+                else:
+                    failures.append(
+                        f"{rel}:{lineno}: states `{keyword} {number} {unit}`, "
+                        + "; ".join(
+                            f"{src} says {lits or 'nothing matching'}" for src, lits in said
                         )
+                    )
     if constant_claims == 0:
         failures.append(
             "no documented constants found — the claim pattern stopped "

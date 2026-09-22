@@ -185,6 +185,11 @@ pub const ACTION_LEVELS: &[(&str, ActionLevel)] = &[
     ("start_recording", ActionLevel::Device),
     ("stop_recording", ActionLevel::Device),
     ("recording_pid", ActionLevel::Observe),
+    // Device, not App: the route is the device's, not the app's. It
+    // serves whatever runs there, and it stays open after the test that
+    // opened it has finished — which is what this level names.
+    ("reverse_port", ActionLevel::Device),
+    ("reverse_port_remove", ActionLevel::Device),
     // Data goes away. `uninstall` takes the app's container with it;
     // `keychain_reset` is device-wide, not app-scoped.
     ("uninstall", ActionLevel::Destructive),
@@ -266,13 +271,23 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
     // Reasons, written once. Several actions are refused for the same
     // reason on the same device, and repeating the sentence is how two
     // of them come to disagree.
-    const NO_DEVICECTL_VERB: &str = "devicectl has no verb for it, and it is a CoreSimulator                                      facility with no counterpart on a device";
-    const THROUGH_RUNNER: &str = "do it through the runner session, which behaves the same on a                                   phone as on a simulator";
-    const USERS_OWN_DEVICE: &str = "on a device this is the owner's own data, and Apple exposes                                     no way to take it away from outside";
-    const BY_HAND: &str = "do it by hand on the device, or use a simulator for the run that                            needs it set";
+    const NO_DEVICECTL_VERB: &str = "devicectl has no verb for it, and it is a CoreSimulator facility with no counterpart on a device";
+    const THROUGH_RUNNER: &str =
+        "do it through the runner session, which behaves the same on a phone as on a simulator";
+    const USERS_OWN_DEVICE: &str = "on a device this is the owner's own data, and Apple exposes no way to take it away from outside";
+    const BY_HAND: &str =
+        "do it by hand on the device, or use a simulator for the run that needs it set";
     const ANDROID_HAS_NO_SUCH_IDEA: &str = "Android has no equivalent of this iOS facility";
-    const EMULATOR_CONSOLE_ONLY: &str = "the emulator console provides this and a handset does                                          not";
+    const EMULATOR_CONSOLE_ONLY: &str = "the emulator console provides this and a handset does not";
     const ANDROID_CLIPBOARD_IS_SEALED: &str = "since Android 10 the clipboard is readable and writable only by the app in the foreground, and the test runner is not it";
+    // Not "cannot": a simulator needs no route because it is already on
+    // this side of one. Refusing with the reason a caller can act on is
+    // the difference between a dead end and an answer.
+    const SIMULATOR_SHARES_THIS_HOST: &str =
+        "a simulator shares this machine's network stack, so there is no channel to open";
+    const SIMULATOR_USE_LOOPBACK: &str = "reach the service at 127.0.0.1:<port> from inside the simulator — it is the same loopback this machine's service is bound to";
+    const NO_REVERSE_OVER_USB: &str = "Apple's USB channel carries host-to-device connections only, and exposes nothing in the other direction";
+    const PUT_IT_ON_THE_LAN: &str = "bind the service to an address the phone can reach over the network and name that address in the app under test";
 
     &[
         // Metadata about the binding, not an action on a device.
@@ -291,7 +306,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 Yes,
                 Yes,
                 No {
-                    why: "devicectl stops processes by pid and cannot find the pid of a                           running app from its bundle id",
+                    why: "devicectl stops processes by pid and cannot find the pid of a running app from its bundle id",
                     instead: THROUGH_RUNNER,
                 },
                 Yes,
@@ -330,7 +345,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 Yes,
                 Yes,
                 No {
-                    why: "surface capture is a CoreSimulator facility with no device                           counterpart",
+                    why: "surface capture is a CoreSimulator facility with no device counterpart",
                     instead: THROUGH_RUNNER,
                 },
                 Yes,
@@ -432,7 +447,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 Yes,
                 Yes,
                 No {
-                    why: "TCC grants on a device are the owner's, and devicectl has no                           equivalent of `simctl privacy`",
+                    why: "TCC grants on a device are the owner's, and devicectl has no equivalent of `simctl privacy`",
                     instead: "grant it on the device the first time the app asks",
                 },
                 Yes,
@@ -451,6 +466,40 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
         ),
         ("stop_recording", [Yes, Yes, Yes, Yes]),
         ("recording_pid", [Yes, Yes, Yes, Yes]),
+        // A route from the device back to a service on this machine.
+        // The two Apple cells refuse for opposite reasons — one because
+        // there is nothing to open, one because nothing can be opened —
+        // and both say where the caller should go instead.
+        (
+            "reverse_port",
+            [
+                No {
+                    why: SIMULATOR_SHARES_THIS_HOST,
+                    instead: SIMULATOR_USE_LOOPBACK,
+                },
+                Yes,
+                No {
+                    why: NO_REVERSE_OVER_USB,
+                    instead: PUT_IT_ON_THE_LAN,
+                },
+                Yes,
+            ],
+        ),
+        (
+            "reverse_port_remove",
+            [
+                No {
+                    why: SIMULATOR_SHARES_THIS_HOST,
+                    instead: SIMULATOR_USE_LOOPBACK,
+                },
+                Yes,
+                No {
+                    why: NO_REVERSE_OVER_USB,
+                    instead: PUT_IT_ON_THE_LAN,
+                },
+                Yes,
+            ],
+        ),
         // Taking data away. Most of these should not exist on somebody's
         // own phone, which is a reason and not an accident.
         (
@@ -489,7 +538,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 Yes,
                 Yes,
                 No {
-                    why: "devicectl can uninstall an app but cannot empty its container in                           place",
+                    why: "devicectl can uninstall an app but cannot empty its container in place",
                     instead: "uninstall and install again, which empties it",
                 },
                 Yes,
@@ -504,7 +553,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                     instead: "clear the app's data, which takes its preferences with it",
                 },
                 No {
-                    why: "a device's defaults live inside the app container, which devicectl                           cannot write",
+                    why: "a device's defaults live inside the app container, which devicectl cannot write",
                     instead: "uninstall and install again, which empties them",
                 },
                 No {
@@ -746,6 +795,37 @@ pub trait DeviceControl: Send + Sync {
     async fn recording_pid(&self) -> Option<u32> {
         None
     }
+
+    // === A route from the device to this machine ===
+
+    /// Let the app under test reach `127.0.0.1:<host_port>` on this
+    /// machine by dialling `127.0.0.1:<device_port>` on the device.
+    ///
+    /// The device port comes first because that is the end the app
+    /// dials, and it is the end that identifies the route later.
+    ///
+    /// What is opened outlives this call: it is not a process, and
+    /// nothing here holds it. A caller that opens one owes a
+    /// [`Self::reverse_port_remove`], and a caller that writes it into a
+    /// ledger gives the next teardown the same ability.
+    ///
+    /// Since smix 10.2.0.
+    async fn reverse_port(
+        &self,
+        udid: &str,
+        device_port: u16,
+        host_port: u16,
+    ) -> Result<(), DeviceControlError>;
+
+    /// Close a route opened by [`Self::reverse_port`], named by the port
+    /// the device dials.
+    ///
+    /// Since smix 10.2.0.
+    async fn reverse_port_remove(
+        &self,
+        udid: &str,
+        device_port: u16,
+    ) -> Result<(), DeviceControlError>;
 }
 
 #[cfg(test)]
@@ -845,6 +925,46 @@ mod action_level_tests {
              §9 #1 requires a loud refusal when a capability is not there. A \
              method nobody answered for is the quiet degradation it forbids."
         );
+    }
+
+    /// A refusal on an Apple device has to leave the caller somewhere
+    /// to go, and for these two the somewhere differs: a simulator
+    /// needs no route because it already shares this machine's
+    /// loopback; a phone has no route to open at all.
+    ///
+    /// Asserted on the text because that is what a caller reads. A cell
+    /// that merely said `RefusedByName` with an empty `instead` would
+    /// satisfy the type and strand the reader — which is the dead end
+    /// `Availability`'s own doc says it exists to prevent.
+    #[test]
+    fn the_two_apple_refusals_of_a_reverse_say_where_to_go_instead() {
+        use smix_simctl::registry::DeviceKind;
+
+        for action in ["reverse_port", "reverse_port_remove"] {
+            let Some(Availability::RefusedByName { why, instead }) =
+                availability(action, DeviceKind::Simulator)
+            else {
+                panic!("{action} on a simulator should refuse by name");
+            };
+            assert!(why.contains("network stack"), "{action}: {why}");
+            assert!(instead.contains("127.0.0.1"), "{action}: {instead}");
+
+            let Some(Availability::RefusedByName { why, instead }) =
+                availability(action, DeviceKind::PhysicalIos)
+            else {
+                panic!("{action} on a phone should refuse by name");
+            };
+            assert!(why.contains("host-to-device"), "{action}: {why}");
+            assert!(instead.contains("over the"), "{action}: {instead}");
+
+            for kind in [DeviceKind::Emulator, DeviceKind::PhysicalAndroid] {
+                assert_eq!(
+                    availability(action, kind),
+                    Some(Availability::Works),
+                    "{action} is driven on {kind:?}"
+                );
+            }
+        }
     }
 
     #[test]

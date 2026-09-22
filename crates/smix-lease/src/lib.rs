@@ -135,6 +135,33 @@ pub enum Resource {
         /// inside a process; when that process goes, so does it.
         proc: ProcIdentity,
     },
+    /// A port on the device routed back to a port on this machine, so
+    /// the app under test can reach a service running here.
+    ///
+    /// The mirror of [`Resource::PortForward`] in direction, and its
+    /// opposite in shape: a forward lives inside a process, this lives
+    /// in the adb server. `smix sim reverse` writes the row and exits,
+    /// and the route stays open — which is why there is no
+    /// [`ProcIdentity`] here to probe or signal. It is closed by naming
+    /// it, or when the device goes away.
+    ///
+    /// Closed *after* the runner it serves, for the same reason the
+    /// forward is: the app's last requests are still travelling
+    /// through it while the runner comes down.
+    #[serde(rename_all = "camelCase")]
+    ReversePort {
+        /// Port the app dials on the device. This identifies the route:
+        /// it is what `adb reverse --remove` takes, and a device may
+        /// have several open at once.
+        device_port: u16,
+        /// Port on this machine the route lands on.
+        host_port: u16,
+        /// Device serial. Carried for the same reason `AndroidRunner`
+        /// carries it: every host-side call in the teardown must name
+        /// the device, and an unpinned one reaches whatever is
+        /// attached — on a developer machine, often a phone.
+        serial: String,
+    },
     /// The device is booted. `by_us` records whether this holder is the
     /// one that booted it.
     #[serde(rename_all = "camelCase")]
@@ -437,6 +464,15 @@ pub enum CleanupAction {
         local_port: u16,
         /// Must be re-verified at the pid before any signal is sent.
         proc: ProcIdentity,
+    },
+    /// `adb reverse --remove` the route the device was dialling.
+    /// Emitted after the runner, like the forward next door.
+    #[serde(rename_all = "camelCase")]
+    RemoveReversePort {
+        /// Device serial — every host-side call in the teardown names it.
+        serial: String,
+        /// The port on the device, which is what identifies the route.
+        device_port: u16,
     },
     /// `simctl shutdown` — only ever emitted for a device this holder
     /// booted.
@@ -826,6 +862,7 @@ pub fn is_service(r: &Resource) -> bool {
             | Resource::Supervisor { .. }
             | Resource::Booted { .. }
             | Resource::Claimed { .. }
+            | Resource::ReversePort { .. }
     )
 }
 
@@ -897,6 +934,16 @@ pub fn plan_cleanup(lease: &Lease) -> Vec<CleanupAction> {
             local_port: *local_port,
             proc: proc.clone(),
         }),
+        // Same position, same reason, opposite direction: the app's
+        // last requests are still travelling this way out.
+        Resource::ReversePort {
+            device_port,
+            serial,
+            ..
+        } => Some(CleanupAction::RemoveReversePort {
+            serial: serial.clone(),
+            device_port: *device_port,
+        }),
         _ => None,
     }));
     plan
@@ -925,7 +972,7 @@ fn plan_rest(lease: &Lease) -> Vec<CleanupAction> {
                 // Handled ahead of everything else by `plan_cleanup`.
                 Resource::Supervisor { .. } => None,
                 // Handled after everything else by `plan_cleanup`.
-                Resource::PortForward { .. } => None,
+                Resource::PortForward { .. } | Resource::ReversePort { .. } => None,
                 Resource::Recording { path, proc } => Some(CleanupAction::StopRecording {
                     path: path.clone(),
                     proc: proc.clone(),
@@ -1080,6 +1127,55 @@ mod tests {
             proc: recording_proc(),
         }
     }
+
+    fn reverse(device_port: u16, host_port: u16) -> Resource {
+        Resource::ReversePort {
+            device_port,
+            host_port,
+            serial: "emulator-5554".into(),
+        }
+    }
+
+    /// A route the device dials is there for whoever drives next.
+    ///
+    /// `smix sim reverse` exits the moment adb has the row, so its
+    /// holder is dead seconds later. If this were not a service, the
+    /// most ordinary order there is — open the route, bring the runner
+    /// up, run a flow — would be denied at the third step by the first.
+    #[test]
+    fn a_reverse_route_is_a_service_and_not_a_process() {
+        assert!(is_service(&reverse(8080, 8080)));
+        assert!(
+            !is_process_backed(&reverse(8080, 8080)),
+            "it lives in the adb server; there is no pid here to probe or signal"
+        );
+    }
+
+    #[test]
+    fn a_dead_holder_leaves_a_reverse_route_to_be_adopted() {
+        let lease = lease_with(vec![
+            reverse(8080, 8080),
+            Resource::AndroidRunner {
+                port: 22087,
+                serial: "emulator-5554".into(),
+                proc: runner_proc(),
+            },
+        ]);
+        assert_eq!(
+            assess(&facts_with_resources(lease, false, false, FRESH, true)),
+            Admission::Adoptable
+        );
+    }
+
+    /// With nothing running, the next command takes the lease and the
+    /// row stays — the route is still open on the device, and a ledger
+    /// that forgot it would leave nothing able to close it.
+    #[test]
+    fn a_reverse_route_alone_does_not_make_a_ledger_abandoned() {
+        let lease = lease_with(vec![reverse(8080, 3000)]);
+        assert_eq!(assess(&facts(lease, false, false, FRESH)), Admission::Granted);
+    }
+
 
     /// Facts for a probed holder. `now` sits inside the heartbeat window
     /// unless a test is about staleness.
@@ -1315,8 +1411,12 @@ mod tests {
                     );
                 }
                 // Carries no process by design: there is nothing to
-                // signal for a row nobody can read.
-                CleanupAction::ShutdownSim { .. } | CleanupAction::CannotClose { .. } => {}
+                // signal for a row nobody can read, nothing to signal
+                // for a device, and — for a reverse route — nothing to
+                // signal at all, since it lives in the adb server.
+                CleanupAction::ShutdownSim { .. }
+                | CleanupAction::CannotClose { .. }
+                | CleanupAction::RemoveReversePort { .. } => {}
             }
         }
     }
@@ -1701,6 +1801,58 @@ mod forward_ordering_tests {
         }
     }
 
+    fn reverse_row(device_port: u16, host_port: u16) -> Resource {
+        Resource::ReversePort {
+            device_port,
+            host_port,
+            serial: "emulator-5554".into(),
+        }
+    }
+
+    /// Mirror of the forwarder's reason: the app's last requests are
+    /// still travelling through this route while the runner shuts down.
+    #[test]
+    fn a_reverse_route_is_closed_after_the_runner_it_served() {
+        let lease = lease(vec![
+            reverse_row(8080, 8080),
+            Resource::AndroidRunner {
+                port: 22087,
+                serial: "emulator-5554".into(),
+                proc: proc(5150, "am instrument"),
+            },
+        ]);
+        let plan = plan_cleanup(&lease);
+        let runner_at = plan
+            .iter()
+            .position(|a| matches!(a, CleanupAction::StopAndroidRunner { .. }))
+            .expect("the runner is in the plan");
+        let route_at = plan
+            .iter()
+            .position(|a| matches!(a, CleanupAction::RemoveReversePort { .. }))
+            .expect("the route is in the plan");
+        assert!(
+            runner_at < route_at,
+            "pulling the route first turns a clean teardown into a connection error: {plan:?}"
+        );
+    }
+
+    /// The device port is what identifies a route, and a device may
+    /// have several open at once — so the plan closes each one it was
+    /// told about, by its own port.
+    #[test]
+    fn every_open_route_is_in_the_plan_by_its_device_port() {
+        let lease = lease(vec![reverse_row(8080, 8080), reverse_row(3000, 3001)]);
+        let ports: Vec<u16> = plan_cleanup(&lease)
+            .iter()
+            .filter_map(|a| match a {
+                CleanupAction::RemoveReversePort { device_port, .. } => Some(*device_port),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ports.len(), 2, "both routes owe a close");
+        assert!(ports.contains(&8080) && ports.contains(&3000), "{ports:?}");
+    }
+
     fn full_session() -> Lease {
         lease(vec![
             Resource::PortForward {
@@ -1750,6 +1902,7 @@ mod forward_ordering_tests {
                 CleanupAction::StopAndroidRunner { .. } => "android",
                 CleanupAction::ShutdownSim { .. } => "shutdown",
                 CleanupAction::CannotClose { .. } => "unnamed",
+                CleanupAction::RemoveReversePort { .. } => "reverse",
             })
             .collect();
         assert_eq!(kinds, vec!["supervisor", "runner", "forward"]);

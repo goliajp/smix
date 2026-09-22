@@ -63,6 +63,11 @@ const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
     ),
     ("Openurl", "hands a URL to the system"),
     (
+        "Reverse",
+        "opens a route from the device to this machine, and closes it by \
+         the same verb; nothing on the device is touched",
+    ),
+    (
         "Appearance",
         "light or dark, and reversible by the same verb",
     ),

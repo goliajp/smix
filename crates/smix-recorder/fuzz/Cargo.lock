@@ -1028,6 +1028,7 @@ dependencies = [
 name = "smix-host-coord-resolver"
 version = "10.1.0"
 dependencies = [
+ "smix-input",
  "smix-screen",
  "smix-selector",
  "smix-selector-resolver",

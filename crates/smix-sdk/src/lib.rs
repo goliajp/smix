@@ -86,6 +86,8 @@ fn swipe_endpoint(start: (f64, f64), direction: SwipeDirection) -> (f64, f64) {
 
 // -- re-exports for downstream user convenience ------------------------
 
+/// What a scroll-until-visible asks of its target; part of [`ScrollUntil`].
+pub use smix_driver::Reach;
 /// Which device a runner port actually reaches — the check that
 /// stands between `--device` and acting on somebody else's machine.
 pub use smix_driver::port_owner;
@@ -93,8 +95,6 @@ pub use smix_driver::{
     ActOutcome, ActVerdict, AndroidDriver, HitElement, HttpRunnerClient, IncludeScope, OcrFrame,
     RunnerScrollSelector, RunnerTransportError, ScrollUntil, SimctlDriver, SystemPopup, TapMode,
 };
-/// What a scroll-until-visible asks of its target; part of [`ScrollUntil`].
-pub use smix_driver::Reach;
 pub use smix_error::{
     ExpectationFailure, FailureCode, FailureInit, build_suggestions, edit_distance, similarity,
 };

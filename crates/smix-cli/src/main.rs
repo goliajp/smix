@@ -1647,6 +1647,36 @@ enum SimAction {
         /// The app to remove.
         bundle_id: String,
     },
+    /// Let an Android device reach a service running on this machine.
+    ///
+    /// The app under test dials `127.0.0.1:<port>` on the device and
+    /// lands on `127.0.0.1:<port>` here — `--to` sends it to a
+    /// different port on this side. A consumer's suite starts its API
+    /// stub on the host; without this, a phone on the cable has no way
+    /// to reach it at all, and an emulator has only a special address
+    /// to remember.
+    ///
+    /// What is opened stays open: it survives this command, the runner,
+    /// and the flow. It goes when `--remove` names it, when the device
+    /// goes away, or when a teardown closes the ledger row this writes.
+    ///
+    /// Android only. A simulator already shares this machine's loopback
+    /// and needs nothing; a physical iPhone has no such channel, and
+    /// both say so rather than doing nothing quietly.
+    Reverse {
+        /// Which device, by serial or registry alias.
+        device: String,
+        /// The port the app dials on the device. It also names the
+        /// route later, for `--remove`.
+        port: u16,
+        /// The port on this machine to land on. Defaults to the same
+        /// number the device dials.
+        #[arg(long, conflicts_with = "remove")]
+        to: Option<u16>,
+        /// Close the route this port names instead of opening one.
+        #[arg(long)]
+        remove: bool,
+    },
     /// Open a URL on the simulator.
     Openurl {
         /// Which device, by UDID or registry alias.
@@ -1948,6 +1978,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Terminate { device, .. }
         | SimAction::Install { device, .. }
         | SimAction::Uninstall { device, .. }
+        | SimAction::Reverse { device, .. }
         | SimAction::Openurl { device, .. }
         | SimAction::Appearance { device, .. }
         | SimAction::AllowDestructive { device }
@@ -1984,6 +2015,11 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
     // and is not wired — and §9 #1 ③ says a capability that is not
     // available is said out loud rather than attempted into silence.
     const LOADABLE: &[DeviceKind] = &[Simulator, Emulator, PhysicalAndroid];
+    // Both Android kinds, and only those. `adb reverse` works the same
+    // on an emulator as on a handset, so one verb covers both — a flow
+    // that had to know which kind it was driving is the thing the
+    // device abstraction exists to remove.
+    const ANDROID: &[DeviceKind] = &[Emulator, PhysicalAndroid];
     Some(match action {
         // No device, or the registry rather than the device.
         SimAction::List { .. }
@@ -2012,6 +2048,13 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
         // an Android phone.
         SimAction::Install { .. } => LOADABLE,
 
+        // A route from the device back to this machine. Android only,
+        // and the two Apple kinds are absent for opposite reasons the
+        // platform table spells out: a simulator is already on this
+        // side of the loopback, and Apple's USB channel has no reverse
+        // direction to open.
+        SimAction::Reverse { .. } => ANDROID,
+
         // simctl and nothing else. An emulator's counterparts exist
         // (`emulator -avd`, `adb shell am start`, `adb shell settings`)
         // but none of them is wired here, and pretending otherwise is
@@ -2027,6 +2070,43 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
     })
 }
 
+/// Which entry of the platform table answers for this verb, if any.
+///
+/// Exhaustive on purpose, like its two neighbours: a new verb has to
+/// say whether the table already holds a sentence for it.
+///
+/// Only `reverse` maps today, and the rest are `None` deliberately —
+/// not because nothing else could. The generic sentence below says
+/// "this command runs through simctl", which is true of the verbs that
+/// do and false of any verb that does not; `reverse` is the first of
+/// the second kind, and pointing it at the table is what keeps the
+/// refusal honest. Mapping the others is a change to what every one of
+/// them says, and belongs with somebody reading each in turn.
+fn table_action_of(action: &SimAction) -> Option<&'static str> {
+    match action {
+        SimAction::Reverse { .. } => Some("reverse_port"),
+        SimAction::List { .. }
+        | SimAction::Register { .. }
+        | SimAction::Resolve { .. }
+        | SimAction::Migrate { .. }
+        | SimAction::Unregister { .. }
+        | SimAction::AllowDestructive { .. }
+        | SimAction::Boot { .. }
+        | SimAction::Shutdown { .. }
+        | SimAction::Erase { .. }
+        | SimAction::Screenshot { .. }
+        | SimAction::Launch { .. }
+        | SimAction::Terminate { .. }
+        | SimAction::Install { .. }
+        | SimAction::Uninstall { .. }
+        | SimAction::Openurl { .. }
+        | SimAction::Appearance { .. }
+        | SimAction::KeychainReset { .. }
+        | SimAction::Locale { .. }
+        | SimAction::Exec { .. } => None,
+    }
+}
+
 /// Refuse a verb this device kind has no path for, naming what does.
 fn guard_sim_verb(action: &SimAction, device: &str) -> Result<(), CliError> {
     use smix_simctl::registry::DeviceKind;
@@ -2036,6 +2116,17 @@ fn guard_sim_verb(action: &SimAction, device: &str) -> Result<(), CliError> {
     let kind = device_kind_of(device);
     if kinds.contains(&kind) {
         return Ok(());
+    }
+    // The table's own words when it has them: it is where every other
+    // refusal's wording lives, and it says why *this* device cannot and
+    // where the caller should go instead.
+    if let Some(table_action) = table_action_of(action)
+        && let Some(smix_sdk::device_control::Availability::RefusedByName { why, instead }) =
+            smix_sdk::device_control::availability(table_action, kind)
+    {
+        return Err(CliError::Other(format!(
+            "{device} cannot do this: {why}\nInstead: {instead}"
+        )));
     }
     let what = match kind {
         DeviceKind::Simulator => "an iOS Simulator",
@@ -2680,6 +2771,45 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         }
                     }
                     println!("uninstalled: {bundle_id} on {udid}");
+                }
+                SimAction::Reverse {
+                    device,
+                    port,
+                    to,
+                    remove,
+                } => {
+                    use smix_sdk::device_control::DeviceControl;
+                    let serial = resolve_android_serial(&device)?;
+                    let control = smix_sdk::android_device::AndroidDeviceControl::new();
+                    let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
+                    if remove {
+                        control
+                            .reverse_port_remove(&serial, port)
+                            .await
+                            .map_err(|e| CliError::Other(e.to_string()))?;
+                        smix_lease::store::drop_reverse(&leases, &serial, port)
+                            .map_err(|e| CliError::Other(e.to_string()))?;
+                        println!("reverse: {serial} tcp:{port} closed");
+                    } else {
+                        // The device's own port is the default: a caller
+                        // who wants them to differ says so.
+                        let host_port = to.unwrap_or(port);
+                        control
+                            .reverse_port(&serial, port, host_port)
+                            .await
+                            .map_err(|e| CliError::Other(e.to_string()))?;
+                        // Written after adb took it, never before. A row
+                        // for a route that was never opened would have
+                        // the next teardown close something that is not
+                        // there, and report a clean device either way.
+                        smix_lease::store::record_reverse(&leases, &serial, &serial, port, host_port)
+                            .map_err(|e| CliError::Other(e.to_string()))?;
+                        println!(
+                            "reverse: {serial} tcp:{port} -> 127.0.0.1:{host_port} \
+                             (stays open until `smix sim reverse {device} {port} --remove`, \
+                             or until the device goes away)"
+                        );
+                    }
                 }
                 SimAction::Openurl { device, url } => {
                     let udid = resolve_device(&device)?;
@@ -4489,6 +4619,8 @@ fn is_destructive(action: &SimAction) -> bool {
         | SimAction::Terminate { .. }
         | SimAction::Install { .. }
         | SimAction::Openurl { .. }
+        // A route to this machine takes nothing off the device.
+        | SimAction::Reverse { .. }
         | SimAction::Appearance { .. }
         | SimAction::Locale { .. } => false,
     }

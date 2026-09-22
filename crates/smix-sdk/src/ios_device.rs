@@ -55,6 +55,36 @@ impl IosDeviceControl {
     }
 }
 
+/// Say no on a simulator, with the reason and the way out the platform
+/// table already holds.
+///
+/// The sentence is not written here: `ACTION_PLATFORMS` is where every
+/// other refusal's wording lives, and a second copy beside the code is
+/// the one that goes stale (`code/derive-dont-copy`).
+fn refused_on_a_simulator(action: &str) -> DeviceControlError {
+    use crate::device_control::{Availability, availability};
+    use smix_simctl::registry::DeviceKind;
+
+    match availability(action, DeviceKind::Simulator) {
+        Some(Availability::RefusedByName { why, instead }) => DeviceControlError::non_zero_exit(
+            action,
+            -1,
+            format!("{action} is not available on a simulator: {why}\nInstead: {instead}").as_str(),
+        ),
+        // The table says this works here and this code refuses it. Say
+        // that, rather than invent a reason for a disagreement.
+        other => DeviceControlError::non_zero_exit(
+            action,
+            -1,
+            format!(
+                "{action} was refused on a simulator, but the platform table says {other:?}. \
+                 The table and this code disagree; fix one."
+            )
+            .as_str(),
+        ),
+    }
+}
+
 #[async_trait]
 impl DeviceControl for IosDeviceControl {
     fn platform(&self) -> Platform {
@@ -277,6 +307,23 @@ impl DeviceControl for IosDeviceControl {
         let handle = self.client.record_video_start(udid, &path_str).await?;
         *guard = Some(handle);
         Ok(())
+    }
+
+    async fn reverse_port(
+        &self,
+        _udid: &str,
+        _device_port: u16,
+        _host_port: u16,
+    ) -> Result<(), DeviceControlError> {
+        Err(refused_on_a_simulator("reverse_port"))
+    }
+
+    async fn reverse_port_remove(
+        &self,
+        _udid: &str,
+        _device_port: u16,
+    ) -> Result<(), DeviceControlError> {
+        Err(refused_on_a_simulator("reverse_port_remove"))
     }
 
     async fn recording_pid(&self) -> Option<u32> {

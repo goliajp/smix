@@ -19,9 +19,22 @@
 #      gradle android plugin fans install/connected tasks out to EVERY
 #      attached device, so an unpinned run reaches the phone too.
 #
-# Read-only adb (`devices`, `shell getprop`, `forward`, `logcat`,
-# `emu kill`) is never touched — none of it writes app state. Non-adb,
-# non-gradle commands pass untouched.
+# Read-only adb is never touched — `devices`, `shell getprop`, `logcat`,
+# and the `--list` form of `forward` / `reverse`. Non-adb, non-gradle
+# commands pass untouched.
+#
+# Opening a forward or a reverse is NOT in that set, and the header said
+# it was until 2026-09-23: `is_read_only` has only ever allowed
+# `forward --list`, so `adb -s <phone> forward tcp:1 tcp:2` was refused
+# while this paragraph promised it would not be. Same shape as the
+# `shell getprop` correction below, and the same lesson — a rule whose
+# stated form is kinder than its real one gets discovered the hard way.
+#
+# The refusal is right, and the reason is not that a route writes app
+# state. It is that a route nothing recorded is an orphan: it outlives
+# the command that opened it, and no teardown can close what no ledger
+# names. `smix sim reverse <device> <port>` opens the same route, writes
+# it down, and closes it on `--remove` or at the next reconcile.
 #
 # The emulator serial pattern is `emulator-<port>`; a physical device
 # serial is anything else. Requiring the emulator form (rather than
@@ -49,6 +62,7 @@ deny() {
   # which names the device up front so a bare command can never reach a
   # phone by accident.
   echo "adb-guard: drive the device through smix, not raw adb — smix takes the device explicitly, so it cannot fall through to an attached phone: 'smix run <flow> --device emulator-5554', 'smix fill/find/tree --device emulator-5554', 'smix runner up --platform android --device emulator-5554', 'smix sim boot <alias>'. A physical device must be registered first ('smix sim register')." >&2
+  echo "adb-guard: to let a device reach a server on this machine, 'smix sim reverse <device> <port>' (and '--remove' to close it) — it takes the device explicitly and records the route, so a teardown can close it" >&2
   echo "adb-guard: if you must use raw adb, pin an emulator — 'adb -s emulator-5554 …' or 'ANDROID_SERIAL=emulator-5554 ./gradlew …'; never an unpinned mutation (it reaches a physical phone) and never a physical serial" >&2
   exit 2
 }

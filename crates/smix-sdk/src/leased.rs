@@ -450,6 +450,12 @@ mod tests {
         async fn recording_pid(&self) -> Option<u32> {
             Some(std::process::id())
         }
+        async fn reverse_port(&self, _: &str, _: u16, _: u16) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn reverse_port_remove(&self, _: &str, _: u16) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
         async fn launch(&self, _: &str, _: &str) -> Result<u32, DeviceControlError> {
             unreachable!()
         }
@@ -614,6 +620,12 @@ mod tests {
             unreachable!()
         }
         async fn stop_recording(&self) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn reverse_port(&self, _: &str, _: u16, _: u16) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn reverse_port_remove(&self, _: &str, _: u16) -> Result<(), DeviceControlError> {
             unreachable!()
         }
     }

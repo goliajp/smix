@@ -1034,6 +1034,23 @@ impl DeviceControl for DevicectlClient {
         Ok(())
     }
 
+    async fn reverse_port(
+        &self,
+        _udid: &str,
+        _device_port: u16,
+        _host_port: u16,
+    ) -> Result<(), DeviceControlError> {
+        Err(refused("reverse_port"))
+    }
+
+    async fn reverse_port_remove(
+        &self,
+        _udid: &str,
+        _device_port: u16,
+    ) -> Result<(), DeviceControlError> {
+        Err(refused("reverse_port_remove"))
+    }
+
     async fn stop_recording(&self) -> Result<(), DeviceControlError> {
         let mut rec = recording_to_end(self.recording.lock().await.take())?;
         // SIGINT, not kill: the encoder writes the movie's trailer when it
@@ -1220,9 +1237,15 @@ mod tests {
         //
         // 12 until `location_set` and `location_start` followed, through
         // `device simulate location coordinate` / `route`.
+        //
+        // 10 until `reverse_port` and `reverse_port_remove` arrived in
+        // the same release. Those two move the count the other way and
+        // they are not a gap: a phone refuses them because Apple's USB
+        // channel has no reverse direction for anything to drive, so
+        // there is no verb for devicectl to grow.
         assert_eq!(
-            checked, 10,
-            "the phone refuses 10 of these; this says {checked}"
+            checked, 12,
+            "the phone refuses 12 of these; this says {checked}"
         );
     }
 
@@ -1469,6 +1492,8 @@ mod parity_tests {
                 "screenshot" => err_of(c.screenshot(&udid).await.map(|_| ())),
                 "capture_bgra" => err_of(c.capture_bgra(&udid).await.map(|_| ())),
                 "set_animations_quiet" => err_of(c.set_animations_quiet(&udid, true).await),
+                "reverse_port" => err_of(c.reverse_port(&udid, 8080, 8080).await),
+                "reverse_port_remove" => err_of(c.reverse_port_remove(&udid, 8080).await),
                 other => Some(format!("UNCHECKED: no case for {other}")),
             };
             match refusal {

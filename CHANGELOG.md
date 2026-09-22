@@ -6,6 +6,29 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **`smix sim reverse` — let an Android device reach a service on this
+  machine.** An app under test that talks to a stub server on the host
+  had one address on an emulator (`10.0.2.2`) and none at all on a phone
+  on the cable: a consumer's suite starts a local server and so could
+  not run on a phone, since raw `adb reverse` against a physical serial
+  is refused by the plugin's adb guard — rightly, because nothing would
+  have recorded what it opened.
+
+  ```bash
+  smix sim reverse <DEVICE> 8080            # device dials 127.0.0.1:8080 → this machine's 8080
+  smix sim reverse <DEVICE> 8080 --to 3000  # → this machine's 3000
+  smix sim reverse <DEVICE> 8080 --remove   # close it
+  ```
+
+  The same verb on an emulator and on a registered phone, so a flow
+  never has to know which it is driving. What it opens outlives the
+  command, the runner and the flow — it is written into the device's
+  ledger beside the runner and the recording, so a route left behind by
+  a session that died is closed by the next teardown rather than
+  lingering until somebody notices. A simulator and a physical iPhone
+  refuse it and say why: the first already shares this machine's
+  loopback, the second has no channel in that direction.
+
 - **The Compose probe sees the Views that Compose hosts.** An
   `AndroidView` puts a real View inside a composition; the probe walked
   the semantics tree and nothing else, so those controls were absent from

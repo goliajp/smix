@@ -188,6 +188,47 @@ fn parse_granted_runtime_permissions(dumpsys_stdout: &str) -> Vec<String> {
     granted
 }
 
+/// `adb reverse` argv: the device's port, then this machine's.
+///
+/// Separated from the call so the order can be judged without a device.
+/// `forward` takes host-then-device and `reverse` takes
+/// device-then-host; one function each, and each one's order is a test.
+fn reverse_argv(device_port: u16, host_port: u16) -> Vec<String> {
+    vec![
+        "reverse".into(),
+        format!("tcp:{device_port}"),
+        format!("tcp:{host_port}"),
+    ]
+}
+
+/// `adb reverse --remove` argv. The device port identifies the pair —
+/// it is the end the device dials.
+fn unreverse_argv(device_port: u16) -> Vec<String> {
+    vec![
+        "reverse".into(),
+        "--remove".into(),
+        format!("tcp:{device_port}"),
+    ]
+}
+
+/// The `(device_port, host_port)` pairs out of `adb reverse --list`.
+///
+/// Each line reads `<serial> tcp:<device> tcp:<host>`. A line that does
+/// not parse is not a pair and is left out: the caller asked which
+/// routes are open, and a zero would be an answer nobody could act on.
+fn parse_reverse_list(stdout: &str) -> Vec<(u16, u16)> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut ports = line
+                .split_whitespace()
+                .filter_map(|tok| tok.strip_prefix("tcp:"))
+                .filter_map(|p| p.parse::<u16>().ok());
+            Some((ports.next()?, ports.next()?))
+        })
+        .collect()
+}
+
 impl AdbClient {
     /// Default constructor — uses `adb` from PATH.
     #[must_use]
@@ -501,6 +542,42 @@ impl AdbClient {
         Ok(output.stdout)
     }
 
+    /// `adb -s <serial> reverse tcp:<device> tcp:<host>` — let the
+    /// device reach a port on this machine.
+    ///
+    /// The mirror of [`Self::forward`], and the direction an app under
+    /// test needs: a service running here becomes reachable from the
+    /// device at `127.0.0.1:<device_port>`. It is state in the adb
+    /// server rather than a process — it outlives the command that sets
+    /// it, and lasts until removed or until the device goes away.
+    pub async fn reverse(
+        &self,
+        serial: &str,
+        device_port: u16,
+        host_port: u16,
+    ) -> Result<(), AdbError> {
+        let argv = reverse_argv(device_port, host_port);
+        let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+        self.run_capture(Some(serial), &argv[0], &args).await?;
+        Ok(())
+    }
+
+    /// `adb -s <serial> reverse --remove tcp:<device>` — close one.
+    pub async fn unreverse(&self, serial: &str, device_port: u16) -> Result<(), AdbError> {
+        let argv = unreverse_argv(device_port);
+        let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+        self.run_capture(Some(serial), &argv[0], &args).await?;
+        Ok(())
+    }
+
+    /// `adb -s <serial> reverse --list` — the pairs open on this device.
+    pub async fn reverse_list(&self, serial: &str) -> Result<Vec<(u16, u16)>, AdbError> {
+        let (stdout, _) = self
+            .run_capture(Some(serial), "reverse", &["--list"])
+            .await?;
+        Ok(parse_reverse_list(&stdout))
+    }
+
     /// `adb -s <serial> forward tcp:<host> tcp:<device>` — set up port
     /// forwarding from host loopback to device port.
     pub async fn forward(
@@ -688,5 +765,36 @@ User 0: ceDataInode=1234 installed=true hidden=false
         assert_eq!(devs[0].serial, "emulator-5554");
         assert_eq!(devs[0].state, "device");
         assert_eq!(devs[0].transport_id.as_deref(), Some("1"));
+    }
+
+    /// The device side comes first, and this is the whole judgement.
+    ///
+    /// `adb reverse <remote> <local>` reads device-then-host, and
+    /// `adb forward <local> <remote>` reads host-then-device — the two
+    /// subcommands take their pair in opposite orders. Swapping them
+    /// costs nothing at the adb layer (both are ports, both parse) and
+    /// gives the device a route to a port nothing is listening on.
+    #[test]
+    fn reverse_names_the_device_port_before_the_host_port() {
+        assert_eq!(
+            reverse_argv(8080, 3000),
+            vec!["reverse", "tcp:8080", "tcp:3000"]
+        );
+        assert_eq!(unreverse_argv(8080), vec!["reverse", "--remove", "tcp:8080"]);
+    }
+
+    /// Verbatim from `adb -s emulator-5554 reverse --list` with two open.
+    #[test]
+    fn reads_the_open_reverses() {
+        let listing = "emulator-5554 tcp:8080 tcp:3000\nemulator-5554 tcp:9090 tcp:9090\n";
+        assert_eq!(parse_reverse_list(listing), vec![(8080, 3000), (9090, 9090)]);
+    }
+
+    /// An empty listing is the ordinary answer on a device with none
+    /// open, and it must not read as "one, on port zero".
+    #[test]
+    fn a_device_with_nothing_open_reads_as_nothing() {
+        assert!(parse_reverse_list("").is_empty());
+        assert!(parse_reverse_list("\n").is_empty());
     }
 }
