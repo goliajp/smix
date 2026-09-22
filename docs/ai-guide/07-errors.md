@@ -179,6 +179,23 @@ point, which is why it has its own code.
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
 
+### A fill with nothing focused
+
+`no_focused_field` means the characters had nowhere to go: `input text`
+types into whatever holds focus, and nothing did. The usual cause is
+not the field — it is something else on top of it.
+
+So the failure names it. The message ends with the foreign window
+holding the focus (`Above <your app>, and holding the focus:
+com.android.permissioncontroller (an app window)`), and says when your
+app has no window in the stack at all. The whole stack comes back
+beside it as `windows`.
+
+A consumer lost six seconds and a screenshot to the version that said
+only "no editable field had focus": their keyboard had opened its own
+promotion dialog over the field. `smix system-popups` lists such a
+window with its buttons, and `smix system-popup-action` presses one.
+
 ### A refused `back`
 
 `back` fails when the screen it was on is still the screen it is on. The

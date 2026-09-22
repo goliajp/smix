@@ -270,8 +270,7 @@ pub async fn cmd_tap_then_screenshot(
         ));
     }
     let d = driver_for(platform, port);
-    let raw = HttpRunnerClient::new(port);
-    let (outcome, captured) = smix_sdk::tap_then_capture_with(d.as_ref(), Some(&raw), &selector)
+    let (outcome, captured) = smix_sdk::tap_then_capture_with(d.as_ref(), &selector)
         .await
         .map_err(|e| ActError::Transport(e.to_prompt()))?;
     // Only now: a tap that failed returned above, so nothing on disk can

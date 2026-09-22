@@ -754,9 +754,12 @@ like a working checker. Read the density from the device
 hides itself after a few seconds outlives neither a second command nor
 the turn between two tool calls, and the usual answer is to change the
 app so the thing stays up long enough to photograph. This takes the
-frame from the same process that tapped, in the same call: measured at
-about 88 ms after the tap returns, against roughly 325 ms going out to
-device tooling. The line it prints says which route took the frame and
+frame from the same process that tapped, in the same call, on both
+platforms: measured at about 88 ms after the tap returns, against
+roughly 325 ms going out to device tooling. (Before 10.2 the Android
+runner served no such route and this answered `501 not_implemented`; a
+runner older than that now says so and asks to be brought up again,
+rather than handing back a frame taken by something else.) The line it prints says which route took the frame and
 how many milliseconds late it is, so the number is reported rather than
 promised.
 

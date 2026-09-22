@@ -2294,9 +2294,12 @@ like a working checker. Read the density from the device
 hides itself after a few seconds outlives neither a second command nor
 the turn between two tool calls, and the usual answer is to change the
 app so the thing stays up long enough to photograph. This takes the
-frame from the same process that tapped, in the same call: measured at
-about 88 ms after the tap returns, against roughly 325 ms going out to
-device tooling. The line it prints says which route took the frame and
+frame from the same process that tapped, in the same call, on both
+platforms: measured at about 88 ms after the tap returns, against
+roughly 325 ms going out to device tooling. (Before 10.2 the Android
+runner served no such route and this answered `501 not_implemented`; a
+runner older than that now says so and asks to be brought up again,
+rather than handing back a frame taken by something else.) The line it prints says which route took the frame and
 how many milliseconds late it is, so the number is reported rather than
 promised.
 
@@ -3074,6 +3077,23 @@ point, which is why it has its own code.
 - `socket timeout`: runner alive but slow (XCUITest hung) — `smix down` then re-up
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
+
+### A fill with nothing focused
+
+`no_focused_field` means the characters had nowhere to go: `input text`
+types into whatever holds focus, and nothing did. The usual cause is
+not the field — it is something else on top of it.
+
+So the failure names it. The message ends with the foreign window
+holding the focus (`Above <your app>, and holding the focus:
+com.android.permissioncontroller (an app window)`), and says when your
+app has no window in the stack at all. The whole stack comes back
+beside it as `windows`.
+
+A consumer lost six seconds and a screenshot to the version that said
+only "no editable field had focus": their keyboard had opened its own
+promotion dialog over the field. `smix system-popups` lists such a
+window with its buttons, and `smix system-popup-action` presses one.
 
 ### A refused `back`
 
@@ -4680,14 +4700,43 @@ Response: raw PNG bytes (`Content-Type: image/png`). A 503 means
 it carries `error` and `reason`, and callers are expected to say so
 rather than hand back an empty image.
 
-**iOS only**: the Android runner serves no such route, and a frame there
-comes from device tooling instead. Anything that can go either way is
-expected to name which it took.
+Both platforms serve it, and `tap --then-screenshot` takes its frame
+from it on both: the picture comes from the process that just acted.
+The Android runner served no such route until 10.2, so a runner older
+than that answers `501 not_implemented` — which callers are expected to
+report as "this runner predates the route, bring it up again" rather
+than quietly photographing the screen with something else.
 
 ### `POST /foreground`
 
 Body: `{ bundle: string }` — sends to system `XCUIApplication(bundleId).activate()`.
 Response: `{ ok: bool }`
+
+### `GET /system-popups`
+
+Response: `{ popups: [{ id, type, source, title, body, buttons: [{ id,
+label, role, dangerous, outcomeHint? }] }] }`. `source` is who owns the
+window — a bundle id on iOS, a package name on Android.
+
+A popup is a window that **belongs to somebody other than the app under
+test, took the focus, and carries something a caller can press**. All
+three matter, and each was learned from a window that broke one of
+them:
+
+- The navigation bar carries four clickable, named buttons (Back, Home,
+  Overview, Switch input method) and is over every app at all times. It
+  never takes the focus, and it is not a popup.
+- The keyboard is never a popup whatever is drawn on it. Its verb is
+  `hideKeyboard`.
+- An app's own dialog is answered by `/tree`, where the flow's own
+  selectors can name its buttons.
+
+Which app is "the app under test" comes from the `App-Bundle-Id` header
+every smix client sends, or `?app=<pkg>`. **A caller who sends neither
+gets every focused window carrying buttons, their own dialogs
+included** — the alternative was guessing, and the guess that was tried
+first ("the focused application window") took the permission dialog for
+the app and reported nothing at all.
 
 ### `GET /health`
 
@@ -4707,6 +4756,14 @@ Failures return HTTP 4xx/5xx with:
 
 Codes: `not_found`, `snapshot_unavailable`, `app_unavailable`,
 `invalid_request`, `runner_error`.
+
+`no_focused_field` carries two more fields, from one walk of the window
+stack: the `message` names any foreign window holding the focus, and
+`windows` is the whole stack as `[{ package, type, kind, layer }]`. A
+fill that finds no field is most often a fill with something else on
+top, and the sentence that used to come back described only the focus.
+When the app under test has no window in the stack at all, the message
+says that too.
 
 ## Wire selector schema
 

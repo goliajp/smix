@@ -136,6 +136,42 @@ class SmixHttpServer(
         return bmp
     }
 
+    /**
+     * `GET /screenshot` — the whole screen as PNG bytes.
+     *
+     * The same wire contract the iOS runner has served all along: raw
+     * bytes with `image/png`, and a 503 when the capture produced
+     * nothing, which is a different thing from a screen that is blank.
+     * There was no such route here, so `smix tap --then-screenshot`
+     * answered `501 not_implemented` on Android while the very same
+     * capture was already being taken for OCR one function above.
+     *
+     * Through the pacer, like every other capture in this process: a
+     * caller alternating frames and OCR otherwise contends with
+     * UiAutomator through two different doors.
+     */
+    private fun serveScreenshot(): Response {
+        val bitmap = pacedScreenshot()
+            ?: return errorJson(
+                Response.Status.SERVICE_UNAVAILABLE,
+                "screenshot_failed",
+                "UiAutomation.takeScreenshot returned null. The screen was not " +
+                    "photographed, which is not the same as a screen with " +
+                    "nothing on it.",
+            )
+        val bytes = java.io.ByteArrayOutputStream().use { out ->
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+            bitmap.recycle()
+            out.toByteArray()
+        }
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "image/png",
+            ByteArrayInputStream(bytes),
+            bytes.size.toLong(),
+        )
+    }
+
     /// How long `input-text` waits for a field to take focus.
     ///
     /// The tap that focuses it lands immediately before, and on a cold
@@ -236,6 +272,7 @@ class SmixHttpServer(
                 uri == "/record/start" && session.method == Method.POST -> serveRecordStart()
                 uri == "/record/poll" && session.method == Method.GET -> serveRecordPoll()
                 uri == "/record/stop" && session.method == Method.POST -> serveRecordStop()
+                uri == "/screenshot" && session.method == Method.GET -> serveScreenshot()
                 uri == "/tree" && session.method == Method.GET -> serveTree()
                 uri == "/probe" && session.method == Method.GET -> serveProbe(session)
                 uri == "/probe/tree" && session.method == Method.GET -> serveProbeTree(session)
@@ -262,7 +299,7 @@ class SmixHttpServer(
                 uri == "/foreground" && session.method == Method.POST -> serveForeground(session)
                 uri == "/find-text-by-ocr" && session.method == Method.POST ->
                     serveFindTextByOcr(session)
-                uri == "/system-popups" && session.method == Method.GET -> serveSystemPopups()
+                uri == "/system-popups" && session.method == Method.GET -> serveSystemPopups(session)
                 uri == "/system-popup-action" && session.method == Method.POST ->
                     serveSystemPopupAction(session)
                 uri == "/webview-eval" && session.method == Method.POST ->
@@ -474,6 +511,7 @@ class SmixHttpServer(
                     focused = w.isFocused,
                     rootReadable = root != null,
                     packageName = root?.packageName?.toString(),
+                    kind = WindowRules.kindOf(w.type),
                 ),
             )
             root?.recycle()
@@ -773,9 +811,38 @@ class SmixHttpServer(
     /// ordinary state, and it is exactly the one that used to send back
     /// through to the app.
     private fun keyboardIsUp(): Boolean =
-        instrumentation.uiAutomation.windows.any {
-            it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+        readWindowRows().any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+
+    /// The window stack, as the decision on the other side reads it.
+    ///
+    /// One walk for the three questions that ask about windows — is the
+    /// keyboard up, what is on the screen, and who is over the app in a
+    /// failure. They disagreed about nothing so far because two of them
+    /// did not exist yet.
+    private fun readWindowRows(): List<WindowRules.Row> =
+        instrumentation.uiAutomation.windows.map { w ->
+            val root = w.root
+            val pkg = root?.packageName?.toString()
+            root?.recycle()
+            WindowRules.Row(w.type, pkg, w.layer, w.isActive || w.isFocused)
         }
+
+    /// Which package the caller is driving, when the caller said.
+    ///
+    /// The `App-Bundle-Id` header every smix request already carries,
+    /// or `?app=<pkg>` for a caller holding nothing but curl.
+    ///
+    /// **Nothing is guessed when neither is given.** The first version
+    /// of this fell back to "the focused application window", and the
+    /// permission dialog — the very thing this route exists to report —
+    /// is a focused application window, so it was taken for the app
+    /// under test and reported as nothing at all. A caller who did not
+    /// say which app they are driving gets every window that took the
+    /// focus and carries buttons, their own dialogs included; the doc
+    /// says so.
+    private fun appUnderTest(session: IHTTPSession): String? =
+        session.headers["app-bundle-id"]?.takeIf { it.isNotEmpty() }
+            ?: session.parameters["app"]?.firstOrNull()?.takeIf { it.isNotEmpty() }
 
     private fun serveSetOrientation(session: IHTTPSession): Response {
         // OK MEANS: outcome — the display is left in the rotation that
@@ -1086,14 +1153,28 @@ class SmixHttpServer(
         // is the whole defect — the second fill on a screen always
         // worked because by then the keyboard was already open.
         val focused = awaitEditableFocus(FOCUS_SETTLE_MS, focusPx)
-            ?: return errorJson(
+        if (focused == null) {
+            // Who is over the app, in the failure that it caused.
+            //
+            // A consumer lost six seconds and a screenshot to this: their
+            // keyboard had opened its own promotion dialog over the field,
+            // and every word of this message was about focus. The walk was
+            // already being done next door for `keyboardIsUp`.
+            val rows = readWindowRows()
+            val above = WindowRules.windowStackSentence(rows, appUnderTest(session))
+            return newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
-                "no_focused_field",
-                "input-text: no editable field had focus after " +
-                    "${FOCUS_SETTLE_MS}ms. `input text` types into the focused " +
-                    "field and there was none, so the characters would have " +
-                    "gone nowhere while this reported success.",
+                "application/json",
+                RunnerWire.noFocusedFieldEnvelope(
+                    "input-text: no editable field had focus after " +
+                        "${FOCUS_SETTLE_MS}ms. `input text` types into the focused " +
+                        "field and there was none, so the characters would have " +
+                        "gone nowhere while this reported success." +
+                        if (above.isEmpty()) "" else " $above",
+                    rows,
+                ),
             )
+        }
 
         val before = focused.text?.toString() ?: ""
         // The node says whether it masks. Nothing here guesses it from
@@ -1733,21 +1814,29 @@ class SmixHttpServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
-    private fun serveSystemPopups(): Response {
+    private fun serveSystemPopups(session: IHTTPSession): Response {
         // Walk UiAutomation.windows and classify each as
-        // app | dialog | system based on getType() / window class.
-        // Compose AlertDialog typically reports type = TYPE_APPLICATION
-        // but is hosted in a separate window with isDialog=true (API 24+).
-        // We surface every TYPE_APPLICATION_PANEL / non-main window as a
-        // candidate popup; the host driver then matches on title/body to
-        // disambiguate which one it cares about.
+        // A popup is a window belonging to somebody other than the app
+        // under test with something in it to press. `?app=<pkg>` names
+        // the app; without it the focused application window stands in,
+        // which is the only thing this route can read when nobody said.
         val automation = instrumentation.uiAutomation
+        val app = appUnderTest(session)
         val popupsArr = JSONArray()
         var idx = 0
         for (window in automation.windows) {
             val root = window.root ?: continue
             try {
-                if (!PopupClassifier.isDialogLike(window, root)) continue
+                if (!WindowRules.isForeignPopup(
+                        window.type,
+                        root.packageName?.toString(),
+                        PopupClassifier.hasPressable(root),
+                        window.isActive || window.isFocused,
+                        app,
+                    )
+                ) {
+                    continue
+                }
                 val title = PopupClassifier.findTitle(root)
                 val body = PopupClassifier.findBody(root, title)
                 val buttons = PopupClassifier.collectButtons(root)
@@ -1775,6 +1864,9 @@ class SmixHttpServer(
         // reported that it ran. The popup going away is the caller's
         // next look.
         val (popupId, buttonId) = RunnerWire.decodeSystemPopupAction(readBodyString(session))
+        // The same predicate the listing used, or the ids would count a
+        // different set of windows than the one the caller read from.
+        val actionApp = appUnderTest(session)
         // Re-walk to find the popup + button (mirror swift smix-runner
         // re-resolve semantics — stale ids surface as ok:false).
         val automation = instrumentation.uiAutomation
@@ -1783,7 +1875,16 @@ class SmixHttpServer(
         for (window in automation.windows) {
             val root = window.root ?: continue
             try {
-                if (!PopupClassifier.isDialogLike(window, root)) continue
+                if (!WindowRules.isForeignPopup(
+                        window.type,
+                        root.packageName?.toString(),
+                        PopupClassifier.hasPressable(root),
+                        window.isActive || window.isFocused,
+                        actionApp,
+                    )
+                ) {
+                    continue
+                }
                 val currentId = "android-popup-$idx"
                 idx += 1
                 if (currentId != popupId) continue
@@ -1874,36 +1975,42 @@ class SmixHttpServer(
 /// `type=APPLICATION_PANEL` on API 24+. Fallback heuristic: small window
 /// bounds (not full-screen) + has button-like children.
 object PopupClassifier {
-    fun isDialogLike(window: AccessibilityWindowInfo, root: AccessibilityNodeInfo): Boolean {
-        // Primary: API isDialog flag (24+ stable signal).
-        if (window.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
-            // For TYPE_APPLICATION, exclude main app window. We classify as
-            // dialog if a Button child is found AND the window is NOT the
-            // largest one (heuristic — main app window typically full-screen).
-            val rect = Rect()
-            root.getBoundsInScreen(rect)
-            val screenW = window.root?.let { Rect().also { r -> it.getBoundsInScreen(r); }.right - rect.left } ?: 0
-            // Dialog if it has any Button-class descendant AND the window
-            // doesn't span full screen height (>90% means main app).
-            if (rect.height() > 0 && rect.height() < screenW * 2) {
-                // Allow — check for button presence
-                return hasButtonDescendant(root)
-            }
-        }
-        return false
+    /// The name of a thing a caller could press, or null.
+    ///
+    /// One rule, used by all three things that ask about buttons: is
+    /// this window a popup, what is on it, and which node does an id
+    /// refer to. They used to ask differently — the listing matched any
+    /// class or resource id containing the word "button", the action
+    /// route matched class names only — and the navigation bar has a
+    /// container called `nav_buttons`. Measured on emulator-5554
+    /// 2026-09-23: with the keyboard up, the listing offered the
+    /// navigation bar as a popup carrying one nameless button.
+    ///
+    /// So the question is asked of the node rather than of its
+    /// spelling: does it take a click, and can it be named. A button
+    /// nobody can name cannot be asked for by a caller either.
+    fun pressLabel(node: AccessibilityNodeInfo): String? {
+        if (!node.isClickable) return null
+        val own = node.text?.toString().orEmpty()
+        if (own.isNotEmpty()) return own
+        val described = node.contentDescription?.toString().orEmpty()
+        if (described.isNotEmpty()) return described
+        // Compose wraps the clickable in a parent whose sibling holds
+        // the visible label.
+        return findSiblingText(node)?.takeIf { it.isNotEmpty() }
     }
 
-    private fun hasButtonDescendant(node: AccessibilityNodeInfo): Boolean {
-        val cls = node.className?.toString() ?: ""
-        if (cls.endsWith("Button") || cls.contains("Button")) return true
-        // testTag-based heuristic for Compose
-        node.viewIdResourceName?.let { id ->
-            if (id.endsWith("-btn") || id.contains("button")) return true
-        }
+    /// Is there anything in this window a caller could press?
+    ///
+    /// The other half of the popup decision, which lives in
+    /// `WindowRules` on the unit-testable side. This half has to walk
+    /// `AccessibilityNodeInfo`, so it stays here.
+    fun hasPressable(node: AccessibilityNodeInfo): Boolean {
+        if (pressLabel(node) != null) return true
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             try {
-                if (hasButtonDescendant(child)) return true
+                if (hasPressable(child)) return true
             } finally {
                 child.recycle()
             }
@@ -1956,27 +2063,10 @@ object PopupClassifier {
     }
 
     private fun collectButtonsRecursive(node: AccessibilityNodeInfo, arr: JSONArray) {
-        val cls = node.className?.toString() ?: ""
-        val viewId = node.viewIdResourceName ?: ""
-        val isButton = cls.endsWith("Button") || cls.contains("Button") ||
-            viewId.endsWith("-btn") || viewId.contains("button")
-        if (isButton) {
+        val label = pressLabel(node)
+        if (label != null) {
+            val viewId = node.viewIdResourceName ?: ""
             val short = viewId.substringAfter(":id/", viewId)
-            // Compose AlertDialog wraps the Button class node in a parent
-            // ViewGroup that ALSO contains a sibling TextView holding the
-            // visible label. node.text on the Button itself is empty; walk
-            // siblings via getParent() for label.
-            val labelFromSelf = node.text?.toString().orEmpty()
-            val labelFromDesc = node.contentDescription?.toString().orEmpty()
-            val labelFromSibling = if (labelFromSelf.isEmpty() && labelFromDesc.isEmpty()) {
-                findSiblingText(node)
-            } else {
-                null
-            }
-            val label = labelFromSelf.takeIf { it.isNotEmpty() }
-                ?: labelFromDesc.takeIf { it.isNotEmpty() }
-                ?: labelFromSibling
-                ?: ""
             val id = PopupWire.buttonId(short, label)
             val role = PopupWire.buttonRole(id, label)
             arr.put(PopupWire.buttonEntry(id, label, role))
@@ -2018,19 +2108,14 @@ object PopupClassifier {
     /// Find button by id (testTag-derived OR label-lowercase fallback).
     /// Caller must recycle().
     fun findButton(root: AccessibilityNodeInfo, buttonId: String): AccessibilityNodeInfo? {
-        val cls = root.className?.toString() ?: ""
-        val viewId = root.viewIdResourceName ?: ""
-        val short = viewId.substringAfter(":id/", viewId)
-        val isButton = cls.endsWith("Button") || cls.contains("Button")
-        if (isButton) {
-            // Match by testTag-derived id first, then by label-slug fallback
-            // (Compose AlertDialog doesn't propagate testTagsAsResourceId
-            // into its dialog window — host driver gets label-slug as id).
-            val matchById = short.isNotEmpty() && short == buttonId
-            val labelFromSibling = findSiblingText(root) ?: ""
-            val matchByLabel = labelFromSibling.isNotEmpty() &&
-                labelFromSibling.lowercase() == buttonId.lowercase()
-            if (matchById || matchByLabel) {
+        // The id the listing would have given this node, computed the
+        // same way. When these two disagreed, a caller could read an id
+        // out of `/system-popups` and get `ok:false` pressing it.
+        val label = pressLabel(root)
+        if (label != null) {
+            val viewId = root.viewIdResourceName ?: ""
+            val short = viewId.substringAfter(":id/", viewId)
+            if (PopupWire.buttonId(short, label).equals(buttonId, ignoreCase = true)) {
                 return AccessibilityNodeInfo.obtain(root)
             }
         }

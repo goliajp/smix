@@ -63,6 +63,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v10.2-c7-probe-sees-the-screen-e2e.sh",
     "v10.2-c8-reverse-reaches-host-e2e.sh",
     "v10.2-c9-a-phone-is-arranged-e2e.sh",
+    "v10.2-c10-what-is-above-the-app-e2e.sh",
     "v2.12-c3-federation-single-node-e2e.sh",
     "v2.12-c4-federation-two-node-e2e.sh",
     "v2.12-c5-federation-cli-e2e.sh",
