@@ -2125,3 +2125,92 @@ fn selector_map_refuses_non_string_keys() {
         assert!(reason.contains("unknown key"), "{body}: {reason}");
     }
 }
+
+// ---- scrollUntilVisible: every maestro key is read or refused by name ----
+
+use smix_adapter_maestro::SCROLL_UNTIL_VISIBLE_KEYS;
+use smix_driver::{DEFAULT_SCROLL_TIMEOUT, ScrollUntil};
+use smix_host_coord_resolver::Reach;
+
+fn scroll_step(yaml_body: &str) -> (ScrollUntil, BlockOptions, String) {
+    match only_step(yaml_body) {
+        Step::ScrollUntilVisible {
+            until,
+            opts,
+            direction,
+            ..
+        } => (until, opts, direction),
+        other => panic!("expected ScrollUntilVisible, got {other:?}"),
+    }
+}
+
+#[test]
+fn scroll_until_visible_defaults_are_maestros() {
+    let (until, opts, direction) = scroll_step("- scrollUntilVisible:\n    element: x\n");
+    assert_eq!(until, ScrollUntil::default());
+    assert_eq!(until.reach, Reach::default());
+    assert_eq!(until.timeout, DEFAULT_SCROLL_TIMEOUT);
+    assert_eq!(opts, BlockOptions::default());
+    assert_eq!(direction, "down");
+}
+
+#[test]
+fn scroll_until_visible_reads_visibility_centre_timeout_label_and_optional() {
+    let (until, opts, direction) = scroll_step(
+        "- scrollUntilVisible:\n    element: x\n    direction: UP\n    visibilityPercentage: 50\n    centerElement: true\n    timeout: 30000\n    label: find the row\n    optional: true\n",
+    );
+    assert!((until.reach.visibility - 0.5).abs() < 1e-9);
+    assert!(until.reach.center_element);
+    assert_eq!(until.timeout, std::time::Duration::from_secs(30));
+    assert_eq!(opts.label.as_deref(), Some("find the row"));
+    assert!(opts.optional);
+    assert_eq!(direction, "UP");
+    // maestro's `timeout` is a string in its schema; both spellings mean ms.
+    let (until, _, _) =
+        scroll_step("- scrollUntilVisible:\n    element: x\n    timeout: \"30000\"\n");
+    assert_eq!(until.timeout, std::time::Duration::from_secs(30));
+}
+
+#[test]
+fn scroll_until_visible_refuses_the_knobs_smix_swipes_do_not_have() {
+    for (key, value) in [("speed", "40"), ("waitToSettleTimeoutMs", "500")] {
+        let (field, reason) =
+            parse_err(&format!("- scrollUntilVisible:\n    element: x\n    {key}: {value}\n"));
+        assert_eq!(field, "scrollUntilVisible");
+        assert!(reason.contains(&format!("`{key}`")), "{reason}");
+        assert!(!reason.contains("unknown key"), "named, not unknown: {reason}");
+    }
+}
+
+#[test]
+fn scroll_until_visible_refuses_a_visibility_outside_one_to_a_hundred_and_unknown_keys() {
+    for v in ["0", "101", "\"half\"", "-5"] {
+        let (field, _) = parse_err(&format!(
+            "- scrollUntilVisible:\n    element: x\n    visibilityPercentage: {v}\n"
+        ));
+        assert_eq!(field, "scrollUntilVisible.visibilityPercentage", "{v}");
+    }
+    let (field, reason) = parse_err("- scrollUntilVisible:\n    elemnt: x\n");
+    assert_eq!(field, "scrollUntilVisible");
+    assert!(reason.contains("unknown key `elemnt`"), "{reason}");
+    let (field, _) = parse_err("- scrollUntilVisible:\n    element: x\n    centerElement: yes please\n");
+    assert_eq!(field, "scrollUntilVisible.centerElement");
+}
+
+/// Seven: maestro's `YamlScrollUntilVisible` has nine fields, and smix
+/// refuses two of them (`speed`, `waitToSettleTimeoutMs`) by name.
+#[test]
+fn scroll_until_visible_keys_are_maestros_nine_less_the_two_refused() {
+    assert_eq!(SCROLL_UNTIL_VISIBLE_KEYS.len(), 7);
+    for k in [
+        "element",
+        "direction",
+        "timeout",
+        "visibilityPercentage",
+        "centerElement",
+        "label",
+        "optional",
+    ] {
+        assert!(SCROLL_UNTIL_VISIBLE_KEYS.contains(&k), "{k}");
+    }
+}

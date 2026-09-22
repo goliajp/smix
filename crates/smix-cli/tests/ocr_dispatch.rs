@@ -33,8 +33,13 @@ fn every_selector_command_answers_for_ocr() {
 
     for body in takers {
         let name = body.split('(').next().unwrap_or("?");
+        // Two ways to answer. Either the command splits the needle out
+        // itself (`ocr_needle`), or it hands the whole selector to
+        // `smix_driver::scroll_until`, whose look is the tree and then
+        // every `ocrText` the selector names — an OCR needle reaching
+        // THAT is dispatched, not dropped.
         assert!(
-            body.contains("ocr_needle"),
+            body.contains("ocr_needle") || body.contains("scroll_until("),
             "cmd_{name} takes a selector and never asks whether it is an OCR \
              needle. It will hand one to the resolver, which answers 'not \
              found' for text that is on the screen"

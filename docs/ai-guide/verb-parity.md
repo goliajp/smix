@@ -92,7 +92,7 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `scroll` | ✅ | ✅ | |
-| `scrollUntilVisible` | ✅ | ✅ | Polls a11y tree between scrolls; selectors containing `ocrText` also probe OCR per stroke |
+| `scrollUntilVisible` | ✅ | ✅ | One host-side loop on both: swipe, look (tree, then each `ocrText`), stop when the element is wholly on screen and has stopped moving. `visibilityPercentage` / `centerElement` / `timeout` / `label` / `optional` read; `speed` / `waitToSettleTimeoutMs` refused by name |
 | `swipe` (`direction:` or `start:`/`end:` or `from:`/`to:`) | ✅ | ✅ | Absolute + relative coord shapes |
 | `hideKeyboard` | ✅ | ✅ | |
 

@@ -322,8 +322,11 @@ one that stops.
 - scrollUntilVisible:
     element:
       text: "Row #5000"
-    direction: DOWN
-    timeout: 30000                       # ms
+    direction: DOWN                      # UP / DOWN / LEFT / RIGHT
+    timeout: 30000                       # ms; default 20000
+    visibilityPercentage: 100            # 1-100; default 100 = wholly on screen
+    centerElement: false                 # stop once it is near the middle
+    optional: false                      # not reached -> skip, not failure
 
 - swipe:
     direction: LEFT
@@ -666,7 +669,7 @@ The verbs that fire OCR, and what they do with it:
 
 - `extendedWaitUntil.visible` — polls tree + OCR per iteration until timeout.
 - `tapOn` with `fallback: [..., ocrText]` — polls the whole chain within `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) before failing, closing tap-vs-mount races.
-- `scrollUntilVisible` — probes tree + OCR between swipe strokes (off-screen items dropped from a degraded a11y tree are still found by OCR once scrolled into view).
+- `scrollUntilVisible` — every look reads the tree first, then each `ocrText` the selector names, in the chain's order (off-screen items dropped from a degraded a11y tree are still found by OCR once scrolled into view).
 - `runFlow.when.visible` / `when.notVisible` — the gate check fires OCR.
 
 Cost note: one OCR call is ~500 ms on-sim. Order `fallback:` chains cheapest-first (`id` → `text` → `ocrText`) so tree hits pre-empt Vision cost.
@@ -1382,11 +1385,18 @@ looking is `keyboard_state_unknown` — see
     element:
       text: "Row #5000"
     direction: DOWN
-    timeout: 30000
+    timeout: 30000              # ms; default 20000
 
-# OCR-aware variant — for virtualized lists whose off-screen items are
-# dropped from the a11y tree (RN Fabric LazyColumn/LazyRow etc.), add
-# an ocrText tier: tree + OCR are both probed between swipe strokes.
+# Stop earlier, or stop with the element near the middle of the screen.
+- scrollUntilVisible:
+    element:
+      id: "row-line_crossing"
+    visibilityPercentage: 60    # 1-100; default 100, the whole element
+    centerElement: true         # default false
+
+# OCR tier — for virtualized lists whose off-screen items are dropped
+# from the a11y tree (RN Fabric LazyColumn/LazyRow etc.). Every look
+# reads the tree first, then each ocrText in the chain's order.
 - scrollUntilVisible:
     element:
       fallback:
@@ -1395,10 +1405,24 @@ looking is `keyboard_state_unknown` — see
     direction: DOWN
 ```
 
-- Iteratively scrolls + checks for element visibility.
-- Default timeout 30s.
-- Useful for very long lists.
-- When the selector contains `ocrText`, each inter-swipe probe fires OCR in addition to the tree check (30-swipe / 20 s budget). Selectors without OCR keep the tree-only fast path.
+- Swipes until the element is reached, then stops.
+- **Reached means wholly on screen** (`visibilityPercentage: 100`, maestro's
+  default). An element that merely overlaps the screen is not reached: its
+  middle can be past the edge, and the `tapOn` after it would aim there.
+- `centerElement: true` stops once the element's middle has come past the
+  centre of the screen, from the side the content is arriving from. It gives
+  up centring after four swipes — the last row of a list cannot be centred —
+  and the visibility rule decides from there.
+- The scroll also waits for the content to stop: a list is still gliding
+  after a swipe, and a tap sent into the glide is spent stopping it.
+- `timeout` (default 20 s) is the only limit. There is no swipe count.
+- Failure says how much of the element the last look saw, and what was asked
+  for — or that it never appeared.
+- `speed` and `waitToSettleTimeoutMs` (maestro) are **refused by name**: one
+  swipe is a fixed gesture on both runners, so there is no duration to set,
+  and the settling above is not a number to tune.
+- `label` and `optional` work as they do on other steps: `optional: true`
+  turns "not reached" into a skip and the flow goes on.
 
 ### Custom swipe (explicit start/end)
 
@@ -2161,7 +2185,8 @@ smix wait-for id:loading-spinner --absent  # wait until it is GONE
 
 smix fill id:form-email-input --text alice@example.com
 smix press-key return                      # positional key name
-smix scroll "text:Row #5000" --direction down
+smix scroll "text:Row #5000" --direction down   # stops when it is wholly in view
+smix scroll "ocrText:Row #5000" --direction down # looks with OCR too
 smix swipe down                            # one gesture; `down` reveals what is below
 smix hide-keyboard
 
@@ -2227,9 +2252,13 @@ is still there when time runs out. Use it for a spinner or a modal you
 need off the screen before the next step.
 
 **`swipe` is one gesture, `scroll` stops at something.** `smix scroll`
-takes a selector and keeps going until it is visible. `smix swipe` does
-a single swipe and returns. In both, the direction names what you want
-to see — `down` reveals what is below — not which way a finger travels.
+takes a selector and keeps going until that element is **wholly** on
+screen and has stopped moving — the same rule and the same loop
+`scrollUntilVisible` runs, with its defaults (100% visible, 20 s). An
+`ocrText:` selector works: every look reads the tree first, then OCR.
+`smix swipe` does a single swipe and returns. In both, the direction
+names what you want to see — `down` reveals what is below — not which
+way a finger travels.
 
 **The software keyboard's keys are collapsed.** A key per letter plus
 `Next keyboard`, `Dictate`, shift and delete is around sixty nodes that
@@ -4775,7 +4804,7 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `scroll` | ✅ | ✅ | |
-| `scrollUntilVisible` | ✅ | ✅ | Polls a11y tree between scrolls; selectors containing `ocrText` also probe OCR per stroke |
+| `scrollUntilVisible` | ✅ | ✅ | One host-side loop on both: swipe, look (tree, then each `ocrText`), stop when the element is wholly on screen and has stopped moving. `visibilityPercentage` / `centerElement` / `timeout` / `label` / `optional` read; `speed` / `waitToSettleTimeoutMs` refused by name |
 | `swipe` (`direction:` or `start:`/`end:` or `from:`/`to:`) | ✅ | ✅ | Absolute + relative coord shapes |
 | `hideKeyboard` | ✅ | ✅ | |
 

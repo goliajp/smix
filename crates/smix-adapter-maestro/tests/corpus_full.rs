@@ -93,7 +93,12 @@ impl AppLike for SilentMockApp {
     async fn press_key(&self, _: KeyName) -> Result<(), ExpectationFailure> {
         Ok(())
     }
-    async fn scroll(&self, _: &Selector, _: SwipeDirection) -> Result<(), ExpectationFailure> {
+    async fn scroll(
+        &self,
+        _: &Selector,
+        _: SwipeDirection,
+        _: &smix_driver::ScrollUntil,
+    ) -> Result<(), ExpectationFailure> {
         Ok(())
     }
     async fn wait_for(&self, _: &Selector, _: Duration) -> Result<(), ExpectationFailure> {

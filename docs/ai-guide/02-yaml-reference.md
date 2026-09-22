@@ -150,8 +150,11 @@ one that stops.
 - scrollUntilVisible:
     element:
       text: "Row #5000"
-    direction: DOWN
-    timeout: 30000                       # ms
+    direction: DOWN                      # UP / DOWN / LEFT / RIGHT
+    timeout: 30000                       # ms; default 20000
+    visibilityPercentage: 100            # 1-100; default 100 = wholly on screen
+    centerElement: false                 # stop once it is near the middle
+    optional: false                      # not reached -> skip, not failure
 
 - swipe:
     direction: LEFT
@@ -494,7 +497,7 @@ The verbs that fire OCR, and what they do with it:
 
 - `extendedWaitUntil.visible` — polls tree + OCR per iteration until timeout.
 - `tapOn` with `fallback: [..., ocrText]` — polls the whole chain within `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) before failing, closing tap-vs-mount races.
-- `scrollUntilVisible` — probes tree + OCR between swipe strokes (off-screen items dropped from a degraded a11y tree are still found by OCR once scrolled into view).
+- `scrollUntilVisible` — every look reads the tree first, then each `ocrText` the selector names, in the chain's order (off-screen items dropped from a degraded a11y tree are still found by OCR once scrolled into view).
 - `runFlow.when.visible` / `when.notVisible` — the gate check fires OCR.
 
 Cost note: one OCR call is ~500 ms on-sim. Order `fallback:` chains cheapest-first (`id` → `text` → `ocrText`) so tree hits pre-empt Vision cost.

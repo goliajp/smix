@@ -489,6 +489,12 @@ pub enum Step {
         selector: Selector,
         /// Direction (`up` / `down` / `left` / `right`).
         direction: String,
+        /// `visibilityPercentage` / `centerElement` / `timeout`.
+        #[serde(default, with = "scroll_until_serde", skip_serializing_if = "is_default_until")]
+        until: smix_driver::ScrollUntil,
+        /// `label` / `optional`.
+        #[serde(default, skip_serializing_if = "BlockOptions::is_default")]
+        opts: BlockOptions,
     },
     /// Erase N characters from the focused field. Maps to `App::press_key` × N delete.
     EraseText(u32),
@@ -1074,6 +1080,62 @@ pub enum RepeatMode {
 /// never reaches its `Condition` (`YamlFluentCommand.toCondition`), so
 /// smix refuses it rather than accept a key that does nothing.
 pub const CONDITION_KEYS: &[&str] = &["platform", "visible", "notVisible", "true", "label"];
+
+/// The keys `scrollUntilVisible:` takes: maestro's
+/// `YamlScrollUntilVisible` less `speed` and `waitToSettleTimeoutMs`,
+/// which smix refuses by name — its single swipe is a fixed gesture on
+/// both runners, with no duration to set and no settle wait to tune.
+pub const SCROLL_UNTIL_VISIBLE_KEYS: &[&str] = &[
+    "element",
+    "direction",
+    "timeout",
+    "visibilityPercentage",
+    "centerElement",
+    "label",
+    "optional",
+];
+
+fn is_default_until(u: &smix_driver::ScrollUntil) -> bool {
+    *u == smix_driver::ScrollUntil::default()
+}
+
+/// [`smix_driver::ScrollUntil`] in the words a flow uses for it:
+/// `visibilityPercentage` (1–100), `centerElement`, `timeout` in
+/// milliseconds.
+mod scroll_until_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use smix_driver::ScrollUntil;
+    use smix_host_coord_resolver::Reach;
+    use std::time::Duration;
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Wire {
+        visibility_percentage: f64,
+        center_element: bool,
+        timeout_ms: u64,
+    }
+
+    pub fn serialize<S: Serializer>(u: &ScrollUntil, s: S) -> Result<S::Ok, S::Error> {
+        Wire {
+            visibility_percentage: u.reach.visibility * 100.0,
+            center_element: u.reach.center_element,
+            timeout_ms: u64::try_from(u.timeout.as_millis()).unwrap_or(u64::MAX),
+        }
+        .serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<ScrollUntil, D::Error> {
+        let w = Wire::deserialize(d)?;
+        Ok(ScrollUntil {
+            reach: Reach {
+                visibility: w.visibility_percentage / 100.0,
+                center_element: w.center_element,
+            },
+            timeout: Duration::from_millis(w.timeout_ms),
+        })
+    }
+}
 
 /// A precondition, as maestro's `when:` / `repeat.while:` spell it. Every
 /// present field must hold (AND); the runtime checks them in maestro's

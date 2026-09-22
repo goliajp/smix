@@ -221,12 +221,8 @@ impl Driver for IosDriver {
         IosDriver::press_key(self, key).await
     }
 
-    async fn scroll(
-        &self,
-        selector: &Selector,
-        direction: SwipeDirection,
-    ) -> Result<(), ExpectationFailure> {
-        IosDriver::scroll(self, selector, direction).await
+    async fn confirm_on_screen(&self, matched: &[&A11yNode]) -> bool {
+        IosDriver::confirm_on_screen(self, matched, None).await
     }
 
     async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {

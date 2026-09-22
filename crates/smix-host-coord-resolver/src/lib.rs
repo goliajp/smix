@@ -60,6 +60,9 @@
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-host-coord-resolver")]
 
+mod reach;
+
+pub use reach::{MAX_RECENTER, NormBox, Reach, Verdict, near_center, norm_box, verdict, visible_share};
 use smix_screen::A11yNode;
 use smix_selector::Selector;
 use smix_selector_resolver::resolve_selector;

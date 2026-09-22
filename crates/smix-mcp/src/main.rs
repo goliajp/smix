@@ -717,7 +717,7 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Swipe until an element comes into view, then stop. Use this rather than repeated swipes — it knows when to stop. Not for ocrText — swipe with smix_swipe and check with smix_find between swipes instead. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Swipe until an element is wholly in view, then stop. Use this rather than repeated swipes — it knows when to stop. Takes id / text / label / role / ocrText or a fallback chain of them: after each swipe it reads the tree, then each ocrText in the chain's order. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     /// CLI: smix scroll
     async fn smix_scroll(
@@ -725,12 +725,6 @@ impl SmixMcpService {
         Parameters(params): Parameters<ScrollParams>,
     ) -> Result<CallToolResult, McpError> {
         let sel = params.target.to_selector()?;
-        if chain_of(&sel).is_some() {
-            return Err(McpError::invalid_params(
-                "a chain means 'try these in order on this screen', and scrolling changes the screen between tries, so the later layers would answer a different question. Probing the whole chain after each swipe is a capability smix does not have yet; it is named here rather than approximated",
-                None,
-            ));
-        }
         if point_of(&sel).is_some() {
             return Err(McpError::invalid_params(
                 "a point is already a place on this screen; scrolling to it means nothing — the schema says so and now this does too. Name the \
@@ -739,18 +733,26 @@ impl SmixMcpService {
                 None,
             ));
         }
-        if ocr_text_of(&sel).is_some() {
-            return Err(McpError::invalid_params(
-                "ocrText cannot drive smix_scroll — its stop condition resolves \
-                 against the accessibility tree, which never matches OCR text. \
-                 Use smix_swipe to move through the content and smix_find with \
-                 ocrText between swipes to know when to stop",
-                None,
-            ));
+        // A chain and an `ocrText` are both looked for after every swipe:
+        // the scroll loop reads the tree and then each `ocrText` in the
+        // order the chain names them. A point inside a chain is still a
+        // place rather than something a swipe can bring into view.
+        if let Some(layers) = chain_of(&sel) {
+            for (i, layer) in layers.iter().enumerate() {
+                if point_of(layer).is_some() {
+                    return Err(McpError::invalid_params(
+                        format!(
+                            "fallback[{i}] is a point, and a point is a place rather \
+                             than something a scroll can bring into view. Only smix_tap takes one"
+                        ),
+                        None,
+                    ));
+                }
+            }
         }
         let dir = parse_direction(params.direction.as_deref().unwrap_or("down"))?;
         let app = self.bound_app().await?;
-        app.scroll(&sel, dir)
+        app.scroll(&sel, dir, &smix_sdk::ScrollUntil::default())
             .await
             .map_err(|e| McpError::internal_error(e.to_prompt(), None))?;
         Ok(CallToolResult::success(vec![Content::text(format!(

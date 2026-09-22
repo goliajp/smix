@@ -232,11 +232,12 @@ pub trait AppLike: Send + Sync {
     async fn fill(&self, selector: &Selector, text: &str) -> Result<(), ExpectationFailure>;
     /// Press a hardware / IME key. Mirrors [`App::press_key`].
     async fn press_key(&self, key: KeyName) -> Result<(), ExpectationFailure>;
-    /// Scroll until selector is visible. Mirrors [`App::scroll`].
+    /// Scroll until selector is reached. Mirrors [`App::scroll`].
     async fn scroll(
         &self,
         selector: &Selector,
         direction: SwipeDirection,
+        until: &smix_driver::ScrollUntil,
     ) -> Result<(), ExpectationFailure>;
     /// Wait for selector to become visible within `timeout`. Mirrors
     /// [`App::wait_for`] but discards the matched node.
@@ -525,8 +526,9 @@ impl AppLike for App {
         &self,
         selector: &Selector,
         direction: SwipeDirection,
+        until: &smix_driver::ScrollUntil,
     ) -> Result<(), ExpectationFailure> {
-        App::scroll(self, selector, direction).await
+        App::scroll(self, selector, direction, until).await
     }
     async fn wait_for(
         &self,
@@ -1913,25 +1915,23 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             Step::ScrollUntilVisible {
                 selector,
                 direction,
+                until,
+                opts,
             } => {
                 let dir = parse_swipe_direction(direction)?;
-                // When the selector contains any `OcrText` sub, the
-                // driver's `scroll` (tree-only resolver) can't see
-                // off-screen targets in degraded a11y trees (RN 0.86
-                // Fabric LazyColumn/LazyRow on iOS 26.5 drops
-                // off-screen items). Use an adapter-side loop instead:
-                // probe the tree via `App::find` AND OCR via
-                // `App::find_by_text_ocr` between each swipe. First
-                // hit stops. Perf caveat: OCR costs ~500ms per
-                // iteration on top of the ~250ms each swipe takes.
-                if self.selector_contains_ocr(selector) {
-                    self.scroll_until_visible_with_ocr(selector, dir).await?;
-                } else {
-                    self.app
-                        .scroll(&self.desugar_localized_text(selector), dir)
-                        .await?;
-                }
-                Ok(RunStepReport::Ok)
+                // One loop for every selector, `ocrText` included: it
+                // looks at the tree and then at each `ocrText` the
+                // selector names (`smix_driver::scroll_until`). What the
+                // adapter adds is the session's locale for an `ocrText`
+                // that named none — it is the one that knows it.
+                let sel = self.with_session_locale(&self.desugar_localized_text(selector));
+                let result = self
+                    .app
+                    .scroll(&sel, dir, until)
+                    .await
+                    .map(|()| RunStepReport::Ok)
+                    .map_err(RunError::Sdk);
+                block_outcome("scrollUntilVisible", opts, result)
             }
             Step::Swipe { from, to } => {
                 self.app.swipe_at_coord(*from, *to).await?;
@@ -3183,22 +3183,15 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     if let Selector::OcrText {
                         ocr_text, locales, ..
                     } = sub
-                    {
-                        let eff_locales: Vec<String> = if locales.is_empty() {
-                            vec![self.last_locale.clone()]
-                        } else {
-                            locales.clone()
-                        };
-                        if self
+                        && self
                             .app
-                            .find_by_text_ocr(ocr_text, &eff_locales)
+                            .find_by_text_ocr(ocr_text, locales)
                             .await
                             .ok()
                             .flatten()
                             .is_some()
-                        {
-                            return Ok(());
-                        }
+                    {
+                        return Ok(());
                     }
                 }
             } else if let Selector::OcrText {
@@ -3429,79 +3422,26 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
-    /// Is `OcrText` present anywhere in this selector tree?
-    /// Standalone or inside a `Fallback` chain both count. Used by
-    /// tapOn / scrollUntilVisible dispatch to decide whether to activate
-    /// the OCR-aware polling variant.
-    fn selector_contains_ocr(&self, sel: &Selector) -> bool {
-        match sel {
-            Selector::OcrText { .. } => true,
-            Selector::Fallback { fallback } => {
-                fallback.iter().any(|s| self.selector_contains_ocr(s))
+    /// `sel` with the session's locale on every `ocrText` that named
+    /// none — the locale the last `launchApp` set. Standalone or inside a
+    /// chain.
+    fn with_session_locale(&self, sel: &Selector) -> Selector {
+        fn fill(sel: &mut Selector, locale: &str) {
+            match sel {
+                Selector::OcrText { locales, .. } if locales.is_empty() => {
+                    *locales = vec![locale.to_string()];
+                }
+                Selector::Fallback { fallback } => {
+                    for sub in fallback {
+                        fill(sub, locale);
+                    }
+                }
+                _ => {}
             }
-            _ => false,
         }
-    }
-
-    /// scrollUntilVisible with an OCR probe between swipes.
-    /// RN 0.86 Fabric LazyColumn/LazyRow on iOS
-    /// 26.5 drops off-screen items from the a11y tree, so
-    /// `driver.scroll`'s tree-only resolver can never see them. OCR
-    /// reads pixels — sees whatever's on screen after each swipe.
-    ///
-    /// Cadence: probe (tree + OCR if present) → swipe → probe → swipe
-    /// until a hit or 30 swipes (matches driver's SCROLL_MAX_SWIPES) or
-    /// 20 s wall (matches driver's timeout).
-    async fn scroll_until_visible_with_ocr(
-        &mut self,
-        selector: &Selector,
-        direction: smix_sdk::SwipeDirection,
-    ) -> Result<(), RunError> {
-        use std::time::Instant;
-        const MAX_SWIPES: usize = 30;
-        let deadline = Instant::now() + Duration::from_secs(20);
-        for _ in 0..=MAX_SWIPES {
-            // Probe the selector. If it's a Fallback we walk each sub;
-            // otherwise probe the standalone selector.
-            if self.check_selector_visible(selector).await? {
-                return Ok(());
-            }
-            if Instant::now() >= deadline {
-                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::ElementNotFound),
-                    message: format!(
-                        "scrollUntilVisible({}, '{:?}'): OCR-aware poll exhausted \
-                         after {} swipes / 20 s deadline",
-                        smix_sdk::describe_selector(selector),
-                        direction,
-                        MAX_SWIPES,
-                    ),
-                    selector: Some(selector.clone()),
-                    hint: Some(
-                        "Tree probe + OCR probe both missed on every swipe. \
-                         Either the target text isn't on any screen the swipe \
-                         direction can reveal, OR the OCR text spelling doesn't \
-                         match what Apple Vision recognizes. Try a shorter \
-                         substring in `ocrText` and re-run."
-                            .into(),
-                    ),
-                    ..Default::default()
-                })));
-            }
-            self.app.scroll_screen(direction).await?;
-        }
-        Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::ElementNotFound),
-            message: format!(
-                "scrollUntilVisible({}, '{:?}'): OCR-aware poll exhausted \
-                 {} swipe budget",
-                smix_sdk::describe_selector(selector),
-                direction,
-                MAX_SWIPES
-            ),
-            selector: Some(selector.clone()),
-            ..Default::default()
-        })))
+        let mut out = sel.clone();
+        fill(&mut out, &self.last_locale);
+        out
     }
 
     /// One-shot visibility probe. Returns Ok(true) if the
@@ -3572,24 +3512,17 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         // probe answers a gate: `when.notVisible` would fire because
         // the question was never asked, which is a wrong branch taken
         // in silence rather than an error anyone sees.
-        let sel = &*self.desugar_localized_text(sel);
+        let sel = &self.with_session_locale(&self.desugar_localized_text(sel));
         match sel {
             Selector::OcrText {
                 ocr_text, locales, ..
-            } => {
-                let eff_locales: Vec<String> = if locales.is_empty() {
-                    vec![self.last_locale.clone()]
-                } else {
-                    locales.clone()
-                };
-                Ok(self
-                    .app
-                    .find_by_text_ocr(ocr_text, &eff_locales)
-                    .await
-                    .ok()
-                    .flatten()
-                    .is_some())
-            }
+            } => Ok(self
+                .app
+                .find_by_text_ocr(ocr_text, locales)
+                .await
+                .ok()
+                .flatten()
+                .is_some()),
             Selector::Fallback { fallback } => {
                 // Tree-based subs first (cheap), then OCR subs.
                 for sub in fallback.iter() {

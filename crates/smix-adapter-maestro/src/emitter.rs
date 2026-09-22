@@ -129,6 +129,8 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
         Step::ScrollUntilVisible {
             selector,
             direction,
+            until,
+            opts,
         } => {
             let mut inner = Mapping::new();
             inner.insert(
@@ -139,6 +141,35 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
                 Value::String("direction".into()),
                 Value::String(direction.clone()),
             );
+            // Only what differs from the default, so an ordinary step
+            // emits the two keys it always did.
+            let defaults = smix_driver::ScrollUntil::default();
+            if until.reach.visibility != defaults.reach.visibility {
+                let percent = (until.reach.visibility * 100.0).round() as u64;
+                inner.insert(
+                    Value::String("visibilityPercentage".into()),
+                    Value::Number(Number::from(percent)),
+                );
+            }
+            if until.reach.center_element != defaults.reach.center_element {
+                inner.insert(
+                    Value::String("centerElement".into()),
+                    Value::Bool(until.reach.center_element),
+                );
+            }
+            if until.timeout != defaults.timeout {
+                let ms = u64::try_from(until.timeout.as_millis()).unwrap_or(u64::MAX);
+                inner.insert(
+                    Value::String("timeout".into()),
+                    Value::Number(Number::from(ms)),
+                );
+            }
+            if let Some(label) = &opts.label {
+                inner.insert(Value::String("label".into()), Value::String(label.clone()));
+            }
+            if opts.optional {
+                inner.insert(Value::String("optional".into()), Value::Bool(true));
+            }
             Ok(single("scrollUntilVisible", Value::Mapping(inner)))
         }
         Step::StopApp => Ok(Value::String("stopApp".into())),

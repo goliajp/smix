@@ -712,36 +712,16 @@ impl Driver for AndroidDriver {
         })
     }
 
-    async fn scroll(
-        &self,
-        selector: &Selector,
-        direction: SwipeDirection,
-    ) -> Result<(), ExpectationFailure> {
-        // Host-side scroll-until-visible loop. /tree +
-        // /swipe-once primitives — same pattern as iOS.
-        let start = std::time::Instant::now();
-        let timeout = Duration::from_secs(20);
-        const MAX_SWIPES: u32 = 30;
-        for _ in 0..=MAX_SWIPES {
-            let tree = self.tree(None).await?;
-            if resolve_selector(&tree, selector).is_some() {
-                return Ok(());
-            }
-            if start.elapsed() > timeout {
-                break;
-            }
-            self.swipe_once(direction).await?;
-        }
-        Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::ElementNotFound),
-            message: format!(
-                "AndroidDriver::scroll: element not visible after {} swipes: {}",
-                MAX_SWIPES,
-                describe_selector(selector)
-            ),
-            selector: Some(selector.clone()),
-            ..Default::default()
-        }))
+    /// `true`: there is no stale frame here to check.
+    ///
+    /// UiAutomator's bounds are the node's live, clipped on-screen
+    /// rectangle, and the probe's semantics tree is read from the app at
+    /// the moment it is asked. The probe reports layout rather than what
+    /// is visible — a row below the screen edge carries its full box —
+    /// and that is what the scroll's visible-share rule reads, so it
+    /// needs no live query to be told.
+    async fn confirm_on_screen(&self, _matched: &[&A11yNode]) -> bool {
+        true
     }
 
     async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {

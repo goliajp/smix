@@ -71,7 +71,6 @@ use smix_runner_client::TouchVerdict;
 
 const POLL_INTERVAL_MS: u64 = 250;
 const TOTAL_TIMEOUT_MS: u64 = 5000;
-const SCROLL_MAX_SWIPES: u32 = 30;
 
 /// Driver wrapping `HttpRunnerClient` with host-side resolve dispatch.
 ///
@@ -955,79 +954,6 @@ impl IosDriver {
             .press_key(key)
             .await
             .map_err(transport_to_failure)?;
-        Ok(())
-    }
-
-    /// Host-side scroll-until-visible loop. Alternates
-    /// `driver.tree + resolve_selector` (host-side probe) with
-    /// `runner.swipe_once` (single-swipe runner gesture). Up to 30
-    /// swipes or 20s timeout.
-    pub async fn scroll(
-        &self,
-        selector: &Selector,
-        direction: SwipeDirection,
-    ) -> Result<(), ExpectationFailure> {
-        let start = Instant::now();
-        let timeout = Duration::from_secs(20);
-        // Build the resolver cache once outside the swipe loop so regex
-        // compile cost is paid once, not per iteration. None case =
-        // regex compile error → element-not-found fail-fast
-        // (semantically equivalent to silent-None + 30-swipe timeout,
-        // but immediate).
-        let Some(ctx) = ResolverContext::new(selector) else {
-            return Err(ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::ElementNotFound),
-                message: format!(
-                    "scroll({}, '{}'): selector pattern failed to compile",
-                    describe_selector(selector),
-                    direction
-                ),
-                selector: Some(selector.clone()),
-                hint: Some(
-                    "regex Pattern compile error — check selector syntax (unbalanced bracket / invalid escape / etc.)"
-                        .into(),
-                ),
-                ..Default::default()
-            }));
-        };
-        for i in 0..=SCROLL_MAX_SWIPES {
-            // Transport retry on tree fetch (see tap above).
-            let tree = self.tree_with_retry(None).await?;
-            if let Some(node) = resolve_selector_compiled(&tree, selector, &ctx) {
-                // Live on-screen confirmation. Without it a
-                // below-the-fold element with a drifted snapshot frame
-                // satisfies the probe on swipe 0 and scrollUntilVisible
-                // returns WITHOUT scrolling.
-                // A refuted confirm means "exists but not on screen
-                // yet" — exactly the state another swipe should fix.
-                let matched = [node];
-                if self.confirm_on_screen(&matched, None).await {
-                    return Ok(());
-                }
-            }
-            if i == SCROLL_MAX_SWIPES || start.elapsed() > timeout {
-                let visible = collect_visible_summaries(&tree, 10);
-                let target = base_text_or_id(selector);
-                let suggestions = smix_error::build_suggestions(target.as_deref(), &visible);
-                return Err(ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::ElementNotFound),
-                    message: format!(
-                        "scroll({}, '{}'): element not visible after {} swipes",
-                        describe_selector(selector),
-                        direction,
-                        SCROLL_MAX_SWIPES
-                    ),
-                    selector: Some(selector.clone()),
-                    visible_elements: visible,
-                    suggestions,
-                    ..Default::default()
-                }));
-            }
-            self.runner
-                .swipe_once(direction)
-                .await
-                .map_err(transport_to_failure)?;
-        }
         Ok(())
     }
 
@@ -1995,9 +1921,13 @@ fn _silence_unused_imports() {
 
 mod android;
 mod ios;
+mod scroll_until;
 mod traits;
 
 pub use android::AndroidDriver;
+pub use scroll_until::{DEFAULT_SCROLL_TIMEOUT, ScrollUntil, scroll_until};
+/// What a scroll-until-visible asks of its target; part of [`ScrollUntil`].
+pub use smix_host_coord_resolver::Reach;
 pub use traits::{Driver, Platform};
 
 /// The bundle id this description was taken from, read off the a11y

@@ -384,10 +384,13 @@ enum Cmd {
         #[arg(long)]
         device: Option<String>,
     },
-    /// Scroll until the selector becomes visible. Direction:
-    /// `up` / `down` / `left` / `right`.
+    /// Swipe until the selector's target is wholly in view — the same
+    /// loop `scrollUntilVisible` runs, with its defaults (100% visible,
+    /// 20 s). Direction: `up` / `down` / `left` / `right`.
     Scroll {
         /// Which element to bring into view, in `<kind>:<value>` shorthand.
+        /// `ocrText:` works too: after each swipe the tree is read first,
+        /// then OCR.
         selector: String,
         /// Which way to travel through the content — names what you want to
         /// SEE, not the finger's path. `up` / `down` / `left` / `right`.

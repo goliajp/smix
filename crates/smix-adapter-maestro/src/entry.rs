@@ -798,8 +798,10 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             };
             format!("runFlow inline ({} cmds){cond}{}", steps.len(), block_label(opts))
         }
-        Step::ScrollUntilVisible { direction, .. } => {
-            format!("scrollUntilVisible ({direction})")
+        Step::ScrollUntilVisible {
+            direction, opts, ..
+        } => {
+            format!("scrollUntilVisible ({direction}){}", block_label(opts))
         }
         Step::EraseText(n) => format!("eraseText ({n} chars)"),
         Step::Swipe { from, to } => format!("swipe {from:?} -> {to:?}"),
