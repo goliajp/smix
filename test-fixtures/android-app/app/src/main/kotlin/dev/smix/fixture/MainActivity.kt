@@ -99,6 +99,18 @@ class MainActivity : Activity() {
             }
         }
 
+        // The way into the screen that carries a hosted View. Same
+        // reason as the three buttons above: a flow has no verb that
+        // starts an activity.
+        val toInterop = Button(this).apply {
+            text = "Interop screen"
+            contentDescription = "open-interop"
+            id = View.generateViewId()
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, InteropActivity::class.java))
+            }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@MainActivity).apply { text = "smix fixture" })
@@ -109,6 +121,7 @@ class MainActivity : Activity() {
             addView(toCompose)
             addView(toScroll)
             addView(toBlocked)
+            addView(toInterop)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,

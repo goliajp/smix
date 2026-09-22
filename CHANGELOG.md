@@ -6,6 +6,43 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **The Compose probe sees the Views that Compose hosts.** An
+  `AndroidView` puts a real View inside a composition; the probe walked
+  the semantics tree and nothing else, so those controls were absent from
+  it — and since a flow reads the probe's tree whenever an app carries
+  one, adding the probe to an app *removed* controls the accessibility
+  reader could see. A consumer's player chrome
+  (`R.id.btn_player_fullscreen` and its siblings) answered `exists=true`
+  to `smix find` and `ELEMENT_NOT_FOUND` inside a flow, on the same
+  screen, at the same moment. Hosted Views are now walked and reported
+  with their own resource id, their content description, their text, and
+  the role the accessibility reader would have given them — named by the
+  one table that maps Android classes to roles, in the runner, rather
+  than a second copy of it in the probe.
+
+### Changed
+
+- **A probe node's rectangle is the part of it on screen.** It was
+  `positionOnScreen + size`: where the layout put the node, whether or
+  not any of it is showing. A consumer measured a `LazyColumn` row
+  reported at `[0,533,1080,743]` with the screen showing it nowhere, and
+  at `[284,1466,795,1550]` after scrolling to it; `scrollUntilVisible`
+  stopped at once on the first number and the tap that followed landed
+  on whatever was really there. The rectangle is now clipped by every
+  ancestor, so a half-scrolled row reports the half that shows, and a
+  row scrolled past reports an empty rectangle with `visible: false`.
+
+  **A node the toolkit has measured but never placed is no longer
+  reported at all** — the state a lazy list leaves a prefetched row in.
+  Its only position is one it has never had, and reporting it was how
+  the wrong rectangle got out. A flow that asserted such a node was
+  visible was passing on something that was not on screen, and will now
+  fail.
+
+  Both halves need the probe upgraded to take effect
+  (`debugImplementation("jp.golia.smix:smix-probe:…")`); an older probe
+  is read exactly as before.
+
 - **`back` on Android answers whether anything went back.** It used to
   answer `UiDevice.pressBack()`, whose boolean is neither the key going
   in nor the screen changing: it waits up to a second for any window to

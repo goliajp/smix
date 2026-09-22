@@ -152,6 +152,62 @@ def main():
     check("superset should red when the probe drops a node", rc != 0, out.strip()[:160])
     check("superset should name the dropped node", "compose_input" in out, out.strip()[:160])
 
+    # 7b. Where a thing is, not just whether it is named. The second half
+    #     of what a consumer reported was entirely positional: a row named
+    #     by both readers, in two different places, and the tap went to the
+    #     probe's one.
+    moved = copy.deepcopy(base_s)
+    m = find_tag(moved, "compose_submit")
+    check("fixture should carry compose_submit for the move", m is not None)
+    if m:
+        b = m["bounds"]
+        m["bounds"] = [b[0], b[1] + 400, b[2], b[3] + 400]
+    rc, out = run(base_a, moved, "--min-both", "16", tmp=tmp)
+    check("a node in two places should red", rc != 0, out.strip()[:200])
+    check("and should print both rectangles", "is in two places" in out, out.strip()[:200])
+
+    # 7c. The two readers report different rectangles for a good reason —
+    #     accessibility gets Compose's touch target, padded to 48dp, and
+    #     semantics gets the visual box. Measured on these very payloads:
+    #     compose_open_dialog is 132px tall to one and 110px to the other.
+    #     A gate that reds on that would be turned off within a week.
+    padded = copy.deepcopy(base_a)
+    def pad(n):
+        if n.get("identifier") == "compose_submit":
+            n["bounds"] = {"x": n["bounds"]["x"] - 10, "y": n["bounds"]["y"] - 20,
+                           "w": n["bounds"]["w"] + 20, "h": n["bounds"]["h"] + 40}
+        for c in n.get("children") or []:
+            pad(c)
+    pad(padded["root"])
+    rc, out = run(padded, base_s, "--min-both", "16", tmp=tmp)
+    check("a padded touch target must not red", rc == 0, out.strip()[:200])
+
+    # 7d. The comparison must not be over an empty set: two readers naming
+    #     disjoint things would otherwise "agree" about every one of the
+    #     nothing they share.
+    rc, out = run(base_a, base_s, "--min-both", "16",
+                  "--min-bounds-compared", "99", tmp=tmp)
+    check("comparing too few rectangles should red", rc != 0, out.strip()[:200])
+
+    # 7e. A View that Compose hosts names itself with a resource id, not a
+    #     testTag. Reading only testTags is how the probe's own blindness
+    #     to hosted Views stayed invisible to this gate for two majors.
+    hosted = copy.deepcopy(base_s)
+    h = find_tag(hosted, "compose_submit")
+    if h:
+        h["children"] = (h.get("children") or []) + [{
+            "id": 9902, "resourceId": "btn_hosted_by_the_test",
+            "bounds": h["bounds"], "focused": False, "enabled": True,
+            "visible": True, "actions": [], "children": [],
+        }]
+    rc, out = run(base_a, hosted, "--min-both", "16", tmp=tmp)
+    check(
+        "a hosted View's resource id should be read on the semantics side",
+        "btn_hosted_by_the_test" in out,
+        "the gate did not mention it at all, so it never saw the id: "
+        + out.strip()[:160],
+    )
+
     # 8. The fixtures are recorded, and recorded fixtures go stale in
     #    silence: this suite stayed green for a whole checkpoint while the
     #    gate was blind to the live wire, because the payloads it was
@@ -175,7 +231,7 @@ def main():
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("two-paths-agree.test: clean — 15 assertions over 4 recorded payloads")
+    print("two-paths-agree.test: clean — 22 assertions over 4 recorded payloads")
     return 0
 
 

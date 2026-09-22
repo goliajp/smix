@@ -22,14 +22,27 @@ package dev.smix.probe
 data class ProbeNode(
     val id: Int,
     val testTag: String?,
+    /// A hosted View's own id, short form, the way the accessibility path
+    /// spells it. Null for a Compose node, which has a `testTag` instead —
+    /// the two are different things and one field for both would make a
+    /// selector unable to say which it meant.
+    val resourceId: String?,
     val text: String?,
     val editableText: String?,
     val inputText: String?,
     val contentDescription: String?,
     val role: String?,
+    /// The View's class, for a hosted View. The host turns a class into a
+    /// role, as it already does for the accessibility path — the table
+    /// that does it stays in one place rather than being copied here.
+    val className: String?,
     val bounds: Bounds,
     val focused: Boolean,
     val enabled: Boolean,
+    /// Whether any of it shows. False for a node that is placed and
+    /// entirely clipped away — which is not the same as a node nobody
+    /// placed, and that one is absent rather than false.
+    val visible: Boolean,
     val actions: List<String>,
     val children: List<ProbeNode>,
 )
@@ -49,16 +62,19 @@ fun List<ProbeNode>.toWireJson(): String =
 private fun ProbeNode.toJson(): String = buildString {
     append("{\"id\":").append(id)
     appendField("testTag", testTag)
+    appendField("resourceId", resourceId)
     appendField("text", text)
     appendField("editableText", editableText)
     appendField("inputText", inputText)
     appendField("contentDescription", contentDescription)
     appendField("role", role)
+    appendField("className", className)
     append(",\"bounds\":[")
         .append(bounds.left).append(',').append(bounds.top).append(',')
         .append(bounds.right).append(',').append(bounds.bottom).append(']')
     append(",\"focused\":").append(focused)
     append(",\"enabled\":").append(enabled)
+    append(",\"visible\":").append(visible)
     append(",\"actions\":")
         .append(actions.joinToString(prefix = "[", separator = ",", postfix = "]") { it.quoted() })
     append(",\"children\":").append(children.toWireJson())

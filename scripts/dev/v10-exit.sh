@@ -35,7 +35,15 @@ step() {
 # 1 — the two perception paths reconcile, and the reconciliation is not
 #     vacuous (an exact count, not "more than none").
 step "two paths agree on the fixture" \
-  python3 scripts/dev/two-paths-agree.py --device "$ANDROID" --port "$APORT" --min-both 16
+  python3 scripts/dev/two-paths-agree.py --device "$ANDROID" --port "$APORT" \
+    --min-both 16 --min-bounds-compared 16
+
+# 1b — and on the screen where Compose hosts a View, which is where the
+#      claim above could fail and never did, for want of such a screen.
+step "two paths agree where Compose hosts a View" \
+  python3 scripts/dev/two-paths-agree.py --device "$ANDROID" --port "$APORT" \
+    --activity .InteropActivity --min-both 3 --min-bounds-compared 3 \
+    --prove-differences-exhibited
 
 # 2 — the three root causes of 6.4.0 each have something that goes red.
 step "the three that went red" \

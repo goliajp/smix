@@ -20,5 +20,8 @@
         <activity
             android:name=".BlockedActivity"
             android:exported="true" />
+        <activity
+            android:name=".InteropActivity"
+            android:exported="true" />
     </application>
 </manifest>
