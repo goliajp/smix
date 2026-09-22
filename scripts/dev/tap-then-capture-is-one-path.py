@@ -17,14 +17,24 @@ So this reads the source:
 - smix-sdk references `HttpRunnerClient::screenshot` — the code-level
   evidence for "the frame comes from the runner", rather than a sentence
   in a guide;
-- both route names live in that one function, so "Android goes another
-  way" is said in the code and not only in the documentation (§9 #1 ③).
+- the route the frame came from is named in that one function, and
+  there is only one of them.
 
-The plan for this gate said to forbid `self.screenshot(` inside the
-combined action. That rule is unsatisfiable: Android's branch legitimately
-is that call — it has no runner route to use. Forbidding it would have
-refused a correct implementation, so the predicate below asks for the
-evidence instead of banning a spelling.
+Until 10.2 there were two: iOS asked the runner and Android was filled
+in afterwards from device tooling, because the Android runner served no
+`/screenshot`. This gate then required both names to appear, so that
+"Android goes another way" was said in the code rather than only in a
+document. The route exists on both platforms now, so the rule is the
+other way round — a second route reappearing means somebody has started
+photographing the screen with a hand other than the one that tapped,
+and the two frames will differ by a couple of hundred milliseconds that
+nothing downstream can see.
+
+What replaced the old second route is a named failure, so the scan also
+requires that: a runner too old to serve `/screenshot` has to be told
+apart from a capture that failed, and neither may come back as an empty
+frame. `png: Vec::new()` used to be reachable here, and the command
+line wrote those nought bytes to disk and reported them as a picture.
 """
 
 import os
@@ -44,15 +54,24 @@ RESULT = "CapturedAfterTap"
 # The two answers `via` can carry. Both have to be in the one function:
 # a platform difference that only exists in a document is one nobody
 # reading the code can see.
-ROUTES = ('"runner"', '"device-tooling"')
+ROUTE = '"runner"'
+# A second provenance means a second hand taking the picture.
+FORMER_ROUTE = '"device-tooling"'
 # The code-level evidence that the frame comes from the runner.
-FROM_THE_RUNNER = "screenshot"
+#
+# The call, not the word: `screenshot_route_absent` next door contains
+# "screenshot", and with the looser spelling a body that had stopped
+# asking the runner for anything still satisfied this (caught by the
+# self-test's own mutation).
+FROM_THE_RUNNER = "runner.screenshot("
+# A runner without the route is a sentence, not an empty picture.
+ABSENCE_IS_NAMED = "screenshot_route_absent"
+EMPTY_FRAME = "Vec::new()"
 
 # Below either of these the scan is describing a codebase that is not
 # this one. Small because this axis has few sites: the floors refuse a
 # cleared-out tree, they do not describe a size.
 MIN_SURFACES = 2
-MIN_ROUTES = 2
 
 DOC = re.compile(r"^\s*//[/!]")
 
@@ -129,16 +148,38 @@ if body is not None and FROM_THE_RUNNER not in body:
         "later, and no test can tell"
     )
 
-# --- both routes are named in the code, not only in a guide --------------
+# --- one route, named, and no silent second hand -------------------------
 
-named = [r for r in ROUTES if body is not None and r in body]
-if len(named) < MIN_ROUTES:
-    missing = [r for r in ROUTES if r not in named]
+if body is not None and ROUTE not in body:
     problems.append(
-        f"{CORE} names {len(named)} of the {len(ROUTES)} routes a frame can "
-        f"come from — missing {', '.join(missing)}. A platform that goes "
-        "another way has to say so where the code says it, or the difference "
-        "exists only in a document (§9 #1 ③)"
+        f"{CORE} does not name {ROUTE} as where the frame came from. The "
+        "answer carries its provenance so a reader never has to assume it"
+    )
+
+if body is not None and FORMER_ROUTE in body:
+    problems.append(
+        f"{CORE} names {FORMER_ROUTE} again. Both platforms serve "
+        "/screenshot since 10.2, and a second hand taking the picture is a "
+        "frame a couple of hundred milliseconds later from another layer — "
+        "which is exactly the difference this combined action exists to "
+        "remove, and which nothing downstream can see"
+    )
+
+# --- a runner without the route is said, not photographed by something else
+
+if body is not None and ABSENCE_IS_NAMED not in body:
+    problems.append(
+        f"{CORE} does not ask {ABSENCE_IS_NAMED}. A runner older than the "
+        "route answers 501, and a capture that produced nothing answers 503; "
+        "collapsing those two sends somebody with a black screen to reinstall "
+        "their runner (§9 #1 ③)"
+    )
+
+if body is not None and EMPTY_FRAME in body:
+    problems.append(
+        f"{CORE} can still produce an empty frame ({EMPTY_FRAME}). The "
+        "command line writes what it is handed and prints the byte count: "
+        "nought bytes on disk looked exactly like a picture of a screen"
     )
 
 # --- every surface reaches the one implementation ------------------------
@@ -168,5 +209,6 @@ if problems:
 
 print(
     f"tap-then-capture-is-one-path: clean — {len(surfaces)} surfaces reach it, "
-    f"the frame comes from the runner, {len(named)} routes named"
+    "the frame comes from the runner on both platforms, and a runner without "
+    "the route is named rather than photographed by something else"
 )

@@ -28,21 +28,27 @@ pub struct CapturedAfterTap {
 
 pub async fn tap_then_capture_with(
     driver: &dyn Driver,
-    runner: Option<&HttpRunnerClient>,
     selector: &Selector,
 ) -> Result<(ActOutcome, CapturedAfterTap), ExpectationFailure> {
     let outcome = driver.tap(selector, None).await?;
     let tapped_at = std::time::Instant::now();
-    let (png, via) = match runner {
-        Some(runner) => (runner.screenshot().await?, "runner"),
-        None => (Vec::new(), "device-tooling"),
-    };
-    Ok((outcome, CapturedAfterTap { png, via, gap_ms: 0 }))
+    let runner = driver.runner_client().ok_or_else(no_runner)?;
+    let png = runner.screenshot().await.map_err(|e| {
+        if screenshot_route_absent(&e) {
+            return predates_the_route(e);
+        }
+        transport_to_failure(e)
+    })?;
+    Ok((outcome, CapturedAfterTap { png, via: "runner", gap_ms: 0 }))
+}
+
+fn screenshot_route_absent(err: &RunnerTransportError) -> bool {
+    matches!(err, RunnerTransportError::NonSuccessStatus { status, .. } if *status == 501)
 }
 
 impl App {
     pub async fn tap_then_capture(&self, selector: &Selector) -> Result<(), ()> {
-        tap_then_capture_with(self.driving()?, self.http_runner_client(), selector).await
+        tap_then_capture_with(self.driving()?, selector).await
     }
 }
 """
@@ -109,21 +115,46 @@ CASES = [
         "the frame no longer comes from the runner",
         {
             "smix-sdk/src/lib.rs": [
-                ("(runner.screenshot().await?, \"runner\")", "(Vec::new(), \"runner\")")
+                ("let png = runner.screenshot().await", "let png = device_tooling().await")
             ]
         },
         False,
         "never asks the runner for a frame",
     ),
     (
-        "the other route is not named in the code",
+        "the answer stops saying where the frame came from",
+        {"smix-sdk/src/lib.rs": [('via: "runner"', "via: provenance()")]},
+        False,
+        "does not name",
+    ),
+    (
+        "a second hand takes the picture again",
         {
             "smix-sdk/src/lib.rs": [
-                ('None => (Vec::new(), "device-tooling"),', "None => (Vec::new(), OTHER),")
+                ('Ok((outcome, CapturedAfterTap { png, via: "runner", gap_ms: 0 }))',
+                 'let via = if png.is_empty() { "device-tooling" } else { "runner" };\n'
+                 "    Ok((outcome, CapturedAfterTap { png, via, gap_ms: 0 }))")
             ]
         },
         False,
-        "has to say so where the code says it",
+        "names \"device-tooling\" again",
+    ),
+    (
+        "an old runner and a failed capture collapse into one answer",
+        {"smix-sdk/src/lib.rs": [("if screenshot_route_absent(&e) {", "if false {")]},
+        False,
+        "does not ask screenshot_route_absent",
+    ),
+    (
+        "an empty frame is reachable again",
+        {
+            "smix-sdk/src/lib.rs": [
+                ("let png = runner.screenshot().await.map_err(|e| {",
+                 "let png = Vec::new();\n    let _ = runner.screenshot().await.map_err(|e| {")
+            ]
+        },
+        False,
+        "empty frame",
     ),
     (
         "only one surface reaches it",

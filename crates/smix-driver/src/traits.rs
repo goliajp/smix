@@ -53,6 +53,20 @@ pub trait Driver: Send + Sync {
         None
     }
 
+    /// The runner this driver talks to, when it has one.
+    ///
+    /// Distinct from [`Driver::as_ios_driver`] on purpose. That one asks
+    /// "is this the iOS driver", and `smix_sdk::App` uses its `Some` as
+    /// the iOS session precondition — widening it to Android would start
+    /// demanding a session id from a platform that has none. This asks a
+    /// different question: who can take a picture of the screen from
+    /// inside the process that just acted. Both drivers can answer it,
+    /// and for as long as only one was asked, `tap --then-screenshot`
+    /// had two implementations and Android met the one that 501s.
+    fn runner_client(&self) -> Option<&smix_runner_client::HttpRunnerClient> {
+        None
+    }
+
     /// Set the target bundle id sent to the runner as the
     /// `App-Bundle-Id` header on every request. iOS rebinds
     /// `XCUIApplication(bundleIdentifier:)` per request with it;

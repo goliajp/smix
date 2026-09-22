@@ -873,13 +873,14 @@ pub struct CapturedAfterTap {
 /// the CLI's `tap` holds a bare driver. Written twice, the copies drift,
 /// and what drifts first is the ordering — which is the entire point.
 ///
-/// On a runner-less caller the frame is left empty and `via` says
-/// `device-tooling`; that caller is expected to fill it from whatever
-/// device tooling it has. Said out loud rather than degraded silently
-/// (§9 #1 ③).
+/// The frame comes from the runner on both platforms — the hand that
+/// tapped. A driver with no runner at all, and a runner too old to
+/// serve the route, are each a named failure rather than a frame taken
+/// by some other hand: a picture of the screen from a different process
+/// arriving under the same field is how a caller ends up comparing two
+/// things it believes are one (§9 #1 ③).
 pub async fn tap_then_capture_with(
     driver: &dyn smix_driver::Driver,
-    runner: Option<&HttpRunnerClient>,
     selector: &Selector,
 ) -> Result<(ActOutcome, CapturedAfterTap), ExpectationFailure> {
     // Tap first, and let a failed tap end it here. A frame taken after a
@@ -888,24 +889,58 @@ pub async fn tap_then_capture_with(
     // screen nothing happened on.
     let outcome = driver.tap(selector, None).await?;
     let tapped_at = std::time::Instant::now();
-    let (png, via) = match runner {
-        Some(runner) => (
-            runner
-                .screenshot()
-                .await
-                .map_err(smix_driver::transport_to_failure)?,
-            "runner",
-        ),
-        None => (Vec::new(), "device-tooling"),
-    };
+    let runner = driver.runner_client().ok_or_else(|| {
+        ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: "tap-then-capture: this driver has no runner, so there is \
+                      nothing here that can photograph the screen it just touched"
+                .into(),
+            ..Default::default()
+        })
+    })?;
+    let png = runner.screenshot().await.map_err(|e| {
+        if screenshot_route_absent(&e) {
+            return ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!(
+                    "tap-then-capture: the tap landed and the runner answered \
+                     `{e}`. That runner predates the /screenshot route."
+                ),
+                hint: Some(
+                    "bring the runner up again so it matches this smix — \
+                     `smix runner up <device> --platform android` reinstalls \
+                     it from the sources this binary ships with"
+                        .into(),
+                ),
+                ..Default::default()
+            });
+        }
+        smix_driver::transport_to_failure(e)
+    })?;
     Ok((
         outcome,
         CapturedAfterTap {
             png,
-            via,
+            via: "runner",
             gap_ms: u64::try_from(tapped_at.elapsed().as_millis()).unwrap_or(u64::MAX),
         },
     ))
+}
+
+/// Whether this failure means the runner has no `/screenshot` at all.
+///
+/// Not the same question as "the screenshot failed", and the two must
+/// not share an answer: a 503 is the runner saying it captured nothing,
+/// which is a device to look at, while a 404 or a 501 is a runner from
+/// before the route existed, which is a reinstall. Telling someone with
+/// a black screen to reinstall the runner sends them to the wrong half
+/// of the problem.
+fn screenshot_route_absent(err: &smix_runner_client::RunnerTransportError) -> bool {
+    matches!(
+        err,
+        smix_runner_client::RunnerTransportError::NonSuccessStatus { endpoint, status, .. }
+            if endpoint == "/screenshot" && matches!(status, 404 | 501)
+    )
 }
 
 /// Which part of this selector this layer cannot evaluate, if any.
@@ -1994,16 +2029,7 @@ impl App {
         &self,
         selector: &Selector,
     ) -> Result<(ActOutcome, CapturedAfterTap), ExpectationFailure> {
-        let device_side = self.http_runner_client().is_none();
-        let (outcome, mut captured) =
-            tap_then_capture_with(self.driving()?, self.http_runner_client(), selector).await?;
-        if device_side {
-            // The Android side has no runner route for this; the frame
-            // comes from device tooling, which lives behind DeviceControl
-            // rather than behind the driver.
-            captured.png = self.screenshot().await?;
-        }
-        Ok((outcome, captured))
+        tap_then_capture_with(self.driving()?, selector).await
     }
 
     pub async fn tap(&self, selector: &Selector) -> Result<ActOutcome, ExpectationFailure> {

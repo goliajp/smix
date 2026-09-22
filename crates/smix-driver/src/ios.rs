@@ -25,6 +25,10 @@ impl Driver for IosDriver {
         Some(self)
     }
 
+    fn runner_client(&self) -> Option<&smix_runner_client::HttpRunnerClient> {
+        Some(self.runner())
+    }
+
     /// iOS impl: mutate the wrapped `HttpRunnerClient` so every
     /// subsequent request carries the `App-Bundle-Id` header. Runner
     /// side rebinds `XCUIApplication(bundleIdentifier:)` per request.

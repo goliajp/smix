@@ -210,3 +210,87 @@ async fn the_gap_is_the_gap_and_not_the_whole_call() {
         captured.gap_ms
     );
 }
+
+// The Android half, which had no frame from the hand that tapped.
+//
+// `smix tap --then-screenshot` answered `501 not_implemented` on
+// Android for as long as the flag existed: the runner served no
+// `/screenshot`, and the CLI asked it anyway. The SDK's own path
+// quietly took a different route — device tooling — so the same call
+// had two behaviours and the consumer met the one that fails.
+
+/// A runner that answers what an Android tap-then-frame needs.
+async fn android_runner_server(shot: ResponseTemplate) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tree_with_submit()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/tap-at-norm-coord"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/screenshot"))
+        .respond_with(shot)
+        .mount(&server)
+        .await;
+    server
+}
+
+fn android_app(server: &MockServer) -> App {
+    // The device-control half is the simulator's on purpose: it has no
+    // udid here, so any call into device tooling fails loudly. This
+    // test is about the frame coming from the runner, and a silent
+    // change of hands would otherwise read as a pass.
+    App::new_with(
+        Box::new(smix_driver::AndroidDriver::new(HttpRunnerClient::with_base(
+            server.uri(),
+        ))),
+        Box::new(smix_sdk::AndroidDeviceControl::new()),
+    )
+}
+
+#[tokio::test]
+async fn android_takes_the_frame_from_the_runner_that_tapped() {
+    let server = android_runner_server(
+        ResponseTemplate::new(200)
+            .set_body_bytes(FRAME)
+            .insert_header("Content-Type", "image/png"),
+    )
+    .await;
+    let app = android_app(&server);
+    let (_outcome, captured) = app
+        .tap_then_capture(&submit())
+        .await
+        .expect("the stub answers every route this needs");
+    assert_eq!(captured.png, FRAME, "the frame has to survive the trip");
+    assert_eq!(
+        captured.via, "runner",
+        "both platforms photograph with the hand that tapped; two hands \
+         for one call is how one of them went untested"
+    );
+}
+
+#[tokio::test]
+async fn a_runner_without_the_route_says_what_to_do_about_it() {
+    // What a runner older than the route answers, verbatim from
+    // emulator-5554 running 10.1.0 on 2026-09-23.
+    let server = android_runner_server(ResponseTemplate::new(501).set_body_json(
+        serde_json::json!({ "error": "not_implemented", "route": "/screenshot", "method": "GET" }),
+    ))
+    .await;
+    let app = android_app(&server);
+    let failed = app
+        .tap_then_capture(&submit())
+        .await
+        .expect_err("a runner that cannot take the frame has not taken it");
+    let said = failed.to_prompt();
+    assert!(
+        said.contains("runner up"),
+        "a runner that predates the route is fixed by bringing it up \
+         again, and the failure is the only place that can say so: {said}"
+    );
+}

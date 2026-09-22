@@ -254,6 +254,10 @@ impl Driver for AndroidDriver {
         Platform::Android
     }
 
+    fn runner_client(&self) -> Option<&smix_runner_client::HttpRunnerClient> {
+        Some(self.runner())
+    }
+
     // No as_ios_driver override — uses default `None` from trait.
 
     /// Android impl: send the package of the app under test as

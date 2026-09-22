@@ -553,6 +553,34 @@ object RunnerWire {
         .put("reason", reason)
         .toString()
 
+    /// `no_focused_field`, with the window stack that explains it.
+    ///
+    /// The sentence is for the reader and `windows` is for a machine,
+    /// and they come from one walk so they cannot disagree.
+    ///
+    /// Not named `…Body`: in this file that suffix means the answer a
+    /// route decided, and `an-act-route-says-what-ok-means` requires
+    /// every one of them to carry an `ok` the handler computed. This is
+    /// a refusal envelope, the shape `errorBody` already has, and it
+    /// carries no `ok` because nothing was done.
+    fun noFocusedFieldEnvelope(message: String, rows: List<WindowRules.Row>): String {
+        val arr = JSONArray()
+        for (r in rows) {
+            arr.put(
+                JSONObject()
+                    .put("package", r.pkg ?: JSONObject.NULL)
+                    .put("type", r.type)
+                    .put("kind", WindowRules.kindOf(r.type))
+                    .put("layer", r.layer),
+            )
+        }
+        return JSONObject()
+            .put("error", "no_focused_field")
+            .put("message", message)
+            .put("windows", arr)
+            .toString()
+    }
+
     fun errorBody(kind: String, message: String): String = JSONObject()
         .put("error", kind)
         .put("message", message)
@@ -848,12 +876,105 @@ object TreeWire {
         focused: Boolean,
         rootReadable: Boolean,
         packageName: String?,
+        kind: String,
     ): JSONObject = JSONObject()
         .put("index", index)
         .put("type", type)
+        .put("kind", kind)
         .put("layer", layer)
         .put("active", active)
         .put("focused", focused)
         .put("rootReadable", rootReadable)
         .put("package", packageName ?: JSONObject.NULL)
+}
+
+/// Which windows are above the app under test, and which of them a
+/// caller can do something about.
+///
+/// The old rule asked whether a window was `TYPE_APPLICATION` and then
+/// compared a height against a number computed from one window's right
+/// edge minus another's left — neither a width nor a height, and true
+/// for almost everything it ever saw. It answered `[]` for a crash
+/// dialog covering the whole screen, because that dialog is
+/// `TYPE_SYSTEM`.
+///
+/// So the question is asked directly instead: does this window belong
+/// to somebody other than the app under test, and is there anything in
+/// it to press. A window with nothing to press is reported in the
+/// sentence (it still explains a failure) but is not offered as a
+/// popup, because `system-popup-action` would have no button to take.
+object WindowRules {
+    /// `AccessibilityWindowInfo` types, by their platform values.
+    const val TYPE_APPLICATION = 1
+    const val TYPE_INPUT_METHOD = 2
+    const val TYPE_SYSTEM = 3
+
+    /// One window, as `/windows` already reports it.
+    data class Row(
+        val type: Int,
+        val pkg: String?,
+        val layer: Int,
+        val takesFocus: Boolean = false,
+    )
+
+    fun isForeignPopup(
+        type: Int,
+        pkg: String?,
+        hasButton: Boolean,
+        takesFocus: Boolean,
+        app: String?,
+    ): Boolean {
+        // The keyboard is not a popup however many pressable things are
+        // drawn on it. Its verb is `hideKeyboard`, and offering its keys
+        // as popup buttons would answer a question nobody asked.
+        if (type == TYPE_INPUT_METHOD) return false
+        if (!hasButton) return false
+        // Furniture is not a popup. The navigation bar carries four
+        // clickable, named buttons (Back, Overview, Switch input method,
+        // Home — read on emulator-5554), so "has something to press" on
+        // its own offered the bars as popups every time the keyboard
+        // came up. What separates them is not what they carry: a popup
+        // came up over the app and took the focus, and the bars never
+        // do. A foreign window that takes no focus is still named in
+        // the sentence a failure carries — it is only not offered as
+        // something to press a button on.
+        if (!takesFocus) return false
+        val owner = pkg ?: return false
+        return owner != app
+    }
+
+    /// What kind of window this is, in the words a reader needs.
+    fun kindOf(type: Int): String = when (type) {
+        TYPE_APPLICATION -> "an app window"
+        TYPE_INPUT_METHOD -> "an input method"
+        TYPE_SYSTEM -> "a system window"
+        else -> "a window of type $type"
+    }
+
+    /// One sentence naming who is over the app, or an empty string.
+    ///
+    /// Empty rather than "nothing is above the app": the two readings
+    /// this can produce are "the app owns the stack" and "this was not
+    /// looked at", and a sentence that reads the same in both cases is
+    /// the failure this whole route exists against.
+    fun windowStackSentence(rows: List<Row>, app: String?): String {
+        // Only what took the focus gets named.
+        //
+        // The status and navigation bars are over every app at all
+        // times; naming them in every failure is a sentence a reader
+        // learns to skip, and the one time it matters it reads the
+        // same. The full stack is on the wire beside this for anything
+        // that wants to look.
+        val foreign = rows
+            .filter { it.pkg != null && it.pkg != app && it.takesFocus }
+            .sortedByDescending { it.layer }
+        val mine = if (rows.any { it.pkg == app }) {
+            ""
+        } else {
+            " The app under test has no window in the stack at all."
+        }
+        if (foreign.isEmpty()) return mine.trim()
+        val named = foreign.joinToString(", ") { "${it.pkg} (${kindOf(it.type)})" }
+        return "Above ${app ?: "the app"}, and holding the focus: $named.$mine"
+    }
 }

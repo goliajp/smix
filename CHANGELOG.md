@@ -6,6 +6,35 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **`GET /screenshot` on the Android runner**, the wire contract iOS has
+  served all along: raw PNG bytes, `503` when the capture produced
+  nothing. `smix tap --then-screenshot` answered `501 not_implemented`
+  on Android for as long as the flag existed, while the same capture was
+  already being taken one function away for OCR. The host now asks the
+  runner on both platforms — the frame comes from the process that
+  tapped — and a runner too old to serve the route is told apart from a
+  capture that failed: the first is answered with "bring the runner up
+  again", the second with the device's own words.
+
+- **`/system-popups` reports any window that is over the app, not just
+  the ones that look like app dialogs.** A window counts when it belongs
+  to somebody other than the app under test, took the focus, and carries
+  something a caller can press. Measured on emulator-5554: a permission
+  dialog (`com.android.permissioncontroller`) and a crash dialog
+  (package `android`) were both reported as nothing at all, because the
+  rule only considered `TYPE_APPLICATION` windows and then compared a
+  height against a number that was neither a width nor a height. The
+  keyboard is never a popup (its verb is `hideKeyboard`), and neither is
+  the navigation bar — which does carry four clickable, named buttons,
+  and never takes the focus.
+
+- **`no_focused_field` says what was on top.** The failure now ends with
+  the foreign window holding the focus, says when the app under test has
+  no window in the stack at all, and carries the whole stack as
+  `windows`. A consumer lost six seconds and a screenshot to a message
+  that described only the focus while their keyboard's own promotion
+  dialog sat over the field.
+
 - **Five verbs for arranging and reading an Android device**, each one
   taking the device explicitly and reading the result back from it.
   Waking a screen, holding it awake, granting a runtime permission,

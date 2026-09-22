@@ -111,6 +111,29 @@ class MainActivity : Activity() {
             }
         }
 
+        // A window belonging to somebody else, over this app, on
+        // demand.
+        //
+        // The judgement it exists for is "smix reports what is above
+        // the app": a consumer's keyboard opened its own dialog over a
+        // field, and nothing said so. The obvious subject — `am crash`,
+        // whose dialog belongs to package `android` — is refused by the
+        // system after repeated crashes and lands on the launcher
+        // instead, so a gate built on it is red for the wrong reason
+        // about a third of the time (measured, emulator-5554).
+        //
+        // The permission dialog is owned by the permission controller,
+        // takes focus, carries buttons, and comes up every time the
+        // permission is not held.
+        val askCamera = Button(this).apply {
+            text = "Ask for the camera"
+            contentDescription = "ask-camera"
+            id = R.id.fixture_ask_camera
+            setOnClickListener {
+                requestPermissions(arrayOf(android.Manifest.permission.CAMERA), 1)
+            }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@MainActivity).apply { text = "smix fixture" })
@@ -122,6 +145,7 @@ class MainActivity : Activity() {
             addView(toScroll)
             addView(toBlocked)
             addView(toInterop)
+            addView(askCamera)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
