@@ -29,8 +29,11 @@ RUNTIME = os.path.join(ROOT, "crates", "smix-adapter-maestro", "src", "runtime.r
 # What counts as reading each form, in the runtime. Named by the call
 # that does the reading rather than by a verb, so a rename of the verb
 # cannot quietly satisfy this.
+# `find_text_by_ocr` is the driver trait's spelling and `find_by_text_ocr`
+# the SDK's; the two layers read the same thing under names that differ by
+# one word, and a slot whose loop moved down a layer reads the lower one.
 READS = {
-    "OcrText": ("find_by_text_ocr", "wait_for_visible_with_ocr", "scroll_until_visible_with_ocr"),
+    "OcrText": ("find_by_text_ocr", "find_text_by_ocr", "wait_for_visible_with_ocr"),
     "LocalizedText": ("desugar_localized_text",),
     "AnchorRelative": ("find_norm_coord",),
 }
@@ -53,8 +56,26 @@ SLOT_HELPERS = {
     "AnnotationAnchor": ("point_for_unreadable", "point_for_unreadable_once"),
     "RepeatTapTarget": ("point_for_unreadable", "point_for_unreadable_once"),
     "WaitVisibleTarget": ("wait_for_visible_with_ocr",),
-    "RunFlowGate": ("check_selector_visible", "evaluate_run_flow_gate"),
-    "ScrollTarget": ("scroll_until_visible_with_ocr",),
+    "RunFlowGate": ("check_selector_visible", "evaluate_condition"),
+}
+
+# A slot whose reading left this crate, with the file it left for.
+#
+# `scrollUntilVisible` used to run an OCR-aware loop of its own in the
+# adapter, beside two more in the drivers; one loop now serves all three
+# and lives in `smix_driver::scroll_until`. So the arm names a driver
+# call and the reading happens a crate away, and a scan that only read
+# this crate saw a cell claiming a dispatch nothing here performs.
+#
+# Following the call rather than widening the reader list is the
+# difference between checking the chain and checking a word: naming
+# `scroll` a reader of OCR would go on agreeing after that loop stopped
+# looking at any, which is the shape this whole file exists against.
+#
+# The production half of the file, not all of it: a reader named only in
+# that file's own tests would satisfy this while the loop read nothing.
+SLOT_READS_IN = {
+    "ScrollTarget": (os.path.join("crates", "smix-driver", "src", "scroll_until.rs"),),
 }
 SLOT_ARMS = {
     "TapOnTarget": ("TapOn",),
@@ -140,6 +161,15 @@ def fn_body(src: str, name: str) -> str:
     return ""
 
 
+def production_half(rel: str) -> str:
+    """A file's text above its `#[cfg(test)]`, or empty when it is gone."""
+    try:
+        src = open(os.path.join(ROOT, rel), encoding="utf-8").read()
+    except OSError:
+        return ""
+    return src.split("#[cfg(test)]", 1)[0]
+
+
 def claims_dispatch(table: str, slot: str, form: str) -> bool:
     """Does the table's `support` say this cell is dispatched?
 
@@ -158,18 +188,39 @@ _CELLS_CACHE = {}
 
 
 def _dispatched_cells(table: str) -> set:
-    """Every dispatched cell, evaluated by the Rust that owns the table."""
+    """Every dispatched cell, evaluated by the Rust that owns the table.
+
+    No cells is not "no cell claims a dispatch": it is this scan having
+    failed to ask. The crate not compiling, the test renamed, cargo not
+    on PATH — each prints nothing, and every cell check below then has
+    nothing to check and says so cheerfully.
+
+    Found by mutation: removing the OCR call the `ScrollTarget` cell
+    depends on left the crate uncompilable, and this gate reported clean
+    about a table it had never read. So the reading either produces
+    cells or is a failure with the compiler's own words.
+    """
     if "cells" in _CELLS_CACHE:
         return _CELLS_CACHE["cells"]
     import subprocess
 
-    out = subprocess.run(
+    r = subprocess.run(
         ["cargo", "test", "-p", "smix-adapter-maestro", "--test",
          "every_cell_is_a_decision", "--", "--nocapture", "print_the_table"],
         cwd=ROOT, capture_output=True, text=True,
-    ).stdout
-    cells = set(re.findall(r"CELL (\S+):(\S+) DISPATCHED", out))
-    cells = {f"{a}:{b}" for a, b in cells}
+    )
+    cells = {f"{a}:{b}" for a, b in re.findall(r"CELL (\S+):(\S+) DISPATCHED", r.stdout)}
+    if not cells:
+        said = (r.stderr or r.stdout).strip().splitlines()
+        tail = "\n      ".join(said[-6:]) if said else "(it said nothing at all)"
+        print("every-cell-is-declared: FAIL")
+        print(
+            "  - the table would not answer: `cargo test -p smix-adapter-maestro "
+            "--test every_cell_is_a_decision print_the_table` printed no CELL "
+            "lines, so there was nothing to check the runtime against.\n"
+            f"      {tail}"
+        )
+        sys.exit(1)
     _CELLS_CACHE["cells"] = cells
     return cells
 
@@ -201,6 +252,29 @@ def main() -> int:
     #
     # A cell claims a dispatch; the arm that serves its slot has to
     # contain a reader for that form.
+    # The join names helpers and files, and a name that means nothing
+    # reads exactly like a name that is satisfied: `fn_body` returns ""
+    # for a helper that has been renamed away, and the cell then passes
+    # on whatever its sibling helper happens to contain. Both of these
+    # had gone stale within one version — `evaluate_run_flow_gate` was
+    # renamed and `scroll_until_visible_with_ocr` deleted — and this
+    # scan went on printing clean.
+    for slot, helpers in sorted(SLOT_HELPERS.items()):
+        for helper in helpers:
+            if not fn_body(runtime, helper):
+                problems.append(
+                    f"the join says {slot} is served by `{helper}` and runtime.rs "
+                    f"has no such function. A helper that is gone excuses the cell "
+                    f"instead of checking it."
+                )
+    for slot, rels in sorted(SLOT_READS_IN.items()):
+        for rel in rels:
+            if not production_half(rel).strip():
+                problems.append(
+                    f"the join sends {slot}'s reading to {rel}, which is missing or "
+                    f"all test code. An empty file agrees with every cell."
+                )
+
     arms = step_arms(runtime)
     for (slot, form), arm_names in CELL_ARMS.items():
         if not claims_dispatch(table, slot, form):
@@ -209,12 +283,16 @@ def main() -> int:
         bodies = "\n".join(arms.get(a, "") for a in arm_names)
         for helper in SLOT_HELPERS.get(slot, ()):
             bodies += "\n" + fn_body(runtime, helper)
+        for rel in SLOT_READS_IN.get(slot, ()):
+            bodies += "\n" + production_half(rel)
         if not any(re.search(rf"\b{re.escape(r)}\b", bodies) for r in readers):
+            looked = list(arm_names) + list(SLOT_HELPERS.get(slot, ())) + list(
+                SLOT_READS_IN.get(slot, ())
+            )
             problems.append(
-                f"the table says {slot} reads `{form}`, and the runtime arm(s) "
-                f"{list(arm_names)} call none of {list(readers)}. A cell that "
-                f"claims a dispatch nothing performs is the table agreeing with "
-                f"itself."
+                f"the table says {slot} reads `{form}`, and none of {looked} "
+                f"calls any of {list(readers)}. A cell that claims a dispatch "
+                f"nothing performs is the table agreeing with itself."
             )
 
     if problems:
@@ -225,7 +303,8 @@ def main() -> int:
 
     print(
         f"every-cell-is-declared: clean — {len(listed)} slots, each declared by a step "
-        f"and walked by the tests; every dispatched form has a reader in runtime.rs"
+        f"and walked by the tests; every dispatched form has a reader in the arm, its "
+        f"helpers, or the file the join follows it to"
     )
     return 0
 

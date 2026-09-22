@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# v10.2 C8 — a device reaches a service on this machine.
+# v10.2-C8: a device reaches a service on this machine.
 #
-# insight's Consumer round (2026-09-22) starts a server on the host and
+# A consumer's Android round (2026-09-22) starts a server on the host and
 # drives the app against it. An emulator has 10.0.2.2 to remember; a
 # phone on the cable has nothing at all, and raw `adb reverse` against a
 # physical serial is refused by the plugin's adb guard — rightly, since
@@ -50,8 +50,12 @@ WE_BOOTED=0
 # version of this script proved that by passing with the two swapped.
 # So the device dials one number and the host serves another, which is
 # also the only device-level exercise `--to` gets.
-HOST_PORT="${SMIX_E2E_STUB_PORT:-6001}"
-DEVICE_PORT="${SMIX_E2E_DEVICE_PORT:-6002}"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
+gate_free_port _C8_HOST_PORT
+gate_free_port _C8_DEVICE_PORT
+HOST_PORT="${SMIX_E2E_STUB_PORT:-$_C8_HOST_PORT}"
+DEVICE_PORT="${SMIX_E2E_DEVICE_PORT:-$_C8_DEVICE_PORT}"
 TOKEN="smix-c8-$$-$(date +%s)"
 STUB_PID=""
 

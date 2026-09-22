@@ -2,7 +2,8 @@
 # v10.2-C5: a scroll stops with its target wholly on screen, and the tap
 # that follows lands on it — on both platforms, through one loop.
 #
-# The defect this is the instrument for (insight, 2026-09-22): the scroll
+# The defect this is the instrument for, from a consumer's Android
+# round (2026-09-22): the scroll
 # stopped as soon as the target was in the tree AND overlapped the screen
 # at all. A row crossing the bottom edge satisfies that with its middle
 # below the edge, so `scrollUntilVisible` returned and the `tapOn` after
@@ -28,8 +29,11 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 AND_ALIAS="${SMIX_C5_ANDROID:-sim-smix-android-01}"
 IOS_ALIAS="${SMIX_C5_IOS:-5D087114-ECB3-443C-8DDB-40EEF9CFB90C}"
-AND_PORT="${SMIX_C5_ANDROID_PORT:-22097}"
-IOS_PORT="${SMIX_C5_IOS_PORT:-22098}"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
+# One runner per platform, so two ports, both asked of the OS.
+AND_PORT="$SMIX_RUNNER_PORT"
+gate_free_port IOS_PORT
 AND_APPID="dev.smix.fixture"
 IOS_APPID="jp.golia.smix.fixture"
 AND_APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"

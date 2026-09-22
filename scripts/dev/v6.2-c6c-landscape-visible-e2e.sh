@@ -16,7 +16,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 ALIAS="${SMIX_C6C_IOS:-smix-ios}"
-PORT="${SMIX_C6C_PORT:-22090}"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
+PORT="$SMIX_RUNNER_PORT"
 BUNDLE="jp.golia.smix.fixture"
 FIXTURE="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
 WORK="$(mktemp -d)"

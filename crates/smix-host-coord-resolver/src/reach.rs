@@ -235,8 +235,8 @@ mod tests {
 
     #[test]
     fn the_consumers_row_whose_middle_is_below_the_edge_is_short() {
-        // insight 09-22 #4: the scroll stopped here and the tap failed
-        // with CentroidOutOfFrame { ny: 1.02 }.
+        // A consumer's Android round, 2026-09-22: the scroll stopped
+        // here and the tap failed with CentroidOutOfFrame { ny: 1.02 }.
         let b = nb(0.0, 0.95, 1.0, 0.14);
         assert!(b.mid_y() > 1.0);
         assert!(matches!(

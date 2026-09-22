@@ -188,6 +188,7 @@ SOURCE_GATES=(
   gate-subject-diversity
   route-context-scan
   gate-port-scan
+  gate-port-scan.test
   every-runner-a-gate-starts-comes-down
   the-publish-graph-builds
   the-publish-graph-builds.test

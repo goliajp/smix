@@ -71,6 +71,7 @@ LOCAL = {
     "gate subject diversity": "gate-subject-diversity",
     "route context scan": "route-context-scan",
     "gate port scan": "gate-port-scan",
+    "the gate-port scan can still go red": "gate-port-scan.test",
     "every runner a gate starts comes down": "every-runner-a-gate-starts-comes-down",
     "the publish graph builds": "the-publish-graph-builds",
     "the publish-graph gate can still go red": "the-publish-graph-builds.test",

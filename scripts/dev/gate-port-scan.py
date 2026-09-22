@@ -55,9 +55,15 @@ SCRIPTS = os.path.join(ROOT, "scripts")
 # telling the reader what to run next, and a `case` pattern in the adb
 # guard's own test table. A scan that cannot tell a command from a
 # sentence about a command makes work rather than finding it.
+#
+# The environment prefix is there for the same reason: `ANDROID_SERIAL=…
+# "$SMIX" runner up …` is how one gate spells it, and without this the
+# scan walked past a script that starts a runner on a pinned port —
+# invisible rather than excused, which is worse.
 STARTS_A_RUNNER = re.compile(
     r"""^\s*
         (?:if\s+!?\s*|\(\s*cd\s[^&]*&&\s*)?     # `if !` / `( cd X &&` prefixes
+        (?:[A-Za-z_][A-Za-z_0-9]*=\S*\s+)*      # `VAR=value ` environment prefixes
         "?\$?\{?(?:smix|SMIX_BIN|SMIX)\}?"?     # the binary, however spelled
         (?:/[\w/.\-]*smix)?                     # or a path ending in smix
         \s+runner\ up\b""",
@@ -66,7 +72,16 @@ STARTS_A_RUNNER = re.compile(
 # A port written as a number: `PORT=28080`, or a default for an override
 # (`${SMIX_GATE_RUNNER_PORT:-28080}`). Four or five digits, so a `-p 80`
 # or an index is not mistaken for one.
-PINS_A_PORT = re.compile(r"[A-Z_]*PORT[A-Z_]*=\s*\"?(?:\$\{[A-Za-z_]+:-)?\s*\d{4,5}\b")
+#
+# The override's name takes digits after the first character. It did not,
+# and three gates written in one version escaped through that: their
+# overrides are named after the checkpoint (`SMIX_C5_ANDROID_PORT`,
+# `SMIX_C6_PORT`, `SMIX_C7_PORT`), so the literal default behind each was
+# never looked at, and two of them passed on the other branch below for
+# mentioning `SMIX_RUNNER_PORT=` while still pinning a socket.
+PINS_A_PORT = re.compile(
+    r"[A-Z_]*PORT[A-Z_]*=\s*\"?(?:\$\{[A-Za-z_][A-Za-z_0-9]*:-)?\s*\d{4,5}\b"
+)
 
 # Prose about the command, in any of the forms this repo writes it.
 MENTIONS_ONLY = re.compile(r"^\s*(?:#|log\b|echo\b|printf\b|\*[\"'])")

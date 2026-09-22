@@ -20,8 +20,11 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 IOS_ALIAS="${SMIX_C7_IOS:-smix-ios}"
 AND_ALIAS="${SMIX_C7_ANDROID:-smix-android}"
-IOS_PORT="${SMIX_C7_IOS_PORT:-22095}"
-AND_PORT="${SMIX_C7_ANDROID_PORT:-22096}"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
+# One runner per platform, so two ports, both asked of the OS.
+IOS_PORT="$SMIX_RUNNER_PORT"
+gate_free_port AND_PORT
 IOS_APPID="jp.golia.smix.fixture"
 AND_APPID="dev.smix.fixture"
 IOS_FIXTURE="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"

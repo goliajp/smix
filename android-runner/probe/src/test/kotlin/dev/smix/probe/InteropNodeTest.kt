@@ -15,10 +15,10 @@ import org.junit.Test
  * and which rectangle is its — is a function of values, so it is judged
  * without an emulator and the walk is left with nothing to decide.
  *
- * The defect (insight, 2026-09-22): a player's chrome inside an
- * `AndroidView` was addressable through the accessibility path and
- * vanished the moment the app carried the probe, because the probe
- * walked semantics children and nothing else.
+ * The defect, reported from a consumer's Android round (2026-09-22): a
+ * player's chrome inside an `AndroidView` was addressable through the
+ * accessibility path and vanished the moment the app carried the probe,
+ * because the probe walked semantics children and nothing else.
  */
 class InteropNodeTest {
     @Test

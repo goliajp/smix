@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # v10.2-C7: the probe's tree is the screen, not the layout.
 #
-# Three defects, one root (insight, 2026-09-22). The probe walked
+# Three defects, one root, from a consumer's Android round
+# (2026-09-22). The probe walked
 # `SemanticsNode.children` and reported `positionOnScreen + size`, so:
 #
 #   1. a View inside an `AndroidView` was not in its tree at all — and
@@ -27,7 +28,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SMIX="${SMIX_BIN:-$ROOT/target/release/smix}"
 ALIAS="${SMIX_C7_ANDROID:-sim-smix-android-01}"
-PORT="${SMIX_C7_PORT:-22099}"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
+PORT="$SMIX_RUNNER_PORT"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
 

@@ -679,6 +679,10 @@ log "preflight parity scan"
 python3 "$ROOT/scripts/dev/preflight-parity-scan.py" > /tmp/smix-ship-parity.log 2>&1 \
   || fail "preflight parity scan FAILED — see /tmp/smix-ship-parity.log"
 
+log "the gate-port scan can still go red"
+python3 "$ROOT/scripts/dev/gate-port-scan.test.py" > /tmp/smix-ship-gate-port-test.log 2>&1 \
+  || fail "gate-port-scan no longer refuses a pinned port — in particular it may have gone back to reading only letters in an override's name, or to missing a `runner up` behind an environment prefix, which is how six gates came to pin a socket. See /tmp/smix-ship-gate-port-test.log"
+
 log "gate port scan"
 python3 "$ROOT/scripts/dev/gate-port-scan.py" > /tmp/smix-ship-gate-port.log 2>&1 \
   || fail "gate port scan FAILED — see /tmp/smix-ship-gate-port.log"
