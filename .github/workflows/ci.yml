@@ -318,6 +318,11 @@ jobs:
       # Reads the e2e scripts' teardowns; they are in the checkout.
       - name: teardown restores rather than imposes
         run: python3 scripts/dev/teardown-restores-scan.py
+      # Reads the Android runner's routes and its wire; both are source.
+      - name: an act route says what ok means
+        run: python3 scripts/dev/an-act-route-says-what-ok-means.py
+      - name: the ok-means scan can still go red
+        run: python3 scripts/dev/an-act-route-says-what-ok-means.test.py
       # Reads the Android e2e scripts' subjects; they are in the checkout.
       - name: android gates drive our own app
         run: python3 scripts/dev/android-subject-scan.py

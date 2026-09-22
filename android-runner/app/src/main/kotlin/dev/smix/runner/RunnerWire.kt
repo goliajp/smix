@@ -265,8 +265,14 @@ object RunnerWire {
         .put("runnerVersion", version)
         .toString()
 
+    // `ok` AND `status`, and the first of those is new. These bodies
+    // carried the injection result in a `status` string that nothing on
+    // the host reads — `OkEnvelope` looks for `ok` and takes its absence
+    // for success, so a touch that was never injected arrived as a
+    // passing tap. `status` stays for shell probes.
     fun tapAtNormCoordBody(ok: Boolean, displayWidth: Int, displayHeight: Int, x: Int, y: Int): String =
         JSONObject()
+            .put("ok", ok)
             .put("status", if (ok) "ok" else "click_returned_false")
             .put("displayWidth", displayWidth)
             .put("displayHeight", displayHeight)
@@ -275,20 +281,23 @@ object RunnerWire {
             .toString()
 
     fun swipeAtNormCoordBody(ok: Boolean, q: SwipeQuad): String = JSONObject()
+        .put("ok", ok)
         .put("status", if (ok) "ok" else "swipe_returned_false")
         .put("from", JSONObject().put("x", q.x1).put("y", q.y1))
         .put("to", JSONObject().put("x", q.x2).put("y", q.y2))
         .toString()
 
     fun swipeOnceBody(ok: Boolean, direction: String, q: SwipeQuad): String = JSONObject()
+        .put("ok", ok)
         .put("status", if (ok) "ok" else "swipe_returned_false")
         .put("direction", direction)
         .put("from", JSONObject().put("x", q.x1).put("y", q.y1))
         .put("to", JSONObject().put("x", q.x2).put("y", q.y2))
         .toString()
 
-    fun pressKeyBody(key: String, keyCode: Int): String = JSONObject()
-        .put("status", "ok")
+    fun pressKeyBody(ok: Boolean, key: String, keyCode: Int): String = JSONObject()
+        .put("ok", ok)
+        .put("status", if (ok) "ok" else "key_not_injected")
         .put("key", key)
         .put("keyCode", keyCode)
         .toString()
@@ -297,10 +306,22 @@ object RunnerWire {
     // (OkEnvelope) and the shape the iOS runner emits. These two used to
     // answer with a `status` string, so their success and failure looked
     // identical to the host. `status` stays alongside for shell probes.
-    fun backBody(ok: Boolean): String = JSONObject()
-        .put("ok", ok)
-        .put("status", if (ok) "ok" else "press_back_returned_false")
-        .toString()
+    // `settledBy` and `saw` are the fields the iOS runner's /back
+    // already emits and the host already reads (HttpRunnerClient::back
+    // prints them beside the failure they explain), so answering in the
+    // same words costs the Rust side nothing. `injected` is the
+    // UiAutomator boolean this route used to answer with: kept, because
+    // "the key never went in" and "it went in and nothing moved" are
+    // different problems, and demoted, because neither of them is what
+    // `ok` was being asked.
+    fun backBody(ok: Boolean, settledBy: String, saw: String, injected: Boolean): String =
+        JSONObject()
+            .put("ok", ok)
+            .put("status", if (ok) "ok" else settledBy)
+            .put("settledBy", settledBy)
+            .put("saw", saw)
+            .put("injected", injected)
+            .toString()
 
     fun hideKeyboardBody(ok: Boolean): String = JSONObject()
         .put("ok", ok)
@@ -309,9 +330,51 @@ object RunnerWire {
 
     fun statusOkBody(): String = JSONObject().put("status", "ok").toString()
 
-    fun setOrientationBody(orientation: String): String = JSONObject()
-        .put("status", "ok")
+    /// Turning the display upside down, which UiAutomator has no call
+    /// for.
+    ///
+    /// `setOrientationNatural()` followed by two left rotations was the
+    /// emulation here, and it does not arrive: measured on
+    /// emulator-5554 (API 36) it leaves the display at rotation 1, and
+    /// the route reported success anyway because nothing looked. The
+    /// settings route does arrive — rotation 2, same emulator, same
+    /// minute — and needs the accelerometer frozen first, which is what
+    /// the UiAutomator calls do for the other three.
+    fun rotateUpsideDownCommands(): List<String> = listOf(
+        "settings put system accelerometer_rotation 0",
+        "settings put system user_rotation 2",
+    )
+
+    /// Which `Surface.ROTATION_*` each orientation name should leave
+    /// the display in.
+    ///
+    /// Measured on emulator-5554 (API 36) rather than assumed: the
+    /// names are smix's, the numbers are Android's, and the pairing is
+    /// a fact about the device, not about either vocabulary.
+    fun rotationFor(orientation: String): Int? = when (orientation) {
+        "portrait" -> 0
+        "landscapeLeft" -> 1
+        "landscapeRight" -> 3
+        "portraitUpsideDown" -> 2
+        else -> null
+    }
+
+    /// Whether the display ended up where the caller asked for.
+    ///
+    /// An unknown name is rejected by the route before this, so a
+    /// `null` expectation here would be a bug rather than a pass.
+    fun rotationMatches(orientation: String, rotation: Int): Boolean =
+        rotationFor(orientation) == rotation
+
+    // The rotation the display is left in, and whether it is the one
+    // asked for. `portraitUpsideDown` is emulated with two rotations
+    // and not every device ends up where that aims, which the route
+    // used to report as success regardless.
+    fun setOrientationBody(ok: Boolean, orientation: String, rotation: Int): String = JSONObject()
+        .put("ok", ok)
+        .put("status", if (ok) "ok" else "rotation_did_not_take")
         .put("orientation", orientation)
+        .put("rotation", rotation)
         .toString()
 
     fun tapByIdBody(
@@ -328,21 +391,24 @@ object RunnerWire {
         .put("saw_action_click", sawActionClick)
         .toString()
 
-    fun doubleTapBody(x: Int, y: Int): String = JSONObject()
-        .put("status", "ok")
+    fun doubleTapBody(ok: Boolean, x: Int, y: Int): String = JSONObject()
+        .put("ok", ok)
+        .put("status", if (ok) "ok" else "tap_not_injected")
         .put("x", x)
         .put("y", y)
         .toString()
 
-    fun longPressBody(x: Int, y: Int, durationMs: Long): String = JSONObject()
-        .put("status", "ok")
+    fun longPressBody(ok: Boolean, x: Int, y: Int, durationMs: Long): String = JSONObject()
+        .put("ok", ok)
+        .put("status", if (ok) "ok" else "press_not_injected")
         .put("x", x)
         .put("y", y)
         .put("durationMs", durationMs)
         .toString()
 
-    fun inputTextBody(text: String): String = JSONObject()
-        .put("status", "ok")
+    fun inputTextBody(ok: Boolean, text: String): String = JSONObject()
+        .put("ok", ok)
+        .put("status", if (ok) "ok" else "text_did_not_land")
         .put("text", text)
         .toString()
 
@@ -357,15 +423,23 @@ object RunnerWire {
     // bounded number of characters and can leave a longer field
     // partly filled. A caller that cannot tell them apart cannot know
     // which it got.
-    fun clearTextBody(method: String, deletes: Int): String = JSONObject()
-        .put("status", "ok")
+    // `ok` is whether the field is empty when the route looks again,
+    // not whether the clear was attempted. The two used to be the same
+    // answer here, and the fallback path attempts fifty deletes with
+    // nothing checking what they did.
+    fun clearTextBody(ok: Boolean, method: String, deletes: Int, held: Int): String = JSONObject()
+        .put("ok", ok)
+        .put("status", if (ok) "ok" else "field_not_empty")
         .put("method", method)
         .put("deletes", deletes)
+        .put("held", held)
         .toString()
 
-    fun foregroundBody(bundleId: String): String = JSONObject()
-        .put("status", "ok")
+    fun foregroundBody(ok: Boolean, bundleId: String, saw: String): String = JSONObject()
+        .put("ok", ok)
+        .put("status", if (ok) "ok" else "not_in_foreground")
         .put("bundleId", bundleId)
+        .put("saw", saw)
         .toString()
 
     // Wire shape matches iOS swift /find-text-by-ocr response:

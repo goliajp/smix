@@ -2985,6 +2985,31 @@ point, which is why it has its own code.
 - `webview-bridge unreachable`: WebView-hosting screen never visited; navigate first OR `adb forward tcp:28081`
 - `JSON decode failed`: runner version mismatch — rebuild runner
 
+### A refused `back`
+
+`back` fails when the screen it was on is still the screen it is on. The
+runner presses the key, then watches what is on screen for up to two
+seconds, and the message names which reading decided:
+
+| `settledBy` | what it means |
+|---|---|
+| `screenChanged` | what is on screen is not what was on screen — the ordinary success, and what leaving the app looks like too |
+| `couldNotSee` | nothing on screen could be read before the key, so there is nothing to compare against |
+| `gaveUp` | the key went in and nothing changed for two seconds |
+| `notInjected` | the key event never went in |
+
+`gaveUp` usually means the app consumed the key: a screen with its own
+back handling, a modal that ignores it, a root screen in a task the app
+does not leave. The reply's `saw` carries the readings behind the
+verdict, and `injected` says whether the key itself was delivered —
+"the key never went in" and "it went in and nothing moved" are
+different problems and used to arrive as the same sentence.
+
+What the runner compares is **which nodes are on screen**, not what they
+say. A clock, a spinner or a countdown changes text on every frame
+without anything having gone back, and taking that for navigation is
+the error the old answer made.
+
 ### CAPTURE_BACKPRESSURE
 
 **Trigger**: the simulator's capture path is under load and is refusing
@@ -4777,7 +4802,7 @@ that is why.
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
 | `repeat` | ✅ | ✅ | `while:` takes the same conditions as `runFlow.when`; `label` / `optional` on the block |
 | `pressKey` | ✅ | ✅ | enter/return, delete, tab, space, escape, and the four arrows on both. home / lock / volumeUp / volumeDown reach Android; on the iOS simulator they report an explicit Skipped (Apple exposes no simulator path) |
-| `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. Not a keystroke: `pressKey: back` is not a spelling of it |
+| `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. Not a keystroke: `pressKey: back` is not a spelling of it. Both platforms answer whether the screen changed, not whether the key was delivered, and both report which reading decided (`settledBy`); a back an app swallows is a failure |
 
 ## Lifecycle
 
@@ -4816,7 +4841,7 @@ that is why.
 | `setLocation` | ✅ | ✅ | Android sends `geo fix` on the emulator console. The fix persists and replays when an app starts listening, so setting it early is not a race. On a registered physical iPhone it needs Xcode 27, and the location stays until `xcrun devicectl device simulate location clear --device <UDID>` |
 | `travel` | ✅ | ⚠️ | iOS hands the route to CoreSimulator. Android has no route primitive — the emulator console takes one position at a time — so smix walks it from the host, one `geo fix` a second. Both return immediately and travel in the background. A registered physical iPhone takes the route through `devicectl` (Xcode 27), with the same caveat as `setLocation` |
 | `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
-| `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure |
+| `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure. Android reads the display's rotation back before answering, so a rotation that does not arrive is a failure rather than a silent no-op |
 
 ## smix-native extensions
 

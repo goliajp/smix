@@ -2241,6 +2241,13 @@ impl HttpRunnerClient {
     }
 
     /// `POST /press-key` — press named key (Return/Tab/Delete/etc.).
+    ///
+    /// Reads `ok`, which for a key press means the event was injected.
+    /// [`RunnerKeyboardResult`] has no room for it — it carries a tree
+    /// and timings — so a refusal used to deserialize cleanly into a
+    /// result with both of those absent and reach the caller as
+    /// success. The Android runner has answered that field since 10.2;
+    /// a runner that does not send it is unchanged by this.
     pub async fn press_key(
         &self,
         key: KeyName,
@@ -2249,7 +2256,21 @@ impl HttpRunnerClient {
         struct Req {
             key: KeyName,
         }
-        self.json_post("/press-key", &Req { key }, None).await
+        #[derive(Deserialize)]
+        struct Resp {
+            #[serde(default)]
+            ok: Option<bool>,
+            #[serde(flatten)]
+            result: RunnerKeyboardResult,
+        }
+        let body: Resp = self.json_post("/press-key", &Req { key }, None).await?;
+        OkEnvelope {
+            ok: body.ok,
+            error: None,
+            saw: None,
+        }
+        .require_ok("/press-key")?;
+        Ok(body.result)
     }
 
     /// `POST /scroll {selector, direction, include?}` — scroll-until-visible.

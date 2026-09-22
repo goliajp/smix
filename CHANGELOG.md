@@ -6,6 +6,35 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **`back` on Android answers whether anything went back.** It used to
+  answer `UiDevice.pressBack()`, whose boolean is neither the key going
+  in nor the screen changing: it waits up to a second for any window to
+  emit `TYPE_WINDOW_CONTENT_CHANGED`, so a ticking clock satisfies it
+  and a navigation that lands late does not. A consumer reported
+  `ok:false` twice with the screenshot showing the app had navigated;
+  measured here it is wrong in the other direction too — on a screen
+  whose app swallows the key while a label ticks, the old answer was
+  `ok:true`. Now the key goes in by injection and the screen is read
+  afterwards, 50 ms at a time for up to 2 s, comparing which nodes are
+  on screen and not what they say (a clock is not a navigation). The
+  reply carries `settledBy` (`screenChanged` / `couldNotSee` /
+  `gaveUp` / `notInjected`), `saw` with the readings behind it, and
+  `injected` — the old boolean, kept as a diagnostic because "the key
+  never went in" and "it went in and nothing moved" are different
+  problems. The key is injected directly rather than through
+  `UiDevice`, whose press calls wait for the screen to go idle first:
+  measured, one `/back` on a screen with a ticking label spent 30
+  seconds in those waits while its own settle budget is 2.
+
+- **`setOrientation: portraitUpsideDown` actually turns an Android
+  display over.** UiAutomator has no upside-down call, and the
+  emulation here — natural, then two left rotations — lands at rotation
+  1, not 2. Nothing checked, so the verb has been doing something else
+  and reporting success. It now goes through the display setting that
+  does arrive, and every orientation is read back from
+  `displayRotation` before the route answers.
+
+
 - **A physical iPhone can be photographed without a runner.** Xcode 27's
   `devicectl` has `device capture screenshot`, and smix drives it:
   `smix sim screenshot <phone> out.png` asks the phone what it offers and,
@@ -87,6 +116,22 @@ All notable changes to the `smix` workspace are documented here. The format foll
   accessibility tree. It does not any more — the refusals went with it.
 
 ### Changed
+
+- **An Android act route's answer now reaches the host.**
+  `/tap-at-norm-coord`, `/swipe-at-norm-coord` and `/swipe-once`
+  computed whether their events were injected and wrote it into a
+  `status` string that nothing on the host reads — the host looks for
+  `ok` and treats its absence as success, so a touch that was never
+  injected arrived as a passing tap. `/press-key`,
+  `/double-tap-at-norm-coord` and `/long-press-at-norm-coord` discarded
+  the result outright. All six answer `ok` now, and `/press-key`'s
+  answer is read on the host side as well. `/foreground` reports
+  whether the named package owns the foreground afterwards rather than
+  that an `am start` was run, and `/clear-text` reports whether the
+  field is empty — with `held`, the number of characters it found —
+  rather than which method it attempted. **A flow that was passing on
+  an injection that silently failed will now fail where it happens.**
+
 
 - **`visible` and `notVisible` in one `when:` combine instead of being
   refused.** Both must hold, as in maestro.

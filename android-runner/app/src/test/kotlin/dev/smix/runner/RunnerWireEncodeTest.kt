@@ -7,9 +7,11 @@
 // - /find-text-by-ocr → client reads `{found: bool, frame: [f64; 4]?}`
 // - /system-popups   → client reads `{popups: [SystemPopup]}`
 // - /system-popup-action → client reads `ok: bool`
-// The coord/gesture routes (`/tap-at-norm-coord` etc.) are parsed as
-// opaque serde_json::Value and discarded, so their bodies are
-// Android-runner-owned shapes.
+// - /tap-at-norm-coord, /swipe-at-norm-coord, /swipe-once, /press-key,
+//   /double-tap-at-norm-coord, /long-press-at-norm-coord, /input-text,
+//   /clear-text, /foreground, /set-orientation → client reads `ok: bool`
+//   through OkEnvelope. It always did; until 10.2 these bodies did not
+//   carry that field, and `OkEnvelope` reads an absent `ok` as success.
 
 package dev.smix.runner
 
@@ -77,19 +79,84 @@ class RunnerWireEncodeTest {
 
     @Test
     fun pressKeyEchoesKeyAndCode() {
-        val obj = JSONObject(RunnerWire.pressKeyBody("return", 66))
+        val obj = JSONObject(RunnerWire.pressKeyBody(true, "return", 66))
         assertEquals("ok", obj.getString("status"))
         assertEquals("return", obj.getString("key"))
         assertEquals(66, obj.getInt("keyCode"))
     }
 
     @Test
-    fun backStatusReflectsOutcome() {
-        assertEquals("ok", JSONObject(RunnerWire.backBody(true)).getString("status"))
-        assertEquals(
-            "press_back_returned_false",
-            JSONObject(RunnerWire.backBody(false)).getString("status"),
+    fun backStatusNamesTheBranchThatDecided() {
+        val landed = JSONObject(
+            RunnerWire.backBody(true, "screenChanged", "before=… last=…", injected = true),
         )
+        assertEquals("ok", landed.getString("status"))
+        // A refusal's `status` carries the branch rather than one fixed
+        // phrase: "the key never went in" and "it went in and the
+        // screen never changed" used to print the same sentence.
+        val refused = JSONObject(
+            RunnerWire.backBody(false, "gaveUp", "before=… last=…", injected = true),
+        )
+        assertEquals("gaveUp", refused.getString("status"))
+        assertEquals("gaveUp", refused.getString("settledBy"))
+        assertEquals(true, refused.getBoolean("injected"))
+        assertTrue(refused.getString("saw").isNotEmpty())
+    }
+
+    @Test
+    fun backSeparatesWhetherTheKeyWentInFromWhetherAnythingMoved() {
+        // The two were one boolean until 10.2, and the one they were
+        // was the wrong one.
+        val notInjected = JSONObject(
+            RunnerWire.backBody(false, "notInjected", "before=… last=<none>", injected = false),
+        )
+        assertEquals(false, notInjected.getBoolean("ok"))
+        assertEquals(false, notInjected.getBoolean("injected"))
+        val injectedButStill = JSONObject(
+            RunnerWire.backBody(false, "gaveUp", "before=… last=…", injected = true),
+        )
+        assertEquals(false, injectedButStill.getBoolean("ok"))
+        assertEquals(true, injectedButStill.getBoolean("injected"))
+    }
+
+    @Test
+    fun everyOrientationNameHasOneRotationAndTheyAreAllDifferent() {
+        val names = listOf("portrait", "landscapeLeft", "landscapeRight", "portraitUpsideDown")
+        val rotations = names.map { RunnerWire.rotationFor(it) }
+        assertEquals(listOf(0, 1, 3, 2), rotations)
+        // Four names, four rotations: two names sharing one would make
+        // the read-back unable to tell them apart.
+        assertEquals(4, rotations.toSet().size)
+        assertEquals(null, RunnerWire.rotationFor("sideways"))
+        assertTrue(RunnerWire.rotationMatches("landscapeLeft", 1))
+        assertFalse(RunnerWire.rotationMatches("landscapeLeft", 3))
+    }
+
+    @Test
+    fun theRoutesThatUsedToAnswerStatusOkNowCarryWhatTheyDecided() {
+        // Each of these built a body with `status: "ok"` in it and no
+        // `ok` field at all, so a failure reached the host as a pass.
+        assertEquals(false, JSONObject(RunnerWire.pressKeyBody(false, "return", 66)).getBoolean("ok"))
+        assertEquals(false, JSONObject(RunnerWire.doubleTapBody(false, 1, 2)).getBoolean("ok"))
+        assertEquals(false, JSONObject(RunnerWire.longPressBody(false, 1, 2, 800L)).getBoolean("ok"))
+        assertEquals(false, JSONObject(RunnerWire.inputTextBody(false, "hi")).getBoolean("ok"))
+        assertEquals(false, JSONObject(RunnerWire.clearTextBody(false, "key-events", 50, 3)).getBoolean("ok"))
+        assertEquals(
+            false,
+            JSONObject(RunnerWire.foregroundBody(false, "dev.smix.fixture", "foreground=com.android.launcher3"))
+                .getBoolean("ok"),
+        )
+        assertEquals(false, JSONObject(RunnerWire.setOrientationBody(false, "portrait", 1)).getBoolean("ok"))
+        assertEquals(true, JSONObject(RunnerWire.tapAtNormCoordBody(true, 1080, 2400, 5, 6)).getBoolean("ok"))
+    }
+
+    @Test
+    fun clearTextSaysHowManyCharactersItFound() {
+        // -1 is "I could not find the field to ask", which is not the
+        // same answer as "the field is empty".
+        val unknown = JSONObject(RunnerWire.clearTextBody(false, "set-text", 0, -1))
+        assertEquals(-1, unknown.getInt("held"))
+        assertEquals(false, unknown.getBoolean("ok"))
     }
 
     @Test
@@ -101,7 +168,7 @@ class RunnerWireEncodeTest {
 
     @Test
     fun setOrientationEchoesLiteral() {
-        val obj = JSONObject(RunnerWire.setOrientationBody("landscapeRight"))
+        val obj = JSONObject(RunnerWire.setOrientationBody(true, "landscapeRight", 3))
         assertEquals("ok", obj.getString("status"))
         assertEquals("landscapeRight", obj.getString("orientation"))
     }
@@ -129,7 +196,7 @@ class RunnerWireEncodeTest {
 
     @Test
     fun doubleTapEchoesPixelCoord() {
-        val obj = JSONObject(RunnerWire.doubleTapBody(540, 1200))
+        val obj = JSONObject(RunnerWire.doubleTapBody(true, 540, 1200))
         assertEquals("ok", obj.getString("status"))
         assertEquals(540, obj.getInt("x"))
         assertEquals(1200, obj.getInt("y"))
@@ -137,20 +204,20 @@ class RunnerWireEncodeTest {
 
     @Test
     fun longPressEchoesDuration() {
-        val obj = JSONObject(RunnerWire.longPressBody(540, 1200, 750L))
+        val obj = JSONObject(RunnerWire.longPressBody(true, 540, 1200, 750L))
         assertEquals("ok", obj.getString("status"))
         assertEquals(750L, obj.getLong("durationMs"))
     }
 
     @Test
     fun inputTextEchoesUnescapedText() {
-        val obj = JSONObject(RunnerWire.inputTextBody("hello world"))
+        val obj = JSONObject(RunnerWire.inputTextBody(true, "hello world"))
         assertEquals("hello world", obj.getString("text"))
     }
 
     @Test
     fun foregroundEchoesBundleId() {
-        val obj = JSONObject(RunnerWire.foregroundBody("com.example.app"))
+        val obj = JSONObject(RunnerWire.foregroundBody(true, "com.example.app", "foreground=com.example.app"))
         assertEquals("ok", obj.getString("status"))
         assertEquals("com.example.app", obj.getString("bundleId"))
     }
@@ -240,9 +307,9 @@ class RunnerWireEncodeTest {
     // fact backgrounded the app.
     @Test
     fun backBodyCarriesTheOkFieldTheClientReads() {
-        val ok = JSONObject(RunnerWire.backBody(true))
+        val ok = JSONObject(RunnerWire.backBody(true, "screenChanged", "…", injected = true))
         assertEquals(true, ok.getBoolean("ok"))
-        val bad = JSONObject(RunnerWire.backBody(false))
+        val bad = JSONObject(RunnerWire.backBody(false, "gaveUp", "…", injected = true))
         assertEquals(false, bad.getBoolean("ok"))
     }
 

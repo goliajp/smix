@@ -65,7 +65,7 @@ that is why.
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
 | `repeat` | ✅ | ✅ | `while:` takes the same conditions as `runFlow.when`; `label` / `optional` on the block |
 | `pressKey` | ✅ | ✅ | enter/return, delete, tab, space, escape, and the four arrows on both. home / lock / volumeUp / volumeDown reach Android; on the iOS simulator they report an explicit Skipped (Apple exposes no simulator path) |
-| `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. Not a keystroke: `pressKey: back` is not a spelling of it |
+| `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. Not a keystroke: `pressKey: back` is not a spelling of it. Both platforms answer whether the screen changed, not whether the key was delivered, and both report which reading decided (`settledBy`); a back an app swallows is a failure |
 
 ## Lifecycle
 
@@ -104,7 +104,7 @@ that is why.
 | `setLocation` | ✅ | ✅ | Android sends `geo fix` on the emulator console. The fix persists and replays when an app starts listening, so setting it early is not a race. On a registered physical iPhone it needs Xcode 27, and the location stays until `xcrun devicectl device simulate location clear --device <UDID>` |
 | `travel` | ✅ | ⚠️ | iOS hands the route to CoreSimulator. Android has no route primitive — the emulator console takes one position at a time — so smix walks it from the host, one `geo fix` a second. Both return immediately and travel in the background. A registered physical iPhone takes the route through `devicectl` (Xcode 27), with the same caveat as `setLocation` |
 | `setPermissions` | ✅ | ✅ | `pm grant` / `pm revoke` per permission on Android; `simctl privacy` on iOS |
-| `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure |
+| `setOrientation` | ✅ | ⚠️ | An app that has locked its orientation stays where it is; neither platform reports that as a failure. Android reads the display's rotation back before answering, so a rotation that does not arrive is a failure rather than a silent no-op |
 
 ## smix-native extensions
 

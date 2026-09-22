@@ -610,6 +610,12 @@ log "teardown restores rather than imposes"
 python3 "$ROOT/scripts/dev/teardown-restores-scan.py" > /tmp/smix-ship-teardown.log 2>&1 \
   || fail "teardown-restores scan FAILED — see /tmp/smix-ship-teardown.log"
 
+log "an act route says what ok means"
+python3 "$ROOT/scripts/dev/an-act-route-says-what-ok-means.py" > /tmp/smix-ship-ok-means.log 2>&1 \
+  || fail "an-act-route-says-what-ok-means FAILED — see /tmp/smix-ship-ok-means.log"
+python3 "$ROOT/scripts/dev/an-act-route-says-what-ok-means.test.py" > /tmp/smix-ship-ok-means-test.log 2>&1 \
+  || fail "an-act-route-says-what-ok-means self-test FAILED — see /tmp/smix-ship-ok-means-test.log"
+
 log "a yield is not a failure"
 python3 "$ROOT/scripts/dev/yield-is-not-failure-scan.py" > /tmp/smix-ship-yield.log 2>&1 \
   || fail "yield-is-not-failure scan FAILED — see /tmp/smix-ship-yield.log"

@@ -88,6 +88,17 @@ class MainActivity : Activity() {
             }
         }
 
+        // The way into the screen back cannot leave. Same reason as the
+        // two buttons above: a flow has no verb that starts an activity.
+        val toBlocked = Button(this).apply {
+            text = "Blocked screen"
+            contentDescription = "open-blocked"
+            id = View.generateViewId()
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, BlockedActivity::class.java))
+            }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@MainActivity).apply { text = "smix fixture" })
@@ -97,6 +108,7 @@ class MainActivity : Activity() {
             addView(result)
             addView(toCompose)
             addView(toScroll)
+            addView(toBlocked)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,

@@ -3,4 +3,5 @@
     <item name="fixture_input" type="id" />
     <item name="fixture_submit" type="id" />
     <item name="fixture_result" type="id" />
+    <item name="fixture_blocked_ticker" type="id" />
 </resources>
