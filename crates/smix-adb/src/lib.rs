@@ -229,6 +229,196 @@ fn parse_reverse_list(stdout: &str) -> Vec<(u16, u16)> {
         .collect()
 }
 
+/// Whether the device's screen is on, as the power manager words it.
+///
+/// `Unknown` is a distinct answer and not a synonym for `Asleep`: a dump
+/// this could not find the line in is a dump nobody read, and reporting
+/// "asleep" for it would have a caller wake a device that may already be
+/// awake and then believe the reading that followed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wakefulness {
+    Awake,
+    Asleep,
+    Dozing,
+}
+
+/// The `mWakefulness=` line out of `dumpsys power`.
+///
+/// Measured on API 36: the dump carries one `  mWakefulness=Awake` line,
+/// and a device sent to sleep with `KEYCODE_SLEEP` reads `Asleep`.
+#[must_use]
+pub fn parse_wakefulness(dump: &str) -> Option<Wakefulness> {
+    let value = dump
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("mWakefulness="))?
+        .trim();
+    match value {
+        "Awake" => Some(Wakefulness::Awake),
+        "Asleep" => Some(Wakefulness::Asleep),
+        "Dozing" => Some(Wakefulness::Dozing),
+        _ => None,
+    }
+}
+
+/// `settings get global stay_on_while_plugged_in` read as a yes or no.
+///
+/// The setting is a bitmask over the charger types the screen stays on
+/// for (measured: `svc power stayon true` writes 7 = AC|USB|WIRELESS,
+/// `false` writes 0), so any non-zero value is "on". A key that was
+/// never written reads `null`, which is not a zero — nobody set it, and
+/// saying "off" would be inventing the answer.
+#[must_use]
+pub fn parse_stay_awake(stdout: &str) -> Option<bool> {
+    let raw = stdout.trim();
+    if raw.is_empty() || raw == "null" {
+        return None;
+    }
+    raw.parse::<u32>().ok().map(|mask| mask != 0)
+}
+
+/// The resumed activity out of `dumpsys activity activities`, as
+/// `(package, activity)`.
+///
+/// The line reads
+/// `ResumedActivity: ActivityRecord{<hash> u0 <pkg>/<activity>} t<task>}`
+/// (measured on API 36). The activity half is kept exactly as dumpsys
+/// spells it, relative leading dot and all, because that is what the
+/// caller will compare against what they wrote in a manifest.
+///
+/// Split-screen puts two of these in the dump; the first is taken and
+/// the rest ignored. There is one frontmost app to a caller asking this
+/// question, and picking any later one would be a different arbitrary
+/// choice rather than a better one.
+#[must_use]
+pub fn parse_resumed_activity(dump: &str) -> Option<(String, String)> {
+    let record = dump
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("ResumedActivity:"))?;
+    // `ActivityRecord{27c287f u0 dev.smix.fixture/.ComposeActivity} t2095}`
+    let component = record
+        .split_whitespace()
+        .find(|tok| tok.contains('/'))?
+        .trim_end_matches('}');
+    let (package, activity) = component.split_once('/')?;
+    if package.is_empty() || activity.is_empty() {
+        return None;
+    }
+    Some((package.to_string(), activity.to_string()))
+}
+
+/// One crash the device recorded, as its own buffer words it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrashReport {
+    /// The timestamp logcat put on the first line, verbatim.
+    pub when: String,
+    /// The process the report names, or empty when it names none. A
+    /// report whose process cannot be read is still a crash, so it is
+    /// kept rather than dropped.
+    pub process: String,
+    /// The first line's message — what happened, in the device's words.
+    pub summary: String,
+    /// Every line of the report in order, verbatim.
+    pub lines: Vec<String>,
+}
+
+/// One `-v threadtime` line split into its fixed prefix and its message.
+///
+/// The format is logcat's own and documented:
+/// `MM-DD HH:MM:SS.mmm  PID  TID L TAG: message`.
+fn split_threadtime(line: &str) -> Option<(String, String)> {
+    let mut parts = line.splitn(6, char::is_whitespace);
+    let date = parts.next()?;
+    let time = parts.next()?;
+    // The pid/tid columns are right-aligned, so the split above hands
+    // back empty strings for the padding. Walk the rest by tokens.
+    let rest = line.get(date.len() + 1 + time.len()..)?;
+    let mut tokens = rest.split_whitespace();
+    let _pid: u32 = tokens.next()?.parse().ok()?;
+    let _tid: u32 = tokens.next()?.parse().ok()?;
+    let _level = tokens.next()?;
+    let (_, message) = rest.split_once(": ")?;
+    Some((format!("{date} {time}"), message.to_string()))
+}
+
+/// Does this line open a new crash report?
+///
+/// Four banners, each one a fixed string Android writes itself:
+/// the two `AndroidRuntime` ones for a Java crash, `Fatal signal` from
+/// libc when a native process dies, and the tombstone rule that
+/// `debuggerd` prints ahead of a backtrace.
+fn crash_banner(message: &str) -> bool {
+    message.starts_with("FATAL EXCEPTION")
+        || message.starts_with("*** FATAL EXCEPTION IN SYSTEM PROCESS")
+        || message.starts_with("Fatal signal ")
+        || message.starts_with("*** *** ***")
+}
+
+/// The process a report names, or empty when it names none.
+///
+/// Three shapes, all measured in one buffer: `Process: <pkg>, PID: <n>`
+/// from a Java crash, `pid N (name)` from libc's signal line, and
+/// `>>> <path> <<<` from a tombstone.
+fn crash_process(lines: &[String]) -> String {
+    for line in lines {
+        let Some((_, message)) = split_threadtime(line) else {
+            continue;
+        };
+        if let Some(rest) = message.strip_prefix("Process: ")
+            && let Some((pkg, _)) = rest.split_once(',')
+        {
+            return pkg.trim().to_string();
+        }
+        if let Some(start) = message.find(">>> ")
+            && let Some(end) = message[start + 4..].find(" <<<")
+        {
+            return message[start + 4..start + 4 + end].trim().to_string();
+        }
+        if message.starts_with("Fatal signal ")
+            && let Some(start) = message.rfind(" (")
+            && let Some(end) = message[start..].find(')')
+        {
+            return message[start + 2..start + end].trim().to_string();
+        }
+    }
+    String::new()
+}
+
+/// Every crash report in `adb logcat -b crash -d -v threadtime` output.
+///
+/// A report runs from one banner to the next, or to the end. Lines
+/// ahead of the first banner belong to no report and are left out —
+/// logcat's own `--------- beginning of crash` marker is one of them.
+///
+/// A `Fatal signal` line and the tombstone that follows it are two
+/// reports, not one. They are almost always the same crash, but the
+/// signal line's pid is the process that died while the tombstone's is
+/// the `crash_dump` helper that wrote it down, and joining them takes
+/// an inference — one that, when wrong, files one crash's backtrace
+/// under another's name. Both records are true and both name a process.
+#[must_use]
+pub fn parse_crash_buffer(stdout: &str) -> Vec<CrashReport> {
+    let mut reports: Vec<CrashReport> = Vec::new();
+    for line in stdout.lines() {
+        let Some((when, message)) = split_threadtime(line) else {
+            continue;
+        };
+        if crash_banner(&message) {
+            reports.push(CrashReport {
+                when,
+                process: String::new(),
+                summary: message,
+                lines: vec![line.to_string()],
+            });
+        } else if let Some(current) = reports.last_mut() {
+            current.lines.push(line.to_string());
+        }
+    }
+    for report in &mut reports {
+        report.process = crash_process(&report.lines);
+    }
+    reports
+}
+
 impl AdbClient {
     /// Default constructor — uses `adb` from PATH.
     #[must_use]
@@ -640,6 +830,74 @@ impl AdbClient {
         Ok(stdout)
     }
 
+    /// `adb -s <serial> shell input keyevent KEYCODE_WAKEUP`.
+    ///
+    /// Turns the screen on. It does **not** dismiss the keyguard: on a
+    /// device with a passcode the screen lights and the lock stays.
+    pub async fn wake(&self, serial: &str) -> Result<(), AdbError> {
+        self.run_capture(
+            Some(serial),
+            "shell",
+            &["input", "keyevent", "KEYCODE_WAKEUP"],
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// `adb -s <serial> shell dumpsys power` read for `mWakefulness=`.
+    pub async fn wakefulness(&self, serial: &str) -> Result<Option<Wakefulness>, AdbError> {
+        let dump = self.shell(serial, &["dumpsys", "power"]).await?;
+        Ok(parse_wakefulness(&dump))
+    }
+
+    /// `adb -s <serial> shell svc power stayon <true|false>`.
+    pub async fn set_stay_awake(&self, serial: &str, on: bool) -> Result<(), AdbError> {
+        let value = if on { "true" } else { "false" };
+        self.run_capture(Some(serial), "shell", &["svc", "power", "stayon", value])
+            .await?;
+        Ok(())
+    }
+
+    /// `adb -s <serial> shell settings get global stay_on_while_plugged_in`.
+    pub async fn stay_awake(&self, serial: &str) -> Result<Option<bool>, AdbError> {
+        let out = self
+            .shell(
+                serial,
+                &["settings", "get", "global", "stay_on_while_plugged_in"],
+            )
+            .await?;
+        Ok(parse_stay_awake(&out))
+    }
+
+    /// `adb -s <serial> shell dumpsys activity activities`, read for the
+    /// resumed activity.
+    pub async fn resumed_activity(
+        &self,
+        serial: &str,
+    ) -> Result<Option<(String, String)>, AdbError> {
+        let dump = self
+            .shell(serial, &["dumpsys", "activity", "activities"])
+            .await?;
+        Ok(parse_resumed_activity(&dump))
+    }
+
+    /// `adb -s <serial> logcat -b crash -d -v threadtime`.
+    ///
+    /// `-v threadtime` is pinned rather than left to the device's
+    /// default: the parser reads a fixed column layout, and a buffer
+    /// formatted some other way would parse to nothing while looking
+    /// exactly like a device that has not crashed.
+    pub async fn crash_buffer(&self, serial: &str) -> Result<Vec<CrashReport>, AdbError> {
+        let (stdout, _) = self
+            .run_capture(
+                Some(serial),
+                "logcat",
+                &["-b", "crash", "-d", "-v", "threadtime"],
+            )
+            .await?;
+        Ok(parse_crash_buffer(&stdout))
+    }
+
     /// `adb -s <serial> shell pm grant <pkg> <android.permission.X>`.
     pub async fn pm_grant(
         &self,
@@ -796,5 +1054,137 @@ User 0: ceDataInode=1234 installed=true hidden=false
     fn a_device_with_nothing_open_reads_as_nothing() {
         assert!(parse_reverse_list("").is_empty());
         assert!(parse_reverse_list("\n").is_empty());
+    }
+
+    /// Verbatim from `dumpsys power` on API 36, before and after a
+    /// `KEYCODE_SLEEP` / `KEYCODE_WAKEUP` round trip.
+    #[test]
+    fn wakefulness_is_read_from_the_power_dump() {
+        assert_eq!(
+            parse_wakefulness("Power Manager State:\n  mWakefulness=Awake\n  mHalt=false\n"),
+            Some(Wakefulness::Awake)
+        );
+        assert_eq!(
+            parse_wakefulness("  mWakefulness=Asleep\n"),
+            Some(Wakefulness::Asleep)
+        );
+        assert_eq!(
+            parse_wakefulness("  mWakefulness=Dozing\n"),
+            Some(Wakefulness::Dozing)
+        );
+    }
+
+    /// A dump with no such line is a dump this could not read, and that
+    /// is a third answer. Calling it `Asleep` would have a caller wake a
+    /// device that was never measured and trust what came next.
+    #[test]
+    fn a_power_dump_without_the_line_is_not_asleep() {
+        assert_eq!(parse_wakefulness(""), None);
+        assert_eq!(parse_wakefulness("Power Manager State:\n"), None);
+        assert_eq!(parse_wakefulness("  mWakefulness=Bananas\n"), None);
+    }
+
+    /// `stay_on_while_plugged_in` is a bitmask over charger types.
+    /// Measured: `svc power stayon true` writes 7, `false` writes 0.
+    #[test]
+    fn stay_awake_reads_the_bitmask_as_a_yes_or_no() {
+        assert_eq!(parse_stay_awake("7\n"), Some(true));
+        assert_eq!(parse_stay_awake("1\n"), Some(true));
+        assert_eq!(parse_stay_awake("0\n"), Some(false));
+    }
+
+    /// `settings get` answers `null` for a key nobody has written. That
+    /// is "unset", not "off" — the difference is whether anyone chose.
+    #[test]
+    fn an_unwritten_stay_awake_setting_is_not_a_no() {
+        assert_eq!(parse_stay_awake("null\n"), None);
+        assert_eq!(parse_stay_awake(""), None);
+        assert_eq!(parse_stay_awake("not a number\n"), None);
+    }
+
+    /// Verbatim from `dumpsys activity activities` on API 36 with the
+    /// fixture app in front.
+    ///
+    /// The dump carries two lines that look interchangeable, and on a
+    /// settled screen they agree — which is why the two here are made to
+    /// disagree. `ResumedActivity:` is the one this reads; a version of
+    /// the parser that reached for `topResumedActivity=` passed against
+    /// a dump where both said the same thing, and would have gone on
+    /// passing while answering a different question.
+    #[test]
+    fn the_resumed_activity_is_read_and_not_the_top_one() {
+        let dump = "  Task{...}\n    topResumedActivity=ActivityRecord{aaa u0 com.other.app/.Splash} t9}\n  ResumedActivity: ActivityRecord{27c287f u0 dev.smix.fixture/.ComposeActivity} t2095}\n";
+        assert_eq!(
+            parse_resumed_activity(dump),
+            Some(("dev.smix.fixture".into(), ".ComposeActivity".into()))
+        );
+    }
+
+    /// A lock screen, or a device mid-boot, has nothing resumed. That is
+    /// an answer and not a failure, so it has to be distinguishable from
+    /// one — and from a package named the empty string.
+    #[test]
+    fn a_dump_with_nothing_resumed_reads_as_nothing() {
+        assert_eq!(parse_resumed_activity(""), None);
+        assert_eq!(parse_resumed_activity("  mResumedActivity: null\n"), None);
+        assert_eq!(
+            parse_resumed_activity("  ResumedActivity: ActivityRecord{27c u0 /} t1}\n"),
+            None
+        );
+    }
+
+    /// The whole crash buffer of emulator-5554, recorded 2026-09-23.
+    ///
+    /// Four banners, so four reports. The count is a fact about this
+    /// recording: two Java crashes, libc's signal line for a native one,
+    /// and the tombstone `debuggerd` wrote for the same native crash.
+    const CRASH_BUFFER: &str =
+        include_str!("../../smix-sdk/tests/fixtures/logcat/crash-buffer.threadtime.txt");
+
+    #[test]
+    fn every_banner_in_a_real_buffer_starts_a_report() {
+        let reports = parse_crash_buffer(CRASH_BUFFER);
+        assert_eq!(reports.len(), 4, "four banners in the recorded buffer");
+        assert_eq!(
+            reports[0].summary,
+            "*** FATAL EXCEPTION IN SYSTEM PROCESS: batterystats-handler"
+        );
+        assert_eq!(reports[0].when, "09-23 03:22:12.506");
+        assert_eq!(reports[1].summary, "FATAL EXCEPTION: main");
+        assert_eq!(reports[2].summary.split(',').next().unwrap(), "Fatal signal 11 (SIGSEGV)");
+        assert!(reports[3].summary.starts_with("*** *** ***"));
+    }
+
+    /// Three different shapes name the process, and one names none.
+    /// The nameless one is still a crash and is still reported.
+    #[test]
+    fn a_report_names_its_process_when_the_buffer_does() {
+        let reports = parse_crash_buffer(CRASH_BUFFER);
+        assert_eq!(reports[0].process, "", "the system-process banner names a thread, not a process");
+        assert_eq!(reports[1].process, "com.android.phone");
+        assert_eq!(reports[2].process, "libgoldfish-ril");
+        assert_eq!(reports[3].process, "/vendor/bin/hw/libgoldfish-rild");
+    }
+
+    /// Every line between two banners belongs to the earlier one, and
+    /// the lines before the first banner belong to no report at all —
+    /// logcat's own `--------- beginning of crash` among them.
+    #[test]
+    fn a_reports_lines_are_the_buffers_lines() {
+        let reports = parse_crash_buffer(CRASH_BUFFER);
+        let kept: usize = reports.iter().map(|r| r.lines.len()).sum();
+        let banners = CRASH_BUFFER.lines().filter(|l| l.contains(" F ") || l.contains(" E ")).count();
+        assert_eq!(kept, banners, "every log line lands in exactly one report");
+        assert!(reports[1].lines.iter().any(|l| l.contains("Process: com.android.phone, PID: 901")));
+        assert!(!reports[0].lines.iter().any(|l| l.contains("beginning of crash")));
+    }
+
+    /// A device that has not crashed answers with an empty buffer, and
+    /// an empty buffer is an empty list rather than an error. "Nothing
+    /// crashed" is the ordinary answer, and the one a caller will bet on.
+    #[test]
+    fn a_device_that_has_not_crashed_reports_nothing() {
+        assert!(parse_crash_buffer("").is_empty());
+        assert!(parse_crash_buffer("--------- beginning of crash\n").is_empty());
     }
 }

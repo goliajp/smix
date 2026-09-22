@@ -373,6 +373,16 @@ impl<'a> Leased<'a> {
             .set_permission(&self.device_id, bundle_id, permission, action)
             .await
     }
+
+    /// Turn the device's screen on. Does not unlock it.
+    pub async fn wake(&self) -> Result<(), DeviceControlError> {
+        self.inner.wake(&self.device_id).await
+    }
+
+    /// Hold the screen on while charging, or stop.
+    pub async fn set_stay_awake(&self, on: bool) -> Result<(), DeviceControlError> {
+        self.inner.set_stay_awake(&self.device_id, on).await
+    }
 }
 
 #[cfg(test)]
@@ -454,6 +464,24 @@ mod tests {
             unreachable!()
         }
         async fn reverse_port_remove(&self, _: &str, _: u16) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn wake(&self, _: &str) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn set_stay_awake(&self, _: &str, _: bool) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn frontmost_app(
+            &self,
+            _: &str,
+        ) -> Result<Option<crate::device_control::Frontmost>, DeviceControlError> {
+            unreachable!()
+        }
+        async fn crash_reports(
+            &self,
+            _: &str,
+        ) -> Result<Vec<crate::device_control::CrashReport>, DeviceControlError> {
             unreachable!()
         }
         async fn launch(&self, _: &str, _: &str) -> Result<u32, DeviceControlError> {
@@ -626,6 +654,24 @@ mod tests {
             unreachable!()
         }
         async fn reverse_port_remove(&self, _: &str, _: u16) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn wake(&self, _: &str) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn set_stay_awake(&self, _: &str, _: bool) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn frontmost_app(
+            &self,
+            _: &str,
+        ) -> Result<Option<crate::device_control::Frontmost>, DeviceControlError> {
+            unreachable!()
+        }
+        async fn crash_reports(
+            &self,
+            _: &str,
+        ) -> Result<Vec<crate::device_control::CrashReport>, DeviceControlError> {
             unreachable!()
         }
     }

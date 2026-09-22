@@ -3916,32 +3916,28 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
 /// name raises [`ParseError::InvalidValue`] listing the full supported
 /// set rather than silently no-op'ing.
 fn parse_simctl_permission(name: &str) -> Result<SimctlPermission, ParseError> {
-    match name.trim().to_ascii_lowercase().as_str() {
-        "camera" => Ok(SimctlPermission::Camera),
-        "photos" => Ok(SimctlPermission::Photos),
-        "location" => Ok(SimctlPermission::Location),
-        "location-always" | "locationalways" => Ok(SimctlPermission::LocationAlways),
-        "notifications" => Ok(SimctlPermission::Notifications),
-        "microphone" => Ok(SimctlPermission::Microphone),
-        "contacts" => Ok(SimctlPermission::Contacts),
-        "calendar" => Ok(SimctlPermission::Calendar),
-        "reminders" => Ok(SimctlPermission::Reminders),
-        "media" | "media-library" => Ok(SimctlPermission::Media),
-        "motion" => Ok(SimctlPermission::Motion),
-        "homekit" => Ok(SimctlPermission::HomeKit),
-        "health" => Ok(SimctlPermission::Health),
-        "bluetooth" => Ok(SimctlPermission::Bluetooth),
-        "faceid" => Ok(SimctlPermission::Faceid),
-        other => Err(ParseError::InvalidValue {
-            field: format!("launchApp.permissions.{other}"),
-            reason: format!(
-                "unknown permission name '{other}' — supported: camera, photos, \
-                 location, location-always, notifications, microphone, contacts, \
-                 calendar, reminders, media (media-library), motion, homekit, \
-                 health, bluetooth, faceid"
-            ),
-        }),
-    }
+    // The spellings live on `Permission`, beside the enum they name.
+    // They were written out a second time here until 10.2, and the two
+    // lists had already drifted: `Permission` grew `storage` and
+    // `post-notifications` and this one never heard of either, so a
+    // flow could not ask for a permission the Android backend had
+    // implemented.
+    let permission =
+        smix_sdk::device_control::Permission::from_name(name).map_err(|reason| {
+            ParseError::InvalidValue {
+                field: format!("launchApp.permissions.{}", name.trim()),
+                reason,
+            }
+        })?;
+    permission.to_simctl().ok_or_else(|| ParseError::InvalidValue {
+        field: format!("launchApp.permissions.{}", name.trim()),
+        reason: format!(
+            "'{}' has no iOS counterpart, and this yaml key is carried as an iOS \
+             permission all the way to the device — so it cannot be asked for here \
+             even on Android",
+            permission.name()
+        ),
+    })
 }
 
 fn parse_key_name(s: &str) -> Result<KeyName, RunError> {

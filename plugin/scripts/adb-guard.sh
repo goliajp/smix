@@ -63,6 +63,7 @@ deny() {
   # phone by accident.
   echo "adb-guard: drive the device through smix, not raw adb — smix takes the device explicitly, so it cannot fall through to an attached phone: 'smix run <flow> --device emulator-5554', 'smix fill/find/tree --device emulator-5554', 'smix runner up --platform android --device emulator-5554', 'smix sim boot <alias>'. A physical device must be registered first ('smix sim register')." >&2
   echo "adb-guard: to let a device reach a server on this machine, 'smix sim reverse <device> <port>' (and '--remove' to close it) — it takes the device explicitly and records the route, so a teardown can close it" >&2
+  echo "adb-guard: to arrange or read a device, 'smix sim wake <device>', 'smix sim stay-awake <device> on|off', 'smix sim permission <device> <bundle> <name> grant|revoke', 'smix sim frontmost <device>', 'smix sim crashes <device>' — each names the device and reads the result back from it" >&2
   echo "adb-guard: if you must use raw adb, pin an emulator — 'adb -s emulator-5554 …' or 'ANDROID_SERIAL=emulator-5554 ./gradlew …'; never an unpinned mutation (it reaches a physical phone) and never a physical serial" >&2
   exit 2
 }

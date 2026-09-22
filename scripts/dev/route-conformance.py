@@ -49,6 +49,12 @@ EXCLUDED_AREAS = [
         "dlsym fixtures name absolute paths that look like routes",
     ),
     (
+        "crates/smix-adb/src/lib.rs",
+        "an adb wrapper, which serves no HTTP routes at all: the absolute "
+        "paths here come out of a device's crash buffer, where a tombstone "
+        "names the executable that died",
+    ),
+    (
         "crates/smix-selector/tests/perf_contract.rs",
         "names directories in this repo",
     ),

@@ -14,6 +14,21 @@ use std::path::Path;
 
 pub use crate::PermissionAction;
 
+/// The app a device has in front, as the device names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Frontmost {
+    /// The package or bundle that owns what is on screen.
+    pub package: String,
+    /// The entry point inside it, spelled the way the platform spells
+    /// it — on Android that is the resumed activity, leading dot and
+    /// all, so it compares against what a manifest says.
+    pub activity: String,
+}
+
+/// One crash a device recorded. Re-exported from the adb layer so a
+/// caller holds one type whatever kind of device answered.
+pub use smix_adb::CrashReport;
+
 /// Platform-agnostic permission name used in [`DeviceControl::set_permission`]
 /// and the cross-platform yaml `launchApp.permissions:` shape. Avoids
 /// leaking iOS-specific `SimctlPermission` into the trait signature.
@@ -50,6 +65,89 @@ pub enum Permission {
 }
 
 impl Permission {
+    /// Every permission this enum names.
+    ///
+    /// The spelling a caller types is derived from this list rather than
+    /// kept beside it, so a new variant cannot be reachable in one
+    /// surface and unknown in another.
+    pub const ALL: &'static [Permission] = &[
+        Permission::Camera,
+        Permission::Microphone,
+        Permission::PhotoLibrary,
+        Permission::Location,
+        Permission::LocationAlways,
+        Permission::Notifications,
+        Permission::Contacts,
+        Permission::Calendar,
+        Permission::Reminders,
+        Permission::Bluetooth,
+        Permission::Motion,
+        Permission::Media,
+        Permission::Health,
+        Permission::FaceId,
+        Permission::HomeKit,
+        Permission::Storage,
+        Permission::PostNotifications,
+    ];
+
+    /// The name a caller writes, in yaml or on the command line.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Permission::Camera => "camera",
+            Permission::Microphone => "microphone",
+            Permission::PhotoLibrary => "photos",
+            Permission::Location => "location",
+            Permission::LocationAlways => "location-always",
+            Permission::Notifications => "notifications",
+            Permission::Contacts => "contacts",
+            Permission::Calendar => "calendar",
+            Permission::Reminders => "reminders",
+            Permission::Bluetooth => "bluetooth",
+            Permission::Motion => "motion",
+            Permission::Media => "media",
+            Permission::Health => "health",
+            Permission::FaceId => "faceid",
+            Permission::HomeKit => "homekit",
+            Permission::Storage => "storage",
+            Permission::PostNotifications => "post-notifications",
+        }
+    }
+
+    /// Every spelling accepted for a permission, `name()` first.
+    ///
+    /// The aliases are the ones the guides and older flows already use.
+    #[must_use]
+    fn aliases(self) -> &'static [&'static str] {
+        match self {
+            Permission::LocationAlways => &["location-always", "locationalways"],
+            Permission::Media => &["media", "media-library"],
+            _ => &[],
+        }
+    }
+
+    /// Parse a caller's spelling. Never guesses: an unknown name is an
+    /// error listing every name there is, because silently doing nothing
+    /// with a misspelled permission is how a flow comes to pass while
+    /// granting nothing.
+    ///
+    /// # Errors
+    ///
+    /// The name matches no permission.
+    pub fn from_name(name: &str) -> Result<Permission, String> {
+        let wanted = name.trim().to_ascii_lowercase();
+        for permission in Permission::ALL {
+            if permission.name() == wanted || permission.aliases().contains(&wanted.as_str()) {
+                return Ok(*permission);
+            }
+        }
+        let known: Vec<&str> = Permission::ALL.iter().map(|p| p.name()).collect();
+        Err(format!(
+            "unknown permission name '{name}' — supported: {}",
+            known.join(", ")
+        ))
+    }
+
     /// Map to iOS `SimctlPermission`. Returns `None` for Android-only
     /// permissions (`Storage`).
     #[must_use]
@@ -190,6 +288,15 @@ pub const ACTION_LEVELS: &[(&str, ActionLevel)] = &[
     // opened it has finished — which is what this level names.
     ("reverse_port", ActionLevel::Device),
     ("reverse_port_remove", ActionLevel::Device),
+    // Arranging the device itself. Both outlive the test that set them
+    // and neither takes anything away, which is this level exactly.
+    ("wake", ActionLevel::Device),
+    ("set_stay_awake", ActionLevel::Device),
+    // Asking the device what it is doing. Neither changes anything, so
+    // neither needs the lease — a look must not fail because somebody
+    // else is driving.
+    ("frontmost_app", ActionLevel::Observe),
+    ("crash_reports", ActionLevel::Observe),
     // Data goes away. `uninstall` takes the app's container with it;
     // `keychain_reset` is device-wide, not app-scoped.
     ("uninstall", ActionLevel::Destructive),
@@ -288,6 +395,35 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
     const SIMULATOR_USE_LOOPBACK: &str = "reach the service at 127.0.0.1:<port> from inside the simulator — it is the same loopback this machine's service is bound to";
     const NO_REVERSE_OVER_USB: &str = "Apple's USB channel carries host-to-device connections only, and exposes nothing in the other direction";
     const PUT_IT_ON_THE_LAN: &str = "bind the service to an address the phone can reach over the network and name that address in the app under test";
+    // A simulator's screen is drawn by the host and never sleeps, so
+    // there is no sleeping to undo and nothing to hold awake.
+    const SIMULATOR_NEVER_SLEEPS: &str =
+        "a simulator's screen is drawn by this machine and never sleeps";
+    const NOTHING_TO_DO_ON_A_SIMULATOR: &str =
+        "nothing needs doing — a simulator is always awake and stays that way";
+    const NO_DEVICECTL_POWER_VERB: &str =
+        "devicectl can read a device's lock state but has no verb that changes it";
+    const WAKE_IT_BY_HAND: &str =
+        "press the side button, or check `xcrun devicectl device info lockState` to see where it stands";
+    const NO_DEVICECTL_DISPLAY_SETTING: &str =
+        "devicectl exposes no display or auto-lock setting";
+    const SET_AUTOLOCK_BY_HAND: &str =
+        "set Settings > Display & Brightness > Auto-Lock to Never on the device";
+    // Neither Apple tool answers "which app is in front". simctl has no
+    // verb at all, and devicectl's `info processes` lists what is
+    // running without saying which one the user is looking at.
+    const NO_FRONTMOST_FROM_SIMCTL: &str =
+        "simctl has no verb that reports which app is in front";
+    const NO_FRONTMOST_FROM_DEVICECTL: &str = "devicectl lists a device's processes but does not say which one is frontmost";
+    const ASK_THE_RUNNER_WHAT_IT_SEES: &str =
+        "ask the runner instead — `smix tree --device <udid>` names the app it read the screen from";
+    // The two Apple refusals here are about attribution, not access.
+    const SIM_CRASHES_ARE_NOT_DEVICE_SCOPED: &str = "a simulator's crash reports land in this machine's own folder, which is not divided by device, so no answer here could honestly be about one simulator";
+    const READ_THE_HOST_CRASH_FOLDER: &str =
+        "open ~/Library/Logs/DiagnosticReports and match on the app name and the time of the run";
+    const DEVICE_CRASHES_STAY_ON_THE_DEVICE: &str = "crash reports stay on the device and devicectl has no verb that reads them (`sysdiagnose` gathers an archive, which is a different thing)";
+    const USE_XCODE_DEVICES_WINDOW: &str =
+        "download them with Xcode's Window > Devices and Simulators";
 
     &[
         // Metadata about the binding, not an action on a device.
@@ -496,6 +632,70 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 No {
                     why: NO_REVERSE_OVER_USB,
                     instead: PUT_IT_ON_THE_LAN,
+                },
+                Yes,
+            ],
+        ),
+        // Arranging a handset so a run can reach it, and asking it what
+        // it is doing. Android on both counts: neither Apple tool has a
+        // verb for any of the four, and each cell says which tool was
+        // asked and what it answered instead.
+        (
+            "wake",
+            [
+                No {
+                    why: SIMULATOR_NEVER_SLEEPS,
+                    instead: NOTHING_TO_DO_ON_A_SIMULATOR,
+                },
+                Yes,
+                No {
+                    why: NO_DEVICECTL_POWER_VERB,
+                    instead: WAKE_IT_BY_HAND,
+                },
+                Yes,
+            ],
+        ),
+        (
+            "set_stay_awake",
+            [
+                No {
+                    why: SIMULATOR_NEVER_SLEEPS,
+                    instead: NOTHING_TO_DO_ON_A_SIMULATOR,
+                },
+                Yes,
+                No {
+                    why: NO_DEVICECTL_DISPLAY_SETTING,
+                    instead: SET_AUTOLOCK_BY_HAND,
+                },
+                Yes,
+            ],
+        ),
+        (
+            "frontmost_app",
+            [
+                No {
+                    why: NO_FRONTMOST_FROM_SIMCTL,
+                    instead: ASK_THE_RUNNER_WHAT_IT_SEES,
+                },
+                Yes,
+                No {
+                    why: NO_FRONTMOST_FROM_DEVICECTL,
+                    instead: ASK_THE_RUNNER_WHAT_IT_SEES,
+                },
+                Yes,
+            ],
+        ),
+        (
+            "crash_reports",
+            [
+                No {
+                    why: SIM_CRASHES_ARE_NOT_DEVICE_SCOPED,
+                    instead: READ_THE_HOST_CRASH_FOLDER,
+                },
+                Yes,
+                No {
+                    why: DEVICE_CRASHES_STAY_ON_THE_DEVICE,
+                    instead: USE_XCODE_DEVICES_WINDOW,
                 },
                 Yes,
             ],
@@ -826,6 +1026,41 @@ pub trait DeviceControl: Send + Sync {
         udid: &str,
         device_port: u16,
     ) -> Result<(), DeviceControlError>;
+
+    /// Turn the device's screen on, and answer once it is on.
+    ///
+    /// This lights the screen. It does **not** unlock: a device with a
+    /// passcode keeps its keyguard, and a caller who needs past it has
+    /// to get past it some other way. The name says what it does for
+    /// that reason.
+    ///
+    /// Since smix 10.2.0.
+    async fn wake(&self, udid: &str) -> Result<(), DeviceControlError>;
+
+    /// Keep the screen on while the device is on a charger, or stop.
+    ///
+    /// Outlives the run that set it — it is a device setting, not a
+    /// property of the session, and the same call with `false` is what
+    /// puts it back.
+    ///
+    /// Since smix 10.2.0.
+    async fn set_stay_awake(&self, udid: &str, on: bool) -> Result<(), DeviceControlError>;
+
+    /// Which app is in front, or `None` when nothing is.
+    ///
+    /// `None` is an ordinary answer: a locked screen and a device still
+    /// booting both have nothing resumed.
+    ///
+    /// Since smix 10.2.0.
+    async fn frontmost_app(&self, udid: &str) -> Result<Option<Frontmost>, DeviceControlError>;
+
+    /// Every crash the device has recorded, oldest first.
+    ///
+    /// An empty list means the device recorded none — the ordinary
+    /// answer on a healthy run, and not a failure.
+    ///
+    /// Since smix 10.2.0.
+    async fn crash_reports(&self, udid: &str) -> Result<Vec<CrashReport>, DeviceControlError>;
 }
 
 #[cfg(test)]
@@ -1065,12 +1300,98 @@ mod action_level_tests {
 
     #[test]
     fn reads_are_not_dressed_up_as_writes() {
-        for m in ["screenshot", "capture_bgra", "pasteboard_get"] {
+        for m in [
+            "screenshot",
+            "capture_bgra",
+            "pasteboard_get",
+            "frontmost_app",
+            "crash_reports",
+        ] {
             assert_eq!(
                 action_level(m),
                 Some(ActionLevel::Observe),
                 "{m} only reads"
             );
         }
+    }
+
+    /// Arranging a handset is Android's alone, and each Apple cell has
+    /// to say which tool was asked and what to do instead.
+    ///
+    /// The `instead` half is what makes a refusal usable: a message that
+    /// only says no gets worked around rather than read, which is why
+    /// the table's own type demands one. Asserting it is non-empty keeps
+    /// a future cell from satisfying the type with `""`.
+    #[test]
+    fn arranging_a_phone_is_android_only_and_apple_says_where_to_go() {
+        use smix_simctl::registry::DeviceKind::{
+            Emulator, PhysicalAndroid, PhysicalIos, Simulator,
+        };
+
+        for action in ["wake", "set_stay_awake", "frontmost_app", "crash_reports"] {
+            for kind in [Emulator, PhysicalAndroid] {
+                assert_eq!(
+                    availability(action, kind),
+                    Some(Availability::Works),
+                    "{action} is driven over adb on {kind:?}"
+                );
+            }
+            for kind in [Simulator, PhysicalIos] {
+                match availability(action, kind) {
+                    Some(Availability::RefusedByName { why, instead }) => {
+                        assert!(!why.is_empty(), "{action} on {kind:?} refuses without a reason");
+                        assert!(
+                            !instead.is_empty(),
+                            "{action} on {kind:?} refuses without a way forward"
+                        );
+                    }
+                    other => panic!("{action} on {kind:?} should refuse by name, got {other:?}"),
+                }
+            }
+        }
+    }
+
+    /// One name table, and every variant reachable through it.
+    ///
+    /// The count is the number of variants, so adding one without a
+    /// spelling fails here rather than in whichever surface asks first.
+    #[test]
+    fn every_permission_has_exactly_one_spelling_that_parses() {
+        assert_eq!(Permission::ALL.len(), 17, "one entry per enum variant");
+        for permission in Permission::ALL {
+            assert_eq!(
+                Permission::from_name(permission.name()),
+                Ok(*permission),
+                "{} does not parse from its own name",
+                permission.name()
+            );
+        }
+    }
+
+    /// Case and the older spellings both land, and a misspelling is an
+    /// error naming every alternative — never a silent no-op, which
+    /// would grant nothing while the flow went on reporting success.
+    #[test]
+    fn a_misspelled_permission_is_an_error_that_lists_the_real_ones() {
+        assert_eq!(Permission::from_name("CAMERA"), Ok(Permission::Camera));
+        assert_eq!(
+            Permission::from_name(" media-library "),
+            Ok(Permission::Media)
+        );
+        assert_eq!(
+            Permission::from_name("locationalways"),
+            Ok(Permission::LocationAlways)
+        );
+        // Both of these were unreachable from the yaml name table until
+        // it was folded into this one.
+        assert_eq!(Permission::from_name("storage"), Ok(Permission::Storage));
+        assert_eq!(
+            Permission::from_name("post-notifications"),
+            Ok(Permission::PostNotifications)
+        );
+
+        let err = Permission::from_name("camra").expect_err("a misspelling is not a permission");
+        assert!(err.contains("camra"), "says what it could not read: {err}");
+        assert!(err.contains("camera"), "lists the real ones: {err}");
     }
 }

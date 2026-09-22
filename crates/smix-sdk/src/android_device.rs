@@ -13,7 +13,7 @@ use smix_driver::Platform;
 use smix_simctl::DeviceControlError;
 
 use crate::PermissionAction;
-use crate::device_control::{DeviceControl, Permission};
+use crate::device_control::{CrashReport, DeviceControl, Frontmost, Permission};
 
 /// What `simctl location start` uses when `--speed` is absent, per its own
 /// help text. Mirrored so a flow that omits the speed travels at the same
@@ -24,6 +24,13 @@ const SIMCTL_DEFAULT_SPEED_MPS: f64 = 20.0;
 /// 1 Hz, and the emulator's own `mFixInterval` is 1000ms, so a faster tick
 /// would only queue fixes the framework reports at this rate anyway.
 const GEO_FIX_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// How long `wake` waits for the screen to actually come on.
+///
+/// Measured on API 36: the power manager reports `Awake` well inside a
+/// second after `KEYCODE_WAKEUP`. Two seconds leaves room for a loaded
+/// machine without letting a device that will never wake hold a run.
+const WAKE_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Great-circle distance in metres. Used only to turn a leg into a
 /// duration, which is why the earth is a sphere here.
@@ -772,6 +779,99 @@ impl DeviceControl for AndroidDeviceControl {
             .unreverse(serial, device_port)
             .await
             .map_err(|e| adb_to_simctl_err(e, "reverse --remove"))
+    }
+
+    /// Send `KEYCODE_WAKEUP`, then read the power manager until it says
+    /// the device is awake.
+    ///
+    /// The keyevent's exit status says the event was injected, which is
+    /// a different claim from the screen being on — the same distinction
+    /// `/back` was answering the wrong side of until 10.2. One look
+    /// straight after is not enough either: the transition takes a frame
+    /// or two, so this polls to a budget and reports what it last read
+    /// when the budget runs out.
+    async fn wake(&self, serial: &str) -> Result<(), DeviceControlError> {
+        use smix_adb::Wakefulness;
+
+        self.client
+            .wake(serial)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "input keyevent KEYCODE_WAKEUP"))?;
+        let deadline = std::time::Instant::now() + WAKE_BUDGET;
+        let mut last;
+        loop {
+            last = self
+                .client
+                .wakefulness(serial)
+                .await
+                .map_err(|e| adb_to_simctl_err(e, "dumpsys power"))?;
+            if last == Some(Wakefulness::Awake) {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        Err(DeviceControlError::non_zero_exit(
+            "wake",
+            -1,
+            format!(
+                "the screen did not come on within {:?}: dumpsys power last said {}",
+                WAKE_BUDGET,
+                match last {
+                    Some(w) => format!("mWakefulness={w:?}"),
+                    // Not the same as asleep, and saying so keeps a
+                    // caller from hunting a power problem that is
+                    // really a dump this could not read.
+                    None => "nothing it could read".to_string(),
+                }
+            ),
+        ))
+    }
+
+    /// `svc power stayon`, then read the setting back and hold it
+    /// against what was asked for.
+    async fn set_stay_awake(&self, serial: &str, on: bool) -> Result<(), DeviceControlError> {
+        self.client
+            .set_stay_awake(serial, on)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "svc power stayon"))?;
+        let read_back = self
+            .client
+            .stay_awake(serial)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "settings get global stay_on_while_plugged_in"))?;
+        if read_back == Some(on) {
+            return Ok(());
+        }
+        Err(DeviceControlError::non_zero_exit(
+            "set_stay_awake",
+            -1,
+            format!(
+                "asked for stay-awake {on} and the device reads back {}",
+                match read_back {
+                    Some(v) => v.to_string(),
+                    None => "a setting nobody has written".to_string(),
+                }
+            ),
+        ))
+    }
+
+    async fn frontmost_app(&self, serial: &str) -> Result<Option<Frontmost>, DeviceControlError> {
+        let resumed = self
+            .client
+            .resumed_activity(serial)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "dumpsys activity activities"))?;
+        Ok(resumed.map(|(package, activity)| Frontmost { package, activity }))
+    }
+
+    async fn crash_reports(&self, serial: &str) -> Result<Vec<CrashReport>, DeviceControlError> {
+        self.client
+            .crash_buffer(serial)
+            .await
+            .map_err(|e| adb_to_simctl_err(e, "logcat -b crash"))
     }
 
     async fn stop_recording(&self) -> Result<(), DeviceControlError> {
