@@ -3,15 +3,18 @@
     "arguments": [
       "devicectl",
       "device",
-      "pasteboard",
-      "copy",
+      "simulate",
+      "location",
+      "route",
+      "--route-file",
+      "route.json",
       "--device",
       "5D087114-ECB3-443C-8DDB-40EEF9CFB90C",
       "--json-output",
       "out.json",
       "-q"
     ],
-    "commandType": "devicectl.device.pasteboard.copy",
+    "commandType": "devicectl.device.simulate.location.route",
     "environment": {
       "TERM": "xterm-256color"
     },
@@ -21,12 +24,7 @@
   },
   "result": {
     "deviceIdentifier": "5D087114-ECB3-443C-8DDB-40EEF9CFB90C",
-    "itemCount": 1,
-    "pasteboardName": "general",
-    "types": [
-      "public.utf8-plain-text",
-      "public.plain-text",
-      "public.text"
-    ]
+    "speed": 20,
+    "waypointsCount": 2
   }
 }

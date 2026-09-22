@@ -2540,7 +2540,11 @@ impl App {
         })
     }
 
-    /// Set sim location. Maestro `setLocation: { latitude, longitude }`.
+    /// Hold the device at one coordinate. Maestro `setLocation: { latitude,
+    /// longitude }`. Through the device backend: `simctl location set`, the
+    /// emulator console's `geo fix`, or `devicectl device simulate location
+    /// coordinate` for a registered iPhone — where it stays until something
+    /// outside smix clears it.
     pub async fn set_location(
         &self,
         latitude: f64,
@@ -2553,9 +2557,9 @@ impl App {
             .map_err(simctl_to_failure)
     }
 
-    /// Interpolate sim location along waypoints. Maestro `travel`.
-    /// **Fire-and-return**: simctl injects scenario and returns immediately;
-    /// sim continues interpolation in background. Caller must explicitly
+    /// Move the device along waypoints. Maestro `travel`.
+    /// **Fire-and-return** on every backend that has it: the route is
+    /// handed over and this returns while the device keeps travelling. Caller must explicitly
     /// `waitForAnimationToEnd` / sleep if downstream logic depends on
     /// playback completion.
     pub async fn travel(

@@ -12,9 +12,10 @@
 //! equivalent**. Not a harder path: no path. `erase`, `recordVideo`,
 //! `location_set` and the pasteboard were among the fifteen.
 //!
-//! That survey was of Xcode 26. Xcode 27's `devicectl` grew `capture` and
-//! `pasteboard`, and the screenshot, the recording pair and the two
-//! pasteboard actions are carried out here now; the table in
+//! That survey was of Xcode 26. Xcode 27's `devicectl` grew `capture`,
+//! `pasteboard` and `simulate location`, and the screenshot, the
+//! recording pair, the two pasteboard actions and the two location
+//! actions are carried out here now; the table in
 //! `device_control` holds the current count, and a test holds this file
 //! against it.
 //!
@@ -368,6 +369,43 @@ impl DevicectlClient {
                 "--destination".into(),
                 destination.to_string(),
             ],
+            // `--latitude -33.8` is refused — devicectl takes the value for
+            // another option — so every coordinate is attached with `=`.
+            DevicectlVerb::LocationCoordinate {
+                latitude,
+                longitude,
+                json_output,
+            } => vec![
+                "device".into(),
+                "simulate".into(),
+                "location".into(),
+                "coordinate".into(),
+                "--device".into(),
+                d,
+                format!("--latitude={latitude}"),
+                format!("--longitude={longitude}"),
+                "--json-output".into(),
+                json_output.to_string(),
+            ],
+            // The file form, not `--waypoints`: that option is a variadic
+            // array that swallows every argument after it, `--device`
+            // included, and no spelling of a negative latitude got through
+            // it. The file takes both.
+            DevicectlVerb::LocationRoute {
+                route_file,
+                json_output,
+            } => vec![
+                "device".into(),
+                "simulate".into(),
+                "location".into(),
+                "route".into(),
+                "--device".into(),
+                d,
+                "--route-file".into(),
+                route_file.to_string(),
+                "--json-output".into(),
+                json_output.to_string(),
+            ],
             DevicectlVerb::PasteboardCopy { json_output } => {
                 self.pasteboard_argv("copy", d, json_output)
             }
@@ -464,6 +502,23 @@ pub enum DevicectlVerb<'a> {
         /// Where the movie goes, on this machine.
         destination: &'a str,
     },
+    /// Hold the device at one coordinate until cleared.
+    LocationCoordinate {
+        /// Degrees north.
+        latitude: f64,
+        /// Degrees east.
+        longitude: f64,
+        /// Where devicectl writes what it set.
+        json_output: &'a str,
+    },
+    /// Move the device along the route a file describes. Returns at once;
+    /// the device keeps travelling.
+    LocationRoute {
+        /// The route, in devicectl's own JSON.
+        route_file: &'a str,
+        /// Where devicectl writes what it started.
+        json_output: &'a str,
+    },
     /// Put text on the device's pasteboard. The text arrives on stdin.
     PasteboardCopy {
         /// Where devicectl writes what it did.
@@ -477,6 +532,125 @@ pub enum DevicectlVerb<'a> {
     },
 }
 
+/// The simulated-location capability, as a device lists it.
+pub const CAPABILITY_SIMULATE_LOCATION: &str = "com.apple.coredevice.feature.simulatelocation";
+
+/// What `simctl location start` does when told no speed and no update
+/// rule (`simctl help location`): 20 m/s, a fix every second. devicectl
+/// has no defaults — a route without all three is a bare validation
+/// error — so the same trait call is given the same meaning here.
+const ROUTE_DEFAULT_SPEED_MPS: f64 = 20.0;
+const ROUTE_UPDATE_INTERVAL_S: f64 = 1.0;
+
+/// How far an echoed coordinate may sit from the one sent and still be
+/// the same one: a tenth of a metre, far inside what a decimal printed
+/// and parsed again can drift and far outside a swapped pair.
+const SAME_COORDINATE_DEG: f64 = 1e-6;
+
+/// A route in the JSON `devicectl … route --route-file` reads.
+///
+/// devicectl takes a single waypoint; `simctl` and the flow parser do
+/// not, and one point is not a journey on either backend.
+fn route_file_json(
+    points: &[(f64, f64)],
+    speed_mps: Option<f64>,
+) -> Result<String, DeviceControlError> {
+    if points.len() < 2 {
+        return Err(DeviceControlError::Malformed {
+            subcommand: "devicectl device simulate location route".into(),
+            detail: format!("requires ≥2 waypoints, got {}", points.len()),
+        });
+    }
+    let waypoints: Vec<serde_json::Value> = points
+        .iter()
+        .map(|(latitude, longitude)| {
+            serde_json::json!({ "latitude": latitude, "longitude": longitude })
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "mode": "interval",
+        "interval": ROUTE_UPDATE_INTERVAL_S,
+        "speed": speed_mps.unwrap_or(ROUTE_DEFAULT_SPEED_MPS),
+        "waypoints": waypoints,
+    })
+    .to_string())
+}
+
+/// devicectl's JSON, once it says the command succeeded.
+///
+/// The exit code says devicectl ran; `info.outcome` says what happened.
+fn successful_result(
+    json: &str,
+    subcommand: &str,
+) -> Result<serde_json::Value, DeviceControlError> {
+    let malformed = |detail: String| DeviceControlError::Malformed {
+        subcommand: subcommand.into(),
+        detail,
+    };
+    let mut doc: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| malformed(e.to_string()))?;
+    let outcome = doc["info"]["outcome"].as_str().unwrap_or("(absent)");
+    if outcome != "success" {
+        return Err(malformed(format!(
+            "outcome is {outcome:?}, not \"success\""
+        )));
+    }
+    Ok(doc["result"].take())
+}
+
+/// There is no verb that reads a device's simulated location back, so
+/// what devicectl says it set is the only account there is. It is held
+/// against what was sent.
+fn location_echo_agrees(
+    json: &str,
+    latitude: f64,
+    longitude: f64,
+) -> Result<(), DeviceControlError> {
+    const VERB: &str = "devicectl device simulate location coordinate";
+    let result = successful_result(json, VERB)?;
+    let said = |key: &str| {
+        result[key]
+            .as_f64()
+            .ok_or_else(|| DeviceControlError::Malformed {
+                subcommand: VERB.into(),
+                detail: format!("result.{key} is missing or not a number"),
+            })
+    };
+    let (said_lat, said_lon) = (said("latitude")?, said("longitude")?);
+    if (said_lat - latitude).abs() > SAME_COORDINATE_DEG
+        || (said_lon - longitude).abs() > SAME_COORDINATE_DEG
+    {
+        return Err(DeviceControlError::Malformed {
+            subcommand: VERB.into(),
+            detail: format!(
+                "sent ({latitude}, {longitude}) and devicectl says it set ({said_lat}, {said_lon})"
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn route_echo_agrees(
+    json: &str,
+    waypoints: usize,
+    speed_mps: f64,
+) -> Result<(), DeviceControlError> {
+    const VERB: &str = "devicectl device simulate location route";
+    let result = successful_result(json, VERB)?;
+    let said_points = result["waypointsCount"].as_u64();
+    let said_speed = result["speed"].as_f64();
+    if said_points != Some(waypoints as u64) || said_speed != Some(speed_mps) {
+        return Err(DeviceControlError::Malformed {
+            subcommand: VERB.into(),
+            detail: format!(
+                "sent {waypoints} waypoint(s) at {speed_mps} m/s and devicectl says \
+                 {said_points:?} at {said_speed:?}"
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// The pasteboard capability, as a device lists it.
 pub const CAPABILITY_PASTEBOARD: &str = "com.apple.coredevice.feature.pasteboard";
 
@@ -488,19 +662,13 @@ pub const CAPABILITY_PASTEBOARD: &str = "com.apple.coredevice.feature.pasteboard
 /// A pasteboard holding no text is `""` — devicectl exits 0 with nothing
 /// on stdout and a `contentSize` of 0.
 pub fn pasteboard_text(stdout: Vec<u8>, json: &str) -> Result<String, DeviceControlError> {
+    const VERB: &str = "devicectl device pasteboard paste";
     let malformed = |detail: String| DeviceControlError::Malformed {
-        subcommand: "devicectl device pasteboard paste".into(),
+        subcommand: VERB.into(),
         detail,
     };
-    let doc: serde_json::Value =
-        serde_json::from_str(json).map_err(|e| malformed(e.to_string()))?;
-    let outcome = doc["info"]["outcome"].as_str().unwrap_or("(absent)");
-    if outcome != "success" {
-        return Err(malformed(format!(
-            "outcome is {outcome:?}, not \"success\""
-        )));
-    }
-    let said = doc["result"]["contentSize"]
+    let result = successful_result(json, VERB)?;
+    let said = result["contentSize"]
         .as_u64()
         .ok_or_else(|| malformed("result.contentSize is missing or not a byte count".into()))?;
     if said != stdout.len() as u64 {
@@ -535,19 +703,12 @@ pub struct ScreenshotResult {
 /// An outcome other than `success` is an error whatever the exit code
 /// was: the exit code says devicectl ran, the outcome says what happened.
 pub fn parse_screenshot_result(json: &str) -> Result<ScreenshotResult, DeviceControlError> {
+    const VERB: &str = "devicectl device capture screenshot";
     let malformed = |detail: String| DeviceControlError::Malformed {
-        subcommand: "devicectl device capture screenshot".into(),
+        subcommand: VERB.into(),
         detail,
     };
-    let doc: serde_json::Value =
-        serde_json::from_str(json).map_err(|e| malformed(e.to_string()))?;
-    let outcome = doc["info"]["outcome"].as_str().unwrap_or("(absent)");
-    if outcome != "success" {
-        return Err(malformed(format!(
-            "outcome is {outcome:?}, not \"success\""
-        )));
-    }
-    let result = &doc["result"];
+    let result = successful_result(json, VERB)?;
     let text = |key: &str| {
         result[key]
             .as_str()
@@ -750,19 +911,46 @@ impl DeviceControl for DevicectlClient {
     async fn location_set(
         &self,
         _udid: &str,
-        _lat: f64,
-        _lon: f64,
+        lat: f64,
+        lon: f64,
     ) -> Result<(), DeviceControlError> {
-        Err(refused("location_set"))
+        let (_, json) = capture_scratch("json");
+        run(&self.argv(DevicectlVerb::LocationCoordinate {
+            latitude: lat,
+            longitude: lon,
+            json_output: &json.to_string_lossy(),
+        }))
+        .await?;
+        let said = tokio::fs::read_to_string(&json).await?;
+        tokio::fs::remove_file(&json).await?;
+        location_echo_agrees(&said, lat, lon)
     }
 
     async fn location_start(
         &self,
         _udid: &str,
-        _points: &[(f64, f64)],
-        _speed_mps: Option<f64>,
+        points: &[(f64, f64)],
+        speed_mps: Option<f64>,
     ) -> Result<(), DeviceControlError> {
-        Err(refused("location_start"))
+        let route = route_file_json(points, speed_mps)?;
+        let (route_file, json) = capture_scratch("route.json");
+        tokio::fs::write(&route_file, route).await?;
+        // Returns at once — measured at 0.18 s — and the device goes on
+        // travelling, as `simctl location start` does.
+        let ran = run(&self.argv(DevicectlVerb::LocationRoute {
+            route_file: &route_file.to_string_lossy(),
+            json_output: &json.to_string_lossy(),
+        }))
+        .await;
+        tokio::fs::remove_file(&route_file).await?;
+        ran?;
+        let said = tokio::fs::read_to_string(&json).await?;
+        tokio::fs::remove_file(&json).await?;
+        route_echo_agrees(
+            &said,
+            points.len(),
+            speed_mps.unwrap_or(ROUTE_DEFAULT_SPEED_MPS),
+        )
     }
 
     async fn start_recording(
@@ -1029,9 +1217,12 @@ mod tests {
         // 14 until the same release closed two more: `pasteboard_set` and
         // `pasteboard_get` go through `device pasteboard copy` / `paste`,
         // written and read back byte for byte on an iPhone.
+        //
+        // 12 until `location_set` and `location_start` followed, through
+        // `device simulate location coordinate` / `route`.
         assert_eq!(
-            checked, 12,
-            "the phone refuses 12 of these; this says {checked}"
+            checked, 10,
+            "the phone refuses 10 of these; this says {checked}"
         );
     }
 
@@ -1118,7 +1309,6 @@ mod tests {
             // phone that happened to be plugged in — a unit test may
             // only call what refuses before dialling.
             ("add_media", err(c.add_media(UDID, &[]).await)),
-            ("location_set", err(c.location_set(UDID, 1.0, 2.0).await)),
             ("send_push", err(c.send_push(UDID, "b", "p").await)),
         ];
         for (name, msg) in refusals {
@@ -1196,6 +1386,8 @@ mod parity_tests {
         "stop_recording",
         "pasteboard_set",
         "pasteboard_get",
+        "location_set",
+        "location_start",
         "launch",
         "launch_with_args",
         "install",
@@ -1269,8 +1461,6 @@ mod parity_tests {
                         .await,
                 ),
                 "add_media" => err_of(c.add_media(&udid, &[]).await),
-                "location_set" => err_of(c.location_set(&udid, 0.0, 0.0).await),
-                "location_start" => err_of(c.location_start(&udid, &[], None).await),
                 "start_recording" => err_of(
                     c.start_recording(&udid, std::path::Path::new("/tmp/x"))
                         .await,
@@ -1558,5 +1748,98 @@ mod pasteboard_tests {
         let json = r#"{"info":{"outcome":"success"},"result":{"contentSize":2}}"#;
         let err = pasteboard_text(vec![0xff, 0xfe], json).expect_err("not UTF-8");
         assert!(err.to_string().contains("UTF-8"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod location_tests {
+    use super::*;
+
+    const UDID: &str = "00000000-0000000000000000";
+    const COORDINATE: &str =
+        include_str!("../tests/fixtures/devicectl/location-coordinate.sim.json");
+    const ROUTE: &str = include_str!("../tests/fixtures/devicectl/location-route.sim.json");
+
+    #[test]
+    fn a_negative_coordinate_is_attached_to_its_flag() {
+        // `--longitude -122.4194` is refused: devicectl reads the value
+        // as another option. Only a device could say so; this holds the
+        // form that device accepted.
+        let c = DevicectlClient::new(UDID);
+        assert_eq!(
+            c.argv(DevicectlVerb::LocationCoordinate {
+                latitude: 37.7749,
+                longitude: -122.4194,
+                json_output: "/tmp/a.json"
+            }),
+            [
+                "device",
+                "simulate",
+                "location",
+                "coordinate",
+                "--device",
+                UDID,
+                "--latitude=37.7749",
+                "--longitude=-122.4194",
+                "--json-output",
+                "/tmp/a.json"
+            ]
+        );
+        assert_eq!(
+            c.argv(DevicectlVerb::LocationRoute {
+                route_file: "/tmp/r.json",
+                json_output: "/tmp/a.json"
+            }),
+            [
+                "device",
+                "simulate",
+                "location",
+                "route",
+                "--device",
+                UDID,
+                "--route-file",
+                "/tmp/r.json",
+                "--json-output",
+                "/tmp/a.json"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_route_is_written_the_way_devicectl_reads_one() {
+        let points = [(-33.8688, 151.2093), (-33.9, 151.3)];
+        let doc: serde_json::Value =
+            serde_json::from_str(&route_file_json(&points, Some(5.0)).expect("two points"))
+                .expect("it is JSON");
+        assert_eq!(doc["mode"], "interval");
+        assert_eq!(doc["interval"], 1.0);
+        assert_eq!(doc["speed"], 5.0);
+        assert_eq!(doc["waypoints"][0]["latitude"], -33.8688);
+        assert_eq!(doc["waypoints"][1]["longitude"], 151.3);
+        assert_eq!(doc["waypoints"].as_array().map(Vec::len), Some(2));
+
+        let unhurried: serde_json::Value =
+            serde_json::from_str(&route_file_json(&points, None).expect("two points"))
+                .expect("it is JSON");
+        assert_eq!(unhurried["speed"], 20.0);
+
+        let one = route_file_json(&points[..1], None).expect_err("one point is not a route");
+        assert!(one.to_string().contains("waypoints"), "{one}");
+    }
+
+    #[test]
+    fn what_devicectl_says_it_set_is_held_against_what_was_sent() {
+        assert!(location_echo_agrees(COORDINATE, 37.7749, -122.4194).is_ok());
+        let swapped =
+            location_echo_agrees(COORDINATE, -122.4194, 37.7749).expect_err("the other way round");
+        let msg = swapped.to_string();
+        assert!(
+            msg.contains("37.7749") && msg.contains("-122.4194"),
+            "{msg}"
+        );
+
+        assert!(route_echo_agrees(ROUTE, 2, 20.0).is_ok());
+        assert!(route_echo_agrees(ROUTE, 3, 20.0).is_err());
+        assert!(route_echo_agrees(ROUTE, 2, 5.0).is_err());
     }
 }

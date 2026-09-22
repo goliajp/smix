@@ -166,6 +166,21 @@ error is its own. Mind whose clipboard it is: a phone's general pasteboard
 travels by Universal Clipboard to every device on the same Apple ID, so a flow
 that sets it also sets the one on the Mac beside it.
 
+`setLocation` and `travel` work on a registered iPhone from Xcode 27 on too,
+through `devicectl device simulate location coordinate` and `route`. `travel`
+returns at once and the phone keeps moving, as on a simulator; without a speed
+it goes at 20 m/s. **A simulated location stays on the phone until it is
+cleared, and no flow verb clears it** — every map and weather app on that phone
+is wrong until you run:
+
+```bash
+xcrun devicectl device simulate location clear --device <UDID>
+```
+
+`devicectl` has no verb that reads a phone's current simulated location back, so
+what smix checks is `devicectl`'s own account of what it set against what was
+sent; a disagreement is an error, not a success.
+
 Apple identifiers are normalised to upper case, because `devicectl` will not
 match a lower-case spelling of a UDID it accepts in upper case. adb serials are
 stored and returned verbatim, because `adb` matches them byte for byte.

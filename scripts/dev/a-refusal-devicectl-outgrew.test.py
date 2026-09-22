@@ -22,7 +22,7 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
     &[
         ("platform", [Yes, Yes, Yes, Yes]),
         ("screenshot", [Yes, Yes, Yes, Yes]),
-        ("pasteboard_set", [Yes, Yes, No { why: undriven_devicectl_verb!("device pasteboard copy"), instead: "x" }, Yes]),
+        ("pasteboard_set", [Yes, Yes, No { why: "devicectl has `device pasteboard copy`; undriven", instead: "x" }, Yes]),
         ("pasteboard_get", [Yes, Yes, No { why: "devicectl has `device pasteboard paste`; undriven", instead: "x" }, Yes]),
         ("location_set", [Yes, Yes, No { why: "devicectl has `device simulate location coordinate`; undriven", instead: "x" }, Yes]),
         ("location_start", [Yes, Yes, No { why: "devicectl has `device simulate location route`; undriven", instead: "x" }, Yes]),
