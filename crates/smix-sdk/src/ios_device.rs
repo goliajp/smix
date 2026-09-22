@@ -12,7 +12,7 @@ use smix_driver::Platform;
 use smix_simctl::{DeviceControlError, RecordingHandle, SimctlClient};
 
 use crate::PermissionAction;
-use crate::device_control::{DeviceControl, Permission};
+use crate::device_control::{CrashReport, DeviceControl, Frontmost, Permission};
 
 /// iOS `DeviceControl` impl. Wraps `SimctlClient` + owns active
 /// recording handle. Constructed by `App::new` / `App::connect_to_runner`
@@ -324,6 +324,22 @@ impl DeviceControl for IosDeviceControl {
         _device_port: u16,
     ) -> Result<(), DeviceControlError> {
         Err(refused_on_a_simulator("reverse_port_remove"))
+    }
+
+    async fn wake(&self, _udid: &str) -> Result<(), DeviceControlError> {
+        Err(refused_on_a_simulator("wake"))
+    }
+
+    async fn set_stay_awake(&self, _udid: &str, _on: bool) -> Result<(), DeviceControlError> {
+        Err(refused_on_a_simulator("set_stay_awake"))
+    }
+
+    async fn frontmost_app(&self, _udid: &str) -> Result<Option<Frontmost>, DeviceControlError> {
+        Err(refused_on_a_simulator("frontmost_app"))
+    }
+
+    async fn crash_reports(&self, _udid: &str) -> Result<Vec<CrashReport>, DeviceControlError> {
+        Err(refused_on_a_simulator("crash_reports"))
     }
 
     async fn recording_pid(&self) -> Option<u32> {

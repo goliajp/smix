@@ -162,6 +162,24 @@ impl DeviceControl for RecordingDevice {
     async fn reverse_port_remove(&self, _: &str, _: u16) -> Result<(), DeviceControlError> {
         unreachable!()
     }
+    async fn wake(&self, _: &str) -> Result<(), DeviceControlError> {
+        unreachable!()
+    }
+    async fn set_stay_awake(&self, _: &str, _: bool) -> Result<(), DeviceControlError> {
+        unreachable!()
+    }
+    async fn frontmost_app(
+        &self,
+        _: &str,
+    ) -> Result<Option<smix_sdk::device_control::Frontmost>, DeviceControlError> {
+        unreachable!()
+    }
+    async fn crash_reports(
+        &self,
+        _: &str,
+    ) -> Result<Vec<smix_sdk::device_control::CrashReport>, DeviceControlError> {
+        unreachable!()
+    }
 }
 
 fn app_with_device(device: RecordingDevice) -> App {

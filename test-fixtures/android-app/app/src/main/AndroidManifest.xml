@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Declared so the permission verb has a subject, and never asked
+         for at runtime: `pm grant` refuses a permission the package did
+         not request, so a fixture that declares none cannot be used to
+         tell a working grant from a broken one. CAMERA is the ordinary
+         runtime permission; POST_NOTIFICATIONS is the Android-only one,
+         which no iOS-shaped name table could reach until 10.2. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:label="smix fixture"
         android:theme="@style/Theme.AppCompat.Light">

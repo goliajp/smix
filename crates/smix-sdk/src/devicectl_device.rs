@@ -36,7 +36,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use smix_simctl::{DeviceControlError, SimctlClient};
 
-use crate::device_control::{DeviceControl, Permission, PermissionAction};
+use crate::device_control::{CrashReport, DeviceControl, Frontmost, Permission, PermissionAction};
 
 /// A physical iOS device, driven through `xcrun devicectl`.
 pub struct DevicectlClient {
@@ -1051,6 +1051,22 @@ impl DeviceControl for DevicectlClient {
         Err(refused("reverse_port_remove"))
     }
 
+    async fn wake(&self, _udid: &str) -> Result<(), DeviceControlError> {
+        Err(refused("wake"))
+    }
+
+    async fn set_stay_awake(&self, _udid: &str, _on: bool) -> Result<(), DeviceControlError> {
+        Err(refused("set_stay_awake"))
+    }
+
+    async fn frontmost_app(&self, _udid: &str) -> Result<Option<Frontmost>, DeviceControlError> {
+        Err(refused("frontmost_app"))
+    }
+
+    async fn crash_reports(&self, _udid: &str) -> Result<Vec<CrashReport>, DeviceControlError> {
+        Err(refused("crash_reports"))
+    }
+
     async fn stop_recording(&self) -> Result<(), DeviceControlError> {
         let mut rec = recording_to_end(self.recording.lock().await.take())?;
         // SIGINT, not kill: the encoder writes the movie's trailer when it
@@ -1243,9 +1259,15 @@ mod tests {
         // they are not a gap: a phone refuses them because Apple's USB
         // channel has no reverse direction for anything to drive, so
         // there is no verb for devicectl to grow.
+        //
+        // 16 as of the release that added `wake`, `set_stay_awake`,
+        // `frontmost_app` and `crash_reports`. Like the two above these
+        // move the count up without being a gap: no devicectl verb
+        // changes a device's power state or names its frontmost app,
+        // and its crash reports stay on the device.
         assert_eq!(
-            checked, 12,
-            "the phone refuses 12 of these; this says {checked}"
+            checked, 16,
+            "the phone refuses 16 of these; this says {checked}"
         );
     }
 
@@ -1494,6 +1516,10 @@ mod parity_tests {
                 "set_animations_quiet" => err_of(c.set_animations_quiet(&udid, true).await),
                 "reverse_port" => err_of(c.reverse_port(&udid, 8080, 8080).await),
                 "reverse_port_remove" => err_of(c.reverse_port_remove(&udid, 8080).await),
+                "wake" => err_of(c.wake(&udid).await),
+                "set_stay_awake" => err_of(c.set_stay_awake(&udid, true).await),
+                "frontmost_app" => err_of(c.frontmost_app(&udid).await.map(|_| ())),
+                "crash_reports" => err_of(c.crash_reports(&udid).await.map(|_| ())),
                 other => Some(format!("UNCHECKED: no case for {other}")),
             };
             match refusal {
@@ -1517,7 +1543,17 @@ mod parity_tests {
     /// `platform` and `as_ios_simctl` describe the binding; the rest go
     /// to hardware and so must answer for themselves.
     fn is_device_read(name: &str) -> bool {
-        matches!(name, "screenshot" | "capture_bgra" | "pasteboard_get")
+        matches!(
+            name,
+            "screenshot"
+                | "capture_bgra"
+                | "pasteboard_get"
+                // Reads of the device rather than of the binding: each
+                // one asks the hardware a question, so each one owes an
+                // answer or a refusal.
+                | "frontmost_app"
+                | "crash_reports"
+        )
     }
 
     fn err_of<T>(r: Result<T, DeviceControlError>) -> Option<String> {

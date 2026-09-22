@@ -1721,6 +1721,43 @@ xcrun devicectl device simulate location clear --device <UDID>
 what smix checks is `devicectl`'s own account of what it set against what was
 sent; a disagreement is an error, not a success.
 
+### Arranging a device, and asking what it is doing
+
+A run needs the screen on, the screen to stay on, permissions in a known
+state, and — when something goes wrong — an answer to "what was in front" and
+"did it crash". All five take the device explicitly.
+
+```bash
+smix sim wake <DEVICE>                                    # turn the screen on
+smix sim stay-awake <DEVICE> on                           # and keep it on while charging
+smix sim permission <DEVICE> <BUNDLE> camera grant        # grant / revoke / reset one permission
+smix sim frontmost <DEVICE>                               # which app is in front
+smix sim crashes <DEVICE> --app <BUNDLE>                  # what the device recorded
+```
+
+Four things worth knowing before you rely on them:
+
+- **`wake` turns the screen on. It does not unlock.** A device with a passcode
+  keeps its keyguard, and nothing here gets past it.
+- **`stay-awake` writes a device setting**, so it outlives the run that set it.
+  `off` is how it goes back.
+- **`crashes` exits 0 whether or not it finds anything.** A read that found
+  nothing is not a failure; under `set -e` the other choice would kill a healthy
+  run. With `--app` the last line says how many of the reports named that
+  process, so "none of them was yours" reads differently from "the device
+  recorded none".
+- **`frontmost` reads the resumed activity**, not whichever window holds focus —
+  a dialog on top does not change the answer. Nothing resumed (a lock screen, a
+  device still booting) prints that and exits 0.
+
+These are Android verbs. `wake`, `stay-awake`, `frontmost` and `crashes` refuse
+on an iPhone or a simulator and say what to do instead: neither `simctl` nor
+`devicectl` has a verb for any of them, a simulator's screen never sleeps, and a
+simulator's crash reports land in this machine's own `~/Library/Logs/
+DiagnosticReports`, which is not divided by device. `permission` is the
+exception — a simulator answers it through `simctl privacy`, and only a physical
+iPhone refuses, because those grants are the owner's.
+
 ### Letting a device reach a server on this machine
 
 An app under test often has to talk to something running on your machine — a

@@ -87,6 +87,10 @@ CHECKOUT = {
 DECIDES_NOTHING = {
     "smix_dir": "normalises a path a caller already chose",
     "store_dir": "same, as the public name for it",
+    # A test about which kinds of device a verb reaches. It resolves
+    # nothing and writes nowhere; "path" is in its name because the
+    # verbs it checks are the ones that have a path to a device.
+    "arranging_verbs_reach_the_kinds_that_have_a_path": "a test naming device kinds, not a place on disk",
 }
 
 # Calls that write a device fact. Each must be handed a path from a

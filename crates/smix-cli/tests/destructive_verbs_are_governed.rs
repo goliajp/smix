@@ -62,6 +62,18 @@ const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
         "adds; the uninstall that would remove it is guarded",
     ),
     ("Openurl", "hands a URL to the system"),
+    ("Wake", "turns the screen on; it does not even unlock"),
+    (
+        "StayAwake",
+        "a display setting the same verb sets back",
+    ),
+    (
+        "Permission",
+        "grants or revokes one permission; `privacy_reset_all` is the \
+         destructive neighbour and it is not this",
+    ),
+    ("Frontmost", "reads"),
+    ("Crashes", "reads"),
     (
         "Reverse",
         "opens a route from the device to this machine, and closes it by \

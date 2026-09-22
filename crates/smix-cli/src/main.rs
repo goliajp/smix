@@ -1677,6 +1677,87 @@ enum SimAction {
         #[arg(long)]
         remove: bool,
     },
+    /// Turn the device's screen on.
+    ///
+    /// Lights the screen and waits until the power manager agrees it is
+    /// on. It does **not** unlock: a device with a passcode keeps its
+    /// keyguard, and the name says only what it does.
+    ///
+    /// Android only — a simulator's screen never sleeps, and devicectl
+    /// can read a phone's lock state but not change it.
+    Wake {
+        /// Which device, by serial or registry alias.
+        device: String,
+    },
+    /// Keep the screen on while the device is charging, or stop.
+    ///
+    /// A device setting, so it outlives the run that set it. Reading it
+    /// back is part of the command: `svc power stayon` reports nothing
+    /// about whether the setting took.
+    ///
+    /// Android only, for the same reasons as `wake`.
+    StayAwake {
+        /// Which device, by serial or registry alias.
+        device: String,
+        /// `on` to hold the screen awake on a charger, `off` to stop.
+        ///
+        /// `action = Set` because clap gives a `bool` field the flag
+        /// treatment by default, and a positional that takes no value
+        /// is a command that cannot be built at all.
+        #[arg(value_parser = parse_on_off, action = clap::ArgAction::Set)]
+        state: bool,
+    },
+    /// Grant, revoke or reset one runtime permission for an app.
+    ///
+    /// `simctl privacy` on a simulator and `pm grant` / `pm revoke` on
+    /// Android. A physical iPhone refuses: those grants are the owner's,
+    /// and devicectl has no equivalent.
+    Permission {
+        /// Which device, by UDID, serial or registry alias.
+        device: String,
+        /// The app the permission belongs to.
+        bundle_id: String,
+        /// Which permission, e.g. `camera`, `location`, `post-notifications`.
+        permission: String,
+        /// What to do with it.
+        #[arg(value_parser = parse_permission_action)]
+        action: String,
+    },
+    /// Print which app is in front.
+    ///
+    /// A read, not a command: it reports the app the device has resumed
+    /// and changes nothing. Nothing resumed — a lock screen, a device
+    /// still booting — prints that and exits 0.
+    ///
+    /// Android only: neither simctl nor devicectl reports this, and the
+    /// runner answers it for an Apple device (`smix tree` names the app
+    /// it read).
+    Frontmost {
+        /// Which device, by serial or registry alias.
+        device: String,
+        /// Print JSON instead of a line of prose.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the crashes the device has recorded.
+    ///
+    /// Exits 0 whether or not it finds any: a read that found nothing
+    /// is not a failure, and exiting non-zero would kill a healthy run
+    /// under `set -e`.
+    ///
+    /// Android only — a simulator's reports land in this machine's own
+    /// folder, which is not divided by device, and a phone's stay on the
+    /// phone.
+    Crashes {
+        /// Which device, by serial or registry alias.
+        device: String,
+        /// Only reports naming this process.
+        #[arg(long)]
+        app: Option<String>,
+        /// Print JSON instead of prose.
+        #[arg(long)]
+        json: bool,
+    },
     /// Open a URL on the simulator.
     Openurl {
         /// Which device, by UDID or registry alias.
@@ -1773,6 +1854,28 @@ enum SimAction {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+}
+
+/// `on` / `off` as a bool. Anything else is rejected at parse time,
+/// naming both spellings — a value nobody recognises must not become a
+/// default, which is how `stay-awake maybe` would quietly turn it off.
+fn parse_on_off(s: &str) -> Result<bool, String> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "on" => Ok(true),
+        "off" => Ok(false),
+        other => Err(format!("expected `on` or `off`, got `{other}`")),
+    }
+}
+
+/// One of `grant` / `revoke` / `reset`, kept as the string the action
+/// enum parses downstream.
+fn parse_permission_action(s: &str) -> Result<String, String> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        a @ ("grant" | "revoke" | "reset") => Ok(a.to_string()),
+        other => Err(format!(
+            "expected `grant`, `revoke` or `reset`, got `{other}`"
+        )),
+    }
 }
 
 /// Parse `KEY=VAL` clap value. Empty KEY or missing `=` is rejected.
@@ -1979,6 +2082,11 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         | SimAction::Install { device, .. }
         | SimAction::Uninstall { device, .. }
         | SimAction::Reverse { device, .. }
+        | SimAction::Wake { device }
+        | SimAction::StayAwake { device, .. }
+        | SimAction::Permission { device, .. }
+        | SimAction::Frontmost { device, .. }
+        | SimAction::Crashes { device, .. }
         | SimAction::Openurl { device, .. }
         | SimAction::Appearance { device, .. }
         | SimAction::AllowDestructive { device }
@@ -2055,6 +2163,18 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
         // direction to open.
         SimAction::Reverse { .. } => ANDROID,
 
+        // Arranging a handset so a run can reach it, and asking it what
+        // it is doing. adb has a verb for each; neither Apple tool does,
+        // and the platform table carries the sentence that says so.
+        SimAction::Wake { .. }
+        | SimAction::StayAwake { .. }
+        | SimAction::Frontmost { .. }
+        | SimAction::Crashes { .. } => ANDROID,
+
+        // The one exception in this group: a simulator answers it too,
+        // through `simctl privacy`. Only a physical iPhone refuses.
+        SimAction::Permission { .. } => &[Simulator, Emulator, PhysicalAndroid],
+
         // simctl and nothing else. An emulator's counterparts exist
         // (`emulator -avd`, `adb shell am start`, `adb shell settings`)
         // but none of them is wired here, and pretending otherwise is
@@ -2085,6 +2205,14 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
 fn table_action_of(action: &SimAction) -> Option<&'static str> {
     match action {
         SimAction::Reverse { .. } => Some("reverse_port"),
+        // Each of these refuses on at least one Apple kind for a reason
+        // the table already words. The generic sentence below says the
+        // command runs through simctl, and for all five that is false.
+        SimAction::Wake { .. } => Some("wake"),
+        SimAction::StayAwake { .. } => Some("set_stay_awake"),
+        SimAction::Permission { .. } => Some("set_permission"),
+        SimAction::Frontmost { .. } => Some("frontmost_app"),
+        SimAction::Crashes { .. } => Some("crash_reports"),
         SimAction::List { .. }
         | SimAction::Register { .. }
         | SimAction::Resolve { .. }
@@ -2809,6 +2937,141 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                              (stays open until `smix sim reverse {device} {port} --remove`, \
                              or until the device goes away)"
                         );
+                    }
+                }
+                SimAction::Wake { device } => {
+                    let serial = resolve_android_serial(&device)?;
+                    let control = smix_sdk::android_device::AndroidDeviceControl::new();
+                    with_device_lease(&control, &serial, |leased| async move {
+                        leased.wake().await?;
+                        Ok(((), leased))
+                    })
+                    .await?;
+                    println!(
+                        "wake: {serial} screen is on \
+                         (a passcode lock is untouched — this lights the screen, it does not unlock)"
+                    );
+                }
+                SimAction::StayAwake { device, state } => {
+                    let serial = resolve_android_serial(&device)?;
+                    let control = smix_sdk::android_device::AndroidDeviceControl::new();
+                    with_device_lease(&control, &serial, |leased| async move {
+                        leased.set_stay_awake(state).await?;
+                        Ok(((), leased))
+                    })
+                    .await?;
+                    let worded = if state { "on" } else { "off" };
+                    println!(
+                        "stay-awake: {serial} {worded} \
+                         (a device setting — it outlives this run until set back)"
+                    );
+                }
+                SimAction::Permission {
+                    device,
+                    bundle_id,
+                    permission,
+                    action,
+                } => {
+                    use smix_sdk::device_control::{DeviceControl, Permission};
+                    let parsed = Permission::from_name(&permission).map_err(CliError::Other)?;
+                    let what = match action.as_str() {
+                        "grant" => smix_sdk::PermissionAction::Grant,
+                        "revoke" => smix_sdk::PermissionAction::Revoke,
+                        // The value parser admits only these three.
+                        _ => smix_sdk::PermissionAction::Reset,
+                    };
+                    let kind = device_kind_of(&device);
+                    if kind == smix_simctl::registry::DeviceKind::Simulator {
+                        let udid = resolve_device(&device)?;
+                        let control = smix_sdk::ios_device::IosDeviceControl::new();
+                        control
+                            .set_permission(&udid, &bundle_id, parsed, what)
+                            .await
+                            .map_err(|e| CliError::Other(e.to_string()))?;
+                        println!("permission: {udid} {bundle_id} {} {action}", parsed.name());
+                    } else {
+                        let serial = resolve_android_serial(&device)?;
+                        let control = smix_sdk::android_device::AndroidDeviceControl::new();
+                        control
+                            .set_permission(&serial, &bundle_id, parsed, what)
+                            .await
+                            .map_err(|e| CliError::Other(e.to_string()))?;
+                        println!("permission: {serial} {bundle_id} {} {action}", parsed.name());
+                    }
+                }
+                SimAction::Frontmost { device, json } => {
+                    use smix_sdk::device_control::DeviceControl;
+                    let serial = resolve_android_serial(&device)?;
+                    let control = smix_sdk::android_device::AndroidDeviceControl::new();
+                    let front = control
+                        .frontmost_app(&serial)
+                        .await
+                        .map_err(|e| CliError::Other(e.to_string()))?;
+                    match (front, json) {
+                        (Some(f), true) => println!(
+                            "{}",
+                            serde_json::json!({ "package": f.package, "activity": f.activity })
+                        ),
+                        (Some(f), false) => println!("frontmost: {} {}", f.package, f.activity),
+                        // Nothing resumed is an answer — a lock screen,
+                        // or a device still coming up — so it is said
+                        // plainly rather than left to an empty line.
+                        (None, true) => println!("null"),
+                        (None, false) => {
+                            println!("frontmost: nothing is resumed on {serial}");
+                        }
+                    }
+                }
+                SimAction::Crashes { device, app, json } => {
+                    use smix_sdk::device_control::DeviceControl;
+                    let serial = resolve_android_serial(&device)?;
+                    let control = smix_sdk::android_device::AndroidDeviceControl::new();
+                    let all = control
+                        .crash_reports(&serial)
+                        .await
+                        .map_err(|e| CliError::Other(e.to_string()))?;
+                    let shown: Vec<_> = match &app {
+                        Some(pkg) => all.iter().filter(|r| r.process.contains(pkg)).collect(),
+                        None => all.iter().collect(),
+                    };
+                    if json {
+                        let rows: Vec<_> = shown
+                            .iter()
+                            .map(|r| {
+                                serde_json::json!({
+                                    "when": r.when,
+                                    "process": r.process,
+                                    "summary": r.summary,
+                                    "lines": r.lines,
+                                })
+                            })
+                            .collect();
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&rows)
+                                .map_err(|e| CliError::Other(e.to_string()))?
+                        );
+                    } else {
+                        for report in &shown {
+                            println!("{} {} — {}", report.when, report.process, report.summary);
+                            for line in &report.lines {
+                                println!("  {line}");
+                            }
+                        }
+                        // How many were filtered out is the evidence
+                        // that reads apart from an empty buffer: "none
+                        // of them was yours" and "the device recorded
+                        // none" are different answers.
+                        match &app {
+                            Some(pkg) => println!(
+                                "crashes: {} of {} report(s) on {serial} name {pkg}",
+                                shown.len(),
+                                all.len()
+                            ),
+                            None => {
+                                println!("crashes: {} report(s) on {serial}", all.len());
+                            }
+                        }
                     }
                 }
                 SimAction::Openurl { device, url } => {
@@ -4621,6 +4884,17 @@ fn is_destructive(action: &SimAction) -> bool {
         | SimAction::Openurl { .. }
         // A route to this machine takes nothing off the device.
         | SimAction::Reverse { .. }
+        // Arranging the screen and reading what is on it. The two
+        // writers change a setting the same verb changes back; the two
+        // readers change nothing at all.
+        | SimAction::Wake { .. }
+        | SimAction::StayAwake { .. }
+        | SimAction::Frontmost { .. }
+        | SimAction::Crashes { .. }
+        // A permission grant is the app's, and revoking is the same
+        // verb with the other argument. `privacy_reset_all` is the
+        // destructive one, and it is not this.
+        | SimAction::Permission { .. }
         | SimAction::Appearance { .. }
         | SimAction::Locale { .. } => false,
     }
@@ -6517,6 +6791,154 @@ mod tests {
         }
     }
 
+    /// The five verbs that arrange or read a handset, and the kinds of
+    /// device each one reaches.
+    ///
+    /// Shape only, for the same reason as the test above: this reads
+    /// nothing but its argument.
+    #[test]
+    fn arranging_verbs_reach_the_kinds_that_have_a_path() {
+        use smix_simctl::registry::DeviceKind::{
+            Emulator, PhysicalAndroid, PhysicalIos, Simulator,
+        };
+
+        let android_only: Vec<(&str, Option<&'static [_]>)> = vec![
+            ("wake", sim_verb_supports(&SimAction::Wake { device: String::new() })),
+            (
+                "stay-awake",
+                sim_verb_supports(&SimAction::StayAwake {
+                    device: String::new(),
+                    state: true,
+                }),
+            ),
+            (
+                "frontmost",
+                sim_verb_supports(&SimAction::Frontmost {
+                    device: String::new(),
+                    json: false,
+                }),
+            ),
+            (
+                "crashes",
+                sim_verb_supports(&SimAction::Crashes {
+                    device: String::new(),
+                    app: None,
+                    json: false,
+                }),
+            ),
+        ];
+        for (name, kinds) in android_only {
+            let kinds = kinds.unwrap_or_else(|| panic!("{name} takes a device"));
+            assert!(kinds.contains(&Emulator), "{name}: {kinds:?}");
+            assert!(kinds.contains(&PhysicalAndroid), "{name}: {kinds:?}");
+            // Neither simctl nor devicectl has a verb for any of these,
+            // and claiming one would attempt a capability that is not
+            // there instead of saying so (§9 #1 ③).
+            assert!(!kinds.contains(&Simulator), "{name} claims a simulator: {kinds:?}");
+            assert!(
+                !kinds.contains(&PhysicalIos),
+                "{name} claims a physical iPhone: {kinds:?}"
+            );
+        }
+
+        // The odd one out: a simulator answers this through
+        // `simctl privacy`, and only a physical iPhone refuses.
+        let permission = sim_verb_supports(&SimAction::Permission {
+            device: String::new(),
+            bundle_id: String::new(),
+            permission: String::new(),
+            action: String::new(),
+        })
+        .expect("permission takes a device");
+        for kind in [Simulator, Emulator, PhysicalAndroid] {
+            assert!(permission.contains(&kind), "permission dropped {kind:?}");
+        }
+        assert!(
+            !permission.contains(&PhysicalIos),
+            "a device's TCC grants are its owner's: {permission:?}"
+        );
+    }
+
+    /// Each of the five points at the row of the platform table that
+    /// carries its refusal.
+    ///
+    /// Without this they fall to the generic sentence, which says the
+    /// command runs through simctl — false for all five, and the kind of
+    /// true-looking wrong answer a caller acts on.
+    #[test]
+    fn arranging_verbs_take_their_refusal_from_the_table() {
+        use smix_sdk::device_control::availability;
+        use smix_simctl::registry::DeviceKind::Simulator;
+
+        let pairs = [
+            (
+                table_action_of(&SimAction::Wake { device: String::new() }),
+                "wake",
+            ),
+            (
+                table_action_of(&SimAction::StayAwake {
+                    device: String::new(),
+                    state: false,
+                }),
+                "set_stay_awake",
+            ),
+            (
+                table_action_of(&SimAction::Permission {
+                    device: String::new(),
+                    bundle_id: String::new(),
+                    permission: String::new(),
+                    action: String::new(),
+                }),
+                "set_permission",
+            ),
+            (
+                table_action_of(&SimAction::Frontmost {
+                    device: String::new(),
+                    json: false,
+                }),
+                "frontmost_app",
+            ),
+            (
+                table_action_of(&SimAction::Crashes {
+                    device: String::new(),
+                    app: None,
+                    json: false,
+                }),
+                "crash_reports",
+            ),
+        ];
+        for (mapped, expected) in pairs {
+            assert_eq!(mapped, Some(expected), "verb does not name its table row");
+            // And the row is real: a name the table has never heard of
+            // would map cleanly here and produce nothing to print.
+            assert!(
+                availability(expected, Simulator).is_some(),
+                "{expected} is not a row in the platform table"
+            );
+        }
+    }
+
+    /// `on` and `off`, and nothing else. A value nobody recognises must
+    /// not fall through to a default — `stay-awake maybe` turning it off
+    /// is the shape this rejects.
+    #[test]
+    fn stay_awake_takes_on_or_off_and_says_so() {
+        assert_eq!(parse_on_off("on"), Ok(true));
+        assert_eq!(parse_on_off("OFF"), Ok(false));
+        let err = parse_on_off("maybe").expect_err("maybe is not a state");
+        assert!(err.contains("on"), "{err}");
+        assert!(err.contains("off"), "{err}");
+        assert!(err.contains("maybe"), "says what it could not read: {err}");
+    }
+
+    #[test]
+    fn a_permission_action_is_one_of_three() {
+        assert_eq!(parse_permission_action("grant"), Ok("grant".to_string()));
+        assert_eq!(parse_permission_action(" Revoke "), Ok("revoke".to_string()));
+        let err = parse_permission_action("allow").expect_err("allow is not one of them");
+        assert!(err.contains("grant") && err.contains("revoke") && err.contains("reset"), "{err}");
+    }
+
     #[test]
     fn adb_devices_output_parses_to_serial_state_and_model() {
         let out = "List of devices attached\n\
@@ -6945,6 +7367,24 @@ mod tests {
         }
         assert!(err.contains("they are"), "plural form expected in: {err}");
     }
+    /// The command tree is one clap can actually build.
+    ///
+    /// clap checks a long list of internal contradictions only when a
+    /// command is built, which happens on the first real invocation —
+    /// so a malformed argument is not a compile error and not a failing
+    /// unit test, it is a panic in front of whoever ran `smix` next. A
+    /// `bool` positional shipped exactly that way during 10.2: clap
+    /// gives `bool` the flag treatment, a positional flag takes no
+    /// value, and *every* subcommand panicked, not just the new one.
+    ///
+    /// `debug_assert()` is clap's own name for these checks. It costs a
+    /// millisecond and covers every argument anyone adds after this.
+    #[test]
+    fn the_command_tree_is_one_clap_can_build() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+
     /// `--animations` exists on `smix run` and is off by default.
     ///
     /// The default is the whole change: a run quietens the device

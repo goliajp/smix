@@ -6,6 +6,43 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **Five verbs for arranging and reading an Android device**, each one
+  taking the device explicitly and reading the result back from it.
+  Waking a screen, holding it awake, granting a runtime permission,
+  reading the frontmost activity and reading the crash buffer were all
+  reachable only through raw `adb`, and raw `adb` against a physical
+  serial is refused by the plugin's guard — correctly. Four of the five
+  had no smix entry at all.
+
+  ```bash
+  smix sim wake <DEVICE>                              # screen on (does NOT unlock)
+  smix sim stay-awake <DEVICE> on|off                 # keep it on while charging
+  smix sim permission <DEVICE> <BUNDLE> camera grant  # grant / revoke / reset
+  smix sim frontmost <DEVICE> [--json]                # which app is in front
+  smix sim crashes <DEVICE> [--app PKG] [--json]      # what the device recorded
+  ```
+
+  None of them reports the command it sent: `wake` polls `dumpsys power`
+  until the screen is on, `stay-awake` reads
+  `stay_on_while_plugged_in` back and fails if it disagrees with what was
+  asked, and `permission` surfaces the package manager's own refusal when
+  an app never requested the permission. `crashes` exits 0 whether or not
+  it finds anything — a read that found nothing is not a failure — and
+  with `--app` says how many of the reports named that process, so "none
+  of them was yours" reads differently from "the device recorded none".
+
+  `wake`, `stay-awake`, `frontmost` and `crashes` are Android-only and
+  refuse by name elsewhere: no `simctl` or `devicectl` verb exists for
+  any of them, a simulator's screen never sleeps, and a simulator's crash
+  reports land in a host folder that is not divided by device.
+  `permission` also works on a simulator through `simctl privacy`.
+
+- **`launchApp.permissions:` accepts `post-notifications`.** The yaml
+  name table was a second copy of the permission spellings and had
+  drifted from the enum it named; folding it into one list made the
+  Android-only `POST_NOTIFICATIONS` reachable from a flow for the first
+  time.
+
 - **`smix sim reverse` — let an Android device reach a service on this
   machine.** An app under test that talks to a stub server on the host
   had one address on an emulator (`10.0.2.2`) and none at all on a phone
