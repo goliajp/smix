@@ -119,6 +119,10 @@ run_android() {
   AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
   [ -n "$AND_SERIAL" ] || { log "no emulator registered as '$AND_ALIAS' — skipping Android half"; return 0; }
   [ -f "$AND_APK" ] || { log "no Android fixture apk at $AND_APK (scripts/dev/build-android-fixture.sh) — skipping Android half"; return 0; }
+  # And the one THESE sources build: the path existing says a build
+  # happened, not which sources it happened over (open-items O1).
+  python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
+    || fail "the fixture apk on disk is not the one this tree builds"
 
   step "Android: ensure $AND_ALIAS ($AND_SERIAL) up, install fixture, runner up"
   if ! adb devices 2>/dev/null | grep -q "^${AND_SERIAL}[[:space:]]*device"; then

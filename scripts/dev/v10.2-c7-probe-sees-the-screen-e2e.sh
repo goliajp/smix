@@ -51,6 +51,10 @@ trap cleanup EXIT
 command -v adb >/dev/null 2>&1 || fail "no adb on PATH — this judges an Android runner and cannot"
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build --release -p smix-cli)"
 [ -f "$APK" ] || fail "no fixture apk — run: bash scripts/dev/build-android-fixture.sh"
+# And the one THESE sources build: the path existing says a build
+# happened, not which sources it happened over (open-items O1).
+python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
+  || fail "the fixture apk on disk is not the one this tree builds"
 
 SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
 [ -n "$SERIAL" ] || fail "no device registered as $ALIAS"

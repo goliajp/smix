@@ -4,6 +4,17 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+
+### Fixed
+
+- The Android fixture's scrolling screen now works out where to put its
+  rows so that one is always cut by the bottom edge with its middle
+  below it. That state is what the scroll gates measure, and whether it
+  existed used to depend on the screen's height: on a 2340px screen it
+  was there by 41px, and about two screen heights in five had it
+  nowhere. Only the gates were affected — nothing a consumer runs reads
+  this fixture.
+
 ### Fixed
 
 - **`back` could report that a screen had gone back when nothing had.**

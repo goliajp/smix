@@ -29,5 +29,12 @@ fail() { printf 'build-android-fixture: %s\n' "$*" >&2; exit 1; }
 DECLARED="$(grep -m1 'applicationId' "$TREE/app/build.gradle.kts" | cut -d'"' -f2)"
 [ -n "$DECLARED" ] || fail "no applicationId in $TREE/app/build.gradle.kts"
 
+# What it was built from, beside it. `[ -f "$APK" ]` says a build
+# happened; it does not say over which sources, and the device gates
+# install whatever is at that path. C7 spent a day measuring a probe
+# that was not the one in this tree (open-items O1).
+python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --write >/dev/null \
+  || fail "the apk was built and its source stamp could not be written"
+
 printf '%s\n' "$APK"
 printf 'build-android-fixture: %s (applicationId %s)\n' "$APK" "$DECLARED" >&2

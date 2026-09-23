@@ -181,6 +181,10 @@ run_android() {
   AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
   [ -n "$AND_SERIAL" ] || { log "no emulator registered as '$AND_ALIAS' — skipping the Android leg"; return 0; }
   [ -f "$AND_APK" ] || { log "no fixture apk (bash scripts/dev/build-android-fixture.sh) — skipping the Android leg"; return 0; }
+  # And the one THESE sources build: the path existing says a build
+  # happened, not which sources it happened over (open-items O1).
+  python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
+    || fail "the fixture apk on disk is not the one this tree builds"
   port_free "$AND_PORT" || cannot_judge "port $AND_PORT already serves a runner — set SMIX_C5_ANDROID_PORT"
 
   step "Android: $AND_ALIAS ($AND_SERIAL)"

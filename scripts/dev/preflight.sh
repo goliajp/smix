@@ -367,6 +367,9 @@ bash scripts/dev/plugin-monitor.test.sh
 python3 scripts/dev/an-e2e-says-whether-it-judged.py
 python3 scripts/dev/an-e2e-says-whether-it-judged.test.py
 bash scripts/release/device-e2e-tier.sh --selftest
+# Whether the apk a device gate installs is the one this tree builds.
+# C7 spent a day measuring a probe that was not this one (open-items O1).
+python3 scripts/dev/fixture-apk-stamp.test.py
 # How the release verifier reads a registry that has not caught up. The
 # same lateness answered NOT YET on one registry and FAIL on another.
 bash scripts/release/verify-published.sh --selftest

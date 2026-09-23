@@ -49,6 +49,10 @@ SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[
 [ -n "$SERIAL" ] || cannot_judge "no emulator registered as '$ALIAS'"
 adb devices 2>/dev/null | grep -q "^$SERIAL[[:space:]]*device" || cannot_judge "device $SERIAL not attached"
 [ -f "$APK" ] || cannot_judge "no Android fixture apk (scripts/dev/build-android-fixture.sh)"
+# And the one THESE sources build: the path existing says a build
+# happened, not which sources it happened over (open-items O1).
+python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
+  || fail "the fixture apk on disk is not the one this tree builds"
 curl -s "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q smix-android-runner \
   || cannot_judge "no Android runner on $PORT"
 log "device $SERIAL, runner $PORT"

@@ -405,6 +405,14 @@ log "the two-paths gate can still go red"
 python3 "$ROOT/scripts/dev/two-paths-agree.test.py" > /tmp/smix-ship-twopaths.log 2>&1 \
   || fail "the two-paths gate no longer goes red (see /tmp/smix-ship-twopaths.log)"
 
+# Whether the fixture a device gate installs is the one this tree
+# builds. C7 spent a day measuring a probe that was not the one in this
+# checkout: the apk was there, the path check passed, and two verdicts
+# read as the probe being wrong about the screen (open-items O1).
+log "the fixture stamp can still go red"
+python3 "$ROOT/scripts/dev/fixture-apk-stamp.test.py" > /tmp/smix-ship-fixturestamp.log 2>&1 \
+  || fail "the fixture source stamp no longer goes red (see /tmp/smix-ship-fixturestamp.log)"
+
 log "the publish-dag gate can still go red"
 python3 "$ROOT/scripts/dev/publish-dag-is-complete.test.py" > /tmp/smix-ship-dagtest.log 2>&1 \
   || fail "the publish-dag gate no longer goes red on a broken list (see /tmp/smix-ship-dagtest.log)"
