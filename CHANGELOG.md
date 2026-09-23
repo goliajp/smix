@@ -497,6 +497,24 @@ to change.
   than what is on screen, so an off-screen row is in the tree with its
   real coordinates. See the stop rule above.
 
+### Known issues
+
+- **On Android, a tap on a system dialog's button can report `tapped`
+  and not press it.** Present in 10.1.0 as well; not introduced here,
+  and fixed in the next release. A selector tap is turned into a point
+  as a share of the accessibility tree's root, and back into pixels as a
+  share of the display. With gesture navigation and a system dialog in
+  front, the root is the union of the windows that could be read — not
+  the display — so the point lands below the dialog, dismisses it, and
+  the step still passes: an Android tap is never judged, and "could not
+  be judged" is counted as a pass. The dialog being gone reads as the
+  action having happened. Measured on an emulator: with three-button
+  navigation the root equals the display and the same tap lands; with
+  gesture navigation and a system uninstall dialog in front the root was
+  1080×1473 on a 2340-pixel-tall screen. Until the fix ships, assert the
+  result the dialog was meant to cause rather than the dialog's absence —
+  a dismissed dialog and a confirmed one are both gone.
+
 ## [10.1.0] — 2026-09-19
 
 ### Changed
