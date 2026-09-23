@@ -2,70 +2,59 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [11.0.0] — 2026-09-23
 
+Most flows need no change. Three things can make one behave differently:
+an unread key in `runFlow:` / `repeat:` / `when:` / `while:` / a selector
+map is now a parse error, `scrollUntilVisible` stops when the target is
+wholly visible rather than merely overlapping, and an Android step whose
+touch silently failed now fails where it happens. If you call the Rust
+crates, five signatures moved. [Migrating to smix 11.0](docs/migrating-to-11.md)
+is short, and `smix run --check <flow>` names anything in a flow that has
+to change.
 
-### Fixed
+### Breaking
 
-- An emulator alias now resolves to the device it names, not to the port
-  that device answered on when it was registered. `emulator-<port>` is a
-  slot: whoever boots first takes 5554, so a registry row holding only a
-  serial named whichever emulator was there today — on a shared machine,
-  possibly somebody else's. The AVD name has been recorded at
-  registration all along and `smix sim boot` already starts devices by
-  it; resolution now reads it too. An alias whose AVD moved slots is
-  followed (and says so); one whose AVD is not running is refused, naming
-  whoever holds the port it used to have; a row that records only a port
-  is refused with the command that repairs it. Physical Android serials
-  and iOS UDIDs are identities already and are unchanged.
+- **Breaking (Rust API): `LaunchAppOptions.permissions`,
+  `App::set_permission` and `App::set_permissions` take the
+  cross-platform `Permission`, not the iOS `SimctlPermission`.** The
+  whole path from the yaml key to the backend was typed as the iOS
+  enum, so `storage` — implemented and tested in the Android backend —
+  could not be named from a flow on either platform. `launchApp:
+  { permissions: { storage: allow } }` now reaches
+  `WRITE_EXTERNAL_STORAGE`. A name with no counterpart on the device in
+  front of you is a no-op there, as it always was for the others;
+  `Permission::from_simctl` is gone with its last caller.
 
-- The Android fixture's scrolling screen now works out where to put its
-  rows so that one is always cut by the bottom edge with its middle
-  below it. That state is what the scroll gates measure, and whether it
-  existed used to depend on the screen's height: on a 2340px screen it
-  was there by 41px, and about two screen heights in five had it
-  nowhere. Only the gates were affected — nothing a consumer runs reads
-  this fixture.
+- **Breaking (Rust API): `Step::Repeat` carries `times` / `while_` /
+  `while_expr` and `Step::RunScript` carries `when` / `env` / `opts`;
+  `RepeatMode` is gone.** The mode enum encoded the either-or this
+  release removes.
 
-### Fixed
+- **A key smix does not act on is a parse error in `runFlow:`, `repeat:`,
+  `when:`, `while:` and selector maps.** Before, such a key was dropped
+  without a word, and the most common case was a condition:
+  `when: { platform: Android }` read as no condition at all, so the block
+  ran on iOS too. A misspelt key (`platfrom:`), `when.optional` (which
+  maestro accepts and never applies) and a selector's unquoted `true:` or
+  numeric key now stop the flow at parse time, naming the key and the
+  keys that are read there. A `when:` with nothing to check (`{}`, or only
+  `label`) is refused as well.
 
-- **`back` could report that a screen had gone back when nothing had.**
-  The route decides by comparing what is on screen before the key with
-  what is on screen after it, and one look at the window list can come
-  back missing a window whose contents would not read that instant. A
-  window dropped from the reading and a window that had genuinely left
-  produced the same answer, so a back key the app swallowed could be
-  reported as `ok:true settledBy=screenChanged` — on a phone or emulator
-  under load, and not reproducibly. Every window in the list now stays
-  in the reading, with whatever did not read left empty, and the
-  comparison is made window by window: a part that did not read is never
-  evidence, either way. A whole budget in which nothing could be
-  compared now answers `couldNotSee` rather than claiming the screen
-  never changed.
+- **Rust API: the scroll surface moved.** `Driver::scroll` is gone,
+  replaced by `smix_driver::scroll_until(driver, selector, direction,
+  &ScrollUntil)`; `Driver` gains `confirm_on_screen`. `App::scroll` and
+  `AppLike::scroll` take a `&ScrollUntil`, and `Step::ScrollUntilVisible`
+  carries `until` and `opts`.
 
-- **A scroll stopped as soon as a sliver of the row showed, on any
-  Compose screen carrying the probe.** The rule that decides when a
-  scroll has arrived divides the part of the target inside the frame by
-  the part that could ever be inside it — and the probe had begun
-  reporting the rectangle already clipped to the frame, which makes that
-  division one over one. A row showing sixty pixels of its two hundred
-  and seventy-five read as wholly visible, the scroll stopped, and the
-  tap that followed landed on whatever was really there. This is the
-  defect a consumer reported as `CentroidOutOfFrame { ny: 1.02 }`, fixed
-  host-side and re-opened from the probe's end one version later. The
-  probe now reports two rectangles: `bounds`, what the node occupies,
-  and `visibleBounds`, how much of it shows. Nodes nobody placed are
-  still absent, and a node clipped away entirely still says
-  `visible:false`.
-
-### Removed
-
-- **`POST /scroll` on the iOS runner.** Scrolling to an element is one
-  loop on the host and has been since the three loops were unified; the
-  runner-side loop behind this route was a second implementation with
-  its own idea of "visible", and nothing had called it. A route that
-  exists and that nobody walks reads, to anyone writing a client, like a
-  path. `RunnerScrollSelector` and `ScrollResponse` go with it.
+- **Rust API: `Step::RunFlowConditional`, `Step::RunFlowInline` and
+  `Step::Repeat` changed shape.** The two runFlow variants carry
+  `when: Option<FlowCondition>`, `env` and `opts: BlockOptions` in place of
+  `when_visible` / `when_not_visible`; `Repeat` carries `opts`. `AppLike`
+  has a new required method, `platform()`. `RepeatMode` went through
+  `WhileCondition(Box<FlowCondition>)` during this line and is gone in
+  the released shape — see the `Step::Repeat` entry above for what
+  replaced it.
 
 ### Added
 
@@ -91,83 +80,6 @@ All notable changes to the `smix` workspace are documented here. The format foll
   holds fails saying exactly that; `when:` decides whether it is
   reached. `env:` and `label` / `optional` parse and travel with the
   step rather than being dropped at the parser.
-
-### Changed
-
-- **Breaking (Rust API): `LaunchAppOptions.permissions`,
-  `App::set_permission` and `App::set_permissions` take the
-  cross-platform `Permission`, not the iOS `SimctlPermission`.** The
-  whole path from the yaml key to the backend was typed as the iOS
-  enum, so `storage` — implemented and tested in the Android backend —
-  could not be named from a flow on either platform. `launchApp:
-  { permissions: { storage: allow } }` now reaches
-  `WRITE_EXTERNAL_STORAGE`. A name with no counterpart on the device in
-  front of you is a no-op there, as it always was for the others;
-  `Permission::from_simctl` is gone with its last caller.
-
-- **Breaking (Rust API): `Step::Repeat` carries `times` / `while_` /
-  `while_expr` and `Step::RunScript` carries `when` / `env` / `opts`;
-  `RepeatMode` is gone.** The mode enum encoded the either-or this
-  release removes.
-
-- **`smix tree` takes `--reader auto|probe|a11y`.** `auto` is the
-  default and is what a flow does. Naming one asks that one and fails if
-  it cannot answer, rather than quietly handing back the other — a tool
-  comparing the two readers that is silently given the same tree twice
-  reports perfect agreement.
-
-### Fixed
-
-- **`smix tree`, `smix find` and every other CLI verb read the tree the
-  flow reads.** The probe was asked only when the caller named an app,
-  and no CLI verb does, so a flow read the app's semantics tree while
-  `smix tree` beside it read the accessibility projection — of the same
-  screen, at the same moment, with neither saying the other existed. Two
-  gates in this release had to bypass the CLI to see what the flow saw.
-  The runner now answers about the window holding the focus when nobody
-  named an app; a request that names one is unchanged, so flows behave
-  exactly as before.
-
-- **`launchApp: { clearState: true }` works on Xcode 27.** It cleared
-  the sandbox by starting `/bin/rm` inside the simulator, and the iOS 27
-  and 26.5 runtime roots carry `df` and `launchctl` and no `rm` — so it
-  exited 111 with `Invalid or missing Program` and took the whole
-  `launchApp` with it. The container is a directory on the host and
-  always was; the three sandbox directories are removed directly, with
-  no process started on the device.
-
-- **`smix sim launch`, `terminate` and `openurl` carry out on Android
-  and on a registered iPhone what their backends had implemented all
-  along.** The CLI kept its own list of which devices each verb reached,
-  beside the platform table that is reconciled against the
-  implementations; by 10.2 the two disagreed in five places, and every
-  one of them was the CLI refusing something a backend does.
-  `AndroidDeviceControl` had been running all three through `am` since
-  Android support landed, `DevicectlClient::install` was wired in 10.2,
-  and `keychain-reset` claimed a physical iPhone the table refuses. The
-  CLI list is gone: a verb with a row in the platform table now takes
-  its answer from that row, so the two cannot drift again. `install`
-  therefore reaches a registered iPhone, `keychain-reset` no longer
-  claims one, and `uninstall` on one goes to `devicectl` rather than to
-  `simctl`, which lists no phones.
-
-- **A refusal no longer claims a tool it knows nothing about, or gives
-  advice about another verb.** `smix sim launch <android-device>` used
-  to answer "this command runs through simctl … Android lifecycle goes
-  through adb — `smix runner up …`" — false in its first half, about a
-  different verb in its second, and a consumer read the pair as a report
-  that the install they had just run had taken their runner down. A verb
-  with no row in the platform table now says which devices it does work
-  on and nothing more; one with a row answers in the table's own words.
-
-- **`smix sim install` says when it stopped the app it replaced.**
-  Reinstalling ends the running copy — `adb install -r` and `simctl
-  install` both — and the runner is untouched by it. Only the app dies,
-  so the next step reads the launcher and the runner looks guilty. The
-  line is printed from a before-and-after reading of what is in front,
-  so it appears when it happened and not otherwise.
-
-### Added
 
 - **`GET /screenshot` on the Android runner**, the wire contract iOS has
   served all along: raw PNG bytes, `503` when the capture produced
@@ -274,6 +186,12 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Changed
 
+- **`smix tree` takes `--reader auto|probe|a11y`.** `auto` is the
+  default and is what a flow does. Naming one asks that one and fails if
+  it cannot answer, rather than quietly handing back the other — a tool
+  comparing the two readers that is silently given the same tree twice
+  reports perfect agreement.
+
 - **A probe node's rectangle is the part of it on screen.** It was
   `positionOnScreen + size`: where the layout put the node, whether or
   not any of it is showing. A consumer measured a `LazyColumn` row
@@ -323,7 +241,6 @@ All notable changes to the `smix` workspace are documented here. The format foll
   does arrive, and every orientation is read back from
   `displayRotation` before the route answers.
 
-
 - **A physical iPhone can be photographed without a runner.** Xcode 27's
   `devicectl` has `device capture screenshot`, and smix drives it:
   `smix sim screenshot <phone> out.png` asks the phone what it offers and,
@@ -370,9 +287,9 @@ All notable changes to the `smix` workspace are documented here. The format foll
   does when told nothing. `travel` returns at once (0.4 s on the phone)
   and the device keeps moving. `devicectl` cannot read a simulated
   location back, so its own account of what it set is held against what
-  was sent, and a disagreement is an error. **The location stays on the
-  phone until `xcrun devicectl device simulate location clear --device
-  <UDID>`; no flow verb clears it.** Driven on an iPhone on iOS 26.6.2.
+  was sent, and a disagreement is an error. **A simulated location
+  outlives the flow that set it and the cable**; `clearLocation` (below)
+  puts the phone back. Driven on an iPhone on iOS 26.6.2.
 
 - **`when:` reads every condition maestro defines.** `platform`
   (`Android` / `iOS` / `Web`, any case) and `true` (a template, false when
@@ -404,8 +321,6 @@ All notable changes to the `smix` workspace are documented here. The format foll
   chains.** Both refused them because the loop behind them read only the
   accessibility tree. It does not any more — the refusals went with it.
 
-### Changed
-
 - **An Android act route's answer now reaches the host.**
   `/tap-at-norm-coord`, `/swipe-at-norm-coord` and `/swipe-once`
   computed whether their events were injected and wrote it into a
@@ -420,7 +335,6 @@ All notable changes to the `smix` workspace are documented here. The format foll
   field is empty — with `held`, the number of characters it found —
   rather than which method it attempted. **A flow that was passing on
   an injection that silently failed will now fail where it happens.**
-
 
 - **`visible` and `notVisible` in one `when:` combine instead of being
   refused.** Both must hold, as in maestro.
@@ -469,38 +383,119 @@ All notable changes to the `smix` workspace are documented here. The format foll
   A swipe-count limit (30) is gone: `timeout` was always the other limit,
   and two limits are two stopping rules.
 
+### Removed
+
+- **`POST /scroll` on the iOS runner.** Scrolling to an element is one
+  loop on the host and has been since the three loops were unified; the
+  runner-side loop behind this route was a second implementation with
+  its own idea of "visible", and nothing had called it. A route that
+  exists and that nobody walks reads, to anyone writing a client, like a
+  path. `RunnerScrollSelector` and `ScrollResponse` go with it.
+
 ### Fixed
+
+- An emulator alias now resolves to the device it names, not to the port
+  that device answered on when it was registered. `emulator-<port>` is a
+  slot: whoever boots first takes 5554, so a registry row holding only a
+  serial named whichever emulator was there today — on a shared machine,
+  possibly somebody else's. The AVD name has been recorded at
+  registration all along and `smix sim boot` already starts devices by
+  it; resolution now reads it too. An alias whose AVD moved slots is
+  followed (and says so); one whose AVD is not running is refused, naming
+  whoever holds the port it used to have; a row that records only a port
+  is refused with the command that repairs it. Physical Android serials
+  and iOS UDIDs are identities already and are unchanged.
+
+- The Android fixture's scrolling screen now works out where to put its
+  rows so that one is always cut by the bottom edge with its middle
+  below it. That state is what the scroll gates measure, and whether it
+  existed used to depend on the screen's height: on a 2340px screen it
+  was there by 41px, and about two screen heights in five had it
+  nowhere. Only the gates were affected — nothing a consumer runs reads
+  this fixture.
+
+- **`back` could report that a screen had gone back when nothing had.**
+  The route decides by comparing what is on screen before the key with
+  what is on screen after it, and one look at the window list can come
+  back missing a window whose contents would not read that instant. A
+  window dropped from the reading and a window that had genuinely left
+  produced the same answer, so a back key the app swallowed could be
+  reported as `ok:true settledBy=screenChanged` — on a phone or emulator
+  under load, and not reproducibly. Every window in the list now stays
+  in the reading, with whatever did not read left empty, and the
+  comparison is made window by window: a part that did not read is never
+  evidence, either way. A whole budget in which nothing could be
+  compared now answers `couldNotSee` rather than claiming the screen
+  never changed.
+
+- **A scroll stopped as soon as a sliver of the row showed, on any
+  Compose screen carrying the probe.** The rule that decides when a
+  scroll has arrived divides the part of the target inside the frame by
+  the part that could ever be inside it — and the probe had begun
+  reporting the rectangle already clipped to the frame, which makes that
+  division one over one. A row showing sixty pixels of its two hundred
+  and seventy-five read as wholly visible, the scroll stopped, and the
+  tap that followed landed on whatever was really there. This is the
+  defect a consumer reported as `CentroidOutOfFrame { ny: 1.02 }`, fixed
+  host-side and re-opened from the probe's end one version later. The
+  probe now reports two rectangles: `bounds`, what the node occupies,
+  and `visibleBounds`, how much of it shows. Nodes nobody placed are
+  still absent, and a node clipped away entirely still says
+  `visible:false`.
+
+- **`smix tree`, `smix find` and every other CLI verb read the tree the
+  flow reads.** The probe was asked only when the caller named an app,
+  and no CLI verb does, so a flow read the app's semantics tree while
+  `smix tree` beside it read the accessibility projection — of the same
+  screen, at the same moment, with neither saying the other existed. Two
+  gates in this release had to bypass the CLI to see what the flow saw.
+  The runner now answers about the window holding the focus when nobody
+  named an app; a request that names one is unchanged, so flows behave
+  exactly as before.
+
+- **`launchApp: { clearState: true }` works on Xcode 27.** It cleared
+  the sandbox by starting `/bin/rm` inside the simulator, and the iOS 27
+  and 26.5 runtime roots carry `df` and `launchctl` and no `rm` — so it
+  exited 111 with `Invalid or missing Program` and took the whole
+  `launchApp` with it. The container is a directory on the host and
+  always was; the three sandbox directories are removed directly, with
+  no process started on the device.
+
+- **`smix sim launch`, `terminate` and `openurl` carry out on Android
+  and on a registered iPhone what their backends had implemented all
+  along.** The CLI kept its own list of which devices each verb reached,
+  beside the platform table that is reconciled against the
+  implementations; by 10.2 the two disagreed in five places, and every
+  one of them was the CLI refusing something a backend does.
+  `AndroidDeviceControl` had been running all three through `am` since
+  Android support landed, `DevicectlClient::install` was wired in 10.2,
+  and `keychain-reset` claimed a physical iPhone the table refuses. The
+  CLI list is gone: a verb with a row in the platform table now takes
+  its answer from that row, so the two cannot drift again. `install`
+  therefore reaches a registered iPhone, `keychain-reset` no longer
+  claims one, and `uninstall` on one goes to `devicectl` rather than to
+  `simctl`, which lists no phones.
+
+- **A refusal no longer claims a tool it knows nothing about, or gives
+  advice about another verb.** `smix sim launch <android-device>` used
+  to answer "this command runs through simctl … Android lifecycle goes
+  through adb — `smix runner up …`" — false in its first half, about a
+  different verb in its second, and a consumer read the pair as a report
+  that the install they had just run had taken their runner down. A verb
+  with no row in the platform table now says which devices it does work
+  on and nothing more; one with a row answers in the table's own words.
+
+- **`smix sim install` says when it stopped the app it replaced.**
+  Reinstalling ends the running copy — `adb install -r` and `simctl
+  install` both — and the runner is untouched by it. Only the app dies,
+  so the next step reads the launcher and the runner looks guilty. The
+  line is printed from a before-and-after reading of what is in front,
+  so it appears when it happened and not otherwise.
 
 - **`scrollUntilVisible` on Android stopped without swiping at all when
   the app carried the semantics probe.** The probe reports layout rather
   than what is on screen, so an off-screen row is in the tree with its
   real coordinates. See the stop rule above.
-
-### Breaking
-
-- **A key smix does not act on is a parse error in `runFlow:`, `repeat:`,
-  `when:`, `while:` and selector maps.** Before, such a key was dropped
-  without a word, and the most common case was a condition:
-  `when: { platform: Android }` read as no condition at all, so the block
-  ran on iOS too. A misspelt key (`platfrom:`), `when.optional` (which
-  maestro accepts and never applies) and a selector's unquoted `true:` or
-  numeric key now stop the flow at parse time, naming the key and the
-  keys that are read there. A `when:` with nothing to check (`{}`, or only
-  `label`) is refused as well.
-
-- **Rust API: the scroll surface moved.** `Driver::scroll` is gone,
-  replaced by `smix_driver::scroll_until(driver, selector, direction,
-  &ScrollUntil)`; `Driver` gains `confirm_on_screen`. `App::scroll` and
-  `AppLike::scroll` take a `&ScrollUntil`, and `Step::ScrollUntilVisible`
-  carries `until` and `opts`.
-
-- **Rust API: `Step::RunFlowConditional`, `Step::RunFlowInline` and
-  `Step::Repeat` changed shape.** The two runFlow variants carry
-  `when: Option<FlowCondition>`, `env` and `opts: BlockOptions` in place of
-  `when_visible` / `when_not_visible`; `Repeat` carries `opts`; and
-  `RepeatMode::WhileVisible` / `WhileNotVisible` are replaced by
-  `RepeatMode::WhileCondition(Box<FlowCondition>)`. `AppLike` has a new
-  required method, `platform()`.
 
 ## [10.1.0] — 2026-09-19
 

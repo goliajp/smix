@@ -314,6 +314,34 @@ with tempfile.TemporaryDirectory() as tmp:
     expect_verdict("a cold plan with no checkpoints fails", code, out)
     expect("and says it is reading air", "reading air" in out, f"no reason in:\n{out}")
 
+# 15b. A checkpoint that carries a letter sorts after the bare number.
+#    `archive_key` matched `c(\d+)` and nothing else, so `v10.2-c13d-hot.md`
+#    fell to the catch-all and sorted as checkpoint 0 — behind `c1`. The
+#    gate then named `c13` as the newest with four later ones beside it,
+#    and the only way to make it green was to write that stale name into
+#    the note it was checking. A gate that drives someone to write a
+#    falsehood is the gate being wrong.
+_lettered = [
+    "v10.2-c1-hot.md",
+    "v10.2-c13-hot.md",
+    "v10.2-c13b-hot.md",
+    "v10.2-c13d-hot.md",
+    "v10.2-c2-hot.md",
+]
+_want = [
+    "v10.2-c1-hot.md",
+    "v10.2-c2-hot.md",
+    "v10.2-c13-hot.md",
+    "v10.2-c13b-hot.md",
+    "v10.2-c13d-hot.md",
+]
+_got = sorted(_lettered, key=scan.archive_key)
+expect(
+    "a lettered checkpoint sorts after the bare number it follows",
+    _got == _want,
+    f"got {_got}",
+)
+
 # 16. This repository. Last, and never the only one — see the header.
 #    On a bare checkout there is no `.claude/docs/` to read, and the case
 #    says which one it dropped rather than counting itself as coverage.
