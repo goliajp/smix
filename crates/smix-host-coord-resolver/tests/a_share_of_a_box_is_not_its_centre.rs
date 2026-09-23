@@ -21,6 +21,8 @@ fn node(id: &str, x: f64, y: f64, w: f64, h: f64, children: Vec<A11yNode>) -> A1
     A11yNode {
         visible_bounds: None,
         hittable: None,
+        window: None,
+        unreadable_windows: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,

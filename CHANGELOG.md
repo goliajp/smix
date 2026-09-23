@@ -44,8 +44,28 @@ All notable changes to the `smix` workspace are documented here. The format foll
   rather than an element — a raw coordinate, text found by OCR — still
   has nothing to be compared with and still passes with its reason
   printed.
+- **A failure says whose screen it happened on.** It used to print
+  "visible elements (top 10)", and on Android those ten were the status
+  bar or the navigation bar — each is a window of its own and the runner
+  lists them first — whether or not the app was on screen. A consumer
+  read that list as the screen and built a detector on it that called
+  every Android failure blind. Now the failure carries one line naming
+  the windows the screen held, whose they are and which holds the focus,
+  and how many could not be read; the list says what it was cut from
+  (`10 of 79`) and puts the focused app's elements first, the system's
+  last. In the JSON: `windows`, `visibleTotal` and `unreadableWindows`,
+  each omitted when there is nothing to say. iOS answers the same
+  sentence: its tree is the app you named, so `windows` holds that app.
 
 ### Breaking
+
+- **Rust API: `A11yNode` has two more fields, `window` and
+  `unreadable_windows`; `FailureInit` and `ExpectationFailure` have
+  `visible_total`, `windows` and `unreadable_windows`.** A struct literal
+  of any of them needs the new fields (`None` / empty); `FailureInit`
+  built with `..Default::default()` needs nothing. Build a failure's
+  screen with `FailureInit::with_screen(smix_screen::screen_facts(&tree,
+  10))`, or `with_screen_from(&earlier)` when restating another failure.
 
 - **Rust API: `tap_landed_within` takes a `ChainCoverage`, and
   `TapAtCoordResult` has `complete`.** Whether a chain lists every

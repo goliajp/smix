@@ -22,6 +22,8 @@ fn minimal_tree() -> A11yNode {
     A11yNode {
         visible_bounds: None,
         hittable: None,
+        window: None,
+        unreadable_windows: None,
         raw_type: "application".into(),
         element_type_raw: 1,
         role: None,
@@ -190,6 +192,50 @@ async fn a_named_app_is_the_app_the_probe_is_asked_about() {
     let tree = client.get_tree(None).await.expect("tree");
     assert_eq!(tree.source, smix_runner_client::TreeSource::Accessibility);
     server.verify().await;
+}
+
+/// An iOS tree is one app: the runner's root is the `XCUIApplication` for
+/// the bundle the client named. It carries no window information because
+/// there is only the one, and a failure then had no line saying whose
+/// screen it was. The host knows the bundle it asked for, and says so.
+#[tokio::test]
+async fn an_application_root_is_marked_as_the_app_the_client_named() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(minimal_tree()))
+        .mount(&server)
+        .await;
+    let client =
+        HttpRunnerClient::with_base(server.uri()).with_target_bundle_id("jp.golia.smix.fixture");
+    let tree = client.get_tree(None).await.expect("tree");
+    let w = tree
+        .root
+        .window
+        .expect("an application root says whose it is");
+    assert_eq!(w.package.as_deref(), Some("jp.golia.smix.fixture"));
+    assert_eq!(w.kind, smix_screen::WindowKind::Application);
+    assert!(w.focused);
+}
+
+/// Named nobody: still an application window, and the package is left
+/// out rather than guessed.
+#[tokio::test]
+async fn an_application_root_with_no_bundle_named_says_so() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(minimal_tree()))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let tree = client.get_tree(None).await.expect("tree");
+    let w = tree
+        .root
+        .window
+        .expect("an application root says whose it is");
+    assert_eq!(w.package, None);
+    assert_eq!(w.kind, smix_screen::WindowKind::Application);
 }
 
 #[tokio::test]

@@ -808,6 +808,28 @@ object TreeWire {
     fun roleForWindowType(windowType: Int): String? =
         if (windowType == 2) "keyboard" else null
 
+    /// Whose window a subtree is, as smix-screen's `WindowInfo` reads it.
+    ///
+    /// The status bar is a window of its own and comes first in
+    /// `UiAutomation.windows`, so without this a host reading the tree
+    /// could not tell the app's nodes from the system's — and a failure
+    /// that listed the first ten visible elements listed the clock. The
+    /// types are `AccessibilityWindowInfo.TYPE_*`: 1 application,
+    /// 2 input method, 3 system; the rest (accessibility overlay,
+    /// split-screen divider, magnification overlay) are `other`. A
+    /// package the platform did not report is left out, not guessed.
+    fun windowJson(windowType: Int, pkg: String?, focused: Boolean): JSONObject {
+        val kind = when (windowType) {
+            1 -> "application"
+            2 -> "inputMethod"
+            3 -> "system"
+            else -> "other"
+        }
+        val o = JSONObject().put("kind", kind).put("focused", focused)
+        if (pkg != null) o.put("package", pkg)
+        return o
+    }
+
     fun deriveRole(cls: String): String? {
         val tail = cls.substringAfterLast('.')
         return when {

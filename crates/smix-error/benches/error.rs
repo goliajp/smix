@@ -80,6 +80,13 @@ fn bench_to_prompt(c: &mut Criterion) {
         hint: Some("Try `app.wait_for(selector)` first".into()),
         screenshot: None,
         device_log: vec!["[2026-05-26 10:00:00] some log line".into()],
+        visible_total: Some(40),
+        windows: vec![smix_screen::WindowInfo {
+            package: Some("dev.smix.fixture".into()),
+            kind: smix_screen::WindowKind::Application,
+            focused: true,
+        }],
+        unreadable_windows: Some(1),
     });
     c.bench_function("to_prompt full failure", |b| {
         b.iter(|| black_box(&f).to_prompt())

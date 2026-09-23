@@ -23,7 +23,8 @@ use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
 use smix_input::{KeyName, SwipeDirection};
 use smix_screen::{
-    A11yNode, DEFAULT_VISIBLE_LIMIT, ScreenDescription, collect_visible_summaries, summarize_node,
+    A11yNode, DEFAULT_VISIBLE_LIMIT, ScreenDescription, collect_visible_summaries, screen_facts,
+    summarize_node,
 };
 use smix_selector::{Modifiers, Pattern, Selector, True, describe_selector, match_text_compiled};
 use smix_selector_resolver::{
@@ -480,13 +481,15 @@ impl IosDriver {
                         && let TouchVerdict::Refuse(why) =
                             smix_runner_client::touch_verdict(n.hittable)
                     {
-                        return Err(ExpectationFailure::new(FailureInit {
-                            code: Some(FailureCode::NotVisible),
-                            message: format!("{}: {why}", describe_selector(selector)),
-                            selector: Some(selector.clone()),
-                            visible_elements: collect_visible_summaries(&tree, 10),
-                            ..Default::default()
-                        }));
+                        return Err(ExpectationFailure::new(
+                            FailureInit {
+                                code: Some(FailureCode::NotVisible),
+                                message: format!("{}: {why}", describe_selector(selector)),
+                                selector: Some(selector.clone()),
+                                ..Default::default()
+                            }
+                            .with_screen(screen_facts(&tree, 10)),
+                        ));
                     }
                     let aimed = node.map(|n| HitElement {
                         identifier: n.identifier.clone().unwrap_or_default(),
@@ -497,25 +500,27 @@ impl IosDriver {
                 }
                 Err(HostResolveError::NotFound) => {
                     if start.elapsed() > timeout {
-                        let visible = collect_visible_summaries(&tree, 10);
+                        let screen = screen_facts(&tree, 10);
                         let target = base_text_or_id(selector);
                         let suggestions =
-                            smix_error::build_suggestions(target.as_deref(), &visible);
-                        return Err(ExpectationFailure::new(FailureInit {
-                            code: Some(FailureCode::ElementNotFound),
-                            message: format!(
-                                "element not found: {}",
-                                describe_selector(selector)
-                            ),
-                            selector: Some(selector.clone()),
-                            visible_elements: visible,
-                            suggestions,
-                            hint: Some(
-                                "matched 0 nodes in the current a11y tree; check selector or wait for the screen to settle"
-                                    .into(),
-                            ),
-                            ..Default::default()
-                        }));
+                            smix_error::build_suggestions(target.as_deref(), &screen.elements);
+                        return Err(ExpectationFailure::new(
+                            FailureInit {
+                                code: Some(FailureCode::ElementNotFound),
+                                message: format!(
+                                    "element not found: {}",
+                                    describe_selector(selector)
+                                ),
+                                selector: Some(selector.clone()),
+                                suggestions,
+                                hint: Some(
+                                    "matched 0 nodes in the current a11y tree; check selector or wait for the screen to settle"
+                                        .into(),
+                                ),
+                                ..Default::default()
+                            }
+                            .with_screen(screen),
+                        ));
                     }
                     sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
                     continue;
@@ -596,17 +601,19 @@ impl IosDriver {
     ) -> Result<(), ExpectationFailure> {
         let tree = self.tree_with_retry(include).await?;
         let (nx, ny) = resolve_to_norm_coord(&tree, selector).map_err(|_| {
-            let visible = collect_visible_summaries(&tree, 10);
+            let screen = screen_facts(&tree, 10);
             let target = base_text_or_id(selector);
-            let suggestions = smix_error::build_suggestions(target.as_deref(), &visible);
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::ElementNotFound),
-                message: format!("element not found: {}", describe_selector(selector)),
-                selector: Some(selector.clone()),
-                visible_elements: visible,
-                suggestions,
-                ..Default::default()
-            })
+            let suggestions = smix_error::build_suggestions(target.as_deref(), &screen.elements);
+            ExpectationFailure::new(
+                FailureInit {
+                    code: Some(FailureCode::ElementNotFound),
+                    message: format!("element not found: {}", describe_selector(selector)),
+                    selector: Some(selector.clone()),
+                    suggestions,
+                    ..Default::default()
+                }
+                .with_screen(screen),
+            )
         })?;
         self.runner
             .tap_at_norm_coord_burst(nx, ny, times, interval_ms, hold_ms)
@@ -1112,10 +1119,10 @@ impl IosDriver {
                         tree_hit_offscreen = true;
                     }
                     if start.elapsed() >= timeout {
-                        let visible = collect_visible_summaries(&tree, 10);
+                        let screen = screen_facts(&tree, 10);
                         let target = base_text_or_id(selector);
                         let suggestions =
-                            smix_error::build_suggestions(target.as_deref(), &visible);
+                            smix_error::build_suggestions(target.as_deref(), &screen.elements);
                         let hint = if tree_hit_offscreen {
                             Some(
                                 "the a11y tree matched this selector but the LIVE \
@@ -1129,19 +1136,21 @@ impl IosDriver {
                         } else {
                             None
                         };
-                        return Err(ExpectationFailure::new(FailureInit {
-                            code: Some(FailureCode::Timeout),
-                            message: format!(
-                                "waitFor({}) timed out after {:?}",
-                                describe_selector(selector),
-                                timeout
-                            ),
-                            selector: Some(selector.clone()),
-                            visible_elements: visible,
-                            suggestions,
-                            hint,
-                            ..Default::default()
-                        }));
+                        return Err(ExpectationFailure::new(
+                            FailureInit {
+                                code: Some(FailureCode::Timeout),
+                                message: format!(
+                                    "waitFor({}) timed out after {:?}",
+                                    describe_selector(selector),
+                                    timeout
+                                ),
+                                selector: Some(selector.clone()),
+                                suggestions,
+                                hint,
+                                ..Default::default()
+                            }
+                            .with_screen(screen),
+                        ));
                     }
                     last_transport_err = None;
                 }
@@ -2136,6 +2145,8 @@ mod describe_meta_tests {
         A11yNode {
             visible_bounds: None,
             hittable: None,
+            window: None,
+            unreadable_windows: None,
             raw_type: "application".into(),
             element_type_raw: 1,
             role: None,

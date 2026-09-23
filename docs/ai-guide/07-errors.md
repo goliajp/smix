@@ -14,6 +14,12 @@ smix errors come back as structured JSON:
   "hint": "runner XCUIQuery returned no match; check id spelling or wait for screen to settle",
   "step": "tapOn",
   "step_index": 3,
+  "windows": [
+    { "package": "com.example.app", "kind": "application", "focused": true },
+    { "package": "com.android.systemui", "kind": "system" },
+    { "package": "com.android.systemui", "kind": "system" }
+  ],
+  "visibleTotal": 57,
   "visibleElements": [
     { "id": "home-counter-label", "text": "0" },
     { "id": "home-increment-btn", "text": "+1" },
@@ -26,6 +32,26 @@ smix errors come back as structured JSON:
 ```
 
 Read **`code`** first to triage. Read **`hint`** + **`suggestions`** to know the fix.
+
+**`visibleElements` is a sample, not the screen.** It holds the first ten of
+`visibleTotal`, the focused app's window first, then any other app's, then the
+keyboard, then system chrome (status bar, navigation bar). To ask "is the app on
+screen at all" or "did the device stop serving it", read **`windows`** — every
+window the screen held, whose it is, and which holds the focus — and
+**`unreadableWindows`**, the number of windows the reader could not read. A
+screen whose app window is present and one whose app window could not be read
+are different failures, and only one of them is the app's. The rendered form
+says the same in one line:
+
+```
+  on screen: com.example.app (application, focused) · com.android.systemui (system) ×2
+  visible elements (10 of 57, the focused app's first):
+```
+
+On iOS the tree is the app you named, so `windows` holds that one app; the
+status bar belongs to SpringBoard and is not in it. All three fields are
+omitted when there is nothing to say, so an older reader sees the shape it
+always did.
 
 ## Error codes
 

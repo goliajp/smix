@@ -376,14 +376,16 @@ Spatial + index = picky:
 
 If a selector matches zero elements, the failure message includes:
 - The selector you used (full canonicalized form)
-- `visibleElements:` partial dump of what was on screen
+- `on screen:` the windows the screen held, whose they are, which holds the focus
+- `visible elements (N of M, …):` the first N of M elements a reader could name, the focused app's first
 - `suggestions:` text strings of nearby elements that *could* have been what you meant
 
 Read the suggestions block carefully — it's tuned to surface i18n drift and missing testid issues.
 
 ```
 ELEMENT_NOT_FOUND: tap_by_id: element not found — id="home-incremnt-btn"
-  visibleElements:
+  on screen: com.example.app (application, focused)
+  visible elements (3 of 3, the focused app's first):
     - id="home-counter-label" text="0"
     - id="home-increment-btn" text="+1"   ← typo in your selector!
     - id="home-reset-btn" text="Reset"

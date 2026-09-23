@@ -21,6 +21,8 @@ fn mk_leaf(label: &str) -> A11yNode {
     A11yNode {
         visible_bounds: None,
         hittable: None,
+        window: None,
+        unreadable_windows: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,
@@ -48,6 +50,8 @@ fn mk_app(children: Vec<A11yNode>) -> A11yNode {
     A11yNode {
         visible_bounds: None,
         hittable: None,
+        window: None,
+        unreadable_windows: None,
         raw_type: "application".into(),
         element_type_raw: 1,
         role: None,

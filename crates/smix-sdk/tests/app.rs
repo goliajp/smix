@@ -22,6 +22,8 @@ fn login_tree() -> A11yNode {
     A11yNode {
         visible_bounds: None,
         hittable: None,
+        window: None,
+        unreadable_windows: None,
         raw_type: "application".into(),
         element_type_raw: 1,
         role: None,
@@ -44,6 +46,8 @@ fn login_tree() -> A11yNode {
         children: vec![A11yNode {
             visible_bounds: None,
             hittable: None,
+            window: None,
+            unreadable_windows: None,
             raw_type: "button".into(),
             element_type_raw: 1,
             role: Some(Role::Button),

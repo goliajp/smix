@@ -39,6 +39,12 @@ SYSTEM_SUBJECT = re.compile(
 # whose subject IS the platform belongs here; one that merely needed a
 # text field does not.
 EXEMPT = {
+    "v11.1-c2-a-failure-says-whose-screen-e2e.sh":
+        "its a11y leg needs an app with no smix probe and the system's windows "
+        "above it, which the fixture (it carries the probe) cannot be; the step "
+        "is meant to fail and names no Settings id, so a Settings version cannot "
+        "move where anything lands — the judge reads only whose window each "
+        "listed element sits in",
     "v2.3-c15-addressability-e2e.sh":
         "its subject is the platform's refusal to address an unregistered device, "
         "not any app",

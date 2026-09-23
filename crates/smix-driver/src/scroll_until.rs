@@ -16,7 +16,7 @@ use smix_host_coord_resolver::{
     HostResolveError, NormBox, Reach, Verdict, norm_box, verdict, visible_share,
 };
 use smix_input::SwipeDirection;
-use smix_screen::{ElementSummary, collect_visible_summaries};
+use smix_screen::{ScreenFacts, screen_facts};
 use smix_selector::{Selector, describe_selector};
 use smix_selector_resolver::{ResolverContext, resolve_selector_compiled};
 use std::time::Duration;
@@ -112,7 +112,7 @@ pub(crate) struct Look {
     /// The target's box, when it is seen at all.
     pub seen: Option<NormBox>,
     /// What was on screen, for the failure a timeout produces.
-    pub visible: Vec<ElementSummary>,
+    pub visible: ScreenFacts,
 }
 
 #[async_trait]
@@ -185,7 +185,7 @@ struct DriverEyes<'a> {
 impl Eyes for DriverEyes<'_> {
     async fn look(&mut self) -> Result<Look, ExpectationFailure> {
         let tree = self.driver.tree(None).await?;
-        let visible = collect_visible_summaries(&tree, 10);
+        let visible = screen_facts(&tree, 10);
         if let Some(node) = resolve_selector_compiled(&tree, self.selector, &self.ctx)
             && self.driver.confirm_on_screen(&[node]).await
         {
@@ -257,7 +257,7 @@ fn not_reached(
     swipes: u32,
     last_share: Option<f64>,
     moving: bool,
-    visible: Vec<ElementSummary>,
+    visible: ScreenFacts,
 ) -> ExpectationFailure {
     let last = match (last_share, moving) {
         // In place on every look and never twice in the same place: the
@@ -272,21 +272,23 @@ fn not_reached(
         (None, _) => "the last look did not see it".to_string(),
     };
     let target = base_text_or_id(selector);
-    let suggestions = smix_error::build_suggestions(target.as_deref(), &visible);
-    ExpectationFailure::new(FailureInit {
-        code: Some(FailureCode::ElementNotFound),
-        message: format!(
-            "scroll({}, '{}'): not reached after {} swipes in {:.1} s; {last}",
-            describe_selector(selector),
-            direction,
-            swipes,
-            until.timeout.as_secs_f64(),
-        ),
-        selector: Some(selector.clone()),
-        visible_elements: visible,
-        suggestions,
-        ..Default::default()
-    })
+    let suggestions = smix_error::build_suggestions(target.as_deref(), &visible.elements);
+    ExpectationFailure::new(
+        FailureInit {
+            code: Some(FailureCode::ElementNotFound),
+            message: format!(
+                "scroll({}, '{}'): not reached after {} swipes in {:.1} s; {last}",
+                describe_selector(selector),
+                direction,
+                swipes,
+                until.timeout.as_secs_f64(),
+            ),
+            selector: Some(selector.clone()),
+            suggestions,
+            ..Default::default()
+        }
+        .with_screen(visible),
+    )
 }
 
 #[cfg(test)]
@@ -310,7 +312,7 @@ mod tests {
             };
             next.map(|seen| Look {
                 seen,
-                visible: Vec::new(),
+                visible: ScreenFacts::default(),
             })
         }
         async fn swipe(&mut self, _: SwipeDirection) -> Result<(), ExpectationFailure> {

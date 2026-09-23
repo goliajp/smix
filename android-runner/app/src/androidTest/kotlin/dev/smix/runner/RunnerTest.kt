@@ -2249,6 +2249,10 @@ object TreeBuilder {
                 // capability was in the driver and not in the tree, which
                 // is the one place every verb can reach it from.
                 TreeWire.roleForWindowType(window.type)?.let { obj.put("role", it) }
+                obj.put(
+                    "window",
+                    TreeWire.windowJson(window.type, node.packageName?.toString(), window.isFocused),
+                )
                 rootChildren.put(obj)
             } finally {
                 node.recycle()

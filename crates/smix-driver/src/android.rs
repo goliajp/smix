@@ -21,7 +21,7 @@ use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
 use smix_input::{KeyName, SwipeDirection};
 use smix_runner_client::{HttpRunnerClient, IncludeScope, OcrFrame, SystemPopup, TapMode};
-use smix_screen::{A11yNode, DEFAULT_VISIBLE_LIMIT, collect_visible_summaries};
+use smix_screen::{A11yNode, DEFAULT_VISIBLE_LIMIT, collect_visible_summaries, screen_facts};
 use smix_selector::{Selector, describe_selector};
 use smix_selector_resolver::{resolve_selector, resolve_selector_all};
 
@@ -475,20 +475,21 @@ impl Driver for AndroidDriver {
                 let candidates = collect_visible_summaries(&tree, DEFAULT_VISIBLE_LIMIT);
                 let target = crate::base_text_or_id(selector);
                 let suggestions = smix_error::build_suggestions(target.as_deref(), &candidates);
-                let visible = collect_visible_summaries(&tree, 10);
-                return Err(ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::ElementNotFound),
-                    message: format!(
-                        "AndroidDriver::wait_for timeout after {}ms: {}{}",
-                        timeout.as_millis(),
-                        describe_selector(selector),
-                        self.reader_caveat().await,
-                    ),
-                    selector: Some(selector.clone()),
-                    visible_elements: visible,
-                    suggestions,
-                    ..Default::default()
-                }));
+                return Err(ExpectationFailure::new(
+                    FailureInit {
+                        code: Some(FailureCode::ElementNotFound),
+                        message: format!(
+                            "AndroidDriver::wait_for timeout after {}ms: {}{}",
+                            timeout.as_millis(),
+                            describe_selector(selector),
+                            self.reader_caveat().await,
+                        ),
+                        selector: Some(selector.clone()),
+                        suggestions,
+                        ..Default::default()
+                    }
+                    .with_screen(screen_facts(&tree, 10)),
+                ));
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }

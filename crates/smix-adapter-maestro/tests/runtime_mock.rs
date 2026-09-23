@@ -741,6 +741,8 @@ impl AppLike for MockApp {
             smix_sdk::A11yNode {
                 visible_bounds: None,
                 hittable: None,
+                window: None,
+                unreadable_windows: None,
                 raw_type: if id.is_some() {
                     "textField".into()
                 } else {
