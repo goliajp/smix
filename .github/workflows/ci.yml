@@ -325,6 +325,11 @@ jobs:
         run: python3 scripts/dev/an-e2e-says-whether-it-judged.py
       - name: the judged-or-not scan can still go red
         run: python3 scripts/dev/an-e2e-says-whether-it-judged.test.py
+      # The apk a device gate installs, and whether it is the one these
+      # sources build. Device-free: it hashes the checkout. Local
+      # counterpart: preflight.sh.
+      - name: the fixture stamp can still go red
+        run: python3 scripts/dev/fixture-apk-stamp.test.py
       # What the tier makes of those exit codes. Device-free: the
       # reading, not a device. Local counterpart: preflight.sh.
       - name: the device e2e tier reads an exit code

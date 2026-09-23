@@ -144,6 +144,10 @@ run_android() {
   esac
   step "Android: $AND_ALIAS ($AND_SERIAL)"
   [ -f "$AND_APK" ] || fail "no fixture apk at $AND_APK (assembleDebug in test-fixtures/android-app)"
+  # And the one THESE sources build: the path existing says a build
+  # happened, not which sources it happened over (open-items O1).
+  python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
+    || fail "the fixture apk on disk is not the one this tree builds"
 
   if ! adb -s "$AND_SERIAL" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; then
     "$SMIX" sim boot "$AND_ALIAS" >/dev/null 2>&1 || fail "could not boot $AND_ALIAS"
