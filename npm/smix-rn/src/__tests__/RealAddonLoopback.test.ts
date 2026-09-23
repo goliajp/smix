@@ -34,7 +34,25 @@ async function startFakeWire(): Promise<Wire> {
           : req.url === '/session/open'
             ? '{"sessionId":"s-1"}'
             : '{"ok":true}'
-      res.writeHead(200, { 'content-type': 'application/json' })
+      // `connection: close`, so the addon opens a fresh socket per
+      // request rather than reusing this one.
+      //
+      // Measured on a 2-core Linux box (`taskset -c 0,1`), which is the
+      // shape a CI runner has: a second request on a REUSED socket never
+      // completes — not slowly, at all. Raised to a 60 s budget it sat
+      // there for the whole 60 s. Same code under `bun` directly, and on
+      // 16 cores, answers in milliseconds; at the previous tag the file
+      // passed three times over because a tree read was one request, and
+      // v11 made it two (the probe, then the tree).
+      //
+      // The weak side is this stand-in, not the wire: it is a node http
+      // server living in the same vitest worker thread that is waiting
+      // on the answer. The real runner is another process in another
+      // language, and keep-alive there is worth having — a flow makes
+      // hundreds of requests. So the stand-in stops pretending it can
+      // hold a connection, and whether the client should pool at all is
+      // recorded with its measurements rather than decided here.
+      res.writeHead(200, { 'content-type': 'application/json', connection: 'close' })
       res.end(reply)
     })
   })
