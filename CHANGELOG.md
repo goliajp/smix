@@ -7,6 +7,18 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- An emulator alias now resolves to the device it names, not to the port
+  that device answered on when it was registered. `emulator-<port>` is a
+  slot: whoever boots first takes 5554, so a registry row holding only a
+  serial named whichever emulator was there today — on a shared machine,
+  possibly somebody else's. The AVD name has been recorded at
+  registration all along and `smix sim boot` already starts devices by
+  it; resolution now reads it too. An alias whose AVD moved slots is
+  followed (and says so); one whose AVD is not running is refused, naming
+  whoever holds the port it used to have; a row that records only a port
+  is refused with the command that repairs it. Physical Android serials
+  and iOS UDIDs are identities already and are unchanged.
+
 - The Android fixture's scrolling screen now works out where to put its
   rows so that one is always cut by the bottom edge with its middle
   below it. That state is what the scroll gates measure, and whether it

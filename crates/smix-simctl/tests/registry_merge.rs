@@ -30,6 +30,7 @@ fn sim(udid: &str, kind: DeviceKind, opt_in: bool) -> RegisteredSim {
         udid: udid.into(),
         runtime: String::new(),
         device_type: String::new(),
+        avd_name: None,
         locale: None,
         runner_port: None,
     }

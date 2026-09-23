@@ -1951,6 +1951,96 @@ fn parse_appearance(s: &str) -> Result<Appearance, String> {
 /// phone, so for a while nothing bad came of it — but `devicectl` does,
 /// and it can uninstall. So a raw UDID now has to be one of ours: either
 /// registered here, or a simulator the platform itself lists.
+/// Whether a device reference is asking "where is my device" rather
+/// than naming a slot outright.
+///
+/// A caller who types `emulator-5556` has named the slot; answering
+/// their literal with a refusal because some row in some checkout also
+/// mentions that port would make `--device emulator-5556` unusable. The
+/// identity question belongs to the alias path, which is where P1 lives.
+fn alias_needs_identity_check(device_ref: &str) -> bool {
+    !registry::is_emulator_serial(device_ref) && !registry::is_udid(device_ref)
+}
+
+/// Turn an emulator alias into the serial that emulator answers on today.
+///
+/// `emulator-<port>` is a slot. The row records one, and on 2026-09-23
+/// the row for `sim-smix-android-01` recorded `emulator-5554` while that
+/// port was answering for a consumer's `qip-consumer-36` — so every
+/// alias-driven install, flow and `runner up` would have gone to their
+/// device. Registration has written the AVD name down since emulators
+/// became registrable, and `smix sim boot` starts the device by it;
+/// this is the other half, which was missing: reading it back.
+fn emulator_alias_address(
+    sim: &smix_simctl::registry::RegisteredSim,
+) -> smix_simctl::registry::EmulatorAddress {
+    let live = smix_adb::AdbClient::new().live_emulators();
+    registry::emulator_address(sim.avd_name(), &sim.udid, &live)
+}
+
+/// The same answer, as the thing a caller who wants to *drive* it needs.
+///
+/// `sim boot` reads the answer itself: "not running" is a refusal here
+/// and the whole job there, and folding the two together would have
+/// made the refusal recommend a command this very check refuses.
+fn address_emulator_alias(
+    device_ref: &str,
+    sim: &smix_simctl::registry::RegisteredSim,
+) -> Result<String, CliError> {
+    use smix_simctl::registry::EmulatorAddress;
+    match emulator_alias_address(sim) {
+        EmulatorAddress::At { serial } => Ok(serial),
+        EmulatorAddress::MovedTo { serial, recorded } => {
+            eprintln!(
+                "note: {device_ref} is running as {serial}, not the {recorded} it was \
+                 registered on — an emulator serial is a port, and this one took a \
+                 different one this time"
+            );
+            Ok(serial)
+        }
+        addr => Err(emulator_address_refusal(device_ref, sim, addr)),
+    }
+}
+
+/// What to say when an emulator alias cannot be turned into a device.
+///
+/// One wording, read by both the driving path and `sim boot`: they refuse
+/// for the same two reasons, and two copies of a sentence drift.
+fn emulator_address_refusal(
+    device_ref: &str,
+    sim: &smix_simctl::registry::RegisteredSim,
+    addr: smix_simctl::registry::EmulatorAddress,
+) -> CliError {
+    use smix_simctl::registry::EmulatorAddress;
+    CliError::Other(match addr {
+        EmulatorAddress::NotRunning {
+            avd,
+            slot_now: Some(other),
+        } => format!(
+            "{device_ref} names the AVD `{avd}`, which is not running. {} is running \
+             `{other}` — a different device that happens to hold the port this alias \
+             was registered on. Start yours with `smix sim boot {device_ref}`.",
+            sim.udid
+        ),
+        EmulatorAddress::NotRunning { avd, slot_now: None } => format!(
+            "{device_ref} names the AVD `{avd}`, which is not running. \
+             Start it with `smix sim boot {device_ref}`."
+        ),
+        EmulatorAddress::NoIdentityRecorded { serial } => format!(
+            "{device_ref} records the port {serial} and nothing else, and a port is \
+             whichever emulator booted into it first — it may be somebody else's \
+             today. Register it once while yours is running and the AVD name is \
+             kept: `smix sim register {device_ref} --udid {serial} --kind emulator`."
+        ),
+        // Both of these are answers, not refusals; the callers take them
+        // before ever asking for a sentence.
+        EmulatorAddress::At { serial } | EmulatorAddress::MovedTo { serial, .. } => format!(
+            "{device_ref} resolves to {serial}; this is not a refusal and nothing \
+             should have asked for one"
+        ),
+    })
+}
+
 fn resolve_device(device_ref: &str) -> Result<String, CliError> {
     if registry::is_udid(device_ref) {
         let udid = device_ref.to_ascii_uppercase();
@@ -1984,6 +2074,12 @@ fn resolve_device(device_ref: &str) -> Result<String, CliError> {
     let view = load_registry();
     let resolved = view.registry.resolve(device_ref)?;
     note_if_unmigrated(&view, device_ref);
+    if alias_needs_identity_check(device_ref)
+        && let Some(sim) = view.registry.lookup(device_ref)
+        && sim.kind == smix_simctl::registry::DeviceKind::Emulator
+    {
+        return address_emulator_alias(device_ref, sim);
+    }
     Ok(resolved)
 }
 
@@ -2015,9 +2111,18 @@ fn resolve_android_serial(device_ref: &str) -> Result<String, CliError> {
         None => smix_lease::Known::Unknown,
     };
     smix_lease::may_address(device_ref, known).map_err(|e| CliError::Other(e.to_string()))?;
-    // An alias resolves to the serial it was registered with; a serial
-    // given directly is already the answer.
-    Ok(registered.map_or_else(|| device_ref.to_string(), |s| s.udid))
+    // An alias resolves to the device it names — which is not the same
+    // as the serial it was registered with, because that serial is a
+    // port. A serial given directly is already the answer.
+    match &registered {
+        Some(sim)
+            if sim.kind == smix_simctl::registry::DeviceKind::Emulator
+                && alias_needs_identity_check(device_ref) =>
+        {
+            address_emulator_alias(device_ref, sim)
+        }
+        _ => Ok(registered.map_or_else(|| device_ref.to_string(), |s| s.udid)),
+    }
 }
 
 /// Which platform's tooling addresses this device.
@@ -2545,7 +2650,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         let avd = smix_adb::AdbClient::new()
                             .avd_name(&udid)
                             .await
-                            .unwrap_or_default();
+                            .ok()
+                            .filter(|a| !a.is_empty());
                         let path = registry_path()?;
                         let outcome = SimRegistry::register(
                             &path,
@@ -2554,7 +2660,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 device_name: name.unwrap_or_else(|| alias.clone()),
                                 udid: udid.clone(),
                                 runtime: String::new(),
-                                device_type: avd,
+                                device_type: String::new(),
+                                avd_name: avd,
                                 locale,
                                 runner_port,
                                 kind,
@@ -2590,6 +2697,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 udid: udid.clone(),
                                 runtime: String::new(),
                                 device_type: String::new(),
+                                avd_name: None,
                                 locale,
                                 runner_port,
                                 kind,
@@ -2643,6 +2751,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             udid: device.udid.to_ascii_uppercase(),
                             runtime: device.runtime_identifier.clone(),
                             device_type: device.device_type_identifier.clone(),
+                            avd_name: None,
                             locale,
                             runner_port,
                             // Not a guess: this record is built from what
@@ -2668,7 +2777,48 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     );
                 }
                 SimAction::Boot { device } => {
-                    let udid = resolve_device(&device)?;
+                    // Booting asks a different question than driving does:
+                    // "where should this start" rather than "where is it".
+                    // `resolve_device` refuses an emulator alias whose AVD
+                    // is not running, which is precisely the state this
+                    // command exists to leave — so the port to start on
+                    // comes from the row, and the identity check below
+                    // decides whether starting is the right move at all.
+                    let registered = lookup_registered(&device);
+                    let booting_emulator = registered
+                        .as_ref()
+                        .is_some_and(|s| s.kind == smix_simctl::registry::DeviceKind::Emulator)
+                        && alias_needs_identity_check(&device);
+                    let udid = if booting_emulator {
+                        let sim = registered.as_ref().expect("checked above");
+                        match emulator_alias_address(sim) {
+                            smix_simctl::registry::EmulatorAddress::At { serial }
+                            | smix_simctl::registry::EmulatorAddress::MovedTo {
+                                serial, ..
+                            } => serial,
+                            smix_simctl::registry::EmulatorAddress::NotRunning {
+                                avd,
+                                slot_now: Some(other),
+                            } => {
+                                return Err(CliError::Other(format!(
+                                    "{device} names the AVD `{avd}`, and the port it was \
+                                     registered on ({}) is running `{other}` — starting \
+                                     yours there would take a port somebody else is \
+                                     answering on. Free that port, or register {device} \
+                                     again while yours is running.",
+                                    sim.udid
+                                )));
+                            }
+                            smix_simctl::registry::EmulatorAddress::NotRunning { .. } => {
+                                sim.udid.clone()
+                            }
+                            addr @ smix_simctl::registry::EmulatorAddress::NoIdentityRecorded {
+                                ..
+                            } => return Err(emulator_address_refusal(&device, sim, addr)),
+                        }
+                    } else {
+                        resolve_device(&device)?
+                    };
                     // An emulator is started by name, not by serial: the
                     // serial is what answers once it is up. The AVD name was
                     // written down at registration, when the device was
@@ -2682,8 +2832,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         });
                         if !already {
                             let avd = lookup_registered(&device)
-                                .map(|s| s.device_type.clone())
-                                .filter(|a| !a.is_empty())
+                                .and_then(|s| s.avd_name().map(str::to_string))
                                 .ok_or_else(|| {
                                     CliError::Other(format!(
                                         "{udid} has no AVD name on record, so there is \
@@ -5742,6 +5891,7 @@ async fn cmd_init(
             device_name: d.name.clone(),
             runtime: d.runtime_identifier.clone(),
             device_type: d.device_type_identifier.clone(),
+            avd_name: None,
             runner_port: None,
             locale: None,
             // Same reason as `sim register`: this came from simctl, which
@@ -6847,6 +6997,7 @@ mod tests {
                 udid: "00008120-000000000000000E".into(),
                 runtime: String::new(),
                 device_type: String::new(),
+                avd_name: None,
                 locale: None,
                 runner_port: None,
             },
@@ -7415,6 +7566,20 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn a_literal_slot_is_not_asked_who_it_is() {
+        // The alias path is where P1 lives: "where is my device" has to
+        // be answered by identity. A caller who typed the port named the
+        // port, and refusing their literal because some row mentions it
+        // would make `--device emulator-5556` unusable.
+        assert!(alias_needs_identity_check("sim-smix-android-01"));
+        assert!(alias_needs_identity_check("phone-s22"));
+        assert!(!alias_needs_identity_check("emulator-5556"));
+        assert!(!alias_needs_identity_check(
+            "5D087114-ECB3-443C-8DDB-40EEF9CFB90C"
+        ));
     }
 
     #[test]

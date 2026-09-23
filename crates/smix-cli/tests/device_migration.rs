@@ -22,6 +22,7 @@ fn sim(udid: &str, opt_in: bool) -> RegisteredSim {
         udid: udid.into(),
         runtime: "com.apple.CoreSimulator.SimRuntime.iOS-26-5".into(),
         device_type: String::new(),
+        avd_name: None,
         locale: None,
         runner_port: None,
     }

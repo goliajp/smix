@@ -26,6 +26,7 @@ fn sim(name: &str) -> RegisteredSim {
         udid: format!("UDID-{name}"),
         runtime: "iOS 26.5".to_string(),
         device_type: "iPhone 16 Pro".to_string(),
+        avd_name: None,
         locale: None,
         runner_port: None,
         kind: smix_simctl::registry::DeviceKind::Simulator,
