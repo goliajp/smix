@@ -247,9 +247,9 @@ fn android_app(server: &MockServer) -> App {
     // test is about the frame coming from the runner, and a silent
     // change of hands would otherwise read as a pass.
     App::new_with(
-        Box::new(smix_driver::AndroidDriver::new(HttpRunnerClient::with_base(
-            server.uri(),
-        ))),
+        Box::new(smix_driver::AndroidDriver::new(
+            HttpRunnerClient::with_base(server.uri()),
+        )),
         Box::new(smix_sdk::AndroidDeviceControl::new()),
     )
 }

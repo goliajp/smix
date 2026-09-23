@@ -1106,7 +1106,7 @@ mod probe_conversion_guards {
 
 #[cfg(test)]
 mod what_the_probe_says_about_a_node {
-    use super::{collect_visible_summaries, probe_tree_to_a11y, Role};
+    use super::{Role, collect_visible_summaries, probe_tree_to_a11y};
 
     /// The one node, as the host reads it off the probe's wire.
     ///
@@ -1120,8 +1120,8 @@ mod what_the_probe_says_about_a_node {
                  "enabled":true,"visible":true,"actions":[],
                  "children":[{{{node_fields}}}]}}]"#
         );
-        let screen = probe_tree_to_a11y(&json)
-            .expect("a root carrying a named node converts to a tree");
+        let screen =
+            probe_tree_to_a11y(&json).expect("a root carrying a named node converts to a tree");
         screen.children[0].children[0].clone()
     }
 

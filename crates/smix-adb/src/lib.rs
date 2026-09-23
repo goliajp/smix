@@ -1075,14 +1075,20 @@ User 0: ceDataInode=1234 installed=true hidden=false
             reverse_argv(8080, 3000),
             vec!["reverse", "tcp:8080", "tcp:3000"]
         );
-        assert_eq!(unreverse_argv(8080), vec!["reverse", "--remove", "tcp:8080"]);
+        assert_eq!(
+            unreverse_argv(8080),
+            vec!["reverse", "--remove", "tcp:8080"]
+        );
     }
 
     /// Verbatim from `adb -s emulator-5554 reverse --list` with two open.
     #[test]
     fn reads_the_open_reverses() {
         let listing = "emulator-5554 tcp:8080 tcp:3000\nemulator-5554 tcp:9090 tcp:9090\n";
-        assert_eq!(parse_reverse_list(listing), vec![(8080, 3000), (9090, 9090)]);
+        assert_eq!(
+            parse_reverse_list(listing),
+            vec![(8080, 3000), (9090, 9090)]
+        );
     }
 
     /// An empty listing is the ordinary answer on a device with none
@@ -1188,7 +1194,10 @@ User 0: ceDataInode=1234 installed=true hidden=false
         );
         assert_eq!(reports[0].when, "09-23 03:22:12.506");
         assert_eq!(reports[1].summary, "FATAL EXCEPTION: main");
-        assert_eq!(reports[2].summary.split(',').next().unwrap(), "Fatal signal 11 (SIGSEGV)");
+        assert_eq!(
+            reports[2].summary.split(',').next().unwrap(),
+            "Fatal signal 11 (SIGSEGV)"
+        );
         assert!(reports[3].summary.starts_with("*** *** ***"));
     }
 
@@ -1197,7 +1206,10 @@ User 0: ceDataInode=1234 installed=true hidden=false
     #[test]
     fn a_report_names_its_process_when_the_buffer_does() {
         let reports = parse_crash_buffer(CRASH_BUFFER);
-        assert_eq!(reports[0].process, "", "the system-process banner names a thread, not a process");
+        assert_eq!(
+            reports[0].process, "",
+            "the system-process banner names a thread, not a process"
+        );
         assert_eq!(reports[1].process, "com.android.phone");
         assert_eq!(reports[2].process, "libgoldfish-ril");
         assert_eq!(reports[3].process, "/vendor/bin/hw/libgoldfish-rild");
@@ -1210,10 +1222,23 @@ User 0: ceDataInode=1234 installed=true hidden=false
     fn a_reports_lines_are_the_buffers_lines() {
         let reports = parse_crash_buffer(CRASH_BUFFER);
         let kept: usize = reports.iter().map(|r| r.lines.len()).sum();
-        let banners = CRASH_BUFFER.lines().filter(|l| l.contains(" F ") || l.contains(" E ")).count();
+        let banners = CRASH_BUFFER
+            .lines()
+            .filter(|l| l.contains(" F ") || l.contains(" E "))
+            .count();
         assert_eq!(kept, banners, "every log line lands in exactly one report");
-        assert!(reports[1].lines.iter().any(|l| l.contains("Process: com.android.phone, PID: 901")));
-        assert!(!reports[0].lines.iter().any(|l| l.contains("beginning of crash")));
+        assert!(
+            reports[1]
+                .lines
+                .iter()
+                .any(|l| l.contains("Process: com.android.phone, PID: 901"))
+        );
+        assert!(
+            !reports[0]
+                .lines
+                .iter()
+                .any(|l| l.contains("beginning of crash"))
+        );
     }
 
     /// A device that has not crashed answers with an empty buffer, and

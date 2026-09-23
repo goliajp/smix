@@ -190,7 +190,12 @@ impl Eyes for DriverEyes<'_> {
             && self.driver.confirm_on_screen(&[node]).await
         {
             match norm_box(node.bounds, tree.bounds) {
-                Ok(b) => return Ok(Look { seen: Some(b), visible }),
+                Ok(b) => {
+                    return Ok(Look {
+                        seen: Some(b),
+                        visible,
+                    });
+                }
                 // A node with no area is not on screen in any sense a
                 // scroll can improve; keep looking.
                 Err(HostResolveError::EmptyMatchedFrame) => {}
@@ -326,10 +331,18 @@ mod tests {
     }
 
     fn nb(y: f64, h: f64) -> NormBox {
-        NormBox { x: 0.0, y, w: 1.0, h }
+        NormBox {
+            x: 0.0,
+            y,
+            w: 1.0,
+            h,
+        }
     }
 
-    async fn go(looks: Vec<Result<Option<NormBox>, ExpectationFailure>>, until: ScrollUntil) -> (Result<(), ExpectationFailure>, u32) {
+    async fn go(
+        looks: Vec<Result<Option<NormBox>, ExpectationFailure>>,
+        until: ScrollUntil,
+    ) -> (Result<(), ExpectationFailure>, u32) {
         let mut eyes = Scripted { looks, swipes: 0 };
         let r = run(&mut eyes, &sel(), SwipeDirection::Down, &until).await;
         (r, eyes.swipes)
@@ -343,7 +356,10 @@ mod tests {
         )
         .await;
         assert!(r.is_ok(), "{r:?}");
-        assert_eq!(swipes, 1, "partly in is not reached; one swipe brings it in");
+        assert_eq!(
+            swipes, 1,
+            "partly in is not reached; one swipe brings it in"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -356,7 +372,11 @@ mod tests {
         let f = r.expect_err("a target that never appears must fail");
         assert_eq!(f.code, FailureCode::ElementNotFound);
         assert!(swipes >= 7, "swiped for the whole timeout, got {swipes}");
-        assert!(f.message.contains(&format!("{swipes} swipes")), "{}", f.message);
+        assert!(
+            f.message.contains(&format!("{swipes} swipes")),
+            "{}",
+            f.message
+        );
         assert!(f.message.contains("did not see it"), "{}", f.message);
     }
 
@@ -385,7 +405,10 @@ mod tests {
         // Wholly in, low on the screen, and it never moves: the end of a list.
         let (r, swipes) = go(vec![Ok(Some(nb(0.85, 0.1)))], until).await;
         assert!(r.is_ok(), "{r:?}");
-        assert_eq!(swipes, 5, "MAX_RECENTER + 1 recentring swipes, then the share rule");
+        assert_eq!(
+            swipes, 5,
+            "MAX_RECENTER + 1 recentring swipes, then the share rule"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -405,7 +428,10 @@ mod tests {
         )
         .await;
         assert!(r.is_ok(), "{r:?}");
-        assert_eq!(swipes, 1, "one swipe; the rest of the looks waited out the glide");
+        assert_eq!(
+            swipes, 1,
+            "one swipe; the rest of the looks waited out the glide"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -459,7 +485,11 @@ mod tests {
             fallback: vec![chain.clone()],
         };
         let got: Vec<&str> = ocr_texts(&nested).into_iter().map(|(t, _)| t).collect();
-        assert_eq!(got, vec!["Row 30", "Row 31"], "a nested chain reads as written out");
+        assert_eq!(
+            got,
+            vec!["Row 30", "Row 31"],
+            "a nested chain reads as written out"
+        );
         assert!(ocr_texts(&sel()).is_empty());
     }
 }

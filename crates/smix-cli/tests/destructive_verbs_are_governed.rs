@@ -63,10 +63,7 @@ const NOT_DESTRUCTIVE: &[(&str, &str)] = &[
     ),
     ("Openurl", "hands a URL to the system"),
     ("Wake", "turns the screen on; it does not even unlock"),
-    (
-        "StayAwake",
-        "a display setting the same verb sets back",
-    ),
+    ("StayAwake", "a display setting the same verb sets back"),
     (
         "Permission",
         "grants or revokes one permission; `privacy_reset_all` is the \

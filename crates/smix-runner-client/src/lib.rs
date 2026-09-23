@@ -326,14 +326,14 @@ impl OcrFrame {
 pub use smix_runner_wire::{
     DiagnosticDumpResponse, FindRequest, FindResponse, HealthProcessInfo, HealthResponse,
     HealthTestHostInfo, IncludeScope, KeyboardStages, PressResult, RecordEventsResponse,
-    RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult,
-    SessionAppLifecycleRequest, SessionAppLifecycleResponse, SessionCloseAllResponse,
-    SessionCloseRequest, SessionCloseResponse, SessionListResponse, SessionOpenRequest,
-    SessionOpenResponse, SessionRelaunchAppRequest, SessionRelaunchAppResponse,
-    SessionRenewActivationRequest, SessionRenewActivationResponse, SessionSummary,
-    SimHealthWireState, SubprocessRecord as WireSubprocessRecord, SystemPopup,
-    SystemPopupActionRequest, SystemPopupActionResponse, SystemPopupButton, SystemPopupsResponse,
-    TapAtCoordResult, TapAtNormCoordRequest, TapMode, TapRequest, TapResult, TapStages,
+    RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult, SessionAppLifecycleRequest,
+    SessionAppLifecycleResponse, SessionCloseAllResponse, SessionCloseRequest,
+    SessionCloseResponse, SessionListResponse, SessionOpenRequest, SessionOpenResponse,
+    SessionRelaunchAppRequest, SessionRelaunchAppResponse, SessionRenewActivationRequest,
+    SessionRenewActivationResponse, SessionSummary, SimHealthWireState,
+    SubprocessRecord as WireSubprocessRecord, SystemPopup, SystemPopupActionRequest,
+    SystemPopupActionResponse, SystemPopupButton, SystemPopupsResponse, TapAtCoordResult,
+    TapAtNormCoordRequest, TapMode, TapRequest, TapResult, TapStages,
 };
 
 // -------------------- Transport retry constants -------------------------
@@ -1525,10 +1525,7 @@ impl HttpRunnerClient {
         // that meant rather than being free to answer about the window
         // in front.
         let named = app.map(|a| format!("?app={a}")).unwrap_or_default();
-        let raw: serde_json::Value = self
-            .json_get(&format!("/probe{named}"), None)
-            .await
-            .ok()?;
+        let raw: serde_json::Value = self.json_get(&format!("/probe{named}"), None).await.ok()?;
         if raw.get("present")?.as_bool() != Some(true) {
             return None;
         }
@@ -1828,7 +1825,9 @@ impl HttpRunnerClient {
     /// `ok` existed. A payload with neither is a runner that did not
     /// answer the question.
     fn clear_text_verdict(res: ClearTextRes) -> Result<String, RunnerTransportError> {
-        let cleared = res.ok.unwrap_or_else(|| res.status.as_deref() == Some("ok"));
+        let cleared = res
+            .ok
+            .unwrap_or_else(|| res.status.as_deref() == Some("ok"));
         if !cleared {
             return Err(RunnerTransportError::Refused {
                 endpoint: "/clear-text".to_string(),
@@ -2328,7 +2327,6 @@ impl HttpRunnerClient {
         .require_ok("/press-key")?;
         Ok(body.result)
     }
-
 
     /// `POST /swipe-once {direction}` — single swipe, no probe.
     pub async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), RunnerTransportError> {

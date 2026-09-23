@@ -523,7 +523,7 @@ pub async fn cmd_scroll(
         &smix_driver::ScrollUntil::default(),
     )
     .await
-        .map_err(|e| ActError::Transport(format!("{e}")))?;
+    .map_err(|e| ActError::Transport(format!("{e}")))?;
     println!("scrolled {direction_str} to {selector_str}");
     Ok(())
 }

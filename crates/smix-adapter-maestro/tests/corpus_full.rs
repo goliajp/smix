@@ -239,7 +239,10 @@ impl AppLike for SilentMockApp {
     async fn set_permissions(
         &self,
         _: &str,
-        _: &[(smix_sdk::device_control::Permission, smix_sdk::PermissionAction)],
+        _: &[(
+            smix_sdk::device_control::Permission,
+            smix_sdk::PermissionAction,
+        )],
     ) -> Result<(), ExpectationFailure> {
         Ok(())
     }

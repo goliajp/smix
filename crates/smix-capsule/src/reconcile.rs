@@ -212,7 +212,13 @@ pub(crate) fn stop_port_forward(local_port: u16, proc: &ProcIdentity) -> Outcome
 /// missing, or a route that refuses to go, is reported.
 fn remove_reverse_port(serial: &str, device_port: u16) -> Outcome {
     let out = std::process::Command::new("adb")
-        .args(["-s", serial, "reverse", "--remove", &format!("tcp:{device_port}")])
+        .args([
+            "-s",
+            serial,
+            "reverse",
+            "--remove",
+            &format!("tcp:{device_port}"),
+        ])
         .output();
     match out {
         Ok(o) if o.status.success() => {

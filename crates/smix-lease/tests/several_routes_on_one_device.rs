@@ -50,8 +50,15 @@ fn two_routes_on_different_ports_both_stay() {
     store::record_reverse(&d, "emulator-5554", "emulator-5554", 3000, 3001).expect("second");
 
     let open = routes(&d, "emulator-5554");
-    assert_eq!(open.len(), 2, "both routes are open on the device: {open:?}");
-    assert!(open.contains(&(8080, 8080)) && open.contains(&(3000, 3001)), "{open:?}");
+    assert_eq!(
+        open.len(),
+        2,
+        "both routes are open on the device: {open:?}"
+    );
+    assert!(
+        open.contains(&(8080, 8080)) && open.contains(&(3000, 3001)),
+        "{open:?}"
+    );
 }
 
 /// Re-pointing a route the device already dials is one route, not two —
@@ -104,7 +111,9 @@ fn closing_a_route_leaves_the_record_of_who_booted_the_device() {
     store::record_reverse(&d, "emulator-5554", "emulator-5554", 8080, 8080).expect("open");
     store::drop_reverse(&d, "emulator-5554", 8080).expect("close");
 
-    let lease = store::read(&d, "emulator-5554").expect("read").expect("ledger");
+    let lease = store::read(&d, "emulator-5554")
+        .expect("read")
+        .expect("ledger");
     assert!(
         lease
             .known_resources()

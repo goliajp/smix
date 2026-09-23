@@ -490,7 +490,11 @@ pub enum Step {
         /// Direction (`up` / `down` / `left` / `right`).
         direction: String,
         /// `visibilityPercentage` / `centerElement` / `timeout`.
-        #[serde(default, with = "scroll_until_serde", skip_serializing_if = "is_default_until")]
+        #[serde(
+            default,
+            with = "scroll_until_serde",
+            skip_serializing_if = "is_default_until"
+        )]
         until: smix_driver::ScrollUntil,
         /// `label` / `optional`.
         #[serde(default, skip_serializing_if = "BlockOptions::is_default")]
@@ -1193,7 +1197,8 @@ impl ConditionPlatform {
     pub fn matches(self, p: smix_driver::Platform) -> bool {
         matches!(
             (self, p),
-            (Self::Android, smix_driver::Platform::Android) | (Self::Ios, smix_driver::Platform::Ios)
+            (Self::Android, smix_driver::Platform::Android)
+                | (Self::Ios, smix_driver::Platform::Ios)
         )
     }
 
