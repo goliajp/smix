@@ -30,6 +30,12 @@ CASES = [
      'SERIAL="${ADB_SERIAL:-emulator-5554}"\nadb -s "$SERIAL" shell echo\n', True),
     ("hard-codes a serial",
      'SERIAL="emulator-5554"\nadb -s "$SERIAL" shell echo\n', True),
+    # The release script's shape: it drives no device itself, it picks a
+    # slot and hands it to gates that are right to take their device
+    # from the caller. Skipped as a non-toucher until 2026-09-24, when the
+    # slot it named held a consumer's emulator.
+    ("hands a default slot to what it runs, touching nothing itself",
+     'DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"\nbash ./some-gate.sh "$DEVICE"\n', True),
     ("touches a device with no source for it",
      'adb -s "$SOMETHING" shell echo\n', True),
     ("asks the ledger", DELIBERATE_SCRIPT, False),

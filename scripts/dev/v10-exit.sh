@@ -8,7 +8,17 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-ANDROID="${SMIX_EXIT_ANDROID:-emulator-5554}"
+# Not a slot. emulator-5554 is whichever AVD booted into it first, and on
+# 2026-09-24 that was a consumer's. The picker answers with an emulator
+# this machine's ledger says smix booted, or refuses and says what to run.
+if [[ -n "${SMIX_EXIT_ANDROID:-}" ]]; then
+  ANDROID="$SMIX_EXIT_ANDROID"
+else
+  ANDROID="$(bash "$ROOT/scripts/dev/pick-dev-emulator.sh" 2>&1)" || {
+    printf 'v10-exit: no emulator this check may drive:\n%s\n' "$ANDROID" >&2
+    exit 1
+  }
+fi
 APORT="${SMIX_EXIT_ANDROID_PORT:-22095}"
 IOS="${SMIX_EXIT_IOS:-}"
 # No literal: the iOS gate asks the OS for a port of its own, and an

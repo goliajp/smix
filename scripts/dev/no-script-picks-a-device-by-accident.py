@@ -66,6 +66,11 @@ ACCIDENTS = [
     (re.compile(r"[\"']emulator-\d+[\"']"), "hard-codes a serial"),
 ]
 
+# The two accidents a file can commit on someone else's behalf: a serial it
+# writes down is passed on to whatever it runs. Named here so the check
+# below reads from the same words the table above uses.
+HANDED_ON = {"falls back to emulator-5554", "hard-codes a serial"}
+
 # What a deliberate choice looks like.
 DELIBERATE = [
     re.compile(r"pick-dev-emulator\.sh"),
@@ -92,6 +97,8 @@ NOT_A_SUBJECT = {
     "adb-guard.test.sh": "feeds adb command lines to the guard under test; it runs none of them",
     "hook-command.test.py": "same — the strings are the guard's inputs, not commands",
     "no-script-picks-a-device-by-accident.test.py": "this gate's own harness: its fixtures ARE the accidents, written down to be refused",
+    "no-script-picks-a-device-by-accident.py": "this gate: its patterns spell the accidents in order to find them",
+    "v4.1-c1-android-payload-e2e.sh": "its serial is emulator-9999, one nobody can hold: the check is what smix says about a device that is not there",
     "v6.1-c5-two-devices-one-is-not-yours-e2e.sh": "two devices are its subject: it starts one by hand and reads `adb devices` to prove it stays up after a refusal, never to pick one to drive — ours comes from `sim resolve`",
 }
 
@@ -115,11 +122,25 @@ def main() -> int:
                         if os.path.exists(os.path.join(base, m + ".py"))
                         and TOUCHES.search(open(os.path.join(base, m + ".py"),
                                                encoding="utf-8").read())}
+            rel = f"{d}/{name}"
+            # A serial written as a default is a guess whether or not this
+            # file drives the device itself. ship.sh never touched one, so
+            # this scan skipped it -- and it handed `emulator-5554` down to
+            # four gates that were right to take their device from the
+            # caller. On 2026-09-24 that slot held a consumer's emulator.
+            # The accident lives in whoever chose, so it is looked for in
+            # every file, not only in the ones that go on to use it.
+            handed_down = [why for pat, why in ACCIDENTS if pat.search(code)]
             if not TOUCHES.search(code) and not imported:
+                # Only a written-down serial is handed on. Listing what adb
+                # sees is how the picker itself works before it asks the
+                # ledger, and a file that does not drive a device is not
+                # choosing one by reading that list.
+                for why in (w for w in handed_down if w in HANDED_ON):
+                    problems.append(f"{rel} {why}, and hands it to whatever it runs — a default serial is a slot, and a slot belongs to whoever booted into it")
                 continue
             touched += 1
-            rel = f"{d}/{name}"
-            hits = [why for pat, why in ACCIDENTS if pat.search(code)]
+            hits = handed_down
             for why in hits:
                 problems.append(f"{rel} {why} — a device is either the ledger's answer or the caller's, never the first one adb lists")
             if not hits and name.endswith(".py") and not IS_A_LIBRARY.search(code):
