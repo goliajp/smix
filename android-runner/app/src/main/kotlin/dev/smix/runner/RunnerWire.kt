@@ -270,7 +270,14 @@ object RunnerWire {
     // the host reads — `OkEnvelope` looks for `ok` and takes its absence
     // for success, so a touch that was never injected arrived as a
     // passing tap. `status` stays for shell probes.
-    fun tapAtNormCoordBody(ok: Boolean, displayWidth: Int, displayHeight: Int, x: Int, y: Int): String =
+    fun tapAtNormCoordBody(
+        ok: Boolean,
+        displayWidth: Int,
+        displayHeight: Int,
+        x: Int,
+        y: Int,
+        chain: List<HitChain.Entry>,
+    ): String =
         JSONObject()
             .put("ok", ok)
             .put("status", if (ok) "ok" else "click_returned_false")
@@ -278,7 +285,33 @@ object RunnerWire {
             .put("displayHeight", displayHeight)
             .put("x", x)
             .put("y", y)
+            .withChain(chain)
             .toString()
+
+    /// What the touch was delivered to, in the shape the iOS runner uses,
+    /// plus `complete`: this chain lists every element under the point,
+    /// named or not, so an element's absence from it is evidence of a
+    /// miss. The iOS chain lists named elements only, and there absence
+    /// proves nothing.
+    private fun JSONObject.withChain(chain: List<HitChain.Entry>): JSONObject {
+        val arr = JSONArray()
+        for (e in chain) {
+            arr.put(
+                JSONObject()
+                    .put("identifier", e.id)
+                    .put("label", e.label)
+                    .put(
+                        "frame",
+                        JSONObject()
+                            .put("x", e.bounds.left)
+                            .put("y", e.bounds.top)
+                            .put("w", e.bounds.right - e.bounds.left)
+                            .put("h", e.bounds.bottom - e.bounds.top),
+                    ),
+            )
+        }
+        return put("chain", arr).put("complete", true)
+    }
 
     fun swipeAtNormCoordBody(ok: Boolean, q: SwipeQuad): String = JSONObject()
         .put("ok", ok)
@@ -391,19 +424,21 @@ object RunnerWire {
         .put("saw_action_click", sawActionClick)
         .toString()
 
-    fun doubleTapBody(ok: Boolean, x: Int, y: Int): String = JSONObject()
+    fun doubleTapBody(ok: Boolean, x: Int, y: Int, chain: List<HitChain.Entry>): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "tap_not_injected")
         .put("x", x)
         .put("y", y)
+        .withChain(chain)
         .toString()
 
-    fun longPressBody(ok: Boolean, x: Int, y: Int, durationMs: Long): String = JSONObject()
+    fun longPressBody(ok: Boolean, x: Int, y: Int, durationMs: Long, chain: List<HitChain.Entry>): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "press_not_injected")
         .put("x", x)
         .put("y", y)
         .put("durationMs", durationMs)
+        .withChain(chain)
         .toString()
 
     fun inputTextBody(ok: Boolean, text: String): String = JSONObject()
@@ -840,14 +875,24 @@ object TreeWire {
     // window missing from the tree looks exactly like an app with no
     // accessibility nodes — which is what a consumer concluded, after
     // several rounds of driving by pixel because of it.
+    //
+    // The root's rectangle is the DISPLAY, the same size a tap is turned
+    // back into pixels with. Every selector tap divides a node's centre by
+    // this rectangle and the runner multiplies it by the display, so the
+    // two have to be one number. It used to be the union of the windows
+    // that could be read, and with gesture navigation and a dialog in
+    // front nothing reached the bottom of the screen: 1080x1396 on a
+    // 1080x2340 display, and a dialog's confirm pressed at y=2122, below
+    // a dialog ending at 1341 — which dismissed it, and was reported as a
+    // tap.
     fun windowRootJson(
-        maxW: Int,
-        maxH: Int,
+        displayWidth: Int,
+        displayHeight: Int,
         children: JSONArray,
         unreadableWindows: Int = 0,
     ): JSONObject = JSONObject()
         .put("rawType", "android.view.WindowRoot")
-        .put("bounds", JSONObject().put("x", 0).put("y", 0).put("w", maxW).put("h", maxH))
+        .put("bounds", JSONObject().put("x", 0).put("y", 0).put("w", displayWidth).put("h", displayHeight))
         .put("enabled", true)
         .put("selected", false)
         .put("hasFocus", false)

@@ -11,7 +11,7 @@
 //! containment and not identity: at the centre of the first row, the
 //! innermost named element is the row's own label, not the row.
 
-use smix_driver::{ActVerdict, HitElement, tap_landed_within};
+use smix_driver::{ActVerdict, ChainCoverage, HitElement, tap_landed_within};
 
 fn el(id: &str, label: &str, frame: (f64, f64, f64, f64)) -> HitElement {
     HitElement {
@@ -52,7 +52,11 @@ fn a_tap_that_lands_on_the_aimed_elements_own_label_is_confirmed() {
         (16.0, 168.0, 370.0, 90.0),
     );
     assert_eq!(
-        tap_landed_within(&aimed, &settings_first_row_chain()),
+        tap_landed_within(
+            &aimed,
+            &settings_first_row_chain(),
+            ChainCoverage::NamedOnly
+        ),
         ActVerdict::Confirmed
     );
 }
@@ -65,7 +69,8 @@ fn a_point_inside_none_of_the_aimed_element_names_what_was_there() {
         el("overlay-scrim", "", (0.0, 0.0, 402.0, 874.0)),
         el("com.example.app", "Insight", (0.0, 0.0, 402.0, 874.0)),
     ];
-    let ActVerdict::Missed(why) = tap_landed_within(&aimed, &chain) else {
+    let ActVerdict::Missed(why) = tap_landed_within(&aimed, &chain, ChainCoverage::NamedOnly)
+    else {
         panic!("a point inside neither the element nor its ancestors is a miss");
     };
     assert!(
@@ -79,7 +84,11 @@ fn a_point_inside_none_of_the_aimed_element_names_what_was_there() {
 fn aiming_at_an_ancestor_on_the_chain_is_confirmed() {
     let aimed = el("com.apple.Preferences", "设置", (0.0, 0.0, 402.0, 874.0));
     assert_eq!(
-        tap_landed_within(&aimed, &settings_first_row_chain()),
+        tap_landed_within(
+            &aimed,
+            &settings_first_row_chain(),
+            ChainCoverage::NamedOnly
+        ),
         ActVerdict::Confirmed
     );
 }
@@ -88,7 +97,7 @@ fn aiming_at_an_ancestor_on_the_chain_is_confirmed() {
 #[test]
 fn an_empty_chain_is_a_miss() {
     let aimed = el("btn-login", "", (10.0, 20.0, 80.0, 30.0));
-    let ActVerdict::Missed(why) = tap_landed_within(&aimed, &[]) else {
+    let ActVerdict::Missed(why) = tap_landed_within(&aimed, &[], ChainCoverage::NamedOnly) else {
         panic!("a tap that landed on nothing is a miss");
     };
     assert!(
@@ -102,7 +111,10 @@ fn an_empty_chain_is_a_miss() {
 fn an_unnamed_element_is_found_by_its_frame() {
     let aimed = el("", "", (16.0, 168.0, 370.0, 90.0));
     let chain = vec![el("", "", (16.4, 168.0, 370.0, 90.0))];
-    assert_eq!(tap_landed_within(&aimed, &chain), ActVerdict::Confirmed);
+    assert_eq!(
+        tap_landed_within(&aimed, &chain, ChainCoverage::NamedOnly),
+        ActVerdict::Confirmed
+    );
 }
 
 /// An unnamed target against a named chain cannot be judged.
@@ -114,7 +126,11 @@ fn an_unnamed_element_is_found_by_its_frame() {
 #[test]
 fn an_unnamed_target_against_a_named_chain_is_unconfirmable() {
     let aimed = el("", "", (0.0, 0.0, 0.0, 0.0));
-    let verdict = tap_landed_within(&aimed, &settings_first_row_chain());
+    let verdict = tap_landed_within(
+        &aimed,
+        &settings_first_row_chain(),
+        ChainCoverage::NamedOnly,
+    );
     let ActVerdict::Unconfirmable(why) = verdict else {
         panic!("expected Unconfirmable, got {verdict:?}");
     };
@@ -142,4 +158,68 @@ fn the_captured_tree_still_holds_the_element_these_chains_name() {
              in this file no longer stand for anything observed"
         );
     }
+}
+
+/// The fixture's dialog count label, and what an Android touch at y=2122
+/// was delivered to: the activity's root, and nothing else.
+///
+/// An Android chain lists every element under the point, named or not,
+/// so a target that is not in it was not touched. A consumer's confirm
+/// was pressed there and reported as a tap.
+fn android_chain_below_the_dialog() -> Vec<HitElement> {
+    vec![el("", "", (0.0, 0.0, 1080.0, 2340.0))]
+}
+
+#[test]
+fn an_unnamed_target_missing_from_a_chain_that_lists_everything_is_a_miss() {
+    let aimed = el("", "", (44.0, 357.0, 201.0, 45.0));
+    assert!(matches!(
+        tap_landed_within(
+            &aimed,
+            &android_chain_below_the_dialog(),
+            ChainCoverage::Every
+        ),
+        ActVerdict::Missed(_)
+    ));
+}
+
+#[test]
+fn an_unnamed_target_found_by_its_frame_in_a_chain_that_lists_everything_is_confirmed() {
+    let aimed = el("", "", (44.0, 357.0, 201.0, 45.0));
+    let chain = vec![
+        el("", "", (44.0, 357.0, 201.0, 45.0)),
+        el("", "", (0.0, 0.0, 1080.0, 2340.0)),
+    ];
+    assert_eq!(
+        tap_landed_within(&aimed, &chain, ChainCoverage::Every),
+        ActVerdict::Confirmed
+    );
+}
+
+#[test]
+fn an_unnamed_target_missing_from_a_chain_of_named_elements_cannot_be_judged() {
+    // The iOS chain leaves unnamed elements out, so absence from it is
+    // not evidence — unchanged, and the reason the coverage is carried.
+    let aimed = el("", "", (44.0, 357.0, 201.0, 45.0));
+    assert!(matches!(
+        tap_landed_within(
+            &aimed,
+            &settings_first_row_chain(),
+            ChainCoverage::NamedOnly
+        ),
+        ActVerdict::Unconfirmable(_)
+    ));
+}
+
+#[test]
+fn a_named_target_missing_from_a_chain_that_lists_everything_is_a_miss() {
+    let aimed = el("button1", "", (773.0, 1192.0, 203.0, 149.0));
+    assert!(matches!(
+        tap_landed_within(
+            &aimed,
+            &android_chain_below_the_dialog(),
+            ChainCoverage::Every
+        ),
+        ActVerdict::Missed(_)
+    ));
 }

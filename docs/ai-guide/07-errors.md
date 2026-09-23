@@ -116,7 +116,16 @@ finishes presenting — and the coordinate then belongs to something
 else. The tap still happened; it happened somewhere you did not mean.
 
 The message names both sides: what was aimed at, and what the point
-turned out to be inside.
+turned out to be inside. On Android it can also say the touch was
+**delivered outside every window the runner can read** — the point
+fell where no readable window reaches, which is what a tap aimed at a
+dialog's button looked like when the tap was computed against the wrong
+rectangle (fixed in 11.1; the dialog was dismissed and the step used to
+pass).
+
+A different failure, `DRIVER_ERROR` saying *the runner reported nothing
+about what it was delivered to*, is not a miss: it is a runner older than
+the field that carries that list. `smix runner up --force` rebuilds it.
 
 **Fixes**:
 - Wait for the screen before tapping (`extendedWaitUntil`, or

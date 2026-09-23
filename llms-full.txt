@@ -1200,6 +1200,16 @@ accessibility snapshot — a stronger statement than "a touch was
 synthesised somewhere", and a weaker one than "your element was
 touched".
 
+The two runners report slightly different lists. The sentence above is
+the iOS one — iOS lists the *named* elements under the point. Android lists *every* element under the
+point, read from the window on top before the touch goes in — so on
+Android an element with no id and no description is judged by its
+frame, and a touch that reaches no window at all is a miss. The same
+applies to `doubleTapOn` and `longPressOn` on Android. A runner that
+reports nothing about where a touch went fails the step and says so
+(until 11.1, every Android tap reported nothing and was printed as
+`not verified` — and passed).
+
 The gap between those two is not hypothetical. The comparison happens
 entirely in the coordinate space the snapshot describes; the
 synthesised event is read in whatever space it is stamped with, and
@@ -3062,7 +3072,16 @@ finishes presenting — and the coordinate then belongs to something
 else. The tap still happened; it happened somewhere you did not mean.
 
 The message names both sides: what was aimed at, and what the point
-turned out to be inside.
+turned out to be inside. On Android it can also say the touch was
+**delivered outside every window the runner can read** — the point
+fell where no readable window reaches, which is what a tap aimed at a
+dialog's button looked like when the tap was computed against the wrong
+rectangle (fixed in 11.1; the dialog was dismissed and the step used to
+pass).
+
+A different failure, `DRIVER_ERROR` saying *the runner reported nothing
+about what it was delivered to*, is not a miss: it is a runner older than
+the field that carries that list. `smix runner up --force` rebuilds it.
 
 **Fixes**:
 - Wait for the screen before tapping (`extendedWaitUntil`, or

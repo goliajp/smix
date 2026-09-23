@@ -257,6 +257,15 @@ pub struct TapAtCoordResult {
     /// verdict of its own rather than a silent pass.
     #[serde(default)]
     pub chain: Vec<HitChainEntry>,
+    /// Whether `chain` lists EVERY element under the point, named or not.
+    ///
+    /// The iOS runner lists named elements only, so a target absent from
+    /// its chain may simply be unnamed; the Android runner lists them all,
+    /// so there absence is a miss. Without saying which, the host could
+    /// only treat both as the weaker kind — and every Android tap was
+    /// recorded as "could not be judged".
+    #[serde(default)]
+    pub complete: bool,
 }
 
 /// `POST /tap` request body.

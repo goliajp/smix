@@ -47,6 +47,16 @@ accessibility snapshot — a stronger statement than "a touch was
 synthesised somewhere", and a weaker one than "your element was
 touched".
 
+The two runners report slightly different lists. The sentence above is
+the iOS one — iOS lists the *named* elements under the point. Android lists *every* element under the
+point, read from the window on top before the touch goes in — so on
+Android an element with no id and no description is judged by its
+frame, and a touch that reaches no window at all is a miss. The same
+applies to `doubleTapOn` and `longPressOn` on Android. A runner that
+reports nothing about where a touch went fails the step and says so
+(until 11.1, every Android tap reported nothing and was printed as
+`not verified` — and passed).
+
 The gap between those two is not hypothetical. The comparison happens
 entirely in the coordinate space the snapshot describes; the
 synthesised event is read in whatever space it is stamped with, and

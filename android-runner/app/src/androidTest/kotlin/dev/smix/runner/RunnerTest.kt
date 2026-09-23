@@ -451,8 +451,14 @@ class SmixHttpServer(
                 // class and Compose's own role, and the table that turns
                 // either into smix's word for it lives here, next to the
                 // accessibility path that needs the same table.
+                //
+                // The screen is this runner's, not the probe's. The probe
+                // measures from inside the app, and a tap is turned back
+                // into pixels here; one number for both ends is the only
+                // way a normalised coordinate means the same thing at each.
+                val (w, h) = displaySize()
                 ProbeRoles.fill(
-                    """{"screen":[${b.getInt("screenW", 0)},${b.getInt("screenH", 0)}],""" +
+                    """{"screen":[$w,$h],""" +
                         """"roots":${b.getString("tree") ?: "[]"}}""",
                 )
             }
@@ -485,7 +491,7 @@ class SmixHttpServer(
         // slowdown across a batch without any wire-body change.
         val walkStart = System.currentTimeMillis()
         val automation = instrumentation.uiAutomation
-        val root = TreeBuilder.fromWindows(automation)
+        val root = TreeBuilder.fromWindows(automation, displaySize())
         val wallMs = System.currentTimeMillis() - walkStart
         val refreshCount = treeServeCounter.incrementAndGet()
         val resp = newFixedLengthResponse(
@@ -529,6 +535,60 @@ class SmixHttpServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
+    /// What a touch at `(px, py)` is about to be delivered to — see
+    /// [HitChain]. Only the nodes containing the point are read: the
+    /// geometry is decided there, and refreshing a whole tree on every
+    /// tap would cost the walk `/tree` already pays for.
+    private fun hitChainAt(px: Int, py: Int): List<HitChain.Entry> {
+        val windows = instrumentation.uiAutomation.windows.mapNotNull { w ->
+            val root = w.root ?: return@mapNotNull null
+            try {
+                val wb = Rect()
+                w.getBoundsInScreen(wb)
+                HitChain.Window(w.layer, HitChain.Box(wb.left, wb.top, wb.right, wb.bottom), hitNode(root, px, py))
+            } finally {
+                root.recycle()
+            }
+        }
+        return HitChain.at(windows, px, py)
+    }
+
+    private fun hitNode(n: AccessibilityNodeInfo, px: Int, py: Int): HitChain.Node {
+        n.refresh()
+        val r = Rect()
+        n.getBoundsInScreen(r)
+        val kids = mutableListOf<HitChain.Node>()
+        for (i in 0 until n.childCount) {
+            val c = n.getChild(i) ?: continue
+            try {
+                val cr = Rect()
+                c.getBoundsInScreen(cr)
+                if (cr.contains(px, py)) kids.add(hitNode(c, px, py))
+            } finally {
+                c.recycle()
+            }
+        }
+        return HitChain.Node(
+            id = n.viewIdResourceName?.let(TreeWire::shortResourceId) ?: "",
+            label = n.contentDescription?.toString() ?: "",
+            bounds = HitChain.Box(r.left, r.top, r.right, r.bottom),
+            children = kids,
+        )
+    }
+
+    /// The display's size, in the pixels a touch is injected in.
+    ///
+    /// The one place it is read. The tree's root, the probe tree's
+    /// `screen`, and every normalised coordinate a caller sends are all
+    /// this number: the host divides a node's centre by the root and this
+    /// runner multiplies the share back by the display, so any second
+    /// source for either end moves every selector tap by the ratio
+    /// between them. It had two — the root was the union of readable
+    /// windows, and the probe's `screen` was measured in the app's
+    /// process — and a dialog's confirm button was pressed 800 pixels
+    /// below the dialog.
+    private fun displaySize(): Pair<Int, Int> = device.displayWidth to device.displayHeight
+
     private fun serveTapAtNormCoord(session: IHTTPSession): Response {
         // OK MEANS: injected — `UiDevice.click` is `clickNoSync`, which
         // is `touchDown`/`touchUp` through `injectEventSync` and nothing
@@ -537,15 +597,16 @@ class SmixHttpServer(
         // is the caller's next assertion, not a question this route can
         // answer.
         val req = RunnerWire.decodeNormCoord(readBodyString(session))
-        val w = device.displayWidth
-        val h = device.displayHeight
+        val (w, h) = displaySize()
         val px = RunnerWire.normToPixel(req.nx, w)
         val py = RunnerWire.normToPixel(req.ny, h)
+        // Before the touch: a confirm that lands takes its dialog away.
+        val chain = hitChainAt(px, py)
         val ok = device.click(px, py)
         // Give the dispatched IO event time to render before /tree probes
         // observe the post-tap UI state.
         device.waitForIdle(500)
-        val body = RunnerWire.tapAtNormCoordBody(ok, w, h, px, py)
+        val body = RunnerWire.tapAtNormCoordBody(ok, w, h, px, py, chain)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -554,8 +615,7 @@ class SmixHttpServer(
         // `InteractionController.swipe`; the boolean is whether the
         // pointer events went in.
         val req = RunnerWire.decodeSwipeAtNormCoord(readBodyString(session))
-        val w = device.displayWidth
-        val h = device.displayHeight
+        val (w, h) = displaySize()
         val q = RunnerWire.SwipeQuad(
             RunnerWire.normToPixel(req.fromNx, w),
             RunnerWire.normToPixel(req.fromNy, h),
@@ -575,7 +635,7 @@ class SmixHttpServer(
         // /swipe-at-norm-coord. The scroll loop driving this re-reads the
         // tree afterwards, which is where "did anything move" is answered.
         val direction = RunnerWire.decodeSwipeOnce(readBodyString(session))
-        val q = RunnerWire.swipeOnceCoords(direction, device.displayWidth, device.displayHeight)
+        val q = displaySize().let { (w, h) -> RunnerWire.swipeOnceCoords(direction, w, h) }
             ?: return errorJson(
                 Response.Status.BAD_REQUEST,
                 "bad_direction",
@@ -1126,8 +1186,10 @@ class SmixHttpServer(
         // OK MEANS: injected — both taps went in. One of two landing is
         // not a double tap, so the answer is the conjunction.
         val req = RunnerWire.decodeNormCoord(readBodyString(session))
-        val px = RunnerWire.normToPixel(req.nx, device.displayWidth)
-        val py = RunnerWire.normToPixel(req.ny, device.displayHeight)
+        val (w, h) = displaySize()
+        val px = RunnerWire.normToPixel(req.nx, w)
+        val py = RunnerWire.normToPixel(req.ny, h)
+        val chain = hitChainAt(px, py)
         val first = device.click(px, py)
         // Standard double-tap inter-tap window — 150ms is below most
         // systems' DOUBLE_TAP_TIMEOUT (300ms) so events register as a
@@ -1135,7 +1197,7 @@ class SmixHttpServer(
         Thread.sleep(150)
         val second = device.click(px, py)
         device.waitForIdle(500)
-        val body = RunnerWire.doubleTapBody(first && second, px, py)
+        val body = RunnerWire.doubleTapBody(first && second, px, py, chain)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -1143,11 +1205,13 @@ class SmixHttpServer(
         // OK MEANS: injected — a long press is a swipe that does not
         // travel, so this is `InteractionController.swipe`'s answer.
         val req = RunnerWire.decodeLongPressAtNormCoord(readBodyString(session))
-        val px = RunnerWire.normToPixel(req.nx, device.displayWidth)
-        val py = RunnerWire.normToPixel(req.ny, device.displayHeight)
+        val (w, h) = displaySize()
+        val px = RunnerWire.normToPixel(req.nx, w)
+        val py = RunnerWire.normToPixel(req.ny, h)
+        val chain = hitChainAt(px, py)
         val injected = device.swipe(px, py, px, py, RunnerWire.longPressSteps(req.durationMs))
         device.waitForIdle(500)
-        val body = RunnerWire.longPressBody(injected, px, py, req.durationMs)
+        val body = RunnerWire.longPressBody(injected, px, py, req.durationMs, chain)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -1267,13 +1331,14 @@ class SmixHttpServer(
     /// caller named no element.
     private fun focusRectPx(r: RunnerWire.NormRect?): IntArray? =
         r?.let {
-            val l = RunnerWire.normToPixel(it.nx, device.displayWidth)
-            val t = RunnerWire.normToPixel(it.ny, device.displayHeight)
+            val (w, h) = displaySize()
+            val l = RunnerWire.normToPixel(it.nx, w)
+            val t = RunnerWire.normToPixel(it.ny, h)
             intArrayOf(
                 l,
                 t,
-                l + RunnerWire.normToPixel(it.nw, device.displayWidth),
-                t + RunnerWire.normToPixel(it.nh, device.displayHeight),
+                l + RunnerWire.normToPixel(it.nw, w),
+                t + RunnerWire.normToPixel(it.nh, h),
             )
         }
 
@@ -2161,10 +2226,8 @@ object PopupClassifier {
 /// virtual root so the host driver sees foreground app + system windows
 /// in a single dump.
 object TreeBuilder {
-    fun fromWindows(automation: UiAutomation): JSONObject {
+    fun fromWindows(automation: UiAutomation, display: Pair<Int, Int>): JSONObject {
         val rootChildren = JSONArray()
-        var maxW = 0
-        var maxH = 0
         var unreadable = 0
         for (window in automation.windows) {
             // A window whose root cannot be read is counted, not
@@ -2187,15 +2250,11 @@ object TreeBuilder {
                 // is the one place every verb can reach it from.
                 TreeWire.roleForWindowType(window.type)?.let { obj.put("role", it) }
                 rootChildren.put(obj)
-                val bounds = Rect()
-                node.getBoundsInScreen(bounds)
-                if (bounds.right > maxW) maxW = bounds.right
-                if (bounds.bottom > maxH) maxH = bounds.bottom
             } finally {
                 node.recycle()
             }
         }
-        return TreeWire.windowRootJson(maxW, maxH, rootChildren, unreadable)
+        return TreeWire.windowRootJson(display.first, display.second, rootChildren, unreadable)
     }
 
     private fun nodeToJson(node: AccessibilityNodeInfo): JSONObject {

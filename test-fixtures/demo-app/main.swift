@@ -143,6 +143,10 @@ struct ContentView: View {
   // keep an identifier on a control inside an alert, or does the modal
   // cost it the way `testTagsAsResourceId` does on Android?
   @State private var alertShown = false
+  // What the alert's confirm has actually received. A confirmed alert and
+  // a dismissed one are both gone, so "the alert went away" says nothing;
+  // this count is the app's own reading of whether the button was pressed.
+  @State private var alertConfirmed = 0
 
   var body: some View {
     // NavigationStack, and the back button it provides, rather than a
@@ -175,11 +179,19 @@ struct ContentView: View {
           Text(submitted.isEmpty ? "nothing submitted" : submitted)
             .accessibilityIdentifier("fixture-result")
             .alert("An alert", isPresented: $alertShown) {
-              Button("OK") { alertShown = false }
+              Button("Delete", role: .destructive) {
+                alertConfirmed += 1
+                alertShown = false
+              }
                 .accessibilityIdentifier("fixture-alert-confirm")
+              Button("Cancel", role: .cancel) { alertShown = false }
+                .accessibilityIdentifier("fixture-alert-cancel")
             } message: {
               Text("hosted by the system")
             }
+
+          Text("confirmed \(alertConfirmed)")
+            .accessibilityIdentifier("fixture-alert-count")
 
           NavigationLink("Open detail") { DetailView() }
             .accessibilityIdentifier("fixture-detail-link")

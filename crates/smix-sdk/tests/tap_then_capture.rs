@@ -27,6 +27,20 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const FRAME: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR-and-then-some";
 
+/// What a current runner answers a tap with: the touch went in, and what
+/// it was delivered to. A runner that reports nothing now fails the step,
+/// so a stand-in has to say what a real one says.
+fn landed_on_submit() -> serde_json::Value {
+    serde_json::json!({
+        "ok": true,
+        "chain": [{
+            "identifier": "fixture-submit",
+            "label": "",
+            "frame": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}
+        }]
+    })
+}
+
 fn node(
     raw_type: &str,
     identifier: Option<&str>,
@@ -103,7 +117,7 @@ async fn runner_server() -> MockServer {
         .await;
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(landed_on_submit()))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -230,7 +244,7 @@ async fn android_runner_server(shot: ResponseTemplate) -> MockServer {
         .await;
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(landed_on_submit()))
         .mount(&server)
         .await;
     Mock::given(method("GET"))

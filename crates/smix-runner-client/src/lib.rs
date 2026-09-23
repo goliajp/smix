@@ -590,6 +590,31 @@ struct OkEnvelope {
     saw: Option<String>,
 }
 
+/// A touch's answer: whether it went in, and what it was delivered to.
+///
+/// The Android double tap and long press answered `{ok}` only, so the
+/// host could say nothing about where they landed. They now carry the
+/// same chain a tap does.
+#[derive(Deserialize)]
+struct Landed {
+    #[serde(default)]
+    ok: Option<bool>,
+    #[serde(flatten)]
+    result: TapAtCoordResult,
+}
+
+impl Landed {
+    fn into_result(self, route: &str) -> Result<TapAtCoordResult, RunnerTransportError> {
+        OkEnvelope {
+            ok: self.ok,
+            error: None,
+            saw: None,
+        }
+        .require_ok(route)?;
+        Ok(self.result)
+    }
+}
+
 impl OkEnvelope {
     fn require_ok(self, endpoint: &str) -> Result<(), RunnerTransportError> {
         if self.ok == Some(false) {
@@ -1720,17 +1745,16 @@ impl HttpRunnerClient {
         &self,
         nx: f64,
         ny: f64,
-    ) -> Result<(), RunnerTransportError> {
+    ) -> Result<TapAtCoordResult, RunnerTransportError> {
         #[derive(Serialize)]
         struct Req {
             nx: f64,
             ny: f64,
         }
-        let body: OkEnvelope = self
+        let body: Landed = self
             .json_post("/double-tap-at-norm-coord", &Req { nx, ny }, None)
             .await?;
-        body.require_ok("/double-tap-at-norm-coord")?;
-        Ok(())
+        body.into_result("/double-tap-at-norm-coord")
     }
 
     /// `POST /long-press-at-norm-coord` — long-press at coord
@@ -1740,7 +1764,7 @@ impl HttpRunnerClient {
         nx: f64,
         ny: f64,
         duration_ms: u64,
-    ) -> Result<(), RunnerTransportError> {
+    ) -> Result<TapAtCoordResult, RunnerTransportError> {
         #[derive(Serialize)]
         struct Req {
             nx: f64,
@@ -1748,7 +1772,7 @@ impl HttpRunnerClient {
             #[serde(rename = "durationMs")]
             duration_ms: u64,
         }
-        let body: OkEnvelope = self
+        let body: Landed = self
             .json_post(
                 "/long-press-at-norm-coord",
                 &Req {
@@ -1759,8 +1783,7 @@ impl HttpRunnerClient {
                 None,
             )
             .await?;
-        body.require_ok("/long-press-at-norm-coord")?;
-        Ok(())
+        body.into_result("/long-press-at-norm-coord")
     }
 
     /// `POST /input-text` — type text into currently-focused
