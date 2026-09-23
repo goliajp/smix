@@ -2107,87 +2107,91 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
 ///
 /// `None` means the verb takes no device, or acts on the registry
 /// rather than the device.
-fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::registry::DeviceKind]> {
-    use DeviceKind::{Emulator, PhysicalAndroid, PhysicalIos, Simulator};
+fn sim_verb_supports(action: &SimAction) -> Option<Vec<smix_simctl::registry::DeviceKind>> {
+    use DeviceKind::{Emulator, Simulator};
     use smix_simctl::registry::DeviceKind;
-    const ALL: &[DeviceKind] = &DeviceKind::ALL;
-    const SIMCTL: &[DeviceKind] = &[Simulator];
-    // Powering a device on and off, which is not an Apple-only idea.
-    // Physical devices are absent on purpose: section 9 #1 gates them
-    // behind registration and a per-device opt-in, and nothing here
-    // should decide a phone's power state.
+
+    // Derived, not written down again. Every verb that is a
+    // `DeviceControl` method takes its answer from the platform table,
+    // which is reconciled against the implementations themselves.
+    //
+    // The two lists used to be kept apart, and by 10.2 they disagreed in
+    // five places -- every one of them the CLI refusing something the
+    // backend carries out. `launch`, `terminate` and `openurl` were
+    // simulator-only while `AndroidDeviceControl` ran all three through
+    // `am`; `install` excluded a registered iPhone after
+    // `DevicectlClient::install` was wired; `keychain-reset` claimed one
+    // the table refuses. A consumer met the first of those on a handset,
+    // and read "this command runs through simctl" as a report that the
+    // install they had just run had broken something.
+    if let Some(table_action) = table_action_of(action) {
+        return Some(
+            DeviceKind::ALL
+                .iter()
+                .copied()
+                .filter(|kind| {
+                    smix_sdk::device_control::availability(table_action, *kind)
+                        == Some(smix_sdk::device_control::Availability::Works)
+                })
+                .collect(),
+        );
+    }
+
+    // What is left is the verbs that are not device-control methods, so
+    // the table has no row to derive from. Exhaustive, deliberately:
+    // adding a verb will not compile until somebody says which devices
+    // it works on. The alternative is a hand-kept list of "the verbs I
+    // remembered to check", which is how `capsule up` came to run
+    // `simctl boot` against an emulator and sit there until it timed out
+    // 120 seconds later, reporting the timeout rather than the mistake.
+    //
+    // `None` means the verb takes no device, or acts on the registry
+    // rather than the device.
+    //
+    // Powering a device on and off is not an Apple-only idea, so both
+    // virtual kinds have it. Physical devices are absent on purpose:
+    // section 9 #1 gates them behind registration and a per-device
+    // opt-in, and nothing here should decide a phone's power state.
     const POWERABLE: &[DeviceKind] = &[Simulator, Emulator];
-    const APPLE: &[DeviceKind] = &[Simulator, PhysicalIos];
-    // Everything that can be handed a payload. A physical iPhone is
-    // absent because no path here puts an app on one — `devicectl` would
-    // and is not wired — and §9 #1 ③ says a capability that is not
-    // available is said out loud rather than attempted into silence.
-    const LOADABLE: &[DeviceKind] = &[Simulator, Emulator, PhysicalAndroid];
-    // Both Android kinds, and only those. `adb reverse` works the same
-    // on an emulator as on a handset, so one verb covers both — a flow
-    // that had to know which kind it was driving is the thing the
-    // device abstraction exists to remove.
-    const ANDROID: &[DeviceKind] = &[Emulator, PhysicalAndroid];
-    Some(match action {
-        // No device, or the registry rather than the device.
-        SimAction::List { .. }
-        | SimAction::Register { .. }
-        | SimAction::AllowDestructive { .. }
-        | SimAction::Migrate { .. }
-        | SimAction::Unregister { .. }
-        | SimAction::Resolve { .. } => return None,
+    // simctl and nothing else. An emulator's counterparts exist
+    // (`emulator -avd`, `adb shell am start`, `adb shell settings`) but
+    // none of them is wired here, and pretending otherwise is how a
+    // caller ends up waiting out a 120-second timeout.
+    const SIMCTL: &[DeviceKind] = &[Simulator];
+    Some(
+        match action {
+            // No device, or the registry rather than the device.
+            SimAction::List { .. }
+            | SimAction::Register { .. }
+            | SimAction::AllowDestructive { .. }
+            | SimAction::Migrate { .. }
+            | SimAction::Unregister { .. }
+            | SimAction::Resolve { .. } => return None,
 
-        // Dispatches all four itself.
-        SimAction::Screenshot { .. } => ALL,
+            SimAction::Boot { .. } | SimAction::Shutdown { .. } => POWERABLE,
 
-        // Apple device tooling: simctl for a simulator, devicectl for a
-        // phone. Neither speaks adb.
-        SimAction::KeychainReset { .. } => APPLE,
+            SimAction::Erase { .. }
+            | SimAction::Appearance { .. }
+            | SimAction::Locale { .. }
+            | SimAction::Exec { .. } => SIMCTL,
 
-        // Taking an app off reaches every kind, and on a physical
-        // Android device it is the first thing the per-device
-        // destructive opt-in ever has to refuse. Registering one prints
-        // that the gate exists; until this arm, nothing could reach it —
-        // erase and keychain-reset are simctl and Apple, so a registered
-        // phone had a gate with nothing behind it.
-        SimAction::Uninstall { .. } => ALL,
-
-        // Putting one on: simctl for a simulator, adb for an emulator or
-        // an Android phone.
-        SimAction::Install { .. } => LOADABLE,
-
-        // A route from the device back to this machine. Android only,
-        // and the two Apple kinds are absent for opposite reasons the
-        // platform table spells out: a simulator is already on this
-        // side of the loopback, and Apple's USB channel has no reverse
-        // direction to open.
-        SimAction::Reverse { .. } => ANDROID,
-
-        // Arranging a handset so a run can reach it, and asking it what
-        // it is doing. adb has a verb for each; neither Apple tool does,
-        // and the platform table carries the sentence that says so.
-        SimAction::Wake { .. }
-        | SimAction::StayAwake { .. }
-        | SimAction::Frontmost { .. }
-        | SimAction::Crashes { .. } => ANDROID,
-
-        // The one exception in this group: a simulator answers it too,
-        // through `simctl privacy`. Only a physical iPhone refuses.
-        SimAction::Permission { .. } => &[Simulator, Emulator, PhysicalAndroid],
-
-        // simctl and nothing else. An emulator's counterparts exist
-        // (`emulator -avd`, `adb shell am start`, `adb shell settings`)
-        // but none of them is wired here, and pretending otherwise is
-        // how a caller ends up waiting out a 120-second timeout.
-        SimAction::Boot { .. } | SimAction::Shutdown { .. } => POWERABLE,
-        SimAction::Erase { .. }
-        | SimAction::Launch { .. }
-        | SimAction::Terminate { .. }
-        | SimAction::Openurl { .. }
-        | SimAction::Appearance { .. }
-        | SimAction::Locale { .. }
-        | SimAction::Exec { .. } => SIMCTL,
-    })
+            // Answered above, from the table.
+            SimAction::Screenshot { .. }
+            | SimAction::KeychainReset { .. }
+            | SimAction::Uninstall { .. }
+            | SimAction::Install { .. }
+            | SimAction::Reverse { .. }
+            | SimAction::Wake { .. }
+            | SimAction::StayAwake { .. }
+            | SimAction::Frontmost { .. }
+            | SimAction::Crashes { .. }
+            | SimAction::Permission { .. }
+            | SimAction::Launch { .. }
+            | SimAction::Terminate { .. }
+            | SimAction::Openurl { .. } => unreachable!("answered by the platform table"),
+        }
+        .to_vec(),
+    )
 }
 
 /// Which entry of the platform table answers for this verb, if any.
@@ -2205,14 +2209,26 @@ fn sim_verb_supports(action: &SimAction) -> Option<&'static [smix_simctl::regist
 fn table_action_of(action: &SimAction) -> Option<&'static str> {
     match action {
         SimAction::Reverse { .. } => Some("reverse_port"),
-        // Each of these refuses on at least one Apple kind for a reason
-        // the table already words. The generic sentence below says the
-        // command runs through simctl, and for all five that is false.
         SimAction::Wake { .. } => Some("wake"),
         SimAction::StayAwake { .. } => Some("set_stay_awake"),
         SimAction::Permission { .. } => Some("set_permission"),
         SimAction::Frontmost { .. } => Some("frontmost_app"),
         SimAction::Crashes { .. } => Some("crash_reports"),
+        // The lifecycle verbs. Each has a row because each is a
+        // `DeviceControl` method with real implementations behind it,
+        // and pointing at the row is what stopped the CLI keeping a
+        // second opinion about where they work.
+        SimAction::Launch { .. } => Some("launch"),
+        SimAction::Terminate { .. } => Some("terminate"),
+        SimAction::Install { .. } => Some("install"),
+        SimAction::Uninstall { .. } => Some("uninstall"),
+        SimAction::Openurl { .. } => Some("open_url"),
+        SimAction::Screenshot { .. } => Some("screenshot"),
+        SimAction::KeychainReset { .. } => Some("keychain_reset"),
+        // No row, because none of these is a `DeviceControl` method:
+        // powering a device, erasing it, and the three simulator-only
+        // settings. Their refusals are built from their own support
+        // list instead, by `refusal_for`.
         SimAction::List { .. }
         | SimAction::Register { .. }
         | SimAction::Resolve { .. }
@@ -2222,14 +2238,7 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
         | SimAction::Boot { .. }
         | SimAction::Shutdown { .. }
         | SimAction::Erase { .. }
-        | SimAction::Screenshot { .. }
-        | SimAction::Launch { .. }
-        | SimAction::Terminate { .. }
-        | SimAction::Install { .. }
-        | SimAction::Uninstall { .. }
-        | SimAction::Openurl { .. }
         | SimAction::Appearance { .. }
-        | SimAction::KeychainReset { .. }
         | SimAction::Locale { .. }
         | SimAction::Exec { .. } => None,
     }
@@ -2237,7 +2246,6 @@ fn table_action_of(action: &SimAction) -> Option<&'static str> {
 
 /// Refuse a verb this device kind has no path for, naming what does.
 fn guard_sim_verb(action: &SimAction, device: &str) -> Result<(), CliError> {
-    use smix_simctl::registry::DeviceKind;
     let Some(kinds) = sim_verb_supports(action) else {
         return Ok(());
     };
@@ -2245,6 +2253,42 @@ fn guard_sim_verb(action: &SimAction, device: &str) -> Result<(), CliError> {
     if kinds.contains(&kind) {
         return Ok(());
     }
+    Err(CliError::Other(refusal_for(action, device, kind)))
+}
+
+/// Whatever drives this kind of device.
+///
+/// One place decides which tool addresses which kind. It was three
+/// hand-written `match device_kind_of(...)` arms before this, on their
+/// way to six, and one of them was already wrong: `uninstall` sent a
+/// registered iPhone to `simctl`, which lists no phones. A verb that
+/// reaches a new kind of device should not also have to know how.
+fn device_control_for(
+    kind: smix_simctl::registry::DeviceKind,
+    udid: &str,
+) -> Box<dyn smix_sdk::device_control::DeviceControl> {
+    use smix_simctl::registry::DeviceKind;
+    match kind {
+        DeviceKind::Simulator => Box::new(smix_sdk::ios_device::IosDeviceControl::new()),
+        DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
+            Box::new(smix_sdk::android_device::AndroidDeviceControl::new())
+        }
+        DeviceKind::PhysicalIos => Box::new(smix_sdk::devicectl_device::DevicectlClient::new(udid)),
+    }
+}
+
+/// What to say when a verb has no path on this kind of device.
+///
+/// Split from [`guard_sim_verb`] so the sentence can be read without a
+/// registry: the guard resolves the kind from whatever this machine has
+/// recorded, and a test of the wording that went through it would pass
+/// or fail on that.
+fn refusal_for(
+    action: &SimAction,
+    device: &str,
+    kind: smix_simctl::registry::DeviceKind,
+) -> String {
+    use smix_simctl::registry::DeviceKind;
     // The table's own words when it has them: it is where every other
     // refusal's wording lives, and it says why *this* device cannot and
     // where the caller should go instead.
@@ -2252,27 +2296,33 @@ fn guard_sim_verb(action: &SimAction, device: &str) -> Result<(), CliError> {
         && let Some(smix_sdk::device_control::Availability::RefusedByName { why, instead }) =
             smix_sdk::device_control::availability(table_action, kind)
     {
-        return Err(CliError::Other(format!(
-            "{device} cannot do this: {why}\nInstead: {instead}"
-        )));
+        return format!("{device} cannot do this: {why}\nInstead: {instead}");
     }
-    let what = match kind {
+    // What is left has no row, so the sentence is built from the verb's
+    // own support list rather than asserting a tool.
+    //
+    // It used to say "this command runs through simctl", which is true
+    // of the six verbs that do and false of every verb that does not,
+    // and it carried a line about `runner up` on any Android device --
+    // advice about a different verb entirely. A consumer ran
+    // `smix sim launch` after installing an app, met that paragraph, and
+    // read it as a report that the install had taken their runner down.
+    let name_of = |kind| match kind {
         DeviceKind::Simulator => "an iOS Simulator",
         DeviceKind::Emulator => "an Android emulator",
         DeviceKind::PhysicalIos => "a physical iPhone or iPad",
         DeviceKind::PhysicalAndroid => "a physical Android device",
     };
-    let alternative = match kind {
-        DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
-            "\nAndroid lifecycle goes through adb — `smix runner up <serial> \
-             --platform android` brings the device up for driving."
-        }
-        _ => "",
-    };
-    Err(CliError::Other(format!(
-        "this command runs through simctl, and {device} is {what} — \
-         so there is nothing here it could do to it.{alternative}"
-    )))
+    let works_on = sim_verb_supports(action)
+        .unwrap_or_default()
+        .into_iter()
+        .map(name_of)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "{device} is {}, and this command has no path to it.\nIt works on: {works_on}.",
+        name_of(kind)
+    )
 }
 
 /// Where a device fact is written: this machine.
@@ -2838,66 +2888,101 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     launch_args,
                 } => {
                     let udid = resolve_device(&device)?;
+                    let kind = device_kind_of(&device);
                     let pairs: Vec<(&str, &str)> = child_env
                         .iter()
                         .map(|(k, v)| (k.as_str(), v.as_str()))
                         .collect();
-                    let LaunchResult { pid } = simctl
-                        .launch_with_args_and_env(&udid, &bundle_id, &launch_args, &pairs)
-                        .await?;
-                    println!("launched: {bundle_id} on {udid} (pid {pid})");
+                    // `SIMCTL_CHILD_*` is a CoreSimulator facility: the
+                    // simulator's launchd hands the variables to the
+                    // child. `am start` has no equivalent -- an activity
+                    // inherits the system's environment and nothing
+                    // else -- so passing them would be dropping them
+                    // silently, which §9 #1 ③ is about.
+                    if !pairs.is_empty() && kind != smix_simctl::registry::DeviceKind::Simulator {
+                        return Err(CliError::Other(format!(
+                            "--child-env sets the launched process's environment, and only \
+                             a simulator's launchd can do that; {udid} is driven by \
+                             {}.\nInstead: pass the values as launch arguments, which \
+                             every backend carries.",
+                            if kind == smix_simctl::registry::DeviceKind::PhysicalIos {
+                                "devicectl"
+                            } else {
+                                "adb"
+                            }
+                        )));
+                    }
+                    let pid = if kind == smix_simctl::registry::DeviceKind::Simulator {
+                        let LaunchResult { pid } = simctl
+                            .launch_with_args_and_env(&udid, &bundle_id, &launch_args, &pairs)
+                            .await?;
+                        pid
+                    } else {
+                        device_control_for(kind, &udid)
+                            .launch_with_args(&udid, &bundle_id, &launch_args, None)
+                            .await
+                            .map_err(|e| CliError::Other(e.to_string()))?
+                    };
+                    // `am start` reports no pid and the Android backend
+                    // returns 0 for it. Printing "(pid 0)" reads as a
+                    // process number rather than as its absence.
+                    if pid == 0 {
+                        println!("launched: {bundle_id} on {udid}");
+                    } else {
+                        println!("launched: {bundle_id} on {udid} (pid {pid})");
+                    }
                 }
                 SimAction::Terminate { device, bundle_id } => {
                     let udid = resolve_device(&device)?;
-                    simctl.terminate(&udid, &bundle_id).await?;
+                    device_control_for(device_kind_of(&device), &udid)
+                        .terminate(&udid, &bundle_id)
+                        .await
+                        .map_err(|e| CliError::Other(e.to_string()))?;
                     println!("terminated: {bundle_id} on {udid}");
                 }
                 SimAction::Install { device, app_path } => {
-                    use smix_simctl::registry::DeviceKind;
                     let udid = resolve_device(&device)?;
-                    // Which tool carries the payload is smix's problem,
-                    // not the caller's — the same shape `screenshot`
-                    // takes. `guard_sim_verb` has already refused the
-                    // kinds with no path, so the arms here are the ones
-                    // that have one.
-                    match device_kind_of(&device) {
-                        DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
-                            use smix_sdk::device_control::DeviceControl;
-                            smix_sdk::android_device::AndroidDeviceControl::new()
-                                .install(&udid, &app_path.display().to_string())
-                                .await
-                                .map_err(|e| CliError::Other(e.to_string()))?;
-                        }
-                        _ => {
-                            simctl
-                                .install(&udid, &app_path.display().to_string())
-                                .await?;
+                    let kind = device_kind_of(&device);
+                    let control = device_control_for(kind, &udid);
+                    // Who was in front before the payload lands.
+                    //
+                    // A reinstall ends the running copy of the app it
+                    // replaces -- `adb install -r` always has -- and
+                    // nothing said so. A consumer installed over the app
+                    // they were driving, found the next step reading the
+                    // launcher, and concluded the install had taken the
+                    // runner down. The runner was fine; their app was
+                    // gone. Read rather than assumed, and printed only
+                    // when it really happened: a line every install
+                    // carries is a line readers learn to skip.
+                    let before = control.frontmost_app(&udid).await.ok().flatten();
+                    control
+                        .install(&udid, &app_path.display().to_string())
+                        .await
+                        .map_err(|e| CliError::Other(e.to_string()))?;
+                    println!("installed: {} on {udid}", app_path.display());
+                    if let Some(was) = before {
+                        let after = control.frontmost_app(&udid).await.ok().flatten();
+                        if after.as_ref().map(|f| &f.package) != Some(&was.package) {
+                            println!(
+                                "  {} was running and this reinstall stopped it — \
+                                 bring it back with `smix sim launch {device} {}`",
+                                was.package, was.package
+                            );
                         }
                     }
-                    println!("installed: {} on {udid}", app_path.display());
                 }
                 SimAction::Uninstall { device, bundle_id } => {
-                    use smix_simctl::registry::DeviceKind;
                     let udid = resolve_device(&device)?;
                     let bundle = bundle_id.clone();
-                    match device_kind_of(&device) {
-                        DeviceKind::Emulator | DeviceKind::PhysicalAndroid => {
-                            let control = smix_sdk::android_device::AndroidDeviceControl::new();
-                            with_device_lease(&control, &udid, |leased| async move {
-                                leased.uninstall(&bundle).await?;
-                                Ok(((), leased))
-                            })
-                            .await?;
-                        }
-                        _ => {
-                            let control = smix_sdk::ios_device::IosDeviceControl::new();
-                            with_device_lease(&control, &udid, |leased| async move {
-                                leased.uninstall(&bundle).await?;
-                                Ok(((), leased))
-                            })
-                            .await?;
-                        }
-                    }
+                    // The `_ =>` arm this replaces sent a registered
+                    // iPhone to `simctl`, which lists no phones.
+                    let control = device_control_for(device_kind_of(&device), &udid);
+                    with_device_lease(control.as_ref(), &udid, |leased| async move {
+                        leased.uninstall(&bundle).await?;
+                        Ok(((), leased))
+                    })
+                    .await?;
                     println!("uninstalled: {bundle_id} on {udid}");
                 }
                 SimAction::Reverse {
@@ -3076,7 +3161,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
                 SimAction::Openurl { device, url } => {
                     let udid = resolve_device(&device)?;
-                    simctl.open_url(&udid, &url).await?;
+                    device_control_for(device_kind_of(&device), &udid)
+                        .open_url(&udid, &url)
+                        .await
+                        .map_err(|e| CliError::Other(e.to_string()))?;
                     println!("opened: {url} on {udid}");
                 }
                 SimAction::Appearance { device, mode } => {
@@ -6649,7 +6737,7 @@ mod device_power {
     // instead of ours. Neither side could tell, because neither side
     // could ask.
 
-    fn kinds(action: &SimAction) -> &'static [DeviceKind] {
+    fn kinds(action: &SimAction) -> Vec<DeviceKind> {
         sim_verb_supports(action).expect("this verb acts on a device")
     }
 
@@ -6770,12 +6858,13 @@ mod tests {
         assert!(install.contains(&Emulator), "install: {install:?}");
         assert!(install.contains(&PhysicalAndroid), "install: {install:?}");
         assert!(install.contains(&Simulator), "install: {install:?}");
-        // No devicectl path is wired for it, and §9 #1 ③ says an
-        // unavailable capability is loud rather than silently attempted.
+        // A registered iPhone too, since `DevicectlClient::install` was
+        // wired: the CLI refused it for a while afterwards because it
+        // kept its own list of where each verb worked, and that list
+        // still said what had been true before.
         assert!(
-            !install.contains(&PhysicalIos),
-            "install claims a physical iPhone, and nothing here can put an \
-             app on one: {install:?}"
+            install.contains(&PhysicalIos),
+            "install refuses a registered iPhone and devicectl installs on one: {install:?}"
         );
 
         let uninstall = sim_verb_supports(&SimAction::Uninstall {
@@ -6798,12 +6887,18 @@ mod tests {
     /// nothing but its argument.
     #[test]
     fn arranging_verbs_reach_the_kinds_that_have_a_path() {
+        use smix_simctl::registry::DeviceKind;
         use smix_simctl::registry::DeviceKind::{
             Emulator, PhysicalAndroid, PhysicalIos, Simulator,
         };
 
-        let android_only: Vec<(&str, Option<&'static [_]>)> = vec![
-            ("wake", sim_verb_supports(&SimAction::Wake { device: String::new() })),
+        let android_only: Vec<(&str, Option<Vec<DeviceKind>>)> = vec![
+            (
+                "wake",
+                sim_verb_supports(&SimAction::Wake {
+                    device: String::new(),
+                }),
+            ),
             (
                 "stay-awake",
                 sim_verb_supports(&SimAction::StayAwake {
@@ -6914,6 +7009,324 @@ mod tests {
             assert!(
                 availability(expected, Simulator).is_some(),
                 "{expected} is not a row in the platform table"
+            );
+        }
+    }
+
+    /// Every `smix sim` verb, one of each, for the reconciliations below.
+    ///
+    /// Hand-written and therefore the kind of copy that goes stale — so
+    /// the test underneath it checks the list against the command tree
+    /// clap builds from the enum itself. A verb that leaves this list
+    /// takes its reconciliation with it, silently, which is exactly the
+    /// failure the reconciliation exists to catch.
+    fn every_sim_action() -> Vec<(&'static str, SimAction)> {
+        let d = String::new;
+        vec![
+            (
+                "list",
+                SimAction::List {
+                    json: false,
+                    registered: false,
+                },
+            ),
+            (
+                "register",
+                SimAction::Register {
+                    alias: d(),
+                    udid: d(),
+                    locale: None,
+                    runner_port: None,
+                    kind: DeviceKindArg::Simulator,
+                    name: None,
+                },
+            ),
+            ("resolve", SimAction::Resolve { device: d() }),
+            (
+                "migrate",
+                SimAction::Migrate {
+                    dry_run: false,
+                    from: Vec::new(),
+                },
+            ),
+            ("unregister", SimAction::Unregister { alias: d() }),
+            (
+                "allow-destructive",
+                SimAction::AllowDestructive { device: d() },
+            ),
+            ("boot", SimAction::Boot { device: d() }),
+            ("shutdown", SimAction::Shutdown { device: d() }),
+            ("erase", SimAction::Erase { device: d() }),
+            (
+                "screenshot",
+                SimAction::Screenshot {
+                    device: d(),
+                    out: std::path::PathBuf::new(),
+                },
+            ),
+            (
+                "launch",
+                SimAction::Launch {
+                    device: d(),
+                    bundle_id: d(),
+                    child_env: Vec::new(),
+                    launch_args: Vec::new(),
+                },
+            ),
+            (
+                "terminate",
+                SimAction::Terminate {
+                    device: d(),
+                    bundle_id: d(),
+                },
+            ),
+            (
+                "install",
+                SimAction::Install {
+                    device: d(),
+                    app_path: std::path::PathBuf::new(),
+                },
+            ),
+            (
+                "uninstall",
+                SimAction::Uninstall {
+                    device: d(),
+                    bundle_id: d(),
+                },
+            ),
+            (
+                "openurl",
+                SimAction::Openurl {
+                    device: d(),
+                    url: d(),
+                },
+            ),
+            (
+                "appearance",
+                SimAction::Appearance {
+                    device: d(),
+                    mode: Appearance::Light,
+                },
+            ),
+            ("keychain-reset", SimAction::KeychainReset { device: d() }),
+            (
+                "locale",
+                SimAction::Locale {
+                    device: d(),
+                    lang: d(),
+                    reboot: false,
+                },
+            ),
+            (
+                "exec",
+                SimAction::Exec {
+                    device: d(),
+                    verb: d(),
+                    args: Vec::new(),
+                },
+            ),
+            (
+                "reverse",
+                SimAction::Reverse {
+                    device: d(),
+                    port: 0,
+                    to: None,
+                    remove: false,
+                },
+            ),
+            ("wake", SimAction::Wake { device: d() }),
+            (
+                "stay-awake",
+                SimAction::StayAwake {
+                    device: d(),
+                    state: false,
+                },
+            ),
+            (
+                "permission",
+                SimAction::Permission {
+                    device: d(),
+                    bundle_id: d(),
+                    permission: d(),
+                    action: d(),
+                },
+            ),
+            (
+                "frontmost",
+                SimAction::Frontmost {
+                    device: d(),
+                    json: false,
+                },
+            ),
+            (
+                "crashes",
+                SimAction::Crashes {
+                    device: d(),
+                    app: None,
+                    json: false,
+                },
+            ),
+        ]
+    }
+
+    /// One verb out of the list above, by the name clap knows it by.
+    fn sim_verb(want: &str) -> SimAction {
+        every_sim_action()
+            .into_iter()
+            .find(|(n, _)| *n == want)
+            .map(|(_, a)| a)
+            .unwrap_or_else(|| panic!("no `smix sim {want}`"))
+    }
+
+    /// The kinds of device a verb reaches. Panics for the verbs that
+    /// take no device, which the callers below never ask about.
+    fn verb_kinds(action: &SimAction) -> Vec<smix_simctl::registry::DeviceKind> {
+        sim_verb_supports(action)
+            .expect("this verb acts on a device")
+            .to_vec()
+    }
+
+    /// The list above names every `sim` subcommand and no others.
+    ///
+    /// Read off the clap tree, which is generated from the enum, so the
+    /// two cannot drift: adding a verb and forgetting to list it here
+    /// fails, and so does listing one that no longer exists.
+    #[test]
+    fn the_enumeration_of_sim_verbs_matches_the_command_tree() {
+        use clap::CommandFactory;
+        use std::collections::BTreeSet;
+
+        let cmd = Cli::command();
+        let sim = cmd
+            .get_subcommands()
+            .find(|c| c.get_name() == "sim")
+            .expect("smix sim exists");
+        let from_clap: BTreeSet<&str> = sim.get_subcommands().map(clap::Command::get_name).collect();
+        let listed: BTreeSet<&str> = every_sim_action().iter().map(|(n, _)| *n).collect();
+        assert_eq!(
+            listed, from_clap,
+            "the hand-written verb list and the command tree disagree"
+        );
+    }
+
+    /// A verb the platform table answers for supports exactly what the
+    /// table says works — not a kind more, not a kind less.
+    ///
+    /// The CLI used to keep its own list of which devices each verb
+    /// reached, and by 10.2 the two had drifted in five places, every
+    /// one of them the CLI refusing something the backend carries out:
+    /// `launch`, `terminate` and `openurl` were simulator-only while
+    /// `AndroidDeviceControl` ran all three through `am`; `install`
+    /// excluded a physical iPhone whose `DevicectlClient::install` had
+    /// been wired since 10.2; `keychain-reset` claimed a phone the table
+    /// refuses. A consumer met the first of those and read its refusal
+    /// as a report that something had broken.
+    ///
+    /// Equality rather than containment: a CLI that claimed a kind the
+    /// table refuses would reach a backend with nothing behind it.
+    #[test]
+    fn a_verb_the_table_answers_for_supports_exactly_what_the_table_says() {
+        use smix_sdk::device_control::{Availability, availability};
+        use smix_simctl::registry::DeviceKind;
+
+        let mut reconciled = 0;
+        for (name, action) in every_sim_action() {
+            let Some(table_action) = table_action_of(&action) else {
+                continue;
+            };
+            reconciled += 1;
+            let claimed = sim_verb_supports(&action)
+                .unwrap_or_else(|| panic!("{name} names a table row but takes no device"));
+            // Both sides in `DeviceKind::ALL` order, so the comparison
+            // is about membership and never about the order a list was
+            // written in.
+            let supported: Vec<_> = DeviceKind::ALL
+                .iter()
+                .copied()
+                .filter(|k| claimed.contains(k))
+                .collect();
+            let works: Vec<_> = DeviceKind::ALL
+                .iter()
+                .copied()
+                .filter(|k| availability(table_action, *k) == Some(Availability::Works))
+                .collect();
+            assert_eq!(
+                supported, works,
+                "`smix sim {name}` and the platform table disagree about {table_action}"
+            );
+        }
+        // Exact, so that a verb quietly dropping out of the table's
+        // answer shows up here rather than in a consumer's refusal.
+        assert_eq!(
+            reconciled, 13,
+            "the number of verbs answered by the platform table changed"
+        );
+    }
+
+    /// The four the consumer round found refused while the backend
+    /// carried them out.
+    #[test]
+    fn the_verbs_the_backend_carries_out_are_not_refused() {
+        use smix_simctl::registry::DeviceKind::{Emulator, PhysicalAndroid, PhysicalIos};
+
+        for verb in ["launch", "openurl"] {
+            let kinds = verb_kinds(&sim_verb(verb));
+            for kind in [Emulator, PhysicalAndroid, PhysicalIos] {
+                assert!(
+                    kinds.contains(&kind),
+                    "`smix sim {verb}` refuses {kind:?} and the backend does it: {kinds:?}"
+                );
+            }
+        }
+
+        let terminate = verb_kinds(&sim_verb("terminate"));
+        for kind in [Emulator, PhysicalAndroid] {
+            assert!(
+                terminate.contains(&kind),
+                "terminate refuses {kind:?} and `am force-stop` does it: {terminate:?}"
+            );
+        }
+        assert!(
+            !terminate.contains(&PhysicalIos),
+            "devicectl stops by pid and cannot find one from a bundle id: {terminate:?}"
+        );
+
+        assert!(
+            verb_kinds(&sim_verb("install")).contains(&PhysicalIos),
+            "install refuses a registered iPhone, and DevicectlClient::install is wired"
+        );
+    }
+
+    /// A verb with no row in the platform table refuses in its own
+    /// words.
+    ///
+    /// The sentence these used to share said the command runs through
+    /// simctl. True of the six that do; false of every verb that does
+    /// not, and it was the false half a consumer read.
+    #[test]
+    fn a_verb_the_table_cannot_answer_for_refuses_without_claiming_simctl() {
+        for verb in ["erase", "appearance", "locale", "exec"] {
+            let action = sim_verb(verb);
+            assert!(
+                table_action_of(&action).is_none(),
+                "{verb} has a table row now — reconcile it instead"
+            );
+            let said = refusal_for(
+                &action,
+                "emulator-5554",
+                smix_simctl::registry::DeviceKind::Emulator,
+            );
+            assert!(
+                !said.contains("runs through simctl"),
+                "`smix sim {verb}` still claims simctl: {said}"
+            );
+            assert!(
+                said.contains("iOS Simulator"),
+                "`smix sim {verb}` does not say where it does work: {said}"
+            );
+            assert!(
+                !said.contains("Android lifecycle goes through adb"),
+                "a refusal carrying advice about another verb entirely: {said}"
             );
         }
     }
