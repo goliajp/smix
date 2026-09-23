@@ -791,7 +791,27 @@ alive = subprocess.run(["ps", "-p", str(holder["pid"])], capture_output=True).re
 sys.exit(0 if alive and holder["pid"] != os.getpid() else 1)
 PYBUSY
 }
-ANDROID_DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"
+# One emulator for every Android leg, chosen once, and by whose it is --
+# not by which port it answers on. This used to default to emulator-5554,
+# a slot: on 2026-09-24 the AVD in that slot was a consumer's
+# (`qip-consumer-36`), and the release checklist also exported
+# ANDROID_SERIAL=emulator-5554, which every unpinned adb honours. Run as
+# written, the ship would have installed our fixture and runner on their
+# emulator. The instrumentation and behaviour gates already refused to
+# guess (pick-dev-emulator: only a device this machine's ledger says smix
+# booted); these legs were the half that still guessed. The same picker
+# now answers for all of them, and the gates are handed its answer so the
+# four cannot drive two different emulators.
+if [[ -n "${SMIX_V10_ANDROID:-}" ]]; then
+  ANDROID_DEVICE="$SMIX_V10_ANDROID"
+else
+  ANDROID_DEVICE="$(bash "$ROOT/scripts/dev/pick-dev-emulator.sh" 2>&1)" \
+    || fail "no emulator this release may drive:
+$ANDROID_DEVICE"
+fi
+export SMIX_ANDROID_SERIAL="${SMIX_ANDROID_SERIAL:-$ANDROID_DEVICE}"
+[[ "$SMIX_ANDROID_SERIAL" == "$ANDROID_DEVICE" ]] \
+  || fail "SMIX_ANDROID_SERIAL=$SMIX_ANDROID_SERIAL and SMIX_V10_ANDROID=$ANDROID_DEVICE name two emulators; the Android legs must drive one"
 # Free once is not free enough. The consumer's batch runs flows back to
 # back with gaps of seconds, and these three legs take minutes: a check
 # that proceeds on the first idle sample walks into the next flow.
@@ -832,8 +852,9 @@ android_device_is_busy \
 
 log "android instrumentation (device)"
 bash "$ROOT/scripts/release/android-instrumentation-gate.sh" \
-  || fail "android instrumentation gate FAILED — see the verdict above; start an emulator with \
-\"\$ANDROID_HOME/emulator/emulator\" -avd sim-smix-android-01 -port 5554 -no-snapshot-save &"
+  || fail "android instrumentation gate FAILED — see the verdict above. To give it an emulator it may \
+drive, start one through the ledger: smix sim boot sim-smix-android-01 (an emulator started by hand \
+writes no ledger, and the picker is right to refuse it)"
 
 # --- android behaviour (device) ----------------------------------------
 # Three assertions that each go red when their fix is reverted: the
@@ -858,7 +879,7 @@ SMIX_BIN="$ROOT/target/release/smix" \
 #
 # They need the fixture with `debugImplementation("jp.golia.smix:smix-probe")`
 # installed on the emulator; each says which line is missing when it is not.
-V10_DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"
+V10_DEVICE="$ANDROID_DEVICE"
 
 # These five need a runner and none of them starts one. They passed for
 # weeks because a runner happened to be up on 22095 from a hand-run, and
