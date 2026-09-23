@@ -15,6 +15,7 @@ const WARMUP_FRAC: u32 = 10;
 
 fn mk(label: &str) -> A11yNode {
     A11yNode {
+        visible_bounds: None,
         raw_type: "other".into(),
         element_type_raw: 1,
         role: None,

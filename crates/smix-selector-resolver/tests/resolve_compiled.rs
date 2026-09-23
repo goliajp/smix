@@ -19,6 +19,7 @@ use smix_selector_resolver::{
 
 fn mk_leaf(label: &str) -> A11yNode {
     A11yNode {
+        visible_bounds: None,
         hittable: None,
         raw_type: "other".into(),
         element_type_raw: 1,
@@ -45,6 +46,7 @@ fn mk_leaf(label: &str) -> A11yNode {
 
 fn mk_app(children: Vec<A11yNode>) -> A11yNode {
     A11yNode {
+        visible_bounds: None,
         hittable: None,
         raw_type: "application".into(),
         element_type_raw: 1,

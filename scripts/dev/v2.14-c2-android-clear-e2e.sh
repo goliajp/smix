@@ -20,7 +20,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 # A serial from the caller, or the ledger's answer — never a port
 # somebody else's emulator may be sitting on.
 SERIAL="${SMIX_ANDROID_SERIAL:-}"
@@ -36,7 +37,7 @@ WORK="$(mktemp -d)"
 log()  { printf '[c2-clear] %s\n' "$*" >&2; }
 step() { printf '[c2-clear] --- %s\n' "$*" >&2; }
 fail() { printf '[c2-clear] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c2-clear] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c2-clear] SKIP: %s\n' "$*" >&2; exit 2; }
 
 started=0
 cleanup() {
@@ -52,9 +53,9 @@ cleanup() {
 trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
-command -v adb >/dev/null 2>&1 || skip "no adb — this needs an Android emulator"
+command -v adb >/dev/null 2>&1 || cannot_judge "no adb — this needs an Android emulator"
 adb devices | grep -q "^${SERIAL}[[:space:]]*device$" \
-  || skip "no emulator at $SERIAL — start one (emulator -avd sim-smix-android-01), or set SMIX_ANDROID_SERIAL"
+  || cannot_judge "no emulator at $SERIAL — start one (emulator -avd sim-smix-android-01), or set SMIX_ANDROID_SERIAL"
 
 # The field this drives. Settings' search box is on every image and is a
 # plain EditText, which is what makes it a fair stand-in for an app's

@@ -19,10 +19,12 @@ use smix_selector::{Modifiers, Pattern, Selector};
 use smix_selector_resolver::{resolve_selector, resolve_selector_all};
 
 let tree = A11yNode {
+    visible_bounds: None,
     raw_type: "application".into(), element_type_raw: 1,
     bounds: Rect { x: 0.0, y: 0.0, w: 390.0, h: 844.0 },
     children: vec![
         A11yNode { /* "Login" button */
+            visible_bounds: None,
 #            raw_type: "button".into(), element_type_raw: 1, role: None, identifier: None,
 #            label: Some("Login".into()),
 #            title: None, placeholder_value: None, value: None, text: None,

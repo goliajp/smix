@@ -24,6 +24,7 @@ use smix_screen::{
 };
 
 let node = A11yNode {
+    visible_bounds: None,
     raw_type: "button".into(),
     element_type_raw: 9,
     role: Some(Role::Button),
@@ -36,6 +37,7 @@ let node = A11yNode {
 };
 let viewport = Rect { x: 0.0, y: 0.0, w: 390.0, h: 844.0 };
 let tree = A11yNode {
+    visible_bounds: None,
     raw_type: "application".into(),
     bounds: viewport,
     children: vec![node.clone()],

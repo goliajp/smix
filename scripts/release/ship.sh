@@ -492,6 +492,15 @@ python3 "$ROOT/scripts/dev/flake-classify.test.py" > /tmp/smix-ship-flake.log 2>
   || fail "flake classifier self-test FAILED — see /tmp/smix-ship-flake.log"
 bash "$ROOT/scripts/release/corpus-gate.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
   || fail "corpus-gate verdict self-test FAILED — see /tmp/smix-ship-flake.log"
+# The tier's own reading of an exit code: 0 drove, 2 could not judge,
+# anything else failed. It read the word SKIP out of a script's output
+# until this cycle, which a passing script's log can contain.
+bash "$ROOT/scripts/release/device-e2e-tier.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
+  || fail "device-e2e-tier verdict self-test FAILED — see /tmp/smix-ship-flake.log"
+# And how the verifier at the end of this ship reads a late registry —
+# checked here rather than discovered there, an hour and a half later.
+bash "$ROOT/scripts/release/verify-published.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
+  || fail "verify-published verdict self-test FAILED — see /tmp/smix-ship-flake.log"
 bash "$ROOT/scripts/dev/v3.0-c3-determinism.sh" --selftest >> /tmp/smix-ship-flake.log 2>&1 \
   || fail "determinism verdict self-test FAILED — see /tmp/smix-ship-flake.log"
 
@@ -1160,6 +1169,27 @@ SMIX_BIN="$ROOT/target/release/smix" \
   "$ROOT/scripts/release/corpus-gate.sh" \
     > /tmp/smix-ship-corpus.log 2>&1 \
   || fail "corpus gate FAILED — see /tmp/smix-ship-corpus.log"
+
+# --- the checkpoint evidence, run by someone other than its author ----
+# Every `*-e2e.sh` is a checkpoint's proof, and until this line none of
+# them ran here: they were written, run once by hand the day they landed,
+# and never again. One had been red since the checkpoint after it — C7
+# changed the rectangle C5's Android leg picks its subject from, and
+# nothing said so for six checkpoints.
+#
+# The tier is what counts: a leg that could not judge (exit 2) is named,
+# a leg that failed (exit 1) fails this, and everything skipping is a
+# failure of its own — a measurement that did not happen must not look
+# like one that passed.
+#
+# One binary for all of them, the release one this ship built, for the
+# reason in scripts/lib/e2e-binary.sh.
+log "device e2e tier"
+SMIX_E2E_UDID="$SMIX_CORPUS_SIM" \
+SMIX_BIN="$ROOT/target/release/smix" \
+  bash "$ROOT/scripts/release/device-e2e-tier.sh" \
+    > /tmp/smix-ship-e2e-tier.log 2>&1 \
+  || fail "device e2e tier FAILED — see /tmp/smix-ship-e2e-tier.log"
 
 # --- ffi bindings -----------------------------------------------------
 # The Swift and Kotlin bindings are committed next to binary blobs, and

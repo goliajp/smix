@@ -19,14 +19,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 OURS_ALIAS="${SMIX_C5_OURS_ALIAS:-smix-android}"
 WORK="$(mktemp -d)"
 
 log()  { printf '[c5] %s\n' "$*" >&2; }
 step() { printf '[c5] --- %s\n' "$*" >&2; }
 fail() { printf '[c5] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c5] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c5] SKIP: %s\n' "$*" >&2; exit 2; }
 
 # What this script starts by hand it stops by hand; what it starts via
 # smix it stops via smix. Nothing else.
@@ -41,11 +42,11 @@ cleanup() {
 trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"
-command -v adb >/dev/null 2>&1 || skip "no adb"
-command -v xcrun >/dev/null 2>&1 || skip "no xcrun"
+command -v adb >/dev/null 2>&1 || cannot_judge "no adb"
+command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun"
 
 OURS_SERIAL="$("$SMIX" sim resolve "$OURS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
-[ -n "$OURS_SERIAL" ] || skip "no emulator registered as '$OURS_ALIAS'"
+[ -n "$OURS_SERIAL" ] || cannot_judge "no emulator registered as '$OURS_ALIAS'"
 OURS_PORT="${OURS_SERIAL##*-}"
 THEIRS_PORT=$((OURS_PORT + 2))
 THEIRS_ANDROID="emulator-$THEIRS_PORT"
@@ -110,7 +111,7 @@ for rt in json.load(sys.stdin)["devices"].values():
         if d.get("name","").startswith("sim-smix-") and d.get("state")=="Shutdown" and d.get("isAvailable"):
             print(d["udid"]); raise SystemExit
 ')"
-[ -n "$THEIRS_IOS" ] || skip "no shut-down sim-smix-* to stand in for somebody else's"
+[ -n "$THEIRS_IOS" ] || cannot_judge "no shut-down sim-smix-* to stand in for somebody else's"
 xcrun simctl boot "$THEIRS_IOS" >/dev/null 2>&1 || fail "could not hand-boot $THEIRS_IOS"
 sleep 15
 if "$SMIX" sim shutdown "$THEIRS_IOS" > "$WORK/refuse-i.log" 2>&1; then

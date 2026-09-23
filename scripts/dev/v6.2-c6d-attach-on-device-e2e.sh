@@ -14,7 +14,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C6D_IOS:-smix-ios}"
 PORT="${SMIX_C6D_PORT:-22092}"
 BUNDLE="jp.golia.smix.fixture"
@@ -25,7 +26,7 @@ WORK="$(mktemp -d)"
 log()  { printf '[c6d] %s\n' "$*" >&2; }
 step() { printf '[c6d] --- %s\n' "$*" >&2; }
 fail() { printf '[c6d] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c6d] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c6d] SKIP: %s\n' "$*" >&2; exit 2; }
 
 UDID="" WE_BOOTED=0 WE_UPPED=0
 cleanup() {
@@ -40,16 +41,16 @@ cleanup() {
 trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"
-command -v xcrun >/dev/null 2>&1 || skip "no xcrun — this needs Xcode"
+command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun — this needs Xcode"
 UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
-[ -n "$UDID" ] || skip "no sim registered as '$ALIAS'"
-[ -d "$FIXTURE" ] || skip "no iOS fixture at $FIXTURE"
-[ -d "$PROJECT" ] || skip "no runner project at $PROJECT"
+[ -n "$UDID" ] || cannot_judge "no sim registered as '$ALIAS'"
+[ -d "$FIXTURE" ] || cannot_judge "no iOS fixture at $FIXTURE"
+[ -d "$PROJECT" ] || cannot_judge "no runner project at $PROJECT"
 # Refuse to collide with a runner already on this port — up_on_with would
 # (correctly) refuse to kill an unrecorded runner, so pick a free port
 # instead of fighting one somebody else owns.
 if curl -s "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q '"ok":true'; then
-  skip "port $PORT already serves a runner — set SMIX_C6D_PORT to a free port"
+  cannot_judge "port $PORT already serves a runner — set SMIX_C6D_PORT to a free port"
 fi
 
 step "boot $ALIAS ($UDID), install fixture"

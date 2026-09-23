@@ -20,7 +20,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C4_ANDROID:-smix-android}"
 PORT="${SMIX_C4_PORT:-22088}"
 APPID="dev.smix.fixture"
@@ -36,20 +37,20 @@ MISSING="SMIX_C4_MISSING"
 log()  { printf '[c4] %s\n' "$*" >&2; }
 step() { printf '[c4] --- %s\n' "$*" >&2; }
 fail() { printf '[c4] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c4] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c4] SKIP: %s\n' "$*" >&2; exit 2; }
 
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
-command -v adb >/dev/null 2>&1 || skip "no adb — this needs the Android SDK"
+command -v adb >/dev/null 2>&1 || cannot_judge "no adb — this needs the Android SDK"
 
 SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
-[ -n "$SERIAL" ] || skip "no emulator registered as '$ALIAS'"
-adb devices 2>/dev/null | grep -q "^$SERIAL[[:space:]]*device" || skip "device $SERIAL not attached"
-[ -f "$APK" ] || skip "no Android fixture apk (scripts/dev/build-android-fixture.sh)"
+[ -n "$SERIAL" ] || cannot_judge "no emulator registered as '$ALIAS'"
+adb devices 2>/dev/null | grep -q "^$SERIAL[[:space:]]*device" || cannot_judge "device $SERIAL not attached"
+[ -f "$APK" ] || cannot_judge "no Android fixture apk (scripts/dev/build-android-fixture.sh)"
 curl -s "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q smix-android-runner \
-  || skip "no Android runner on $PORT"
+  || cannot_judge "no Android runner on $PORT"
 log "device $SERIAL, runner $PORT"
 
 adb -s "$SERIAL" install -r "$APK" >"$WORK/install.log" 2>&1 || fail "fixture install failed: $(tail -2 "$WORK/install.log")"

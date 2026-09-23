@@ -362,16 +362,25 @@ bash scripts/dev/plugin-readiness.test.sh
 python3 scripts/dev/plugin-capability-parity.test.py
 bash scripts/dev/plugin-monitor.test.sh
 
+# What every e2e answers with its exit code, and what the tier makes of
+# it. Device-free: it judges the reading, not a device.
+python3 scripts/dev/an-e2e-says-whether-it-judged.py
+python3 scripts/dev/an-e2e-says-whether-it-judged.test.py
+bash scripts/release/device-e2e-tier.sh --selftest
+# How the release verifier reads a registry that has not caught up. The
+# same lateness answered NOT YET on one registry and FAIL on another.
+bash scripts/release/verify-published.sh --selftest
+
 # The device e2e scripts (record/propose/federation) each need a booted
 # sim or emulator, so preflight — device-free and run dozens of times a
-# day — only runs them when SMIX_DEVICE_E2E is set. The glob wires every
-# `*-e2e.sh` into a gate so workflow-scan reads them as run rather than
-# orphaned, without a hand-kept list that would drift as checkpoints add
-# scripts.
+# day — only runs them when SMIX_DEVICE_E2E is set.
+#
+# Through the tier rather than a bare loop. The loop ran the same
+# scripts and could not say how many of them did anything: a run where
+# every one of them skipped exited 0 and read as success.
 if [[ -n "${SMIX_DEVICE_E2E:-}" ]]; then
-    for e2e in scripts/dev/*-e2e.sh; do
-        bash "$e2e"
-    done
+    SMIX_E2E_UDID="${SMIX_E2E_UDID:-$(bash scripts/dev/pick-dev-sim.sh)}" \
+        bash scripts/release/device-e2e-tier.sh
 fi
 
 echo "preflight: clean"

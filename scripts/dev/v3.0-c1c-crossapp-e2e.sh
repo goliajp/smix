@@ -26,7 +26,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 # Its own variable first, then the one the whole tier is driven by.
 #
 # Without the second, `device-e2e-tier.sh` — which sets SMIX_E2E_UDID and
@@ -69,7 +70,7 @@ WORK="$(mktemp -d)"
 
 log()  { printf '[c1c] %s\n' "$*" >&2; }
 fail() { printf '[c1c] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c1c] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c1c] SKIP: %s\n' "$*" >&2; exit 2; }
 
 started_runner=0
 cleanup() {
@@ -84,9 +85,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-[ -x "$SMIX" ] || skip "no smix binary at $SMIX (build it, or set SMIX_BIN)"
+[ -x "$SMIX" ] || fail "no smix binary at $SMIX (build it, or set SMIX_BIN)"
 if [ -z "$UDID" ]; then
-  skip "set SMIX_CROSSAPP_E2E_UDID or SMIX_E2E_UDID to a booted simulator"
+  cannot_judge "set SMIX_CROSSAPP_E2E_UDID or SMIX_E2E_UDID to a booted simulator"
 fi
 
 # The text has to have come out of the fixture, or a green run means it

@@ -26,7 +26,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 AND_ALIAS="${SMIX_C5_ANDROID:-sim-smix-android-01}"
 IOS_ALIAS="${SMIX_C5_IOS:-5D087114-ECB3-443C-8DDB-40EEF9CFB90C}"
 # shellcheck source=../lib/gate-port.sh
@@ -45,7 +46,7 @@ LEGS_RUN=0
 log()  { printf '[c5-scroll] %s\n' "$*" >&2; }
 step() { printf '[c5-scroll] --- %s\n' "$*" >&2; }
 fail() { printf '[c5-scroll] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c5-scroll] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c5-scroll] SKIP: %s\n' "$*" >&2; exit 2; }
 
 AND_SERIAL="" IOS_UDID=""
 AND_WE_BOOTED=0 AND_WE_UPPED=0 IOS_WE_BOOTED=0 IOS_WE_UPPED=0
@@ -180,7 +181,7 @@ run_android() {
   AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
   [ -n "$AND_SERIAL" ] || { log "no emulator registered as '$AND_ALIAS' — skipping the Android leg"; return 0; }
   [ -f "$AND_APK" ] || { log "no fixture apk (bash scripts/dev/build-android-fixture.sh) — skipping the Android leg"; return 0; }
-  port_free "$AND_PORT" || skip "port $AND_PORT already serves a runner — set SMIX_C5_ANDROID_PORT"
+  port_free "$AND_PORT" || cannot_judge "port $AND_PORT already serves a runner — set SMIX_C5_ANDROID_PORT"
 
   step "Android: $AND_ALIAS ($AND_SERIAL)"
   if ! adb devices 2>/dev/null | grep -q "^${AND_SERIAL}[[:space:]]*device"; then
@@ -246,7 +247,7 @@ run_ios() {
   IOS_UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
   [ -n "$IOS_UDID" ] || { log "no simulator resolves '$IOS_ALIAS' — skipping the iOS leg"; return 0; }
   [ -d "$IOS_FIXTURE" ] || { log "no iOS fixture (bash scripts/dev/build-fixture-app.sh) — skipping the iOS leg"; return 0; }
-  port_free "$IOS_PORT" || skip "port $IOS_PORT already serves a runner — set SMIX_C5_IOS_PORT"
+  port_free "$IOS_PORT" || cannot_judge "port $IOS_PORT already serves a runner — set SMIX_C5_IOS_PORT"
 
   step "iOS: $IOS_UDID"
   if ! xcrun simctl list devices 2>/dev/null | grep -q "$IOS_UDID.*Booted"; then

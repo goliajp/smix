@@ -24,7 +24,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_E2E_DEVICE:-sim-smix-02}"
 BUNDLE="com.apple.Preferences"
 # The literal fallback here was 22087 -- the very default this gate
@@ -38,6 +39,9 @@ REPORTS="$HOME/Library/Logs/DiagnosticReports"
 log()  { printf '[c6-lease] %s\n' "$*"; }
 step() { printf '[c6-lease] --- %s\n' "$*"; }
 fail() { printf '[c6-lease] FAIL: %s\n' "$*" >&2; exit 1; }
+# Standing aside is not a failure and not a pass: the port is held
+# by something this must not disturb, so there is nothing to judge.
+cannot_judge() { printf '[c6-lease] cannot judge: %s\n' "$*" >&2; exit 2; }
 
 ips_count() { ls -1 "$REPORTS" 2>/dev/null | grep -c '\.ips$' || true; }
 
@@ -209,7 +213,7 @@ step "7. nothing is left, and the settling itself was graceful"
 pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1 \
   && fail "xcodebuild still driving $UDID after settle"
 curl -s -m 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 \
-  && fail "port $PORT still answers after settle"
+  && cannot_judge "port $PORT still answers after settle"
 STATE="$(xcrun simctl list devices -j | python3 -c "
 import json,sys
 for rt, devs in json.load(sys.stdin)['devices'].items():

@@ -34,6 +34,7 @@ fn node(
     children: Vec<A11yNode>,
 ) -> A11yNode {
     A11yNode {
+        visible_bounds: None,
         hittable: None,
         raw_type: raw_type.into(),
         element_type_raw: 1,

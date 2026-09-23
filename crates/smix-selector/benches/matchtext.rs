@@ -13,6 +13,7 @@ use std::hint::black_box;
 
 fn mk_with(field: NodeField) -> A11yNode {
     let mut n = A11yNode {
+        visible_bounds: None,
         hittable: None,
         raw_type: "other".into(),
         element_type_raw: 1,

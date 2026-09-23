@@ -15,6 +15,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn a_tree() -> A11yNode {
     A11yNode {
+        visible_bounds: None,
         hittable: None,
         raw_type: "application".into(),
         element_type_raw: 1,

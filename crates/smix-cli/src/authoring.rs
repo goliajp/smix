@@ -389,6 +389,7 @@ mod tests {
 
     fn node(id: Option<&str>, text: Option<&str>) -> A11yNode {
         A11yNode {
+            visible_bounds: None,
             hittable: None,
             raw_type: "any".into(),
             element_type_raw: 1,
@@ -416,6 +417,7 @@ mod tests {
     #[test]
     fn suggest_id_wildcard() {
         let root = A11yNode {
+            visible_bounds: None,
             children: vec![
                 node(Some("qa-chip-a"), Some("Chip A")),
                 node(Some("qa-chip-b"), Some("Chip B")),
@@ -432,6 +434,7 @@ mod tests {
     #[test]
     fn suggest_text_case_insensitive() {
         let root = A11yNode {
+            visible_bounds: None,
             children: vec![node(None, Some("Sign In")), node(None, Some("Log Out"))],
             ..node(None, None)
         };
@@ -442,6 +445,7 @@ mod tests {
     #[test]
     fn diff_clean_when_identical() {
         let root = A11yNode {
+            visible_bounds: None,
             children: vec![node(Some("a"), Some("hi"))],
             ..node(None, None)
         };
@@ -452,10 +456,12 @@ mod tests {
     #[test]
     fn diff_reports_missing() {
         let base = A11yNode {
+            visible_bounds: None,
             children: vec![node(Some("a"), Some("hi")), node(Some("b"), Some("bye"))],
             ..node(None, None)
         };
         let curr = A11yNode {
+            visible_bounds: None,
             children: vec![node(Some("a"), Some("hi"))],
             ..node(None, None)
         };
@@ -467,10 +473,12 @@ mod tests {
     #[test]
     fn diff_reports_drift() {
         let base = A11yNode {
+            visible_bounds: None,
             children: vec![node(Some("a"), Some("hi"))],
             ..node(None, None)
         };
         let curr = A11yNode {
+            visible_bounds: None,
             children: vec![node(Some("a"), Some("hello"))],
             ..node(None, None)
         };

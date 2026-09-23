@@ -25,7 +25,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C9_ANDROID:-sim-smix-android-01}"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"

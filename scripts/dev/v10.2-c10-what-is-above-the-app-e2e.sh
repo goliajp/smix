@@ -27,7 +27,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C10_ANDROID:-sim-smix-android-01}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
@@ -39,6 +40,9 @@ WORK="$(mktemp -d)"
 log()  { printf '[c10-above] %s\n' "$*" >&2; }
 step() { printf '[c10-above] --- %s\n' "$*" >&2; }
 fail() { printf '[c10-above] FAIL: %s\n' "$*" >&2; exit 1; }
+# Standing aside is not a failure and not a pass: the port is held
+# by something this must not disturb, so there is nothing to judge.
+cannot_judge() { printf '[c10-above] cannot judge: %s\n' "$*" >&2; exit 2; }
 
 SERIAL="" WE_BOOTED=0 WE_UPPED=0
 cleanup() {
@@ -75,7 +79,7 @@ a device with adb and will not do that to a phone." ;;
 esac
 
 if curl -s -m 2 "http://localhost:$PORT/health" >/dev/null 2>&1; then
-  fail "port $PORT already answers — another runner is there"
+  cannot_judge "port $PORT already answers — another runner is there"
 fi
 
 step "device: $ALIAS ($SERIAL)"

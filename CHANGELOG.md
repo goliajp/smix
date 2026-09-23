@@ -4,6 +4,32 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Fixed
+
+- **A scroll stopped as soon as a sliver of the row showed, on any
+  Compose screen carrying the probe.** The rule that decides when a
+  scroll has arrived divides the part of the target inside the frame by
+  the part that could ever be inside it — and the probe had begun
+  reporting the rectangle already clipped to the frame, which makes that
+  division one over one. A row showing sixty pixels of its two hundred
+  and seventy-five read as wholly visible, the scroll stopped, and the
+  tap that followed landed on whatever was really there. This is the
+  defect a consumer reported as `CentroidOutOfFrame { ny: 1.02 }`, fixed
+  host-side and re-opened from the probe's end one version later. The
+  probe now reports two rectangles: `bounds`, what the node occupies,
+  and `visibleBounds`, how much of it shows. Nodes nobody placed are
+  still absent, and a node clipped away entirely still says
+  `visible:false`.
+
+### Removed
+
+- **`POST /scroll` on the iOS runner.** Scrolling to an element is one
+  loop on the host and has been since the three loops were unified; the
+  runner-side loop behind this route was a second implementation with
+  its own idea of "visible", and nothing had called it. A route that
+  exists and that nobody walks reads, to anyone writing a client, like a
+  path. `RunnerScrollSelector` and `ScrollResponse` go with it.
+
 ### Added
 
 - **`clearLocation` — the way back from `setLocation` and `travel`.**

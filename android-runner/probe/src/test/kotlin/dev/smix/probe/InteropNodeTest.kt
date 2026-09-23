@@ -95,7 +95,11 @@ class InteropNodeTest {
             children = emptyList(),
         )
         assertNotNull("a placed but clipped node was dropped", n)
-        assertEquals("the clipped rectangle is not empty", 0, n!!.bounds.right - n.bounds.left)
+        assertEquals(
+            "the rectangle that shows is not empty",
+            0,
+            n!!.visibleBounds.right - n.visibleBounds.left,
+        )
         assertTrue("a node with nothing showing says it is visible", !n.visible)
     }
 
@@ -112,17 +116,26 @@ class InteropNodeTest {
             children = emptyList(),
         )
         assertNotNull("a placed, half-visible node was dropped", n)
-        assertEquals(Bounds(0, 200, 1080, 300), n!!.bounds)
+        // Both rectangles, because the host asks two questions of them:
+        // where to aim (the whole node) and how much of it can be seen
+        // (the part inside the clip). Answering both with the clipped one
+        // made every partly-visible row read as fully visible.
+        assertEquals("the node's own rectangle", Bounds(0, 100, 1080, 300), n!!.bounds)
+        assertEquals("the part that shows", Bounds(0, 200, 1080, 300), n.visibleBounds)
         assertTrue("a node half on screen says it is invisible", n.visible)
     }
 
     @Test
-    fun `the wire has fifteen fields`() {
-        // A count, not "more than none". Fifteen is a fact about what the
+    fun `the wire has sixteen fields`() {
+        // A count, not "more than none". Sixteen is a fact about what the
         // host reads off this wire today; a field added or removed here
         // changes what every downstream reader sees, so it should cost one
         // deliberate edit in this file rather than pass unnoticed.
-        assertEquals(15, ProbeNode::class.java.declaredFields.count { !it.isSynthetic })
+        //
+        // Sixteen since `visibleBounds` joined `bounds`: one rectangle was
+        // being asked both where the node is and how much of it shows, and
+        // the second answer was wrong for every clipped node.
+        assertEquals(16, ProbeNode::class.java.declaredFields.count { !it.isSynthetic })
     }
 }
 

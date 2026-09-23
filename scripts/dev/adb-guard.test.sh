@@ -38,6 +38,23 @@ feed $BLOCK "adb shell am instrument -w -e class dev.smix.runner.RunnerTest dev.
 feed $BLOCK "adb push fixture.apk /data/local/tmp/"
 feed $BLOCK "./gradlew :app:installDebugAndroidTest"
 feed $BLOCK "./gradlew connectedAndroidTest"
+# Behind a wrapper it is still the same call: the guard steps over
+# `sudo`, `env`, `xargs` and friends rather than taking their name for
+# the program.
+feed $BLOCK "sudo adb install -r app.apk"
+feed $BLOCK "env ANDROID_HOME=/opt adb -s R5CT52DF07D install -r app.apk"
+feed $BLOCK "timeout 60 ./gradlew :app:installDebug"
+
+# --- must ALLOW: reading ABOUT these commands is not running one ---
+# Searching this repository for its own rules was refused as a device
+# mutation: the guard matched the words inside a quoted pattern. A
+# refusal that lands on a read-only search is how a guard gets worked
+# around instead of obeyed.
+feed $ALLOW "grep -rn 'am instrument' plugin/scripts/"
+feed $ALLOW "rg --files-with-matches 'adb install' scripts/"
+feed $ALLOW "git grep -n 'adb -s R5CT52DF07D install' -- docs/"
+feed $ALLOW "cat plugin/scripts/adb-guard.sh"
+feed $ALLOW "sed -n '1,40p' scripts/dev/adb-guard.test.sh"
 feed $BLOCK "cd android-runner && ./gradlew :app:connectedCheck"
 # a physical -s even on an otherwise read-only verb is explicit intent
 feed $BLOCK "adb -s R5CT52DF07D shell input tap 100 200"

@@ -17,7 +17,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 IOS_ALIAS="${SMIX_C7_IOS:-smix-ios}"
 AND_ALIAS="${SMIX_C7_ANDROID:-smix-android}"
 # shellcheck source=../lib/gate-port.sh
@@ -38,7 +39,7 @@ WORK="$(mktemp -d)"
 log()  { printf '[c7] %s\n' "$*" >&2; }
 step() { printf '[c7] --- %s\n' "$*" >&2; }
 fail() { printf '[c7] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c7] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c7] SKIP: %s\n' "$*" >&2; exit 2; }
 
 IOS_UDID="" AND_SERIAL=""
 IOS_WE_BOOTED=0 IOS_WE_UPPED=0 AND_WE_BOOTED=0 AND_WE_UPPED=0
@@ -121,7 +122,7 @@ run_ios() {
   IOS_UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
   [ -n "$IOS_UDID" ] || { log "no sim registered as '$IOS_ALIAS' — skipping iOS leg"; return 0; }
   [ -d "$IOS_FIXTURE" ] || { log "no iOS fixture — skipping iOS leg"; return 0; }
-  port_free "$IOS_PORT" || skip "iOS port $IOS_PORT already serves a runner — set SMIX_C7_IOS_PORT"
+  port_free "$IOS_PORT" || cannot_judge "iOS port $IOS_PORT already serves a runner — set SMIX_C7_IOS_PORT"
 
   step "iOS: boot $IOS_ALIAS, install, runner up (no --platform anywhere after)"
   if ! xcrun simctl list devices 2>/dev/null | grep -q "$IOS_UDID.*Booted"; then
@@ -141,7 +142,7 @@ run_android() {
   AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
   [ -n "$AND_SERIAL" ] || { log "no emulator registered as '$AND_ALIAS' — skipping Android leg"; return 0; }
   [ -f "$AND_APK" ] || { log "no Android fixture apk — skipping Android leg"; return 0; }
-  port_free "$AND_PORT" || skip "Android port $AND_PORT already serves a runner — set SMIX_C7_ANDROID_PORT"
+  port_free "$AND_PORT" || cannot_judge "Android port $AND_PORT already serves a runner — set SMIX_C7_ANDROID_PORT"
 
   step "Android: ensure $AND_ALIAS up, install, runner up"
   if ! adb devices 2>/dev/null | grep -q "^${AND_SERIAL}[[:space:]]*device"; then

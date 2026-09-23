@@ -14,33 +14,6 @@ import CoreGraphics
 // double POST /shutdown cannot crash. Never fired (no /shutdown call) →
 // `wait()` suspends forever → `server.run()` is never stopped → `runForever`
 // blocks exactly as it would without the signal (purely additive opt-in).
-// Minimal JSON-string escape for selector field re-serialization
-// inside the /scroll route handler. Same character set as
-// ScrollRoute.jsonEscape (control + quote + backslash). Local helper because
-// the route handler reassembles a {"text":"..."} JSON literal to forward as
-// a single string parameter to the UITest closure (the closure layer parses
-// it back; mirrors how findHandler/fillHandler receive their selectorText
-// today as a plain string — one wire form per direction).
-private func jsonEscapeSelector(_ s: String) -> String {
-  var out = ""
-  out.reserveCapacity(s.count)
-  for ch in s {
-    switch ch {
-    case "\"": out += "\\\""
-    case "\\": out += "\\\\"
-    case "\n": out += "\\n"
-    case "\r": out += "\\r"
-    case "\t": out += "\\t"
-    default:
-      if let scalar = ch.unicodeScalars.first, scalar.value < 0x20 {
-        out += String(format: "\\u%04x", scalar.value)
-      } else {
-        out.append(ch)
-      }
-    }
-  }
-  return out
-}
 
 actor ShutdownSignal {
   private var fired = false
@@ -573,19 +546,6 @@ public actor SmixRunnerServer {
   // SpringBoard alerts / sheets / dialogs and returns POCOs the server
   // serializes via `SystemPopupsRoute.success(popups:)`.
   public typealias SystemPopupsHandler = @Sendable (_ scope: String?) async -> [SystemPopupsRoute.Popup]
-
-  // POST /scroll handler. Drives the runner-side XCUITest
-  // swipe-until-visible loop. The route module owns decode + envelope; the
-  // handler owns selector → element resolution + per-swipe existence probe.
-  // Returns matched + swipes count; the wire layer (RunnerClient.scroll)
-  // transforms `matched=false` into RunnerScrollNotMatched on the SDK
-  // side (HTTP stays 200 — same discipline as /find: business result is in
-  // body, transport errors are 4xx/5xx). `scope` carries `?include=` query
-  // value (`"all-windows"` ⇒ see-through resolution path).
-  public typealias ScrollHandler = @Sendable (
-    _ selector: String, _ direction: String,
-    _ maxSwipes: Int, _ timeoutMs: Int, _ scope: String?
-  ) async -> (matched: Bool, swipes: Int)
 
   // POST /foreground handler. App-level act capability (no
   // selector / no scope / no loop) — instantiates XCUIApplication
@@ -1255,6 +1215,7 @@ public actor SmixRunnerServer {
     server: HTTPServer,
     handlers: SessionHandlers
   ) async {
+    // OK MEANS: bookkeeping — a session record was opened; the app it names is activated by the steps that follow, not by this.
     await server.appendRoute("POST /session/open") { request in
       let body: Data
       do { body = try await request.bodyData }
@@ -1283,6 +1244,7 @@ public actor SmixRunnerServer {
         )
       }
     }
+    // OK MEANS: bookkeeping — the session this names is no longer held here.
     await server.appendRoute("POST /session/close") { request in
       let body: Data
       do { body = try await request.bodyData }
@@ -1299,6 +1261,7 @@ public actor SmixRunnerServer {
         return SessionRoute.closeResponse(ok: outcome.ok)
       }
     }
+    // OK MEANS: outcome — the app was asked to come forward again and answered that it is.
     await server.appendRoute("POST /session/renew-activation") { request in
       let body: Data
       do { body = try await request.bodyData }
@@ -1319,6 +1282,7 @@ public actor SmixRunnerServer {
       }
     }
     // POST /session/close-all
+    // OK MEANS: bookkeeping — every session this runner held is released.
     await server.appendRoute("POST /session/close-all") { _ in
       return await Self.guardedResponse(
         fallback: SessionRoute.closeAllResponse(closed: 0)
@@ -1328,6 +1292,7 @@ public actor SmixRunnerServer {
       }
     }
     // POST /session/list
+    // OK MEANS: reading — what sessions this runner holds; it acts on nothing.
     await server.appendRoute("POST /session/list") { _ in
       return await Self.guardedResponse(
         fallback: SessionRoute.listResponse([])
@@ -1337,6 +1302,7 @@ public actor SmixRunnerServer {
       }
     }
     // POST /diagnostic/dump
+    // OK MEANS: reading — what the runner can say about itself right now.
     await server.appendRoute("POST /diagnostic/dump") { _ in
       return await Self.guardedResponse(
         fallback: SessionRoute.diagnosticResponse(
@@ -1383,6 +1349,7 @@ public actor SmixRunnerServer {
       }
     }
     // POST /session/relaunch-app
+    // OK MEANS: outcome — the app was terminated and launched again, and the launch answered.
     await server.appendRoute("POST /session/relaunch-app") { request in
       let body: Data
       do { body = try await request.bodyData }
@@ -1470,7 +1437,6 @@ public actor SmixRunnerServer {
     findHandler: FindHandler? = nil,
     systemPopupsHandler: SystemPopupsHandler? = nil,
     systemPopupActionHandler: SystemPopupActionHandler? = nil,
-    scrollHandler: ScrollHandler? = nil,
     foregroundHandler: ForegroundHandler? = nil,
     backHandler: BackHandler? = nil,
     swipeOnceHandler: SwipeOnceHandler? = nil,
@@ -1583,6 +1549,7 @@ public actor SmixRunnerServer {
     // executing on (deadlock), and the response must be sent before the socket
     // closes. So it only fires the one-shot signal + returns immediately; the
     // stop-observer task below performs `server.stop()` out of band.
+    // OK MEANS: bookkeeping — the runner was asked to stop serving; it keeps no device state.
     await server.appendRoute("POST /shutdown") { _ in
       await shutdownSignal.fire()
       return ShutdownRoute.response()
@@ -1594,6 +1561,7 @@ public actor SmixRunnerServer {
     // the socket closes; the host-side CLI re-confirms recovery with a
     // follow-up `GET /health`. Registered only when a handler is wired.
     if let softCycleHandler {
+      // OK MEANS: outcome — the app under test was rebound and the rebind reported what it found.
       await server.appendRoute("POST /soft-cycle") { _ in
         let start = DispatchTime.now()
         let outcome = await softCycleHandler()
@@ -1606,6 +1574,7 @@ public actor SmixRunnerServer {
         )
       }
     }
+    // OK MEANS: injected — the touch was dispatched at the element that matched; whether the app reacted is the caller's next assertion.
     await server.appendRoute("POST /tap") { request in
       let body: Data
       do {
@@ -1764,6 +1733,7 @@ public actor SmixRunnerServer {
     }
 
     if let fillHandler {
+      // OK MEANS: outcome — the field was typed into and read back.
       await server.appendRoute("POST /fill") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -1789,6 +1759,7 @@ public actor SmixRunnerServer {
       }
     }
     if let clearHandler {
+      // OK MEANS: outcome — the field was emptied and read back.
       await server.appendRoute("POST /clear") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -1810,6 +1781,7 @@ public actor SmixRunnerServer {
       }
     }
     if let pressKeyHandler {
+      // OK MEANS: injected — the key event was dispatched.
       await server.appendRoute("POST /press-key") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -1827,6 +1799,7 @@ public actor SmixRunnerServer {
     // /find lets the SDK side ask "does this selector match" without
     // the cost of /tree (full snapshot serialization + JS predicate walk).
     if let findHandler {
+      // OK MEANS: reading — whether the selector matched; nothing is touched.
       await server.appendRoute("POST /find") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -1902,6 +1875,7 @@ public actor SmixRunnerServer {
     // `?include=` — the action route is element-level but id-keyed; the
     // include scope was decided at enumerate time on the sense path.
     if let systemPopupActionHandler {
+      // OK MEANS: injected — the popup's button was tapped, or the popup was no longer there to tap.
       await server.appendRoute("POST /system-popup-action") { request in
         let body: Data
         do {
@@ -1934,57 +1908,6 @@ public actor SmixRunnerServer {
       }
     }
 
-    // POST /scroll. Decodes the ScrollRequest, drives the
-    // runner-side XCUITest swipe-until-visible loop via scrollHandler,
-    // and emits the matched/swipes envelope. Guarded so a vanished-element
-    // failure inside the handler (the same mid-interaction XCUITest hazard
-    // /tap and /fill already protect against) surfaces as
-    // `matched=false, swipes=0` instead of escaping the closure into
-    // FlyingFox's withThrowingTaskGroup. maxSwipes / timeoutMs are
-    // hardcoded defaults (30 / 30_000ms) — not caller-tunable via SDK
-    // opts today.
-    if let scrollHandler {
-      await server.appendRoute("POST /scroll") { request in
-        let body: Data
-        do {
-          body = try await request.bodyData
-        } catch {
-          return ScrollRoute.badRequest(reason: "failed to read body: \(error)")
-        }
-        let req: ScrollRoute.ScrollRequest
-        do {
-          req = try ScrollRoute.decode(body)
-        } catch let e as ScrollRoute.DecodeError {
-          return ScrollRoute.badRequest(reason: "\(e)")
-        } catch {
-          return ScrollRoute.badRequest(reason: "\(error)")
-        }
-        let scope = request.query["include"]
-        // Serialize the selector as JSON for the handler — runner side
-        // parses out text / id (mirrors how findHandler receives just the
-        // text string today; scroll carries both possible base fields).
-        let selectorJSON: String
-        if let t = req.selector.text {
-          selectorJSON = #"{"text":"\#(jsonEscapeSelector(t))"}"#
-        } else if let id = req.selector.id {
-          selectorJSON = #"{"id":"\#(jsonEscapeSelector(id))"}"#
-        } else {
-          // Should not reach: decode() rejects when both fields absent.
-          return ScrollRoute.badRequest(reason: "selector missing both text and id")
-        }
-        return await Self.contextGuardedResponse(request: request,
-          fallback: ScrollRoute.success(matched: false, swipes: 0)
-        ) {
-          let outcome = await scrollHandler(
-            selectorJSON, req.direction, 30, 30_000, scope
-          )
-          return ScrollRoute.success(
-            matched: outcome.matched, swipes: outcome.swipes
-          )
-        }
-      }
-    }
-
     // POST /foreground. Decodes ForegroundRequest, calls
     // foregroundHandler with bundleId, wraps result in {ok:<bool>} envelope.
     // Guarded so an XCUITest NSException inside the handler (the
@@ -1993,6 +1916,7 @@ public actor SmixRunnerServer {
     // the closure into FlyingFox's withThrowingTaskGroup. No `?include=`
     // query — foreground is an app-level act, not element-level (no scope).
     if let foregroundHandler {
+      // OK MEANS: outcome — the app was asked to come forward and XCUITest did not refuse the request.
       await server.appendRoute("POST /foreground") { request in
         let body: Data
         do {
@@ -2024,6 +1948,7 @@ public actor SmixRunnerServer {
     // against) surfaces as `ok:false` instead of escaping the closure.
     // No `?include=` query — back is app-level navigation, not element-level.
     if let backHandler {
+      // OK MEANS: outcome — the screen was observed to change after the gesture, not merely that a gesture went out.
       await server.appendRoute("POST /back") { request in
         let body: Data
         do {
@@ -2058,6 +1983,7 @@ public actor SmixRunnerServer {
     // query optional (forwarded as scope param, currently only ignored — swipe
     // is app-level gesture).
     if let swipeOnceHandler {
+      // OK MEANS: injected — one swipe was dispatched.
       await server.appendRoute("POST /swipe-once") { request in
         let body: Data
         do {
@@ -2088,6 +2014,7 @@ public actor SmixRunnerServer {
     // Pairs a host-side DFS-first resolve with the runner's native UI
     // event chain.
     if let tapAtCoordHandler {
+      // OK MEANS: injected — the touch was dispatched at that point of the frame.
       await server.appendRoute("POST /tap-at-norm-coord") { request in
         let body: Data
         do {
@@ -2119,6 +2046,7 @@ public actor SmixRunnerServer {
     // host-HID-at-coord path can't trigger. Parallel to /tap-at-norm-coord;
     // /tap itself is left untouched.
     if let tapByIdHandler {
+      // OK MEANS: injected — the touch was dispatched at the element with that identifier, or there was no such element.
       await server.appendRoute("POST /tap-by-id") { request in
         let body: Data
         do {
@@ -2146,6 +2074,7 @@ public actor SmixRunnerServer {
     // POST /find-text-by-ocr. Apple Vision OCR over current
     // XCUIScreen screenshot. L5 sense layer per a11y-i18n master plan.
     if let findTextByOcrHandler {
+      // OK MEANS: reading — whether the text was found in the pixels; nothing is touched.
       await server.appendRoute("POST /find-text-by-ocr") { request in
         let body: Data
         do {
@@ -2203,6 +2132,7 @@ public actor SmixRunnerServer {
     // `{"fromNx","fromNy","toNx","toNy"}` ∈ [0,1]. Normalized-coordinate
     // escape-hatch companion to /tap-at-norm-coord.
     if let swipeAtCoordHandler {
+      // OK MEANS: injected — the swipe was dispatched between those two points.
       await server.appendRoute("POST /swipe-at-norm-coord") { request in
         let body: Data
         do {
@@ -2231,6 +2161,7 @@ public actor SmixRunnerServer {
     // Body {selector: {text}}. Sibling of the /tap envelope, but with no
     // stages — this is a single path, so timing is not broken down.
     if let doubleTapHandler {
+      // OK MEANS: injected — both touches were dispatched at the element, or there was no such element.
       await server.appendRoute("POST /double-tap") { request in
         let body: Data
         do {
@@ -2260,6 +2191,7 @@ public actor SmixRunnerServer {
     // POST /long-press. XCUIElement.press(forDuration:) public API.
     // Body {selector: {text}, durationMs: N}. Duration is in milliseconds.
     if let longPressHandler {
+      // OK MEANS: injected — the press was held for the duration asked and the timings come back with it.
       await server.appendRoute("POST /long-press") { request in
         let body: Data
         do {
@@ -2288,6 +2220,7 @@ public actor SmixRunnerServer {
     // POST /set-orientation. XCUIDevice.shared.orientation public
     // XCUI API. Body {orientation: "portrait|portraitUpsideDown|landscapeLeft|landscapeRight"}.
     if let setOrientationHandler {
+      // OK MEANS: outcome — the device reported the orientation asked for after being turned.
       await server.appendRoute("POST /set-orientation") { request in
         let body: Data
         do {
@@ -2320,6 +2253,7 @@ public actor SmixRunnerServer {
     // of escaping the closure. No `?include=` query — keyboard dismiss is
     // app-level, not element-level.
     if let hideKeyboardHandler {
+      // OK MEANS: outcome — the keyboard was observed to leave, not merely that a dismissal was sent.
       await server.appendRoute("POST /hide-keyboard") { request in
         let body: Data
         do {
@@ -2350,6 +2284,7 @@ public actor SmixRunnerServer {
     // `?include=` query — typing targets the focused element, not a
     // selector-resolved one.
     if let inputTextHandler {
+      // OK MEANS: outcome — the text was typed and the field read back.
       await server.appendRoute("POST /input-text") { request in
         let body: Data
         do {
@@ -2379,6 +2314,7 @@ public actor SmixRunnerServer {
     // off — zero v1.x impact). When the handler triple isn't wired (env off
     // or older UITest target), the routes simply aren't registered.
     if let recordHandlers {
+      // OK MEANS: bookkeeping — the runner began keeping a record of what it is asked to do.
       await server.appendRoute("POST /record/start") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -2394,6 +2330,7 @@ public actor SmixRunnerServer {
           return RecordRoute.startSuccess()
         }
       }
+      // OK MEANS: bookkeeping — the runner stopped keeping that record.
       await server.appendRoute("POST /record/stop") { request in
         let body: Data
         do { body = try await request.bodyData } catch {

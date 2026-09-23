@@ -333,37 +333,6 @@ pub struct FindResponse {
     pub ok: bool,
 }
 
-// -------------------- /scroll wire shape --------------------------------
-
-/// Reduced selector shape used by `/scroll` (text-or-id only; complex
-/// selectors are host-side-resolved before reaching the runner).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum RunnerScrollSelector {
-    /// Match by text content.
-    Text {
-        /// Text to match against.
-        text: String,
-    },
-    /// Match by accessibility identifier.
-    Id {
-        /// Identifier to match against.
-        id: String,
-    },
-}
-
-/// `POST /scroll` response body.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScrollResponse {
-    /// Whether the selector matched after scrolling (None when unknown).
-    #[serde(default)]
-    pub matched: Option<bool>,
-    /// Number of swipe iterations performed.
-    #[serde(default)]
-    pub swipes: Option<u32>,
-}
-
 // -------------------- /system-popups wire shape -------------------------
 
 /// One system-popup discovered on the screen (alert / sheet / banner).

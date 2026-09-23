@@ -32,7 +32,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$ROOT/scripts/lib/gate-port.sh"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 WORK="$(mktemp -d)"
 OUT="$(mktemp)"
 

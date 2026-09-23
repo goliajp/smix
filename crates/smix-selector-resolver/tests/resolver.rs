@@ -34,6 +34,7 @@ struct NodePartial {
 
 fn mk(p: NodePartial) -> A11yNode {
     A11yNode {
+        visible_bounds: None,
         hittable: None,
         raw_type: p.raw_type.unwrap_or_else(|| "other".into()),
         element_type_raw: 1,

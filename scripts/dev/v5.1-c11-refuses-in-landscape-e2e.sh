@@ -21,7 +21,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 UDID="${SMIX_C11_E2E_UDID:-}"
 . "$ROOT/scripts/lib/gate-port.sh"
 PORT="${SMIX_C11_E2E_PORT:-$SMIX_RUNNER_PORT}"
@@ -31,7 +32,7 @@ WORK="$(mktemp -d)"
 log()  { printf '[c11] %s\n' "$*" >&2; }
 step() { printf '[c11] --- %s\n' "$*" >&2; }
 fail() { printf '[c11] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c11] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c11] SKIP: %s\n' "$*" >&2; exit 2; }
 
 started_runner=0
 cleanup() {
@@ -46,12 +47,12 @@ cleanup() {
 trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
-command -v xcrun >/dev/null 2>&1 || skip "no xcrun — this needs a simulator"
+command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun — this needs a simulator"
 
 if [ -z "$UDID" ]; then
   UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh" 2>"$WORK/pick.log")" || {
     cat "$WORK/pick.log" >&2
-    skip "no dev sim this machine's ledger says smix booted"
+    cannot_judge "no dev sim this machine's ledger says smix booted"
   }
 fi
 log "device $UDID, runner port $PORT"
@@ -73,7 +74,7 @@ started_runner=1
 # for a reason that has nothing to do with the decision under test.
 if ! curl -fsS -o "$WORK/space.json" \
      "http://127.0.0.1:$PORT/coordinate-space?nx=0.5&ny=0.5" 2>/dev/null; then
-  skip "this runner does not serve /coordinate-space — rebuild the sources tarball and the CLI"
+  fail "this runner does not serve /coordinate-space — rebuild the sources tarball and the CLI"
 fi
 
 step "3. portrait: the check must not fire"

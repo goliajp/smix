@@ -486,6 +486,17 @@ pub struct A11yNode {
     pub text: Option<String>,
     /// Geometric bounds in logical points.
     pub bounds: Rect,
+    /// The part of `bounds` that is not hidden by a scroll container or
+    /// the screen edge; `None` from a reader that cannot say.
+    ///
+    /// Separate from `bounds` because "where is it" and "how much of it
+    /// shows" are two questions, and a scroll's stop rule divides one by
+    /// the other. A reader answering both with the clipped rectangle
+    /// makes that division one over one, so a row showing a sliver reads
+    /// as wholly visible — which is how a consumer's tap landed on the
+    /// filter chips two versions after that was fixed host-side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible_bounds: Option<Rect>,
     /// Whether the element is currently interactable.
     pub enabled: bool,
     /// Whether the element is currently selected.
@@ -575,6 +586,7 @@ mod tests {
         children: Vec<A11yNode>,
     ) -> A11yNode {
         A11yNode {
+            visible_bounds: None,
             hittable: None,
             raw_type: raw_type.into(),
             element_type_raw: 1,
@@ -856,6 +868,11 @@ struct ProbeNodeWire {
     visible: bool,
     #[serde(default)]
     bounds: [f64; 4],
+    /// The part of `bounds` that shows. Absent from probes older than
+    /// this field, and absent is not "all of it" — the host carries the
+    /// absence through rather than answering for a reader that did not.
+    #[serde(default, rename = "visibleBounds")]
+    visible_bounds: Option<[f64; 4]>,
     #[serde(default)]
     focused: bool,
     #[serde(default = "yes")]
@@ -900,6 +917,12 @@ impl ProbeNodeWire {
             w: (self.bounds[2] - self.bounds[0]).max(0.0),
             h: (self.bounds[3] - self.bounds[1]).max(0.0),
         };
+        n.visible_bounds = self.visible_bounds.map(|b| Rect {
+            x: b[0],
+            y: b[1],
+            w: (b[2] - b[0]).max(0.0),
+            h: (b[3] - b[1]).max(0.0),
+        });
         n.children = self.children.iter().map(ProbeNodeWire::to_a11y).collect();
         n
     }
@@ -1001,6 +1024,49 @@ fn union_bounds(nodes: &[A11yNode]) -> Rect {
 #[cfg(test)]
 mod probe_conversion_guards {
     use super::probe_tree_to_a11y;
+
+    /// The payload a row clipped by the screen edge produces.
+    ///
+    /// Two rectangles, because the host asks two things of them: where
+    /// the row is — which is what "how much of it could be seen" divides
+    /// by — and how much of it shows. Answer both with the clipped one
+    /// and that division is one over one, so every row showing a sliver
+    /// reads as wholly visible and the scroll stops with the tap target
+    /// off screen.
+    fn clipped_row() -> String {
+        r#"{"screen":[1080,2400],"roots":[{"id":1,"testTag":"list",
+            "bounds":[0,0,1080,2400],"visibleBounds":[0,0,1080,2400],
+            "visible":true,"enabled":true,"children":[
+              {"id":2,"testTag":"scroll_row_9","text":"row 9",
+               "bounds":[0,2112,1080,2387],"visibleBounds":[0,2112,1080,2400],
+               "visible":true,"enabled":true,"children":[]}]}]}"#
+            .to_string()
+    }
+
+    #[test]
+    fn a_clipped_node_reports_the_rectangle_it_occupies_and_the_part_that_shows() {
+        let root = probe_tree_to_a11y(&clipped_row()).expect("a tree");
+        let row = &root.children[0].children[0];
+        assert_eq!(
+            row.bounds.h, 275.0,
+            "the row's own height, not the part of it on screen"
+        );
+        let seen = row
+            .visible_bounds
+            .expect("how much of it shows is its own answer");
+        assert_eq!(seen.h, 288.0, "clipped at the screen edge");
+    }
+
+    #[test]
+    fn a_probe_that_does_not_send_the_second_rectangle_has_none_invented_for_it() {
+        // Absence is not "all of it shows". A probe built before this
+        // field cannot be asked the question, and a reader has to be
+        // able to tell that apart from a measurement.
+        let payload = r#"[{"id":1,"testTag":"a","bounds":[0,0,100,40],
+            "visible":true,"enabled":true,"children":[]}]"#;
+        let root = probe_tree_to_a11y(payload).expect("a tree");
+        assert!(root.children[0].visible_bounds.is_none());
+    }
 
     #[test]
     fn an_empty_payload_is_not_a_tree() {

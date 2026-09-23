@@ -93,7 +93,7 @@ pub use smix_driver::Reach;
 pub use smix_driver::port_owner;
 pub use smix_driver::{
     ActOutcome, ActVerdict, AndroidDriver, HitElement, HttpRunnerClient, IncludeScope, OcrFrame,
-    RunnerScrollSelector, RunnerTransportError, ScrollUntil, SimctlDriver, SystemPopup, TapMode,
+    RunnerTransportError, ScrollUntil, SimctlDriver, SystemPopup, TapMode,
 };
 pub use smix_error::{
     ExpectationFailure, FailureCode, FailureInit, build_suggestions, edit_distance, similarity,

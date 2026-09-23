@@ -319,6 +319,20 @@ jobs:
       # Reads the e2e scripts' own refusals; they are in the checkout.
       - name: a yield is not a failure
         run: python3 scripts/dev/yield-is-not-failure-scan.py
+      # Reads the same scripts' exit codes and which binary they pick;
+      # both are in the checkout. Local counterpart: preflight.sh.
+      - name: an e2e says whether it judged
+        run: python3 scripts/dev/an-e2e-says-whether-it-judged.py
+      - name: the judged-or-not scan can still go red
+        run: python3 scripts/dev/an-e2e-says-whether-it-judged.test.py
+      # What the tier makes of those exit codes. Device-free: the
+      # reading, not a device. Local counterpart: preflight.sh.
+      - name: the device e2e tier reads an exit code
+        run: bash scripts/release/device-e2e-tier.sh --selftest
+      # How the verifier reads a registry that is merely late. Local
+      # counterpart: preflight.sh.
+      - name: a late registry is not a failed one
+        run: bash scripts/release/verify-published.sh --selftest
       # Reads the e2e scripts' teardowns; they are in the checkout.
       - name: teardown restores rather than imposes
         run: python3 scripts/dev/teardown-restores-scan.py

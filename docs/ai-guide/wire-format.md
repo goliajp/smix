@@ -170,10 +170,15 @@ Response: `{ ok: bool }`
 Body: `{ direction: SwipeDirection }` — variants: `up`, `down`, `left`, `right`.
 Response: `{ ok: bool }`
 
-### `POST /scroll`
+### `POST /scroll` — retired
 
-Body: `{ selector: ScrollSelector, direction: SwipeDirection, include?: IncludeScope }`
-Response: `{ scrolled: u32 }` — count of scroll gestures dispatched.
+Gone as of 10.2. Scrolling to an element is one loop on the host: it
+reads the tree, decides whether enough of the target can be seen and
+whether it has stopped moving, and sends `/swipe-once` until it has.
+The runner-side loop this route drove was a second implementation of
+the same thing, with its own idea of "visible", and nothing had called
+it since the host's three loops were unified — a route that exists and
+that nobody walks reads, to anyone writing a client, like a path.
 
 ### `POST /hide-keyboard`
 

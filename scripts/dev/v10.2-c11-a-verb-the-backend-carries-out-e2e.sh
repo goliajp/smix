@@ -22,7 +22,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C11_ANDROID:-sim-smix-android-01}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"

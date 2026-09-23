@@ -33,7 +33,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C6_ANDROID:-sim-smix-android-01}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
@@ -45,6 +46,9 @@ WORK="$(mktemp -d)"
 log()  { printf '[c6-back] %s\n' "$*" >&2; }
 step() { printf '[c6-back] --- %s\n' "$*" >&2; }
 fail() { printf '[c6-back] FAIL: %s\n' "$*" >&2; exit 1; }
+# Standing aside is not a failure and not a pass: the port is held
+# by something this must not disturb, so there is nothing to judge.
+cannot_judge() { printf '[c6-back] cannot judge: %s\n' "$*" >&2; exit 2; }
 
 SERIAL="" WE_BOOTED=0 WE_UPPED=0
 cleanup() {
@@ -80,7 +84,7 @@ SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[
 [ -n "$SERIAL" ] || fail "no emulator registered as '$ALIAS' — register one, or set SMIX_C6_ANDROID"
 
 if curl -s -m 2 "http://localhost:$PORT/health" >/dev/null 2>&1; then
-  fail "port $PORT already answers — another runner is there; set SMIX_C6_PORT"
+  cannot_judge "port $PORT already answers — another runner is there; set SMIX_C6_PORT"
 fi
 
 step "device: $ALIAS ($SERIAL)"

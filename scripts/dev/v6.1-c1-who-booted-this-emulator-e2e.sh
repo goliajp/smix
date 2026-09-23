@@ -18,14 +18,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C1_ALIAS:-smix-android}"
 WORK="$(mktemp -d)"
 
 log()  { printf '[c1] %s\n' "$*" >&2; }
 step() { printf '[c1] --- %s\n' "$*" >&2; }
 fail() { printf '[c1] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c1] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c1] SKIP: %s\n' "$*" >&2; exit 2; }
 
 cleanup() {
   # Only what this script started, and only through the console. An
@@ -38,10 +39,10 @@ cleanup() {
 trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
-command -v adb >/dev/null 2>&1 || skip "no adb — this needs the Android SDK"
+command -v adb >/dev/null 2>&1 || cannot_judge "no adb — this needs the Android SDK"
 
 SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
-[ -n "$SERIAL" ] || skip "no emulator registered as '$ALIAS' — register one first:
+[ -n "$SERIAL" ] || cannot_judge "no emulator registered as '$ALIAS' — register one first:
   smix sim register $ALIAS --udid emulator-<port> --kind emulator"
 log "device $SERIAL (alias $ALIAS)"
 

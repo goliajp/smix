@@ -101,6 +101,35 @@ def main() -> int:
     else:
         print("  ok   a stale exemption")
 
+    # The other spelling: a shell script whose self-test is a flag. This
+    # is the one that got past the gate — six cases proving a tier could
+    # still go red, and nothing calling them, while every `*.test.py`
+    # beside them was accounted for.
+    ok &= case(
+        "a shell self-test loses its callers",
+        tree(drop_reference="device-e2e-tier.sh --selftest"),
+        "answers `--selftest` and nothing calls it",
+    )
+
+    # And that half must be able to lose its subject, too.
+    d2 = tree()
+    for rel in ("scripts/dev", "scripts/release"):
+        for name in os.listdir(os.path.join(d2, rel)):
+            if not name.endswith(".sh"):
+                continue
+            path = os.path.join(d2, rel, name)
+            body = open(path, encoding="utf-8").read()
+            if "--selftest" in body:
+                open(path, "w", encoding="utf-8").write(
+                    body.replace("--selftest", "--no-such-flag")
+                )
+    r2 = subprocess.run([sys.executable, GATE, d2], capture_output=True, text=True)
+    if r2.returncode == 0 or "stopped finding its subject" not in r2.stdout:
+        print(f"  FAIL shell self-tests all vanish\n{r2.stdout}{r2.stderr}")
+        ok = False
+    else:
+        print("  ok   shell self-tests all vanish")
+
     p = subprocess.run([sys.executable, GATE, ROOT], capture_output=True, text=True)
     if p.returncode != 0:
         print(f"  FAIL the real tree: red on a tree that is correct\n{p.stdout}")

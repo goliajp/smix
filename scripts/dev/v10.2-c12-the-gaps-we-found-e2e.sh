@@ -32,7 +32,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 IOS_UDID="${1:-${SMIX_E2E_UDID:-}}"
 AND_ALIAS="${SMIX_C12_ANDROID:-sim-smix-android-01}"
 IOS_APPID="jp.golia.smix.fixture"

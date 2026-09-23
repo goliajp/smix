@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Every POST route on the Android runner says what its `ok` means, and
-that value reaches the host.
+"""Every POST route on either runner says what its `ok` means, and that
+value reaches the host.
 
 Two defects sit behind this gate, and they are different from each
 other.
@@ -41,6 +41,13 @@ through a `*Body` builder that actually puts `ok` on the wire.
 Not a style rule. A new route cannot be added without someone writing
 down which of those five its `ok` is, and the wire check is the half
 that would have caught the three routes above.
+
+The iOS runner answers the same questions through FlyingFox's
+`appendRoute`, and for a version this gate could not see it: it parsed
+Kotlin, so half the product was outside what it judged — a gate covering
+one of two platforms while reading as covering the thing. The Swift half
+below reads the same declaration, with the same five kinds, from the
+same file the routes are registered in.
 """
 
 import re
@@ -50,6 +57,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROUTES = ROOT / "android-runner/app/src/androidTest/kotlin/dev/smix/runner/RunnerTest.kt"
 DEFAULT_WIRE = ROOT / "android-runner/app/src/main/kotlin/dev/smix/runner/RunnerWire.kt"
+DEFAULT_SWIFT = ROOT / "swift-bridge/Sources/SmixRunnerCore/SmixRunnerServer.swift"
 
 KINDS = ("injected", "outcome", "action-performed", "reading", "bookkeeping")
 # The kinds whose value is an answer about the device, and so has to
@@ -117,6 +125,90 @@ def wire_builders(source):
         end = starts[i + 1][0] if i + 1 < len(starts) else len(source)
         out[name] = source[pos:end]
     return out
+
+
+SWIFT_ROUTE = re.compile(r'appendRoute\(\s*"(?P<method>GET|POST) (?P<uri>/[^"]*)"')
+# What a Swift route answers with. Two shapes count as a decided
+# answer: a `success(ok: …)` carrying the value, and a route that picks
+# between two different responses (`success()` or `notFound(…)`) — on
+# this runner the verdict is often which object comes back rather than
+# what is inside it. What does not count is a single `success()` with
+# nothing in it and no alternative: that is `{"ok":true}` written in.
+SWIFT_RESPONSE = re.compile(r"(\w+Route)\.(?P<kind>\w+)\((?P<args>[^)]*)\)")
+
+
+def swift_routes(source):
+    """Each `appendRoute("METHOD /uri")` with the comment block above it
+    and the closure body below, to the next route."""
+    out = []
+    marks = [(m.start(), m.group("method"), m.group("uri")) for m in SWIFT_ROUTE.finditer(source)]
+    starts = [comment_block_start(source, pos) for pos, _m, _u in marks]
+    for i, (_pos, method, uri) in enumerate(marks):
+        # Up to the NEXT route's comment block, not to its registration:
+        # the line above a route belongs to that route, and a slice that
+        # ran to `appendRoute` swallowed it — every route then carried
+        # two declarations, its own and its neighbour's.
+        end = starts[i + 1] if i + 1 < len(starts) else len(source)
+        out.append((method, uri, source[starts[i]:end]))
+    return out
+
+
+def judge_swift(source):
+    """The same rule, read off the Swift runner."""
+    problems = []
+    routes = swift_routes(source)
+    if not routes:
+        return ["no `appendRoute(\"METHOD /uri\")` found — the Swift reader is blind"], 0, {}
+    kinds = {}
+    checked = 0
+    for method, uri, body in routes:
+        if method != "POST":
+            continue
+        decls = DECL.findall(body)
+        if not decls:
+            problems.append(
+                f"POST {uri} (swift): no `// OK MEANS: <kind> — …` line. "
+                f"Say which of {', '.join(KINDS)} its `ok` is."
+            )
+            continue
+        if len(decls) > 1:
+            problems.append(f"POST {uri} (swift): {len(decls)} `OK MEANS` lines; exactly one")
+            continue
+        kind, _sep, why = decls[0]
+        if kind not in KINDS:
+            problems.append(
+                f"POST {uri} (swift): kind `{kind}` is not one of {', '.join(KINDS)}"
+            )
+            continue
+        if not why.strip():
+            problems.append(f"POST {uri} (swift): the kind is there and the sentence is not")
+            continue
+        kinds.setdefault(kind, []).append(uri)
+        if kind in KINDS_NEEDING_OK:
+            calls = [(m.group("kind"), m.group("args")) for m in SWIFT_RESPONSE.finditer(body)]
+            answers = {k for k, _ in calls if k not in {"decode", "DecodeError"}}
+            if not calls:
+                problems.append(
+                    f"POST {uri} (swift): declares `{kind}` and builds no `…Route.…(…)` "
+                    f"response, so there is nowhere for that answer to be"
+                )
+                continue
+            checked += 1
+            # A response built with something in it carries a verdict —
+            # `success(ok: …)`, `outcome(await handler())`,
+            # `response(rebound: …)`. `badRequest` is about the request
+            # and says nothing about the device, so it neither carries
+            # nor counts as an alternative.
+            carries = any(
+                k != "badRequest" and args.strip() for k, args in calls
+            )
+            picks = len({k for k in answers if k not in {"badRequest"}}) > 1
+            if not carries and not picks:
+                problems.append(
+                    f"POST {uri} (swift): declares `{kind}`, but it always answers the same "
+                    f"way — an `ok` written in rather than one this route decided"
+                )
+    return problems, checked, kinds
 
 
 def main(argv):
@@ -229,6 +321,10 @@ def main(argv):
                 f"a declaration nothing checks"
             )
 
+    swift = Path(argv[2]) if len(argv) > 2 else DEFAULT_SWIFT
+    swift_problems, swift_checked, swift_kinds = judge_swift(swift.read_text())
+    problems += swift_problems
+
     if checked_for_ok == 0:
         problems.append(
             "no handler was checked for the `ok` field — the wire half of this gate did nothing"
@@ -238,10 +334,12 @@ def main(argv):
         return fail(problems)
 
     kinds = ", ".join(f"{k}:{len(v)}" for k, v in sorted(declared_kinds.items()))
+    swift_total = sum(len(v) for v in swift_kinds.values())
     print(
-        f"an-act-route-says-what-ok-means: clean — {len(post)} POST route(s) declare what "
-        f"their ok means ({kinds}); {checked_for_ok} response builder(s) checked for the "
-        f"field the host reads"
+        f"an-act-route-says-what-ok-means: clean — {len(post)} POST route(s) on Android "
+        f"declare what their ok means ({kinds}); {checked_for_ok} response builder(s) "
+        f"checked for the field the host reads; {swift_total} POST route(s) on iOS "
+        f"declare theirs, {swift_checked} of them building a decided answer"
     )
     return 0
 
