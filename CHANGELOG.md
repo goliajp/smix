@@ -6,6 +6,20 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- **`back` could report that a screen had gone back when nothing had.**
+  The route decides by comparing what is on screen before the key with
+  what is on screen after it, and one look at the window list can come
+  back missing a window whose contents would not read that instant. A
+  window dropped from the reading and a window that had genuinely left
+  produced the same answer, so a back key the app swallowed could be
+  reported as `ok:true settledBy=screenChanged` — on a phone or emulator
+  under load, and not reproducibly. Every window in the list now stays
+  in the reading, with whatever did not read left empty, and the
+  comparison is made window by window: a part that did not read is never
+  evidence, either way. A whole budget in which nothing could be
+  compared now answers `couldNotSee` rather than claiming the screen
+  never changed.
+
 - **A scroll stopped as soon as a sliver of the row showed, on any
   Compose screen carrying the probe.** The rule that decides when a
   scroll has arrived divides the part of the target inside the frame by

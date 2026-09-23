@@ -30,18 +30,31 @@ package dev.smix.runner
  * subject can change is not a reading of anything. Hashing the whole
  * window set removes the choice.
  *
- * [windows] is that hash, over the window ids, their packages and
- * which nodes they hold. [saw] is the packages in plain words, for the
- * diagnosis line and for nothing else — it is not compared.
+ * [windows] is one entry per window in that list, and the entries are
+ * compared one against its own id rather than folded into a single
+ * number. Folding was the first version and it could not tell a window
+ * that had left from a window this look failed to read: the fold
+ * changed either way, so `/back` answered "the screen changed" on a
+ * screen the app never left. Pairing by id is not the pick that C6
+ * measured moving — what moves is which window is "the" window, not
+ * whether an id still equals itself.
  *
- * Neither carries text. A clock, a spinner or a countdown changes text
- * every frame while nothing has gone back — the fixture's blocked
+ * A `null` in [WindowReading] means "the window is in the list and
+ * this look did not read this part of it". It is not a value: it is
+ * neither equal nor unequal to anything, and it is never evidence.
+ *
+ * Nothing here carries text. A clock, a spinner or a countdown changes
+ * text every frame while nothing has gone back — the fixture's blocked
  * screen is exactly that shape, and it is what `pressBack()`'s own
  * boolean gets wrong.
  */
-data class ScreenReading(val windows: Int, val saw: String) {
+data class WindowReading(val id: Int, val pkg: String?, val structure: Int?)
+
+data class ScreenReading(val windows: List<WindowReading>) {
     /** Short enough to sit in a `saw` string beside another one. */
-    fun brief(): String = "windows=$windows [$saw]"
+    fun brief(): String = "windows=" + windows.joinToString(" ") {
+        "${it.id}:${it.pkg ?: "<unread>"}:${it.structure ?: "<unread>"}"
+    }
 }
 
 /** What one look produced. */
@@ -106,6 +119,7 @@ class BackSettle(private val before: ScreenReading?) {
 
     private var last: ScreenReading? = null
     private var unreadable = 0
+    private var compared = 0
 
     /** `null` means no verdict yet — look again. */
     fun observe(reading: Reading): Verdict? {
@@ -118,13 +132,47 @@ class BackSettle(private val before: ScreenReading?) {
             is Reading.Screen -> {
                 val now = reading.reading
                 last = now
-                if (now.windows != before.windows) return Verdict.ArrivedScreenChanged
+                if (now.windows.map { it.id }.toSet() != before.windows.map { it.id }.toSet()) {
+                    return Verdict.ArrivedScreenChanged
+                }
+                val was = before.windows.associateBy { it.id }
+                for (window in now.windows) {
+                    val then = was[window.id] ?: continue
+                    if (differs(then.structure, window.structure)) {
+                        return Verdict.ArrivedScreenChanged
+                    }
+                    if (differs(then.pkg, window.pkg)) return Verdict.ArrivedScreenChanged
+                    if (window.structure != null && then.structure != null) compared += 1
+                }
                 return null
             }
         }
     }
 
-    fun atDeadline(): Verdict = if (before == null) Verdict.CouldNotSee else Verdict.GaveUp
+    /**
+     * Whether two halves of a window's identity disagree.
+     *
+     * `null` is "this look did not read it", which is neither the same
+     * as the other reading nor different from it. Comparing it as a
+     * value is what made a missed look indistinguishable from a window
+     * that had left — the whole of N1.
+     */
+    private fun <T> differs(then: T?, now: T?): Boolean =
+        then != null && now != null && then != now
+
+    /**
+     * The verdict when the budget runs out.
+     *
+     * "The readings never changed" is a claim about readings, so it
+     * needs one: a whole budget in which no window was ever comparable
+     * is a failed look, and `gaveUp` would be that same false pass one
+     * step along.
+     */
+    fun atDeadline(): Verdict = when {
+        before == null -> Verdict.CouldNotSee
+        compared == 0 -> Verdict.CouldNotSee
+        else -> Verdict.GaveUp
+    }
 
     /**
      * The readings behind the verdict.

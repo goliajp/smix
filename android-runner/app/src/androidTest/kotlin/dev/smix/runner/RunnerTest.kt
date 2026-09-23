@@ -225,13 +225,19 @@ class SmixHttpServer(
 
     /// The bound on one screen-structure reading — see `structureHash`.
     ///
-    /// The cap is shared out per window rather than spent in order, and
-    /// no window gets less than the minimum: a screen is usually three
-    /// or four windows, and a share too small to reach past a layout
-    /// wrapper would make two different screens read the same.
+    /// Per window, and a constant. It was a total cap divided by how
+    /// many windows were on screen, which put "how many windows are
+    /// there today" inside every window's hash: one transient window
+    /// appearing moved the budget, and unrelated windows then read
+    /// differently while nothing about them had changed. A reading must
+    /// not depend on the instrument's own state.
+    ///
+    /// Spending it per window rather than in window order is the part
+    /// worth keeping: a single shared budget was eaten by the status
+    /// and navigation bars, which sort first by id, and the app's
+    /// window never got looked at.
     private val STRUCTURE_DEPTH_CAP = 4
-    private val STRUCTURE_NODE_CAP = 160
-    private val STRUCTURE_MIN_SHARE = 24
+    private val STRUCTURE_WINDOW_BUDGET = 40
 
     // NanoHTTPD serves each connection on its own thread, so the body
     // drained in `serve` reaches that request's handler and no other.
@@ -649,40 +655,43 @@ class SmixHttpServer(
     /// decision about which window matters.
     private fun readScreen(): Reading {
         val windows = instrumentation.uiAutomation.windows
-        var hash = 17
-        var readable = 0
-        val packages = LinkedHashSet<String>()
-        // Every window gets its own share of the budget. A single
-        // shared budget spent in window order is what the first version
-        // did, and the status bar and navigation bar — which sort
-        // first by id — ate all of it: the reading contained
-        // `com.android.systemui` and nothing else, so a back that
-        // genuinely left the Compose screen changed nothing the route
-        // could see and came back `gaveUp`.
-        val share = maxOf(STRUCTURE_MIN_SHARE, STRUCTURE_NODE_CAP / maxOf(1, windows.size))
+        if (windows.isEmpty()) return Reading.Unreadable
+        // A window whose root will not read stays in the reading, with
+        // the parts that did not read left empty. Dropping it is what
+        // N1 was: `uiAutomation.windows` lists a window whose root
+        // comes back null, so a look that missed the app's window and a
+        // look taken after the app's window left produced the same
+        // reading, and `/back` answered "the screen changed" on a
+        // screen the app had never left. The walk next door
+        // (`readWindowRows`) has always kept the row and left the
+        // package null; this one now does the same.
+        //
         // By id, because a window's id outlives the layer order that a
         // transition shuffles.
-        for (window in windows.sortedBy { it.id }) {
-            val root = window.root ?: continue
-            readable += 1
-            try {
-                val pkg = root.packageName?.toString() ?: "<none>"
-                packages.add(pkg)
-                hash = hash * 31 + window.id
-                hash = hash * 31 + pkg.hashCode()
-                hash = hash * 31 + structureHash(root, share)
-            } finally {
-                root.recycle()
+        val readings = windows.sortedBy { it.id }.map { window ->
+            val root = window.root
+            if (root == null) {
+                WindowReading(window.id, pkg = null, structure = null)
+            } else {
+                try {
+                    // The package is read from the root already in
+                    // hand. `UiDevice.currentPackageName` would name
+                    // the one in front, and it waits for the screen to
+                    // go idle to do it — ten seconds, measured, on a
+                    // screen with a label ticking five times a second,
+                    // which is the very screen this route has to answer
+                    // for.
+                    WindowReading(
+                        window.id,
+                        pkg = root.packageName?.toString(),
+                        structure = structureHash(root, STRUCTURE_WINDOW_BUDGET),
+                    )
+                } finally {
+                    root.recycle()
+                }
             }
         }
-        if (readable == 0) return Reading.Unreadable
-        // The packages are read from the roots already in hand.
-        // `UiDevice.currentPackageName` would name the one in front,
-        // and it waits for the screen to go idle to do it — ten
-        // seconds, measured, on a screen with a label ticking five
-        // times a second, which is the very screen this route has to
-        // answer for.
-        return Reading.Screen(ScreenReading(hash, packages.joinToString(" ")))
+        return Reading.Screen(ScreenReading(readings))
     }
 
     /// Put the back key in, and nothing else.
