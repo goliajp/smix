@@ -239,11 +239,23 @@ would need measuring again.
       - { latitude: 35.0, longitude: 139.0 }
       - { latitude: 36.0, longitude: 140.0 }
     speedMps: 50
+- clearLocation                          # stop simulating; the way back from the two above
 - setPermissions:                        # iOS / Android permission grants
     camera: allow
     location: allow
     notifications: allow
+    storage: allow                       # Android's WRITE_EXTERNAL_STORAGE; a no-op on iOS
 ```
+
+A simulated location outlives the flow that set it, and on a phone it
+outlives the cable — `clearLocation` is how smix puts it back. On an
+Android emulator it stops a `travel` in progress and leaves the device
+where it stands: the emulator console has no inverse of a position fix,
+and there is no real position to return to.
+
+`setPermissions` and `launchApp.permissions` name permissions the same
+way, and the list is neither platform's — a name with no counterpart on
+the device in front of you is a no-op there, not an error.
 
 ### Deep links
 
@@ -293,6 +305,16 @@ would need measuring again.
       visible: "Load more"
     label: "drain the list"
     optional: true
+    commands:
+      - tapOn: "Load more"
+
+# Both together: another pass needs the condition to hold AND the count
+# to be unspent. Give neither and it is a parse error — nothing would
+# say when the loop ends.
+- repeat:
+    times: 5
+    while:
+      visible: "Load more"
     commands:
       - tapOn: "Load more"
 
@@ -369,6 +391,17 @@ would need measuring again.
 - evalScript: |
     output.userId = output.someResponse.id
 - runScript: "../scripts/setup.js"
+
+# `runScript` also takes maestro's mapping form, `when:` included — so a
+# script meant for one platform is skipped on the other rather than
+# failing there. smix has no JS runtime, so one whose condition holds
+# fails saying exactly that; what `when:` changes is whether it is
+# reached at all.
+- runScript:
+    file: "../scripts/seed-android.js"
+    when:
+      platform: Android
+    label: "seed the database"
 ```
 
 ### Wait / sync

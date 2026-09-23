@@ -26,7 +26,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/release/smix}"
+SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
 ALIAS="${SMIX_C7_ANDROID:-sim-smix-android-01}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
@@ -81,12 +81,15 @@ adb -s "$SERIAL" shell am force-stop "$APPID" >/dev/null 2>&1 || true
 adb -s "$SERIAL" shell am start -n "$APPID/.InteropActivity" >/dev/null 2>&1 \
   || fail "could not start the interop screen"
 
-# Read through the runner, not through `adb content call`: this is the
-# wire a flow reads, and it is where the roles are named. (`smix tree`
-# cannot be used — it takes no bundle, so the CLI never asks the probe at
-# all; open-items I1.)
-probe_tree() { curl -s -m 30 "http://localhost:$PORT/probe/tree?app=$APPID"; }
-a11y_tree()  { "$SMIX" tree --device "$SERIAL" --port "$PORT" --json 2>/dev/null | grep -v '^kevy:'; }
+# Each reader asked by name, through the CLI a consumer has.
+#
+# Both go through `smix tree` since I1 was closed: the probe is no
+# longer reachable only by curl, and — the half that matters here — the
+# accessibility tree is no longer what a plain `smix tree` returns on a
+# probe-carrying app. Without `--reader` this would compare the
+# semantics tree with itself and agree about everything.
+probe_tree() { "$SMIX" tree --device "$SERIAL" --port "$PORT" --json --reader probe 2>/dev/null | grep -v '^kevy:'; }
+a11y_tree()  { "$SMIX" tree --device "$SERIAL" --port "$PORT" --json --reader a11y 2>/dev/null | grep -v '^kevy:'; }
 
 # Wait for the screen, do not guess at it: the activity is resumed before
 # Compose has composed, and a tree read in that gap is of a screen that has
@@ -96,8 +99,15 @@ for _ in $(seq 1 40); do
   sleep 0.5
 done
 
-PROBE="$(probe_tree)"
-A11Y="$(a11y_tree)"
+# `|| status=$?` on both: under `set -e` a failing command
+# substitution ends the script where it stands, and the verdict below
+# never prints — this exited 1 with no output at all when `smix tree`
+# was handed a flag the binary on PATH did not have.
+probe_status=0 a11y_status=0
+PROBE="$(probe_tree)" || probe_status=$?
+A11Y="$(a11y_tree)" || a11y_status=$?
+[ "$probe_status" = 0 ] || fail "asking the probe reader failed (exit $probe_status) — is this smix built from this tree?"
+[ "$a11y_status" = 0 ] || fail "asking the accessibility reader failed (exit $a11y_status) — is this smix built from this tree?"
 printf '%s' "$PROBE" | grep -q interop_title || fail "the probe never reported the interop screen"
 
 VERDICTS="$(PROBE_JSON="$PROBE" A11Y_JSON="$A11Y" python3 "$ROOT/scripts/dev/v10.2-c7-probe-verdicts.py")" || { printf '%s\n' "$VERDICTS" | sed 's/^/[c7-probe]   /' >&2; fail "the probe does not agree with the screen"; }
@@ -106,12 +116,14 @@ printf '%s\n' "$VERDICTS" | sed 's/^/[c7-probe]   /' >&2
 
 log "--- the reconciliation gate, on this screen"
 python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$SERIAL" --port "$PORT" \
+  --binary "$SMIX" \
   --activity .InteropActivity --min-both 3 --min-bounds-compared 3 \
   --prove-differences-exhibited >&2 \
   || fail "two-paths-agree is red on the interop screen"
 
 log "--- and on the screen it has always driven"
 python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$SERIAL" --port "$PORT" \
+  --binary "$SMIX" \
   --min-both 16 --min-bounds-compared 16 >&2 \
   || fail "two-paths-agree is red on the Compose screen"
 

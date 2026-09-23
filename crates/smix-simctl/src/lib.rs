@@ -1667,13 +1667,23 @@ impl SimctlClient {
         }
     }
 
-    /// Wipe the app's sandbox on the sim: locate the
-    /// Data container via `simctl get_app_container <udid> <bundle>
-    /// data`, then `simctl spawn <udid> rm -rf <container>/Documents
-    /// <container>/Library <container>/tmp`. The app remains installed
-    /// (no `simctl uninstall`), so the XCUITest binding is preserved
-    /// and macOS `ReportCrash` does not misinterpret a missing
+    /// Wipe the app's sandbox on the sim: locate the Data container via
+    /// `simctl get_app_container <udid> <bundle> data`, then delete
+    /// `Documents`, `Library` and `tmp` inside it. The app remains
+    /// installed (no `simctl uninstall`), so the XCUITest binding is
+    /// preserved and macOS `ReportCrash` does not misinterpret a missing
     /// install-receipt as a crash.
+    ///
+    /// The deletion happens here, on the host. A simulator's container
+    /// IS a directory on this Mac — `get_app_container` answers with its
+    /// host path — so the `simctl spawn <udid> /bin/rm` this used to run
+    /// was starting a process inside the simulator to delete files the
+    /// caller could already reach. On Xcode 27 it cannot: the runtime
+    /// root ships `df` and `launchctl` and nothing else, so spawning
+    /// `/bin/rm` exits 111 with `Invalid or missing Program`, and
+    /// `launchApp: { clearState: true }` failed with it. (Measured
+    /// 2026-09-23 against iOS 27.0 and 26.5; `/bin/echo` fails the same
+    /// way, so it is the runtime's contents and not this call's shape.)
     pub async fn clear_app_sandbox(
         &self,
         udid: &str,
@@ -1698,18 +1708,21 @@ impl SimctlClient {
                 detail: format!("empty Data container path for bundle {bundle_id}"),
             });
         }
-        let documents = format!("{container}/Documents");
-        let library = format!("{container}/Library");
-        let tmp = format!("{container}/tmp");
-        // `xcrun simctl spawn <UDID> <cmd>` uses `posix_spawn` inside
-        // the sim OS; `<cmd>` must be an absolute path (there is no
-        // PATH resolution). A bare `"rm"` fails with
-        // `NSPOSIXErrorDomain code 2: No such file or directory` on
-        // iOS 17+ sims. `/bin/rm` is present on every stock sim image.
-        //
-        // Best-effort: any missing subdir is fine (fresh app that never
-        // wrote to that path). `rm -rf` treats absent targets as no-ops.
-        simctl_run(&["spawn", udid, "/bin/rm", "-rf", &documents, &library, &tmp]).await?;
+        for path in sandbox_paths(container) {
+            // A directory that was never written to is not there, and
+            // that is the state this call exists to produce. `rm -rf`
+            // read it the same way.
+            match std::fs::remove_dir_all(&path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(DeviceControlError::Malformed {
+                        subcommand: "clear_app_sandbox".into(),
+                        detail: format!("{path}: {e}"),
+                    });
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1730,6 +1743,23 @@ impl SimctlClient {
         simctl_run(&refs).await?;
         Ok(())
     }
+}
+
+/// The three directories inside an app's Data container that
+/// `clearState` empties, as paths on this host.
+///
+/// `Documents`, `Library` and `tmp` rather than the container itself:
+/// the container holds the app's identity for the installed record, and
+/// removing it is `uninstall` by another name — which is the pairing
+/// that costs the XCUITest binding and raises a crash dialog.
+#[doc(hidden)]
+pub fn sandbox_paths(container: &str) -> [String; 3] {
+    let base = container.trim_end_matches('/');
+    [
+        format!("{base}/Documents"),
+        format!("{base}/Library"),
+        format!("{base}/tmp"),
+    ]
 }
 
 /// Argv construction for `xcrun simctl openurl`. Extracted
@@ -2367,6 +2397,42 @@ mod tests {
     #[test]
     fn compose_child_env_empty_input_is_empty_output() {
         assert!(compose_child_env(&[]).is_empty());
+    }
+
+    // -- clearing an app's sandbox --------------------------------------
+
+    /// The three directories `clearState` empties, as host paths.
+    ///
+    /// Host paths, because that is what they are: `get_app_container`
+    /// answers with a directory on this Mac, and the only reason a
+    /// process was ever started inside the simulator to delete them was
+    /// that nobody looked. On Xcode 27 nothing can be started there —
+    /// the runtime root carries `df` and `launchctl` and no `rm` — so
+    /// `clearState: true` failed with `Invalid or missing Program` and
+    /// took the whole `launchApp` with it.
+    #[test]
+    fn the_three_directories_cleared_are_under_the_container() {
+        let c = "/Users/x/Library/Developer/CoreSimulator/Devices/UD-ID/data/\
+                 Containers/Data/Application/GUID";
+        let paths = sandbox_paths(c);
+        assert_eq!(
+            paths,
+            [
+                format!("{c}/Documents"),
+                format!("{c}/Library"),
+                format!("{c}/tmp"),
+            ],
+        );
+    }
+
+    #[test]
+    fn a_container_path_is_not_joined_with_a_stray_separator() {
+        // `get_app_container` answers without a trailing slash and the
+        // paths are joined by hand. A double slash still resolves, so
+        // this would never fail on a device — it would only make the
+        // failure message name a path no reader can find.
+        let paths = sandbox_paths("/tmp/container/");
+        assert_eq!(paths[0], "/tmp/container/Documents");
     }
 
     // -- openurl URL preservation ---------------------------------------

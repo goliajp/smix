@@ -413,6 +413,9 @@ impl AppLike for MockApp {
     ) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn clear_location(&self) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn travel(
         &self,
         _points: &[(f64, f64)],
@@ -423,7 +426,7 @@ impl AppLike for MockApp {
     async fn set_permissions(
         &self,
         _bundle_id: &str,
-        _permissions: &[(smix_sdk::SimctlPermission, smix_sdk::PermissionAction)],
+        _permissions: &[(smix_sdk::device_control::Permission, smix_sdk::PermissionAction)],
     ) -> Result<(), ExpectationFailure> {
         Ok(())
     }

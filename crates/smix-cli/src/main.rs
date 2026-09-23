@@ -452,6 +452,17 @@ enum Cmd {
         /// it holds — so nothing disappears without saying so.
         #[arg(long)]
         keyboard: bool,
+        /// Which reader to ask: `auto` (default), `probe`, or `a11y`.
+        ///
+        /// `auto` is what a flow does — the app's own semantics tree
+        /// when it carries the probe, the accessibility projection
+        /// otherwise — and it is what you want unless you are comparing
+        /// the two. Naming one asks that one and fails if it cannot
+        /// answer, rather than quietly handing back the other: a tool
+        /// comparing two readers that is silently given the same tree
+        /// twice reports perfect agreement.
+        #[arg(long, default_value = "auto")]
+        reader: TreeReader,
     },
     /// Print the runner's high-level ScreenDescription: the visible
     /// interactive elements aggregated from the current a11y tree.
@@ -976,6 +987,35 @@ impl RunOutputFormat {
             Self::Human => smix_adapter_maestro::OutputFormat::Human,
             Self::Json => smix_adapter_maestro::OutputFormat::Json,
             Self::Junit => smix_adapter_maestro::OutputFormat::Junit,
+        }
+    }
+}
+
+/// Which of the two readers `smix tree` should ask.
+///
+/// smix has one perception primitive and two things that satisfy it. A
+/// flow takes whichever is available, best first, and says which
+/// answered. A reader comparing the two needs to ask each by name —
+/// and to be told "that one cannot answer here" rather than handed the
+/// other, because a comparison silently given the same tree twice
+/// reports that the two agree perfectly.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum TreeReader {
+    /// The app's own semantics tree when it carries the probe, the
+    /// accessibility projection otherwise. What a flow does.
+    Auto,
+    /// The app's semantics tree, through the smix probe.
+    Probe,
+    /// The accessibility projection, which every app has.
+    A11y,
+}
+
+impl TreeReader {
+    fn to_act(self) -> act::TreeReader {
+        match self {
+            Self::Auto => act::TreeReader::Auto,
+            Self::Probe => act::TreeReader::Probe,
+            Self::A11y => act::TreeReader::A11y,
         }
     }
 }
@@ -3748,9 +3788,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
             port,
             device,
             keyboard,
+            reader,
         } => {
             let p = runner_dial_port(port, device.as_deref());
-            act::cmd_tree(json, p, keyboard)
+            act::cmd_tree(json, p, keyboard, reader.to_act())
                 .await
                 .map_err(|e| CliError::Other(e.to_string()))?;
         }

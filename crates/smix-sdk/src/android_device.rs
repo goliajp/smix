@@ -674,6 +674,21 @@ impl DeviceControl for AndroidDeviceControl {
         Ok(())
     }
 
+    async fn location_clear(&self, _serial: &str) -> Result<(), DeviceControlError> {
+        // Stopping the walk is the whole of what is available here.
+        //
+        // `geo fix` has no inverse in the emulator console, and an
+        // emulator has no satellite to fall back on — its position is
+        // whatever was last fixed, so there is nothing to restore. What
+        // there IS to undo is the loop above, which outlives the call
+        // that started it and would otherwise walk into the next flow.
+        let mut slot = self.travel.lock().await;
+        if let Some(previous) = slot.take() {
+            previous.abort();
+        }
+        Ok(())
+    }
+
     // === Permissions ===
 
     async fn set_permission(
@@ -956,7 +971,10 @@ mod tests {
             // simply skipped it and the test stayed green — proved by
             // flipping `pasteboard_get` and watching nothing happen. A
             // walk over a set cannot notice something leaving the set.
-            let expected = if kind == DeviceKind::Emulator { 5 } else { 7 };
+            // The emulator's count did not move with `location_clear`:
+            // stopping a walk is something this backend can do, so that
+            // cell says Works. A phone has no console to say it to.
+            let expected = if kind == DeviceKind::Emulator { 5 } else { 8 };
             assert_eq!(
                 checked, expected,
                 "{kind:?} refuses {expected} of these; this walk saw {checked}. Either a \

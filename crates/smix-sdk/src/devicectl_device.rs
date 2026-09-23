@@ -406,6 +406,16 @@ impl DevicectlClient {
                 "--json-output".into(),
                 json_output.to_string(),
             ],
+            DevicectlVerb::LocationClear { json_output } => vec![
+                "device".into(),
+                "simulate".into(),
+                "location".into(),
+                "clear".into(),
+                "--device".into(),
+                d,
+                "--json-output".into(),
+                json_output.to_string(),
+            ],
             DevicectlVerb::PasteboardCopy { json_output } => {
                 self.pasteboard_argv("copy", d, json_output)
             }
@@ -519,6 +529,11 @@ pub enum DevicectlVerb<'a> {
         /// Where devicectl writes what it started.
         json_output: &'a str,
     },
+    /// Stop simulating, and give the device its own location back.
+    LocationClear {
+        /// Where devicectl writes what it did.
+        json_output: &'a str,
+    },
     /// Put text on the device's pasteboard. The text arrives on stdin.
     PasteboardCopy {
         /// Where devicectl writes what it did.
@@ -628,6 +643,24 @@ fn location_echo_agrees(
         });
     }
     Ok(())
+}
+
+/// What devicectl says it did with a `clear`.
+///
+/// `cleared: true` is not a reading of the device — devicectl answers it
+/// with nothing being simulated at all — so this checks that the
+/// instruction was carried out and says exactly that much. A `false`, or
+/// a result that has stopped carrying the field, is not a clear.
+fn clear_echo_agrees(json: &str) -> Result<(), DeviceControlError> {
+    const VERB: &str = "devicectl device simulate location clear";
+    let result = successful_result(json, VERB)?;
+    match result["cleared"].as_bool() {
+        Some(true) => Ok(()),
+        other => Err(DeviceControlError::Malformed {
+            subcommand: VERB.into(),
+            detail: format!("result.cleared is {other:?}, not true"),
+        }),
+    }
 }
 
 fn route_echo_agrees(
@@ -951,6 +984,17 @@ impl DeviceControl for DevicectlClient {
             points.len(),
             speed_mps.unwrap_or(ROUTE_DEFAULT_SPEED_MPS),
         )
+    }
+
+    async fn location_clear(&self, _udid: &str) -> Result<(), DeviceControlError> {
+        let (_, json) = capture_scratch("json");
+        run(&self.argv(DevicectlVerb::LocationClear {
+            json_output: &json.to_string_lossy(),
+        }))
+        .await?;
+        let said = tokio::fs::read_to_string(&json).await?;
+        tokio::fs::remove_file(&json).await?;
+        clear_echo_agrees(&said)
     }
 
     async fn start_recording(
@@ -1433,6 +1477,7 @@ mod parity_tests {
         "pasteboard_get",
         "location_set",
         "location_start",
+        "location_clear",
         "launch",
         "launch_with_args",
         "install",
@@ -1863,6 +1908,50 @@ mod location_tests {
                 "--json-output",
                 "/tmp/a.json"
             ]
+        );
+    }
+
+    #[test]
+    fn clearing_a_location_names_the_device_and_asks_for_the_answer() {
+        let c = DevicectlClient::new(UDID);
+        assert_eq!(
+            c.argv(DevicectlVerb::LocationClear {
+                json_output: "/tmp/a.json"
+            }),
+            [
+                "device",
+                "simulate",
+                "location",
+                "clear",
+                "--device",
+                UDID,
+                "--json-output",
+                "/tmp/a.json"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_clear_that_the_device_did_not_accept_is_not_a_clear() {
+        // `cleared: true` is devicectl saying it carried the instruction
+        // out — it answers that with nothing being simulated too, so it
+        // is not a reading of the device. What it can still catch is the
+        // shape changing under us, which is why the field is read rather
+        // than the exit code trusted.
+        let ok = r#"{"info":{"outcome":"success"},"result":{"cleared":true}}"#;
+        assert!(clear_echo_agrees(ok).is_ok());
+
+        let refused = r#"{"info":{"outcome":"success"},"result":{"cleared":false}}"#;
+        let said = format!("{:?}", clear_echo_agrees(refused).unwrap_err());
+        assert!(
+            said.contains("cleared"),
+            "the failure does not say what devicectl answered: {said}"
+        );
+
+        let shapeless = r#"{"info":{"outcome":"success"},"result":{}}"#;
+        assert!(
+            clear_echo_agrees(shapeless).is_err(),
+            "a result with no `cleared` field was read as a successful clear"
         );
     }
 

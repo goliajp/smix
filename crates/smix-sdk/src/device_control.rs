@@ -174,29 +174,6 @@ impl Permission {
         }
     }
 
-    /// Reverse: map iOS `SimctlPermission` → `Permission`. Used by App
-    /// back-compat shim accepting `SimctlPermission` arg.
-    #[must_use]
-    pub fn from_simctl(perm: SimctlPermission) -> Self {
-        match perm {
-            SimctlPermission::Camera => Permission::Camera,
-            SimctlPermission::Microphone => Permission::Microphone,
-            SimctlPermission::Photos => Permission::PhotoLibrary,
-            SimctlPermission::Location => Permission::Location,
-            SimctlPermission::LocationAlways => Permission::LocationAlways,
-            SimctlPermission::Notifications => Permission::Notifications,
-            SimctlPermission::Contacts => Permission::Contacts,
-            SimctlPermission::Calendar => Permission::Calendar,
-            SimctlPermission::Reminders => Permission::Reminders,
-            SimctlPermission::Bluetooth => Permission::Bluetooth,
-            SimctlPermission::Motion => Permission::Motion,
-            SimctlPermission::Media => Permission::Media,
-            SimctlPermission::Health => Permission::Health,
-            SimctlPermission::Faceid => Permission::FaceId,
-            SimctlPermission::HomeKit => Permission::HomeKit,
-            SimctlPermission::AddressBook => Permission::Contacts,
-        }
-    }
 
     /// Map to Android `android.permission.X` string. Returns `None` for
     /// iOS-only permissions (`FaceId`, `HomeKit`). Wired by
@@ -280,6 +257,10 @@ pub const ACTION_LEVELS: &[(&str, ActionLevel)] = &[
     ("add_media", ActionLevel::Device),
     ("location_set", ActionLevel::Device),
     ("location_start", ActionLevel::Device),
+    // Putting the device's own location back is the same level as
+    // taking it away. It is not `Observe`: nothing is read, something
+    // is undone.
+    ("location_clear", ActionLevel::Device),
     ("start_recording", ActionLevel::Device),
     ("stop_recording", ActionLevel::Device),
     ("recording_pid", ActionLevel::Observe),
@@ -570,6 +551,33 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
                 Yes,
                 // `devicectl device simulate location route --route-file`: returns
                 // at once and the device keeps travelling.
+                Yes,
+                No {
+                    why: EMULATOR_CONSOLE_ONLY,
+                    instead: BY_HAND,
+                },
+            ],
+        ),
+        (
+            // The way back. A simulated location outlives the flow that
+            // set it and the runner that drove it — on a phone it
+            // outlives the cable — so a verb that can set one without a
+            // verb that can put it back leaves the device lying to every
+            // app on it, and smix with no way to stop.
+            "location_clear",
+            [
+                Yes,
+                // The emulator console has no inverse of `geo fix`, and
+                // an emulator has no real position to be handed back to
+                // — so here this stops the walk smix started and leaves
+                // the device standing where it was. That is the whole of
+                // what can be done, and it is the half a flow needs:
+                // without it a `travel` keeps walking into the next test.
+                Yes,
+                // `devicectl device simulate location clear`, which answers
+                // `cleared: true` whether or not anything was being
+                // simulated. So it is an instruction carried out, not a
+                // reading: what it proves is that the device accepted it.
                 Yes,
                 No {
                     why: EMULATOR_CONSOLE_ONLY,
@@ -961,6 +969,19 @@ pub trait DeviceControl: Send + Sync {
         points: &[(f64, f64)],
         speed_mps: Option<f64>,
     ) -> Result<(), DeviceControlError>;
+    /// Stop simulating a location: cancel a route in progress and, where
+    /// the backend can, hand the device back its own position.
+    ///
+    /// The second half is not everywhere. `simctl` and `devicectl` both
+    /// have it; the Android emulator console has no inverse of `geo fix`
+    /// and no real position to return to, so there it stops the walk and
+    /// leaves the device where it stands. The table's cell for each kind
+    /// says which.
+    ///
+    /// Neither backend can be asked "are you simulating now" — `devicectl`
+    /// answers `cleared: true` with nothing running — so what a success
+    /// reports is that the instruction was accepted, and no more.
+    async fn location_clear(&self, udid: &str) -> Result<(), DeviceControlError>;
 
     // === Permissions (cross-platform `Permission` enum) ===
 

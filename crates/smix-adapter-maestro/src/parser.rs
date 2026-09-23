@@ -8,7 +8,7 @@
 //! lets us surface a precise [`ParseError`] for every malformed shape,
 //! and mirrors the maestro Kotlin parser layout 1:1.
 
-use crate::{BlockOptions, Flow, FlowCondition, MaestroPermissionAction, ParseError, RepeatMode, Step};
+use crate::{BlockOptions, Flow, FlowCondition, MaestroPermissionAction, ParseError, Step};
 use serde::Deserialize;
 use serde_norway::Value;
 use smix_selector::{Modifiers, Pattern, Role, Selector};
@@ -1192,6 +1192,9 @@ fn parse_run_flow(v: &Value) -> Result<Step, ParseError> {
 const RUN_FLOW_KEYS: &[&str] = &["file", "commands", "when", "as", "env", "label", "optional"];
 const REPEAT_KEYS: &[&str] = &["times", "while", "commands", "label", "optional"];
 
+/// maestro's `YamlRunScript` keys, all five of them.
+const RUN_SCRIPT_KEYS: &[&str] = &["file", "env", "when", "label", "optional"];
+
 /// maestro's own reading of `when.optional`: it is a field of
 /// `YamlCondition` that `toCondition` never copies, so it does nothing.
 const CONDITION_REFUSED: &[(&str, &str)] = &[(
@@ -2247,6 +2250,21 @@ fn parse_set_location(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
+/// `clearLocation`, which takes nothing.
+///
+/// A device has one location, so there is nothing to narrow it to. An
+/// argument here means the reader believes they scoped it to something,
+/// and the yaml would go on doing something else in silence.
+fn parse_clear_location(v: &Value) -> Result<Step, ParseError> {
+    match v {
+        Value::Null => Ok(Step::ClearLocation),
+        other => Err(ParseError::InvalidValue {
+            field: "clearLocation".into(),
+            reason: format!("takes no arguments, got {other:?}"),
+        }),
+    }
+}
+
 // `travel: { points: [{ latitude, longitude }, ...], speed_mps?: f64 }`.
 // >=2 waypoints required, per `simctl location start` semantics.
 fn parse_travel(v: &Value) -> Result<Step, ParseError> {
@@ -2512,59 +2530,55 @@ fn parse_repeat(v: &Value) -> Result<Step, ParseError> {
         .get(Value::String("commands".into()))
         .ok_or_else(|| ParseError::MissingField("repeat.commands".into()))?;
     let commands = parse_step_sequence(commands_val, "repeat.commands")?;
-    let has_times = map.get(Value::String("times".into())).is_some();
-    let has_while = map.get(Value::String("while".into())).is_some();
-    let mode = match (has_times, has_while) {
-        (true, true) => {
-            return Err(ParseError::InvalidValue {
-                field: "repeat".into(),
-                reason: "expected exactly one of `times` or `while`, got both".into(),
-            });
-        }
-        (false, false) => {
-            return Err(ParseError::InvalidValue {
-                field: "repeat".into(),
-                reason: "expected exactly one of `times` or `while`".into(),
-            });
-        }
-        (true, false) => {
-            let n = map
-                .get(Value::String("times".into()))
-                .and_then(Value::as_u64)
-                .ok_or_else(|| ParseError::InvalidValue {
-                    field: "repeat.times".into(),
-                    reason: "expected unsigned integer".into(),
-                })?;
+    // Both, either, or neither — maestro takes the first three and
+    // treats the fourth as `while true, Int.MAX_VALUE` times. smix
+    // refuses neither-of-them: a loop that names no count and no
+    // condition has not said when to stop, and the runtime's iteration
+    // cap would be answering that question on the author's behalf.
+    let times = match map.get(Value::String("times".into())) {
+        None => None,
+        Some(v) => {
+            let n = v.as_u64().ok_or_else(|| ParseError::InvalidValue {
+                field: "repeat.times".into(),
+                reason: "expected unsigned integer".into(),
+            })?;
             if n > u32::MAX as u64 {
                 return Err(ParseError::InvalidValue {
                     field: "repeat.times".into(),
                     reason: format!("times {n} exceeds u32::MAX"),
                 });
             }
-            RepeatMode::Times(n as u32)
-        }
-        (false, true) => {
-            let w = map.get(Value::String("while".into())).expect("checked");
-            match w {
-                Value::String(s) => RepeatMode::While {
-                    condition_expr: s.clone(),
-                },
-                Value::Mapping(_) => {
-                    RepeatMode::WhileCondition(Box::new(parse_condition(w, "repeat.while")?))
-                }
-                other => {
-                    return Err(ParseError::InvalidValue {
-                        field: "repeat.while".into(),
-                        reason: format!(
-                            "expected string expression or `{{ visible: <selector> }}` mapping, got {other:?}"
-                        ),
-                    });
-                }
-            }
+            Some(n as u32)
         }
     };
+    let (while_, while_expr) = match map.get(Value::String("while".into())) {
+        None => (None, None),
+        // The string form is smix's own; maestro's `while` is a
+        // condition mapping.
+        Some(Value::String(expr)) => (None, Some(expr.clone())),
+        Some(w @ Value::Mapping(_)) => (
+            Some(Box::new(parse_condition(w, "repeat.while")?)),
+            None,
+        ),
+        Some(other) => {
+            return Err(ParseError::InvalidValue {
+                field: "repeat.while".into(),
+                reason: format!(
+                    "expected string expression or `{{ visible: <selector> }}` mapping, got {other:?}"
+                ),
+            });
+        }
+    };
+    if times.is_none() && while_.is_none() && while_expr.is_none() {
+        return Err(ParseError::InvalidValue {
+            field: "repeat".into(),
+            reason: "expected `times`, `while`, or both — with neither, nothing says when the loop ends".into(),
+        });
+    }
     Ok(Step::Repeat {
-        mode,
+        times,
+        while_,
+        while_expr,
         commands,
         opts: parse_block_options(map, "repeat")?,
     })
@@ -2596,15 +2610,45 @@ fn parse_retry(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
-// `runScript: <inline literal or path>`. The parser accepts it so
+// `runScript: <inline literal or path>`, or maestro's mapping form
+// `{ file, env, when, label, optional }`. The parser accepts both so
 // yaml stays portable with maestro; the runtime raises an explicit
-// DriverError because there is no JS runtime behind it.
+// DriverError because there is no JS runtime behind it — except when
+// `when:` says this device was never meant to run it, which is a skip.
 fn parse_run_script(v: &Value) -> Result<Step, ParseError> {
     match v {
-        Value::String(s) => Ok(Step::RunScript { source: s.clone() }),
+        Value::String(s) => Ok(Step::RunScript {
+            source: s.clone(),
+            when: None,
+            env: Vec::new(),
+            opts: BlockOptions::default(),
+        }),
+        Value::Mapping(map) => {
+            reject_unknown_keys(map, "runScript", "runScript", RUN_SCRIPT_KEYS, &[])?;
+            let source = map
+                .get(Value::String("file".into()))
+                .ok_or_else(|| ParseError::MissingField("runScript.file".into()))
+                .and_then(|f| string_value(f, "runScript.file"))?;
+            let when = match map.get(Value::String("when".into())) {
+                None => None,
+                Some(w) => Some(Box::new(parse_condition(w, "runScript.when")?)),
+            };
+            let env = match map.get(Value::String("env".into())) {
+                None => Vec::new(),
+                Some(e) => parse_block_env(e, "runScript.env")?,
+            };
+            Ok(Step::RunScript {
+                source,
+                when,
+                env,
+                opts: parse_block_options(map, "runScript")?,
+            })
+        }
         other => Err(ParseError::InvalidValue {
             field: "runScript".into(),
-            reason: format!("expected string (inline source or file path), got {other:?}"),
+            reason: format!(
+                "expected a string (inline source or file path) or a mapping with `file`, got {other:?}"
+            ),
         }),
     }
 }
@@ -3031,6 +3075,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "webview_eval" | "webviewEval" | "webViewEval" => parse_webview_eval(value),
         // Device + Media gap.
         "setLocation" => parse_set_location(value),
+        "clearLocation" => parse_clear_location(value),
         "travel" => parse_travel(value),
         "setPermissions" => parse_set_permissions(value),
         "addMedia" => parse_add_media(value),

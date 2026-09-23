@@ -7,7 +7,9 @@
       - { latitude: 35.0, longitude: 139.0 }
       - { latitude: 36.0, longitude: 140.0 }
     speedMps: 50
+- clearLocation                          # stop simulating; the way back from the two above
 - setPermissions:                        # iOS / Android permission grants
     camera: allow
     location: allow
     notifications: allow
+    storage: allow                       # Android's WRITE_EXTERNAL_STORAGE; a no-op on iOS

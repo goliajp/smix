@@ -110,6 +110,90 @@ async fn get_tree_no_include_no_query_param() {
     assert_eq!(tree.source, smix_runner_client::TreeSource::Accessibility);
 }
 
+/// A caller who named no app still gets the tree the flow gets.
+///
+/// `smix tree`, `smix find`, `smix tap` — every CLI verb builds its
+/// client without a bundle id, and the probe was asked only when one
+/// was set. So the CLI read the accessibility tree while a flow beside
+/// it read the semantics tree, on the same screen, and two e2e scripts
+/// in this cycle had to bypass the CLI and curl `/probe/tree` to see
+/// what the flow was seeing.
+///
+/// The runner is the side that can tell which app holds the focus, so
+/// the question goes out without a name and comes back answered.
+#[tokio::test]
+async fn a_caller_who_named_no_app_is_still_offered_the_probes_tree() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/probe"))
+        .and(NoQueryParam("app"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "present": true, "version": "10.2.0", "roots": 1, "quietMs": 40,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/probe/tree"))
+        .and(NoQueryParam("app"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "screen": [1080, 2400],
+            "roots": [{
+                "id": 1, "testTag": "compose_submit", "text": "Submit",
+                "bounds": [0, 0, 1080, 200], "children": [],
+            }],
+        })))
+        .mount(&server)
+        .await;
+    // The accessibility route answers too, so a client that never asks
+    // the probe still completes — and fails on the verdict below rather
+    // than on a mock that was not there.
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(minimal_tree()))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let tree = client.get_tree(None).await.expect("tree");
+    assert_eq!(
+        tree.source,
+        smix_runner_client::TreeSource::Semantics,
+        "the CLI read the accessibility tree while a flow on the same \
+         screen read the semantics one"
+    );
+    server.verify().await;
+}
+
+/// The app a caller DID name is the app asked about.
+///
+/// The inference above must never reach a request that carries a name:
+/// a flow names its app on every call, and a runner second-guessing it
+/// would make the flow's tree depend on which window happened to hold
+/// the focus mid-transition.
+#[tokio::test]
+async fn a_named_app_is_the_app_the_probe_is_asked_about() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/probe"))
+        .and(query_param("app", "com.example.app"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "present": false, "why": "com.example.app declares no smix probe",
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(minimal_tree()))
+        .mount(&server)
+        .await;
+    let client =
+        HttpRunnerClient::with_base(server.uri()).with_target_bundle_id("com.example.app");
+    let tree = client.get_tree(None).await.expect("tree");
+    assert_eq!(tree.source, smix_runner_client::TreeSource::Accessibility);
+    server.verify().await;
+}
+
 #[tokio::test]
 async fn get_tree_with_include_threads_query_param() {
     let server = MockServer::start().await;
@@ -437,6 +521,21 @@ async fn client_with_session_id_sends_session_header_on_every_request() {
         .await
         .expect("find with session header");
     assert!(ok);
+}
+
+/// Matches only requests that do NOT carry the named query parameter.
+/// Sibling of [`NoHeader`], and needed for the same reason: without it
+/// a probe request asking about `app=` would satisfy a test written to
+/// prove the client asks about no app in particular.
+struct NoQueryParam(&'static str);
+
+impl wiremock::Match for NoQueryParam {
+    fn matches(&self, request: &wiremock::Request) -> bool {
+        !request
+            .url
+            .query_pairs()
+            .any(|(k, _)| k == self.0)
+    }
 }
 
 /// Matches only requests that do NOT carry the named header. wiremock

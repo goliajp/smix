@@ -337,6 +337,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::RunScript { .. } => "runScript",
         Step::EvalScript { .. } => "evalScript",
         Step::SetLocation { .. } => "setLocation",
+        Step::ClearLocation => "clearLocation",
         Step::Travel { .. } => "travel",
         Step::SetPermissions { .. } => "setPermissions",
         Step::AddMedia { .. } => "addMedia",

@@ -44,7 +44,13 @@ def sh(*cmd):
 
 
 def fetch_a11y(binary, device, port):
-    out = sh(binary, "tree", "--device", device, "--port", str(port), "--json")
+    # `--reader a11y`, and the flag is load-bearing. Since I1 was closed
+    # `smix tree` asks the probe first — it is what a flow does — so a
+    # plain call on a probe-carrying app hands back the semantics tree,
+    # and this gate would compare that tree with itself and find perfect
+    # agreement on every screen forever.
+    out = sh(binary, "tree", "--device", device, "--port", str(port), "--json",
+             "--reader", "a11y")
     if out is None:
         return None
     body = "\n".join(l for l in out.splitlines() if not l.startswith("kevy:"))

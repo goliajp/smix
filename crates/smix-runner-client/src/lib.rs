@@ -1429,23 +1429,64 @@ impl HttpRunnerClient {
         &self,
         include: Option<IncludeScope>,
     ) -> Result<PerceivedTree, RunnerTransportError> {
-        // The probe first, when there is an app to ask about. One
-        // perception primitive with two satisfiers, chosen at the source:
-        // every caller downstream keeps working against one tree, and none
-        // of them grows an `if probe { … } else { … }`.
+        // The probe first. One perception primitive with two satisfiers,
+        // chosen at the source: every caller downstream keeps working
+        // against one tree, and none of them grows an
+        // `if probe { … } else { … }`.
         //
-        // A probe that is not there, or an app nobody named, falls through
-        // to the accessibility tree — and the answer says which, because a
-        // screen the accessibility reader has gone blind on and a screen
-        // with nothing on it print identically otherwise.
-        if let Some(app) = self.target_bundle_id.clone()
-            && let Some(tree) = self.semantics_tree(&app).await
-        {
+        // The app is named when the caller has a name — a flow always
+        // does — and left out when it does not, in which case the runner
+        // answers about the window holding the focus. It used to be a
+        // precondition: no bundle, no probe. Every CLI verb builds its
+        // client without one, so `smix tree` answered from the
+        // accessibility projection while a flow on the same screen
+        // answered from the semantics tree, and two e2e scripts in this
+        // cycle had to bypass the CLI to see what the flow was seeing.
+        //
+        // A probe that is not there, or a screen with no app window in
+        // front, falls through to the accessibility tree — and the answer
+        // says which, because a screen the accessibility reader has gone
+        // blind on and a screen with nothing on it print identically
+        // otherwise.
+        if let Some(tree) = self.semantics_tree(self.target_bundle_id.as_deref()).await {
             return Ok(PerceivedTree {
                 source: TreeSource::Semantics,
                 root: tree,
             });
         }
+        self.accessibility_tree_only(include).await
+    }
+
+    /// The semantics tree and nothing else, or an error saying why not.
+    ///
+    /// [`Self::get_tree`] takes whichever reader can answer, best first.
+    /// That is right for a caller who wants to see the screen and wrong
+    /// for one comparing the two readers: handed the other tree without
+    /// a word, a comparison finds the two in perfect agreement. So this
+    /// refuses instead — a reader named is a reader asked.
+    pub async fn semantics_tree_only(&self) -> Result<PerceivedTree, RunnerTransportError> {
+        match self.semantics_tree(self.target_bundle_id.as_deref()).await {
+            Some(root) => Ok(PerceivedTree {
+                source: TreeSource::Semantics,
+                root,
+            }),
+            None => Err(RunnerTransportError::NonSuccessStatus {
+                endpoint: "/probe/tree".into(),
+                status: 404,
+                body: "no semantics tree here: the app in front carries no smix probe, \
+                       or no application window holds the focus. `smix tree` without \
+                       --reader takes the accessibility tree in that case."
+                    .into(),
+            }),
+        }
+    }
+
+    /// The accessibility tree and nothing else. Sibling of
+    /// [`Self::semantics_tree_only`], and the reason is the same one.
+    pub async fn accessibility_tree_only(
+        &self,
+        include: Option<IncludeScope>,
+    ) -> Result<PerceivedTree, RunnerTransportError> {
         let mut root: A11yNode = self.json_get("/tree", include).await?;
         derive_roles_recursive(&mut root);
         Ok(PerceivedTree {
@@ -1461,16 +1502,22 @@ impl HttpRunnerClient {
     /// the same thing to a caller, which is "carry on with the tree you
     /// have always had". What must NOT be swallowed is which tree was used,
     /// and that is the return value of the function above.
-    async fn semantics_tree(&self, app: &str) -> Option<A11yNode> {
+    async fn semantics_tree(&self, app: Option<&str>) -> Option<A11yNode> {
+        // The parameter is carried only when there is one to carry. An
+        // `app=` with nothing after it is not the same request: it names
+        // the empty package, and the runner would have to decide what
+        // that meant rather than being free to answer about the window
+        // in front.
+        let named = app.map(|a| format!("?app={a}")).unwrap_or_default();
         let raw: serde_json::Value = self
-            .json_get(&format!("/probe?app={app}"), None)
+            .json_get(&format!("/probe{named}"), None)
             .await
             .ok()?;
         if raw.get("present")?.as_bool() != Some(true) {
             return None;
         }
         let payload = self
-            .json_get::<serde_json::Value>(&format!("/probe/tree?app={app}"), None)
+            .json_get::<serde_json::Value>(&format!("/probe/tree{named}"), None)
             .await
             .ok()?;
         let mut root = smix_screen::probe_tree_to_a11y(&payload.to_string())?;

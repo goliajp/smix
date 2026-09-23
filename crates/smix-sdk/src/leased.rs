@@ -549,6 +549,9 @@ mod tests {
         ) -> Result<(), DeviceControlError> {
             unreachable!()
         }
+        async fn location_clear(&self, _: &str) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
         async fn set_permission(
             &self,
             _: &str,
@@ -633,6 +636,9 @@ mod tests {
             _: &[(f64, f64)],
             _: Option<f64>,
         ) -> Result<(), DeviceControlError> {
+            unreachable!()
+        }
+        async fn location_clear(&self, _: &str) -> Result<(), DeviceControlError> {
             unreachable!()
         }
         async fn set_permission(

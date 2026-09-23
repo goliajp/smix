@@ -350,7 +350,7 @@ async fn run_step(
             direction,
         } => cmd_scroll(selector.clone(), direction.clone(), port, platform).await,
         Step::HideKeyboard => cmd_hide_keyboard(port, platform).await,
-        Step::Tree { json } => cmd_tree(*json, port, false).await,
+        Step::Tree { json } => cmd_tree(*json, port, false, act::TreeReader::Auto).await,
         Step::Describe { json } => cmd_describe(*json, port).await,
         Step::SystemPopups { json } => cmd_system_popups(*json, port).await,
         // Lifecycle variants handled above.

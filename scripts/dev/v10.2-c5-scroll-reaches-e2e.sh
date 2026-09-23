@@ -70,52 +70,40 @@ trap cleanup EXIT
 
 port_free() { ! curl -s "http://127.0.0.1:$1/health" 2>/dev/null | grep -q '"ok":true'; }
 
-# The tree the FLOW reads, as json on stdout.
+# The tree the FLOW reads, as json on stdout, with which reader answered.
 #
-# Two eyes, because the flow has two: an app carrying the semantics probe
-# is read through it (`/probe/tree`), and everything else through the
-# accessibility reader. `smix tree` cannot ask for the first — it takes no
-# bundle — so the probe is asked directly here rather than measuring a
-# different screen than the flow acts on.
-flow_tree() { # $1 port  $2 device  $3 appId  $4 out.json
-  if curl -s "http://127.0.0.1:$1/probe?app=$3" 2>/dev/null | grep -q '"present":true'; then
-    curl -s "http://127.0.0.1:$1/probe/tree?app=$3" > "$4" 2>/dev/null
-    grep -q '"roots"' "$4" || { echo "no-probe-tree"; return 1; }
-    echo probe
-  else
-    "$SMIX" tree --json --port "$1" --device "$2" 2>/dev/null | grep -v '^kevy:' > "$4" || true
-    head -c 1 "$4" | grep -q '{' || { echo "no-tree"; return 1; }
-    echo a11y
-  fi
+# Through the CLI, which is the point: the flow and `smix tree` read the
+# same screen through the same two eyes — the semantics probe when the
+# app carries one, the accessibility reader otherwise — and the answer
+# says which. Until I1 was closed the CLI took no bundle and so never
+# asked the probe at all, and this had to curl `/probe/tree` to avoid
+# measuring a different screen than the flow acts on.
+flow_tree() { # $1 port  $2 device  $3 out.json
+  "$SMIX" tree --json --port "$1" --device "$2" 2>/dev/null | grep -v '^kevy:' > "$3" || true
+  head -c 1 "$3" | grep -q '{' || { echo "no-tree"; return 1; }
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$3"
 }
 
-# Every node of either tree shape as (id, x, y, w, h), plus the screen.
+# Every named node as (id, x, y, w, h), plus the screen.
+#
+# One shape, because there is one now: whichever reader answered, the
+# tree arrives from `smix tree --json` as a root with `bounds` and
+# `identifier` — a Compose testTag and a hosted View's resource id both
+# land in the latter.
 PY_NODES='
 import json, sys
 d = json.load(open(sys.argv[1]))
 out = []
-if "roots" in d:                      # the probe: [x1, y1, x2, y2], screen beside them
-    sw, sh = d["screen"]
-    def walk(n):
-        tag = n.get("testTag")
-        b = n.get("bounds")
-        if tag and b:
-            out.append((tag, b[0], b[1], b[2] - b[0], b[3] - b[1]))
-        for c in n.get("children") or []:
-            walk(c)
-    for r in d["roots"]:
-        walk(r)
-else:                                 # the accessibility reader, via smix tree
-    root = d["root"]
-    sw, sh = root["bounds"]["w"], root["bounds"]["h"]
-    def walk(n):
-        ident = (n.get("identifier") or "").split("/")[-1]
-        b = n["bounds"]
-        if ident:
-            out.append((ident, b["x"], b["y"], b["w"], b["h"]))
-        for c in n.get("children") or []:
-            walk(c)
-    walk(root)
+root = d["root"]
+sw, sh = root["bounds"]["w"], root["bounds"]["h"]
+def walk(n):
+    ident = (n.get("identifier") or "").split("/")[-1]
+    b = n["bounds"]
+    if ident:
+        out.append((ident, b["x"], b["y"], b["w"], b["h"]))
+    for c in n.get("children") or []:
+        walk(c)
+walk(root)
 '
 
 # A row that crosses the bottom edge, in one of two shapes:
@@ -136,11 +124,11 @@ else:                                 # the accessibility reader, via smix tree
 # Polled, not read once: straight after the navigation the probe answers
 # with every row at (0, 0, 0, 0) for a frame or two, and a single look
 # lands there and reports a screen that has no rows at all.
-await_crossing_row() { # $1 port  $2 device  $3 appId  $4 out.json  $5 prefix  $6 shape
+await_crossing_row() { # $1 port  $2 device  $3 out.json  $4 prefix  $5 shape
   local target=none
   for _ in $(seq 1 20); do
-    flow_tree "$1" "$2" "$3" "$4" >/dev/null || { sleep 0.5; continue; }
-    target="$(crossing_row "$4" "$5" "$6")"
+    flow_tree "$1" "$2" "$3" >/dev/null || { sleep 0.5; continue; }
+    target="$(crossing_row "$3" "$4" "$5")"
     [ "$target" != none ] && { printf '%s\n' "$target"; return 0; }
     sleep 0.5
   done
@@ -219,10 +207,10 @@ FLOW
   SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/and-open.yaml" >"$WORK/and-open.log" 2>&1 \
     || { tail -10 "$WORK/and-open.log" >&2; fail "android: could not open the scrolling screen"; }
   local target
-  target="$(await_crossing_row "$AND_PORT" "$AND_SERIAL" "$AND_APPID" "$WORK/and-tree.json" scroll_row_ centre-out)" \
+  target="$(await_crossing_row "$AND_PORT" "$AND_SERIAL" "$WORK/and-tree.json" scroll_row_ centre-out)" \
     || fail "android: no row crosses the bottom edge with its centre off screen — the screen this measures is not the screen it was written for"
   local eyes
-  eyes="$(flow_tree "$AND_PORT" "$AND_SERIAL" "$AND_APPID" "$WORK/and-tree.json")"
+  eyes="$(flow_tree "$AND_PORT" "$AND_SERIAL" "$WORK/and-tree.json")"
   local index="${target##*_}"
   log "android eyes=$eyes target=$target (its middle is below the bottom edge)"
 
@@ -243,7 +231,7 @@ FLOW
     printf '%s\n' "$out" | tail -20 >&2
     fail "android: the flow did not pass (the scroll stopped with $target still crossing the edge, and the tap went where its middle is)"
   fi
-  flow_tree "$AND_PORT" "$AND_SERIAL" "$AND_APPID" "$WORK/and-after.json" >/dev/null \
+  flow_tree "$AND_PORT" "$AND_SERIAL" "$WORK/and-after.json" >/dev/null \
     || fail "android: no tree after the flow"
   local reach
   reach="$(reach_of "$WORK/and-after.json" "$target")"
@@ -279,10 +267,10 @@ FLOW
   SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios-open.yaml" >"$WORK/ios-open.log" 2>&1 \
     || { tail -10 "$WORK/ios-open.log" >&2; fail "ios: could not launch the fixture"; }
   local target
-  target="$(await_crossing_row "$IOS_PORT" "$IOS_UDID" "$IOS_APPID" "$WORK/ios-tree.json" fixture-row- any)" \
+  target="$(await_crossing_row "$IOS_PORT" "$IOS_UDID" "$WORK/ios-tree.json" fixture-row- any)" \
     || fail "ios: no row crosses the bottom edge"
   local eyes
-  eyes="$(flow_tree "$IOS_PORT" "$IOS_UDID" "$IOS_APPID" "$WORK/ios-tree.json")"
+  eyes="$(flow_tree "$IOS_PORT" "$IOS_UDID" "$WORK/ios-tree.json")"
   log "ios eyes=$eyes target=$target (it crosses the bottom edge)"
 
   cat >"$WORK/ios.yaml" <<FLOW
@@ -301,7 +289,7 @@ FLOW
     printf '%s\n' "$out" | tail -20 >&2
     fail "ios: the flow did not pass"
   fi
-  flow_tree "$IOS_PORT" "$IOS_UDID" "$IOS_APPID" "$WORK/ios-after.json" >/dev/null || fail "ios: no tree after the flow"
+  flow_tree "$IOS_PORT" "$IOS_UDID" "$WORK/ios-after.json" >/dev/null || fail "ios: no tree after the flow"
   local reach
   reach="$(reach_of "$WORK/ios-after.json" "$target")"
   [ "$reach" = full ] || fail "ios reach=$reach — the scroll stopped with the row not wholly on screen"
