@@ -148,16 +148,33 @@ def bold_phrases(section):
     Taken verbatim between the `**` pairs — one entry's phrase carries
     backticks and an underscore, and regularising it would make the join key
     something neither file actually contains.
+
+    A phrase can wrap. This used to read one line at a time and drop an
+    entry whose closing `**` was on a later line — without a word, so the
+    entry left the set and nothing compared it. Four of 11.0.0's five
+    breaking entries wrap, and the scan saw one. A wrapped phrase is
+    joined with single spaces (the line breaks are the file's layout, not
+    its content); an opening `- **` that never closes is returned as an
+    `UNCLOSED:` marker so the comparison names it rather than skipping it.
     """
     out = []
-    for line in section.splitlines():
-        line = line.strip()
+    lines = section.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        i += 1
         if not line.startswith("- **"):
             continue
-        rest = line[len("- **"):]
-        end = rest.find("**")
-        if end != -1:
-            out.append(rest[:end])
+        parts = [line[len("- **"):]]
+        while "**" not in parts[-1] and i < len(lines):
+            nxt = lines[i].strip()
+            if not nxt or nxt.startswith("- "):
+                break
+            parts.append(nxt)
+            i += 1
+        joined = " ".join(parts)
+        end = joined.find("**")
+        out.append(joined[:end] if end != -1 else f"UNCLOSED: {joined[:60]}")
     return out
 
 
