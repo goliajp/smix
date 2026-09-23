@@ -247,6 +247,20 @@ pub enum Wakefulness {
 /// Measured on API 36: the dump carries one `  mWakefulness=Awake` line,
 /// and a device sent to sleep with `KEYCODE_SLEEP` reads `Asleep`.
 #[must_use]
+/// The AVD name out of what the emulator console answered.
+///
+/// The console answers with the name and then `OK` on its own line.
+/// Taking the whole body would store "sim-smix-01\nOK" as the AVD, and
+/// `emulator -avd` would then be handed something no AVD is called.
+pub fn parse_avd_name(console_out: &str) -> String {
+    console_out
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && *l != "OK")
+        .unwrap_or_default()
+        .to_string()
+}
+
 pub fn parse_wakefulness(dump: &str) -> Option<Wakefulness> {
     let value = dump
         .lines()
@@ -605,17 +619,40 @@ impl AdbClient {
     /// are knowable — it already refuses a serial adb cannot see — so
     /// that is where the pair gets written down.
     pub async fn avd_name(&self, serial: &str) -> Result<String, AdbError> {
-        let out = self.emu(serial, &["avd", "name"]).await?;
-        // The console answers with the name and then `OK` on its own
-        // line. Taking the whole body would store "sim-smix-01\nOK" as
-        // the AVD, and `emulator -avd` would then be handed something no
-        // AVD is called.
-        Ok(out
-            .lines()
-            .map(str::trim)
-            .find(|l| !l.is_empty() && *l != "OK")
-            .unwrap_or_default()
-            .to_string())
+        Ok(parse_avd_name(&self.emu(serial, &["avd", "name"]).await?))
+    }
+
+    /// Every running emulator paired with the AVD it is running.
+    ///
+    /// Synchronous because the callers are resolution paths, which run
+    /// before anything has a device to await on; `adb devices` plus one
+    /// console question per emulator measured 17 ms each on this machine.
+    ///
+    /// An emulator that does not answer with a name is **left out**
+    /// rather than entered under an empty one. "It did not say" and "it
+    /// is called nothing" are different facts, and the second one would
+    /// match a row whose identity is missing — turning two unknowns into
+    /// a confident wrong answer.
+    pub fn live_emulators(&self) -> Vec<(String, String)> {
+        let bin = self.binary.as_deref().unwrap_or("adb");
+        let Ok(listed) = std::process::Command::new(bin).arg("devices").output() else {
+            return Vec::new();
+        };
+        let Ok(devices) = parse_devices_stdout(&String::from_utf8_lossy(&listed.stdout)) else {
+            return Vec::new();
+        };
+        devices
+            .into_iter()
+            .filter(|d| d.serial.starts_with("emulator-") && d.state == "device")
+            .filter_map(|d| {
+                let out = std::process::Command::new(bin)
+                    .args(["-s", &d.serial, "emu", "avd", "name"])
+                    .output()
+                    .ok()?;
+                let name = parse_avd_name(&String::from_utf8_lossy(&out.stdout));
+                (!name.is_empty()).then_some((d.serial, name))
+            })
+            .collect()
     }
 
     /// Start an AVD, detached, and return once the process is away.

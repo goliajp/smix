@@ -78,6 +78,20 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Scripts that *build* a legacy file instead of pointing a reader at one.
+///
+/// `import_legacy_records` still reads `<store dir>/sims.json` every time
+/// a store is opened — live code with its own tests — so a gate that
+/// needs a registry of a particular shape writes one in a temp
+/// directory. What this rule is against is sending a person to a file
+/// nothing writes any more; a fixture under `mktemp -d` tells nobody
+/// anything.
+///
+/// Named by path and asserted to exist, for the reason `is_exempt`
+/// gives above: an exemption that outlives its file goes on reading like
+/// a decision while protecting nothing.
+const SCRIPT_FIXTURES: &[&str] = &["scripts/dev/v10.2-c13d-an-alias-follows-its-device-e2e.sh"];
+
 /// Shell scripts and CI carry user-visible text too.
 ///
 /// `sim-guard.sh` told anyone it blocked to "see .smix/sims.json" —
@@ -99,7 +113,19 @@ fn no_script_points_at_a_retired_state_file() {
         scripts.len()
     );
 
+    for fixture in SCRIPT_FIXTURES {
+        assert!(
+            root.join(fixture).is_file(),
+            "{fixture} is exempt from the retired-file rule and does not exist — \
+             an exemption whose file is gone excuses nothing and hides that it does"
+        );
+    }
+
     for path in &scripts {
+        let rel = path.strip_prefix(&root).unwrap_or(path).to_string_lossy().to_string();
+        if SCRIPT_FIXTURES.contains(&rel.as_str()) {
+            continue;
+        }
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };

@@ -120,8 +120,23 @@ pub struct RegisteredSim {
     /// Runtime identifier.
     pub runtime: String,
     /// Device type identifier.
+    ///
+    /// Apple's `SimDeviceType` for a simulator. For an emulator this is
+    /// where the AVD name used to live, and rows written before
+    /// [`Self::avd_name`] existed still keep it there — read it through
+    /// that method rather than from here, which is named after the
+    /// other half of its rows.
     #[serde(rename = "deviceType")]
     pub device_type: String,
+    /// Which AVD an emulator row names.
+    ///
+    /// The serial is a slot: `emulator-5554` belongs to whoever booted
+    /// first, so a row holding only a serial names a stranger the moment
+    /// somebody else takes that port. The AVD name survives a reboot and
+    /// a slot change, and it is the name `smix sim boot` already starts
+    /// the device by.
+    #[serde(default, rename = "avdName", skip_serializing_if = "Option::is_none")]
+    pub avd_name: Option<String>,
     /// Desired BCP 47 locale tag (e.g. `"en-US"`, `"ja-JP"`). When set,
     /// `smix sim boot` enforces it via
     /// `defaults write -g AppleLanguages + AppleLocale` and reboots the
@@ -142,6 +157,25 @@ pub struct RegisteredSim {
         skip_serializing_if = "Option::is_none"
     )]
     pub runner_port: Option<u16>,
+}
+
+impl RegisteredSim {
+    /// The AVD this row names, when it names one.
+    ///
+    /// Reads the field, then the place the value lived before that field
+    /// existed. One reader, so the two spellings cannot drift apart —
+    /// and only for emulators: `deviceType` on a simulator row carries
+    /// Apple's device type, and reading that as an identity would invent
+    /// an AVD named `com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro`.
+    pub fn avd_name(&self) -> Option<&str> {
+        if self.kind != DeviceKind::Emulator {
+            return None;
+        }
+        self.avd_name
+            .as_deref()
+            .or(Some(self.device_type.as_str()))
+            .filter(|a| !a.is_empty())
+    }
 }
 
 /// What [`SimRegistry::register`] did with the alias.
@@ -226,6 +260,90 @@ pub fn is_udid(s: &str) -> bool {
         }
     }
     true
+}
+
+/// Where an emulator alias actually points today.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmulatorAddress {
+    /// The recorded AVD is running on the slot it was registered with.
+    At {
+        /// The serial to address it by.
+        serial: String,
+    },
+    /// The recorded AVD is running, on a different slot than recorded.
+    MovedTo {
+        /// The serial it answers on today.
+        serial: String,
+        /// The serial the registry recorded.
+        recorded: String,
+    },
+    /// The recorded AVD is not running anywhere.
+    NotRunning {
+        /// The AVD the row records.
+        avd: String,
+        /// Which AVD holds the recorded slot now, when one does.
+        slot_now: Option<String>,
+    },
+    /// The row records a slot and nothing else.
+    NoIdentityRecorded {
+        /// The slot the row records.
+        serial: String,
+    },
+}
+
+impl EmulatorAddress {
+    /// How many answers there are.
+    pub const VARIANTS: usize = 4;
+}
+
+/// Which emulator an alias names today, given what was recorded and
+/// what is running.
+///
+/// `emulator-<port>` is a slot, not a device: whoever boots first takes
+/// 5554. So a row that records only a serial names whichever emulator
+/// happens to be answering there — on 2026-09-23 that was a consumer's
+/// `qip-consumer-36`, and every alias-driven action would have installed
+/// onto their device. The AVD name is what survives a reboot and a slot
+/// change, and registration has been writing it down since the start;
+/// nothing read it.
+///
+/// The order matters. Identity is asked for first, and the running list
+/// is not consulted without one: letting an empty slot stand in for an
+/// unknown identity is precisely how a slot becomes an identity.
+pub fn emulator_address(
+    recorded_avd: Option<&str>,
+    recorded_serial: &str,
+    live: &[(String, String)],
+) -> EmulatorAddress {
+    let Some(avd) = recorded_avd.filter(|a| !a.is_empty()) else {
+        return EmulatorAddress::NoIdentityRecorded {
+            serial: recorded_serial.to_string(),
+        };
+    };
+    // Byte for byte: `adb` and `emulator -avd` both match verbatim, so a
+    // case fold here would hand back a device neither of them answers to.
+    if let Some((serial, _)) = live.iter().find(|(_, name)| name == avd) {
+        return if serial == recorded_serial {
+            EmulatorAddress::At {
+                serial: serial.clone(),
+            }
+        } else {
+            EmulatorAddress::MovedTo {
+                serial: serial.clone(),
+                recorded: recorded_serial.to_string(),
+            }
+        };
+    }
+    EmulatorAddress::NotRunning {
+        avd: avd.to_string(),
+        // Only for the sentence: the reader needs to know the slot is
+        // not merely empty, it belongs to someone. It takes no part in
+        // choosing.
+        slot_now: live
+            .iter()
+            .find(|(serial, _)| serial == recorded_serial)
+            .map(|(_, name)| name.clone()),
+    }
 }
 
 /// Why an identifier does not fit the kind it was registered under.
@@ -969,6 +1087,7 @@ mod kind_tests {
                 udid: "emulator-5554".into(),
                 runtime: String::new(),
                 device_type: String::new(),
+                avd_name: None,
                 locale: None,
                 runner_port: None,
                 kind: DeviceKind::Emulator,
@@ -1026,6 +1145,7 @@ mod kind_tests {
             udid: "00008120-001410C11A42201E".into(),
             runtime: "iOS-26-5".into(),
             device_type: "iPhone15,4".into(),
+            avd_name: None,
             locale: None,
             runner_port: None,
         };
@@ -1035,5 +1155,194 @@ mod kind_tests {
         let back: RegisteredSim = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.kind, DeviceKind::PhysicalIos);
         assert!(back.destructive_opt_in);
+    }
+}
+
+#[cfg(test)]
+mod emulator_address_tests {
+    use super::*;
+
+    fn live(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(s, a)| ((*s).to_string(), (*a).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn an_avd_still_in_the_slot_it_was_registered_on_is_addressed_there() {
+        let out = emulator_address(
+            Some("a-01"),
+            "emulator-5554",
+            &live(&[("emulator-5554", "a-01")]),
+        );
+        assert_eq!(
+            out,
+            EmulatorAddress::At {
+                serial: "emulator-5554".into()
+            }
+        );
+    }
+
+    #[test]
+    fn an_avd_that_moved_slots_is_followed_not_looked_up_by_slot() {
+        // This machine, 2026-09-23: the row says 5554, the AVD is on
+        // 5556, and 5554 now hosts somebody else's emulator.
+        let out = emulator_address(
+            Some("a-01"),
+            "emulator-5554",
+            &live(&[
+                ("emulator-5554", "qip-consumer-36"),
+                ("emulator-5556", "a-01"),
+            ]),
+        );
+        assert_eq!(
+            out,
+            EmulatorAddress::MovedTo {
+                serial: "emulator-5556".into(),
+                recorded: "emulator-5554".into()
+            }
+        );
+    }
+
+    #[test]
+    fn an_avd_that_is_not_running_says_who_holds_the_slot_it_used_to_have() {
+        let out = emulator_address(
+            Some("a-01"),
+            "emulator-5554",
+            &live(&[("emulator-5554", "qip-consumer-36")]),
+        );
+        assert_eq!(
+            out,
+            EmulatorAddress::NotRunning {
+                avd: "a-01".into(),
+                slot_now: Some("qip-consumer-36".into())
+            }
+        );
+    }
+
+    #[test]
+    fn nothing_running_is_not_running_with_nobody_in_the_slot() {
+        let out = emulator_address(Some("a-01"), "emulator-5554", &live(&[]));
+        assert_eq!(
+            out,
+            EmulatorAddress::NotRunning {
+                avd: "a-01".into(),
+                slot_now: None
+            }
+        );
+    }
+
+    #[test]
+    fn a_row_with_no_identity_says_so_whatever_is_in_the_slot() {
+        // Both directions: an empty slot does not turn "we do not know
+        // which device this is" into "we do". That step is exactly how a
+        // slot quietly becomes an identity.
+        let expected = EmulatorAddress::NoIdentityRecorded {
+            serial: "emulator-5554".into(),
+        };
+        assert_eq!(
+            emulator_address(None, "emulator-5554", &live(&[])),
+            expected
+        );
+        assert_eq!(
+            emulator_address(
+                None,
+                "emulator-5554",
+                &live(&[("emulator-5554", "somebody-else")])
+            ),
+            expected
+        );
+        // An empty string is an absence that was written down, not a name.
+        assert_eq!(
+            emulator_address(Some(""), "emulator-5554", &live(&[])),
+            expected
+        );
+    }
+
+    #[test]
+    fn avd_names_are_matched_byte_for_byte() {
+        // `adb` and `emulator -avd` both match verbatim, so a case fold
+        // here would address a device neither of them would.
+        let out = emulator_address(
+            Some("A-01"),
+            "emulator-5554",
+            &live(&[("emulator-5554", "a-01")]),
+        );
+        assert_eq!(
+            out,
+            EmulatorAddress::NotRunning {
+                avd: "A-01".into(),
+                slot_now: Some("a-01".into())
+            }
+        );
+    }
+
+    #[test]
+    fn there_are_four_answers_and_each_carries_a_different_sentence() {
+        // A count, not a walk: folding one answer into another is how a
+        // refusal turns into a different refusal's wording and stops
+        // being about what happened.
+        assert_eq!(EmulatorAddress::VARIANTS, 4);
+    }
+}
+#[cfg(test)]
+mod avd_name_tests {
+    use super::*;
+
+    fn row(kind: DeviceKind, device_type: &str, avd_name: Option<&str>) -> RegisteredSim {
+        RegisteredSim {
+            device_name: "d".into(),
+            kind,
+            destructive_opt_in: false,
+            udid: "emulator-5554".into(),
+            runtime: String::new(),
+            device_type: device_type.into(),
+            avd_name: avd_name.map(str::to_string),
+            locale: None,
+            runner_port: None,
+        }
+    }
+
+    #[test]
+    fn the_new_field_is_absent_from_the_wire_until_it_is_set() {
+        // An older reader has to keep reading these files.
+        let json = serde_json::to_string(&row(DeviceKind::Emulator, "", None)).expect("serialize");
+        assert!(!json.contains("avdName"), "got: {json}");
+        let json =
+            serde_json::to_string(&row(DeviceKind::Emulator, "", Some("a-01"))).expect("serialize");
+        assert!(json.contains("\"avdName\":\"a-01\""), "got: {json}");
+        let back: RegisteredSim = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.avd_name(), Some("a-01"));
+    }
+
+    #[test]
+    fn an_emulator_row_written_before_the_field_existed_keeps_its_identity() {
+        // Registration has written the AVD name into `deviceType` since
+        // emulators became registrable. Those rows are not identityless;
+        // their identity is in a field named after somebody else's idea.
+        let sim = row(DeviceKind::Emulator, "sim-smix-android-01", None);
+        assert_eq!(sim.avd_name(), Some("sim-smix-android-01"));
+    }
+
+    #[test]
+    fn a_simulators_device_type_is_not_an_avd_name() {
+        // The same field carries Apple's device type for simulators.
+        // Reading that as an identity would invent an AVD called
+        // `com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro`.
+        let sim = row(
+            DeviceKind::Simulator,
+            "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+            None,
+        );
+        assert_eq!(sim.avd_name(), None);
+        let phone = row(DeviceKind::PhysicalAndroid, "SM-S9010", None);
+        assert_eq!(phone.avd_name(), None);
+    }
+
+    #[test]
+    fn the_new_field_wins_when_both_are_there() {
+        let sim = row(DeviceKind::Emulator, "old-name", Some("new-name"));
+        assert_eq!(sim.avd_name(), Some("new-name"));
     }
 }
