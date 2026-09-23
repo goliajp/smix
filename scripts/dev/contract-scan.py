@@ -66,12 +66,23 @@ BESIDE = {
 
 
 def archive_key(name: str) -> tuple:
-    """Order archives by version line then checkpoint, for "the newest"."""
-    m = re.match(r"v(\d+)\.(\d+)-(?:c(\d+)|(.+?))-hot\.md$", name)
+    """Order archives by version line then checkpoint, for "the newest".
+
+    A checkpoint may carry a letter — `c13`, then `c13b`, `c13c`, `c13d`
+    when a segment has to be followed by another before the next number.
+    The first version of this matched `c(\\d+)` and nothing else, so
+    `v10.2-c13d-hot.md` failed that branch, fell through to the catch-all
+    and sorted as checkpoint 0 — behind `c1`. The gate then reported the
+    newest archive as `c13` while four later ones sat beside it, and the
+    only way to satisfy it was to write a stale name into the note it
+    was checking.
+    """
+    m = re.match(r"v(\d+)\.(\d+)-(?:c(\d+)([a-z]*)|(.+?))-hot\.md$", name)
     if not m:
-        return (0, 0, 0, name)
+        return (0, 0, 0, "", name)
     return (int(m.group(1)), int(m.group(2)),
-            int(m.group(3)) if m.group(3) else 0, name)
+            int(m.group(3)) if m.group(3) else 0,
+            m.group(4) or "", name)
 
 
 def read(path: str) -> str:

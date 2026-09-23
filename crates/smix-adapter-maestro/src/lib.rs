@@ -780,7 +780,7 @@ pub enum Step {
         times: Option<u32>,
         /// What must hold to run another iteration. `None` means only
         /// the count decides. The string form (`while: "<expr>"`) is a
-        /// smix extension and lives in [`RepeatMode`].
+        /// smix extension and lives in `while_expr` below.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         while_: Option<Box<FlowCondition>>,
         /// The smix-only expression form of `while`, when that is what

@@ -30,21 +30,27 @@ npm install -g @goliapkg/smix-cli
 cargo install smix-cli --locked
 
 # Swift Package Manager
-# add https://github.com/goliajp/smix (product: SmixSDK, from: "10.1.0")
+# add https://github.com/goliajp/smix (product: SmixSDK, from: "11.0.0")
 
 # Gradle / Maven (Kotlin / Java)
-# implementation("jp.golia.smix:smix-sdk:10.1.0")
+# implementation("jp.golia.smix:smix-sdk:11.0.0")
 
 # Optional, Android only, debug builds only: lets smix read Compose's own
 # semantics tree instead of the accessibility projection of it, so a control
 # inside a dialog can be addressed by id. Everything works without it.
-# debugImplementation("jp.golia.smix:smix-probe:10.1.0")
+# debugImplementation("jp.golia.smix:smix-probe:11.0.0")
 
 # TypeScript / Node / Bun (drives a simulator through the native addon)
 npm install @goliapkg/smix
 ```
 
 Prerequisites: macOS with Xcode + Simulator (iOS testing); Android SDK with an emulator image (Android testing). For a physical device, USB and a paired phone — plus, on iOS, an Apple Development signing identity and a phone that stays unlocked, because a locked one parks `xcodebuild` rather than failing it.
+
+Coming from 10.x? An unread key in a flow is now a parse error, a scroll
+stops when its target is wholly visible rather than merely overlapping,
+and an Android step whose touch silently failed now fails where it
+happens — [Migrating to smix 11.0](docs/migrating-to-11.md) is short, and
+`smix run --check <flow>` names anything that has to change.
 
 Coming from 3.x? Device records and leases moved to the machine, so one
 checkout no longer holds answers the next cannot see. Run `smix sim
