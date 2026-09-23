@@ -14,11 +14,19 @@ gone on reading as true forever.
 
 A self-test nobody runs is a claim about the past.
 
+It happened again in a shape this file could not see: `scripts/release/
+device-e2e-tier.sh --selftest`, six cases proving the tier can still
+report NOTHING DRIVEN, invoked by nothing — and the tier itself invoked
+by nothing either. This file only looked for `*.test.py`, so a self-test
+written as a flag on a shell script was outside what it judged. Both
+shapes are read now.
+
 Usage:
   scripts/dev/a-selftest-nobody-runs.py [repo-root]
 """
 
 import os
+import re
 import sys
 
 ROOT = (
@@ -48,6 +56,12 @@ CALLERS = [
 DRIVEN_ELSEWHERE: dict[str, str] = {}
 
 MIN_SELFTESTS = 10
+
+# Shell scripts carrying their own self-test as a flag, rather than as a
+# `*.test.py` beside them. Same claim, same expiry, different spelling.
+SELFTEST_FLAG = re.compile(r'(?:=\s*"--selftest"|^\s*--selftest\))', re.M)
+SELFTEST_DIRS = [os.path.join("scripts", "dev"), os.path.join("scripts", "release")]
+MIN_FLAG_SELFTESTS = 2
 
 
 def callers_text(root: str) -> str:
@@ -85,6 +99,32 @@ def main() -> int:
             f"{DEV}/{name} is invoked by nothing. It exists to prove its gate can "
             f"still go red, and that proof is worth what it was worth the last time "
             f"it ran — which, wired nowhere, is the day somebody ran it by hand."
+        )
+
+    # The other spelling: a shell script whose self-test is a flag.
+    flag_selftests = []
+    for rel in SELFTEST_DIRS:
+        d = os.path.join(ROOT, rel)
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            if not name.endswith(".sh"):
+                continue
+            body = open(os.path.join(d, name), encoding="utf-8").read()
+            if not SELFTEST_FLAG.search(body):
+                continue
+            flag_selftests.append(os.path.join(rel, name))
+            if f"{name} --selftest" not in text:
+                problems.append(
+                    f"{rel}/{name} answers `--selftest` and nothing calls it with "
+                    f"that flag. A proof that the script can still go red is worth "
+                    f"what it was worth the last time somebody typed it."
+                )
+    if len(flag_selftests) < MIN_FLAG_SELFTESTS:
+        problems.append(
+            f"only {len(flag_selftests)} shell self-tests found, fewer than the "
+            f"{MIN_FLAG_SELFTESTS} this repository has — this half has stopped "
+            f"finding its subject, which reads exactly like finding it clean."
         )
 
     # The exemptions, checked against reality. An entry for a file that

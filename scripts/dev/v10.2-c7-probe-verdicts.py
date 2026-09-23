@@ -51,7 +51,23 @@ seen = index(probe)
 theirs = index(a11y)
 
 def rect(n):
+    """Where the node is: the rectangle it occupies, clipped or not."""
     b = n["bounds"]
+    return (b["x"], b["y"], b["x"] + b["w"], b["y"] + b["h"])
+
+
+def shown(n):
+    """How much of it can be seen — the other question, the other rectangle.
+
+    A reader that answers both with one rectangle cannot be asked how
+    much of a row shows, and the scroll rule that divides one by the
+    other then reads every sliver as a whole row. `visibleBounds` when
+    the reader sends it; the accessibility path only ever reports the
+    part that shows, so for it the two are the same.
+    """
+    b = n.get("visibleBounds")
+    if not b:
+        return rect(n)
     return (b["x"], b["y"], b["x"] + b["w"], b["y"] + b["h"])
 
 lines, bad = [], []
@@ -80,14 +96,22 @@ row = seen.get("interop_clipped_row_0")
 if row is None:
     bad.append("clipped-bounds=missing — the first row is not in the probe's tree")
 else:
-    mine, yours = rect(row), rect(theirs["interop_clipped_row_0"])
+    mine, yours = shown(row), shown(theirs["interop_clipped_row_0"])
     height = mine[3] - mine[1]
+    whole = rect(row)[3] - rect(row)[1]
     if mine != yours:
         bad.append(f"clipped-bounds=disagree — probe {mine}, accessibility {yours}")
     elif height >= 275:
-        bad.append(f"clipped-bounds=unclipped — {height}px tall, the whole row")
+        bad.append(f"clipped-bounds=unclipped — {height}px showing, the whole row")
+    elif whole < 275:
+        # The row's own rectangle must stay whole: it is what the scroll
+        # rule divides by, and clipping it there is what made every
+        # partly-visible row read as fully visible.
+        bad.append(f"clipped-bounds=lost-the-row — the node itself reads {whole}px of 275")
     else:
-        lines.append(f"clipped-bounds=agree        {mine} ({height}px of 275)")
+        lines.append(
+            f"clipped-bounds=agree        {mine} ({height}px of {whole} showing)"
+        )
 
 # 4 — and the rows below the viewport are carried as showing nothing,
 #     rather than dropped or reported somewhere.
@@ -96,8 +120,16 @@ if len(below) != 2:
     bad.append(f"offscreen-kept=no — {below} of 2 rows below the fold are in the tree")
 elif any(seen[t].get("visible") is not False for t in below):
     bad.append("offscreen-kept=visible — a row below the fold says it is showing")
+elif any(shown(seen[t])[3] - shown(seen[t])[1] > 0 for t in below):
+    bad.append("offscreen-kept=shows-something — a row below the fold has a visible part")
+elif any(rect(seen[t])[3] - rect(seen[t])[1] <= 0 for t in below):
+    # It knows where it is even though none of it shows. Without that,
+    # a scroll cannot tell "below the fold" from "not laid out".
+    bad.append("offscreen-kept=placeless — a row below the fold lost its own rectangle")
 else:
-    lines.append("offscreen-kept=yes          (present, visible=false, empty rectangle)")
+    lines.append(
+        "offscreen-kept=yes          (present, visible=false, its rectangle kept, nothing showing)"
+    )
 
 # 5 — the role a flow would match on, named by the same table the other
 #     reader uses.

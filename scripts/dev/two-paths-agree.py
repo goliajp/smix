@@ -379,7 +379,18 @@ def rect_of(node):
 
 
 def probe_rect(node):
-    b = node.get("bounds")
+    """What the accessibility reader is answering about: the part that shows.
+
+    The probe reports two rectangles — the node's own, and the part of it
+    inside its scroll container and the screen. The accessibility path
+    reports the second kind, so comparing it against the first would call
+    the two readers wrong about every clipped row while they agree
+    perfectly. `visibleBounds` when it is there; a probe too old to send
+    it only ever had the one rectangle.
+    """
+    b = node.get("visibleBounds")
+    if not isinstance(b, list) or len(b) != 4:
+        b = node.get("bounds")
     if not isinstance(b, list) or len(b) != 4:
         return None
     try:

@@ -32,7 +32,7 @@ fail() { printf '[c1-taphit] FAIL: %s\n' "$*" >&2; exit 1; }
 # what to do about it — not a FAIL. Yielding to somebody else's batch, or
 # an unset target, says nothing about whether smix works, and FAIL says it
 # does not to whoever reads the suite next.
-skip() { printf '[c1-taphit] %s\n' "$*" >&2; printf '%s\n' "C1-TAP-HIT-SKIP"; exit 0; }
+cannot_judge() { printf '[c1-taphit] %s\n' "$*" >&2; printf '%s\n' "C1-TAP-HIT-SKIP"; exit 2; }
 
 
 # --- guards --------------------------------------------------------------
@@ -44,17 +44,19 @@ skip() { printf '[c1-taphit] %s\n' "$*" >&2; printf '%s\n' "C1-TAP-HIT-SKIP"; ex
 UDID="${SMIX_TAPHIT_SIM:-}"
 if [[ -z "$UDID" ]]; then
   UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" \
-    || skip "set SMIX_TAPHIT_SIM to a UDID"
+    || cannot_judge "set SMIX_TAPHIT_SIM to a UDID"
 fi
 [[ -n "$UDID" ]] || fail "no dev sim — set SMIX_TAPHIT_SIM to a UDID"
 
 log "guard: no batch owner on this machine (yield, never seize)"
 pgrep -f 'runner.ts|smix run|supervise' >/dev/null \
-  && skip "batch owner active — yielding"
+  && cannot_judge "batch owner active — yielding"
 
 [[ -f "$ROOT/$FLOW" ]] || fail "flow missing: $FLOW"
 
-SMIX_BIN="${SMIX_BIN:-$ROOT/target/release/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+
+source "$ROOT/scripts/lib/e2e-binary.sh"
 [[ -x "$SMIX_BIN" ]] || fail "smix binary missing: $SMIX_BIN (cargo build -p smix-cli --release)"
 
 OUT="$(mktemp)"

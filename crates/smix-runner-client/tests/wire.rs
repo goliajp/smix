@@ -6,7 +6,7 @@
 
 use smix_input::{KeyName, SwipeDirection};
 use smix_runner_client::{
-    HttpRunnerClient, IncludeScope, OwnerProbe, RunnerScrollSelector, TapMode,
+    HttpRunnerClient, IncludeScope, OwnerProbe, TapMode,
 };
 use smix_screen::{A11yNode, Rect};
 use smix_selector::{Modifiers, Pattern, Selector};
@@ -22,6 +22,7 @@ fn text_sel(t: &str) -> Selector {
 
 fn minimal_tree() -> A11yNode {
     A11yNode {
+        visible_bounds: None,
         hittable: None,
         raw_type: "application".into(),
         element_type_raw: 1,
@@ -343,50 +344,7 @@ async fn swipe_once_posts_direction_camel_case() {
 
 // ---- scroll ------------------------------------------------------------
 
-#[tokio::test]
-async fn scroll_matched_returns_swipe_count() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/scroll"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "matched": true,
-            "swipes": 3
-        })))
-        .mount(&server)
-        .await;
-    let client = HttpRunnerClient::with_base(server.uri());
-    let s = RunnerScrollSelector::Text {
-        text: "Log out".into(),
-    };
-    let swipes = client
-        .scroll(&s, SwipeDirection::Down, None)
-        .await
-        .expect("matched");
-    assert_eq!(swipes, 3);
-}
 
-#[tokio::test]
-async fn scroll_not_matched_returns_malformed_body_with_swipe_count_detail() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/scroll"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "matched": false,
-            "swipes": 30
-        })))
-        .mount(&server)
-        .await;
-    let client = HttpRunnerClient::with_base(server.uri());
-    let s = RunnerScrollSelector::Text {
-        text: "Hidden".into(),
-    };
-    let err = client
-        .scroll(&s, SwipeDirection::Down, None)
-        .await
-        .unwrap_err();
-    let msg = format!("{err}");
-    assert!(msg.contains("30 swipes"), "got: {msg}");
-}
 
 // ---- system_popups envelope --------------------------------------------
 

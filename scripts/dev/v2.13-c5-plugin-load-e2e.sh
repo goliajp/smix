@@ -23,7 +23,7 @@ fail() { printf '[c5-plugin] FAIL: %s\n' "$*" >&2; exit 1; }
 # assertions are about what a session observes, so a session that never
 # ran has produced no evidence either way.
 UNRUNNABLE='reached your .* limit|/usage-credits|not logged in|Invalid API key|command not found|credit balance'
-skip() { printf '[c5-plugin] %s\n' "$*" >&2; printf '%s\n' "C5-PLUGIN-LOAD-SKIP"; exit 0; }
+cannot_judge() { printf '[c5-plugin] %s\n' "$*" >&2; printf '%s\n' "C5-PLUGIN-LOAD-SKIP"; exit 2; }
 session_unrunnable() { grep -qiE "$UNRUNNABLE" "$1" 2>/dev/null; }
 
 

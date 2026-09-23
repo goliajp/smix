@@ -43,7 +43,7 @@ fail() { printf '[c5-fed] FAIL: %s\n' "$*" >&2; exit 1; }
 # about whether smix works — and FAIL says it does not, to whoever reads
 # the suite next. A suite that cries wolf gets skimmed, and then a real
 # failure gets skimmed with it.
-skip() { printf '[c5-fed] %s\n' "$*" >&2; printf '%s\n' "C5-FEDERATION-CLI-SKIP"; exit 0; }
+cannot_judge() { printf '[c5-fed] %s\n' "$*" >&2; printf '%s\n' "C5-FEDERATION-CLI-SKIP"; exit 2; }
 
 
 rssh() { ssh -o ConnectTimeout=5 -o BatchMode=yes "$HOST" "$@"; }
@@ -60,24 +60,24 @@ ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=accept-new loc
   || fail "ssh localhost refused after self-authorization"
 
 log "guard: $HOST reachable"
-rssh true || skip "$HOST is not reachable over BatchMode ssh — this node is not available here"
+rssh true || cannot_judge "$HOST is not reachable over BatchMode ssh — this node is not available here"
 REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $HOST"
 
 log "guard: no active batch on studio or $HOST (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active on studio — yielding; re-run when it is idle"
-rssh "pgrep -f 'runner.ts|smix run|supervise' >/dev/null" && skip "batch owner active on $HOST — yielding; re-run when it is idle"
+pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active on studio — yielding; re-run when it is idle"
+rssh "pgrep -f 'runner.ts|smix run|supervise' >/dev/null" && cannot_judge "batch owner active on $HOST — yielding; re-run when it is idle"
 
 log "guard: no user build in flight ($HOST: cargo/xcodebuild; studio: cargo only — resident runner capsule is legitimate)"
-rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && skip "user build in flight on $HOST — yielding; re-run when it is idle"
+rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && cannot_judge "user build in flight on $HOST — yielding; re-run when it is idle"
 # `skip`, not `fail` — the word "yielding" is right there. A script
 # that detects a condition it will not disturb and reports failure makes
 # a gate red for something the product did not do, and a gate that goes
 # red for reasons unrelated to the code is one people stop reading. The
 # line above this one already treats a busy batch owner as a skip.
-pgrep -f 'cargo build' >/dev/null && skip "cargo build in flight on studio — yielding"
+pgrep -f 'cargo build' >/dev/null && cannot_judge "cargo build in flight on studio — yielding"
 
 log "guard: studio runner port $STUDIO_PORT free"
-lsof -nP -i ":$STUDIO_PORT" >/dev/null 2>&1 && skip "port $STUDIO_PORT busy on studio — yielding"
+lsof -nP -i ":$STUDIO_PORT" >/dev/null 2>&1 && cannot_judge "port $STUDIO_PORT busy on studio — yielding"
 
 [ -f "$ROOT/$FLOW_A" ] || fail "corpus flow missing: $FLOW_A"
 [ -f "$ROOT/$FLOW_B" ] || fail "corpus flow missing: $FLOW_B"

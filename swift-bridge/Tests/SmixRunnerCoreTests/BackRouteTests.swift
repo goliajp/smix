@@ -2,7 +2,7 @@ import XCTest
 import FlyingFox
 @testable import SmixRunnerCore
 
-// BackRoute POCO unit tests. Mirrors ForegroundRouteTests / ScrollRouteTests.
+// BackRoute POCO unit tests. Mirrors ForegroundRouteTests.
 // No XCUITest here — BackRoute only owns decode + envelope.
 //
 // case I: decode happy path — empty body allowed (back takes no fields, so no body is required)

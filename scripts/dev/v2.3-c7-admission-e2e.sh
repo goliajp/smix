@@ -17,7 +17,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_E2E_DEVICE:-sim-smix-02}"
 BUNDLE="com.apple.Preferences"
 ABSENT_BUNDLE="jp.golia.smix.not-installed"

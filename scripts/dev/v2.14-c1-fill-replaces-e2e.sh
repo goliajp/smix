@@ -23,7 +23,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 UDID="${SMIX_FILL_E2E_UDID:-}"
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$ROOT/scripts/lib/gate-port.sh"
@@ -37,7 +38,7 @@ WORK="$(mktemp -d)"
 log()  { printf '[c1-fill] %s\n' "$*" >&2; }
 step() { printf '[c1-fill] --- %s\n' "$*" >&2; }
 fail() { printf '[c1-fill] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c1-fill] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c1-fill] SKIP: %s\n' "$*" >&2; exit 2; }
 
 started_runner=0
 cleanup() {
@@ -61,7 +62,7 @@ trap cleanup EXIT
 smix() { "$SMIX" "$@" 2>&1 | grep -v '^kevy:' || true; }
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
-command -v xcrun >/dev/null 2>&1 || skip "no xcrun — this needs a simulator; run it on a Mac with Xcode"
+command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun — this needs a simulator; run it on a Mac with Xcode"
 
 if [ -z "$UDID" ]; then
   # A simulator this repository owns, never whichever one is booted:
@@ -75,7 +76,7 @@ for rt, ds in json.load(sys.stdin)["devices"].items():
             print(d["udid"]); raise SystemExit
 ' || true)"
 fi
-[ -n "$UDID" ] || skip "no sim-smix-* simulator on this machine — create one, or set SMIX_FILL_E2E_UDID"
+[ -n "$UDID" ] || cannot_judge "no sim-smix-* simulator on this machine — create one, or set SMIX_FILL_E2E_UDID"
 log "device $UDID, runner port $PORT"
 
 step "0. the wire rule, which needs no device"

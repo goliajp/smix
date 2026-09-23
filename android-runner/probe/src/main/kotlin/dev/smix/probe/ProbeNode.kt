@@ -36,7 +36,18 @@ data class ProbeNode(
     /// role, as it already does for the accessibility path — the table
     /// that does it stays in one place rather than being copied here.
     val className: String?,
+    /// What the node occupies on screen, whether or not a scroll
+    /// container or the screen edge hides part of it.
+    ///
+    /// Not the same question as `visibleBounds`, and one rectangle
+    /// cannot answer both: "how much of this can be seen" divides the
+    /// part inside the frame by the part that could ever be inside it,
+    /// so a rectangle already clipped to the frame reads as fully
+    /// visible however little of it shows.
     val bounds: Bounds,
+    /// The part of `bounds` that actually shows. Empty when a placed
+    /// node is clipped away entirely — `visible` is false then too.
+    val visibleBounds: Bounds,
     val focused: Boolean,
     val enabled: Boolean,
     /// Whether any of it shows. False for a node that is placed and
@@ -72,6 +83,9 @@ private fun ProbeNode.toJson(): String = buildString {
     append(",\"bounds\":[")
         .append(bounds.left).append(',').append(bounds.top).append(',')
         .append(bounds.right).append(',').append(bounds.bottom).append(']')
+    append(",\"visibleBounds\":[")
+        .append(visibleBounds.left).append(',').append(visibleBounds.top).append(',')
+        .append(visibleBounds.right).append(',').append(visibleBounds.bottom).append(']')
     append(",\"focused\":").append(focused)
     append(",\"enabled\":").append(enabled)
     append(",\"visible\":").append(visible)

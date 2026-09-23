@@ -63,7 +63,7 @@ impl Orientation {
 /// because that is the layer that opens the connection.
 pub use smix_runner_client::port_owner;
 pub use smix_runner_client::{
-    HttpRunnerClient, IncludeScope, OcrFrame, OwnerProbe, RunnerScrollSelector,
+    HttpRunnerClient, IncludeScope, OcrFrame, OwnerProbe,
     RunnerTransportError, SystemPopup, TapMode,
 };
 
@@ -2048,6 +2048,7 @@ mod describe_meta_tests {
 
     fn node_with_identifier(id: Option<&str>) -> A11yNode {
         A11yNode {
+            visible_bounds: None,
             hittable: None,
             raw_type: "application".into(),
             element_type_raw: 1,

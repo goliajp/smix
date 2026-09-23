@@ -13,6 +13,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GATE = os.path.join(HERE, "cheap-gates-come-first.py")
+SHIP = os.path.join(os.path.dirname(os.path.dirname(HERE)), "scripts", "release", "ship.sh")
 
 
 # Every profile the ship writes ends with the publishing, and the gate
@@ -36,8 +37,24 @@ def profile(rows, publishing=True):
     return path
 
 
-def run(path, ship=None):
-    argv = [sys.executable, GATE, path] + ([ship] if ship else [])
+def run(path, ship=None, costs=None):
+    """Drive the gate over one profile.
+
+    `costs` is the cost history the gate compares against — always a
+    file of this test's own, because the real one lives in the machine's
+    data directory and a self-test that writes there would both change
+    what the next ship judges and depend on what the last one left.
+
+    A history that exists but holds nothing is not the same as none: the
+    default gives the gate a file it has already "seen", so the cases
+    below judge rather than report a first run. The first-run behaviour
+    has a case of its own.
+    """
+    if costs is None:
+        fd, costs = tempfile.mkstemp(suffix=".costs.tsv")
+        with os.fdopen(fd, "w") as fh:
+            fh.write("999999\tsomething this profile does not contain\n")
+    argv = [sys.executable, GATE, path, ship or SHIP, costs]
     p = subprocess.run(argv, capture_output=True, text=True)
     return p.returncode, p.stdout + p.stderr
 
@@ -77,8 +94,8 @@ def ship_without_publishing():
     return path
 
 
-def case(name, rows, want_code, must_say, publishing=True, ship=None):
-    code, out = run(profile(rows, publishing), ship)
+def case(name, rows, want_code, must_say, publishing=True, ship=None, costs=None):
+    code, out = run(profile(rows, publishing), ship, costs)
     if code != want_code:
         print(f"  FAIL {name}: exit {code}, wanted {want_code}\n{out}")
         return False
@@ -105,6 +122,53 @@ def main():
         dear + cheap,
         1,
         "sits behind",
+    )
+
+    # The 10.1.0 misjudgement: the same ordering, on a machine under
+    # load. Every step took forty times longer, the ci-green step that
+    # is seven seconds read 275, and this gate failed a ship whose
+    # ordering was correct. With a history to compare against, the
+    # smallest reading of each step is what counts.
+    import tempfile as _tf
+
+    fd, hist = _tf.mkstemp(suffix=".costs.tsv")
+    with os.fdopen(fd, "w") as fh:
+        for secs, name in cheap + dear:
+            fh.write(f"{secs}\t{name}\n")
+    slow = [(secs * 40 + 7, name) for secs, name in cheap + dear]
+    ok &= case(
+        "a loaded machine does not turn a correct ordering red",
+        slow,
+        0,
+        "no seconds-long",
+        costs=hist,
+    )
+
+    # And the opposite: a step that is expensive in every reading still
+    # puts what follows it in the wrong place.
+    fd, hist2 = _tf.mkstemp(suffix=".costs.tsv")
+    with os.fdopen(fd, "w") as fh:
+        for secs, name in dear + cheap:
+            fh.write(f"{secs}\t{name}\n")
+    ok &= case(
+        "a structurally expensive step is still judged expensive",
+        dear + cheap,
+        1,
+        "sits behind",
+        costs=hist2,
+    )
+
+    # A machine that has never run a ship has one reading of each step
+    # and no way to tell load from cost. It says so instead of failing.
+    fd, empty = _tf.mkstemp(suffix=".costs.tsv")
+    os.close(fd)
+    os.unlink(empty)
+    ok &= case(
+        "the first run on a machine establishes a baseline",
+        dear + cheap,
+        2,
+        "no cost history yet",
+        costs=empty,
     )
 
     # A build read as cheap because the cache was warm. Its position is

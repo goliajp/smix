@@ -309,7 +309,8 @@ internal fun SemanticsNode.toProbeNode(): ProbeNode? {
             ?.ifEmpty { null },
         role = c.getOrElseNullable(SemanticsProperties.Role) { null }?.toString(),
         className = null,
-        bounds = shown,
+        bounds = layout,
+        visibleBounds = shown,
         // Compose keeps focus in its own semantics layer. Asking the
         // accessibility side instead is the wrong instrument, and reading
         // it as "nothing has focus" cost a consumer their whole suite.

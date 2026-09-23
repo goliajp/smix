@@ -14,7 +14,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C6C_IOS:-smix-ios}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
@@ -26,7 +27,7 @@ WORK="$(mktemp -d)"
 log()  { printf '[c6c] %s\n' "$*" >&2; }
 step() { printf '[c6c] --- %s\n' "$*" >&2; }
 fail() { printf '[c6c] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c6c] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c6c] SKIP: %s\n' "$*" >&2; exit 2; }
 
 UDID="" WE_BOOTED=0 WE_UPPED=0
 cleanup() {
@@ -41,10 +42,10 @@ cleanup() {
 trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"
-command -v xcrun >/dev/null 2>&1 || skip "no xcrun — this needs Xcode"
+command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun — this needs Xcode"
 UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
-[ -n "$UDID" ] || skip "no sim registered as '$ALIAS'"
-[ -d "$FIXTURE" ] || skip "no iOS fixture at $FIXTURE"
+[ -n "$UDID" ] || cannot_judge "no sim registered as '$ALIAS'"
+[ -d "$FIXTURE" ] || cannot_judge "no iOS fixture at $FIXTURE"
 
 step "boot $ALIAS ($UDID), install fixture, runner up --bundle $BUNDLE"
 if ! xcrun simctl list devices 2>/dev/null | grep -q "$UDID.*Booted"; then

@@ -39,7 +39,6 @@ DRIVES_THE_APP = {
     "POST /fill",
     "POST /clear",
     "POST /find",
-    "POST /scroll",
     "POST /foreground",
     "POST /back",
     "POST /swipe-once",

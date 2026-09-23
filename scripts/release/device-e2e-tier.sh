@@ -29,6 +29,22 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
+# What one script's exit code says it did.
+#
+# It used to be read out of the output — exit 0 with the word SKIP
+# anywhere in it counted as a skip. Two things wrong with that: a script
+# that drove everything and passed counts as skipped if its own log
+# happens to print the word, and a script that could not judge could not
+# say so in the only channel that is not prose. The scripts now answer
+# 0 drove / 1 failed / 2 could not judge, and this reads that.
+e2e_state() {
+  case "$1" in
+    0) echo drove ;;
+    2) echo skip ;;
+    *) echo fail ;;
+  esac
+}
+
 # The verdict over a run: how many drove, skipped, failed.
 #
 # Separated from the running so it can be checked without a simulator.
@@ -95,11 +111,28 @@ if [ "${1:-}" = "--selftest" ]; then
   check "a skipped script is named" 0 "skip b" "$(printf 'a drove\nb skip')"
   check "nothing at all" 1 "NOTHING DRIVEN" ""
 
+  # The classification itself, which is where the reading used to be
+  # wrong. Each of these was a real misreading: a passing script whose
+  # log mentions SKIP counted as skipped, and a script that could not
+  # judge had no way to say so.
+  state_check() { # label rc expected
+    local got
+    got="$(e2e_state "$2")"
+    if [ "$got" != "$3" ]; then
+      echo "device-e2e-tier selftest: $1 — exit $2 read as $got, wanted $3" >&2
+      fails=$((fails + 1))
+    fi
+  }
+  state_check "a script that drove and passed" 0 drove
+  state_check "a script that could not judge" 2 skip
+  state_check "a script that failed" 1 fail
+  state_check "a script killed by a signal" 143 fail
+
   if [ "$fails" -ne 0 ]; then
     echo "device-e2e-tier selftest: FAIL ($fails)" >&2
     exit 1
   fi
-  echo "device-e2e-tier selftest: 6 cases pass"
+  echo "device-e2e-tier selftest: 10 cases pass — a count, a verdict, and what each exit code means"
   exit 0
 fi
 
@@ -112,17 +145,7 @@ for e2e in "$ROOT"/scripts/dev/*-e2e.sh; do
   out="$(bash "$e2e" 2>&1)" && rc=0 || rc=$?
   printf '%s\n' "$out" > "/tmp/device-e2e-$name.log"
 
-  # Exit 0 with SKIP in the output is a skip; exit 0 without it is a
-  # script that ran. Both conventions in this repo print SKIP somewhere
-  # — some to stderr as `SKIP:`, some to stdout as a named marker — and
-  # combined output catches either.
-  if [ "$rc" -ne 0 ]; then
-    state=fail
-  elif printf '%s' "$out" | grep -q "SKIP"; then
-    state=skip
-  else
-    state=drove
-  fi
+  state="$(e2e_state "$rc")"
   echo "device-e2e-tier: [$name] $state" >&2
   results="$results$name $state"$'\n'
 done

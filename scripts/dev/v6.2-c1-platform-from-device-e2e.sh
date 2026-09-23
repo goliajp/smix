@@ -16,7 +16,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 WORK="$(mktemp -d)"
 
 IOS_ALIAS="${SMIX_C1_IOS:-smix-ios}"
@@ -35,7 +36,7 @@ AND_APPID="dev.smix.fixture"
 log()  { printf '[c1] %s\n' "$*" >&2; }
 step() { printf '[c1] --- %s\n' "$*" >&2; }
 fail() { printf '[c1] FAIL: %s\n' "$*" >&2; exit 1; }
-skip() { printf '[c1] SKIP: %s\n' "$*" >&2; exit 0; }
+cannot_judge() { printf '[c1] SKIP: %s\n' "$*" >&2; exit 2; }
 
 # Only what this script started, tracked per device. An emulator or sim
 # somebody else booted is not ours to reclaim (§9 #9 / v6.1-C1).

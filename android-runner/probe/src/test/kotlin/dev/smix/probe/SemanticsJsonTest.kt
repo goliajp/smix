@@ -30,6 +30,7 @@ class SemanticsJsonTest {
         role = null,
         className = null,
         bounds = Bounds(0, 0, 100, 40),
+        visibleBounds = Bounds(0, 0, 100, 40),
         focused = focused,
         enabled = true,
         visible = true,
@@ -101,7 +102,7 @@ class WireEscapingTest {
         ProbeNode(
             id = 1, testTag = "compose_input", resourceId = null, text = null,
             editableText = text, inputText = text,
-            contentDescription = null, role = null, className = null, bounds = Bounds(0, 0, 1, 1),
+            contentDescription = null, role = null, className = null, bounds = Bounds(0, 0, 1, 1), visibleBounds = Bounds(0, 0, 1, 1),
             focused = false, enabled = true, visible = true,
             actions = emptyList(), children = emptyList(),
         ),

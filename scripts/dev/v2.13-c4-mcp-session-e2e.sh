@@ -13,8 +13,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-MCP="${SMIX_MCP_BIN:-$ROOT/target/release/smix-mcp}"
-SMIX="${SMIX_BIN:-$ROOT/target/release/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
+# The server from the same build as the CLI: this script drives both, and
+# it used to take a release server beside a debug command line.
+MCP="$SMIX_MCP"
 BUNDLE="jp.golia.smix.fixture"
 APP="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
 PORT=22091
@@ -27,14 +30,14 @@ fail() { printf '[c4-mcp] FAIL: %s\n' "$*" >&2; exit 1; }
 # what to do about it — not a FAIL. Yielding to somebody else's batch, or
 # an unset target, says nothing about whether smix works, and FAIL says it
 # does not to whoever reads the suite next.
-skip() { printf '[c4-mcp] %s\n' "$*" >&2; printf '%s\n' "C4-MCP-SESSION-SKIP"; exit 0; }
+cannot_judge() { printf '[c4-mcp] %s\n' "$*" >&2; printf '%s\n' "C4-MCP-SESSION-SKIP"; exit 2; }
 
 
 [ -x "$MCP" ] || fail "smix-mcp missing: $MCP (cargo build -p smix-mcp --release)"
 [ -x "$SMIX" ] || fail "smix missing: $SMIX"
 
 log "guard: no batch owner on this machine (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active — yielding"
+pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active — yielding"
 
 # Its own variable first, then the one the whole tier is driven by.
 #
@@ -44,7 +47,7 @@ pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active �
 # script proves nothing while the gate stays green.
 UDID="${SMIX_C4_SIM:-${SMIX_E2E_UDID:-}}"
 if [ -z "$UDID" ]; then
-  UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" || skip "set SMIX_C4_SIM to a UDID"
+  UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" || cannot_judge "set SMIX_C4_SIM to a UDID"
 fi
 log "device: $UDID"
 

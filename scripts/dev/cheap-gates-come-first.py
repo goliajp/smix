@@ -22,8 +22,24 @@ RUN rather than clean — a check that passes when it has read nothing is
 not a check, which is the same rule the reconciler refuses an empty
 corpus under.
 
+What a step costs is not what it took today. On 10.1.0 the ship's first
+real run went red here and the ordering was right: load average was 95
+because another session was compiling, and `the ci-green gate can still
+go red` — seven seconds in every other run — read 275. One step ate the
+whole tolerance and every cheap gate after it was reported as sitting
+behind minutes of work. Nothing was wrong with the ship; the check had
+mistaken a slow afternoon for a structural cost.
+
+So a step's cost is the SMALLEST time it has ever been seen to take,
+kept per machine (`$XDG_DATA_HOME/smix/gate-cost.tsv`). A minimum
+cannot be inflated by load — no amount of contention makes a step
+finish sooner — while an average or a single reading can. Today's
+reading still counts for a step never seen before, and the first run on
+a machine says it is establishing a baseline rather than pretending to
+judge one.
+
 Usage:
-  scripts/dev/cheap-gates-come-first.py [profile.tsv]
+  scripts/dev/cheap-gates-come-first.py [profile.tsv] [ship.sh] [cost-history.tsv]
 """
 
 import os
@@ -43,6 +59,49 @@ CHEAP_SECONDS = 5
 PATIENCE_SECONDS = 300
 # A profile with almost nothing in it is not a profile.
 MIN_GATES = 20
+
+
+def machine_dir() -> str:
+    """Where this machine keeps what it has learned about itself.
+
+    Not the checkout: what a step costs is a fact about this machine's
+    disks and cores, and a second checkout would carry a stale copy of
+    it into a run it knows nothing about (CLAUDE.md §9 #9).
+    """
+    base = os.environ.get("XDG_DATA_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "share"
+    )
+    return os.path.join(base, "smix")
+
+
+COST_HISTORY = (
+    sys.argv[3]
+    if len(sys.argv) > 3
+    else os.path.join(machine_dir(), "gate-cost.tsv")
+)
+
+
+def read_costs(path: str) -> dict:
+    """The cheapest each step has ever been seen to be, on this machine."""
+    out = {}
+    if not os.path.isfile(path):
+        return out
+    for line in open(path, encoding="utf-8"):
+        secs, _, name = line.rstrip("\n").partition("\t")
+        if not name:
+            continue
+        try:
+            out[name] = int(secs)
+        except ValueError:
+            continue
+    return out
+
+
+def write_costs(path: str, costs: dict) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        for name in sorted(costs):
+            fh.write(f"{costs[name]}\t{name}\n")
 
 # The two entries this check cannot judge, because it is them.
 #
@@ -252,9 +311,22 @@ def main() -> int:
     # examined nothing and printed "clean" is the shape this repository
     # keeps finding: found by making the comparison always false, which
     # left the summary unchanged.
+    # What each step costs structurally: the least it has ever taken
+    # here. A first run has nothing to compare against and says so.
+    known = read_costs(COST_HISTORY)
+    updated = dict(known)
+    for secs, name in rows:
+        if name not in updated or secs < updated[name]:
+            updated[name] = secs
+    baseline_is_new = not known
+
     judged = 0
     spent = 0
     for secs, name in rows:
+        # Today's reading is an upper bound on the cost; the history is
+        # the estimate. They differ when the machine is busy, and that
+        # difference is exactly what used to be charged to the ordering.
+        secs = min(secs, updated.get(name, secs))
         if name in PERMISSION:
             # Not added to `spent`: see PERMISSION.
             continue
@@ -284,7 +356,24 @@ def main() -> int:
             )
         spent += secs
 
+    write_costs(COST_HISTORY, updated)
+
     if problems:
+        if baseline_is_new:
+            # Nothing to compare against yet, so every one of these
+            # could be today's load rather than the ordering. Say that
+            # rather than failing a ship over a number with no second
+            # reading behind it.
+            print("cheap-gates-come-first: CANNOT RUN")
+            print(
+                f"  - this machine has no cost history yet, so {len(problems)} "
+                f"apparent misplacement(s) may be this run's load rather than the "
+                f"ordering. Baseline written to {COST_HISTORY}; run the ship again "
+                f"and this will judge against the cheaper of the two."
+            )
+            for p in problems:
+                print(f"      (would have said) {p}")
+            return 2
         print("cheap-gates-come-first: FAIL")
         for p in problems:
             print(f"  - {p}")

@@ -20,7 +20,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/release/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 APP="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
 BUNDLE="jp.golia.smix.fixture"
 ALIAS="dev"
@@ -33,17 +34,17 @@ fail() { printf '[c3-standalone] FAIL: %s\n' "$*" >&2; exit 1; }
 # what to do about it — not a FAIL. Yielding to somebody else's batch, or
 # an unset target, says nothing about whether smix works, and FAIL says it
 # does not to whoever reads the suite next.
-skip() { printf '[c3-standalone] %s\n' "$*" >&2; printf '%s\n' "C3-STANDALONE-LOOP-SKIP"; exit 0; }
+cannot_judge() { printf '[c3-standalone] %s\n' "$*" >&2; printf '%s\n' "C3-STANDALONE-LOOP-SKIP"; exit 2; }
 
 
 [ -x "$SMIX" ] || fail "smix binary missing: $SMIX (cargo build -p smix-cli --release)"
 
 log "guard: no batch owner on this machine (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active — yielding"
+pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active — yielding"
 
 UDID="${SMIX_C3_SIM:-}"
 if [ -z "$UDID" ]; then
-  UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" || skip "set SMIX_C3_SIM to a UDID"
+  UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" || cannot_judge "set SMIX_C3_SIM to a UDID"
 fi
 log "device: $UDID"
 

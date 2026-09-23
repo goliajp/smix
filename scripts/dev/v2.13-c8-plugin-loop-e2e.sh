@@ -32,14 +32,14 @@ fail() { printf '[c8-loop] FAIL: %s\n' "$*" >&2; exit 1; }
 # assertions are about what a session observes, so a session that never
 # ran has produced no evidence either way.
 UNRUNNABLE='reached your .* limit|/usage-credits|not logged in|Invalid API key|command not found|credit balance'
-skip() { printf '[c8-loop] %s\n' "$*" >&2; printf '%s\n' "C8-PLUGIN-LOOP-SKIP"; exit 0; }
+cannot_judge() { printf '[c8-loop] %s\n' "$*" >&2; printf '%s\n' "C8-PLUGIN-LOOP-SKIP"; exit 2; }
 session_unrunnable() { grep -qiE "$UNRUNNABLE" "$1" 2>/dev/null; }
 
 
 command -v claude >/dev/null || fail "the claude CLI is not on PATH"
 
 log "guard: no batch owner on this machine (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && skip "batch owner active — yielding"
+pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active — yielding"
 
 # Its own variable first, then the one the whole tier is driven by.
 #
@@ -51,7 +51,7 @@ UDID="${SMIX_C8_SIM:-${SMIX_E2E_UDID:-}}"
 if [ -z "$UDID" ]; then
   UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh" 2>/dev/null || true)"
 fi
-[ -n "$UDID" ] || skip "set SMIX_C8_SIM to a UDID (or boot a dev sim)"
+[ -n "$UDID" ] || cannot_judge "set SMIX_C8_SIM to a UDID (or boot a dev sim)"
 log "device: $UDID"
 
 step "build and install the app under test"

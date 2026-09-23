@@ -16,7 +16,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_PHYSICAL_ALIAS:-phone}"
 BUNDLE="${SMIX_PHYSICAL_BUNDLE:-com.apple.Preferences}"
 PORT="${SMIX_RUNNER_PORT:-22087}"

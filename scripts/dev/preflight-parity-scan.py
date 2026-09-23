@@ -30,6 +30,14 @@ PREFLIGHT = os.path.join(ROOT, "scripts", "dev", "preflight.sh")
 # CI step name -> a fragment that must appear in preflight.sh.
 LOCAL = {
     "rustfmt": "cargo fmt --all --check",
+    # What an e2e's exit code says it did, and what the tier makes of
+    # those codes. Device-free on both sides: they judge the reading,
+    # not a device.
+    "an e2e says whether it judged": "an-e2e-says-whether-it-judged.py",
+    "the judged-or-not scan can still go red": "an-e2e-says-whether-it-judged.test.py",
+    "the device e2e tier reads an exit code": "device-e2e-tier.sh --selftest",
+    # How the release verifier reads a registry that is merely late.
+    "a late registry is not a failed one": "verify-published.sh --selftest",
     # Three hand-written readers of one recorded document, one per host
     # language. Runs in preflight, in the ship, and in CI — three places,
     # because a gate that runs in one of them makes the other two green

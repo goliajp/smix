@@ -29,6 +29,50 @@
 
 set -uo pipefail
 
+npm_verdict() {
+  local ok="$1" total="$2" missing="$3"
+  if [ "$total" -eq 0 ]; then
+    echo "fail:npm — no package list to check, so this verified nothing"
+    return
+  fi
+  if [ "$ok" -eq "$total" ]; then
+    echo "ok:npm $ok/$total at $VERSION"
+    return
+  fi
+  if [ "$ok" -eq 0 ]; then
+    echo "fail:npm $ok/$total —$missing"
+    return
+  fi
+  echo "pending:npm $ok/$total —$missing"
+}
+
+if [ "${1:-}" = "--selftest" ]; then
+  # The three answers, without a network: all there, some there, none
+  # there. The middle one is why this exists — it used to be a failure
+  # while the same lateness on Maven was a "not yet".
+  VERSION="9.9.9"
+  npm_selftest_fails=0
+  check() { # label expected-prefix ok total
+    local got
+    got="$(npm_verdict "$3" "$4" " a(absent)")"
+    case "$got" in
+      "$2"*) ;;
+      *) echo "verify-published selftest: $1 — got '$got', wanted $2*" >&2
+         npm_selftest_fails=$((npm_selftest_fails + 1)) ;;
+    esac
+  }
+  check "every package is there" ok: 9 9
+  check "some packages are still propagating" pending: 4 9
+  check "no package is there at all" fail: 0 9
+  check "there was no list to check" fail: 0 0
+  if [ "$npm_selftest_fails" -ne 0 ]; then
+    echo "verify-published selftest: FAIL ($npm_selftest_fails)" >&2
+    exit 1
+  fi
+  echo "verify-published selftest: 4 cases pass — late, absent, complete, and an empty list"
+  exit 0
+fi
+
 VERSION="${1:-}"
 [ -n "$VERSION" ] || { echo "usage: verify-published.sh <version>" >&2; exit 2; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -103,12 +147,24 @@ while read -r p; do
     NPM_MISSING="$NPM_MISSING $p(${got:-absent})"
   fi
 done <<< "$NPM_PKGS"
-if [ "$NPM_OK" -eq "$NPM_TOTAL" ] && [ "$NPM_TOTAL" -gt 0 ]; then
-  say "npm $NPM_OK/$NPM_TOTAL at $VERSION"
-  CONFIRMED+=("npm")
-else
-  bad "npm $NPM_OK/$NPM_TOTAL —$NPM_MISSING"
-fi
+# Late is late, whoever is late. Maven's propagation has always been
+# read as NOT YET and npm's as a failure — and on 10.1.0 the npm index
+# showed 4 of 9 for a few minutes with all nine in the publish log, so
+# this exited 1 and the ship never reached the step after it. Two
+# registries, the same delay, two verdicts.
+#
+# Nothing at all is still a failure: a publish that did not happen and
+# an index that has not caught up look alike only until you notice that
+# one of them has no packages at the version anywhere.
+NPM_VERDICT="$(npm_verdict "$NPM_OK" "$NPM_TOTAL" "$NPM_MISSING")"
+case "$NPM_VERDICT" in
+  ok:*)      say "${NPM_VERDICT#ok:}"; CONFIRMED+=("npm") ;;
+  pending:*) say "${NPM_VERDICT#pending:} NOT YET"
+             say "  (the index lags the publish by minutes; re-run this until it"
+             say "   answers. It is not claimed below until every package does.)"
+             PENDING+=("npm") ;;
+  *)         bad "${NPM_VERDICT#fail:}" ;;
+esac
 
 # --- Swift ------------------------------------------------------------
 if git -C "$ROOT" ls-remote --tags origin 2>/dev/null | grep -q "refs/tags/swift-v$VERSION\$"; then

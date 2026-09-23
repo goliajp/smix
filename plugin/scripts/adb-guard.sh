@@ -55,6 +55,32 @@ case "$command" in
   *) exit 0 ;;
 esac
 
+# What program a command runs, with `VAR=value` prefixes and a few
+# wrappers stepped over.
+#
+# Because this guard reads TEXT, and a command that merely contains the
+# word `adb` is not an adb call. Searching this repository for its own
+# rules — `grep -rn "am instrument" plugin/` — was refused as a device
+# mutation, which is the guard telling a reader it does not know the
+# difference between doing a thing and naming it. A refusal that lands
+# on a read-only search is how a guard teaches people to work around it.
+#
+# Wrappers are stepped over rather than trusted: `sudo`, `env`, `xargs`,
+# `timeout`, `nohup`, `stdbuf` all take a command as their argument, and
+# an `adb install` behind one is still an `adb install`.
+command_program() {
+  local one="$1" word
+  for word in $one; do
+    case "$word" in
+      *=*) continue ;;                                   # VAR=value prefix
+      sudo|env|xargs|timeout|nohup|stdbuf|nice|command) continue ;;
+      -*) continue ;;                                    # a wrapper's own flag
+      *) printf '%s' "${word##*/}"; return 0 ;;
+    esac
+  done
+  printf ''
+}
+
 deny() {
   echo "adb-guard: $1" >&2
   # A guard that only says no gets worked around rather than obeyed. Name
@@ -112,7 +138,21 @@ is_read_only() {
 judge_one() {
   local one="$1"
   local carried="$2"
-  local serial
+  local serial prog
+
+  # Command position, not anywhere in the text. `adb`, `am` and a
+  # gradle wrapper are judged when they are what the command RUNS; a
+  # `grep`, `rg` or `cat` whose arguments name them is reading about
+  # them. Anything else that could still reach a device by running one
+  # of these (a shell, a script) is not in this list and therefore
+  # still judged by the rules below.
+  prog="$(command_program "$one")"
+  case "$prog" in
+    adb|am|gradlew|*gradlew*) ;;
+    grep|rg|ag|git|cat|sed|awk|head|tail|less|printf|echo|wc|sort|uniq|python3|ruby|jq)
+      return 0 ;;
+    *) ;;
+  esac
 
   if printf '%s' "$one" | grep -qE 'adb[[:space:]]+(-[a-z]+[[:space:]]+)*-s[[:space:]]+[^[:space:]]+' ; then
     serial="$(printf '%s' "$one" | grep -oE '\-s[[:space:]]+[^[:space:]]+' | head -1 | sed -E 's/^-s[[:space:]]+//')"

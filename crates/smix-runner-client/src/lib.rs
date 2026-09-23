@@ -326,7 +326,7 @@ impl OcrFrame {
 pub use smix_runner_wire::{
     DiagnosticDumpResponse, FindRequest, FindResponse, HealthProcessInfo, HealthResponse,
     HealthTestHostInfo, IncludeScope, KeyboardStages, PressResult, RecordEventsResponse,
-    RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult, RunnerScrollSelector, ScrollResponse,
+    RecordedEvent, RunnerIncludeOpts, RunnerKeyboardResult,
     SessionAppLifecycleRequest, SessionAppLifecycleResponse, SessionCloseAllResponse,
     SessionCloseRequest, SessionCloseResponse, SessionListResponse, SessionOpenRequest,
     SessionOpenResponse, SessionRelaunchAppRequest, SessionRelaunchAppResponse,
@@ -609,6 +609,22 @@ impl OkEnvelope {
         }
         Ok(())
     }
+}
+
+/// The answer `/clear-text` gives, in one declaration.
+///
+/// `ok` since the Android runner began reading the field back (C6);
+/// `status` is what a runner built before that sends. Both optional,
+/// because a runner that answers neither has not been asked this
+/// question and must not read as a success.
+#[derive(Deserialize)]
+struct ClearTextRes {
+    #[serde(default)]
+    ok: Option<bool>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    method: Option<String>,
 }
 
 impl HttpRunnerClient {
@@ -1798,6 +1814,29 @@ impl HttpRunnerClient {
 
     /// `POST /clear-text`, naming the field by the box it lies in.
     /// See [`Self::input_text_in`].
+    /// What every `/clear-text` answer looks like, and what it means.
+    ///
+    /// Three call sites declared this type and this check, letter for
+    /// letter: the whole-field clear, the one aimed at a rectangle, and
+    /// the one aimed at a point. Three copies of a verdict drift apart
+    /// one edit at a time — C6 put `ok` on this wire and none of the
+    /// three began reading it, because whoever changed the runner had
+    /// no single place here to change.
+    ///
+    /// `ok` is the runner's own answer about the field; `status` is the
+    /// older spelling of the same thing, kept for a runner built before
+    /// `ok` existed. A payload with neither is a runner that did not
+    /// answer the question.
+    fn clear_text_verdict(res: ClearTextRes) -> Result<String, RunnerTransportError> {
+        let cleared = res.ok.unwrap_or_else(|| res.status.as_deref() == Some("ok"));
+        if !cleared {
+            return Err(RunnerTransportError::Refused {
+                endpoint: "/clear-text".to_string(),
+            });
+        }
+        Ok(res.method.unwrap_or_else(|| "unknown".to_string()))
+    }
+
     pub async fn clear_text_in(
         &self,
         rect: (f64, f64, f64, f64),
@@ -1807,12 +1846,7 @@ impl HttpRunnerClient {
             #[serde(rename = "focusRect")]
             focus_rect: [f64; 4],
         }
-        #[derive(Deserialize)]
-        struct Res {
-            status: Option<String>,
-            method: Option<String>,
-        }
-        let body: Res = self
+        let body: ClearTextRes = self
             .json_post(
                 "/clear-text",
                 &Req {
@@ -1821,12 +1855,7 @@ impl HttpRunnerClient {
                 None,
             )
             .await?;
-        if body.status.as_deref() != Some("ok") {
-            return Err(RunnerTransportError::Refused {
-                endpoint: "/clear-text".to_string(),
-            });
-        }
-        Ok(body.method.unwrap_or_else(|| "unknown".to_string()))
+        Self::clear_text_verdict(body)
     }
 
     /// `POST /input-text`, naming the field by where it was tapped.
@@ -1884,18 +1913,8 @@ impl HttpRunnerClient {
     pub async fn clear_text(&self) -> Result<String, RunnerTransportError> {
         #[derive(Serialize)]
         struct Req {}
-        #[derive(Deserialize)]
-        struct Res {
-            status: Option<String>,
-            method: Option<String>,
-        }
-        let body: Res = self.json_post("/clear-text", &Req {}, None).await?;
-        if body.status.as_deref() != Some("ok") {
-            return Err(RunnerTransportError::Refused {
-                endpoint: "/clear-text".to_string(),
-            });
-        }
-        Ok(body.method.unwrap_or_else(|| "unknown".to_string()))
+        let body: ClearTextRes = self.json_post("/clear-text", &Req {}, None).await?;
+        Self::clear_text_verdict(body)
     }
 
     /// `POST /clear-text`, naming the field by where it was tapped.
@@ -1911,12 +1930,7 @@ impl HttpRunnerClient {
             #[serde(rename = "focusNy")]
             focus_ny: f64,
         }
-        #[derive(Deserialize)]
-        struct Res {
-            status: Option<String>,
-            method: Option<String>,
-        }
-        let body: Res = self
+        let body: ClearTextRes = self
             .json_post(
                 "/clear-text",
                 &Req {
@@ -1926,12 +1940,7 @@ impl HttpRunnerClient {
                 None,
             )
             .await?;
-        if body.status.as_deref() != Some("ok") {
-            return Err(RunnerTransportError::Refused {
-                endpoint: "/clear-text".to_string(),
-            });
-        }
-        Ok(body.method.unwrap_or_else(|| "unknown".to_string()))
+        Self::clear_text_verdict(body)
     }
 
     /// `POST /tap-by-id` — `XCUIElement.tap()` via the XCTest
@@ -2320,51 +2329,6 @@ impl HttpRunnerClient {
         Ok(body.result)
     }
 
-    /// `POST /scroll {selector, direction, include?}` — scroll-until-visible.
-    pub async fn scroll(
-        &self,
-        selector: &RunnerScrollSelector,
-        direction: SwipeDirection,
-        include: Option<IncludeScope>,
-    ) -> Result<u32, RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            selector: &'a RunnerScrollSelector,
-            direction: SwipeDirection,
-        }
-        #[derive(Deserialize)]
-        struct Resp {
-            #[serde(default)]
-            matched: Option<bool>,
-            #[serde(default)]
-            swipes: Option<u32>,
-        }
-        let r: Resp = self
-            .json_post(
-                "/scroll",
-                &Req {
-                    selector,
-                    direction,
-                },
-                include,
-            )
-            .await?;
-        let matched = r.matched.unwrap_or(false);
-        let swipes = r.swipes.unwrap_or(0);
-        if !matched {
-            // Driver layer is responsible for converting matched:false
-            // to ExpectationFailure(ELEMENT_NOT_FOUND); here we surface
-            // via MalformedBody when shape is missing entirely, otherwise
-            // return the swipe count for the caller to inspect.
-            //
-            // We return swipes; driver wraps via RunnerScrollNotMatched.
-            return Err(RunnerTransportError::MalformedBody {
-                endpoint: "/scroll".into(),
-                detail: format!("not_matched after {swipes} swipes"),
-            });
-        }
-        Ok(swipes)
-    }
 
     /// `POST /swipe-once {direction}` — single swipe, no probe.
     pub async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), RunnerTransportError> {
@@ -2807,5 +2771,49 @@ pub fn touch_verdict(hittable: Option<bool>) -> TouchVerdict {
                 .to_string(),
         ),
         Some(true) | None => TouchVerdict::Proceed,
+    }
+}
+
+#[cfg(test)]
+mod clear_text_verdict_tests {
+    use super::{ClearTextRes, HttpRunnerClient, RunnerTransportError};
+
+    fn res(ok: Option<bool>, status: Option<&str>) -> ClearTextRes {
+        ClearTextRes {
+            ok,
+            status: status.map(str::to_string),
+            method: Some("set-text".into()),
+        }
+    }
+
+    #[test]
+    fn the_runners_own_answer_is_what_decides() {
+        // `ok:false` with the older field still saying "ok" is the
+        // shape that matters: the runner read the field back, found
+        // characters in it, and said so in the newer word. Reading only
+        // the older one called that a success.
+        let e = HttpRunnerClient::clear_text_verdict(res(Some(false), Some("ok")));
+        assert!(matches!(e, Err(RunnerTransportError::Refused { .. })));
+        assert_eq!(
+            HttpRunnerClient::clear_text_verdict(res(Some(true), None)).unwrap(),
+            "set-text"
+        );
+    }
+
+    #[test]
+    fn a_runner_too_old_to_send_ok_is_read_by_its_older_word() {
+        assert_eq!(
+            HttpRunnerClient::clear_text_verdict(res(None, Some("ok"))).unwrap(),
+            "set-text"
+        );
+        assert!(HttpRunnerClient::clear_text_verdict(res(None, Some("field_not_empty"))).is_err());
+    }
+
+    #[test]
+    fn an_answer_to_neither_is_not_a_success() {
+        // Silence is not consent: a payload carrying neither field is a
+        // runner that did not answer, and the three call sites used to
+        // read that as "status is not ok" only by accident.
+        assert!(HttpRunnerClient::clear_text_verdict(res(None, None)).is_err());
     }
 }
