@@ -2666,7 +2666,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             } => {
                 let (holds, gate) = self.evaluate_optional_condition(when.as_ref()).await?;
                 if !holds {
-                    let reason = format!("runFlow{} {gate}; skipped subflow {file}", label_suffix(opts));
+                    let reason = format!(
+                        "runFlow{} {gate}; skipped subflow {file}",
+                        label_suffix(opts)
+                    );
                     return Ok(RunStepReport::Skipped { reason });
                 }
                 let outer = self.enter_env(env)?;

@@ -5,9 +5,7 @@
 //! in c-final capstone alongside swift-bridge build verification.
 
 use smix_input::{KeyName, SwipeDirection};
-use smix_runner_client::{
-    HttpRunnerClient, IncludeScope, OwnerProbe, TapMode,
-};
+use smix_runner_client::{HttpRunnerClient, IncludeScope, OwnerProbe, TapMode};
 use smix_screen::{A11yNode, Rect};
 use smix_selector::{Modifiers, Pattern, Selector};
 use wiremock::matchers::{body_json, method, path, query_param};
@@ -188,8 +186,7 @@ async fn a_named_app_is_the_app_the_probe_is_asked_about() {
         .respond_with(ResponseTemplate::new(200).set_body_json(minimal_tree()))
         .mount(&server)
         .await;
-    let client =
-        HttpRunnerClient::with_base(server.uri()).with_target_bundle_id("com.example.app");
+    let client = HttpRunnerClient::with_base(server.uri()).with_target_bundle_id("com.example.app");
     let tree = client.get_tree(None).await.expect("tree");
     assert_eq!(tree.source, smix_runner_client::TreeSource::Accessibility);
     server.verify().await;
@@ -344,8 +341,6 @@ async fn swipe_once_posts_direction_camel_case() {
 
 // ---- scroll ------------------------------------------------------------
 
-
-
 // ---- system_popups envelope --------------------------------------------
 
 #[tokio::test]
@@ -489,10 +484,7 @@ struct NoQueryParam(&'static str);
 
 impl wiremock::Match for NoQueryParam {
     fn matches(&self, request: &wiremock::Request) -> bool {
-        !request
-            .url
-            .query_pairs()
-            .any(|(k, _)| k == self.0)
+        !request.url.query_pairs().any(|(k, _)| k == self.0)
     }
 }
 

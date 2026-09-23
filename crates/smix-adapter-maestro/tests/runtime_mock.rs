@@ -101,7 +101,10 @@ enum MockCall {
     /// `App::set_permissions(bundle, perms)`.
     SetPermissions(
         String,
-        Vec<(smix_sdk::device_control::Permission, smix_sdk::PermissionAction)>,
+        Vec<(
+            smix_sdk::device_control::Permission,
+            smix_sdk::PermissionAction,
+        )>,
     ),
     /// `App::add_media(paths)`.
     AddMedia(Vec<String>),
@@ -886,7 +889,10 @@ impl AppLike for MockApp {
     async fn set_permissions(
         &self,
         bundle_id: &str,
-        permissions: &[(smix_sdk::device_control::Permission, smix_sdk::PermissionAction)],
+        permissions: &[(
+            smix_sdk::device_control::Permission,
+            smix_sdk::PermissionAction,
+        )],
     ) -> Result<(), ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::SetPermissions(
             bundle_id.to_string(),
@@ -3354,11 +3360,17 @@ async fn a_percent_string_is_refused_because_it_means_the_other_thing() {
 // --------------------------------------------------------------------
 
 fn taps(app: &MockApp) -> usize {
-    app.calls().iter().filter(|c| matches!(c, MockCall::Tap(_))).count()
+    app.calls()
+        .iter()
+        .filter(|c| matches!(c, MockCall::Tap(_)))
+        .count()
 }
 
 fn finds(app: &MockApp) -> usize {
-    app.calls().iter().filter(|c| matches!(c, MockCall::Find(_))).count()
+    app.calls()
+        .iter()
+        .filter(|c| matches!(c, MockCall::Find(_)))
+        .count()
 }
 
 fn skip_reason(report: &smix_adapter_maestro::RunReport) -> String {
@@ -3368,22 +3380,31 @@ fn skip_reason(report: &smix_adapter_maestro::RunReport) -> String {
     }
 }
 
-async fn run_with(app: &MockApp, yaml_body: &str) -> Result<smix_adapter_maestro::RunReport, RunError> {
+async fn run_with(
+    app: &MockApp,
+    yaml_body: &str,
+) -> Result<smix_adapter_maestro::RunReport, RunError> {
     let flow = parse_inline(&format!("appId: com.t.r\n---\n{yaml_body}"));
     Adapter::new(app, fixtures_dir()).run(&flow).await
 }
 
-const ANDROID_ONLY: &str =
-    "- runFlow:\n    when:\n      platform: Android\n    commands:\n      - tapOn:\n          id: nope\n";
+const ANDROID_ONLY: &str = "- runFlow:\n    when:\n      platform: Android\n    commands:\n      - tapOn:\n          id: nope\n";
 
 #[tokio::test]
 async fn condition_platform_mismatch_skips_without_looking_at_the_screen() {
     let app = MockApp::new();
     let report = run_with(&app, ANDROID_ONLY).await.expect("run");
     let reason = skip_reason(&report);
-    assert!(reason.contains("platform") && reason.contains("Android") && reason.contains("iOS"), "{reason}");
+    assert!(
+        reason.contains("platform") && reason.contains("Android") && reason.contains("iOS"),
+        "{reason}"
+    );
     assert_eq!(taps(&app), 0);
-    assert_eq!(finds(&app), 0, "platform is checked before anything on screen");
+    assert_eq!(
+        finds(&app),
+        0,
+        "platform is checked before anything on screen"
+    );
 
     let app = MockApp::new().with_platform(smix_driver::Platform::Android);
     run_with(&app, ANDROID_ONLY).await.expect("run");
@@ -3394,9 +3415,12 @@ async fn condition_platform_mismatch_skips_without_looking_at_the_screen() {
 async fn condition_platform_web_holds_on_neither_platform() {
     for p in [smix_driver::Platform::Ios, smix_driver::Platform::Android] {
         let app = MockApp::new().with_platform(p);
-        run_with(&app, "- runFlow:\n    when:\n      platform: Web\n    commands:\n      - tapOn: x\n")
-            .await
-            .expect("run");
+        run_with(
+            &app,
+            "- runFlow:\n    when:\n      platform: Web\n    commands:\n      - tapOn: x\n",
+        )
+        .await
+        .expect("run");
         assert_eq!(taps(&app), 0, "{p:?}");
     }
 }
@@ -3438,9 +3462,12 @@ async fn condition_true_follows_maestros_falsy_rules() {
 #[tokio::test]
 async fn condition_true_with_a_broken_expression_fails_the_step() {
     let app = MockApp::new();
-    let err = run_with(&app, "- runFlow:\n    when:\n      true: ${output.}\n    commands:\n      - tapOn: x\n")
-        .await
-        .expect_err("a broken expression is an error, not a skip");
+    let err = run_with(
+        &app,
+        "- runFlow:\n    when:\n      true: ${output.}\n    commands:\n      - tapOn: x\n",
+    )
+    .await
+    .expect_err("a broken expression is an error, not a skip");
     match err {
         RunError::Sdk(f) => assert_eq!(f.code, FailureCode::DriverError),
         other => panic!("{other:?}"),
@@ -3453,7 +3480,10 @@ async fn condition_every_part_must_hold() {
     let body = "- runFlow:\n    when:\n      platform: iOS\n      visible: x\n    commands:\n      - tapOn: y\n";
     let app = MockApp::new();
     let reason = skip_reason(&run_with(&app, body).await.expect("run"));
-    assert!(reason.contains("platform") && reason.contains("visible"), "{reason}");
+    assert!(
+        reason.contains("platform") && reason.contains("visible"),
+        "{reason}"
+    );
     assert_eq!(taps(&app), 0);
 
     let key = smix_sdk::describe_selector(&smix_sdk::text("x"));
@@ -3528,7 +3558,11 @@ async fn env_shadows_an_outer_name_and_reads_the_outer_scope_on_entry() {
         "appId: com.t.r\n---\n- runFlow:\n    env:\n      NAME: inner\n      DERIVED: ${NAME}-x\n    commands:\n      - inputText: ${NAME}\n      - inputText: ${DERIVED}\n- inputText: ${NAME}\n",
     );
     Adapter::new(&app, fixtures_dir())
-        .with_env([("NAME".to_string(), "outer".to_string())].into_iter().collect())
+        .with_env(
+            [("NAME".to_string(), "outer".to_string())]
+                .into_iter()
+                .collect(),
+        )
         .run(&flow)
         .await
         .expect("run");
@@ -3543,14 +3577,21 @@ async fn optional_block_turns_its_failure_into_a_skip_and_the_flow_goes_on() {
         "- repeat:\n    times: 1\n    optional: true\n    commands:\n      - tapOn:\n          id: nope\n- tapOn: next\n",
     ] {
         let app = MockApp::new().with_tap_failure(&nope, FailureCode::ElementNotFound);
-        let report = run_with(&app, body).await.expect("optional block does not fail the flow");
+        let report = run_with(&app, body)
+            .await
+            .expect("optional block does not fail the flow");
         let reason = skip_reason(&report);
-        assert!(reason.contains("optional") && reason.contains("nope"), "{reason}");
+        assert!(
+            reason.contains("optional") && reason.contains("nope"),
+            "{reason}"
+        );
         assert_eq!(taps(&app), 2, "the failing tap and the next step");
 
         let strict = body.replace("    optional: true\n", "");
         let app = MockApp::new().with_tap_failure(&nope, FailureCode::ElementNotFound);
-        run_with(&app, &strict).await.expect_err("without optional the flow fails");
+        run_with(&app, &strict)
+            .await
+            .expect_err("without optional the flow fails");
     }
 }
 
@@ -3611,16 +3652,24 @@ async fn an_ocr_text_target_goes_through_the_same_loop_with_the_session_locale()
 
 #[tokio::test]
 async fn optional_scroll_until_visible_that_fails_is_skipped_and_the_flow_goes_on() {
-    let body = "- scrollUntilVisible:\n    element:\n      id: row\n    optional: true\n- tapOn: next\n";
+    let body =
+        "- scrollUntilVisible:\n    element:\n      id: row\n    optional: true\n- tapOn: next\n";
     let app = MockApp::new().with_scroll_failure(FailureCode::ElementNotFound);
-    let report = run_with(&app, body).await.expect("optional does not fail the flow");
+    let report = run_with(&app, body)
+        .await
+        .expect("optional does not fail the flow");
     let reason = skip_reason(&report);
-    assert!(reason.contains("optional") && reason.contains("not reached"), "{reason}");
+    assert!(
+        reason.contains("optional") && reason.contains("not reached"),
+        "{reason}"
+    );
     assert_eq!(taps(&app), 1, "the next step ran");
 
     let strict = body.replace("    optional: true\n", "");
     let app = MockApp::new().with_scroll_failure(FailureCode::ElementNotFound);
-    run_with(&app, &strict).await.expect_err("without optional the flow fails");
+    run_with(&app, &strict)
+        .await
+        .expect_err("without optional the flow fails");
 }
 
 /// A permission Android implements is a permission a flow can ask for.
@@ -3687,7 +3736,10 @@ async fn repeat_with_both_stops_at_the_count() {
         .iter()
         .filter(|c| matches!(c, MockCall::Tap(_)))
         .count();
-    assert_eq!(taps, 2, "the count did not bound a condition that still held");
+    assert_eq!(
+        taps, 2,
+        "the count did not bound a condition that still held"
+    );
 }
 
 /// And the condition stops it when the count would go on.
@@ -3713,7 +3765,10 @@ async fn repeat_with_both_stops_when_the_condition_drops() {
         .iter()
         .filter(|c| matches!(c, MockCall::Tap(_)))
         .count();
-    assert_eq!(taps, 1, "the condition did not stop a loop the count allowed");
+    assert_eq!(
+        taps, 1,
+        "the condition did not stop a loop the count allowed"
+    );
 }
 
 /// A `runScript` this platform was never meant to run is skipped, and

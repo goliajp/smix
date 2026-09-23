@@ -427,7 +427,10 @@ impl AppLike for MockApp {
     async fn set_permissions(
         &self,
         _bundle_id: &str,
-        _permissions: &[(smix_sdk::device_control::Permission, smix_sdk::PermissionAction)],
+        _permissions: &[(
+            smix_sdk::device_control::Permission,
+            smix_sdk::PermissionAction,
+        )],
     ) -> Result<(), ExpectationFailure> {
         Ok(())
     }

@@ -122,7 +122,11 @@ fn no_script_points_at_a_retired_state_file() {
     }
 
     for path in &scripts {
-        let rel = path.strip_prefix(&root).unwrap_or(path).to_string_lossy().to_string();
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .to_string();
         if SCRIPT_FIXTURES.contains(&rel.as_str()) {
             continue;
         }

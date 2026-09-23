@@ -2022,7 +2022,10 @@ fn emulator_address_refusal(
              was registered on. Start yours with `smix sim boot {device_ref}`.",
             sim.udid
         ),
-        EmulatorAddress::NotRunning { avd, slot_now: None } => format!(
+        EmulatorAddress::NotRunning {
+            avd,
+            slot_now: None,
+        } => format!(
             "{device_ref} names the AVD `{avd}`, which is not running. \
              Start it with `smix sim boot {device_ref}`."
         ),
@@ -2793,9 +2796,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         let sim = registered.as_ref().expect("checked above");
                         match emulator_alias_address(sim) {
                             smix_simctl::registry::EmulatorAddress::At { serial }
-                            | smix_simctl::registry::EmulatorAddress::MovedTo {
-                                serial, ..
-                            } => serial,
+                            | smix_simctl::registry::EmulatorAddress::MovedTo { serial, .. } => {
+                                serial
+                            }
                             smix_simctl::registry::EmulatorAddress::NotRunning {
                                 avd,
                                 slot_now: Some(other),
@@ -3204,8 +3207,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         // for a route that was never opened would have
                         // the next teardown close something that is not
                         // there, and report a clean device either way.
-                        smix_lease::store::record_reverse(&leases, &serial, &serial, port, host_port)
-                            .map_err(|e| CliError::Other(e.to_string()))?;
+                        smix_lease::store::record_reverse(
+                            &leases, &serial, &serial, port, host_port,
+                        )
+                        .map_err(|e| CliError::Other(e.to_string()))?;
                         println!(
                             "reverse: {serial} tcp:{port} -> 127.0.0.1:{host_port} \
                              (stays open until `smix sim reverse {device} {port} --remove`, \
@@ -3270,7 +3275,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             .set_permission(&serial, &bundle_id, parsed, what)
                             .await
                             .map_err(|e| CliError::Other(e.to_string()))?;
-                        println!("permission: {serial} {bundle_id} {} {action}", parsed.name());
+                        println!(
+                            "permission: {serial} {bundle_id} {} {action}",
+                            parsed.name()
+                        );
                     }
                 }
                 SimAction::Frontmost { device, json } => {
@@ -7121,7 +7129,10 @@ mod tests {
             // Neither simctl nor devicectl has a verb for any of these,
             // and claiming one would attempt a capability that is not
             // there instead of saying so (§9 #1 ③).
-            assert!(!kinds.contains(&Simulator), "{name} claims a simulator: {kinds:?}");
+            assert!(
+                !kinds.contains(&Simulator),
+                "{name} claims a simulator: {kinds:?}"
+            );
             assert!(
                 !kinds.contains(&PhysicalIos),
                 "{name} claims a physical iPhone: {kinds:?}"
@@ -7159,7 +7170,9 @@ mod tests {
 
         let pairs = [
             (
-                table_action_of(&SimAction::Wake { device: String::new() }),
+                table_action_of(&SimAction::Wake {
+                    device: String::new(),
+                }),
                 "wake",
             ),
             (
@@ -7393,7 +7406,8 @@ mod tests {
             .get_subcommands()
             .find(|c| c.get_name() == "sim")
             .expect("smix sim exists");
-        let from_clap: BTreeSet<&str> = sim.get_subcommands().map(clap::Command::get_name).collect();
+        let from_clap: BTreeSet<&str> =
+            sim.get_subcommands().map(clap::Command::get_name).collect();
         let listed: BTreeSet<&str> = every_sim_action().iter().map(|(n, _)| *n).collect();
         assert_eq!(
             listed, from_clap,
@@ -7539,9 +7553,15 @@ mod tests {
     #[test]
     fn a_permission_action_is_one_of_three() {
         assert_eq!(parse_permission_action("grant"), Ok("grant".to_string()));
-        assert_eq!(parse_permission_action(" Revoke "), Ok("revoke".to_string()));
+        assert_eq!(
+            parse_permission_action(" Revoke "),
+            Ok("revoke".to_string())
+        );
         let err = parse_permission_action("allow").expect_err("allow is not one of them");
-        assert!(err.contains("grant") && err.contains("revoke") && err.contains("reset"), "{err}");
+        assert!(
+            err.contains("grant") && err.contains("revoke") && err.contains("reset"),
+            "{err}"
+        );
     }
 
     #[test]

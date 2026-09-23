@@ -852,11 +852,10 @@ impl DeviceControl for AndroidDeviceControl {
             .set_stay_awake(serial, on)
             .await
             .map_err(|e| adb_to_simctl_err(e, "svc power stayon"))?;
-        let read_back = self
-            .client
-            .stay_awake(serial)
-            .await
-            .map_err(|e| adb_to_simctl_err(e, "settings get global stay_on_while_plugged_in"))?;
+        let read_back =
+            self.client.stay_awake(serial).await.map_err(|e| {
+                adb_to_simctl_err(e, "settings get global stay_on_while_plugged_in")
+            })?;
         if read_back == Some(on) {
             return Ok(());
         }

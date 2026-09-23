@@ -109,7 +109,9 @@ fn parse_ensure_login_with_runflow_when_clause() {
             // runFlow: { when: { visible: "Log in" }, file: ../subflows/login.yaml }
             Step::RunFlowConditional {
                 file: "../subflows/login.yaml".to_string(),
-                when: Some(visible_only(text_selector(Pattern::Text("Log in".to_string())))),
+                when: Some(visible_only(text_selector(Pattern::Text(
+                    "Log in".to_string(),
+                )))),
                 as_name: None,
                 env: Vec::new(),
                 opts: Default::default(),
@@ -148,7 +150,9 @@ fn parse_run_flow_inline_commands_with_when() {
         app: None,
         launch_activity: None,
         steps: vec![Step::RunFlowInline {
-            when: Some(visible_only(text_selector(Pattern::Text("Open in".to_string())))),
+            when: Some(visible_only(text_selector(Pattern::Text(
+                "Open in".to_string(),
+            )))),
             env: Vec::new(),
             opts: Default::default(),
             steps: vec![
@@ -1997,12 +2001,18 @@ fn condition_keys_combine_instead_of_excluding_each_other() {
         "- runFlow:\n    when:\n      platform: Android\n      visible: Allow\n    commands:\n      - tapOn: x\n",
     ));
     assert_eq!(c.platform, Some(ConditionPlatform::Android));
-    assert_eq!(c.visible, Some(text_selector(Pattern::Text("Allow".into()))));
+    assert_eq!(
+        c.visible,
+        Some(text_selector(Pattern::Text("Allow".into())))
+    );
     let c = inline_when(only_step(
         "- runFlow:\n    when:\n      visible: a\n      notVisible: b\n    commands:\n      - tapOn: x\n",
     ));
     assert_eq!(c.visible, Some(text_selector(Pattern::Text("a".into()))));
-    assert_eq!(c.not_visible, Some(text_selector(Pattern::Text("b".into()))));
+    assert_eq!(
+        c.not_visible,
+        Some(text_selector(Pattern::Text("b".into())))
+    );
 }
 
 #[test]
@@ -2023,7 +2033,10 @@ fn condition_optional_is_refused_saying_maestro_does_not_read_it_either() {
         "- runFlow:\n    when:\n      optional: true\n      visible: a\n    commands:\n      - tapOn: x\n",
     );
     assert_eq!(field, "runFlow.when");
-    assert!(reason.contains("`optional`") && reason.contains("maestro"), "{reason}");
+    assert!(
+        reason.contains("`optional`") && reason.contains("maestro"),
+        "{reason}"
+    );
 }
 
 #[test]
@@ -2039,9 +2052,8 @@ fn condition_with_nothing_to_check_is_refused() {
 
 #[test]
 fn condition_non_string_key_is_refused() {
-    let (field, reason) = parse_err(
-        "- runFlow:\n    when:\n      1: x\n    commands:\n      - tapOn: x\n",
-    );
+    let (field, reason) =
+        parse_err("- runFlow:\n    when:\n      1: x\n    commands:\n      - tapOn: x\n");
     assert_eq!(field, "runFlow.when");
     assert!(reason.contains("`1`"), "{reason}");
 }
@@ -2051,17 +2063,34 @@ fn condition_run_flow_reads_env_label_and_optional() {
     match only_step(
         "- runFlow:\n    env:\n      A: '1'\n      B: ${x}\n      C: 3\n    label: dismiss promo\n    optional: true\n    commands:\n      - tapOn: x\n",
     ) {
-        Step::RunFlowInline { when: None, env, opts, .. } => {
+        Step::RunFlowInline {
+            when: None,
+            env,
+            opts,
+            ..
+        } => {
             assert_eq!(
                 env,
-                vec![("A".into(), "1".into()), ("B".into(), "${x}".into()), ("C".into(), "3".into())]
+                vec![
+                    ("A".into(), "1".into()),
+                    ("B".into(), "${x}".into()),
+                    ("C".into(), "3".into())
+                ]
             );
-            assert_eq!(opts, BlockOptions { label: Some("dismiss promo".into()), optional: true });
+            assert_eq!(
+                opts,
+                BlockOptions {
+                    label: Some("dismiss promo".into()),
+                    optional: true
+                }
+            );
         }
         other => panic!("{other:?}"),
     }
     match only_step("- runFlow:\n    file: sub.yaml\n    env:\n      A: b\n") {
-        Step::RunFlowConditional { env, when: None, .. } => {
+        Step::RunFlowConditional {
+            env, when: None, ..
+        } => {
             assert_eq!(env, vec![("A".into(), "b".into())]);
         }
         other => panic!("{other:?}"),
@@ -2087,10 +2116,20 @@ fn condition_repeat_reads_label_optional_and_a_while_condition() {
     match only_step(
         "- repeat:\n    while:\n      platform: iOS\n      visible: x\n    label: drain\n    optional: true\n    commands:\n      - tapOn: y\n",
     ) {
-        Step::Repeat { while_: Some(c), opts, .. } => {
+        Step::Repeat {
+            while_: Some(c),
+            opts,
+            ..
+        } => {
             assert_eq!(c.platform, Some(ConditionPlatform::Ios));
             assert_eq!(c.visible, Some(text_selector(Pattern::Text("x".into()))));
-            assert_eq!(opts, BlockOptions { label: Some("drain".into()), optional: true });
+            assert_eq!(
+                opts,
+                BlockOptions {
+                    label: Some("drain".into()),
+                    optional: true
+                }
+            );
         }
         other => panic!("{other:?}"),
     }
@@ -2120,7 +2159,10 @@ fn condition_keys_are_exactly_maestros_five() {
 
 #[test]
 fn selector_map_refuses_non_string_keys() {
-    for body in ["- tapOn:\n    id: x\n    true: y\n", "- tapOn:\n    id: x\n    1: y\n"] {
+    for body in [
+        "- tapOn:\n    id: x\n    true: y\n",
+        "- tapOn:\n    id: x\n    1: y\n",
+    ] {
         let (_, reason) = parse_err(body);
         assert!(reason.contains("unknown key"), "{body}: {reason}");
     }
@@ -2174,11 +2216,15 @@ fn scroll_until_visible_reads_visibility_centre_timeout_label_and_optional() {
 #[test]
 fn scroll_until_visible_refuses_the_knobs_smix_swipes_do_not_have() {
     for (key, value) in [("speed", "40"), ("waitToSettleTimeoutMs", "500")] {
-        let (field, reason) =
-            parse_err(&format!("- scrollUntilVisible:\n    element: x\n    {key}: {value}\n"));
+        let (field, reason) = parse_err(&format!(
+            "- scrollUntilVisible:\n    element: x\n    {key}: {value}\n"
+        ));
         assert_eq!(field, "scrollUntilVisible");
         assert!(reason.contains(&format!("`{key}`")), "{reason}");
-        assert!(!reason.contains("unknown key"), "named, not unknown: {reason}");
+        assert!(
+            !reason.contains("unknown key"),
+            "named, not unknown: {reason}"
+        );
     }
 }
 
@@ -2193,7 +2239,8 @@ fn scroll_until_visible_refuses_a_visibility_outside_one_to_a_hundred_and_unknow
     let (field, reason) = parse_err("- scrollUntilVisible:\n    elemnt: x\n");
     assert_eq!(field, "scrollUntilVisible");
     assert!(reason.contains("unknown key `elemnt`"), "{reason}");
-    let (field, _) = parse_err("- scrollUntilVisible:\n    element: x\n    centerElement: yes please\n");
+    let (field, _) =
+        parse_err("- scrollUntilVisible:\n    element: x\n    centerElement: yes please\n");
     assert_eq!(field, "scrollUntilVisible.centerElement");
 }
 
@@ -2270,14 +2317,18 @@ fn repeat_with_neither_a_count_nor_a_condition_is_refused() {
     // a flow that says neither has said nothing about when to stop.
     let (field, reason) = parse_err("- repeat:\n    commands:\n      - tapOn: X\n");
     assert_eq!(field, "repeat");
-    assert!(reason.contains("times") && reason.contains("while"), "{reason}");
+    assert!(
+        reason.contains("times") && reason.contains("while"),
+        "{reason}"
+    );
 }
 
 /// maestro's `runScript` carries a condition; smix refused the mapping
 /// form outright, so there was no way to write one (open-items H2).
 #[test]
 fn run_script_takes_a_condition_and_its_own_keys() {
-    let yaml = "appId: com.t.r\n---\n- runScript:\n    file: x.js\n    when:\n      platform: Android\n";
+    let yaml =
+        "appId: com.t.r\n---\n- runScript:\n    file: x.js\n    when:\n      platform: Android\n";
     let flow = parse_flow_yaml(yaml).expect("parse runScript with when");
     match &flow.steps[0] {
         Step::RunScript { when, .. } => {
@@ -2294,7 +2345,14 @@ fn run_script_as_a_bare_string_still_means_the_same_thing() {
         .expect("mapping form");
     let bare = parse_flow_yaml("appId: com.t.r\n---\n- runScript: x.js\n").expect("string form");
     match (&map.steps[0], &bare.steps[0]) {
-        (Step::RunScript { source: a, when: None, .. }, Step::RunScript { source: b, .. }) => {
+        (
+            Step::RunScript {
+                source: a,
+                when: None,
+                ..
+            },
+            Step::RunScript { source: b, .. },
+        ) => {
             assert_eq!(a, b);
         }
         other => panic!("expected two RunScripts, got {other:?}"),

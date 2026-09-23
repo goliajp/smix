@@ -1173,9 +1173,11 @@ mod tests {
     #[test]
     fn a_reverse_route_alone_does_not_make_a_ledger_abandoned() {
         let lease = lease_with(vec![reverse(8080, 3000)]);
-        assert_eq!(assess(&facts(lease, false, false, FRESH)), Admission::Granted);
+        assert_eq!(
+            assess(&facts(lease, false, false, FRESH)),
+            Admission::Granted
+        );
     }
-
 
     /// Facts for a probed holder. `now` sits inside the heartbeat window
     /// unless a test is about staleness.

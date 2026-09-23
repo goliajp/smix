@@ -253,15 +253,9 @@ mod tests {
         };
         let d = SwipeDirection::Down;
         // In, and its centre is past the middle less a fifth: stop.
-        assert_eq!(
-            verdict(nb(0.0, 0.5, 1.0, 0.2), &r, d, 0),
-            Verdict::Reached
-        );
+        assert_eq!(verdict(nb(0.0, 0.5, 1.0, 0.2), &r, d, 0), Verdict::Reached);
         // Wholly in but low on the screen: keep centring.
-        assert_eq!(
-            verdict(nb(0.0, 0.8, 1.0, 0.1), &r, d, 0),
-            Verdict::Recenter
-        );
+        assert_eq!(verdict(nb(0.0, 0.8, 1.0, 0.1), &r, d, 0), Verdict::Recenter);
         assert_eq!(
             verdict(nb(0.0, 0.8, 1.0, 0.1), &r, d, MAX_RECENTER),
             Verdict::Recenter
@@ -296,18 +290,41 @@ mod tests {
 
     #[test]
     fn norm_box_refuses_what_it_cannot_divide_by() {
-        let frame = Rect { x: 0.0, y: 0.0, w: 400.0, h: 800.0 };
-        let node = Rect { x: 100.0, y: 400.0, w: 200.0, h: 80.0 };
+        let frame = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 400.0,
+            h: 800.0,
+        };
+        let node = Rect {
+            x: 100.0,
+            y: 400.0,
+            w: 200.0,
+            h: 80.0,
+        };
+        assert_eq!(norm_box(node, frame), Ok(nb(0.25, 0.5, 0.5, 0.1)));
         assert_eq!(
-            norm_box(node, frame),
-            Ok(nb(0.25, 0.5, 0.5, 0.1))
-        );
-        assert_eq!(
-            norm_box(node, Rect { x: 0.0, y: 0.0, w: 0.0, h: 800.0 }),
+            norm_box(
+                node,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.0,
+                    h: 800.0
+                }
+            ),
             Err(HostResolveError::UnknownAppFrame)
         );
         assert_eq!(
-            norm_box(Rect { x: 1.0, y: 1.0, w: 0.0, h: 5.0 }, frame),
+            norm_box(
+                Rect {
+                    x: 1.0,
+                    y: 1.0,
+                    w: 0.0,
+                    h: 5.0
+                },
+                frame
+            ),
             Err(HostResolveError::EmptyMatchedFrame)
         );
     }

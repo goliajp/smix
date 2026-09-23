@@ -1209,11 +1209,20 @@ fn parse_condition(v: &Value, field: &str) -> Result<FlowCondition, ParseError> 
         field: field.into(),
         reason: "expected a mapping".into(),
     })?;
-    reject_unknown_keys(map, field, "condition", crate::CONDITION_KEYS, CONDITION_REFUSED)?;
+    reject_unknown_keys(
+        map,
+        field,
+        "condition",
+        crate::CONDITION_KEYS,
+        CONDITION_REFUSED,
+    )?;
     let selector_at = |key: &str| -> Result<Option<Selector>, ParseError> {
         match map.get(Value::String(key.into())) {
             Some(v) => visible_to_selector(v).map(Some).map_err(|e| match e {
-                ParseError::InvalidValue { field: inner, reason } => ParseError::InvalidValue {
+                ParseError::InvalidValue {
+                    field: inner,
+                    reason,
+                } => ParseError::InvalidValue {
                     field: format!("{field}.{key}.{inner}"),
                     reason,
                 },
@@ -1248,9 +1257,10 @@ fn parse_condition(v: &Value, field: &str) -> Result<FlowCondition, ParseError> 
     {
         return Err(ParseError::InvalidValue {
             field: field.into(),
-            reason: "no condition to check: a condition that always holds is a typo, not an intent; \
+            reason:
+                "no condition to check: a condition that always holds is a typo, not an intent; \
                      name at least one of platform, visible, notVisible, true"
-                .into(),
+                    .into(),
         });
     }
     Ok(condition)
@@ -2556,10 +2566,7 @@ fn parse_repeat(v: &Value) -> Result<Step, ParseError> {
         // The string form is smix's own; maestro's `while` is a
         // condition mapping.
         Some(Value::String(expr)) => (None, Some(expr.clone())),
-        Some(w @ Value::Mapping(_)) => (
-            Some(Box::new(parse_condition(w, "repeat.while")?)),
-            None,
-        ),
+        Some(w @ Value::Mapping(_)) => (Some(Box::new(parse_condition(w, "repeat.while")?)), None),
         Some(other) => {
             return Err(ParseError::InvalidValue {
                 field: "repeat.while".into(),
@@ -2572,7 +2579,9 @@ fn parse_repeat(v: &Value) -> Result<Step, ParseError> {
     if times.is_none() && while_.is_none() && while_expr.is_none() {
         return Err(ParseError::InvalidValue {
             field: "repeat".into(),
-            reason: "expected `times`, `while`, or both — with neither, nothing says when the loop ends".into(),
+            reason:
+                "expected `times`, `while`, or both — with neither, nothing says when the loop ends"
+                    .into(),
         });
     }
     Ok(Step::Repeat {

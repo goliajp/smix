@@ -63,8 +63,8 @@ impl Orientation {
 /// because that is the layer that opens the connection.
 pub use smix_runner_client::port_owner;
 pub use smix_runner_client::{
-    HttpRunnerClient, IncludeScope, OcrFrame, OwnerProbe,
-    RunnerTransportError, SystemPopup, TapMode,
+    HttpRunnerClient, IncludeScope, OcrFrame, OwnerProbe, RunnerTransportError, SystemPopup,
+    TapMode,
 };
 
 use smix_runner_client::TouchVerdict;

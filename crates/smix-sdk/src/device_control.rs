@@ -174,7 +174,6 @@ impl Permission {
         }
     }
 
-
     /// Map to Android `android.permission.X` string. Returns `None` for
     /// iOS-only permissions (`FaceId`, `HomeKit`). Wired by
     /// `AndroidDeviceControl`; the iOS impl ignores it.
@@ -384,20 +383,17 @@ pub const ACTION_PLATFORMS: &[(&str, [Availability; 4])] = {
         "nothing needs doing — a simulator is always awake and stays that way";
     const NO_DEVICECTL_POWER_VERB: &str =
         "devicectl can read a device's lock state but has no verb that changes it";
-    const WAKE_IT_BY_HAND: &str =
-        "press the side button, or check `xcrun devicectl device info lockState` to see where it stands";
-    const NO_DEVICECTL_DISPLAY_SETTING: &str =
-        "devicectl exposes no display or auto-lock setting";
+    const WAKE_IT_BY_HAND: &str = "press the side button, or check `xcrun devicectl device info lockState` to see where it stands";
+    const NO_DEVICECTL_DISPLAY_SETTING: &str = "devicectl exposes no display or auto-lock setting";
     const SET_AUTOLOCK_BY_HAND: &str =
         "set Settings > Display & Brightness > Auto-Lock to Never on the device";
     // Neither Apple tool answers "which app is in front". simctl has no
     // verb at all, and devicectl's `info processes` lists what is
     // running without saying which one the user is looking at.
-    const NO_FRONTMOST_FROM_SIMCTL: &str =
-        "simctl has no verb that reports which app is in front";
-    const NO_FRONTMOST_FROM_DEVICECTL: &str = "devicectl lists a device's processes but does not say which one is frontmost";
-    const ASK_THE_RUNNER_WHAT_IT_SEES: &str =
-        "ask the runner instead — `smix tree --device <udid>` names the app it read the screen from";
+    const NO_FRONTMOST_FROM_SIMCTL: &str = "simctl has no verb that reports which app is in front";
+    const NO_FRONTMOST_FROM_DEVICECTL: &str =
+        "devicectl lists a device's processes but does not say which one is frontmost";
+    const ASK_THE_RUNNER_WHAT_IT_SEES: &str = "ask the runner instead — `smix tree --device <udid>` names the app it read the screen from";
     // The two Apple refusals here are about attribution, not access.
     const SIM_CRASHES_ARE_NOT_DEVICE_SCOPED: &str = "a simulator's crash reports land in this machine's own folder, which is not divided by device, so no answer here could honestly be about one simulator";
     const READ_THE_HOST_CRASH_FOLDER: &str =
@@ -1360,7 +1356,10 @@ mod action_level_tests {
             for kind in [Simulator, PhysicalIos] {
                 match availability(action, kind) {
                     Some(Availability::RefusedByName { why, instead }) => {
-                        assert!(!why.is_empty(), "{action} on {kind:?} refuses without a reason");
+                        assert!(
+                            !why.is_empty(),
+                            "{action} on {kind:?} refuses without a reason"
+                        );
                         assert!(
                             !instead.is_empty(),
                             "{action} on {kind:?} refuses without a way forward"

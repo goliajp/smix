@@ -783,7 +783,9 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         }
         Step::PressKey(k) => format!("pressKey {k}"),
         Step::RunFlow(p) => format!("runFlow {p}"),
-        Step::RunFlowConditional { file, when, opts, .. } => format!(
+        Step::RunFlowConditional {
+            file, when, opts, ..
+        } => format!(
             "runFlow {file}{}{}",
             if when.is_some() { " (conditional)" } else { "" },
             block_label(opts)
@@ -791,12 +793,12 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         Step::RunFlowInline {
             steps, when, opts, ..
         } => {
-            let cond = if when.is_some() {
-                " (conditional)"
-            } else {
-                ""
-            };
-            format!("runFlow inline ({} cmds){cond}{}", steps.len(), block_label(opts))
+            let cond = if when.is_some() { " (conditional)" } else { "" };
+            format!(
+                "runFlow inline ({} cmds){cond}{}",
+                steps.len(),
+                block_label(opts)
+            )
         }
         Step::ScrollUntilVisible {
             direction, opts, ..
@@ -870,7 +872,11 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             .flatten()
             .collect::<Vec<_>>()
             .join(" ");
-            format!("repeat {how} ({} cmds){}", commands.len(), block_label(opts))
+            format!(
+                "repeat {how} ({} cmds){}",
+                commands.len(),
+                block_label(opts)
+            )
         }
         Step::Retry {
             max_retries,
