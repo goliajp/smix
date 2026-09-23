@@ -1659,15 +1659,29 @@ smix sim boot <ALIAS|UDID>     # boot
 smix sim shutdown <ALIAS|UDID> # shutdown
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
 smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up)
-smix sim launch <ALIAS|UDID> <bundle-id>
-smix sim terminate <ALIAS|UDID> <bundle-id>
-smix sim install <ALIAS|UDID> <path/to.app|.apk>   # simulator → simctl, Android → adb; a physical iPhone is refused
+smix sim launch <ALIAS|UDID> <bundle-id>   # every kind; --child-env is a simulator facility and is refused elsewhere
+smix sim terminate <ALIAS|UDID> <bundle-id>   # every kind but a physical iPhone (devicectl stops by pid, not by bundle id)
+smix sim install <ALIAS|UDID> <path/to.app|.apk>   # every kind; reinstalling stops the running copy of the app, and the command says so
 smix sim uninstall <ALIAS|UDID> <bundle-id|package>  # every kind; on a physical one, after allow-destructive
-smix sim openurl <ALIAS|UDID> <url>   # deeplink; app-level, no device lease needed
-smix sim appearance <ALIAS|UDID> light|dark
-smix sim keychain-reset <ALIAS|UDID>
+smix sim openurl <ALIAS|UDID> <url>   # every kind; deeplink, app-level, no device lease needed
+smix sim appearance <ALIAS|UDID> light|dark   # simulator only
+smix sim keychain-reset <ALIAS|UDID>   # simulator only
 smix sim allow-destructive <ALIAS|UDID>   # physical devices only; once, not per command
 smix sim exec <ALIAS|UDID> <verb> [args...]
+```
+
+Which devices a verb reaches is not a list kept here: it is derived from the
+platform table in `smix-sdk` (`ACTION_PLATFORMS`), which is reconciled against
+the implementations themselves. A verb refused on a device says why and what to
+do instead.
+
+**A reinstall ends the running copy of the app it replaces.** That is `adb
+install -r` and `simctl install` alike, and it does *not* touch the runner —
+`smix sim install` names the app it stopped so the two are not confused:
+
+```
+installed: app-debug.apk on emulator-5554
+  dev.smix.fixture was running and this reinstall stopped it — bring it back with `smix sim launch <device> dev.smix.fixture`
 ```
 
 ### Physical devices

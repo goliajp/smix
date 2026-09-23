@@ -4,6 +4,39 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Fixed
+
+- **`smix sim launch`, `terminate` and `openurl` carry out on Android
+  and on a registered iPhone what their backends had implemented all
+  along.** The CLI kept its own list of which devices each verb reached,
+  beside the platform table that is reconciled against the
+  implementations; by 10.2 the two disagreed in five places, and every
+  one of them was the CLI refusing something a backend does.
+  `AndroidDeviceControl` had been running all three through `am` since
+  Android support landed, `DevicectlClient::install` was wired in 10.2,
+  and `keychain-reset` claimed a physical iPhone the table refuses. The
+  CLI list is gone: a verb with a row in the platform table now takes
+  its answer from that row, so the two cannot drift again. `install`
+  therefore reaches a registered iPhone, `keychain-reset` no longer
+  claims one, and `uninstall` on one goes to `devicectl` rather than to
+  `simctl`, which lists no phones.
+
+- **A refusal no longer claims a tool it knows nothing about, or gives
+  advice about another verb.** `smix sim launch <android-device>` used
+  to answer "this command runs through simctl … Android lifecycle goes
+  through adb — `smix runner up …`" — false in its first half, about a
+  different verb in its second, and a consumer read the pair as a report
+  that the install they had just run had taken their runner down. A verb
+  with no row in the platform table now says which devices it does work
+  on and nothing more; one with a row answers in the table's own words.
+
+- **`smix sim install` says when it stopped the app it replaced.**
+  Reinstalling ends the running copy — `adb install -r` and `simctl
+  install` both — and the runner is untouched by it. Only the app dies,
+  so the next step reads the launcher and the runner looks guilty. The
+  line is printed from a before-and-after reading of what is in front,
+  so it appears when it happened and not otherwise.
+
 ### Added
 
 - **`GET /screenshot` on the Android runner**, the wire contract iOS has
