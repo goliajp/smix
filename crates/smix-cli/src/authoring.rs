@@ -391,6 +391,8 @@ mod tests {
         A11yNode {
             visible_bounds: None,
             hittable: None,
+            window: None,
+            unreadable_windows: None,
             raw_type: "any".into(),
             element_type_raw: 1,
             role: Some(Role::Button),

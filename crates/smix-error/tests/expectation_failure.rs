@@ -257,3 +257,89 @@ fn build_suggestions_below_threshold_skipped() {
     let s = build_suggestions(Some("xyz"), &visible);
     assert!(s.is_empty()); // similarity << 0.5
 }
+
+// ---- whose screen a failure happened on ---------------------------------
+
+fn facts_like_a_consumers_android_failure() -> smix_screen::ScreenFacts {
+    use smix_screen::{ScreenFacts, WindowInfo, WindowKind};
+    ScreenFacts {
+        elements: (0..10)
+            .map(|i| summary(Some(Role::Button), None, Some(&format!("app_row_{i}"))))
+            .collect(),
+        total: 30,
+        windows: vec![
+            WindowInfo {
+                package: Some("dev.smix.fixture".into()),
+                kind: WindowKind::Application,
+                focused: true,
+            },
+            WindowInfo {
+                package: Some("com.android.systemui".into()),
+                kind: WindowKind::System,
+                focused: false,
+            },
+            WindowInfo {
+                package: Some("com.android.systemui".into()),
+                kind: WindowKind::System,
+                focused: false,
+            },
+        ],
+        unreadable: 1,
+    }
+}
+
+/// A consumer read the failure's element list as the whole screen and
+/// built a detector on it; on Android the list was always the status bar.
+/// The failure now says which windows the screen held, whose they were,
+/// and how many elements the list is out of.
+#[test]
+fn a_failure_names_the_windows_and_how_many_elements_the_list_is_out_of() {
+    let f = ExpectationFailure::new(
+        FailureInit {
+            code: Some(FailureCode::ElementNotFound),
+            message: "no element matched".into(),
+            ..Default::default()
+        }
+        .with_screen(facts_like_a_consumers_android_failure()),
+    );
+    let p = f.to_prompt();
+    assert!(
+        p.contains(
+            "  on screen: dev.smix.fixture (application, focused) · com.android.systemui (system) ×2 · 1 window unreadable"
+        ),
+        "{p}"
+    );
+    assert!(
+        p.contains("  visible elements (10 of 30, the focused app's first):"),
+        "{p}"
+    );
+}
+
+#[test]
+fn the_screen_travels_in_the_json_and_stays_out_when_there_is_none() {
+    let with = ExpectationFailure::new(
+        FailureInit {
+            code: Some(FailureCode::ElementNotFound),
+            message: "x".into(),
+            ..Default::default()
+        }
+        .with_screen(facts_like_a_consumers_android_failure()),
+    );
+    let v = serde_json::to_value(&with).unwrap();
+    assert_eq!(v["visibleTotal"], 30);
+    assert_eq!(v["windows"][0]["package"], "dev.smix.fixture");
+    assert_eq!(v["unreadableWindows"], 1);
+
+    let without = ExpectationFailure::new(FailureInit {
+        code: Some(FailureCode::ElementNotFound),
+        message: "x".into(),
+        ..Default::default()
+    });
+    let v = serde_json::to_value(&without).unwrap();
+    for k in ["visibleTotal", "windows", "unreadableWindows"] {
+        assert!(
+            v.get(k).is_none(),
+            "{k} is on the wire with nothing to say: {v}"
+        );
+    }
+}

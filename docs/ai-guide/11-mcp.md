@@ -118,7 +118,8 @@ They are written to be read back:
 FAIL [ELEMENT_NOT_FOUND]: no element matched id=form-submit-btn
   suggestions:
     - form-submit-button
-  visible elements (top 10):
+  on screen: com.example.app (application, focused)
+  visible elements (10 of 23, the focused app's first):
     - button "Submit" id=form-submit-button
     - textField id=form-email-input
 ```

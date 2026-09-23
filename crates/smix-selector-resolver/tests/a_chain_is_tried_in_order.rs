@@ -22,6 +22,8 @@ fn node(id: &str, label: &str) -> A11yNode {
     A11yNode {
         visible_bounds: None,
         hittable: None,
+        window: None,
+        unreadable_windows: None,
         raw_type: "staticText".into(),
         element_type_raw: 48,
         role: None,

@@ -18,7 +18,7 @@
 #![doc(html_root_url = "https://docs.smix.dev/smix-error")]
 
 use serde::{Deserialize, Serialize};
-use smix_screen::ElementSummary;
+use smix_screen::{ElementSummary, ScreenFacts, WindowInfo, WindowKind};
 use smix_selector::{Selector, describe_selector};
 use std::fmt;
 
@@ -146,6 +146,21 @@ pub struct ExpectationFailure {
     /// output for failure-window system context.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub device_log: Vec<String>,
+    /// How many elements `visible_elements` was cut from.
+    ///
+    /// A list of ten read as the whole screen: a consumer built a
+    /// detector on it that called every Android failure blind, because
+    /// the ten were always the status bar. The total says it is a
+    /// sample.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible_total: Option<usize>,
+    /// The windows the screen held when this failed, focused app first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub windows: Vec<WindowInfo>,
+    /// Windows the reader could not read. "The app is not in the tree"
+    /// and "the app's window could not be read" are different failures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unreadable_windows: Option<u32>,
 }
 
 /// Newtype around `false` — used as the [`ExpectationFailure::ok`]
@@ -173,6 +188,44 @@ pub struct FailureInit {
     pub screenshot: Option<String>,
     /// Optional captured device log tail.
     pub device_log: Vec<String>,
+    /// See [`ExpectationFailure::visible_total`].
+    pub visible_total: Option<usize>,
+    /// See [`ExpectationFailure::windows`].
+    pub windows: Vec<WindowInfo>,
+    /// See [`ExpectationFailure::unreadable_windows`].
+    pub unreadable_windows: Option<u32>,
+}
+
+impl FailureInit {
+    /// The screen the failure happened on: its elements (already in the
+    /// order a reader should meet them), how many there were, whose
+    /// windows they sat in, and how many windows could not be read.
+    ///
+    /// One entry point, so a call site cannot hand over the list and
+    /// forget the count that says it is a sample.
+    #[must_use]
+    pub fn with_screen(mut self, facts: ScreenFacts) -> Self {
+        self.visible_elements = facts.elements;
+        self.visible_total = Some(facts.total);
+        self.windows = facts.windows;
+        self.unreadable_windows = (facts.unreadable > 0).then_some(facts.unreadable);
+        self
+    }
+
+    /// The screen an earlier failure described, carried into a new one.
+    ///
+    /// For a failure that re-states another (a timeout reported as "not
+    /// visible"): copying `visible_elements` by hand left the count and
+    /// the windows behind, and the next field added would be left behind
+    /// the same way.
+    #[must_use]
+    pub fn with_screen_from(mut self, earlier: &ExpectationFailure) -> Self {
+        self.visible_elements = earlier.visible_elements.clone();
+        self.visible_total = earlier.visible_total;
+        self.windows = earlier.windows.clone();
+        self.unreadable_windows = earlier.unreadable_windows;
+        self
+    }
 }
 
 impl ExpectationFailure {
@@ -191,6 +244,9 @@ impl ExpectationFailure {
             smix_version: env!("CARGO_PKG_VERSION").to_string(),
             screenshot: init.screenshot,
             device_log: init.device_log,
+            visible_total: init.visible_total,
+            windows: init.windows,
+            unreadable_windows: init.unreadable_windows,
         }
     }
 
@@ -220,9 +276,18 @@ impl ExpectationFailure {
                 lines.push(format!("    - {}", s));
             }
         }
+        if let Some(line) = on_screen_line(&self.windows, self.unreadable_windows) {
+            lines.push(line);
+        }
         if !self.visible_elements.is_empty() {
             let n = self.visible_elements.len().min(10);
-            lines.push(format!("  visible elements (top {}):", n));
+            lines.push(match self.visible_total {
+                Some(total) if self.windows.iter().any(|w| w.focused) => {
+                    format!("  visible elements ({n} of {total}, the focused app's first):")
+                }
+                Some(total) => format!("  visible elements ({n} of {total}):"),
+                None => format!("  visible elements (top {n}):"),
+            });
             for el in self.visible_elements.iter().take(10) {
                 lines.push(format!("    - {}", render_element(el)));
             }
@@ -251,6 +316,44 @@ impl fmt::Display for ExpectationFailure {
 }
 
 impl std::error::Error for ExpectationFailure {}
+
+/// One line naming the windows a failure's screen held.
+///
+/// Repeats collapse (`×2`) because a status bar and a navigation bar are
+/// both `com.android.systemui`, and listing it twice says nothing the
+/// count does not. `None` when there is nothing to say — a tree that
+/// carries no window information gets no line rather than an empty one.
+fn on_screen_line(windows: &[WindowInfo], unreadable: Option<u32>) -> Option<String> {
+    let mut parts: Vec<(String, usize)> = Vec::new();
+    for w in windows {
+        let who = w.package.as_deref().unwrap_or("(package not reported)");
+        let kind = match w.kind {
+            WindowKind::Application => "application",
+            WindowKind::InputMethod => "keyboard",
+            WindowKind::System => "system",
+            WindowKind::Other => "other",
+        };
+        let label = if w.focused {
+            format!("{who} ({kind}, focused)")
+        } else {
+            format!("{who} ({kind})")
+        };
+        match parts.last_mut() {
+            Some((last, n)) if *last == label => *n += 1,
+            _ => parts.push((label, 1)),
+        }
+    }
+    let mut bits: Vec<String> = parts
+        .into_iter()
+        .map(|(l, n)| if n > 1 { format!("{l} ×{n}") } else { l })
+        .collect();
+    match unreadable {
+        Some(1) => bits.push("1 window unreadable".into()),
+        Some(n) if n > 1 => bits.push(format!("{n} windows unreadable")),
+        _ => {}
+    }
+    (!bits.is_empty()).then(|| format!("  on screen: {}", bits.join(" · ")))
+}
 
 fn format_code(c: FailureCode) -> &'static str {
     match c {

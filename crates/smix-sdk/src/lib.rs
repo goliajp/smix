@@ -2883,10 +2883,10 @@ impl App {
                     ),
                 },
                 selector: Some(selector.clone()),
-                visible_elements: e.visible_elements,
-                suggestions: e.suggestions,
+                suggestions: e.suggestions.clone(),
                 ..Default::default()
-            })),
+            }
+            .with_screen_from(&e))),
             Err(e) => Err(e),
         }
     }

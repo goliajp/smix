@@ -183,8 +183,64 @@ pub fn collect_visible_summaries_with(
             walk(c, root, limit, keys, out);
         }
     }
-    walk(tree, tree, limit, include_keyboard_keys, &mut out);
+    // The root is read first as before; its children are read in window
+    // order. Only the root's children: that is where a reader that serves
+    // several windows puts them, and reordering deeper would change the
+    // order of the app's own elements, which is the order a reader of the
+    // screen expects.
+    if tree.enabled && tree.visible && is_visible_enough(tree, tree) {
+        let s = summarize_node(tree);
+        if has_identity(&s) && out.len() < limit {
+            out.push(s);
+        }
+    }
+    if include_keyboard_keys || !is_keyboard(tree) {
+        for c in in_window_order(&tree.children) {
+            if out.len() >= limit {
+                break;
+            }
+            walk(c, tree, limit, include_keyboard_keys, &mut out);
+        }
+    }
     out
+}
+
+/// Where a window sorts when a reader has to pick what to show first:
+/// the app that holds the focus, then other apps, then the keyboard, then
+/// system chrome. A subtree that is not a window keeps its place after
+/// the windows — a tree with no window information is left as it came.
+fn window_rank(n: &A11yNode) -> u8 {
+    match &n.window {
+        Some(WindowInfo {
+            kind: WindowKind::Application,
+            focused: true,
+            ..
+        }) => 0,
+        Some(WindowInfo {
+            kind: WindowKind::Application,
+            ..
+        }) => 1,
+        Some(WindowInfo {
+            kind: WindowKind::InputMethod,
+            ..
+        }) => 2,
+        Some(WindowInfo {
+            kind: WindowKind::System,
+            ..
+        }) => 3,
+        Some(WindowInfo {
+            kind: WindowKind::Other,
+            ..
+        }) => 4,
+        None => 5,
+    }
+}
+
+fn in_window_order(children: &[A11yNode]) -> Vec<&A11yNode> {
+    let mut v: Vec<&A11yNode> = children.iter().collect();
+    // Stable: equal ranks keep the order the reader gave.
+    v.sort_by_key(|n| window_rank(n));
+    v
 }
 
 /// Whether a summary tells a reader anything.
@@ -515,9 +571,85 @@ pub struct A11yNode {
     /// proceeds and only an explicit no refuses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hittable: Option<bool>,
+    /// Whose window this node is the root of, when it is one.
+    ///
+    /// Android serves each window as its own subtree under a synthetic
+    /// root, and the status bar comes first. Without this a reader of the
+    /// tree cannot tell the app's nodes from the system's, and a failure
+    /// that listed "the first ten visible elements" listed the clock.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<WindowInfo>,
+    /// On a tree's root: how many windows the reader could not read.
+    ///
+    /// A window whose root came back empty is counted rather than left
+    /// out, because "the app is not in this tree" and "the app's window
+    /// could not be read" look the same without it — and only one of
+    /// them is the app's fault.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unreadable_windows: Option<u32>,
     /// Child nodes in stable DFS pre-order.
     #[serde(default)]
     pub children: Vec<A11yNode>,
+}
+
+/// What kind of window a subtree is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WindowKind {
+    /// An app's own window.
+    Application,
+    /// The software keyboard.
+    InputMethod,
+    /// System chrome: status bar, navigation bar, notification shade.
+    System,
+    /// Anything the platform types otherwise (overlays, dividers).
+    Other,
+}
+
+/// Whose window a subtree is.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowInfo {
+    /// The package (Android) or bundle id (iOS) that owns it. `None` when
+    /// the reader did not say — rendered as such, not guessed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// What kind of window it is.
+    pub kind: WindowKind,
+    /// Whether it holds the input focus.
+    #[serde(default)]
+    pub focused: bool,
+}
+
+/// What a failure says about the screen it happened on.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ScreenFacts {
+    /// The first `limit` elements a reader could name, the focused app's first.
+    pub elements: Vec<ElementSummary>,
+    /// How many there were before the list was cut.
+    pub total: usize,
+    /// The windows on screen, focused application first.
+    pub windows: Vec<WindowInfo>,
+    /// Windows the reader could not read.
+    pub unreadable: u32,
+}
+
+/// The screen, as a failure should describe it.
+#[must_use]
+pub fn screen_facts(tree: &A11yNode, limit: usize) -> ScreenFacts {
+    let all = collect_visible_summaries(tree, usize::MAX);
+    let mut windows: Vec<WindowInfo> = tree.window.iter().cloned().collect();
+    windows.extend(
+        in_window_order(&tree.children)
+            .into_iter()
+            .filter_map(|c| c.window.clone()),
+    );
+    ScreenFacts {
+        total: all.len(),
+        elements: all.into_iter().take(limit).collect(),
+        windows,
+        unreadable: tree.unreadable_windows.unwrap_or(0),
+    }
 }
 
 // -------------------- visibility primitives ------------------------------
@@ -588,6 +720,8 @@ mod tests {
         A11yNode {
             visible_bounds: None,
             hittable: None,
+            window: None,
+            unreadable_windows: None,
             raw_type: raw_type.into(),
             element_type_raw: 1,
             role: role_from_raw_type(raw_type),
@@ -1216,5 +1350,134 @@ mod what_the_probe_says_about_a_node {
             !listed.iter().any(|s| s.id.as_deref() == Some("row")),
             "a node with an empty rectangle was listed as visible: {listed:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod screen_facts_tests {
+    use super::tests::node;
+    use super::*;
+
+    fn named(prefix: &str, n: usize) -> Vec<A11yNode> {
+        (0..n)
+            .map(|i| node("button", Some(&format!("{prefix}_{i}")), None, vec![]))
+            .collect()
+    }
+
+    fn window(package: &str, kind: WindowKind, focused: bool, kids: Vec<A11yNode>) -> A11yNode {
+        let mut w = node("android.widget.FrameLayout", None, None, kids);
+        w.window = Some(WindowInfo {
+            package: Some(package.into()),
+            kind,
+            focused,
+        });
+        w
+    }
+
+    /// The shape a consumer's failure had: the status bar is a window of
+    /// its own and the runner lists it first, so a pre-order walk capped
+    /// at ten never reached the app. They built a "the emulator stopped
+    /// serving the app" detector on that list and it called every
+    /// Android failure blind.
+    fn android_screen() -> A11yNode {
+        let mut app_kids = vec![node(
+            "staticText",
+            Some("app_title"),
+            Some("Grid views"),
+            vec![],
+        )];
+        app_kids.extend(named("app_row", 11));
+        let mut root = node(
+            "android.view.WindowRoot",
+            None,
+            None,
+            vec![
+                window(
+                    "com.android.systemui",
+                    WindowKind::System,
+                    false,
+                    named("status_bar", 15),
+                ),
+                window("dev.smix.fixture", WindowKind::Application, true, app_kids),
+                window(
+                    "com.android.systemui",
+                    WindowKind::System,
+                    false,
+                    named("nav_bar", 3),
+                ),
+            ],
+        );
+        root.unreadable_windows = Some(1);
+        root
+    }
+
+    #[test]
+    fn the_focused_app_is_listed_before_the_status_bar() {
+        let facts = screen_facts(&android_screen(), 10);
+        assert_eq!(
+            facts.elements[0].id.as_deref(),
+            Some("app_title"),
+            "the first element a failure names is the app's, not the system's"
+        );
+        let system: Vec<_> = facts
+            .elements
+            .iter()
+            .filter_map(|e| e.id.as_deref())
+            .filter(|id| id.starts_with("status_bar") || id.starts_with("nav_bar"))
+            .collect();
+        assert!(
+            system.is_empty(),
+            "system chrome in the first ten: {system:?}"
+        );
+    }
+
+    #[test]
+    fn the_total_is_counted_before_the_list_is_cut() {
+        let tree = android_screen();
+        let facts = screen_facts(&tree, 10);
+        assert_eq!(facts.elements.len(), 10);
+        assert_eq!(facts.total, 30, "12 app + 15 status bar + 3 nav bar");
+        assert_eq!(
+            facts.total,
+            collect_visible_summaries(&tree, usize::MAX).len()
+        );
+    }
+
+    #[test]
+    fn the_windows_are_named_focused_first_with_the_unreadable_counted() {
+        let facts = screen_facts(&android_screen(), 10);
+        let names: Vec<_> = facts
+            .windows
+            .iter()
+            .map(|w| (w.package.as_deref(), w.kind, w.focused))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                (Some("dev.smix.fixture"), WindowKind::Application, true),
+                (Some("com.android.systemui"), WindowKind::System, false),
+                (Some("com.android.systemui"), WindowKind::System, false),
+            ]
+        );
+        assert_eq!(facts.unreadable, 1);
+    }
+
+    #[test]
+    fn a_tree_without_windows_keeps_its_order() {
+        let tree = node(
+            "application",
+            Some("jp.golia.smix.fixture"),
+            None,
+            vec![node("window", None, None, named("row", 12))],
+        );
+        let facts = screen_facts(&tree, 10);
+        let ids: Vec<_> = facts.elements.iter().filter_map(|e| e.id.clone()).collect();
+        let before: Vec<_> = collect_visible_summaries(&tree, 10)
+            .into_iter()
+            .filter_map(|e| e.id)
+            .collect();
+        assert_eq!(ids, before);
+        assert!(facts.windows.is_empty());
+        assert_eq!(facts.unreadable, 0);
     }
 }

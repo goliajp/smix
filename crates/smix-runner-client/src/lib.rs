@@ -1489,13 +1489,36 @@ impl HttpRunnerClient {
         // says which, because a screen the accessibility reader has gone
         // blind on and a screen with nothing on it print identically
         // otherwise.
-        if let Some(tree) = self.semantics_tree(self.target_bundle_id.as_deref()).await {
+        if let Some(mut tree) = self.semantics_tree(self.target_bundle_id.as_deref()).await {
+            self.mark_a_one_app_root(&mut tree);
             return Ok(PerceivedTree {
                 source: TreeSource::Semantics,
                 root: tree,
             });
         }
         self.accessibility_tree_only(include).await
+    }
+
+    /// Say whose screen a tree is when the whole tree is one app's.
+    ///
+    /// An iOS tree is the `XCUIApplication` for the bundle this client
+    /// named, and a probe's tree is the app's own roots; neither carries
+    /// window information, because there is only the one window to
+    /// speak of. A failure then had no line saying whose screen it
+    /// happened on. The host knows which app it asked for; when it asked
+    /// for none, the package is left out rather than guessed. Android's
+    /// accessibility tree is not touched: its windows are its children
+    /// and say whose they are themselves.
+    fn mark_a_one_app_root(&self, root: &mut A11yNode) {
+        if root.window.is_none()
+            && (root.raw_type == "application" || root.raw_type == "SemanticsRoots")
+        {
+            root.window = Some(smix_screen::WindowInfo {
+                package: self.target_bundle_id.clone(),
+                kind: smix_screen::WindowKind::Application,
+                focused: true,
+            });
+        }
     }
 
     /// The semantics tree and nothing else, or an error saying why not.
@@ -1530,6 +1553,7 @@ impl HttpRunnerClient {
     ) -> Result<PerceivedTree, RunnerTransportError> {
         let mut root: A11yNode = self.json_get("/tree", include).await?;
         derive_roles_recursive(&mut root);
+        self.mark_a_one_app_root(&mut root);
         Ok(PerceivedTree {
             source: TreeSource::Accessibility,
             root,

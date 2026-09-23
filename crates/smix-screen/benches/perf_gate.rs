@@ -19,6 +19,8 @@ fn mk(raw_type: &str, label: &str, bounds: Rect) -> A11yNode {
     A11yNode {
         visible_bounds: None,
         hittable: None,
+        window: None,
+        unreadable_windows: None,
         raw_type: raw_type.into(),
         element_type_raw: 1,
         role: None,

@@ -178,4 +178,35 @@ class TreeWireTest {
         assertTrue(root.getBoolean("visible"))
         assertEquals(1, root.getJSONArray("children").length())
     }
+
+    // MARK: - windowJson
+    //
+    // Each window's root carries whose it is. Without it the host could not
+    // tell the app's nodes from the status bar's, and a failure that listed
+    // "the first ten visible elements" listed the clock. The kind strings
+    // are the contract with smix-screen's `WindowKind` (camelCase).
+
+    @Test
+    fun anApplicationWindowSaysWhoseItIsAndWhetherItHasTheFocus() {
+        val w = TreeWire.windowJson(windowType = 1, pkg = "dev.smix.fixture", focused = true)
+        assertTrue("an application window names its package: $w", w.has("package"))
+        assertEquals("dev.smix.fixture", w.getString("package"))
+        assertEquals("application", w.getString("kind"))
+        assertTrue(w.getBoolean("focused"))
+    }
+
+    @Test
+    fun theKindFollowsTheWindowType() {
+        assertEquals("inputMethod", TreeWire.windowJson(2, "com.android.inputmethod", false).getString("kind"))
+        assertEquals("system", TreeWire.windowJson(3, "com.android.systemui", false).getString("kind"))
+        assertEquals("other", TreeWire.windowJson(4, null, false).getString("kind"))
+        assertEquals("other", TreeWire.windowJson(6, null, false).getString("kind"))
+    }
+
+    @Test
+    fun aPackageNobodyReportedIsLeftOutRatherThanGuessed() {
+        val w = TreeWire.windowJson(windowType = 3, pkg = null, focused = false)
+        assertFalse(w.has("package"))
+        assertFalse(w.getBoolean("focused"))
+    }
 }

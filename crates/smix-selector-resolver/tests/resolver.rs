@@ -36,6 +36,8 @@ fn mk(p: NodePartial) -> A11yNode {
     A11yNode {
         visible_bounds: None,
         hittable: None,
+        window: None,
+        unreadable_windows: None,
         raw_type: p.raw_type.unwrap_or_else(|| "other".into()),
         element_type_raw: 1,
         role: p.role,
