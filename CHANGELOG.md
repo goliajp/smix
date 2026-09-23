@@ -2,6 +2,59 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **On Android, a tap on a dialog's button presses it.** The Known issue
+  in 11.0.0. A selector tap was turned into a share of the accessibility
+  tree's root and back into pixels with the display; the root was the
+  union of the windows that could be read, and with gesture navigation
+  and a dialog in front nothing reached the bottom of the screen —
+  measured on the fixture, 1080×1396 on a 1080×2340 display, and the
+  confirm pressed at y=2122, below a dialog ending at 1341. The root is
+  now the display, read in the one place the runner reads it, and the
+  semantics probe's tree carries the same number. This also moved every
+  other act aimed by a selector — `fill`'s focus tap, `doubleTapOn`,
+  `longPressOn`, `swipe: { over: }` — and the "wholly visible" share
+  `scrollUntilVisible` stops on.
+
+- **The semantics probe sees an app's own native dialogs.** It only
+  heard about Compose roots, so a Compose app confirming through
+  `android.app.AlertDialog` had the dialog in its accessibility tree and
+  not in the probe's: `smix find` found the confirm button and `tapOn`
+  said it was not there. Every window of the app process is now read
+  (`WindowInspector`, public API), and one no Compose root lives in is
+  walked as Views. Button text is reported as drawn (`DELETE`), as the
+  accessibility reader reports it, rather than as held (`Delete`).
+
+### Changed
+
+- **An Android tap is judged.** The runner reports what the touch was
+  about to be delivered to — every element under the point, named or
+  not, read from the topmost window before the touch goes in — and the
+  step fails with `TAP_MISSED` when the element aimed at is not there.
+  Until now every Android tap came back unjudged, printed `not verified`,
+  and passed; that is how a dialog dismissed by a misplaced touch was
+  reported as confirmed. `doubleTapOn` and `longPressOn` on Android are
+  judged the same way.
+- **A runner that reports nothing about where a touch went fails the
+  step** (`DRIVER_ERROR`, naming the runner and `smix runner up --force`).
+  It used to be "could not be judged" and pass. A touch aimed at a point
+  rather than an element — a raw coordinate, text found by OCR — still
+  has nothing to be compared with and still passes with its reason
+  printed.
+
+### Breaking
+
+- **Rust API: `tap_landed_within` takes a `ChainCoverage`, and
+  `TapAtCoordResult` has `complete`.** Whether a chain lists every
+  element under the point decides what an unnamed target's absence
+  means. `smix_driver::landing_outcome` is the one judgement both
+  platforms use. `HttpRunnerClient::double_tap_at_norm_coord` and
+  `long_press_at_norm_coord` return the `TapAtCoordResult` the runner
+  answered with.
+
 ## [11.0.0] — 2026-09-23
 
 Most flows need no change. Three things can make one behave differently:

@@ -171,9 +171,7 @@ async fn tap_resolves_then_tap_at_norm_coord() {
             nx: 150.0 / 390.0,
             ny: 120.0 / 844.0,
         })
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "ok": true
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(landed_on("", "Login")))
         .expect(1)
         .mount(&server)
         .await;
@@ -248,9 +246,7 @@ async fn fill_with_id_selector_focus_taps_then_fills_focused() {
         .await;
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "tree": null
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(landed_on("login-btn", "")))
         .expect(1)
         .mount(&server)
         .await;
@@ -327,9 +323,7 @@ async fn clear_with_id_selector_focus_taps_then_clears_focused() {
         .await;
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "tree": null
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(landed_on("login-btn", "")))
         .expect(1)
         .mount(&server)
         .await;
@@ -442,6 +436,20 @@ async fn dispose_idempotent_noop() {
 }
 
 // ---- find() selector-type dispatch ---------------------------------------
+
+/// What a current runner answers a tap with: the touch went in, and here
+/// is what it was delivered to. A runner that reports nothing now fails
+/// the step, so a stand-in has to say what a real one says.
+fn landed_on(identifier: &str, label: &str) -> serde_json::Value {
+    serde_json::json!({
+        "ok": true,
+        "chain": [{
+            "identifier": identifier,
+            "label": label,
+            "frame": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}
+        }]
+    })
+}
 
 fn id_sel(s: &str) -> Selector {
     Selector::Id {
@@ -687,7 +695,7 @@ async fn tap_retries_transient_tree_500() {
         .await;
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(landed_on("", "Login")))
         .mount(&server)
         .await;
     let d = driver_for(&server);

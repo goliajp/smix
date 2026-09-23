@@ -192,12 +192,32 @@ async fn resolve_with_implicit_wait(
     selector: &Selector,
     include: Option<IncludeScope>,
 ) -> Result<(f64, f64), ExpectationFailure> {
+    resolve_aimed(driver, selector, include)
+        .await
+        .map(|(coord, _)| coord)
+}
+
+/// The point to touch, and the element it is aimed at — read from the
+/// same tree, so the element the verdict compares against is the one
+/// the point was computed from.
+async fn resolve_aimed(
+    driver: &AndroidDriver,
+    selector: &Selector,
+    include: Option<IncludeScope>,
+) -> Result<((f64, f64), Option<crate::HitElement>), ExpectationFailure> {
     let start = std::time::Instant::now();
     let timeout = Duration::from_millis(5000);
     loop {
         let tree = driver.tree(include).await?;
         match resolve_to_norm_coord(&tree, selector) {
-            Ok(coord) => return Ok(coord),
+            Ok(coord) => {
+                let aimed = resolve_selector(&tree, selector).map(|n| crate::HitElement {
+                    identifier: n.identifier.clone().unwrap_or_default(),
+                    label: n.label.clone().unwrap_or_default(),
+                    frame: (n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h),
+                });
+                return Ok((coord, aimed));
+            }
             Err(HostResolveError::NotFound) => {
                 if start.elapsed() > timeout {
                     return Err(ExpectationFailure::new(FailureInit {
@@ -481,23 +501,18 @@ impl Driver for AndroidDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<crate::ActOutcome, ExpectationFailure> {
-        // Host-resolve + tap_at_norm_coord (mirrors IosDriver Path B).
-        let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
-        // Android reports no chain yet — only the iOS runner fills it
-        // in — so the outcome says it could not be judged rather than
-        // claiming the tap landed. Wiring the Kotlin side is the other
-        // half of this checkpoint, not a line to sneak in here.
-        self.runner
-            .tap_at_norm_coord(nx, ny)
-            .await
-            .map(|_| crate::ActOutcome::unjudged())
-            .map_err(|e| {
-                ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver::tap: runner.tap_at_norm_coord: {e}"),
-                    ..Default::default()
-                })
+        // Host-resolve + tap_at_norm_coord (mirrors IosDriver Path B),
+        // judged by what the runner says the touch was delivered to —
+        // the same judgement the iOS tap gets.
+        let ((nx, ny), aimed) = resolve_aimed(self, selector, include).await?;
+        let landed = self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("AndroidDriver::tap: runner.tap_at_norm_coord: {e}"),
+                ..Default::default()
             })
+        })?;
+        crate::landing_outcome(selector, aimed, &landed)
     }
 
     async fn tap_with_mode(
@@ -583,9 +598,11 @@ impl Driver for AndroidDriver {
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
         // Host-resolve + /double-tap-at-norm-coord (Kotlin
-        // side dispatches 2 clicks 150ms apart).
-        let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
-        self.runner
+        // side dispatches 2 clicks 150ms apart), judged like a tap. The
+        // trait has no outcome to return here, so a miss is the error.
+        let ((nx, ny), aimed) = resolve_aimed(self, selector, include).await?;
+        let landed = self
+            .runner
             .double_tap_at_norm_coord(nx, ny)
             .await
             .map_err(|e| {
@@ -594,7 +611,8 @@ impl Driver for AndroidDriver {
                     message: format!("AndroidDriver::double_tap: {e}"),
                     ..Default::default()
                 })
-            })
+            })?;
+        crate::landing_outcome(selector, aimed, &landed).map(|_| ())
     }
 
     async fn long_press(
@@ -606,23 +624,25 @@ impl Driver for AndroidDriver {
         // Host-resolve + /long-press-at-norm-coord with
         // duration. Kotlin uses UiDevice.swipe(x,y,x,y,steps) where
         // steps = duration / 5ms to approximate a sustained press.
-        let (nx, ny) = resolve_with_implicit_wait(self, selector, include).await?;
+        let ((nx, ny), aimed) = resolve_aimed(self, selector, include).await?;
         let duration_ms = duration.as_millis() as u64;
         // `UiDevice.swipe` reports nothing about when the touch was
         // down, so the bounds are unavailable rather than guessed —
         // `captureDuring` refuses on Android instead of handing back a
-        // frame it cannot place.
-        self.runner
+        // frame it cannot place. Where it was delivered is known, and
+        // judged like a tap.
+        let landed = self
+            .runner
             .long_press_at_norm_coord(nx, ny, duration_ms)
             .await
-            .map(|()| crate::PressTiming::unplaceable())
             .map_err(|e| {
                 ExpectationFailure::new(FailureInit {
                     code: Some(FailureCode::DriverError),
                     message: format!("AndroidDriver::long_press: {e}"),
                     ..Default::default()
                 })
-            })
+            })?;
+        crate::landing_outcome(selector, aimed, &landed).map(|_| crate::PressTiming::unplaceable())
     }
 
     /// Android honours `key-events` by skipping focus resolution.

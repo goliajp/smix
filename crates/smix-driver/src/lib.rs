@@ -572,63 +572,7 @@ impl IosDriver {
             .tap_at_norm_coord(nx, ny)
             .await
             .map_err(transport_to_failure)?;
-        let chain: Vec<HitElement> = landed
-            .chain
-            .iter()
-            .map(|e| HitElement {
-                identifier: e.identifier.clone(),
-                label: e.label.clone(),
-                frame: (e.frame.x, e.frame.y, e.frame.w, e.frame.h),
-            })
-            .collect();
-        let Some(aimed) = aimed else {
-            return Ok(ActOutcome {
-                target: None,
-                observed: chain,
-                verdict: ActVerdict::Unconfirmable(
-                    "the selector resolved to a coordinate but not to a node, so \
-                     there is nothing to compare the tapped point against"
-                        .into(),
-                ),
-            });
-        };
-        // An empty chain is the one case that is NOT judged. A runner
-        // older than the field answers without it, and that is
-        // indistinguishable on the wire from a point that landed
-        // outside everything — failing both would break every flow
-        // driving an older runner.
-        let verdict = if chain.is_empty() {
-            ActVerdict::Unconfirmable(
-                "the runner reported no elements at the tapped point; it may \
-                 predate the field that carries them"
-                    .into(),
-            )
-        } else {
-            tap_landed_within(&aimed, &chain)
-        };
-        if let ActVerdict::Missed(why) = &verdict {
-            if tap_mismatch_is_fatal() {
-                return Err(ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::TapMissed),
-                    message: format!("tap did not land where it aimed: {why}"),
-                    selector: Some(selector.clone()),
-                    hint: Some(
-                        "the screen moved between the tree fetch and the tap; \
-                         wait for it to settle first. Set \
-                         SMIX_TAP_HIT_MISMATCH=warn to downgrade this to a \
-                         warning while migrating a suite."
-                            .into(),
-                    ),
-                    ..Default::default()
-                }));
-            }
-            eprintln!("smix: warning: tap did not land where it aimed: {why}");
-        }
-        Ok(ActOutcome {
-            target: Some(aimed),
-            observed: chain,
-            verdict,
-        })
+        landing_outcome(selector, aimed, &landed)
     }
 
     /// Tap a selector several times in a row.
@@ -1370,11 +1314,21 @@ pub enum ActVerdict {
     Confirmed,
     /// The point was inside something else, or inside nothing.
     Missed(String),
-    /// Nothing comparable came back.
+    /// There was nothing to compare the touch against.
     ///
-    /// Its own verdict rather than a pass, because "I could not tell"
-    /// and "it landed" are different facts and only one of them is
-    /// what `tapOn` claims.
+    /// A step with this verdict does NOT fail: it is what a touch aimed
+    /// at a point rather than a node gets — a raw coordinate, or text
+    /// found by OCR — and failing those would take away the only way to
+    /// drive a screen with no accessibility nodes. The CLI prints the
+    /// reason beside the result.
+    ///
+    /// It used to be broader, and that is how it hid a defect. Every
+    /// Android selector tap came back with no chain and was given this
+    /// verdict, while this comment said it was "not a pass" and the
+    /// flow counted it as one: a dialog confirm pressed below the dialog
+    /// was reported as `tapped`. A selector aimed at a node now gets
+    /// `Confirmed` or `Missed`, and a runner that reports nothing about
+    /// where a touch went fails the step (see [`landing_outcome`]).
     Unconfirmable(String),
 }
 
@@ -1540,6 +1494,126 @@ pub fn press_frame_placement(press: &PressTiming, frame: &CaptureSpan) -> FrameP
     ))
 }
 
+/// What a chain of hit elements leaves out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChainCoverage {
+    /// Named elements only (the iOS runner): an unnamed target's absence
+    /// proves nothing.
+    NamedOnly,
+    /// Every element under the point (the Android runner): absence is a miss.
+    Every,
+}
+
+/// The verdict on a selector act, from what the runner said it touched.
+///
+/// One judgement for every platform and every act aimed by a selector —
+/// tap, double tap, long press. The iOS tap used to hold this inline and
+/// the Android acts had none, so an Android tap was never judged and a
+/// consumer's dialog confirm, pressed below the dialog, was reported as
+/// `tapped` with exit 0.
+///
+/// `aimed` is `None` when the selector resolved to a point rather than
+/// a node (text found by OCR, for one): there is no element to compare,
+/// and the outcome says so rather than pretending.
+///
+/// A runner that reports NOTHING under the point fails the step. Until
+/// now that was "could not be judged" and counted as a pass, on the
+/// reasoning that failing it would break everyone driving an older
+/// runner — which is how the Android runner, which reported nothing at
+/// all, turned every one of its misses into a pass.
+///
+/// # Errors
+///
+/// `TapMissed` when the touch was delivered to something other than the
+/// element aimed at (unless `SMIX_TAP_HIT_MISMATCH=warn`), and
+/// `DriverError` when the runner reported nothing about where it landed.
+pub fn landing_outcome(
+    selector: &Selector,
+    aimed: Option<HitElement>,
+    landed: &smix_runner_wire::TapAtCoordResult,
+) -> Result<ActOutcome, ExpectationFailure> {
+    let chain: Vec<HitElement> = landed
+        .chain
+        .iter()
+        .map(|e| HitElement {
+            identifier: e.identifier.clone(),
+            label: e.label.clone(),
+            frame: (e.frame.x, e.frame.y, e.frame.w, e.frame.h),
+        })
+        .collect();
+    let Some(aimed) = aimed else {
+        return Ok(ActOutcome {
+            target: None,
+            observed: chain,
+            verdict: ActVerdict::Unconfirmable(
+                "the selector resolved to a coordinate but not to a node, so \
+                 there is nothing to compare the tapped point against"
+                    .into(),
+            ),
+        });
+    };
+    if chain.is_empty() && !landed.complete {
+        return Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!(
+                "the touch aimed at {} went in, and the runner reported \
+                 nothing about what it was delivered to — so whether it \
+                 landed cannot be told",
+                describe_hit(&aimed)
+            ),
+            selector: Some(selector.clone()),
+            hint: Some(
+                "a runner older than the field that carries it answers this \
+                 way; `smix runner up --force` rebuilds the runner from this \
+                 smix"
+                    .into(),
+            ),
+            ..Default::default()
+        }));
+    }
+    let coverage = if landed.complete {
+        ChainCoverage::Every
+    } else {
+        ChainCoverage::NamedOnly
+    };
+    // A runner that lists everything under the point and lists nothing
+    // is saying where the touch went: outside every window it can read.
+    // Measured with gesture navigation and a system dialog in front —
+    // the point was below the dialog, where no readable window reaches.
+    let verdict = if chain.is_empty() {
+        ActVerdict::Missed(format!(
+            "aimed at {} and the touch was delivered outside every window \
+             the runner can read",
+            describe_hit(&aimed)
+        ))
+    } else {
+        tap_landed_within(&aimed, &chain, coverage)
+    };
+    if let ActVerdict::Missed(why) = &verdict {
+        if tap_mismatch_is_fatal() {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::TapMissed),
+                message: format!("tap did not land where it aimed: {why}"),
+                selector: Some(selector.clone()),
+                hint: Some(
+                    "the element moved between the tree fetch and the tap, or \
+                     the touch went to something over it; wait for the screen \
+                     to settle first. Set SMIX_TAP_HIT_MISMATCH=warn to \
+                     downgrade this to a warning while migrating a suite."
+                        .into(),
+                ),
+                ..Default::default()
+            }));
+        }
+        eprintln!("smix: warning: tap did not land where it aimed: {why}");
+    }
+    Ok(ActOutcome {
+        target: Some(aimed),
+        observed: chain,
+        verdict,
+    })
+}
+
 /// Did the touch land inside the element it aimed at?
 ///
 /// `chain` is every named element containing the tapped point, as the
@@ -1564,6 +1638,13 @@ pub fn press_frame_placement(press: &PressTiming, frame: &CaptureSpan) -> FrameP
 /// every list screen looks like. Containment gets it right: the button
 /// is on the chain.
 ///
+/// # What the chain leaves out
+///
+/// The iOS runner lists named elements only; the Android runner lists
+/// every element under the point. `coverage` says which, and it decides
+/// what an unnamed target's absence means: nothing on iOS (it may just
+/// be unnamed), a miss on Android (the list is whole).
+///
 /// # WHAT THIS CANNOT SEE
 ///
 /// **Occlusion.** A scrim covering the aimed element contains the
@@ -1579,7 +1660,11 @@ pub fn press_frame_placement(press: &PressTiming, frame: &CaptureSpan) -> FrameP
 /// nothing happened" and not the covered-element half. The whole chain
 /// travels in the outcome regardless, so a caller can see the scrim
 /// even when the verdict passes.
-pub fn tap_landed_within(aimed: &HitElement, chain: &[HitElement]) -> ActVerdict {
+pub fn tap_landed_within(
+    aimed: &HitElement,
+    chain: &[HitElement],
+    coverage: ChainCoverage,
+) -> ActVerdict {
     if chain.is_empty() {
         return ActVerdict::Missed(format!(
             "aimed at {} and the tapped point held nothing — the element \
@@ -1591,7 +1676,8 @@ pub fn tap_landed_within(aimed: &HitElement, chain: &[HitElement]) -> ActVerdict
     if chain.iter().any(|c| same_element(aimed, c)) {
         return ActVerdict::Confirmed;
     }
-    if aimed.identifier.is_empty() && aimed.label.is_empty() {
+    if aimed.identifier.is_empty() && aimed.label.is_empty() && coverage == ChainCoverage::NamedOnly
+    {
         return ActVerdict::Unconfirmable(format!(
             "the element aimed at carries neither an identifier nor a \
              label, so it cannot be looked for among the {} element(s) \

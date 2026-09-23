@@ -178,6 +178,15 @@ private fun collectHolders(v: View, into: MutableList<ProbeNode>) {
     }
 }
 
+/**
+ * A whole window, walked as Views, reported as a root of its own.
+ *
+ * The same walk `AndroidView` content gets — not a second one. A window
+ * is a root, not a child of some Compose root: it is on top of whatever
+ * is behind it, and the host needs to be able to tell.
+ */
+internal fun View.asWindowRoot(): ProbeNode? = viewSubtree(this)
+
 private fun viewSubtree(v: View): ProbeNode? {
     val children = mutableListOf<ProbeNode>()
     if (v is ViewGroup) {
@@ -202,7 +211,7 @@ private fun viewSubtree(v: View): ProbeNode? {
     return interopNode(
         resourceId = resourceName(v),
         contentDescription = v.contentDescription?.toString()?.ifEmpty { null },
-        text = (v as? TextView)?.text?.toString()?.ifEmpty { null },
+        text = (v as? TextView)?.let(::drawnText)?.ifEmpty { null },
         className = v.javaClass.name,
         layout = layout,
         clip = clip,
@@ -224,4 +233,18 @@ private fun resourceName(v: View): String? {
         // its description and text to be found by.
         null
     }
+}
+
+/**
+ * The text a `TextView` draws, which is not always the text it holds.
+ *
+ * A dialog button holds "Delete" and draws "DELETE" (`textAllCaps`
+ * installs a transformation). The accessibility reader reports what is
+ * drawn, so a probe reporting what is held would put two spellings of
+ * one button into smix's two trees — and a selector written against
+ * either would find it through one reader and not the other.
+ */
+private fun drawnText(v: TextView): String {
+    val held = v.text ?: return ""
+    return v.transformationMethod?.getTransformation(held, v)?.toString() ?: held.toString()
 }

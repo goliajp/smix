@@ -2,6 +2,7 @@ package dev.smix.probe
 
 import android.os.Handler
 import android.view.WindowManager
+import android.view.inspector.WindowInspector
 import android.os.Looper
 import androidx.compose.ui.node.RootForTest
 import androidx.compose.ui.platform.ViewRootForTest
@@ -143,6 +144,13 @@ object SemanticsProbe {
     /**
      * The display's size, in the same pixels the node bounds are in.
      *
+     * No longer the number anything divides by. The runner puts its own
+     * display size on the probe tree it serves — the size it turns taps
+     * back into pixels with — because a denominator measured in two
+     * processes is two denominators, and the accessibility tree's had
+     * already drifted from the runner's by 944 pixels under a dialog.
+     * This is still sent for a runner older than that, which reads it.
+     *
      * Reported because everything downstream normalises a node's rectangle
      * against the tree ROOT's, and the probe's roots cover only what
      * Compose occupies. Normalising a tap against that put it a fifth of a
@@ -166,8 +174,9 @@ object SemanticsProbe {
     }
 
     /** Every attached root's unmerged tree, as smix's wire spells it. */
-    fun dumpWireJson(): String = attached()
-        .mapNotNull { root ->
+    fun dumpWireJson(): String {
+        val compose = attached()
+        val composed = compose.mapNotNull { root ->
             val node = root.semanticsRoot().toProbeNode() ?: return@mapNotNull null
             // The Views this root hosts, as children of it. `AndroidView`
             // content has no semantics node of its own, so it is reachable
@@ -176,7 +185,30 @@ object SemanticsProbe {
             val hosted = root.view.hostedViews()
             if (hosted.isEmpty()) node else node.copy(children = node.children + hosted)
         }
-        .toWireJson()
+        return (composed + windowsWithoutCompose(compose)).toWireJson()
+    }
+
+    /**
+     * This app's windows that no Compose root lives in, walked as Views.
+     *
+     * A Compose app that asks for confirmation through the platform's own
+     * `AlertDialog` puts that dialog in a window of its own, built from
+     * Views. Compose roots are the only thing this probe used to hear
+     * about, so the dialog was absent from the tree a flow reads while the
+     * accessibility reader listed its buttons — `smix find` said the
+     * confirm button was there and `tapOn` said it was not, on the same
+     * screen, measured on the fixture.
+     *
+     * `WindowInspector` is public API (29+, and this probe's floor is 33)
+     * and lists every window root in this process. A window whose root is
+     * already the root of a Compose view has been answered above.
+     */
+    private fun windowsWithoutCompose(compose: List<ViewRootForTest>): List<ProbeNode> {
+        val covered = compose.map { it.view.rootView }.toSet()
+        return WindowInspector.getGlobalWindowViews()
+            .filter { it.isAttachedToWindow && it.isShown && it !in covered }
+            .mapNotNull { it.asWindowRoot() }
+    }
 
     /** The signal that was tried first, kept so its verdict can be re-checked. */
     fun hasPendingLayout(): Boolean = attached().any { it.hasPendingMeasureOrLayout }

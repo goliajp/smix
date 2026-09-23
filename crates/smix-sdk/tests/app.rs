@@ -146,10 +146,17 @@ async fn app_tap_full_pipeline() {
         .respond_with(ResponseTemplate::new(200).set_body_json(login_tree()))
         .mount(&server)
         .await;
+    // What a current runner answers: the touch went in, and here is what
+    // it was delivered to. A runner that reports nothing fails the step.
     Mock::given(method("POST"))
         .and(path("/tap-at-norm-coord"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "ok": true
+            "ok": true,
+            "chain": [{
+                "identifier": "btn-login",
+                "label": "",
+                "frame": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}
+            }]
         })))
         .mount(&server)
         .await;
