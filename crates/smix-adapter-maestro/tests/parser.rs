@@ -1917,7 +1917,7 @@ fn swipe_direction_form_desugars_to_finger_coords() {
 // Android round, 2026-09-22: `when: { platform: Android }` ran on iOS).
 // ---------------------------------------------------------------------
 
-use smix_adapter_maestro::{BlockOptions, CONDITION_KEYS, ConditionPlatform, FlowCondition, RepeatMode};
+use smix_adapter_maestro::{BlockOptions, CONDITION_KEYS, ConditionPlatform, FlowCondition};
 
 fn visible_only(sel: Selector) -> FlowCondition {
     FlowCondition {
@@ -2087,7 +2087,7 @@ fn condition_repeat_reads_label_optional_and_a_while_condition() {
     match only_step(
         "- repeat:\n    while:\n      platform: iOS\n      visible: x\n    label: drain\n    optional: true\n    commands:\n      - tapOn: y\n",
     ) {
-        Step::Repeat { mode: RepeatMode::WhileCondition(c), opts, .. } => {
+        Step::Repeat { while_: Some(c), opts, .. } => {
             assert_eq!(c.platform, Some(ConditionPlatform::Ios));
             assert_eq!(c.visible, Some(text_selector(Pattern::Text("x".into()))));
             assert_eq!(opts, BlockOptions { label: Some("drain".into()), optional: true });
@@ -2213,4 +2213,97 @@ fn scroll_until_visible_keys_are_maestros_nine_less_the_two_refused() {
     ] {
         assert!(SCROLL_UNTIL_VISIBLE_KEYS.contains(&k), "{k}");
     }
+}
+
+// --- clearLocation: the way back from setLocation / travel -------------
+
+/// A simulated location outlives the flow that set it, and until this
+/// verb there was no way to put it back: `DeviceControl` had no
+/// `location_clear`, so a phone driven by `setLocation` kept lying to
+/// every app on it and smix could not stop. smix's own, not maestro's
+/// — maestro has no verb for it.
+#[test]
+fn clear_location_takes_no_arguments() {
+    let yaml = "appId: com.t.r\n---\n- clearLocation\n";
+    let flow = parse_flow_yaml(yaml).expect("parse clearLocation");
+    assert!(matches!(flow.steps.as_slice(), [Step::ClearLocation]));
+}
+
+#[test]
+fn clear_location_rejects_arguments_by_name() {
+    // It clears the one location a device has. A mapping here would be
+    // a reader believing they had scoped it to something.
+    let (field, reason) = parse_err("- clearLocation:\n    latitude: 1.0\n");
+    assert_eq!(field, "clearLocation");
+    assert!(
+        reason.contains("takes no arguments"),
+        "the refusal does not say what is wrong: {reason}"
+    );
+}
+
+// --- repeat: times AND while, and runScript's condition ---------------
+
+/// maestro's `repeat` takes both, and runs while BOTH hold.
+///
+/// `YamlRepeatCommand` has two nullable fields and `Orchestra.kt`'s loop
+/// is `while (checkCondition() && counter < maxRuns)` — `times` absent
+/// means `Int.MAX_VALUE`, a condition absent means true. smix refused
+/// the pair outright, so a flow that wanted "up to five times, while the
+/// spinner is there" had no way to say it (open-items H1).
+#[test]
+fn repeat_takes_a_count_and_a_condition_together() {
+    let yaml = "appId: com.t.r\n---\n- repeat:\n    times: 3\n    while:\n      visible: Spinner\n    commands:\n      - tapOn: X\n";
+    let flow = parse_flow_yaml(yaml).expect("parse repeat with both");
+    match &flow.steps[0] {
+        Step::Repeat { times, while_, .. } => {
+            assert_eq!(*times, Some(3));
+            assert!(while_.is_some(), "the condition was dropped");
+        }
+        other => panic!("expected Repeat, got {other:?}"),
+    }
+}
+
+#[test]
+fn repeat_with_neither_a_count_nor_a_condition_is_refused() {
+    // Both absent is a loop with no way out. maestro's defaults make it
+    // `while true, up to Int.MAX_VALUE`; smix refuses instead, because
+    // a flow that says neither has said nothing about when to stop.
+    let (field, reason) = parse_err("- repeat:\n    commands:\n      - tapOn: X\n");
+    assert_eq!(field, "repeat");
+    assert!(reason.contains("times") && reason.contains("while"), "{reason}");
+}
+
+/// maestro's `runScript` carries a condition; smix refused the mapping
+/// form outright, so there was no way to write one (open-items H2).
+#[test]
+fn run_script_takes_a_condition_and_its_own_keys() {
+    let yaml = "appId: com.t.r\n---\n- runScript:\n    file: x.js\n    when:\n      platform: Android\n";
+    let flow = parse_flow_yaml(yaml).expect("parse runScript with when");
+    match &flow.steps[0] {
+        Step::RunScript { when, .. } => {
+            let c = when.as_ref().expect("the condition was dropped");
+            assert!(c.platform.is_some(), "platform did not survive parsing");
+        }
+        other => panic!("expected RunScript, got {other:?}"),
+    }
+}
+
+#[test]
+fn run_script_as_a_bare_string_still_means_the_same_thing() {
+    let map = parse_flow_yaml("appId: com.t.r\n---\n- runScript:\n    file: x.js\n")
+        .expect("mapping form");
+    let bare = parse_flow_yaml("appId: com.t.r\n---\n- runScript: x.js\n").expect("string form");
+    match (&map.steps[0], &bare.steps[0]) {
+        (Step::RunScript { source: a, when: None, .. }, Step::RunScript { source: b, .. }) => {
+            assert_eq!(a, b);
+        }
+        other => panic!("expected two RunScripts, got {other:?}"),
+    }
+}
+
+#[test]
+fn run_script_keys_are_closed() {
+    let (field, reason) = parse_err("- runScript:\n    file: x.js\n    fiel: y.js\n");
+    assert_eq!(field, "runScript");
+    assert!(reason.contains("unknown key `fiel`"), "{reason}");
 }

@@ -374,16 +374,19 @@ class SmixHttpServer(
      * anything" want different waits, and one value for both is how 250 ms
      * of guessing became indistinguishable from being told.
      *
-     * The app is named by the caller. This runner has no notion of a
-     * current app — sessions are per-id and the target arrives per request
-     * — so inventing one here would answer about whichever app it guessed.
+     * The app is named by the caller when the caller has a name to give.
+     * A flow always does. The CLI does not, and for as long as that meant
+     * "no probe", `smix tree` answered from the accessibility projection
+     * while a flow on the same screen answered from the semantics tree.
+     * So when nobody said, the window holding the focus says — see
+     * [ProbeTarget], which is the only place that inference is made.
      */
     private fun serveProbe(session: NanoHTTPD.IHTTPSession): Response {
-        val app = session.parameters["app"]?.firstOrNull().orEmpty()
+        val app = probeTarget(session).orEmpty()
         if (app.isEmpty()) {
             return newFixedLengthResponse(
                 Response.Status.OK, "application/json",
-                """{"present":false,"why":"no app was named; ask /probe?app=<applicationId>"}""",
+                """{"present":false,"why":"no app was named and no application window holds the focus; ask /probe?app=<applicationId>"}""",
             )
         }
         val uri = Uri.parse("content://$app.smixprobe")
@@ -423,7 +426,7 @@ class SmixHttpServer(
 
     /** The probe's semantics tree, verbatim. */
     private fun serveProbeTree(session: NanoHTTPD.IHTTPSession): Response {
-        val app = session.parameters["app"]?.firstOrNull().orEmpty()
+        val app = probeTarget(session).orEmpty()
         if (app.isEmpty()) {
             return newFixedLengthResponse(
                 Response.Status.OK, "application/json", "[]",
@@ -843,6 +846,18 @@ class SmixHttpServer(
     private fun appUnderTest(session: IHTTPSession): String? =
         session.headers["app-bundle-id"]?.takeIf { it.isNotEmpty() }
             ?: session.parameters["app"]?.firstOrNull()?.takeIf { it.isNotEmpty() }
+
+    /// Which package the probe routes ask, including when nobody said.
+    ///
+    /// Separate from [appUnderTest] on purpose, and the difference is
+    /// what each is for. That one feeds `/system-popups`, where a guess
+    /// makes a dialog classify itself as the app it covers and the
+    /// route reports nothing — so it never guesses. Asking the wrong
+    /// package for a probe only answers `present:false`, the same
+    /// answer as asking about nothing, so here the focused window is
+    /// allowed to speak. The rule itself is in [ProbeTarget].
+    private fun probeTarget(session: IHTTPSession): String? =
+        ProbeTarget.pick(readWindowRows(), appUnderTest(session))
 
     private fun serveSetOrientation(session: IHTTPSession): Response {
         // OK MEANS: outcome — the display is left in the rotation that

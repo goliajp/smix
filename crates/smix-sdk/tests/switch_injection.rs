@@ -135,6 +135,9 @@ impl DeviceControl for RecordingDevice {
     ) -> Result<(), DeviceControlError> {
         unimplemented!()
     }
+    async fn location_clear(&self, _udid: &str) -> Result<(), DeviceControlError> {
+        unimplemented!()
+    }
     async fn set_permission(
         &self,
         _udid: &str,

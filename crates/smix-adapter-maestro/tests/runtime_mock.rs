@@ -95,12 +95,13 @@ enum MockCall {
     LongPressCapturing(Selector, Duration),
     /// `App::set_location(lat, lng)`.
     SetLocation(f64, f64),
+    ClearLocation,
     /// `App::travel(points, speed)`.
     Travel(Vec<(f64, f64)>, Option<f64>),
     /// `App::set_permissions(bundle, perms)`.
     SetPermissions(
         String,
-        Vec<(smix_sdk::SimctlPermission, smix_sdk::PermissionAction)>,
+        Vec<(smix_sdk::device_control::Permission, smix_sdk::PermissionAction)>,
     ),
     /// `App::add_media(paths)`.
     AddMedia(Vec<String>),
@@ -877,10 +878,14 @@ impl AppLike for MockApp {
             .push(MockCall::Travel(points.to_vec(), speed_mps));
         Ok(())
     }
+    async fn clear_location(&self) -> Result<(), ExpectationFailure> {
+        self.calls.lock().unwrap().push(MockCall::ClearLocation);
+        Ok(())
+    }
     async fn set_permissions(
         &self,
         bundle_id: &str,
-        permissions: &[(smix_sdk::SimctlPermission, smix_sdk::PermissionAction)],
+        permissions: &[(smix_sdk::device_control::Permission, smix_sdk::PermissionAction)],
     ) -> Result<(), ExpectationFailure> {
         self.calls.lock().unwrap().push(MockCall::SetPermissions(
             bundle_id.to_string(),
@@ -3615,4 +3620,138 @@ async fn optional_scroll_until_visible_that_fails_is_skipped_and_the_flow_goes_o
     let strict = body.replace("    optional: true\n", "");
     let app = MockApp::new().with_scroll_failure(FailureCode::ElementNotFound);
     run_with(&app, &strict).await.expect_err("without optional the flow fails");
+}
+
+/// A permission Android implements is a permission a flow can ask for.
+///
+/// `storage` reaches `WRITE_EXTERNAL_STORAGE` in the Android backend and
+/// has no iOS counterpart. The whole yaml path was typed
+/// `SimctlPermission`, so the parser had to refuse it — a capability that
+/// existed, was tested, and could not be named from a flow (open-items
+/// L1).
+#[tokio::test]
+async fn a_permission_only_android_has_reaches_the_backend() {
+    let flow = parse_inline(concat!(
+        "appId: com.t.p\n",
+        "---\n",
+        "- launchApp:\n",
+        "    appId: com.target.app\n",
+        "    permissions:\n",
+        "      storage: allow\n",
+    ));
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("launchApp with storage");
+    let launched = app
+        .calls()
+        .iter()
+        .find_map(|c| match c {
+            MockCall::LaunchAppWithOptions(opts) => Some(opts.permissions.clone()),
+            _ => None,
+        })
+        .expect("launchApp carried options");
+    assert_eq!(
+        launched,
+        vec![(
+            smix_sdk::device_control::Permission::Storage,
+            smix_sdk::PermissionAction::Grant
+        )],
+        "the flow asked for storage and the backend was handed something else"
+    );
+}
+
+// --- repeat: a count AND a condition, the way maestro runs them -------
+
+/// The count stops it when the condition would go on.
+#[tokio::test]
+async fn repeat_with_both_stops_at_the_count() {
+    let flow = parse_inline(concat!(
+        "appId: com.t.r\n---\n",
+        "- repeat:\n",
+        "    times: 2\n",
+        "    while:\n",
+        "      visible:\n",
+        "        id: \"spinner\"\n",
+        "    commands:\n",
+        "      - tapOn:\n",
+        "          id: \"btn\"\n",
+    ));
+    // Visible far longer than the count allows.
+    let key = smix_sdk::describe_selector(&smix_sdk::id("spinner"));
+    let app = MockApp::new().with_find_visible_n_times(&key, 99);
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("repeat with both");
+    let taps = app
+        .calls()
+        .iter()
+        .filter(|c| matches!(c, MockCall::Tap(_)))
+        .count();
+    assert_eq!(taps, 2, "the count did not bound a condition that still held");
+}
+
+/// And the condition stops it when the count would go on.
+#[tokio::test]
+async fn repeat_with_both_stops_when_the_condition_drops() {
+    let flow = parse_inline(concat!(
+        "appId: com.t.r\n---\n",
+        "- repeat:\n",
+        "    times: 5\n",
+        "    while:\n",
+        "      visible:\n",
+        "        id: \"spinner\"\n",
+        "    commands:\n",
+        "      - tapOn:\n",
+        "          id: \"btn\"\n",
+    ));
+    let key = smix_sdk::describe_selector(&smix_sdk::id("spinner"));
+    let app = MockApp::new().with_find_visible_n_times(&key, 1);
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("repeat with both");
+    let taps = app
+        .calls()
+        .iter()
+        .filter(|c| matches!(c, MockCall::Tap(_)))
+        .count();
+    assert_eq!(taps, 1, "the condition did not stop a loop the count allowed");
+}
+
+/// A `runScript` this platform was never meant to run is skipped, and
+/// the skip does not depend on whether smix could have run it.
+#[tokio::test]
+async fn a_run_script_for_another_platform_is_skipped_not_failed() {
+    let flow = parse_inline(concat!(
+        "appId: com.t.r\n---\n",
+        "- runScript:\n",
+        "    file: android-only.js\n",
+        "    when:\n",
+        "      platform: Android\n",
+    ));
+    let app = MockApp::new(); // iOS by default
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let report = adapter.run(&flow).await.expect("skipped, not failed");
+    match &report.steps[0] {
+        RunStepReport::Skipped { reason } => {
+            assert!(reason.contains("platform"), "reason: {reason}");
+        }
+        other => panic!("expected Skipped, got {other:?}"),
+    }
+}
+
+/// And one it WAS meant to run still says there is no JS runtime.
+#[tokio::test]
+async fn a_run_script_whose_condition_holds_still_says_it_cannot_run_js() {
+    let flow = parse_inline(concat!(
+        "appId: com.t.r\n---\n",
+        "- runScript:\n",
+        "    file: ios.js\n",
+        "    when:\n",
+        "      platform: iOS\n",
+    ));
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let err = adapter.run(&flow).await.expect_err("no JS runtime");
+    match err {
+        RunError::Sdk(f) => assert!(f.message.contains("JS runtime"), "{}", f.message),
+        other => panic!("expected the unsupported verdict, got {other:?}"),
+    }
 }

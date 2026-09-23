@@ -154,6 +154,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         | Step::RunScript { .. }
         | Step::EvalScript { .. }
         | Step::SetLocation { .. }
+        | Step::ClearLocation
         | Step::Travel { .. }
         | Step::SetPermissions { .. }
         | Step::AddMedia { .. }
@@ -375,6 +376,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         | Step::RunScript { .. }
         | Step::EvalScript { .. }
         | Step::SetLocation { .. }
+        | Step::ClearLocation
         | Step::Travel { .. }
         | Step::SetPermissions { .. }
         | Step::AddMedia { .. }

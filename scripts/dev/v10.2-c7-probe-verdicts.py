@@ -15,26 +15,40 @@ import sys
 
 probe = json.loads(os.environ["PROBE_JSON"])
 a11y = json.loads(os.environ["A11Y_JSON"])
-a11y = a11y.get("root", a11y)
 
-seen = {}
-def walk(n):
-    name = n.get("testTag") or n.get("resourceId")
-    if name:
-        seen[name] = n
-    for c in n.get("children") or []:
-        walk(c)
-for r in probe.get("roots", []):
-    walk(r)
+# Both sides arrive from `smix tree --json --reader …` now, so both are
+# the same envelope and the same node shape: a Compose testTag and a
+# hosted View's resource id both land in `identifier`. They were two
+# shapes while the probe could only be reached by curl (I1).
+#
+# Which reader answered is asserted rather than assumed — `--reader`
+# refusing and `--reader` answering from the other tree would look the
+# same here, and this file's whole job is telling the two apart.
+for name, payload, want in (("probe", probe, "semantics"), ("a11y", a11y, "a11y")):
+    got = payload.get("source")
+    if got != want:
+        sys.exit(f"the {name} side came back from the {got!r} reader, not {want!r}")
 
-theirs = {}
-def walk_a(n):
-    i = n.get("identifier")
-    if i:
-        theirs[i] = n
-    for c in n.get("children") or []:
-        walk_a(c)
-walk_a(a11y)
+probe = probe["root"]
+a11y = a11y["root"]
+
+
+def index(tree):
+    found = {}
+
+    def walk(n):
+        i = n.get("identifier")
+        if i:
+            found[i.split("/")[-1]] = n
+        for c in n.get("children") or []:
+            walk(c)
+
+    walk(tree)
+    return found
+
+
+seen = index(probe)
+theirs = index(a11y)
 
 def rect(n):
     b = n["bounds"]
@@ -47,7 +61,7 @@ btn = seen.get("fixture_interop_button")
 if btn is None:
     bad.append("interop-seen=no — the probe does not report the hosted ImageButton")
 else:
-    mine, yours = tuple(btn["bounds"]), rect(theirs["fixture_interop_button"])
+    mine, yours = rect(btn), rect(theirs["fixture_interop_button"])
     if mine != yours:
         bad.append(f"interop-seen=misplaced — probe {mine}, accessibility {yours}")
     else:
@@ -66,7 +80,7 @@ row = seen.get("interop_clipped_row_0")
 if row is None:
     bad.append("clipped-bounds=missing — the first row is not in the probe's tree")
 else:
-    mine, yours = tuple(row["bounds"]), rect(theirs["interop_clipped_row_0"])
+    mine, yours = rect(row), rect(theirs["interop_clipped_row_0"])
     height = mine[3] - mine[1]
     if mine != yours:
         bad.append(f"clipped-bounds=disagree — probe {mine}, accessibility {yours}")

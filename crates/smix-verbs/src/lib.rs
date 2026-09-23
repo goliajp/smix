@@ -408,6 +408,12 @@ pub static VERB_TABLE: &[VerbEntry] = &[
     ),
     v("travel", "travel", VerbCategory::Device, ArgShape::Mapping),
     v(
+        "clearLocation",
+        "clearLocation",
+        VerbCategory::Device,
+        ArgShape::None,
+    ),
+    v(
         "setPermissions",
         "setPermissions",
         VerbCategory::Device,

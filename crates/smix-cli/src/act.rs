@@ -587,17 +587,33 @@ pub async fn cmd_swipe(
 /// `--json` emits the wire-format JSON (large — typically 100KB+ for a
 /// typical app screen); default emits an indented text outline keyed by
 /// id + label per node.
-pub async fn cmd_tree(json: bool, port: u16, keyboard: bool) -> Result<(), ActError> {
+/// Which reader `smix tree` asks. See the CLI's own enum for why a
+/// caller would name one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TreeReader {
+    Auto,
+    Probe,
+    A11y,
+}
+
+pub async fn cmd_tree(
+    json: bool,
+    port: u16,
+    keyboard: bool,
+    reader: TreeReader,
+) -> Result<(), ActError> {
     // The client rather than the driver, because the driver's `tree` hands
     // back the root alone and the source is the half a reader needs most
     // when the answer looks thin. A screen the accessibility reader has
     // gone blind on and a screen with nothing on it print identically
     // otherwise.
     let client = HttpRunnerClient::new(port);
-    let mut perceived = client
-        .get_tree(None)
-        .await
-        .map_err(|e| ActError::Transport(format!("{e}")))?;
+    let mut perceived = match reader {
+        TreeReader::Auto => client.get_tree(None).await,
+        TreeReader::Probe => client.semantics_tree_only().await,
+        TreeReader::A11y => client.accessibility_tree_only(None).await,
+    }
+    .map_err(|e| ActError::Transport(format!("{e}")))?;
     if !keyboard {
         collapse_keyboards(&mut perceived.root);
     }

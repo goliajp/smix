@@ -8,6 +8,13 @@
          which no iOS-shaped name table could reach until 10.2. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Declared so `storage` has something to land on. It is the one
+         name in the table with no iOS counterpart at all, so it is the
+         only one that can show a flow reaching the Android backend
+         rather than the iOS-shaped path it used to be typed as.
+         Measured on API 36: `pm grant` takes it once it is requested
+         here, and refuses it outright when it is not. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <application
         android:label="smix fixture"
         android:theme="@style/Theme.AppCompat.Light">

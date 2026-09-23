@@ -249,6 +249,10 @@ impl DeviceControl for IosDeviceControl {
         self.client.location_start(udid, points, speed_mps).await
     }
 
+    async fn location_clear(&self, udid: &str) -> Result<(), DeviceControlError> {
+        self.client.location_clear(udid).await
+    }
+
     // === Permissions ===
 
     async fn set_permission(

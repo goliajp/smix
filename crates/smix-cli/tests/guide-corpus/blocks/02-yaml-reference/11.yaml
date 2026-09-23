@@ -30,6 +30,16 @@
     commands:
       - tapOn: "Load more"
 
+# Both together: another pass needs the condition to hold AND the count
+# to be unspent. Give neither and it is a parse error — nothing would
+# say when the loop ends.
+- repeat:
+    times: 5
+    while:
+      visible: "Load more"
+    commands:
+      - tapOn: "Load more"
+
 # Retry on failure
 - retry:
     maxRetries: 3
@@ -103,3 +113,14 @@
 - evalScript: |
     output.userId = output.someResponse.id
 - runScript: "../scripts/setup.js"
+
+# `runScript` also takes maestro's mapping form, `when:` included — so a
+# script meant for one platform is skipped on the other rather than
+# failing there. smix has no JS runtime, so one whose condition holds
+# fails saying exactly that; what `when:` changes is whether it is
+# reached at all.
+- runScript:
+    file: "../scripts/seed-android.js"
+    when:
+      platform: Android
+    label: "seed the database"

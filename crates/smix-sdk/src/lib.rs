@@ -273,7 +273,13 @@ pub struct LaunchAppOptions {
     /// Process-level argv passed via `simctl launch -- <args>`.
     pub arguments: Vec<String>,
     /// Permission directives applied in declaration order BEFORE launch.
-    pub permissions: Vec<(SimctlPermission, PermissionAction)>,
+    ///
+    /// The cross-platform [`Permission`], not the iOS spelling. It was
+    /// the iOS one until 10.2, which made this whole path — yaml key to
+    /// backend — unable to carry a permission iOS has no word for:
+    /// `storage` is implemented in the Android backend and a flow could
+    /// not name it.
+    pub permissions: Vec<(Permission, PermissionAction)>,
     /// App bundle path for clear_state / clear_keychain wipe — mirrors the
     /// `launch_fresh::app_path` parameter; usually populated by the
     /// adapter from `SMIX_APP_PATH_<NORMALIZED_BUNDLE>` env.
@@ -1773,15 +1779,12 @@ impl App {
     pub async fn set_permission(
         &self,
         bundle_id: &str,
-        permission: SimctlPermission,
+        permission: Permission,
         action: PermissionAction,
     ) -> Result<(), ExpectationFailure> {
-        // Delegate to DeviceControl::set_permission with the cross-platform
-        // Permission enum. Round-trip via Permission::from_simctl.
         let udid = self.require_udid()?;
-        let xperm = Permission::from_simctl(permission);
         self.device
-            .set_permission(udid, bundle_id, xperm, action)
+            .set_permission(udid, bundle_id, permission, action)
             .await
             .map_err(simctl_to_failure)
     }
@@ -2605,6 +2608,23 @@ impl App {
             .map_err(simctl_to_failure)
     }
 
+    /// Stop simulating a location. smix's own verb — maestro has none.
+    ///
+    /// The way back from [`Self::set_location`] and [`Self::travel`],
+    /// which outlive the flow that called them: on a registered iPhone a
+    /// coordinate stays until something clears it, and until this
+    /// existed that something could not be smix. What each backend can
+    /// do is in the platform table — the emulator stops the walk and
+    /// leaves the device where it stands, having no real position to
+    /// return to.
+    pub async fn clear_location(&self) -> Result<(), ExpectationFailure> {
+        let udid = self.require_udid()?;
+        self.device
+            .location_clear(udid)
+            .await
+            .map_err(simctl_to_failure)
+    }
+
     /// Add photos / videos / contacts to the sim library. Maestro
     /// `addMedia: <path>` (scalar) or `addMedia: [paths]` (array;
     /// adapter flattens to Vec).
@@ -2677,7 +2697,7 @@ impl App {
     pub async fn set_permissions(
         &self,
         bundle_id: &str,
-        permissions: &[(SimctlPermission, PermissionAction)],
+        permissions: &[(Permission, PermissionAction)],
     ) -> Result<(), ExpectationFailure> {
         for (perm, action) in permissions {
             self.set_permission(bundle_id, *perm, *action).await?;

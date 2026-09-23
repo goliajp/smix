@@ -29,7 +29,7 @@
 //! ergonomics. A blanket impl forwards every method to the
 //! corresponding [`smix_sdk::App`] method 1:1.
 
-use crate::{Flow, FlowCondition, ParseError, RepeatMode, Step, parse_flow_file};
+use crate::{Flow, FlowCondition, ParseError, Step, parse_flow_file};
 
 /// Safety valve for `repeat.while: <expr>` loops. The output store is
 /// read-only during a flow, so an expression-driven repeat whose
@@ -47,7 +47,7 @@ const MAX_REPEAT_ITERATIONS: u32 = 1000;
 use async_trait::async_trait;
 use smix_sdk::{
     App, ExpectationFailure, FailureCode, FailureInit, KeyName, LaunchAppOptions, Pattern,
-    PermissionAction, Selector, SimctlPermission, SwipeDirection,
+    PermissionAction, Selector, SwipeDirection, device_control::Permission,
 };
 
 /// SwiftUI modal dismiss id classifier. Returns true when the
@@ -434,6 +434,8 @@ pub trait AppLike: Send + Sync {
     ) -> Result<smix_sdk::PressCapture, ExpectationFailure>;
     /// Set sim location. Mirrors [`App::set_location`].
     async fn set_location(&self, latitude: f64, longitude: f64) -> Result<(), ExpectationFailure>;
+    /// Stop simulating one. Mirrors [`App::clear_location`].
+    async fn clear_location(&self) -> Result<(), ExpectationFailure>;
     /// Interpolate sim location. Mirrors [`App::travel`].
     async fn travel(
         &self,
@@ -444,7 +446,7 @@ pub trait AppLike: Send + Sync {
     async fn set_permissions(
         &self,
         bundle_id: &str,
-        permissions: &[(SimctlPermission, PermissionAction)],
+        permissions: &[(Permission, PermissionAction)],
     ) -> Result<(), ExpectationFailure>;
     /// Add media to sim library. Mirrors [`App::add_media`].
     async fn add_media(&self, paths: &[String]) -> Result<(), ExpectationFailure>;
@@ -688,6 +690,9 @@ impl AppLike for App {
     async fn set_location(&self, latitude: f64, longitude: f64) -> Result<(), ExpectationFailure> {
         App::set_location(self, latitude, longitude).await
     }
+    async fn clear_location(&self) -> Result<(), ExpectationFailure> {
+        App::clear_location(self).await
+    }
     async fn travel(
         &self,
         points: &[(f64, f64)],
@@ -698,7 +703,7 @@ impl AppLike for App {
     async fn set_permissions(
         &self,
         bundle_id: &str,
-        permissions: &[(SimctlPermission, PermissionAction)],
+        permissions: &[(Permission, PermissionAction)],
     ) -> Result<(), ExpectationFailure> {
         App::set_permissions(self, bundle_id, permissions).await
     }
@@ -960,6 +965,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::SetClipboard(_) => "setClipboard",
         Step::Travel { .. } => "travel",
         Step::SetLocation { .. } => "setLocation",
+        Step::ClearLocation => "clearLocation",
         Step::SetPermissions { .. } => "setPermissions",
         Step::SetOrientation { .. } => "setOrientation",
         Step::AddMedia { .. } => "addMedia",
@@ -2301,11 +2307,20 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::Repeat {
-                mode,
+                times,
+                while_,
+                while_expr,
                 commands,
                 opts,
             } => {
-                let result = Box::pin(self.run_repeat(mode, commands, warnings)).await;
+                let result = Box::pin(self.run_repeat(
+                    *times,
+                    while_.as_deref(),
+                    while_expr.as_deref(),
+                    commands,
+                    warnings,
+                ))
+                .await;
                 block_outcome("repeat", opts, result.map(|()| RunStepReport::Ok))
             }
             Step::Retry {
@@ -2321,19 +2336,33 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
                 Err(last_err.expect("at least one attempt"))
             }
-            Step::RunScript { source } => {
-                Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!(
-                        "runScript: a complete JS runtime is not supported (maestro runs these on GraalJS). Move scripting logic out of yaml, or use assertTrue with the minimal expression engine (== != && || ! () output.x .contains()). source snippet: {:?}",
-                        source.chars().take(80).collect::<String>()
-                    ),
-                    suggestions: vec![
-                        "Replace inline JS with assertTrue + minimal expression engine".to_string(),
-                        "Or wait for v6+ when full JS runtime ships".to_string(),
-                    ],
-                    ..Default::default()
-                })))
+            Step::RunScript {
+                source,
+                when,
+                env,
+                opts,
+            } => {
+                // The condition first: a `runScript` this device is not
+                // meant to run is skipped, and skipping it must not
+                // depend on whether the thing it would have done is
+                // supported.
+                if let Some(c) = when {
+                    let (holds, checked) = self.evaluate_condition(c).await?;
+                    if !holds {
+                        return Ok(RunStepReport::Skipped {
+                            reason: format!(
+                                "{}: {checked}",
+                                opts.label.clone().unwrap_or_else(|| "runScript".into())
+                            ),
+                        });
+                    }
+                }
+                // `env` is carried by the step and read by nothing yet:
+                // there is no JS runtime for it to reach. Dropping it at
+                // the parser instead would be the silent swallow C4
+                // closed everywhere else, so it travels and waits.
+                let _ = env;
+                block_outcome("runScript", opts, Self::run_script_unsupported(source))
             }
             Step::EvalScript { source } => {
                 Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
@@ -2353,6 +2382,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 longitude,
             } => {
                 self.app.set_location(*latitude, *longitude).await?;
+                Ok(RunStepReport::Ok)
+            }
+            Step::ClearLocation => {
+                self.app.clear_location().await?;
                 Ok(RunStepReport::Ok)
             }
             Step::Travel { points, speed_mps } => {
@@ -2382,7 +2415,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 let sdk_perms = permissions
                     .iter()
                     .map(|(name, action)| {
-                        let perm = parse_simctl_permission(name).map_err(RunError::Parse)?;
+                        let perm = parse_permission(name).map_err(RunError::Parse)?;
                         Ok::<_, RunError>((perm, action.to_sdk()))
                     })
                     .collect::<Result<Vec<_>, RunError>>()?;
@@ -2526,10 +2559,10 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     let sdk_perms = permissions
                         .iter()
                         .map(|(name, action)| {
-                            let perm = parse_simctl_permission(name).map_err(RunError::Parse)?;
+                            let perm = parse_permission(name).map_err(RunError::Parse)?;
                             Ok::<_, RunError>((perm, action.to_sdk()))
                         })
-                        .collect::<Result<Vec<(SimctlPermission, PermissionAction)>, RunError>>()?;
+                        .collect::<Result<Vec<(Permission, PermissionAction)>, RunError>>()?;
                     let opts = LaunchAppOptions {
                         bundle_id: app_id.clone(),
                         clear_state: *clear_state,
@@ -2665,63 +2698,86 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         }
     }
 
+    /// What `runScript` does: say plainly that it cannot.
+    ///
+    /// maestro runs these on GraalJS and smix has no JS runtime, so the
+    /// verb parses — a flow stays portable — and fails loudly rather
+    /// than passing over a step that did nothing.
+    fn run_script_unsupported(source: &str) -> Result<RunStepReport, RunError> {
+        Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::DriverError),
+            message: format!(
+                "runScript: a complete JS runtime is not supported (maestro runs these on GraalJS). Move scripting logic out of yaml, or use assertTrue with the minimal expression engine (== != && || ! () output.x .contains()). source snippet: {:?}",
+                source.chars().take(80).collect::<String>()
+            ),
+            suggestions: vec![
+                "Replace inline JS with assertTrue + minimal expression engine".to_string(),
+                "Or wait for v6+ when full JS runtime ships".to_string(),
+            ],
+            ..Default::default()
+        })))
+    }
+
+    /// One loop for both halves, because maestro has one.
+    ///
+    /// `while (checkCondition() && counter < maxRuns)`: a condition that
+    /// is not there holds, a count that is not there is unbounded, and
+    /// with both present BOTH must allow the next pass. smix used to
+    /// pick one at parse time and had no way to express the pair.
+    ///
+    /// `MAX_REPEAT_ITERATIONS` still bounds a count-less loop: a
+    /// condition that never goes false is a flow that never ends, and
+    /// the message says which condition and what to do about it.
     async fn run_repeat(
         &mut self,
-        mode: &RepeatMode,
+        times: Option<u32>,
+        while_: Option<&FlowCondition>,
+        while_expr: Option<&str>,
         commands: &[Step],
         warnings: &mut Vec<String>,
     ) -> Result<(), RunError> {
-        match mode {
-            RepeatMode::Times(n) => {
-                for _ in 0..*n {
-                    Box::pin(self.run_steps_inner(commands, warnings)).await?;
-                }
+        let mut iter = 0u32;
+        loop {
+            if let Some(n) = times
+                && iter >= n
+            {
+                break;
             }
-            RepeatMode::While { condition_expr } => {
-                let mut iter = 0u32;
-                loop {
-                    let cond = self.eval_expr_or_driver(condition_expr)?;
-                    if !cond.is_truthy() {
-                        break;
-                    }
-                    Box::pin(self.run_steps_inner(commands, warnings)).await?;
-                    iter += 1;
-                    if iter >= MAX_REPEAT_ITERATIONS {
-                        return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
-                            code: Some(FailureCode::DriverError),
-                            message: format!(
-                                "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — condition `{condition_expr}` never became falsy; it has to depend on something that changes between iterations (of the stores it can read, only `output` changes, and only `extractWithAI` writes it)"
-                            ),
-                            suggestions: vec![
-                                "Convert to `repeat: { times: N }` with a known bound".to_string(),
-                            ],
-                            ..Default::default()
-                        })));
-                    }
-                }
-            }
-            RepeatMode::WhileCondition(c) => {
-                let mut iter = 0u32;
-                loop {
-                    let (holds, checked) = self.evaluate_condition(c).await?;
+            // Asked before each pass, the count included — maestro
+            // checks the condition first and so does this.
+            let checked = match (while_, while_expr) {
+                (Some(c), _) => {
+                    let (holds, said) = self.evaluate_condition(c).await?;
                     if !holds {
                         break;
                     }
-                    Box::pin(self.run_steps_inner(commands, warnings)).await?;
-                    iter += 1;
-                    if iter >= MAX_REPEAT_ITERATIONS {
-                        return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
-                            code: Some(FailureCode::DriverError),
-                            message: format!(
-                                "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — the condition still held after the last pass ({checked}); the body has to change what it checks"
-                            ),
-                            suggestions: vec![
-                                "Convert to `repeat: { times: N }` with a known bound, or make the body change what the condition checks".to_string(),
-                            ],
-                            ..Default::default()
-                        })));
-                    }
+                    Some(said)
                 }
+                (None, Some(expr)) => {
+                    if !self.eval_expr_or_driver(expr)?.is_truthy() {
+                        break;
+                    }
+                    Some(format!("`{expr}`"))
+                }
+                (None, None) => None,
+            };
+            Box::pin(self.run_steps_inner(commands, warnings)).await?;
+            iter += 1;
+            // Only an unbounded loop can run away; a count is its own
+            // bound and a flow asking for more than this many passes
+            // has said so.
+            if times.is_none() && iter >= MAX_REPEAT_ITERATIONS {
+                let said = checked.unwrap_or_else(|| "(no condition)".into());
+                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!(
+                        "repeat.while: max iterations ({MAX_REPEAT_ITERATIONS}) exceeded — the condition still held after the last pass ({said}); the body has to change what it checks"
+                    ),
+                    suggestions: vec![
+                        "Add `times: N` to bound it, or make the body change what the condition checks".to_string(),
+                    ],
+                    ..Default::default()
+                })));
             }
         }
         Ok(())
@@ -3912,31 +3968,28 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
 // ----------------------------------------------------------------------
 
 /// Map the maestro yaml `launchApp.permissions.<name>` string to a
-/// typed [`SimctlPermission`]. Never guesses: an unknown permission
-/// name raises [`ParseError::InvalidValue`] listing the full supported
-/// set rather than silently no-op'ing.
-fn parse_simctl_permission(name: &str) -> Result<SimctlPermission, ParseError> {
+/// typed [`Permission`]. Never guesses: an unknown permission name
+/// raises [`ParseError::InvalidValue`] listing the full supported set
+/// rather than silently no-op'ing.
+fn parse_permission(name: &str) -> Result<Permission, ParseError> {
     // The spellings live on `Permission`, beside the enum they name.
     // They were written out a second time here until 10.2, and the two
     // lists had already drifted: `Permission` grew `storage` and
     // `post-notifications` and this one never heard of either, so a
     // flow could not ask for a permission the Android backend had
     // implemented.
-    let permission =
-        smix_sdk::device_control::Permission::from_name(name).map_err(|reason| {
-            ParseError::InvalidValue {
-                field: format!("launchApp.permissions.{}", name.trim()),
-                reason,
-            }
-        })?;
-    permission.to_simctl().ok_or_else(|| ParseError::InvalidValue {
-        field: format!("launchApp.permissions.{}", name.trim()),
-        reason: format!(
-            "'{}' has no iOS counterpart, and this yaml key is carried as an iOS \
-             permission all the way to the device — so it cannot be asked for here \
-             even on Android",
-            permission.name()
-        ),
+    // Nothing narrows the set afterwards. It used to: the name was
+    // resolved here and then put through `to_simctl`, which answers
+    // `None` for anything iOS has no word for, so `storage` — a
+    // permission the Android backend implements and tests — could not
+    // be asked for from a flow on either platform. What a backend does
+    // with a permission it has no use for is the backend's to say, and
+    // both of them already say it.
+    smix_sdk::device_control::Permission::from_name(name).map_err(|reason| {
+        ParseError::InvalidValue {
+            field: format!("launchApp.permissions.{}", name.trim()),
+            reason,
+        }
     })
 }
 

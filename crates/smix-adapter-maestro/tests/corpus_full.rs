@@ -230,13 +230,16 @@ impl AppLike for SilentMockApp {
     async fn set_location(&self, _: f64, _: f64) -> Result<(), ExpectationFailure> {
         Ok(())
     }
+    async fn clear_location(&self) -> Result<(), ExpectationFailure> {
+        Ok(())
+    }
     async fn travel(&self, _: &[(f64, f64)], _: Option<f64>) -> Result<(), ExpectationFailure> {
         Ok(())
     }
     async fn set_permissions(
         &self,
         _: &str,
-        _: &[(smix_sdk::SimctlPermission, smix_sdk::PermissionAction)],
+        _: &[(smix_sdk::device_control::Permission, smix_sdk::PermissionAction)],
     ) -> Result<(), ExpectationFailure> {
         Ok(())
     }

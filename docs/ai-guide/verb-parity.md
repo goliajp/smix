@@ -114,6 +114,7 @@ These are verbs — write them in a flow.
 |---|---|---|---|
 | `fixture` | ✅ | ✅ | JSON registry OR TS registry |
 | `webview_eval` / `webviewEval` / `webViewEval` | ✅ | ✅ | RN WebView / native WebView bridge |
+| `clearLocation` | ✅ | ⚠️ | The way back from `setLocation` / `travel`, which outlive the flow that ran them — maestro has no verb for it. iOS clears through `simctl location clear`, a registered iPhone through `devicectl device simulate location clear`. On Android it stops the route smix is walking and leaves the device where it stands: the emulator console has no inverse of `geo fix`, and an emulator has no real position to be given back |
 
 ### Coordinates and OCR are not verbs
 

@@ -852,15 +852,24 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         Step::LongPressOn { duration_ms, .. } => format!("longPressOn ({duration_ms}ms)"),
         Step::AssertTrue { .. } => "assertTrue".into(),
         Step::Repeat {
-            mode,
+            times,
+            while_,
+            while_expr,
             commands,
             opts,
         } => {
-            let how = match mode {
-                crate::RepeatMode::Times(n) => format!("× {n}"),
-                crate::RepeatMode::While { .. } => "while".to_string(),
-                crate::RepeatMode::WhileCondition(_) => "while condition".to_string(),
-            };
+            // Both halves when both are there: "× 3 while condition" is
+            // a different loop from either alone, and a summary that
+            // named one would describe a loop the flow did not write.
+            let how = [
+                times.map(|n| format!("× {n}")),
+                while_.as_ref().map(|_| "while condition".to_string()),
+                while_expr.as_ref().map(|_| "while".to_string()),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" ");
             format!("repeat {how} ({} cmds){}", commands.len(), block_label(opts))
         }
         Step::Retry {
@@ -873,6 +882,7 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             latitude,
             longitude,
         } => format!("setLocation ({latitude}, {longitude})"),
+        Step::ClearLocation => "clearLocation".into(),
         Step::Travel { points, .. } => format!("travel ({} waypoints)", points.len()),
         Step::SetPermissions { permissions, .. } => {
             format!("setPermissions ({} entries)", permissions.len())

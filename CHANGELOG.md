@@ -4,7 +4,74 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- **`clearLocation` — the way back from `setLocation` and `travel`.**
+  A simulated location outlives the flow that set it; on a registered
+  iPhone it outlives the cable. There was no verb that put it back, so a
+  device smix had moved stayed moved and smix could not undo it. smix's
+  own verb — maestro has none. On an Android emulator it stops a route
+  in progress and leaves the device where it stands: the console has no
+  inverse of a position fix and there is no real position to return to,
+  and the verb-parity table says so per platform.
+
+- **`repeat` takes `times` and `while` together.** maestro runs the body
+  while the condition holds AND the count is unspent
+  (`YamlRepeatCommand`, `Orchestra.kt`); smix accepted exactly one of
+  them, so "up to five times, while the spinner is up" could not be
+  written. Giving neither is now a parse error naming both keys — a loop
+  that says nothing about when it ends is not a loop anyone wrote.
+
+- **`runScript` takes maestro's mapping form, `when:` included.** A
+  script meant for one platform is skipped on the other instead of
+  failing there. smix still has no JS runtime, so one whose condition
+  holds fails saying exactly that; `when:` decides whether it is
+  reached. `env:` and `label` / `optional` parse and travel with the
+  step rather than being dropped at the parser.
+
+### Changed
+
+- **Breaking (Rust API): `LaunchAppOptions.permissions`,
+  `App::set_permission` and `App::set_permissions` take the
+  cross-platform `Permission`, not the iOS `SimctlPermission`.** The
+  whole path from the yaml key to the backend was typed as the iOS
+  enum, so `storage` — implemented and tested in the Android backend —
+  could not be named from a flow on either platform. `launchApp:
+  { permissions: { storage: allow } }` now reaches
+  `WRITE_EXTERNAL_STORAGE`. A name with no counterpart on the device in
+  front of you is a no-op there, as it always was for the others;
+  `Permission::from_simctl` is gone with its last caller.
+
+- **Breaking (Rust API): `Step::Repeat` carries `times` / `while_` /
+  `while_expr` and `Step::RunScript` carries `when` / `env` / `opts`;
+  `RepeatMode` is gone.** The mode enum encoded the either-or this
+  release removes.
+
+- **`smix tree` takes `--reader auto|probe|a11y`.** `auto` is the
+  default and is what a flow does. Naming one asks that one and fails if
+  it cannot answer, rather than quietly handing back the other — a tool
+  comparing the two readers that is silently given the same tree twice
+  reports perfect agreement.
+
 ### Fixed
+
+- **`smix tree`, `smix find` and every other CLI verb read the tree the
+  flow reads.** The probe was asked only when the caller named an app,
+  and no CLI verb does, so a flow read the app's semantics tree while
+  `smix tree` beside it read the accessibility projection — of the same
+  screen, at the same moment, with neither saying the other existed. Two
+  gates in this release had to bypass the CLI to see what the flow saw.
+  The runner now answers about the window holding the focus when nobody
+  named an app; a request that names one is unchanged, so flows behave
+  exactly as before.
+
+- **`launchApp: { clearState: true }` works on Xcode 27.** It cleared
+  the sandbox by starting `/bin/rm` inside the simulator, and the iOS 27
+  and 26.5 runtime roots carry `df` and `launchctl` and no `rm` — so it
+  exited 111 with `Invalid or missing Program` and took the whole
+  `launchApp` with it. The container is a directory on the host and
+  always was; the three sandbox directories are removed directly, with
+  no process started on the device.
 
 - **`smix sim launch`, `terminate` and `openurl` carry out on Android
   and on a registered iPhone what their backends had implemented all

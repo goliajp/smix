@@ -760,13 +760,29 @@ pub enum Step {
         expr: String,
     },
     /// Looped subflow. maestro yaml `repeat: { ... }`.
-    /// `RepeatMode::While { condition_expr }` evaluates the expression
-    /// truthy before each iteration; `RepeatMode::Times(N)` runs fixed
-    /// N iterations. `repeat.while: { <condition> }` maps to
-    /// [`RepeatMode::WhileCondition`].
+    ///
+    /// A count, a condition, or both — and with both, the loop runs
+    /// while the condition holds AND the count is not spent, which is
+    /// what maestro's `while (checkCondition() && counter < maxRuns)`
+    /// does. They were mutually exclusive here until 10.2, so "up to
+    /// five times, while the spinner is up" could not be written.
+    ///
+    /// Neither is refused at parse time: a loop that says nothing about
+    /// when to stop has not been written yet.
     Repeat {
-        /// Loop mode. Chosen at parse time, so the runtime has no branch.
-        mode: RepeatMode,
+        /// How many iterations at most. `None` means only the condition
+        /// decides.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        times: Option<u32>,
+        /// What must hold to run another iteration. `None` means only
+        /// the count decides. The string form (`while: "<expr>"`) is a
+        /// smix extension and lives in [`RepeatMode`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        while_: Option<Box<FlowCondition>>,
+        /// The smix-only expression form of `while`, when that is what
+        /// was written.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        while_expr: Option<String>,
         /// Body to run per iteration (recursively parsed).
         commands: Vec<Step>,
         /// `label` / `optional`.
@@ -790,6 +806,19 @@ pub enum Step {
     RunScript {
         /// Raw script source (inline literal or file path verbatim).
         source: String,
+        /// `when:` — maestro's `YamlRunScript` carries one, and smix
+        /// refused the whole mapping form until 10.2, so there was no
+        /// way to write it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        when: Option<Box<FlowCondition>>,
+        /// `env:` — parsed and carried. There is no JS runtime behind
+        /// this verb, so nothing reads these yet; dropping them at the
+        /// parser would be the silent swallow C4 closed everywhere else.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        env: Vec<(String, String)>,
+        /// `label` / `optional`.
+        #[serde(default, skip_serializing_if = "BlockOptions::is_default")]
+        opts: BlockOptions,
     },
     /// maestro `evalScript: <expr>`. Same graceful unsupported
     /// semantics as [`Step::RunScript`].
@@ -805,6 +834,9 @@ pub enum Step {
         /// Longitude in decimal degrees.
         longitude: f64,
     },
+    /// `clearLocation` — stop simulating a location. A smix verb, not a
+    /// maestro one: maestro can set a location and cannot put it back.
+    ClearLocation,
     /// maestro `travel: { points: [...], speed_mps?: <m/s> }`.
     /// Fire-and-return — downstream Step does not block on playback.
     Travel {
@@ -1053,26 +1085,6 @@ pub struct MaskRegion {
     pub width: f64,
     /// Region height in 0..1 fraction of capture height.
     pub height: f64,
-}
-
-/// `Step::Repeat` mode. The parser resolves the mode (yaml
-/// `repeat.times` xor `repeat.while`), so the runtime has no branch.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "mode", content = "value")]
-pub enum RepeatMode {
-    /// `repeat: { while: "<expr>", commands: [...] }` — evaluate expression
-    /// truthy each iteration; loop exits on falsy. Bounded by
-    /// `MAX_REPEAT_ITERATIONS` runtime safety valve.
-    While {
-        /// Expression source (raw; `${...}` wrapping handled).
-        condition_expr: String,
-    },
-    /// `repeat: { while: { <condition> }, commands: [...] }` mapping
-    /// form. Loop continues while the condition holds. Bounded by
-    /// `MAX_REPEAT_ITERATIONS` runtime safety valve.
-    WhileCondition(Box<FlowCondition>),
-    /// `repeat: { times: N, commands: [...] }` — fixed N iterations.
-    Times(u32),
 }
 
 /// The keys a condition mapping (`runFlow.when`, `repeat.while`) may
