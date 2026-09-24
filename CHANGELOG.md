@@ -75,6 +75,29 @@ All notable changes to the `smix` workspace are documented here. The format foll
   `long_press_at_norm_coord` return the `TapAtCoordResult` the runner
   answered with.
 
+### Added
+
+- **A `fallback` chain takes any selector, plus `point`.** `label`,
+  `role` with `name`, modifiers such as `below:`, and an element naming
+  two things at once are all valid chain entries now. The chain had a
+  parser of its own that read six forms and not `label` — and `label` is
+  how smix reaches an Android `contentDescription`, the only name an
+  icon-only button has there. So a flow could not say "this control,
+  under either name the two phones give it":
+
+  ```yaml
+  - tapOn:
+      fallback:
+        - text: "Pause"
+        - label: "Pause"
+  ```
+
+  A chain inside a chain is refused by name (it says nothing a flat
+  chain does not), and an unknown key in a chain entry lists the
+  selector keys that are read, from the same list every other selector
+  uses. Measured on both platforms: see "One control, two phones" in the
+  selectors guide.
+
 ## [11.0.0] — 2026-09-23
 
 Most flows need no change. Three things can make one behave differently:

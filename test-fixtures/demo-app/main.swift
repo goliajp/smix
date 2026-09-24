@@ -147,6 +147,8 @@ struct ContentView: View {
   // a dismissed one are both gone, so "the alert went away" says nothing;
   // this count is the app's own reading of whether the button was pressed.
   @State private var alertConfirmed = 0
+  // Presses the icon-only button received.
+  @State private var iconPauses = 0
 
   var body: some View {
     // NavigationStack, and the back button it provides, rather than a
@@ -190,8 +192,22 @@ struct ContentView: View {
               Text("hosted by the system")
             }
 
-          Text("confirmed \(alertConfirmed)")
-            .accessibilityIdentifier("fixture-alert-count")
+          // Same row as the count above rather than a row of its own: the
+          // list's row positions are the subject of a scroll check, and one
+          // more row moves where the screen's bottom edge falls.
+          HStack {
+            Text("confirmed \(alertConfirmed)")
+              .accessibilityIdentifier("fixture-alert-count")
+            Spacer()
+            // A control with no words and no identifier: its only name is
+            // the accessibility label, as an icon-only button's is. Counts
+            // the presses it received, which is what a check reads.
+            Text("pauses \(iconPauses)")
+              .accessibilityIdentifier("fixture-icon-count")
+            Button { iconPauses += 1 } label: { Image(systemName: "pause.fill") }
+              .buttonStyle(.borderless)
+              .accessibilityLabel("Pause")
+          }
 
           NavigationLink("Open detail") { DetailView() }
             .accessibilityIdentifier("fixture-detail-link")

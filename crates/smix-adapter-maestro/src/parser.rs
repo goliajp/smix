@@ -193,24 +193,32 @@ fn parse_role_name_yaml(
     Ok(Some(text_to_pattern(s)))
 }
 
-// Parse a single chain element of `fallback: [...]`. Reuses
-// the same map-shape dispatcher as parse_tap_on's selector arm — accepts
-// `{id}`, `{text}`, `{localized_text}`, `{ocrText}`, `{anchored}`,
-// `{point: "X%,Y%"}`. Returns the appropriate Selector variant
-// (point → Selector::Point; others → their corresponding variant).
+// Parse a single chain element of `fallback: [...]`: any selector, plus
+// `point`.
 //
-// Returns InvalidValue when shape is none of the above.
+// This used to be a parser of its own — a hand-kept subset of
+// `visible_to_selector` that read `id` / `text` / `localized_text` /
+// `ocrText` / `anchored` / `point` and nothing else, with a second
+// hand-kept list in its refusal. So `label` (how smix reaches an
+// Android contentDescription, the only name an icon button has there),
+// `role` and every modifier could not appear in a chain, and nothing said
+// why beyond "expected one of". A consumer's two-phone flow needed
+// exactly that: "this control, under either name the phones give it".
+// One parser now; the chain adds `point`, the one form that only makes
+// sense as a last resort.
 fn parse_fallback_element(v: &Value, field: &str) -> Result<Selector, ParseError> {
     let map = match v {
         Value::Mapping(m) => m,
+        // A bare string is `text` everywhere else, but with
+        // `SMIX_AUTO_OCR_FALLBACK=1` the main parser lifts it into a chain
+        // of its own, and a chain inside a chain is refused below.
         other => {
             return Err(ParseError::InvalidValue {
                 field: field.into(),
-                reason: format!("fallback chain element expected map, got {other:?}"),
+                reason: format!("fallback chain element expected a map, got {other:?}"),
             });
         }
     };
-    // point: "X%,Y%" / [nx, ny]
     if let Some(p) = map.get(Value::String("point".into())) {
         let (nx, ny) = match p {
             Value::String(s) => parse_point(s)?,
@@ -236,63 +244,27 @@ fn parse_fallback_element(v: &Value, field: &str) -> Result<Selector, ParseError
         };
         return Ok(Selector::Point { nx, ny });
     }
-    if let Some(id) = map.get(Value::String("id".into())).and_then(Value::as_str) {
-        return Ok(Selector::Id {
-            id: id.to_string(),
-            modifiers: Modifiers::default(),
+    if map.contains_key(Value::String("fallback".into())) {
+        return Err(ParseError::InvalidValue {
+            field: field.into(),
+            reason: "a chain inside a chain says nothing a flat chain does not; \
+                     list its elements here instead"
+                .into(),
         });
     }
-    if let Some(raw) = map.get(Value::String("text".into()))
-        && let Some(pattern) = text_pattern_from(raw, "text")
-    {
-        return Ok(Selector::Text {
-            text: pattern?,
-            modifiers: Modifiers::default(),
-        });
-    }
-    if let Some(loc_map) = map
-        .get(Value::String("localizedText".into()))
-        .or_else(|| map.get(Value::String("localized_text".into())))
-        .and_then(Value::as_mapping)
-    {
-        let table = parse_localized_table(loc_map, &format!("{field}.localized_text"))?;
-        return Ok(Selector::LocalizedText {
-            localized_text: table,
-            modifiers: Modifiers::default(),
-        });
-    }
-    if let Some(raw) = map.get(Value::String("ocrText".into())) {
-        let (text, locales) = parse_ocr_text(raw, &format!("{field}.ocrText"))?;
-        return Ok(Selector::OcrText {
-            ocr_text: text,
-            locales,
-            modifiers: Modifiers::default(),
-        });
-    }
-    // `anchorRelative` is accepted as an alias of `anchored`: the
-    // docs name the former, the parser originally read only the
-    // latter.
-    if let Some(raw) = map
-        .get(Value::String("anchored".into()))
-        .or_else(|| map.get(Value::String("anchorRelative".into())))
-    {
-        let (anchor, dx, dy) = parse_anchored(raw, &format!("{field}.anchored"))?;
-        return Ok(Selector::AnchorRelative {
-            anchor: Box::new(anchor),
-            dx,
-            dy,
-        });
-    }
-    Err(ParseError::InvalidValue {
-        field: field.into(),
-        reason: "fallback chain element expected one of: id / text / localized_text / ocrText / anchored (alias anchorRelative) / point".into(),
+    visible_to_selector(v).map_err(|e| match e {
+        ParseError::InvalidValue { field: f, reason } => ParseError::InvalidValue {
+            field: format!("{field}.{f}"),
+            reason,
+        },
+        other => other,
     })
 }
 
 // Parse `fallback: [...]` yaml value into Vec<Selector>.
-// Each element is a single-selector map (id / text / localized_text /
-// ocrText / anchored / point). Empty list → InvalidValue (no chain to
-// try). Last element should be a stable fallback (typically point).
+// Each element is any selector map, or `point`. Empty list →
+// InvalidValue (no chain to try). Last element should be a stable
+// fallback (typically point).
 fn parse_fallback_chain(v: &Value, field: &str) -> Result<Vec<Selector>, ParseError> {
     let seq = match v {
         Value::Sequence(s) => s,
