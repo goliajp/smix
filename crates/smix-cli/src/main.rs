@@ -2,7 +2,7 @@
 //!
 //! `smix sim` is the sole device-control surface — raw `simctl` is not
 //! expected in workflows. Every device argument accepts an explicit
-//! UDID or an alias recorded in `.smix/sims.json` (resolved
+//! UDID or an alias recorded in this machine's registry (resolved
 //! deterministically by `smix_simctl::registry`; never against the live
 //! simulator set). Unwrapped long-tail subcommands go through
 //! `smix sim exec`, which keeps simctl's original argument shape and
@@ -46,7 +46,8 @@ What smix is:
   · A single tool that owns the full sim/emulator lifecycle (boot →
     capsule → flow → teardown).
   · A pinned-device model: every command takes an explicit DEVICE
-    (registry alias from `.smix/sims.json` or raw UDID). There is no
+    (an alias from this machine's registry — `smix sim list` — or a raw
+    UDID). There is no
     `--device booted` fallback; ambiguity is a bug, not a feature.
   · A three-layer architecture: sense (tree / find / OCR / popups) and
     act (tap / fill / swipe / press-key) are core flat capabilities;
@@ -190,7 +191,7 @@ enum Cmd {
         action: RunnerAction,
     },
     /// Tear down every smix-owned residual process and recycle registered
-    /// sims (per-UDID; never touches sims outside .smix/sims.json).
+    /// sims (per-UDID; never touches a sim the registry does not hold).
     Down,
     /// Inspect and settle the device resource ledger: who holds a device,
     /// what they left open, and closing it gracefully when they are gone.
@@ -1347,9 +1348,9 @@ enum RunnerAction {
         #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
         runner_project: Option<PathBuf>,
         /// Bind the runner to an explicit port. Priority (high → low):
-        /// this flag → `.smix/sims.json` `runnerPort` field →
-        /// `SMIX_RUNNER_PORT` env → 22087 default. Two sims with
-        /// distinct `runnerPort` in sims.json can run their own runner
+        /// this flag → the device's registered `runnerPort`
+        /// (`smix sim register --runner-port`) → `SMIX_RUNNER_PORT` env →
+        /// 22087 default. Two sims registered with distinct ports can run their own runner
         /// concurrently without collision.
         #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
         runner_port: Option<u16>,
@@ -1589,10 +1590,25 @@ enum SimAction {
         #[arg(long)]
         registered: bool,
     },
-    /// Print the UDID a device ref resolves to.
+    /// Print the identifier a device ref resolves to, and which book said so.
+    ///
+    /// The identifier goes to stdout, alone, so `$(smix sim resolve x)`
+    /// keeps working. Which registry answered goes to stderr: this
+    /// machine's, a checkout's legacy `.smix/sims.json`, or the one
+    /// `SMIX_SIMS_JSON` names. When this machine's registry and a
+    /// checkout's book give the alias to two different devices, nothing
+    /// is printed to stdout and the command fails naming both.
+    ///
+    /// A harness driving smix from outside should read this — with
+    /// `--json` — rather than any registry file: `.smix/sims.json` is a
+    /// legacy book smix reads and never writes.
     Resolve {
         /// The alias to look up.
         device: String,
+        /// One JSON object: `ref`, `id`, `alias`, `source` (`kind` and
+        /// `path`), `deviceKind`, and for an emulator its `avd`.
+        #[arg(long)]
+        json: bool,
     },
     /// Record a device under an alias, creating the registry when
     /// absent. This is the bootstrap: alias-form device refs fail on a
@@ -1896,7 +1912,8 @@ enum SimAction {
     /// `--reboot` to have smix shut the sim down and boot it back up
     /// so the next app launch picks up the new locale cleanly.
     ///
-    /// Note: `.smix/sims.json` `locale:` field is applied at *next
+    /// Note: a locale registered with the device (`smix sim register
+    /// --locale`) is applied at *next
     /// sim boot* (by `smix runner up` / `smix sim boot`); this command
     /// covers the "sim is already booted, want to change locale now"
     /// gap.
@@ -1970,17 +1987,6 @@ fn parse_appearance(s: &str) -> Result<Appearance, String> {
     }
 }
 
-/// Resolve a device ref to a UDID.
-///
-/// An alias needs a readable `.smix/sims.json` (env `SMIX_SIMS_JSON`
-/// overrides upward discovery from cwd), so it is registered by
-/// construction. A raw UDID used to short-circuit straight through, and
-/// that was the hole: an identifier nobody registered went past every
-/// gate and reached an executor, where it was stopped only if that
-/// executor happened not to recognise it. `simctl` does not recognise a
-/// phone, so for a while nothing bad came of it — but `devicectl` does,
-/// and it can uninstall. So a raw UDID now has to be one of ours: either
-/// registered here, or a simulator the platform itself lists.
 /// Whether a device reference is asking "where is my device" rather
 /// than naming a slot outright.
 ///
@@ -2120,6 +2126,18 @@ fn emulator_address_refusal(
     })
 }
 
+/// Resolve a device ref to the identifier its platform addresses it by.
+///
+/// An alias is answered by this machine's registry, or by a checkout's
+/// legacy book when only that holds it; when the two give the alias to
+/// different devices it is refused, naming both (§9 #9). A raw UDID used
+/// to short-circuit straight through, and that was the hole: an
+/// identifier nobody registered went past every gate and reached an
+/// executor, where it was stopped only if that executor happened not to
+/// recognise it. `simctl` does not recognise a phone, so for a while
+/// nothing bad came of it — but `devicectl` does, and it can uninstall.
+/// So a raw UDID now has to be one of ours: either registered, or a
+/// simulator the platform itself lists.
 fn resolve_device(device_ref: &str) -> Result<String, CliError> {
     if registry::is_udid(device_ref) {
         let udid = device_ref.to_ascii_uppercase();
@@ -2151,7 +2169,7 @@ fn resolve_device(device_ref: &str) -> Result<String, CliError> {
         return Ok(device_ref.to_string());
     }
     let view = load_registry();
-    let resolved = view.registry.resolve(device_ref)?;
+    let resolved = view.resolve_ref(device_ref)?.id;
     note_if_unmigrated(&view, device_ref);
     if alias_needs_identity_check(device_ref)
         && let Some(sim) = view.registry.lookup(device_ref)
@@ -2174,6 +2192,14 @@ fn resolve_device(device_ref: &str) -> Result<String, CliError> {
 /// Case is preserved rather than upper-cased the way UDIDs are: `adb`
 /// serials are matched verbatim, and `EMULATOR-5554` is not a device.
 fn resolve_android_serial(device_ref: &str) -> Result<String, CliError> {
+    // The same stop `resolve_device` makes: a checkout's book that gives
+    // this alias to another device halts the decision, it does not make it.
+    if alias_needs_identity_check(device_ref)
+        && let Err(e @ smix_simctl::registry::RegistryError::Diverged { .. }) =
+            load_registry().resolve_ref(device_ref)
+    {
+        return Err(e.into());
+    }
     let registered = lookup_registered(device_ref);
     let known = match &registered {
         Some(s) => smix_lease::Known::Registered(smix_lease::DeviceClass {
@@ -2281,12 +2307,6 @@ fn adb_knows(serial: &str) -> bool {
         })
 }
 
-/// Resolve the path to `.smix/sims.json` (env override or upward
-/// discovery from cwd). Extracted from [`resolve_device`] so the caller
-/// can also load a [`SimRegistry`] to read sim spec fields like `locale`.
-/// Returns `Ok(None)` only when an explicit UDID was given upstream and
-/// the registry is genuinely absent — the caller passes the UDID through
-/// without spec lookup.
 /// The device a `sim` verb was pointed at, if it names one.
 ///
 /// Exhaustive for the same reason as [`sim_verb_supports`]: a new verb
@@ -2296,7 +2316,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         SimAction::List { .. } | SimAction::Migrate { .. } => None,
         SimAction::Unregister { .. } => None,
         SimAction::Register { udid, .. } => Some(udid),
-        SimAction::Resolve { device }
+        SimAction::Resolve { device, .. }
         | SimAction::Boot { device }
         | SimAction::Shutdown { device }
         | SimAction::Erase { device }
@@ -2608,6 +2628,61 @@ fn note_if_unmigrated(view: &smix_simctl::registry::MergedRegistry, device_ref: 
     );
 }
 
+/// The one line `smix sim resolve` writes to stderr: which book answered.
+fn resolution_line(
+    device_ref: &str,
+    sim: Option<&smix_simctl::registry::RegisteredSim>,
+    source: &smix_simctl::registry::Source,
+) -> String {
+    use smix_simctl::registry::Source;
+    let book = match source {
+        Source::Machine(p) => format!("this machine's registry ({})", p.display()),
+        Source::Checkout(p) => format!(
+            "{} — a checkout's legacy book, read and never written; `smix sim migrate` \
+             records it on this machine",
+            p.display()
+        ),
+        Source::Named(p) => format!("the registry SMIX_SIMS_JSON names ({})", p.display()),
+        Source::Literal => {
+            return format!("{device_ref} is an identifier itself; no registry was consulted");
+        }
+    };
+    match sim.and_then(|s| s.avd_name()) {
+        Some(avd) => format!("resolved `{device_ref}` (AVD `{avd}`) from {book}"),
+        None => format!("resolved `{device_ref}` from {book}"),
+    }
+}
+
+/// `smix sim resolve --json`: the shape a harness reads instead of a file.
+fn resolution_json(
+    device_ref: &str,
+    id: &str,
+    resolved: Option<&smix_simctl::registry::Resolved>,
+    sim: Option<&smix_simctl::registry::RegisteredSim>,
+    source: &smix_simctl::registry::Source,
+) -> serde_json::Value {
+    use smix_simctl::registry::Source;
+    let (kind, path) = match source {
+        Source::Machine(p) => ("machine", Some(p)),
+        Source::Checkout(p) => ("checkout", Some(p)),
+        Source::Named(p) => ("named", Some(p)),
+        Source::Literal => ("literal", None),
+    };
+    let mut v = serde_json::json!({
+        "ref": device_ref,
+        "id": id,
+        "alias": resolved.map_or(device_ref, |r| r.alias.as_str()),
+        "source": { "kind": kind, "path": path.map(|p| p.display().to_string()) },
+        "deviceKind": sim.map(|s| {
+            serde_json::to_value(s.kind).expect("a unit enum with derived Serialize always serialises")
+        }),
+    });
+    if let Some(avd) = sim.and_then(|s| s.avd_name()) {
+        v["avd"] = serde_json::Value::String(avd.to_string());
+    }
+    v
+}
+
 /// Best-effort `RegisteredSim` lookup. Returns `None` (not an error)
 /// when the device was given as a raw UDID with no registry entry for
 /// it — `smix sim boot <unregistered-udid>` is legitimate.
@@ -2714,8 +2789,23 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         .map_err(|e| CliError::Other(e.to_string()))?;
                     println!("forgot `{alias}` -> {} in {}", sim.udid, path.display());
                 }
-                SimAction::Resolve { device } => {
-                    println!("{}", resolve_device(&device)?);
+                SimAction::Resolve { device, json } => {
+                    let id = resolve_device(&device)?;
+                    let view = load_registry();
+                    let resolved = view.resolve_ref(&device).ok();
+                    let sim = view.registry.lookup(&device);
+                    let source = resolved
+                        .as_ref()
+                        .map_or(smix_simctl::registry::Source::Literal, |r| r.source.clone());
+                    if json {
+                        println!(
+                            "{}",
+                            resolution_json(&device, &id, resolved.as_ref(), sim, &source)
+                        );
+                    } else {
+                        eprintln!("{}", resolution_line(&device, sim, &source));
+                        println!("{id}");
+                    }
                 }
                 SimAction::Register {
                     alias,
@@ -3593,7 +3683,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     }
                     // Port priority chain:
                     //   1. `--runner-port` flag / SMIX_RUNNER_PORT env
-                    //   2. `.smix/sims.json` `runnerPort` field for this alias
+                    //   2. the registered `runnerPort` for this alias
                     //   3. 22087 default (CLI convention)
                     let sims_port = lookup_registered(&device).and_then(|s| s.runner_port);
                     let port = port_flag.or(sims_port).unwrap_or(22087);
@@ -7365,7 +7455,13 @@ mod tests {
                     name: None,
                 },
             ),
-            ("resolve", SimAction::Resolve { device: d() }),
+            (
+                "resolve",
+                SimAction::Resolve {
+                    device: d(),
+                    json: false,
+                },
+            ),
             (
                 "migrate",
                 SimAction::Migrate {
@@ -8232,5 +8328,63 @@ mod tests {
             !consulted.get(),
             "registry was read despite an explicit port"
         );
+    }
+}
+
+#[cfg(test)]
+mod resolution_shape_tests {
+    use super::*;
+    use smix_simctl::registry::{DeviceKind, RegisteredSim, Resolved, Source};
+
+    fn emulator() -> RegisteredSim {
+        RegisteredSim {
+            device_name: "sim-smix-android-01".into(),
+            kind: DeviceKind::Emulator,
+            destructive_opt_in: false,
+            udid: "emulator-5554".into(),
+            runtime: String::new(),
+            device_type: String::new(),
+            avd_name: Some("sim-smix-android-01".into()),
+            locale: None,
+            runner_port: None,
+        }
+    }
+
+    /// The keys a harness reads instead of a registry file, with the book
+    /// that answered — the thing a consumer lost an hour for want of.
+    #[test]
+    fn resolve_json_names_the_book_and_the_device() {
+        let path = std::path::PathBuf::from("machine-dir/devices");
+        let r = Resolved {
+            id: "emulator-5556".into(),
+            alias: "phone".into(),
+            source: Source::Machine(path.clone()),
+        };
+        let sim = emulator();
+        let v = resolution_json("phone", "emulator-5556", Some(&r), Some(&sim), &r.source);
+        assert_eq!(v["ref"], "phone");
+        assert_eq!(v["id"], "emulator-5556");
+        assert_eq!(v["alias"], "phone");
+        assert_eq!(v["source"]["kind"], "machine");
+        assert_eq!(v["source"]["path"], "machine-dir/devices");
+        assert_eq!(v["deviceKind"], "emulator");
+        assert_eq!(v["avd"], "sim-smix-android-01");
+    }
+
+    #[test]
+    fn the_stderr_line_says_which_book_answered() {
+        let sim = emulator();
+        let line = resolution_line(
+            "phone",
+            Some(&sim),
+            &Source::Checkout("a-checkout/.smix/sims.json".into()),
+        );
+        assert!(
+            line.contains("a-checkout/.smix/sims.json") && line.contains("legacy book"),
+            "{line}"
+        );
+        assert!(line.contains("AVD `sim-smix-android-01`"), "{line}");
+        let literal = resolution_line("emulator-5554", None, &Source::Literal);
+        assert!(literal.contains("no registry was consulted"), "{literal}");
     }
 }

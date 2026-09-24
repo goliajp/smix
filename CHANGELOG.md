@@ -39,6 +39,12 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **`smix sim resolve` says which book answered, and `--json` gives a harness
+  something to read instead of a file.** The identifier alone still goes to
+  stdout; stderr names this machine's registry, a checkout's legacy book, or
+  the one `SMIX_SIMS_JSON` names. `--json` prints `ref`, `id`, `alias`,
+  `source` (`kind` and `path`), `deviceKind`, and an emulator's `avd`.
+
 - **`smix runner up --platform android` takes `--bundle` and `--no-launch`,
   with the meaning they have on iOS: it finishes with that app in front.**
   Restarted on a fresh bring-up, only brought forward with `--no-launch`
@@ -129,6 +135,24 @@ All notable changes to the `smix` workspace are documented here. The format foll
   sentence: its tree is the app you named, so `windows` holds that app.
 
 ### Fixed
+
+- **An alias that a checkout's `.smix/sims.json` gave to a different device
+  than this machine's registry could drive the checkout's device.** When the
+  two books disagreed, the merge kept whichever UDID sorted first, so the
+  legacy book won half the time — and the note beside the answer said the
+  alias was "not on this machine", which was false. The machine's registry is
+  the authority now: a disagreement is refused, naming both files and both
+  identifiers, and nothing is driven. `smix sim resolve`, `smix runner up`,
+  `smix run --device` and every `smix sim` verb go through the same check.
+
+- **Reading a checkout's legacy book wrote into the checkout.** Opening it
+  created a store under `.smix/` and imported the JSON into it on every read.
+  It is read as a file now, and nothing is written there.
+
+- **`--help` told people the registry was `.smix/sims.json`.** The top-level
+  help, `smix down`, `smix runner up --runner-port` and `smix sim locale` all
+  said so; a harness written from them read a file smix no longer writes.
+  They name this machine's registry now.
 
 - **`smix runner up` misdiagnosed a pulled-down shade as a runner that had
   fallen behind.** With the shade over the screen, it said the runner's
