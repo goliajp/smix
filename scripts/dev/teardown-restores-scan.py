@@ -60,6 +60,7 @@ SHUTS_DOWN_SCRIPTS = {
     "v10.2-c3-devicectl-location-e2e.sh",
     "v11.1-c1-a-press-that-lands-e2e.sh",
     "v11.1-c3-one-control-two-names-e2e.sh",
+    "v11.1-c5-runner-brings-the-app-back-e2e.sh",
     "v11.1-c2-a-failure-says-whose-screen-e2e.sh",
     "v10.2-c5-scroll-reaches-e2e.sh",
     "v10.2-c6-back-answers-the-outcome-e2e.sh",

@@ -14,6 +14,8 @@
 // point of the test. No non-test code here uses unsafe.
 #![deny(unsafe_code)]
 
+mod android_bring_back;
+pub mod android_foreground;
 pub mod reconcile;
 pub mod runner;
 pub mod runner_android;

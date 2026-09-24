@@ -1325,12 +1325,19 @@ enum RunnerAction {
         /// forwards the port, and `am instrument`s the Kotlin runner.
         #[arg(long, value_enum, default_value_t = RunPlatform::Ios)]
         platform: RunPlatform,
-        /// Bundle id the runner binds its XCUIApplication to. iOS only,
-        /// and required there: `runner up` refuses to start without one
-        /// (the help used to claim a com.apple.Preferences default that
-        /// the implementation rejects). On Android it is refused rather
-        /// than ignored — that runner takes its target from the
-        /// App-Bundle-Id header per request, not at startup.
+        /// The app under test: `runner up` finishes with it in front. On
+        /// a fresh bring-up it is relaunched, or only brought forward with
+        /// `--no-launch` — the same on both platforms. On Android it is
+        /// also brought forward when the runner was already up and the
+        /// app was not in front.
+        ///
+        /// Required on iOS, where the runner binds its XCUIApplication to
+        /// it. Optional on Android, whose runner takes its target from the
+        /// App-Bundle-Id header per request — without it, `runner up`
+        /// leaves whatever is in front where it is, and never brings an
+        /// app nobody named forward. With it, an app killed by `adb
+        /// install` is brought back rather than leaving the first step of
+        /// the next flow to find the launcher.
         #[arg(long)]
         bundle: Option<String>,
         /// Explicit path to `SmixRunner.xcodeproj`. Wins over
@@ -3565,22 +3572,23 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         .or(device_flag)
                         .expect("clap requires one of the two forms");
                     if platform == RunPlatform::Android {
-                        reject_ios_only_up_flags(
-                            bundle.is_some(),
-                            runner_project.is_some(),
-                            supervise,
-                        )
-                        .map_err(CliError::Other)?;
+                        reject_ios_only_up_flags(runner_project.is_some(), supervise)
+                            .map_err(CliError::Other)?;
                         let port =
                             port_flag.unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT);
                         // The adb serial is the device id, but it still
                         // has to be a device smix was invited to touch:
                         // this installs an APK.
                         let serial = resolve_android_serial(&device)?;
-                        smix_capsule::runner_android::up_with_takeover(
-                            &root, &serial, port, 180, force, take_over,
-                        )
-                        .map_err(CliError::Other)?;
+                        let opts = smix_capsule::runner_android::UpOptions {
+                            timeout_secs: 180,
+                            force,
+                            take_over,
+                            app: bundle,
+                            relaunch: !no_launch,
+                        };
+                        smix_capsule::runner_android::up_with_options(&root, &serial, port, &opts)
+                            .map_err(CliError::Other)?;
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
                     // Port priority chain:
@@ -6634,13 +6642,8 @@ fn runner_dial_target(
 /// accepted and dropped — but one branch deep, where a scan for "clap
 /// fields nobody reads" cannot see it: every one of these IS read, on
 /// the other platform.
-fn reject_ios_only_up_flags(
-    bundle: bool,
-    runner_project: bool,
-    supervise: bool,
-) -> Result<(), String> {
+fn reject_ios_only_up_flags(runner_project: bool, supervise: bool) -> Result<(), String> {
     let offenders: Vec<&str> = [
-        (bundle, "--bundle"),
         (runner_project, "--runner-project"),
         (supervise, "--supervise"),
     ]
@@ -6654,9 +6657,9 @@ fn reject_ios_only_up_flags(
 
     Err(format!(
         "runner up --platform android does not implement {}: {} iOS-only. \
-         Drop the flag — the Android runner takes its target app from the \
-         App-Bundle-Id header per request, builds no Xcode project, and has \
-         no supervise sidecar. Only --runner-port applies on this platform.",
+         Drop the flag — the Android runner builds no Xcode project and has no \
+         supervise sidecar. What applies on this platform: --runner-port, \
+         --bundle (the app to leave in front), --no-launch, --force, --take-over.",
         offenders.join(" / "),
         if offenders.len() == 1 {
             "it is"
@@ -8094,30 +8097,58 @@ mod tests {
     }
 
     #[test]
-    fn android_runner_up_takes_only_the_port_flag() {
-        assert!(reject_ios_only_up_flags(false, false, false).is_ok());
+    fn android_runner_up_refuses_what_it_cannot_do() {
+        assert!(reject_ios_only_up_flags(false, false).is_ok());
 
-        for (bundle, project, supervise, expected) in [
-            (true, false, false, "--bundle"),
-            (false, true, false, "--runner-project"),
-            (false, false, true, "--supervise"),
+        for (project, supervise, expected) in [
+            (true, false, "--runner-project"),
+            (false, true, "--supervise"),
         ] {
-            let err = reject_ios_only_up_flags(bundle, project, supervise)
+            let err = reject_ios_only_up_flags(project, supervise)
                 .expect_err("an iOS-only flag must be refused, not dropped");
             assert!(err.contains(expected), "{expected} unnamed in: {err}");
             assert!(
-                err.contains("--runner-port"),
-                "the refusal must say what DOES work: {err}"
+                err.contains("--bundle"),
+                "the refusal must say what DOES work, and --bundle does now: {err}"
             );
         }
     }
 
+    /// `--bundle` means the same on both platforms: the app `runner up`
+    /// leaves in front. On Android it used to be refused as iOS-only, so
+    /// a caller had nothing to say "and bring this app back" with.
+    #[test]
+    fn android_runner_up_takes_the_app_under_test() {
+        let cli = Cli::try_parse_from([
+            "smix",
+            "runner",
+            "up",
+            "emulator-5554",
+            "--platform",
+            "android",
+            "--bundle",
+            "dev.smix.fixture",
+            "--no-launch",
+        ])
+        .expect("--bundle and --no-launch parse for Android runner up");
+        let Cmd::Runner {
+            action: RunnerAction::Up {
+                bundle, no_launch, ..
+            },
+        } = cli.cmd
+        else {
+            panic!("parsed as something other than runner up");
+        };
+        assert_eq!(bundle.as_deref(), Some("dev.smix.fixture"));
+        assert!(no_launch);
+    }
+
     #[test]
     fn every_dropped_flag_is_named_at_once() {
-        // One flag per run would make a user re-run three times to
-        // discover three problems.
-        let err = reject_ios_only_up_flags(true, true, true).expect_err("all three are iOS-only");
-        for flag in ["--bundle", "--runner-project", "--supervise"] {
+        // One flag per run would make a user re-run twice to discover two
+        // problems.
+        let err = reject_ios_only_up_flags(true, true).expect_err("both are iOS-only");
+        for flag in ["--runner-project", "--supervise"] {
             assert!(err.contains(flag), "{flag} unnamed in: {err}");
         }
         assert!(err.contains("they are"), "plural form expected in: {err}");

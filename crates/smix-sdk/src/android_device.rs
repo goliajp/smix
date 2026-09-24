@@ -242,49 +242,10 @@ pub fn animation_settings_verified(read_back: &[(&str, &str)]) -> Result<(), Vec
     if bad.is_empty() { Ok(()) } else { Err(bad) }
 }
 
-/// Pull the activity out of `cmd package resolve-activity --brief`.
-///
-/// Two lines on a hit — a `priority=… isDefault=…` header, then the
-/// component as `<pkg>/<activity>` — and the single line
-/// `No activity found` on a miss. Captured from an API 33 emulator on
-/// 2026-07-22; the fixtures under `tests/fixtures/` are that output
-/// verbatim, so this stays checkable without a device.
-///
-/// `None` means "the device did not name one", which the caller reads
-/// as the old `.MainActivity` convention: a shell whose output format
-/// this does not recognise leaves every caller exactly where it was
-/// before the query existed, rather than launching something wrong.
-///
-/// Separate from the method that runs the shell, because the shell is
-/// the part needing a device and this is the part that can be wrong.
-/// The activity comes back relative (`.Settings`) because
-/// `AdbClient::start_activity` prefixes the package itself; returning
-/// the fully-qualified form would produce `<pkg>/<pkg>.Settings`.
-#[must_use]
-pub fn parse_resolved_activity(text: &str, bundle_id: &str) -> Option<String> {
-    let prefix = format!("{bundle_id}/");
-    // Forward, not reversed. The output's first line is a
-    // `priority=… isDefault=…` header and the second is the component,
-    // so a reversed scan looks like it is skipping the header — but it
-    // is the prefix match that skips it, and reversing was a guess
-    // about output shapes never observed. Deleting `.rev()` changed no
-    // test, which is what said so.
-    text.lines()
-        .map(str::trim)
-        .find(|l| l.starts_with(&prefix))
-        .and_then(|l| l.strip_prefix(bundle_id))
-        .map(|rest| rest.trim_start_matches('/').to_string())
-        .map(|a| {
-            if let Some(tail) = a.strip_prefix(&format!("{bundle_id}.")) {
-                format!(".{tail}")
-            } else if a.starts_with('.') {
-                a
-            } else {
-                format!(".{a}")
-            }
-        })
-        .filter(|a| a.len() > 1)
-}
+// The parser lives in smix-adb, beside the command it reads: the runner
+// bring-up in smix-capsule launches the app under test too, and it sits
+// below this crate. Re-exported so the path callers already use stays.
+pub use smix_adb::parse_resolved_activity;
 
 fn android_kind(serial: &str) -> smix_simctl::registry::DeviceKind {
     use smix_simctl::registry::DeviceKind;

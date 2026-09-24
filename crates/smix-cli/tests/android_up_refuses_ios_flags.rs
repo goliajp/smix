@@ -61,3 +61,20 @@ fn the_branch_refuses_ios_only_flags_before_touching_adb() {
          refusing after the install has already happened protects nothing"
     );
 }
+
+/// The app named with `--bundle` reaches the bring-up. Refusing it is
+/// gone; dropping it on the floor would be the same defect in a quieter
+/// form — accepted, and then nothing brought forward.
+#[test]
+fn the_branch_hands_the_named_app_to_the_bring_up() {
+    let branch = android_up_branch();
+    assert!(
+        branch.contains("app: bundle"),
+        "the Android branch accepts --bundle and does not pass it to runner_android — \
+         a flag accepted and then dropped"
+    );
+    assert!(
+        branch.contains("relaunch: !no_launch"),
+        "--no-launch has to reach the bring-up as well"
+    );
+}
