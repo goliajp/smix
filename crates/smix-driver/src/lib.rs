@@ -1909,6 +1909,10 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
                      still up. Retry the step; if it repeats, the runner is the thing \
                      to look at, not the screen."
                     .to_string(),
+                "no_such_button" => "this device has no such button — the `saw` above \
+                     says why and what to do instead. It is refused rather than skipped so \
+                     a flow that needs the press cannot pass without it."
+                    .to_string(),
                 other => format!(
                     "the runner refused with `{other}` — the `saw` above is what it \
                      observed"

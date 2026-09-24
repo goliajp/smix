@@ -1680,11 +1680,12 @@ async fn mock_run_clear_keychain_after_launch() {
     }
 }
 
-// Full PressKey coverage for the maestro yaml key strings. `home`
-// really goes through swift XCUIDevice.shared.press(.home); Apple
-// documents lock / volumeUp / volumeDown as unavailable on the iOS
-// simulator, so the adapter runtime reports a graceful Skipped +
-// warning up front rather than hitting the unavailable swift API.
+// Full PressKey coverage for the maestro yaml key strings. Every key
+// reaches the driver, the hardware buttons included: whether a button
+// exists is the device's to answer. The runtime used to answer it for
+// every device with the iOS simulator's reason, so an Android runner
+// that maps lock and both volume keys was never asked, and a flow on a
+// simulator passed with a step that did nothing.
 
 #[tokio::test]
 async fn mock_run_press_key_home() {
@@ -1698,57 +1699,28 @@ async fn mock_run_press_key_home() {
 }
 
 #[tokio::test]
-async fn mock_run_press_key_lock_graceful_skip() {
-    let flow = parse_inline("appId: com.t.p\n---\n- pressKey: lock\n");
-    let app = MockApp::new();
-    let mut adapter = Adapter::new(&app, fixtures_dir());
-    let report = adapter.run(&flow).await.expect("pressKey lock graceful");
-    match &report.steps[0] {
-        RunStepReport::Skipped { reason } => {
-            assert!(reason.contains("iOS Simulator"), "reason = {reason:?}");
-            assert!(reason.contains("Lock") || reason.contains("lock"));
-        }
-        other => panic!("expected Skipped, got {other:?}"),
+async fn hardware_buttons_reach_the_driver_rather_than_being_skipped() {
+    for (spelling, key) in [
+        ("lock", KeyName::Lock),
+        ("volume up", KeyName::VolumeUp),
+        ("volume down", KeyName::VolumeDown),
+    ] {
+        let flow = parse_inline(&format!("appId: com.t.p\n---\n- pressKey: {spelling}\n"));
+        let app = MockApp::new();
+        let mut adapter = Adapter::new(&app, fixtures_dir());
+        let report = adapter.run(&flow).await.expect(spelling);
+        assert!(
+            matches!(report.steps[0], RunStepReport::Ok),
+            "{spelling}: {:?}",
+            report.steps[0]
+        );
+        assert_eq!(app.calls(), vec![MockCall::PressKey(key)], "{spelling}");
+        assert!(
+            report.warnings.is_empty(),
+            "{spelling}: {:?}",
+            report.warnings
+        );
     }
-    assert!(app.calls().is_empty(), "should NOT reach swift handler");
-}
-
-#[tokio::test]
-async fn mock_run_press_key_volume_up_graceful_skip() {
-    let flow = parse_inline("appId: com.t.p\n---\n- pressKey: volume up\n");
-    let app = MockApp::new();
-    let mut adapter = Adapter::new(&app, fixtures_dir());
-    let report = adapter
-        .run(&flow)
-        .await
-        .expect("pressKey volume up graceful");
-    match &report.steps[0] {
-        RunStepReport::Skipped { reason } => {
-            assert!(reason.contains("iOS Simulator"));
-            assert!(reason.contains("VolumeUp") || reason.contains("volumeUp"));
-        }
-        other => panic!("expected Skipped, got {other:?}"),
-    }
-    assert!(app.calls().is_empty());
-}
-
-#[tokio::test]
-async fn mock_run_press_key_volume_down_graceful_skip() {
-    let flow = parse_inline("appId: com.t.p\n---\n- pressKey: volume down\n");
-    let app = MockApp::new();
-    let mut adapter = Adapter::new(&app, fixtures_dir());
-    let report = adapter
-        .run(&flow)
-        .await
-        .expect("pressKey volume down graceful");
-    match &report.steps[0] {
-        RunStepReport::Skipped { reason } => {
-            assert!(reason.contains("iOS Simulator"));
-            assert!(reason.contains("VolumeDown") || reason.contains("volumeDown"));
-        }
-        other => panic!("expected Skipped, got {other:?}"),
-    }
-    assert!(app.calls().is_empty());
 }
 
 // ExtendedWaitUntil notVisible branch (SDK App::wait_for_not_visible

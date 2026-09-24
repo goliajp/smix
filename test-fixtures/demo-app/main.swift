@@ -258,6 +258,82 @@ final class UIKitAlertStage: ObservableObject {
   }
 }
 
+/// C5's iOS subject, constructed rather than hoped for: a row cut by the
+/// screen's bottom edge with its middle below it — the state where the
+/// old stop rule returned and the tap that followed missed.
+///
+/// The leg used to read the main list, whose rows are system-sized cells
+/// in a `List`. A crossing row existed there only by the geometry of the
+/// day, and the leg had to settle for "crosses at all" (open-items P2).
+/// This is the Android fixture's `ScrollActivity` in SwiftUI: fixed-pitch
+/// rows under a spacer sized, once, so a quarter of a row shows at the
+/// bottom edge on any screen height. Same ids, same labels, same shape of
+/// claim on both platforms.
+///
+/// The result sits above the scroller and stays on screen, so what a
+/// row's tap did is read without scrolling back — asserting on the row
+/// itself would be asserting on the thing under test.
+private let scrollRowHeight: CGFloat = 100
+
+struct ScrollStageView: View {
+  @State private var tapped = "nothing tapped"
+  @State private var spacer: CGFloat = 0
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Text(tapped)
+        .padding(8)
+        .accessibilityIdentifier("scroll_result")
+      ScrollView {
+        VStack(spacing: 0) {
+          Color.clear.frame(height: spacer)
+          ForEach(0..<40, id: \.self) { i in
+            Button { tapped = "tapped \(i)" } label: {
+              Text("scroll row \(i)")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // A fixed pitch, so the arithmetic below is about one number
+            // and not about whatever height a cell defaults to.
+            .frame(height: scrollRowHeight)
+            .accessibilityIdentifier("scroll_row_\(i)")
+          }
+        }
+      }
+      // Measured on the scroller's own frame, not its content: the frame
+      // does not move when the content scrolls, so following it can
+      // never feed back into itself. Followed rather than read once —
+      // a single reading at appear lands mid-transition and measured a
+      // top 47pt off the one the screen settles on.
+      .background(
+        GeometryReader { g in
+          Color.clear.onChange(of: g.frame(in: .global).minY, initial: true) { _, top in
+            settle(viewportTop: top)
+          }
+        })
+      // To the screen's edge: the row being asked about is the one the
+      // SCREEN cuts, and a scroller stopping at the home indicator's
+      // line would cut a different one.
+      .ignoresSafeArea(edges: .bottom)
+    }
+    // Inline, not large: a large title collapses as the content scrolls
+    // and moves every row with it, after the spacer was measured.
+    .navigationBarTitleDisplayMode(.inline)
+    .navigationTitle("scroll")
+  }
+
+  /// The spacer that leaves a quarter of a row showing at the screen's
+  /// bottom edge, given where the scroller starts. Only written when it
+  /// changes: the spacer moves the content, not the scroller, so the
+  /// value settles after one pass.
+  private func settle(viewportTop: CGFloat) {
+    let screen = UIScreen.main.bounds.height
+    let quarter = scrollRowHeight / 4
+    let r = (screen - viewportTop - quarter).truncatingRemainder(dividingBy: scrollRowHeight)
+    let want = r < 0 ? r + scrollRowHeight : r
+    if abs(want - spacer) > 0.5 { spacer = want }
+  }
+}
+
 struct ContentView: View {
   @State private var typed = ""
   @State private var submitted = ""
@@ -278,6 +354,7 @@ struct ContentView: View {
   @State private var alertConfirmed = 0
   // Presses the icon-only button received.
   @State private var iconPauses = 0
+  @State private var scrollShown = false
 
   var body: some View {
     // NavigationStack, and the back button it provides, rather than a
@@ -346,6 +423,12 @@ struct ContentView: View {
             Button { iconPauses += 1 } label: { Image(systemName: "pause.fill") }
               .buttonStyle(.borderless)
               .accessibilityLabel("Pause")
+            // The way into C5's scroll screen, in a row that already
+            // exists: one more row would move where the main list's
+            // bottom edge falls under the corpus flows that scroll it.
+            Button("Open scroll") { scrollShown = true }
+              .buttonStyle(.borderless)
+              .accessibilityIdentifier("fixture-open-scroll")
           }
 
           NavigationLink("Open detail") { DetailView() }
@@ -388,6 +471,7 @@ struct ContentView: View {
       }
       .accessibilityIdentifier("fixture-list")
       .navigationTitle("smix fixture")
+      .navigationDestination(isPresented: $scrollShown) { ScrollStageView() }
     }
   }
 }

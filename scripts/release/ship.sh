@@ -80,7 +80,12 @@ if [[ "$BYPASS" != "--i-know-what-im-doing" ]]; then
   if [[ ! -f "$STAMP" ]] || \
      [[ $(( $(date +%s) - $(stat -f %m "$STAMP" 2>/dev/null || echo 0) )) -gt 3600 ]]; then
     log "smoke gate stale or missing — running smoke first"
-    "$SMOKE" || fail "smoke gate FAILED — refusing to publish"
+    # The binary about to be published. The smoke was the one gate
+    # handed none, and took the PATH's — the last release installed — so
+    # a ship smoked the previous version. Built inside this step so its
+    # minutes stay with the permission they are for.
+    ( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release (for the smoke)"
+    SMIX_BIN="$ROOT/target/release/smix" "$SMOKE" || fail "smoke gate FAILED — refusing to publish"
     touch "$STAMP"
   else
     log "smoke gate stamp fresh (< 1 h) — skipping re-run"
@@ -573,6 +578,12 @@ python3 "$ROOT/scripts/dev/a-status-is-read-from-the-command.py" > /tmp/smix-shi
   || fail "a status is read from a filter rather than the command — see /tmp/smix-ship-status.log"
 python3 "$ROOT/scripts/dev/a-status-is-read-from-the-command.test.py" >> /tmp/smix-ship-status.log 2>&1 \
   || fail "status gate self-test FAILED — see /tmp/smix-ship-status.log"
+log "every script drives this tree's smix"
+python3 "$ROOT/scripts/dev/a-script-drives-this-tree.py" > /tmp/smix-ship-this-tree.log 2>&1 \
+  || fail "a script drives the PATH's smix rather than this tree's — see /tmp/smix-ship-this-tree.log"
+log "the this-tree gate can still go red"
+python3 "$ROOT/scripts/dev/a-script-drives-this-tree.test.py" >> /tmp/smix-ship-this-tree.log 2>&1 \
+  || fail "this-tree gate self-test FAILED — see /tmp/smix-ship-this-tree.log"
 log "every flow run is judged by smix's own code"
 python3 "$ROOT/scripts/dev/a-run-is-judged-by-its-code.py" > /tmp/smix-ship-run-judged.log 2>&1 \
   || fail "a flow run is judged by the script's rule, not smix's code — see /tmp/smix-ship-run-judged.log"
@@ -675,9 +686,6 @@ log "known-unstable list scan"
 python3 "$ROOT/scripts/dev/known-unstable-scan.py" > /tmp/smix-ship-known-unstable.log 2>&1 \
   || fail "known-unstable list scan FAILED — see /tmp/smix-ship-known-unstable.log"
 
-log "mcp cli parity scan"
-python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \
-  || fail "mcp cli parity scan FAILED — see /tmp/smix-ship-mcp-parity.log"
 
 # A fuzz lockfile that no longer satisfies the manifests above it is
 # not a lockfile: the next cargo command resolves something else and
@@ -777,6 +785,18 @@ python3 "$ROOT/scripts/dev/gate-subject-diversity.py" > /tmp/smix-ship-subjects.
 # red on a real driver/runner drift.
 log "cargo build -p smix-cli --release (for corpus gate)"
 ( cd "$ROOT" && cargo build -p smix-cli --release ) || fail "cargo build smix-cli --release"
+# Every gate from here on drives this build, named once rather than gate
+# by gate: the ones not handed a binary took their own default — the
+# Python device gates `./target/release/smix` relative to the working
+# directory, the MCP parity scan whichever build was newer. They resolve
+# through scripts/lib/e2e-binary.sh now, which honours SMIX_BIN.
+export SMIX_BIN="$ROOT/target/release/smix"
+
+# After the build, because it asks the CLI it names ($SMIX_BIN) whether
+# each command exists; before it, neither build was known to be current.
+log "mcp cli parity scan"
+python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \
+  || fail "mcp cli parity scan FAILED — see /tmp/smix-ship-mcp-parity.log"
 
 # --- android instrumentation (device) ----------------------------------
 # The :sdk assertion suite on a pinned emulator. Placed early — before

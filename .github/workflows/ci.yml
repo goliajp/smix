@@ -405,6 +405,12 @@ jobs:
         run: python3 scripts/dev/a-status-is-read-from-the-command.py
       - name: the status gate can still go red
         run: python3 scripts/dev/a-status-is-read-from-the-command.test.py
+      # A script drives the smix this tree builds. Six release gates took
+      # the PATH's -- the last release installed -- when run by hand.
+      - name: every script drives this tree's smix
+        run: python3 scripts/dev/a-script-drives-this-tree.py
+      - name: the this-tree gate can still go red
+        run: python3 scripts/dev/a-script-drives-this-tree.test.py
       # A flow run is judged by the code smix reported. Fifty-three runs read
       # any non-zero exit as their own rule's failure, whatever smix said.
       - name: every flow run is judged by smix's own code

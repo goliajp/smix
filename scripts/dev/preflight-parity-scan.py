@@ -115,6 +115,8 @@ LOCAL = {
     "the all-gates runner can still go red": "all-gates.test",
     "every status read is the judged command's": "a-status-is-read-from-the-command.py",
     "the status gate can still go red": "a-status-is-read-from-the-command.test",
+    "every script drives this tree's smix": "a-script-drives-this-tree.py",
+    "the this-tree gate can still go red": "a-script-drives-this-tree.test",
     "every flow run is judged by smix's own code": "a-run-is-judged-by-its-code.py",
     "the run-judging gate can still go red": "a-run-is-judged-by-its-code.test",
     "the run wrapper can still go red": "smix-run --selftest",

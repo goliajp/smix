@@ -1,6 +1,7 @@
 package dev.smix.probe
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -21,6 +22,38 @@ import org.junit.Test
  * because the probe walked semantics children and nothing else.
  */
 class InteropNodeTest {
+    // Where a hosted View starts, by structure rather than by one
+    // internal class name. Under a Compose root, Compose's own containers
+    // are Compose's classes; the first View that is not one is what the
+    // app handed `AndroidView`. The holder used to be recognised by
+    // comparing against `AndroidViewHolder`'s name, which is `internal`
+    // and can change in any Compose release (open-items J1).
+    @Test
+    fun `compose's own containers are compose-owned, whatever they are called`() {
+        for (name in listOf(
+            "androidx.compose.ui.viewinterop.AndroidViewHolder",
+            "androidx.compose.ui.viewinterop.ViewFactoryHolder",
+            "androidx.compose.ui.platform.AndroidViewsHandler",
+            "androidx.compose.ui.platform.ViewLayerContainer",
+            "androidx.compose.ui.viewinterop.SomeHolderARenameWouldIntroduce",
+        )) {
+            assertTrue(name, isComposeOwned(name, "androidx.compose.ui"))
+        }
+    }
+
+    @Test
+    fun `an app's view is not compose-owned`() {
+        for (name in listOf(
+            "androidx.media3.ui.PlayerView",
+            "android.widget.Button",
+            "com.example.player.ChromeView",
+            // A prefix is not a package: this is a different one.
+            "androidx.compose.uix.Lookalike",
+        )) {
+            assertFalse(name, isComposeOwned(name, "androidx.compose.ui"))
+        }
+    }
+
     @Test
     fun `a resource name is reported the way the accessibility path reports it`() {
         // The same rule as RunnerWire.shortResourceId, which is what

@@ -8,6 +8,12 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+# This tree's binary unless SMIX_BIN names another, for every check below
+# (the Python ones ask the same resolver); the flow is judged by the code
+# smix reports. It ran `./target/release/smix` while the checks beside it
+# chose their own.
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
 # Not a slot. emulator-5554 is whichever AVD booted into it first, and on
 # 2026-09-24 that was a consumer's. The picker answers with an emulator
 # this machine's ledger says smix booted, or refuses and says what to run.
@@ -69,7 +75,7 @@ step "a semantics action is not a touch" \
 
 # 5 — the headline: a control inside a Compose dialog, addressed by id.
 step "dialog-confirm flow" \
-  ./target/release/smix run --device "$ANDROID" --platform android \
+  "$SMIX_RUN" --device "$ANDROID" --platform android \
     --runner-port "$APORT" scripts/release/android-behaviour/dialog-confirm.yaml
 
 # 6 — three readers of one report say the same thing.

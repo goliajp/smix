@@ -19,7 +19,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SMIX="${SMIX_BIN:-$ROOT/target/debug/smix}"
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
 UDID="${SMIX_C12_E2E_UDID:-}"
 . "$ROOT/scripts/lib/gate-port.sh"
 PORT="${SMIX_C12_E2E_PORT:-$SMIX_RUNNER_PORT}"

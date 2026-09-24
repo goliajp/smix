@@ -31,24 +31,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # Which smix answers the ownership question. `SMIX_BIN` is authoritative
-# when set; otherwise the workspace builds before the PATH, because a
-# gate in this tree should ask the smix it is testing, and an older one
-# on the PATH may lack `lease owner` — which would read as "nothing is
-# eligible" rather than "this binary cannot answer".
-SMIX=""
-if [ -n "${SMIX_BIN:-}" ]; then
-    if [ -x "$SMIX_BIN" ] && "$SMIX_BIN" lease owner --help >/dev/null 2>&1; then
-        SMIX="$SMIX_BIN"
-    fi
-else
-    for candidate in "$ROOT/target/release/smix" "$ROOT/target/debug/smix" \
-                     "$(command -v smix 2>/dev/null || true)"; do
-        [ -n "$candidate" ] && [ -x "$candidate" ] || continue
-        if "$candidate" lease owner --help >/dev/null 2>&1; then
-            SMIX="$candidate"
-            break
-        fi
-    done
+# when set; otherwise this tree's debug build, resolved where every other
+# script resolves it. Not the PATH: that holds the last release
+# installed, which may lack `lease owner` ("nothing is eligible" rather
+# than "this binary cannot answer") and is not the binary under test.
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
+if ! "$SMIX" lease owner --help >/dev/null 2>&1; then
+    SMIX=""
 fi
 
 if [ -z "$SMIX" ]; then

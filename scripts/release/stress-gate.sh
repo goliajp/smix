@@ -77,7 +77,8 @@ done < <(python3 "$SELECT" --tier "$TIER")
 [ "${#FLOWS[@]}" -gt 0 ] || { echo "no flows for tier $TIER" >&2; exit 2; }
 echo "stress-gate: tier=$TIER flows=${#FLOWS[@]}"
 
-SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
+# shellcheck source=../lib/e2e-binary.sh
+. "$REPO_ROOT/scripts/lib/e2e-binary.sh"
 
 if [ "$DRY" = "1" ]; then
   # CI-safe: prove the tier's flows all parse, no device.

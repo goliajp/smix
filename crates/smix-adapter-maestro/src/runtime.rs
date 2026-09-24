@@ -1981,23 +1981,13 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 Ok(RunStepReport::Ok)
             }
             Step::PressKey(key) => {
-                let key = *key;
-                // iOS Simulator hardware-button restrictions:
-                //   Apple documents XCUIDevice.Button.volumeUp /
-                //   .volumeDown as unavailable on the simulator; lock
-                //   is not exposed in the public enum at all and
-                //   simctl has no lock verb. maestro has the same
-                //   limitation on the iOS simulator. Rather than
-                //   no-op silently, report an explicit Skipped +
-                //   warning so the caller knows.
-                if matches!(key, KeyName::Lock | KeyName::VolumeUp | KeyName::VolumeDown) {
-                    let reason = format!(
-                        "pressKey {key}: unavailable in iOS Simulator (Apple XCUIDevice.Button restriction); maestro has the same limitation"
-                    );
-                    warnings.push(reason.clone());
-                    return Ok(RunStepReport::Skipped { reason });
-                }
-                self.app.press_key(key).await?;
+                // Every key goes to the device, the hardware buttons
+                // included. Whether a device has a button is its own to
+                // say: an Android runner presses lock and both volume
+                // keys, and an iOS simulator's runner refuses them by
+                // name. This used to skip the three for every device
+                // with the simulator's reason.
+                self.app.press_key(*key).await?;
                 Ok(RunStepReport::Ok)
             }
             Step::EraseText(n) => {

@@ -1773,6 +1773,11 @@ public actor SmixRunnerServer {
         do { req = try KeyboardRoute.decodePressKey(body) }
         catch let e as KeyboardRoute.DecodeError { return KeyboardRoute.badRequest(reason: "\(e)") }
         catch { return KeyboardRoute.badRequest(reason: "\(error)") }
+        if let why = KeyboardRoute.missingButton(
+          key: req.key, onSimulator: KeyboardRoute.runsOnSimulator)
+        {
+          return KeyboardRoute.noSuchButton(saw: why)
+        }
         let outcome = await pressKeyHandler(req.key)
         return successFor(outcome) ?? KeyboardRoute.unsupportedKey(key: req.key)
       }

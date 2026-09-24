@@ -104,14 +104,14 @@ measure() {
     exit 2
   fi
 
-  smix sim boot "$udid" 2>/dev/null
-  wait_for_state "$udid" Booted || { say "$udid did not reach Booted" >&2; smix sim shutdown "$udid" 2>/dev/null || true; exit 2; }
+  "$SMIX" sim boot "$udid" 2>/dev/null
+  wait_for_state "$udid" Booted || { say "$udid did not reach Booted" >&2; "$SMIX" sim shutdown "$udid" 2>/dev/null || true; exit 2; }
   sleep 5
 
   after="$(read_hub "$bin" "$udid")"
   IFS=$'\t' read -r title_after sel_after lists_after <<<"$after"
 
-  smix sim shutdown "$udid" 2>/dev/null
+  "$SMIX" sim shutdown "$udid" 2>/dev/null
   wait_for_state "$udid" Shutdown || say "warning: $udid still not Shutdown" >&2
   if [ "$was_running" = 0 ]; then
     osascript -e 'tell application "DeviceHub" to quit' >/dev/null 2>&1 || true
@@ -157,7 +157,7 @@ EOF
     chmod +x "$tmp/reader"
   }
   write_reader
-  run() { PATH="$bin:/usr/bin:/bin" SMIX_DEVICE_HUB_READ="$tmp/reader" bash "$self" "$u" 2>"$tmp/err"; }
+  run() { PATH="$bin:/usr/bin:/bin" SMIX_BIN="$bin/smix" SMIX_DEVICE_HUB_READ="$tmp/reader" bash "$self" "$u" 2>"$tmp/err"; }
 
   reset_devices
   printf 'title=other\nrow %s selected=true\nrow %s selected=false\n' "$other" "$u" > "$tmp/before.txt"
@@ -190,5 +190,10 @@ EOF
 case "${1:-}" in
   --selftest) selftest ;;
   "") echo "usage: device-hub-shows-a-boot.sh <UDID> | --selftest" >&2; exit 2 ;;
-  *) measure "$1" ;;
+  *)
+    # This tree's binary unless SMIX_BIN names another — the selftest
+    # names its fake that way rather than by putting it on the PATH.
+    # shellcheck source=../lib/e2e-binary.sh
+    . "$HERE/../lib/e2e-binary.sh"
+    measure "$1" ;;
 esac

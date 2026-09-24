@@ -27,19 +27,22 @@
 # segment exists to get rid of.
 #
 # Env:
-#   SMIX_ANDROID_SERIAL         — device; else the first emulator-*
+#   SMIX_ANDROID_SERIAL         — device; else one smix booted (pick-dev-emulator.sh)
 #   SMIX_ANDROID_GATE_TIMEOUT_S — wall clock limit (default 600)
-#   SMIX_BIN                    — smix binary (default: from PATH)
+#   SMIX_BIN                    — smix binary (default: this tree's target/debug/smix,
+#                                 resolved by scripts/lib/e2e-binary.sh)
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TIMEOUT_S="${SMIX_ANDROID_GATE_TIMEOUT_S:-600}"
-SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
-# A flow is judged by the code smix reports: "$SMIX_RUN" hands a verdict
-# about the screen back and ends the gate on anything else, by name.
-. "$REPO_ROOT/scripts/lib/judged-run.sh"
+# This tree's binary unless SMIX_BIN names another. It used to be the
+# PATH's, which on a development machine is the last release installed,
+# so a hand run judged a binary the tree had moved past. The helper also
+# brings "$SMIX_RUN": a flow is judged by the code smix reports, handing
+# a verdict about the screen back and ending the gate on anything else.
+. "$REPO_ROOT/scripts/lib/e2e-binary.sh"
 
 APP="com.android.settings"
 # The app the FLOW binds to, which is not always the one we launch.
@@ -100,7 +103,6 @@ die() {
   exit 1
 }
 
-[[ -n "$SMIX_BIN" ]] || die "no smix binary on PATH (set SMIX_BIN)"
 [[ -f "$FLOW" ]] || die "flow missing: $FLOW"
 
 # --- device selection, before anything touches a device ------------------

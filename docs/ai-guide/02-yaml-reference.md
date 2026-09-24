@@ -301,7 +301,7 @@ would need measuring again.
 ```yaml
 - pressKey: ENTER                        # ENTER / TAB / SPACE / DELETE / ESCAPE
 - pressKey: HOME                         # iOS home button
-- pressKey: VOLUME_UP                    # skipped on the iOS simulator
+- pressKey: VOLUME_UP                    # Android; iOS fails the step by name
 - pressKey: Back                         # the same as `- back`
 - back                                   # navigation back
 ```

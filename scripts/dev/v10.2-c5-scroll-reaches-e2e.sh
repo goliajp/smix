@@ -108,29 +108,25 @@ def walk(n):
 walk(root)
 '
 
-# A row that crosses the bottom edge, in one of two shapes:
+# A row that crosses the bottom edge with its middle below the edge as
+# well. The old rule stopped here AND the tap that followed missed, which
+# is what the consumer reported.
 #
-#   centre-out  its middle is below the edge as well. The old rule
-#               stopped here AND the tap that followed missed, which is
-#               what the consumer reported. Rows have to be tall enough
-#               for that — the Compose fixture's are 110px.
-#   any         it crosses at all. The old rule stopped here too, but
-#               with the middle still inside the tap landed, so what
-#               separates the rules is only where the scroll stopped.
-#               The iOS fixture's rows are 52px and never give the
-#               first shape.
-#
-# Each leg names the shape it means; neither falls back to the other,
-# because they are different claims.
+# Both fixtures construct it: a spacer sized so a quarter of a
+# fixed-pitch row shows at the bottom edge. The iOS leg used to read the
+# main list's system-sized cells, where only a weaker shape was on offer
+# — "crosses at all", which the old rule also stopped on but where the
+# tap still landed — and even that only when the edge did not fall on a
+# cell boundary (open-items P2). That shape is gone with its last user.
 #
 # Polled, not read once: straight after the navigation the probe answers
 # with every row at (0, 0, 0, 0) for a frame or two, and a single look
 # lands there and reports a screen that has no rows at all.
-await_crossing_row() { # $1 port  $2 device  $3 out.json  $4 prefix  $5 shape
+await_crossing_row() { # $1 port  $2 device  $3 out.json  $4 prefix
   local target=none
   for _ in $(seq 1 20); do
     flow_tree "$1" "$2" "$3" >/dev/null || { sleep 0.5; continue; }
-    target="$(crossing_row "$3" "$4" "$5")"
+    target="$(crossing_row "$3" "$4")"
     [ "$target" != none ] && { printf '%s\n' "$target"; return 0; }
     sleep 0.5
   done
@@ -138,16 +134,14 @@ await_crossing_row() { # $1 port  $2 device  $3 out.json  $4 prefix  $5 shape
   return 1
 }
 
-crossing_row() { # $1 tree.json  $2 id prefix  $3 shape
-  python3 - "$1" "$2" "$3" <<PY
+crossing_row() { # $1 tree.json  $2 id prefix
+  python3 - "$1" "$2" <<PY
 $PY_NODES
-prefix, shape = sys.argv[2], sys.argv[3]
-if shape not in ("centre-out", "any"):
-    raise SystemExit(f"crossing_row: unknown shape {shape!r}")
+prefix = sys.argv[2]
 for ident, x, y, w, h in out:
     if not ident.startswith(prefix):
         continue
-    if y < sh < y + h and (shape == "any" or y + h / 2 > sh):
+    if y < sh < y + h and y + h / 2 > sh:
         print(ident)
         break
 else:
@@ -213,7 +207,7 @@ FLOW
   SMIX_RUNNER_PORT="$AND_PORT" "$SMIX_RUN" --device "$AND_SERIAL" "$WORK/and-open.yaml" >"$WORK/and-open.log" 2>&1 \
     || { tail -10 "$WORK/and-open.log" >&2; fail "android: could not open the scrolling screen"; }
   local target
-  target="$(await_crossing_row "$AND_PORT" "$AND_SERIAL" "$WORK/and-tree.json" scroll_row_ centre-out)" \
+  target="$(await_crossing_row "$AND_PORT" "$AND_SERIAL" "$WORK/and-tree.json" scroll_row_)" \
     || fail "android: no row crosses the bottom edge with its centre off screen — the screen this measures is not the screen it was written for"
   local eyes
   eyes="$(flow_tree "$AND_PORT" "$AND_SERIAL" "$WORK/and-tree.json")"
@@ -265,19 +259,23 @@ run_ios() {
     --runner-project "$IOS_PROJECT" >"$WORK/ios-up.log" 2>&1 || fail "runner up: $(tail -5 "$WORK/ios-up.log")"
   IOS_WE_UPPED=1
 
+  # The scroll screen, as on Android: the subject is constructed there.
   cat >"$WORK/ios-open.yaml" <<FLOW
 appId: $IOS_APPID
 ---
 - launchApp
+- tapOn:
+    id: "fixture-open-scroll"
 FLOW
   SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$IOS_UDID" "$WORK/ios-open.yaml" >"$WORK/ios-open.log" 2>&1 \
-    || { tail -10 "$WORK/ios-open.log" >&2; fail "ios: could not launch the fixture"; }
+    || { tail -10 "$WORK/ios-open.log" >&2; fail "ios: could not open the scrolling screen"; }
   local target
-  target="$(await_crossing_row "$IOS_PORT" "$IOS_UDID" "$WORK/ios-tree.json" fixture-row- any)" \
-    || fail "ios: no row crosses the bottom edge"
+  target="$(await_crossing_row "$IOS_PORT" "$IOS_UDID" "$WORK/ios-tree.json" scroll_row_)" \
+    || fail "ios: no row crosses the bottom edge with its centre off screen — the screen this measures is not the screen it was written for"
   local eyes
   eyes="$(flow_tree "$IOS_PORT" "$IOS_UDID" "$WORK/ios-tree.json")"
-  log "ios eyes=$eyes target=$target (it crosses the bottom edge)"
+  local index="${target##*_}"
+  log "ios eyes=$eyes target=$target (its middle is below the bottom edge)"
 
   cat >"$WORK/ios.yaml" <<FLOW
 appId: $IOS_APPID
@@ -288,18 +286,19 @@ appId: $IOS_APPID
     direction: DOWN
 - tapOn:
     id: "$target"
+- assertVisible: "tapped $index"
 FLOW
   local out rc=0
   out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 >&2
-    fail "ios: the flow did not pass"
+    fail "ios: the flow did not pass (the scroll stopped with $target still crossing the edge, and the tap went where its middle is)"
   fi
   flow_tree "$IOS_PORT" "$IOS_UDID" "$WORK/ios-after.json" >/dev/null || fail "ios: no tree after the flow"
   local reach
   reach="$(reach_of "$WORK/ios-after.json" "$target")"
   [ "$reach" = full ] || fail "ios reach=$reach — the scroll stopped with the row not wholly on screen"
-  log "ios reach=full (flow passed: scroll → tap)"
+  log "ios reach=full (flow passed: scroll → tap → the row's own label)"
 
   # The same loop, looking with OCR: the chain's tree layer names
   # nothing that exists, so only the `ocrText` can stop it. Before C5

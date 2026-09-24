@@ -24,18 +24,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # export reaches startup, every command, and teardown alike.
 . "$ROOT/scripts/lib/gate-port.sh"
 PORT="${2:-$SMIX_RUNNER_PORT}"
-# The release build, because the ship judges what it is about to publish.
-# Checked before anything uses it: a worktree with no release build used to
-# get as far as `runner up`, fail there, and report the runner as the
-# reason — a missing binary read as a device that would not answer.
-SMIX="${SMIX_BIN:-$ROOT/target/release/smix}"
+# This tree's binary unless SMIX_BIN names another; the ship names the
+# release build it is about to publish. The resolver checks it exists
+# before anything uses it: a worktree with no build used to get as far as
+# `runner up`, fail there, and report the runner as the reason — a
+# missing binary read as a device that would not answer.
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
 APP="jp.golia.smix.fixture"
 fail() { echo "a-tap-that-cannot-land-says-so: FAIL"; echo "  - $*"; exit 1; }
-if [[ ! -x "$SMIX" ]]; then
-  echo "a-tap-that-cannot-land-says-so: CANNOT JUDGE"
-  echo "  - no smix binary at $SMIX — build it (cargo build --release -p smix-cli), or set SMIX_BIN"
-  exit 2
-fi
 
 result() {
   "$SMIX" tree --device "$UDID" --port "$PORT" --json 2>/dev/null \

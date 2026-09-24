@@ -369,12 +369,19 @@ looking is `keyboard_state_unknown` — see
   which gesture navigation — the default on current phones — does not
   have. Use `- back`: it closes a system sheet (share, permission) the
   same way in either mode.
-- **`VOLUME_UP` / `VOLUME_DOWN` are skipped on the iOS simulator**, not
-  executed: Apple documents `XCUIDevice.Button.volumeUp` / `.volumeDown`
-  as unavailable there, and maestro has the same limitation. The step
-  reports as skipped with the reason rather than failing.
-- There is no `POWER` key. `LOCK` is the closest equivalent
-  (`XCUIDevice.perform(.lockButton)` on iOS).
+- **`LOCK` / `VOLUME_UP` / `VOLUME_DOWN` are pressed on Android** —
+  `KEYCODE_POWER` and the two volume keys, through the runner like any
+  other key. `LOCK` turns the display off; the step does not unlock it
+  again, so a flow that goes on driving the app has to wake the device
+  first.
+- **On iOS the three fail the step, naming why** (`no_such_button`):
+  XCUIDevice has no lock button on any iOS target, the simulator has no
+  volume buttons, and on a physical iPhone this runner has never been
+  measured pressing them. A flow that runs on both platforms presses
+  them inside `runFlow` with `when: { platform: Android }`. Earlier
+  releases reported the three as skipped on every platform, Android
+  included, and a flow passed with a step that did nothing.
+- There is no `POWER` key; `Power` reads as `LOCK`.
 - iOS: maps to XCUIRemote / device interaction methods.
 - Android: maps to KeyEvent constants via runner `/press-key`.
 

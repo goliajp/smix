@@ -135,11 +135,11 @@ if [[ ${#YAMLS[@]} -eq 0 ]]; then
   exit 2
 fi
 
-SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
-if [[ -z "$SMIX_BIN" ]]; then
-  echo "error: smix binary not on PATH (set SMIX_BIN)" >&2
-  exit 2
-fi
+# Exported by the helper, so the flake classifier below reads the
+# records of the binary this gate drives. It read the PATH's while this
+# was a plain assignment.
+# shellcheck source=../lib/e2e-binary.sh
+. "$REPO_ROOT/scripts/lib/e2e-binary.sh"
 
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$REPO_ROOT/scripts/lib/gate-port.sh"

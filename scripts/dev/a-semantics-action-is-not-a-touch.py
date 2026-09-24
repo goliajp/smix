@@ -32,6 +32,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _probe_wire  # noqa: E402
+import _e2e_binary  # noqa: E402
 
 APP = "dev.smix.fixture"
 problems = []
@@ -107,8 +108,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", required=True)
     ap.add_argument("--port", default="22095")
-    ap.add_argument("--binary", default="./target/release/smix")
+    # This tree's binary unless SMIX_BIN names another (e2e-binary.sh);
+    # it was `./target/release/smix`, relative to the caller's directory.
+    ap.add_argument("--binary")
     a = ap.parse_args()
+    if not a.binary:
+        a.binary = _e2e_binary.this_tree_smix()
     d = a.device
 
     adb(d, "am", "start", "-n", f"{APP}/.ComposeActivity")

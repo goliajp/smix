@@ -1770,35 +1770,16 @@ final class SmixRunnerUITests: XCTestCase {
       },
       pressKeyHandler: { key in
         let t0 = DispatchTime.now()
-        // iOS hardware buttons (home / lock / volumeUp / volumeDown) are
-        // not keyboard events: they go through the XCUIDevice public API
-        // and never enter the mapping dict. Supported:
-        //   home          → XCUIDevice.shared.press(.home, forDuration: 0)
-        //   volumeUp/Down → XCUIDevice.shared.press(.volumeUp/.volumeDown, ...)
-        // On the iOS simulator, XCUIDevice.Button exposes no public enum
-        // case for lock, and simctl has no lock interface either — so lock
-        // explicitly returns .notFound and reports unsupported on stderr,
-        // rather than silently no-op'ing.
+        // `home` is not a keyboard event: it goes through XCUIDevice.
+        // lock / volumeUp / volumeDown never reach here — the route
+        // refuses them by name first (KeyboardRoute.missingButton),
+        // because this device has no button to press.
         switch key {
         case "home":
           XCUIDevice.shared.press(XCUIDevice.Button.home)
           let t2 = DispatchTime.now()
           KeyboardCache.shared.invalidate()
           return .success(focusMs: 0, daemonSendMs: SmixRunnerServer.msBetween(t0, t2))
-        case "lock":
-          FileHandle.standardError.write(
-            Data("smix-runner: pressKey lock: unsupported on iOS Simulator (no XCUIDevice.Button.lock, and simctl has no lock verb); maestro has the same limitation\n".utf8))
-          return .notFound
-        case "volumeUp", "volumeDown":
-          // Apple documents XCUIDevice.Button.volumeUp/.volumeDown as
-          // unavailable in the iOS Simulator (physical iOS device only).
-          // The adapter is expected to gracefully skip these at the
-          // runtime layer so they never reach the wire; if one does
-          // arrive, the adapter missed the check — report on stderr and
-          // return .notFound so the runner survives.
-          FileHandle.standardError.write(
-            Data("smix-runner: pressKey \(key): unavailable in iOS Simulator (Apple XCUIDevice.Button restriction); the adapter should have skipped this before it reached the wire\n".utf8))
-          return .notFound
         default: break
         }
         // keyboard-event path (return / delete / tab / space / escape /
