@@ -2050,13 +2050,16 @@ anything may be taken away from it. Two gates, asked in that order.
 
 ### Runner management
 
-`smix runner down` stops the runner **this workspace started**. If the port is
-held by a runner it has no record of, it says so and stops rather than ending
-it — that runner may belong to another session:
+`smix runner down` stops the runner **recorded on that port** (`--runner-port`,
+else 22087) in this machine's device ledger, and nothing else: with two
+simulators each running one, taking one down leaves the other and its record
+untouched, whichever checkout started them. If the port is held by a runner
+the ledger has no record of, it says so and stops rather than ending it —
+that runner may belong to another session:
 
 ```
 $ smix runner down
-error: port 22087 is held by a runner this workspace has no record of
+error: port 22087 is held by a runner the device ledger has no record of
 (pid 27155), and it is still running.
 It may belong to another session — check before ending it:
   ps -o lstart=,command= -p 27155
@@ -2201,7 +2204,9 @@ configure anything:
 `--bundle` is required: it binds the runner's `XCUIApplication`, and
 without it every `/tree` reads the wrong app. `--supervise` attaches a
 sidecar that re-cycles the runner if it dies; `runner down` cascades to
-it. Port comes from `--runner-port`, else the alias's `runnerPort` in
+it. The sidecar is `smix runner supervise --runner-port <port>`: it finds
+the runner it watches by port, so two supervised runners in one checkout
+each watch their own. Port comes from `--runner-port`, else the alias's `runnerPort` in
 the registry, else 22087.
 
 **Android** — extracts the runner project if it is not already
@@ -3542,7 +3547,7 @@ app.
 **Fix**: `smix runner cycle` rebinds in place, in seconds, without
 restarting `xcodebuild`. `smix runner up … --force` does the same thing
 from the bring-up command. Neither reaches a runner recorded for another
-device, or one the store has no record of; those still need
+device, or one the device ledger has no record of; those still need
 `runner down --include-unrecorded`.
 
 `smix_use` reports the same condition, with the same fix — the MCP server

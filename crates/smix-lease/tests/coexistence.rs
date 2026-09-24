@@ -39,6 +39,8 @@ fn lease(device: &str, runner_pid: u32) -> Lease {
             Row::Known(Resource::Booted { by_us: true }),
             Row::Known(Resource::Runner {
                 port: 22087,
+                bundle: None,
+                log: None,
                 proc: proc(runner_pid, "Tue Aug 11 19:54:21 2026"),
             }),
         ],

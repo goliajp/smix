@@ -4,14 +4,14 @@
 //! host-side `xcodebuild test` process IS the session. A leftover
 //! xcodebuild keeps the device's testmanagerd automation slot occupied,
 //! blocking every other XCUITest client on that sim — so the process
-//! handle lives in `.smix/runner/state.json` and teardown is a product
-//! responsibility, not a script convention.
+//! handle is recorded in the device's lease (see [`crate::runner_state`])
+//! and teardown is a product responsibility, not a script convention.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Persisted handle for the host-side xcodebuild process.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunnerState {
     /// Host-side `xcodebuild` pid. Checked against `ps` before signalling:
     /// a recorded pid that has been recycled belongs to someone else now.
@@ -20,8 +20,9 @@ pub struct RunnerState {
     pub udid: String,
     /// Port the runner's HTTP server answers on.
     pub port: u16,
-    /// Where `xcodebuild`'s output is being written.
-    pub log: PathBuf,
+    /// Where `xcodebuild`'s output is being written. `None` for a runner
+    /// recorded before the ledger carried it.
+    pub log: Option<PathBuf>,
     /// Target bundle the runner's XCUIApplication is bound to (None =
     /// runner default, com.apple.Preferences).
     #[serde(default)]
@@ -519,6 +520,9 @@ pub enum AlreadyServing {
     Recover {
         /// Why recovery is happening, in the runner's own words.
         because: String,
+        /// The record the decision was made about, so the recovery acts
+        /// on that runner rather than reading the ledger a second time.
+        runner: Box<RunnerState>,
     },
     /// Say no, out loud, and name what resolves it.
     Refuse {
@@ -614,9 +618,10 @@ pub fn decide_already_serving(
     bundle: Option<&str>,
     probe: &SessionProbe,
     force: bool,
+    unrecorded_evidence: Option<&str>,
 ) -> AlreadyServing {
-    let pid = match record {
-        Some(st) if st.udid == udid && st.bundle.as_deref() == bundle => st.pid,
+    let ours = match record {
+        Some(st) if st.udid == udid && st.bundle.as_deref() == bundle => st,
         // Somebody else's, or nobody's. `--force` is not consulted in
         // either branch and that is the whole of its safety: it changes
         // what happens to *our own* wedged runner, and nothing about
@@ -631,10 +636,22 @@ pub fn decide_already_serving(
             };
         }
         None => {
+            // The checkout used to keep its own runner record. It is not
+            // read any more — the device ledger is the one book — but
+            // when a refusal has nothing else to go on, what it says is
+            // the best clue a reader has.
+            let cited = unrecorded_evidence
+                .map(|e| {
+                    format!(
+                        "\nThe checkout still holds an old runner record, which is no \
+                         longer read (the device ledger is): {e}"
+                    )
+                })
+                .unwrap_or_default();
             return AlreadyServing::Refuse {
                 message: format!(
-                    "port {port} already serves /health but the store has no \
-                     record of that runner — not killing blindly.\n\
+                    "port {port} already serves /health but the device ledger has \
+                     no runner on that port — not killing blindly.{cited}\n\
                      See whose it is:\n  pgrep -fl xcodebuild\n\
                      If it should go:\n  smix runner down --include-unrecorded\n\
                      If it should stay, bring this one up elsewhere:\n  \
@@ -646,7 +663,7 @@ pub fn decide_already_serving(
 
     let (what, told) = match probe {
         SessionProbe::Usable => {
-            return AlreadyServing::ReportUp { pid };
+            return AlreadyServing::ReportUp { pid: ours.pid };
         }
         SessionProbe::Gone { reason, hint } => (
             format!("its session is not usable: {reason}"),
@@ -659,7 +676,10 @@ pub fn decide_already_serving(
     };
 
     if force {
-        return AlreadyServing::Recover { because: what };
+        return AlreadyServing::Recover {
+            because: what,
+            runner: Box::new(ours.clone()),
+        };
     }
     AlreadyServing::Refuse {
         message: format!(
@@ -928,25 +948,18 @@ fn wait_health_back(port: u16, timeout: std::time::Duration) -> bool {
     }
 }
 
-/// Forget the iOS runner record. Reported rather than discarded: a
-/// stale record makes the next `up` believe a runner is already there.
-fn clear_state(root: &Path) {
-    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Ios) {
-        eprintln!("runner: {e}");
-    }
-}
-
-/// The iOS runner's record. `None` is "no runner"; a record that
-/// cannot be read is reported, not swallowed — the `.ok()?` this
-/// replaces turned a damaged record into "no runner", and `up` would
-/// then start a second one beside the first.
-fn read_state(root: &Path) -> Option<RunnerState> {
-    match crate::runner_state::read(root, crate::runner_state::Platform::Ios) {
-        Ok(state) => state,
-        Err(e) => {
-            eprintln!("runner: {e}");
-            None
-        }
+/// Drop this device's runner row after a bring-up that did not finish.
+/// Reported rather than discarded: a stale row makes the next `up`
+/// believe a runner is already there.
+fn forget_runner_row(ledger: &smix_lease::store::LeaseDir, udid: &str) {
+    let sample = smix_lease::Resource::Runner {
+        port: 0,
+        proc: smix_lease::store::identify_self(),
+        bundle: None,
+        log: None,
+    };
+    if let Err(e) = smix_lease::store::drop_resource_kind(ledger, udid, &sample) {
+        eprintln!("runner: the ledger still holds a runner row for {udid}: {e}");
     }
 }
 
@@ -1022,7 +1035,7 @@ fn unrecorded_sessions_on(port: u16) -> Vec<u32> {
         .collect()
 }
 
-/// What to do about runner sessions this workspace has no record of.
+/// What to do about runner sessions the device ledger has no record of.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unrecorded {
     /// Nothing is holding the port but us.
@@ -1036,8 +1049,8 @@ pub enum Unrecorded {
 /// Decide what a teardown may do to a runner it did not start.
 ///
 /// The ledger is the authority: what is not written down is not this
-/// workspace's to end. `runner up` has said so since C6 — it refuses a
-/// port held by a runner the store has no record of, rather than killing
+/// command's to end. `runner up` has said so since C6 — it refuses a
+/// port held by a runner the ledger has no record of, rather than killing
 /// blindly. `down` did the opposite, quietly, and that is the shape of
 /// the 2026-07 incident where a sweep took out another session's runner.
 ///
@@ -1070,7 +1083,7 @@ pub fn unrecorded_refusal(port: u16, pids: &[u32]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "port {port} is held by a runner this workspace has no record of \
+        "port {port} is held by a runner the device ledger has no record of \
          (pid {list}), and it is still running.\n\
          It may belong to another session — check before ending it:\n  \
          ps -o lstart=,command= -p {list}\n\
@@ -1355,6 +1368,7 @@ pub fn up_on(
 ) -> Result<(), String> {
     up_on_with(
         &mut RealBringUp,
+        &machine_leases()?,
         root,
         udid,
         port,
@@ -1374,6 +1388,7 @@ pub fn up_on(
 #[allow(clippy::too_many_arguments)]
 pub fn up_on_with(
     attempter: &mut dyn BringUpAttempter,
+    ledger: &smix_lease::store::LeaseDir,
     root: &Path,
     udid: &str,
     port: u16,
@@ -1425,16 +1440,28 @@ pub fn up_on_with(
     // health-decider: whether this port is already serving, and what to
     // do about it when it is answering without serving.
     if health_ok(port) {
-        let record = read_state(root);
+        let record = crate::runner_state::find(ledger, crate::runner_state::Lookup::Port(port))?;
+        let evidence = match record {
+            Some(_) => None,
+            None => crate::runner_state::legacy_evidence(root),
+        };
         let probe = probe_session_for(port, bundle);
-        match decide_already_serving(record.as_ref(), port, udid, bundle, &probe, force_recover) {
+        match decide_already_serving(
+            record.as_ref(),
+            port,
+            udid,
+            bundle,
+            &probe,
+            force_recover,
+            evidence.as_deref(),
+        ) {
             AlreadyServing::ReportUp { pid } => {
                 println!("runner already up: udid={udid} port={port} pid={pid}");
                 return Ok(());
             }
-            AlreadyServing::Recover { because } => {
+            AlreadyServing::Recover { because, runner } => {
                 println!("runner is up but {because} — cycling it in place");
-                return cycle(root, port, runner_project);
+                return cycle_recorded(root, *runner, runner_project);
             }
             AlreadyServing::Refuse { message } => return Err(message),
         }
@@ -1454,6 +1481,7 @@ pub fn up_on_with(
     let mut attach_already_tried = false;
     loop {
         match attempter.attempt(
+            ledger,
             root,
             udid,
             port,
@@ -1515,6 +1543,7 @@ pub trait BringUpAttempter {
     #[allow(clippy::too_many_arguments)]
     fn attempt(
         &mut self,
+        ledger: &smix_lease::store::LeaseDir,
         root: &Path,
         udid: &str,
         port: u16,
@@ -1535,6 +1564,7 @@ impl BringUpAttempter for RealBringUp {
     #[allow(clippy::too_many_arguments)]
     fn attempt(
         &mut self,
+        ledger: &smix_lease::store::LeaseDir,
         root: &Path,
         udid: &str,
         port: u16,
@@ -1547,6 +1577,7 @@ impl BringUpAttempter for RealBringUp {
         timeout_secs: u64,
     ) -> Result<Attempt, String> {
         one_bring_up(
+            ledger,
             root,
             udid,
             port,
@@ -1581,6 +1612,7 @@ pub enum Attempt {
 /// front of it. Nothing about a single attempt changed in the move.
 #[allow(clippy::too_many_arguments)]
 fn one_bring_up(
+    ledger: &smix_lease::store::LeaseDir,
     root: &Path,
     udid: &str,
     port: u16,
@@ -1634,16 +1666,7 @@ fn one_bring_up(
     let mut child = cmd.spawn().map_err(|e| format!("spawn xcodebuild: {e}"))?;
     let pid = child.id();
 
-    let st = RunnerState {
-        pid,
-        udid: udid.to_string(),
-        port,
-        log: log.clone(),
-        bundle: bundle.map(str::to_string),
-        supervisor_pid: None,
-    };
-    crate::runner_state::write(root, crate::runner_state::Platform::Ios, &st)?;
-    record_runner_lease(&machine_leases()?, udid, port, pid)?;
+    record_runner_lease(ledger, udid, port, pid, bundle, &log)?;
 
     // Detect cold vs warm rebuild by inspecting whether the per-udid
     // derived-data dir is already populated. Cold rebuilds after a
@@ -1701,7 +1724,7 @@ fn one_bring_up(
             last_heartbeat = std::time::Instant::now();
         }
         if let Ok(Some(status)) = child.try_wait() {
-            clear_state(root);
+            forget_runner_row(ledger, udid);
             return Err(format!(
                 "xcodebuild exited early ({status}) — log tail:\n{}",
                 tail_log(&log, 25)
@@ -1765,7 +1788,7 @@ fn one_bring_up(
                         wire_reported = true;
                     }
                     None => {
-                        clear_state(root);
+                        forget_runner_row(ledger, udid);
                         signal(pid, "-TERM");
                         let ours = smix_runner_wire::WIRE_SCHEMA_SUPPORTED;
                         return Err(format!(
@@ -1785,7 +1808,7 @@ fn one_bring_up(
                     }
                 }
                 Some(v) => {
-                    clear_state(root);
+                    forget_runner_row(ledger, udid);
                     signal(pid, "-TERM");
                     return Err(format!(
                         "runner version mismatch: CLI is v{cli_version} but the \
@@ -1817,31 +1840,16 @@ fn one_bring_up(
             }
             // Sidecar mode.
             if supervise {
-                match spawn_supervisor(root, runner_project) {
+                match spawn_supervisor(root, udid, port, runner_project) {
                     Ok(sup_pid) => {
-                        match machine_leases() {
-                            Ok(leases) => record_supervisor_lease(&leases, udid, sup_pid),
-                            Err(e) => eprintln!("warning: supervisor not recorded: {e}"),
-                        }
-                        // Rewrite state.json with the supervisor pid.
-                        if let Some(mut current) = read_state(root) {
-                            current.supervisor_pid = Some(sup_pid);
-                            // Not discarded: losing the supervisor pid
-                            // means `runner down` never cascades SIGTERM
-                            // to the sidecar, and the sidecar outlives
-                            // the runner it was watching.
-                            if let Err(e) = crate::runner_state::write(
-                                root,
-                                crate::runner_state::Platform::Ios,
-                                &current,
-                            ) {
-                                eprintln!("runner supervise: {e}");
-                            }
-                            println!(
-                                "runner supervise: spawned pid={sup_pid} \
-                                 (log: .smix/runner/supervise-{udid}.log)"
-                            );
-                        }
+                        // The supervisor row sits beside the runner row in
+                        // this device's lease; `runner down` reads it from
+                        // there and stops the sidecar first.
+                        record_supervisor_lease(ledger, udid, sup_pid);
+                        println!(
+                            "runner supervise: spawned pid={sup_pid} \
+                             (log: .smix/runner/supervise-{udid}.log)"
+                        );
                     }
                     Err(e) => {
                         eprintln!(
@@ -1856,7 +1864,7 @@ fn one_bring_up(
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
     signal(pid, "-INT");
-    clear_state(root);
+    forget_runner_row(ledger, udid);
     // Lead with the reason when the device itself said one. A timeout
     // whose log ends in "Unlock panda's iphone to Continue" is not a
     // timeout anyone needs 25 lines of build transcript to understand.
@@ -1899,29 +1907,35 @@ fn device_preflight_block(log: &Path) -> Option<String> {
 /// session cleanly via testmanagerd; a hard kill SIGABRTs the runner app
 /// and macOS pops a crash-report dialog that steals user focus.
 ///
-/// If state.json records a supervisor pid, cascade a SIGTERM to it
+/// If the device's lease records a supervisor pid, cascade a SIGTERM to it
 /// BEFORE tearing down xcodebuild. Otherwise the sidecar
 /// would flap into a `TEST INTERRUPTED` trigger the moment we send
 /// SIGINT to xcodebuild and try to re-cycle a runner we just killed.
-/// Stop the runner this workspace recorded. A runner on the port that
-/// the store has no record of is reported, not ended — it may belong to
+/// Stop the runner the device ledger records on `port`. A runner on the
+/// port that the ledger has no record of is reported, not ended — it may belong to
 /// another session, and [`down_including_unrecorded`] is the sanctioned
 /// way through when it should go.
-pub fn down(root: &Path, port: u16) -> Result<(), String> {
-    down_with(root, port, false)
+pub fn down(port: u16) -> Result<(), String> {
+    down_with(port, false)
 }
 
-/// [`down`], and also end any runner on the port the store has no
+/// [`down`], and also end any runner on the port the ledger has no
 /// record of. The consent lives in the name: only a person typing
 /// `--include-unrecorded` is in a position to know the unrecorded
 /// session should go, so only the CLI's flag path calls this.
-pub fn down_including_unrecorded(root: &Path, port: u16) -> Result<(), String> {
-    down_with(root, port, true)
+pub fn down_including_unrecorded(port: u16) -> Result<(), String> {
+    down_with(port, true)
 }
 
-fn down_with(root: &Path, port: u16, consent: bool) -> Result<(), String> {
+fn down_with(port: u16, consent: bool) -> Result<(), String> {
     let mut acted = false;
-    if let Some(st) = read_state(root) {
+    // Only the runner recorded on this port. The record used to be one
+    // per platform per checkout, read without looking at the port, so
+    // `down --runner-port 22087` stopped whichever runner had been
+    // brought up last — on 22091, if that was the other simulator's.
+    let recorded =
+        crate::runner_state::find(&machine_leases()?, crate::runner_state::Lookup::Port(port))?;
+    if let Some(st) = recorded {
         // Supervisor teardown first. Skip when we are
         // the supervisor calling down() (avoid killing ourselves
         // mid-cycle — the re-entrant case).
@@ -1996,7 +2010,6 @@ fn down_with(root: &Path, port: u16, consent: bool) -> Result<(), String> {
                 }
             }
         }
-        clear_state(root);
         match machine_leases() {
             Ok(leases) => forget_runner_lease(&leases, &st.udid),
             Err(e) => eprintln!("runner down: lease ledger not updated: {e}"),
@@ -2053,11 +2066,25 @@ fn down_with(root: &Path, port: u16, consent: bool) -> Result<(), String> {
 /// Errors if no state.json exists — cycle only cycles known runners;
 /// use `smix runner up` for a cold start.
 pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<(), String> {
-    let st = read_state(root).ok_or_else(|| {
-        "no runner recorded — cycle only cycles a known runner; \
-         run `smix runner up <device> [--bundle <id>]` for a cold start"
-            .to_string()
-    })?;
+    let st =
+        crate::runner_state::find(&machine_leases()?, crate::runner_state::Lookup::Port(port))?
+            .ok_or_else(|| {
+                format!(
+                    "no runner recorded on port {port} — cycle only cycles a known runner; \
+             run `smix runner up <device> [--bundle <id>]` for a cold start"
+                )
+            })?;
+    cycle_recorded(root, st, runner_project)
+}
+
+/// Cycle the runner a ledger row names — the one `up` already found, so
+/// the recovery acts on the record the decision was made about rather
+/// than reading a book a second time.
+fn cycle_recorded(
+    root: &Path,
+    st: RunnerState,
+    runner_project: Option<&Path>,
+) -> Result<(), String> {
     let udid = st.udid.clone();
     let bundle = st.bundle.clone();
     let cycle_port = st.port;
@@ -2066,12 +2093,6 @@ pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<()
     // Otherwise `runner cycle` from inside a supervisor-managed runner
     // would silently drop supervision.
     let had_supervisor = st.supervisor_pid.is_some();
-    if cycle_port != port {
-        eprintln!(
-            "note: the recorded port {cycle_port} differs from --runner-port {port}; \
-             cycling on state.json's {cycle_port}"
-        );
-    }
     println!("cycling runner: udid={udid} port={cycle_port} bundle={bundle:?}");
 
     // Try the in-process soft-cycle first: if the XCUITest host is alive
@@ -2090,11 +2111,11 @@ pub fn cycle(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<()
         }
         smix_runner_client::CyclePlan::HardFallback { reason } => {
             println!("soft-cycle unavailable ({reason}); hard-cycling via xcodebuild");
-            // No: a cycle restarts the runner this state file names. If
+            // No: a cycle restarts the runner the ledger names. If
             // something else holds the port, the restart is not what is
             // wanted anyway — better to say so than to clear the way by
             // ending somebody else's session.
-            down(root, cycle_port)?;
+            down(cycle_port)?;
             up(
                 root,
                 &udid,
@@ -2277,10 +2298,12 @@ fn record_forward_lease(leases: &smix_lease::store::LeaseDir, udid: &str, port: 
     }
 }
 
-fn spawn_supervisor(root: &Path, runner_project: Option<&Path>) -> Result<u32, String> {
-    let st = read_state(root)
-        .ok_or_else(|| "internal: no state.json to attach supervisor to".to_string())?;
-    let udid = st.udid.clone();
+fn spawn_supervisor(
+    root: &Path,
+    udid: &str,
+    port: u16,
+    runner_project: Option<&Path>,
+) -> Result<u32, String> {
     let runner_dir = root.join(".smix/runner");
     std::fs::create_dir_all(&runner_dir).map_err(|e| format!("mkdir .smix/runner: {e}"))?;
     let log = runner_dir.join(format!("supervise-{udid}.log"));
@@ -2292,7 +2315,13 @@ fn spawn_supervisor(root: &Path, runner_project: Option<&Path>) -> Result<u32, S
 
     let self_exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let mut cmd = std::process::Command::new(&self_exe);
-    cmd.arg("runner").arg("supervise");
+    // The port is how the supervisor finds its runner. Without it the
+    // supervisor read "the iOS runner" of the checkout, and with two
+    // runners that was whichever came up last.
+    cmd.arg("runner")
+        .arg("supervise")
+        .arg("--runner-port")
+        .arg(port.to_string());
     if let Some(p) = runner_project {
         cmd.arg("--runner-project").arg(p);
     }
@@ -2323,13 +2352,24 @@ fn spawn_supervisor(root: &Path, runner_project: Option<&Path>) -> Result<u32, S
 /// Runs foreground; SIGINT / SIGTERM to the supervisor cleanly shuts
 /// it down. `smix runner down` invoked separately still tears the
 /// runner itself down.
-pub fn supervise(root: &Path, runner_project: Option<&Path>) -> Result<(), String> {
-    let st = read_state(root).ok_or_else(|| {
-        "no runner recorded — supervise attaches to a known runner; \
-         run `smix runner up <device> --bundle <id>` first"
-            .to_string()
+pub fn supervise(root: &Path, port: u16, runner_project: Option<&Path>) -> Result<(), String> {
+    let st =
+        crate::runner_state::find(&machine_leases()?, crate::runner_state::Lookup::Port(port))?
+            .ok_or_else(|| {
+                format!(
+                    "no runner recorded on port {port} — supervise attaches to a known runner; \
+             run `smix runner up <device> --bundle <id>` first"
+                )
+            })?;
+    // A runner recorded before the ledger carried its log has nothing
+    // to tail. Saying so is better than tailing a path nobody wrote.
+    let log_path = st.log.clone().ok_or_else(|| {
+        format!(
+            "the runner on port {} was recorded before its log path was; \
+             `smix runner cycle` it so the record carries one",
+            st.port
+        )
     })?;
-    let log_path = st.log.clone();
     let port = st.port;
     println!(
         "smix runner supervise: attached\n  udid={} port={} log={}",
@@ -2608,6 +2648,8 @@ fn record_runner_lease(
     udid: &str,
     port: u16,
     pid: u32,
+    bundle: Option<&str>,
+    log: &Path,
 ) -> Result<(), String> {
     use smix_lease::store;
     let proc = store::identify(pid).unwrap_or(smix_lease::ProcIdentity {
@@ -2618,8 +2660,17 @@ fn record_runner_lease(
         started_at: String::new(),
         cmd: format!("xcodebuild test … id={udid}"),
     });
-    store::add_resource(leases, udid, smix_lease::Resource::Runner { port, proc })
-        .map_err(|e| e.to_string())
+    store::add_resource(
+        leases,
+        udid,
+        smix_lease::Resource::Runner {
+            port,
+            proc,
+            bundle: bundle.map(str::to_string),
+            log: Some(log.display().to_string()),
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Drop the runner row after a clean teardown, and the whole ledger with
@@ -2636,6 +2687,8 @@ fn forget_runner_lease(leases: &smix_lease::store::LeaseDir, udid: &str) {
     for sample in [
         smix_lease::Resource::Runner {
             port: 0,
+            bundle: None,
+            log: None,
             proc: store::identify_self(),
         },
         smix_lease::Resource::Supervisor {
@@ -2789,7 +2842,7 @@ mod tests {
             pid: 4242,
             udid: UDID.into(),
             port: 22087,
-            log: PathBuf::from("/tmp/runner.log"),
+            log: Some(PathBuf::from("/tmp/runner.log")),
             bundle: Some("com.example.app".into()),
             supervisor_pid: None,
         };
@@ -3162,5 +3215,35 @@ mod target_tests {
         };
         assert_ne!(path_of(&a), path_of(&b));
         assert!(path_of(&b).contains(PHONE));
+    }
+}
+
+#[cfg(test)]
+mod record_tests {
+    use super::*;
+
+    #[test]
+    fn a_recorded_runner_reads_back_with_its_bundle_and_log() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let leases = smix_lease::store::LeaseDir::at(dir.path().join("leases"));
+        record_runner_lease(
+            &leases,
+            "UDID-REC",
+            22093,
+            std::process::id(),
+            Some("com.example.app"),
+            Path::new("/tmp/runner-22093.log"),
+        )
+        .expect("record");
+        let st = crate::runner_state::find(&leases, crate::runner_state::Lookup::Port(22093))
+            .expect("reads")
+            .expect("the runner just recorded is not found on its port");
+        assert_eq!(st.udid, "UDID-REC");
+        assert_eq!(
+            st.bundle.as_deref(),
+            Some("com.example.app"),
+            "the bundle `up` was given is not in the record — `up --force` would refuse its own runner"
+        );
+        assert_eq!(st.log.as_deref(), Some(Path::new("/tmp/runner-22093.log")));
     }
 }

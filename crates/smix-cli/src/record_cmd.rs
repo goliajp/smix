@@ -14,7 +14,6 @@
 use crate::RecordAction;
 use smix_lease::{Resource, store};
 use smix_sdk::device_control::DeviceControl;
-use std::path::Path;
 
 /// What `status` found, said in a sentence.
 ///
@@ -49,9 +48,7 @@ pub fn describe_status(device_id: &str, lease: Option<&smix_lease::Lease>) -> St
 }
 
 /// Run the subcommand.
-pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliError> {
-    // The ledgers are the machine's; `root` is still the tree, and is
-    // used only for settling a dead holder's build products.
+pub async fn run(action: RecordAction) -> Result<(), crate::CliError> {
     let leases = smix_capsule::runner::machine_leases().map_err(crate::CliError::Other)?;
     match action {
         RecordAction::Start { device, output } => {
@@ -59,7 +56,6 @@ pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliErro
             let control = smix_sdk::ios_device::IosDeviceControl::new();
             let leased = smix_sdk::leased::Leased::acquire(
                 &control,
-                root,
                 &leases,
                 &udid,
                 &smix_capsule::reconcile::Reconciler,
@@ -113,13 +109,11 @@ pub async fn run(root: &Path, action: RecordAction) -> Result<(), crate::CliErro
                 println!("{udid}: not recording");
                 return Ok(());
             };
-            let outcomes = smix_capsule::reconcile::execute(
-                root,
-                &[smix_lease::CleanupAction::StopRecording {
+            let outcomes =
+                smix_capsule::reconcile::execute(&[smix_lease::CleanupAction::StopRecording {
                     path: path.clone(),
                     proc,
-                }],
-            );
+                }]);
             for o in &outcomes {
                 println!("  {}", o.line());
             }

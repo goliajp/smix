@@ -87,6 +87,18 @@ pub enum Resource {
         port: u16,
         /// The host-side `xcodebuild` process.
         proc: ProcIdentity,
+        /// The app the runner is bound to. `None` on a row written before
+        /// this field existed, and on a runner started without `--bundle`.
+        ///
+        /// It is here because this row is the only record of the runner:
+        /// the checkout used to hold a second one with the bundle in it,
+        /// under one key per platform, and two runners in one checkout
+        /// overwrote each other there.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bundle: Option<String>,
+        /// Where `xcodebuild`'s output is going. The supervisor tails it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        log: Option<String>,
     },
     /// A `simctl io … recordVideo` child writing to `path`.
     #[serde(rename_all = "camelCase")]
@@ -584,7 +596,7 @@ pub enum StaleReason {
 /// handing the device over" is a question answerable without a device.
 pub trait CleanupExecutor {
     /// Perform the closes, in the order given, and report each.
-    fn execute(&self, root: &std::path::Path, actions: &[CleanupAction]) -> Vec<CleanupReport>;
+    fn execute(&self, actions: &[CleanupAction]) -> Vec<CleanupReport>;
 }
 
 /// What became of one owed close, as the gate needs to hear it.
@@ -1017,7 +1029,7 @@ fn plan_rest(lease: &Lease) -> Vec<CleanupAction> {
                     path: path.clone(),
                     proc: proc.clone(),
                 }),
-                Resource::Runner { port, proc } => Some(CleanupAction::StopRunner {
+                Resource::Runner { port, proc, .. } => Some(CleanupAction::StopRunner {
                     port: *port,
                     proc: proc.clone(),
                 }),
@@ -1159,6 +1171,8 @@ mod tests {
     fn runner() -> Resource {
         Resource::Runner {
             port: 22087,
+            bundle: None,
+            log: None,
             proc: runner_proc(),
         }
     }
@@ -1563,6 +1577,8 @@ mod boot_only_tests {
                 Row::Known(Resource::Booted { by_us: true }),
                 Row::Known(Resource::Runner {
                     port: 1,
+                    bundle: None,
+                    log: None,
                     proc: ProcIdentity {
                         pid: 0,
                         started_at: "Thu Aug  6 10:00:05 2026".into(),
@@ -1627,6 +1643,8 @@ mod ordering_tests {
             },
             Resource::Runner {
                 port: 22087,
+                bundle: None,
+                log: None,
                 proc: proc(5150, "xcodebuild test"),
             },
         ]);
@@ -1740,6 +1758,8 @@ mod entitlement_tests {
         // We have a runner on it, but somebody else turned it on.
         let l = lease(vec![Resource::Runner {
             port: 22087,
+            bundle: None,
+            log: None,
             proc: ProcIdentity {
                 pid: 2,
                 started_at: "Thu Aug  6 10:00:05 2026".into(),
@@ -1939,6 +1959,8 @@ mod forward_ordering_tests {
             },
             Resource::Runner {
                 port: 22087,
+                bundle: None,
+                log: None,
                 proc: proc(5150, "xcodebuild test"),
             },
         ])

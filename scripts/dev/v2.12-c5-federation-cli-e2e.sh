@@ -95,15 +95,20 @@ UDID_M=""
 rssh "xcrun simctl list devices 2>/dev/null | grep -q \"$UDID_M.*Booted\"" && WAS_BOOTED_REMOTE=yes
 
 # Studio teardown, no sweep (C4 incident discipline): read the recorded
-# runner handle from the store, verify the pid is still xcodebuild
+# runner handle from the device's lease, verify the pid is still xcodebuild
 # (pid-reuse guard), then a precise kill -INT with a bounded wait.
 # Never any iOS-form `smix runner down` here — env or flag — and never
-# a bare `pgrep xcodebuild`. The stale handle stays in the store; the
+# a bare `pgrep xcodebuild`. The stale row stays in the lease; the
 # product drops it itself on the next `runner down`.
 stop_studio_runner() {
   local pid cmd i
-  pid="$( (cd "$ROOT" && target/release/smix diagnostic store 2>/dev/null) \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin)["one:runner-ios"]["pid"])' 2>/dev/null )" || true
+  pid="$(python3 -c '
+import json, os, sys
+home = os.environ.get("SMIX_MACHINE_DIR") or os.path.join(
+    os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "smix")
+lease = json.load(open(os.path.join(home, "leases", sys.argv[1] + ".json")))
+print(next(r["proc"]["pid"] for r in lease["resources"] if r["kind"] == "runner"))
+' "$UDID_S" 2>/dev/null)" || true
   if [ -z "$pid" ]; then
     log "teardown: no recorded runner handle on studio — nothing to stop"
     return 0

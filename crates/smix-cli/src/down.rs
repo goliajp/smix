@@ -69,7 +69,7 @@ pub fn teardown_verdict(
 /// A device whose session is still alive is left alone and said so:
 /// `smix down` is a sweep of *this* operator's leftovers, not a claim
 /// on every device on the machine.
-fn settle_ledgers(root: &Path, leases: &smix_lease::store::LeaseDir) {
+fn settle_ledgers(leases: &smix_lease::store::LeaseDir) {
     let Ok(entries) = std::fs::read_dir(leases.path()) else {
         println!("  no device ledgers");
         return;
@@ -124,7 +124,7 @@ fn settle_ledgers(root: &Path, leases: &smix_lease::store::LeaseDir) {
             println!("  {id}: nothing owed");
         }
         let mut all_clean = true;
-        for outcome in smix_capsule::reconcile::execute(root, &cleanup) {
+        for outcome in smix_capsule::reconcile::execute(&cleanup) {
             println!("  {id}: {}", outcome.line());
             all_clean &= outcome.is_clean();
         }
@@ -157,10 +157,10 @@ fn settle_ledgers(root: &Path, leases: &smix_lease::store::LeaseDir) {
 pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     let leases = smix_capsule::runner::machine_leases()?;
     println!("=== 1. device ledgers (close what we opened) ===");
-    settle_ledgers(root, &leases);
+    settle_ledgers(&leases);
 
     println!("=== 2. XCUITest runner ===");
-    smix_capsule::runner::down(root, runner_port)?;
+    smix_capsule::runner::down(runner_port)?;
 
     println!("=== 3. web demo stack ===");
     pkill("-TERM", "smix/web/node_modules/.bin/vite", "vite");

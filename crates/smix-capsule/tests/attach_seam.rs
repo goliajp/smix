@@ -18,6 +18,7 @@ impl BringUpAttempter for FakeUp {
     #[allow(clippy::too_many_arguments)]
     fn attempt(
         &mut self,
+        _ledger: &smix_lease::store::LeaseDir,
         _root: &Path,
         _udid: &str,
         _port: u16,
@@ -47,6 +48,7 @@ fn up_on_with_drives_the_attempter_and_returns_on_up() {
     };
     let result = up_on_with(
         &mut fake,
+        &smix_lease::store::LeaseDir::at(root.path().join("leases")),
         root.path(),
         "C6D-TEST-UDID",
         port,

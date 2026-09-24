@@ -1193,7 +1193,6 @@ impl App {
     /// holder's leftovers could not be closed.
     pub fn hold_device_lease(
         &mut self,
-        workspace_root: &std::path::Path,
         lease_dir: &smix_lease::store::LeaseDir,
         device_id: &str,
         executor: &dyn smix_lease::CleanupExecutor,
@@ -1205,13 +1204,8 @@ impl App {
         // `Drop` on the guard — so ending the borrow here gives nothing
         // away.
         let settled = {
-            let leased = leased::Leased::acquire(
-                self.device.as_ref(),
-                workspace_root,
-                lease_dir,
-                device_id,
-                executor,
-            )?;
+            let leased =
+                leased::Leased::acquire(self.device.as_ref(), lease_dir, device_id, executor)?;
             leased.settled().to_vec()
         };
         self.lease = Some(LeaseHold {

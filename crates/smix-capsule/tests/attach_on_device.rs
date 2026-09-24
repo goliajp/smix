@@ -28,6 +28,7 @@ impl BringUpAttempter for FirstTimesOutThenReal {
     #[allow(clippy::too_many_arguments)]
     fn attempt(
         &mut self,
+        ledger: &smix_lease::store::LeaseDir,
         root: &Path,
         udid: &str,
         port: u16,
@@ -48,6 +49,7 @@ impl BringUpAttempter for FirstTimesOutThenReal {
             });
         }
         self.real.attempt(
+            ledger,
             root,
             udid,
             port,
@@ -87,8 +89,12 @@ fn first_timeout_then_real_attach_brings_the_runner_up() {
         real: RealBringUp,
         attach_flags: Vec::new(),
     };
+    // A real runner on a real device: the ledger it is written in is the
+    // machine's, as it is for `smix runner up`.
+    let ledger = smix_capsule::runner::machine_leases().expect("machine ledger");
     let result = up_on_with(
         &mut fake,
+        &ledger,
         root.path(),
         &udid,
         port,

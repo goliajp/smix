@@ -69,6 +69,22 @@ All notable changes to the `smix` workspace are documented here. The format foll
   platforms use. `HttpRunnerClient::double_tap_at_norm_coord` and
   `long_press_at_norm_coord` return the `TapAtCoordResult` the runner
   answered with.
+- **Rust API: the iOS runner's record is the device's lease.**
+  `smix_lease::Resource::Runner` has two more fields, `bundle` and `log`
+  (both optional; rows written before them still read).
+  `smix_capsule::runner::down` and `down_including_unrecorded` take a port
+  and no workspace root; `supervise` takes the port it watches;
+  `up_on_with` and `BringUpAttempter::attempt` take the ledger;
+  `decide_already_serving` takes the checkout's old record as evidence, and
+  `AlreadyServing::Recover` carries the runner it is about.
+  `RunnerState::log` is an `Option`. `runner_state::{read, write, clear,
+  Platform}` are gone; `runner_state::find` and `legacy_evidence` replace
+  them.
+- **Rust API: cleanup no longer takes a workspace root.**
+  `smix_lease::CleanupExecutor::execute`, `smix_capsule::reconcile::execute`,
+  `smix_sdk::leased::Leased::acquire` and `App::hold_device_lease` drop the
+  `root` / `workspace_root` parameter. It was used for one thing, the
+  checkout's runner record, and that record is no longer written.
 
 ### Added
 
@@ -238,6 +254,26 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- **Two iOS runners brought up from one checkout keep one record each.**
+  The record was one slot per platform per checkout, so the second
+  `runner up` overwrote the first's, `runner down` on the second erased
+  it, and `runner up --force` on the first then refused its own runner as
+  unrecorded ("not killing blindly"). The record is now the device's lease
+  in this machine's ledger — one row per device, found by port — and the
+  checkout's old slot is never written; when a refusal has nothing else to
+  go on it cites what that slot still says.
+- **`smix runner down --runner-port P` stops the runner on port P.** It
+  read the same slot without looking at the port, so with two runners it
+  stopped whichever had been brought up last.
+- **`smix runner up --supervise` watches the runner it was started with.**
+  The sidecar read the same slot; with two runners, the first one's
+  supervisor watched the second one's log. It is started as `smix runner
+  supervise --runner-port <port>` and finds its runner by that port.
+- **A failed `smix runner up` no longer leaves a runner row behind.** Its
+  failure paths cleared the checkout's slot and left the ledger's row, so
+  the two books disagreed about a runner that never came up.
+- **`smix lease` and `smix record` work outside a workspace.** They asked
+  for one only to pass it to a cleanup that did not use it.
 - **iOS double tap and long press say what they landed on.** They went to
   `/double-tap` and `/long-press`, XCUI element actions that answered `ok`
   and nothing about where the touch went. They are now host-resolved and

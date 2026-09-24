@@ -233,7 +233,7 @@ pub fn compare(
                         Row::Unnamed(_) => {
                             format!("unnamed {}", row.unnamed_kind().unwrap_or_default())
                         }
-                        Row::Known(Resource::Runner { port, proc }) => {
+                        Row::Known(Resource::Runner { port, proc, .. }) => {
                             format!("runner :{port} pid {}", proc.pid)
                         }
                         Row::Known(Resource::AndroidRunner { port, proc, .. }) => {
