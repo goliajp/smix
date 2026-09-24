@@ -46,6 +46,79 @@ pub enum RegistryError {
         /// Alias keys and device names available in the registry.
         known: Vec<String>,
     },
+    /// This machine's registry and a checkout's legacy book give one alias
+    /// to two different devices.
+    #[error("{}", diverged_message(alias, machine, checkouts))]
+    Diverged {
+        /// The alias both books claim.
+        alias: String,
+        /// The machine registry's path and the identifier it holds.
+        machine: (PathBuf, String),
+        /// Each checkout book that disagrees, and the identifier it holds.
+        checkouts: Vec<(PathBuf, String)>,
+    },
+}
+
+fn diverged_message(
+    alias: &str,
+    machine: &(PathBuf, String),
+    checkouts: &[(PathBuf, String)],
+) -> String {
+    let others = checkouts
+        .iter()
+        .map(|(p, id)| format!("{} says {id}", p.display()))
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!(
+        "`{alias}` names two devices: this machine's registry ({}) says {}, and {others}. \
+         A checkout's book is read, never written, and it does not get to decide which \
+         device an alias drives — so nothing was driven. Make them agree: correct that \
+         file (smix does not edit it), or record the device on this machine with \
+         `smix sim register --udid <id> {alias}`.",
+        machine.0.display(),
+        machine.1
+    )
+}
+
+/// The shape of a pre-store `.smix/sims.json`.
+#[derive(Deserialize)]
+struct LegacyBook {
+    #[serde(default)]
+    sims: BTreeMap<String, RegisteredSim>,
+}
+
+/// One alias, two devices: this machine's answer and each checkout book
+/// that disagrees with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Divergence {
+    /// The machine registry's path and the identifier it holds.
+    pub machine: (PathBuf, String),
+    /// Each checkout book that disagrees, and the identifier it holds.
+    pub checkouts: Vec<(PathBuf, String)>,
+}
+
+/// Which book an answer came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    /// This machine's registry — where device facts live (§9 #9).
+    Machine(PathBuf),
+    /// A checkout's book that the machine registry does not also hold.
+    Checkout(PathBuf),
+    /// The one registry `SMIX_SIMS_JSON` names.
+    Named(PathBuf),
+    /// No book: the reference was the identifier itself.
+    Literal,
+}
+
+/// A device reference answered, with the book the answer came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolved {
+    /// The identifier the platform addresses the device by.
+    pub id: String,
+    /// The alias the reference matched (the reference itself for a raw id).
+    pub alias: String,
+    /// Which book answered.
+    pub source: Source,
 }
 
 /// What kind of device a registry entry names.
@@ -217,8 +290,16 @@ pub struct MigrationReport {
 /// Every registry this machine can read, folded into one.
 #[derive(Debug, Default, Clone)]
 pub struct MergedRegistry {
-    /// The merged view. Which book a device came from is not visible
-    /// here, deliberately: a device is a device.
+    /// The merged view, with this machine's registry as the authority.
+    ///
+    /// This used to say that which book a device came from was not
+    /// visible here, deliberately, because a device is a device. Two
+    /// things came of that on 2026-09-24: a checkout's legacy book that
+    /// gave an alias to another device won whenever its UDID sorted
+    /// first, and a consumer lost an hour to a harness reading a book
+    /// smix no longer answered from, with nothing saying which book
+    /// smix did answer from. [`Self::sources`] and [`Self::diverged`]
+    /// are the answer to both.
     pub registry: SimRegistry,
     /// Aliases a checkout is the only holder of, and which checkout.
     ///
@@ -228,6 +309,51 @@ pub struct MergedRegistry {
     /// point of moving these was that "check who owns this runner" can
     /// be carried out from anywhere.
     pub unmigrated: BTreeMap<String, PathBuf>,
+    /// Which book each alias in [`Self::registry`] came from.
+    pub sources: BTreeMap<String, Source>,
+    /// Aliases the machine and a checkout give to different devices.
+    pub diverged: BTreeMap<String, Divergence>,
+}
+
+impl MergedRegistry {
+    /// Resolve a device reference, naming the book that answered.
+    ///
+    /// An alias the machine and a checkout give to different devices is
+    /// refused rather than answered: the checkout's book may stop a
+    /// decision and be named as evidence, and nothing more (§9 #9).
+    pub fn resolve_ref(&self, device_ref: &str) -> Result<Resolved, RegistryError> {
+        let alias = self.matched_alias(device_ref);
+        if let Some(a) = alias.as_deref().or(Some(device_ref))
+            && let Some(d) = self.diverged.get(a)
+        {
+            return Err(RegistryError::Diverged {
+                alias: a.to_string(),
+                machine: d.machine.clone(),
+                checkouts: d.checkouts.clone(),
+            });
+        }
+        let id = self.registry.resolve(device_ref)?;
+        let (alias, source) = match alias {
+            Some(a) => {
+                let src = self.sources.get(&a).cloned().unwrap_or(Source::Literal);
+                (a, src)
+            }
+            None => (device_ref.to_string(), Source::Literal),
+        };
+        Ok(Resolved { id, alias, source })
+    }
+
+    /// The alias a reference names: the key itself, or the entry whose
+    /// device name or identifier it is.
+    fn matched_alias(&self, device_ref: &str) -> Option<String> {
+        let sims = self.registry.sims();
+        if sims.contains_key(device_ref) {
+            return Some(device_ref.to_string());
+        }
+        sims.iter()
+            .find(|(_, s)| s.device_name == device_ref || s.udid.eq_ignore_ascii_case(device_ref))
+            .map(|(a, _)| a.clone())
+    }
 }
 
 /// Whether `s` has CoreSimulator UDID form (8-4-4-4-12 hex).
@@ -751,37 +877,153 @@ impl SimRegistry {
     /// that is an empty registry, which reads the same as a machine
     /// where nothing has been registered yet.
     pub fn open_all(start: &Path) -> MergedRegistry {
-        let paths = Self::read_paths(start);
-        // Under `SMIX_SIMS_JSON` there is no machine/checkout split to
-        // report: the caller named the registry, and calling their own
-        // choice "unmigrated" would be advice to move a book they put
-        // where they wanted it.
-        let machine = if std::env::var_os("SMIX_SIMS_JSON").is_some() {
-            None
-        } else {
-            Self::machine_dir()
-        };
-        let mut loaded: Vec<Self> = Vec::new();
-        let mut unmigrated: BTreeMap<String, PathBuf> = BTreeMap::new();
-        let mut on_machine: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for path in &paths {
-            let Ok(reg) = Self::load(path) else {
-                continue;
+        // `SMIX_SIMS_JSON` names one registry and means exactly that one:
+        // there is no machine/checkout split to report, and calling the
+        // caller's own choice "unmigrated" would be advice to move a book
+        // they put where they wanted it.
+        if let Some(p) = std::env::var_os("SMIX_SIMS_JSON") {
+            let path = PathBuf::from(p);
+            let registry = Self::load(&path).unwrap_or_default();
+            let sources = registry
+                .sims
+                .keys()
+                .map(|a| (a.clone(), Source::Named(path.clone())))
+                .collect();
+            return MergedRegistry {
+                registry,
+                unmigrated: BTreeMap::new(),
+                sources,
+                diverged: BTreeMap::new(),
             };
-            if machine.as_deref() == Some(path.as_path()) {
-                on_machine.extend(reg.sims.values().map(|s| s.udid.to_ascii_uppercase()));
-            } else if machine.is_some() {
-                for (alias, sim) in &reg.sims {
-                    if !on_machine.contains(&sim.udid.to_ascii_uppercase()) {
-                        unmigrated.insert(alias.clone(), path.clone());
+        }
+        let machine = Self::machine_dir();
+        let checkouts: Vec<PathBuf> = Self::discover(start).into_iter().collect();
+        Self::open_books(machine.as_deref(), &checkouts)
+    }
+
+    /// Fold this machine's registry and the checkout books named here.
+    ///
+    /// The machine is the authority (§9 #9). Checkout books are merged
+    /// among themselves the way they always were — they have no order —
+    /// and then may add only aliases the machine does not hold. An alias
+    /// both hold for the same device keeps the machine's row, with
+    /// destructive consent narrowed if the checkout withheld it (a stop,
+    /// which is a power a checkout keeps). An alias both hold for
+    /// different devices goes into [`MergedRegistry::diverged`] and is
+    /// refused at resolution; the checkout's row does not enter the view
+    /// under any name, because a suffixed alias is a name nobody gave.
+    ///
+    /// A book that will not open is skipped: one corrupt file must not
+    /// strand the devices recorded in the others.
+    pub fn open_books(machine: Option<&Path>, checkouts: &[PathBuf]) -> MergedRegistry {
+        let machine = machine.and_then(|m| Self::load(m).ok().map(|r| (m.to_path_buf(), r)));
+        let mut books: Vec<(PathBuf, Self)> = checkouts
+            .iter()
+            .flat_map(|c| Self::checkout_books(c))
+            .collect();
+        books.sort_by(|a, b| a.0.cmp(&b.0));
+        Self::combine(machine, books)
+    }
+
+    /// The books a checkout's `.smix` holds, read without writing.
+    ///
+    /// A pre-store `sims.json` and a store written by an older smix are
+    /// two books, read separately so a disagreement can name the file.
+    /// Neither is opened for writing: reading one used to create a store
+    /// in the checkout and import the JSON into it, which put device
+    /// facts back into a checkout on every read.
+    fn checkout_books(path: &Path) -> Vec<(PathBuf, Self)> {
+        let dir = smix_dir(path);
+        let mut out = Vec::new();
+        if dir.join("kv").is_dir()
+            && let Ok(store) = smix_store::Store::open(&dir)
+        {
+            let mut sims = BTreeMap::new();
+            for alias in store.sims().list() {
+                if let Ok(Some(sim)) = store.sims().get_json::<RegisteredSim>(&alias) {
+                    sims.insert(alias, sim);
+                }
+            }
+            out.push((dir.clone(), Self { sims }));
+        }
+        let legacy = dir.join("sims.json");
+        if let Ok(bytes) = std::fs::read(&legacy)
+            && let Ok(doc) = serde_json::from_slice::<LegacyBook>(&bytes)
+        {
+            out.push((legacy, Self { sims: doc.sims }));
+        }
+        out
+    }
+
+    /// The pure half of [`Self::open_books`]: already-read books in,
+    /// one view out.
+    fn combine(machine: Option<(PathBuf, Self)>, books: Vec<(PathBuf, Self)>) -> MergedRegistry {
+        let (mpath, mut mreg) = match machine {
+            Some((p, r)) => (Some(p), r),
+            None => (None, Self::default()),
+        };
+        let mut sources: BTreeMap<String, Source> = BTreeMap::new();
+        if let Some(p) = &mpath {
+            for alias in mreg.sims.keys() {
+                sources.insert(alias.clone(), Source::Machine(p.clone()));
+            }
+        }
+        let mut diverged: BTreeMap<String, Divergence> = BTreeMap::new();
+        let mut rest: Vec<Self> = Vec::new();
+        let mut rest_paths: Vec<(PathBuf, Self)> = Vec::new();
+        for (path, book) in books {
+            let mut kept = BTreeMap::new();
+            for (alias, sim) in book.sims {
+                match (mreg.sims.get_mut(&alias), &mpath) {
+                    (Some(own), _) if own.udid.eq_ignore_ascii_case(&sim.udid) => {
+                        own.destructive_opt_in = own.destructive_opt_in && sim.destructive_opt_in;
+                    }
+                    (Some(own), Some(mp)) => {
+                        diverged
+                            .entry(alias)
+                            .or_insert_with(|| Divergence {
+                                machine: (mp.clone(), own.udid.clone()),
+                                checkouts: Vec::new(),
+                            })
+                            .checkouts
+                            .push((path.clone(), sim.udid));
+                    }
+                    _ => {
+                        kept.insert(alias, sim);
                     }
                 }
             }
-            loaded.push(reg);
+            rest_paths.push((path.clone(), Self { sims: kept.clone() }));
+            rest.push(Self { sims: kept });
+        }
+        let checkout_only = Self::merge(rest);
+        let on_machine: std::collections::BTreeSet<String> = mreg
+            .sims
+            .values()
+            .map(|s| s.udid.to_ascii_uppercase())
+            .collect();
+        let mut unmigrated = BTreeMap::new();
+        for (alias, sim) in checkout_only.sims {
+            let from = rest_paths
+                .iter()
+                .find(|(_, b)| {
+                    b.sims
+                        .values()
+                        .any(|s| s.udid.eq_ignore_ascii_case(&sim.udid))
+                })
+                .map(|(p, _)| p.clone())
+                .unwrap_or_default();
+            if mpath.is_some() && !on_machine.contains(&sim.udid.to_ascii_uppercase()) {
+                unmigrated.insert(alias.clone(), from.clone());
+            }
+            sources.insert(alias.clone(), Source::Checkout(from));
+            mreg.sims.insert(alias, sim);
         }
         MergedRegistry {
-            registry: Self::merge(loaded),
+            registry: mreg,
             unmigrated,
+            sources,
+            diverged,
         }
     }
 

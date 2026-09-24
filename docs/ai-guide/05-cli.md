@@ -482,8 +482,11 @@ to `~/.local/share/smix/android-runner/` and runs a gradle build there,
 which takes a build's worth of time; later runs find the APK already
 built. An Android SDK is required, the way the iOS side requires Xcode.
 
-The device is the adb serial — there is no registry indirection on this
-path. Default port is 28080; `--runner-port` sets the host side, which
+The device is an adb serial or a registered alias. An emulator's alias
+resolves to the AVD it was registered as, wherever that AVD is running now —
+a serial is a port, and an AVD can come up on a different one — and a
+checkout's book that gives the alias to another device stops the command
+(see *Which book answered*). Default port is 28080; `--runner-port` sets the host side, which
 adb forwards to the runner's own port inside the device. `runner up` is
 idempotent: if `/health` already answers on that port it says so and
 returns rather than stacking a second instrumentation onto it.
@@ -946,10 +949,38 @@ runtime, device type, and — for a physical device — whether destructive
 actions have been allowed on it. `--locale` and `--runner-port` are optional
 and set at registration.
 
-These live in a store rather than a file you edit. `smix sim register` and
-`smix sim unregister` are the way in and out; a JSON file written by hand is
-not read, except for a pre-2.1 `.smix/sims.json`, which is imported once and
-then left alone.
+These live in a store on this machine rather than in a file you edit.
+`smix sim register` and `smix sim unregister` are the way in and out.
+
+### Which book answered
+
+A checkout may still carry a `.smix/sims.json` from before 2.1. smix reads it
+and never writes it — not even to import it — and it counts for less than this
+machine's registry:
+
+- An alias only that file holds is answered from it, with a note that
+  `smix sim migrate` records it on this machine.
+- An alias this machine's registry holds is answered from the machine.
+- An alias the two give to **different devices** is refused, naming both files
+  and both identifiers. Nothing is driven: a checkout's book can stop a
+  decision, and it does not get to make one.
+
+`smix sim resolve` says which of these answered, on stderr — the identifier
+alone goes to stdout, so `$(smix sim resolve phone)` keeps working:
+
+```text
+$ smix sim resolve phone
+resolved `phone` from this machine's registry (~/.local/share/smix/devices)
+47ACEAE5-36BA-4C62-811B-F09B397910D7
+```
+
+**A harness that drives smix from outside should ask smix, not read a file.**
+`smix sim resolve <alias> --json` gives one object with `ref`, `id`, `alias`,
+`source` (`kind` is `machine`, `checkout`, `named` or `literal`, with its
+`path`), `deviceKind`, and for an emulator its `avd`. Reading the legacy
+`.smix/sims.json` directly answers from a book that `smix sim register` does
+not add to: a device registered a minute ago is missing from it, which reads
+exactly like a broken harness.
 
 ## The probe — reading the toolkit's own tree
 

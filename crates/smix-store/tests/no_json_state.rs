@@ -90,7 +90,13 @@ fn workspace_root() -> PathBuf {
 /// Named by path and asserted to exist, for the reason `is_exempt`
 /// gives above: an exemption that outlives its file goes on reading like
 /// a decision while protecting nothing.
-const SCRIPT_FIXTURES: &[&str] = &["scripts/dev/v10.2-c13d-an-alias-follows-its-device-e2e.sh"];
+const SCRIPT_FIXTURES: &[&str] = &[
+    "scripts/dev/v10.2-c13d-an-alias-follows-its-device-e2e.sh",
+    // Its subject is the legacy book itself: it writes a checkout's
+    // `.smix/sims.json` that disagrees with the machine's registry, to
+    // prove the disagreement stops resolution and names that file.
+    "scripts/dev/v11.1-c6-one-alias-one-answer-e2e.sh",
+];
 
 /// Shell scripts and CI carry user-visible text too.
 ///
