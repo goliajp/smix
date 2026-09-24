@@ -60,7 +60,14 @@ MIN_SELFTESTS = 10
 # Shell scripts carrying their own self-test as a flag, rather than as a
 # `*.test.py` beside them. Same claim, same expiry, different spelling.
 SELFTEST_FLAG = re.compile(r'(?:=\s*"--selftest"|^\s*--selftest\))', re.M)
-SELFTEST_DIRS = [os.path.join("scripts", "dev"), os.path.join("scripts", "release")]
+# `scripts/lib` too: the shared helpers there are sourced by every gate,
+# and one that answers `--selftest` with nothing calling it was invisible
+# to this scan until `deadline.sh` arrived (2026-09-24).
+SELFTEST_DIRS = [
+    os.path.join("scripts", "dev"),
+    os.path.join("scripts", "release"),
+    os.path.join("scripts", "lib"),
+]
 MIN_FLAG_SELFTESTS = 2
 
 

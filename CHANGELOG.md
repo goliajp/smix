@@ -4,31 +4,75 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ## [Unreleased]
 
-### Fixed
+### Breaking
 
-- **On Android, a tap on a dialog's button presses it.** The Known issue
-  in 11.0.0. A selector tap was turned into a share of the accessibility
-  tree's root and back into pixels with the display; the root was the
-  union of the windows that could be read, and with gesture navigation
-  and a dialog in front nothing reached the bottom of the screen —
-  measured on the fixture, 1080×1396 on a 1080×2340 display, and the
-  confirm pressed at y=2122, below a dialog ending at 1341. The root is
-  now the display, read in the one place the runner reads it, and the
-  semantics probe's tree carries the same number. This also moved every
-  other act aimed by a selector — `fill`'s focus tap, `doubleTapOn`,
-  `longPressOn`, `swipe: { over: }` — and the "wholly visible" share
-  `scrollUntilVisible` stops on.
+- **Rust API: `smix_lease::Resource` has a new variant, `Emulator { avd,
+  console_log }`, and `smix_adb::AdbClient::start_emulator_on` takes the
+  path to write the emulator's console to.** A `match` over `Resource`
+  needs an arm for it (it names a device and opens nothing, so teardown
+  has nothing to close); a caller of `start_emulator_on` passes a path.
 
-- **The semantics probe sees an app's own native dialogs.** It only
-  heard about Compose roots, so a Compose app confirming through
-  `android.app.AlertDialog` had the dialog in its accessibility tree and
-  not in the probe's: `smix find` found the confirm button and `tapOn`
-  said it was not there. Every window of the app process is now read
-  (`WindowInspector`, public API), and one no Compose root lives in is
-  walked as Views. Button text is reported as drawn (`DELETE`), as the
-  accessibility reader reports it, rather than as held (`Delete`).
+- **Rust API: `A11yNode` has two more fields, `window` and
+  `unreadable_windows`; `FailureInit` and `ExpectationFailure` have
+  `visible_total`, `windows` and `unreadable_windows`.** A struct literal
+  of any of them needs the new fields (`None` / empty); `FailureInit`
+  built with `..Default::default()` needs nothing. Build a failure's
+  screen with `FailureInit::with_screen(smix_screen::screen_facts(&tree,
+  10))`, or `with_screen_from(&earlier)` when restating another failure.
+
+- **Rust API: `tap_landed_within` takes a `ChainCoverage`, and
+  `TapAtCoordResult` has `complete`.** Whether a chain lists every
+  element under the point decides what an unnamed target's absence
+  means. `smix_driver::landing_outcome` is the one judgement both
+  platforms use. `HttpRunnerClient::double_tap_at_norm_coord` and
+  `long_press_at_norm_coord` return the `TapAtCoordResult` the runner
+  answered with.
+
+### Added
+
+- **A device that leaves while a ledger describes it is kept as a fact:
+  `smix lease history`.** The next `run`, `runner`, `sim` or `lease`
+  command compares the ledgers with what adb and simctl say is here, and
+  records each device that is gone — when it was noticed, when its
+  ledger last heard from it, who held it, whether smix booted it, what
+  answers on its port now, and for an emulator smix started, the last
+  lines of its console. An emulator smix starts now writes its console to
+  `~/.local/share/smix/emulator-console/` instead of `/dev/null`. It could
+  not be said before whose emulator had exited, or when, or why.
+- **`smix lease prune --device <DEVICE>` prunes one ledger and no other.**
+
+
+- **A `fallback` chain takes any selector, plus `point`.** `label`,
+  `role` with `name`, modifiers such as `below:`, and an element naming
+  two things at once are all valid chain entries now. The chain had a
+  parser of its own that read six forms and not `label` — and `label` is
+  how smix reaches an Android `contentDescription`, the only name an
+  icon-only button has there. So a flow could not say "this control,
+  under either name the two phones give it":
+
+  ```yaml
+  - tapOn:
+      fallback:
+        - text: "Pause"
+        - label: "Pause"
+  ```
+
+  A chain inside a chain is refused by name (it says nothing a flat
+  chain does not), and an unknown key in a chain entry lists the
+  selector keys that are read, from the same list every other selector
+  uses. Measured on both platforms: see "One control, two phones" in the
+  selectors guide.
 
 ### Changed
+
+- **`smix sim boot` starts an emulator on a free console port when the one
+  it was registered on is answering for another AVD.** It used to refuse:
+  the identity is the AVD name, and the port is only where it answers
+  today. It says which port it chose and what holds the registered one.
+- **`smix lease prune` judges an emulator's ledger by asking adb.** It
+  asked simctl only, so every emulator was "cannot tell whether it is
+  still on" and kept for ever.
+
 
 - **An Android tap is judged.** The runner reports what the touch was
   about to be delivered to — every element under the point, named or
@@ -57,47 +101,29 @@ All notable changes to the `smix` workspace are documented here. The format foll
   each omitted when there is nothing to say. iOS answers the same
   sentence: its tree is the app you named, so `windows` holds that app.
 
-### Breaking
+### Fixed
 
-- **Rust API: `A11yNode` has two more fields, `window` and
-  `unreadable_windows`; `FailureInit` and `ExpectationFailure` have
-  `visible_total`, `windows` and `unreadable_windows`.** A struct literal
-  of any of them needs the new fields (`None` / empty); `FailureInit`
-  built with `..Default::default()` needs nothing. Build a failure's
-  screen with `FailureInit::with_screen(smix_screen::screen_facts(&tree,
-  10))`, or `with_screen_from(&earlier)` when restating another failure.
+- **On Android, a tap on a dialog's button presses it.** The Known issue
+  in 11.0.0. A selector tap was turned into a share of the accessibility
+  tree's root and back into pixels with the display; the root was the
+  union of the windows that could be read, and with gesture navigation
+  and a dialog in front nothing reached the bottom of the screen —
+  measured on the fixture, 1080×1396 on a 1080×2340 display, and the
+  confirm pressed at y=2122, below a dialog ending at 1341. The root is
+  now the display, read in the one place the runner reads it, and the
+  semantics probe's tree carries the same number. This also moved every
+  other act aimed by a selector — `fill`'s focus tap, `doubleTapOn`,
+  `longPressOn`, `swipe: { over: }` — and the "wholly visible" share
+  `scrollUntilVisible` stops on.
 
-- **Rust API: `tap_landed_within` takes a `ChainCoverage`, and
-  `TapAtCoordResult` has `complete`.** Whether a chain lists every
-  element under the point decides what an unnamed target's absence
-  means. `smix_driver::landing_outcome` is the one judgement both
-  platforms use. `HttpRunnerClient::double_tap_at_norm_coord` and
-  `long_press_at_norm_coord` return the `TapAtCoordResult` the runner
-  answered with.
-
-### Added
-
-- **A `fallback` chain takes any selector, plus `point`.** `label`,
-  `role` with `name`, modifiers such as `below:`, and an element naming
-  two things at once are all valid chain entries now. The chain had a
-  parser of its own that read six forms and not `label` — and `label` is
-  how smix reaches an Android `contentDescription`, the only name an
-  icon-only button has there. So a flow could not say "this control,
-  under either name the two phones give it":
-
-  ```yaml
-  - tapOn:
-      fallback:
-        - text: "Pause"
-        - label: "Pause"
-  ```
-
-  A chain inside a chain is refused by name (it says nothing a flat
-  chain does not), and an unknown key in a chain entry lists the
-  selector keys that are read, from the same list every other selector
-  uses. Measured on both platforms: see "One control, two phones" in the
-  selectors guide.
-
+- **The semantics probe sees an app's own native dialogs.** It only
+  heard about Compose roots, so a Compose app confirming through
+  `android.app.AlertDialog` had the dialog in its accessibility tree and
+  not in the probe's: `smix find` found the confirm button and `tapOn`
+  said it was not there. Every window of the app process is now read
+  (`WindowInspector`, public API), and one no Compose root lives in is
+  walked as Views. Button text is reported as drawn (`DELETE`), as the
+  accessibility reader reports it, rather than as held (`Delete`).
 ## [11.0.0] — 2026-09-23
 
 Most flows need no change. Three things can make one behave differently:

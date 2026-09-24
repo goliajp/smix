@@ -69,6 +69,7 @@ MACHINE = {
     "read_paths": "machine registry first, checkout only as a read-only fallback",
     "open_all": "the merged view every reader gets",
     "load_registry": "the CLI's handle on that merged view",
+    "emulator_console_path": "what an emulator smix started printed before it died — a fact about a device on this machine, read back by `lease history` from any checkout",
 }
 
 # Facts a tree genuinely owns. Listed rather than assumed.

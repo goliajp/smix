@@ -1735,7 +1735,7 @@ smix run smoke.yaml checkout.yaml --nodes .smix/nodes.yaml --debug-output ./arti
 ```bash
 smix sim list                  # all sims (JSON: --json)
 smix sim resolve <ALIAS>       # alias → UDID
-smix sim boot <ALIAS|UDID>     # boot
+smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is taken starts on a free one
 smix sim shutdown <ALIAS|UDID> # shutdown
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
 smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up)
@@ -2251,6 +2251,8 @@ smix lease release <DEVICE>    # give that up again
 smix lease reconcile <DEVICE>  # close what an abandoned session left open
 smix lease prune               # drop ledgers that no longer describe anything
 smix lease prune --dry-run     # ...or say what it would drop, and drop nothing
+smix lease prune --device <DEVICE>   # ...looking at that one ledger and no other
+smix lease history             # devices that left while a ledger still described them (--json)
 smix lease migrate --from <DIR>  # fold a checkout's old ledgers into this machine's
 smix runner list               # every runner here: port, device, and who knows about it
 ```
@@ -2269,6 +2271,37 @@ Two things it will not do, both deliberate:
 - **It only shuts down a device it booted.** Finding a device already up and
   turning it off would take away someone else's session as the price of
   cleaning up after yours.
+
+### A device that left
+
+A ledger describes a device as present for as long as it exists. When the
+device goes without smix being told — an emulator that exits or crashes, a
+simulator shut down from outside, a phone unplugged — the ledger goes on
+describing it. The next `run`, `runner`, `sim` or `lease` command notices,
+keeps the departure as a fact, and says so once on stderr:
+
+```
+note: emulator-5554 (AVD sim-smix-android-02) left without smix hearing about it.
+Last heard from at 2026-09-24T00:31:03Z, held by pid 73835 (`smix sim boot
+sim-smix-android-02`, no longer running); smix booted it — recorded;
+`smix lease history` has it
+```
+
+`smix lease history` reads them back: which device and AVD, when it was
+noticed, when its ledger last heard from it, who held it and whether that
+process was still running, whether smix booted it, what AVD answers on its
+port now — and, for an emulator smix started, the last twenty lines it
+printed. smix keeps an emulator's console under
+`~/.local/share/smix/emulator-console/`, one file per start, because a
+restart would otherwise overwrite the run that died.
+
+Two limits, said plainly. An emulator smix did not start has no console
+here to read. And an emulator's exit status cannot be recovered afterwards:
+it is started detached, so by the time it exits nothing that smix runs is
+its parent. What it printed is what there is.
+
+A departure is noticed when a smix command next runs, so `noticed` is not
+when it happened; `last heard from` is the other end of that window.
 
 ### Claiming a device nothing here booted
 
