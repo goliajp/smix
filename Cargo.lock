@@ -2752,6 +2752,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_norway",
+ "smix-adb",
  "smix-lease",
  "smix-runner-client",
  "smix-runner-sources",

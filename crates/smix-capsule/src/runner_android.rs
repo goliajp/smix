@@ -32,7 +32,7 @@ const TEST_PACKAGE: &str = "dev.smix.runner.test";
 const TEST_RUNNER: &str = "androidx.test.runner.AndroidJUnitRunner";
 const SERVER_ENTRY: &str = "dev.smix.runner.RunnerTest#runServerForever";
 
-fn adb(serial: &str) -> Command {
+pub(crate) fn adb(serial: &str) -> Command {
     let mut c = Command::new("adb");
     c.args(["-s", serial]);
     c
@@ -103,7 +103,7 @@ const WINDOW_TYPE_APPLICATION: u64 = 1;
 /// has been answering "cannot tell" since the day it was written:
 /// verified against emulator-5554, where the full 166-byte response
 /// arrived immediately and the socket stayed open until the deadline.
-fn get_body(port: u16, path: &str) -> Result<String, ()> {
+pub(crate) fn get_body(port: u16, path: &str) -> Result<String, ()> {
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::time::Duration;
@@ -173,49 +173,16 @@ fn content_length(head: &[u8]) -> Option<usize> {
         .and_then(|(_, v)| v.trim().parse::<usize>().ok())
 }
 
-/// Does the runner's automation see any application window at all?
-///
-/// Read from `/windows`, which is the route that exists to tell "not
-/// attached" from "attached but unreadable" apart. A runner too old to
-/// serve it is not judged — an unknown answer is not a failing one.
-/// The package of whatever the platform says is resumed.
-///
-/// Two spellings appear in one `dumpsys activity activities` dump:
-/// `topResumedActivity=` and `ResumedActivity:`. They differ when more
-/// than one display reports, and the top one is the one in front, so it
-/// wins. Both wrap an `ActivityRecord{<hash> <user> <pkg>/<activity>}`,
-/// and the package is what precedes the slash.
-///
-/// Anything it cannot take apart yields None rather than a fragment: an
-/// unknown foreground is what makes the comparison downstream stand
-/// down, and half a package name would make it lie instead.
-pub fn parse_resumed_package(dump: &str) -> Option<String> {
-    fn package_after(marker: &str, dump: &str) -> Option<String> {
-        let at = dump.find(marker)?;
-        let rest = &dump[at + marker.len()..];
-        let record = rest.find("ActivityRecord{")?;
-        let inside = &rest[record + "ActivityRecord{".len()..];
-        let end = inside.find('}')?;
-        let fields = &inside[..end];
-        // `<hash> <user> <pkg>/<activity>` — the slash-bearing field is
-        // the only one that carries a package, whatever precedes it.
-        let slashed = fields.split_whitespace().find(|f| f.contains('/'))?;
-        let pkg = slashed.split('/').next()?;
-        if pkg.is_empty() {
-            return None;
-        }
-        Some(pkg.to_string())
-    }
-    // The markers carry their punctuation on purpose: "ResumedActivity"
-    // is a substring of "topResumedActivity", so the bare spelling would
-    // match the top line's tail and the two branches would never be
-    // distinguishable — a mutation that deleted the preference passed
-    // every test until these were pinned to `=` and `:`.
-    package_after("topResumedActivity=", dump).or_else(|| package_after("ResumedActivity:", dump))
-}
-
 /// What `dumpsys activity activities` says is in front, if it says.
-fn resumed_package(serial: &str) -> Option<String> {
+///
+/// Read through `smix_adb::parse_resumed_activity`, the same reader
+/// `smix sim frontmost` uses. This crate had its own, with the opposite
+/// rule — it preferred `topResumedActivity=`, the other read
+/// `ResumedActivity:` — and each had a test pinning its side against a
+/// hand-written dump. On the device the display-level `ResumedActivity:`
+/// line is the one that names the same activity as the window manager's
+/// `mFocusedApp`; `topResumedActivity=` is printed once per task.
+pub(crate) fn resumed_package(serial: &str) -> Option<String> {
     let out = adb(serial)
         .args(["shell", "dumpsys", "activity", "activities"])
         .output()
@@ -223,7 +190,7 @@ fn resumed_package(serial: &str) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    parse_resumed_package(&String::from_utf8_lossy(&out.stdout))
+    smix_adb::parse_resumed_activity(&String::from_utf8_lossy(&out.stdout)).map(|(pkg, _)| pkg)
 }
 
 /// Is the runner's view of the device the device's current one?
@@ -293,6 +260,11 @@ pub fn runner_view_is_current(port: u16, foreground_package: &str) -> Result<(),
     ))
 }
 
+/// Does the runner's automation see any application window at all?
+///
+/// Read from `/windows`, which is the route that exists to tell "not
+/// attached" from "attached but unreadable" apart. A runner too old to
+/// serve it is not judged — an unknown answer is not a failing one.
 fn automation_sees_an_app(port: u16) -> Result<(), String> {
     // The crate's own socket read rather than an HTTP client crate:
     // `read_health_bytes` next door does exactly this, and a dependency
@@ -479,33 +451,51 @@ fn device_present(serial: &str) -> bool {
 /// the flag lives on `up_with`, the way the iOS side grew `up_on_with`
 /// beside `up_on`.
 pub fn up(root: &Path, serial: &str, port: u16, timeout_secs: u64) -> Result<(), String> {
-    up_with(root, serial, port, timeout_secs, false)
+    up_with_options(
+        root,
+        serial,
+        port,
+        &UpOptions {
+            timeout_secs,
+            ..UpOptions::default()
+        },
+    )
 }
 
-/// `up`, with the flag that says what to do about a runner of ours whose
-/// view of the device has gone stale: refuse and name the fix, or run it.
-pub fn up_with(
+/// What `runner up` is asked to do beyond bringing the runner up.
+#[derive(Debug, Clone, Default)]
+pub struct UpOptions {
+    /// How long to wait for the runner to answer.
+    pub timeout_secs: u64,
+    /// Cycle a runner of ours whose view of the device has gone stale,
+    /// instead of refusing and naming the fix.
+    pub force: bool,
+    /// Also replace a runner a live process other than this one holds.
+    /// An Android device has one runner, so bringing ours up ends theirs;
+    /// this is where somebody says that is what they meant.
+    pub take_over: bool,
+    /// The app to leave in front (`--bundle`). `None` leaves whatever is
+    /// in front where it is — nothing nobody named is ever brought
+    /// forward.
+    pub app: Option<String>,
+    /// Restart `app` on a fresh bring-up, as iOS does; `false` is
+    /// `--no-launch`, which only brings it forward.
+    pub relaunch: bool,
+}
+
+/// Bring the runner up with `opts`. See [`UpOptions`].
+pub fn up_with_options(
     root: &Path,
     serial: &str,
     port: u16,
-    timeout_secs: u64,
-    force: bool,
+    opts: &UpOptions,
 ) -> Result<(), String> {
-    up_with_takeover(root, serial, port, timeout_secs, force, false)
-}
-
-/// [`up_with`], and with `take_over` also replace a runner a live
-/// process other than this one is holding. An Android device has one
-/// runner, so bringing ours up necessarily ends theirs; the flag is
-/// where somebody says that is what they meant.
-pub fn up_with_takeover(
-    root: &Path,
-    serial: &str,
-    port: u16,
-    timeout_secs: u64,
-    force: bool,
-    take_over: bool,
-) -> Result<(), String> {
+    let UpOptions {
+        timeout_secs,
+        force,
+        take_over,
+        ..
+    } = *opts;
     if !device_present(serial) {
         return Err(format!(
             "adb has no ready device {serial:?}. `adb devices` lists what is \
@@ -588,6 +578,30 @@ pub fn up_with_takeover(
             // question asked before reporting up is the one a caller
             // actually cares about, and the answer comes from the
             // platform rather than from the runner.
+            // Put the screen right before judging the runner by it. A
+            // shade pulled over the screen leaves only system windows,
+            // and the verdict below used to read that as the runner's
+            // accessibility connection having fallen behind — and to
+            // recommend cycling a runner that was fine, leaving the
+            // shade exactly where it was.
+            let settled =
+                match crate::android_bring_back::settle(serial, port, opts.app.as_deref(), false) {
+                    Ok(()) => true,
+                    Err(crate::android_bring_back::Unsettled::App(why)) => return Err(why),
+                    Err(crate::android_bring_back::Unsettled::Screen(why)) if !force => {
+                        return Err(format!(
+                            "port {port} answers /health, but {why}.\n\n\
+                         If no lock screen is up, the runner itself is stuck; bring it \
+                         back in place:\n  \
+                         smix runner up {serial} --platform android --force"
+                        ));
+                    }
+                    Err(crate::android_bring_back::Unsettled::Screen(why)) => {
+                        println!("[runner] {why}");
+                        println!("[runner] --force: replacing it");
+                        false
+                    }
+                };
             let foreground = resumed_package(serial);
             // Retried rather than asked once, and the retry lives here
             // rather than inside the predicate: a window list that has
@@ -599,7 +613,14 @@ pub fn up_with_takeover(
             // without this the release gate's own `am start; runner up`
             // sequence was refused, which is the false positive this
             // predicate has to not have.
-            let mut verdict = runner_view_is_current(port, foreground.as_deref().unwrap_or(""));
+            // Only asked of a screen that settled: an unsettled one under
+            // `--force` is already being replaced, and asking would say so
+            // a second time.
+            let mut verdict = if settled {
+                runner_view_is_current(port, foreground.as_deref().unwrap_or(""))
+            } else {
+                Ok(())
+            };
             for _ in 0..3 {
                 if verdict.is_ok() {
                     break;
@@ -608,10 +629,11 @@ pub fn up_with_takeover(
                 verdict = runner_view_is_current(port, foreground.as_deref().unwrap_or(""));
             }
             match verdict {
-                Ok(()) => {
+                Ok(()) if settled => {
                     println!("runner up: already healthy on http://localhost:{port}");
                     return Ok(());
                 }
+                Ok(()) => {}
                 Err(why) if force => {
                     println!("[runner] {why}");
                     println!("[runner] --force: replacing it");
@@ -745,6 +767,18 @@ pub fn up_with_takeover(
             // An application window is the thing to check for, because
             // there is always one: the launcher owns one on the home
             // screen. Only-SystemUI is not a state to report success on.
+            // The screen first, for the same reason as on the path above:
+            // only after a shade has been ruled out does "only system UI"
+            // mean what the refusal below says it means.
+            match crate::android_bring_back::settle(
+                serial,
+                port,
+                opts.app.as_deref(),
+                opts.relaunch,
+            ) {
+                Ok(()) | Err(crate::android_bring_back::Unsettled::Screen(_)) => {}
+                Err(crate::android_bring_back::Unsettled::App(why)) => return Err(why),
+            }
             if let Err(why) = automation_sees_an_app(port) {
                 return Err(format!(
                     "the runner answers /health on {port} but its automation is \

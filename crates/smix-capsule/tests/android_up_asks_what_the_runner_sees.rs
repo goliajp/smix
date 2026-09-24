@@ -180,7 +180,11 @@ fn an_unreachable_runner_is_not_called_stale() {
 /// activities` prints. Kept separate from the adb call so the shapes it
 /// has to survive can be stated here rather than discovered on a device.
 mod foreground {
-    use smix_capsule::runner_android::parse_resumed_package;
+    // One reader for the whole workspace: `smix sim frontmost` and
+    // `runner up` asking the same question must get the same answer.
+    fn parse_resumed_package(dump: &str) -> Option<String> {
+        smix_adb::parse_resumed_activity(dump).map(|(pkg, _)| pkg)
+    }
 
     #[test]
     fn reads_the_package_out_of_a_resumed_activity_line() {
@@ -193,23 +197,7 @@ mod foreground {
     }
 
     #[test]
-    fn prefers_the_top_resumed_activity_when_both_are_present() {
-        // The two lines name different packages, and the fallback's line
-        // comes first in the text — so a reader that ignored the
-        // preference, or matched "ResumedActivity" loosely enough to hit
-        // the top line's tail, would answer launcher here.
-        let dump = "\
-  ResumedActivity: ActivityRecord{aaa u0 com.android.launcher3/.Launcher} t734}
-    topResumedActivity=ActivityRecord{1b9c118 u0 dev.smix.fixture/.MainActivity} t1590}";
-        assert_eq!(
-            parse_resumed_package(dump),
-            Some("dev.smix.fixture".to_string()),
-            "topResumedActivity is what is in front when both report"
-        );
-    }
-
-    #[test]
-    fn falls_back_to_the_plain_line_when_there_is_no_top_one() {
+    fn reads_the_display_level_line() {
         let dump = "  ResumedActivity: ActivityRecord{aaa u0 \
                     com.android.launcher3/.Launcher} t734}";
         assert_eq!(

@@ -6,6 +6,15 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Breaking
 
+- **Rust API: `smix_capsule::runner_android::up_with` and `up_with_takeover`
+  are gone; `up_with_options(root, serial, port, &UpOptions)` takes their
+  place.** Adding the app under test and whether to relaunch it would have
+  made eight positional arguments. `parse_resumed_package` is gone too:
+  it was a second reader of what is in front, with the opposite rule to
+  `smix_adb::parse_resumed_activity`, and the two are one now.
+  `parse_resolved_activity` moved from `smix-sdk` to `smix-adb`; the old
+  path still re-exports it.
+
 - **Rust API: `smix_lease::Resource` has a new variant, `Emulator { avd,
   console_log }`, and `smix_adb::AdbClient::start_emulator_on` takes the
   path to write the emulator's console to.** A `match` over `Resource`
@@ -29,6 +38,16 @@ All notable changes to the `smix` workspace are documented here. The format foll
   answered with.
 
 ### Added
+
+- **`smix runner up --platform android` takes `--bundle` and `--no-launch`,
+  with the meaning they have on iOS: it finishes with that app in front.**
+  Restarted on a fresh bring-up, only brought forward with `--no-launch`
+  or when the runner was already up, and said in one line when it
+  happens. It used to refuse `--bundle` as iOS-only, so after an `adb
+  install` stopped the app there was nothing to say "bring it back" with,
+  and the next flow's first step found the launcher. A package that is
+  not installed is refused by name. Without `--bundle`, nothing is ever
+  brought forward: which app belongs in front is the caller's to say.
 
 - **A device that leaves while a ledger describes it is kept as a fact:
   `smix lease history`.** The next `run`, `runner`, `sim` or `lease`
@@ -64,6 +83,14 @@ All notable changes to the `smix` workspace are documented here. The format foll
   selectors guide.
 
 ### Changed
+
+- **`smix runner up` on Android puts a pulled-down notification shade
+  away before it answers.** Only system UI held the focus and no app
+  window could be read; `runner up` collapses the shade, says so, and
+  asks again, reading the device back rather than waiting a fixed time.
+  If system UI is still all there is afterwards, it refuses and names
+  both things that can be: a lock screen, or a crashed-and-restarted
+  instrumentation.
 
 - **`smix sim boot` starts an emulator on a free console port when the one
   it was registered on is answering for another AVD.** It used to refuse:
@@ -102,6 +129,17 @@ All notable changes to the `smix` workspace are documented here. The format foll
   sentence: its tree is the app you named, so `windows` holds that app.
 
 ### Fixed
+
+- **`smix runner up` misdiagnosed a pulled-down shade as a runner that had
+  fallen behind.** With the shade over the screen, it said the runner's
+  accessibility connection was behind the device and recommended
+  `--force` — which cycles a working runner and leaves the shade where it
+  was. Reproduced on an emulator; the runner was fine the whole time.
+- **A screen between two apps is no longer read as a covered one.** For a
+  moment after an app is started, the runner lists only system UI, just
+  as it does under a shade; the two differ in whether system UI holds the
+  focus. Read without that, a fresh `runner up --bundle` reported a
+  crashed instrumentation with the app about to appear.
 
 - **On Android, a tap on a dialog's button presses it.** The Known issue
   in 11.0.0. A selector tap was turned into a share of the accessibility

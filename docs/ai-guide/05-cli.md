@@ -488,6 +488,40 @@ adb forwards to the runner's own port inside the device. `runner up` is
 idempotent: if `/health` already answers on that port it says so and
 returns rather than stacking a second instrumentation onto it.
 
+**The app under test, and the screen in front of it.** `--bundle` means
+the same here as on iOS: `runner up` finishes with that app in front —
+restarted on a fresh bring-up, only brought forward with `--no-launch`
+or when the runner was already up. That is what an `adb install` needs
+afterwards: installing an app stops it, the launcher comes to the front,
+and without `--bundle` the next flow's first step found the launcher.
+
+```bash
+smix runner up emulator-5554 --platform android --bundle com.example.app
+[runner] brought com.example.app forward (com.android.launcher3 was in front)
+```
+
+Before it answers, `runner up` also looks at what is covering the
+screen. With the notification shade pulled down, the only windows are
+system UI, and system UI holds the focus; `runner up` puts the shade
+away, says so in one line, and asks again. Each step is read back from
+the device — the activity manager for what is resumed, the runner's own
+window list for what it can read — and nothing waits a fixed time:
+a step ends when the device says it is done, or after 20 seconds.
+
+- **Nothing nobody named is ever brought forward.** Without `--bundle`,
+  whatever app is in front stays there. Whose device this is was
+  already settled by the lease before any of this runs; which app
+  belongs in front is the caller's to say.
+- **A package that is not installed is refused by name**, with the
+  command that installs it.
+- **Only system UI after the shade is put away** is refused, and the
+  refusal names both things it can be: a lock screen (smix does not
+  unlock a device) or an instrumentation that crashed and was restarted
+  (`--force` cycles it). Before this, a pulled-down shade was reported
+  as the runner's accessibility connection having fallen behind, with
+  `--force` as the fix — which cycled a working runner and left the
+  shade where it was.
+
 `runner down --platform android` requires `--device`, because an adb
 command without a serial acts on whichever device happens to be
 attached — and a developer's own phone is often plugged in next to the

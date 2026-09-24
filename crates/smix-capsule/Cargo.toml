@@ -11,6 +11,7 @@ description = "Runner lifecycle for smix: bring an XCUITest runner up on a simul
 [dependencies]
 thiserror.workspace = true
 smix-usbmux = { path = "../smix-usbmux", version = "11.0.0" }
+smix-adb = { path = "../smix-adb", version = "11.0.0" }
 smix-lease = { path = "../smix-lease", version = "11.0.0" }
 smix-runner-client = { path = "../smix-runner-client", version = "11.0.0" }
 smix-runner-sources = { path = "../smix-runner-sources", version = "11.0.0" }
