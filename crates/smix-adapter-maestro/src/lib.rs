@@ -437,8 +437,9 @@ pub enum Step {
         /// What to type.
         text: String,
     },
-    /// Press a hardware / IME key. Maps to `App::press_key`.
-    PressKey(String),
+    /// Press a hardware / IME key. Maps to `App::press_key`. The name is
+    /// read when the flow is, through [`smix_sdk::KeyName::from_name`].
+    PressKey(smix_sdk::KeyName),
     /// Navigation back (maestro `back`): iOS navbar-back / edge swipe,
     /// Android KEYCODE_BACK. Not a keyboard key.
     Back,
@@ -712,6 +713,10 @@ pub enum Step {
         /// against the a11y tree fetched at capture time.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         annotations: Vec<AnnotationSpec>,
+        /// `cropOn`: keep only this element's region — how maestro makes
+        /// the baseline a cropped `assertScreenshot` compares against.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        crop_on: Option<Selector>,
     },
     /// Write a literal to the device pasteboard. maestro yaml
     /// `setClipboard: "literal"`.
@@ -912,14 +917,20 @@ pub enum Step {
     AssertScreenshot {
         /// Baseline PNG path relative to the flow's base_dir.
         path: String,
-        /// `threshold` field from mapping form, dhash hamming
-        /// max distance override. None ⇒ scalar-form default (5).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_hamming: Option<u32>,
-        /// `mask` regions (0..1 shares of the frame) left out of the
-        /// comparison. Empty for the scalar form.
+        /// Which comparison, and its bar: `threshold` (the dhash hamming
+        /// cap) or `thresholdPercentage` (maestro's share of matching
+        /// pixels). A flow names at most one; naming neither is the hash
+        /// with its default cap of 5.
+        threshold: ScreenshotThreshold,
+        /// `mask` regions (0..1 shares of the compared image) left out of
+        /// the comparison. Empty for the scalar form.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         mask: Vec<MaskRegion>,
+        /// `cropOn`: compare only this element's region. The baseline is
+        /// then a cropped image too — `takeScreenshot` with the same
+        /// `cropOn` makes one, and a missing baseline is recorded cropped.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        crop_on: Option<Selector>,
     },
     /// `rememberBounds: { <selector>, as: name }` — keep where an element
     /// is, under a name, for `assertBoundsUnchanged` to compare against.
@@ -1133,6 +1144,26 @@ impl Default for SignalOrderKind {
 /// used: one type for one thing, so the region the parser reads is the
 /// region the comparison applies.
 pub use smix_sdk::ScreenMask as MaskRegion;
+
+/// The bar an `assertScreenshot` is held to, and so which comparison
+/// runs.
+///
+/// Two comparisons because they measure two different things: a 64-bit
+/// perceptual hash (smix's, tolerant of anti-aliasing and encoder noise,
+/// blind to small moves) and maestro's share of matching pixels (sees a
+/// small move, counts every anti-aliased edge). Neither is a setting of
+/// the other, so a flow names one.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScreenshotThreshold {
+    /// `threshold:` — the most differing hash bits allowed; `None` is the
+    /// default of 5.
+    Hash(Option<u32>),
+    /// `thresholdPercentage:` — the least share (0..=100) of pixels that
+    /// must match, as written: it may carry `${…}`, evaluated when the step
+    /// runs, as maestro does.
+    Percentage(String),
+}
 
 /// The keys a condition mapping (`runFlow.when`, `repeat.while`) may
 /// carry. maestro's `YamlCondition` has these five plus `optional`, which

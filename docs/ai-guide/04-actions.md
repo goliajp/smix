@@ -147,9 +147,14 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
     id: "photo-1"
 ```
 
-- Two taps with <300ms gap (system default).
-- iOS: XCUI `element.doubleTap()` or two IOHID events.
-- Android: two `/tap-at-norm-coord` events spaced ~200ms.
+- Two touches, 80ms apart on iOS, ~150ms on Android — inside every
+  platform's double-tap window.
+- Resolved on the host and judged like `tapOn`: the step fails with
+  `TAP_MISSED` when the touch went to something other than the element
+  (a dialog over it, a row that moved), instead of passing because a
+  touch was sent.
+- iOS: one synthesised event carrying both touches. Android: the
+  runner's coordinate double tap.
 
 ### Long press
 
@@ -163,7 +168,9 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
   `XCUIElement.press(forDuration:)` is not used — it was measured taking
   a constant ~2.6s for every hold from 500ms to 6000ms on iOS 26.5, so
   the duration it performed was not the one it was given.
-- Android: Kotlin `/long-press-at-norm-coord` with duration.
+- Android: the runner's coordinate long press, held for `duration`.
+- Judged like `tapOn` on both platforms: a press delivered to something
+  other than the element fails with `TAP_MISSED`.
 
 #### Capturing the held state
 
@@ -349,12 +356,19 @@ looking is `keyboard_state_unknown` — see
 - pressKey: LOCK
 ```
 
-- Available keys: ENTER / TAB / SPACE / DELETE / ESCAPE / HOME / LOCK / VOLUME_UP / VOLUME_DOWN / ARROW_UP / ARROW_DOWN / ARROW_LEFT / ARROW_RIGHT.
-- **Back navigation is not a key press.** Use the `- back` verb: on
-  Android it sends the back key, on iOS it taps the navigation-bar back
-  button. `pressKey: BACK` is refused deliberately — an earlier alias
-  mapped it to Delete, which turned every back step into a silent
-  backspace that reported success.
+- Available keys: ENTER / TAB / SPACE / DELETE / ESCAPE / HOME / LOCK / VOLUME_UP / VOLUME_DOWN / ARROW_UP / ARROW_DOWN / ARROW_LEFT / ARROW_RIGHT / BACK.
+- maestro's spellings (`Enter`, `Backspace`, `Volume Up`) read too; case, spaces, `_` and `-` do not matter; a name that is no key fails when the flow is read.
+- **Back.** `- back`, `pressKey: BACK` and `smix press-key back` are one
+  thing: on Android the system back key, on iOS the navigation bar's
+  back button, and the step fails when nothing went back. It is not a
+  keystroke that nobody checks — an earlier alias mapped `BACK` to
+  Delete, which turned every back step into a silent backspace that
+  reported success.
+- **Under gesture navigation there is no back button to tap.**
+  `tapOn: { id: back }` finds the three-button navigation bar's button,
+  which gesture navigation — the default on current phones — does not
+  have. Use `- back`: it closes a system sheet (share, permission) the
+  same way in either mode.
 - **`VOLUME_UP` / `VOLUME_DOWN` are skipped on the iOS simulator**, not
   executed: Apple documents `XCUIDevice.Button.volumeUp` / `.volumeDown`
   as unavailable there, and maestro has the same limitation. The step

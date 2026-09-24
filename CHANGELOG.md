@@ -16,10 +16,28 @@ All notable changes to the `smix` workspace are documented here. The format foll
   comparison; `AppLike` and `Driver` gain a required `pixels_per_point`.**
   Pass `&[]` for the old behaviour. `MaskRegion` is now the SDK's
   `ScreenMask` under its old name.
-- **`assertScreenshot`'s mapping refuses keys it does not read.** maestro's
-  `cropOn`, `thresholdPercentage`, `label` and `optional` were walked past
-  without a word — a `cropOn` flow compared the whole frame here and passed.
-  Each is now refused by name, saying what smix does instead.
+- **`assertScreenshot` and `takeScreenshot` refuse keys they do not read.**
+  maestro's `cropOn` and `thresholdPercentage` were walked past without a
+  word — a `cropOn` flow compared the whole frame here and passed. They are
+  carried out now (see Added); `label` and `optional`, and on
+  `takeScreenshot` any key but `path` / `name` / `annotate` / `cropOn`, are
+  refused by name.
+- **Rust API: `App::assert_screenshot`, `AppLike::assert_screenshot` and
+  `assert_screenshot_inner` take one `ScreenshotCheck`** — baseline, how to
+  compare (`ScreenshotCompare::Hash { max_hamming }` or `::Pixels {
+  min_match_percent }`), masks and an optional `CropTo` — instead of three
+  positional arguments. `AssertScreenshotOutcome` gains `MatchedPixels {
+  percent }` and is no longer `Eq`. `Step::AssertScreenshot` carries a
+  `ScreenshotThreshold` and `crop_on`; `Step::TakeScreenshot` a `crop_on`.
+- **Rust API: `KeyName` has a new variant, `Back`; `Step::PressKey` holds a
+  `KeyName`, not a `String`; `RunError::UnknownKey` is gone.** A key name is
+  read when the flow is, so an unknown one is a parse error (exit 2), no
+  longer a runtime one (exit 4). `smix_cli::act::parse_key_name` is gone:
+  `KeyName::from_name` is the one reader.
+- **Rust API: `HttpRunnerClient::double_tap` and `long_press` are gone, and
+  the iOS runner no longer serves `/double-tap` or `/long-press`.** Both
+  gestures are `/tap-at-norm-coord` now (below). `TapAtCoordResult` gains
+  the three held-touch bounds and `press()`.
 
 - **Rust API: `smix_capsule::runner_android::up_with` and `up_with_takeover`
   are gone; `up_with_options(root, serial, port, &UpOptions)` takes their
@@ -53,6 +71,30 @@ All notable changes to the `smix` workspace are documented here. The format foll
   answered with.
 
 ### Added
+
+- **`assertScreenshot: { cropOn, thresholdPercentage }`, as maestro
+  carries them out.** `cropOn` takes a selector, waits for it, and compares
+  only that element's region; the baseline recorded on a first run is the
+  cropped image, and `takeScreenshot: { cropOn }` writes one.
+  `thresholdPercentage` is maestro's comparison — the share of pixels whose
+  colour is within 10% of the baseline's — and a screenshot of a different
+  size fails. It is a different measure from `threshold` (a perceptual
+  hash's bit distance), so writing both is an error; a flow that writes
+  neither still compares by hash, where maestro would compare pixels at 95.
+- **`back` is a key.** `pressKey: back`, `smix press-key back` and the MCP
+  `smix_press_key` with `back` all do what the `back` verb does — Android's
+  system back, iOS's navigation-bar back — and fail when nothing went back.
+  Measured under gesture navigation, where there is no back button on screen
+  to `tapOn`: each of the three closes the system share sheet (read from the
+  device's window stack). A consumer looking for back had found it in none
+  of the places they looked.
+- **One key table.** `pressKey`, `smix press-key`, `smix_press_key` and the
+  Node / UniFFI bindings read a key's name through `KeyName::from_name`:
+  maestro's spellings (`Enter`, `Backspace`, `Volume Up`), the wire names
+  and the shorthands, regardless of case, spaces, `_` or `-`. Three hand
+  copies had drifted — MCP did not know `home`, the CLI did not know
+  `volume up` with a space, none knew `back`. maestro's TV remote and TV
+  input keys are refused by name; `Power` points to `lock`.
 
 - **`neverVisible: { <selector>, during: [<steps>] }` — the element is on
   screen at no moment while the inner steps run.** smix's own verb; maestro
@@ -195,6 +237,20 @@ All notable changes to the `smix` workspace are documented here. The format foll
   sentence: its tree is the app you named, so `windows` holds that app.
 
 ### Fixed
+
+- **iOS double tap and long press say what they landed on.** They went to
+  `/double-tap` and `/long-press`, XCUI element actions that answered `ok`
+  and nothing about where the touch went. They are now host-resolved and
+  sent to `/tap-at-norm-coord` — a two-touch burst, or one touch held for
+  the duration — and judged like a tap: delivered to something else is
+  `TAP_MISSED`. The long press's timing bounds come from that route.
+- **iOS `doubleTapOn` / `longPressOn` on a place (an OCR box, an anchor
+  plus a shift) failed with a 404.** The driver posted to
+  `/double-tap-at-norm-coord` and `/long-press-at-norm-coord`, which only
+  the Android runner serves.
+- **An `assertScreenshot` whose masks covered every point it samples
+  passed whatever was on screen.** Both hashes read one flat value, so they
+  were always equal. It is refused now, for both comparisons.
 
 - **An alias that a checkout's `.smix/sims.json` gave to a different device
   than this machine's registry could drive the checkout's device.** When the

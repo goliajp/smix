@@ -468,9 +468,7 @@ pub trait AppLike: Send + Sync {
     /// (first run) from diff-matched (steady state).
     async fn assert_screenshot(
         &self,
-        baseline_path: &std::path::Path,
-        max_hamming: u32,
-        masks: &[crate::MaskRegion],
+        check: &smix_sdk::ScreenshotCheck<'_>,
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure>;
 }
 
@@ -732,11 +730,9 @@ impl AppLike for App {
     }
     async fn assert_screenshot(
         &self,
-        baseline_path: &std::path::Path,
-        max_hamming: u32,
-        masks: &[crate::MaskRegion],
+        check: &smix_sdk::ScreenshotCheck<'_>,
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure> {
-        App::assert_screenshot(self, baseline_path, max_hamming, masks).await
+        App::assert_screenshot(self, check).await
     }
 }
 
@@ -823,9 +819,6 @@ pub enum RunError {
     /// A subflow yaml failed to parse (non-graceful variants).
     #[error("parse: {0}")]
     Parse(#[from] ParseError),
-    /// `pressKey` got an unknown key name.
-    #[error("unknown key: {0}")]
-    UnknownKey(String),
     /// `scrollUntilVisible` got an unknown direction.
     #[error("unknown direction: {0}")]
     UnknownDirection(String),
@@ -1005,7 +998,6 @@ fn failure_kind(err: &RunError) -> String {
     match err {
         RunError::Sdk(f) => format!("{:?}", f.code),
         RunError::Parse(_) => "Parse".into(),
-        RunError::UnknownKey(_) => "UnknownKey".into(),
         RunError::UnknownDirection(_) => "UnknownDirection".into(),
         RunError::RunFlowCycle(_) => "RunFlowCycle".into(),
         RunError::Io(_) => "Io".into(),
@@ -1133,23 +1125,48 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     /// question is whether the layout moved, and scrolling a row half out
     /// of view changes what shows without moving anything.
     async fn bounds_in_points(&self, selector: &Selector) -> Result<smix_sdk::Rect, RunError> {
+        let (_, bounds) = self
+            .wait_for_bounds(selector, "no element to measure")
+            .await?;
+        let ppp = self.app.pixels_per_point().await?;
+        Ok(smix_sdk::rect_in_points(bounds, ppp))
+    }
+
+    /// What `cropOn` crops to: the element's box and the root of the
+    /// same tree, both in the tree's units, so the scale to the
+    /// screenshot comes from two readings of one screen.
+    async fn crop_target(&self, selector: &Selector) -> Result<smix_sdk::CropTo, RunError> {
+        let (root, element) = self
+            .wait_for_bounds(selector, "cropOn: no element to crop to")
+            .await?;
+        Ok(smix_sdk::CropTo { element, root })
+    }
+
+    /// The tree root's bounds and the matched element's, waiting for it
+    /// the way the other element verbs do. Not found by the deadline →
+    /// `ElementNotFound` opening with `what`, carrying the screen it
+    /// last read.
+    async fn wait_for_bounds(
+        &self,
+        selector: &Selector,
+        what: &str,
+    ) -> Result<(smix_sdk::Rect, smix_sdk::Rect), RunError> {
         let deadline = std::time::Instant::now() + IMPLICIT_WAIT;
         loop {
             let tree = self.app.tree().await?;
             if let Some(node) = smix_selector_resolver::resolve_selector(&tree, selector) {
-                let ppp = self.app.pixels_per_point().await?;
-                return Ok(smix_sdk::rect_in_points(node.bounds, ppp));
+                return Ok((tree.bounds, node.bounds));
             }
             if std::time::Instant::now() >= deadline {
-                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::ElementNotFound),
-                    message: format!(
-                        "no element to measure: {}",
-                        smix_selector::describe_selector(selector)
-                    ),
-                    selector: Some(selector.clone()),
-                    ..Default::default()
-                })));
+                return Err(RunError::Sdk(ExpectationFailure::new(
+                    FailureInit {
+                        code: Some(FailureCode::ElementNotFound),
+                        message: format!("{what}: {}", smix_selector::describe_selector(selector)),
+                        selector: Some(selector.clone()),
+                        ..Default::default()
+                    }
+                    .with_screen(smix_sdk::screen_facts(&tree, 10)),
+                )));
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
@@ -1278,6 +1295,26 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
     ) -> Self {
         self.output = output;
         self
+    }
+
+    /// `thresholdPercentage` as a share, after its `${…}` are expanded —
+    /// a value maestro reads as a string for the same reason.
+    fn match_percent(&self, raw: &str) -> Result<f64, RunError> {
+        let expanded = self.expand_template(raw)?;
+        match expanded.trim().parse::<f64>() {
+            Ok(n) if (0.0..=100.0).contains(&n) => Ok(n),
+            _ => Err(RunError::Parse(ParseError::InvalidValue {
+                field: "assertScreenshot.thresholdPercentage".into(),
+                reason: format!(
+                    "{expanded:?} is not a share of pixels from 0 to 100{}",
+                    if expanded == raw {
+                        String::new()
+                    } else {
+                        format!(" (written as {raw:?})")
+                    }
+                ),
+            })),
+        }
     }
 
     /// Expand `${expr}` placeholders inside `src`. Non-`${...}`
@@ -1943,8 +1980,8 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.go_back().await?;
                 Ok(RunStepReport::Ok)
             }
-            Step::PressKey(s) => {
-                let key = parse_key_name(s)?;
+            Step::PressKey(key) => {
+                let key = *key;
                 // iOS Simulator hardware-button restrictions:
                 //   Apple documents XCUIDevice.Button.volumeUp /
                 //   .volumeDown as unavailable on the simulator; lock
@@ -2227,8 +2264,19 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     Ok(RunStepReport::Skipped { reason })
                 }
             },
-            Step::TakeScreenshot { path, annotations } => {
+            Step::TakeScreenshot {
+                path,
+                annotations,
+                crop_on,
+            } => {
+                let crop = match crop_on {
+                    Some(sel) => Some(self.crop_target(sel).await?),
+                    None => None,
+                };
                 let mut bytes = self.app.screenshot().await?;
+                if let Some(crop) = &crop {
+                    bytes = smix_sdk::crop_to(&bytes, crop)?;
+                }
                 // Compose annotations onto the PNG BEFORE writing.
                 // Empty annotations = plain screenshot.
                 // Selector-relative positions are unsupported in this
@@ -2555,12 +2603,34 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             }
             Step::AssertScreenshot {
                 path,
-                max_hamming,
+                threshold,
                 mask,
+                crop_on,
             } => {
                 let abs = self.base_dir.join(path);
-                let cap = max_hamming.unwrap_or(5);
-                let outcome = self.app.assert_screenshot(&abs, cap, mask).await?;
+                let compare = match threshold {
+                    crate::ScreenshotThreshold::Hash(c) => smix_sdk::ScreenshotCompare::Hash {
+                        max_hamming: c.unwrap_or(5),
+                    },
+                    crate::ScreenshotThreshold::Percentage(raw) => {
+                        smix_sdk::ScreenshotCompare::Pixels {
+                            min_match_percent: self.match_percent(raw)?,
+                        }
+                    }
+                };
+                let crop = match crop_on {
+                    Some(sel) => Some(self.crop_target(sel).await?),
+                    None => None,
+                };
+                let outcome = self
+                    .app
+                    .assert_screenshot(&smix_sdk::ScreenshotCheck {
+                        baseline: &abs,
+                        compare,
+                        masks: mask,
+                        crop,
+                    })
+                    .await?;
                 if let smix_sdk::AssertScreenshotOutcome::Recorded { path } = outcome {
                     warnings.push(format!(
                         "assertScreenshot: auto-recorded baseline at {} (first run; subsequent runs will diff against it)",
@@ -4300,42 +4370,6 @@ fn parse_permission(name: &str) -> Result<Permission, ParseError> {
     })
 }
 
-fn parse_key_name(s: &str) -> Result<KeyName, RunError> {
-    match s.trim().to_ascii_lowercase().as_str() {
-        "enter" | "return" => Ok(KeyName::Return),
-        // "back" is deliberately NOT an alias: maestro's `back` is
-        // navigation, and aliasing it to Delete once turned every
-        // `- back` step into a silent backspace that reported success.
-        "delete" | "backspace" => Ok(KeyName::Delete),
-        "tab" => Ok(KeyName::Tab),
-        "space" => Ok(KeyName::Space),
-        "escape" | "esc" => Ok(KeyName::Escape),
-        // The underscored spellings exist for the same reason the
-        // volume ones do: the guides write key names in SCREAMING_SNAKE
-        // (`VOLUME_UP`), `to_ascii_lowercase` leaves the underscore, and
-        // a reader following that convention for the arrows landed on
-        // "unknown key".
-        "arrowup" | "arrow_up" | "up" => Ok(KeyName::ArrowUp),
-        "arrowdown" | "arrow_down" | "down" => Ok(KeyName::ArrowDown),
-        "arrowleft" | "arrow_left" | "left" => Ok(KeyName::ArrowLeft),
-        "arrowright" | "arrow_right" | "right" => Ok(KeyName::ArrowRight),
-        // iOS hardware keys (full maestro yaml key coverage):
-        // home / lock go through
-        // XCUIDevice.shared.perform(.homeButton/.lockButton); volume
-        // up / volume down go through
-        // XCUIDevice.Button.volumeUp/volumeDown.
-        // to_ascii_lowercase() leaves spaces intact, and maestro
-        // documents `pressKey: volume up` as a real format — hence a
-        // separate arm for each of the spaced / underscored / joined
-        // spellings.
-        "home" => Ok(KeyName::Home),
-        "lock" => Ok(KeyName::Lock),
-        "volumeup" | "volume up" | "volume_up" => Ok(KeyName::VolumeUp),
-        "volumedown" | "volume down" | "volume_down" => Ok(KeyName::VolumeDown),
-        _ => Err(RunError::UnknownKey(s.to_string())),
-    }
-}
-
 fn parse_swipe_direction(s: &str) -> Result<SwipeDirection, RunError> {
     match s.trim().to_ascii_lowercase().as_str() {
         "up" => Ok(SwipeDirection::Up),
@@ -4433,8 +4467,13 @@ mod step_attribution_tests {
         // It names its own cause and carries no message field to write
         // into; the stderr line gives it its step.
         let step = Step::Back;
-        let err = attribute_to_step(RunError::UnknownKey("nope".into()), 2, &step, "pressKey");
-        assert!(matches!(err, RunError::UnknownKey(k) if k == "nope"));
+        let err = attribute_to_step(
+            RunError::UnknownDirection("nope".into()),
+            2,
+            &step,
+            "scrollUntilVisible",
+        );
+        assert!(matches!(err, RunError::UnknownDirection(k) if k == "nope"));
     }
 }
 

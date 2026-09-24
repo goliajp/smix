@@ -35,7 +35,6 @@ Exactly one selector key. `text` matches label or identifier (the historical
 behaviour); `id` matches identifier only; `label` matches label only. Regex
 patterns, roles and spatial/index modifiers are not accepted here — they need
 the full tree and resolve host-side, which is what the default tap path does.
-`/double-tap` and `/long-press` take the same selector shape.
 (scope via `?include=` query, same mechanism as `GET /tree`; `mode` defaults to `resolveAndTap`)
 
 Response on success (`TapResult` in `smix-runner-wire`; all fields beyond `ok` optional):
@@ -161,9 +160,27 @@ began clearing first, and still wrong past fifty characters.
 
 ### `POST /press-key`
 
-Body: `{ key: KeyName }` — `KeyName` variants: `enter`, `back`, `home`,
-`delete`, `tab`, `escape`, `space`, `up`, `down`, `left`, `right`.
+Body: `{ key: KeyName }` — the wire names: `return`, `delete`, `tab`,
+`space`, `escape`, `arrowUp`, `arrowDown`, `arrowLeft`, `arrowRight`,
+`home`, `lock`, `volumeUp`, `volumeDown`.
 Response: `{ ok: bool }`
+
+`back` is a `KeyName` too, and never reaches this route: a client sends
+it to `POST /back`, which answers whether anything went back. A key
+press answers only that the event went in.
+
+### `POST /tap-at-norm-coord`
+
+Body: `{ nx, ny, times?, intervalMs?, holdMs? }` — a point as shares of
+the app frame, and optionally a burst (`times` touches `intervalMs`
+apart) or a held touch (`holdMs`). A tap, a double tap (`times: 2`) and
+a long press (`holdMs: duration`) are all this route.
+
+Response: `{ ok, chain: [{ identifier, label, frame }], complete?,
+latestDownOffsetMs?, earliestUpOffsetMs?, handlerWallMs? }`. `chain` is
+what was under the point, innermost first; the host judges the tap
+against it. The three offsets come with a single touch and bound when
+it was down, measured from the handler's entry — bounds, not instants.
 
 ### `POST /swipe`
 

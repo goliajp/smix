@@ -85,7 +85,7 @@ fn emit_core_steps_round_trip() {
         },
         Step::WaitForAnimationToEnd { ceiling_ms: 400 },
         Step::Back,
-        Step::PressKey("Enter".to_string()),
+        Step::PressKey(smix_sdk::KeyName::Return),
         Step::EraseText(10),
         Step::Swipe {
             from: (0.5, 0.7),

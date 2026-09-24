@@ -447,16 +447,34 @@ impl IosDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<ActOutcome, ExpectationFailure> {
+        let (nx, ny, aimed) = self.resolve_aimed(selector, include).await?;
+        let landed = self
+            .runner
+            .tap_at_norm_coord(nx, ny)
+            .await
+            .map_err(transport_to_failure)?;
+        landing_outcome(selector, aimed, &landed)
+    }
+
+    /// Where a touch aimed at `selector` goes, and the node it is aimed
+    /// at — the half of a tap that double-tap and long-press share, so
+    /// all three are delivered by one route and judged by one
+    /// [`landing_outcome`].
+    async fn resolve_aimed(
+        &self,
+        selector: &Selector,
+        include: Option<IncludeScope>,
+    ) -> Result<(f64, f64, Option<HitElement>), ExpectationFailure> {
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
 
         // Before resolving anything: if the point this is about to
         // compute will be read in a different space than it is computed
-        // in, the tap cannot land where the tree says the element is,
+        // in, the touch cannot land where the tree says the element is,
         // and every signal after this line would say it did.
         self.refuse_if_spaces_disagree().await?;
 
-        let (nx, ny, aimed) = loop {
+        loop {
             // Transport retry parity with wait_for / find. Tree fetch
             // transient transport drops (runner socket refusal /
             // concurrent-handling hiccup) are re-tried in-loop.
@@ -496,7 +514,7 @@ impl IosDriver {
                         label: n.label.clone().unwrap_or_default(),
                         frame: (n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h),
                     });
-                    break (coord.0, coord.1, aimed);
+                    return Ok((coord.0, coord.1, aimed));
                 }
                 Err(HostResolveError::NotFound) => {
                     if start.elapsed() > timeout {
@@ -570,14 +588,7 @@ impl IosDriver {
                     }));
                 }
             }
-        };
-
-        let landed = self
-            .runner
-            .tap_at_norm_coord(nx, ny)
-            .await
-            .map_err(transport_to_failure)?;
-        landing_outcome(selector, aimed, &landed)
+        }
     }
 
     /// Tap a selector several times in a row.
@@ -668,87 +679,59 @@ impl IosDriver {
         }
     }
 
-    /// Double-tap a selector via swift sim-side XCUIElement.doubleTap().
-    /// 5s implicit-wait + retry on transport (mirrors
-    /// [`Self::tap_with_mode`]). Same as Maestro `doubleTapOn`.
+    /// Double-tap a selector: two touches in one synthesise on the tap
+    /// route, judged like a tap. Same as Maestro `doubleTapOn`.
+    ///
+    /// It went to `/double-tap`, an XCUI element action that answered
+    /// `ok` and nothing about where the touch went, and by its own note
+    /// did not fire on a React Native modal.
     pub async fn double_tap(
         &self,
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        require_runner_resolvable_selector(selector, "/double-tap")?;
-        let start = Instant::now();
-        let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
-        loop {
-            match self.runner.double_tap(selector, include).await {
-                Ok(_result) => return Ok(()),
-                Err(e) => {
-                    // 4xx is the runner refusing the request shape — it
-                    // will refuse it identically on every retry, so the
-                    // 5s budget bought nothing but latency.
-                    let permanent = matches!(
-                        &e,
-                        smix_runner_client::RunnerTransportError::NonSuccessStatus {
-                            status, ..
-                        } if (400..500).contains(status) && *status != 404
-                    );
-                    if permanent || start.elapsed() > timeout {
-                        return Err(transport_to_failure(e));
-                    }
-                    sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
-                    continue;
-                }
-            }
-        }
+        let (nx, ny, aimed) = self.resolve_aimed(selector, include).await?;
+        let landed = self
+            .runner
+            .tap_at_norm_coord_burst(nx, ny, 2, None, None)
+            .await
+            .map_err(transport_to_failure)?;
+        landing_outcome(selector, aimed, &landed).map(|_| ())
     }
 
-    /// Long-press a selector for `duration` via swift sim-side
-    /// XCUIElement.press(forDuration:). 5s implicit-wait + retry on
-    /// transport. Same as Maestro `longPressOn`.
+    /// Long-press a selector for `duration`: one touch held that long on
+    /// the tap route, judged like a tap. Same as Maestro `longPressOn`.
     ///
     /// Returns when the touch was held, anchored to this host's clock,
     /// so a caller capturing frames alongside can tell whether they
-    /// fall inside the press. See [`press_frame_placement`].
+    /// fall inside the press. See [`press_frame_placement`]. A runner
+    /// that does not report the bounds gets [`PressTiming::unplaceable`].
     pub async fn long_press(
         &self,
         selector: &Selector,
         duration: Duration,
         include: Option<IncludeScope>,
     ) -> Result<PressTiming, ExpectationFailure> {
-        require_runner_resolvable_selector(selector, "/long-press")?;
-        let start = Instant::now();
-        let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
-        let duration_ms = duration.as_millis().min(u64::MAX as u128) as u64;
-        loop {
-            let sent_ms = host_now_ms();
-            match self.runner.long_press(selector, duration_ms, include).await {
-                Ok(result) => {
-                    return Ok(PressTiming {
-                        sent_ms,
-                        received_ms: host_now_ms(),
-                        latest_down_offset_ms: result.latest_down_offset_ms,
-                        earliest_up_offset_ms: result.earliest_up_offset_ms,
-                        handler_wall_ms: result.handler_wall_ms,
-                    });
-                }
-                Err(e) => {
-                    // 4xx is the runner refusing the request shape — it
-                    // will refuse it identically on every retry, so the
-                    // 5s budget bought nothing but latency.
-                    let permanent = matches!(
-                        &e,
-                        smix_runner_client::RunnerTransportError::NonSuccessStatus {
-                            status, ..
-                        } if (400..500).contains(status) && *status != 404
-                    );
-                    if permanent || start.elapsed() > timeout {
-                        return Err(transport_to_failure(e));
-                    }
-                    sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
-                    continue;
-                }
-            }
-        }
+        let (nx, ny, aimed) = self.resolve_aimed(selector, include).await?;
+        let hold_ms = u32::try_from(duration.as_millis()).unwrap_or(u32::MAX);
+        let sent_ms = host_now_ms();
+        let landed = self
+            .runner
+            .tap_at_norm_coord_burst(nx, ny, 1, None, Some(hold_ms))
+            .await
+            .map_err(transport_to_failure)?;
+        let received_ms = host_now_ms();
+        landing_outcome(selector, aimed, &landed)?;
+        Ok(match landed.press() {
+            Some(p) => PressTiming {
+                sent_ms,
+                received_ms,
+                latest_down_offset_ms: p.latest_down_offset_ms,
+                earliest_up_offset_ms: p.earliest_up_offset_ms,
+                handler_wall_ms: p.handler_wall_ms,
+            },
+            None => PressTiming::unplaceable(),
+        })
     }
 
     /// Rotate sim via swift `XCUIDevice.shared.orientation`. Routes to
@@ -947,7 +930,7 @@ impl IosDriver {
         ny: f64,
     ) -> Result<(), ExpectationFailure> {
         self.runner
-            .double_tap_at_norm_coord(nx, ny)
+            .tap_at_norm_coord_burst(nx, ny, 2, None, None)
             .await
             .map_err(transport_to_failure)?;
         Ok(())
@@ -959,8 +942,9 @@ impl IosDriver {
         ny: f64,
         duration_ms: u64,
     ) -> Result<(), ExpectationFailure> {
+        let hold_ms = u32::try_from(duration_ms).unwrap_or(u32::MAX);
         self.runner
-            .long_press_at_norm_coord(nx, ny, duration_ms)
+            .tap_at_norm_coord_burst(nx, ny, 1, None, Some(hold_ms))
             .await
             .map_err(transport_to_failure)?;
         Ok(())

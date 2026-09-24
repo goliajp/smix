@@ -368,6 +368,35 @@ async fn press_key_serializes_camel_case_name() {
     let _ = client.press_key(KeyName::ArrowUp).await.expect("press_key");
 }
 
+/// `back` is pressed by the route that answers whether it went back,
+/// on both platforms — not injected as a keystroke no one checks.
+#[tokio::test]
+async fn press_key_back_goes_to_the_back_route_and_its_answer() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/back"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": false, "error": "nothing to go back from"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/press-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tree": null, "stages": null
+        })))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    client
+        .press_key(KeyName::Back)
+        .await
+        .expect_err("the back route's refusal was not carried");
+    server.verify().await;
+}
+
 // ---- swipe_once ---------------------------------------------------------
 
 #[tokio::test]

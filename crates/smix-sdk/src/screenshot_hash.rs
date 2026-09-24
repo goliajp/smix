@@ -33,6 +33,7 @@ pub(crate) fn compute_dhash_masked(
     // arithmetic — no resize dep). Width 9 = 8 left/right pairs per row;
     // height 8 × 8 bits = 64 bits.
     let mut grid = [[0u8; 9]; 8];
+    let mut sampled = 0usize;
     for (dy, row) in grid.iter_mut().enumerate() {
         for (dx, cell) in row.iter_mut().enumerate() {
             let sx = (dx * w) / 9;
@@ -41,8 +42,23 @@ pub(crate) fn compute_dhash_masked(
             let masked = masks
                 .iter()
                 .any(|m| fx >= m.x && fx < m.x + m.width && fy >= m.y && fy < m.y + m.height);
+            if !masked {
+                sampled += 1;
+            }
             *cell = if masked { MASKED } else { frame.gray(sx, sy) };
         }
+    }
+    // Every sample masked means both frames hash to the same flat value
+    // whatever is on the screen — a comparison of nothing, which passed.
+    if sampled == 0 {
+        return Err(ExpectationFailure::new(smix_error::FailureInit {
+            code: Some(smix_error::FailureCode::AssertionFailed),
+            message: "assertScreenshot: the masks cover every point the hash reads, so \
+                      nothing is left to compare — a comparison of nothing would pass \
+                      whatever was on the screen"
+                .into(),
+            ..Default::default()
+        }));
     }
 
     // Step 2: row-wise left/right diff → 64-bit MSB-first.
@@ -250,5 +266,21 @@ mod tests {
         let h_gray = compute_dhash_masked(&gray, &[]).unwrap();
         let h_rgb = compute_dhash_masked(&rgb, &[]).unwrap();
         assert_eq!(h_gray, h_rgb);
+    }
+    #[test]
+    fn a_mask_over_every_sample_is_refused_not_passed() {
+        // Every one of the 72 sample points inside a mask reads the same
+        // flat value in both frames, so the hashes are equal whatever is
+        // on the screen. That is a comparison of nothing, and it passed.
+        let (a, _) = frames_differing_on_top();
+        let all = [ScreenMask {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        }];
+        let err = compute_dhash_masked(&a, &all).expect_err("nothing is left to hash");
+        assert_eq!(err.code, FailureCode::AssertionFailed);
+        assert!(err.message.contains("nothing is left"), "{}", err.message);
     }
 }

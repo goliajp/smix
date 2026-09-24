@@ -34,9 +34,9 @@ use rmcp::transport::stdio;
 use rmcp::{tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use smix_input::{KeyName, SwipeDirection};
+use smix_input::SwipeDirection;
 use smix_mcp::{SelectorParams, chain_of, ocr_locales_of, ocr_text_of, point_of};
-use smix_sdk::{App, KeyName as SdkKeyName};
+use smix_sdk::{App, KeyName};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -131,8 +131,10 @@ struct BundleParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct PressKeyParams {
-    /// Key name. One of: return / delete / tab / space / escape /
-    /// arrowUp / arrowDown / arrowLeft / arrowRight.
+    /// Key name, read as a flow's `pressKey` reads it: `return`,
+    /// `delete`, `back`, `home`, `volume up`, maestro's `Enter`, the
+    /// arrows and the rest. Case, spaces, `_` and `-` do not matter; an
+    /// unknown name is refused with the whole list.
     key: String,
 }
 
@@ -977,14 +979,15 @@ impl SmixMcpService {
     }
 
     #[tool(
-        description = "Press a named key (Return/Delete/Tab/Space/Escape/arrow keys). Needs the session smix_launch_app opens (SMIX_UDID env var set)."
+        description = "Press a named key (return, delete, back, home, volume up, the arrows, maestro's spellings). `back` is navigation back and fails when nothing went back. Needs the session smix_launch_app opens (SMIX_UDID env var set)."
     )]
     /// CLI: smix press-key
     async fn smix_press_key(
         &self,
         Parameters(params): Parameters<PressKeyParams>,
     ) -> Result<CallToolResult, McpError> {
-        let k = parse_key_name(&params.key).map_err(|m| McpError::invalid_params(m, None))?;
+        let k = KeyName::from_name(&params.key)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         let app = self.bound_app().await?;
         app.press_key(k)
             .await
@@ -1123,23 +1126,6 @@ fn parse_direction(s: &str) -> Result<SwipeDirection, McpError> {
         _ => Err(McpError::invalid_params(
             format!("unknown direction `{s}`; accepted: up, down, left, right"),
             None,
-        )),
-    }
-}
-
-fn parse_key_name(s: &str) -> Result<SdkKeyName, String> {
-    match s {
-        "return" | "Return" => Ok(KeyName::Return),
-        "delete" | "Delete" => Ok(KeyName::Delete),
-        "tab" | "Tab" => Ok(KeyName::Tab),
-        "space" | "Space" => Ok(KeyName::Space),
-        "escape" | "Escape" => Ok(KeyName::Escape),
-        "arrowUp" | "ArrowUp" => Ok(KeyName::ArrowUp),
-        "arrowDown" | "ArrowDown" => Ok(KeyName::ArrowDown),
-        "arrowLeft" | "ArrowLeft" => Ok(KeyName::ArrowLeft),
-        "arrowRight" | "ArrowRight" => Ok(KeyName::ArrowRight),
-        other => Err(format!(
-            "unknown key {other:?} — expected one of: return/delete/tab/space/escape/arrowUp/arrowDown/arrowLeft/arrowRight"
         )),
     }
 }

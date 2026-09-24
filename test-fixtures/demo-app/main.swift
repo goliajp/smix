@@ -234,10 +234,40 @@ enum LandscapeStage {
   }
 }
 
+// A UIKit alert, the kind React Native's `Alert.alert` raises on iOS —
+// not SwiftUI's `.alert`, which the alert above is. A consumer's confirm
+// of exactly this kind was reported as tapped and not pressed; the
+// wording, the button styles and their order are theirs, so a run here
+// asks the same question their flow does.
+final class UIKitAlertStage: ObservableObject {
+  static let shared = UIKitAlertStage()
+  /// Presses `Delete` received — the app's own reading.
+  @Published var deleted = 0
+
+  static let message =
+    "You are about to remove all credentials from this device. This action cannot be undone."
+
+  func present() {
+    guard let root = LandscapeStage.presenter else { return }
+    let alert = UIAlertController(
+      title: "Clear cache", message: Self.message, preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+    alert.addAction(
+      UIAlertAction(title: "Delete", style: .destructive) { _ in self.deleted += 1 })
+    root.present(alert, animated: true)
+  }
+}
+
 struct ContentView: View {
   @State private var typed = ""
   @State private var submitted = ""
   @State private var longPressed = false
+  // Counts, not flags: a gesture delivered twice and one delivered once
+  // read the same as a flag, and a double tap that arrived as two single
+  // taps must not count at all.
+  @State private var longPresses = 0
+  @State private var doubleTaps = 0
+  @ObservedObject private var uikitAlert = UIKitAlertStage.shared
   // A modal, to answer the question Compose answered badly: does SwiftUI
   // keep an identifier on a control inside an alert, or does the modal
   // cost it the way `testTagsAsResourceId` does on Android?
@@ -271,8 +301,18 @@ struct ContentView: View {
           Button("Submit") { submitted = typed }
             .accessibilityIdentifier("fixture-submit")
 
-          Button("Open alert") { alertShown = true }
-            .accessibilityIdentifier("fixture-open-alert")
+          // One row with the alert above, so no row below moves.
+          HStack {
+            Button("Open alert") { alertShown = true }
+              .buttonStyle(.borderless)
+              .accessibilityIdentifier("fixture-open-alert")
+            Spacer()
+            Button("UIKit alert") { UIKitAlertStage.shared.present() }
+              .buttonStyle(.borderless)
+              .accessibilityIdentifier("fixture-open-uikit-alert")
+            Text("deleted \(uikitAlert.deleted)")
+              .accessibilityIdentifier("fixture-uikit-alert-count")
+          }
 
           // Empty until Submit is pressed, so an assertion on it
           // distinguishes "the tap landed" from "the field merely holds
@@ -320,9 +360,23 @@ struct ContentView: View {
           // Its label changes on the gesture, so the assertion is about
           // the long press having happened rather than about the row
           // still existing.
-          Text(longPressed ? "long pressed" : "hold me")
-            .accessibilityIdentifier("fixture-longpress")
-            .onLongPressGesture { longPressed = true }
+          HStack {
+            Text(longPressed ? "long pressed" : "hold me")
+              .accessibilityIdentifier("fixture-longpress")
+              .onLongPressGesture {
+                longPressed = true
+                longPresses += 1
+              }
+            Text("held \(longPresses)")
+              .accessibilityIdentifier("fixture-longpress-count")
+            Spacer()
+            // Its own count is its label, so the check reads the target.
+            Text("double taps \(doubleTaps)")
+              .padding(8)
+              .background(Color.green.opacity(0.2))
+              .accessibilityIdentifier("fixture-doubletap")
+              .onTapGesture(count: 2) { doubleTaps += 1 }
+          }
         }
 
         Section {

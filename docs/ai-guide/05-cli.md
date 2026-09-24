@@ -39,7 +39,7 @@ Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 | 0 | success |
 | 2 | YAML parse error (`RunError::Parse`) |
 | 3 | runtime SDK failure (`RunError::Sdk`) — sim crashed, app died, etc. |
-| 4 | unknown key / direction (`RunError::UnknownKey` / `RunError::UnknownDirection`) |
+| 4 | unknown direction (`RunError::UnknownDirection`); an unknown key name is a parse error (2) |
 | 5 | runFlow cycle / file IO (`RunError::RunFlowCycle` / `RunError::Io`) |
 | 6 | runner unreachable (runner not up / port wrong) |
 
@@ -795,7 +795,8 @@ smix wait-for id:loading-spinner --timeout 5    # seconds, not ms
 smix wait-for id:loading-spinner --absent  # wait until it is GONE
 
 smix fill id:form-email-input --text alice@example.com
-smix press-key return                      # positional key name
+smix press-key return                      # positional key name, read as a flow's pressKey reads it
+smix press-key back                        # navigation back — fails when nothing went back
 smix scroll "text:Row #5000" --direction down   # stops when it is wholly in view
 smix scroll "ocrText:Row #5000" --direction down # looks with OCR too
 smix swipe down                            # one gesture; `down` reveals what is below

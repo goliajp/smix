@@ -71,6 +71,55 @@ public enum TapAtCoordRoute {
       nx: nx, ny: ny, times: times, intervalMs: intervalMs, holdMs: holdMs)
   }
 
+  /// Bounds on when the touch was actually down, measured around the
+  /// synthesised gesture.
+  ///
+  /// The call that performs the gesture is opaque — it returns after
+  /// the touch lifts, and nothing reports the instant it went down.
+  /// What is measurable is the call's own span `[A, B]` and the hold
+  /// `d` the timeline was authored with. A hold of `d` contained in
+  /// `[A, B]` means the touch went down no later than `B - d` and
+  /// lifted no earlier than `A + d`. Those two bounds hold whatever the
+  /// call did with the rest of its time, which is why they, rather
+  /// than a guessed instant, go on the wire.
+  ///
+  /// This is sound only because the caller authors the timeline. It was
+  /// applied to `XCUIElement.press(forDuration:)` first, and that is
+  /// where it broke: on iPhone 17 Pro / iOS 26.5 that call took a
+  /// constant ~2.6s for every hold from 500ms to 6000ms, so `B - A`
+  /// bore no relation to `d` and a 4000ms request produced a "4000ms
+  /// certainly held" window inside a 2.6s call. Measured overhead
+  /// around the synthesised gesture is 290-342ms and independent of
+  /// `d`.
+  public struct PressTimings: Equatable, Sendable {
+    /// Handler entry → latest instant the touch could have gone down.
+    public let latestDownOffsetMs: UInt32
+    /// Handler entry → earliest instant the touch could have lifted.
+    public let earliestUpOffsetMs: UInt32
+    /// Handler entry → handler return.
+    public let handlerWallMs: UInt32
+
+    public init(latestDownOffsetMs: UInt32, earliestUpOffsetMs: UInt32, handlerWallMs: UInt32) {
+      self.latestDownOffsetMs = latestDownOffsetMs
+      self.earliestUpOffsetMs = earliestUpOffsetMs
+      self.handlerWallMs = handlerWallMs
+    }
+
+    /// Derive the bounds from the call span and the requested hold.
+    public static func around(
+      callStartMs: Double, callEndMs: Double, holdMs: UInt32, handlerEntryMs: Double
+    ) -> PressTimings {
+      let hold = Double(holdMs)
+      let latestDown = max(callStartMs, callEndMs - hold) - handlerEntryMs
+      let earliestUp = callStartMs + hold - handlerEntryMs
+      return PressTimings(
+        latestDownOffsetMs: UInt32(max(0, latestDown.rounded())),
+        earliestUpOffsetMs: UInt32(max(0, earliestUp.rounded())),
+        handlerWallMs: UInt32(max(0, (callEndMs - handlerEntryMs).rounded()))
+      )
+    }
+  }
+
   public static func success(ok: Bool) -> HTTPResponse {
     success(ok: ok, chain: [])
   }
@@ -88,6 +137,18 @@ public enum TapAtCoordRoute {
   /// centre is usually the button's own label. An older host ignores
   /// the extra key.
   public static func success(ok: Bool, chain: [HitChainEntry]) -> HTTPResponse {
+    success(ok: ok, chain: chain, press: nil)
+  }
+
+  /// Success for one held touch, carrying when it was down.
+  ///
+  /// This route became the long press when `/long-press` retired, so the
+  /// bounds that route answered with ride here, in the same words.
+  /// Absent for a burst and from a press that could not be timed; the
+  /// host reads absence as "cannot be placed".
+  public static func success(
+    ok: Bool, chain: [HitChainEntry], press: PressTimings?
+  ) -> HTTPResponse {
     let entries = chain.map { e in
       let id = jsonEscape(e.identifier)
       let label = jsonEscape(e.label)
@@ -95,7 +156,12 @@ public enum TapAtCoordRoute {
         + #"{"x":\#(e.frame.origin.x),"y":\#(e.frame.origin.y),"#
         + #""w":\#(e.frame.size.width),"h":\#(e.frame.size.height)}}"#
     }
-    let body = Data(#"{"ok":\#(ok),"chain":[\#(entries.joined(separator: ","))]}"#.utf8)
+    var json = #"{"ok":\#(ok),"chain":[\#(entries.joined(separator: ","))]"#
+    if let t = press {
+      json += #","latestDownOffsetMs":\#(t.latestDownOffsetMs),"#
+        + #""earliestUpOffsetMs":\#(t.earliestUpOffsetMs),"handlerWallMs":\#(t.handlerWallMs)"#
+    }
+    let body = Data((json + "}").utf8)
     return envelope(.ok, body)
   }
 

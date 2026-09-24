@@ -643,6 +643,21 @@ fn reject_unknown_keys(
     Ok(())
 }
 
+/// A selector nested under `field`, its errors naming where it sits
+/// (`assertScreenshot.cropOn.id` rather than `id`).
+fn selector_under(v: &Value, field: &str) -> Result<Selector, ParseError> {
+    visible_to_selector(v).map_err(|e| match e {
+        ParseError::InvalidValue {
+            field: inner,
+            reason,
+        } => ParseError::InvalidValue {
+            field: format!("{field}.{inner}"),
+            reason,
+        },
+        other => other,
+    })
+}
+
 /// Convert a `visible:` value (scalar string or map with a selector
 /// sub-key) into a [`Selector`].
 ///
@@ -1190,16 +1205,7 @@ fn parse_condition(v: &Value, field: &str) -> Result<FlowCondition, ParseError> 
     )?;
     let selector_at = |key: &str| -> Result<Option<Selector>, ParseError> {
         match map.get(Value::String(key.into())) {
-            Some(v) => visible_to_selector(v).map(Some).map_err(|e| match e {
-                ParseError::InvalidValue {
-                    field: inner,
-                    reason,
-                } => ParseError::InvalidValue {
-                    field: format!("{field}.{key}.{inner}"),
-                    reason,
-                },
-                other => other,
-            }),
+            Some(v) => selector_under(v, &format!("{field}.{key}")).map(Some),
             None => Ok(None),
         }
     };
@@ -1414,7 +1420,12 @@ fn parse_press_key(v: &Value) -> Result<Step, ParseError> {
         field: "pressKey".into(),
         reason: "expected a string".into(),
     })?;
-    Ok(Step::PressKey(s.to_string()))
+    smix_sdk::KeyName::from_name(s)
+        .map(Step::PressKey)
+        .map_err(|e| ParseError::InvalidValue {
+            field: "pressKey".into(),
+            reason: e.to_string(),
+        })
 }
 
 fn parse_erase_text(v: &Value) -> Result<Step, ParseError> {
@@ -2353,30 +2364,17 @@ fn parse_assert_screenshot(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::AssertScreenshot {
             path: s.clone(),
-            max_hamming: None,
+            threshold: crate::ScreenshotThreshold::Hash(None),
             mask: Vec::new(),
+            crop_on: None,
         }),
         Value::Mapping(map) => {
-            // maestro's own keys are named rather than called unknown: a
-            // flow carrying them was written for maestro, and until this
-            // check they were walked past without a word — a `cropOn`
-            // flow compared the whole frame here and passed.
             reject_unknown_keys(
                 map,
                 "assertScreenshot",
                 "assertScreenshot",
-                &["path", "threshold", "mask"],
+                &["path", "threshold", "thresholdPercentage", "mask", "cropOn"],
                 &[
-                    (
-                        "cropOn",
-                        "maestro compares only that element's region; smix does not carry \
-                         it out yet. Exclude what changes with `mask:` instead",
-                    ),
-                    (
-                        "thresholdPercentage",
-                        "maestro measures a percentage of differing pixels; smix compares a \
-                         perceptual hash, whose tolerance is `threshold` (bits, default 5)",
-                    ),
                     ("label", "smix does not carry out a per-step label here"),
                     (
                         "optional",
@@ -2438,10 +2436,45 @@ fn parse_assert_screenshot(v: &Value) -> Result<Step, ParseError> {
                     });
                 }
             };
+            let percentage = match map.get(Value::String("thresholdPercentage".into())) {
+                None => None,
+                // maestro reads it as a string and evaluates variables in it
+                // when the step runs; a bare number is the same thing written
+                // without quotes.
+                Some(Value::String(t)) => Some(t.trim().to_string()),
+                Some(Value::Number(n)) => Some(n.to_string()),
+                Some(other) => {
+                    return Err(ParseError::InvalidValue {
+                        field: "assertScreenshot.thresholdPercentage".into(),
+                        reason: format!(
+                            "expected a number (the least share, 0 to 100, of pixels that \
+                             must match) or a string that evaluates to one, got {other:?}"
+                        ),
+                    });
+                }
+            };
+            let threshold = match (max_hamming, percentage) {
+                (Some(_), Some(_)) => {
+                    return Err(ParseError::InvalidValue {
+                        field: "assertScreenshot".into(),
+                        reason: "`threshold` and `thresholdPercentage` measure different \
+                                 things — the most differing bits of a perceptual hash, and \
+                                 the least share of pixels that must match — so name one"
+                            .into(),
+                    });
+                }
+                (_, Some(p)) => crate::ScreenshotThreshold::Percentage(p),
+                (h, None) => crate::ScreenshotThreshold::Hash(h),
+            };
+            let crop_on = match map.get(Value::String("cropOn".into())) {
+                None => None,
+                Some(v) => Some(selector_under(v, "assertScreenshot.cropOn")?),
+            };
             Ok(Step::AssertScreenshot {
                 path,
-                max_hamming,
+                threshold,
                 mask,
+                crop_on,
             })
         }
         other => Err(ParseError::InvalidValue {
@@ -3032,13 +3065,33 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
         Value::Null => Ok(Step::TakeScreenshot {
             path: None,
             annotations: Vec::new(),
+            crop_on: None,
         }),
         Value::String(s) => Ok(Step::TakeScreenshot {
             path: Some(s.clone()),
             annotations: Vec::new(),
+            crop_on: None,
         }),
         Value::Mapping(m) => {
-            // Long form: { name?, annotate: [...] }
+            // Long form: { name? | path?, annotate?, cropOn? }. It used to
+            // read those and walk past every other key.
+            reject_unknown_keys(
+                m,
+                "takeScreenshot",
+                "takeScreenshot",
+                &["name", "path", "annotate", "cropOn"],
+                &[
+                    ("label", "smix does not carry out a per-step label here"),
+                    (
+                        "optional",
+                        "smix does not carry out `optional` on takeScreenshot",
+                    ),
+                ],
+            )?;
+            let crop_on = match m.get(Value::String("cropOn".into())) {
+                None => None,
+                Some(v) => Some(selector_under(v, "takeScreenshot.cropOn")?),
+            };
             let path = m
                 .get(Value::String("name".into()))
                 .or_else(|| m.get(Value::String("path".into())))
@@ -3088,7 +3141,11 @@ fn parse_take_screenshot(v: &Value) -> Result<Step, ParseError> {
                 }
                 None => Vec::new(),
             };
-            Ok(Step::TakeScreenshot { path, annotations })
+            Ok(Step::TakeScreenshot {
+                path,
+                annotations,
+                crop_on,
+            })
         }
         other => Err(ParseError::InvalidValue {
             field: "takeScreenshot".into(),

@@ -25,7 +25,9 @@
 /// `compute_dhash_masked` + `hamming_distance` back the public
 /// `App::assert_screenshot`, not part of the SDK surface.
 pub(crate) mod png_gray;
+pub mod screenshot_compare;
 pub(crate) mod screenshot_hash;
+pub use screenshot_compare::{CropTo, ScreenshotCheck, ScreenshotCompare, crop_to};
 pub use screenshot_hash::ScreenMask;
 
 /// Frame-to-frame stillness, backing `waitForAnimationToEnd`.
@@ -114,17 +116,25 @@ pub use smix_simctl::{
     Appearance, DeviceControlError, LaunchResult, SimctlClient, SimctlPermission,
 };
 
-/// Nucleus of `App::assert_screenshot`. Wraps fs IO + the dhash algorithm
+/// Nucleus of `App::assert_screenshot`. Wraps fs IO, the crop and the comparison
 /// without any `App` dependency, so it can be exercised in host-side
 /// unit tests. Helper fn — not a user-facing capability.
 pub fn assert_screenshot_inner(
-    png_bytes: &[u8],
-    baseline_path: &std::path::Path,
-    max_hamming: u32,
+    captured: &[u8],
+    check: &ScreenshotCheck<'_>,
     strict: bool,
-    masks: &[ScreenMask],
 ) -> Result<AssertScreenshotOutcome, ExpectationFailure> {
     use std::io::ErrorKind;
+    let baseline_path = check.baseline;
+    let masks = check.masks;
+    let cropped;
+    let png_bytes = match &check.crop {
+        Some(crop) => {
+            cropped = crop_to(captured, crop)?;
+            cropped.as_slice()
+        }
+        None => captured,
+    };
     let baseline_bytes = match std::fs::read(baseline_path) {
         Ok(b) => b,
         Err(e) if e.kind() == ErrorKind::NotFound => {
@@ -185,6 +195,22 @@ pub fn assert_screenshot_inner(
 
     // The same masks on both: a region is left out of the comparison,
     // not out of one side of it.
+    let max_hamming = match check.compare {
+        ScreenshotCompare::Hash { max_hamming } => max_hamming,
+        ScreenshotCompare::Pixels { min_match_percent } => {
+            let percent = screenshot_compare::judge_pixels(
+                png_bytes,
+                &baseline_bytes,
+                min_match_percent,
+                masks,
+            )
+            .map_err(|mut e| {
+                e.message = format!("{} (baseline {})", e.message, baseline_path.display());
+                e
+            })?;
+            return Ok(AssertScreenshotOutcome::MatchedPixels { percent });
+        }
+    };
     let h_current = screenshot_hash::compute_dhash_masked(png_bytes, masks)?;
     let h_baseline = screenshot_hash::compute_dhash_masked(&baseline_bytes, masks)?;
     let hamming = screenshot_hash::hamming_distance(h_current, h_baseline);
@@ -210,7 +236,7 @@ pub fn assert_screenshot_inner(
 /// first-run "auto-record baseline" path (which writes the captured PNG to
 /// disk and treats as Ok) from the steady-state diff path (which compares
 /// dhash hamming distance against the recorded baseline).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AssertScreenshotOutcome {
     /// First run — baseline did not exist, captured PNG was written to
     /// `path`. Subsequent runs will diff against this file.
@@ -223,6 +249,12 @@ pub enum AssertScreenshotOutcome {
     Matched {
         /// dhash hamming distance against baseline.
         hamming: u32,
+    },
+    /// Baseline existed and enough pixels matched; `percent` is the
+    /// observed share (≥ the required one).
+    MatchedPixels {
+        /// Share of compared pixels that matched, 0..=100.
+        percent: f64,
     },
 }
 
@@ -2383,25 +2415,23 @@ impl App {
             .await
     }
 
-    /// Assert the current sim screenshot matches a recorded baseline
-    /// PNG via 64-bit dhash perceptual diff. Maestro
-    /// `assertScreenshot: <baseline-path>`.
+    /// Assert the current screenshot matches a recorded baseline PNG.
+    /// Maestro `assertScreenshot: <baseline-path>`.
     ///
-    /// **Baseline lifecycle** (same as maestro):
-    /// - Baseline missing → write the captured PNG + return
+    /// The capture is cropped to `check.crop` first, when there is one;
+    /// everything after judges the cropped image.
+    ///
+    /// **Baseline lifecycle**:
+    /// - Baseline missing → write the (cropped) capture + return
     ///   `Recorded { path }` (auto-record default).
     /// - `SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD=1` env → strict mode:
     ///   missing baseline = `DriverError`.
-    /// - Baseline present → dhash(baseline) vs dhash(current) → hamming
-    ///   distance; `≤ max_hamming` = `Matched { hamming }`, otherwise
-    ///   `AssertionFailed`.
-    ///
-    /// `max_hamming` typically ≤ 10 (adapter runtime arm pins 5).
+    /// - Baseline present → [`ScreenshotCompare::Hash`] passes as
+    ///   `Matched { hamming }`, [`ScreenshotCompare::Pixels`] as
+    ///   `MatchedPixels { percent }`; otherwise `AssertionFailed`.
     pub async fn assert_screenshot(
         &self,
-        baseline_path: &std::path::Path,
-        max_hamming: u32,
-        masks: &[ScreenMask],
+        check: &ScreenshotCheck<'_>,
     ) -> Result<AssertScreenshotOutcome, ExpectationFailure> {
         let png = self.screenshot().await?;
         // CLI-injected config wins; a non-CLI caller with no injection
@@ -2410,7 +2440,7 @@ impl App {
         let strict = self
             .assert_screenshot_strict
             .unwrap_or_else(|| std::env::var_os("SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD").is_some());
-        assert_screenshot_inner(&png, baseline_path, max_hamming, strict, masks)
+        assert_screenshot_inner(&png, check, strict)
     }
 
     pub async fn assert_not_visible(&self, selector: &Selector) -> Result<(), ExpectationFailure> {

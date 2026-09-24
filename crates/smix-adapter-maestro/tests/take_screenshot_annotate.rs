@@ -16,7 +16,9 @@ appId: com.example
 ";
     let step = first_step(yaml);
     match step {
-        Step::TakeScreenshot { path, annotations } => {
+        Step::TakeScreenshot {
+            path, annotations, ..
+        } => {
             assert!(path.is_none());
             assert!(annotations.is_empty());
         }
@@ -33,7 +35,9 @@ appId: com.example
 ";
     let step = first_step(yaml);
     match step {
-        Step::TakeScreenshot { path, annotations } => {
+        Step::TakeScreenshot {
+            path, annotations, ..
+        } => {
             assert_eq!(path.as_deref(), Some("hub-form.png"));
             assert!(annotations.is_empty());
         }
@@ -57,7 +61,9 @@ appId: com.example
 "#;
     let step = first_step(yaml);
     match step {
-        Step::TakeScreenshot { path, annotations } => {
+        Step::TakeScreenshot {
+            path, annotations, ..
+        } => {
             assert_eq!(path.as_deref(), Some("hub-form.png"));
             assert_eq!(annotations.len(), 1);
             match &annotations[0] {
@@ -94,7 +100,9 @@ appId: com.example
 "#;
     let step = first_step(yaml);
     match step {
-        Step::TakeScreenshot { path, annotations } => {
+        Step::TakeScreenshot {
+            path, annotations, ..
+        } => {
             assert!(path.is_none());
             assert_eq!(annotations.len(), 1);
             match &annotations[0] {

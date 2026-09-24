@@ -403,6 +403,11 @@ jobs:
         run: python3 scripts/dev/a-classification-names-every-variant.py
       - name: the classification gate can still go red
         run: python3 scripts/dev/a-classification-names-every-variant.test.py
+      # Three hand copies of the key table drifted; none read `back`.
+      - name: a key name is read in one place
+        run: python3 scripts/dev/one-key-table.py
+      - name: the key-table gate can still go red
+        run: python3 scripts/dev/one-key-table.test.py
       # Reads three source files and the Selector enum; all in the checkout.
       - name: every selector form is declared on every surface
         run: python3 scripts/dev/selector-surface-scan.py

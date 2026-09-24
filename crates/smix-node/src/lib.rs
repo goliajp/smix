@@ -108,12 +108,12 @@ impl SmixNodeDriver {
         client.input_text(&text).await.map_err(transport_err)
     }
 
-    /// Press a hardware/keyboard key by its camelCase wire name (e.g.
-    /// `return`, `arrowUp`). The keyboard diagnostic payload is dropped —
+    /// Press a key by name, read as a flow's `pressKey` reads it (e.g.
+    /// `return`, `back`, `Volume Up`). The keyboard diagnostic payload is dropped —
     /// fire-and-return, matching the UniFFI surface.
     #[napi]
     pub async fn press_key(&self, key: String) -> napi::Result<()> {
-        let key: KeyName = parse_wire_enum(&key, "key")?;
+        let key = KeyName::from_name(&key).map_err(|e| napi::Error::from_reason(e.to_string()))?;
         let client = Arc::clone(&self.client);
         client.press_key(key).await.map_err(transport_err)?;
         Ok(())
