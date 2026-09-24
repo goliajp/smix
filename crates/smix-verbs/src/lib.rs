@@ -275,6 +275,20 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Assert,
         ArgShape::Mapping,
     ),
+    // smix's own: maestro has no way to say "nothing moved between these
+    // steps", so the maestro name is the smix name.
+    v(
+        "rememberBounds",
+        "rememberBounds",
+        VerbCategory::Assert,
+        ArgShape::Mapping,
+    ),
+    v(
+        "assertBoundsUnchanged",
+        "assertBoundsUnchanged",
+        VerbCategory::Assert,
+        ArgShape::Mapping,
+    ),
     // The AI-assertion tier. Opt-in and non-deterministic: a verdict comes
     // from a local `claude` CLI judging a screenshot, so these two are the
     // only verbs in the table whose result is a judgement rather than a

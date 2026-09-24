@@ -39,7 +39,7 @@ fn auto_records_when_baseline_missing() {
     let path = tmp_path("auto-record");
     assert!(!path.exists());
     let png = tiny_png(0);
-    let out = smix_sdk::assert_screenshot_inner(&png, &path, 5, false).unwrap();
+    let out = smix_sdk::assert_screenshot_inner(&png, &path, 5, false, &[]).unwrap();
     match out {
         AssertScreenshotOutcome::Recorded { path: p } => {
             assert_eq!(p, path);
@@ -56,7 +56,7 @@ fn matches_identical_baseline_with_zero_hamming() {
     let png = tiny_png(128);
     // seed baseline = current PNG
     std::fs::write(&path, &png).unwrap();
-    let out = smix_sdk::assert_screenshot_inner(&png, &path, 5, false).unwrap();
+    let out = smix_sdk::assert_screenshot_inner(&png, &path, 5, false, &[]).unwrap();
     match out {
         AssertScreenshotOutcome::Matched { hamming } => assert_eq!(hamming, 0),
         other => panic!("expected Matched 0, got {other:?}"),
@@ -69,7 +69,7 @@ fn strict_mode_fails_when_baseline_missing() {
     let path = tmp_path("strict-missing");
     assert!(!path.exists());
     let png = tiny_png(0);
-    let err = smix_sdk::assert_screenshot_inner(&png, &path, 5, true).unwrap_err();
+    let err = smix_sdk::assert_screenshot_inner(&png, &path, 5, true, &[]).unwrap_err();
     assert_eq!(err.code, smix_sdk::FailureCode::DriverError);
     assert!(
         err.message.contains("SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD"),

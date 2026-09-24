@@ -38,6 +38,10 @@ impl AppLike for SilentMockApp {
     fn platform(&self) -> smix_driver::Platform {
         smix_driver::Platform::Ios
     }
+    // iOS: the tree is in points already.
+    async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure> {
+        Ok(1.0)
+    }
     async fn tap(&self, _: &Selector) -> Result<(), ExpectationFailure> {
         Ok(())
     }
@@ -265,6 +269,7 @@ impl AppLike for SilentMockApp {
         &self,
         _: &std::path::Path,
         _: u32,
+        _: &[smix_adapter_maestro::MaskRegion],
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure> {
         // SilentMockApp does not decode the screenshot — c6 fixture
         // `assert_screenshot_basic.yaml` validates parser+adapter wire,

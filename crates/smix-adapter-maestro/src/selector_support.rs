@@ -93,6 +93,9 @@ pub enum Slot {
     /// `swipe: { over: <selector>, from, to }` — the element whose box
     /// the swipe happens inside.
     SwipeOverTarget,
+    /// `rememberBounds:` / `assertBoundsUnchanged:` — the element whose
+    /// box is measured.
+    BoundsTarget,
 }
 
 /// What a slot does with a form it cannot read from the tree.
@@ -119,6 +122,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         Step::LongPressOn { .. } => &[Slot::LongPressTarget],
         Step::InputTextInto { .. } => &[Slot::FillTarget],
         Step::CopyTextFrom { .. } => &[Slot::CopyTextSource],
+        Step::RememberBounds { .. } | Step::AssertBoundsUnchanged { .. } => &[Slot::BoundsTarget],
         Step::AssertVisible { .. } => &[Slot::AssertVisibleTarget],
         Step::AssertNotVisible { .. } => &[Slot::AssertNotVisibleTarget],
         Step::ExtendedWaitUntil { .. } => &[Slot::WaitVisibleTarget, Slot::WaitNotVisibleTarget],
@@ -178,7 +182,7 @@ impl Slot {
     /// this list against the `Slot::` names `slots()` actually hands
     /// out, because a list written by hand beside a list derived from
     /// the code is two truths waiting to disagree.
-    pub const ALL: [Slot; 14] = [
+    pub const ALL: [Slot; 15] = [
         Slot::TapOnTarget,
         Slot::RepeatTapTarget,
         Slot::DoubleTapTarget,
@@ -193,6 +197,7 @@ impl Slot {
         Slot::RunFlowGate,
         Slot::AnnotationAnchor,
         Slot::SwipeOverTarget,
+        Slot::BoundsTarget,
     ];
 }
 
@@ -295,6 +300,20 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
             )
         }
 
+        // Both bounds verbs measure an element's box and compare it, and
+        // neither of these two forms names an element with a box to
+        // measure.
+        (S::BoundsTarget, F::OcrText) => Support::Refused(
+            "a box found by OCR follows the rendered glyphs — antialiasing and \
+             hinting move it by a pixel on their own — so comparing it to the \
+             pixel would measure the recognizer rather than the layout. Name the \
+             element by id, text, label or role",
+        ),
+        (S::BoundsTarget, F::AnchorRelative) => Support::Refused(
+            "an anchor plus a shift is a point, and a point has no box to \
+             remember or to compare. Name the element itself",
+        ),
+
         (S::RunFlowGate, F::OcrText) => Support::Dispatched,
         (S::RunFlowGate, F::AnchorRelative) => Support::Refused(
             "a gate asks whether an element is on screen, and an anchor plus a \
@@ -318,6 +337,9 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
         Step::LongPressOn { selector, .. } => vec![(Slot::LongPressTarget, selector)],
         Step::InputTextInto { selector, .. } => vec![(Slot::FillTarget, selector)],
         Step::CopyTextFrom { selector, .. } => vec![(Slot::CopyTextSource, selector)],
+        Step::RememberBounds { selector, .. } | Step::AssertBoundsUnchanged { selector, .. } => {
+            vec![(Slot::BoundsTarget, selector)]
+        }
         Step::AssertVisible { selector, .. } => vec![(Slot::AssertVisibleTarget, selector)],
         Step::AssertNotVisible { selector, .. } => {
             vec![(Slot::AssertNotVisibleTarget, selector)]

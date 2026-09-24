@@ -88,6 +88,26 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
         Step::AssertVisible { selector } => {
             Ok(single("assertVisible", selector_to_maestro(selector)?))
         }
+        Step::RememberBounds { selector, name } => {
+            let mut inner = selector_mapping(selector)?;
+            inner.insert(Value::String("as".into()), Value::String(name.clone()));
+            Ok(single("rememberBounds", Value::Mapping(inner)))
+        }
+        Step::AssertBoundsUnchanged {
+            selector,
+            was,
+            within_dp,
+        } => {
+            let mut inner = selector_mapping(selector)?;
+            inner.insert(Value::String("was".into()), Value::String(was.clone()));
+            if *within_dp != 0.0 {
+                inner.insert(
+                    Value::String("within".into()),
+                    Value::Number(Number::from(*within_dp)),
+                );
+            }
+            Ok(single("assertBoundsUnchanged", Value::Mapping(inner)))
+        }
         Step::AssertNotVisible { selector } => {
             Ok(single("assertNotVisible", selector_to_maestro(selector)?))
         }
@@ -225,6 +245,22 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
     }
 }
 
+/// A selector as a mapping, so a verb's own keys can ride beside it.
+/// The bare-string form (`"Save"`) is `text:` spelled short.
+fn selector_mapping(selector: &Selector) -> Result<Mapping, EmitError> {
+    match selector_to_maestro(selector)? {
+        Value::Mapping(m) => Ok(m),
+        Value::String(s) => {
+            let mut m = Mapping::new();
+            m.insert(Value::String("text".into()), Value::String(s));
+            Ok(m)
+        }
+        _ => Err(EmitError::Unsupported {
+            verb: "rememberBounds",
+        }),
+    }
+}
+
 fn single(verb: &str, value: Value) -> Value {
     let mut m = Mapping::new();
     m.insert(Value::String(verb.into()), value);
@@ -328,6 +364,8 @@ fn step_verb(step: &Step) -> &'static str {
         Step::SetClipboard(_) => "setClipboard",
         Step::PasteText { .. } => "pasteText",
         Step::CopyTextFrom { .. } => "copyTextFrom",
+        Step::RememberBounds { .. } => "rememberBounds",
+        Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged",
         Step::DoubleTapOn { .. } => "doubleTapOn",
         Step::RepeatTap { .. } => "repeatTap",
         Step::LongPressOn { .. } => "longPressOn",

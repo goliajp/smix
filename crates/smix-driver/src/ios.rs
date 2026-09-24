@@ -229,6 +229,12 @@ impl Driver for IosDriver {
         IosDriver::confirm_on_screen(self, matched, None).await
     }
 
+    async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure> {
+        // XCUITest reports every frame in points: the tree is already in
+        // device-independent units.
+        Ok(1.0)
+    }
+
     async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
         IosDriver::swipe_once(self, direction).await
     }

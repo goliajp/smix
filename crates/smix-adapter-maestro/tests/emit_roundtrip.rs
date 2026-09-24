@@ -146,3 +146,30 @@ fn emit_refuses_unsupported_selector() {
     let err = emit_flow_yaml(&steps, "com.x").expect_err("focused selector refused");
     assert!(matches!(err, EmitError::Unsupported { .. }), "got {err:?}");
 }
+
+/// The two bounds verbs come back as they went out, `within` included,
+/// and an exact comparison is written without a `within` at all.
+#[test]
+fn bounds_verbs_round_trip() {
+    let steps = vec![
+        launch("com.x"),
+        Step::RememberBounds {
+            selector: id("btn-stop"),
+            name: "stop".into(),
+        },
+        Step::AssertBoundsUnchanged {
+            selector: id("btn-stop"),
+            was: "stop".into(),
+            within_dp: 0.0,
+        },
+        Step::AssertBoundsUnchanged {
+            selector: text("Stop"),
+            was: "stop".into(),
+            within_dp: 1.5,
+        },
+    ];
+    let yaml = emit_flow_yaml(&steps, "com.x").expect("bounds verbs emit");
+    let flow =
+        parse_flow_yaml(&yaml).unwrap_or_else(|e| panic!("emitted yaml must parse: {e}\n{yaml}"));
+    assert_eq!(flow.steps, steps, "round-trip must be faithful\n{yaml}");
+}

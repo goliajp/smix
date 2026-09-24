@@ -185,6 +185,10 @@ pub trait AppLike: Send + Sync {
     /// is compared against. Not async: the driver was chosen when the
     /// app was built, and asking the device would answer the same thing.
     fn platform(&self) -> smix_driver::Platform;
+    /// How many of the tree's units make one device-independent point —
+    /// what `rememberBounds` / `assertBoundsUnchanged` divide every box by.
+    /// Mirrors [`App::pixels_per_point`].
+    async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure>;
     /// Tap an element matched by selector. Mirrors [`App::tap`].
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure>;
     /// Route tap via SDK [`App::tap_xcui`] (swift `/tap-by-id` →
@@ -466,6 +470,7 @@ pub trait AppLike: Send + Sync {
         &self,
         baseline_path: &std::path::Path,
         max_hamming: u32,
+        masks: &[crate::MaskRegion],
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure>;
 }
 
@@ -473,6 +478,9 @@ pub trait AppLike: Send + Sync {
 impl AppLike for App {
     fn platform(&self) -> smix_driver::Platform {
         self.driver().platform()
+    }
+    async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure> {
+        App::pixels_per_point(self).await
     }
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         // The outcome stops at the AppLike boundary for now. Carrying
@@ -726,8 +734,9 @@ impl AppLike for App {
         &self,
         baseline_path: &std::path::Path,
         max_hamming: u32,
+        masks: &[crate::MaskRegion],
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure> {
-        App::assert_screenshot(self, baseline_path, max_hamming).await
+        App::assert_screenshot(self, baseline_path, max_hamming, masks).await
     }
 }
 
@@ -921,6 +930,11 @@ fn refuse_what_this_verb_cannot_read(step: &Step) -> Result<(), RunError> {
     Ok(())
 }
 
+/// A box as one line: corner, then size, one decimal.
+fn describe_box(r: smix_sdk::Rect) -> String {
+    format!("x={:.1} y={:.1} w={:.1} h={:.1}", r.x, r.y, r.w, r.h)
+}
+
 fn summarize_step_verb(step: &Step) -> String {
     match step {
         Step::SwipeOver { .. } => "swipe",
@@ -961,6 +975,8 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::TakeScreenshot { .. } => "takeScreenshot",
         Step::OpenLink(_) => "openLink",
         Step::CopyTextFrom { .. } => "copyTextFrom",
+        Step::RememberBounds { .. } => "rememberBounds",
+        Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged",
         Step::PasteText { .. } => "pasteText",
         Step::SetClipboard(_) => "setClipboard",
         Step::Travel { .. } => "travel",
@@ -1043,6 +1059,10 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
     /// [`Step::ExtractWithAI`], which is the one verb that reads values
     /// off the screen into it; defaults to an empty map.
     output: std::collections::BTreeMap<String, crate::ExprValue>,
+    /// Boxes `rememberBounds` kept, by name, in device-independent pixels.
+    /// Beside `output` rather than in it: a box is four numbers to
+    /// compare, and `output` holds what a template can print.
+    remembered_bounds: std::collections::BTreeMap<String, smix_sdk::Rect>,
     /// Env store used by the expression engine for bare `${NAME}`
     /// lookup. Populated from CLI `--env KEY=VAL` (repeatable) + the
     /// inherited process env as fallback. Enables yaml with
@@ -1105,6 +1125,35 @@ pub struct Adapter<'a, A: AppLike + ?Sized> {
 }
 
 impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
+    /// The matched element's box in device-independent pixels.
+    ///
+    /// Waits for the element the way the other element verbs do. Which
+    /// box: the one the element occupies, not the part that shows — the
+    /// question is whether the layout moved, and scrolling a row half out
+    /// of view changes what shows without moving anything.
+    async fn bounds_in_points(&self, selector: &Selector) -> Result<smix_sdk::Rect, RunError> {
+        let deadline = std::time::Instant::now() + IMPLICIT_WAIT;
+        loop {
+            let tree = self.app.tree().await?;
+            if let Some(node) = smix_selector_resolver::resolve_selector(&tree, selector) {
+                let ppp = self.app.pixels_per_point().await?;
+                return Ok(smix_sdk::rect_in_points(node.bounds, ppp));
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::ElementNotFound),
+                    message: format!(
+                        "no element to measure: {}",
+                        smix_selector::describe_selector(selector)
+                    ),
+                    selector: Some(selector.clone()),
+                    ..Default::default()
+                })));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    }
+
     /// Construct a dispatcher bound to `app` and `base_dir`.
     pub fn new(app: &'a A, base_dir: PathBuf) -> Self {
         Self {
@@ -1113,6 +1162,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             last_bundle: None,
             run_stack: Vec::new(),
             output: std::collections::BTreeMap::new(),
+            remembered_bounds: std::collections::BTreeMap::new(),
             env: std::collections::BTreeMap::new(),
             debug_output: None,
             debug_records: Vec::new(),
@@ -2230,6 +2280,61 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.paste_text(expanded.as_deref()).await?;
                 Ok(RunStepReport::Ok)
             }
+            Step::RememberBounds { selector, name } => {
+                let desugared = self.desugar_localized_text(selector);
+                let box_now = self.bounds_in_points(&desugared).await?;
+                self.remembered_bounds.insert(name.clone(), box_now);
+                Ok(RunStepReport::Ok)
+            }
+            Step::AssertBoundsUnchanged {
+                selector,
+                was,
+                within_dp,
+            } => {
+                let Some(kept) = self.remembered_bounds.get(was).copied() else {
+                    let known: Vec<String> = self
+                        .remembered_bounds
+                        .keys()
+                        .map(|k| format!("`{k}`"))
+                        .collect();
+                    return Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::AssertionFailed),
+                        message: format!(
+                            "assertBoundsUnchanged: nothing was remembered as `{was}` — {}",
+                            if known.is_empty() {
+                                "no `rememberBounds` has run yet in this flow".to_string()
+                            } else {
+                                format!("remembered so far: {}", known.join(", "))
+                            }
+                        ),
+                        ..Default::default()
+                    })));
+                };
+                let desugared = self.desugar_localized_text(selector);
+                let box_now = self.bounds_in_points(&desugared).await?;
+                match smix_sdk::bounds_moved(kept, box_now, *within_dp) {
+                    None => Ok(RunStepReport::Ok),
+                    Some(m) => Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                        code: Some(FailureCode::AssertionFailed),
+                        message: format!(
+                            "assertBoundsUnchanged: {} moved since it was remembered as `{was}` \
+                             (device-independent pixels) — was {}, now {}; x {:+.1}, y {:+.1}, \
+                             width {:+.1}, height {:+.1}; the largest change is {:.1}, allowed {:.1}",
+                            smix_selector::describe_selector(&desugared),
+                            describe_box(kept),
+                            describe_box(box_now),
+                            m.dx,
+                            m.dy,
+                            m.dw,
+                            m.dh,
+                            m.largest(),
+                            within_dp
+                        ),
+                        selector: Some((*desugared).clone()),
+                        ..Default::default()
+                    }))),
+                }
+            }
             Step::CopyTextFrom { selector } => {
                 self.app
                     .copy_text_from(&self.desugar_localized_text(selector))
@@ -2445,17 +2550,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
             } => {
                 let abs = self.base_dir.join(path);
                 let cap = max_hamming.unwrap_or(5);
-                if !mask.is_empty() {
-                    // Surface-only: the parser carried the regions but
-                    // the runtime skips them. Warn into the RunReport
-                    // rather than dropping them silently.
-                    warnings.push(format!(
-                        "assertScreenshot.mask: {} region(s) accepted but ignored (region exclusion needs SSIM/pHash; the current dhash compares the full frame); full-frame dhash dispatched with max_hamming={}",
-                        mask.len(),
-                        cap
-                    ));
-                }
-                let outcome = self.app.assert_screenshot(&abs, cap).await?;
+                let outcome = self.app.assert_screenshot(&abs, cap, mask).await?;
                 if let smix_sdk::AssertScreenshotOutcome::Recorded { path } = outcome {
                     warnings.push(format!(
                         "assertScreenshot: auto-recorded baseline at {} (first run; subsequent runs will diff against it)",

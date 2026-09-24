@@ -54,7 +54,9 @@ that is why.
 | `expect: { signals }` | ✅ | ✅ | Ordered / any-order variants |
 | `expectLogClean` | ✅ | ✅ | Allowlist multi-source merge |
 | `assertTrue` | ✅ | ✅ | Expression engine — `${output.name}`, `${env.NAME}`, arithmetic |
-| `assertScreenshot` | ✅ | ✅ | 64-bit dhash over the PNG, so it behaves the same on both. There is no region masking on either platform |
+| `assertScreenshot` | ✅ | ✅ | 64-bit dhash over the PNG, so it behaves the same on both. `mask:` regions are painted one flat value in both images before hashing, so what changes inside them cannot count. maestro's `cropOn` / `thresholdPercentage` / `label` / `optional` are refused by name, not ignored |
+| `rememberBounds` | ✅ | ✅ | smix's own — maestro has no verb for it. Keeps where an element is, under a name, in device-independent pixels (points on iOS; pixels ÷ density on Android). Takes any selector except `ocrText` and `anchorRelative`, which name no box to measure |
+| `assertBoundsUnchanged` | ✅ | ✅ | smix's own — maestro has no verb for it. The element's box now matches the one `rememberBounds` kept under `was`, every edge within `within` device-independent pixels (default 0). A failure prints both boxes and how far each edge moved |
 
 ## Control flow
 

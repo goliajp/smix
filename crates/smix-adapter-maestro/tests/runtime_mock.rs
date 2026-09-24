@@ -204,6 +204,14 @@ struct MockApp {
     screenshot_backpressure_n: Mutex<usize>,
     /// What `platform()` answers. iOS unless a test says otherwise.
     platform: Mutex<smix_driver::Platform>,
+    /// What `pixels_per_point()` answers: 1 is iOS (points already).
+    pixels_per_point: Mutex<f64>,
+    /// How far down, in the tree's own units, `fixture-input` sits from
+    /// where it starts. A tap on `move-it` adds `move_by` to it.
+    input_shift: Mutex<f64>,
+    move_by: Mutex<f64>,
+    /// The regions the last `assert_screenshot` was handed.
+    last_masks: Mutex<Vec<smix_adapter_maestro::MaskRegion>>,
     /// When set, `scroll` fails with this code.
     scroll_failure: Mutex<Option<FailureCode>>,
 }
@@ -227,6 +235,10 @@ impl MockApp {
             screenshot_cycles: Mutex::new(false),
             screenshot_backpressure_n: Mutex::new(0),
             platform: Mutex::new(smix_driver::Platform::Ios),
+            pixels_per_point: Mutex::new(1.0),
+            input_shift: Mutex::new(0.0),
+            move_by: Mutex::new(0.0),
+            last_masks: Mutex::new(Vec::new()),
             scroll_failure: Mutex::new(None),
         }
     }
@@ -351,7 +363,13 @@ impl AppLike for MockApp {
     fn platform(&self) -> smix_driver::Platform {
         *self.platform.lock().unwrap()
     }
+    async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure> {
+        Ok(*self.pixels_per_point.lock().unwrap())
+    }
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
+        if matches!(selector, Selector::Id { id, .. } if id == "move-it") {
+            *self.input_shift.lock().unwrap() += *self.move_by.lock().unwrap();
+        }
         self.calls
             .lock()
             .unwrap()
@@ -770,7 +788,12 @@ impl AppLike for MockApp {
             r(0.0, 0.0, 1000.0, 1000.0),
             vec![node(
                 Some("fixture-input"),
-                r(100.0, 200.0, 800.0, 400.0),
+                r(
+                    100.0,
+                    200.0 + *self.input_shift.lock().unwrap(),
+                    800.0,
+                    400.0,
+                ),
                 vec![],
             )],
         ))
@@ -934,7 +957,9 @@ impl AppLike for MockApp {
         &self,
         baseline_path: &std::path::Path,
         _: u32,
+        masks: &[smix_adapter_maestro::MaskRegion],
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure> {
+        *self.last_masks.lock().unwrap() = masks.to_vec();
         self.calls
             .lock()
             .unwrap()
@@ -2653,39 +2678,6 @@ async fn mock_run_assert_screenshot_mapping_form_threshold_passes_through() {
     // succeeding proves the mapping form parsed and routed.
 }
 
-// Mapping form `{ path, mask: [...] }` accepted; runtime
-// emits an explicit warn-and-ignore (R2-tier algorithm deferred to v6+).
-#[tokio::test]
-async fn mock_run_assert_screenshot_mask_warns_and_ignores() {
-    let flow = parse_inline(concat!(
-        "appId: com.t.s\n",
-        "---\n",
-        "- assertScreenshot:\n",
-        "    path: masked.png\n",
-        "    mask:\n",
-        "      - x: 0.0\n",
-        "        y: 0.0\n",
-        "        width: 0.5\n",
-        "        height: 0.25\n",
-    ));
-    let app = MockApp::new();
-    let mut adapter = Adapter::new(&app, fixtures_dir());
-    let report = adapter
-        .run(&flow)
-        .await
-        .expect("mask mapping form dispatch");
-    assert!(matches!(report.steps[0], RunStepReport::Ok));
-    let warn = report
-        .warnings
-        .iter()
-        .find(|w| w.contains("mask"))
-        .expect("mask warn-and-ignore must surface in run report");
-    assert!(
-        warn.contains("ignored") && warn.contains("SSIM/pHash"),
-        "warn should explain why mask regions are ignored, got: {warn}"
-    );
-}
-
 // Scalar form remains a clean path (back-compat).
 #[tokio::test]
 async fn parse_assert_screenshot_scalar_form_still_works() {
@@ -3812,4 +3804,123 @@ async fn a_run_script_whose_condition_holds_still_says_it_cannot_run_js() {
         RunError::Sdk(f) => assert!(f.message.contains("JS runtime"), "{}", f.message),
         other => panic!("expected the unsupported verdict, got {other:?}"),
     }
+}
+
+// --- rememberBounds / assertBoundsUnchanged ---------------------------
+
+/// A mock on Android's density (420 dpi, 2.625 pixels a point) whose
+/// `fixture-input` moves down by `move_px` pixels when `move-it` is tapped.
+fn app_that_moves(move_px: f64) -> MockApp {
+    let app = MockApp::new();
+    *app.pixels_per_point.lock().unwrap() = 2.625;
+    *app.move_by.lock().unwrap() = move_px;
+    app
+}
+
+async fn run_bounds(
+    app: &MockApp,
+    within: Option<&str>,
+) -> Result<smix_adapter_maestro::RunReport, RunError> {
+    let within = within
+        .map(|w| format!("\n    within: {w}"))
+        .unwrap_or_default();
+    let flow = parse_inline(&format!(
+        "appId: x\n---\n- rememberBounds:\n    id: fixture-input\n    as: field\n- tapOn:\n    id: move-it\n- assertBoundsUnchanged:\n    id: fixture-input\n    was: field{within}\n"
+    ));
+    let mut adapter = Adapter::new(app, fixtures_dir());
+    adapter.run(&flow).await
+}
+
+#[tokio::test]
+async fn bounds_that_did_not_move_pass() {
+    let app = app_that_moves(0.0);
+    run_bounds(&app, None)
+        .await
+        .expect("an element that stayed put failed");
+}
+
+#[tokio::test]
+async fn bounds_that_moved_fail_and_print_both_boxes() {
+    // 21 pixels at 2.625 is 8 device-independent pixels.
+    let app = app_that_moves(21.0);
+    let err = run_bounds(&app, None)
+        .await
+        .expect_err("an 8-point move passed");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("was x="),
+        "the box it kept is not in the message: {msg}"
+    );
+    assert!(
+        msg.contains("now x="),
+        "the box it read is not in the message: {msg}"
+    );
+    assert!(
+        msg.contains("8.0"),
+        "how far it moved is not in the message: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn within_is_in_device_independent_pixels() {
+    // 21 pixels is 8 points: allowed at `within: 8`. Were the comparison in
+    // raw pixels, 21 > 8 would fail it.
+    let app = app_that_moves(21.0);
+    run_bounds(&app, Some("8"))
+        .await
+        .expect("an 8-point move failed `within: 8`");
+    let app = app_that_moves(21.0);
+    assert!(
+        run_bounds(&app, Some("7.5")).await.is_err(),
+        "an 8-point move passed `within: 7.5`"
+    );
+}
+
+#[tokio::test]
+async fn a_name_nothing_remembered_is_refused_by_name() {
+    let flow = parse_inline(
+        "appId: x\n---\n- rememberBounds:\n    id: fixture-input\n    as: field\n- assertBoundsUnchanged:\n    id: fixture-input\n    was: feild\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let err = adapter
+        .run(&flow)
+        .await
+        .expect_err("an unknown name passed");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("`feild`"),
+        "the name it did not know is not in the message: {msg}"
+    );
+    assert!(
+        msg.contains("`field`"),
+        "the names it does know are not offered: {msg}"
+    );
+}
+
+/// `mask:` reaches the comparison. It used to be parsed, carried to the
+/// runtime, and dropped there with a warning, so a region the author
+/// meant to leave out counted in full.
+#[tokio::test]
+async fn a_screenshot_mask_reaches_the_comparison() {
+    let flow = parse_inline(
+        "appId: x\n---\n- assertScreenshot:\n    path: masked.png\n    mask:\n      - { x: 0.0, y: 0.0, width: 1.0, height: 0.5 }\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let report = adapter
+        .run(&flow)
+        .await
+        .expect("assertScreenshot with a mask failed");
+    let got = app.last_masks.lock().unwrap().clone();
+    assert_eq!(got.len(), 1, "the comparison was not handed the region");
+    assert_eq!(got[0].height, 0.5);
+    assert!(
+        !report
+            .warnings
+            .iter()
+            .any(|w| w.contains("accepted but ignored")),
+        "the run still says the mask is ignored: {:?}",
+        report.warnings
+    );
 }

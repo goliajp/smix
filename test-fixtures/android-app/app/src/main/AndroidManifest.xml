@@ -44,5 +44,8 @@
         <activity
             android:name=".IconActivity"
             android:exported="true" />
+        <activity
+            android:name=".BoundsActivity"
+            android:exported="true" />
     </application>
 </manifest>

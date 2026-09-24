@@ -24,6 +24,9 @@
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-screen")]
 
+mod bounds;
+pub use bounds::{Movement, bounds_moved, rect_in_points};
+
 use serde::{Deserialize, Serialize};
 
 /// Logical-points rectangle (origin top-left, +x right, +y down — matches

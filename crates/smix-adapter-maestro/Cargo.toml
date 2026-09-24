@@ -42,6 +42,9 @@ tokio = { workspace = true, features = ["time", "rt-multi-thread", "macros", "si
 smix-sdk = { path = "../smix-sdk", version = "11.0.0" }
 smix-driver = { path = "../smix-driver", version = "11.0.0" }
 smix-selector = { path = "../smix-selector", version = "11.0.0" }
+# `rememberBounds` / `assertBoundsUnchanged` read a matched node's box,
+# which the SDK's verbs never hand back. Already in the tree below this one.
+smix-selector-resolver = { path = "../smix-selector-resolver", version = "11.0.0" }
 # The box-share resolver for `swipe: { over: ... }`. Already in the tree
 # below this one — `smix-driver` calls its centre-point sibling.
 smix-host-coord-resolver = { path = "../smix-host-coord-resolver", version = "11.0.0" }

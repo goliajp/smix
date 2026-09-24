@@ -850,6 +850,8 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             None => "pasteText (from clipboard)".into(),
         },
         Step::CopyTextFrom { .. } => "copyTextFrom".into(),
+        Step::RememberBounds { .. } => "rememberBounds".into(),
+        Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged".into(),
         Step::DoubleTapOn { .. } => "doubleTapOn".into(),
         Step::LongPressOn { duration_ms, .. } => format!("longPressOn ({duration_ms}ms)"),
         Step::AssertTrue { .. } => "assertTrue".into(),
