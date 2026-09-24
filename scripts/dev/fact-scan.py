@@ -335,7 +335,12 @@ def verb_table_count():
     return len(re.findall(r"^\s{4}v\(", body, re.M))
 
 
-VERB_COUNT_CLAIM = re.compile(r"table is (\d+) entries|verb table \((\d+) entries\)")
+# The third form is the number the site renders ("full table (N)"). It sat
+# at 49 while the table grew to 53 — the comment beside it said 53 and was
+# the only form this read.
+VERB_COUNT_CLAIM = re.compile(
+    r"table is (\d+) entries|verb table \((\d+) entries\)|VERB_TABLE_TOTAL = (\d+)"
+)
 
 
 def iter_surface_files():
@@ -436,18 +441,25 @@ def main():
             "extraction broke"
         )
     verb_claims = 0
+    site_total_seen = False
     for rel in ["web/src/data/verbs.ts", "llms.txt", "llms-full.txt"]:
         if not os.path.isfile(os.path.join(ROOT, rel)):
             continue
         for lineno, line in enumerate(read(rel).splitlines(), 1):
             for m in VERB_COUNT_CLAIM.finditer(line):
                 verb_claims += 1
-                stated = int(m.group(1) or m.group(2))
+                site_total_seen = site_total_seen or m.group(3) is not None
+                stated = int(m.group(1) or m.group(2) or m.group(3))
                 if stated != verbs:
                     failures.append(
                         f"{rel}:{lineno}: claims {stated} verbs, VERB_TABLE "
                         f"holds {verbs}"
                     )
+    if not site_total_seen:
+        failures.append(
+            "web/src/data/verbs.ts: no `VERB_TABLE_TOTAL = N` found — the "
+            "number the site renders is no longer compared with the table"
+        )
     if verb_claims == 0:
         failures.append(
             "no surface states the verb table's size — the pattern stopped "

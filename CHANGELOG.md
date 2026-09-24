@@ -2,20 +2,69 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [Unreleased]
+## [11.0.0] — 2026-09-25
+
+Most flows need no change. Five things can make one behave differently:
+an unread key in `runFlow:` / `repeat:` / `when:` / `while:` / a selector
+map / `assertScreenshot` / `takeScreenshot` is now a parse error,
+`scrollUntilVisible` stops when the target is wholly visible rather than
+merely overlapping, an Android step whose touch silently failed now fails
+where it happens, `when: { visible: }` / `notVisible:` fail when the
+runner could not answer instead of reading that as the element being
+absent, and `pressKey: lock / volumeUp / volumeDown` fails on iOS by name
+rather than being skipped. If you call the Rust crates, several signatures
+moved and `Step` is now `#[non_exhaustive]`.
+[Migrating to smix 11.0](docs/migrating-to-11.md) is short, and
+`smix run --check <flow>` names anything in a flow that has to change.
 
 ### Breaking
+
+- **Breaking (Rust API): `LaunchAppOptions.permissions`,
+  `App::set_permission` and `App::set_permissions` take the
+  cross-platform `Permission`, not the iOS `SimctlPermission`.** The
+  whole path from the yaml key to the backend was typed as the iOS
+  enum, so `storage` — implemented and tested in the Android backend —
+  could not be named from a flow on either platform. `launchApp:
+  { permissions: { storage: allow } }` now reaches
+  `WRITE_EXTERNAL_STORAGE`. A name with no counterpart on the device in
+  front of you is a no-op there, as it always was for the others;
+  `Permission::from_simctl` is gone with its last caller.
+
+- **Breaking (Rust API): `Step::Repeat` carries `times` / `while_` /
+  `while_expr` and `Step::RunScript` carries `when` / `env` / `opts`;
+  `RepeatMode` is gone.** The mode enum encoded the either-or this
+  release removes.
+
+- **A key smix does not act on is a parse error in `runFlow:`, `repeat:`,
+  `when:`, `while:` and selector maps.** Before, such a key was dropped
+  without a word, and the most common case was a condition:
+  `when: { platform: Android }` read as no condition at all, so the block
+  ran on iOS too. A misspelt key (`platfrom:`), `when.optional` (which
+  maestro accepts and never applies) and a selector's unquoted `true:` or
+  numeric key now stop the flow at parse time, naming the key and the
+  keys that are read there. A `when:` with nothing to check (`{}`, or only
+  `label`) is refused as well.
+
+- **Rust API: the scroll surface moved.** `Driver::scroll` is gone,
+  replaced by `smix_driver::scroll_until(driver, selector, direction,
+  &ScrollUntil)`; `Driver` gains `confirm_on_screen`. `App::scroll` and
+  `AppLike::scroll` take a `&ScrollUntil`, and `Step::ScrollUntilVisible`
+  carries `until` and `opts`.
+
+- **Rust API: `Step::RunFlowConditional`, `Step::RunFlowInline` and
+  `Step::Repeat` changed shape.** The two runFlow variants carry
+  `when: Option<FlowCondition>`, `env` and `opts: BlockOptions` in place of
+  `when_visible` / `when_not_visible`; `Repeat` carries `opts`. `AppLike`
+  has a new required method, `platform()`. `RepeatMode` went through
+  `WhileCondition(Box<FlowCondition>)` during this line and is gone in
+  the released shape — see the `Step::Repeat` entry above for what
+  replaced it.
 
 - **Rust API: `smix_adapter_maestro::Step` is `#[non_exhaustive]`, and has
   two new variants, `RememberBounds` and `AssertBoundsUnchanged`.** Outside
   this crate a `match` on `Step` needs a `_` arm now; in exchange, the next
   verb added is not a breaking change for you. The attribute is itself a
   major change, so it came in a release that was major anyway.
-- **Rust API: `App::assert_screenshot`, `AppLike::assert_screenshot` and
-  `assert_screenshot_inner` take a slice of regions to leave out of the
-  comparison; `AppLike` and `Driver` gain a required `pixels_per_point`.**
-  Pass `&[]` for the old behaviour. `MaskRegion` is now the SDK's
-  `ScreenMask` under its old name.
 - **`assertScreenshot` and `takeScreenshot` refuse keys they do not read.**
   maestro's `cropOn` and `thresholdPercentage` were walked past without a
   word — a `cropOn` flow compared the whole frame here and passed. They are
@@ -29,6 +78,8 @@ All notable changes to the `smix` workspace are documented here. The format foll
   positional arguments. `AssertScreenshotOutcome` gains `MatchedPixels {
   percent }` and is no longer `Eq`. `Step::AssertScreenshot` carries a
   `ScreenshotThreshold` and `crop_on`; `Step::TakeScreenshot` a `crop_on`.
+  `AppLike` and `Driver` gain a required `pixels_per_point`, and
+  `MaskRegion` is now the SDK's `ScreenMask` under its old name.
 - **Rust API: `KeyName` has a new variant, `Back`; `Step::PressKey` holds a
   `KeyName`, not a `String`; `RunError::UnknownKey` is gone.** A key name is
   read when the flow is, so an unknown one is a parse error (exit 2), no
@@ -98,380 +149,6 @@ All notable changes to the `smix` workspace are documented here. The format foll
   measured pressing them. A flow that ran on both platforms and passed
   with a step that did nothing now fails on iOS; press them inside
   `runFlow` with `when: { platform: Android }`.
-
-### Added
-
-- **`failure.judgesTheScreen` in `smix run --format json`, and
-  `FailureCode::judges_the_screen()`.** Whether a failure is an answer
-  about the app (`ELEMENT_NOT_FOUND`, `TIMEOUT`, …) or smix unable to look
-  (`DRIVER_ERROR`, `APP_NOT_RUNNING`, …). One list, in `smix-error`;
-  `optional:` reads it, and so can a script that judges a run by its
-  exit status.
-
-- **`assertScreenshot: { cropOn, thresholdPercentage }`, as maestro
-  carries them out.** `cropOn` takes a selector, waits for it, and compares
-  only that element's region; the baseline recorded on a first run is the
-  cropped image, and `takeScreenshot: { cropOn }` writes one.
-  `thresholdPercentage` is maestro's comparison — the share of pixels whose
-  colour is within 10% of the baseline's — and a screenshot of a different
-  size fails. It is a different measure from `threshold` (a perceptual
-  hash's bit distance), so writing both is an error; a flow that writes
-  neither still compares by hash, where maestro would compare pixels at 95.
-- **`back` is a key.** `pressKey: back`, `smix press-key back` and the MCP
-  `smix_press_key` with `back` all do what the `back` verb does — Android's
-  system back, iOS's navigation-bar back — and fail when nothing went back.
-  Measured under gesture navigation, where there is no back button on screen
-  to `tapOn`: each of the three closes the system share sheet (read from the
-  device's window stack). A consumer looking for back had found it in none
-  of the places they looked.
-- **One key table.** `pressKey`, `smix press-key`, `smix_press_key` and the
-  Node / UniFFI bindings read a key's name through `KeyName::from_name`:
-  maestro's spellings (`Enter`, `Backspace`, `Volume Up`), the wire names
-  and the shorthands, regardless of case, spaces, `_` or `-`. Three hand
-  copies had drifted — MCP did not know `home`, the CLI did not know
-  `volume up` with a space, none knew `back`. maestro's TV remote and TV
-  input keys are refused by name; `Power` points to `lock`.
-
-- **`neverVisible: { <selector>, during: [<steps>] }` — the element is on
-  screen at no moment while the inner steps run.** smix's own verb; maestro
-  has none. `assertNotVisible` answers about one instant, and a loading
-  state that flashed for 200 ms between two steps is gone by any instant
-  after them. The inner steps run as they do anywhere else; beside them a
-  watch asks the question `assertNotVisible` asks, as fast as the device
-  answers, and looks at least once after every inner step before the next
-  begins. One sighting fails it with the time since the span began, the
-  inner step that was running and the screen just after; a pass says how
-  many times it looked and the longest stretch nobody was looking. A watch
-  whose every look failed fails — nothing is known about a screen nobody
-  read — and an inner step's failure is reported as itself. Measured on
-  the fixture: about 24 looks a second on an Android emulator and 38 on an
-  iOS simulator, longest gap under 75 ms. `optional: true` turns a sighting
-  into a skip; `label:` is the element's label here, as on every verb with
-  a selector.
-- **`smix_sdk::screen_facts`** is re-exported, so a failure built outside
-  the driver can carry the same "whose windows, how many elements" facts.
-
-- **`rememberBounds` / `assertBoundsUnchanged`: a flow can say nothing
-  moved between two steps.** `rememberBounds: { <selector>, as: name }`
-  keeps an element's box; `assertBoundsUnchanged: { <selector>, was: name,
-  within: dp }` fails if any edge moved more than `within` (default 0). Boxes
-  are compared in device-independent pixels — points on iOS, pixels divided
-  by the display density on Android, which the Android runner now answers at
-  `GET /display` — so a tolerance means the same on every phone. A failure
-  prints both boxes and how far each edge moved. smix's own verbs; maestro
-  has none. Asserting `visible` in each state passed whether or not the
-  layout jumped between them.
-- **`assertScreenshot`'s `mask:` is applied.** It was parsed, carried to the
-  runtime and dropped there with a warning. Masked regions now read one flat
-  value in both frames before hashing, so a video playing or a clock ticking
-  inside one cannot count.
-
-- **`smix sim resolve` says which book answered, and `--json` gives a harness
-  something to read instead of a file.** The identifier alone still goes to
-  stdout; stderr names this machine's registry, a checkout's legacy book, or
-  the one `SMIX_SIMS_JSON` names. `--json` prints `ref`, `id`, `alias`,
-  `source` (`kind` and `path`), `deviceKind`, and an emulator's `avd`.
-
-- **`smix runner up --platform android` takes `--bundle` and `--no-launch`,
-  with the meaning they have on iOS: it finishes with that app in front.**
-  Restarted on a fresh bring-up, only brought forward with `--no-launch`
-  or when the runner was already up, and said in one line when it
-  happens. It used to refuse `--bundle` as iOS-only, so after an `adb
-  install` stopped the app there was nothing to say "bring it back" with,
-  and the next flow's first step found the launcher. A package that is
-  not installed is refused by name. Without `--bundle`, nothing is ever
-  brought forward: which app belongs in front is the caller's to say.
-
-- **A device that leaves while a ledger describes it is kept as a fact:
-  `smix lease history`.** The next `run`, `runner`, `sim` or `lease`
-  command compares the ledgers with what adb and simctl say is here, and
-  records each device that is gone — when it was noticed, when its
-  ledger last heard from it, who held it, whether smix booted it, what
-  answers on its port now, and for an emulator smix started, the last
-  lines of its console. An emulator smix starts now writes its console to
-  `~/.local/share/smix/emulator-console/` instead of `/dev/null`. It could
-  not be said before whose emulator had exited, or when, or why.
-- **`smix lease prune --device <DEVICE>` prunes one ledger and no other.**
-
-
-- **A `fallback` chain takes any selector, plus `point`.** `label`,
-  `role` with `name`, modifiers such as `below:`, and an element naming
-  two things at once are all valid chain entries now. The chain had a
-  parser of its own that read six forms and not `label` — and `label` is
-  how smix reaches an Android `contentDescription`, the only name an
-  icon-only button has there. So a flow could not say "this control,
-  under either name the two phones give it":
-
-  ```yaml
-  - tapOn:
-      fallback:
-        - text: "Pause"
-        - label: "Pause"
-  ```
-
-  A chain inside a chain is refused by name (it says nothing a flat
-  chain does not), and an unknown key in a chain entry lists the
-  selector keys that are read, from the same list every other selector
-  uses. Measured on both platforms: see "One control, two phones" in the
-  selectors guide.
-
-### Changed
-
-- **Commands no longer print the store's replay line.** Every `smix`
-  command opened the embedded store and printed
-  `kevy: AOF … replayed N commands from M bytes in K ms (clean)` on
-  stderr — into terminals, CI logs and AI transcripts, once per command.
-  It is gone. A replay that lost bytes (a partial last write, a corrupt
-  frame) is still reported, as a `kevy WARN:` line naming the file and
-  what was dropped. If a script filtered the line out with
-  `grep -v '^kevy:'`, the filter now selects nothing — and an exit status
-  read after such a pipeline was the filter's all along, not smix's.
-
-
-- **`smix runner up` on Android puts a pulled-down notification shade
-  away before it answers.** Only system UI held the focus and no app
-  window could be read; `runner up` collapses the shade, says so, and
-  asks again, reading the device back rather than waiting a fixed time.
-  If system UI is still all there is afterwards, it refuses and names
-  both things that can be: a lock screen, or a crashed-and-restarted
-  instrumentation.
-
-- **`smix sim boot` starts an emulator on a free console port when the one
-  it was registered on is answering for another AVD.** It used to refuse:
-  the identity is the AVD name, and the port is only where it answers
-  today. It says which port it chose and what holds the registered one.
-- **`smix lease prune` judges an emulator's ledger by asking adb.** It
-  asked simctl only, so every emulator was "cannot tell whether it is
-  still on" and kept for ever.
-
-
-- **An Android tap is judged.** The runner reports what the touch was
-  about to be delivered to — every element under the point, named or
-  not, read from the topmost window before the touch goes in — and the
-  step fails with `TAP_MISSED` when the element aimed at is not there.
-  Until now every Android tap came back unjudged, printed `not verified`,
-  and passed; that is how a dialog dismissed by a misplaced touch was
-  reported as confirmed. `doubleTapOn` and `longPressOn` on Android are
-  judged the same way.
-- **A runner that reports nothing about where a touch went fails the
-  step** (`DRIVER_ERROR`, naming the runner and `smix runner up --force`).
-  It used to be "could not be judged" and pass. A touch aimed at a point
-  rather than an element — a raw coordinate, text found by OCR — still
-  has nothing to be compared with and still passes with its reason
-  printed.
-- **A failure says whose screen it happened on.** It used to print
-  "visible elements (top 10)", and on Android those ten were the status
-  bar or the navigation bar — each is a window of its own and the runner
-  lists them first — whether or not the app was on screen. A consumer
-  read that list as the screen and built a detector on it that called
-  every Android failure blind. Now the failure carries one line naming
-  the windows the screen held, whose they are and which holds the focus,
-  and how many could not be read; the list says what it was cut from
-  (`10 of 79`) and puts the focused app's elements first, the system's
-  last. In the JSON: `windows`, `visibleTotal` and `unreadableWindows`,
-  each omitted when there is nothing to say. iOS answers the same
-  sentence: its tree is the app you named, so `windows` holds that app.
-
-### Fixed
-
-- **`pressKey: lock / volumeUp / volumeDown` are pressed on Android.** The
-  flow runtime skipped all three on every platform with a reason true of
-  the iOS simulator only; the Android runner maps them to `KEYCODE_POWER`
-  and the volume keys and was never asked. Measured on an API 33
-  emulator: two presses reach AudioService as two volume adjustments,
-  and `lock` turns the display off.
-- **Scripts and release gates drive the smix this tree builds.** Six
-  release gates took the PATH's `smix` — on a development machine the
-  last release installed — when run without `SMIX_BIN`; the ship's smoke
-  ran that way too, and the corpus gate's flake classifier read the PATH
-  binary's records. Every script now resolves its binary in
-  `scripts/lib/e2e-binary.sh` (this tree's debug build unless `SMIX_BIN`
-  names another), and a gate refuses a PATH lookup, a bare `smix` call, or
-  a build path a script picks for itself.
-- **The probe finds a View hosted in Compose without naming an internal
-  class.** It compared against `AndroidViewHolder`'s class name, which is
-  `internal` to Compose and could change in any release; it now walks
-  down through Compose's own classes and reports the first View that is
-  not one.
-
-- **An empty Android field holds nothing, even while it shows its hint.**
-  Since API 26 an empty `EditText` reports its hint as the accessibility
-  node's text, and the runner read that as the field's content in four
-  places: the tree gave the fixture's empty field `text: "type here"`, and
-  `/clear-text` answered `field_not_empty` about it (`held: 9`), so every
-  `fill` / `inputText` into an empty field with a hint was refused as "the
-  clear did not happen" — on Settings' search box too (`held: 7`, the
-  length of `Search…`). The refusal arrived with this cycle's clear
-  read-back and was never in a published release; the hint-as-text tree
-  was in every one. The hint now travels as `placeholderValue`, as it
-  does on iOS, and `text:` still finds the field by it — in the app's
-  probe tree as well, which used to carry neither.
-- **A clear on a Compose field is read after it lands.** The read-back
-  looked once, straight after the clear, and a Compose field publishes
-  asynchronously: a fill naming a field that already held text was refused
-  with the field about to read empty. It now watches for up to two
-  seconds, as a fill's own read-back already did. Also new this cycle.
-- **`smix lease list` no longer says something still writes a tree's old
-  ledger.** A frozen `.smix/leases` disagrees with the machine's book for
-  good, and the note turned that into a claim about a live writer. It
-  says when the tree's copy was last written, and that this smix only
-  reads it.
-- **The `smix-runner-wire` docs no longer list a `/scroll` route.** The
-  runner does not serve one, and the two types the row named do not
-  exist. Twenty-one broken doc links across six crates are fixed, and
-  `cargo doc` with warnings denied runs in CI, preflight and the ship.
-- **A runner that could not answer no longer reads as "not visible".**
-  `when: { visible: … }` / `notVisible:` took any failure to look as the
-  element being absent, so a runner answering half a body skipped the
-  block and the run went green; `extendedWaitUntil` and fallback chains
-  with `ocrText` spent their whole budget "missing" and then reported a
-  `TIMEOUT`. Both now fail at once under smix's own code; a wait still
-  waits through `CAPTURE_BACKPRESSURE`, which means *not now*.
-- **The iOS live on-screen check no longer confirms what it could not
-  ask.** It exists because tree frames go stale, and a transport failure
-  during it answered "on screen" — `assertVisible`, `scrollUntilVisible`
-  and a wait could pass on a sick runner's say-so. It is a
-  `DRIVER_ERROR` now; only a runner too old to have the route leaves the
-  tree's answer standing.
-- **`longPressOn captureDuring` says why no frame was taken.** "no frame
-  was captured at all" now carries the capture's own error.
-- **Two iOS runners brought up from one checkout keep one record each.**
-  The record was one slot per platform per checkout, so the second
-  `runner up` overwrote the first's, `runner down` on the second erased
-  it, and `runner up --force` on the first then refused its own runner as
-  unrecorded ("not killing blindly"). The record is now the device's lease
-  in this machine's ledger — one row per device, found by port — and the
-  checkout's old slot is never written; when a refusal has nothing else to
-  go on it cites what that slot still says.
-- **`smix runner down --runner-port P` stops the runner on port P.** It
-  read the same slot without looking at the port, so with two runners it
-  stopped whichever had been brought up last.
-- **`smix runner up --supervise` watches the runner it was started with.**
-  The sidecar read the same slot; with two runners, the first one's
-  supervisor watched the second one's log. It is started as `smix runner
-  supervise --runner-port <port>` and finds its runner by that port.
-- **A failed `smix runner up` no longer leaves a runner row behind.** Its
-  failure paths cleared the checkout's slot and left the ledger's row, so
-  the two books disagreed about a runner that never came up.
-- **`smix lease` and `smix record` work outside a workspace.** They asked
-  for one only to pass it to a cleanup that did not use it.
-- **iOS double tap and long press say what they landed on.** They went to
-  `/double-tap` and `/long-press`, XCUI element actions that answered `ok`
-  and nothing about where the touch went. They are now host-resolved and
-  sent to `/tap-at-norm-coord` — a two-touch burst, or one touch held for
-  the duration — and judged like a tap: delivered to something else is
-  `TAP_MISSED`. The long press's timing bounds come from that route.
-- **iOS `doubleTapOn` / `longPressOn` on a place (an OCR box, an anchor
-  plus a shift) failed with a 404.** The driver posted to
-  `/double-tap-at-norm-coord` and `/long-press-at-norm-coord`, which only
-  the Android runner serves.
-- **An `assertScreenshot` whose masks covered every point it samples
-  passed whatever was on screen.** Both hashes read one flat value, so they
-  were always equal. It is refused now, for both comparisons.
-
-- **An alias that a checkout's `.smix/sims.json` gave to a different device
-  than this machine's registry could drive the checkout's device.** When the
-  two books disagreed, the merge kept whichever UDID sorted first, so the
-  legacy book won half the time — and the note beside the answer said the
-  alias was "not on this machine", which was false. The machine's registry is
-  the authority now: a disagreement is refused, naming both files and both
-  identifiers, and nothing is driven. `smix sim resolve`, `smix runner up`,
-  `smix run --device` and every `smix sim` verb go through the same check.
-
-- **Reading a checkout's legacy book wrote into the checkout.** Opening it
-  created a store under `.smix/` and imported the JSON into it on every read.
-  It is read as a file now, and nothing is written there.
-
-- **`--help` told people the registry was `.smix/sims.json`.** The top-level
-  help, `smix down`, `smix runner up --runner-port` and `smix sim locale` all
-  said so; a harness written from them read a file smix no longer writes.
-  They name this machine's registry now.
-
-- **`smix runner up` misdiagnosed a pulled-down shade as a runner that had
-  fallen behind.** With the shade over the screen, it said the runner's
-  accessibility connection was behind the device and recommended
-  `--force` — which cycles a working runner and leaves the shade where it
-  was. Reproduced on an emulator; the runner was fine the whole time.
-- **A screen between two apps is no longer read as a covered one.** For a
-  moment after an app is started, the runner lists only system UI, just
-  as it does under a shade; the two differ in whether system UI holds the
-  focus. Read without that, a fresh `runner up --bundle` reported a
-  crashed instrumentation with the app about to appear.
-
-- **On Android, a tap on a dialog's button presses it.** The Known issue
-  in 11.0.0. A selector tap was turned into a share of the accessibility
-  tree's root and back into pixels with the display; the root was the
-  union of the windows that could be read, and with gesture navigation
-  and a dialog in front nothing reached the bottom of the screen —
-  measured on the fixture, 1080×1396 on a 1080×2340 display, and the
-  confirm pressed at y=2122, below a dialog ending at 1341. The root is
-  now the display, read in the one place the runner reads it, and the
-  semantics probe's tree carries the same number. This also moved every
-  other act aimed by a selector — `fill`'s focus tap, `doubleTapOn`,
-  `longPressOn`, `swipe: { over: }` — and the "wholly visible" share
-  `scrollUntilVisible` stops on.
-
-- **The semantics probe sees an app's own native dialogs.** It only
-  heard about Compose roots, so a Compose app confirming through
-  `android.app.AlertDialog` had the dialog in its accessibility tree and
-  not in the probe's: `smix find` found the confirm button and `tapOn`
-  said it was not there. Every window of the app process is now read
-  (`WindowInspector`, public API), and one no Compose root lives in is
-  walked as Views. Button text is reported as drawn (`DELETE`), as the
-  accessibility reader reports it, rather than as held (`Delete`).
-## [11.0.0] — 2026-09-23
-
-Most flows need no change. Three things can make one behave differently:
-an unread key in `runFlow:` / `repeat:` / `when:` / `while:` / a selector
-map is now a parse error, `scrollUntilVisible` stops when the target is
-wholly visible rather than merely overlapping, and an Android step whose
-touch silently failed now fails where it happens. If you call the Rust
-crates, five signatures moved. [Migrating to smix 11.0](docs/migrating-to-11.md)
-is short, and `smix run --check <flow>` names anything in a flow that has
-to change.
-
-### Breaking
-
-- **Breaking (Rust API): `LaunchAppOptions.permissions`,
-  `App::set_permission` and `App::set_permissions` take the
-  cross-platform `Permission`, not the iOS `SimctlPermission`.** The
-  whole path from the yaml key to the backend was typed as the iOS
-  enum, so `storage` — implemented and tested in the Android backend —
-  could not be named from a flow on either platform. `launchApp:
-  { permissions: { storage: allow } }` now reaches
-  `WRITE_EXTERNAL_STORAGE`. A name with no counterpart on the device in
-  front of you is a no-op there, as it always was for the others;
-  `Permission::from_simctl` is gone with its last caller.
-
-- **Breaking (Rust API): `Step::Repeat` carries `times` / `while_` /
-  `while_expr` and `Step::RunScript` carries `when` / `env` / `opts`;
-  `RepeatMode` is gone.** The mode enum encoded the either-or this
-  release removes.
-
-- **A key smix does not act on is a parse error in `runFlow:`, `repeat:`,
-  `when:`, `while:` and selector maps.** Before, such a key was dropped
-  without a word, and the most common case was a condition:
-  `when: { platform: Android }` read as no condition at all, so the block
-  ran on iOS too. A misspelt key (`platfrom:`), `when.optional` (which
-  maestro accepts and never applies) and a selector's unquoted `true:` or
-  numeric key now stop the flow at parse time, naming the key and the
-  keys that are read there. A `when:` with nothing to check (`{}`, or only
-  `label`) is refused as well.
-
-- **Rust API: the scroll surface moved.** `Driver::scroll` is gone,
-  replaced by `smix_driver::scroll_until(driver, selector, direction,
-  &ScrollUntil)`; `Driver` gains `confirm_on_screen`. `App::scroll` and
-  `AppLike::scroll` take a `&ScrollUntil`, and `Step::ScrollUntilVisible`
-  carries `until` and `opts`.
-
-- **Rust API: `Step::RunFlowConditional`, `Step::RunFlowInline` and
-  `Step::Repeat` changed shape.** The two runFlow variants carry
-  `when: Option<FlowCondition>`, `env` and `opts: BlockOptions` in place of
-  `when_visible` / `when_not_visible`; `Repeat` carries `opts`. `AppLike`
-  has a new required method, `platform()`. `RepeatMode` went through
-  `WhileCondition(Box<FlowCondition>)` during this line and is gone in
-  the released shape — see the `Step::Repeat` entry above for what
-  replaced it.
 
 ### Added
 
@@ -600,6 +277,120 @@ to change.
   the role the accessibility reader would have given them — named by the
   one table that maps Android classes to roles, in the runner, rather
   than a second copy of it in the probe.
+
+- **`failure.judgesTheScreen` in `smix run --format json`, and
+  `FailureCode::judges_the_screen()`.** Whether a failure is an answer
+  about the app (`ELEMENT_NOT_FOUND`, `TIMEOUT`, …) or smix unable to look
+  (`DRIVER_ERROR`, `APP_NOT_RUNNING`, …). One list, in `smix-error`;
+  `optional:` reads it, and so can a script that judges a run by its
+  exit status.
+
+- **`assertScreenshot: { cropOn, thresholdPercentage }`, as maestro
+  carries them out.** `cropOn` takes a selector, waits for it, and compares
+  only that element's region; the baseline recorded on a first run is the
+  cropped image, and `takeScreenshot: { cropOn }` writes one.
+  `thresholdPercentage` is maestro's comparison — the share of pixels whose
+  colour is within 10% of the baseline's — and a screenshot of a different
+  size fails. It is a different measure from `threshold` (a perceptual
+  hash's bit distance), so writing both is an error; a flow that writes
+  neither still compares by hash, where maestro would compare pixels at 95.
+- **`back` is a key.** `pressKey: back`, `smix press-key back` and the MCP
+  `smix_press_key` with `back` all do what the `back` verb does — Android's
+  system back, iOS's navigation-bar back — and fail when nothing went back.
+  Measured under gesture navigation, where there is no back button on screen
+  to `tapOn`: each of the three closes the system share sheet (read from the
+  device's window stack). A consumer looking for back had found it in none
+  of the places they looked.
+- **One key table.** `pressKey`, `smix press-key`, `smix_press_key` and the
+  Node / UniFFI bindings read a key's name through `KeyName::from_name`:
+  maestro's spellings (`Enter`, `Backspace`, `Volume Up`), the wire names
+  and the shorthands, regardless of case, spaces, `_` or `-`. Three hand
+  copies had drifted — MCP did not know `home`, the CLI did not know
+  `volume up` with a space, none knew `back`. maestro's TV remote and TV
+  input keys are refused by name; `Power` points to `lock`.
+
+- **`neverVisible: { <selector>, during: [<steps>] }` — the element is on
+  screen at no moment while the inner steps run.** smix's own verb; maestro
+  has none. `assertNotVisible` answers about one instant, and a loading
+  state that flashed for 200 ms between two steps is gone by any instant
+  after them. The inner steps run as they do anywhere else; beside them a
+  watch asks the question `assertNotVisible` asks, as fast as the device
+  answers, and looks at least once after every inner step before the next
+  begins. One sighting fails it with the time since the span began, the
+  inner step that was running and the screen just after; a pass says how
+  many times it looked and the longest stretch nobody was looking. A watch
+  whose every look failed fails — nothing is known about a screen nobody
+  read — and an inner step's failure is reported as itself. Measured on
+  the fixture: about 24 looks a second on an Android emulator and 38 on an
+  iOS simulator, longest gap under 75 ms. `optional: true` turns a sighting
+  into a skip; `label:` is the element's label here, as on every verb with
+  a selector.
+- **`smix_sdk::screen_facts`** is re-exported, so a failure built outside
+  the driver can carry the same "whose windows, how many elements" facts.
+
+- **`rememberBounds` / `assertBoundsUnchanged`: a flow can say nothing
+  moved between two steps.** `rememberBounds: { <selector>, as: name }`
+  keeps an element's box; `assertBoundsUnchanged: { <selector>, was: name,
+  within: dp }` fails if any edge moved more than `within` (default 0). Boxes
+  are compared in device-independent pixels — points on iOS, pixels divided
+  by the display density on Android, which the Android runner now answers at
+  `GET /display` — so a tolerance means the same on every phone. A failure
+  prints both boxes and how far each edge moved. smix's own verbs; maestro
+  has none. Asserting `visible` in each state passed whether or not the
+  layout jumped between them.
+- **`assertScreenshot`'s `mask:` is applied.** It was parsed, carried to the
+  runtime and dropped there with a warning. Masked regions now read one flat
+  value in both frames before hashing, so a video playing or a clock ticking
+  inside one cannot count.
+
+- **`smix sim resolve` says which book answered, and `--json` gives a harness
+  something to read instead of a file.** The identifier alone still goes to
+  stdout; stderr names this machine's registry, a checkout's legacy book, or
+  the one `SMIX_SIMS_JSON` names. `--json` prints `ref`, `id`, `alias`,
+  `source` (`kind` and `path`), `deviceKind`, and an emulator's `avd`.
+
+- **`smix runner up --platform android` takes `--bundle` and `--no-launch`,
+  with the meaning they have on iOS: it finishes with that app in front.**
+  Restarted on a fresh bring-up, only brought forward with `--no-launch`
+  or when the runner was already up, and said in one line when it
+  happens. It used to refuse `--bundle` as iOS-only, so after an `adb
+  install` stopped the app there was nothing to say "bring it back" with,
+  and the next flow's first step found the launcher. A package that is
+  not installed is refused by name. Without `--bundle`, nothing is ever
+  brought forward: which app belongs in front is the caller's to say.
+
+- **A device that leaves while a ledger describes it is kept as a fact:
+  `smix lease history`.** The next `run`, `runner`, `sim` or `lease`
+  command compares the ledgers with what adb and simctl say is here, and
+  records each device that is gone — when it was noticed, when its
+  ledger last heard from it, who held it, whether smix booted it, what
+  answers on its port now, and for an emulator smix started, the last
+  lines of its console. An emulator smix starts now writes its console to
+  `~/.local/share/smix/emulator-console/` instead of `/dev/null`. It could
+  not be said before whose emulator had exited, or when, or why.
+- **`smix lease prune --device <DEVICE>` prunes one ledger and no other.**
+
+
+- **A `fallback` chain takes any selector, plus `point`.** `label`,
+  `role` with `name`, modifiers such as `below:`, and an element naming
+  two things at once are all valid chain entries now. The chain had a
+  parser of its own that read six forms and not `label` — and `label` is
+  how smix reaches an Android `contentDescription`, the only name an
+  icon-only button has there. So a flow could not say "this control,
+  under either name the two phones give it":
+
+  ```yaml
+  - tapOn:
+      fallback:
+        - text: "Pause"
+        - label: "Pause"
+  ```
+
+  A chain inside a chain is refused by name (it says nothing a flat
+  chain does not), and an unknown key in a chain entry lists the
+  selector keys that are read, from the same list every other selector
+  uses. Measured on both platforms: see "One control, two phones" in the
+  selectors guide.
 
 ### Changed
 
@@ -800,6 +591,61 @@ to change.
   A swipe-count limit (30) is gone: `timeout` was always the other limit,
   and two limits are two stopping rules.
 
+- **Commands no longer print the store's replay line.** Every `smix`
+  command opened the embedded store and printed
+  `kevy: AOF … replayed N commands from M bytes in K ms (clean)` on
+  stderr — into terminals, CI logs and AI transcripts, once per command.
+  It is gone. A replay that lost bytes (a partial last write, a corrupt
+  frame) is still reported, as a `kevy WARN:` line naming the file and
+  what was dropped. If a script filtered the line out with
+  `grep -v '^kevy:'`, the filter now selects nothing — and an exit status
+  read after such a pipeline was the filter's all along, not smix's.
+
+
+- **`smix runner up` on Android puts a pulled-down notification shade
+  away before it answers.** Only system UI held the focus and no app
+  window could be read; `runner up` collapses the shade, says so, and
+  asks again, reading the device back rather than waiting a fixed time.
+  If system UI is still all there is afterwards, it refuses and names
+  both things that can be: a lock screen, or a crashed-and-restarted
+  instrumentation.
+
+- **`smix sim boot` starts an emulator on a free console port when the one
+  it was registered on is answering for another AVD.** It used to refuse:
+  the identity is the AVD name, and the port is only where it answers
+  today. It says which port it chose and what holds the registered one.
+- **`smix lease prune` judges an emulator's ledger by asking adb.** It
+  asked simctl only, so every emulator was "cannot tell whether it is
+  still on" and kept for ever.
+
+
+- **An Android tap is judged.** The runner reports what the touch was
+  about to be delivered to — every element under the point, named or
+  not, read from the topmost window before the touch goes in — and the
+  step fails with `TAP_MISSED` when the element aimed at is not there.
+  Until now every Android tap came back unjudged, printed `not verified`,
+  and passed; that is how a dialog dismissed by a misplaced touch was
+  reported as confirmed. `doubleTapOn` and `longPressOn` on Android are
+  judged the same way.
+- **A runner that reports nothing about where a touch went fails the
+  step** (`DRIVER_ERROR`, naming the runner and `smix runner up --force`).
+  It used to be "could not be judged" and pass. A touch aimed at a point
+  rather than an element — a raw coordinate, text found by OCR — still
+  has nothing to be compared with and still passes with its reason
+  printed.
+- **A failure says whose screen it happened on.** It used to print
+  "visible elements (top 10)", and on Android those ten were the status
+  bar or the navigation bar — each is a window of its own and the runner
+  lists them first — whether or not the app was on screen. A consumer
+  read that list as the screen and built a detector on it that called
+  every Android failure blind. Now the failure carries one line naming
+  the windows the screen held, whose they are and which holds the focus,
+  and how many could not be read; the list says what it was cut from
+  (`10 of 79`) and puts the focused app's elements first, the system's
+  last. In the JSON: `windows`, `visibleTotal` and `unreadableWindows`,
+  each omitted when there is nothing to say. iOS answers the same
+  sentence: its tree is the app you named, so `windows` holds that app.
+
 ### Removed
 
 - **`POST /scroll` on the iOS runner.** Scrolling to an element is one
@@ -914,23 +760,151 @@ to change.
   than what is on screen, so an off-screen row is in the tree with its
   real coordinates. See the stop rule above.
 
-### Known issues
+- **`pressKey: lock / volumeUp / volumeDown` are pressed on Android.** The
+  flow runtime skipped all three on every platform with a reason true of
+  the iOS simulator only; the Android runner maps them to `KEYCODE_POWER`
+  and the volume keys and was never asked. Measured on an API 33
+  emulator: two presses reach AudioService as two volume adjustments,
+  and `lock` turns the display off.
+- **Scripts and release gates drive the smix this tree builds.** Six
+  release gates took the PATH's `smix` — on a development machine the
+  last release installed — when run without `SMIX_BIN`; the ship's smoke
+  ran that way too, and the corpus gate's flake classifier read the PATH
+  binary's records. Every script now resolves its binary in
+  `scripts/lib/e2e-binary.sh` (this tree's debug build unless `SMIX_BIN`
+  names another), and a gate refuses a PATH lookup, a bare `smix` call, or
+  a build path a script picks for itself.
+- **The probe finds a View hosted in Compose without naming an internal
+  class.** It compared against `AndroidViewHolder`'s class name, which is
+  `internal` to Compose and could change in any release; it now walks
+  down through Compose's own classes and reports the first View that is
+  not one.
 
-- **On Android, a tap on a system dialog's button can report `tapped`
-  and not press it.** Present in 10.1.0 as well; not introduced here,
-  and fixed in the next release. A selector tap is turned into a point
-  as a share of the accessibility tree's root, and back into pixels as a
-  share of the display. With gesture navigation and a system dialog in
-  front, the root is the union of the windows that could be read — not
-  the display — so the point lands below the dialog, dismisses it, and
-  the step still passes: an Android tap is never judged, and "could not
-  be judged" is counted as a pass. The dialog being gone reads as the
-  action having happened. Measured on an emulator: with three-button
-  navigation the root equals the display and the same tap lands; with
-  gesture navigation and a system uninstall dialog in front the root was
-  1080×1473 on a 2340-pixel-tall screen. Until the fix ships, assert the
-  result the dialog was meant to cause rather than the dialog's absence —
-  a dismissed dialog and a confirmed one are both gone.
+- **An empty Android field holds nothing, even while it shows its hint.**
+  Since API 26 an empty `EditText` reports its hint as the accessibility
+  node's text, and the runner read that as the field's content in four
+  places: the tree gave the fixture's empty field `text: "type here"`, and
+  `/clear-text` answered `field_not_empty` about it (`held: 9`), so every
+  `fill` / `inputText` into an empty field with a hint was refused as "the
+  clear did not happen" — on Settings' search box too (`held: 7`, the
+  length of `Search…`). The refusal arrived with this cycle's clear
+  read-back and was never in a published release; the hint-as-text tree
+  was in every one. The hint now travels as `placeholderValue`, as it
+  does on iOS, and `text:` still finds the field by it — in the app's
+  probe tree as well, which used to carry neither.
+- **A clear on a Compose field is read after it lands.** The read-back
+  looked once, straight after the clear, and a Compose field publishes
+  asynchronously: a fill naming a field that already held text was refused
+  with the field about to read empty. It now watches for up to two
+  seconds, as a fill's own read-back already did. Also new this cycle.
+- **`smix lease list` no longer says something still writes a tree's old
+  ledger.** A frozen `.smix/leases` disagrees with the machine's book for
+  good, and the note turned that into a claim about a live writer. It
+  says when the tree's copy was last written, and that this smix only
+  reads it.
+- **The `smix-runner-wire` docs no longer list a `/scroll` route.** The
+  runner does not serve one, and the two types the row named do not
+  exist. Twenty-one broken doc links across six crates are fixed, and
+  `cargo doc` with warnings denied runs in CI, preflight and the ship.
+- **A runner that could not answer no longer reads as "not visible".**
+  `when: { visible: … }` / `notVisible:` took any failure to look as the
+  element being absent, so a runner answering half a body skipped the
+  block and the run went green; `extendedWaitUntil` and fallback chains
+  with `ocrText` spent their whole budget "missing" and then reported a
+  `TIMEOUT`. Both now fail at once under smix's own code; a wait still
+  waits through `CAPTURE_BACKPRESSURE`, which means *not now*.
+- **The iOS live on-screen check no longer confirms what it could not
+  ask.** It exists because tree frames go stale, and a transport failure
+  during it answered "on screen" — `assertVisible`, `scrollUntilVisible`
+  and a wait could pass on a sick runner's say-so. It is a
+  `DRIVER_ERROR` now; only a runner too old to have the route leaves the
+  tree's answer standing.
+- **`longPressOn captureDuring` says why no frame was taken.** "no frame
+  was captured at all" now carries the capture's own error.
+- **Two iOS runners brought up from one checkout keep one record each.**
+  The record was one slot per platform per checkout, so the second
+  `runner up` overwrote the first's, `runner down` on the second erased
+  it, and `runner up --force` on the first then refused its own runner as
+  unrecorded ("not killing blindly"). The record is now the device's lease
+  in this machine's ledger — one row per device, found by port — and the
+  checkout's old slot is never written; when a refusal has nothing else to
+  go on it cites what that slot still says.
+- **`smix runner down --runner-port P` stops the runner on port P.** It
+  read the same slot without looking at the port, so with two runners it
+  stopped whichever had been brought up last.
+- **`smix runner up --supervise` watches the runner it was started with.**
+  The sidecar read the same slot; with two runners, the first one's
+  supervisor watched the second one's log. It is started as `smix runner
+  supervise --runner-port <port>` and finds its runner by that port.
+- **A failed `smix runner up` no longer leaves a runner row behind.** Its
+  failure paths cleared the checkout's slot and left the ledger's row, so
+  the two books disagreed about a runner that never came up.
+- **`smix lease` and `smix record` work outside a workspace.** They asked
+  for one only to pass it to a cleanup that did not use it.
+- **iOS double tap and long press say what they landed on.** They went to
+  `/double-tap` and `/long-press`, XCUI element actions that answered `ok`
+  and nothing about where the touch went. They are now host-resolved and
+  sent to `/tap-at-norm-coord` — a two-touch burst, or one touch held for
+  the duration — and judged like a tap: delivered to something else is
+  `TAP_MISSED`. The long press's timing bounds come from that route.
+- **iOS `doubleTapOn` / `longPressOn` on a place (an OCR box, an anchor
+  plus a shift) failed with a 404.** The driver posted to
+  `/double-tap-at-norm-coord` and `/long-press-at-norm-coord`, which only
+  the Android runner serves.
+- **An `assertScreenshot` whose masks covered every point it samples
+  passed whatever was on screen.** Both hashes read one flat value, so they
+  were always equal. It is refused now, for both comparisons.
+
+- **An alias that a checkout's `.smix/sims.json` gave to a different device
+  than this machine's registry could drive the checkout's device.** When the
+  two books disagreed, the merge kept whichever UDID sorted first, so the
+  legacy book won half the time — and the note beside the answer said the
+  alias was "not on this machine", which was false. The machine's registry is
+  the authority now: a disagreement is refused, naming both files and both
+  identifiers, and nothing is driven. `smix sim resolve`, `smix runner up`,
+  `smix run --device` and every `smix sim` verb go through the same check.
+
+- **Reading a checkout's legacy book wrote into the checkout.** Opening it
+  created a store under `.smix/` and imported the JSON into it on every read.
+  It is read as a file now, and nothing is written there.
+
+- **`--help` told people the registry was `.smix/sims.json`.** The top-level
+  help, `smix down`, `smix runner up --runner-port` and `smix sim locale` all
+  said so; a harness written from them read a file smix no longer writes.
+  They name this machine's registry now.
+
+- **`smix runner up` misdiagnosed a pulled-down shade as a runner that had
+  fallen behind.** With the shade over the screen, it said the runner's
+  accessibility connection was behind the device and recommended
+  `--force` — which cycles a working runner and leaves the shade where it
+  was. Reproduced on an emulator; the runner was fine the whole time.
+- **A screen between two apps is no longer read as a covered one.** For a
+  moment after an app is started, the runner lists only system UI, just
+  as it does under a shade; the two differ in whether system UI holds the
+  focus. Read without that, a fresh `runner up --bundle` reported a
+  crashed instrumentation with the app about to appear.
+
+- **On Android, a tap on a dialog's button presses it.** Present in
+  10.1.0 as well. A selector tap was turned into a share of the accessibility
+  tree's root and back into pixels with the display; the root was the
+  union of the windows that could be read, and with gesture navigation
+  and a dialog in front nothing reached the bottom of the screen —
+  measured on the fixture, 1080×1396 on a 1080×2340 display, and the
+  confirm pressed at y=2122, below a dialog ending at 1341. The root is
+  now the display, read in the one place the runner reads it, and the
+  semantics probe's tree carries the same number. This also moved every
+  other act aimed by a selector — `fill`'s focus tap, `doubleTapOn`,
+  `longPressOn`, `swipe: { over: }` — and the "wholly visible" share
+  `scrollUntilVisible` stops on.
+
+- **The semantics probe sees an app's own native dialogs.** It only
+  heard about Compose roots, so a Compose app confirming through
+  `android.app.AlertDialog` had the dialog in its accessibility tree and
+  not in the probe's: `smix find` found the confirm button and `tapOn`
+  said it was not there. Every window of the app process is now read
+  (`WindowInspector`, public API), and one no Compose root lives in is
+  walked as Views. Button text is reported as drawn (`DELETE`), as the
+  accessibility reader reports it, rather than as held (`Delete`).
 
 ## [10.1.0] — 2026-09-19
 
