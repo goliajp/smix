@@ -38,7 +38,7 @@ trap cleanup EXIT
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb — this needs the Android SDK"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
 [ -n "$SERIAL" ] || cannot_judge "no emulator registered as '$ALIAS' — register one first"
 adb devices 2>/dev/null | grep -q "^$SERIAL[[:space:]]*device" || cannot_judge "device $SERIAL not attached"
 [ -f "$APK" ] || cannot_judge "no Android fixture apk (scripts/dev/build-android-fixture.sh)"
@@ -57,7 +57,6 @@ adb -s "$SERIAL" install -r "$APK" >"$WORK/install.log" 2>&1 || fail "fixture in
 # that into a red rather than a false pass.
 field_text() {
   SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --json --device "$SERIAL" 2>/dev/null \
-    | grep -v '^kevy:' \
     | python3 -c "
 import sys,json
 want=sys.argv[1]; found=[]
@@ -118,12 +117,12 @@ log "CLI entrance OK: field == '$GOT_CLI'"
 step "CLI find: present → exists=true, absent → exists=false"
 FIND_P_RC=0
 SMIX_RUNNER_PORT="$PORT" "$SMIX" find 'text:SUBMIT' --device "$SERIAL" >"$WORK/find_present.out" 2>&1 || FIND_P_RC=$?
-[ "$FIND_P_RC" -eq 0 ] || fail "find (present) exited $FIND_P_RC (the 501 the fix removes): $(grep -v '^kevy:' "$WORK/find_present.out" | tail -2)"
-grep -q '^exists=true' <(grep -v '^kevy:' "$WORK/find_present.out") || fail "find 'text:SUBMIT' did not report exists=true"
+[ "$FIND_P_RC" -eq 0 ] || fail "find (present) exited $FIND_P_RC (the 501 the fix removes): $(tail -2 "$WORK/find_present.out")"
+grep -q '^exists=true' "$WORK/find_present.out" || fail "find 'text:SUBMIT' did not report exists=true"
 log "find present: exists=true"
 
 SMIX_RUNNER_PORT="$PORT" "$SMIX" find 'text:NoSuchElementZZZ' --device "$SERIAL" >"$WORK/find_absent.out" 2>&1 || true
-grep -q '^exists=false' <(grep -v '^kevy:' "$WORK/find_absent.out") || fail "find of an absent needle did not report exists=false — the find judge is not two-sided"
+grep -q '^exists=false' "$WORK/find_absent.out" || fail "find of an absent needle did not report exists=false — the find judge is not two-sided"
 log "find absent: exists=false"
 
 log "v6.2-C3 PASS: fill and find reach the same field from CLI and flow; find proved both sides"

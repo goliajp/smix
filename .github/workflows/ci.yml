@@ -385,6 +385,24 @@ jobs:
       # from the checkout, so it runs here.
       - name: the contract gate can still go red
         run: python3 scripts/dev/contract-scan.test.py
+      # The runner every checkpoint's acceptance must name. It derives the
+      # gate list from these workflows, so CI does not run it (that would be
+      # every gate twice) -- only its harness, which builds its own trees.
+      - name: the all-gates runner can still go red
+        run: python3 scripts/dev/all-gates.test.py
+      # A status read after a pipeline is the last stage's. Forty-one scripts
+      # read grep's status as smix's until the noise they filtered was
+      # turned off at its source.
+      - name: every status read is the judged command's
+        run: python3 scripts/dev/a-status-is-read-from-the-command.py
+      - name: the status gate can still go red
+        run: python3 scripts/dev/a-status-is-read-from-the-command.test.py
+      # `matches!` over several variants of our own enum is `_ =>` spelled
+      # differently: a new variant joins the false side undecided.
+      - name: every class over our own enums names every variant
+        run: python3 scripts/dev/a-classification-names-every-variant.py
+      - name: the classification gate can still go red
+        run: python3 scripts/dev/a-classification-names-every-variant.test.py
       # Reads three source files and the Selector enum; all in the checkout.
       - name: every selector form is declared on every surface
         run: python3 scripts/dev/selector-surface-scan.py

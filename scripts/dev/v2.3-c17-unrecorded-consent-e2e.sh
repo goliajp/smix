@@ -95,7 +95,7 @@ done
 log "a plain listener holds $PORT (pid $DECOY)"
 
 SMIX_RUNNER_PORT="$PORT" "$SMIX" runner down > "$OUT" 2>&1 || true
-grep -v '^kevy:' "$OUT" > "${OUT}.clean" && mv "${OUT}.clean" "$OUT"
+
 # It answers /health with nothing, so teardown reports the port is not
 # clear rather than claiming success. What it must NOT do is kill it.
 kill -0 "$DECOY" 2>/dev/null || fail "down killed a process that is not a runner at all"

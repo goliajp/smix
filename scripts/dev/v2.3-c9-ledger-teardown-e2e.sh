@@ -23,7 +23,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_E2E_DEVICE:-sim-smix-02}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${SMIX_E2E_DEVICE:-$E2E_IOS}"
 BUNDLE="com.apple.Preferences"
 REPORTS="$HOME/Library/Logs/DiagnosticReports"
 

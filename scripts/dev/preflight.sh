@@ -285,6 +285,15 @@ python3 scripts/dev/retired-claims-scan.test.py
 python3 scripts/dev/three-readers-agree.py --assert-ci-union
 python3 scripts/dev/three-readers-agree.test.py
 python3 scripts/dev/contract-scan.test.py
+# The runner every checkpoint's acceptance must name, and that it goes
+# red when its reading of the workflows goes empty.
+python3 scripts/dev/all-gates.test.py
+# A status read after a pipeline is the last stage's, not the command's.
+python3 scripts/dev/a-status-is-read-from-the-command.py
+python3 scripts/dev/a-status-is-read-from-the-command.test.py
+# A class drawn with `matches!` over our own enum lets a new variant in silently.
+python3 scripts/dev/a-classification-names-every-variant.py
+python3 scripts/dev/a-classification-names-every-variant.test.py
 # And that the selector-surface gate can still go red. Its subject is an
 # axis nothing watched: `point` worked in flows and four SDKs and was
 # missing from MCP and the CLI for two majors, with every gate green.

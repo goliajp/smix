@@ -34,7 +34,7 @@ trap cleanup EXIT
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb — this needs the Android SDK"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
 [ -n "$SERIAL" ] || cannot_judge "no emulator registered as '$ALIAS'"
 adb devices 2>/dev/null | grep -q "^$SERIAL[[:space:]]*device" || cannot_judge "device $SERIAL not attached"
 [ -f "$APK" ] || cannot_judge "no Android fixture apk (scripts/dev/build-android-fixture.sh)"
@@ -63,11 +63,11 @@ launch_fresh() {
 }
 
 human_tree() {
-  SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --device "$SERIAL" 2>/dev/null | grep -v '^kevy:'
+  SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --device "$SERIAL" 2>/dev/null
 }
 json_count() { # $1 = identifier string; prints count of occurrences in --json
   SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --json --device "$SERIAL" 2>/dev/null \
-    | grep -v '^kevy:' | grep -c "\"$1\"" || true
+ | grep -c "\"$1\"" || true
 }
 human_line() { # $1 = id; prints the human line carrying id="<id>"
   human_tree | grep -F "id=\"$1\"" || true

@@ -35,7 +35,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
 IOS_UDID="${1:-${SMIX_E2E_UDID:-}}"
-AND_ALIAS="${SMIX_C12_ANDROID:-sim-smix-android-01}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+AND_ALIAS="${SMIX_C12_ANDROID:-$E2E_ANDROID}"
 IOS_APPID="jp.golia.smix.fixture"
 AND_APPID="dev.smix.fixture"
 IOS_FIXTURE="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
@@ -119,7 +120,7 @@ FLOW
   # whether the verb exists unasked.
   local out status=0
   out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || status=$?
-  out="$(printf '%s\n' "$out" | grep -v '^kevy:' || true)"
+  out="$(printf '%s\n' "$out" || true)"
   if [ "$status" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 | sed 's/^/[c12-gaps]   /' >&2
     fail "the iOS flow did not run (exit $status)"
@@ -134,7 +135,7 @@ FLOW
 
 # ---- Android: a permission only Android has, and one tree -----------
 run_android() {
-  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)"
   [ -n "$AND_SERIAL" ] || fail "nothing is registered as $AND_ALIAS"
   # Never a phone: this grants and revokes a permission and installs an
   # app, none of which belongs on somebody's own handset.
@@ -183,7 +184,7 @@ appId: $AND_APPID
 FLOW
   local out status=0
   out="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/and.yaml" 2>&1)" || status=$?
-  out="$(printf '%s\n' "$out" | grep -v '^kevy:' || true)"
+  out="$(printf '%s\n' "$out" || true)"
   if [ "$status" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 | sed 's/^/[c12-gaps]   /' >&2
     fail "the Android flow did not run (exit $status)"
@@ -212,7 +213,7 @@ FLOW
   local source=""
   for _ in $(seq 1 30); do
     "$SMIX" tree --json --device "$AND_SERIAL" --port "$AND_PORT" 2>/dev/null \
-      | grep -v '^kevy:' > "$WORK/tree.json" || true
+ > "$WORK/tree.json" || true
     if head -c 1 "$WORK/tree.json" | grep -q '{'; then
       source="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$WORK/tree.json" 2>/dev/null || true)"
       [ "$source" = semantics ] && break

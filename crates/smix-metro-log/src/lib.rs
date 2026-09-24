@@ -384,7 +384,10 @@ impl MetroLogTail {
         let buf = self.inner.buffer.read().expect("poisoned");
         let allow = self.inner.allowlist.read().expect("poisoned");
         buf.iter()
-            .filter(|e| matches!(e.level, LogLevel::Warn | LogLevel::Error))
+            .filter(|e| match e.level {
+                LogLevel::Warn | LogLevel::Error => true,
+                LogLevel::Log | LogLevel::Debug | LogLevel::Info => false,
+            })
             .filter(|e| !allow.iter().any(|r| r.is_match(&e.message)))
             .cloned()
             .collect()

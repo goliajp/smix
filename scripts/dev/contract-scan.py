@@ -100,6 +100,44 @@ def awaiting_fields(text: str) -> dict:
     return found
 
 
+# What every checkpoint's acceptance must run, whatever else it names.
+#
+# Each acceptance used to pick its own few checks, and two failures of this
+# line came through that gap: checkpoints committed with four gates red,
+# because each ran the tests and clippy and not the gates; and a ledger enum
+# change that broke boot -> runner up -> run on Android, with two further
+# checkpoints committed on top before anyone walked that path. The first is
+# answered by the whole gate set, derived from CI; the second by the smoke
+# chain on both platforms. Naming them in prose elsewhere in the plan is not
+# running them at the checkpoint, so only the acceptance section is read.
+ACCEPTANCE_MUST_RUN = (
+    "python3 scripts/dev/all-gates.py",
+    "bash scripts/dev/smoke-chain-e2e.sh",
+)
+ACCEPTANCE_HEADING = re.compile(r"^##\s*Checkpoint\b.*验收", re.M)
+
+
+def acceptance_gaps(plan: str) -> list[str]:
+    """What the hot plan's acceptance section leaves out, as sentences."""
+    m = ACCEPTANCE_HEADING.search(plan)
+    if m is None:
+        return [
+            f"{HOT} has no `## Checkpoint … 验收` section, so nothing says how this "
+            f"segment is known to be done — and an acceptance that is absent passes "
+            f"every check made of it"
+        ]
+    rest = plan[m.end():]
+    nxt = re.search(r"^##\s", rest, re.M)
+    section = rest[: nxt.start()] if nxt else rest
+    return [
+        f"{HOT}'s acceptance does not run `{line}` — every checkpoint's does, "
+        f"because the checks a segment picks for itself are the ones that let "
+        f"what it did not pick go red unseen"
+        for line in ACCEPTANCE_MUST_RUN
+        if line not in section
+    ]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=REPO)
@@ -173,6 +211,7 @@ def main() -> int:
             )
         else:
             segment = (m.group(1), m.group(2), m.group(3))
+        problems.extend(acceptance_gaps(read(os.path.join(docs, HOT))))
 
     # The segment in flight is read off layer three, so a broken layer
     # three cannot locate the other three. Say what is already known.

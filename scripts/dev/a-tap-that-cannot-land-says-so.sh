@@ -24,13 +24,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # export reaches startup, every command, and teardown alike.
 . "$ROOT/scripts/lib/gate-port.sh"
 PORT="${2:-$SMIX_RUNNER_PORT}"
-SMIX="$ROOT/target/release/smix"
+# The release build, because the ship judges what it is about to publish.
+# Checked before anything uses it: a worktree with no release build used to
+# get as far as `runner up`, fail there, and report the runner as the
+# reason — a missing binary read as a device that would not answer.
+SMIX="${SMIX_BIN:-$ROOT/target/release/smix}"
 APP="jp.golia.smix.fixture"
 fail() { echo "a-tap-that-cannot-land-says-so: FAIL"; echo "  - $*"; exit 1; }
+if [[ ! -x "$SMIX" ]]; then
+  echo "a-tap-that-cannot-land-says-so: CANNOT JUDGE"
+  echo "  - no smix binary at $SMIX — build it (cargo build --release -p smix-cli), or set SMIX_BIN"
+  exit 2
+fi
 
 result() {
   "$SMIX" tree --device "$UDID" --port "$PORT" --json 2>/dev/null \
-    | grep -v '^kevy:' \
     | python3 -c '
 import sys, json
 d = json.load(sys.stdin); root = d.get("root", d)
@@ -93,7 +101,7 @@ trap teardown EXIT
 READY=0
 for _ in $(seq 1 30); do
   if "$SMIX" find 'id:fixture-input' --device "$UDID" --port "$PORT" 2>/dev/null \
-      | grep -v '^kevy:' | grep -q 'exists=true'; then
+ | grep -q 'exists=true'; then
     READY=1
     break
   fi
@@ -117,11 +125,12 @@ BEFORE="$(result)"
 sleep 2
 
 # Half one: refused, by name.
-# `kevy:` AOF lines share stdout with the verdict, and grepping the lot for
-# the refusal's words found them in a replay log instead. Every other gate
-# here filters them; this one did not, and read a store's chatter as an
-# answer about the screen.
-OUT="$("$SMIX" tap 'id:fixture-submit' --device "$UDID" --port "$PORT" 2>&1 | grep -v '^kevy:')"
+# The store used to announce its log replay on every smix command, into
+# the same output as the verdict, and grepping the lot for the refusal's
+# words once found them in that replay line instead. smix now opens the
+# store quietly (smix-store `kevy_config`), so the output here is smix's
+# alone and nothing needs filtering out of it.
+OUT="$("$SMIX" tap 'id:fixture-submit' --device "$UDID" --port "$PORT" 2>&1)"
 RC=$?
 [ "$RC" -eq 0 ] && fail "the tap behind the alert exited 0 — this is the defect, unfixed"
 grep -qi 'cannot be touched' <<<"$OUT" \
@@ -133,14 +142,14 @@ MID="$(result)"
 
 # `find` keeps saying it exists — it does — and adds the second fact, so a
 # reader learns it there rather than from a tap refused a moment later.
-FOUND="$("$SMIX" find 'id:fixture-submit' --device "$UDID" --port "$PORT" 2>&1 | grep -v '^kevy:')"
+FOUND="$("$SMIX" find 'id:fixture-submit' --device "$UDID" --port "$PORT" 2>&1)"
 grep -q 'exists=true' <<<"$FOUND" \
   || fail "find stopped reporting the element as existing — it is there, and \
 saying otherwise is a different lie: $FOUND"
 grep -q 'reachable=false' <<<"$FOUND" \
   || fail "find did not mention that it cannot be reached: $FOUND"
 # And the modal's own control must NOT carry that line, or it means nothing.
-INSIDE="$("$SMIX" find 'id:fixture-alert-confirm' --device "$UDID" --port "$PORT" 2>&1 | grep -v '^kevy:')"
+INSIDE="$("$SMIX" find 'id:fixture-alert-confirm' --device "$UDID" --port "$PORT" 2>&1)"
 grep -q 'reachable=false' <<<"$INSIDE" \
   && fail "the alert's own button was reported unreachable: $INSIDE"
 

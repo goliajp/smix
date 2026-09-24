@@ -416,9 +416,44 @@ fn tappable_subset_filter(candidates: Vec<&A11yNode>) -> Vec<&A11yNode> {
 // Match `raw_type` strings directly (lower-case wire shape, mirrors
 // `elementTypeName(7 / 8)`); accept the `Role` enum too so unit-test
 // fixtures that set `role` only stay valid.
+/// Which roles cover what is behind them. Every role is named, so a role
+/// added to `Role` is a compile error here until somebody decides whether
+/// it is modal — a sheet or a popover would otherwise be treated as
+/// ordinary content without anyone having said so.
+fn is_modal_role(role: Role) -> bool {
+    match role {
+        Role::Alert | Role::Dialog => true,
+        Role::Button
+        | Role::Link
+        | Role::TextField
+        | Role::SecureTextField
+        | Role::SearchField
+        | Role::Switch
+        | Role::Toggle
+        | Role::CheckBox
+        | Role::Radio
+        | Role::Image
+        | Role::StaticText
+        | Role::Tab
+        | Role::TabBar
+        | Role::NavigationBar
+        | Role::Cell
+        | Role::Slider
+        | Role::ProgressBar
+        | Role::Picker
+        | Role::Menu
+        | Role::MenuItem
+        | Role::ScrollView
+        | Role::SegmentedControl
+        | Role::Table
+        | Role::CollectionView
+        | Role::WebView
+        | Role::Keyboard => false,
+    }
+}
+
 fn is_modal_node(n: &A11yNode) -> bool {
-    matches!(n.raw_type.as_str(), "alert" | "dialog")
-        || matches!(n.role, Some(Role::Alert) | Some(Role::Dialog))
+    matches!(n.raw_type.as_str(), "alert" | "dialog") || n.role.is_some_and(is_modal_role)
 }
 
 fn tree_has_modal_role(node: &A11yNode) -> bool {

@@ -70,7 +70,7 @@ log "phone $UDID, runner on $PORT"
 
 step "2. the screen comes back as a PNG"
 "$SMIX" sim screenshot "$ALIAS" "$SHOT" > "$OUT" 2>&1 \
-  || { grep -v '^kevy:' "$OUT"; fail "screenshot failed"; }
+  || { cat "$OUT"; fail "screenshot failed"; }
 [ -s "$SHOT" ] || fail "the file is empty — a zero-byte PNG is the failure this exists to avoid"
 
 step "3. and it is THIS device's screen, not a picture from anywhere"

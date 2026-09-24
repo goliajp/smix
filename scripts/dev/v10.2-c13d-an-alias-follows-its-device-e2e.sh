@@ -29,7 +29,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
 
-AVD_ABSENT="${SMIX_C13D_AVD_ABSENT:-sim-smix-android-02}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+AVD_ABSENT="${SMIX_C13D_AVD_ABSENT:-$E2E_ANDROID_SECOND}"
 WORK="$(mktemp -d)"
 
 log()  { printf '[c13d] %s\n' "$*" >&2; }
@@ -100,7 +101,7 @@ cat >"$WORK/sims.json" <<JSON
 JSON
 export SMIX_SIMS_JSON="$WORK/sims.json"
 
-resolve() { "$SMIX" sim resolve "$1" 2>"$WORK/$1.err" | grep -v '^kevy:' | tail -1; }
+resolve() { "$SMIX" sim resolve "$1" 2>"$WORK/$1.err" | tail -1; }
 
 step "an alias follows its AVD to whatever port it took"
 got="$(resolve c13d-probe || true)"

@@ -35,7 +35,7 @@ fail() { printf '[c18-shot] FAIL: %s\n' "$*" >&2; exit 1; }
 cleanup() { rm -rf "$WORK" "$OUT"; }
 trap cleanup EXIT
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"
-smix() { "$SMIX" "$@" 2>&1 | grep -v '^kevy:' || true; }
+smix() { "$SMIX" "$@" 2>&1 || true; }
 
 step "0. classification, which needs no devices"
 ( cd "$ROOT" && cargo test -p smix-cli --bin smix device_ref_is_classed ) > "$OUT" 2>&1 \

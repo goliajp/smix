@@ -58,7 +58,10 @@ pub(crate) fn settle(
         if let Some(name) = app
             && relaunch
             && !started
-            && matches!(step, Step::Ready | Step::BringForward { .. })
+            && match step {
+                Step::Ready | Step::BringForward { .. } => true,
+                Step::CollapseShade | Step::NotYet | Step::Refuse(_) => false,
+            }
         {
             start_app(serial, port, name, true)?;
             started = true;

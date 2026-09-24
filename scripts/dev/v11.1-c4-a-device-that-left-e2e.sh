@@ -53,7 +53,7 @@ for avd in "$BLOCKER_AVD" "$ALIAS"; do
 done
 
 registered_port() {
-  "$SMIX" sim list --registered 2>/dev/null | grep -v '^kevy:' \
+  "$SMIX" sim list --registered 2>/dev/null \
     | awk -v a="$1" '$1 == a { sub("emulator-", "", $2); print $2 }'
 }
 PORT2="$(registered_port "$ALIAS")"
@@ -85,7 +85,7 @@ wait_for_boot "$BLOCKER_SERIAL" || cannot_judge "$BLOCKER_AVD did not come up on
 log "$BLOCKER_SERIAL is $BLOCKER_AVD"
 
 step "smix sim boot $ALIAS — its port is taken, so it has to go elsewhere"
-out="$(with_deadline 240 "$SMIX" sim boot "$ALIAS" 2>&1 | grep -v '^kevy:')"
+out="$(with_deadline 240 "$SMIX" sim boot "$ALIAS" 2>&1)"
 rc=$?
 [ "$rc" = "$DEADLINE_STATUS" ] && cannot_judge "sim boot did not return in 240 s"
 [ "$rc" = 0 ] || fail "sim boot refused or failed with its registered port taken (exit $rc):
@@ -120,13 +120,13 @@ done
 adb devices | grep -q "^$SERIAL[[:space:]]" && cannot_judge "$SERIAL was still listed 30 s after emu kill"
 
 step "the next smix command notices"
-said="$(with_deadline 60 "$SMIX" lease list 2>&1 >/dev/null | grep -v '^kevy:')"
+said="$(with_deadline 60 "$SMIX" lease list 2>&1 >/dev/null)"
 printf '%s\n' "$said" | grep -q "$SERIAL.*left without smix hearing about it" \
   || fail "\`smix lease list\` did not say $SERIAL left:
 $said"
 log "noticed=yes"
 
-HIST="$(with_deadline 30 "$SMIX" lease history --json 2>/dev/null | grep -v '^kevy:')"
+HIST="$(with_deadline 30 "$SMIX" lease history --json 2>/dev/null)"
 SERIAL="$SERIAL" ALIAS="$ALIAS" HIST="$HIST" python3 - <<'PY' || exit 1
 import json, os, sys
 serial, alias = os.environ["SERIAL"], os.environ["ALIAS"]
@@ -148,7 +148,7 @@ PY
 
 step "lease prune --device $SERIAL clears that ledger and no other"
 before="$(ls "$HOME/.local/share/smix/leases/" | grep -c '\.json$')"
-out="$(with_deadline 60 "$SMIX" lease prune --device "$SERIAL" 2>&1 | grep -v '^kevy:')"
+out="$(with_deadline 60 "$SMIX" lease prune --device "$SERIAL" 2>&1)"
 [ -f "$LEDGER" ] && fail "prune --device $SERIAL kept a ledger whose device is gone:
 $out"
 after="$(ls "$HOME/.local/share/smix/leases/" | grep -c '\.json$')"

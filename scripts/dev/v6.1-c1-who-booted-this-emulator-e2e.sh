@@ -41,7 +41,7 @@ trap cleanup EXIT
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb — this needs the Android SDK"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
 [ -n "$SERIAL" ] || cannot_judge "no emulator registered as '$ALIAS' — register one first:
   smix sim register $ALIAS --udid emulator-<port> --kind emulator"
 log "device $SERIAL (alias $ALIAS)"
@@ -78,7 +78,7 @@ step "1. smix boots it, and the ledger says so"
   || { cat "$WORK/boot.log" >&2; fail "smix could not boot $ALIAS"; }
 running || fail "smix reported a boot and adb does not list $SERIAL — a report of
 something that did not happen is the defect this version is about"
-"$SMIX" lease owner "$SERIAL" 2>/dev/null | grep -v '^kevy:' > "$WORK/owner.log" || true
+"$SMIX" lease owner "$SERIAL" 2>/dev/null > "$WORK/owner.log" || true
 grep -qi "booted by smix" "$WORK/owner.log" \
   || fail "the ledger cannot say who booted $SERIAL: $(cat "$WORK/owner.log")"
 log "ledger: $(head -1 "$WORK/owner.log")"
@@ -88,7 +88,7 @@ step "2. smix stops what it started, and the row goes with it"
   || { cat "$WORK/down.log" >&2; fail "smix refused to stop a device it booted"; }
 sleep 5
 running && fail "smix reported a shutdown and $SERIAL is still listed"
-"$SMIX" lease owner "$SERIAL" 2>/dev/null | grep -v '^kevy:' > "$WORK/owner2.log" || true
+"$SMIX" lease owner "$SERIAL" 2>/dev/null > "$WORK/owner2.log" || true
 grep -qi "booted by smix" "$WORK/owner2.log" \
   && fail "the boot row outlived the device — a later teardown would read it and
 stop whatever is on that port next: $(cat "$WORK/owner2.log")"
@@ -96,7 +96,8 @@ log "row cleared"
 
 step "3. an emulator smix did not start is not smix's to stop"
 # Start it outside smix, the way a person or another tool would.
-"$ANDROID_HOME/emulator/emulator" -avd "${SMIX_C1_AVD:-sim-smix-android-01}" \
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+"$ANDROID_HOME/emulator/emulator" -avd "${SMIX_C1_AVD:-$E2E_ANDROID}" \
   -port "${SERIAL##*-}" -no-boot-anim > "$WORK/manual.log" 2>&1 &
 WE_STARTED_MANUAL=1
 ready || { tail -5 "$WORK/manual.log" >&2; fail "the hand-started emulator did not come up"; }

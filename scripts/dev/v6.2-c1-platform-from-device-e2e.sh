@@ -93,7 +93,7 @@ DIFF_LINES="$(diff <(grep -v '^appId:' "$WORK/ios.yaml") <(grep -v '^appId:' "$W
 # ---- iOS half -------------------------------------------------------
 run_ios() {
   command -v xcrun >/dev/null 2>&1 || { log "no xcrun — skipping iOS half"; return 0; }
-  IOS_UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+  IOS_UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
   [ -n "$IOS_UDID" ] || { log "no sim registered as '$IOS_ALIAS' — skipping iOS half"; return 0; }
   [ -d "$IOS_FIXTURE" ] || { log "no iOS fixture at $IOS_FIXTURE — skipping iOS half"; return 0; }
 
@@ -107,7 +107,7 @@ run_ios() {
   IOS_WE_UPPED=1
 
   step "iOS: run the shared flow with NO --platform — platform must come from the sim's kind"
-  OUT="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1 | grep -v '^kevy:')" || true
+  OUT="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || true
   printf '%s\n' "$OUT" | grep -qE 'simctl|Invalid device' && fail "iOS run went a wrong path: $OUT"
   printf '%s\n' "$OUT" | grep -q '"ok":true' || fail "iOS run did not pass (app not foregrounded / Submit not visible): $OUT"
   log "iOS PASS — no --platform, sim kind → iOS, Submit visible"
@@ -116,7 +116,7 @@ run_ios() {
 # ---- Android half ---------------------------------------------------
 run_android() {
   command -v adb >/dev/null 2>&1 || { log "no adb — skipping Android half"; return 0; }
-  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
   [ -n "$AND_SERIAL" ] || { log "no emulator registered as '$AND_ALIAS' — skipping Android half"; return 0; }
   [ -f "$AND_APK" ] || { log "no Android fixture apk at $AND_APK (scripts/dev/build-android-fixture.sh) — skipping Android half"; return 0; }
   # And the one THESE sources build: the path existing says a build
@@ -138,7 +138,7 @@ run_android() {
 
   step "Android: run the shared flow with NO --platform — platform must come from the emulator's kind"
   adb -s "$AND_SERIAL" shell am force-stop "$AND_APPID" >/dev/null 2>&1 || true
-  OUT="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/android.yaml" 2>&1 | grep -v '^kevy:')" || true
+  OUT="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/android.yaml" 2>&1)" || true
   printf '%s\n' "$OUT" | grep -qE 'simctl|Invalid device' && fail "Android run took the iOS/simctl path — platform was NOT read from the device: $OUT"
   printf '%s\n' "$OUT" | grep -q '"ok":true' || fail "Android run did not pass (app not foregrounded / Submit not visible): $OUT"
   log "Android PASS — no --platform, emulator kind → Android, Submit visible"

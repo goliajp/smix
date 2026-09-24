@@ -40,7 +40,8 @@ source "$ROOT/scripts/lib/e2e-binary.sh"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
 PORT="$SMIX_RUNNER_PORT"
-ALIAS="${SMIX_C1_ANDROID:-sim-smix-android-01}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${SMIX_C1_ANDROID:-$E2E_ANDROID}"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
 
@@ -95,7 +96,7 @@ set_nav() {
 }
 
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb on PATH"
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
 [ -n "$SERIAL" ] || cannot_judge "no device registered as $ALIAS"
 case "$SERIAL" in
   emulator-*) : ;;
@@ -126,7 +127,7 @@ fi
 # the accessibility reader — a reading of the app, not of smix's tap.
 confirmed_count() {
   local tree
-  tree="$("$SMIX" tree --device "$SERIAL" --port "$PORT" --reader a11y --json 2>/dev/null | grep -v '^kevy:')" \
+  tree="$("$SMIX" tree --device "$SERIAL" --port "$PORT" --reader a11y --json 2>/dev/null)" \
     || return 1
   TREE_JSON="$tree" python3 - <<'PY'
 import json, os, re, sys
@@ -147,7 +148,7 @@ PY
 # a tap that printed success, so what it said is part of the evidence.
 tap() { # $1 selector → sets TAP_RC, TAP_SAID
   TAP_RC=0
-  TAP_SAID="$("$SMIX" tap "$1" --device "$SERIAL" --port "$PORT" 2>&1 | grep -v '^kevy:')" || TAP_RC=$?
+  TAP_SAID="$("$SMIX" tap "$1" --device "$SERIAL" --port "$PORT" 2>&1)" || TAP_RC=$?
 }
 
 # The press happened (the app says so); smix must say the same thing.

@@ -56,7 +56,7 @@ bash "$ROOT/scripts/dev/build-fixture-app.sh" > "$WORK/build.log" 2>&1 \
   || fail "could not install the fixture"
 
 read_counter() {
-  "$SMIX" tree --port "$PORT" --json 2>/dev/null | grep -v '^kevy:' | python3 -c "
+  "$SMIX" tree --port "$PORT" --json 2>/dev/null | python3 -c "
 import json,sys
 def walk(n):
     if (n.get('identifier') or '') == 'landscape-counter':

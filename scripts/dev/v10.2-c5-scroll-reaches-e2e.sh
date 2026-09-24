@@ -28,7 +28,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-AND_ALIAS="${SMIX_C5_ANDROID:-sim-smix-android-01}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+AND_ALIAS="${SMIX_C5_ANDROID:-$E2E_ANDROID}"
 IOS_ALIAS="${SMIX_C5_IOS:-5D087114-ECB3-443C-8DDB-40EEF9CFB90C}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
@@ -80,7 +81,7 @@ port_free() { ! curl -s "http://127.0.0.1:$1/health" 2>/dev/null | grep -q '"ok"
 # asked the probe at all, and this had to curl `/probe/tree` to avoid
 # measuring a different screen than the flow acts on.
 flow_tree() { # $1 port  $2 device  $3 out.json
-  "$SMIX" tree --json --port "$1" --device "$2" 2>/dev/null | grep -v '^kevy:' > "$3" || true
+  "$SMIX" tree --json --port "$1" --device "$2" 2>/dev/null > "$3" || true
   head -c 1 "$3" | grep -q '{' || { echo "no-tree"; return 1; }
   python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$3"
 }
@@ -178,7 +179,7 @@ PY
 # ---- Android ---------------------------------------------------------
 run_android() {
   command -v adb >/dev/null 2>&1 || { log "no adb — skipping the Android leg"; return 0; }
-  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
   [ -n "$AND_SERIAL" ] || { log "no emulator registered as '$AND_ALIAS' — skipping the Android leg"; return 0; }
   [ -f "$AND_APK" ] || { log "no fixture apk (bash scripts/dev/build-android-fixture.sh) — skipping the Android leg"; return 0; }
   # And the one THESE sources build: the path existing says a build
@@ -231,7 +232,7 @@ appId: $AND_APPID
 - assertVisible: "tapped $index"
 FLOW
   local out rc=0
-  out="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/and.yaml" 2>&1 | grep -v '^kevy:')" || rc=$?
+  out="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/and.yaml" 2>&1)" || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 >&2
     fail "android: the flow did not pass (the scroll stopped with $target still crossing the edge, and the tap went where its middle is)"
@@ -248,7 +249,7 @@ FLOW
 # ---- iOS -------------------------------------------------------------
 run_ios() {
   command -v xcrun >/dev/null 2>&1 || { log "no xcrun — skipping the iOS leg"; return 0; }
-  IOS_UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+  IOS_UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
   [ -n "$IOS_UDID" ] || { log "no simulator resolves '$IOS_ALIAS' — skipping the iOS leg"; return 0; }
   [ -d "$IOS_FIXTURE" ] || { log "no iOS fixture (bash scripts/dev/build-fixture-app.sh) — skipping the iOS leg"; return 0; }
   port_free "$IOS_PORT" || cannot_judge "port $IOS_PORT already serves a runner — set SMIX_C5_IOS_PORT"
@@ -289,7 +290,7 @@ appId: $IOS_APPID
     id: "$target"
 FLOW
   local out rc=0
-  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1 | grep -v '^kevy:')" || rc=$?
+  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 >&2
     fail "ios: the flow did not pass"
@@ -319,7 +320,7 @@ appId: $IOS_APPID
     direction: DOWN
 FLOW
   rc=0
-  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios-ocr.yaml" 2>&1 | grep -v '^kevy:')" || rc=$?
+  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios-ocr.yaml" 2>&1)" || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 >&2
     fail "ios: the OCR chain did not stop the scroll"

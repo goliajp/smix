@@ -37,7 +37,7 @@ cleanup() { rm -rf "$WORK" "$OUT"; }
 trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"
-smix() { "$SMIX" "$@" 2>&1 | grep -v '^kevy:' || true; }
+smix() { "$SMIX" "$@" 2>&1 || true; }
 
 step "0. the shape and case rules, which need no device"
 cargo test -p smix-simctl --lib kind_tests > "$OUT" 2>&1 \

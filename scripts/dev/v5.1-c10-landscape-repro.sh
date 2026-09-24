@@ -78,7 +78,7 @@ trap cleanup EXIT
 # landscape screen that did not exist: the verdict had been handed to
 # `grep`, which was perfectly happy. Anything that decides calls "$SMIX"
 # directly.
-smix_quiet() { "$SMIX" "$@" 2>&1 | grep -v '^kevy:' || true; }
+smix_quiet() { "$SMIX" "$@" 2>&1 || true; }
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 command -v xcrun >/dev/null 2>&1 || skip "no xcrun — this needs a simulator"
@@ -114,7 +114,7 @@ PREFIX="$ORIENTATION"
 read_counter() {
   # Not the `smix` pipe helper: this value decides the verdict, and a
   # stray diagnostic line folded into stdout would read as a broken tree.
-  "$SMIX" tree --port "$PORT" --json 2>/dev/null | grep -v '^kevy:' | python3 -c "
+  "$SMIX" tree --port "$PORT" --json 2>/dev/null | python3 -c "
 import json,sys
 want=sys.argv[1]
 def walk(n):
@@ -138,7 +138,7 @@ tap_and_judge() {
   local id="$1" before after reported bbox
   before="$(read_counter)"
   shot "$WORK/before.png"
-  reported="$("$SMIX" tap "id:$id" --port "$PORT" 2>&1 | grep -v '^kevy:' | tr '\n' ' ' | sed 's/  */ /g')"
+  reported="$("$SMIX" tap "id:$id" --port "$PORT" 2>&1 | tr '\n' ' ' | sed 's/  */ /g')"
   sleep 1
   shot "$WORK/after.png"
   after="$(read_counter)"
@@ -166,7 +166,7 @@ step "3. open the counter screen"
 # The space the tree is describing, recorded either way — it is the
 # number the next checkpoint compares against, and it costs nothing to
 # take here.
-ROOT_BOUNDS="$("$SMIX" tree --port "$PORT" --json 2>/dev/null | grep -v '^kevy:' | python3 -c "
+ROOT_BOUNDS="$("$SMIX" tree --port "$PORT" --json 2>/dev/null | python3 -c "
 import json,sys
 t=json.load(sys.stdin); n=t if isinstance(t,dict) else t[0]
 b=n.get('bounds') or {}

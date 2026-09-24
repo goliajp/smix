@@ -35,7 +35,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_C6_ANDROID:-sim-smix-android-01}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${SMIX_C6_ANDROID:-$E2E_ANDROID}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
 PORT="$SMIX_RUNNER_PORT"
@@ -84,7 +85,7 @@ command -v adb >/dev/null 2>&1 || fail "no adb on PATH — this judges an Androi
 python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
   || fail "the fixture apk on disk is not the one this tree builds"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
 [ -n "$SERIAL" ] || fail "no emulator registered as '$ALIAS' — register one, or set SMIX_C6_ANDROID"
 
 if curl -s -m 2 "http://localhost:$PORT/health" >/dev/null 2>&1; then

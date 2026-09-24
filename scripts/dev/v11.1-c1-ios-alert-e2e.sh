@@ -69,7 +69,7 @@ WE_UPPED=1
 
 count() {
   local tree
-  tree="$("$SMIX" tree --device "$UDID" --port "$PORT" --json 2>/dev/null | grep -v '^kevy:')" || return 1
+  tree="$("$SMIX" tree --device "$UDID" --port "$PORT" --json 2>/dev/null)" || return 1
   TREE_JSON="$tree" python3 - <<'PY'
 import json, os, re, sys
 d = json.loads(os.environ["TREE_JSON"])
@@ -98,7 +98,7 @@ press() { # $1 selector, $2 seconds to wait after the alert opens, $3 label
   "$SMIX" tap "id:fixture-open-alert" --device "$UDID" --port "$PORT" >/dev/null 2>&1 \
     || fail "$3: could not open the alert"
   [ "$2" = 0 ] || sleep "$2"
-  said="$("$SMIX" tap "$1" --device "$UDID" --port "$PORT" 2>&1 | grep -v '^kevy:')" || rc=$?
+  said="$("$SMIX" tap "$1" --device "$UDID" --port "$PORT" 2>&1)" || rc=$?
   sleep 1.5
   after="$(count)" || fail "$3: could not read the count after"
   [ "$after" = $((before + 1)) ] \

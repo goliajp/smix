@@ -565,6 +565,19 @@ python3 "$ROOT/scripts/dev/no-second-ledger-path.py" > /tmp/smix-ship-ledger-pat
 log "the four layers are all present"
 python3 "$ROOT/scripts/dev/contract-scan.py" > /tmp/smix-ship-contract.log 2>&1 \
   || fail "contract scan FAILED — a layer is missing or the gap is unclaimed (see /tmp/smix-ship-contract.log)"
+log "the all-gates runner can still go red"
+python3 "$ROOT/scripts/dev/all-gates.test.py" > /tmp/smix-ship-all-gates.log 2>&1 \
+  || fail "all-gates self-test FAILED — see /tmp/smix-ship-all-gates.log"
+log "every status read is the judged command's"
+python3 "$ROOT/scripts/dev/a-status-is-read-from-the-command.py" > /tmp/smix-ship-status.log 2>&1 \
+  || fail "a status is read from a filter rather than the command — see /tmp/smix-ship-status.log"
+python3 "$ROOT/scripts/dev/a-status-is-read-from-the-command.test.py" >> /tmp/smix-ship-status.log 2>&1 \
+  || fail "status gate self-test FAILED — see /tmp/smix-ship-status.log"
+log "every class over our own enums names every variant"
+python3 "$ROOT/scripts/dev/a-classification-names-every-variant.py" > /tmp/smix-ship-classes.log 2>&1 \
+  || fail "a class is drawn with matches! over several variants — see /tmp/smix-ship-classes.log"
+python3 "$ROOT/scripts/dev/a-classification-names-every-variant.test.py" >> /tmp/smix-ship-classes.log 2>&1 \
+  || fail "classification gate self-test FAILED — see /tmp/smix-ship-classes.log"
 
 # An element can be nameable in a flow and unnameable from the surface an
 # agent drives through, with nothing red. `point` was, for two majors.

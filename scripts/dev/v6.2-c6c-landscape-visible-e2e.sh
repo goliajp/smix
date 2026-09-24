@@ -43,7 +43,7 @@ trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"
 command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun — this needs Xcode"
-UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
 [ -n "$UDID" ] || cannot_judge "no sim registered as '$ALIAS'"
 [ -d "$FIXTURE" ] || cannot_judge "no iOS fixture at $FIXTURE"
 
@@ -70,16 +70,16 @@ appId: $BUNDLE
     id: landscape-enter
 FLOW
 SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$UDID" "$WORK/flow.yaml" >"$WORK/run.log" 2>&1 \
-  || fail "could not enter landscape stage: $(grep -v '^kevy:' "$WORK/run.log" | tail -4)"
+  || fail "could not enter landscape stage: $(tail -4 "$WORK/run.log")"
 
 # Wait for the landscape stage to lay out.
 for _ in $(seq 1 15); do
-  SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --json --device "$UDID" 2>/dev/null | grep -v '^kevy:' | grep -q 'landscape-counter' && break
+  SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --json --device "$UDID" 2>/dev/null | grep -q 'landscape-counter' && break
   sleep 1
 done
 
 step "assert landscape-counter / -increment / -exit are all visible=true"
-TREE="$(SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --json --device "$UDID" 2>/dev/null | grep -v '^kevy:')"
+TREE="$(SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --json --device "$UDID" 2>/dev/null)"
 printf '%s' "$TREE" | python3 -c "
 import sys, json
 tree = json.load(sys.stdin)

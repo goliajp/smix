@@ -13,6 +13,18 @@ use std::os::unix::fs::PermissionsExt;
 
 use smix_adb::AdbClient;
 
+/// One test at a time may hold a written executable and a running child.
+///
+/// Each test writes a stub program and has the code under test run it.
+/// The harness runs tests on several threads, so one thread can fork while
+/// another still holds its stub open for writing; the forked child carries
+/// that descriptor until it execs, and Linux refuses to execute a file that
+/// is open for writing — `ETXTBSY`, "Text file busy". It failed about one
+/// run in five on Linux and never on macOS. Taking this lock around writing
+/// and running makes the two impossible to overlap, rather than retrying
+/// until they happen not to.
+static EXEC: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// A stub `adb` that records its argv and replies with `body`.
 fn stub_adb(dir: &std::path::Path, body: &str) -> AdbClient {
     let bin = dir.join("adb-stub");
@@ -38,6 +50,7 @@ fn argv(dir: &std::path::Path) -> Vec<String> {
 
 #[tokio::test]
 async fn emu_goes_to_the_console_not_the_device_shell() {
+    let _exec = EXEC.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let c = stub_adb(dir.path(), "echo OK");
     c.emu("emulator-5554", &["geo", "fix", "139.6917", "35.6895"])
@@ -66,6 +79,7 @@ async fn emu_goes_to_the_console_not_the_device_shell() {
 
 #[tokio::test]
 async fn a_console_refusal_is_not_success() {
+    let _exec = EXEC.lock().await;
     // Measured against a real emulator: the console answers `KO: <reason>`
     // and exits 0. Reading stdout is the only way a caller ever finds out.
     let dir = tempfile::tempdir().unwrap();
@@ -85,6 +99,7 @@ async fn a_console_refusal_is_not_success() {
 
 #[tokio::test]
 async fn a_console_ok_is_success() {
+    let _exec = EXEC.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let c = stub_adb(dir.path(), "echo OK");
     let out = c
@@ -96,6 +111,7 @@ async fn a_console_ok_is_success() {
 
 #[tokio::test]
 async fn shell_still_goes_to_the_device() {
+    let _exec = EXEC.lock().await;
     // The sibling path must keep working — this is what `pm grant` rides on.
     let dir = tempfile::tempdir().unwrap();
     let c = stub_adb(dir.path(), "echo done");

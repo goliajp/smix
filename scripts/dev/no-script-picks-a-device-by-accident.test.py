@@ -36,6 +36,14 @@ CASES = [
     # slot it named held a consumer's emulator.
     ("hands a default slot to what it runs, touching nothing itself",
      'DEVICE="${SMIX_V10_ANDROID:-emulator-5554}"\nbash ./some-gate.sh "$DEVICE"\n', True),
+    # A registered alias is a better default than a slot, but written into
+    # each script it is copied: nineteen of them held `sim-smix-android-01`,
+    # and changing which device the e2e suite drives meant nineteen edits.
+    # The default lives in scripts/lib/e2e-devices.sh.
+    ("writes a default alias of its own",
+     'ALIAS="${SMIX_CX_ANDROID:-sim-smix-android-01}"\nSERIAL="$("$SMIX" sim resolve "$ALIAS")"\nadb -s "$SERIAL" shell echo\n', True),
+    ("takes its default alias from the shared file",
+     'source "$ROOT/scripts/lib/e2e-devices.sh"\nALIAS="${SMIX_CX_ANDROID:-$E2E_ANDROID}"\nSERIAL="$("$SMIX" sim resolve "$ALIAS")"\nadb -s "$SERIAL" shell echo\n', False),
     ("touches a device with no source for it",
      'adb -s "$SOMETHING" shell echo\n', True),
     ("asks the ledger", DELIBERATE_SCRIPT, False),

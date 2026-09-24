@@ -60,7 +60,20 @@ AWAITING = "\n".join([
     "",
 ])
 
-HOT = "# plan-hot — v4.2 到 C2：契约门\n\n## 目标 checkpoint\n"
+# Every hot plan's acceptance section names the two things no segment may
+# leave out: the whole gate set, and the smoke chain across both platforms.
+# The minimal plan below carries them, so the cases that are about the
+# layer structure stay about the layer structure.
+ACCEPTANCE = "\n".join([
+    "## Checkpoint C2 验收",
+    "",
+    "```bash",
+    "python3 scripts/dev/all-gates.py",
+    "bash scripts/dev/smoke-chain-e2e.sh",
+    "```",
+    "",
+])
+HOT = "# plan-hot — v4.2 到 C2：契约门\n\n## 目标 checkpoint\n\n" + ACCEPTANCE
 
 
 def run(root: str) -> tuple[int, str]:
@@ -355,6 +368,46 @@ else:
         file=sys.stderr,
     )
     checked = 15
+
+
+# The acceptance section. Two checkpoints of this line were committed with
+# gates red because each acceptance picked its own few; a third changed a
+# ledger enum and broke boot -> runner up -> run on Android, and two more
+# were committed on top before anyone walked that path. So a hot plan whose
+# acceptance does not name both is red, and says which one it lacks.
+for missing, keep in (
+    ("python3 scripts/dev/all-gates.py", "bash scripts/dev/smoke-chain-e2e.sh"),
+    ("bash scripts/dev/smoke-chain-e2e.sh", "python3 scripts/dev/all-gates.py"),
+):
+    with tempfile.TemporaryDirectory() as tmp:
+        docs = tree(tmp)
+        write(os.path.join(docs, "plan-hot.md"), HOT.replace(missing + "\n", ""))
+        code, out = run(tmp)
+        expect_verdict(f"an acceptance without `{missing}` fails", code, out)
+        expect(
+            f"and names `{missing}`",
+            missing in out,
+            f"the verdict does not name what is missing:\n{out}",
+        )
+
+# A plan with no acceptance section at all is not excused by having
+# nothing to check: that is the empty predicate.
+with tempfile.TemporaryDirectory() as tmp:
+    docs = tree(tmp)
+    write(os.path.join(docs, "plan-hot.md"), "# plan-hot — v4.2 到 C2：契约门\n\n## 目标 checkpoint\n")
+    code, out = run(tmp)
+    expect_verdict("a hot plan with no acceptance section fails", code, out)
+
+# The two lines inside prose rather than the acceptance section do not count:
+# naming the gate set in a note is not running it at the checkpoint.
+with tempfile.TemporaryDirectory() as tmp:
+    docs = tree(tmp)
+    prose = "# plan-hot — v4.2 到 C2：契约门\n\n## 目标 checkpoint\n\n" \
+        "remember python3 scripts/dev/all-gates.py and bash scripts/dev/smoke-chain-e2e.sh\n\n" \
+        "## Checkpoint C2 验收\n\n```bash\ncargo test\n```\n"
+    write(os.path.join(docs, "plan-hot.md"), prose)
+    code, out = run(tmp)
+    expect_verdict("the two lines outside the acceptance section do not count", code, out)
 
 if problems:
     print("contract-scan.test: FAIL")
