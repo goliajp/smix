@@ -229,6 +229,7 @@ impl AppLike for SilentMockApp {
                 placement: smix_driver::FramePlacement::DuringPress,
                 png: b"\x89PNG\r\n\x1a\n".to_vec(),
             }],
+            capture_stopped: None,
         })
     }
     async fn set_location(&self, _: f64, _: f64) -> Result<(), ExpectationFailure> {

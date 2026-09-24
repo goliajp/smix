@@ -37,6 +37,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TIMEOUT_S="${SMIX_ANDROID_GATE_TIMEOUT_S:-600}"
 SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
+# A flow is judged by the code smix reports: "$SMIX_RUN" hands a verdict
+# about the screen back and ends the gate on anything else, by name.
+. "$REPO_ROOT/scripts/lib/judged-run.sh"
 
 APP="com.android.settings"
 # The app the FLOW binds to, which is not always the one we launch.
@@ -193,7 +196,7 @@ kill -0 "$PROXY_PID" 2>/dev/null || die "wire recorder died. Log: $WORK/proxy.lo
 run_flow() {
   local label="$1"; shift
   local logfile="$WORK/$label.log"
-  ( "$SMIX_BIN" run --platform android --device "$SERIAL" --no-launch \
+  ( "$SMIX_RUN" --platform android --device "$SERIAL" --no-launch \
       --runner-port "$PROXY_PORT" "$@" "$FLOW" ) > "$logfile" 2>&1 &
   local pid=$!
   local waited=0
@@ -679,7 +682,7 @@ A13FLOW
 # Through the proxy, like every other driving call here: the rest of
 # this gate passes --port "$PROXY_PORT", and a call that does not
 # reaches a different endpoint with a different view of the app.
-"$SMIX_BIN" run "$WORK/a13-over.yaml" --platform android --device "$SERIAL" \
+"$SMIX_RUN" "$WORK/a13-over.yaml" --platform android --device "$SERIAL" \
   --port "$PROXY_PORT" > "$WORK/a13-over.log" 2>&1
 if [ $? -ne 0 ]; then
   die "A13: a swipe over a named element failed: $(tail -3 "$WORK/a13-over.log")"
@@ -701,7 +704,7 @@ A13ABSENT
 # Through the proxy, like every other driving call here: the rest of
 # this gate passes --port "$PROXY_PORT", and a call that does not
 # reaches a different endpoint with a different view of the app.
-"$SMIX_BIN" run "$WORK/a13-absent.yaml" --platform android --device "$SERIAL" \
+"$SMIX_RUN" "$WORK/a13-absent.yaml" --platform android --device "$SERIAL" \
   --port "$PROXY_PORT" > "$WORK/a13-absent.log" 2>&1
 if [ $? -eq 0 ]; then
   die "A13: a swipe over an element that is not there reported success. \

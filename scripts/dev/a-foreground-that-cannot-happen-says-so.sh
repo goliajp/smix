@@ -66,6 +66,7 @@ trap teardown EXIT
 
 FLOW="$(mktemp -t smix-absent-app-XXXXXX).yaml"
 printf 'appId: %s\n---\n- launchApp\n' "$ABSENT" > "$FLOW"
+# raw run: the app is absent on purpose; the refusal naming it is what this script judges
 OUT="$("$SMIX" run --device "$UDID" --port "$PORT" "$FLOW" 2>&1)"
 rm -f "$FLOW"
 

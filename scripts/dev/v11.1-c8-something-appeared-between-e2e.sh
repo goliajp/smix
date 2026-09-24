@@ -81,7 +81,7 @@ DENSITY=""
 # Sets RC and OUT.
 run_flow() {
   RC=0
-  OUT="$(SMIX_RUNNER_PORT="$3" with_deadline 120 "$SMIX" run --device "$2" "$5" 2>&1)" || RC=$?
+  OUT="$(SMIX_RUNNER_PORT="$3" with_deadline 120 "$SMIX_RUN" --device "$2" "$5" 2>&1)" || RC=$?
   [ "$RC" = "$DEADLINE_STATUS" ] && cannot_judge "$1 $4: smix run did not answer within 120 s"
   printf '%s\n' "$OUT" > "$WORK/$1-$4.log"
   if [ -n "$KEEP" ]; then mkdir -p "$KEEP" && cp "$WORK/$1-$4.log" "$KEEP/"; fi

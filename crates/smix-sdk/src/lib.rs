@@ -880,6 +880,9 @@ pub struct PressCapture {
     pub timing: smix_driver::PressTiming,
     /// Frames in capture order.
     pub frames: Vec<PressFrame>,
+    /// Why capturing stopped before the window closed, when a capture
+    /// failed. The frames taken before it are still in `frames`.
+    pub capture_stopped: Option<String>,
 }
 
 impl PressCapture {
@@ -2577,6 +2580,7 @@ impl App {
             smix_driver::host_now_ms() + duration.as_millis() as u64 + CAPTURE_OVERRUN_MS;
         let capturing = async {
             let mut frames = Vec::new();
+            let mut stopped = None;
             while frames.len() < MAX_PRESS_FRAMES && smix_driver::host_now_ms() < deadline_ms {
                 let start_ms = smix_driver::host_now_ms();
                 match self.device.screenshot(&udid).await {
@@ -2589,17 +2593,22 @@ impl App {
                     )),
                     // One failing capture will fail identically for the
                     // rest of the window; stop rather than burn it.
-                    Err(_) => break,
+                    Err(e) => {
+                        stopped = Some(e.to_string());
+                        break;
+                    }
                 }
             }
-            frames
+            (frames, stopped)
         };
 
         let (pressed, captured) =
             tokio::join!(driver.long_press(selector, duration, None), capturing);
         let timing = pressed?;
+        let (captured, capture_stopped) = captured;
         Ok(PressCapture {
             timing,
+            capture_stopped,
             frames: captured
                 .into_iter()
                 .map(|(span, png)| PressFrame {

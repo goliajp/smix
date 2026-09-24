@@ -74,7 +74,7 @@ out="$(with_deadline 300 "$SMIX" runner up "$AND_ALIAS" --platform android --run
   || link_failed android "runner up" "$out"
 AND_UPPED=1
 printf 'appId: %s\n---\n- launchApp\n- assertVisible:\n    id: fixture_submit\n' "$AND_APPID" > "$WORK/a.yaml"
-out="$(SMIX_RUNNER_PORT="$AND_PORT" with_deadline 180 "$SMIX" run --device "$SERIAL" "$WORK/a.yaml" 2>&1)" \
+out="$(SMIX_RUNNER_PORT="$AND_PORT" with_deadline 180 "$SMIX_RUN" --device "$SERIAL" "$WORK/a.yaml" 2>&1)" \
   || link_failed android "run" "$out"
 out="$("$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$AND_PORT" 2>&1)" \
   || link_failed android "runner down" "$out"
@@ -93,7 +93,7 @@ out="$(with_deadline 600 "$SMIX" runner up "$UDID" --bundle "$IOS_APPID" --runne
   || link_failed ios "runner up" "$out"
 IOS_UPPED=1
 printf 'appId: %s\n---\n- launchApp\n- assertVisible:\n    id: fixture-submit\n' "$IOS_APPID" > "$WORK/i.yaml"
-out="$(SMIX_RUNNER_PORT="$IOS_PORT" with_deadline 180 "$SMIX" run --device "$UDID" "$WORK/i.yaml" 2>&1)" \
+out="$(SMIX_RUNNER_PORT="$IOS_PORT" with_deadline 180 "$SMIX_RUN" --device "$UDID" "$WORK/i.yaml" 2>&1)" \
   || link_failed ios "run" "$out"
 out="$("$SMIX" runner down --device "$UDID" --runner-port "$IOS_PORT" 2>&1)" \
   || link_failed ios "runner down" "$out"

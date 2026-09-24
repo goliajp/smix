@@ -69,7 +69,7 @@ appId: $BUNDLE
 - tapOn:
     id: landscape-enter
 FLOW
-SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$UDID" "$WORK/flow.yaml" >"$WORK/run.log" 2>&1 \
+SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$UDID" "$WORK/flow.yaml" >"$WORK/run.log" 2>&1 \
   || fail "could not enter landscape stage: $(tail -4 "$WORK/run.log")"
 
 # Wait for the landscape stage to lay out.

@@ -157,7 +157,7 @@ log "recorded $(grep -c 'assertVisible' "$WORK/recorded.yaml") assertions"
 # --- 6. run what was recorded -------------------------------------------
 
 step "smix run the recorded flow"
-"$SMIX" run "$WORK/recorded.yaml" --device "$ALIAS" >"$WORK/run.log" 2>&1 \
+"$SMIX_RUN" "$WORK/recorded.yaml" --device "$ALIAS" >"$WORK/run.log" 2>&1 \
   || { tail -15 "$WORK/run.log" >&2; fail "the recorded flow did not run"; }
 log "recorded flow ran green"
 

@@ -336,7 +336,9 @@ pub trait Driver: Send + Sync {
     /// Asked by [`crate::scroll_until`] before it trusts a tree match's
     /// frame. A platform whose tree can hold a stale frame answers from
     /// a live query; one whose tree is read live answers `true`.
-    async fn confirm_on_screen(&self, matched: &[&A11yNode]) -> bool;
+    ///
+    /// Failing to ask is an error, not an answer.
+    async fn confirm_on_screen(&self, matched: &[&A11yNode]) -> Result<bool, ExpectationFailure>;
 
     /// How many of this platform's tree units make one device-independent
     /// point. Every box the tree holds is divided by it before two boxes

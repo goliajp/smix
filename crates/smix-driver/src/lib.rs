@@ -292,7 +292,7 @@ impl IosDriver {
             if matched.is_empty() {
                 return Ok(false);
             }
-            Ok(self.confirm_on_screen(&matched, include).await)
+            self.confirm_on_screen(&matched, include).await
         }
     }
 
@@ -315,14 +315,17 @@ impl IosDriver {
     /// the tree verdict stands; OCR tiers remain the fallback for
     /// handle-less degraded trees.
     ///
-    /// Transport errors during confirmation also let the tree
-    /// verdict stand: a flaky live probe must not turn a legitimate
-    /// tree hit into a miss.
+    /// A runner that has no live route (an older build answering 404
+    /// with no `not_found` in the body) lets the tree verdict stand —
+    /// it cannot be asked. Any other failure to ask is an error under
+    /// its own code: this probe exists because tree frames go stale,
+    /// and answering "could not confirm" with "confirmed on screen"
+    /// turned a sick runner into a positive verdict.
     async fn confirm_on_screen(
         &self,
         matched: &[&A11yNode],
         include: Option<IncludeScope>,
-    ) -> bool {
+    ) -> Result<bool, ExpectationFailure> {
         let mut had_handle = false;
         for node in matched.iter().take(3) {
             let handle = node
@@ -337,14 +340,24 @@ impl IosDriver {
                 modifiers: smix_selector::Modifiers::default(),
             };
             match self.runner.find_on_screen(&probe, include).await {
-                Ok(true) => return true,
+                Ok(true) => return Ok(true),
                 Ok(false) => continue,
-                // Live probe unavailable → tree verdict stands.
-                Err(_) => return true,
+                Err(RunnerTransportError::NonSuccessStatus {
+                    status: 404, body, ..
+                }) if !body.contains("\"not_found\"") => {
+                    return Ok(true);
+                }
+                Err(e) => {
+                    let failure = transport_to_failure(e);
+                    if failure.code.judges_the_screen() {
+                        continue;
+                    }
+                    return Err(failure);
+                }
             }
         }
         // No node carried a live handle → cannot confirm → trust tree.
-        !had_handle
+        Ok(!had_handle)
     }
 
     /// Transient `/tree` transport retry helper. Shared by
@@ -1096,11 +1109,23 @@ impl IosDriver {
                         // the fold. One live probe per tree hit keeps
                         // wait_for / scrollUntilVisible / tapOn in
                         // agreement on "visible".
+                        //
+                        // A probe that could not be asked is one more
+                        // transport failure: keep polling, and surface it
+                        // if the budget runs out on it.
                         let matched = [node];
-                        if self.confirm_on_screen(&matched, include).await {
-                            return Ok(node.clone());
+                        match self.confirm_on_screen(&matched, include).await {
+                            Ok(true) => return Ok(node.clone()),
+                            Ok(false) => tree_hit_offscreen = true,
+                            Err(e) => {
+                                if start.elapsed() >= timeout {
+                                    return Err(e);
+                                }
+                                last_transport_err = Some(e);
+                                sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
+                                continue;
+                            }
                         }
-                        tree_hit_offscreen = true;
                     }
                     if start.elapsed() >= timeout {
                         let screen = screen_facts(&tree, 10);

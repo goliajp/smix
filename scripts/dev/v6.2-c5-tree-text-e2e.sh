@@ -51,7 +51,7 @@ adb -s "$SERIAL" install -r "$APK" >"$WORK/install.log" 2>&1 || fail "fixture in
 launch_fresh() {
   adb -s "$SERIAL" shell am force-stop "$APPID" >/dev/null 2>&1 || true
   printf 'appId: %s\n---\n- launchApp\n' "$APPID" >"$WORK/launch.yaml"
-  SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/launch.yaml" >/dev/null 2>&1 \
+  SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/launch.yaml" >/dev/null 2>&1 \
     || fail "could not launch $APPID"
   # launchApp returns before the view hierarchy is laid out; wait for the
   # fixture's own node to appear rather than reading an empty early tree.

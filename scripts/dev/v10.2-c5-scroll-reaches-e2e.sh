@@ -210,7 +210,7 @@ appId: $AND_APPID
 - tapOn:
     label: "open-scroll"
 FLOW
-  SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/and-open.yaml" >"$WORK/and-open.log" 2>&1 \
+  SMIX_RUNNER_PORT="$AND_PORT" "$SMIX_RUN" --device "$AND_SERIAL" "$WORK/and-open.yaml" >"$WORK/and-open.log" 2>&1 \
     || { tail -10 "$WORK/and-open.log" >&2; fail "android: could not open the scrolling screen"; }
   local target
   target="$(await_crossing_row "$AND_PORT" "$AND_SERIAL" "$WORK/and-tree.json" scroll_row_ centre-out)" \
@@ -232,7 +232,7 @@ appId: $AND_APPID
 - assertVisible: "tapped $index"
 FLOW
   local out rc=0
-  out="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/and.yaml" 2>&1)" || rc=$?
+  out="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX_RUN" --device "$AND_SERIAL" "$WORK/and.yaml" 2>&1)" || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 >&2
     fail "android: the flow did not pass (the scroll stopped with $target still crossing the edge, and the tap went where its middle is)"
@@ -270,7 +270,7 @@ appId: $IOS_APPID
 ---
 - launchApp
 FLOW
-  SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios-open.yaml" >"$WORK/ios-open.log" 2>&1 \
+  SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$IOS_UDID" "$WORK/ios-open.yaml" >"$WORK/ios-open.log" 2>&1 \
     || { tail -10 "$WORK/ios-open.log" >&2; fail "ios: could not launch the fixture"; }
   local target
   target="$(await_crossing_row "$IOS_PORT" "$IOS_UDID" "$WORK/ios-tree.json" fixture-row- any)" \
@@ -290,7 +290,7 @@ appId: $IOS_APPID
     id: "$target"
 FLOW
   local out rc=0
-  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || rc=$?
+  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 >&2
     fail "ios: the flow did not pass"
@@ -320,7 +320,7 @@ appId: $IOS_APPID
     direction: DOWN
 FLOW
   rc=0
-  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios-ocr.yaml" 2>&1)" || rc=$?
+  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$IOS_UDID" "$WORK/ios-ocr.yaml" 2>&1)" || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 >&2
     fail "ios: the OCR chain did not stop the scroll"

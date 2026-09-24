@@ -107,7 +107,7 @@ run_ios() {
   IOS_WE_UPPED=1
 
   step "iOS: run the shared flow with NO --platform — platform must come from the sim's kind"
-  OUT="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || true
+  OUT="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || true
   printf '%s\n' "$OUT" | grep -qE 'simctl|Invalid device' && fail "iOS run went a wrong path: $OUT"
   printf '%s\n' "$OUT" | grep -q '"ok":true' || fail "iOS run did not pass (app not foregrounded / Submit not visible): $OUT"
   log "iOS PASS — no --platform, sim kind → iOS, Submit visible"
@@ -138,7 +138,7 @@ run_android() {
 
   step "Android: run the shared flow with NO --platform — platform must come from the emulator's kind"
   adb -s "$AND_SERIAL" shell am force-stop "$AND_APPID" >/dev/null 2>&1 || true
-  OUT="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/android.yaml" 2>&1)" || true
+  OUT="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX_RUN" --device "$AND_SERIAL" "$WORK/android.yaml" 2>&1)" || true
   printf '%s\n' "$OUT" | grep -qE 'simctl|Invalid device' && fail "Android run took the iOS/simctl path — platform was NOT read from the device: $OUT"
   printf '%s\n' "$OUT" | grep -q '"ok":true' || fail "Android run did not pass (app not foregrounded / Submit not visible): $OUT"
   log "Android PASS — no --platform, emulator kind → Android, Submit visible"

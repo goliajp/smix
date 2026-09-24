@@ -97,7 +97,7 @@ appId: dev.smix.fixture
     id: $SEL
 YAML
 log "baseline flow (assertVisible id:$SEL)"
-if ! "$SMIX" run --device "$SERIAL" --platform android --runner-port "$PORT" --no-launch "$WORK/baseline.yaml"; then
+if ! "$SMIX_RUN" --device "$SERIAL" --platform android --runner-port "$PORT" --no-launch "$WORK/baseline.yaml"; then
   fail "C4-BASELINE-FAIL: baseline selector $SEL not on the fixture — not a loop problem"
 fi
 
@@ -111,7 +111,7 @@ YAML
 mkdir -p "$WORK/bundle"
 log "corrupt flow (assertVisible id:${SEL}X) — expect exit 3"
 set +e
-"$SMIX" run --device "$SERIAL" --platform android --runner-port "$PORT" --no-launch \
+"$SMIX_RUN" --device "$SERIAL" --platform android --runner-port "$PORT" --no-launch \
   --debug-output "$WORK/bundle" --format json "$WORK/corrupt.yaml" \
   >"$WORK/bundle/failure.json" 2>"$WORK/corrupt.err"
 code=$?
@@ -132,6 +132,7 @@ ok=0
 for attempt in 1 2 3; do
   if cargo run -q -p smix-authoring-propose --example propose_amend -- \
        "$WORK/corrupt.yaml" "$WORK/bundle" "$WORK/amended.yaml" 2>"$WORK/propose.$attempt.err"; then
+    # raw run: --check parses the amended flow on the host; no device, and a parse failure is the answer
     if "$SMIX" run --check "$WORK/amended.yaml"; then
       ok=1
       break
@@ -144,7 +145,7 @@ log "amended flow:"; sed 's/^/    /' "$WORK/amended.yaml"
 
 # --- (e) amended flow reruns on device (effectiveness) ---
 log "rerun amended flow on device"
-if "$SMIX" run --device "$SERIAL" --platform android --runner-port "$PORT" --no-launch "$WORK/amended.yaml"; then
+if "$SMIX_RUN" --device "$SERIAL" --platform android --runner-port "$PORT" --no-launch "$WORK/amended.yaml"; then
   log "C4-E2E-PASS"
 else
   fail "C4-WELLFORMED-ONLY: amended flow well-formed + ran to verdict but did not flip fail->pass"

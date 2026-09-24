@@ -150,13 +150,21 @@ struct MockApp {
     calls: Mutex<Vec<MockCall>>,
     /// describe_selector-keyed map of find responses (true = visible).
     find_returns: Mutex<HashMap<String, bool>>,
-    /// describe_selector-keyed set of selectors
-    /// for which `find` should return `Err(ExpectationFailure)` (the
-    /// runner-transport-error path). Used to test that RunFlowInline /
-    /// RunFlowConditional's when-visible predicate swallows driver
-    /// errors as "not visible" instead of surfacing them via
-    /// `to_prompt` stderr noise.
+    /// describe_selector-keyed set of selectors for which `find`
+    /// answers `Err(ElementNotFound)` — a verdict about the screen,
+    /// the element is not there. It used to be described as "the
+    /// runner-transport-error path", and the code it returned was not
+    /// one: a transport failure is `DriverError`, which is
+    /// [`Self::find_failures`].
     find_error_selectors: Mutex<std::collections::HashSet<String>>,
+    /// describe_selector-keyed failure `find` answers with: the way to
+    /// make smix unable to look, as opposed to looking and not finding.
+    find_failures: Mutex<HashMap<String, FailureCode>>,
+    /// Failures `find_by_text_ocr` answers with, one per call, before it
+    /// answers `ocr_result`.
+    ocr_failures: Mutex<std::collections::VecDeque<FailureCode>>,
+    /// When set, `long_press_capturing` took no frame and says why.
+    press_capture_stopped: Mutex<Option<String>>,
     /// describe_selector-keyed map of tap responses; missing key = Ok.
     tap_failures: Mutex<HashMap<String, FailureCode>>,
     /// Describe_selector-keyed transient fail count: (code,
@@ -225,6 +233,9 @@ impl MockApp {
             calls: Mutex::new(Vec::new()),
             find_returns: Mutex::new(HashMap::new()),
             find_error_selectors: Mutex::new(std::collections::HashSet::new()),
+            find_failures: Mutex::new(HashMap::new()),
+            ocr_failures: Mutex::new(std::collections::VecDeque::new()),
+            press_capture_stopped: Mutex::new(None),
             tap_failures: Mutex::new(HashMap::new()),
             tap_failures_n_times: Mutex::new(HashMap::new()),
             assert_not_visible_failures: Mutex::new(HashMap::new()),
@@ -332,6 +343,27 @@ impl MockApp {
             .lock()
             .unwrap()
             .insert(sel_key.to_string());
+        self
+    }
+
+    fn with_find_failure(self, sel_key: &str, code: FailureCode) -> Self {
+        self.find_failures
+            .lock()
+            .unwrap()
+            .insert(sel_key.to_string(), code);
+        self
+    }
+
+    fn with_ocr_failures(self, codes: &[FailureCode]) -> Self {
+        self.ocr_failures
+            .lock()
+            .unwrap()
+            .extend(codes.iter().copied());
+        self
+    }
+
+    fn with_press_capture_stopped(self, why: &str) -> Self {
+        *self.press_capture_stopped.lock().unwrap() = Some(why.to_string());
         self
     }
 
@@ -453,7 +485,13 @@ impl AppLike for MockApp {
             .lock()
             .unwrap()
             .push(MockCall::FindByTextOcr(text.to_string(), locales.to_vec()));
-        // Return mock-canned ocr_result if set, else default Some at frame (0.5, 0.5, 0.1, 0.05)
+        if let Some(code) = self.ocr_failures.lock().unwrap().pop_front() {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(code),
+                message: format!("mock: OCR {code:?}"),
+                ..Default::default()
+            }));
+        }
         Ok(*self.ocr_result.lock().unwrap())
     }
     async fn find_norm_coord(
@@ -577,10 +615,13 @@ impl AppLike for MockApp {
             .unwrap()
             .push(MockCall::Find(selector.clone()));
         let key = smix_sdk::describe_selector(selector);
-        // Runner-transport-error path.
-        // When configured to error for this selector, surface
-        // ExpectationFailure so `when_visible` predicate's error-
-        // swallow behavior can be exercised.
+        if let Some(code) = self.find_failures.lock().unwrap().get(&key).copied() {
+            return Err(ExpectationFailure::new(FailureInit {
+                code: Some(code),
+                message: format!("mock: {code:?} for {key}"),
+                ..Default::default()
+            }));
+        }
         if self.find_error_selectors.lock().unwrap().contains(&key) {
             return Err(ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::ElementNotFound),
@@ -891,6 +932,13 @@ impl AppLike for MockApp {
             earliest_up_offset_ms: 300 + duration.as_millis() as u64,
             handler_wall_ms: duration.as_millis() as u64 + 400,
         };
+        if let Some(why) = self.press_capture_stopped.lock().unwrap().clone() {
+            return Ok(smix_sdk::PressCapture {
+                timing,
+                frames: Vec::new(),
+                capture_stopped: Some(why),
+            });
+        }
         Ok(smix_sdk::PressCapture {
             timing,
             frames: vec![smix_sdk::PressFrame {
@@ -901,6 +949,7 @@ impl AppLike for MockApp {
                 placement: smix_driver::FramePlacement::DuringPress,
                 png: b"\x89PNG\r\n\x1a\n".to_vec(),
             }],
+            capture_stopped: None,
         })
     }
     async fn set_location(&self, latitude: f64, longitude: f64) -> Result<(), ExpectationFailure> {
@@ -2828,10 +2877,11 @@ async fn mock_run_scroll_until_visible_uppercase_direction() {
 // refactor for one dependency site.
 // ====================================================================
 
-/// A false `when_visible` predicate on `runFlowInline` where the
-/// underlying `find` returns Err (runner-transport-error path) must be
-/// treated as "not visible", not surface as a stderr `to_prompt` block.
-/// The inner body must be Skipped, the outer flow exit 0.
+/// A `when_visible` predicate whose `find` answers `ElementNotFound` —
+/// the element is not there — is "not visible" and skips quietly, with
+/// no stderr `to_prompt` block. That quiet is for an answer about the
+/// screen only; see `a_when_that_could_not_look_fails_the_step` for a
+/// `find` that could not look.
 #[tokio::test]
 async fn run_flow_inline_when_false_swallows_find_error() {
     let flow = parse_inline(
@@ -4198,4 +4248,113 @@ async fn take_screenshot_with_crop_on_writes_only_the_element() {
     let reader = png::Decoder::new(bytes.as_slice()).read_info().unwrap();
     assert_eq!((reader.info().width, reader.info().height), (52, 27));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A `when:` whose look failed is not a `when:` that saw nothing.
+///
+/// A consumer's release gate read a runner that answered non-JSON as a
+/// rule of its own being broken; one layer down, the same answer turned
+/// `when: { visible }` into "not visible" and skipped the block, and the
+/// run went green over a step it never judged. A driver failure fails
+/// the step, under its own code.
+#[tokio::test]
+async fn a_when_that_could_not_look_fails_the_step() {
+    let flow = parse_inline(
+        "appId: x\n---\n- runFlow:\n    when:\n      visible: \"Banner\"\n    commands:\n      - tapOn: \"inside\"\n",
+    );
+    let sel_key = smix_sdk::describe_selector(&smix_sdk::text("Banner"));
+    let app = MockApp::new().with_find_failure(&sel_key, FailureCode::DriverError);
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    match adapter.run(&flow).await {
+        Err(RunError::Sdk(f)) => assert_eq!(
+            f.code,
+            FailureCode::DriverError,
+            "the step failed, but under {:?} rather than the driver's own code: {}",
+            f.code,
+            f.message
+        ),
+        Ok(report) => panic!(
+            "a when: that could not look read as \"not visible\" and the run passed: {:?}",
+            report.steps
+        ),
+        Err(other) => panic!("expected a DriverError, got {other:?}"),
+    }
+}
+
+/// Waiting for text that could not be read ends at once, as the failure
+/// it was — not as a timeout after the whole budget spent missing.
+#[tokio::test]
+async fn waiting_for_text_that_could_not_be_read_fails_at_once() {
+    let flow = parse_inline(
+        "appId: x\n---\n- extendedWaitUntil:\n    visible:\n      ocrText: \"Home\"\n    timeout: 3000\n",
+    );
+    let app = MockApp::new().with_ocr_failures(&[FailureCode::DriverError]);
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let started = std::time::Instant::now();
+    let result = adapter.run(&flow).await;
+    let took = started.elapsed();
+    match result {
+        Err(RunError::Sdk(f)) => {
+            assert_eq!(
+                f.code,
+                FailureCode::DriverError,
+                "reported as {:?} after {took:?}: {}",
+                f.code,
+                f.message
+            );
+            assert!(
+                took < std::time::Duration::from_millis(1500),
+                "the right code, but only after spending {took:?} of a 3 s budget"
+            );
+        }
+        other => panic!("expected a DriverError, got {other:?}"),
+    }
+}
+
+/// `CaptureBackpressure` means "not now": a wait with time left waits
+/// through it rather than failing on it.
+#[tokio::test]
+async fn a_wait_waits_through_capture_backpressure() {
+    let flow = parse_inline(
+        "appId: x\n---\n- extendedWaitUntil:\n    visible:\n      ocrText: \"Home\"\n    timeout: 5000\n",
+    );
+    let app = MockApp::new()
+        .with_ocr_failures(&[
+            FailureCode::CaptureBackpressure,
+            FailureCode::CaptureBackpressure,
+        ])
+        .with_ocr_result(Some(smix_sdk::OcrFrame {
+            nx: 0.4,
+            ny: 0.4,
+            w: 0.1,
+            h: 0.05,
+        }));
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let result = adapter.run(&flow).await;
+    assert!(
+        result.is_ok(),
+        "two \"not now\" answers and then a frame should be a wait that ended: {result:?}"
+    );
+}
+
+/// A press whose frames could not be taken says what stopped the
+/// capture, not only that nothing was captured.
+#[tokio::test]
+async fn a_press_capture_that_failed_says_why() {
+    let flow = parse_inline(
+        "appId: x\n---\n- longPressOn:\n    id: hdr-back-btn\n    duration: 1200\n    captureDuring: true\n",
+    );
+    let app = MockApp::new().with_press_capture_stopped("simctl io screenshot: exit 1");
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    match adapter.run(&flow).await {
+        Err(RunError::Sdk(f)) => {
+            assert_eq!(f.code, FailureCode::DriverError, "{}", f.message);
+            assert!(
+                f.message.contains("simctl io screenshot: exit 1"),
+                "the capture's own error is not in the failure: {}",
+                f.message
+            );
+        }
+        other => panic!("expected a DriverError, got {other:?}"),
+    }
 }

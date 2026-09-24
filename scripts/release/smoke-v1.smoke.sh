@@ -33,6 +33,10 @@ fail() { printf '[smoke] FAIL: %s\n' "$*" >&2; exit 1; }
 # --- pre-flight -------------------------------------------------------
 
 command -v smix >/dev/null || fail "smix not on PATH"
+SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
+# The smoke flow is expected to fail on its assertion, and only on that:
+# "$SMIX_RUN" ends the smoke on any other failure, by the code smix gave.
+. "$ROOT/scripts/lib/judged-run.sh"
 command -v jq >/dev/null || fail "jq required for smoke output introspection"
 command -v xcrun >/dev/null || fail "xcrun required"
 
@@ -69,7 +73,7 @@ grep -q "SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE" "$OUT_DIR/up-no-bundle.log" \
 # --- 2. smoke yaml — pacer + fail tree.json --------------------------
 
 log "run smoke yaml with --debug-output"
-if smix run "$SMOKE_YAML" \
+if "$SMIX_RUN" "$SMOKE_YAML" \
     --device "$SMOKE_UDID" \
     --activate \
     --bundle-id "$SMOKE_BUNDLE" \

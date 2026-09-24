@@ -104,7 +104,7 @@ appId: $APPID
 ---
 - launchApp
 FLOW
-  SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/open.yaml" >"$WORK/open.log" 2>&1 \
+  SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/open.yaml" >"$WORK/open.log" 2>&1 \
     || fail "could not launch the fixture: $(tail -5 "$WORK/open.log")"
 }
 

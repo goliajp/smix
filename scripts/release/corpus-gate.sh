@@ -294,6 +294,7 @@ for yaml in "${YAMLS[@]}"; do
   # different work, and until now the gate could not tell them apart.
   # If a FLAKE ever turns this gate green, the old objection is back and
   # the change was wrong.
+  # raw run: the claim is that every corpus flow passes; any failure fails it, and flake-classify reads smix's own record
   python3 "$REPO_ROOT/scripts/dev/run-with-timeout.py" "$SMIX_CORPUS_TIMEOUT_S" \
     "$SMIX_BIN" run "$yaml" --device "$SMIX_CORPUS_SIM" --retry 2 \
     >"$yaml_log" 2>&1 && rc=0 || rc=$?

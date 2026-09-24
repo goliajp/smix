@@ -59,7 +59,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-smix() { "$SMIX" "$@" 2>&1 || true; }
+# The binary's own status, not `|| true`: every call below is followed by
+# `|| fail`, and with `|| true` in here none of those could ever fire —
+# boot, install, runner up, both fills and the submit all read as done
+# whatever smix said (found 2026-09-24).
+smix() { "$SMIX" "$@" 2>&1; }
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun — this needs a simulator; run it on a Mac with Xcode"
@@ -121,7 +125,10 @@ def walk(n):
         print(n.get("label") or n.get("value") or n.get("text") or "")
         raise SystemExit
     for c in n.get("children", []): walk(c)
-walk(json.load(open(sys.argv[1])))
+# `tree --json` carries the reader beside the tree: {"source", "root"}.
+# Walking the envelope finds nothing, and read as an empty result.
+doc = json.load(open(sys.argv[1]))
+walk(doc["root"])
 ' "$WORK/tree.json")"
 log "submitted value: ${RESULT:-<empty>}"
 [ "$RESULT" = "second" ] || fail "a named field must be replaced — the app received ${RESULT:-<empty>}, wanted 'second'"
@@ -130,7 +137,9 @@ log "replaced, not concatenated"
 step "4. typing into the focused field still appends"
 # The scalar `inputText:` verb, which is maestro's shape: no field is
 # named, so there is nothing to replace, and a flow that types twice
-# means the second to continue the first.
+# means the second to continue the first. Step 3 left "second" in the
+# field, so appending is "secondabcd" — this expected "abcd" for as long
+# as the `|| fail` below could not fire (smix() ended in `|| true`).
 cat > "$WORK/append.yaml" <<YAML
 appId: $BUNDLE
 ---
@@ -142,10 +151,10 @@ appId: $BUNDLE
     id: "fixture-submit"
 - assertVisible:
     id: "fixture-result"
-    text: "abcd"
+    text: "secondabcd"
 YAML
-smix run --device "$UDID" --runner-port "$PORT" --no-launch "$WORK/append.yaml" > "$WORK/append.log" 2>&1 \
-  || { tail -25 "$WORK/append.log"; fail "typing into the focused field must append — it did not produce 'abcd'"; }
+"$SMIX_RUN" --device "$UDID" --runner-port "$PORT" --no-launch "$WORK/append.yaml" > "$WORK/append.log" 2>&1 \
+  || { tail -25 "$WORK/append.log"; fail "typing into the focused field must append — it did not produce 'secondabcd'"; }
 log "appended, because nothing was named"
 
 printf 'v2.14-C1 FILL-E2E-PASS\n'

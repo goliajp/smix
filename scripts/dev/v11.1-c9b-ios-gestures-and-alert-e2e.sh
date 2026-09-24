@@ -88,7 +88,7 @@ PY
 
 run_flow() { # run_flow <file> — sets OUT and RC
   RC=0
-  OUT="$(SMIX_RUNNER_PORT="$PORT" with_deadline 180 "$SMIX" run --device "$UDID" "$1" 2>&1)" || RC=$?
+  OUT="$(SMIX_RUNNER_PORT="$PORT" with_deadline 180 "$SMIX_RUN" --device "$UDID" "$1" 2>&1)" || RC=$?
 }
 
 fresh() {

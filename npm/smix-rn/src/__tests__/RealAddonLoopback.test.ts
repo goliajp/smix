@@ -34,32 +34,34 @@ async function startFakeWire(): Promise<Wire> {
           : req.url === '/session/open'
             ? '{"sessionId":"s-1"}'
             : '{"ok":true}'
-      // `connection: close`, so the addon opens a fresh socket per
-      // request rather than reusing this one.
-      //
-      // Measured on a 2-core Linux box (`taskset -c 0,1`), which is the
-      // shape a CI runner has: a second request on a REUSED socket never
-      // completes — not slowly, at all. Raised to a 60 s budget it sat
-      // there for the whole 60 s. Same code under `bun` directly, and on
-      // 16 cores, answers in milliseconds; at the previous tag the file
-      // passed three times over because a tree read was one request, and
-      // v11 made it two (the probe, then the tree).
-      //
-      // The weak side is this stand-in, not the wire: it is a node http
-      // server living in the same vitest worker thread that is waiting
-      // on the answer. The real runner is another process in another
-      // language, and keep-alive there is worth having — a flow makes
-      // hundreds of requests. So the stand-in stops pretending it can
-      // hold a connection, and whether the client should pool at all is
-      // recorded with its measurements rather than decided here.
-      res.writeHead(200, { 'content-type': 'application/json', connection: 'close' })
+      res.writeHead(200, { 'content-type': 'application/json' })
       res.end(reply)
     })
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
   const addr = server.address()
   const port = typeof addr === 'object' && addr ? addr.port : 0
-  return { port, seen, close: () => new Promise((r) => server.close(() => r())) }
+  // Keep-alive stays on, as it is on the real runner; `close` drops the
+  // connections the addon's pool is holding before it waits.
+  //
+  // `server.close()` waits for every open socket to end, and the addon
+  // keeps its idle one. Measured on a 2-core Linux box (`taskset -c
+  // 0,1`, lx64, 2026-09-24/25, ten runs each): every request finished in
+  // 3–70 ms, and in 9 of 10 runs a test then sat out its whole timeout
+  // inside this `close`. Dropping the connections first: 10/10 in under
+  // half a second. The same wire in a process of its own, with four busy
+  // loops on those two cores: 10/10. What stalled was this stand-in's
+  // teardown, not a request on a reused connection — 11.0 read it as the
+  // latter and answered `connection: close` on every reply.
+  return {
+    port,
+    seen,
+    close: () =>
+      new Promise((r) => {
+        server.closeAllConnections()
+        server.close(() => r())
+      }),
+  }
 }
 
 describe('smix-rn drives through the real napi addon (C4)', () => {

@@ -187,7 +187,7 @@ impl Eyes for DriverEyes<'_> {
         let tree = self.driver.tree(None).await?;
         let visible = screen_facts(&tree, 10);
         if let Some(node) = resolve_selector_compiled(&tree, self.selector, &self.ctx)
-            && self.driver.confirm_on_screen(&[node]).await
+            && self.driver.confirm_on_screen(&[node]).await?
         {
             match norm_box(node.bounds, tree.bounds) {
                 Ok(b) => {

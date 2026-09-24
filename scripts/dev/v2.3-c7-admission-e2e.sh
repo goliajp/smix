@@ -148,6 +148,7 @@ done
 # here does not exist: if the refusal names the missing file instead of
 # the holder, the gate is running too late to be a gate.
 set +e
+# raw run: this run must be refused before any step, for the live holder — the refusal is what it judges
 OUT="$("$SMIX" run /nonexistent/flow.yaml --device "$UDID" 2>&1)"
 RC=$?
 set -e
@@ -181,6 +182,7 @@ step "7. a run that takes the device gives it back, even when it fails"
 # mode would be a device nobody can use until someone runs `lease
 # reconcile` — a worse outcome than the error the run already reported.
 set +e
+# raw run: the flow does not exist on purpose; what is judged is the lease afterwards
 "$SMIX" run /nonexistent/flow.yaml --device "$UDID" >/dev/null 2>&1
 set -e
 OUT="$("$SMIX" lease status "$UDID" 2>/dev/null | grep "^$UDID:")"

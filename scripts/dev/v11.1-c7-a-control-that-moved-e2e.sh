@@ -73,7 +73,7 @@ FAILED=0
 # $5 the flow file, $6 expected ("pass" | "fail").
 judge() {
   local label="$4" flow="$5" rc=0 out
-  out="$(SMIX_RUNNER_PORT="$3" with_deadline 120 "$SMIX" run --device "$2" "$flow" 2>&1)" || rc=$?
+  out="$(SMIX_RUNNER_PORT="$3" with_deadline 120 "$SMIX_RUN" --device "$2" "$flow" 2>&1)" || rc=$?
   [ "$rc" = "$DEADLINE_STATUS" ] && cannot_judge "$1 $label: smix run did not answer within 120 s"
   printf '%s\n' "$out" > "$WORK/$1-$label.log"
   [ -n "$KEEP" ] && mkdir -p "$KEEP" && cp "$WORK/$1-$label.log" "$KEEP/"

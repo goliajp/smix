@@ -85,8 +85,19 @@ All notable changes to the `smix` workspace are documented here. The format foll
   `smix_sdk::leased::Leased::acquire` and `App::hold_device_lease` drop the
   `root` / `workspace_root` parameter. It was used for one thing, the
   checkout's runner record, and that record is no longer written.
+- **Rust API: `Driver::confirm_on_screen` returns `Result<bool,
+  ExpectationFailure>`.** A live check the runner could not answer is an
+  error now, not a confirmation (see Fixed). `smix_sdk::PressCapture`
+  gains `capture_stopped`, the reason a capture ended early.
 
 ### Added
+
+- **`failure.judgesTheScreen` in `smix run --format json`, and
+  `FailureCode::judges_the_screen()`.** Whether a failure is an answer
+  about the app (`ELEMENT_NOT_FOUND`, `TIMEOUT`, …) or smix unable to look
+  (`DRIVER_ERROR`, `APP_NOT_RUNNING`, …). One list, in `smix-error`;
+  `optional:` reads it, and so can a script that judges a run by its
+  exit status.
 
 - **`assertScreenshot: { cropOn, thresholdPercentage }`, as maestro
   carries them out.** `cropOn` takes a selector, waits for it, and compares
@@ -254,6 +265,21 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- **A runner that could not answer no longer reads as "not visible".**
+  `when: { visible: … }` / `notVisible:` took any failure to look as the
+  element being absent, so a runner answering half a body skipped the
+  block and the run went green; `extendedWaitUntil` and fallback chains
+  with `ocrText` spent their whole budget "missing" and then reported a
+  `TIMEOUT`. Both now fail at once under smix's own code; a wait still
+  waits through `CAPTURE_BACKPRESSURE`, which means *not now*.
+- **The iOS live on-screen check no longer confirms what it could not
+  ask.** It exists because tree frames go stale, and a transport failure
+  during it answered "on screen" — `assertVisible`, `scrollUntilVisible`
+  and a wait could pass on a sick runner's say-so. It is a
+  `DRIVER_ERROR` now; only a runner too old to have the route leaves the
+  tree's answer standing.
+- **`longPressOn captureDuring` says why no frame was taken.** "no frame
+  was captured at all" now carries the capture's own error.
 - **Two iOS runners brought up from one checkout keep one record each.**
   The record was one slot per platform per checkout, so the second
   `runner up` overwrote the first's, `runner down` on the second erased

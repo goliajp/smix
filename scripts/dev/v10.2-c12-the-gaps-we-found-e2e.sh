@@ -119,7 +119,7 @@ FLOW
   # drives them. A setup done outside smix would leave the question of
   # whether the verb exists unasked.
   local out status=0
-  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || status=$?
+  out="$(SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$IOS_UDID" "$WORK/ios.yaml" 2>&1)" || status=$?
   out="$(printf '%s\n' "$out" || true)"
   if [ "$status" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 | sed 's/^/[c12-gaps]   /' >&2
@@ -183,7 +183,7 @@ appId: $AND_APPID
       storage: allow
 FLOW
   local out status=0
-  out="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/and.yaml" 2>&1)" || status=$?
+  out="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX_RUN" --device "$AND_SERIAL" "$WORK/and.yaml" 2>&1)" || status=$?
   out="$(printf '%s\n' "$out" || true)"
   if [ "$status" -ne 0 ]; then
     printf '%s\n' "$out" | tail -20 | sed 's/^/[c12-gaps]   /' >&2

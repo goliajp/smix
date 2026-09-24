@@ -112,7 +112,7 @@ appId: $APPID
 - launchApp
 - assertVisible: { id: fixture_input }
 YAML
-SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/drive.yaml" >"$WORK/run.log" 2>&1 \
+SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/drive.yaml" >"$WORK/run.log" 2>&1 \
   || fail "the flow that proves the app is being driven failed: $(tail -3 "$WORK/run.log")"
 log "  drive=ok"
 
