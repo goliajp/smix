@@ -41,7 +41,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${1:-${SMIX_C8_ANDROID:-sim-smix-android-01}}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${1:-${SMIX_C8_ANDROID:-$E2E_ANDROID}}"
 SERIAL=""
 WE_BOOTED=0
 # Two different numbers, deliberately. The ordinary use of this verb
@@ -66,7 +67,7 @@ fail() { log "FAIL: $*"; exit 1; }
 command -v adb >/dev/null 2>&1 || fail "no adb on PATH — this judges an Android route and cannot"
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
 if [ -z "$SERIAL" ]; then
   log "nothing is registered as $ALIAS"
   # 2, not 0: nothing was judged. A run that could not look and a run
@@ -171,7 +172,7 @@ something else is routing it, and nothing below would mean anything" ;;
 esac
 
 "$SMIX" sim reverse "$SERIAL" "$DEVICE_PORT" --to "$HOST_PORT" >/tmp/smix-c8-open.log 2>&1 \
-  || fail "smix sim reverse failed: $(grep -v '^kevy:' /tmp/smix-c8-open.log | tail -2)"
+  || fail "smix sim reverse failed: $(tail -2 /tmp/smix-c8-open.log)"
 
 row="$(ledger_row)"
 [ "$row" = "$DEVICE_PORT->$HOST_PORT" ] \
@@ -185,7 +186,7 @@ case "$after" in
 esac
 
 "$SMIX" sim reverse "$SERIAL" "$DEVICE_PORT" --remove >/tmp/smix-c8-close.log 2>&1 \
-  || fail "smix sim reverse --remove failed: $(grep -v '^kevy:' /tmp/smix-c8-close.log | tail -2)"
+  || fail "smix sim reverse --remove failed: $(tail -2 /tmp/smix-c8-close.log)"
 
 row="$(ledger_row)"
 [ "$row" = "none" ] || fail "the ledger still holds a route that was closed: $row"

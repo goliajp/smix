@@ -31,8 +31,9 @@ source "$ROOT/scripts/lib/gate-port.sh"
 PORT="$SMIX_RUNNER_PORT"
 gate_free_port IOS_PORT
 
-ALIAS="${SMIX_C5_ANDROID:-sim-smix-android-01}"
-IOS_ALIAS="${SMIX_C5_IOS:-sim-smix-02}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${SMIX_C5_ANDROID:-$E2E_ANDROID}"
+IOS_ALIAS="${SMIX_C5_IOS:-$E2E_IOS}"
 APPID="dev.smix.fixture"
 IOS_APPID="jp.golia.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
@@ -68,12 +69,12 @@ python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
 
 # The device by alias first, so the ledger records that smix booted it and
 # which AVD it is; the serial only after — it is the port it took today.
-if ! SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" || [ -z "$SERIAL" ]; then
+if ! SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)" || [ -z "$SERIAL" ]; then
   log "booting $ALIAS"
   with_deadline 300 "$SMIX" sim boot "$ALIAS" >"$WORK/boot.log" 2>&1 \
     || cannot_judge "could not boot $ALIAS: $(tail -3 "$WORK/boot.log" | tr '\n' ' ')"
   WE_BOOTED=1
-  SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+  SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
 fi
 case "$SERIAL" in emulator-*) ;; *) cannot_judge "$ALIAS resolved to '$SERIAL', which is not an emulator" ;; esac
 avd="$(with_deadline 10 adb -s "$SERIAL" emu avd name 2>/dev/null | head -1 | tr -d '\r')"
@@ -112,7 +113,7 @@ up() { # up <args...> — runner up on this device, output to $WORK/up.out, exit
   UP_RC=0
   with_deadline 300 "$SMIX" runner up "$SERIAL" --platform android --runner-port "$PORT" "$@" \
     >"$WORK/up.out" 2>&1 || UP_RC=$?
-  grep -v '^kevy:' "$WORK/up.out" >&2 || true
+  cat "$WORK/up.out" >&2 || true
   [ "$UP_RC" = "$DEADLINE_STATUS" ] && cannot_judge "runner up did not return in 300 s"
   return 0
 }
@@ -189,7 +190,7 @@ log "E=up-and-in-front ($now)"
 
 # --- iOS: the same sentence ----------------------------------------------
 step "iOS: Settings in front, runner up --bundle $IOS_APPID"
-if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" || [ -z "$UDID" ]; then
+if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tail -1)" || [ -z "$UDID" ]; then
   cannot_judge "no iOS simulator registered as $IOS_ALIAS"
 fi
 ios_state() {
@@ -210,7 +211,7 @@ with_deadline 600 "$SMIX" runner up "$UDID" --bundle "$IOS_APPID" --runner-port 
 IOS_UPPED=1
 count() {
   local tree
-  tree="$("$SMIX" tree --device "$UDID" --port "$IOS_PORT" --reader a11y --json 2>/dev/null | grep -v '^kevy:')" || return 1
+  tree="$("$SMIX" tree --device "$UDID" --port "$IOS_PORT" --reader a11y --json 2>/dev/null)" || return 1
   TREE_JSON="$tree" python3 - <<'PY'
 import json, os, re, sys
 def walk(n):

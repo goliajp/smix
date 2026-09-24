@@ -45,7 +45,7 @@ trap cleanup EXIT
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb — this needs the Android SDK"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
 [ -n "$SERIAL" ] || cannot_judge "no emulator registered as '$ALIAS'"
 adb devices 2>/dev/null | grep -q "^$SERIAL[[:space:]]*device" || cannot_judge "device $SERIAL not attached"
 [ -f "$APK" ] || cannot_judge "no Android fixture apk (scripts/dev/build-android-fixture.sh)"
@@ -61,7 +61,6 @@ adb -s "$SERIAL" install -r "$APK" >"$WORK/install.log" 2>&1 || fail "fixture in
 
 field_text() {
   SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --json --device "$SERIAL" 2>/dev/null \
-    | grep -v '^kevy:' \
     | python3 -c "
 import sys,json
 want=sys.argv[1]; found=[]
@@ -106,7 +105,7 @@ launch_fresh
 fill_flow "\${SMIX_C4_VAL}"
 A_RC=0
 env -u SMIX_C4_VAL SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/flow.yaml" --env "SMIX_C4_VAL=$WORD_A" >"$WORK/a.log" 2>&1 || A_RC=$?
-[ "$A_RC" -eq 0 ] || fail "SIDE A run exited $A_RC (supplied --env should resolve): $(grep -v '^kevy:' "$WORK/a.log" | tail -2)"
+[ "$A_RC" -eq 0 ] || fail "SIDE A run exited $A_RC (supplied --env should resolve): $(tail -2 "$WORK/a.log")"
 GOT_A="$(field_text fixture_input)"
 [ "$GOT_A" = "$WORD_A" ] || fail "SIDE A: field holds '$GOT_A', expected '$WORD_A' — --env did not reach the flow (this is the ④ regression)"
 log "SIDE A OK: field == '$GOT_A'"
@@ -118,9 +117,9 @@ BASE_B="$(field_text fixture_input)"
 fill_flow "\${$MISSING}"
 B_RC=0
 env -u "$MISSING" SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/flow.yaml" >"$WORK/b.log" 2>&1 || B_RC=$?
-[ "$B_RC" -ne 0 ] || fail "SIDE B exited 0 — log: $(grep -v '^kevy:' "$WORK/b.log" | tail -5)"
-grep -qi 'undefined variable' <(grep -v '^kevy:' "$WORK/b.log") \
-  || fail "SIDE B did not name 'undefined variable' — the failure must say why, not just be non-zero: $(grep -v '^kevy:' "$WORK/b.log" | tail -2)"
+[ "$B_RC" -ne 0 ] || fail "SIDE B exited 0 — log: $(tail -5 "$WORK/b.log")"
+grep -qi 'undefined variable' "$WORK/b.log" \
+  || fail "SIDE B did not name 'undefined variable' — the failure must say why, not just be non-zero: $(tail -2 "$WORK/b.log")"
 GOT_B="$(field_text fixture_input)"
 [ "$GOT_B" != "\${$MISSING}" ] || fail "SIDE B typed the literal \${$MISSING} into the field — this is exactly ④"
 [ "$GOT_B" = "$BASE_B" ] || fail "SIDE B touched the field ('$GOT_B' != baseline '$BASE_B') — a failed interpolation must type nothing"

@@ -71,11 +71,11 @@ rm -f "$FLOW"
 
 echo "$OUT" | grep -q "$ABSENT" \
   || fail "the refusal does not name the bundle that is missing:
-  $(echo "$OUT" | grep -v '^kevy:' | tail -3)"
+  $(echo "$OUT" | tail -3)"
 echo "$OUT" | grep -qi "not installed" \
   || fail "the refusal does not say the app is not installed -- an author
   reading it cannot tell this from any other failure:
-  $(echo "$OUT" | grep -v '^kevy:' | tail -3)"
+  $(echo "$OUT" | tail -3)"
 echo "  refused, and named the condition"
 
 # The half that was broken. `/tree` needs the main actor; a wedged runner

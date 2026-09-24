@@ -47,7 +47,7 @@ run() {
     OUT="$(cd "$W" && SMIX_MACHINE_DIR="$M" "$SMIX" "$@" 2>&1)"
     RC=$?
     set -e
-    OUT="$(printf '%s\n' "$OUT" | grep -v '^kevy:' || true)"
+    OUT="$(printf '%s\n' "$OUT" || true)"
 }
 
 step "0. build, and the routing table's own test"

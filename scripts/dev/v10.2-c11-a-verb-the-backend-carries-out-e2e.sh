@@ -24,7 +24,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_C11_ANDROID:-sim-smix-android-01}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${SMIX_C11_ANDROID:-$E2E_ANDROID}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
 PORT="$SMIX_RUNNER_PORT"
@@ -55,7 +56,7 @@ command -v adb >/dev/null 2>&1 || fail "no adb on PATH — this judges an Androi
 python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
   || fail "the fixture apk on disk is not the one this tree builds"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
 if [ -z "$SERIAL" ]; then
   log "nothing is registered as $ALIAS"
   # 2, not 0: nothing was judged. A run that could not look and a run
@@ -90,7 +91,7 @@ say=""
 smix_sim() {
   local status=0
   say="$("$SMIX" sim "$@" 2>&1)" || status=$?
-  say="$(printf '%s\n' "$say" | grep -v '^kevy:' || true)"
+  say="$(printf '%s\n' "$say" || true)"
   return $status
 }
 

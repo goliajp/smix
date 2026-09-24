@@ -9,6 +9,25 @@ use smix_ai_tier::AiTierConfig;
 use smix_authoring_propose::{ProposalEdit, parse_proposal_reply, propose_from_bundle};
 use smix_error::FailureCode;
 
+/// One test at a time may hold a written executable and a running child.
+///
+/// Each test writes a stub program and has the code under test run it.
+/// The harness runs tests on several threads, so one thread can fork while
+/// another still holds its stub open for writing; the forked child carries
+/// that descriptor until it execs, and Linux refuses to execute a file that
+/// is open for writing — `ETXTBSY`, "Text file busy". It failed about one
+/// run in five on Linux and never on macOS. Taking this lock around writing
+/// and running makes the two impossible to overlap, rather than retrying
+/// until they happen not to.
+static EXEC: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn exec_lock() -> std::sync::MutexGuard<'static, ()> {
+    // A test that panicked while holding it poisons it; the next test is
+    // not the one that failed, so it proceeds.
+    EXEC.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn rt() -> &'static tokio::runtime::Runtime {
     static RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
     RT.get_or_init(|| {
@@ -69,6 +88,7 @@ fn parse_proposal_reply_tolerates_prose() {
 
 #[test]
 fn propose_from_bundle_parses_stub_reply() {
+    let _exec = exec_lock();
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let flow = write_bundle(dir.path());
@@ -86,6 +106,7 @@ fn propose_from_bundle_parses_stub_reply() {
 
 #[test]
 fn propose_from_bundle_surfaces_cli_failure() {
+    let _exec = exec_lock();
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let flow = write_bundle(dir.path());

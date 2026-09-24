@@ -73,7 +73,7 @@ def probe_node(device, tag):
 
 def a11y_tree(device, port):
     r = smix(device, port, "tree", "--json")
-    body = "\n".join(l for l in r.stdout.splitlines() if not l.startswith("kevy:"))
+    body = r.stdout
     try:
         d = json.loads(body)
     except json.JSONDecodeError:

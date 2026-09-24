@@ -28,7 +28,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_C7_ANDROID:-sim-smix-android-01}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${SMIX_C7_ANDROID:-$E2E_ANDROID}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
 PORT="$SMIX_RUNNER_PORT"
@@ -56,7 +57,7 @@ command -v adb >/dev/null 2>&1 || fail "no adb on PATH — this judges an Androi
 python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
   || fail "the fixture apk on disk is not the one this tree builds"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
 [ -n "$SERIAL" ] || fail "no device registered as $ALIAS"
 case "$SERIAL" in
   emulator-*) : ;;
@@ -93,8 +94,8 @@ adb -s "$SERIAL" shell am start -n "$APPID/.InteropActivity" >/dev/null 2>&1 \
 # accessibility tree is no longer what a plain `smix tree` returns on a
 # probe-carrying app. Without `--reader` this would compare the
 # semantics tree with itself and agree about everything.
-probe_tree() { "$SMIX" tree --device "$SERIAL" --port "$PORT" --json --reader probe 2>/dev/null | grep -v '^kevy:'; }
-a11y_tree()  { "$SMIX" tree --device "$SERIAL" --port "$PORT" --json --reader a11y 2>/dev/null | grep -v '^kevy:'; }
+probe_tree() { "$SMIX" tree --device "$SERIAL" --port "$PORT" --json --reader probe 2>/dev/null; }
+a11y_tree()  { "$SMIX" tree --device "$SERIAL" --port "$PORT" --json --reader a11y 2>/dev/null; }
 
 # Wait for the screen, do not guess at it: the activity is resumed before
 # Compose has composed, and a tree read in that gap is of a screen that has

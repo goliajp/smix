@@ -10,6 +10,25 @@ use std::os::unix::fs::PermissionsExt;
 use smix_ai_tier::{AiTierConfig, StructuredVerdict, ask, extract, judge};
 use smix_error::FailureCode;
 
+/// One test at a time may hold a written executable and a running child.
+///
+/// Each test writes a stub program and has the code under test run it.
+/// The harness runs tests on several threads, so one thread can fork while
+/// another still holds its stub open for writing; the forked child carries
+/// that descriptor until it execs, and Linux refuses to execute a file that
+/// is open for writing — `ETXTBSY`, "Text file busy". It failed about one
+/// run in five on Linux and never on macOS. Taking this lock around writing
+/// and running makes the two impossible to overlap, rather than retrying
+/// until they happen not to.
+static EXEC: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn exec_lock() -> std::sync::MutexGuard<'static, ()> {
+    // A test that panicked while holding it poisons it; the next test is
+    // not the one that failed, so it proceeds.
+    EXEC.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// One runtime for the whole binary, rather than one per test.
 ///
 /// tokio reaps child processes through a driver owned by a runtime. Give each
@@ -52,6 +71,7 @@ fn stub_cli(dir: &std::path::Path, body: &str) -> AiTierConfig {
 
 #[test]
 fn ask_pub_runs_stub() {
+    let _exec = exec_lock();
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let cfg = stub_cli(dir.path(), "echo hi");
@@ -70,6 +90,9 @@ fn verdict_deserializes_from_cli_json() {
 
 #[test]
 fn missing_cli_reports_driver_error_with_an_install_hint() {
+    // It spawns too: the fork happens before the missing program is found,
+    // and carries whatever another test has open for writing.
+    let _exec = exec_lock();
     rt().block_on(async {
         let cfg = AiTierConfig {
             claude_bin: "/nonexistent/definitely-not-claude".into(),
@@ -90,6 +113,7 @@ fn missing_cli_reports_driver_error_with_an_install_hint() {
 
 #[test]
 fn a_verdict_round_trips_from_the_cli() {
+    let _exec = exec_lock();
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let cfg = stub_cli(
@@ -104,6 +128,7 @@ fn a_verdict_round_trips_from_the_cli() {
 
 #[test]
 fn a_verdict_wrapped_in_prose_still_parses() {
+    let _exec = exec_lock();
     rt().block_on(async {
         // Models like to introduce themselves. The object is what matters.
         let dir = tempfile::tempdir().unwrap();
@@ -119,6 +144,7 @@ fn a_verdict_wrapped_in_prose_still_parses() {
 
 #[test]
 fn unparseable_output_is_an_error_not_a_false_verdict() {
+    let _exec = exec_lock();
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let cfg = stub_cli(dir.path(), "echo 'I think the toast is probably fine'");
@@ -134,6 +160,7 @@ fn unparseable_output_is_an_error_not_a_false_verdict() {
 
 #[test]
 fn a_failing_cli_is_an_error_not_a_false_verdict() {
+    let _exec = exec_lock();
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let cfg = stub_cli(dir.path(), "echo 'not logged in' >&2\nexit 1");
@@ -149,6 +176,7 @@ fn a_failing_cli_is_an_error_not_a_false_verdict() {
 
 #[test]
 fn a_hanging_cli_times_out_rather_than_blocking_the_flow() {
+    let _exec = exec_lock();
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let mut cfg = stub_cli(dir.path(), "sleep 30");
@@ -161,6 +189,7 @@ fn a_hanging_cli_times_out_rather_than_blocking_the_flow() {
 
 #[test]
 fn extract_reads_named_fields_off_the_screen() {
+    let _exec = exec_lock();
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let cfg = stub_cli(
@@ -176,6 +205,7 @@ fn extract_reads_named_fields_off_the_screen() {
 
 #[test]
 fn extract_reports_an_unreadable_reply_rather_than_empty_fields() {
+    let _exec = exec_lock();
     rt().block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let cfg = stub_cli(dir.path(), "echo 'the total looks like 42 yen'");

@@ -139,6 +139,17 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Changed
 
+- **Commands no longer print the store's replay line.** Every `smix`
+  command opened the embedded store and printed
+  `kevy: AOF … replayed N commands from M bytes in K ms (clean)` on
+  stderr — into terminals, CI logs and AI transcripts, once per command.
+  It is gone. A replay that lost bytes (a partial last write, a corrupt
+  frame) is still reported, as a `kevy WARN:` line naming the file and
+  what was dropped. If a script filtered the line out with
+  `grep -v '^kevy:'`, the filter now selects nothing — and an exit status
+  read after such a pipeline was the filter's all along, not smix's.
+
+
 - **`smix runner up` on Android puts a pulled-down notification shade
   away before it answers.** Only system UI held the focus and no app
   window could be read; `runner up` collapses the shade, says so, and

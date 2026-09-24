@@ -53,7 +53,7 @@ def fetch_a11y(binary, device, port):
              "--reader", "a11y")
     if out is None:
         return None
-    body = "\n".join(l for l in out.splitlines() if not l.startswith("kevy:"))
+    body = out
     try:
         payload = json.loads(body)
     except json.JSONDecodeError:

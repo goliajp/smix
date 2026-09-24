@@ -59,6 +59,10 @@ ACCIDENTS = [
     (re.compile(r"adb\s+devices[^\n]*\|\s*awk[^\n]*emulator"), "scans `adb devices` for the first emulator"),
     (re.compile(r"adb\s+devices[^\n]*\|\s*(head|grep)[^\n]*emulator"), "scans `adb devices` for an emulator"),
     (re.compile(r":-emulator-5554\b"), "falls back to emulator-5554"),
+    # A registered alias is a better default than a slot, but nineteen
+    # scripts each wrote their own copy of it; the default lives once, in
+    # scripts/lib/e2e-devices.sh (not scanned — it is the one place).
+    (re.compile(r":-sim-smix-[\w-]+"), "writes a default device alias of its own instead of scripts/lib/e2e-devices.sh's"),
     (re.compile(r"^\s*SERIAL=[\"']?emulator-\d+"), "hard-codes a serial"),
     # The same accident spelled in Python. A library takes its device from
     # the caller -- that is why it is excused from proving it -- so a serial

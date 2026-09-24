@@ -104,13 +104,13 @@ log "one flow, byte-identical but for appId (portable selectors only)"
 
 port_free() { ! curl -s "http://127.0.0.1:$1/health" 2>/dev/null | grep -q '"ok":true'; }
 
-tree_json() { SMIX_RUNNER_PORT="$1" "$SMIX" tree --json --device "$2" 2>/dev/null | grep -v '^kevy:'; }
+tree_json() { SMIX_RUNNER_PORT="$1" "$SMIX" tree --json --device "$2" 2>/dev/null; }
 
 wait_for_textfield() { # $1 port $2 dev — resolve via the selector engine,
   # the same path the flow uses, rather than guessing the wire field name.
   for _ in $(seq 1 20); do
     SMIX_RUNNER_PORT="$1" "$SMIX" find 'role:textField' --device "$2" 2>/dev/null \
-      | grep -v '^kevy:' | grep -q '^exists=true' && return 0
+ | grep -q '^exists=true' && return 0
     sleep 1
   done
   return 1
@@ -119,7 +119,7 @@ wait_for_textfield() { # $1 port $2 dev — resolve via the selector engine,
 # ---- iOS leg --------------------------------------------------------
 run_ios() {
   command -v xcrun >/dev/null 2>&1 || { log "no xcrun — skipping iOS leg"; return 0; }
-  IOS_UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+  IOS_UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
   [ -n "$IOS_UDID" ] || { log "no sim registered as '$IOS_ALIAS' — skipping iOS leg"; return 0; }
   [ -d "$IOS_FIXTURE" ] || { log "no iOS fixture — skipping iOS leg"; return 0; }
   port_free "$IOS_PORT" || cannot_judge "iOS port $IOS_PORT already serves a runner — set SMIX_C7_IOS_PORT"
@@ -139,7 +139,7 @@ run_ios() {
 # ---- Android leg ----------------------------------------------------
 run_android() {
   command -v adb >/dev/null 2>&1 || { log "no adb — skipping Android leg"; return 0; }
-  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+  AND_SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
   [ -n "$AND_SERIAL" ] || { log "no emulator registered as '$AND_ALIAS' — skipping Android leg"; return 0; }
   [ -f "$AND_APK" ] || { log "no Android fixture apk — skipping Android leg"; return 0; }
   # And the one THESE sources build: the path existing says a build
@@ -168,7 +168,7 @@ leg() { # $1 label  $2 dev  $3 port  $4 flow_a
   # would be reading the springboard.
   step "$label: run the shared flow, no --platform (①② + ④ supply via assertVisible '$ENV_VAL')"
   local out rc=0
-  out="$(env -u SMIX_C7_VAL SMIX_RUNNER_PORT="$port" "$SMIX" run --device "$dev" "$flow" --env "SMIX_C7_VAL=$ENV_VAL" 2>&1 | grep -v '^kevy:')" || rc=$?
+  out="$(env -u SMIX_C7_VAL SMIX_RUNNER_PORT="$port" "$SMIX" run --device "$dev" "$flow" --env "SMIX_C7_VAL=$ENV_VAL" 2>&1)" || rc=$?
   printf '%s\n' "$out" | grep -qE 'simctl|Invalid device' && fail "$label: run took a wrong platform path (② not read from device): $out"
   printf '%s\n' "$out" | grep -q '"ok":true' || fail "$label: flow did not pass (① app not foregrounded, or ④ env value '$ENV_VAL' never reached the field): $out"
   log "$label OK: launchApp→visible→textField→inputText \${env}→submit→result shows '$ENV_VAL'"
@@ -192,9 +192,9 @@ leg() { # $1 label  $2 dev  $3 port  $4 flow_a
   [ "$frc" -eq 0 ] || fail "$label: CLI fill role:textField exited $frc (the 501 the fix removes)"
   # find must not 501 and must be two-sided. 'Submit' is on both (text: is
   # case-insensitive, so iOS 'Submit' and Android 'SUBMIT' both match).
-  SMIX_RUNNER_PORT="$port" "$SMIX" find 'text:Submit' --device "$dev" 2>/dev/null | grep -v '^kevy:' | grep -q '^exists=true' \
+  SMIX_RUNNER_PORT="$port" "$SMIX" find 'text:Submit' --device "$dev" 2>/dev/null | grep -q '^exists=true' \
     || fail "$label: CLI find 'text:Submit' is not exists=true (find 501 or two-sided broken)"
-  SMIX_RUNNER_PORT="$port" "$SMIX" find 'text:NoSuchElemZZZ' --device "$dev" 2>/dev/null | grep -v '^kevy:' | grep -q '^exists=false' \
+  SMIX_RUNNER_PORT="$port" "$SMIX" find 'text:NoSuchElemZZZ' --device "$dev" 2>/dev/null | grep -q '^exists=false' \
     || fail "$label: find of an absent needle is not exists=false (find not two-sided)"
   log "$label OK: CLI fill + find reachable (rc 0, not 501), find true/false both sides"
 }
@@ -210,11 +210,11 @@ if [ -n "$AND_SERIAL" ] && [ "$AND_WE_UPPED" = 1 ]; then
   BRC=0
   env -u "$MISSING" SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/b.yaml" >"$WORK/b.log" 2>&1 || BRC=$?
   [ "$BRC" -ne 0 ] || fail "unresolved \${$MISSING} exited 0 — must fail, not pass silently"
-  grep -qi 'undefined variable' <(grep -v '^kevy:' "$WORK/b.log") || fail "missing-var did not name 'undefined variable': $(grep -v '^kevy:' "$WORK/b.log" | tail -2)"
+  grep -qi 'undefined variable' "$WORK/b.log" || fail "missing-var did not name 'undefined variable': $(tail -2 "$WORK/b.log")"
   log "Android OK: unresolved \${$MISSING} → non-zero + 'undefined variable', no literal typed"
 
   step "Android: tree human output prints text= (⑤ integration touch)"
-  SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" tree --device "$AND_SERIAL" 2>/dev/null | grep -v '^kevy:' | grep -q 'text=' \
+  SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" tree --device "$AND_SERIAL" 2>/dev/null | grep -q 'text=' \
     || fail "Android human tree has no text= — ⑤ regressed"
   log "Android OK: human tree prints text="
 fi

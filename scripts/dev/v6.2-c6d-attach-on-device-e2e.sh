@@ -42,7 +42,7 @@ trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"
 command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun — this needs Xcode"
-UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
 [ -n "$UDID" ] || cannot_judge "no sim registered as '$ALIAS'"
 [ -d "$FIXTURE" ] || cannot_judge "no iOS fixture at $FIXTURE"
 [ -d "$PROJECT" ] || cannot_judge "no runner project at $PROJECT"
@@ -69,9 +69,9 @@ SMIX_C6D_UDID="$UDID" SMIX_C6D_PORT="$PORT" SMIX_C6D_BUNDLE="$BUNDLE" \
   SMIX_C6D_RUNNER_PROJECT="$PROJECT" \
   cargo test -p smix-capsule --test attach_on_device -- --ignored --nocapture \
   >"$WORK/test.log" 2>&1 \
-  || { grep -v '^kevy:' "$WORK/test.log" | tail -20 >&2; fail "attach-on-device test failed (see above) — the retry did not bring the runner up, or attach_flags != [false, true]"; }
+  || { tail -20 "$WORK/test.log" >&2; fail "attach-on-device test failed (see above) — the retry did not bring the runner up, or attach_flags != [false, true]"; }
 grep -q 'first_timeout_then_real_attach_brings_the_runner_up ... ok' "$WORK/test.log" \
-  || { grep -v '^kevy:' "$WORK/test.log" | tail -20 >&2; fail "the attach test did not report ok"; }
+  || { tail -20 "$WORK/test.log" >&2; fail "the attach test did not report ok"; }
 log "injected timeout → real simctl launch → real attach: Ok, attach_flags=[false, true]"
 
 step "the attach-brought runner must actually drive the app (tree shows the fixture)"
@@ -81,7 +81,7 @@ step "the attach-brought runner must actually drive the app (tree shows the fixt
 FOUND=0
 for _ in $(seq 1 15); do
   SMIX_RUNNER_PORT="$PORT" "$SMIX" tree --json --device "$UDID" 2>/dev/null \
-    | grep -v '^kevy:' >"$WORK/tree.json" || true
+ >"$WORK/tree.json" || true
   if grep -q 'landscape-enter' "$WORK/tree.json"; then FOUND=1; break; fi
   sleep 1
 done

@@ -165,7 +165,10 @@ impl DeviceKind {
     /// Is this a device somebody might be carrying around?
     #[must_use]
     pub fn is_physical(self) -> bool {
-        matches!(self, DeviceKind::PhysicalIos | DeviceKind::PhysicalAndroid)
+        match self {
+            DeviceKind::PhysicalIos | DeviceKind::PhysicalAndroid => true,
+            DeviceKind::Simulator | DeviceKind::Emulator => false,
+        }
     }
 }
 

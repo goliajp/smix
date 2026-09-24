@@ -45,7 +45,7 @@ trap cleanup EXIT
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb"
 command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun"
 
-OURS_SERIAL="$("$SMIX" sim resolve "$OURS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tr -d '[:space:]')" || true
+OURS_SERIAL="$("$SMIX" sim resolve "$OURS_ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
 [ -n "$OURS_SERIAL" ] || cannot_judge "no emulator registered as '$OURS_ALIAS'"
 OURS_PORT="${OURS_SERIAL##*-}"
 THEIRS_PORT=$((OURS_PORT + 2))

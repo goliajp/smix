@@ -48,7 +48,7 @@ trap cleanup EXIT
 
 # Quieten the embedded store's replay chatter so greps read the command's
 # own output rather than the KV log.
-smix() { "$SMIX" "$@" 2>&1 | grep -v '^kevy:' || true; }
+smix() { "$SMIX" "$@" 2>&1 || true; }
 
 step "0. the judgement itself, which needs nothing"
 cargo test -p smix-lease --lib may_address > "$OUT" 2>&1 \

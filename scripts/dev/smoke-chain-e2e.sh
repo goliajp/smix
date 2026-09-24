@@ -23,8 +23,9 @@ source "$ROOT/scripts/lib/gate-port.sh"
 source "$ROOT/scripts/lib/deadline.sh"
 AND_PORT="$SMIX_RUNNER_PORT"
 gate_free_port IOS_PORT
-AND_ALIAS="${SMIX_SMOKE_ANDROID:-sim-smix-android-01}"
-IOS_ALIAS="${SMIX_SMOKE_IOS:-sim-smix-02}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+AND_ALIAS="${SMIX_SMOKE_ANDROID:-$E2E_ANDROID}"
+IOS_ALIAS="${SMIX_SMOKE_IOS:-$E2E_IOS}"
 AND_APPID="dev.smix.fixture"
 IOS_APPID="jp.golia.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
@@ -54,14 +55,14 @@ trap cleanup EXIT
 
 # $1 label, $2 what failed, $3 its output. Each link is judged by its own
 # exit code, and a failure names the link rather than the chain.
-link_failed() { printf '[smoke-chain] FAIL: %s: %s — %s\n' "$1" "$2" "$(printf '%s' "$3" | grep -v '^kevy:' | tail -3 | tr '\n' ' ')" >&2; exit 1; }
+link_failed() { printf '[smoke-chain] FAIL: %s: %s — %s\n' "$1" "$2" "$(printf '%s' "$3" | tail -3 | tr '\n' ' ')" >&2; exit 1; }
 
 # ---- Android ----------------------------------------------------------
 out=""
-if ! SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" || [ -z "$SERIAL" ]; then
+if ! SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)" || [ -z "$SERIAL" ]; then
   out="$(with_deadline 300 "$SMIX" sim boot "$AND_ALIAS" 2>&1)" || link_failed android "sim boot $AND_ALIAS" "$out"
   WE_BOOTED=1
-  SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" \
+  SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)" \
     || link_failed android "sim resolve $AND_ALIAS after boot" ""
 fi
 case "$SERIAL" in
@@ -81,7 +82,7 @@ AND_UPPED=0
 log "android: sim boot → runner up → run → runner down, each answered"
 
 # ---- iOS --------------------------------------------------------------
-UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" \
+UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tail -1)" \
   || cannot_judge "no iOS simulator registered as $IOS_ALIAS"
 if ! xcrun simctl list devices -j | python3 -c "import json,sys;d=json.load(sys.stdin);sys.exit(0 if any(x['udid']=='$UDID' and x['state']=='Booted' for r in d['devices'].values() for x in r) else 1)"; then
   out="$(with_deadline 300 "$SMIX" sim boot "$IOS_ALIAS" 2>&1)" || link_failed ios "sim boot $IOS_ALIAS" "$out"

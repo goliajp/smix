@@ -37,8 +37,9 @@ source "$ROOT/scripts/lib/gate-port.sh"
 source "$ROOT/scripts/lib/deadline.sh"
 AND_PORT="$SMIX_RUNNER_PORT"
 gate_free_port IOS_PORT
-AND_ALIAS="${SMIX_C8_ANDROID:-sim-smix-android-01}"
-IOS_ALIAS="${SMIX_C8_IOS:-sim-smix-02}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+AND_ALIAS="${SMIX_C8_ANDROID:-$E2E_ANDROID}"
+IOS_ALIAS="${SMIX_C8_IOS:-$E2E_IOS}"
 AND_APPID="dev.smix.fixture"
 IOS_APPID="jp.golia.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
@@ -98,7 +99,7 @@ judge_flash() { # $1 platform
     log "  $1 flash: failed, as it should — $when"
   else
     printf '[c8-between] FAIL: %s flash: expected to fail naming the time and the inner step, exited %s — %s\n' \
-      "$1" "$RC" "$(printf '%s' "$OUT" | grep -v '^kevy:' | tail -4 | tr '\n' ' ')" >&2
+      "$1" "$RC" "$(printf '%s' "$OUT" | tail -4 | tr '\n' ' ')" >&2
     FAILED=1
   fi
 }
@@ -112,7 +113,7 @@ judge_quiet() { # $1 platform
     DENSITY="$DENSITY $1: $line;"
   else
     printf '[c8-between] FAIL: %s quiet: expected to pass having looked at least once, exited %s — %s\n' \
-      "$1" "$RC" "$(printf '%s' "$OUT" | grep -v '^kevy:' | tail -4 | tr '\n' ' ')" >&2
+      "$1" "$RC" "$(printf '%s' "$OUT" | tail -4 | tr '\n' ' ')" >&2
     FAILED=1
   fi
 }
@@ -121,7 +122,7 @@ judge_quiet() { # $1 platform
 # tree — not from smix's account of having pressed.
 judge_vanish() { # $1 platform, $2 device, $3 port, $4 presses id, $5 latency id, $6 leg name
   local tree presses latency
-  tree="$(SMIX_RUNNER_PORT="$3" with_deadline 60 "$SMIX" tree --device "$2" --port "$3" --json 2>/dev/null | grep -v '^kevy:')" \
+  tree="$(SMIX_RUNNER_PORT="$3" with_deadline 60 "$SMIX" tree --device "$2" --port "$3" --json 2>/dev/null)" \
     || cannot_judge "$1 $6: could not read the tree afterwards"
   presses="$(printf '%s' "$tree" | python3 -c "
 import json,sys
@@ -146,7 +147,7 @@ for n in walk(t):
     DENSITY="$DENSITY $1 $6: $latency;"
   else
     printf '[c8-between] FAIL: %s %s: expected the app to count one press, it says %s (flow exited %s) — %s\n' \
-      "$1" "$6" "'${presses:-nothing}'" "$RC" "$(printf '%s' "$OUT" | grep -v '^kevy:' | tail -3 | tr '\n' ' ')" >&2
+      "$1" "$6" "'${presses:-nothing}'" "$RC" "$(printf '%s' "$OUT" | tail -3 | tr '\n' ' ')" >&2
     FAILED=1
   fi
 }
@@ -205,12 +206,12 @@ OPEN
 # ---- Android ----------------------------------------------------------
 # Boot by alias first, then ask for the serial: the alias resolves only to
 # an AVD that is running.
-if ! SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" \
+if ! SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)" \
    || [ -z "$SERIAL" ] || ! adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; then
   log "booting $AND_ALIAS"
   with_deadline 300 "$SMIX" sim boot "$AND_ALIAS" >/dev/null 2>&1 || cannot_judge "could not boot $AND_ALIAS"
   WE_BOOTED=1
-  SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+  SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)"
 fi
 case "$SERIAL" in
   emulator-*) : ;;
@@ -245,7 +246,7 @@ and_fresh; run_flow android "$SERIAL" "$AND_PORT" wait-tap "$WORK/a-wait-tap.yam
 judge_vanish android "$SERIAL" "$AND_PORT" watch_presses watch_latency wait-then-tap
 
 # ---- iOS --------------------------------------------------------------
-if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" || [ -z "$UDID" ]; then
+if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tail -1)" || [ -z "$UDID" ]; then
   cannot_judge "no iOS simulator registered as $IOS_ALIAS"
 fi
 if ! xcrun simctl list devices -j | python3 -c "import json,sys;d=json.load(sys.stdin);sys.exit(0 if any(x['udid']=='$UDID' and x['state']=='Booted' for r in d['devices'].values() for x in r) else 1)"; then

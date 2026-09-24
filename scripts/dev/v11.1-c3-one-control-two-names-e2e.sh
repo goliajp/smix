@@ -29,8 +29,9 @@ source "$ROOT/scripts/lib/e2e-binary.sh"
 source "$ROOT/scripts/lib/gate-port.sh"
 AND_PORT="$SMIX_RUNNER_PORT"
 gate_free_port IOS_PORT
-AND_ALIAS="${SMIX_C3_ANDROID:-sim-smix-android-01}"
-IOS_ALIAS="${SMIX_C3_IOS:-sim-smix-02}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+AND_ALIAS="${SMIX_C3_ANDROID:-$E2E_ANDROID}"
+IOS_ALIAS="${SMIX_C3_IOS:-$E2E_IOS}"
 AND_APPID="dev.smix.fixture"
 IOS_APPID="jp.golia.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
@@ -68,7 +69,7 @@ python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
 # the device, $2 the port, $3 the identifier suffix of the count's text.
 count_of() {
   local tree
-  tree="$("$SMIX" tree --device "$1" --port "$2" --reader a11y --json 2>/dev/null | grep -v '^kevy:')" \
+  tree="$("$SMIX" tree --device "$1" --port "$2" --reader a11y --json 2>/dev/null)" \
     || return 1
   TREE_JSON="$tree" WANT="$3" python3 - <<'PY'
 import json, os, re, sys
@@ -90,7 +91,7 @@ PY
 # $3 reader, $4 name.
 fields_of() {
   local tree
-  tree="$("$SMIX" tree --device "$1" --port "$2" --reader "$3" --json 2>/dev/null | grep -v '^kevy:')" \
+  tree="$("$SMIX" tree --device "$1" --port "$2" --reader "$3" --json 2>/dev/null)" \
     || { echo "unreadable"; return 0; }
   TREE_JSON="$tree" NAME="$4" python3 - <<'PY'
 import json, os
@@ -124,7 +125,7 @@ press_delta() {
 # $1 device, $2 port, $3 name
 found_by() {
   local out
-  out="$("$SMIX" find --device "$1" --port "$2" "$3" 2>/dev/null | grep -v '^kevy:')" || true
+  out="$("$SMIX" find --device "$1" --port "$2" "$3" 2>/dev/null)" || true
   case "$out" in *"exists=true"*|*'"exists":true'*) echo yes ;; *) echo no ;; esac
 }
 
@@ -134,7 +135,7 @@ row() { # platform control reader-fields text-find label-find text-press label-p
 }
 
 # ---------------------------------------------------------------- Android
-if ! SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" \
+if ! SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)" \
    || [ -z "$SERIAL" ] || ! adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; then
   # By alias, so the ledger records smix booted it and the AVD it is,
   # and only then is the serial read: a serial is the port it happened to
@@ -142,7 +143,7 @@ if ! SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' |
   log "booting $AND_ALIAS"
   "$SMIX" sim boot "$AND_ALIAS" >/dev/null 2>&1 || cannot_judge "could not boot $AND_ALIAS"
   WE_BOOTED=1
-  SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+  SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)"
 fi
 case "$SERIAL" in
   emulator-*) : ;;
@@ -182,7 +183,7 @@ for spec in "Pause:icon_pause_count:Compose" "Stop:icon_stop_count:AndroidView";
 done
 
 # ---------------------------------------------------------------- iOS
-if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" || [ -z "$UDID" ]; then
+if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tail -1)" || [ -z "$UDID" ]; then
   cannot_judge "no iOS simulator registered as $IOS_ALIAS"
 fi
 if ! xcrun simctl list devices -j | python3 -c "import json,sys;d=json.load(sys.stdin);sys.exit(0 if any(x['udid']=='$UDID' and x['state']=='Booted' for r in d['devices'].values() for x in r) else 1)"; then

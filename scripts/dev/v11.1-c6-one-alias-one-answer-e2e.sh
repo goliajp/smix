@@ -53,7 +53,7 @@ run() {  # run <checkout> <args…> → sets RC, OUT, ERR
   (cd "$co" && SMIX_MACHINE_DIR="$WORK/machine" "$SMIX" "$@" >"$WORK/out" 2>"$WORK/err")
   RC=$?
   OUT="$(cat "$WORK/out")"
-  ERR="$(grep -v '^kevy:' "$WORK/err")"
+  ERR="$(cat "$WORK/err")"
 }
 
 checkout() {  # checkout <dir> <alias> <udid>

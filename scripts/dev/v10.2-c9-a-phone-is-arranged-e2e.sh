@@ -27,7 +27,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_C9_ANDROID:-sim-smix-android-01}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${SMIX_C9_ANDROID:-$E2E_ANDROID}"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
 
@@ -66,7 +67,7 @@ command -v adb >/dev/null 2>&1 || fail "no adb on PATH — this judges an Androi
 python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
   || fail "the fixture apk on disk is not the one this tree builds"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
 if [ -z "$SERIAL" ]; then
   log "nothing is registered as $ALIAS"
   # 2, not 0: nothing was judged. A run that could not look and a run
@@ -111,7 +112,7 @@ smix_sim() {
   # no judgement printed at all. A red that says nothing is the shape
   # this suite refuses (a red must carry a verdict, not just a status).
   out="$("$SMIX" sim "$@" 2>&1)" || status=$?
-  out="$(printf '%s\n' "$out" | grep -v '^kevy:' || true)"
+  out="$(printf '%s\n' "$out" || true)"
   if [ "$status" -ne 0 ]; then
     printf '%s\n' "$out" >&2
     fail "smix sim $* exited $status"

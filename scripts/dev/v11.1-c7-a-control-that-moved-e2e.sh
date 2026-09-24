@@ -30,8 +30,9 @@ source "$ROOT/scripts/lib/gate-port.sh"
 source "$ROOT/scripts/lib/deadline.sh"
 AND_PORT="$SMIX_RUNNER_PORT"
 gate_free_port IOS_PORT
-AND_ALIAS="${SMIX_C7_ANDROID:-sim-smix-android-01}"
-IOS_ALIAS="${SMIX_C7_IOS:-sim-smix-02}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+AND_ALIAS="${SMIX_C7_ANDROID:-$E2E_ANDROID}"
+IOS_ALIAS="${SMIX_C7_IOS:-$E2E_IOS}"
 AND_APPID="dev.smix.fixture"
 IOS_APPID="jp.golia.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
@@ -80,7 +81,7 @@ judge() {
     pass)
       if [ "$rc" = 0 ]; then log "  $1 $label: pass (as it should)"
       else printf '[c7-moved] FAIL: %s %s: expected to pass, exited %s — %s\n' "$1" "$label" "$rc" \
-             "$(printf '%s' "$out" | grep -v '^kevy:' | tail -4 | tr '\n' ' ')" >&2; FAILED=1; fi ;;
+             "$(printf '%s' "$out" | tail -4 | tr '\n' ' ')" >&2; FAILED=1; fi ;;
     fail)
       # Both boxes printed, AND the change it reports is the 8 points the
       # fixture moves the anchor by. Without the second half an iOS run
@@ -92,7 +93,7 @@ judge() {
          && python3 -c "import sys; sys.exit(0 if abs(float('${largest:-nan}') - 8.0) <= 0.5 else 1)" 2>/dev/null; then
         log "  $1 $label: failed with both boxes, moved $largest (as it should): $(printf '%s' "$out" | grep -o 'was x=[^;]*' | head -1)"
       else printf '[c7-moved] FAIL: %s %s: expected to fail, print both boxes and report a move of 8 (reported %s), exited %s — %s\n' "$1" "$label" "${largest:-nothing}" "$rc" \
-             "$(printf '%s' "$out" | grep -v '^kevy:' | tail -4 | tr '\n' ' ')" >&2; FAILED=1; fi ;;
+             "$(printf '%s' "$out" | tail -4 | tr '\n' ' ')" >&2; FAILED=1; fi ;;
   esac
 }
 
@@ -126,12 +127,12 @@ OPEN
 }
 
 # ---- Android ----------------------------------------------------------
-if ! SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" \
+if ! SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)" \
    || [ -z "$SERIAL" ] || ! adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; then
   log "booting $AND_ALIAS"
   with_deadline 300 "$SMIX" sim boot "$AND_ALIAS" >/dev/null 2>&1 || cannot_judge "could not boot $AND_ALIAS"
   WE_BOOTED=1
-  SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
+  SERIAL="$("$SMIX" sim resolve "$AND_ALIAS" 2>/dev/null | tail -1)"
 fi
 case "$SERIAL" in
   emulator-*) : ;;
@@ -162,7 +163,7 @@ and_fresh; judge android "$SERIAL" "$AND_PORT" move "$WORK/a-move.yaml" fail
 and_fresh; judge android "$SERIAL" "$AND_PORT" move-within-8 "$WORK/a-move8.yaml" pass
 
 # ---- iOS --------------------------------------------------------------
-if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" || [ -z "$UDID" ]; then
+if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tail -1)" || [ -z "$UDID" ]; then
   cannot_judge "no iOS simulator registered as $IOS_ALIAS"
 fi
 if ! xcrun simctl list devices -j | python3 -c "import json,sys;d=json.load(sys.stdin);sys.exit(0 if any(x['udid']=='$UDID' and x['state']=='Booted' for r in d['devices'].values() for x in r) else 1)"; then

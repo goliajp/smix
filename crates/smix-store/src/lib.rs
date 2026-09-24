@@ -29,7 +29,7 @@
 
 use std::path::{Path, PathBuf};
 
-use kevy_embedded::{Config, Store as KevyStore};
+use kevy_embedded::{Config, KevyMetric, Store as KevyStore};
 
 mod import;
 pub use import::import_legacy_records;
@@ -193,6 +193,28 @@ fn compact_if_overgrown(store: &KevyStore, dir: &Path) {
     }
 }
 
+/// How smix opens the embedded store: persisted under `dir`, and quiet
+/// when there is nothing to say.
+///
+/// kevy announces every replay of its append-only log on stderr. For a
+/// server that is a boot banner; smix opens the store on every command, so
+/// every command printed it, into terminals, CI logs and AI transcripts —
+/// and this repository's scripts grew forty-one `grep -v '^kevy:'` filters,
+/// whose exit status then stood in for smix's.
+///
+/// Registering a metric sink is kevy's own switch for that: the
+/// informational line stops and the numbers arrive here as data. The sink
+/// is registered for that effect and keeps nothing. A replay that lost
+/// bytes is still said, by kevy: its `kevy WARN: … dropped a
+/// non-replayable tail …` is an incident signal the switch never silences
+/// (measured with a partial last write appended to the log), so saying it
+/// again here would be the same event reported twice.
+fn kevy_config(dir: &Path) -> Config {
+    Config::default()
+        .with_persist(dir)
+        .with_metric_sink(|_: KevyMetric| {})
+}
+
 impl Store {
     /// Open (or create) the store under `root`.
     ///
@@ -226,11 +248,9 @@ impl Store {
         })?;
 
         let dir = root.join("kv");
-        let inner = KevyStore::open(Config::default().with_persist(&dir)).map_err(|source| {
-            StoreError::Open {
-                path: dir.clone(),
-                source: std::io::Error::other(source),
-            }
+        let inner = KevyStore::open(kevy_config(&dir)).map_err(|source| StoreError::Open {
+            path: dir.clone(),
+            source: std::io::Error::other(source),
         })?;
         compact_if_overgrown(&inner, &dir);
         Ok(Store {
@@ -271,11 +291,9 @@ impl Store {
             return Ok(None);
         }
         let dir = root.join("kv");
-        let inner = KevyStore::open(Config::default().with_persist(&dir)).map_err(|source| {
-            StoreError::Open {
-                path: dir.clone(),
-                source: std::io::Error::other(source),
-            }
+        let inner = KevyStore::open(kevy_config(&dir)).map_err(|source| StoreError::Open {
+            path: dir.clone(),
+            source: std::io::Error::other(source),
         })?;
         Ok(Some(Store {
             inner,

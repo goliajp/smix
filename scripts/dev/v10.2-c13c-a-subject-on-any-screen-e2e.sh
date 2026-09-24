@@ -36,7 +36,8 @@ source "$ROOT/scripts/lib/gate-port.sh"
 # shellcheck source=../lib/deadline.sh
 source "$ROOT/scripts/lib/deadline.sh"
 PORT="$SMIX_RUNNER_PORT"
-ALIAS="${SMIX_C13C_ANDROID:-sim-smix-android-01}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${SMIX_C13C_ANDROID:-$E2E_ANDROID}"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
 
@@ -81,12 +82,12 @@ command -v adb >/dev/null 2>&1 || cannot_judge "no adb on PATH"
 # when an alias came to name an AVD rather than a port: `sim resolve` now
 # refuses an AVD that is not running, and under `set -e` that refusal
 # ended this script at its first line with exit 1 and no verdict at all.
-if SERIAL="$(with_deadline 30 "$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" \
+if SERIAL="$(with_deadline 30 "$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)" \
    && [ -n "$SERIAL" ]; then
   : # already running — somebody's, possibly; not this run's to shut down
 else
   log "booting $ALIAS"
-  booted="$(with_deadline 240 "$SMIX" sim boot "$ALIAS" 2>&1 | grep -v '^kevy:')" \
+  booted="$(with_deadline 240 "$SMIX" sim boot "$ALIAS" 2>&1)" \
     || cannot_judge "could not boot $ALIAS:
 $booted"
   SERIAL="$(printf '%s\n' "$booted" | sed -n 's/^booted: \(emulator-[0-9]*\).*/\1/p' | tail -1)"
@@ -188,7 +189,7 @@ for height in $HEIGHTS; do
     raw="$(with_deadline 30 "$SMIX" tree --json --device "$SERIAL" --port "$PORT" 2>/dev/null)" || rc=$?
     [ "$rc" = "$DEADLINE_STATUS" ] \
       && cannot_judge "$SERIAL stopped answering (\`smix tree\` gave no answer in 30s) at ${WIDTH}x${height} — the device, not the screen under test"
-    tree="$(printf '%s\n' "$raw" | grep -v '^kevy:' || true)"
+    tree="$(printf '%s\n' "$raw" || true)"
     case "$tree" in
       \{*) verdict="$(TREE_JSON="$tree" subject_of)" ;;
       *)   verdict="no-tree" ;;

@@ -703,11 +703,19 @@ pub fn record_claim(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
 /// and a fifth kind of silent row would have had to be added to each.
 fn worth_keeping(lease: &Lease) -> bool {
     lease.resources.iter().any(|row| {
-        row.known().is_none_or(|r| {
-            !matches!(
-                r,
-                Resource::Booted { by_us: false } | Resource::Emulator { .. }
-            )
+        row.known().is_none_or(|r| match r {
+            // Rows that say something about a device without holding
+            // anything that must be cleaned up. A new kind of row has to
+            // be put on one side of this line by whoever adds it.
+            Resource::Booted { by_us: false } | Resource::Emulator { .. } => false,
+            Resource::Booted { by_us: true }
+            | Resource::Runner { .. }
+            | Resource::Recording { .. }
+            | Resource::Supervisor { .. }
+            | Resource::AndroidRunner { .. }
+            | Resource::PortForward { .. }
+            | Resource::ReversePort { .. }
+            | Resource::Claimed { .. } => true,
         })
     })
 }

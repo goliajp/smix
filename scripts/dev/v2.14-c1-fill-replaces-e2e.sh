@@ -59,7 +59,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-smix() { "$SMIX" "$@" 2>&1 | grep -v '^kevy:' || true; }
+smix() { "$SMIX" "$@" 2>&1 || true; }
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun — this needs a simulator; run it on a Mac with Xcode"
@@ -111,7 +111,7 @@ smix tap "id:fixture-submit" --port "$PORT" >/dev/null || fail "submit did not t
 # Not the `smix` helper: it folds stderr into stdout, and one stray
 # diagnostic line would make this JSON unparseable in a way that reads
 # like a broken tree.
-"$SMIX" tree --port "$PORT" --json 2>"$WORK/tree.err" | grep -v '^kevy:' > "$WORK/tree.json" || true
+"$SMIX" tree --port "$PORT" --json 2>"$WORK/tree.err" > "$WORK/tree.json" || true
 head -c 1 "$WORK/tree.json" | grep -q '{' \
   || { head -5 "$WORK/tree.err"; fail "the runner did not return a tree — see above"; }
 RESULT="$(python3 -c '

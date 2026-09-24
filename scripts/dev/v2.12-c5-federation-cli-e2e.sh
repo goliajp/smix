@@ -13,7 +13,8 @@
 set -euo pipefail
 
 HOST="${SMIX_FED_NODE_HOST:-mini}"
-STUDIO_SIM="${SMIX_FED_STUDIO_SIM:-sim-smix-02}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+STUDIO_SIM="${SMIX_FED_STUDIO_SIM:-$E2E_IOS}"
 MINI_SIM="${SMIX_FED_MINI_SIM:-sim-simx-001}"
 REPO="workspace/goliajp/smix"   # remote, relative to $HOME
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

@@ -27,7 +27,8 @@ source "$ROOT/scripts/lib/e2e-binary.sh"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
 PORT="$SMIX_RUNNER_PORT"
-ALIAS="${SMIX_C2_ANDROID:-sim-smix-android-01}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+ALIAS="${SMIX_C2_ANDROID:-$E2E_ANDROID}"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
 JUDGE="$ROOT/scripts/dev/v11.1-c2-judge.py"
@@ -57,7 +58,7 @@ command -v adb >/dev/null 2>&1 || cannot_judge "no adb on PATH"
 # An alias names an AVD, and an AVD that is not running has no serial to
 # resolve to (an emulator serial is a port, not an identity). So boot by
 # the alias first when it is not up, and ask for the serial afterwards.
-resolve() { "$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1; }
+resolve() { "$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1; }
 SERIAL="$(resolve)" || true
 if [ -z "$SERIAL" ]; then
   log "booting $ALIAS"
@@ -101,7 +102,7 @@ run_leg() { # $1 leg, $2 app id, $3.. judge flags
   local flow out rc=0
   flow="$(failing_flow "$app")"
   log "--- $leg ($app)"
-  out="$(SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$flow" 2>&1 | grep -v '^kevy:')" || rc=$?
+  out="$(SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$flow" 2>&1)" || rc=$?
   [ "$rc" != 0 ] || fail "$leg: a step that cannot pass passed"
   printf '%s\n' "$out" > "$WORK/$leg.out"
   # The screen as the runner serves it, read right after the failure: the
