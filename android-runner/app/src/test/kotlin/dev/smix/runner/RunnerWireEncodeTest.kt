@@ -34,6 +34,19 @@ class RunnerWireEncodeTest {
         assertEquals("2.0.0", obj.getString("version"))
     }
 
+    // MARK: - /display
+
+    @Test
+    fun displayCarriesTheSizeAndHowManyPixelsMakeAPoint() {
+        // A box compared in raw pixels would make `within: 1` a third of
+        // a point on one phone and a whole one on another: the host needs
+        // the density, and it needs it from the same place as the size.
+        val obj = JSONObject(RunnerWire.displayBody(1080, 2340, 2.625f))
+        assertEquals(1080, obj.getInt("width"))
+        assertEquals(2340, obj.getInt("height"))
+        assertEquals(2.625, obj.getDouble("pixelsPerPoint"), 1e-9)
+    }
+
     // MARK: - /tap-at-norm-coord
 
     @Test

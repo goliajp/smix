@@ -6,6 +6,21 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Breaking
 
+- **Rust API: `smix_adapter_maestro::Step` is `#[non_exhaustive]`, and has
+  two new variants, `RememberBounds` and `AssertBoundsUnchanged`.** Outside
+  this crate a `match` on `Step` needs a `_` arm now; in exchange, the next
+  verb added is not a breaking change for you. The attribute is itself a
+  major change, so it came in a release that was major anyway.
+- **Rust API: `App::assert_screenshot`, `AppLike::assert_screenshot` and
+  `assert_screenshot_inner` take a slice of regions to leave out of the
+  comparison; `AppLike` and `Driver` gain a required `pixels_per_point`.**
+  Pass `&[]` for the old behaviour. `MaskRegion` is now the SDK's
+  `ScreenMask` under its old name.
+- **`assertScreenshot`'s mapping refuses keys it does not read.** maestro's
+  `cropOn`, `thresholdPercentage`, `label` and `optional` were walked past
+  without a word — a `cropOn` flow compared the whole frame here and passed.
+  Each is now refused by name, saying what smix does instead.
+
 - **Rust API: `smix_capsule::runner_android::up_with` and `up_with_takeover`
   are gone; `up_with_options(root, serial, port, &UpOptions)` takes their
   place.** Adding the app under test and whether to relaunch it would have
@@ -38,6 +53,21 @@ All notable changes to the `smix` workspace are documented here. The format foll
   answered with.
 
 ### Added
+
+- **`rememberBounds` / `assertBoundsUnchanged`: a flow can say nothing
+  moved between two steps.** `rememberBounds: { <selector>, as: name }`
+  keeps an element's box; `assertBoundsUnchanged: { <selector>, was: name,
+  within: dp }` fails if any edge moved more than `within` (default 0). Boxes
+  are compared in device-independent pixels — points on iOS, pixels divided
+  by the display density on Android, which the Android runner now answers at
+  `GET /display` — so a tolerance means the same on every phone. A failure
+  prints both boxes and how far each edge moved. smix's own verbs; maestro
+  has none. Asserting `visible` in each state passed whether or not the
+  layout jumped between them.
+- **`assertScreenshot`'s `mask:` is applied.** It was parsed, carried to the
+  runtime and dropped there with a warning. Masked regions now read one flat
+  value in both frames before hashing, so a video playing or a clock ticking
+  inside one cannot count.
 
 - **`smix sim resolve` says which book answered, and `--json` gives a harness
   something to read instead of a file.** The identifier alone still goes to

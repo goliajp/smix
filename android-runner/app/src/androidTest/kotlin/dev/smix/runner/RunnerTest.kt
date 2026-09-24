@@ -279,6 +279,7 @@ class SmixHttpServer(
                 uri == "/record/poll" && session.method == Method.GET -> serveRecordPoll()
                 uri == "/record/stop" && session.method == Method.POST -> serveRecordStop()
                 uri == "/screenshot" && session.method == Method.GET -> serveScreenshot()
+                uri == "/display" && session.method == Method.GET -> serveDisplay()
                 uri == "/tree" && session.method == Method.GET -> serveTree()
                 uri == "/probe" && session.method == Method.GET -> serveProbe(session)
                 uri == "/probe/tree" && session.method == Method.GET -> serveProbeTree(session)
@@ -588,6 +589,17 @@ class SmixHttpServer(
     /// process — and a dialog's confirm button was pressed 800 pixels
     /// below the dialog.
     private fun displaySize(): Pair<Int, Int> = device.displayWidth to device.displayHeight
+
+    /// The display's size (from [displaySize], the one place it is read)
+    /// and its density — how many of the pixels every reader here reports
+    /// make one device-independent point. The density is the display's
+    /// own, override included, which is what the app is laid out in.
+    private fun serveDisplay(): Response {
+        val (w, h) = displaySize()
+        val density = instrumentation.targetContext.resources.displayMetrics.density
+        val body = RunnerWire.displayBody(w, h, density)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    }
 
     private fun serveTapAtNormCoord(session: IHTTPSession): Response {
         // OK MEANS: injected — `UiDevice.click` is `clickNoSync`, which

@@ -137,6 +137,11 @@ impl AppLike for MockApp {
     fn platform(&self) -> smix_driver::Platform {
         smix_driver::Platform::Android
     }
+    // Answers as a phone at 420 dpi would, matching `platform()` — so a
+    // guide example's bounds are converted the way an Android run would.
+    async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure> {
+        Ok(2.625)
+    }
     async fn tap(&self, selector: &Selector) -> Result<(), ExpectationFailure> {
         self.record(MockCall::Tap(selector.clone()));
         Ok(())
@@ -282,9 +287,15 @@ impl AppLike for MockApp {
                 children,
             }
         }
+        // `btn-ptz-stop` is the guide's `rememberBounds` /
+        // `assertBoundsUnchanged` example, which measures a named
+        // element's box the same way.
         Ok(box_named(
             "root",
-            vec![box_named("view-timeline", Vec::new())],
+            vec![
+                box_named("view-timeline", Vec::new()),
+                box_named("btn-ptz-stop", Vec::new()),
+            ],
         ))
     }
     async fn webview_eval(&self, _js: &str) -> Result<serde_json::Value, ExpectationFailure> {
@@ -455,6 +466,7 @@ impl AppLike for MockApp {
         &self,
         _baseline_path: &std::path::Path,
         _max_hamming: u32,
+        _masks: &[smix_adapter_maestro::MaskRegion],
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure> {
         Ok(smix_sdk::AssertScreenshotOutcome::Recorded {
             path: std::path::PathBuf::new(),

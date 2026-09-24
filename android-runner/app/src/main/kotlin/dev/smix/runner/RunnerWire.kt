@@ -257,6 +257,16 @@ object RunnerWire {
 
     // `ok` + `runnerVersion` are what the Rust HealthResponse reads;
     // `status`/`runner`/`version` stay for existing shell probes.
+    /// `GET /display` — the screen's size in pixels and how many pixels
+    /// make a device-independent point. The host turns every box into
+    /// points with the second, so a tolerance means the same on every
+    /// phone.
+    fun displayBody(width: Int, height: Int, pixelsPerPoint: Float): String = JSONObject()
+        .put("width", width)
+        .put("height", height)
+        .put("pixelsPerPoint", pixelsPerPoint.toDouble())
+        .toString()
+
     fun healthBody(version: String): String = JSONObject()
         .put("ok", true)
         .put("status", "ok")

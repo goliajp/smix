@@ -749,6 +749,22 @@ impl Driver for AndroidDriver {
         true
     }
 
+    async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure> {
+        // Both readers here — accessibility and the semantics probe —
+        // report physical pixels. The runner says how many make a point.
+        let d = self.runner.display().await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!(
+                    "AndroidDriver::pixels_per_point: {e} — a runner older than this \
+                     host has no `/display`; `smix runner up --force` installs this one"
+                ),
+                ..Default::default()
+            })
+        })?;
+        Ok(d.pixels_per_point)
+    }
+
     async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure> {
         self.runner.swipe_once(direction).await.map_err(|e| {
             ExpectationFailure::new(FailureInit {

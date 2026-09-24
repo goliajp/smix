@@ -338,6 +338,11 @@ pub trait Driver: Send + Sync {
     /// a live query; one whose tree is read live answers `true`.
     async fn confirm_on_screen(&self, matched: &[&A11yNode]) -> bool;
 
+    /// How many of this platform's tree units make one device-independent
+    /// point. Every box the tree holds is divided by it before two boxes
+    /// are compared, so a tolerance means the same on every device.
+    async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure>;
+
     /// One-shot swipe in a direction (no probe loop).
     async fn swipe_once(&self, direction: SwipeDirection) -> Result<(), ExpectationFailure>;
 

@@ -209,7 +209,7 @@ async fn assert_screenshot_strict_field_forces_driver_error() {
     let baseline = scratch_baseline("strict");
     let (device, _calls) = RecordingDevice::new();
     let app = app_with_device(device).with_assert_screenshot_strict(Some(true));
-    let err = app.assert_screenshot(&baseline, 5).await.unwrap_err();
+    let err = app.assert_screenshot(&baseline, 5, &[]).await.unwrap_err();
     assert_eq!(err.code, smix_sdk::FailureCode::DriverError);
     assert!(
         !baseline.exists(),
@@ -222,7 +222,7 @@ async fn assert_screenshot_field_false_auto_records() {
     let baseline = scratch_baseline("record");
     let (device, _calls) = RecordingDevice::new();
     let app = app_with_device(device).with_assert_screenshot_strict(Some(false));
-    let out = app.assert_screenshot(&baseline, 5).await.unwrap();
+    let out = app.assert_screenshot(&baseline, 5, &[]).await.unwrap();
     assert!(matches!(out, AssertScreenshotOutcome::Recorded { .. }));
     assert!(baseline.exists(), "non-strict auto-records the baseline");
     let _ = std::fs::remove_dir_all(baseline.parent().unwrap());

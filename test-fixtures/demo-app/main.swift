@@ -29,6 +29,13 @@ import UIKit
 let fixtureRowCount = 40
 
 struct DetailView: View {
+  // Whether the anchor below has been pushed down. `rememberBounds` /
+  // `assertBoundsUnchanged` need a control that can be made to move by a
+  // known amount and one press that moves nothing, so "moved" and "did
+  // not move" are both there to be judged. Here rather than on the main
+  // list, whose rows other checks measure.
+  @State private var anchorShifted = false
+
   var body: some View {
     VStack(spacing: 16) {
       Text("Detail").font(.headline)
@@ -36,6 +43,26 @@ struct DetailView: View {
       // not arriving look identical from a flow's point of view.
       Text("you are on the detail screen")
         .accessibilityIdentifier("fixture-detail")
+      // A spacer above it rather than padding on it: padding belongs to
+      // the element's own frame, so the frame would grow while its corner
+      // stayed put. Both sit in a fixed-height, top-aligned box: the outer
+      // stack is centred on the screen, and a spacer growing inside it
+      // would push everything above up by half and the anchor down by the
+      // other half — measured, 4 points instead of 8. In the box the
+      // anchor, and only the anchor, moves by exactly the 8 points a
+      // consumer's tour buttons were built not to cause.
+      VStack(spacing: 0) {
+        Color.clear.frame(height: anchorShifted ? 8 : 0)
+        Text("anchor")
+          .accessibilityIdentifier("fixture-bounds-target")
+      }
+      .frame(height: 44, alignment: .top)
+      HStack {
+        Button("Move") { anchorShifted = true }
+          .accessibilityIdentifier("fixture-bounds-move")
+        Button("Stay") {}
+          .accessibilityIdentifier("fixture-bounds-stay")
+      }
     }
     .navigationTitle("Detail")
   }

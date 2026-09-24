@@ -880,17 +880,26 @@ pub fn may_shut_down(lease: Option<&Lease>) -> bool {
 /// them is their purpose. A recording is an activity: two sessions
 /// writing over one capture is a collision, not a hand-off. `Booted` is
 /// neither a process nor an activity and never blocks adoption.
+///
+/// Exhaustive on purpose. This was a `matches!` with a default of "not a
+/// service", and the `Emulator` row added in v11.1-C4 fell to it without
+/// a word: every emulator smix booted then refused the `runner up` → `run`
+/// pairing on it. A new kind of row has to be classified here to compile.
 pub fn is_service(r: &Resource) -> bool {
-    matches!(
-        r,
+    match r {
         Resource::Runner { .. }
-            | Resource::AndroidRunner { .. }
-            | Resource::PortForward { .. }
-            | Resource::Supervisor { .. }
-            | Resource::Booted { .. }
-            | Resource::Claimed { .. }
-            | Resource::ReversePort { .. }
-    )
+        | Resource::AndroidRunner { .. }
+        | Resource::PortForward { .. }
+        | Resource::Supervisor { .. }
+        | Resource::Booted { .. }
+        | Resource::Claimed { .. }
+        | Resource::ReversePort { .. }
+        // Names which AVD this is and where its console went. Like
+        // `Booted`, a fact about the device, not something a second
+        // session could collide with.
+        | Resource::Emulator { .. } => true,
+        Resource::Recording { .. } => false,
+    }
 }
 
 /// Does this resource stand for a process that can die?
@@ -899,14 +908,18 @@ pub fn is_service(r: &Resource) -> bool {
 /// probed for liveness. That difference decides whether a ledger without
 /// a live holder is an abandoned session or merely a device left on.
 pub fn is_process_backed(r: &Resource) -> bool {
-    matches!(
-        r,
+    // Exhaustive for the same reason as `is_service`.
+    match r {
         Resource::Runner { .. }
-            | Resource::Recording { .. }
-            | Resource::Supervisor { .. }
-            | Resource::AndroidRunner { .. }
-            | Resource::PortForward { .. }
-    )
+        | Resource::Recording { .. }
+        | Resource::Supervisor { .. }
+        | Resource::AndroidRunner { .. }
+        | Resource::PortForward { .. } => true,
+        Resource::ReversePort { .. }
+        | Resource::Booted { .. }
+        | Resource::Claimed { .. }
+        | Resource::Emulator { .. } => false,
+    }
 }
 
 /// Has the holder stopped beating for longer than [`STALE_AFTER_SECS`]?
@@ -1184,6 +1197,36 @@ mod tests {
     fn a_dead_holder_leaves_a_reverse_route_to_be_adopted() {
         let lease = lease_with(vec![
             reverse(8080, 8080),
+            Resource::AndroidRunner {
+                port: 22087,
+                serial: "emulator-5554".into(),
+                proc: runner_proc(),
+            },
+        ]);
+        assert_eq!(
+            assess(&facts_with_resources(lease, false, false, FRESH, true)),
+            Admission::Adoptable
+        );
+    }
+
+    /// The ledger `smix sim boot <avd>` then `smix runner up` leaves: the
+    /// boot row, the emulator's identity row (C4), and the live runner.
+    /// `sim boot` exits by design, so its holder is dead — and the next
+    /// command must drive through the runner, not be refused.
+    ///
+    /// It was refused: `is_service` was a non-exhaustive `matches!`, the
+    /// `Emulator` row added in v11.1-C4 fell to its default, and a
+    /// not-service row with a live neighbour reads as an abandoned
+    /// activity. The refusal then said "a recording it started is still
+    /// running" — about a device on which nothing was recording.
+    #[test]
+    fn a_boot_then_a_runner_is_adopted_with_the_emulator_row_in_it() {
+        let lease = lease_with(vec![
+            Resource::Booted { by_us: true },
+            Resource::Emulator {
+                avd: "sim-smix-android-01".into(),
+                console_log: Some("/tmp/console.log".into()),
+            },
             Resource::AndroidRunner {
                 port: 22087,
                 serial: "emulator-5554".into(),

@@ -2473,3 +2473,136 @@ fn a_chain_element_with_an_unknown_key_names_the_selector_keys() {
         other => panic!("expected InvalidValue, got {other:?}"),
     }
 }
+
+// --- bounds as values: rememberBounds / assertBoundsUnchanged ----------
+
+/// A consumer's promise reads "nothing moves by a pixel between these
+/// states", and a flow could only say "it is visible in each". Both verbs
+/// are smix's own — maestro has neither.
+#[test]
+fn remember_bounds_takes_a_selector_and_a_name() {
+    let yaml = "appId: com.t.r\n---\n- rememberBounds:\n    id: btn-stop\n    as: stop\n";
+    let flow = parse_flow_yaml(yaml).expect("parse rememberBounds");
+    match flow.steps.as_slice() {
+        [Step::RememberBounds { selector, name }] => {
+            assert_eq!(selector, &id_selector("btn-stop"));
+            assert_eq!(name, "stop");
+        }
+        other => panic!("expected one RememberBounds, got {other:?}"),
+    }
+}
+
+#[test]
+fn remember_bounds_selects_through_the_main_parser() {
+    // `label` and a modifier ride in the same mapping as `as`: the verb
+    // takes any selector the rest of the dialect takes, not a subset.
+    let yaml = "appId: com.t.r\n---\n- rememberBounds:\n    label: Stop\n    below:\n      id: header\n    as: stop\n";
+    let flow = parse_flow_yaml(yaml).expect("parse rememberBounds with label + below");
+    match flow.steps.as_slice() {
+        [Step::RememberBounds { selector, .. }] => {
+            assert!(
+                matches!(selector, Selector::Label { modifiers, .. } if modifiers.below.is_some()),
+                "the selector lost its label or its modifier: {selector:?}"
+            );
+        }
+        other => panic!("expected one RememberBounds, got {other:?}"),
+    }
+}
+
+#[test]
+fn remember_bounds_without_a_name_is_refused() {
+    let (field, reason) = parse_err("- rememberBounds:\n    id: btn-stop\n");
+    assert_eq!(field, "rememberBounds.as");
+    assert!(
+        reason.contains("as"),
+        "the refusal does not name the key: {reason}"
+    );
+}
+
+#[test]
+fn remember_bounds_refuses_an_unknown_key_by_name() {
+    let (_, reason) =
+        parse_err("- rememberBounds:\n    id: btn-stop\n    as: stop\n    sa: typo\n");
+    assert!(
+        reason.contains("`sa`"),
+        "the refusal does not name the key it did not know: {reason}"
+    );
+}
+
+#[test]
+fn assert_bounds_unchanged_reads_within_in_device_independent_pixels() {
+    let yaml = "appId: com.t.r\n---\n- assertBoundsUnchanged:\n    id: btn-stop\n    was: stop\n    within: 1\n";
+    let flow = parse_flow_yaml(yaml).expect("parse assertBoundsUnchanged");
+    match flow.steps.as_slice() {
+        [
+            Step::AssertBoundsUnchanged {
+                selector,
+                was,
+                within_dp,
+            },
+        ] => {
+            assert_eq!(selector, &id_selector("btn-stop"));
+            assert_eq!(was, "stop");
+            assert_eq!(*within_dp, 1.0);
+        }
+        other => panic!("expected one AssertBoundsUnchanged, got {other:?}"),
+    }
+}
+
+#[test]
+fn assert_bounds_unchanged_defaults_to_exact() {
+    let yaml = "appId: com.t.r\n---\n- assertBoundsUnchanged:\n    id: btn-stop\n    was: stop\n";
+    let flow = parse_flow_yaml(yaml).expect("parse assertBoundsUnchanged without within");
+    assert!(
+        matches!(flow.steps.as_slice(), [Step::AssertBoundsUnchanged { within_dp, .. }] if *within_dp == 0.0),
+        "an absent `within` is not exact: {:?}",
+        flow.steps
+    );
+}
+
+#[test]
+fn assert_bounds_unchanged_refuses_a_negative_or_non_numeric_within() {
+    let (field, _) = parse_err("- assertBoundsUnchanged:\n    id: a\n    was: s\n    within: -1\n");
+    assert_eq!(field, "assertBoundsUnchanged.within");
+    let (field, _) =
+        parse_err("- assertBoundsUnchanged:\n    id: a\n    was: s\n    within: wide\n");
+    assert_eq!(field, "assertBoundsUnchanged.within");
+}
+
+#[test]
+fn assert_bounds_unchanged_without_was_is_refused() {
+    let (field, _) = parse_err("- assertBoundsUnchanged:\n    id: btn-stop\n");
+    assert_eq!(field, "assertBoundsUnchanged.was");
+}
+
+// --- assertScreenshot: the keys it reads, and maestro's it does not ----
+
+/// maestro's `assertScreenshot` takes `cropOn`, `thresholdPercentage`,
+/// `label` and `optional`; smix's mapping read `path` / `threshold` /
+/// `mask` and walked past the rest. A maestro flow with `cropOn` was
+/// compared on the whole frame here and passed.
+#[test]
+fn assert_screenshot_refuses_maestros_keys_by_name() {
+    for key in [
+        "cropOn:\n      id: panel",
+        "thresholdPercentage: \"5\"",
+        "label: panel",
+        "optional: true",
+    ] {
+        let yaml = format!("- assertScreenshot:\n    path: a.png\n    {key}\n");
+        let (field, reason) = parse_err(&yaml);
+        assert_eq!(field, "assertScreenshot", "{key}");
+        let name = key.split(':').next().unwrap();
+        assert!(
+            reason.contains(&format!("`{name}`")),
+            "the refusal of `{name}` does not name it: {reason}"
+        );
+    }
+}
+
+#[test]
+fn assert_screenshot_refuses_a_misspelt_key() {
+    let (field, reason) = parse_err("- assertScreenshot:\n    path: a.png\n    treshold: 3\n");
+    assert_eq!(field, "assertScreenshot");
+    assert!(reason.contains("`treshold`"), "{reason}");
+}

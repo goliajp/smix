@@ -44,14 +44,21 @@ pub enum AdmissionError {
         /// Since when (RFC3339).
         acquired_at: String,
     },
-    /// The previous holder died, and what it left running is not a
-    /// service that can be adopted — a recording, today. Distinct from
-    /// [`AdmissionError::InUse`] because "wait for it to finish" is
-    /// advice about a process, and there is no process to wait for.
+    /// The previous holder died, and what it left is not a service that
+    /// can be adopted. Distinct from [`AdmissionError::InUse`] because
+    /// "wait for it to finish" is advice about a process, and there is no
+    /// process to wait for.
+    ///
+    /// Two things can be there, and the message names both rather than
+    /// guessing one: a recording (the one kind of row `is_service` says
+    /// no to), or a row this smix cannot read. It used to say "a
+    /// recording" outright, and said it about a device on which nothing
+    /// was recording when a row kind was left unclassified.
     #[error(
-        "device {device_id}'s last session ({holder_cmd}) is gone, but a recording it \
-         started is still running.\n\
-         Stop it first: smix record stop {device_id}"
+        "device {device_id}'s last session ({holder_cmd}) is gone, but it left something a \
+         second session would collide with — a recording, or a row this smix cannot read.\n\
+         See what it is: smix lease status {device_id}\n\
+         A recording stops with: smix record stop {device_id}"
     )]
     HeldByRemains {
         /// The device.

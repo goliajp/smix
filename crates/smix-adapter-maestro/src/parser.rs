@@ -2347,10 +2347,8 @@ fn parse_set_permissions(v: &Value) -> Result<Step, ParseError> {
 
 // `assertScreenshot: "path"` scalar.
 // Also accepts the mapping form `{ path, threshold?, mask? }`.
-// `threshold` passes through to the dhash max_hamming; `mask` is
-// carried but warn-and-ignored by the runtime, since algorithm-level
-// region exclusion needs a perceptual hash (SSIM/pHash) backbone that
-// dhash does not provide.
+// `threshold` passes through to the dhash max_hamming; `mask` regions
+// are left out of the comparison on both frames.
 fn parse_assert_screenshot(v: &Value) -> Result<Step, ParseError> {
     match v {
         Value::String(s) => Ok(Step::AssertScreenshot {
@@ -2359,6 +2357,33 @@ fn parse_assert_screenshot(v: &Value) -> Result<Step, ParseError> {
             mask: Vec::new(),
         }),
         Value::Mapping(map) => {
+            // maestro's own keys are named rather than called unknown: a
+            // flow carrying them was written for maestro, and until this
+            // check they were walked past without a word — a `cropOn`
+            // flow compared the whole frame here and passed.
+            reject_unknown_keys(
+                map,
+                "assertScreenshot",
+                "assertScreenshot",
+                &["path", "threshold", "mask"],
+                &[
+                    (
+                        "cropOn",
+                        "maestro compares only that element's region; smix does not carry \
+                         it out yet. Exclude what changes with `mask:` instead",
+                    ),
+                    (
+                        "thresholdPercentage",
+                        "maestro measures a percentage of differing pixels; smix compares a \
+                         perceptual hash, whose tolerance is `threshold` (bits, default 5)",
+                    ),
+                    ("label", "smix does not carry out a per-step label here"),
+                    (
+                        "optional",
+                        "smix does not carry out `optional` on assertScreenshot",
+                    ),
+                ],
+            )?;
             let path = map
                 .get(Value::String("path".into()))
                 .and_then(Value::as_str)
@@ -2883,6 +2908,87 @@ fn parse_copy_text_from(v: &Value) -> Result<Step, ParseError> {
     Ok(Step::CopyTextFrom { selector })
 }
 
+/// Split a bounds verb's mapping into its selector and its own keys.
+///
+/// The selector keys go to [`visible_to_selector`] as they would for any
+/// other verb, so `label`, `role`, modifiers and a fallback chain all
+/// work here; the verb's own keys are taken out first. Every key is
+/// checked against the union before anything is parsed, so a typo is
+/// refused by name rather than by the selector parser guessing.
+fn split_bounds_mapping<'a>(
+    v: &'a Value,
+    verb: &str,
+    own: &[&str],
+) -> Result<(Selector, &'a serde_norway::Mapping), ParseError> {
+    let map = v.as_mapping().ok_or_else(|| ParseError::InvalidValue {
+        field: verb.into(),
+        reason: format!(
+            "expected a mapping with a selector and {}, got {v:?}",
+            own.join(" / ")
+        ),
+    })?;
+    let known: Vec<&str> = smix_verbs::SELECTOR_KEYS
+        .iter()
+        .copied()
+        .chain(own.iter().copied())
+        .collect();
+    reject_unknown_keys(map, verb, verb, &known, &[])?;
+    let mut selector_part = map.clone();
+    for k in own {
+        selector_part.remove(Value::String((*k).into()));
+    }
+    let selector = visible_to_selector(&Value::Mapping(selector_part))?;
+    Ok((selector, map))
+}
+
+fn required_name(map: &serde_norway::Mapping, verb: &str, key: &str) -> Result<String, ParseError> {
+    match get_spelled(map, key) {
+        Some(Value::String(s)) if !s.is_empty() => Ok(s.clone()),
+        Some(other) => Err(ParseError::InvalidValue {
+            field: format!("{verb}.{key}"),
+            reason: format!("expected a non-empty name, got {other:?}"),
+        }),
+        None => Err(ParseError::InvalidValue {
+            field: format!("{verb}.{key}"),
+            reason: format!("`{key}` is required: it is the name the two bounds verbs share"),
+        }),
+    }
+}
+
+// `rememberBounds: { <selector>, as: name }`. smix's own verb.
+fn parse_remember_bounds(v: &Value) -> Result<Step, ParseError> {
+    let (selector, map) = split_bounds_mapping(v, "rememberBounds", &["as"])?;
+    let name = required_name(map, "rememberBounds", "as")?;
+    Ok(Step::RememberBounds { selector, name })
+}
+
+// `assertBoundsUnchanged: { <selector>, was: name, within?: dp }`.
+// smix's own verb. `within` is device-independent pixels per edge,
+// default 0.
+fn parse_assert_bounds_unchanged(v: &Value) -> Result<Step, ParseError> {
+    let (selector, map) = split_bounds_mapping(v, "assertBoundsUnchanged", &["was", "within"])?;
+    let was = required_name(map, "assertBoundsUnchanged", "was")?;
+    let within_dp = match get_spelled(map, "within") {
+        None => 0.0,
+        Some(w) => match w.as_f64() {
+            Some(n) if n >= 0.0 && n.is_finite() => n,
+            _ => {
+                return Err(ParseError::InvalidValue {
+                    field: "assertBoundsUnchanged.within".into(),
+                    reason: format!(
+                        "expected a non-negative number of device-independent pixels, got {w:?}"
+                    ),
+                });
+            }
+        },
+    };
+    Ok(Step::AssertBoundsUnchanged {
+        selector,
+        was,
+        within_dp,
+    })
+}
+
 // takeScreenshot accepts three shapes:
 //   `takeScreenshot: "name"`          — string path
 //   `- takeScreenshot`                 — bare (None ⇒ discard bytes)
@@ -3043,6 +3149,8 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "setClipboard" => parse_set_clipboard(value),
         "pasteText" => parse_paste_text(value),
         "copyTextFrom" => parse_copy_text_from(value),
+        "rememberBounds" => parse_remember_bounds(value),
+        "assertBoundsUnchanged" => parse_assert_bounds_unchanged(value),
         "doubleTapOn" => parse_double_tap_on(value),
         "repeatTap" => parse_repeat_tap(value),
         "longPressOn" => parse_long_press_on(value),

@@ -22,10 +22,11 @@
 #![doc(html_root_url = "https://docs.smix.dev/smix-sdk")]
 
 /// Visual regression perceptual hash (dhash 64-bit). Crate-internal:
-/// `compute_dhash` + `hamming_distance` back the public
+/// `compute_dhash_masked` + `hamming_distance` back the public
 /// `App::assert_screenshot`, not part of the SDK surface.
 pub(crate) mod png_gray;
 pub(crate) mod screenshot_hash;
+pub use screenshot_hash::ScreenMask;
 
 /// Frame-to-frame stillness, backing `waitForAnimationToEnd`.
 pub mod quiescence;
@@ -100,8 +101,8 @@ pub use smix_error::{
 };
 pub use smix_input::{KeyName, SwipeDirection};
 pub use smix_screen::{
-    A11yNode, Bounds, ElementSummary, Rect, Role, ScreenDescription, collect_visible_summaries,
-    is_visible_enough, summarize_node, visible_area,
+    A11yNode, Bounds, ElementSummary, Movement, Rect, Role, ScreenDescription, bounds_moved,
+    collect_visible_summaries, is_visible_enough, rect_in_points, summarize_node, visible_area,
 };
 pub use smix_selector::{
     AnchorBox, IndexModifiers, Modifiers, Pattern, Selector, True, describe_selector, match_text,
@@ -120,6 +121,7 @@ pub fn assert_screenshot_inner(
     baseline_path: &std::path::Path,
     max_hamming: u32,
     strict: bool,
+    masks: &[ScreenMask],
 ) -> Result<AssertScreenshotOutcome, ExpectationFailure> {
     use std::io::ErrorKind;
     let baseline_bytes = match std::fs::read(baseline_path) {
@@ -180,8 +182,10 @@ pub fn assert_screenshot_inner(
         }
     };
 
-    let h_current = screenshot_hash::compute_dhash(png_bytes)?;
-    let h_baseline = screenshot_hash::compute_dhash(&baseline_bytes)?;
+    // The same masks on both: a region is left out of the comparison,
+    // not out of one side of it.
+    let h_current = screenshot_hash::compute_dhash_masked(png_bytes, masks)?;
+    let h_baseline = screenshot_hash::compute_dhash_masked(&baseline_bytes, masks)?;
     let hamming = screenshot_hash::hamming_distance(h_current, h_baseline);
     if hamming <= max_hamming {
         Ok(AssertScreenshotOutcome::Matched { hamming })
@@ -1940,6 +1944,13 @@ impl App {
 
     // ---- sense (driver-bound) -----------------------------------------
 
+    /// How many of the tree's units make one device-independent point:
+    /// 1 on iOS, whose tree is in points; the display's density on
+    /// Android, whose readers report physical pixels.
+    pub async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure> {
+        self.driver().pixels_per_point().await
+    }
+
     pub async fn tree(&self) -> Result<A11yNode, ExpectationFailure> {
         self.driving()?.tree(None).await
     }
@@ -2389,6 +2400,7 @@ impl App {
         &self,
         baseline_path: &std::path::Path,
         max_hamming: u32,
+        masks: &[ScreenMask],
     ) -> Result<AssertScreenshotOutcome, ExpectationFailure> {
         let png = self.screenshot().await?;
         // CLI-injected config wins; a non-CLI caller with no injection
@@ -2397,7 +2409,7 @@ impl App {
         let strict = self
             .assert_screenshot_strict
             .unwrap_or_else(|| std::env::var_os("SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD").is_some());
-        assert_screenshot_inner(&png, baseline_path, max_hamming, strict)
+        assert_screenshot_inner(&png, baseline_path, max_hamming, strict, masks)
     }
 
     pub async fn assert_not_visible(&self, selector: &Selector) -> Result<(), ExpectationFailure> {

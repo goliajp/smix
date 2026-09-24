@@ -642,6 +642,18 @@ impl OkEnvelope {
 /// `status` is what a runner built before that sends. Both optional,
 /// because a runner that answers neither has not been asked this
 /// question and must not read as a success.
+/// What `GET /display` answers.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayInfo {
+    /// Screen width in pixels.
+    pub width: u32,
+    /// Screen height in pixels.
+    pub height: u32,
+    /// How many pixels make one device-independent point.
+    pub pixels_per_point: f64,
+}
+
 #[derive(Deserialize)]
 struct ClearTextRes {
     #[serde(default)]
@@ -1271,6 +1283,13 @@ impl HttpRunnerClient {
     }
 
     // ---- public methods (mirrors TS RunnerClient surface) ----
+
+    /// `GET /display` — the screen's size in pixels and how many of those
+    /// pixels make one device-independent point. Android only: the iOS
+    /// runner's tree is in points already, so there is nothing to ask.
+    pub async fn display(&self) -> Result<DisplayInfo, RunnerTransportError> {
+        self.json_get("/display", None).await
+    }
 
     /// `GET /health` — bare alive probe (no memoization). Returns true on 2xx.
     pub async fn health(&self) -> bool {

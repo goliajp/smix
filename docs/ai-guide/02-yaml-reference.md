@@ -70,11 +70,37 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
 - assertScreenshot:
     path: "home.png"                     # baseline path, relative to the flow file
     threshold: 5                         # max hamming distance (default 5)
+    mask:                                # left out of the comparison (0..1 shares)
+      - { x: 0.0, y: 0.0, width: 1.0, height: 0.4 }
+
+- rememberBounds:                        # keep where an element is, by name
+    id: "btn-ptz-stop"
+    as: "stop"
+- assertBoundsUnchanged:                 # …and that it has not moved since
+    id: "btn-ptz-stop"
+    was: "stop"
+    within: 1                            # device-independent pixels (default 0)
 ```
 
+`rememberBounds` / `assertBoundsUnchanged` are smix's own — maestro has
+no way to say "nothing moved between these steps". Asserting `visible` in
+each state passes whether or not the layout jumped 8 pixels between them;
+this pair compares the element's box itself. Boxes are compared in
+device-independent pixels (points on iOS; pixels divided by the display
+density on Android), so `within: 1` means the same on every phone, and
+every edge is compared — a control that grew without moving its corner
+has changed. A failure prints both boxes and how far each edge moved.
+The box compared is the one the element occupies, not the part that
+shows: scrolling a row half out of view changes what shows without
+moving anything.
+
 `assertScreenshot` auto-records the baseline on the first run and diffs
-against it afterwards. `mask:` regions are accepted but not yet applied
-(the dhash compares the full frame); a run warning says so.
+against it afterwards. `mask:` regions — shares (0..1) of the frame, as
+`{ x, y, width, height }` — are left out of the comparison: both frames
+read one flat value there before hashing, so a video playing or a clock
+ticking inside a region cannot count. maestro's `cropOn`,
+`thresholdPercentage`, `label` and `optional` are refused by name rather
+than ignored.
 
 `assertTrue` reads `${…}` with a small expression engine, not a JS
 runtime — comparison, boolean operators, parentheses and `.contains()`,

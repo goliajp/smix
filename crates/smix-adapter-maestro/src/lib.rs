@@ -329,8 +329,17 @@ pub enum TapDispatch {
 
 /// One parsed yaml step. See the maestro-compat command table in the
 /// module docs above for the yaml shapes each variant corresponds to.
+///
+/// `#[non_exhaustive]` because this enum grows with every verb, and
+/// without the attribute each new verb is a semver-major change for
+/// anyone matching on it outside this crate. The attribute itself is
+/// major, so it was added in a release that was major anyway (the one
+/// that brought `rememberBounds`). Inside this crate matches stay
+/// exhaustive, which is where the compiler's "you forgot the new verb"
+/// is worth having.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Step {
     /// Tap an element by selector. Maps to `App::tap`.
     TapOn {
@@ -894,12 +903,11 @@ pub enum Step {
     /// distance ≤ `max_hamming` (None = 5 default). Set env
     /// `SMIX_ASSERT_SCREENSHOT_NO_AUTORECORD=1` to force strict mode.
     ///
-    /// The mapping form is **partly surface-only**: `threshold`
-    /// overrides the dhash hamming cap and takes effect; `mask` is
-    /// parsed into [`MaskRegion`] but the runtime emits a warning and
-    /// ignores the regions — region exclusion needs a perceptual hash
-    /// (SSIM/pHash) backbone that the current dhash implementation
-    /// does not provide.
+    /// The mapping form reads `path`, `threshold` (the dhash hamming cap)
+    /// and `mask` (regions both frames read as one flat value before
+    /// hashing, so what changes inside them cannot count). maestro's
+    /// `cropOn` / `thresholdPercentage` / `label` / `optional` are
+    /// refused by name at parse time.
     AssertScreenshot {
         /// Baseline PNG path relative to the flow's base_dir.
         path: String,
@@ -907,11 +915,36 @@ pub enum Step {
         /// max distance override. None ⇒ scalar-form default (5).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_hamming: Option<u32>,
-        /// `mask` regions (normalized 0..1 bbox) accepted from
-        /// mapping form. Runtime emits warn-and-ignore (surface-only).
-        /// Empty Vec for scalar form.
+        /// `mask` regions (0..1 shares of the frame) left out of the
+        /// comparison. Empty for the scalar form.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         mask: Vec<MaskRegion>,
+    },
+    /// `rememberBounds: { <selector>, as: name }` — keep where an element
+    /// is, under a name, for `assertBoundsUnchanged` to compare against.
+    ///
+    /// A smix verb; maestro has none. The rectangle is kept as a value to
+    /// compare, never as something a flow can aim at — addressing is still
+    /// by selector (CLAUDE.md §9 #3).
+    RememberBounds {
+        /// What to measure.
+        selector: Selector,
+        /// The name `assertBoundsUnchanged.was` refers to.
+        name: String,
+    },
+    /// `assertBoundsUnchanged: { <selector>, was: name, within: dp }` —
+    /// the element's rectangle now matches the one remembered under
+    /// `was`, every edge within `within` device-independent pixels.
+    ///
+    /// A smix verb; maestro has none. Asserting "visible" in each state
+    /// passes whether or not the layout jumped between them.
+    AssertBoundsUnchanged {
+        /// What to measure now.
+        selector: Selector,
+        /// The name a `rememberBounds` stored.
+        was: String,
+        /// Allowed movement per edge, in device-independent pixels.
+        within_dp: f64,
     },
     /// Ask the AI judge whether a plain-language condition holds on the
     /// current screen.
@@ -1073,23 +1106,14 @@ impl Default for SignalOrderKind {
     }
 }
 
-/// Normalized bbox for `assertScreenshot.mask` regions. Coordinates
-/// are 0..1 fractions of the captured screenshot — the same
-/// convention maestro's mapping form uses. Surface-only: the adapter
-/// parses and carries the regions, but the runtime emits a warning
-/// and skips region exclusion, which needs a perceptual hash backbone
-/// the current dhash implementation does not provide.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct MaskRegion {
-    /// Top-left x in 0..1 fraction of capture width.
-    pub x: f64,
-    /// Top-left y in 0..1 fraction of capture height.
-    pub y: f64,
-    /// Region width in 0..1 fraction of capture width.
-    pub width: f64,
-    /// Region height in 0..1 fraction of capture height.
-    pub height: f64,
-}
+/// A region `assertScreenshot` leaves out of its comparison, as shares
+/// (0..1) of the captured frame. smix's own key — maestro's
+/// `assertScreenshot` has `cropOn` instead, which smix refuses by name.
+///
+/// The SDK's [`smix_sdk::ScreenMask`] under the name this crate has always
+/// used: one type for one thing, so the region the parser reads is the
+/// region the comparison applies.
+pub use smix_sdk::ScreenMask as MaskRegion;
 
 /// The keys a condition mapping (`runFlow.when`, `repeat.while`) may
 /// carry. maestro's `YamlCondition` has these five plus `optional`, which

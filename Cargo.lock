@@ -2678,6 +2678,7 @@ dependencies = [
  "smix-migrate",
  "smix-sdk",
  "smix-selector",
+ "smix-selector-resolver",
  "smix-simctl",
  "smix-verbs",
  "tempfile",
