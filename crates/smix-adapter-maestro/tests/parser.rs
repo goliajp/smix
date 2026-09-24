@@ -2365,3 +2365,111 @@ fn run_script_keys_are_closed() {
     assert_eq!(field, "runScript");
     assert!(reason.contains("unknown key `fiel`"), "{reason}");
 }
+
+// ---------------------------------------------------------------------
+// A chain element is any selector, plus `point`.
+//
+// The chain used to have a parser of its own: a hand-kept subset of
+// `visible_to_selector` that read `id` / `text` / `localized_text` /
+// `ocrText` / `anchored` / `point` and nothing else. So an icon button
+// named only by its label on Android — `label:` is how smix reaches a
+// contentDescription — could not be one of "the names the two phones give
+// this control", and neither could `role`, nor any element with a
+// modifier. These pin the chain to the one parser.
+// ---------------------------------------------------------------------
+
+fn chain_of(yaml_chain: &str) -> Result<Vec<Selector>, ParseError> {
+    let yaml = format!("appId: com.test.app\n---\n- tapOn:\n    fallback:\n{yaml_chain}");
+    let flow = parse_flow_yaml(&yaml)?;
+    match flow.steps.into_iter().next() {
+        Some(Step::TapOn {
+            selector: Selector::Fallback { fallback },
+            ..
+        }) => Ok(fallback),
+        other => panic!("expected a tapOn with a fallback chain, got: {other:?}"),
+    }
+}
+
+#[test]
+fn a_chain_element_can_be_a_label() {
+    let chain = chain_of("      - label: \"Pause\"\n      - text: \"Pause\"\n").expect("parse ok");
+    assert!(
+        matches!(&chain[0], Selector::Label { label, .. } if label == "Pause"),
+        "first element should be Label(Pause), got {:?}",
+        chain[0]
+    );
+    assert!(matches!(chain[1], Selector::Text { .. }));
+}
+
+#[test]
+fn a_chain_element_can_be_a_role_with_a_name() {
+    let chain = chain_of("      - role: button\n        name: \"Pause\"\n").expect("parse ok");
+    assert!(
+        matches!(&chain[0], Selector::Role { name: Some(_), .. }),
+        "expected Role with a name, got {:?}",
+        chain[0]
+    );
+}
+
+#[test]
+fn a_chain_element_keeps_its_modifiers() {
+    let chain = chain_of("      - text: \"Row\"\n        below:\n          id: \"header\"\n")
+        .expect("parse ok");
+    match &chain[0] {
+        Selector::Text { modifiers, .. } => assert!(
+            modifiers.below.is_some(),
+            "`below` was dropped from the chain element: {modifiers:?}"
+        ),
+        other => panic!("expected Text, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_chain_element_naming_two_things_is_both() {
+    let chain = chain_of("      - id: \"a\"\n        label: \"b\"\n").expect("parse ok");
+    match &chain[0] {
+        Selector::Id { id, modifiers } => {
+            assert_eq!(id, "a");
+            assert!(
+                modifiers
+                    .and
+                    .iter()
+                    .any(|s| matches!(s, Selector::Label { label, .. } if label == "b")),
+                "the label half of the element was dropped: {modifiers:?}"
+            );
+        }
+        other => panic!("expected Id with a label conjunct, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_chain_inside_a_chain_is_refused() {
+    let err = chain_of("      - fallback:\n          - id: \"x\"\n")
+        .expect_err("nested chain must error");
+    match err {
+        ParseError::InvalidValue { field, reason } => {
+            assert!(field.contains("fallback[0]"), "field={field}");
+            // Not merely "chain": the old hand-kept refusal said "fallback
+            // chain element expected one of …" to every unknown key, and so
+            // passed this by accident. The refusal has to say why a chain
+            // cannot hold a chain.
+            assert!(reason.contains("flat chain"), "reason={reason}");
+        }
+        other => panic!("expected InvalidValue, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_chain_element_with_an_unknown_key_names_the_selector_keys() {
+    let err = chain_of("      - labell: \"x\"\n").expect_err("unknown key must error");
+    match err {
+        ParseError::InvalidValue { field, reason } => {
+            assert!(field.contains("fallback[0]"), "field={field}");
+            assert!(
+                reason.contains("labell") && reason.contains("label"),
+                "the refusal should name the typo and the keys that are read: {reason}"
+            );
+        }
+        other => panic!("expected InvalidValue, got {other:?}"),
+    }
+}

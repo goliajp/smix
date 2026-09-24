@@ -41,5 +41,8 @@
         <activity
             android:name=".NativeDialogActivity"
             android:exported="true" />
+        <activity
+            android:name=".IconActivity"
+            android:exported="true" />
     </application>
 </manifest>

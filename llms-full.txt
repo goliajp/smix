@@ -1017,6 +1017,10 @@ looking for a pause instead:
       - point: "50%,75%"                # last resort
 ```
 
+- An entry is any selector — `label`, `role` with `name`, a modifier
+  such as `below:`, two keys at once — plus `point`, which only makes
+  sense as a last resort. A chain inside a chain is refused: it says
+  nothing a flat chain does not.
 - Iterates entries in order; uses the first that resolves. Order is a
   promise, not a tiebreak: `[id, text]` prefers the id even when both
   match, so a chain keeps picking the same element as an app's copy
@@ -1062,6 +1066,37 @@ looking for a pause instead:
 ```
 
 - Convenience shorthand for `text:` only.
+
+## One control, two phones
+
+A control with no words on it — an icon button, an icon-only tab — has
+one name, given for accessibility: `contentDescription` on Android,
+`accessibilityLabel` on iOS. smix reads both into `label`, and `text:`
+checks `label` among the fields it matches, so either form reaches it.
+Measured on both platforms with the fixture's icon-only controls, each
+pressed once per row and the press read from the app's own count:
+
+| platform | control | name lands in | `text:` finds / presses | `label:` finds / presses | `fallback: [text, label]` presses |
+|---|---|---|---|---|---|
+| Android | Compose, `semantics { contentDescription }` | `label` (both readers) | yes / yes | yes / yes | yes |
+| Android | `ImageButton` hosted by `AndroidView`, `contentDescription` | `label` (both readers) | yes / yes | yes / yes | yes |
+| iOS | SwiftUI `Button` with an image, `.accessibilityLabel` | `label` | yes / yes | yes / yes | yes |
+
+So for an icon-only control, `label:` is the precise form and `text:`
+also works. Write a chain when the two phones name the control
+differently — an Android build describing it "Pause", an iOS build
+labelling it "Pause recording":
+
+```yaml
+- tapOn:
+    fallback:
+      - label: "Pause"
+      - label: "Pause recording"
+```
+
+A control hosted by `AndroidView` inside Compose is visible to flows
+since 11.0 — before it, the semantics probe did not walk into it, and a
+flow on an app carrying the probe could not see it under any name.
 
 ## Modifiers
 
