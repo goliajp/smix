@@ -37,6 +37,14 @@ jobs:
         run: cargo fmt --all --check
       - name: clippy
         run: cargo clippy --workspace --all-targets
+      # Warnings are errors here and nowhere else: a doc link to a private
+      # item, or to a type that no longer exists, builds and tests green.
+      # Twenty-one of them had gathered (2026-09-25), two naming the types
+      # of a `/scroll` route the runner does not serve.
+      - name: rustdoc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --workspace
       # The runner tarballs are compared against the trees they were built
       # from, and that comparison lived inside `cargo test --workspace` — which
       # is where it was found, twice in one cycle, at thirteen and thirty-one

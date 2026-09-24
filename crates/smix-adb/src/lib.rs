@@ -213,9 +213,13 @@ fn unreverse_argv(device_port: u16) -> Vec<String> {
 
 /// The `(device_port, host_port)` pairs out of `adb reverse --list`.
 ///
-/// Each line reads `<serial> tcp:<device> tcp:<host>`. A line that does
-/// not parse is not a pair and is left out: the caller asked which
-/// routes are open, and a zero would be an answer nobody could act on.
+/// Each line reads `<transport> tcp:<device> tcp:<host>`. The first
+/// column is adb's name for the connection it answered on — `host-34`,
+/// measured on emulator-5554 — and not the device's serial, so it is not
+/// read: the listing already belongs to the device `-s` named. A line
+/// that does not parse is not a pair and is left out: the caller asked
+/// which routes are open, and a zero would be an answer nobody could act
+/// on.
 fn parse_reverse_list(stdout: &str) -> Vec<(u16, u16)> {
     stdout
         .lines()
@@ -1212,13 +1216,17 @@ User 0: ceDataInode=1234 installed=true hidden=false
         );
     }
 
-    /// Verbatim from `adb -s emulator-5554 reverse --list` with two open.
+    /// Verbatim from `adb -s emulator-5554 reverse --list` with one open
+    /// (2026-09-25), plus a second line of the same shape. The first
+    /// column is `host-34`: the transport, not the serial this test used
+    /// to put there. A parser that filtered on the serial would read
+    /// nothing out of a listing that has two routes in it.
     #[test]
     fn reads_the_open_reverses() {
-        let listing = "emulator-5554 tcp:8080 tcp:3000\nemulator-5554 tcp:9090 tcp:9090\n";
+        let listing = "host-34 tcp:6001 tcp:6001\nhost-34 tcp:8080 tcp:3000\n";
         assert_eq!(
             parse_reverse_list(listing),
-            vec![(8080, 3000), (9090, 9090)]
+            vec![(6001, 6001), (8080, 3000)]
         );
     }
 

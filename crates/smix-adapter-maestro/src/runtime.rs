@@ -337,7 +337,7 @@ pub trait AppLike: Send + Sync {
             ..Default::default()
         }))
     }
-    /// Same as [`clear_app_data`], but applies caller-
+    /// Same as [`clear_app_data`](Self::clear_app_data), but applies caller-
     /// supplied launchArguments + launchEnvironment on the runner-side
     /// launch step. Default impl delegates to `clear_app_data`
     /// (ignores args) so mock backends stay working.

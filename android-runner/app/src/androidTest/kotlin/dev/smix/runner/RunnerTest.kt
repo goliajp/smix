@@ -856,6 +856,26 @@ class SmixHttpServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
+    /// How many characters the field holds once the clear has had time
+    /// to reach it, watched rather than sampled.
+    ///
+    /// A Compose field publishes to its accessibility node
+    /// asynchronously — the reason `awaitLanded` watches a fill. One read
+    /// straight after `ACTION_SET_TEXT` caught `compose_input` still
+    /// holding all fifteen characters it was being emptied of, and the
+    /// fill that followed was refused as "the clear did not happen"
+    /// (the behaviour gate's A10, emulator-5554, 2026-09-25). Returns as
+    /// soon as the field reads empty; otherwise what it held when the
+    /// budget ran out.
+    private fun awaitEmptied(focusPx: IntArray?, budgetMs: Long): Int {
+        val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
+        while (true) {
+            val held = focusedTextLength(focusPx)
+            if (held == 0 || android.os.SystemClock.elapsedRealtime() >= deadline) return held
+            Thread.sleep(50)
+        }
+    }
+
     /// How many characters the focused field holds, or -1 when no
     /// focused editable node can be found to ask.
     ///
@@ -865,7 +885,7 @@ class SmixHttpServer(
     private fun focusedTextLength(focusPx: IntArray?): Int {
         val node = awaitEditableFocus(FOCUS_SETTLE_MS, focusPx) ?: return -1
         return try {
-            node.text?.toString()?.length ?: 0
+            FieldText.held(node.text, node.isShowingHintText).length
         } finally {
             node.recycle()
         }
@@ -1276,7 +1296,7 @@ class SmixHttpServer(
             )
         }
 
-        val before = focused.text?.toString() ?: ""
+        val before = FieldText.held(focused.text, focused.isShowingHintText)
         // The node says whether it masks. Nothing here guesses it from
         // the text: `aaaa` is four of the same character and is not a
         // mask, and a guess would quietly stop checking content for
@@ -1502,23 +1522,6 @@ class SmixHttpServer(
     private fun AccessibilityNodeInfo.canTakeText(): Boolean =
         actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
 
-    /// Current text of whatever holds input focus, read fresh.
-    ///
-    /// "Fresh" is what `refresh()` buys: without it this returned the
-    /// value the node carried when the framework handed it over, which
-    /// on a field that had just been typed into is the value from
-    /// before the typing. It read 0 characters, every time, about a
-    /// field the tree showed holding all seventeen.
-    private fun readFocusedText(): String? {
-        val node = instrumentation.uiAutomation.findFocus(
-            AccessibilityNodeInfo.FOCUS_INPUT,
-        ) ?: return null
-        node.refresh()
-        val text = node.text?.toString()
-        node.recycle()
-        return text
-    }
-
     /// Wait for the field to be holding `text`, up to a budget.
     ///
     /// One read after a fixed settle is not enough and cannot be made
@@ -1552,7 +1555,7 @@ class SmixHttpServer(
         var last = ""
         while (true) {
             node.refresh()
-            last = node.text?.toString() ?: ""
+            last = FieldText.held(node.text, node.isShowingHintText)
             if (RunnerWire.textLanded(before, last, dispatched, masked)) return last
             if (android.os.SystemClock.elapsedRealtime() >= deadline) return last
             Thread.sleep(50)
@@ -1598,7 +1601,7 @@ class SmixHttpServer(
             focused.recycle()
             if (ok) {
                 device.waitForIdle(500)
-                val held = focusedTextLength(focusPx)
+                val held = awaitEmptied(focusPx, TEXT_LAND_MS)
                 val body = RunnerWire.clearTextBody(held == 0, "set-text", 0, held)
                 return newFixedLengthResponse(Response.Status.OK, "application/json", body)
             }
@@ -1610,7 +1613,7 @@ class SmixHttpServer(
         device.waitForIdle(500)
         // Fifty delete keys with nothing checking what they did was the
         // whole of this path's evidence. The field itself can say.
-        val held = focusedTextLength(focusPx)
+        val held = awaitEmptied(focusPx, TEXT_LAND_MS)
         val body = RunnerWire.clearTextBody(held == 0, "key-events", deletes, held)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
@@ -2297,7 +2300,8 @@ object TreeBuilder {
             rawType = node.className?.toString() ?: "",
             identifier = node.viewIdResourceName,
             label = node.contentDescription?.toString(),
-            text = node.text?.toString(),
+            text = FieldText.held(node.text, node.isShowingHintText),
+            placeholder = node.hintText?.toString(),
             x = rect.left,
             y = rect.top,
             w = rect.right - rect.left,

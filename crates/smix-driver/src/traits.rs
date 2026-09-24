@@ -293,7 +293,7 @@ pub trait Driver: Send + Sync {
     /// Returns when the touch was held, on this host's clock, so a
     /// caller capturing frames alongside can tell whether they fall
     /// inside the press. A platform whose runner cannot report the
-    /// bounds returns [`PressTiming::unplaceable`] — which reads as "I
+    /// bounds returns [`PressTiming::unplaceable`](crate::PressTiming::unplaceable) — which reads as "I
     /// cannot tell", not as a press that happened at time zero.
     async fn long_press(
         &self,

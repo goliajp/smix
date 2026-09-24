@@ -30,7 +30,6 @@
 //! - `POST /fill` `{selector, text}` → [`RunnerKeyboardResult`]
 //! - `POST /clear` `{selector}` → [`RunnerKeyboardResult`]
 //! - `POST /press-key` `{key}` → [`RunnerKeyboardResult`]
-//! - `POST /scroll` `{selector, direction}` → `{matched, swipes}`
 //! - `POST /swipe-once` `{direction}` → `{ok}`
 //! - `POST /foreground` `{bundleId}` → `{ok}`
 //! - `POST /hide-keyboard` → `{ok}`

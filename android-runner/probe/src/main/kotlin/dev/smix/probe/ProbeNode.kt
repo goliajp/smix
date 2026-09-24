@@ -28,6 +28,11 @@ data class ProbeNode(
     /// selector unable to say which it meant.
     val resourceId: String?,
     val text: String?,
+    /// A field's hint: what it shows while it holds nothing. Not its
+    /// text — the accessibility reader carries the same thing as
+    /// placeholderValue, and a hint read as content is characters a clear
+    /// can never remove.
+    val hint: String?,
     val editableText: String?,
     val inputText: String?,
     val contentDescription: String?,
@@ -75,6 +80,7 @@ private fun ProbeNode.toJson(): String = buildString {
     appendField("testTag", testTag)
     appendField("resourceId", resourceId)
     appendField("text", text)
+    appendField("hint", hint)
     appendField("editableText", editableText)
     appendField("inputText", inputText)
     appendField("contentDescription", contentDescription)

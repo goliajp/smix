@@ -18,9 +18,10 @@
 //!
 //! Wire protocol (host `serve` mode):
 //!   - host emits `<W>x<H>\n` on stderr once, then loops.
-//!   - request:  one opcode byte on stdin — [`OP_RAW`] (raw BGRA) or
-//!     [`OP_PNG`] (ImageIO PNG). EOF ends the host.
-//!   - response: one status byte — [`STATUS_OK`] or [`STATUS_UNAVAILABLE`].
+//!   - request:  one opcode byte on stdin — [`OP_RAW`](crate::surface_capture::OP_RAW) (raw BGRA) or
+//!     [`OP_PNG`](crate::surface_capture::OP_PNG) (ImageIO PNG). EOF ends the host.
+//!   - response: one status byte — [`STATUS_OK`](crate::surface_capture::STATUS_OK) or
+//!     [`STATUS_UNAVAILABLE`](crate::surface_capture::STATUS_UNAVAILABLE).
 //!     On OK, followed by a 12-byte header `w:u32 h:u32 len:u32` (little
 //!     endian) then `len` payload bytes. On UNAVAILABLE the host exits.
 

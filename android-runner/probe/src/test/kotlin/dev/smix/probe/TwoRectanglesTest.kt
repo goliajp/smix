@@ -24,6 +24,7 @@ class TwoRectanglesTest {
         testTag = "scroll_row_9",
         resourceId = null,
         text = "row 9",
+        hint = null,
         editableText = null,
         inputText = null,
         contentDescription = null,

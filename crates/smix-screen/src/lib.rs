@@ -113,7 +113,8 @@ pub struct ScreenDescription {
 /// Collect up to `limit` visible+enabled nodes a reader could name (DFS
 /// pre-order), projecting each via [`summarize_node`]. Default limit = 1000.
 ///
-/// Anonymous layout scaffolding is skipped — see [`has_identity`].
+/// Anonymous layout scaffolding is skipped: a node with no role, name,
+/// id or text is left out, because it cannot be recognized or acted on.
 ///
 /// "Visible" here means what the resolver means by it: Apple's flag *and*
 /// [`is_visible_enough`]. Filtering on the flag alone let a node with zero
@@ -977,6 +978,11 @@ struct ProbeNodeWire {
     resource_id: Option<String>,
     #[serde(default)]
     text: Option<String>,
+    /// A hosted View's hint — what an empty field shows. Carried as the
+    /// node's placeholder, the way the accessibility reader carries it,
+    /// never as its text.
+    #[serde(default)]
+    hint: Option<String>,
     #[serde(default, rename = "editableText")]
     editable_text: Option<String>,
     /// What a field actually holds. Separate from `editableText`, which on
@@ -1032,6 +1038,7 @@ impl ProbeNodeWire {
         n.identifier = self.test_tag.clone().or_else(|| self.resource_id.clone());
         n.label = self.content_description.clone();
         n.text = self.text.clone();
+        n.placeholder_value = self.hint.clone();
         // `inputText` first: it is what was typed, where `editableText` is
         // what is shown. A predicate comparing a masked field with what a
         // flow typed asks a question only the first can answer.
@@ -1286,6 +1293,21 @@ mod what_the_probe_says_about_a_node {
                "enabled":true,"actions":[],"children":[]"#,
         );
         assert!(n.visible, "a silent probe was read as reporting hidden");
+    }
+
+    #[test]
+    fn an_empty_fields_hint_is_its_placeholder_and_not_its_text() {
+        // The accessibility reader carries a field's hint as
+        // `placeholderValue`. A probe tree that dropped it made
+        // `text: "type here"` find the fixture's field through one reader
+        // and not the other (measured 2026-09-25, emulator-5554).
+        let n = node_from_wire(
+            r#""id":2,"resourceId":"fixture_input","hint":"type here",
+               "className":"android.widget.EditText","bounds":[0,189,1080,313],
+               "focused":false,"enabled":true,"actions":[],"children":[]"#,
+        );
+        assert_eq!(n.placeholder_value.as_deref(), Some("type here"));
+        assert_eq!(n.text, None, "the hint was read as the field's content");
     }
 
     #[test]

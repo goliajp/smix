@@ -1010,6 +1010,12 @@ log "clippy"
 ( cd "$ROOT" && cargo clippy --workspace --all-targets ) > /tmp/smix-ship-clippy.log 2>&1 \
   || fail "clippy FAILED — see /tmp/smix-ship-clippy.log"
 
+# Beside clippy: a doc link to a private item or a type that is gone
+# builds and tests green, and only rustdoc with warnings denied says so.
+log "rustdoc"
+( cd "$ROOT" && RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace ) > /tmp/smix-ship-rustdoc.log 2>&1 \
+  || fail "rustdoc FAILED — see /tmp/smix-ship-rustdoc.log"
+
 # Moved down past the cheap judgements below it. This step runs three
 # host suites and pays for whatever the tree last invalidated: after
 # the kevy bump it took 25 minutes, and `cheap-gates-come-first`
