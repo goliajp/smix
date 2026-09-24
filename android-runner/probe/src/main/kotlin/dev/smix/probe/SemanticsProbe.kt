@@ -329,6 +329,8 @@ internal fun SemanticsNode.toProbeNode(): ProbeNode? {
         text = c.getOrElseNullable(SemanticsProperties.Text) { null }
             ?.joinToString("") { it.text }
             ?.ifEmpty { null },
+        // Compose semantics has no hint property to read.
+        hint = null,
         // What a field actually holds. The accessibility projection cannot
         // report this on a masked field — it gives one bullet per character
         // and the characters nowhere.

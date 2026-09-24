@@ -1411,7 +1411,7 @@ pub enum ParseError {
     },
 }
 
-/// Reading back what [`emit_junit`] writes.
+/// Reading back what `entry::emit_junit` writes.
 ///
 /// Beside the writer on purpose. Three host adapters read this — an XCTest
 /// helper, a JUnit rule, and whatever comes next — and a shape that drifts

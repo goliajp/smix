@@ -424,16 +424,16 @@ pub enum LaunchFreshOp {
     /// daemon interpretation.
     Terminate,
     /// `simctl uninstall` on the target. Used only when `SMIX_LAUNCH_FRESH_FORCE_REINSTALL=1` is set;
-    /// the default clear-state path uses [`SandboxClearInPlace`] to
+    /// the default clear-state path uses [`SandboxClearInPlace`](LaunchFreshOp::SandboxClearInPlace) to
     /// avoid the iOS 26.5 XCUITest binding loss and
-    /// ReportCrash "<app> quit unexpectedly" dialog.
+    /// ReportCrash "`<app>` quit unexpectedly" dialog.
     Uninstall,
     /// `simctl install <path>` — reinstalls the .app bundle. Same
-    /// note as [`Uninstall`]: only used on the force-reinstall path.
+    /// note as [`Uninstall`](LaunchFreshOp::Uninstall): only used on the force-reinstall path.
     Install(String),
     /// `simctl privacy reset all` — wipes granted permissions
     /// without touching the app's data. Companion to
-    /// [`SandboxClearInPlace`]; both make up the default in-place
+    /// [`SandboxClearInPlace`](LaunchFreshOp::SandboxClearInPlace); both make up the default in-place
     /// clear-state path.
     ///
     /// Since smix 1.0.4.
@@ -472,7 +472,7 @@ pub fn plan_launch_fresh_calls(
 /// switch. When `false` (the new default), `clear_state=true` runs
 /// the in-place sandbox clear + privacy reset instead of
 /// `simctl uninstall + install`. This avoids the iOS 26.5 XCUITest
-/// binding loss and the ReportCrash "<app> quit
+/// binding loss and the ReportCrash "`<app>` quit
 /// unexpectedly" system dialog — both of which stem
 /// from the uninstall+install sequence.
 ///
@@ -683,7 +683,7 @@ impl Session {
     ///    cleanly.
     ///
     /// This replaces the maestro `launchApp: { clearState: true }`
-    /// shape that triggered the "<app> quit unexpectedly" system dialog
+    /// shape that triggered the "`<app>` quit unexpectedly" system dialog
     /// on the iOS 26.5 sim even once `simctl uninstall + install` was
     /// removed. The dialog is eliminated because the terminate path is
     /// cooperative.
@@ -1549,7 +1549,7 @@ impl App {
     /// IN PLACE via cooperative XCUIApplication.terminate() + host
     /// SimctlClient sandbox wipe + cooperative XCUIApplication.launch().
     /// Preserves XCUITest binding and does NOT signal
-    /// `com.apple.ReportCrash` — the fix for the "<app> quit
+    /// `com.apple.ReportCrash` — the fix for the "`<app>` quit
     /// unexpectedly" system dialog that both `simctl uninstall + install`
     /// and `simctl terminate + simctl spawn rm` still tripped.
     ///
@@ -1945,7 +1945,7 @@ impl App {
     /// Capture a frame preferring the fast raw-BGRA path (skips PNG
     /// encode+decode for diff-loop consumers). Falls back to a PNG frame when
     /// the direct IOSurface path is unavailable. See
-    /// [`DeviceControl::capture_bgra`](crate::device_control::DeviceControl::capture_bgra).
+    /// [`DeviceControl::capture_bgra`].
     ///
     /// Since smix 2.0.0.
     pub async fn capture_bgra(

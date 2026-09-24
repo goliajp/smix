@@ -44,6 +44,40 @@ pub fn describe(device_id: &str, admission: &Admission) -> String {
     }
 }
 
+/// The note for one device the tree's old book records differently.
+///
+/// Pure so the wording is testable. It says when the tree's copy was
+/// last written, and never that something is writing it: a book frozen
+/// since the ledgers moved disagrees with the machine's on every device
+/// it names, forever, and "Something still writes there" turned that
+/// into a claim about a live writer with nothing behind it.
+pub fn divergence_note(
+    d: &LedgerDivergence,
+    checkout: &str,
+    tree: &Path,
+    leases: &str,
+    last_written: Option<&str>,
+) -> String {
+    match d {
+        LedgerDivergence::OnlyInCheckout { device_id } => format!(
+            "note: {device_id} has a ledger in {checkout} and none here — no other \
+             checkout can see it. `smix lease migrate --from {}` brings it over.",
+            tree.display()
+        ),
+        LedgerDivergence::Disagrees { device_id, detail } => {
+            let when = match last_written {
+                Some(t) => format!("That copy was last written {t}"),
+                None => "When it was last written could not be read".to_string(),
+            };
+            format!(
+                "note: {device_id} is recorded differently in {checkout} — {detail}. \
+                 {when}; this smix only reads it. This command answers from \
+                 {leases} alone."
+            )
+        }
+    }
+}
+
 /// Run the subcommand.
 ///
 /// `leases` is this machine's ledger directory — the ledgers stopped
@@ -78,18 +112,26 @@ pub async fn run(leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::Cl
             .unwrap_or(c.path());
         eprintln!();
         for d in rows {
-            match d {
-                LedgerDivergence::OnlyInCheckout { device_id } => eprintln!(
-                    "note: {device_id} has a ledger in {c} and none here — no other \
-                     checkout can see it. `smix lease migrate --from {}` brings it over.",
-                    tree.display()
-                ),
-                LedgerDivergence::Disagrees { device_id, detail } => eprintln!(
-                    "note: {device_id} is recorded differently in {c} — {detail}. \
-                     Something still writes there; until they agree, this command \
-                     answers from {leases} alone."
-                ),
-            }
+            let written = c
+                .ledger_path(d.device_id())
+                .ok()
+                .and_then(|p| std::fs::metadata(p).ok())
+                .and_then(|m| m.modified().ok())
+                .map(|t| {
+                    chrono::DateTime::<chrono::Local>::from(t)
+                        .format("%Y-%m-%d %H:%M:%S %:z")
+                        .to_string()
+                });
+            eprintln!(
+                "{}",
+                divergence_note(
+                    d,
+                    &c.to_string(),
+                    tree,
+                    &leases.to_string(),
+                    written.as_deref()
+                )
+            );
         }
     };
     match action {
@@ -524,6 +566,57 @@ mod tests {
             started_at: "Thu Aug  6 10:00:00 2026".into(),
             cmd: "smix run hello.yaml".into(),
         }
+    }
+
+    fn disagreement() -> LedgerDivergence {
+        LedgerDivergence::Disagrees {
+            device_id: "5D087114".into(),
+            detail: "holder: machine says pid 70842, the tree says pid 47495".into(),
+        }
+    }
+
+    #[test]
+    fn a_disagreement_says_when_the_tree_was_written_and_not_that_it_still_is() {
+        // A frozen book always disagrees with a live one. The note said
+        // "Something still writes there" about a file last touched on
+        // 2026-08-11, and a release review took it at its word.
+        let msg = divergence_note(
+            &disagreement(),
+            "/home/u/repo/.smix/leases",
+            Path::new("/home/u/repo/.smix/leases")
+                .ancestors()
+                .nth(2)
+                .expect("a book two levels under its tree"),
+            "/home/u/.local/share/smix/leases",
+            Some("2026-08-11 22:21:54 +09:00"),
+        );
+        assert!(!msg.contains("still writes"), "{msg}");
+        assert!(
+            msg.contains("last written 2026-08-11 22:21:54 +09:00"),
+            "{msg}"
+        );
+        assert!(
+            msg.contains("answers from /home/u/.local/share/smix/leases alone"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn a_disagreement_whose_file_has_no_time_says_so() {
+        let msg = divergence_note(
+            &disagreement(),
+            "/home/u/repo/.smix/leases",
+            Path::new("/home/u/repo/.smix/leases")
+                .ancestors()
+                .nth(2)
+                .expect("a book two levels under its tree"),
+            "/home/u/.local/share/smix/leases",
+            None,
+        );
+        assert!(
+            msg.contains("When it was last written could not be read"),
+            "{msg}"
+        );
     }
 
     #[test]

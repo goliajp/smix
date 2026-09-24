@@ -1029,7 +1029,7 @@ pub fn set_flow_attempts_persist_path(path: std::path::PathBuf) {
 }
 
 /// Public accessor with just the fields needed by callers.
-/// Mirrors [`smix_runner_wire::FlowAttempt`] shape.
+/// Mirrors the shape of `smix_runner_wire::FlowAttempt`.
 #[derive(Clone, Debug)]
 pub struct FlowAttemptData {
     /// Zero-based retry index.
@@ -1074,7 +1074,7 @@ where
 }
 
 /// Abstraction so callers pass either
-/// [`smix_runner_wire::FlowAttempt`] or a local struct with the same
+/// `smix_runner_wire::FlowAttempt` or a local struct with the same
 /// shape without a cross-crate dep on smix-runner-wire from smix-simctl.
 pub trait FlowAttemptShape {
     /// Zero-based retry index.
@@ -1616,7 +1616,7 @@ impl SimctlClient {
     /// Companion to [`Self::clear_app_sandbox`] on the in-place
     /// `launchApp: clearState: true` path, which replaces
     /// `simctl uninstall + install` — that pairing triggers iOS 26.5
-    /// XCUITest binding loss plus a ReportCrash "<app> quit
+    /// XCUITest binding loss plus a ReportCrash "`<app>` quit
     /// unexpectedly" dialog.
     pub async fn privacy_reset_all(
         &self,

@@ -111,6 +111,9 @@ else
     # cargo here loses more time to contention than it saves.
     # shellcheck disable=SC2086
     cargo clippy -j 4 $ARGS --all-targets
+    echo "--- rustdoc"
+    # shellcheck disable=SC2086
+    RUSTDOCFLAGS="-D warnings" cargo doc -j 4 --no-deps $ARGS
     echo "--- test"
     # shellcheck disable=SC2086
     cargo test -j 4 $ARGS

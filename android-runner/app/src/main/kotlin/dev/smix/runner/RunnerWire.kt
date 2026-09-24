@@ -869,6 +869,7 @@ object TreeWire {
         identifier: String?,
         label: String?,
         text: String?,
+        placeholder: String?,
         x: Int,
         y: Int,
         w: Int,
@@ -885,6 +886,7 @@ object TreeWire {
         identifier?.takeIf { it.isNotEmpty() }?.let { obj.put("identifier", shortResourceId(it)) }
         label?.takeIf { it.isNotEmpty() }?.let { obj.put("label", it) }
         text?.takeIf { it.isNotEmpty() }?.let { obj.put("text", it) }
+        placeholder?.takeIf { it.isNotEmpty() }?.let { obj.put("placeholderValue", it) }
         obj.put(
             "bounds",
             JSONObject()
@@ -1054,4 +1056,14 @@ object WindowRules {
         val named = foreign.joinToString(", ") { "${it.pkg} (${kindOf(it.type)})" }
         return "Above ${app ?: "the app"}, and holding the focus: $named.$mine"
     }
+}
+
+// What a text field holds, as opposed to what is written on it. Since
+// API 26 an empty EditText reports its hint as the node's text and sets
+// isShowingHintText; read as content, a search field's "Search…" was
+// seven characters that /clear-text could not delete (AB1, 2026-09-25).
+// The hint is not lost: the tree carries it as placeholderValue.
+object FieldText {
+    fun held(text: CharSequence?, showingHint: Boolean): String =
+        if (showingHint) "" else text?.toString() ?: ""
 }

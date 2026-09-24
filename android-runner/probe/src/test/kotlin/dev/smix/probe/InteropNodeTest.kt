@@ -44,6 +44,7 @@ class InteropNodeTest {
             resourceId = "btn_player_fullscreen",
             contentDescription = "Full screen",
             text = null,
+            hint = null,
             className = "android.widget.ImageButton",
             layout = Bounds(948, 934, 1039, 1025),
             clip = Bounds(0, 0, 1080, 2340),
@@ -69,6 +70,7 @@ class InteropNodeTest {
                 resourceId = "row_far_away",
                 contentDescription = null,
                 text = "24 Sep",
+                hint = null,
                 className = "android.widget.TextView",
                 layout = Bounds(0, 533, 1080, 743),
                 clip = Bounds(0, 0, 1080, 2340),
@@ -88,6 +90,7 @@ class InteropNodeTest {
             resourceId = "row_scrolled_past",
             contentDescription = null,
             text = "yesterday",
+            hint = null,
             className = "android.widget.TextView",
             layout = Bounds(0, 2400, 1080, 2500),
             clip = Bounds(0, 0, 1080, 2340),
@@ -109,6 +112,7 @@ class InteropNodeTest {
             resourceId = "row_half",
             contentDescription = null,
             text = "half",
+            hint = null,
             className = "android.widget.TextView",
             layout = Bounds(0, 100, 1080, 300),
             clip = Bounds(0, 200, 1080, 2340),
@@ -126,7 +130,32 @@ class InteropNodeTest {
     }
 
     @Test
-    fun `the wire has sixteen fields`() {
+    fun `an empty field's hint travels as a hint, not as its text`() {
+        // The accessibility reader reports a field's hint as placeholderValue
+        // and its content as text; a probe that dropped the hint left
+        // `text: "type here"` finding the fixture's field through one reader
+        // and not the other (measured 2026-09-25, emulator-5554).
+        val n = interopNode(
+            resourceId = "fixture_input",
+            contentDescription = null,
+            text = null,
+            hint = "type here",
+            className = "android.widget.EditText",
+            layout = Bounds(0, 189, 1080, 313),
+            clip = Bounds(0, 0, 1080, 2340),
+            placed = true,
+            children = emptyList(),
+        )
+        assertEquals("type here", n!!.hint)
+        assertNull("an empty field was given its hint as content", n.text)
+        assertTrue(
+            "the wire does not carry the hint",
+            listOf(n).toWireJson().contains("\"hint\":\"type here\""),
+        )
+    }
+
+    @Test
+    fun `the wire has seventeen fields`() {
         // A count, not "more than none". Sixteen is a fact about what the
         // host reads off this wire today; a field added or removed here
         // changes what every downstream reader sees, so it should cost one
@@ -134,8 +163,10 @@ class InteropNodeTest {
         //
         // Sixteen since `visibleBounds` joined `bounds`: one rectangle was
         // being asked both where the node is and how much of it shows, and
-        // the second answer was wrong for every clipped node.
-        assertEquals(16, ProbeNode::class.java.declaredFields.count { !it.isSynthetic })
+        // the second answer was wrong for every clipped node. Seventeen
+        // since `hint`: an empty field's hint is what a person reads there,
+        // and the accessibility reader carries it.
+        assertEquals(17, ProbeNode::class.java.declaredFields.count { !it.isSynthetic })
     }
 }
 

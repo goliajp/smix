@@ -361,6 +361,16 @@ impl CheckoutLedgers {
     pub fn read(&self, device_id: &str) -> Result<Option<Lease>, LeaseError> {
         read(&LeaseDir(self.0.clone()), device_id)
     }
+
+    /// Where this book keeps one device's ledger, whether or not it is
+    /// there.
+    ///
+    /// # Errors
+    ///
+    /// An id that cannot be a filename, as [`lease_path`].
+    pub fn ledger_path(&self, device_id: &str) -> Result<PathBuf, LeaseError> {
+        lease_path(&LeaseDir(self.0.clone()), device_id)
+    }
 }
 
 impl std::fmt::Display for CheckoutLedgers {

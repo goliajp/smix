@@ -50,6 +50,7 @@ LOCAL = {
     "three readers agree (swift)": "three-readers-agree",
     "every reader is exercised somewhere in CI": "three-readers-agree",
     "clippy": "cargo clippy",
+    "rustdoc": "cargo doc",
     "cargo test": "cargo test",
     # preflight reaches this crate through the embedder rule near the
     # top of the file — a change under `swift-bridge/` or

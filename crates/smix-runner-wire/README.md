@@ -57,7 +57,6 @@ client method names live in [`smix-runner-client`](https://crates.io/crates/smix
 | POST | `/fill` | `{selector, text}` | [`RunnerKeyboardResult`] |
 | POST | `/clear` | `{selector}` | [`RunnerKeyboardResult`] |
 | POST | `/press-key` | `{key}` | [`RunnerKeyboardResult`] |
-| POST | `/scroll` | `{selector,`[`RunnerScrollSelector`]`, direction}` | [`ScrollResponse`] |
 | POST | `/swipe-once` | `{direction}` | `{ok}` |
 | POST | `/foreground` | `{bundleId}` | `{ok}` |
 | POST | `/hide-keyboard` | — | `{ok}` |

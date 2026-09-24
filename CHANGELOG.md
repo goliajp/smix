@@ -265,6 +265,32 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Fixed
 
+- **An empty Android field holds nothing, even while it shows its hint.**
+  Since API 26 an empty `EditText` reports its hint as the accessibility
+  node's text, and the runner read that as the field's content in four
+  places: the tree gave the fixture's empty field `text: "type here"`, and
+  `/clear-text` answered `field_not_empty` about it (`held: 9`), so every
+  `fill` / `inputText` into an empty field with a hint was refused as "the
+  clear did not happen" — on Settings' search box too (`held: 7`, the
+  length of `Search…`). The refusal arrived with this cycle's clear
+  read-back and was never in a published release; the hint-as-text tree
+  was in every one. The hint now travels as `placeholderValue`, as it
+  does on iOS, and `text:` still finds the field by it — in the app's
+  probe tree as well, which used to carry neither.
+- **A clear on a Compose field is read after it lands.** The read-back
+  looked once, straight after the clear, and a Compose field publishes
+  asynchronously: a fill naming a field that already held text was refused
+  with the field about to read empty. It now watches for up to two
+  seconds, as a fill's own read-back already did. Also new this cycle.
+- **`smix lease list` no longer says something still writes a tree's old
+  ledger.** A frozen `.smix/leases` disagrees with the machine's book for
+  good, and the note turned that into a claim about a live writer. It
+  says when the tree's copy was last written, and that this smix only
+  reads it.
+- **The `smix-runner-wire` docs no longer list a `/scroll` route.** The
+  runner does not serve one, and the two types the row named do not
+  exist. Twenty-one broken doc links across six crates are fixed, and
+  `cargo doc` with warnings denied runs in CI, preflight and the ship.
 - **A runner that could not answer no longer reads as "not visible".**
   `when: { visible: … }` / `notVisible:` took any failure to look as the
   element being absent, so a runner answering half a body skipped the
