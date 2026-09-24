@@ -48,8 +48,9 @@ Prerequisites: macOS with Xcode + Simulator (iOS testing); Android SDK with an e
 
 Coming from 10.x? An unread key in a flow is now a parse error, a scroll
 stops when its target is wholly visible rather than merely overlapping,
-and an Android step whose touch silently failed now fails where it
-happens — [Migrating to smix 11.0](docs/migrating-to-11.md) is short, and
+an Android step whose touch silently failed now fails where it happens,
+and `pressKey: lock / volumeUp / volumeDown` fails on iOS by name instead
+of being skipped — [Migrating to smix 11.0](docs/migrating-to-11.md) is short, and
 `smix run --check <flow>` names anything that has to change.
 
 Coming from 3.x? Device records and leases moved to the machine, so one

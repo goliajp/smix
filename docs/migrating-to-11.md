@@ -113,6 +113,40 @@ It was emulated as two left rotations, which lands at rotation 1, not 2
 — and nothing checked, so the verb reported success for something else.
 Every orientation is now read back before the route answers.
 
+### `assertScreenshot` and `takeScreenshot` refuse keys they do not read
+
+maestro's `cropOn` and `thresholdPercentage` used to be walked past, so
+a `cropOn` flow compared the whole frame and passed. Both are carried out
+now. `label` and `optional` on either verb, and on `takeScreenshot` any
+key but `path` / `name` / `annotate` / `cropOn`, stop at parse time by
+name. A baseline recorded without `cropOn` is a whole frame; if you add
+`cropOn` to an existing check, record its baseline again.
+
+### A runner that could not answer is no longer "not visible"
+
+`when: { visible: … }`, `when: { notVisible: … }` and `assertNotVisible`
+took any failure to look as the element being absent — a runner that
+answered half a body skipped the block, and the run went green. They now
+fail at once as `DRIVER_ERROR`. In `smix run --format json`,
+`failure.judgesTheScreen` says which kind a failure is: `true` is an
+answer about your app, `false` is smix unable to look.
+
+### `pressKey: lock / volumeUp / volumeDown` on iOS fails by name
+
+These were skipped on every platform. They are pressed on Android now,
+and on iOS the step fails saying why: XCUIDevice has no lock button, the
+simulator has no volume buttons, and on a physical iPhone this has not
+been measured. A cross-platform flow presses them under a platform
+condition:
+
+```yaml
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - pressKey: volumeUp
+```
+
 ---
 
 ## Rust API
@@ -185,6 +219,73 @@ behind this route was a second implementation with its own idea of
 "visible", and nothing called it. `RunnerScrollSelector` and
 `ScrollResponse` go with it.
 
+### `Step` is `#[non_exhaustive]`
+
+Outside `smix-adapter-maestro`, a `match` on `Step` needs a `_` arm.
+Two variants are new, `RememberBounds` and `AssertBoundsUnchanged`. From
+here on a new flow verb is a minor release for you, not a major one.
+
+`Step::PressKey` holds a `KeyName` (which gains `Back`), not a `String`;
+`RunError::UnknownKey` is gone because an unknown key is a parse error
+now. `KeyName::from_name` is the one reader;
+`smix_cli::act::parse_key_name` is gone.
+
+### Screenshots take one `ScreenshotCheck`
+
+```rust
+// 10.x
+app.assert_screenshot(&baseline, max_hamming).await?;
+
+// 11.0
+app.assert_screenshot(&ScreenshotCheck {
+    baseline: &baseline,
+    compare: ScreenshotCompare::Hash { max_hamming },
+    masks: &[],
+    crop: None,
+}).await?;
+```
+
+`ScreenshotCompare::Pixels { min_match_percent }` is maestro's
+`thresholdPercentage`. `AssertScreenshotOutcome` gains
+`MatchedPixels { percent }` and is no longer `Eq`. `AppLike` and `Driver`
+gain a required `pixels_per_point`.
+
+### Runner client and capsule
+
+- `HttpRunnerClient::double_tap` and `long_press` are gone, with the iOS
+  runner's `/double-tap` and `/long-press`. Use
+  `double_tap_at_norm_coord` / `long_press_at_norm_coord`; both return
+  the runner's `TapAtCoordResult`, which gains the held-touch bounds,
+  `press()` and `complete`.
+- `tap_landed_within` takes a `ChainCoverage`.
+- `smix_capsule::runner_android::up_with` and `up_with_takeover` are
+  replaced by `up_with_options(root, serial, port, &UpOptions)`.
+  `parse_resumed_package` is gone; `smix_adb::parse_resumed_activity` is
+  the one reader.
+- `Driver::confirm_on_screen` returns `Result<bool, ExpectationFailure>`:
+  a check the runner could not answer is an error, not a confirmation.
+
+### Leases and cleanup
+
+- `smix_lease::Resource` has a new variant, `Emulator { avd, console_log }`,
+  and `Resource::Runner` has two optional fields, `bundle` and `log`.
+  `AdbClient::start_emulator_on` takes the path to write the emulator's
+  console to.
+- The iOS runner's record is the device's lease.
+  `smix_capsule::runner::down` and `down_including_unrecorded` take a port
+  and no workspace root; `runner_state::{read, write, clear, Platform}`
+  are replaced by `runner_state::find` and `legacy_evidence`.
+- Cleanup takes no workspace root: `CleanupExecutor::execute`,
+  `reconcile::execute`, `Leased::acquire` and `App::hold_device_lease`
+  drop the parameter.
+
+### Failure and tree fields
+
+`A11yNode` has `window` and `unreadable_windows`; `FailureInit` and
+`ExpectationFailure` have `visible_total`, `windows` and
+`unreadable_windows`. A struct literal needs them (`None` / empty);
+`FailureInit { ..Default::default() }` needs nothing.
+
 ---
 
 ## What did not change
@@ -193,5 +294,8 @@ Physical-device rules are unchanged: a device must be registered before
 it can be addressed, destructive actions are refused per device until
 allowed once, and a capability a phone does not have is a loud error.
 
-Device records and leases are where 4.0 put them. No migration command
-is needed for this release.
+Device records and leases are where 4.0 put them, with one addition:
+the iOS runner's record, which used to be a file in the checkout, is now
+the device's lease in the machine directory. A checkout's old file is
+still read, as evidence only. No migration command is needed for this
+release.

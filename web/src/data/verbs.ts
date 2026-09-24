@@ -29,6 +29,7 @@ export const VERB_SUBSET: VerbRow[] = [
   { maestro: 'assertWithAI', smix: 'assertCondition', category: 'Assert', tag: 'ai-tier' },
   { maestro: 'extractTextWithAI', smix: 'extractWithAI', category: 'Assert', tag: 'ai-tier' },
   { maestro: 'fixture', smix: 'fixture', category: 'SmixNative', tag: 'native' },
+  { maestro: 'neverVisible', smix: 'neverVisible', category: 'Assert', tag: 'native' },
   {
     maestro: 'waitForAnimationToEnd',
     smix: 'waitForAnimationToEnd',
@@ -37,4 +38,4 @@ export const VERB_SUBSET: VerbRow[] = [
   },
 ]
 
-export const VERB_TABLE_TOTAL = 49
+export const VERB_TABLE_TOTAL = 53
