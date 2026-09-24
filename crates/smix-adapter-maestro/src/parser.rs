@@ -2989,6 +2989,40 @@ fn parse_assert_bounds_unchanged(v: &Value) -> Result<Step, ParseError> {
     })
 }
 
+// `neverVisible: { <selector>, during: [<steps>], optional? }`. smix's
+// own verb. `optional` is a block's, as on `runFlow`; a block's `label`
+// is not taken, because here `label:` already means what it means on
+// every verb with a selector — the element's accessibility label — and
+// one key cannot name two things.
+fn parse_never_visible(v: &Value) -> Result<Step, ParseError> {
+    let (selector, map) = split_bounds_mapping(v, "neverVisible", &["during", "optional"])?;
+    let Some(steps) = get_spelled(map, "during") else {
+        return Err(ParseError::InvalidValue {
+            field: "neverVisible.during".into(),
+            reason: "`during` is required: it is the steps the watch spans".into(),
+        });
+    };
+    let during = parse_step_sequence(steps, "neverVisible.during")?;
+    if during.is_empty() {
+        // A span of no steps is a watch over no time: it would pass
+        // having looked at nothing.
+        return Err(ParseError::InvalidValue {
+            field: "neverVisible.during".into(),
+            reason: "`during` is empty: a watch needs at least one step to span".into(),
+        });
+    }
+    let mut own = serde_norway::Mapping::new();
+    if let Some(o) = get_spelled(map, "optional") {
+        own.insert(Value::String("optional".into()), o.clone());
+    }
+    let opts = parse_block_options(&own, "neverVisible")?;
+    Ok(Step::NeverVisible {
+        selector,
+        during,
+        opts,
+    })
+}
+
 // takeScreenshot accepts three shapes:
 //   `takeScreenshot: "name"`          — string path
 //   `- takeScreenshot`                 — bare (None ⇒ discard bytes)
@@ -3151,6 +3185,7 @@ fn dispatch_step(key: &str, value: &Value) -> Result<Step, ParseError> {
         "copyTextFrom" => parse_copy_text_from(value),
         "rememberBounds" => parse_remember_bounds(value),
         "assertBoundsUnchanged" => parse_assert_bounds_unchanged(value),
+        "neverVisible" => parse_never_visible(value),
         "doubleTapOn" => parse_double_tap_on(value),
         "repeatTap" => parse_repeat_tap(value),
         "longPressOn" => parse_long_press_on(value),

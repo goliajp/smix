@@ -54,6 +54,25 @@ All notable changes to the `smix` workspace are documented here. The format foll
 
 ### Added
 
+- **`neverVisible: { <selector>, during: [<steps>] }` — the element is on
+  screen at no moment while the inner steps run.** smix's own verb; maestro
+  has none. `assertNotVisible` answers about one instant, and a loading
+  state that flashed for 200 ms between two steps is gone by any instant
+  after them. The inner steps run as they do anywhere else; beside them a
+  watch asks the question `assertNotVisible` asks, as fast as the device
+  answers, and looks at least once after every inner step before the next
+  begins. One sighting fails it with the time since the span began, the
+  inner step that was running and the screen just after; a pass says how
+  many times it looked and the longest stretch nobody was looking. A watch
+  whose every look failed fails — nothing is known about a screen nobody
+  read — and an inner step's failure is reported as itself. Measured on
+  the fixture: about 24 looks a second on an Android emulator and 38 on an
+  iOS simulator, longest gap under 75 ms. `optional: true` turns a sighting
+  into a skip; `label:` is the element's label here, as on every verb with
+  a selector.
+- **`smix_sdk::screen_facts`** is re-exported, so a failure built outside
+  the driver can carry the same "whose windows, how many elements" facts.
+
 - **`rememberBounds` / `assertBoundsUnchanged`: a flow can say nothing
   moved between two steps.** `rememberBounds: { <selector>, as: name }`
   keeps an element's box; `assertBoundsUnchanged: { <selector>, was: name,

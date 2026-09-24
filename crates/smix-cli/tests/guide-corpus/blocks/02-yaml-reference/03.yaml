@@ -25,3 +25,11 @@
     id: "btn-ptz-stop"
     was: "stop"
     within: 1                            # device-independent pixels (default 0)
+
+- neverVisible:                          # at no moment while these steps run
+    id: "loading-overlay"
+    during:
+      - tapOn: { id: "row-alert-1" }
+      - extendedWaitUntil:
+          visible: { id: "player-surface" }
+          timeout: 5000

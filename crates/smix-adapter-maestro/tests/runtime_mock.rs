@@ -370,6 +370,16 @@ impl AppLike for MockApp {
         if matches!(selector, Selector::Id { id, .. } if id == "move-it") {
             *self.input_shift.lock().unwrap() += *self.move_by.lock().unwrap();
         }
+        // `overlay` appears while the app is between `show-overlay` and
+        // `hide-overlay` — the loading state `neverVisible` watches for.
+        if let Selector::Id { id, .. } = selector
+            && (id == "show-overlay" || id == "hide-overlay")
+        {
+            self.find_returns.lock().unwrap().insert(
+                smix_sdk::describe_selector(&smix_sdk::id("overlay")),
+                id == "show-overlay",
+            );
+        }
         self.calls
             .lock()
             .unwrap()
@@ -3923,4 +3933,131 @@ async fn a_screenshot_mask_reaches_the_comparison() {
         "the run still says the mask is ignored: {:?}",
         report.warnings
     );
+}
+
+// --- neverVisible: a watch over the steps between two instants ---------
+
+async fn run_watch(
+    app: &MockApp,
+    inner: &str,
+    extra: &str,
+) -> Result<smix_adapter_maestro::RunReport, RunError> {
+    let flow = parse_inline(&format!(
+        "appId: x\n---\n- neverVisible:\n    id: overlay{extra}\n    during:\n{inner}"
+    ));
+    let mut adapter = Adapter::new(app, fixtures_dir());
+    adapter.run(&flow).await
+}
+
+#[tokio::test]
+async fn never_visible_fails_when_it_appears_and_says_during_which_step() {
+    let app = MockApp::new();
+    let err = run_watch(
+        &app,
+        "      - tapOn:\n          id: show-overlay\n      - tapOn:\n          id: hide-overlay\n      - tapOn:\n          id: done\n",
+        "",
+    ).await
+    .expect_err("an overlay that appeared between the steps passed");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("after ") && msg.contains("ms"),
+        "no time since the watch began: {msg}"
+    );
+    assert!(msg.contains("tapOn"), "no inner step named: {msg}");
+    assert!(
+        msg.contains("step 1") || msg.contains("step 2"),
+        "no inner step number: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn never_visible_passes_when_it_never_appears_and_says_how_often_it_looked() {
+    let app = MockApp::new();
+    let report = run_watch(
+        &app,
+        "      - tapOn:\n          id: a\n      - tapOn:\n          id: b\n",
+        "",
+    )
+    .await
+    .expect("an overlay that never appeared failed");
+    let note = report
+        .warnings
+        .iter()
+        .find(|w| w.contains("neverVisible"))
+        .unwrap_or_else(|| panic!("no word on how the watch went: {:?}", report.warnings));
+    assert!(
+        note.contains("watched "),
+        "the number of looks is missing: {note}"
+    );
+    assert!(
+        note.contains("longest gap"),
+        "the longest gap is missing: {note}"
+    );
+    assert!(
+        !note.contains("watched 0 "),
+        "a watch that never looked was reported as having looked: {note}"
+    );
+}
+
+#[tokio::test]
+async fn never_visible_that_could_never_look_fails_rather_than_passes() {
+    // Every look failed: "it never appeared" would be a claim about a
+    // screen nobody read.
+    let app =
+        MockApp::new().with_find_error(&smix_sdk::describe_selector(&smix_sdk::id("overlay")));
+    let err = run_watch(&app, "      - tapOn:\n          id: a\n", "")
+        .await
+        .expect_err("a watch that could not look once passed");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("could not look") || msg.contains("never looked"),
+        "the refusal does not say the watch never saw the screen: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn a_failing_inner_step_is_the_failure_the_watch_reports() {
+    let app = MockApp::new().with_tap_failure(
+        &smix_sdk::describe_selector(&smix_sdk::id("broken")),
+        FailureCode::ElementNotFound,
+    );
+    let err = run_watch(&app, "      - tapOn:\n          id: broken\n", "")
+        .await
+        .expect_err("the inner step's failure was swallowed");
+    match err {
+        RunError::Sdk(f) => assert_eq!(f.code, FailureCode::ElementNotFound, "{}", f.message),
+        other => panic!("expected the inner step's own failure, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn an_optional_watch_that_saw_it_is_skipped_with_the_verdict() {
+    let app = MockApp::new();
+    let report = run_watch(
+        &app,
+        "      - tapOn:\n          id: show-overlay\n      - tapOn:\n          id: hide-overlay\n",
+        "\n    optional: true",
+    )
+    .await
+    .expect("an optional watch failed the flow");
+    match &report.steps[0] {
+        RunStepReport::Skipped { reason } => {
+            assert!(reason.contains("neverVisible"), "{reason}");
+        }
+        other => panic!("expected the watch skipped, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn never_visible_on_something_already_there_says_it_was_there_before_step_one() {
+    // The first look can come back before any inner step has run. A
+    // sighting then is not "during step 1" — nothing was running yet.
+    let app =
+        MockApp::new().with_find(&smix_sdk::describe_selector(&smix_sdk::id("overlay")), true);
+    let err = run_watch(&app, "      - tapOn:\n          id: a\n", "")
+        .await
+        .expect_err("an overlay already on screen passed");
+    let msg = format!("{err}");
+    assert!(msg.contains("before step 1 began"), "{msg}");
+    assert!(!msg.contains("()"), "a step with no verb was named: {msg}");
 }

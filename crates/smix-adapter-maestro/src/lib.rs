@@ -258,6 +258,7 @@ mod output;
 mod parser;
 mod runtime;
 pub mod selector_support;
+mod watch;
 
 pub use emitter::{EmitError, emit_flow_yaml};
 
@@ -945,6 +946,24 @@ pub enum Step {
         was: String,
         /// Allowed movement per edge, in device-independent pixels.
         within_dp: f64,
+    },
+    /// `neverVisible: { <selector>, during: [<steps>] }` — the element is
+    /// not on screen at any moment while the inner steps run.
+    ///
+    /// A smix verb; maestro has none. `assertNotVisible` answers about one
+    /// instant, and a loading state that flashed for 200 ms between two
+    /// steps is gone by the time any instant after them is asked about.
+    /// The inner steps run as they would anywhere else; beside them a
+    /// watch asks the same question `assertNotVisible` asks, as fast as
+    /// the device answers, and says how often it managed to.
+    NeverVisible {
+        /// What must not appear.
+        selector: Selector,
+        /// The steps the watch spans.
+        during: Vec<Step>,
+        /// `label` / `optional`, read as a `runFlow` block reads them.
+        #[serde(default)]
+        opts: BlockOptions,
     },
     /// Ask the AI judge whether a plain-language condition holds on the
     /// current screen.

@@ -80,6 +80,14 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
     id: "btn-ptz-stop"
     was: "stop"
     within: 1                            # device-independent pixels (default 0)
+
+- neverVisible:                          # at no moment while these steps run
+    id: "loading-overlay"
+    during:
+      - tapOn: { id: "row-alert-1" }
+      - extendedWaitUntil:
+          visible: { id: "player-surface" }
+          timeout: 5000
 ```
 
 `rememberBounds` / `assertBoundsUnchanged` are smix's own — maestro has
@@ -93,6 +101,24 @@ has changed. A failure prints both boxes and how far each edge moved.
 The box compared is the one the element occupies, not the part that
 shows: scrolling a row half out of view changes what shows without
 moving anything.
+
+`neverVisible` is smix's own too. `assertNotVisible` answers about one
+instant, and a loading state that flashed for 200 ms between two steps is
+gone by any instant after them. `neverVisible` runs the steps under
+`during` as they would run anywhere else and, beside them, keeps asking
+whether the element is on screen — the same question `assertNotVisible`
+asks, as fast as the device answers, with no sleep between looks. It
+looks at least once after every inner step before the next one starts.
+One sighting fails it: the failure says how long after the span began the
+element was seen, which inner step was running, and what was on screen
+just after. A pass is reported with how many times it looked and the
+longest stretch nobody was looking — including before the first look and
+after the last — because "never seen" only means something if the looks
+were close together. A watch whose every look failed is a failure, not a
+pass: nothing is known about a screen nobody read. A failing inner step
+is reported as itself. `optional: true` turns a sighting into a skip, as
+it does on a `runFlow` block; `label:` is the element's accessibility
+label here, as on every verb with a selector.
 
 `assertScreenshot` auto-records the baseline on the first run and diffs
 against it afterwards. `mask:` regions — shares (0..1) of the frame, as

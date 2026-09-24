@@ -289,6 +289,14 @@ pub static VERB_TABLE: &[VerbEntry] = &[
         VerbCategory::Assert,
         ArgShape::Mapping,
     ),
+    // smix's own: `assertNotVisible` asks about one instant, and a loading
+    // state that flashed between two steps is gone by any instant after.
+    v(
+        "neverVisible",
+        "neverVisible",
+        VerbCategory::Assert,
+        ArgShape::Mapping,
+    ),
     // The AI-assertion tier. Opt-in and non-deterministic: a verdict comes
     // from a local `claude` CLI judging a screenshot, so these two are the
     // only verbs in the table whose result is a judgement rather than a

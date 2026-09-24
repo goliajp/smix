@@ -47,5 +47,8 @@
         <activity
             android:name=".BoundsActivity"
             android:exported="true" />
+        <activity
+            android:name=".WatchActivity"
+            android:exported="true" />
     </application>
 </manifest>

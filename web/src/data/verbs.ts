@@ -1,6 +1,6 @@
 // A hand-curated, representative subset of the canonical VERB_TABLE
-// (crates/smix-verbs/src/lib.rs). The full table is 52 entries — verified
-// against llms.txt ("The canonical yaml verb table (52 entries)"). Every row
+// (crates/smix-verbs/src/lib.rs). The full table is 53 entries — verified
+// against llms.txt ("The canonical yaml verb table (53 entries)"). Every row
 // below is copied verbatim from VERB_TABLE (maestro_name, smix_name,
 // category). The full table lives in llms.txt.
 

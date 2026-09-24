@@ -57,6 +57,7 @@ that is why.
 | `assertScreenshot` | ✅ | ✅ | 64-bit dhash over the PNG, so it behaves the same on both. `mask:` regions are painted one flat value in both images before hashing, so what changes inside them cannot count. maestro's `cropOn` / `thresholdPercentage` / `label` / `optional` are refused by name, not ignored |
 | `rememberBounds` | ✅ | ✅ | smix's own — maestro has no verb for it. Keeps where an element is, under a name, in device-independent pixels (points on iOS; pixels ÷ density on Android). Takes any selector except `ocrText` and `anchorRelative`, which name no box to measure |
 | `assertBoundsUnchanged` | ✅ | ✅ | smix's own — maestro has no verb for it. The element's box now matches the one `rememberBounds` kept under `was`, every edge within `within` device-independent pixels (default 0). A failure prints both boxes and how far each edge moved |
+| `neverVisible` | ✅ | ✅ | smix's own — maestro has no verb for it. Runs the steps under `during` and, beside them, keeps asking the question `assertNotVisible` asks, as fast as the device answers; one sighting fails it, with the time since the span began and the inner step that was running. A pass says how many times it looked and the longest stretch nobody was looking. Refuses `ocrText` and `anchorRelative` for the same reason `assertNotVisible` does |
 
 ## Control flow
 
