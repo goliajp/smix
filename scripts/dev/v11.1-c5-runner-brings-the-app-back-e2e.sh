@@ -231,7 +231,7 @@ PY
 }
 b="$(count)" || fail "iOS: after runner up --bundle the fixture's counter is not on the screen"
 printf 'appId: %s\n---\n- tapOn: { label: Pause }\n' "$IOS_APPID" >"$WORK/ios-tap.yaml"
-SMIX_RUNNER_PORT="$IOS_PORT" with_deadline 120 "$SMIX" run --device "$UDID" "$WORK/ios-tap.yaml" \
+SMIX_RUNNER_PORT="$IOS_PORT" with_deadline 120 "$SMIX_RUN" --device "$UDID" "$WORK/ios-tap.yaml" \
   >"$WORK/ios-tap.log" 2>&1 || fail "iOS: the tap on the fixture did not run: $(tail -3 "$WORK/ios-tap.log" | tr '\n' ' ')"
 sleep 1
 a="$(count)" || fail "iOS: the fixture's counter went away after the tap"

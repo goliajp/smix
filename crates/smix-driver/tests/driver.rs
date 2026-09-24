@@ -951,3 +951,61 @@ async fn clear_first_belongs_to_the_first_chunk_only() {
     let d = driver_for(&server);
     d.fill(&text_sel("Email"), "abc", None, true).await.unwrap();
 }
+
+/// A live confirmation that could not be asked is not a confirmation.
+///
+/// `find` on an id resolves in the tree and then asks the runner whether
+/// that element is on screen right now, because a snapshot's frame can
+/// be stale. That second question failing used to answer "yes": a
+/// runner replying garbage turned a tree hit it was supposed to check
+/// into a confirmed one. It is the driver failure it was.
+#[tokio::test]
+async fn a_confirmation_the_runner_could_not_give_is_a_driver_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tree_with_id_and_role()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/find"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<html>not json</html>"))
+        .mount(&server)
+        .await;
+    let d = driver_for(&server);
+    match d.find(&id_sel("login-btn"), None).await {
+        Err(f) => assert_eq!(f.code, FailureCode::DriverError, "{}", f.message),
+        Ok(present) => {
+            panic!("a /find that answered non-JSON was read as a confirmation: present={present}")
+        }
+    }
+}
+
+/// A runner that has no live route at all is older, not broken: the
+/// tree's answer stands, as it did before the route existed.
+#[tokio::test]
+async fn a_runner_without_the_live_route_leaves_the_tree_answer_standing() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tree"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tree_with_id_and_role()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/find"))
+        .respond_with(
+            ResponseTemplate::new(404)
+                .set_body_json(serde_json::json!({"error": "not_implemented", "route": "/find"})),
+        )
+        .mount(&server)
+        .await;
+    let d = driver_for(&server);
+    let present = d
+        .find(&id_sel("login-btn"), None)
+        .await
+        .expect("an absent route is not a failure");
+    assert!(
+        present,
+        "the tree found it and nothing live contradicted it"
+    );
+}

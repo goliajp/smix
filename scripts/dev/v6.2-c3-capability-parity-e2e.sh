@@ -72,7 +72,7 @@ print(found[0] if found and found[0] is not None else '')
 launch_fresh() {
   adb -s "$SERIAL" shell am force-stop "$APPID" >/dev/null 2>&1 || true
   printf 'appId: %s\n---\n- launchApp\n' "$APPID" >"$WORK/launch.yaml"
-  SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/launch.yaml" >/dev/null 2>&1 \
+  SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/launch.yaml" >/dev/null 2>&1 \
     || fail "could not launch $APPID"
 }
 
@@ -95,7 +95,7 @@ appId: $APPID
 - inputText: "$WORD_FLOW"
 FLOW
 FLOW_RC=0
-SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/flow.yaml" >/dev/null 2>&1 || FLOW_RC=$?
+SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/flow.yaml" >/dev/null 2>&1 || FLOW_RC=$?
 [ "$FLOW_RC" -eq 0 ] || fail "flow entrance run exited $FLOW_RC"
 GOT_FLOW="$(field_text fixture_input)"
 [ "$GOT_FLOW" = "$WORD_FLOW" ] || fail "flow entrance: field holds '$GOT_FLOW', expected '$WORD_FLOW'"

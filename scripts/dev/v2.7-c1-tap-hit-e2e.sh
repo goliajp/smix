@@ -82,7 +82,7 @@ log "runner up on $UDID (bundle $BUNDLE)"
 # is what let the original defect read as an intermittent animation race
 # for as long as it did.
 log "run $FLOW (no retry)"
-if "$SMIX_BIN" run "$ROOT/$FLOW" --device "$UDID" >"$OUT" 2>&1; then
+if "$SMIX_RUN" "$ROOT/$FLOW" --device "$UDID" >"$OUT" 2>&1; then
   :
 else
   rc=$?

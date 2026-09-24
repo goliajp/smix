@@ -81,6 +81,7 @@ SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
 
 if [ "$DRY" = "1" ]; then
   # CI-safe: prove the tier's flows all parse, no device.
+  # raw run: --dry-run parses the tier's flows on the host; no device, and a parse failure is the answer
   "$SMIX_BIN" run "${FLOWS[@]}" --device dry --dry-run
   exit $?
 fi
@@ -110,6 +111,7 @@ RESULTS=()
 if [ -n "$PARALLEL" ] && [ -n "${SMIX_CORPUS_ALSO_SIMS:-}" ]; then
   also=(); for s in $SMIX_CORPUS_ALSO_SIMS; do also+=(--also-device "$s"); done
   start=$(python3 -c 'import time;print(int(time.time()*1000))')
+  # raw run: the claim is that every flow passes under load; any failure fails it, and the log carries smix's line
   "$SMIX_BIN" run "${FLOWS[@]}" --device "$SIM" "${also[@]}" --parallel "$PARALLEL" \
     >"$LOG_DIR/parallel.log" 2>&1 && ok=1 || ok=0
   end=$(python3 -c 'import time;print(int(time.time()*1000))')
@@ -118,6 +120,7 @@ else
   for flow in "${FLOWS[@]}"; do
     name="$(basename "$flow" .yaml)"
     start=$(python3 -c 'import time;print(int(time.time()*1000))')
+    # raw run: the claim is that every flow passes under load; any failure fails it, and the log carries smix's line
     if "$SMIX_BIN" run "$flow" --device "$SIM" >"$LOG_DIR/$name.log" 2>&1; then ok=1; else ok=0; fi
     end=$(python3 -c 'import time;print(int(time.time()*1000))')
     echo "stress-gate: [$name] $([ $ok = 1 ] && echo PASS || echo FAIL) $((end - start))ms"

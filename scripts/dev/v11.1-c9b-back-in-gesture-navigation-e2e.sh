@@ -179,7 +179,7 @@ FLOW
 open_share() {
   local out pkg
   OPENED=1
-  out="$(SMIX_RUNNER_PORT="$PORT" with_deadline 120 "$SMIX" run --device "$SERIAL" "$WORK/open-share.yaml" 2>&1)" \
+  out="$(SMIX_RUNNER_PORT="$PORT" with_deadline 120 "$SMIX_RUN" --device "$SERIAL" "$WORK/open-share.yaml" 2>&1)" \
     || fail "could not open the share sheet: $(printf '%s' "$out" | tail -5)"
   for _ in $(seq 1 20); do
     pkg="$(focused_pkg)"
@@ -208,13 +208,13 @@ SHEET_PKG=""
 
 log "--- flow verb: - back"
 open_share
-out="$(SMIX_RUNNER_PORT="$PORT" with_deadline 120 "$SMIX" run --device "$SERIAL" "$WORK/back-verb.yaml" 2>&1)" \
+out="$(SMIX_RUNNER_PORT="$PORT" with_deadline 120 "$SMIX_RUN" --device "$SERIAL" "$WORK/back-verb.yaml" 2>&1)" \
   || fail "- back: the flow failed: $(printf '%s' "$out" | tail -5)"
 judge_closed "- back"
 
 log "--- flow key: pressKey: back"
 open_share
-out="$(SMIX_RUNNER_PORT="$PORT" with_deadline 120 "$SMIX" run --device "$SERIAL" "$WORK/back-key.yaml" 2>&1)" \
+out="$(SMIX_RUNNER_PORT="$PORT" with_deadline 120 "$SMIX_RUN" --device "$SERIAL" "$WORK/back-key.yaml" 2>&1)" \
   || fail "pressKey: back: the flow failed: $(printf '%s' "$out" | tail -5)"
 judge_closed "pressKey: back"
 

@@ -397,6 +397,12 @@ jobs:
         run: python3 scripts/dev/a-status-is-read-from-the-command.py
       - name: the status gate can still go red
         run: python3 scripts/dev/a-status-is-read-from-the-command.test.py
+      # A flow run is judged by the code smix reported. Fifty-three runs read
+      # any non-zero exit as their own rule's failure, whatever smix said.
+      - name: every flow run is judged by smix's own code
+        run: python3 scripts/dev/a-run-is-judged-by-its-code.py
+      - name: the run-judging gate can still go red
+        run: python3 scripts/dev/a-run-is-judged-by-its-code.test.py
       # `matches!` over several variants of our own enum is `_ =>` spelled
       # differently: a new variant joins the false side undecided.
       - name: every class over our own enums names every variant
@@ -493,6 +499,10 @@ jobs:
       # bite past its deadline and keep a command's own status inside it.
       - name: the deadline helper can still go red
         run: bash scripts/lib/deadline.sh --selftest
+      # The wrapper every flow run in an e2e goes through: a verdict goes back
+      # to the script, anything else ends it under smix's own code.
+      - name: the run wrapper can still go red
+        run: bash scripts/lib/smix-run --selftest
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check
 

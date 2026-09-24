@@ -116,7 +116,7 @@ press_delta() {
   before="$(count_of "$2" "$3" "$6")" || { echo "unreadable"; return 0; }
   flow="$WORK/press-$RANDOM.yaml"
   printf 'appId: %s\n---\n- tapOn: %s\n' "$4" "$5" > "$flow"
-  SMIX_RUNNER_PORT="$3" "$SMIX" run --device "$2" "$flow" >"$WORK/run.log" 2>&1 || rc=$?
+  SMIX_RUNNER_PORT="$3" "$SMIX_RUN" --device "$2" "$flow" >"$WORK/run.log" 2>&1 || rc=$?
   sleep 1
   after="$(count_of "$2" "$3" "$6")" || { echo "unreadable"; return 0; }
   echo "$(( after - before )) (run exit $rc)"
@@ -196,7 +196,7 @@ fi
   || cannot_judge "the iOS runner would not start on $UDID:$IOS_PORT"
 IOS_UPPED=1
 printf 'appId: %s\n---\n- launchApp\n' "$IOS_APPID" > "$WORK/ios-open.yaml"
-SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX" run --device "$UDID" "$WORK/ios-open.yaml" >"$WORK/ios-open.log" 2>&1 \
+SMIX_RUNNER_PORT="$IOS_PORT" "$SMIX_RUN" --device "$UDID" "$WORK/ios-open.yaml" >"$WORK/ios-open.log" 2>&1 \
   || fail "could not open the iOS fixture: $(tail -3 "$WORK/ios-open.log" | tr '\n' ' ')"
 sleep 2
 

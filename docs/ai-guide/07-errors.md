@@ -53,6 +53,37 @@ status bar belongs to SpringBoard and is not in it. All three fields are
 omitted when there is nothing to say, so an older reader sees the shape it
 always did.
 
+## A verdict, or smix unable to look
+
+Codes fall into two kinds, and `smix run --format json` says which in
+`failure.judgesTheScreen`:
+
+| judges the screen (`true`) | smix could not look (`false`) |
+|---|---|
+| `ELEMENT_NOT_FOUND` `NOT_VISIBLE` `NOT_ENABLED` `AMBIGUOUS` `TIMEOUT` `ASSERTION_FAILED` `TAP_MISSED` `COORDINATE_SPACE_MISMATCH` | `DRIVER_ERROR` `APP_NOT_RUNNING` `SIMULATOR_NOT_BOOTED` `CAPTURE_BACKPRESSURE` |
+
+The first kind is an answer about the app; the second is about the
+machinery between you and it. A flow treats them differently:
+
+- **`optional: true`** tolerates only the first kind. A block that failed
+  because the runner went away still fails the step.
+- **`when: { visible: … }` / `notVisible:`** — a look that failed on the
+  second kind fails the step under its own code. It used to read as
+  "not visible", so a runner answering garbage quietly skipped the block
+  and the run went green.
+- **A wait** (`extendedWaitUntil`, a fallback chain with `ocrText`) keeps
+  waiting through `CAPTURE_BACKPRESSURE` — it means *not now* — and fails
+  at once on any other failure of the second kind, instead of spending
+  its whole budget "missing" and then reporting a `TIMEOUT`.
+- **A live on-screen check** (the one that guards against stale tree
+  frames on iOS) that could not be asked is a `DRIVER_ERROR`, not a
+  confirmation. Only a runner too old to have the route leaves the tree's
+  answer standing.
+
+If you judge a run by its exit status in a script, judge it by this
+field (or the `FAIL [CODE]` line) too: a non-zero exit with `DRIVER_ERROR`
+is not a verdict on whatever your script was checking.
+
 ## Error codes
 
 ### ELEMENT_NOT_FOUND
@@ -273,6 +304,7 @@ a consumer's release gate could not tell the two apart.
 - **A verb that waits already handles it.** `waitForAnimationToEnd` keeps
   waiting inside its own ceiling and only gives up when the ceiling does,
   reporting that it could not observe the screen — not the pacer's state.
+  `extendedWaitUntil` and a fallback chain's `ocrText` layers do the same.
 - **Anywhere else**: retry after the window in the hint. A run that meets
   this repeatedly is telling you about the simulator, not about the flow —
   the usual cause is a long-lived simulator under accumulated load, and a

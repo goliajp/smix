@@ -102,7 +102,7 @@ run_leg() { # $1 leg, $2 app id, $3.. judge flags
   local flow out rc=0
   flow="$(failing_flow "$app")"
   log "--- $leg ($app)"
-  out="$(SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$flow" 2>&1)" || rc=$?
+  out="$(SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$flow" 2>&1)" || rc=$?
   [ "$rc" != 0 ] || fail "$leg: a step that cannot pass passed"
   printf '%s\n' "$out" > "$WORK/$leg.out"
   # The screen as the runner serves it, read right after the failure: the

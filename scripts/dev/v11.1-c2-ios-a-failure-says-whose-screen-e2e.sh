@@ -55,7 +55,7 @@ WE_UPPED=1
 flow="$WORK/ios.yaml"
 printf 'appId: %s\n---\n- launchApp\n- assertVisible: { id: "c2_nothing_carries_this_id" }\n' "$APP" > "$flow"
 rc=0
-out="$(SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$UDID" "$flow" 2>&1)" || rc=$?
+out="$(SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$UDID" "$flow" 2>&1)" || rc=$?
 [ "$rc" != 0 ] || fail "a step that cannot pass passed"
 printf '%s\n' "$out" | python3 "$JUDGE" ios "$APP" >&2 \
   || fail "the failure does not say whose screen it happened on"

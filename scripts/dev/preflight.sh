@@ -291,6 +291,9 @@ python3 scripts/dev/all-gates.test.py
 # A status read after a pipeline is the last stage's, not the command's.
 python3 scripts/dev/a-status-is-read-from-the-command.py
 python3 scripts/dev/a-status-is-read-from-the-command.test.py
+# A flow run is judged by the code smix reported, not by the script's rule.
+python3 scripts/dev/a-run-is-judged-by-its-code.py
+python3 scripts/dev/a-run-is-judged-by-its-code.test.py
 # A class drawn with `matches!` over our own enum lets a new variant in silently.
 python3 scripts/dev/a-classification-names-every-variant.py
 python3 scripts/dev/a-classification-names-every-variant.test.py
@@ -360,6 +363,8 @@ bash scripts/release/this-machine-is-current.sh --selftest
 # The deadline every e2e device call now runs under (2026-09-24): it has
 # to bite past its deadline and keep a command's own status inside it.
 bash scripts/lib/deadline.sh --selftest
+# The wrapper every e2e flow run goes through (2026-09-24).
+bash scripts/lib/smix-run --selftest
 # The Device Hub instrument: it must tell "the window did not move" from
 # "the window could not be read", because only one of those is a fact.
 bash scripts/dev/device-hub-shows-a-boot.sh --selftest

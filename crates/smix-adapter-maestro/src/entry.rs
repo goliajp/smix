@@ -704,15 +704,21 @@ fn emit_json_success(flow: &Path, report: &crate::RunReport) {
 }
 
 fn emit_json_failure(flow: &Path, err: &crate::RunError) {
+    let payload = json_failure_payload(flow, err);
+    println!("{}", serde_json::to_string(&payload).unwrap_or_default());
+}
+
+fn json_failure_payload(flow: &Path, err: &crate::RunError) -> serde_json::Value {
     use serde_json::json;
     // For SDK failures, surface the ExpectationFailure's own
     // structured form when we can. For parse/io/unknown, plain string.
-    let payload = if let crate::RunError::Sdk(f) = err {
+    if let crate::RunError::Sdk(f) = err {
         json!({
             "flow": flow.display().to_string(),
             "runOutcome": "failure",
             "failure": {
                 "code": format!("{:?}", f.code),
+                "judgesTheScreen": f.code.judges_the_screen(),
                 "message": f.message,
                 "selector": f.selector.as_ref().map(|s| format!("{s:?}")),
                 "suggestions": f.suggestions,
@@ -721,8 +727,7 @@ fn emit_json_failure(flow: &Path, err: &crate::RunError) {
         })
     } else {
         build_summary_json(flow, Err(err), &[])
-    };
-    println!("{}", serde_json::to_string(&payload).unwrap_or_default());
+    }
 }
 
 fn run_error_to_exit(e: &RunError) -> u8 {
@@ -991,4 +996,33 @@ fn print_summary(report: &RunReport) {
     eprintln!(
         "summary: {total} steps, {warnings} warnings, {skipped} skipped, {expanded} expanded subflows"
     );
+}
+
+#[cfg(test)]
+mod json_failure {
+    use super::*;
+    use smix_sdk::{ExpectationFailure, FailureCode, FailureInit};
+
+    fn payload(code: FailureCode) -> serde_json::Value {
+        let f = ExpectationFailure::new(FailureInit {
+            code: Some(code),
+            message: "m".to_string(),
+            ..Default::default()
+        });
+        json_failure_payload(Path::new("f.yaml"), &crate::RunError::Sdk(f))
+    }
+
+    /// A reader of the JSON report can tell a verdict about the screen
+    /// from smix being unable to look, without keeping its own list.
+    #[test]
+    fn a_failure_says_whether_it_judges_the_screen() {
+        assert_eq!(
+            payload(FailureCode::ElementNotFound)["failure"]["judgesTheScreen"],
+            serde_json::Value::Bool(true)
+        );
+        assert_eq!(
+            payload(FailureCode::DriverError)["failure"]["judgesTheScreen"],
+            serde_json::Value::Bool(false)
+        );
+    }
 }

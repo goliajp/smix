@@ -168,7 +168,7 @@ leg() { # $1 label  $2 dev  $3 port  $4 flow_a
   # would be reading the springboard.
   step "$label: run the shared flow, no --platform (①② + ④ supply via assertVisible '$ENV_VAL')"
   local out rc=0
-  out="$(env -u SMIX_C7_VAL SMIX_RUNNER_PORT="$port" "$SMIX" run --device "$dev" "$flow" --env "SMIX_C7_VAL=$ENV_VAL" 2>&1)" || rc=$?
+  out="$(env -u SMIX_C7_VAL SMIX_RUNNER_PORT="$port" "$SMIX_RUN" --device "$dev" "$flow" --env "SMIX_C7_VAL=$ENV_VAL" 2>&1)" || rc=$?
   printf '%s\n' "$out" | grep -qE 'simctl|Invalid device' && fail "$label: run took a wrong platform path (② not read from device): $out"
   printf '%s\n' "$out" | grep -q '"ok":true' || fail "$label: flow did not pass (① app not foregrounded, or ④ env value '$ENV_VAL' never reached the field): $out"
   log "$label OK: launchApp→visible→textField→inputText \${env}→submit→result shows '$ENV_VAL'"
@@ -208,6 +208,7 @@ if [ -n "$AND_SERIAL" ] && [ "$AND_WE_UPPED" = 1 ]; then
   flow_b "$AND_APPID" "$WORK/b.yaml"
   adb -s "$AND_SERIAL" shell am force-stop "$AND_APPID" >/dev/null 2>&1 || true
   BRC=0
+  # raw run: an undefined variable is refused before any step; that refusal is what this leg judges
   env -u "$MISSING" SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" run --device "$AND_SERIAL" "$WORK/b.yaml" >"$WORK/b.log" 2>&1 || BRC=$?
   [ "$BRC" -ne 0 ] || fail "unresolved \${$MISSING} exited 0 — must fail, not pass silently"
   grep -qi 'undefined variable' "$WORK/b.log" || fail "missing-var did not name 'undefined variable': $(tail -2 "$WORK/b.log")"

@@ -111,7 +111,7 @@ appId: $APPID
 - tapOn:
     label: "$1"
 FLOW
-  SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/open.yaml" >"$WORK/open.log" 2>&1 \
+  SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/open.yaml" >"$WORK/open.log" 2>&1 \
     || fail "could not open the '$1' screen: $(tail -5 "$WORK/open.log")"
 }
 
@@ -166,7 +166,7 @@ appId: $APPID
 - assertVisible:
     id: "compose_input"
 FLOW
-SMIX_RUNNER_PORT="$PORT" "$SMIX" run --device "$SERIAL" "$WORK/fill.yaml" >"$WORK/fill.log" 2>&1 \
+SMIX_RUNNER_PORT="$PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/fill.yaml" >"$WORK/fill.log" 2>&1 \
   || fail "the fill flow failed: $(tail -5 "$WORK/fill.log")"
 cleared="$(post /clear-text '{}')"
 held="$(field "$cleared" held)"

@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# `smix run`, judged by the failure code smix itself reported.
+#
+# An e2e script used to read any non-zero exit of `smix run` as a failure
+# of the rule it tests: "the scroll stopped with the row still crossing
+# the edge", when what had happened was the runner answering a request
+# with half a body. The script's sentence was about the screen; smix's
+# own line — `FAIL [DRIVER_ERROR]: …` — was about the machinery, and it
+# was printed above the sentence that contradicted it.
+#
+# So this runs `"$SMIX" run "$@"`, passes its output through unchanged,
+# and then:
+#   - exit 0                          → 0
+#   - a code that judges the screen   → smix's own exit status: the
+#                                       script judges, by its rule
+#   - ended by a signal (>128)        → that status: the script's own
+#                                       deadline names it
+#   - any other code, or no code      → the WHOLE SCRIPT ends with 1,
+#                                       naming smix's code and its line
+#
+# Which codes judge the screen is read from smix-error by
+# `failure-codes.py`, not listed here.
+#
+# An executable, not a shell function, because the calls it replaces run
+# under `env -u …` and `with_deadline` (perl exec), and neither can run a
+# function. Ending the whole script from inside `$(…)` or under
+# `>/dev/null 2>&1` needs the script's own shell: `judged-run.sh` traps
+# USR1 in it and exports its pid, and the reason goes through a file so
+# it reaches the script's stderr whatever this call's output was
+# redirected to.
+#
+#   bash scripts/lib/smix-run --selftest
+
+set -u
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ "${1:-}" == "--selftest" ]]; then
+  exec bash "$HERE/smix-run.selftest.sh"
+fi
+
+# Ending the caller's script, with the reason on its stderr. Used for a
+# failure that is not a verdict, and for this wrapper failing to start:
+# an exit 1 from here must never pass for the flow's own failure.
+abort() {
+  printf '%s\n' "$1" >&2
+  if [ -n "${SMIX_E2E_PID:-}" ] && [ -n "${SMIX_E2E_ABORT:-}" ]; then
+    printf '%s\n' "$1" >"$SMIX_E2E_ABORT"
+    kill -USR1 "$SMIX_E2E_PID" 2>/dev/null
+  fi
+  exit 1
+}
+
+SMIX="${SMIX_RUN_BIN:-}"
+[ -n "$SMIX" ] || abort "smix-run: SMIX_RUN_BIN is not set — source scripts/lib/judged-run.sh (e2e-binary.sh does)"
+
+OUT="$(mktemp)"
+ERR="$(mktemp)"
+CHILD=
+
+show() {
+  cat "$OUT"
+  cat "$ERR" >&2
+  rm -f "$OUT" "$ERR"
+}
+
+# A deadline or an interrupt aimed at this wrapper is meant for smix:
+# pass it on, wait for it, then end the same way so the caller sees the
+# status it asked for.
+forward() {
+  local sig="$1"
+  [ -n "$CHILD" ] && kill -"$sig" "$CHILD" 2>/dev/null
+  [ -n "$CHILD" ] && wait "$CHILD" 2>/dev/null
+  show
+  trap - "$sig"
+  kill -"$sig" $$
+}
+trap 'forward ALRM' ALRM
+trap 'forward TERM' TERM
+trap 'forward INT' INT
+trap 'forward HUP' HUP
+
+"$SMIX" run "$@" >"$OUT" 2>"$ERR" &
+CHILD=$!
+wait "$CHILD"
+RC=$?
+CHILD=
+
+LINE="$(grep -hE 'FAIL \[[A-Z_]+\]' "$ERR" "$OUT" | tail -1)"
+CODE="$(printf '%s' "$LINE" | sed -nE 's/.*FAIL \[([A-Z_]+)\].*/\1/p')"
+[ -n "$LINE" ] || LINE="$(tail -1 "$ERR")"
+show
+
+[ "$RC" -eq 0 ] && exit 0
+[ "$RC" -gt 128 ] && exit "$RC"
+
+if ! VERDICTS="$(python3 "$HERE/failure-codes.py" verdicts)"; then
+  REASON="smix-run: could not read which failure codes are verdicts from smix-error — cannot tell smix's exit $RC apart from a verdict"
+elif [ -n "$CODE" ] && printf '%s\n' "$VERDICTS" | grep -qxF "$CODE"; then
+  exit "$RC"
+else
+  REASON="smix run failed with ${CODE:-no failure code (exit $RC)}: ${LINE:-<no output>} — this is not a verdict on what this script judges"
+fi
+
+abort "$REASON"

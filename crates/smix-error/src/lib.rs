@@ -538,6 +538,78 @@ impl FailureCode {
         FailureCode::DriverError,
         FailureCode::CaptureBackpressure,
     ];
+
+    /// Whether this code is a verdict about the screen, as opposed to
+    /// smix being unable to look at it.
+    ///
+    /// Two readers ask this and must get the same answer. A flow step
+    /// marked `optional` turns a verdict into a skip and lets a driver
+    /// failure fail the step; an end-to-end check judges a flow by its
+    /// own rule only when the flow failed on a verdict, and names the
+    /// driver's code otherwise. A runner that answered garbage once read,
+    /// in one of those checks, as "the scroll stopped in the wrong place"
+    /// — the red carried a verdict that was not its own.
+    ///
+    /// Exhaustive on purpose: a code added later does not compile until
+    /// somebody has said which side it is on.
+    pub fn judges_the_screen(self) -> bool {
+        match self {
+            FailureCode::ElementNotFound
+            | FailureCode::NotVisible
+            | FailureCode::NotEnabled
+            | FailureCode::Ambiguous
+            | FailureCode::Timeout
+            | FailureCode::AssertionFailed
+            | FailureCode::TapMissed
+            | FailureCode::CoordinateSpaceMismatch => true,
+            FailureCode::AppNotRunning
+            | FailureCode::SimulatorNotBooted
+            | FailureCode::DriverError
+            | FailureCode::CaptureBackpressure => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod what_a_code_is_about {
+    use super::*;
+
+    /// The eight codes that say something about the screen, and the four
+    /// that say smix could not look. Named rather than counted: a code
+    /// moved from one side to the other has to be moved here too.
+    #[test]
+    fn a_verdict_is_about_the_screen_and_a_driver_failure_is_not() {
+        let about_the_screen = [
+            FailureCode::ElementNotFound,
+            FailureCode::NotVisible,
+            FailureCode::NotEnabled,
+            FailureCode::Ambiguous,
+            FailureCode::Timeout,
+            FailureCode::AssertionFailed,
+            FailureCode::TapMissed,
+            FailureCode::CoordinateSpaceMismatch,
+        ];
+        let could_not_look = [
+            FailureCode::AppNotRunning,
+            FailureCode::SimulatorNotBooted,
+            FailureCode::DriverError,
+            FailureCode::CaptureBackpressure,
+        ];
+        for c in about_the_screen {
+            assert!(c.judges_the_screen(), "{c:?} is a verdict about the screen");
+        }
+        for c in could_not_look {
+            assert!(
+                !c.judges_the_screen(),
+                "{c:?} says smix could not look, not what it saw"
+            );
+        }
+        assert_eq!(
+            about_the_screen.len() + could_not_look.len(),
+            FailureCode::ALL.len(),
+            "every code is on one side or the other"
+        );
+    }
 }
 
 #[cfg(test)]

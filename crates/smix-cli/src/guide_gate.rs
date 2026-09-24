@@ -230,6 +230,7 @@ impl AppLike for MockApp {
                 placement: smix_driver::FramePlacement::DuringPress,
                 png: b"\x89PNG\r\n\x1a\n".to_vec(),
             }],
+            capture_stopped: None,
         })
     }
 

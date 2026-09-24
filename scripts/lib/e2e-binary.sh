@@ -40,3 +40,8 @@ export SMIX_BIN="$SMIX"
 SMIX_MCP="${SMIX_MCP_BIN:-$(dirname "$SMIX")/smix-mcp}"
 export SMIX_MCP
 export SMIX_MCP_BIN="$SMIX_MCP"
+
+
+# `smix run`, judged by the code smix reported.
+# shellcheck source=scripts/lib/judged-run.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/judged-run.sh"

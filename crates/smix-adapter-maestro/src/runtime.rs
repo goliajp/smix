@@ -3232,7 +3232,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
             }
             if let Some(sel) = &c.visible {
-                let visible = self.check_selector_visible(sel).await.unwrap_or(false);
+                let visible = self.check_selector_visible(sel).await?;
                 parts.push(format!(
                     "when.visible={visible} ({})",
                     smix_sdk::describe_selector(sel)
@@ -3242,7 +3242,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 }
             }
             if let Some(sel) = &c.not_visible {
-                let visible = self.check_selector_visible(sel).await.unwrap_or(false);
+                let visible = self.check_selector_visible(sel).await?;
                 parts.push(format!(
                     "when.notVisible visible={visible} ({})",
                     smix_sdk::describe_selector(sel)
@@ -3608,7 +3608,7 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     if matches!(sub, Selector::OcrText { .. }) {
                         continue;
                     }
-                    if self.app.find(sub).await.unwrap_or(false) {
+                    if not_yet_is_unseen(was_seen(self.app.find(sub).await))? {
                         return Ok(());
                     }
                 }
@@ -3616,13 +3616,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     if let Selector::OcrText {
                         ocr_text, locales, ..
                     } = sub
-                        && self
-                            .app
-                            .find_by_text_ocr(ocr_text, locales)
-                            .await
-                            .ok()
-                            .flatten()
-                            .is_some()
+                        && not_yet_is_unseen(text_was_seen(
+                            self.app.find_by_text_ocr(ocr_text, locales).await,
+                        ))?
                     {
                         return Ok(());
                     }
@@ -3637,14 +3633,9 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 } else {
                     locales.clone()
                 };
-                if self
-                    .app
-                    .find_by_text_ocr(ocr_text, &eff_locales)
-                    .await
-                    .ok()
-                    .flatten()
-                    .is_some()
-                {
+                if not_yet_is_unseen(text_was_seen(
+                    self.app.find_by_text_ocr(ocr_text, &eff_locales).await,
+                ))? {
                     return Ok(());
                 }
             }
@@ -3708,6 +3699,12 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     smix_driver::FramePlacement::DuringPress => None,
                     smix_driver::FramePlacement::Outside(w)
                     | smix_driver::FramePlacement::Uncertain(w) => Some(w.clone()),
+                })
+                .or_else(|| {
+                    capture
+                        .capture_stopped
+                        .as_ref()
+                        .map(|e| format!("capturing stopped: {e}"))
                 })
                 .unwrap_or_else(|| "no frame was captured at all".to_string());
             return Err(ExpectationFailure::new(FailureInit {
@@ -3949,20 +3946,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
         match sel {
             Selector::OcrText {
                 ocr_text, locales, ..
-            } => Ok(self
-                .app
-                .find_by_text_ocr(ocr_text, locales)
-                .await
-                .ok()
-                .flatten()
-                .is_some()),
+            } => text_was_seen(self.app.find_by_text_ocr(ocr_text, locales).await),
             Selector::Fallback { fallback } => {
                 // Tree-based subs first (cheap), then OCR subs.
                 for sub in fallback.iter() {
                     if matches!(sub, Selector::OcrText { .. }) {
                         continue;
                     }
-                    if self.app.find(sub).await.unwrap_or(false) {
+                    if was_seen(self.app.find(sub).await)? {
                         return Ok(true);
                     }
                 }
@@ -3976,21 +3967,14 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                         } else {
                             locales.clone()
                         };
-                        if self
-                            .app
-                            .find_by_text_ocr(ocr_text, &eff_locales)
-                            .await
-                            .ok()
-                            .flatten()
-                            .is_some()
-                        {
+                        if text_was_seen(self.app.find_by_text_ocr(ocr_text, &eff_locales).await)? {
                             return Ok(true);
                         }
                     }
                 }
                 Ok(false)
             }
-            _ => Ok(self.app.find(sel).await.unwrap_or(false)),
+            _ => was_seen(self.app.find(sel).await),
         }
     }
 
@@ -4496,7 +4480,7 @@ fn block_outcome(
     result: Result<RunStepReport, RunError>,
 ) -> Result<RunStepReport, RunError> {
     match result {
-        Err(RunError::Sdk(f)) if opts.optional && failure_is_a_verdict(f.code) => {
+        Err(RunError::Sdk(f)) if opts.optional && f.code.judges_the_screen() => {
             let target = f
                 .selector
                 .as_ref()
@@ -4514,25 +4498,39 @@ fn block_outcome(
     }
 }
 
-/// Whether a failure is a judgement about the screen (which `optional`
-/// exists to tolerate) rather than about the machinery.
-fn failure_is_a_verdict(code: FailureCode) -> bool {
-    match code {
-        FailureCode::ElementNotFound
-        | FailureCode::NotVisible
-        | FailureCode::NotEnabled
-        | FailureCode::Ambiguous
-        | FailureCode::Timeout
-        | FailureCode::AssertionFailed
-        | FailureCode::TapMissed
-        | FailureCode::CoordinateSpaceMismatch => true,
-        FailureCode::AppNotRunning
-        | FailureCode::SimulatorNotBooted
-        | FailureCode::DriverError
-        | FailureCode::CaptureBackpressure => false,
-        // `FailureCode` is `#[non_exhaustive]`. A code added later has
-        // not been judged to be about the screen, so it fails the step.
-        _ => false,
+/// What one look answered: seen, not seen, or that smix could not look.
+///
+/// A failure that judges the screen — the element is not there — is a
+/// look that saw nothing. Any other failure is smix unable to look, and
+/// it was being folded into "not seen": a `when: { visible }` whose
+/// runner answered garbage skipped its block and the run went green, and
+/// a wait spent its whole budget "missing" before reporting a timeout.
+/// It goes up under its own code now.
+fn was_seen(look: Result<bool, ExpectationFailure>) -> Result<bool, RunError> {
+    match look {
+        Ok(seen) => Ok(seen),
+        Err(f) if f.code.judges_the_screen() => Ok(false),
+        Err(f) => Err(RunError::Sdk(f)),
+    }
+}
+
+/// [`was_seen`] for a read of the screen's text.
+fn text_was_seen(
+    look: Result<Option<smix_sdk::OcrFrame>, ExpectationFailure>,
+) -> Result<bool, RunError> {
+    was_seen(look.map(|frame| frame.is_some()))
+}
+
+/// Inside a wait, "not now" is one more look that saw nothing.
+///
+/// `CaptureBackpressure` is the capture path saying it will answer again
+/// shortly; a wait with time left is exactly the caller that can take
+/// that answer. Outside a wait there is no time left to spend on it, so
+/// only the waits call this.
+fn not_yet_is_unseen(look: Result<bool, RunError>) -> Result<bool, RunError> {
+    match look {
+        Err(RunError::Sdk(f)) if f.code == FailureCode::CaptureBackpressure => Ok(false),
+        other => other,
     }
 }
 

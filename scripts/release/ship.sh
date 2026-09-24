@@ -573,6 +573,14 @@ python3 "$ROOT/scripts/dev/a-status-is-read-from-the-command.py" > /tmp/smix-shi
   || fail "a status is read from a filter rather than the command — see /tmp/smix-ship-status.log"
 python3 "$ROOT/scripts/dev/a-status-is-read-from-the-command.test.py" >> /tmp/smix-ship-status.log 2>&1 \
   || fail "status gate self-test FAILED — see /tmp/smix-ship-status.log"
+log "every flow run is judged by smix's own code"
+python3 "$ROOT/scripts/dev/a-run-is-judged-by-its-code.py" > /tmp/smix-ship-run-judged.log 2>&1 \
+  || fail "a flow run is judged by the script's rule, not smix's code — see /tmp/smix-ship-run-judged.log"
+python3 "$ROOT/scripts/dev/a-run-is-judged-by-its-code.test.py" >> /tmp/smix-ship-run-judged.log 2>&1 \
+  || fail "run-judging gate self-test FAILED — see /tmp/smix-ship-run-judged.log"
+log "the run wrapper can still go red"
+bash "$ROOT/scripts/lib/smix-run" --selftest > /tmp/smix-ship-run-wrapper.log 2>&1 \
+  || fail "smix-run self-test FAILED — see /tmp/smix-ship-run-wrapper.log"
 log "every class over our own enums names every variant"
 python3 "$ROOT/scripts/dev/a-classification-names-every-variant.py" > /tmp/smix-ship-classes.log 2>&1 \
   || fail "a class is drawn with matches! over several variants — see /tmp/smix-ship-classes.log"

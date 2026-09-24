@@ -225,7 +225,7 @@ impl Driver for IosDriver {
         IosDriver::press_key(self, key).await
     }
 
-    async fn confirm_on_screen(&self, matched: &[&A11yNode]) -> bool {
+    async fn confirm_on_screen(&self, matched: &[&A11yNode]) -> Result<bool, ExpectationFailure> {
         IosDriver::confirm_on_screen(self, matched, None).await
     }
 

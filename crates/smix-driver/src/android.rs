@@ -745,8 +745,8 @@ impl Driver for AndroidDriver {
     /// is visible — a row below the screen edge carries its full box —
     /// and that is what the scroll's visible-share rule reads, so it
     /// needs no live query to be told.
-    async fn confirm_on_screen(&self, _matched: &[&A11yNode]) -> bool {
-        true
+    async fn confirm_on_screen(&self, _matched: &[&A11yNode]) -> Result<bool, ExpectationFailure> {
+        Ok(true)
     }
 
     async fn pixels_per_point(&self) -> Result<f64, ExpectationFailure> {
