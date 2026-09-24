@@ -46,15 +46,9 @@ pub fn describe(device_id: &str, admission: &Admission) -> String {
 
 /// Run the subcommand.
 ///
-/// Two directories, not one. `leases` is this machine's ledger
-/// directory — the ledgers stopped being a property of the tree you are
-/// standing in. `root` is still the tree, and is used for exactly one
-/// thing: settling a dead holder's build products, which are in a tree.
-pub async fn run(
-    root: &Path,
-    leases: &LeaseDir,
-    action: LeaseAction,
-) -> Result<u8, crate::CliError> {
+/// `leases` is this machine's ledger directory — the ledgers stopped
+/// being a property of the tree you are standing in.
+pub async fn run(leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::CliError> {
     // What the tree underfoot still holds, if it holds anything.
     //
     // Read for one purpose: to say when it disagrees. Never merged into
@@ -201,7 +195,7 @@ pub async fn run(
                             }
                         )
                     );
-                    let outcomes = smix_capsule::reconcile::execute(root, &cleanup);
+                    let outcomes = smix_capsule::reconcile::execute(&cleanup);
                     let mut all_clean = true;
                     for o in &outcomes {
                         println!("  {}", o.line());

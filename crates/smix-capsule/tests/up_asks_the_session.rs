@@ -19,8 +19,8 @@ use std::net::TcpListener;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use smix_capsule::runner::{RunnerState, RunnerTarget, UpOptions, up_on};
-use smix_capsule::runner_state::{Platform, write as write_state};
+use smix_capsule::runner::{RealBringUp, RunnerTarget, UpOptions, up_on_with};
+use smix_lease::store::LeaseDir;
 
 /// A runner-shaped server: healthy, with a `/tree` we choose, and a
 /// `/soft-cycle` that works. It records the request lines it served, so
@@ -72,24 +72,32 @@ const DEAD_SESSION: &str = concat!(
 const UDID: &str = "5D087114-ECB3-443C-8DDB-40EEF9CFB90C";
 const BUNDLE: &str = "jp.golia.smix.fixture";
 
+/// The device ledger this test's runner is written in. Beside the
+/// checkout rather than in the machine's: a test must not write the
+/// ledger a developer's real runners are recorded in.
+fn ledger(root: &Path) -> LeaseDir {
+    LeaseDir::at(root.join("leases"))
+}
+
 fn seed(root: &Path, port: u16) {
-    write_state(
-        root,
-        Platform::Ios,
-        &RunnerState {
-            pid: std::process::id(),
-            udid: UDID.to_string(),
+    let proc = smix_lease::store::identify(std::process::id()).expect("this process");
+    smix_lease::store::add_resource(
+        &ledger(root),
+        UDID,
+        smix_lease::Resource::Runner {
             port,
-            log: root.join("runner.log"),
+            proc,
             bundle: Some(BUNDLE.to_string()),
-            supervisor_pid: None,
+            log: Some(root.join("runner.log").display().to_string()),
         },
     )
     .expect("seed the runner record");
 }
 
 fn run_up(root: &Path, port: u16, force_recover: bool) -> Result<(), String> {
-    up_on(
+    up_on_with(
+        &mut RealBringUp,
+        &ledger(root),
         root,
         UDID,
         port,

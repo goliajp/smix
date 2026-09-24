@@ -333,7 +333,7 @@ app.
 **Fix**: `smix runner cycle` rebinds in place, in seconds, without
 restarting `xcodebuild`. `smix runner up … --force` does the same thing
 from the bring-up command. Neither reaches a runner recorded for another
-device, or one the store has no record of; those still need
+device, or one the device ledger has no record of; those still need
 `runner down --include-unrecorded`.
 
 `smix_use` reports the same condition, with the same fix — the MCP server

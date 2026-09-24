@@ -435,7 +435,7 @@ pub async fn down(root: &Path, udid: &str) -> Result<(), String> {
     };
 
     let mut errors: Vec<String> = Vec::new();
-    if let Err(e) = smix_capsule::runner::down(root, state.runner_port) {
+    if let Err(e) = smix_capsule::runner::down(state.runner_port) {
         eprintln!("capsule down: runner down failed: {e}");
         errors.push(format!("runner: {e}"));
     }

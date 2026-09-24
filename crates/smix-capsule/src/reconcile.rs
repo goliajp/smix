@@ -9,7 +9,6 @@
 //! uniform.
 
 use smix_lease::{CleanupAction, ProcIdentity};
-use std::path::Path;
 
 /// What became of one owed close.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,7 +106,7 @@ fn stop_recording(path: &str, proc: &ProcIdentity) -> Outcome {
 /// checks the recorded pid is still an `xcodebuild` before signalling it,
 /// so a recycled pid is safe to hand it. The probe here only decides how
 /// to describe what happened.
-fn stop_runner(root: &Path, port: u16, proc: &ProcIdentity) -> Outcome {
+fn stop_runner(port: u16, proc: &ProcIdentity) -> Outcome {
     let probe = smix_lease::store::probe(proc);
     let how = if !probe.pid_exists {
         "launcher already exited; cleared the port and the session it left"
@@ -119,7 +118,7 @@ fn stop_runner(root: &Path, port: u16, proc: &ProcIdentity) -> Outcome {
     // No: reconcile acts on a ledger row, so the runner it is closing
     // is recorded by definition. Anything else on the port is not the
     // session being settled.
-    match crate::runner::down(root, port) {
+    match crate::runner::down(port) {
         Ok(()) => Outcome::Closed(format!("runner on port {port}: {how}")),
         Err(e) => Outcome::Failed(format!("runner on port {port} did not stop: {e}")),
     }
@@ -160,7 +159,7 @@ fn stop_supervisor(proc: &ProcIdentity) -> Outcome {
 /// client — killing the client would leave the server running and the
 /// port still answering. Every call it makes names the serial, which is
 /// why the ledger row carries one.
-fn stop_android_runner(root: &Path, port: u16, serial: &str, proc: &ProcIdentity) -> Outcome {
+fn stop_android_runner(port: u16, serial: &str, proc: &ProcIdentity) -> Outcome {
     let probe = smix_lease::store::probe(proc);
     let how = if !probe.pid_exists {
         "host-side process already exited; ended the on-device server and freed the port"
@@ -169,7 +168,7 @@ fn stop_android_runner(root: &Path, port: u16, serial: &str, proc: &ProcIdentity
     } else {
         "stopped"
     };
-    match crate::runner_android::down(root, serial, port) {
+    match crate::runner_android::down(serial, port) {
         Ok(()) => Outcome::Closed(format!("android runner on {serial}:{port}: {how}")),
         Err(e) => Outcome::Failed(format!(
             "android runner on {serial}:{port} did not stop: {e}"
@@ -284,18 +283,18 @@ fn shutdown_sim(udid: &str) -> Outcome {
 /// Order is not an optimisation: the recording is stopped before the
 /// runner that was driving what it recorded, and the device is shut down
 /// only once nothing is left talking to it.
-pub fn execute(root: &Path, actions: &[CleanupAction]) -> Vec<Outcome> {
+pub fn execute(actions: &[CleanupAction]) -> Vec<Outcome> {
     actions
         .iter()
         .map(|a| match a {
             CleanupAction::StopRecording { path, proc } => stop_recording(path, proc),
-            CleanupAction::StopRunner { port, proc } => stop_runner(root, *port, proc),
+            CleanupAction::StopRunner { port, proc } => stop_runner(*port, proc),
             CleanupAction::StopSupervisor { proc } => stop_supervisor(proc),
             CleanupAction::StopPortForward { local_port, proc } => {
                 stop_port_forward(*local_port, proc)
             }
             CleanupAction::StopAndroidRunner { port, serial, proc } => {
-                stop_android_runner(root, *port, serial, proc)
+                stop_android_runner(*port, serial, proc)
             }
             // Failed, not Skipped: `is_ok` is what a caller reads to
             // decide the teardown finished, and a device still holding
@@ -353,13 +352,10 @@ mod tests {
 
     #[test]
     fn an_exited_process_is_already_gone_not_a_failure() {
-        let outcomes = execute(
-            Path::new("/nonexistent"),
-            &[CleanupAction::StopRecording {
-                path: "x.mov".into(),
-                proc: ghost(),
-            }],
-        );
+        let outcomes = execute(&[CleanupAction::StopRecording {
+            path: "x.mov".into(),
+            proc: ghost(),
+        }]);
         assert!(matches!(outcomes[0], Outcome::AlreadyGone(_)));
         assert!(outcomes[0].is_clean());
     }
@@ -369,13 +365,10 @@ mod tests {
         // If this ever regresses to sending a signal, it signals the test
         // process itself — which is exactly the blast radius in the field.
         // Port 1 has no runner, so `down` finds nothing to act on.
-        let outcomes = execute(
-            Path::new("/nonexistent"),
-            &[CleanupAction::StopRunner {
-                port: 1,
-                proc: impostor(),
-            }],
-        );
+        let outcomes = execute(&[CleanupAction::StopRunner {
+            port: 1,
+            proc: impostor(),
+        }]);
         match &outcomes[0] {
             Outcome::Closed(msg) => assert!(msg.contains("pid was reused")),
             other => panic!("expected Closed with a reused-pid note, got {other:?}"),
@@ -387,13 +380,10 @@ mod tests {
         // The regression this pins: returning early on "already gone"
         // would report a clean device while the XCUITest session the
         // hard kill left behind still holds its automation slot.
-        let outcomes = execute(
-            Path::new("/nonexistent"),
-            &[CleanupAction::StopRunner {
-                port: 1,
-                proc: ghost(),
-            }],
-        );
+        let outcomes = execute(&[CleanupAction::StopRunner {
+            port: 1,
+            proc: ghost(),
+        }]);
         match &outcomes[0] {
             Outcome::Closed(msg) => assert!(msg.contains("cleared the port")),
             other => panic!("expected Closed, got {other:?}"),
@@ -402,19 +392,16 @@ mod tests {
 
     #[test]
     fn outcomes_come_back_in_the_order_given() {
-        let outcomes = execute(
-            Path::new("/nonexistent"),
-            &[
-                CleanupAction::StopRecording {
-                    path: "first.mov".into(),
-                    proc: ghost(),
-                },
-                CleanupAction::StopRunner {
-                    port: 1,
-                    proc: impostor(),
-                },
-            ],
-        );
+        let outcomes = execute(&[
+            CleanupAction::StopRecording {
+                path: "first.mov".into(),
+                proc: ghost(),
+            },
+            CleanupAction::StopRunner {
+                port: 1,
+                proc: impostor(),
+            },
+        ]);
         assert!(outcomes[0].line().contains("already exited"));
         assert!(outcomes[1].line().contains("pid was reused"));
     }
@@ -429,8 +416,8 @@ mod tests {
 pub struct Reconciler;
 
 impl smix_lease::CleanupExecutor for Reconciler {
-    fn execute(&self, root: &Path, actions: &[CleanupAction]) -> Vec<smix_lease::CleanupReport> {
-        execute(root, actions)
+    fn execute(&self, actions: &[CleanupAction]) -> Vec<smix_lease::CleanupReport> {
+        execute(actions)
             .into_iter()
             .map(|o| smix_lease::CleanupReport {
                 line: o.line().to_string(),

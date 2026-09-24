@@ -100,7 +100,7 @@ fn state(udid: &str, bundle: Option<&str>) -> RunnerState {
         pid: 4242,
         udid: udid.to_string(),
         port: 22087,
-        log: PathBuf::from("/tmp/runner.log"),
+        log: Some(PathBuf::from("/tmp/runner.log")),
         bundle: bundle.map(str::to_string),
         supervisor_pid: None,
     }
@@ -170,6 +170,7 @@ fn ours_and_working_is_reported_up() {
         Some("com.example.app"),
         &SessionProbe::Usable,
         false,
+        None,
     );
     assert_eq!(verdict, AlreadyServing::ReportUp { pid: 4242 });
 }
@@ -188,6 +189,7 @@ fn ours_and_dead_refuses_with_both_facts_and_the_way_out() {
         Some("com.example.app"),
         &probe,
         false,
+        None,
     ) else {
         panic!("a dead session must not be reported as up");
     };
@@ -219,7 +221,7 @@ fn ours_and_silent_is_the_same_refusal() {
     let probe = SessionProbe::Silent {
         detail: "connected, then nothing before the deadline".into(),
     };
-    let verdict = decide_already_serving(Some(&st), 22087, "UDID-1", None, &probe, false);
+    let verdict = decide_already_serving(Some(&st), 22087, "UDID-1", None, &probe, false, None);
     assert!(
         matches!(&verdict, AlreadyServing::Refuse { message } if message.contains("smix runner cycle")),
         "silence is not usability either: {verdict:?}"
@@ -240,9 +242,10 @@ fn ours_and_dead_with_force_recovers() {
         Some("com.example.app"),
         &probe,
         true,
+        None,
     );
     assert!(
-        matches!(&verdict, AlreadyServing::Recover { because } if because.contains("not-running")),
+        matches!(&verdict, AlreadyServing::Recover { because, .. } if because.contains("not-running")),
         "--force on our own dead runner recovers it, saying why: {verdict:?}"
     );
 }
@@ -261,6 +264,7 @@ fn force_does_not_unlock_the_ownership_judgement() {
         Some("com.example.app"),
         &probe,
         true,
+        None,
     ) else {
         panic!("--force must not reach across to somebody else's runner");
     };
@@ -280,9 +284,15 @@ fn force_does_not_unlock_an_unrecorded_runner_either() {
         reason: "not-running".into(),
         hint: "…".into(),
     };
-    let AlreadyServing::Refuse { message } =
-        decide_already_serving(None, 22087, "UDID-1", Some("com.example.app"), &probe, true)
-    else {
+    let AlreadyServing::Refuse { message } = decide_already_serving(
+        None,
+        22087,
+        "UDID-1",
+        Some("com.example.app"),
+        &probe,
+        true,
+        None,
+    ) else {
         panic!("--force must not kill a runner the store has never heard of");
     };
     assert!(
@@ -326,5 +336,30 @@ fn not_naming_an_app_sends_no_name_rather_than_an_empty_one() {
     assert!(
         !request.contains("App-Bundle-Id"),
         "no app was named and the probe named one anyway: {request:?}"
+    );
+}
+
+#[test]
+fn an_unrecorded_runner_refusal_cites_the_checkouts_old_record() {
+    let probe = SessionProbe::Usable;
+    let evidence = "/w/.smix/kv `runner-ios` names udid=UDID-1 port=22087 pid=4242";
+    let AlreadyServing::Refuse { message } = decide_already_serving(
+        None,
+        22087,
+        "UDID-1",
+        Some("com.example.app"),
+        &probe,
+        false,
+        Some(evidence),
+    ) else {
+        panic!("a runner the ledger does not record must still be refused");
+    };
+    assert!(
+        message.contains(evidence),
+        "the checkout's old record is the one clue a reader has — cite it: {message}"
+    );
+    assert!(
+        message.contains("no longer read"),
+        "say that the old record is evidence, not the answer: {message}"
     );
 }

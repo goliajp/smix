@@ -119,7 +119,6 @@ impl<'a> Leased<'a> {
     /// it.
     pub fn acquire(
         inner: &'a dyn DeviceControl,
-        workspace_root: &Path,
         lease_dir: &LeaseDir,
         device_id: &str,
         executor: &dyn CleanupExecutor,
@@ -166,7 +165,7 @@ impl<'a> Leased<'a> {
                 Vec::new()
             }
             Admission::Reclaimable { cleanup, .. } => {
-                let reports = executor.execute(workspace_root, &cleanup);
+                let reports = executor.execute(&cleanup);
                 let failures: Vec<&str> = reports
                     .iter()
                     .filter(|r| !r.clean)
@@ -406,7 +405,7 @@ mod tests {
     }
 
     impl CleanupExecutor for RecordingExecutor {
-        fn execute(&self, _root: &Path, actions: &[CleanupAction]) -> Vec<CleanupReport> {
+        fn execute(&self, actions: &[CleanupAction]) -> Vec<CleanupReport> {
             self.seen.borrow_mut().extend_from_slice(actions);
             actions
                 .iter()
@@ -718,6 +717,8 @@ mod tests {
                 smix_lease::Row::Known(Resource::Booted { by_us: true }),
                 smix_lease::Row::Known(Resource::Runner {
                     port: 22087,
+                    bundle: None,
+                    log: None,
                     proc: ProcIdentity {
                         pid: 0,
                         started_at: "Thu Aug  6 10:00:05 2026".into(),
@@ -732,14 +733,8 @@ mod tests {
     fn a_free_device_is_granted_without_cleaning_anything() {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let ex = executor(true);
-        let leased = Leased::acquire(
-            &NeverCalled,
-            tmp.path(),
-            &LeaseDir::at(tmp.path()),
-            "UDID-FREE",
-            &ex,
-        )
-        .expect("granted");
+        let leased = Leased::acquire(&NeverCalled, &LeaseDir::at(tmp.path()), "UDID-FREE", &ex)
+            .expect("granted");
         assert!(leased.settled().is_empty());
         assert!(
             ex.seen.borrow().is_empty(),
@@ -760,13 +755,7 @@ mod tests {
         });
         store::write(&LeaseDir::at(tmp.path()), &lease).expect("write");
         let ex = executor(true);
-        match Leased::acquire(
-            &NeverCalled,
-            tmp.path(),
-            &LeaseDir::at(tmp.path()),
-            "UDID-BUSY",
-            &ex,
-        ) {
+        match Leased::acquire(&NeverCalled, &LeaseDir::at(tmp.path()), "UDID-BUSY", &ex) {
             Err(AdmissionError::InUse { holder_pid, .. }) => assert_eq!(holder_pid, 1),
             other => panic!("expected InUse, got {other:?}", other = other.err()),
         }
@@ -781,14 +770,8 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tmpdir");
         store::write(&LeaseDir::at(tmp.path()), &dead_holder_lease("UDID-DEAD")).expect("write");
         let ex = executor(true);
-        let leased = Leased::acquire(
-            &NeverCalled,
-            tmp.path(),
-            &LeaseDir::at(tmp.path()),
-            "UDID-DEAD",
-            &ex,
-        )
-        .expect("granted");
+        let leased = Leased::acquire(&NeverCalled, &LeaseDir::at(tmp.path()), "UDID-DEAD", &ex)
+            .expect("granted");
         assert_eq!(
             ex.seen.borrow().len(),
             2,
@@ -810,13 +793,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tmpdir");
         store::write(&LeaseDir::at(tmp.path()), &dead_holder_lease("UDID-STUCK")).expect("write");
         let ex = executor(false);
-        match Leased::acquire(
-            &NeverCalled,
-            tmp.path(),
-            &LeaseDir::at(tmp.path()),
-            "UDID-STUCK",
-            &ex,
-        ) {
+        match Leased::acquire(&NeverCalled, &LeaseDir::at(tmp.path()), "UDID-STUCK", &ex) {
             Err(AdmissionError::NotSettled { details, .. }) => assert!(details.contains("handled")),
             other => panic!("expected NotSettled, got {other:?}", other = other.err()),
         }
@@ -832,14 +809,8 @@ mod tests {
     fn releasing_drops_what_the_lease_covered() {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let ex = executor(true);
-        let leased = Leased::acquire(
-            &NeverCalled,
-            tmp.path(),
-            &LeaseDir::at(tmp.path()),
-            "UDID-REL",
-            &ex,
-        )
-        .expect("granted");
+        let leased = Leased::acquire(&NeverCalled, &LeaseDir::at(tmp.path()), "UDID-REL", &ex)
+            .expect("granted");
         leased
             .record(Resource::Recording {
                 path: "x.mov".into(),
@@ -866,14 +837,8 @@ mod tests {
         // device smix turned on with nobody entitled to turn it off.
         let tmp = tempfile::tempdir().expect("tmpdir");
         let ex = executor(true);
-        let leased = Leased::acquire(
-            &NeverCalled,
-            tmp.path(),
-            &LeaseDir::at(tmp.path()),
-            "UDID-BOOT",
-            &ex,
-        )
-        .expect("granted");
+        let leased = Leased::acquire(&NeverCalled, &LeaseDir::at(tmp.path()), "UDID-BOOT", &ex)
+            .expect("granted");
         leased
             .record(Resource::Booted { by_us: true })
             .expect("boot row");
@@ -901,8 +866,8 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let dev = Recorder::new();
         let ex = executor(true);
-        let leased = Leased::acquire(&dev, tmp.path(), &LeaseDir::at(tmp.path()), "UDID-REC", &ex)
-            .expect("granted");
+        let leased =
+            Leased::acquire(&dev, &LeaseDir::at(tmp.path()), "UDID-REC", &ex).expect("granted");
         leased
             .start_recording(Path::new("/tmp/run.mov"))
             .await
@@ -941,6 +906,8 @@ mod tests {
             "UDID-ADOPT",
             smix_lease::Resource::Runner {
                 port: 22097,
+                bundle: None,
+                log: None,
                 proc: store::identify_self(),
             },
         )
@@ -958,8 +925,7 @@ mod tests {
 
         let dev = Recorder::new();
         let ex = executor(true);
-        let leased =
-            Leased::acquire(&dev, root, &dir, "UDID-ADOPT", &ex).expect("adopted, not denied");
+        let leased = Leased::acquire(&dev, &dir, "UDID-ADOPT", &ex).expect("adopted, not denied");
         assert_eq!(leased.inherited().len(), 1, "the runner row is inherited");
 
         leased.release().expect("release");
@@ -979,14 +945,8 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tmpdir");
         let dev = Recorder::new();
         let ex = executor(true);
-        let leased = Leased::acquire(
-            &dev,
-            tmp.path(),
-            &LeaseDir::at(tmp.path()),
-            "UDID-REC2",
-            &ex,
-        )
-        .expect("granted");
+        let leased =
+            Leased::acquire(&dev, &LeaseDir::at(tmp.path()), "UDID-REC2", &ex).expect("granted");
         leased
             .start_recording(Path::new("/tmp/run.mov"))
             .await

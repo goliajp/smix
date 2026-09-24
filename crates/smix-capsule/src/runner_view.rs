@@ -146,7 +146,7 @@ pub fn attribute(
     for (device_id, lease) in machine {
         for resource in lease.known_resources() {
             let (port, ledger_pid, probe) = match resource {
-                Resource::Runner { port, proc } => (*port, proc.pid, Probe::Ios),
+                Resource::Runner { port, proc, .. } => (*port, proc.pid, Probe::Ios),
                 Resource::AndroidRunner { port, proc, .. } => (
                     *port,
                     proc.pid,
@@ -359,6 +359,8 @@ mod tests {
                 "D",
                 Resource::Runner {
                     port: 22087,
+                    bundle: None,
+                    log: None,
                     proc: proc(14176),
                 },
             )],
@@ -391,6 +393,8 @@ mod tests {
                 "D",
                 Resource::Runner {
                     port: 22087,
+                    bundle: None,
+                    log: None,
                     proc: proc(99999),
                 },
             )],
@@ -420,6 +424,8 @@ mod tests {
                 "D",
                 Resource::Runner {
                     port: 22087,
+                    bundle: None,
+                    log: None,
                     proc: proc(99120),
                 },
             )],
@@ -459,6 +465,8 @@ mod tests {
                 "E",
                 Resource::Runner {
                     port: 22300,
+                    bundle: None,
+                    log: None,
                     proc: proc(14176),
                 },
             )],

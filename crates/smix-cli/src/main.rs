@@ -1356,8 +1356,8 @@ enum RunnerAction {
         #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
         runner_port: Option<u16>,
         /// After `/health` returns 200, spawn a detached
-        /// `smix runner supervise` sidecar and record its pid in
-        /// `.smix/runner/state.json`. `smix runner down` cascades a
+        /// `smix runner supervise` sidecar and record its pid in the
+        /// device's ledger, beside the runner. `smix runner down` cascades a
         /// SIGTERM to the sidecar before tearing down xcodebuild.
         /// Sidecar log at `.smix/runner/supervise-<UDID>.log`.
         #[arg(long = "supervise", default_value_t = false)]
@@ -1396,7 +1396,7 @@ enum RunnerAction {
         /// `smix runner cycle`, seconds, no xcodebuild restart.
         ///
         /// It does not reach across to a runner recorded for another
-        /// device, or to one the store has no record of. Those are
+        /// device, or to one the device ledger has no record of. Those are
         /// refused with or without it — `runner down --include-unrecorded`
         /// is the sanctioned way through, and it is a separate decision
         /// on purpose.
@@ -1514,6 +1514,11 @@ enum RunnerAction {
         /// operation. Same cascade as `runner up`.
         #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
         runner_project: Option<PathBuf>,
+        /// The port of the runner to watch. It is how the supervisor
+        /// finds its runner in the device ledger: a checkout can drive
+        /// several simulators at once, each on its own port.
+        #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
+        runner_port: Option<u16>,
     },
     /// List every session the runner currently tracks.
     /// Reads `POST /session/list`. Useful for post-cycle diagnostics.
@@ -3826,15 +3831,15 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 .unwrap_or(smix_capsule::runner_android::DEFAULT_ANDROID_PORT)
                         });
                         let serial = resolve_android_serial(&serial)?;
-                        smix_capsule::runner_android::down_with(&root, &serial, port, take_over)
+                        smix_capsule::runner_android::down_with(&serial, port, take_over)
                             .map_err(CliError::Other)?;
                         return Ok(std::process::ExitCode::SUCCESS);
                     }
                     let port = port_flag.unwrap_or_else(runner_port);
                     if include_unrecorded {
-                        smix_capsule::runner::down_including_unrecorded(&root, port)
+                        smix_capsule::runner::down_including_unrecorded(port)
                     } else {
-                        smix_capsule::runner::down(&root, port)
+                        smix_capsule::runner::down(port)
                     }
                     .map_err(CliError::Other)?;
                 }
@@ -3874,8 +3879,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     smix_capsule::runner::cycle(&root, port, runner_project.as_deref())
                         .map_err(CliError::Other)?;
                 }
-                RunnerAction::Supervise { runner_project } => {
-                    smix_capsule::runner::supervise(&root, runner_project.as_deref())
+                RunnerAction::Supervise {
+                    runner_project,
+                    runner_port: port,
+                } => {
+                    let port = port.unwrap_or_else(runner_port);
+                    smix_capsule::runner::supervise(&root, port, runner_project.as_deref())
                         .map_err(CliError::Other)?;
                 }
                 RunnerAction::List { prune } => {
@@ -3993,15 +4002,13 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 .map_err(CliError::Other)?;
         }
         Cmd::Lease { action } => {
-            let root = smix_workspace_root()?;
             let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
             return Ok(std::process::ExitCode::from(
-                lease_cmd::run(&root, &leases, action).await?,
+                lease_cmd::run(&leases, action).await?,
             ));
         }
         Cmd::Record { action } => {
-            let root = smix_workspace_root()?;
-            record_cmd::run(&root, action).await?;
+            record_cmd::run(action).await?;
         }
         Cmd::Capsule { action } => {
             let root = smix_workspace_root()?;
@@ -5252,11 +5259,9 @@ where
     F: FnOnce(smix_sdk::leased::Leased<'a>) -> Fut,
     Fut: std::future::Future<Output = Result<(T, smix_sdk::leased::Leased<'a>), CliError>>,
 {
-    let root = smix_workspace_root()?;
     let leases = smix_capsule::runner::machine_leases().map_err(CliError::Other)?;
     let leased = smix_sdk::leased::Leased::acquire(
         control,
-        &root,
         &leases,
         udid,
         &smix_capsule::reconcile::Reconciler,
@@ -5315,18 +5320,13 @@ fn hold_run_lease(udid: Option<&str>) -> Result<Option<RunLease>, CliError> {
         return Ok(None);
     };
     // A run outside a workspace still gets a lease: the ledger is the
-    // machine's. `root` only decides where a dead holder's build
-    // products would be settled, and cwd is the honest answer when
-    // there is no `.smix` above it.
-    let root = smix_workspace_root()
-        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    // machine's.
     let Ok(leases) = smix_capsule::runner::machine_leases() else {
         return Ok(None);
     };
     let control = smix_sdk::ios_device::IosDeviceControl::new();
     let leased = smix_sdk::leased::Leased::acquire(
         &control,
-        &root,
         &leases,
         udid,
         &smix_capsule::reconcile::Reconciler,

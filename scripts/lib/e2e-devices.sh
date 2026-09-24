@@ -10,7 +10,10 @@
 #
 # SMIX_E2E_ANDROID / SMIX_E2E_IOS point the whole suite at once.
 # E2E_ANDROID_SECOND is the other smix AVD, for the scripts whose subject
-# is two emulators.
+# is two emulators. E2E_IOS_SECOND is the iOS counterpart: `sim-smix-03`,
+# by UDID because it is not registered — registering it would write to
+# this machine's device registry, which consumers' rows share.
 E2E_ANDROID="${SMIX_E2E_ANDROID:-sim-smix-android-01}"
 E2E_ANDROID_SECOND="${SMIX_E2E_ANDROID_SECOND:-sim-smix-android-02}"
 E2E_IOS="${SMIX_E2E_IOS:-sim-smix-02}"
+E2E_IOS_SECOND="${SMIX_E2E_IOS_SECOND:-89980B43-EF26-446A-A897-848C1AD3A872}"

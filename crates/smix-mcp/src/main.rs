@@ -355,22 +355,15 @@ impl SmixMcpService {
         // Announce the binding, so a `smix run` or a destructive CLI
         // command aimed at the same device is refused rather than landing
         // in the middle of an agent's session. Best-effort in one
-        // direction only: a workspace root that cannot be found means
-        // there is no ledger to write, which is the state every caller
-        // was in before leases existed — but an actual refusal is
-        // surfaced, because that one means somebody else is working.
-        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        // The ledger no longer depends on standing in a workspace. It
-        // used to: no `.smix` above the working directory meant no lease
-        // written, and this server is what held the lease that went
-        // missing — a runner on port 22087, recorded in a tree nobody
-        // else was standing in. The tree still decides where a dead
-        // holder's build products would be settled, which is all it ever
-        // decided.
-        let root = smix_capsule::runner::workspace_root(&cwd).unwrap_or(cwd);
+        // direction only: a machine with no ledger directory has nothing
+        // to write, which is the state every caller was in before leases
+        // existed — but an actual refusal is surfaced, because that one
+        // means somebody else is working. The ledger does not depend on
+        // standing in a workspace: this server once held a lease that
+        // went missing because it was written in a tree nobody else was
+        // standing in.
         if let Some(leases) = smix_lease::store::LeaseDir::machine() {
             match next.hold_device_lease(
-                &root,
                 &leases,
                 &params.udid,
                 &smix_capsule::reconcile::Reconciler,
@@ -411,13 +404,11 @@ impl SmixMcpService {
                 "nothing was bound".to_string(),
             )]));
         };
-        let root = std::env::current_dir()
-            .map_err(|e| McpError::internal_error(format!("cwd: {e}"), None))?;
         let port = bound.port;
         // No, and emphatically: an MCP release runs without anyone
         // watching. Ending another session's runner from here would be
         // the same accident as before, with nobody present to notice.
-        tokio::task::spawn_blocking(move || smix_capsule::runner::down(&root, port))
+        tokio::task::spawn_blocking(move || smix_capsule::runner::down(port))
             .await
             .map_err(|e| McpError::internal_error(format!("runner down panicked: {e}"), None))?
             .map_err(|e| McpError::internal_error(format!("runner down: {e}"), None))?;

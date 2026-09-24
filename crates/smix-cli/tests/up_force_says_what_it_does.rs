@@ -3,7 +3,7 @@
 //!
 //! A flag called force, on a command that can end processes, reads as
 //! "kill whatever is in the way" unless it says otherwise — and this one
-//! does the opposite: it cycles the runner this workspace recorded, in
+//! does the opposite: it cycles the runner recorded on that port, in
 //! place, and refuses somebody else's exactly as the unforced command
 //! does. The wording is the only place a reader learns that.
 

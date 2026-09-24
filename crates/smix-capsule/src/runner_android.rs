@@ -20,7 +20,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::runner::{RunnerState, health_ok};
+use crate::runner::health_ok;
 
 /// The Kotlin runner's HTTP port, by convention. iOS uses 22087.
 pub const DEFAULT_ANDROID_PORT: u16 = 28080;
@@ -727,23 +727,6 @@ pub fn up_with_options(
         Err(e) => eprintln!("warning: android runner not recorded: {e}"),
     }
 
-    let state = RunnerState {
-        pid,
-        udid: serial.to_string(),
-        port,
-        log: log.clone(),
-        bundle: None,
-        supervisor_pid: None,
-    };
-    // Not discarded, and not the iOS slot. Both halves were wrong
-    // before: this wrote the same file `runner.rs` wrote, so an Android
-    // runner replaced the iOS record — and `let _ =` meant a failed
-    // write said nothing at all.
-    if let Err(e) = crate::runner_state::write(root, crate::runner_state::Platform::Android, &state)
-    {
-        eprintln!("runner: {e}");
-    }
-
     println!(
         "runner starting: device={serial} port={port} pid={pid} — log: {}",
         log.display()
@@ -795,9 +778,6 @@ pub fn up_with_options(
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
-    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
-        eprintln!("runner: {e}");
-    }
     Err(format!(
         "runner did not become healthy within {timeout_secs}s. Log tail:\n{}",
         std::fs::read_to_string(&log)
@@ -943,14 +923,14 @@ fn remove_our_forwards(serial: &str) -> Vec<u16> {
 }
 
 /// Stop the instrumentation, drop the port forward, and clear the rows.
-pub fn down(root: &Path, serial: &str, port: u16) -> Result<(), String> {
-    down_with(root, serial, port, false)
+pub fn down(serial: &str, port: u16) -> Result<(), String> {
+    down_with(serial, port, false)
 }
 
 /// [`down`], and with `take_over` also end a runner a live process other
 /// than this one is holding. The consent lives in the flag: only a
 /// person who can see whose run it is can decide it should end.
-pub fn down_with(root: &Path, serial: &str, port: u16, take_over: bool) -> Result<(), String> {
+pub fn down_with(serial: &str, port: u16, take_over: bool) -> Result<(), String> {
     if !take_over && let Some(holder) = live_foreign_holder(serial) {
         return Err(foreign_holder_refusal(serial, &holder, "down"));
     }
@@ -961,9 +941,6 @@ pub fn down_with(root: &Path, serial: &str, port: u16, take_over: bool) -> Resul
         .args(["shell", "am", "force-stop", TEST_PACKAGE])
         .output();
     let closed = remove_our_forwards(serial);
-    if let Err(e) = crate::runner_state::clear(root, crate::runner_state::Platform::Android) {
-        eprintln!("runner: {e}");
-    }
     let leases = match crate::runner::machine_leases() {
         Ok(l) => l,
         Err(e) => {

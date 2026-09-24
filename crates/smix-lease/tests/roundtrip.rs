@@ -117,6 +117,8 @@ fn facts_from_a_dead_holder_reclaim_with_cleanup() {
     // see `boot_only_tests` in the crate.
     l.resources.push(Row::Known(Resource::Runner {
         port: 1,
+        bundle: None,
+        log: None,
         proc: ProcIdentity {
             pid: 0,
             started_at: "Thu Aug  6 10:00:05 2026".into(),
@@ -140,10 +142,14 @@ fn a_second_resource_of_the_same_kind_replaces_the_first() {
     let dir = LeaseDir::at(tmp.path());
     let first = Resource::Runner {
         port: 1,
+        bundle: None,
+        log: None,
         proc: store::identify_self(),
     };
     let second = Resource::Runner {
         port: 2,
+        bundle: None,
+        log: None,
         proc: store::identify_self(),
     };
     store::add_resource(&dir, "UDID-E", first).expect("first");
@@ -165,6 +171,8 @@ fn dropping_the_last_meaningful_row_clears_the_ledger() {
         "UDID-F",
         Resource::Runner {
             port: 1,
+            bundle: None,
+            log: None,
             proc: store::identify_self(),
         },
     )
@@ -176,6 +184,8 @@ fn dropping_the_last_meaningful_row_clears_the_ledger() {
         "UDID-F",
         &Resource::Runner {
             port: 0,
+            bundle: None,
+            log: None,
             proc: store::identify_self(),
         },
     )
@@ -196,6 +206,8 @@ fn a_boot_we_performed_keeps_the_ledger_alive_on_its_own() {
         "UDID-G",
         &Resource::Runner {
             port: 0,
+            bundle: None,
+            log: None,
             proc: store::identify_self(),
         },
     )

@@ -50,6 +50,8 @@ fn ledger(dir: &LeaseDir, device: &str, resources: Vec<Resource>) {
 fn runner_row() -> Resource {
     Resource::Runner {
         port: 22087,
+        bundle: None,
+        log: None,
         proc: dead_holder(),
     }
 }
