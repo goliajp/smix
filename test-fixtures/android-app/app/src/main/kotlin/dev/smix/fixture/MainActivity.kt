@@ -134,6 +134,23 @@ class MainActivity : Activity() {
             }
         }
 
+        // The system share sheet, over this app. It belongs to the
+        // system's intent resolver, not to the app, and under gesture
+        // navigation there is no back button on screen to tap — a
+        // consumer looking for one found none (feedback #8). What
+        // closes it is the back key, and that is what this is for.
+        val share = Button(this).apply {
+            text = "Share"
+            contentDescription = "open-share"
+            id = View.generateViewId()
+            setOnClickListener {
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, "smix fixture")
+                startActivity(Intent.createChooser(send, null))
+            }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@MainActivity).apply { text = "smix fixture" })
@@ -145,7 +162,15 @@ class MainActivity : Activity() {
             addView(toScroll)
             addView(toBlocked)
             addView(toInterop)
-            addView(askCamera)
+            // One row, so nothing above moves and the new button is not
+            // pushed below a screen this layout cannot scroll.
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(askCamera)
+                    addView(share)
+                },
+            )
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,

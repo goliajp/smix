@@ -635,10 +635,13 @@ public actor SmixRunnerServer {
   /// The chain is the answer to "what did the tap land on", which this
   /// route could not previously give: it reported that a touch was
   /// synthesised and callers read that as the element being tapped.
+  ///
+  /// `press` is when a single touch was held, for a long press; nil for
+  /// a burst or when it could not be timed.
   public typealias TapAtCoordHandler =
     @Sendable (
       _ nx: Double, _ ny: Double, _ times: Int, _ intervalMs: Int, _ holdMs: Int
-    ) async -> (ok: Bool, chain: [HitChainEntry])
+    ) async -> (ok: Bool, chain: [HitChainEntry], press: TapAtCoordRoute.PressTimings?)
 
   /// POST /tap-by-id handler. Resolves an element by accessibility
   /// identifier and invokes `XCUIElement.tap()` (the XCTest gesture-recognizer
@@ -680,25 +683,6 @@ public actor SmixRunnerServer {
   public typealias SwipeAtCoordHandler = @Sendable (
     _ fromNx: Double, _ fromNy: Double, _ toNx: Double, _ toNy: Double
   ) async -> Bool
-
-  /// POST /double-tap handler. XCUIElement.doubleTap() public API path —
-  /// note it does not fire on React Native modals.
-  /// Returns true on double-tap dispatched; false on smixGuarded NSException
-  /// or element-not-found.
-  public typealias DoubleTapHandler = @Sendable (
-    _ selector: RouteSelector
-  ) async -> Bool
-
-  /// POST /long-press handler. XCUIElement.press(forDuration:)
-  /// public API. `durationMs` is in milliseconds; the caller is
-  /// responsible for the ms → seconds conversion.
-  /// Returns the bounds on when the touch was down, or nil when the
-  /// selector matched nothing. A press that dispatched but could not be
-  /// timed returns timings of all zero, which the host reads as "cannot
-  /// be placed" rather than as a press at time zero.
-  public typealias LongPressHandler = @Sendable (
-    _ selector: RouteSelector, _ durationMs: UInt32
-  ) async -> LongPressRoute.PressTimings?
 
   /// POST /set-orientation handler. XCUIDevice.shared.orientation is a
   /// framework-documented public XCUI property, so the rule requiring
@@ -1447,8 +1431,6 @@ public actor SmixRunnerServer {
     findTextByOcrHandler: FindTextByOcrHandler? = nil,
     screenshotHandler: ScreenshotHandler? = nil,
     swipeAtCoordHandler: SwipeAtCoordHandler? = nil,
-    doubleTapHandler: DoubleTapHandler? = nil,
-    longPressHandler: LongPressHandler? = nil,
     setOrientationHandler: SetOrientationHandler? = nil,
     recordHandlers: RecordHandlers? = nil,
     selectResolveHandler: SelectResolveHandler? = nil,
@@ -2035,7 +2017,8 @@ public actor SmixRunnerServer {
         ) {
           let outcome = await tapAtCoordHandler(
             req.nx, req.ny, req.times, req.intervalMs, req.holdMs)
-          return TapAtCoordRoute.success(ok: outcome.ok, chain: outcome.chain)
+          return TapAtCoordRoute.success(
+            ok: outcome.ok, chain: outcome.chain, press: outcome.press)
         }
       }
     }
@@ -2153,66 +2136,6 @@ public actor SmixRunnerServer {
         ) {
           let ok = await swipeAtCoordHandler(req.fromNx, req.fromNy, req.toNx, req.toNy)
           return SwipeAtCoordRoute.success(ok: ok)
-        }
-      }
-    }
-
-    // POST /double-tap. XCUIElement.doubleTap() public API path.
-    // Body {selector: {text}}. Sibling of the /tap envelope, but with no
-    // stages — this is a single path, so timing is not broken down.
-    if let doubleTapHandler {
-      // OK MEANS: injected — both touches were dispatched at the element, or there was no such element.
-      await server.appendRoute("POST /double-tap") { request in
-        let body: Data
-        do {
-          body = try await request.bodyData
-        } catch {
-          return DoubleTapRoute.badRequest(reason: "failed to read body: \(error)")
-        }
-        let req: DoubleTapRoute.DoubleTapRequest
-        do {
-          req = try DoubleTapRoute.decode(body)
-        } catch let e as DoubleTapRoute.DecodeError {
-          return DoubleTapRoute.badRequest(reason: "\(e)")
-        } catch {
-          return DoubleTapRoute.badRequest(reason: "\(error)")
-        }
-        return await Self.contextGuardedResponse(request: request,
-          fallback: DoubleTapRoute.notFound(selector: req.selector)
-        ) {
-          let ok = await doubleTapHandler(req.selector)
-          return ok
-            ? DoubleTapRoute.success()
-            : DoubleTapRoute.notFound(selector: req.selector)
-        }
-      }
-    }
-
-    // POST /long-press. XCUIElement.press(forDuration:) public API.
-    // Body {selector: {text}, durationMs: N}. Duration is in milliseconds.
-    if let longPressHandler {
-      // OK MEANS: injected — the press was held for the duration asked and the timings come back with it.
-      await server.appendRoute("POST /long-press") { request in
-        let body: Data
-        do {
-          body = try await request.bodyData
-        } catch {
-          return LongPressRoute.badRequest(reason: "failed to read body: \(error)")
-        }
-        let req: LongPressRoute.LongPressRequest
-        do {
-          req = try LongPressRoute.decode(body)
-        } catch let e as LongPressRoute.DecodeError {
-          return LongPressRoute.badRequest(reason: "\(e)")
-        } catch {
-          return LongPressRoute.badRequest(reason: "\(error)")
-        }
-        return await Self.contextGuardedResponse(request: request,
-          fallback: LongPressRoute.notFound(selector: req.selector)
-        ) {
-          let timings = await longPressHandler(req.selector, req.durationMs)
-          return timings.map { LongPressRoute.success(timings: $0) }
-            ?? LongPressRoute.notFound(selector: req.selector)
         }
       }
     }

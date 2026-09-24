@@ -1780,10 +1780,10 @@ impl HttpRunnerClient {
     }
 
     /// `POST /double-tap-at-norm-coord` — double-tap at
-    /// viewport-normalized coord. Android-specific endpoint backing
-    /// `AndroidDriver::double_tap` after host-resolve. iOS path uses
-    /// selector-based `/double-tap`; this exists for Android where the
-    /// runner does its own host-resolve via tree dump.
+    /// viewport-normalized coord. Android runner only, backing
+    /// `AndroidDriver::double_tap` after host-resolve; the iOS runner
+    /// serves the same gesture as a two-touch burst on
+    /// `/tap-at-norm-coord`.
     pub async fn double_tap_at_norm_coord(
         &self,
         nx: f64,
@@ -2154,48 +2154,6 @@ impl HttpRunnerClient {
         Ok(resp.result)
     }
 
-    /// `POST /double-tap` — XCUIElement.doubleTap() public API.
-    /// Mirrors `/tap` envelope but issues two-tap gesture on the resolved
-    /// element. Same as Maestro `doubleTapOn`.
-    pub async fn double_tap(
-        &self,
-        selector: &Selector,
-        include: Option<IncludeScope>,
-    ) -> Result<TapResult, RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            selector: &'a Selector,
-        }
-        self.json_post("/double-tap", &Req { selector }, include)
-            .await
-    }
-
-    /// `POST /long-press` — XCUIElement.press(forDuration:) public
-    /// API. `duration_ms` comes from maestro yaml `duration:`, default 500.
-    /// Same as Maestro `longPressOn`.
-    pub async fn long_press(
-        &self,
-        selector: &Selector,
-        duration_ms: u64,
-        include: Option<IncludeScope>,
-    ) -> Result<PressResult, RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            selector: &'a Selector,
-            #[serde(rename = "durationMs")]
-            duration_ms: u64,
-        }
-        self.json_post(
-            "/long-press",
-            &Req {
-                selector,
-                duration_ms,
-            },
-            include,
-        )
-        .await
-    }
-
     /// `POST /set-orientation` — rotate sim via swift
     /// `XCUIDevice.shared.orientation` setter. `orientation` literal:
     /// "portrait" | "portraitUpsideDown" | "landscapeLeft" | "landscapeRight".
@@ -2369,10 +2327,19 @@ impl HttpRunnerClient {
     /// result with both of those absent and reach the caller as
     /// success. The Android runner has answered that field since 10.2;
     /// a runner that does not send it is unchanged by this.
+    ///
+    /// [`KeyName::Back`] is not a keystroke: it goes to `POST /back`,
+    /// the route that answers whether anything went back, and comes
+    /// back with no tree or timings. Here rather than in each caller
+    /// because the bindings reach this client without a driver.
     pub async fn press_key(
         &self,
         key: KeyName,
     ) -> Result<RunnerKeyboardResult, RunnerTransportError> {
+        if key == KeyName::Back {
+            self.back().await?;
+            return Ok(RunnerKeyboardResult::default());
+        }
         #[derive(Serialize)]
         struct Req {
             key: KeyName,

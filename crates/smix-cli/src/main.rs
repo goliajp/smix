@@ -333,13 +333,14 @@ enum Cmd {
         #[arg(long)]
         device: Option<String>,
     },
-    /// Issue a hardware / IME key press. Key shorthand: `return`
-    /// (alias `enter`), `delete` (alias `backspace`), `tab`, `space`,
-    /// `escape` / `esc`, `arrowUp` / `up`, `arrowDown` / `down`,
-    /// `arrowLeft` / `left`, `arrowRight` / `right`, `home`, `lock`,
-    /// `volumeUp` / `volume-up`, `volumeDown` / `volume-down`.
+    /// Press a key by name: `return`, `delete`, `back`, `home`,
+    /// `volume up`, maestro's `Enter` / `Backspace`, the arrows and the
+    /// rest. Case, spaces, `_` and `-` do not matter; an unknown name is
+    /// refused with the whole list. `back` is the flow's `back`: system
+    /// back on Android, the navigation bar's back on iOS, and it fails
+    /// when nothing went back.
     PressKey {
-        /// KeyName shorthand (see help text).
+        /// The key's name, read as a flow's `pressKey` reads it.
         key: String,
         /// Runner port override (defaults to SMIX_RUNNER_PORT env or 22087).
         /// `--runner-port` is accepted too — `smix run` spells it that way.

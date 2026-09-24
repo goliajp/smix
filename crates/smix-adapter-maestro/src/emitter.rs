@@ -154,7 +154,7 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
             Ok(single("waitForAnimationToEnd", Value::Mapping(inner)))
         }
         Step::Back => Ok(Value::String("back".into())),
-        Step::PressKey(s) => Ok(single("pressKey", Value::String(s.clone()))),
+        Step::PressKey(k) => Ok(single("pressKey", Value::String(k.as_str().into()))),
         Step::EraseText(n) => Ok(single("eraseText", Value::Number(Number::from(*n)))),
         Step::Swipe { from, to } => {
             let mut inner = Mapping::new();

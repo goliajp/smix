@@ -17,6 +17,10 @@
     threshold: 5                         # max hamming distance (default 5)
     mask:                                # left out of the comparison (0..1 shares)
       - { x: 0.0, y: 0.0, width: 1.0, height: 0.4 }
+- assertScreenshot:
+    path: "card.png"
+    cropOn: { id: "summary-card" }       # compare only this element's region
+    thresholdPercentage: 95              # maestro's measure: % of pixels that match
 
 - rememberBounds:                        # keep where an element is, by name
     id: "btn-ptz-stop"

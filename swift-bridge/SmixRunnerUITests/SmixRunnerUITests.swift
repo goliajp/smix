@@ -2413,6 +2413,7 @@ final class SmixRunnerUITests: XCTestCase {
       // rendering from triggering its data fetch — the list sits on a
       // skeleton loader for 30 s instead of populating.
       tapAtCoordHandler: { nx, ny, times, intervalMs, holdMs in
+        let entryMs = Date().timeIntervalSince1970 * 1000.0
         let app = await resolveApp()  // Per-request target-app rebind.
         // Compute the physical point (nx × app.frame.width + frame.origin)
         // on the main thread.
@@ -2428,14 +2429,14 @@ final class SmixRunnerUITests: XCTestCase {
           appH = frame.size.height
           return true
         }
-        guard setupOk == true else { return (ok: false, chain: []) }
+        guard setupOk == true else { return (ok: false, chain: [], press: nil) }
 
         let delivery = smixDelivery(
           of: CGPoint(x: px, y: py), appFrame: CGSize(width: appW, height: appH))
         guard let record = SmixEventRecord(orientation: delivery.orientation) else {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
-          return (ok: false, chain: [])
+          return (ok: false, chain: [], press: nil)
         }
         // One record, N paths. The interval rides the event timeline
         // rather than being whatever a per-tap round trip cost.
@@ -2445,7 +2446,7 @@ final class SmixRunnerUITests: XCTestCase {
         guard pathAdded else {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: XCPointerEventPath unavailable\n".utf8))
-          return (ok: false, chain: [])
+          return (ok: false, chain: [], press: nil)
         }
         // What the point is inside, from a fresh snapshot taken here —
         // immediately before the touch, and from the runner rather than
@@ -2478,14 +2479,25 @@ final class SmixRunnerUITests: XCTestCase {
             point: CGPoint(x: px, y: py), in: convertSnapshot(snap))
           return true
         }
+        // Timed around the synthesise alone: this process authors the
+        // timeline, so the call's span and the hold bound when a single
+        // touch was down (see `TapAtCoordRoute.PressTimings`). A burst
+        // has several downs and no one window, so it reports none.
+        let callStartMs = Date().timeIntervalSince1970 * 1000.0
         do {
           try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
         } catch {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: synthesize error: \(error)\n".utf8))
-          return (ok: false, chain: [])
+          return (ok: false, chain: [], press: nil)
         }
-        return (ok: true, chain: chain)
+        let callEndMs = Date().timeIntervalSince1970 * 1000.0
+        let press = times == 1
+          ? TapAtCoordRoute.PressTimings.around(
+            callStartMs: callStartMs, callEndMs: callEndMs,
+            holdMs: UInt32(max(0, holdMs)), handlerEntryMs: entryMs)
+          : nil
+        return (ok: true, chain: chain, press: press)
       },
       // POST /tap-by-id handler. XCUIElement.tap() via the XCTest
       // gesture-recognizer chain for SwiftUI .sheet / .alert /
@@ -2767,90 +2779,6 @@ final class SmixRunnerUITests: XCTestCase {
             Data("smix-runner: swipe-at-norm-coord: synthesize error: \(error)\n".utf8))
           return false
         }
-      },
-      // POST /double-tap handler. XCUIElement.doubleTap() public API.
-      // Selector resolution follows the tap handler (NSPredicate
-      // label|identifier), but does NOT accept see-through (modal scope):
-      // see-through is a tap-specific path. Double-tap is single-armed —
-      // NSPredicate descendants match → first hit. Not found ⇒ stderr +
-      // false (notFound).
-      doubleTapHandler: { selector in
-        let app = await resolveApp()  // Per-request target-app rebind.
-        return smixGuarded("double-tap") { () -> Bool in
-          let predicate = Self.predicate(for: selector)
-          let element = app.descendants(matching: .any)
-            .matching(predicate)
-            .firstMatch
-          if !element.exists {
-            FileHandle.standardError.write(
-              Data("smix-runner: double-tap: element not found for \(selector.wireKey)=\(selector.raw)\n".utf8))
-            return false
-          }
-          element.doubleTap()
-          return true
-        } ?? false
-      },
-      // POST /long-press handler.
-      //
-      // `XCUIElement.press(forDuration:)` is deliberately NOT used. It
-      // was measured on iPhone 17 Pro / iOS 26.5 taking a constant
-      // ~2.6s round trip for every requested hold from 500ms to
-      // 6000ms, while `/tap` on the same selector took 156ms and
-      // `/find` 1.7ms — so the cost is inside the press, and the hold
-      // it performs bears no relation to the one asked for. Every
-      // `longPressOn: { duration: N }` written against this runner got
-      // the same gesture regardless of N.
-      //
-      // Synthesising the touch puts the timeline in this process:
-      // touch down at offset 0, lift at offset `durationMs`. That is
-      // the same mechanism `repeatTap` already rides, and it is what
-      // makes the reported bounds mean anything.
-      longPressHandler: { selector, durationMs in
-        let entryMs = Date().timeIntervalSince1970 * 1000.0
-        let app = await resolveApp()  // Per-request target-app rebind.
-        var centre = CGPoint.zero
-        var longPressAppFrame = CGSize.zero
-        let resolved = smixGuarded("long-press-resolve") { () -> Bool in
-          let predicate = Self.predicate(for: selector)
-          let element = app.descendants(matching: .any)
-            .matching(predicate)
-            .firstMatch
-          if !element.exists {
-            FileHandle.standardError.write(
-              Data("smix-runner: long-press: element not found for \(selector.wireKey)=\(selector.raw)\n".utf8))
-            return false
-          }
-          let f = element.frame
-          centre = CGPoint(x: f.midX, y: f.midY)
-          longPressAppFrame = app.frame.size
-          return true
-        }
-        guard resolved == true else { return nil }
-
-        let longPress = smixDelivery(of: centre, appFrame: longPressAppFrame)
-        guard let record = SmixEventRecord(orientation: longPress.orientation) else {
-          FileHandle.standardError.write(
-            Data("smix-runner: long-press: XCSynthesizedEventRecord unavailable\n".utf8))
-          return nil
-        }
-        guard record.addPointerTapBurst(
-          at: longPress.point, times: 1, intervalMs: 0, holdMs: Int(durationMs)) else {
-          FileHandle.standardError.write(
-            Data("smix-runner: long-press: XCPointerEventPath unavailable\n".utf8))
-          return nil
-        }
-        let callStartMs = Date().timeIntervalSince1970 * 1000.0
-        do {
-          try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
-        } catch {
-          FileHandle.standardError.write(
-            Data("smix-runner: long-press: synthesize failed: \(error)\n".utf8))
-          return nil
-        }
-        let callEndMs = Date().timeIntervalSince1970 * 1000.0
-        return LongPressRoute.PressTimings.around(
-          callStartMs: callStartMs, callEndMs: callEndMs,
-          holdMs: durationMs, handlerEntryMs: entryMs)
       },
       // POST /set-orientation handler. XCUIDevice.shared.orientation
       // public XCUI API. orientation literal aligned with iOS UIDeviceOrientation

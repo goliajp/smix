@@ -208,28 +208,6 @@ mod driver_for {
     }
 }
 
-/// Parse a KeyName shorthand mirroring the wire camelCase form
-/// `smix_input::KeyName::as_str` produces. Accepts a couple of common
-/// shell-friendly aliases (`enter` → return, `backspace` → delete).
-pub fn parse_key_name(s: &str) -> Option<KeyName> {
-    match s {
-        "return" | "enter" => Some(KeyName::Return),
-        "delete" | "backspace" => Some(KeyName::Delete),
-        "tab" => Some(KeyName::Tab),
-        "space" => Some(KeyName::Space),
-        "escape" | "esc" => Some(KeyName::Escape),
-        "arrowUp" | "up" => Some(KeyName::ArrowUp),
-        "arrowDown" | "down" => Some(KeyName::ArrowDown),
-        "arrowLeft" | "left" => Some(KeyName::ArrowLeft),
-        "arrowRight" | "right" => Some(KeyName::ArrowRight),
-        "home" => Some(KeyName::Home),
-        "lock" => Some(KeyName::Lock),
-        "volumeUp" | "volume-up" => Some(KeyName::VolumeUp),
-        "volumeDown" | "volume-down" => Some(KeyName::VolumeDown),
-        _ => None,
-    }
-}
-
 /// Parse swipe / scroll direction.
 pub fn parse_direction(s: &str) -> Option<SwipeDirection> {
     match s {
@@ -473,15 +451,11 @@ pub async fn cmd_fill(
     Ok(())
 }
 
-/// `smix press-key <key-name>` — issue a hardware / IME key press. Key
-/// shorthand: `return` (alias `enter`), `delete` (alias `backspace`),
-/// `tab`, `space`, `escape` / `esc`, `arrowUp` / `up`, `arrowDown` /
-/// `down`, `arrowLeft` / `left`, `arrowRight` / `right`, `home`, `lock`,
-/// `volumeUp` / `volume-up`, `volumeDown` / `volume-down`.
+/// `smix press-key <key-name>` — press a key named as a flow's
+/// `pressKey` names it ([`KeyName::from_name`]).
 pub async fn cmd_press_key(key_str: String, port: u16, platform: Platform) -> Result<(), ActError> {
-    let key = parse_key_name(&key_str).ok_or_else(|| {
-        ActError::BadSelector(format!("key:{key_str}"), "unknown key name".into())
-    })?;
+    let key = KeyName::from_name(&key_str)
+        .map_err(|e| ActError::BadSelector(format!("key:{key_str}"), e.to_string()))?;
     let d = driver_for(platform, port);
     d.press_key(key)
         .await
@@ -1052,21 +1026,6 @@ mod tests {
         unsafe { std::env::set_var("SMIX_RUNNER_PORT", "22099") };
         assert_eq!(runner_port_from_env_opt(), Some(22099));
         unsafe { std::env::remove_var("SMIX_RUNNER_PORT") };
-    }
-
-    #[test]
-    fn parse_key_name_canonical_and_aliases() {
-        assert_eq!(parse_key_name("return"), Some(KeyName::Return));
-        assert_eq!(parse_key_name("enter"), Some(KeyName::Return));
-        assert_eq!(parse_key_name("delete"), Some(KeyName::Delete));
-        assert_eq!(parse_key_name("backspace"), Some(KeyName::Delete));
-        assert_eq!(parse_key_name("arrowUp"), Some(KeyName::ArrowUp));
-        assert_eq!(parse_key_name("up"), Some(KeyName::ArrowUp));
-        assert_eq!(parse_key_name("escape"), Some(KeyName::Escape));
-        assert_eq!(parse_key_name("esc"), Some(KeyName::Escape));
-        assert_eq!(parse_key_name("volumeUp"), Some(KeyName::VolumeUp));
-        assert_eq!(parse_key_name("volume-up"), Some(KeyName::VolumeUp));
-        assert_eq!(parse_key_name("nope"), None);
     }
 
     #[test]

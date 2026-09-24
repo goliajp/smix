@@ -12,10 +12,6 @@
 const ROUTE_SELECTOR: &str =
     include_str!("../../../swift-bridge/Sources/SmixRunnerCore/RouteSelector.swift");
 const TAP: &str = include_str!("../../../swift-bridge/Sources/SmixRunnerCore/TapRoute.swift");
-const DOUBLE_TAP: &str =
-    include_str!("../../../swift-bridge/Sources/SmixRunnerCore/DoubleTapRoute.swift");
-const LONG_PRESS: &str =
-    include_str!("../../../swift-bridge/Sources/SmixRunnerCore/LongPressRoute.swift");
 
 /// Reads the decoder's own key list, not the file at large.
 ///
@@ -42,21 +38,16 @@ fn tap_route_decodes_three_selector_keys() {
     }
 }
 
-/// One decoder, not three. Three copies would drift, and the defect
-/// being closed here was exactly one route's worth of a shape the
-/// other two shared.
+/// The tap route decodes its selector through `RouteSelector`, not by
+/// hand. It was one of three tap-family routes sharing that decoder;
+/// `/double-tap` and `/long-press` retired into `/tap-at-norm-coord`
+/// (host-resolved, no selector on the wire), which leaves this one.
 #[test]
-fn all_three_tap_routes_share_one_selector_decoder() {
-    for (name, src) in [
-        ("TapRoute", TAP),
-        ("DoubleTapRoute", DOUBLE_TAP),
-        ("LongPressRoute", LONG_PRESS),
-    ] {
-        assert!(
-            src.contains("RouteSelector.decode"),
-            "{name} decodes its selector itself instead of sharing RouteSelector"
-        );
-    }
+fn tap_route_decodes_through_route_selector() {
+    assert!(
+        TAP.contains("RouteSelector.decode"),
+        "TapRoute decodes its selector itself instead of sharing RouteSelector"
+    );
 }
 
 /// The Swift keys are the Rust enum's keys. `Selector` is untagged, so

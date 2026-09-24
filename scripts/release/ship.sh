@@ -578,6 +578,11 @@ python3 "$ROOT/scripts/dev/a-classification-names-every-variant.py" > /tmp/smix-
   || fail "a class is drawn with matches! over several variants — see /tmp/smix-ship-classes.log"
 python3 "$ROOT/scripts/dev/a-classification-names-every-variant.test.py" >> /tmp/smix-ship-classes.log 2>&1 \
   || fail "classification gate self-test FAILED — see /tmp/smix-ship-classes.log"
+log "a key name is read in one place"
+python3 "$ROOT/scripts/dev/one-key-table.py" > /tmp/smix-ship-keys.log 2>&1 \
+  || fail "a key name is read outside KeyName::from_name — see /tmp/smix-ship-keys.log"
+python3 "$ROOT/scripts/dev/one-key-table.test.py" >> /tmp/smix-ship-keys.log 2>&1 \
+  || fail "key-table gate self-test FAILED — see /tmp/smix-ship-keys.log"
 
 # An element can be nameable in a flow and unnameable from the surface an
 # agent drives through, with nothing red. `point` was, for two majors.

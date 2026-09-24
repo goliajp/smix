@@ -186,6 +186,7 @@ fn emit_key(k: KeyName) -> &'static str {
         KeyName::Lock => "KeyName::Lock",
         KeyName::VolumeUp => "KeyName::VolumeUp",
         KeyName::VolumeDown => "KeyName::VolumeDown",
+        KeyName::Back => "KeyName::Back",
     }
 }
 

@@ -234,6 +234,15 @@ PINS = [
         "android-runner/app/src/androidTest/kotlin/dev/smix/runner/RunnerTest.kt",
         r"(\d+)ms is below most",
     ),
+    # iOS double tap: a two-touch burst on the tap route, spaced by the
+    # timeline's default interval.
+    (
+        "apart",
+        "ms",
+        "swift-bridge/Sources/SmixRunnerCore/TouchTimeline.swift",
+        r"defaultIntervalMs: Int = (\d+)",
+        r"\biOS\b",
+    ),
 ]
 
 # Markdown surfaces whose numbers are promises to a reader.

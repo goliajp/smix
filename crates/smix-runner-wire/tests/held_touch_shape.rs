@@ -1,16 +1,16 @@
-//! The `/long-press` success body exists twice — the Swift emitter
-//! builds it by string template, this crate parses it into
-//! [`PressResult`]. Every field is `#[serde(default)]`, so a drifted
+//! The held-touch bounds on `/tap-at-norm-coord` exist twice — the
+//! Swift emitter builds them by string template, this crate parses them
+//! into [`TapAtCoordResult`] and reads them back as [`PressResult`]. Every field is `#[serde(default)]`, so a drifted
 //! key does not error: it parses to zero, and zero is exactly what the
 //! host reads as "this press cannot be placed". The capability would
 //! die into a permanent "uncertain" with every test still green.
 //!
 //! Read the emitter's literals, the way `tap_route_shape.rs` does.
 
-use smix_runner_wire::PressResult;
+use smix_runner_wire::{PressResult, TapAtCoordResult};
 
 const LONG_PRESS_SWIFT: &str =
-    include_str!("../../../swift-bridge/Sources/SmixRunnerCore/LongPressRoute.swift");
+    include_str!("../../../swift-bridge/Sources/SmixRunnerCore/TapAtCoordRoute.swift");
 
 #[test]
 fn every_field_this_crate_parses_is_a_key_the_emitter_writes() {
@@ -38,23 +38,30 @@ fn every_field_this_crate_parses_is_a_key_the_emitter_writes() {
 /// The emitted body has to round-trip, not merely contain the words.
 #[test]
 fn the_emitted_body_parses_back_to_what_was_measured() {
-    let body =
-        r#"{"ok":true,"latestDownOffsetMs":500,"earliestUpOffsetMs":1200,"handlerWallMs":1500}"#;
-    let parsed: PressResult = serde_json::from_str(body).expect("parse");
+    let body = r#"{"ok":true,"chain":[],"latestDownOffsetMs":500,"earliestUpOffsetMs":1200,"handlerWallMs":1500}"#;
+    let parsed: TapAtCoordResult = serde_json::from_str(body).expect("parse");
     assert_eq!(
-        parsed,
-        PressResult {
+        parsed.press(),
+        Some(PressResult {
             latest_down_offset_ms: 500,
             earliest_up_offset_ms: 1200,
             handler_wall_ms: 1500,
-        }
+        })
     );
 }
 
-/// The old bare body still parses, and to zeros — an older runner is
-/// unplaceable, not wrongly placed.
+/// A tap's body, or an older runner's, carries no bounds and is
+/// unplaceable — not a press at time zero.
 #[test]
-fn an_older_runners_bare_ok_reads_as_unplaceable() {
-    let parsed: PressResult = serde_json::from_str(r#"{"ok":true}"#).expect("parse");
-    assert_eq!(parsed, PressResult::default());
+fn a_body_without_bounds_reads_as_unplaceable() {
+    let parsed: TapAtCoordResult =
+        serde_json::from_str(r#"{"ok":true,"chain":[]}"#).expect("parse");
+    assert_eq!(parsed.press(), None);
+    let one_edge: TapAtCoordResult =
+        serde_json::from_str(r#"{"ok":true,"latestDownOffsetMs":500}"#).expect("parse");
+    assert_eq!(
+        one_edge.press(),
+        None,
+        "one edge of a window places nothing"
+    );
 }

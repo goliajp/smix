@@ -188,10 +188,11 @@ pub struct TapResult {
     pub app_frame: Option<smix_screen::Rect>,
 }
 
-/// `POST /long-press` response body.
+/// When a held touch was down, from `POST /tap-at-norm-coord` with a
+/// hold ([`TapAtCoordResult::press`]).
 ///
-/// Bounds, not instants. `press(forDuration:)` does not report when the
-/// touch went down, so the runner reports what it can measure — the
+/// Bounds, not instants. The synthesised gesture does not report when
+/// the touch went down, so the runner reports what it can measure — the
 /// call's own span — reduced to the two bounds that hold whatever went
 /// on inside it. A reader who takes `latest_down_offset_ms` for "when
 /// it went down" will place frames inside a press they were not inside.
@@ -266,6 +267,30 @@ pub struct TapAtCoordResult {
     /// recorded as "could not be judged".
     #[serde(default)]
     pub complete: bool,
+    /// Handler entry → the latest instant a single held touch could have
+    /// gone down. With the two below, present only when the request was
+    /// one touch; absent from a runner that does not measure it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_down_offset_ms: Option<u64>,
+    /// Handler entry → the earliest instant that touch could have lifted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub earliest_up_offset_ms: Option<u64>,
+    /// Handler entry → handler return.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handler_wall_ms: Option<u64>,
+}
+
+impl TapAtCoordResult {
+    /// When the touch was held, if the runner said — all three bounds
+    /// or none, since a window with one edge missing places nothing.
+    #[must_use]
+    pub fn press(&self) -> Option<PressResult> {
+        Some(PressResult {
+            latest_down_offset_ms: self.latest_down_offset_ms?,
+            earliest_up_offset_ms: self.earliest_up_offset_ms?,
+            handler_wall_ms: self.handler_wall_ms?,
+        })
+    }
 }
 
 /// `POST /tap` request body.

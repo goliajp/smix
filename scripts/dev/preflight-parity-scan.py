@@ -116,6 +116,8 @@ LOCAL = {
     "the status gate can still go red": "a-status-is-read-from-the-command.test",
     "every class over our own enums names every variant": "a-classification-names-every-variant.py",
     "the classification gate can still go red": "a-classification-names-every-variant.test",
+    "a key name is read in one place": "one-key-table.py",
+    "the key-table gate can still go red": "one-key-table.test",
     "every selector form is declared on every surface": "selector-surface-scan",
     "the selector-surface gate can still go red": "selector-surface-scan.test",
     "every health_ok call site says whether it decides": "health-is-not-a-session-check",

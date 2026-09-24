@@ -317,12 +317,14 @@ impl AppLike for MockApp {
         }
         // `btn-ptz-stop` is the guide's `rememberBounds` /
         // `assertBoundsUnchanged` example, which measures a named
-        // element's box the same way.
+        // element's box the same way; `summary-card` is the element the
+        // screenshot examples crop to.
         Ok(box_named(
             "root",
             vec![
                 box_named("view-timeline", Vec::new()),
                 box_named("btn-ptz-stop", Vec::new()),
+                box_named("summary-card", Vec::new()),
             ],
         ))
     }
@@ -492,9 +494,7 @@ impl AppLike for MockApp {
     }
     async fn assert_screenshot(
         &self,
-        _baseline_path: &std::path::Path,
-        _max_hamming: u32,
-        _masks: &[smix_adapter_maestro::MaskRegion],
+        _check: &smix_sdk::ScreenshotCheck<'_>,
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure> {
         Ok(smix_sdk::AssertScreenshotOutcome::Recorded {
             path: std::path::PathBuf::new(),
@@ -878,11 +878,14 @@ fn every_documented_tap_is_admissible_at_the_driver_boundary() {
             for call in calls {
                 let (selector, route) = match &call {
                     MockCall::TapWithMode(s, _) => (s, "/tap"),
-                    MockCall::DoubleTap(s) => (s, "/double-tap"),
-                    MockCall::LongPress(s) => (s, "/long-press"),
-                    // The default tap resolves host-side against the
-                    // full tree; no runner-side form applies to it.
-                    MockCall::Tap(_) | MockCall::TapXcui(_) | MockCall::Launch(_) => continue,
+                    // The default tap, double-tap and long-press resolve
+                    // host-side against the full tree; no runner-side
+                    // form applies to them.
+                    MockCall::Tap(_)
+                    | MockCall::DoubleTap(_)
+                    | MockCall::LongPress(_)
+                    | MockCall::TapXcui(_)
+                    | MockCall::Launch(_) => continue,
                 };
                 checked += 1;
                 if let Err(e) = smix_driver::require_runner_resolvable_selector(selector, route) {

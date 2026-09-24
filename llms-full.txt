@@ -244,6 +244,10 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
     threshold: 5                         # max hamming distance (default 5)
     mask:                                # left out of the comparison (0..1 shares)
       - { x: 0.0, y: 0.0, width: 1.0, height: 0.4 }
+- assertScreenshot:
+    path: "card.png"
+    cropOn: { id: "summary-card" }       # compare only this element's region
+    thresholdPercentage: 95              # maestro's measure: % of pixels that match
 
 - rememberBounds:                        # keep where an element is, by name
     id: "btn-ptz-stop"
@@ -293,12 +297,34 @@ it does on a `runFlow` block; `label:` is the element's accessibility
 label here, as on every verb with a selector.
 
 `assertScreenshot` auto-records the baseline on the first run and diffs
-against it afterwards. `mask:` regions — shares (0..1) of the frame, as
-`{ x, y, width, height }` — are left out of the comparison: both frames
-read one flat value there before hashing, so a video playing or a clock
-ticking inside a region cannot count. maestro's `cropOn`,
-`thresholdPercentage`, `label` and `optional` are refused by name rather
-than ignored.
+against it afterwards. It compares one of two ways, and they measure
+different things:
+
+- `threshold` (the default, 5): a 64-bit perceptual hash of each frame;
+  passes when at most that many bits differ. Tolerant of anti-aliasing
+  and small shifts; blind to a change too small to move a brightness
+  gradient.
+- `thresholdPercentage`: maestro's comparison — the share of pixels
+  whose colour is within 10% of the baseline's, passing when it is at
+  least this many percent. A screenshot of a different size fails. It
+  may be written as a number, a string, or `${…}`; a value that is not a
+  number from 0 to 100 is refused.
+
+Writing both is an error rather than a choice between them. Unlike
+maestro, whose only comparison is pixels with a default of 95, a flow
+that writes neither compares by hash as it always has.
+
+`cropOn:` takes a selector, waits for it like any element verb, and
+compares only that element's region; the baseline recorded on the first
+run is the cropped image, and `takeScreenshot` takes `cropOn:` too, to
+write one. An element with no area on screen is `NOT_VISIBLE`.
+
+`mask:` regions — shares (0..1) of the image being compared, as
+`{ x, y, width, height }`, the cropped image when there is a `cropOn` —
+are left out of the comparison: a masked pixel counts neither as a match
+nor as a difference. Masks that cover everything are refused: a
+comparison of nothing would pass whatever was on the screen. maestro's
+`label` and `optional` are refused by name rather than ignored.
 
 `assertTrue` reads `${…}` with a small expression engine, not a JS
 runtime — comparison, boolean operators, parentheses and `.contains()`,
@@ -448,8 +474,16 @@ would need measuring again.
 - pressKey: ENTER                        # ENTER / TAB / SPACE / DELETE / ESCAPE
 - pressKey: HOME                         # iOS home button
 - pressKey: VOLUME_UP                    # skipped on the iOS simulator
-- back                                   # navigation back — not a key press
+- pressKey: Back                         # the same as `- back`
+- back                                   # navigation back
 ```
+
+Key names are read when the flow is read, and one table reads them for
+the flow, `smix press-key` and the MCP tool alike: maestro's spellings
+(`Enter`, `Backspace`, `Volume Up`), the wire names (`return`,
+`volumeUp`), and shorthands (`esc`, `up`). Case, spaces, `_` and `-` do
+not matter. maestro's TV remote keys are refused by name — smix drives
+no TV — and `Power` points to `LOCK`.
 
 ### System / device controls
 
@@ -495,6 +529,9 @@ the device in front of you is a no-op there, not an error.
 - startRecording: "trace.mp4"
 - stopRecording                          # writes path passed to start
 - takeScreenshot: "step5.png"
+- takeScreenshot:
+    path: "card.png"
+    cropOn: { id: "summary-card" }       # only this element — a cropOn baseline
 ```
 
 ### Control flow
@@ -1389,9 +1426,14 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
     id: "photo-1"
 ```
 
-- Two taps with <300ms gap (system default).
-- iOS: XCUI `element.doubleTap()` or two IOHID events.
-- Android: two `/tap-at-norm-coord` events spaced ~200ms.
+- Two touches, 80ms apart on iOS, ~150ms on Android — inside every
+  platform's double-tap window.
+- Resolved on the host and judged like `tapOn`: the step fails with
+  `TAP_MISSED` when the touch went to something other than the element
+  (a dialog over it, a row that moved), instead of passing because a
+  touch was sent.
+- iOS: one synthesised event carrying both touches. Android: the
+  runner's coordinate double tap.
 
 ### Long press
 
@@ -1405,7 +1447,9 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
   `XCUIElement.press(forDuration:)` is not used — it was measured taking
   a constant ~2.6s for every hold from 500ms to 6000ms on iOS 26.5, so
   the duration it performed was not the one it was given.
-- Android: Kotlin `/long-press-at-norm-coord` with duration.
+- Android: the runner's coordinate long press, held for `duration`.
+- Judged like `tapOn` on both platforms: a press delivered to something
+  other than the element fails with `TAP_MISSED`.
 
 #### Capturing the held state
 
@@ -1591,12 +1635,19 @@ looking is `keyboard_state_unknown` — see
 - pressKey: LOCK
 ```
 
-- Available keys: ENTER / TAB / SPACE / DELETE / ESCAPE / HOME / LOCK / VOLUME_UP / VOLUME_DOWN / ARROW_UP / ARROW_DOWN / ARROW_LEFT / ARROW_RIGHT.
-- **Back navigation is not a key press.** Use the `- back` verb: on
-  Android it sends the back key, on iOS it taps the navigation-bar back
-  button. `pressKey: BACK` is refused deliberately — an earlier alias
-  mapped it to Delete, which turned every back step into a silent
-  backspace that reported success.
+- Available keys: ENTER / TAB / SPACE / DELETE / ESCAPE / HOME / LOCK / VOLUME_UP / VOLUME_DOWN / ARROW_UP / ARROW_DOWN / ARROW_LEFT / ARROW_RIGHT / BACK.
+- maestro's spellings (`Enter`, `Backspace`, `Volume Up`) read too; case, spaces, `_` and `-` do not matter; a name that is no key fails when the flow is read.
+- **Back.** `- back`, `pressKey: BACK` and `smix press-key back` are one
+  thing: on Android the system back key, on iOS the navigation bar's
+  back button, and the step fails when nothing went back. It is not a
+  keystroke that nobody checks — an earlier alias mapped `BACK` to
+  Delete, which turned every back step into a silent backspace that
+  reported success.
+- **Under gesture navigation there is no back button to tap.**
+  `tapOn: { id: back }` finds the three-button navigation bar's button,
+  which gesture navigation — the default on current phones — does not
+  have. Use `- back`: it closes a system sheet (share, permission) the
+  same way in either mode.
 - **`VOLUME_UP` / `VOLUME_DOWN` are skipped on the iOS simulator**, not
   executed: Apple documents `XCUIDevice.Button.volumeUp` / `.volumeDown`
   as unavailable there, and maestro has the same limitation. The step
@@ -1725,7 +1776,7 @@ Environment variables consumed by `smix run` (beyond the flag-bound ones above):
 | 0 | success |
 | 2 | YAML parse error (`RunError::Parse`) |
 | 3 | runtime SDK failure (`RunError::Sdk`) — sim crashed, app died, etc. |
-| 4 | unknown key / direction (`RunError::UnknownKey` / `RunError::UnknownDirection`) |
+| 4 | unknown direction (`RunError::UnknownDirection`); an unknown key name is a parse error (2) |
 | 5 | runFlow cycle / file IO (`RunError::RunFlowCycle` / `RunError::Io`) |
 | 6 | runner unreachable (runner not up / port wrong) |
 
@@ -2481,7 +2532,8 @@ smix wait-for id:loading-spinner --timeout 5    # seconds, not ms
 smix wait-for id:loading-spinner --absent  # wait until it is GONE
 
 smix fill id:form-email-input --text alice@example.com
-smix press-key return                      # positional key name
+smix press-key return                      # positional key name, read as a flow's pressKey reads it
+smix press-key back                        # navigation back — fails when nothing went back
 smix scroll "text:Row #5000" --direction down   # stops when it is wholly in view
 smix scroll "ocrText:Row #5000" --direction down # looks with OCR too
 smix swipe down                            # one gesture; `down` reveals what is below
@@ -4823,7 +4875,6 @@ Exactly one selector key. `text` matches label or identifier (the historical
 behaviour); `id` matches identifier only; `label` matches label only. Regex
 patterns, roles and spatial/index modifiers are not accepted here — they need
 the full tree and resolve host-side, which is what the default tap path does.
-`/double-tap` and `/long-press` take the same selector shape.
 (scope via `?include=` query, same mechanism as `GET /tree`; `mode` defaults to `resolveAndTap`)
 
 Response on success (`TapResult` in `smix-runner-wire`; all fields beyond `ok` optional):
@@ -4949,9 +5000,27 @@ began clearing first, and still wrong past fifty characters.
 
 ### `POST /press-key`
 
-Body: `{ key: KeyName }` — `KeyName` variants: `enter`, `back`, `home`,
-`delete`, `tab`, `escape`, `space`, `up`, `down`, `left`, `right`.
+Body: `{ key: KeyName }` — the wire names: `return`, `delete`, `tab`,
+`space`, `escape`, `arrowUp`, `arrowDown`, `arrowLeft`, `arrowRight`,
+`home`, `lock`, `volumeUp`, `volumeDown`.
 Response: `{ ok: bool }`
+
+`back` is a `KeyName` too, and never reaches this route: a client sends
+it to `POST /back`, which answers whether anything went back. A key
+press answers only that the event went in.
+
+### `POST /tap-at-norm-coord`
+
+Body: `{ nx, ny, times?, intervalMs?, holdMs? }` — a point as shares of
+the app frame, and optionally a burst (`times` touches `intervalMs`
+apart) or a held touch (`holdMs`). A tap, a double tap (`times: 2`) and
+a long press (`holdMs: duration`) are all this route.
+
+Response: `{ ok, chain: [{ identifier, label, frame }], complete?,
+latestDownOffsetMs?, earliestUpOffsetMs?, handlerWallMs? }`. `chain` is
+what was under the point, innermost first; the host judges the tap
+against it. The three offsets come with a single touch and bound when
+it was down, measured from the handler's entry — bounds, not instants.
 
 ### `POST /swipe`
 
@@ -5211,9 +5280,9 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
-| `doubleTapOn` / `doubleTap` | ✅ | ✅ | Android dispatches two clicks 150 ms apart at the resolved point |
+| `doubleTapOn` / `doubleTap` | ✅ | ✅ | Resolved on the host and judged like `tapOn`: a double tap delivered to something else fails `TAP_MISSED`. iOS sends both touches in one synthesised event, 80 ms apart; Android two clicks 150 ms apart |
 | `repeatTap` | ✅ | ⚠️ | iOS packs every touch into one synthesised event, so the interval is the number you state; Android falls back to one request per touch, where the interval is a floor and not a guarantee |
-| `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s, and XCUIElement's press convention); `{ duration: N }` sets it |
+| `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s); `{ duration: N }` sets it. Resolved on the host and judged like `tapOn` on both platforms |
 | `tapOn: { point: "X%,Y%" }` | ✅ | ✅ | Normalized [0, 1] coordinates; the escape hatch for screens with no a11y semantics. Not a verb of its own — there is no `tapByCoord` |
 
 ## Input family
@@ -5237,7 +5306,7 @@ that is why.
 | `expect: { signals }` | ✅ | ✅ | Ordered / any-order variants |
 | `expectLogClean` | ✅ | ✅ | Allowlist multi-source merge |
 | `assertTrue` | ✅ | ✅ | Expression engine — `${output.name}`, `${env.NAME}`, arithmetic |
-| `assertScreenshot` | ✅ | ✅ | 64-bit dhash over the PNG, so it behaves the same on both. `mask:` regions are painted one flat value in both images before hashing, so what changes inside them cannot count. maestro's `cropOn` / `thresholdPercentage` / `label` / `optional` are refused by name, not ignored |
+| `assertScreenshot` | ✅ | ✅ | Two comparisons, the same on both: `threshold` (default 5) is a 64-bit dhash distance; `thresholdPercentage` is maestro's share of matching pixels (RGB within 10%), and a size mismatch fails. Writing both is an error. **Differs from maestro**: a flow that writes neither compares by hash, where maestro compares pixels at 95. `cropOn` compares one element's region and the baseline is the cropped image. `mask:` regions count neither way; masks covering everything are refused. `label` / `optional` refused by name |
 | `rememberBounds` | ✅ | ✅ | smix's own — maestro has no verb for it. Keeps where an element is, under a name, in device-independent pixels (points on iOS; pixels ÷ density on Android). Takes any selector except `ocrText` and `anchorRelative`, which name no box to measure |
 | `assertBoundsUnchanged` | ✅ | ✅ | smix's own — maestro has no verb for it. The element's box now matches the one `rememberBounds` kept under `was`, every edge within `within` device-independent pixels (default 0). A failure prints both boxes and how far each edge moved |
 | `neverVisible` | ✅ | ✅ | smix's own — maestro has no verb for it. Runs the steps under `during` and, beside them, keeps asking the question `assertNotVisible` asks, as fast as the device answers; one sighting fails it, with the time since the span began and the inner step that was running. A pass says how many times it looked and the longest stretch nobody was looking. Refuses `ocrText` and `anchorRelative` for the same reason `assertNotVisible` does |
@@ -5250,8 +5319,8 @@ that is why.
 | `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when` takes `platform` / `true` / `visible` / `notVisible` / `label`, combined with AND in maestro's order; OCR fires when a gate selector contains `ocrText`; `env` / `label` / `optional` on the block; unknown keys are parse errors; skips emit `SKIPPED: <reason>` to stderr |
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
 | `repeat` | ✅ | ✅ | `while:` takes the same conditions as `runFlow.when`; `label` / `optional` on the block |
-| `pressKey` | ✅ | ✅ | enter/return, delete, tab, space, escape, and the four arrows on both. home / lock / volumeUp / volumeDown reach Android; on the iOS simulator they report an explicit Skipped (Apple exposes no simulator path) |
-| `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. Not a keystroke: `pressKey: back` is not a spelling of it. Both platforms answer whether the screen changed, not whether the key was delivered, and both report which reading decided (`settledBy`); a back an app swallows is a failure |
+| `pressKey` | ✅ | ✅ | One key table for the flow, `smix press-key` and MCP, read when the flow is read: maestro's spellings, the wire names, shorthands. enter/return, delete, tab, space, escape, and the four arrows on both. `back` is the `back` verb below. lock / volumeUp / volumeDown report an explicit Skipped. maestro's TV remote keys are refused by name; `Power` points to `lock` |
+| `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. `pressKey: back` and `smix press-key back` are this, not a keystroke. Closes a system share sheet under gesture navigation, where there is no back button to tap. Both platforms answer whether the screen changed, not whether the key was delivered, and both report which reading decided (`settledBy`); a back an app swallows is a failure |
 
 ## Lifecycle
 
@@ -5268,7 +5337,7 @@ that is why.
 
 | verb | iOS | Android | notes |
 |---|---|---|---|
-| `takeScreenshot` | ✅ | ✅ | Long form with `annotate: [...]` (5 primitives) + auto-mkdir + PNG ext inference |
+| `takeScreenshot` | ✅ | ✅ | Long form with `annotate: [...]` (5 primitives) + auto-mkdir + PNG ext inference; `cropOn:` writes only that element (a baseline for `assertScreenshot` `cropOn`). Other keys, `label` / `optional` included, are refused by name |
 | `startRecording` | ✅ | ⚠️ | Android records on the device with `screenrecord`, whose `--time-limit` help calls 180 s the maximum, not a default to raise. iOS has no such cap |
 | `stopRecording` | ✅ | ✅ | Android interrupts `screenrecord` rather than killing it — the mp4's moov atom is written on interrupt, and without it the file will not play — then pulls the file |
 | `addMedia` | ✅ | ✅ | Android pushes to `/sdcard/Pictures/` and fires a media-scan broadcast. Landing the bytes is not enough: a file MediaStore has not indexed is invisible to the app |

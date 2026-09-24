@@ -46,8 +46,6 @@ DRIVES_THE_APP = {
     "POST /tap-by-id",
     "POST /find-text-by-ocr",
     "POST /swipe-at-norm-coord",
-    "POST /double-tap",
-    "POST /long-press",
     "POST /hide-keyboard",
     "POST /input-text",
     "POST /session/relaunch-app",

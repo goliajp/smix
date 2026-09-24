@@ -29,19 +29,20 @@ pub use bounds::{Movement, bounds_moved, rect_in_points};
 
 use serde::{Deserialize, Serialize};
 
-/// Logical-points rectangle (origin top-left, +x right, +y down — matches
-/// UIKit / XCUITest coordinate space). All fields `f64` because the
-/// runner `/tree` route emits floating-point points (sub-pixel scale
-/// factors).
+/// A rectangle in the tree's own units (origin top-left, +x right, +y
+/// down): logical points on iOS, where XCUITest reports points, and
+/// physical pixels on Android, where accessibility does. A driver's
+/// `pixels_per_point` says which; `rect_in_points` converts. All fields
+/// `f64` because the runners emit fractional values.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Rect {
-    /// Top-left x coordinate in logical points.
+    /// Top-left x coordinate.
     pub x: f64,
-    /// Top-left y coordinate in logical points.
+    /// Top-left y coordinate.
     pub y: f64,
-    /// Width in logical points (zero or negative = invisible).
+    /// Width (zero or negative = invisible).
     pub w: f64,
-    /// Height in logical points (zero or negative = invisible).
+    /// Height (zero or negative = invisible).
     pub h: f64,
 }
 

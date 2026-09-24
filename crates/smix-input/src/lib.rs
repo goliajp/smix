@@ -96,6 +96,10 @@ pub enum KeyName {
     /// iOS hardware Volume Down button — XCUIDevice.Button.volumeDown.
     /// Maps 1:1 to maestro `pressKey: volume down`.
     VolumeDown,
+    /// Back: the same thing the `back` verb does, and answered the same
+    /// way — Android's system back, iOS's navigation-bar back. Maestro
+    /// `pressKey: Back`.
+    Back,
 }
 
 impl KeyName {
@@ -116,9 +120,134 @@ impl KeyName {
             KeyName::Lock => "lock",
             KeyName::VolumeUp => "volumeUp",
             KeyName::VolumeDown => "volumeDown",
+            KeyName::Back => "back",
+        }
+    }
+
+    /// Every key, in declaration order.
+    pub const ALL: [KeyName; 14] = [
+        KeyName::Return,
+        KeyName::Delete,
+        KeyName::Tab,
+        KeyName::Space,
+        KeyName::Escape,
+        KeyName::ArrowUp,
+        KeyName::ArrowDown,
+        KeyName::ArrowLeft,
+        KeyName::ArrowRight,
+        KeyName::Home,
+        KeyName::Lock,
+        KeyName::VolumeUp,
+        KeyName::VolumeDown,
+        KeyName::Back,
+    ];
+
+    /// The key a person or a flow names, the one place a key name is
+    /// read — `pressKey`, `smix press-key` and `smix_press_key` all
+    /// come here.
+    ///
+    /// Case, spaces, underscores and hyphens are not part of a name, so
+    /// maestro's `Volume Up`, a shell's `volume-up` and the wire's
+    /// `volumeUp` are one key.
+    ///
+    /// # Errors
+    ///
+    /// [`KeyNameError`] naming what was written, and either why smix
+    /// does not press that maestro key or which names it does read.
+    pub fn from_name(name: &str) -> Result<KeyName, KeyNameError> {
+        let folded: String = name
+            .chars()
+            .filter(|c| !matches!(c, ' ' | '_' | '-'))
+            .flat_map(char::to_lowercase)
+            .collect();
+        if let Some(&(_, key)) = NAMES.iter().find(|(n, _)| *n == folded) {
+            return Ok(key);
+        }
+        let not_here = |why| KeyNameError::NotPressedHere {
+            name: name.to_string(),
+            why,
+        };
+        if folded == "power" {
+            return Err(not_here(
+                "a phone's power button is its lock button here — write `lock`",
+            ));
+        }
+        if folded.starts_with("remote") || folded.starts_with("tvinput") {
+            return Err(not_here(
+                "a TV remote or TV input key; smix drives phones and tablets, which have \
+                 no such key to press",
+            ));
+        }
+        Err(KeyNameError::Unknown {
+            name: name.to_string(),
+        })
+    }
+}
+
+/// Every name [`KeyName::from_name`] reads, folded (lower case, no
+/// spaces, `_` or `-`): each key's wire name, maestro's spelling where
+/// it differs, and the shell shorthands smix has always taken.
+const NAMES: [(&str, KeyName); 21] = [
+    ("return", KeyName::Return),
+    ("enter", KeyName::Return),
+    ("delete", KeyName::Delete),
+    ("backspace", KeyName::Delete),
+    ("tab", KeyName::Tab),
+    ("space", KeyName::Space),
+    ("escape", KeyName::Escape),
+    ("esc", KeyName::Escape),
+    ("arrowup", KeyName::ArrowUp),
+    ("up", KeyName::ArrowUp),
+    ("arrowdown", KeyName::ArrowDown),
+    ("down", KeyName::ArrowDown),
+    ("arrowleft", KeyName::ArrowLeft),
+    ("left", KeyName::ArrowLeft),
+    ("arrowright", KeyName::ArrowRight),
+    ("right", KeyName::ArrowRight),
+    ("home", KeyName::Home),
+    ("lock", KeyName::Lock),
+    ("volumeup", KeyName::VolumeUp),
+    ("volumedown", KeyName::VolumeDown),
+    ("back", KeyName::Back),
+];
+
+/// Why a key name was not read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyNameError {
+    /// Not a key name smix or maestro knows.
+    Unknown {
+        /// What was written.
+        name: String,
+    },
+    /// A maestro key for a kind of device smix does not drive, or with
+    /// another name here.
+    NotPressedHere {
+        /// What was written.
+        name: String,
+        /// Why, and what to write instead when there is something.
+        why: &'static str,
+    },
+}
+
+impl std::fmt::Display for KeyNameError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyNameError::Unknown { name } => {
+                write!(f, "unknown key {name:?}; the keys are ")?;
+                for (i, k) in KeyName::ALL.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str(k.as_str())?;
+                }
+                f.write_str(" (case, spaces, `_` and `-` do not matter)")
+            }
+            KeyNameError::NotPressedHere { name, why } => write!(f, "key {name:?}: {why}"),
         }
     }
 }
+
+impl std::error::Error for KeyNameError {}
 
 impl std::fmt::Display for KeyName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

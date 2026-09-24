@@ -28,9 +28,9 @@ that is why.
 | verb | iOS | Android | notes |
 |---|---|---|---|
 | `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
-| `doubleTapOn` / `doubleTap` | ✅ | ✅ | Android dispatches two clicks 150 ms apart at the resolved point |
+| `doubleTapOn` / `doubleTap` | ✅ | ✅ | Resolved on the host and judged like `tapOn`: a double tap delivered to something else fails `TAP_MISSED`. iOS sends both touches in one synthesised event, 80 ms apart; Android two clicks 150 ms apart |
 | `repeatTap` | ✅ | ⚠️ | iOS packs every touch into one synthesised event, so the interval is the number you state; Android falls back to one request per touch, where the interval is a floor and not a guarantee |
-| `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s, and XCUIElement's press convention); `{ duration: N }` sets it |
+| `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s); `{ duration: N }` sets it. Resolved on the host and judged like `tapOn` on both platforms |
 | `tapOn: { point: "X%,Y%" }` | ✅ | ✅ | Normalized [0, 1] coordinates; the escape hatch for screens with no a11y semantics. Not a verb of its own — there is no `tapByCoord` |
 
 ## Input family
@@ -54,7 +54,7 @@ that is why.
 | `expect: { signals }` | ✅ | ✅ | Ordered / any-order variants |
 | `expectLogClean` | ✅ | ✅ | Allowlist multi-source merge |
 | `assertTrue` | ✅ | ✅ | Expression engine — `${output.name}`, `${env.NAME}`, arithmetic |
-| `assertScreenshot` | ✅ | ✅ | 64-bit dhash over the PNG, so it behaves the same on both. `mask:` regions are painted one flat value in both images before hashing, so what changes inside them cannot count. maestro's `cropOn` / `thresholdPercentage` / `label` / `optional` are refused by name, not ignored |
+| `assertScreenshot` | ✅ | ✅ | Two comparisons, the same on both: `threshold` (default 5) is a 64-bit dhash distance; `thresholdPercentage` is maestro's share of matching pixels (RGB within 10%), and a size mismatch fails. Writing both is an error. **Differs from maestro**: a flow that writes neither compares by hash, where maestro compares pixels at 95. `cropOn` compares one element's region and the baseline is the cropped image. `mask:` regions count neither way; masks covering everything are refused. `label` / `optional` refused by name |
 | `rememberBounds` | ✅ | ✅ | smix's own — maestro has no verb for it. Keeps where an element is, under a name, in device-independent pixels (points on iOS; pixels ÷ density on Android). Takes any selector except `ocrText` and `anchorRelative`, which name no box to measure |
 | `assertBoundsUnchanged` | ✅ | ✅ | smix's own — maestro has no verb for it. The element's box now matches the one `rememberBounds` kept under `was`, every edge within `within` device-independent pixels (default 0). A failure prints both boxes and how far each edge moved |
 | `neverVisible` | ✅ | ✅ | smix's own — maestro has no verb for it. Runs the steps under `during` and, beside them, keeps asking the question `assertNotVisible` asks, as fast as the device answers; one sighting fails it, with the time since the span began and the inner step that was running. A pass says how many times it looked and the longest stretch nobody was looking. Refuses `ocrText` and `anchorRelative` for the same reason `assertNotVisible` does |
@@ -67,8 +67,8 @@ that is why.
 | `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when` takes `platform` / `true` / `visible` / `notVisible` / `label`, combined with AND in maestro's order; OCR fires when a gate selector contains `ocrText`; `env` / `label` / `optional` on the block; unknown keys are parse errors; skips emit `SKIPPED: <reason>` to stderr |
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
 | `repeat` | ✅ | ✅ | `while:` takes the same conditions as `runFlow.when`; `label` / `optional` on the block |
-| `pressKey` | ✅ | ✅ | enter/return, delete, tab, space, escape, and the four arrows on both. home / lock / volumeUp / volumeDown reach Android; on the iOS simulator they report an explicit Skipped (Apple exposes no simulator path) |
-| `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. Not a keystroke: `pressKey: back` is not a spelling of it. Both platforms answer whether the screen changed, not whether the key was delivered, and both report which reading decided (`settledBy`); a back an app swallows is a failure |
+| `pressKey` | ✅ | ✅ | One key table for the flow, `smix press-key` and MCP, read when the flow is read: maestro's spellings, the wire names, shorthands. enter/return, delete, tab, space, escape, and the four arrows on both. `back` is the `back` verb below. lock / volumeUp / volumeDown report an explicit Skipped. maestro's TV remote keys are refused by name; `Power` points to `lock` |
+| `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. `pressKey: back` and `smix press-key back` are this, not a keystroke. Closes a system share sheet under gesture navigation, where there is no back button to tap. Both platforms answer whether the screen changed, not whether the key was delivered, and both report which reading decided (`settledBy`); a back an app swallows is a failure |
 
 ## Lifecycle
 
@@ -85,7 +85,7 @@ that is why.
 
 | verb | iOS | Android | notes |
 |---|---|---|---|
-| `takeScreenshot` | ✅ | ✅ | Long form with `annotate: [...]` (5 primitives) + auto-mkdir + PNG ext inference |
+| `takeScreenshot` | ✅ | ✅ | Long form with `annotate: [...]` (5 primitives) + auto-mkdir + PNG ext inference; `cropOn:` writes only that element (a baseline for `assertScreenshot` `cropOn`). Other keys, `label` / `optional` included, are refused by name |
 | `startRecording` | ✅ | ⚠️ | Android records on the device with `screenrecord`, whose `--time-limit` help calls 180 s the maximum, not a default to raise. iOS has no such cap |
 | `stopRecording` | ✅ | ✅ | Android interrupts `screenrecord` rather than killing it — the mp4's moov atom is written on interrupt, and without it the file will not play — then pulls the file |
 | `addMedia` | ✅ | ✅ | Android pushes to `/sdcard/Pictures/` and fires a media-scan broadcast. Landing the bytes is not enough: a file MediaStore has not indexed is invisible to the app |

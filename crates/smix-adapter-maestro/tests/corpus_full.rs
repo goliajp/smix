@@ -267,9 +267,7 @@ impl AppLike for SilentMockApp {
     }
     async fn assert_screenshot(
         &self,
-        _: &std::path::Path,
-        _: u32,
-        _: &[smix_adapter_maestro::MaskRegion],
+        _check: &smix_sdk::ScreenshotCheck<'_>,
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure> {
         // SilentMockApp does not decode the screenshot — c6 fixture
         // `assert_screenshot_basic.yaml` validates parser+adapter wire,

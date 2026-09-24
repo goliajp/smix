@@ -40,6 +40,7 @@ fn a_selector_tap_the_runner_reports_nothing_about_fails_and_names_the_runner() 
     let landed = TapAtCoordResult {
         chain: vec![],
         complete: false,
+        ..Default::default()
     };
     let err = landing_outcome(&aim(), Some(button1()), &landed)
         .expect_err("an empty chain was a pass until now, and must not be");
@@ -55,6 +56,7 @@ fn a_selector_tap_delivered_below_its_dialog_fails() {
     let landed = TapAtCoordResult {
         chain: vec![entry("", 0.0, 0.0, 1080.0, 2340.0)],
         complete: true,
+        ..Default::default()
     };
     let err = landing_outcome(&aim(), Some(button1()), &landed)
         .expect_err("the touch went to the activity behind the dialog");
@@ -73,6 +75,7 @@ fn a_selector_tap_delivered_to_its_button_is_confirmed() {
             entry("buttonPanel", 44.0, 1150.0, 992.0, 246.0),
         ],
         complete: true,
+        ..Default::default()
     };
     let outcome =
         landing_outcome(&aim(), Some(button1()), &landed).expect("the touch went to the button");
@@ -89,6 +92,7 @@ fn a_touch_delivered_outside_every_readable_window_is_a_miss_not_an_old_runner()
     let landed = TapAtCoordResult {
         chain: vec![],
         complete: true,
+        ..Default::default()
     };
     let err = landing_outcome(&aim(), Some(button1()), &landed)
         .expect_err("the touch went to no window at all");

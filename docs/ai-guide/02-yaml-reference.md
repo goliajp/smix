@@ -72,6 +72,10 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
     threshold: 5                         # max hamming distance (default 5)
     mask:                                # left out of the comparison (0..1 shares)
       - { x: 0.0, y: 0.0, width: 1.0, height: 0.4 }
+- assertScreenshot:
+    path: "card.png"
+    cropOn: { id: "summary-card" }       # compare only this element's region
+    thresholdPercentage: 95              # maestro's measure: % of pixels that match
 
 - rememberBounds:                        # keep where an element is, by name
     id: "btn-ptz-stop"
@@ -121,12 +125,34 @@ it does on a `runFlow` block; `label:` is the element's accessibility
 label here, as on every verb with a selector.
 
 `assertScreenshot` auto-records the baseline on the first run and diffs
-against it afterwards. `mask:` regions — shares (0..1) of the frame, as
-`{ x, y, width, height }` — are left out of the comparison: both frames
-read one flat value there before hashing, so a video playing or a clock
-ticking inside a region cannot count. maestro's `cropOn`,
-`thresholdPercentage`, `label` and `optional` are refused by name rather
-than ignored.
+against it afterwards. It compares one of two ways, and they measure
+different things:
+
+- `threshold` (the default, 5): a 64-bit perceptual hash of each frame;
+  passes when at most that many bits differ. Tolerant of anti-aliasing
+  and small shifts; blind to a change too small to move a brightness
+  gradient.
+- `thresholdPercentage`: maestro's comparison — the share of pixels
+  whose colour is within 10% of the baseline's, passing when it is at
+  least this many percent. A screenshot of a different size fails. It
+  may be written as a number, a string, or `${…}`; a value that is not a
+  number from 0 to 100 is refused.
+
+Writing both is an error rather than a choice between them. Unlike
+maestro, whose only comparison is pixels with a default of 95, a flow
+that writes neither compares by hash as it always has.
+
+`cropOn:` takes a selector, waits for it like any element verb, and
+compares only that element's region; the baseline recorded on the first
+run is the cropped image, and `takeScreenshot` takes `cropOn:` too, to
+write one. An element with no area on screen is `NOT_VISIBLE`.
+
+`mask:` regions — shares (0..1) of the image being compared, as
+`{ x, y, width, height }`, the cropped image when there is a `cropOn` —
+are left out of the comparison: a masked pixel counts neither as a match
+nor as a difference. Masks that cover everything are refused: a
+comparison of nothing would pass whatever was on the screen. maestro's
+`label` and `optional` are refused by name rather than ignored.
 
 `assertTrue` reads `${…}` with a small expression engine, not a JS
 runtime — comparison, boolean operators, parentheses and `.contains()`,
@@ -276,8 +302,16 @@ would need measuring again.
 - pressKey: ENTER                        # ENTER / TAB / SPACE / DELETE / ESCAPE
 - pressKey: HOME                         # iOS home button
 - pressKey: VOLUME_UP                    # skipped on the iOS simulator
-- back                                   # navigation back — not a key press
+- pressKey: Back                         # the same as `- back`
+- back                                   # navigation back
 ```
+
+Key names are read when the flow is read, and one table reads them for
+the flow, `smix press-key` and the MCP tool alike: maestro's spellings
+(`Enter`, `Backspace`, `Volume Up`), the wire names (`return`,
+`volumeUp`), and shorthands (`esc`, `up`). Case, spaces, `_` and `-` do
+not matter. maestro's TV remote keys are refused by name — smix drives
+no TV — and `Power` points to `LOCK`.
 
 ### System / device controls
 
@@ -323,6 +357,9 @@ the device in front of you is a no-op there, not an error.
 - startRecording: "trace.mp4"
 - stopRecording                          # writes path passed to start
 - takeScreenshot: "step5.png"
+- takeScreenshot:
+    path: "card.png"
+    cropOn: { id: "summary-card" }       # only this element — a cropOn baseline
 ```
 
 ### Control flow

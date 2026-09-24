@@ -2577,18 +2577,13 @@ fn assert_bounds_unchanged_without_was_is_refused() {
 
 // --- assertScreenshot: the keys it reads, and maestro's it does not ----
 
-/// maestro's `assertScreenshot` takes `cropOn`, `thresholdPercentage`,
-/// `label` and `optional`; smix's mapping read `path` / `threshold` /
-/// `mask` and walked past the rest. A maestro flow with `cropOn` was
-/// compared on the whole frame here and passed.
+use smix_adapter_maestro::ScreenshotThreshold;
+
+/// maestro's `assertScreenshot` also takes `label` and `optional`; smix
+/// does not carry them out here, and says so rather than walking past.
 #[test]
-fn assert_screenshot_refuses_maestros_keys_by_name() {
-    for key in [
-        "cropOn:\n      id: panel",
-        "thresholdPercentage: \"5\"",
-        "label: panel",
-        "optional: true",
-    ] {
+fn assert_screenshot_refuses_the_maestro_keys_it_does_not_carry_out() {
+    for key in ["label: panel", "optional: true"] {
         let yaml = format!("- assertScreenshot:\n    path: a.png\n    {key}\n");
         let (field, reason) = parse_err(&yaml);
         assert_eq!(field, "assertScreenshot", "{key}");
@@ -2597,6 +2592,104 @@ fn assert_screenshot_refuses_maestros_keys_by_name() {
             reason.contains(&format!("`{name}`")),
             "the refusal of `{name}` does not name it: {reason}"
         );
+    }
+}
+
+/// maestro compares only `cropOn`'s region. The element is named the way
+/// every other verb names one — the main selector parser, so `label:` and
+/// modifiers work here too.
+#[test]
+fn assert_screenshot_takes_crop_on_as_a_selector() {
+    for (key, want) in [
+        ("id: panel", id_selector("panel")),
+        (
+            "label: Pause",
+            Selector::Label {
+                label: "Pause".into(),
+                modifiers: Default::default(),
+            },
+        ),
+    ] {
+        let yaml = format!("- assertScreenshot:\n    path: a.png\n    cropOn:\n      {key}\n");
+        match only_step(&yaml) {
+            Step::AssertScreenshot { crop_on, .. } => assert_eq!(crop_on, Some(want), "{key}"),
+            other => panic!("{key}: {other:?}"),
+        }
+    }
+}
+
+/// maestro's `thresholdPercentage` is a share of matching pixels, written
+/// as a number or a string that may carry a variable (`"${T}"`) — kept as
+/// written and evaluated when the step runs, as maestro does.
+#[test]
+fn assert_screenshot_takes_threshold_percentage_as_written() {
+    for (written, want) in [
+        ("90", "90"),
+        ("\"90\"", "90"),
+        ("\"${T}\"", "${T}"),
+        ("97.5", "97.5"),
+    ] {
+        let yaml =
+            format!("- assertScreenshot:\n    path: a.png\n    thresholdPercentage: {written}\n");
+        match only_step(&yaml) {
+            Step::AssertScreenshot { threshold, .. } => assert_eq!(
+                threshold,
+                ScreenshotThreshold::Percentage(want.into()),
+                "{written}"
+            ),
+            other => panic!("{written}: {other:?}"),
+        }
+    }
+    let (field, _) =
+        parse_err("- assertScreenshot:\n    path: a.png\n    thresholdPercentage: true\n");
+    assert_eq!(field, "assertScreenshot.thresholdPercentage");
+}
+
+/// The two thresholds measure different things — bits of a perceptual
+/// hash, a share of matching pixels — so a flow names one.
+#[test]
+fn assert_screenshot_refuses_both_thresholds_at_once() {
+    let (field, reason) = parse_err(
+        "- assertScreenshot:\n    path: a.png\n    threshold: 3\n    thresholdPercentage: 90\n",
+    );
+    assert_eq!(field, "assertScreenshot");
+    assert!(
+        reason.contains("`threshold`") && reason.contains("`thresholdPercentage`"),
+        "{reason}"
+    );
+}
+
+#[test]
+fn assert_screenshot_without_a_threshold_compares_by_hash_as_before() {
+    match only_step("- assertScreenshot: a.png\n") {
+        Step::AssertScreenshot {
+            threshold, crop_on, ..
+        } => {
+            assert_eq!(threshold, ScreenshotThreshold::Hash(None));
+            assert_eq!(crop_on, None);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// `takeScreenshot` takes `cropOn` too: it is how maestro makes the
+/// cropped baseline a cropped comparison needs. Its mapping read `name` /
+/// `path` / `annotate` and walked past every other key.
+#[test]
+fn take_screenshot_takes_crop_on_and_refuses_what_it_does_not_read() {
+    match only_step("- takeScreenshot:\n    path: panel\n    cropOn:\n      id: panel\n") {
+        Step::TakeScreenshot { crop_on, path, .. } => {
+            assert_eq!(crop_on, Some(id_selector("panel")));
+            assert_eq!(path.as_deref(), Some("panel"));
+        }
+        other => panic!("{other:?}"),
+    }
+    for key in ["label: x", "optional: true", "nmae: x"] {
+        let yaml = format!("- takeScreenshot:\n    path: p\n    {key}\n");
+        let (field, reason) = parse_err(&yaml);
+        assert_eq!(field, "takeScreenshot", "{key}");
+        let name = key.split(':').next().unwrap();
+        assert!(reason.contains(&format!("`{name}`")), "{key}: {reason}");
     }
 }
 
@@ -2707,5 +2800,48 @@ fn never_visible_without_a_selector_is_refused() {
     assert!(
         parse_flow_yaml(yaml).is_err(),
         "a neverVisible with no selector parsed"
+    );
+}
+
+// pressKey reads its key when the flow is read, through the one table.
+
+#[test]
+fn press_key_refuses_a_name_that_is_no_key_when_the_flow_is_read() {
+    let err = parse_flow_yaml("appId: x\n---\n- pressKey: banana\n").expect_err("banana parsed");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("pressKey") && msg.contains("banana") && msg.contains("back"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn press_key_refuses_a_tv_remote_key_by_name() {
+    let err = parse_flow_yaml("appId: x\n---\n- pressKey: Remote Dpad Up\n")
+        .expect_err("a TV key parsed");
+    assert!(err.to_string().contains("TV"), "{err}");
+}
+
+#[test]
+fn press_key_takes_maestro_spellings_including_back() {
+    let flow = parse_flow_yaml(
+        "appId: x\n---\n- pressKey: Back\n- pressKey: Volume Up\n- pressKey: enter\n",
+    )
+    .expect("parse");
+    let keys: Vec<smix_sdk::KeyName> = flow
+        .steps
+        .iter()
+        .map(|s| match s {
+            Step::PressKey(k) => *k,
+            other => panic!("expected PressKey, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        keys,
+        vec![
+            smix_sdk::KeyName::Back,
+            smix_sdk::KeyName::VolumeUp,
+            smix_sdk::KeyName::Return
+        ]
     );
 }

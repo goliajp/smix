@@ -258,15 +258,17 @@ impl SmixSession {
         until_cancelled(cancel, self.client.input_text(&text)).await
     }
 
-    /// Press a hardware-like key. `key` is a name the runner knows —
-    /// "return", "delete", "arrowUp"; an unknown one is refused here, before
+    /// Press a key by name, read as a flow's `pressKey` reads it —
+    /// "return", "back", "Volume Up"; an unknown one is refused here, before
     /// any request, so the string boundary is not a way to send nonsense on.
     pub async fn press_key(
         &self,
         key: String,
         cancel: Option<Arc<CancelToken>>,
     ) -> Result<(), DriveError> {
-        let key: KeyName = parse_wire_enum(&key, "key")?;
+        let key = KeyName::from_name(&key).map_err(|e| DriveError::Transport {
+            detail: e.to_string(),
+        })?;
         // The runner returns a post-keystroke tree snapshot and timings; the
         // SDK's pressKey is fire-and-return, so that diagnostic payload is
         // dropped here rather than widening the boundary for it.

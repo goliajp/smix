@@ -212,6 +212,9 @@ struct MockApp {
     move_by: Mutex<f64>,
     /// The regions the last `assert_screenshot` was handed.
     last_masks: Mutex<Vec<smix_adapter_maestro::MaskRegion>>,
+    /// How the last `assert_screenshot` was to judge, and what it was
+    /// to crop to.
+    last_screenshot_check: Mutex<Option<(smix_sdk::ScreenshotCompare, Option<smix_sdk::CropTo>)>>,
     /// When set, `scroll` fails with this code.
     scroll_failure: Mutex<Option<FailureCode>>,
 }
@@ -239,6 +242,7 @@ impl MockApp {
             input_shift: Mutex::new(0.0),
             move_by: Mutex::new(0.0),
             last_masks: Mutex::new(Vec::new()),
+            last_screenshot_check: Mutex::new(None),
             scroll_failure: Mutex::new(None),
         }
     }
@@ -965,15 +969,14 @@ impl AppLike for MockApp {
     }
     async fn assert_screenshot(
         &self,
-        baseline_path: &std::path::Path,
-        _: u32,
-        masks: &[smix_adapter_maestro::MaskRegion],
+        check: &smix_sdk::ScreenshotCheck<'_>,
     ) -> Result<smix_sdk::AssertScreenshotOutcome, ExpectationFailure> {
-        *self.last_masks.lock().unwrap() = masks.to_vec();
+        *self.last_masks.lock().unwrap() = check.masks.to_vec();
+        *self.last_screenshot_check.lock().unwrap() = Some((check.compare, check.crop));
         self.calls
             .lock()
             .unwrap()
-            .push(MockCall::AssertScreenshot(baseline_path.to_path_buf()));
+            .push(MockCall::AssertScreenshot(check.baseline.to_path_buf()));
         Ok(smix_sdk::AssertScreenshotOutcome::Matched { hamming: 0 })
     }
 }
@@ -1201,19 +1204,15 @@ async fn mock_run_press_key_enter() {
     assert_eq!(app.calls(), vec![MockCall::PressKey(KeyName::Return)]);
 }
 
+/// `pressKey: back` reaches the app as the Back key; the runner client
+/// sends it to the back route (see its wire test).
 #[tokio::test]
-async fn mock_run_unknown_press_key_returns_error() {
-    let flow = parse_inline("appId: x\n---\n- pressKey: \"F19\"\n");
+async fn mock_run_press_key_back() {
+    let flow = parse_inline("appId: x\n---\n- pressKey: Back\n");
     let app = MockApp::new();
     let mut adapter = Adapter::new(&app, fixtures_dir());
-    let err = adapter
-        .run(&flow)
-        .await
-        .expect_err("unknown key should error");
-    match err {
-        RunError::UnknownKey(k) => assert_eq!(k, "F19"),
-        other => panic!("expected RunError::UnknownKey, got {other:?}"),
-    }
+    adapter.run(&flow).await.expect("run ok");
+    assert_eq!(app.calls(), vec![MockCall::PressKey(KeyName::Back)]);
 }
 
 /// Maestro's `- back` is a navigation back. It parsed into a
@@ -4060,4 +4059,143 @@ async fn never_visible_on_something_already_there_says_it_was_there_before_step_
     let msg = format!("{err}");
     assert!(msg.contains("before step 1 began"), "{msg}");
     assert!(!msg.contains("()"), "a step with no verb was named: {msg}");
+}
+
+/// `cropOn` resolves to the element's box and the tree root it was read
+/// against — the two readings the crop's scale is derived from.
+#[tokio::test]
+async fn crop_on_hands_the_comparison_the_element_and_the_root() {
+    let flow = parse_inline(
+        "appId: x\n---\n- assertScreenshot:\n    path: cropped.png\n    cropOn: { id: fixture-input }\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter
+        .run(&flow)
+        .await
+        .expect("assertScreenshot with cropOn");
+    let (_, crop) = app
+        .last_screenshot_check
+        .lock()
+        .unwrap()
+        .expect("the comparison was never asked for");
+    let r = |x: f64, y: f64, w: f64, h: f64| smix_sdk::Rect { x, y, w, h };
+    assert_eq!(
+        crop,
+        Some(smix_sdk::CropTo {
+            element: r(100.0, 200.0, 800.0, 400.0),
+            root: r(0.0, 0.0, 1000.0, 1000.0),
+        })
+    );
+}
+
+#[tokio::test]
+async fn crop_on_an_element_that_is_not_there_says_so_and_shows_the_screen() {
+    let flow = parse_inline(
+        "appId: x\n---\n- assertScreenshot:\n    path: cropped.png\n    cropOn: { id: no-such-thing }\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let err = adapter
+        .run(&flow)
+        .await
+        .expect_err("cropOn on nothing passed");
+    let RunError::Sdk(e) = err else {
+        panic!("expected an Sdk failure, got {err:?}")
+    };
+    assert_eq!(e.code, FailureCode::ElementNotFound);
+    assert!(e.message.contains("cropOn"), "msg: {}", e.message);
+    assert!(
+        e.visible_total.is_some() && !e.visible_elements.is_empty(),
+        "the failure does not say what was on the screen: {e:?}"
+    );
+    assert!(
+        app.last_screenshot_check.lock().unwrap().is_none(),
+        "the comparison ran without its crop"
+    );
+}
+
+/// `thresholdPercentage` is maestro's measure, a share of pixels; it is
+/// expanded like any other value, so `${T}` works.
+#[tokio::test]
+async fn threshold_percentage_reaches_the_comparison_as_a_share_of_pixels() {
+    let flow = parse_inline(concat!(
+        "appId: x\n---\n- runFlow:\n    env:\n      T: \"90\"\n    commands:\n",
+        "      - assertScreenshot:\n          path: p.png\n          thresholdPercentage: ${T}\n",
+    ));
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("thresholdPercentage");
+    let (compare, _) = app
+        .last_screenshot_check
+        .lock()
+        .unwrap()
+        .expect("not compared");
+    assert_eq!(
+        compare,
+        smix_sdk::ScreenshotCompare::Pixels {
+            min_match_percent: 90.0
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_threshold_percentage_that_is_not_a_number_is_refused_by_name() {
+    let flow = parse_inline(
+        "appId: x\n---\n- assertScreenshot:\n    path: p.png\n    thresholdPercentage: ninety\n",
+    );
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    let err = adapter
+        .run(&flow)
+        .await
+        .expect_err("a word passed as a share");
+    assert!(
+        format!("{err}").contains("thresholdPercentage"),
+        "the error does not name the key: {err}"
+    );
+    assert!(app.last_screenshot_check.lock().unwrap().is_none());
+}
+
+#[tokio::test]
+async fn without_a_percentage_the_comparison_is_the_hash_with_its_threshold() {
+    let flow =
+        parse_inline("appId: x\n---\n- assertScreenshot:\n    path: p.png\n    threshold: 9\n");
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter.run(&flow).await.expect("threshold");
+    let (compare, crop) = app
+        .last_screenshot_check
+        .lock()
+        .unwrap()
+        .expect("not compared");
+    assert_eq!(
+        compare,
+        smix_sdk::ScreenshotCompare::Hash { max_hamming: 9 }
+    );
+    assert_eq!(crop, None);
+}
+
+/// `takeScreenshot` with `cropOn` writes only the element: the mock's
+/// 64×64 capture of a 1000-unit root puts `fixture-input`
+/// (100, 200, 800×400) at pixels 6..58 × 12..39.
+#[tokio::test]
+async fn take_screenshot_with_crop_on_writes_only_the_element() {
+    let dir = std::env::temp_dir().join(format!("smix-c9b-take-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("crop.png");
+    let flow = parse_inline(&format!(
+        "appId: x\n---\n- takeScreenshot:\n    path: {}\n    cropOn: {{ id: fixture-input }}\n",
+        out.display()
+    ));
+    let app = MockApp::new();
+    let mut adapter = Adapter::new(&app, fixtures_dir());
+    adapter
+        .run(&flow)
+        .await
+        .expect("takeScreenshot with cropOn");
+    let bytes = std::fs::read(&out).expect("nothing written");
+    let reader = png::Decoder::new(bytes.as_slice()).read_info().unwrap();
+    assert_eq!((reader.info().width, reader.info().height), (52, 27));
+    let _ = std::fs::remove_dir_all(&dir);
 }

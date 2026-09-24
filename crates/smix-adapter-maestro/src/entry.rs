@@ -729,7 +729,7 @@ fn run_error_to_exit(e: &RunError) -> u8 {
     match e {
         RunError::Parse(_) => 2,
         RunError::Sdk(_) => 3,
-        RunError::UnknownKey(_) | RunError::UnknownDirection(_) => 4,
+        RunError::UnknownDirection(_) => 4,
         RunError::RunFlowCycle(_) | RunError::Io(_) => 5,
     }
 }
@@ -838,12 +838,26 @@ pub(crate) fn summarize_step(step: &Step) -> String {
             None => "clearState (current)".to_string(),
         },
         Step::ClearKeychain => "clearKeychain".into(),
-        Step::TakeScreenshot { path, annotations } => match (path, annotations.is_empty()) {
-            (Some(p), true) => format!("takeScreenshot {p}"),
-            (Some(p), false) => format!("takeScreenshot {p} +{} annotate", annotations.len()),
-            (None, true) => "takeScreenshot".into(),
-            (None, false) => format!("takeScreenshot +{} annotate", annotations.len()),
-        },
+        Step::TakeScreenshot {
+            path,
+            annotations,
+            crop_on,
+        } => {
+            let mut s = match path {
+                Some(p) => format!("takeScreenshot {p}"),
+                None => "takeScreenshot".into(),
+            };
+            if !annotations.is_empty() {
+                s.push_str(&format!(" +{} annotate", annotations.len()));
+            }
+            if let Some(sel) = crop_on {
+                s.push_str(&format!(
+                    " cropOn={}",
+                    smix_selector::describe_selector(sel)
+                ));
+            }
+            s
+        }
         Step::SetClipboard(s) => format!("setClipboard ({} chars)", s.chars().count()),
         Step::PasteText { text } => match text {
             Some(s) => format!("pasteText ({} chars)", s.chars().count()),
@@ -902,12 +916,23 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         Step::StopRecording => "stopRecording".into(),
         Step::AssertScreenshot {
             path,
-            max_hamming,
+            threshold,
             mask,
+            crop_on,
         } => {
             let mut s = format!("assertScreenshot {path}");
-            if let Some(c) = max_hamming {
-                s.push_str(&format!(" threshold={c}"));
+            match threshold {
+                crate::ScreenshotThreshold::Hash(Some(c)) => s.push_str(&format!(" threshold={c}")),
+                crate::ScreenshotThreshold::Hash(None) => {}
+                crate::ScreenshotThreshold::Percentage(p) => {
+                    s.push_str(&format!(" thresholdPercentage={p}"))
+                }
+            }
+            if let Some(sel) = crop_on {
+                s.push_str(&format!(
+                    " cropOn={}",
+                    smix_selector::describe_selector(sel)
+                ));
             }
             if !mask.is_empty() {
                 s.push_str(&format!(" mask={}regions", mask.len()));
