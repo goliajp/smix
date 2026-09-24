@@ -2606,3 +2606,106 @@ fn assert_screenshot_refuses_a_misspelt_key() {
     assert_eq!(field, "assertScreenshot");
     assert!(reason.contains("`treshold`"), "{reason}");
 }
+
+// ---- neverVisible (smix's own verb): a watch that spans steps ----
+
+#[test]
+fn never_visible_takes_a_selector_and_the_steps_it_watches_over() {
+    let step = only_step(
+        "- neverVisible:\n    id: loading-overlay\n    during:\n      - tapOn:\n          id: row-alert-1\n      - extendedWaitUntil:\n          visible:\n            id: player-surface\n          timeout: 5000\n",
+    );
+    match step {
+        Step::NeverVisible {
+            selector,
+            during,
+            opts,
+        } => {
+            assert_eq!(selector, id_selector("loading-overlay"));
+            assert_eq!(during.len(), 2, "the two inner steps: {during:?}");
+            assert!(matches!(during[0], Step::TapOn { .. }), "{:?}", during[0]);
+            assert!(
+                matches!(during[1], Step::ExtendedWaitUntil { .. }),
+                "{:?}",
+                during[1]
+            );
+            assert_eq!(opts, smix_adapter_maestro::BlockOptions::default());
+        }
+        other => panic!("expected NeverVisible, got {other:?}"),
+    }
+}
+
+#[test]
+fn never_visible_selects_through_the_main_parser() {
+    let step = only_step(
+        "- neverVisible:\n    label: Loading\n    below:\n      id: header\n    during:\n      - tapOn: Go\n",
+    );
+    match step {
+        Step::NeverVisible { selector, .. } => assert!(
+            matches!(selector, Selector::Label { ref modifiers, .. } if modifiers.below.is_some()),
+            "the selector lost its label or its modifier: {selector:?}"
+        ),
+        other => panic!("expected NeverVisible, got {other:?}"),
+    }
+}
+
+#[test]
+fn never_visible_reads_optional_as_a_block_does() {
+    let step = only_step(
+        "- neverVisible:\n    id: spinner\n    optional: true\n    during:\n      - tapOn: Go\n",
+    );
+    match step {
+        Step::NeverVisible { opts, .. } => assert!(opts.optional),
+        other => panic!("expected NeverVisible, got {other:?}"),
+    }
+}
+
+#[test]
+fn never_visible_reads_label_as_the_selector_not_as_a_block_name() {
+    // `label:` means the element's accessibility label on every verb with
+    // a selector; a block's name would be a second meaning for one key.
+    let step = only_step("- neverVisible:\n    label: Loading\n    during:\n      - tapOn: Go\n");
+    match step {
+        Step::NeverVisible { selector, opts, .. } => {
+            assert!(matches!(selector, Selector::Label { .. }), "{selector:?}");
+            assert_eq!(opts.label, None);
+        }
+        other => panic!("expected NeverVisible, got {other:?}"),
+    }
+}
+
+#[test]
+fn never_visible_without_during_is_refused_by_name() {
+    let (field, reason) = parse_err("- neverVisible:\n    id: spinner\n");
+    assert_eq!(field, "neverVisible.during");
+    assert!(reason.contains("during"), "{reason}");
+}
+
+#[test]
+fn never_visible_with_nothing_to_watch_over_is_refused() {
+    // An empty span is a watch over no time at all: it would pass having
+    // looked at nothing, which is the one thing this verb must not do.
+    let (field, reason) = parse_err("- neverVisible:\n    id: spinner\n    during: []\n");
+    assert_eq!(field, "neverVisible.during");
+    assert!(
+        reason.contains("empty") || reason.contains("at least one"),
+        "{reason}"
+    );
+}
+
+#[test]
+fn never_visible_refuses_an_unknown_key_by_name() {
+    let (_, reason) = parse_err(
+        "- neverVisible:\n    id: spinner\n    durng:\n      - tapOn: Go\n    during:\n      - tapOn: Go\n",
+    );
+    assert!(reason.contains("`durng`"), "{reason}");
+}
+
+#[test]
+fn never_visible_without_a_selector_is_refused() {
+    // Nothing to watch for is not a watch.
+    let yaml = "appId: com.t.r\n---\n- neverVisible:\n    during:\n      - tapOn: Go\n";
+    assert!(
+        parse_flow_yaml(yaml).is_err(),
+        "a neverVisible with no selector parsed"
+    );
+}

@@ -63,8 +63,80 @@ struct DetailView: View {
         Button("Stay") {}
           .accessibilityIdentifier("fixture-bounds-stay")
       }
+      // A screen of its own rather than more rows here or on the main
+      // list, whose positions other checks measure.
+      NavigationLink("Open watch") { WatchView() }
+        .accessibilityIdentifier("fixture-watch-link")
     }
     .navigationTitle("Detail")
+  }
+}
+
+// The subjects `neverVisible` and a disappearing control are judged on.
+//
+// `Flash` does what a consumer's alert row does when it opens a
+// recording: the press returns, and a moment later a loading overlay
+// stands over the screen for 400 ms and goes. `Quiet` takes the same time
+// and shows nothing — the control that says a watch which never saw
+// anything was not simply blind. Both end by showing `done`, which is
+// what a flow waits for.
+//
+// `Reveal` shows a button that takes itself away after three seconds, as
+// a player's controls do after the picture is touched. It counts the
+// presses it received and how long after it appeared the press came, on
+// the app's own clock — the reading a check trusts.
+struct WatchView: View {
+  @State private var overlay = false
+  @State private var done = false
+  @State private var vanishing = false
+  @State private var shownAt = Date()
+  @State private var presses = 0
+  @State private var latency = -1
+
+  var body: some View {
+    ZStack {
+      VStack(spacing: 16) {
+        Text("watch")
+        Button("Flash") {
+          DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            overlay = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+              overlay = false
+              done = true
+            }
+          }
+        }
+        .accessibilityIdentifier("watch-flash")
+        Button("Quiet") {
+          DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { done = true }
+        }
+        .accessibilityIdentifier("watch-quiet")
+        if done {
+          Text("done").accessibilityIdentifier("watch-done")
+        }
+        Button("Reveal") {
+          vanishing = true
+          shownAt = Date()
+          DispatchQueue.main.asyncAfter(deadline: .now() + 3) { vanishing = false }
+        }
+        .accessibilityIdentifier("watch-reveal")
+        if vanishing {
+          Button("Tap me") {
+            presses += 1
+            latency = Int(Date().timeIntervalSince(shownAt) * 1000)
+          }
+          .accessibilityIdentifier("watch-vanishing")
+        }
+        Text("presses \(presses)").accessibilityIdentifier("watch-presses")
+        Text("latency \(latency)").accessibilityIdentifier("watch-latency")
+      }
+      if overlay {
+        Color.black.opacity(0.4)
+          .ignoresSafeArea()
+          .overlay(Text("loading").foregroundColor(.white).accessibilityIdentifier("watch-overlay"))
+      }
+    }
+    .navigationTitle("Watch")
   }
 }
 

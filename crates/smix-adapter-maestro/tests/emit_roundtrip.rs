@@ -173,3 +173,42 @@ fn bounds_verbs_round_trip() {
         parse_flow_yaml(&yaml).unwrap_or_else(|e| panic!("emitted yaml must parse: {e}\n{yaml}"));
     assert_eq!(flow.steps, steps, "round-trip must be faithful\n{yaml}");
 }
+
+/// A watch comes back with its selector, its inner steps and its
+/// `optional`, and a default watch writes no `optional` at all.
+#[test]
+fn never_visible_round_trips() {
+    let steps = vec![
+        launch("com.x"),
+        Step::NeverVisible {
+            selector: id("loading-overlay"),
+            during: vec![
+                Step::TapOn {
+                    selector: id("row-alert-1"),
+                    optional: false,
+                    dispatch: None,
+                },
+                Step::AssertVisible {
+                    selector: id("player-surface"),
+                },
+            ],
+            opts: smix_adapter_maestro::BlockOptions::default(),
+        },
+        Step::NeverVisible {
+            selector: text("Loading"),
+            during: vec![Step::TapOn {
+                selector: id("go"),
+                optional: false,
+                dispatch: None,
+            }],
+            opts: smix_adapter_maestro::BlockOptions {
+                label: None,
+                optional: true,
+            },
+        },
+    ];
+    let yaml = emit_flow_yaml(&steps, "com.x").expect("neverVisible emits");
+    let flow =
+        parse_flow_yaml(&yaml).unwrap_or_else(|e| panic!("emitted yaml must parse: {e}\n{yaml}"));
+    assert_eq!(flow.steps, steps, "round-trip must be faithful\n{yaml}");
+}

@@ -252,6 +252,14 @@ The `app:` form (cross-platform) needs `--apps-config <path>` flag. The `appId:`
     id: "btn-ptz-stop"
     was: "stop"
     within: 1                            # device-independent pixels (default 0)
+
+- neverVisible:                          # at no moment while these steps run
+    id: "loading-overlay"
+    during:
+      - tapOn: { id: "row-alert-1" }
+      - extendedWaitUntil:
+          visible: { id: "player-surface" }
+          timeout: 5000
 ```
 
 `rememberBounds` / `assertBoundsUnchanged` are smix's own — maestro has
@@ -265,6 +273,24 @@ has changed. A failure prints both boxes and how far each edge moved.
 The box compared is the one the element occupies, not the part that
 shows: scrolling a row half out of view changes what shows without
 moving anything.
+
+`neverVisible` is smix's own too. `assertNotVisible` answers about one
+instant, and a loading state that flashed for 200 ms between two steps is
+gone by any instant after them. `neverVisible` runs the steps under
+`during` as they would run anywhere else and, beside them, keeps asking
+whether the element is on screen — the same question `assertNotVisible`
+asks, as fast as the device answers, with no sleep between looks. It
+looks at least once after every inner step before the next one starts.
+One sighting fails it: the failure says how long after the span began the
+element was seen, which inner step was running, and what was on screen
+just after. A pass is reported with how many times it looked and the
+longest stretch nobody was looking — including before the first look and
+after the last — because "never seen" only means something if the looks
+were close together. A watch whose every look failed is a failure, not a
+pass: nothing is known about a screen nobody read. A failing inner step
+is reported as itself. `optional: true` turns a sighting into a skip, as
+it does on a `runFlow` block; `label:` is the element's accessibility
+label here, as on every verb with a selector.
 
 `assertScreenshot` auto-records the baseline on the first run and diffs
 against it afterwards. `mask:` regions — shares (0..1) of the frame, as
@@ -1291,6 +1317,20 @@ signal XCUITest offers is `isHittable`, which reports false under
 floating overlays that are genuinely visible and assertable. If a tap
 reports success and nothing happens, see `07-errors.md` →
 "tap returns `ok: true` but state doesn't change".
+
+**A control that goes away on its own.** `tapOn` waits for its target
+itself — it keeps reading the screen until the element resolves (up to
+5 s), then taps. So a control that shows for a few seconds and hides
+(a player's buttons after the picture is touched) is tapped by writing
+`tapOn` directly; there is no need to wait for it first. Measured on the
+repository's fixture, from the moment the control appeared to the moment
+the app counted the press, on the app's own clock: about 0.8 s on an
+Android emulator and 0.35 s on an iOS simulator with `tapOn` alone, and
+about 0.05–0.08 s more with an `extendedWaitUntil` in front of it. Most
+of that time is the previous step finishing — the tap that revealed the
+control — not the tap on it. A screen whose accessibility tree is much
+larger than the fixture's takes longer to read, so measure on your own
+screen before assuming a margin.
 
 ### Tap with explicit dispatch (v1.0.26)
 
@@ -5200,6 +5240,7 @@ that is why.
 | `assertScreenshot` | ✅ | ✅ | 64-bit dhash over the PNG, so it behaves the same on both. `mask:` regions are painted one flat value in both images before hashing, so what changes inside them cannot count. maestro's `cropOn` / `thresholdPercentage` / `label` / `optional` are refused by name, not ignored |
 | `rememberBounds` | ✅ | ✅ | smix's own — maestro has no verb for it. Keeps where an element is, under a name, in device-independent pixels (points on iOS; pixels ÷ density on Android). Takes any selector except `ocrText` and `anchorRelative`, which name no box to measure |
 | `assertBoundsUnchanged` | ✅ | ✅ | smix's own — maestro has no verb for it. The element's box now matches the one `rememberBounds` kept under `was`, every edge within `within` device-independent pixels (default 0). A failure prints both boxes and how far each edge moved |
+| `neverVisible` | ✅ | ✅ | smix's own — maestro has no verb for it. Runs the steps under `during` and, beside them, keeps asking the question `assertNotVisible` asks, as fast as the device answers; one sighting fails it, with the time since the span began and the inner step that was running. A pass says how many times it looked and the longest stretch nobody was looking. Refuses `ocrText` and `anchorRelative` for the same reason `assertNotVisible` does |
 
 ## Control flow
 

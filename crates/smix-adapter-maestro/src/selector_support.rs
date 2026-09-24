@@ -96,6 +96,9 @@ pub enum Slot {
     /// `rememberBounds:` / `assertBoundsUnchanged:` — the element whose
     /// box is measured.
     BoundsTarget,
+    /// `neverVisible:` — the element that must not appear at any moment
+    /// while the inner steps run.
+    NeverVisibleTarget,
 }
 
 /// What a slot does with a form it cannot read from the tree.
@@ -125,6 +128,7 @@ pub fn slots(step: &Step) -> &'static [Slot] {
         Step::RememberBounds { .. } | Step::AssertBoundsUnchanged { .. } => &[Slot::BoundsTarget],
         Step::AssertVisible { .. } => &[Slot::AssertVisibleTarget],
         Step::AssertNotVisible { .. } => &[Slot::AssertNotVisibleTarget],
+        Step::NeverVisible { .. } => &[Slot::NeverVisibleTarget],
         Step::ExtendedWaitUntil { .. } => &[Slot::WaitVisibleTarget, Slot::WaitNotVisibleTarget],
         Step::ScrollUntilVisible { .. } => &[Slot::ScrollTarget],
         Step::RunFlowInline { .. } | Step::RunFlowConditional { .. } => &[Slot::RunFlowGate],
@@ -182,7 +186,7 @@ impl Slot {
     /// this list against the `Slot::` names `slots()` actually hands
     /// out, because a list written by hand beside a list derived from
     /// the code is two truths waiting to disagree.
-    pub const ALL: [Slot; 15] = [
+    pub const ALL: [Slot; 16] = [
         Slot::TapOnTarget,
         Slot::RepeatTapTarget,
         Slot::DoubleTapTarget,
@@ -198,6 +202,7 @@ impl Slot {
         Slot::AnnotationAnchor,
         Slot::SwipeOverTarget,
         Slot::BoundsTarget,
+        Slot::NeverVisibleTarget,
     ];
 }
 
@@ -287,18 +292,22 @@ pub fn support(slot: Slot, form: UnreadableForm) -> Support {
             )
         }
 
-        (S::AssertNotVisibleTarget | S::WaitNotVisibleTarget, F::OcrText) => Support::Refused(
+        (
+            S::AssertNotVisibleTarget | S::WaitNotVisibleTarget | S::NeverVisibleTarget,
+            F::OcrText,
+        ) => Support::Refused(
             "OCR not finding text is not evidence that it is absent: recognition \
              misses low contrast, small type and partial occlusion, and reporting \
              those as absence would be a pass with nothing behind it. Name the \
              element by id, text, label or role",
         ),
-        (S::AssertNotVisibleTarget | S::WaitNotVisibleTarget, F::AnchorRelative) => {
-            Support::Refused(
-                "an anchor plus a shift names a place, not an element, so there is \
+        (
+            S::AssertNotVisibleTarget | S::WaitNotVisibleTarget | S::NeverVisibleTarget,
+            F::AnchorRelative,
+        ) => Support::Refused(
+            "an anchor plus a shift names a place, not an element, so there is \
                  nothing there to be absent",
-            )
-        }
+        ),
 
         // Both bounds verbs measure an element's box and compare it, and
         // neither of these two forms names an element with a box to
@@ -341,6 +350,7 @@ pub fn slot_selectors(step: &Step) -> Vec<(Slot, &Selector)> {
             vec![(Slot::BoundsTarget, selector)]
         }
         Step::AssertVisible { selector, .. } => vec![(Slot::AssertVisibleTarget, selector)],
+        Step::NeverVisible { selector, .. } => vec![(Slot::NeverVisibleTarget, selector)],
         Step::AssertNotVisible { selector, .. } => {
             vec![(Slot::AssertNotVisibleTarget, selector)]
         }

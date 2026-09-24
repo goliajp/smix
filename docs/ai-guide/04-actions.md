@@ -76,6 +76,20 @@ floating overlays that are genuinely visible and assertable. If a tap
 reports success and nothing happens, see `07-errors.md` →
 "tap returns `ok: true` but state doesn't change".
 
+**A control that goes away on its own.** `tapOn` waits for its target
+itself — it keeps reading the screen until the element resolves (up to
+5 s), then taps. So a control that shows for a few seconds and hides
+(a player's buttons after the picture is touched) is tapped by writing
+`tapOn` directly; there is no need to wait for it first. Measured on the
+repository's fixture, from the moment the control appeared to the moment
+the app counted the press, on the app's own clock: about 0.8 s on an
+Android emulator and 0.35 s on an iOS simulator with `tapOn` alone, and
+about 0.05–0.08 s more with an `extendedWaitUntil` in front of it. Most
+of that time is the previous step finishing — the tap that revealed the
+control — not the tap on it. A screen whose accessibility tree is much
+larger than the fixture's takes longer to read, so measure on your own
+screen before assuming a margin.
+
 ### Tap with explicit dispatch (v1.0.26)
 
 The default tap path (host-resolve → IOHID native-event synthesize) fires SwiftUI `onTap` and RN Pressable `onPress` reliably. Two runtime-specific cases need a different mechanism — declare it per tap:

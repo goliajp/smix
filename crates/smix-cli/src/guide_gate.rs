@@ -95,6 +95,34 @@ pub enum MockCall {
 #[derive(Default)]
 pub struct MockApp {
     pub calls: Mutex<Vec<MockCall>>,
+    /// What the example asserts must never appear, by
+    /// `describe_selector`. "Yes to everything" answers `find` with
+    /// "it is there" so a `when: { visible }` block runs; for a
+    /// `neverVisible` target the yes is "it stayed away", as
+    /// `assert_not_visible` already answers — otherwise the mock would
+    /// answer a negative question with a positive one.
+    pub absent: std::collections::HashSet<String>,
+}
+
+/// Every `neverVisible` target in a flow, inner steps included.
+fn never_visible_targets(
+    steps: &[smix_adapter_maestro::Step],
+    out: &mut std::collections::HashSet<String>,
+) {
+    for step in steps {
+        match step {
+            smix_adapter_maestro::Step::NeverVisible {
+                selector, during, ..
+            } => {
+                out.insert(smix_sdk::describe_selector(selector));
+                never_visible_targets(during, out);
+            }
+            smix_adapter_maestro::Step::RunFlowInline { steps, .. } => {
+                never_visible_targets(steps, out);
+            }
+            _ => {}
+        }
+    }
 }
 
 impl MockCall {
@@ -335,8 +363,8 @@ impl AppLike for MockApp {
     async fn assert_not_visible(&self, _selector: &Selector) -> Result<(), ExpectationFailure> {
         Ok(())
     }
-    async fn find(&self, _selector: &Selector) -> Result<bool, ExpectationFailure> {
-        Ok(true)
+    async fn find(&self, selector: &Selector) -> Result<bool, ExpectationFailure> {
+        Ok(!self.absent.contains(&smix_sdk::describe_selector(selector)))
     }
     async fn launch(&self, bundle_id: &str) -> Result<(), ExpectationFailure> {
         self.record(MockCall::Launch(bundle_id.to_string()));
@@ -662,7 +690,8 @@ fn run_example(page: &str, block: &str) -> Verdict {
             Err(e) => return Verdict::Refused(format!("parse: {e}")),
         }
     };
-    let app = MockApp::default();
+    let mut app = MockApp::default();
+    never_visible_targets(&flow.steps, &mut app.absent);
     let base =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/guide-corpus/flows");
     let rt = tokio::runtime::Builder::new_current_thread()

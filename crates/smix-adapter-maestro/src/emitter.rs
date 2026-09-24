@@ -93,6 +93,22 @@ fn emit_step(step: &Step) -> Result<Value, EmitError> {
             inner.insert(Value::String("as".into()), Value::String(name.clone()));
             Ok(single("rememberBounds", Value::Mapping(inner)))
         }
+        Step::NeverVisible {
+            selector,
+            during,
+            opts,
+        } => {
+            let mut inner = selector_mapping(selector)?;
+            let steps = during
+                .iter()
+                .map(emit_step)
+                .collect::<Result<Vec<_>, _>>()?;
+            inner.insert(Value::String("during".into()), Value::Sequence(steps));
+            if opts.optional {
+                inner.insert(Value::String("optional".into()), Value::Bool(true));
+            }
+            Ok(single("neverVisible", Value::Mapping(inner)))
+        }
         Step::AssertBoundsUnchanged {
             selector,
             was,
@@ -366,6 +382,7 @@ fn step_verb(step: &Step) -> &'static str {
         Step::CopyTextFrom { .. } => "copyTextFrom",
         Step::RememberBounds { .. } => "rememberBounds",
         Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged",
+        Step::NeverVisible { .. } => "neverVisible",
         Step::DoubleTapOn { .. } => "doubleTapOn",
         Step::RepeatTap { .. } => "repeatTap",
         Step::LongPressOn { .. } => "longPressOn",

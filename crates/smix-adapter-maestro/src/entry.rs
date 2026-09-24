@@ -852,6 +852,7 @@ pub(crate) fn summarize_step(step: &Step) -> String {
         Step::CopyTextFrom { .. } => "copyTextFrom".into(),
         Step::RememberBounds { .. } => "rememberBounds".into(),
         Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged".into(),
+        Step::NeverVisible { .. } => "neverVisible".into(),
         Step::DoubleTapOn { .. } => "doubleTapOn".into(),
         Step::LongPressOn { duration_ms, .. } => format!("longPressOn ({duration_ms}ms)"),
         Step::AssertTrue { .. } => "assertTrue".into(),

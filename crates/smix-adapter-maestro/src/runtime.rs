@@ -977,6 +977,7 @@ fn summarize_step_verb(step: &Step) -> String {
         Step::CopyTextFrom { .. } => "copyTextFrom",
         Step::RememberBounds { .. } => "rememberBounds",
         Step::AssertBoundsUnchanged { .. } => "assertBoundsUnchanged",
+        Step::NeverVisible { .. } => "neverVisible",
         Step::PasteText { .. } => "pasteText",
         Step::SetClipboard(_) => "setClipboard",
         Step::Travel { .. } => "travel",
@@ -2280,6 +2281,15 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                 self.app.paste_text(expanded.as_deref()).await?;
                 Ok(RunStepReport::Ok)
             }
+            Step::NeverVisible {
+                selector,
+                during,
+                opts,
+            } => {
+                let target = self.desugar_localized_text(selector).into_owned();
+                let result = self.run_never_visible(&target, during, warnings).await;
+                block_outcome("neverVisible", opts, result)
+            }
             Step::RememberBounds { selector, name } => {
                 let desugared = self.desugar_localized_text(selector);
                 let box_now = self.bounds_in_points(&desugared).await?;
@@ -2792,6 +2802,205 @@ impl<'a, A: AppLike + ?Sized> Adapter<'a, A> {
                     }
                 }
                 Ok(result)
+            }
+        }
+    }
+
+    /// `neverVisible`: run the inner steps, and beside them keep asking
+    /// whether the element is on screen. `selector` arrives desugared.
+    ///
+    /// The question is `AppLike::find` — the one `assertNotVisible`
+    /// asks — so the two verbs cannot disagree about the same screen.
+    /// There is no sleep between looks: the device's answer is the
+    /// interval. `yield_now` is not a sleep; it is what lets the inner
+    /// steps run when an answer comes back without the future ever
+    /// having to wait (a mock, a cached reply), which would otherwise
+    /// starve them.
+    ///
+    /// Seeing the element does not stop the inner steps. They run to
+    /// their end, because abandoning an action in flight leaves the
+    /// device half way through it, and the verdict is already settled.
+    async fn run_never_visible(
+        &mut self,
+        selector: &Selector,
+        during: &[Step],
+        warnings: &mut Vec<String>,
+    ) -> Result<RunStepReport, RunError> {
+        let target = selector.clone();
+        let app = self.app;
+        let began = std::time::Instant::now();
+        // (0, "") until the first step starts: a look can come back before
+        // any step has run, and a sighting then happened before step 1.
+        let running = std::sync::Mutex::new((0_usize, String::new()));
+        let finished = std::sync::atomic::AtomicBool::new(false);
+        // Attempts the watch has completed, and whether it has stopped.
+        // The inner steps read these to wait for one look between each
+        // step and the next — see below.
+        let asked = std::sync::atomic::AtomicU32::new(0);
+        let attempts = std::sync::atomic::AtomicU32::new(0);
+        let stopped = std::sync::atomic::AtomicBool::new(false);
+
+        let watch = async {
+            let mut watch = crate::watch::Watch::default();
+            let mut screen = None;
+            loop {
+                asked.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                let answer = app.find(&target).await;
+                let at = began.elapsed();
+                match answer {
+                    Ok(visible) => {
+                        let (step, verb) = running.lock().expect("never poisoned").clone();
+                        watch.looked(at, visible, step, &verb);
+                        if watch.has_seen() {
+                            // What else was there, read as soon after the
+                            // sighting as the device answers.
+                            screen = Some((app.tree().await, began.elapsed() - at));
+                            break;
+                        }
+                    }
+                    Err(e) => watch.could_not_look(e.message),
+                }
+                attempts.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                if finished.load(std::sync::atomic::Ordering::Acquire) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+            stopped.store(true, std::sync::atomic::Ordering::Release);
+            (watch, screen)
+        };
+        let inner = async {
+            let mut outcome = Ok(());
+            for (i, step) in during.iter().enumerate() {
+                *running.lock().expect("never poisoned") = (i + 1, summarize_step_verb(step));
+                if let Err(e) = Box::pin(self.run_step(step, warnings)).await {
+                    outcome = Err(e);
+                    break;
+                }
+                // The watch looks at least once after every step before the
+                // next begins. Without this, a step that completes without waiting on
+                // anything can be followed by the next before the watch
+                // has had a turn, and whatever the first one left on the
+                // screen is never looked at. It costs one look per step,
+                // and it is what lets the verdict say "looked after every
+                // step" rather than "looked when the scheduler allowed".
+                // Looks are one at a time, so once more have completed than
+                // had been asked when the step ended, one of them was asked
+                // after it — a look that was already in flight could have
+                // read the screen from before the step took effect.
+                let asked_before = asked.load(std::sync::atomic::Ordering::Acquire);
+                while attempts.load(std::sync::atomic::Ordering::Acquire) <= asked_before
+                    && !stopped.load(std::sync::atomic::Ordering::Acquire)
+                {
+                    tokio::task::yield_now().await;
+                }
+            }
+            finished.store(true, std::sync::atomic::Ordering::Release);
+            outcome
+        };
+        let ((watch, screen), inner) = tokio::join!(watch, inner);
+        let span = began.elapsed();
+        let what = smix_sdk::describe_selector(&target);
+        let verdict = watch.verdict(span);
+
+        if let Err(mut e) = inner {
+            // The inner step's failure is the one to report; a sighting
+            // the watch also made rides along rather than replacing it.
+            if let (RunError::Sdk(f), crate::watch::Verdict::Seen(s)) = (&mut e, &verdict) {
+                let during_what = if s.step == 0 {
+                    "before step 1 began".to_string()
+                } else {
+                    format!("during step {} ({})", s.step, s.verb)
+                };
+                f.message.push_str(&format!(
+                    "\n(neverVisible also saw {what} {} ms into its span, {during_what})",
+                    s.at.as_millis(),
+                ));
+            }
+            return Err(e);
+        }
+        match verdict {
+            crate::watch::Verdict::Seen(s) => {
+                let when = if s.step == 0 {
+                    "before step 1 began — it was already there".to_string()
+                } else {
+                    format!(
+                        "while step {} of {} ({}) was running",
+                        s.step,
+                        during.len(),
+                        s.verb
+                    )
+                };
+                let mut init = FailureInit {
+                    code: Some(FailureCode::AssertionFailed),
+                    message: format!(
+                        "neverVisible: {what} appeared after {} ms, {when} — the watch had looked \
+                         {} time{} before that",
+                        s.at.as_millis(),
+                        s.looks_before,
+                        if s.looks_before == 1 { "" } else { "s" },
+                    ),
+                    selector: Some(target.clone()),
+                    ..Default::default()
+                };
+                match screen {
+                    Some((Ok(tree), lag)) => {
+                        init.message.push_str(&format!(
+                            "; the screen below was read {} ms after the sighting",
+                            lag.as_millis()
+                        ));
+                        init = init.with_screen(smix_sdk::screen_facts(&tree, 10));
+                    }
+                    Some((Err(e), _)) => init.message.push_str(&format!(
+                        "; the screen could not be read after it: {}",
+                        e.message
+                    )),
+                    None => {}
+                }
+                Err(RunError::Sdk(ExpectationFailure::new(init)))
+            }
+            crate::watch::Verdict::NeverLooked {
+                attempts,
+                last_error,
+            } => Err(RunError::Sdk(ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: if attempts == 0 {
+                    format!(
+                        "neverVisible: the watch never asked whether {what} was on screen, so \
+                         nothing is known about the {} ms it spanned",
+                        span.as_millis()
+                    )
+                } else {
+                    format!(
+                        "neverVisible: the watch could not look — none of its {attempts} attempts \
+                         to ask whether {what} was on screen came back (last: {last_error}), so \
+                         nothing is known about the {} ms it spanned",
+                        span.as_millis()
+                    )
+                },
+                selector: Some(target.clone()),
+                ..Default::default()
+            }))),
+            crate::watch::Verdict::Clear {
+                looks,
+                failed,
+                longest_gap,
+                span,
+            } => {
+                let failed = if failed == 0 {
+                    String::new()
+                } else {
+                    format!(
+                        " ({failed} more attempt{} did not come back)",
+                        if failed == 1 { "" } else { "s" }
+                    )
+                };
+                warnings.push(format!(
+                    "neverVisible {what}: not seen — watched {looks} times over {} ms, longest gap {} ms{failed}",
+                    span.as_millis(),
+                    longest_gap.as_millis()
+                ));
+                Ok(RunStepReport::Ok)
             }
         }
     }
