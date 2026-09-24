@@ -33,6 +33,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/scripts/lib/e2e-binary.sh"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
+# shellcheck source=../lib/deadline.sh
+source "$ROOT/scripts/lib/deadline.sh"
 PORT="$SMIX_RUNNER_PORT"
 ALIAS="${SMIX_C13C_ANDROID:-sim-smix-android-01}"
 APPID="dev.smix.fixture"
@@ -60,7 +62,7 @@ cleanup() {
   # The display first, and unconditionally: leaving somebody's emulator
   # at 1080x2260 is a change this script made to a machine it borrowed.
   if [ "$SIZE_CHANGED" = 1 ] && [ -n "$SERIAL" ]; then
-    adb -s "$SERIAL" shell wm size reset >/dev/null 2>&1 || \
+    with_deadline 20 adb -s "$SERIAL" shell wm size reset >/dev/null 2>&1 || \
       printf '[c13c-subject] warning: the display size was NOT restored — run: adb -s %s shell wm size reset\n' "$SERIAL" >&2
   fi
   if [ "$WE_UPPED" = 1 ]; then
@@ -74,20 +76,30 @@ cleanup() {
 trap cleanup EXIT
 
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb on PATH"
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)"
-[ -n "$SERIAL" ] || cannot_judge "no device registered as $ALIAS"
+# Boot by the alias, then read the serial the device answers on. The
+# other order resolved first and booted by serial, which stopped working
+# when an alias came to name an AVD rather than a port: `sim resolve` now
+# refuses an AVD that is not running, and under `set -e` that refusal
+# ended this script at its first line with exit 1 and no verdict at all.
+if SERIAL="$(with_deadline 30 "$SMIX" sim resolve "$ALIAS" 2>/dev/null | grep -v '^kevy:' | tail -1)" \
+   && [ -n "$SERIAL" ]; then
+  : # already running — somebody's, possibly; not this run's to shut down
+else
+  log "booting $ALIAS"
+  booted="$(with_deadline 240 "$SMIX" sim boot "$ALIAS" 2>&1 | grep -v '^kevy:')" \
+    || cannot_judge "could not boot $ALIAS:
+$booted"
+  SERIAL="$(printf '%s\n' "$booted" | sed -n 's/^booted: \(emulator-[0-9]*\).*/\1/p' | tail -1)"
+  [ -n "$SERIAL" ] || cannot_judge "\`smix sim boot $ALIAS\` printed no \`booted:\` line:
+$booted"
+  WE_BOOTED=1
+fi
 case "$SERIAL" in
   emulator-*) : ;;
   # It installs a fixture and resizes the display. A registered phone
   # belongs to somebody (§9 #1).
   *) cannot_judge "$ALIAS resolves to $SERIAL, which is not an emulator — refusing" ;;
 esac
-if ! adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; then
-  log "booting $SERIAL"
-  "$SMIX" sim boot "$SERIAL" >/dev/null 2>&1 || fail "could not boot $SERIAL"
-  WE_BOOTED=1
-  adb -s "$SERIAL" wait-for-device
-fi
 [ -f "$APK" ] || fail "no fixture apk — run: bash scripts/dev/build-android-fixture.sh"
 # And the one THESE sources build: the path existing says a build
 # happened, not which sources it happened over (open-items O1).
@@ -141,12 +153,27 @@ else:
 PY
 }
 
+# Every call to the device carries a deadline. A device pushed into a
+# state it cannot answer from — on 2026-09-23 the window service broke
+# after the third size change, and `adb shell` stopped returning — held
+# this loop for ten minutes with no verdict (open-items Q2). That is not
+# the product failing and not a pass; it is a device this cannot judge on.
+device() { # $1: seconds, rest: the call; exits 2 when the device stops answering
+  local secs="$1" rc
+  shift
+  with_deadline "$secs" "$@"
+  rc=$?
+  [ "$rc" = "$DEADLINE_STATUS" ] \
+    && cannot_judge "$SERIAL stopped answering (\`$*\` gave no answer in ${secs}s) at ${WIDTH}x${height:-?} — the device, not the screen under test"
+  return "$rc"
+}
+
 for height in $HEIGHTS; do
-  adb -s "$SERIAL" shell wm size "${WIDTH}x${height}" >/dev/null 2>&1 \
+  device 20 adb -s "$SERIAL" shell wm size "${WIDTH}x${height}" >/dev/null 2>&1 \
     || fail "could not set the display to ${WIDTH}x${height}"
   SIZE_CHANGED=1
-  adb -s "$SERIAL" shell am force-stop "$APPID" >/dev/null 2>&1 || true
-  adb -s "$SERIAL" shell am start -n "$APPID/.ScrollActivity" >/dev/null 2>&1 \
+  device 20 adb -s "$SERIAL" shell am force-stop "$APPID" >/dev/null 2>&1 || true
+  device 20 adb -s "$SERIAL" shell am start -n "$APPID/.ScrollActivity" >/dev/null 2>&1 \
     || fail "could not start the scrolling screen at ${WIDTH}x${height}"
 
   # Polled, not read once: straight after the start the probe answers
@@ -154,7 +181,14 @@ for height in $HEIGHTS; do
   # lands there and reports a screen with no rows on it.
   verdict="no-rows"
   for _ in $(seq 1 30); do
-    tree="$("$SMIX" tree --json --device "$SERIAL" --port "$PORT" 2>/dev/null | grep -v '^kevy:')" || tree=""
+    # Not through `device`: inside `$( )` its exit would end only the
+    # subshell, and the `||` after it would carry on polling — the silent
+    # wait this deadline exists to end.
+    rc=0
+    raw="$(with_deadline 30 "$SMIX" tree --json --device "$SERIAL" --port "$PORT" 2>/dev/null)" || rc=$?
+    [ "$rc" = "$DEADLINE_STATUS" ] \
+      && cannot_judge "$SERIAL stopped answering (\`smix tree\` gave no answer in 30s) at ${WIDTH}x${height} — the device, not the screen under test"
+    tree="$(printf '%s\n' "$raw" | grep -v '^kevy:' || true)"
     case "$tree" in
       \{*) verdict="$(TREE_JSON="$tree" subject_of)" ;;
       *)   verdict="no-tree" ;;

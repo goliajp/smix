@@ -12,6 +12,7 @@ mod act;
 mod authoring;
 mod bench;
 mod capsule;
+mod departures;
 mod down;
 /// Distributed `smix run --nodes`: roster parsing, cross-node flow
 /// sharding, readiness gate, ssh fan-out and merged reporting.
@@ -1277,6 +1278,28 @@ enum LeaseAction {
         /// Report what would go, and delete nothing.
         #[arg(long)]
         dry_run: bool,
+        /// Look at this one device's ledger and no other.
+        ///
+        /// Prune reads every ledger on the machine, and a machine is
+        /// shared: without this, cleaning up after your own device meant
+        /// running a judgement over somebody else's rows too.
+        #[arg(long, value_name = "DEVICE")]
+        device: Option<String>,
+    },
+    /// Devices that left while a ledger still said they were here.
+    ///
+    /// Noticed by the next `run`, `runner`, `sim` or `lease` command after
+    /// the device went: an emulator that exited, a simulator shut down
+    /// from outside, a phone unplugged. Each entry says which device (and
+    /// its AVD), when it was noticed, when its ledger last heard from it,
+    /// who held it, whether smix booted it, what answers on its port now,
+    /// and — for an emulator smix started — the last lines it printed on
+    /// its console. An emulator smix did not start has no console here to
+    /// read, and its exit status is nobody's to collect.
+    History {
+        /// Print the history as JSON.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1962,6 +1985,52 @@ fn alias_needs_identity_check(device_ref: &str) -> bool {
     !registry::is_emulator_serial(device_ref) && !registry::is_udid(device_ref)
 }
 
+/// Where an emulator smix starts writes its console: one file per start,
+/// in this machine's directory.
+///
+/// Per start and not per AVD, because the file that matters is the one
+/// from the run that died, and a restart would overwrite it.
+fn emulator_console_path(avd: &str) -> Result<std::path::PathBuf, CliError> {
+    let root = smix_lease::store::machine_root().ok_or_else(|| {
+        CliError::Other(
+            "no machine-level directory to keep the emulator's console in — neither \
+             HOME nor XDG_DATA_HOME is set"
+                .to_string(),
+        )
+    })?;
+    let stamp = smix_lease::store::now_rfc3339().replace(':', "-");
+    Ok(root
+        .join("emulator-console")
+        .join(format!("{avd}-{stamp}.log")))
+}
+
+/// A serial nothing answers on, for an AVD whose registered port is taken.
+///
+/// The candidates come from the ports adb already lists; each is then
+/// asked of the OS, because a port can be held by something adb does not
+/// list — an emulator still starting, or one wedged on its way out.
+fn free_console_serial() -> Result<String, CliError> {
+    let taken: Vec<u16> = smix_adb::AdbClient::new()
+        .live_devices()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|(serial, _)| serial.strip_prefix("emulator-")?.parse().ok())
+        .flat_map(|p: u16| [p, p + 1])
+        .collect();
+    smix_adb::AdbClient::console_port_candidates(&taken)
+        .into_iter()
+        .find(|p| {
+            std::net::TcpListener::bind(("127.0.0.1", *p)).is_ok()
+                && std::net::TcpListener::bind(("127.0.0.1", p + 1)).is_ok()
+        })
+        .map(|p| format!("emulator-{p}"))
+        .ok_or_else(|| {
+            CliError::Other(
+                "every emulator console port adb scans (5554–5682) is in use".to_string(),
+            )
+        })
+}
+
 /// Turn an emulator alias into the serial that emulator answers on today.
 ///
 /// `emulator-<port>` is a slot. The row records one, and on 2026-09-23
@@ -2551,6 +2620,13 @@ async fn main() -> ExitCode {
     }
 }
 
+/// The command as typed, verb and first argument: `smix sim boot`,
+/// `smix run flows/login.yaml`. Enough to say who noticed something.
+fn invoked_as() -> String {
+    let args: Vec<String> = std::env::args().skip(1).take(2).collect();
+    format!("smix {}", args.join(" "))
+}
+
 async fn run(cli: Cli) -> Result<ExitCode, CliError> {
     // Enable subprocess-ring persistence so
     // `/diagnostic/dump` payloads survive supervisor cycles that used
@@ -2571,6 +2647,17 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         // `smix diagnostic dump` reads back for the `recent flows`
         // section.
         smix_simctl::set_flow_attempts_persist_path(diag_root);
+    }
+
+    // Before the verbs that touch devices, compare the ledgers with what
+    // is here. A device that left while a ledger still described it is
+    // kept as a fact by whichever of these runs next — the only moment
+    // anything will ever notice.
+    if matches!(
+        cli.cmd,
+        Cmd::Run { .. } | Cmd::Runner { .. } | Cmd::Sim { .. } | Cmd::Lease { .. }
+    ) {
+        departures::notice(&invoked_as()).await;
     }
 
     let simctl = SimctlClient::new();
@@ -2803,14 +2890,17 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 avd,
                                 slot_now: Some(other),
                             } => {
-                                return Err(CliError::Other(format!(
-                                    "{device} names the AVD `{avd}`, and the port it was \
-                                     registered on ({}) is running `{other}` — starting \
-                                     yours there would take a port somebody else is \
-                                     answering on. Free that port, or register {device} \
-                                     again while yours is running.",
+                                // The identity is the AVD name; the port is only
+                                // where it answers today. The registered one is
+                                // somebody else's now, so start ours on a free one.
+                                let serial = free_console_serial()?;
+                                eprintln!(
+                                    "note: {device} was registered on {}, which is \
+                                     running `{other}` today; starting `{avd}` on \
+                                     {serial} instead",
                                     sim.udid
-                                )));
+                                );
+                                serial
                             }
                             smix_simctl::registry::EmulatorAddress::NotRunning { .. } => {
                                 sim.udid.clone()
@@ -2833,6 +2923,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         } else {
                             EmulatorState::WasOff
                         });
+                        let mut identity: Option<smix_lease::Resource> = None;
                         if !already {
                             let avd = lookup_registered(&device)
                                 .and_then(|s| s.avd_name().map(str::to_string))
@@ -2845,7 +2936,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                     ))
                                 })?;
                             let adb = smix_adb::AdbClient::new();
-                            adb.start_emulator_on(&avd, &udid)
+                            let console = emulator_console_path(&avd)?;
+                            adb.start_emulator_on(&avd, &udid, &console)
                                 .map_err(|e| CliError::Other(format!("{e}")))?;
                             // Wait for the device to exist, not for the
                             // command that asks for it to return. The first
@@ -2863,18 +2955,42 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                     "{avd} was started and {udid} did not come up \
                                      within 180s: {e}\n\
                                      the ledger has not been told smix booted it, \
-                                     because it did not"
+                                     because it did not. What the emulator printed \
+                                     is in {}",
+                                    console.display()
                                 )));
                             }
+                            identity = Some(smix_lease::Resource::Emulator {
+                                avd,
+                                console_log: Some(console.display().to_string()),
+                            });
+                        } else if let Ok(avd) = smix_adb::AdbClient::new().avd_name(&udid).await
+                            && !avd.is_empty()
+                        {
+                            // Found running: its console is not ours to keep,
+                            // but its name is what tells this ledger apart
+                            // from the next AVD to take the same port.
+                            identity = Some(smix_lease::Resource::Emulator {
+                                avd,
+                                console_log: None,
+                            });
                         }
-                        if let Ok(leases) = smix_capsule::runner::machine_leases()
-                            && let Err(e) = smix_lease::store::record_boot(
+                        if let Ok(leases) = smix_capsule::runner::machine_leases() {
+                            if let Err(e) = smix_lease::store::record_boot(
                                 &leases,
                                 &udid,
                                 claim == BootClaim::ClaimAsOurs,
-                            )
-                        {
-                            eprintln!("warning: boot not recorded in the device ledger: {e}");
+                            ) {
+                                eprintln!("warning: boot not recorded in the device ledger: {e}");
+                            }
+                            if let Some(row) = identity
+                                && let Err(e) = smix_lease::store::add_resource(&leases, &udid, row)
+                            {
+                                eprintln!(
+                                    "warning: which AVD {udid} is was not recorded in the \
+                                     device ledger: {e}"
+                                );
+                            }
                         }
                         println!("booted: {udid}");
                         return Ok(std::process::ExitCode::SUCCESS);

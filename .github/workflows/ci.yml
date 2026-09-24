@@ -466,6 +466,10 @@ jobs:
       # Claude profiles, then runs the real script against them.
       - name: this-machine-is-current self-test
         run: bash scripts/release/this-machine-is-current.sh --selftest
+      # Every device call in the e2e scripts runs under it; it has to
+      # bite past its deadline and keep a command's own status inside it.
+      - name: the deadline helper can still go red
+        run: bash scripts/lib/deadline.sh --selftest
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check
 

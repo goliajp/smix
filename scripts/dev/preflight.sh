@@ -345,6 +345,9 @@ bash scripts/release/site-is-current.sh --selftest
 # refuse are the ones this machine was actually in: `smix` without
 # `smix-mcp`, and a plugin current in one Claude profile and not the rest.
 bash scripts/release/this-machine-is-current.sh --selftest
+# The deadline every e2e device call now runs under (2026-09-24): it has
+# to bite past its deadline and keep a command's own status inside it.
+bash scripts/lib/deadline.sh --selftest
 # The Device Hub instrument: it must tell "the window did not move" from
 # "the window could not be read", because only one of those is a fact.
 bash scripts/dev/device-hub-shows-a-boot.sh --selftest

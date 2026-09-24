@@ -119,6 +119,37 @@ impl LeaseDir {
     pub fn path(&self) -> &Path {
         &self.0
     }
+
+    /// Every device this directory holds a ledger for.
+    ///
+    /// One ledger is one `<device>.json`, and that suffix is the whole
+    /// definition. It was spelled out in three places before —
+    /// `survey`, [`CheckoutLedgers::device_ids`] and the CLI — and a
+    /// fourth reader would have been one more; the history of devices
+    /// that left (`vanished.jsonl`) now lives in this directory too, and
+    /// one definition is the only way to be sure no reader mistakes it
+    /// for a device.
+    #[must_use]
+    pub fn device_ids(&self) -> Vec<String> {
+        ledger_ids_in(&self.0)
+    }
+}
+
+fn ledger_ids_in(dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .strip_suffix(".json")
+                .map(str::to_string)
+        })
+        .collect();
+    ids.sort();
+    ids
 }
 
 /// Two books saying different things about one device.
@@ -224,6 +255,7 @@ pub fn compare(
                         }
                         Row::Known(Resource::Booted { by_us }) => format!("booted by_us={by_us}"),
                         Row::Known(Resource::Claimed { at }) => format!("claimed at {at}"),
+                        Row::Known(Resource::Emulator { avd, .. }) => format!("emulator {avd}"),
                     })
                     .collect()
             };
@@ -258,13 +290,7 @@ pub fn compare(
 #[must_use]
 pub fn survey(machine: &LeaseDir, checkout: &CheckoutLedgers) -> Vec<LedgerDivergence> {
     let mut ids: Vec<String> = checkout.device_ids();
-    if let Ok(entries) = std::fs::read_dir(machine.path()) {
-        for e in entries.flatten() {
-            if let Some(id) = e.file_name().to_string_lossy().strip_suffix(".json") {
-                ids.push(id.to_string());
-            }
-        }
-    }
+    ids.extend(machine.device_ids());
     ids.sort();
     ids.dedup();
     ids.iter()
@@ -321,20 +347,7 @@ impl CheckoutLedgers {
     /// stop the commands that merely wanted to know whether it did.
     #[must_use]
     pub fn device_ids(&self) -> Vec<String> {
-        let Ok(entries) = std::fs::read_dir(&self.0) else {
-            return Vec::new();
-        };
-        let mut ids: Vec<String> = entries
-            .flatten()
-            .filter_map(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .strip_suffix(".json")
-                    .map(str::to_string)
-            })
-            .collect();
-        ids.sort();
-        ids
+        ledger_ids_in(&self.0)
     }
 
     /// One device's ledger, as this tree has it.
@@ -638,11 +651,7 @@ pub fn drop_reverse(dir: &LeaseDir, device_id: &str, device_port: u16) -> Result
         return Ok(());
     };
     lease.resources.retain(|row| !names_route(row, device_port));
-    let worth_keeping = lease.resources.iter().any(|row| {
-        row.known()
-            .is_none_or(|r| !matches!(r, Resource::Booted { by_us: false }))
-    });
-    if worth_keeping {
+    if worth_keeping(&lease) {
         write(dir, &lease)
     } else {
         remove(dir, device_id)
@@ -680,6 +689,29 @@ pub fn record_claim(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseError> {
 /// A `Booted { by_us: false }` row is not worth keeping a ledger for: it
 /// records a device somebody else brought up, which is precisely the
 /// thing this process must not act on.
+/// Whether a ledger still says anything a later command must reason about.
+///
+/// Two kinds of row say nothing on their own: a boot row for a device
+/// this holder found already up (it is not ours to shut down, so there
+/// is nothing to tear down), and the row naming which AVD an emulator
+/// is (it describes the device; it holds nothing). A ledger left with
+/// only those is a husk that reads like an occupied device — and, for the
+/// identity row, one that would later be read as a device that vanished,
+/// when all that happened is that smix shut it down itself.
+///
+/// This was spelled out in four places before the identity row existed,
+/// and a fifth kind of silent row would have had to be added to each.
+fn worth_keeping(lease: &Lease) -> bool {
+    lease.resources.iter().any(|row| {
+        row.known().is_none_or(|r| {
+            !matches!(
+                r,
+                Resource::Booted { by_us: false } | Resource::Emulator { .. }
+            )
+        })
+    })
+}
+
 pub fn drop_resource_kind(
     dir: &LeaseDir,
     device_id: &str,
@@ -693,11 +725,7 @@ pub fn drop_resource_kind(
         row.known()
             .is_none_or(|r| std::mem::discriminant(r) != kind)
     });
-    let worth_keeping = lease.resources.iter().any(|row| {
-        row.known()
-            .is_none_or(|r| !matches!(r, Resource::Booted { by_us: false }))
-    });
-    if worth_keeping {
+    if worth_keeping(&lease) {
         write(dir, &lease)
     } else {
         remove(dir, device_id)
@@ -718,11 +746,7 @@ pub fn drop_process_rows(dir: &LeaseDir, device_id: &str) -> Result<(), LeaseErr
     lease
         .resources
         .retain(|row| row.known().is_none_or(|r| !crate::is_process_backed(r)));
-    let worth_keeping = lease.resources.iter().any(|row| {
-        row.known()
-            .is_none_or(|r| !matches!(r, Resource::Booted { by_us: false }))
-    });
-    if worth_keeping {
+    if worth_keeping(&lease) {
         write(dir, &lease)
     } else {
         remove(dir, device_id)
@@ -751,11 +775,7 @@ pub fn drop_process_rows_except(
         row.known()
             .is_none_or(|r| !crate::is_process_backed(r) || keep.contains(r))
     });
-    let worth_keeping = lease.resources.iter().any(|row| {
-        row.known()
-            .is_none_or(|r| !matches!(r, Resource::Booted { by_us: false }))
-    });
-    if worth_keeping {
+    if worth_keeping(&lease) {
         write(dir, &lease)
     } else {
         remove(dir, device_id)
@@ -824,6 +844,8 @@ pub fn collect_facts(dir: &LeaseDir, device_id: &str) -> Result<Facts, LeaseErro
             // a device, and nothing about it can be probed for liveness.
             | Resource::Booted { .. }
             | Resource::Claimed { .. }
+            // A name, not a process.
+            | Resource::Emulator { .. }
             // A route is a row in the adb server. There is no process
             // to probe, so it can never make a device look busy — the
             // same answer `PortForward` gets, for a nearer reason.

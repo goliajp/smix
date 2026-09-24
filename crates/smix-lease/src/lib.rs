@@ -25,6 +25,7 @@
 //! of a teardown be tested without a device.
 
 pub mod store;
+pub mod vanish;
 
 use serde::{Deserialize, Serialize};
 
@@ -189,6 +190,32 @@ pub enum Resource {
         /// RFC3339. When the claim was made — later than the lease's own
         /// `acquired_at` whenever a holder claims a device mid-session.
         at: String,
+    },
+    /// Which AVD this emulator ledger is about, and where its console
+    /// is being written.
+    ///
+    /// An emulator's ledger is keyed by its serial, and the serial is a
+    /// port: whichever AVD boots next into that port answers to it. With
+    /// nothing but the serial, a ledger cannot tell "my device is gone"
+    /// from "my device is still here" once somebody else's has taken the
+    /// slot — which is the state a consumer's emulator and ours were in
+    /// on 2026-09-23. The AVD name is the device's identity; this row is
+    /// where the ledger keeps it.
+    ///
+    /// `console_log` is where the emulator's own stdout and stderr go when
+    /// smix started it. They used to go to `/dev/null`, so an emulator
+    /// that died left nothing behind — no crash report, an empty crash
+    /// database, and no way to say afterwards whose it was or why.
+    ///
+    /// Nothing to close: it names a device, it opens nothing.
+    #[serde(rename_all = "camelCase")]
+    Emulator {
+        /// The AVD name, as `adb emu avd name` reports it.
+        avd: String,
+        /// The file the emulator's console output was sent to, when smix
+        /// started it. `None` when smix found it already running.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        console_log: Option<String>,
     },
 }
 
@@ -996,6 +1023,8 @@ fn plan_rest(lease: &Lease) -> Vec<CleanupAction> {
                 // Closing it by switching the device off would be the one
                 // thing the claim promised not to do.
                 Resource::Claimed { .. } => None,
+                // Names the device; nothing was opened, so nothing closes.
+                Resource::Emulator { .. } => None,
                 Resource::Booted { by_us: true } => Some(CleanupAction::ShutdownSim {
                     udid: lease.device_id.clone(),
                 }),

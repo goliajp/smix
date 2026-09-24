@@ -634,24 +634,72 @@ impl AdbClient {
     /// match a row whose identity is missing — turning two unknowns into
     /// a confident wrong answer.
     pub fn live_emulators(&self) -> Vec<(String, String)> {
-        let bin = self.binary.as_deref().unwrap_or("adb");
-        let Ok(listed) = std::process::Command::new(bin).arg("devices").output() else {
-            return Vec::new();
-        };
-        let Ok(devices) = parse_devices_stdout(&String::from_utf8_lossy(&listed.stdout)) else {
-            return Vec::new();
-        };
-        devices
+        self.live_devices()
+            .unwrap_or_default()
             .into_iter()
-            .filter(|d| d.serial.starts_with("emulator-") && d.state == "device")
-            .filter_map(|d| {
-                let out = std::process::Command::new(bin)
-                    .args(["-s", &d.serial, "emu", "avd", "name"])
-                    .output()
-                    .ok()?;
-                let name = parse_avd_name(&String::from_utf8_lossy(&out.stdout));
-                (!name.is_empty()).then_some((d.serial, name))
-            })
+            .filter_map(|(serial, avd)| Some((serial, avd?)))
+            .collect()
+    }
+
+    /// Every device adb lists as `device`, each emulator paired with the
+    /// AVD it answers as when it will say. `None` when adb could not be
+    /// asked at all.
+    ///
+    /// The `None` is the point. [`Self::live_emulators`] answers an empty
+    /// list both when nothing is running and when there is no adb to ask,
+    /// which is harmless for resolving a name and wrong for judging that
+    /// a device has left: a machine without adb on its PATH would record
+    /// every emulator it ever had as gone.
+    pub fn live_devices(&self) -> Option<Vec<(String, Option<String>)>> {
+        let bin = self.binary.as_deref().unwrap_or("adb");
+        let listed = std::process::Command::new(bin)
+            .arg("devices")
+            .output()
+            .ok()?;
+        if !listed.status.success() {
+            return None;
+        }
+        let devices = parse_devices_stdout(&String::from_utf8_lossy(&listed.stdout)).ok()?;
+        Some(
+            devices
+                .into_iter()
+                .filter(|d| d.state == "device")
+                .map(|d| {
+                    let avd = d
+                        .serial
+                        .starts_with("emulator-")
+                        .then(|| {
+                            std::process::Command::new(bin)
+                                .args(["-s", &d.serial, "emu", "avd", "name"])
+                                .output()
+                                .ok()
+                        })
+                        .flatten()
+                        .map(|out| parse_avd_name(&String::from_utf8_lossy(&out.stdout)))
+                        .filter(|name| !name.is_empty());
+                    (d.serial, avd)
+                })
+                .collect(),
+        )
+    }
+
+    /// Console ports an emulator could be started on, best first. Pure.
+    ///
+    /// An emulator takes an even console port and the odd one above it for
+    /// adb, from 5554 to 5682 — the range adb scans. A port is out when it
+    /// or its partner is already answering for a device.
+    ///
+    /// Why a boot needs this at all: a serial is a port, and the port an
+    /// AVD was registered on can be answering for somebody else's AVD the
+    /// next time. On 2026-09-24 `sim-smix-android-01` was registered on
+    /// 5554 and 5554 was a consumer's `qip-consumer-36`; `sim boot` refused
+    /// rather than start ours anywhere else — the identity is the AVD
+    /// name, and the port is just where it answers today.
+    #[must_use]
+    pub fn console_port_candidates(taken: &[u16]) -> Vec<u16> {
+        (5554..=5682)
+            .step_by(2)
+            .filter(|p| !taken.contains(p) && !taken.contains(&(p + 1)))
             .collect()
     }
 
@@ -667,7 +715,17 @@ impl AdbClient {
     /// asked for one device while starting another, which is the exact
     /// confusion this whole line of work exists to end, committed by the
     /// code meant to end it.
-    pub fn start_emulator_on(&self, avd: &str, serial: &str) -> Result<(), AdbError> {
+    ///
+    /// `console` is where the emulator's stdout and stderr go. It used to
+    /// be `/dev/null`, which is why an emulator smix started and that then
+    /// died left nothing behind to say why: no crash report, an empty
+    /// crash database, and a console nobody kept.
+    pub fn start_emulator_on(
+        &self,
+        avd: &str,
+        serial: &str,
+        console: &std::path::Path,
+    ) -> Result<(), AdbError> {
         let port = serial
             .rsplit('-')
             .next()
@@ -681,14 +739,19 @@ impl AdbClient {
                 ),
             });
         };
-        self.spawn_emulator(avd, Some(port))
+        self.spawn_emulator(avd, Some(port), Some(console))
     }
 
     pub fn start_emulator(&self, avd: &str) -> Result<(), AdbError> {
-        self.spawn_emulator(avd, None)
+        self.spawn_emulator(avd, None, None)
     }
 
-    fn spawn_emulator(&self, avd: &str, port: Option<u16>) -> Result<(), AdbError> {
+    fn spawn_emulator(
+        &self,
+        avd: &str,
+        port: Option<u16>,
+        console: Option<&std::path::Path>,
+    ) -> Result<(), AdbError> {
         let home = std::env::var("ANDROID_HOME")
             .or_else(|_| std::env::var("ANDROID_SDK_ROOT"))
             .unwrap_or_else(|_| {
@@ -702,9 +765,23 @@ impl AdbClient {
         if let Some(port) = port {
             cmd.args(["-port", &port.to_string()]);
         }
+        let (out, err) = match console {
+            Some(path) => {
+                if let Some(dir) = path.parent() {
+                    std::fs::create_dir_all(dir).map_err(AdbError::from)?;
+                }
+                let file = std::fs::File::create(path).map_err(AdbError::from)?;
+                let err = file.try_clone().map_err(AdbError::from)?;
+                (
+                    std::process::Stdio::from(file),
+                    std::process::Stdio::from(err),
+                )
+            }
+            None => (std::process::Stdio::null(), std::process::Stdio::null()),
+        };
         cmd.stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stdout(out)
+            .stderr(err)
             .spawn()
             .map_err(AdbError::from)?;
         Ok(())
@@ -1248,5 +1325,30 @@ User 0: ceDataInode=1234 installed=true hidden=false
     fn a_device_that_has_not_crashed_reports_nothing() {
         assert!(parse_crash_buffer("").is_empty());
         assert!(parse_crash_buffer("--------- beginning of crash\n").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod console_port_tests {
+    use super::AdbClient;
+
+    #[test]
+    fn a_taken_port_and_the_port_below_its_adb_partner_are_skipped() {
+        // 5554 is taken; 5557 is taken, which is 5556's adb partner.
+        let c = AdbClient::console_port_candidates(&[5554, 5557]);
+        assert_eq!(c.first(), Some(&5558));
+        assert!(!c.contains(&5554));
+        assert!(!c.contains(&5556));
+    }
+
+    #[test]
+    fn every_candidate_is_an_even_console_port_in_the_range_adb_scans() {
+        let c = AdbClient::console_port_candidates(&[]);
+        assert_eq!(c.first(), Some(&5554));
+        assert_eq!(c.last(), Some(&5682));
+        // Exact: 5554..=5682 in steps of two. A candidate outside the
+        // scanned range is a device adb would never list.
+        assert_eq!(c.len(), 65);
+        assert!(c.iter().all(|p| p % 2 == 0));
     }
 }
