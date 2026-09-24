@@ -51,9 +51,10 @@ fi
 
 # This script had no binary of its own — it passed SMIX_BIN through to
 # the corpus gate and never ran smix itself. The bootstrap below does,
-# so it resolves one the same way the gate does.
-SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
-[ -n "$SMIX_BIN" ] || { echo "error: smix binary not on PATH (set SMIX_BIN)" >&2; exit 2; }
+# so it resolves one the same way the gate does: from the one helper,
+# which also exports it to the gate.
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
 
 # A `.smix` workspace, if this checkout has none.
 #

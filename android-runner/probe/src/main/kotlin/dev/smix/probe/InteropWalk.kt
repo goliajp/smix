@@ -3,6 +3,7 @@ package dev.smix.probe
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ViewRootForTest
 
 /**
@@ -17,23 +18,26 @@ import androidx.compose.ui.platform.ViewRootForTest
  * same id in a flow answered `ELEMENT_NOT_FOUND`, because the flow reads
  * the probe's tree and `smix find` did not.
  *
- * The walk is Views all the way: the holder `AndroidView` creates is a
- * child of the `AndroidComposeView`, so getting at it needs only
+ * The walk is Views all the way: the holder `AndroidView` creates sits
+ * under the `AndroidComposeView`, so getting at it needs only
  * `ViewGroup.getChildAt`.
  *
- * The holder's TYPE cannot be named. `AndroidViewHolder` is `internal` in
- * Compose — `javap` shows it as a public JVM class, which is what Kotlin
- * `internal` compiles to, and the compiler refuses it anyway. So it is
- * recognised by class name, which is a string that a future Compose could
- * change.
+ * Where the app's View starts is read from structure, not from a name.
+ * No public type identifies the holder: `AndroidViewHolder` is `internal`
+ * (the compiler refuses it), and `InteroperableComposeUiNode` is
+ * `@InternalComposeUiApi` and not implemented by the holder anyway
+ * (`javap`, ui 1.9.3). What does hold: everything the Compose root puts
+ * between itself and the app's View — the handler, the holder, the layer
+ * containers — is Compose's own class, in Compose's own package, and the
+ * app's View is not. So the walk goes down through Compose's classes and
+ * the first View that is not one is hosted content. The package is read
+ * off `Modifier`, a type the compiler checks, not written as a string.
  *
- * That is survivable only because something goes red when it does:
- * `two-paths-agree` drives a screen with an `AndroidView` on it and
- * asserts the probe sees every id the accessibility path sees. A rename
- * turns this walk into a no-op and that gate into a failure naming the id
- * that went missing. Without such a screen the same rename would be
- * silent — which is exactly how the defect being fixed here survived a
- * whole major.
+ * This used to compare against `AndroidViewHolder`'s class name, which
+ * any Compose release could change without a word (open-items J1). The
+ * backstop stays: `two-paths-agree` drives a screen with an `AndroidView`
+ * and asserts the probe sees every id the accessibility path sees, so a
+ * walk that finds nothing turns it red naming the id that went missing.
  */
 
 /** A resource name the way the accessibility path spells it. */
@@ -148,34 +152,34 @@ internal fun View.hostedViews(): List<ProbeNode> {
     return found
 }
 
-/** The class `AndroidView` hosts its View in, named because it cannot be imported. */
-private const val HOLDER_CLASS = "androidx.compose.ui.viewinterop.AndroidViewHolder"
+/**
+ * Whether a View's class is one of Compose's own, given the package
+ * Compose's UI classes live in.
+ *
+ * A prefix with the dot, so `androidx.compose.uix` is not taken for it.
+ */
+fun isComposeOwned(className: String, composePackage: String): Boolean =
+    className.startsWith("$composePackage.")
 
-/** Whether this View is that holder — `ViewFactoryHolder` extends it, so the chain is walked. */
-private fun isInteropHolder(v: View): Boolean {
-    var c: Class<*>? = v.javaClass
-    while (c != null) {
-        if (c.name == HOLDER_CLASS) return true
-        c = c.superclass
-    }
-    return false
-}
+/** Compose UI's package, read off a type the compiler resolves. */
+private fun composeUiPackage(): String = Modifier::class.java.name.substringBeforeLast('.')
 
 private fun collectHolders(v: View, into: MutableList<ProbeNode>) {
-    if (isInteropHolder(v) && v is ViewGroup) {
-        for (i in 0 until v.childCount) {
-            v.getChildAt(i)?.let { hosted -> viewSubtree(hosted)?.let { into.add(it) } }
-        }
-        return
-    }
-    if (v is ViewGroup) {
-        for (i in 0 until v.childCount) {
-            val child = v.getChildAt(i) ?: continue
-            // A Compose root inside an interop View answers for itself —
-            // it registers with the probe like any other root, and walking
-            // through it here would put every node in the tree twice.
-            if (child is ViewRootForTest) continue
-            collectHolders(child, into)
+    collectHosted(v, composeUiPackage(), into)
+}
+
+private fun collectHosted(v: View, composePackage: String, into: MutableList<ProbeNode>) {
+    if (v !is ViewGroup) return
+    for (i in 0 until v.childCount) {
+        val child = v.getChildAt(i) ?: continue
+        // A Compose root inside an interop View answers for itself —
+        // it registers with the probe like any other root, and walking
+        // through it here would put every node in the tree twice.
+        if (child is ViewRootForTest) continue
+        if (isComposeOwned(child.javaClass.name, composePackage)) {
+            collectHosted(child, composePackage, into)
+        } else {
+            viewSubtree(child)?.let { into.add(it) }
         }
     }
 }

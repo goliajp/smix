@@ -39,7 +39,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -101,7 +100,10 @@ def main() -> int:
         "--attempts",
         help="read records from this JSON file instead of asking smix (tests)",
     )
-    ap.add_argument("--smix", default=os.environ.get("SMIX_BIN") or shutil.which("smix"))
+    # The binary whose records are read: the one the calling gate drives,
+    # which it exports as SMIX_BIN. Not the PATH's — that is the last
+    # release installed, and its records are about a different run.
+    ap.add_argument("--smix", default=os.environ.get("SMIX_BIN"))
     args = ap.parse_args()
 
     # Silence is NORECORD, never PASS — an unreachable smix, an
@@ -117,6 +119,7 @@ def main() -> int:
     elif args.smix:
         records = recent_flows(args.smix)
     else:
+        print("flake-classify: no smix named (set SMIX_BIN or pass --smix)", file=sys.stderr)
         records = None
 
     if not isinstance(records, list):

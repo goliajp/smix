@@ -18,6 +18,8 @@
 # Exit:   0 both files are what they claim · 1 a verdict failed · 2 cannot judge
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
 # The device tier runs every *-e2e.sh with no arguments and names the
 # device in SMIX_E2E_UDID; by hand, the argument wins.
 UDID="${1:-${SMIX_E2E_UDID:-}}"
@@ -27,7 +29,7 @@ WE_BOOTED=0
 log()  { printf '[c1-capture] %s\n' "$*"; }
 fail() { printf '[c1-capture] FAIL: %s\n' "$*" >&2; exit 1; }
 cleanup() {
-  if [ "$WE_BOOTED" = 1 ]; then smix sim shutdown "$UDID" >/dev/null 2>&1 || true; fi
+  if [ "$WE_BOOTED" = 1 ]; then "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true; fi
   rm -rf "$OUT"
 }
 trap cleanup EXIT
@@ -45,7 +47,7 @@ case "${#UDID}" in
       log "simulator $UDID — already booted, and not ours to shut down"
     else
       log "simulator $UDID — booting through smix"
-      smix sim boot "$UDID" >/dev/null 2>&1 || true
+      "$SMIX" sim boot "$UDID" >/dev/null 2>&1 || true
       WE_BOOTED=1
     fi
     ;;

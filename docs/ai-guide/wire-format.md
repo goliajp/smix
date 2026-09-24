@@ -165,6 +165,11 @@ Body: `{ key: KeyName }` — the wire names: `return`, `delete`, `tab`,
 `home`, `lock`, `volumeUp`, `volumeDown`.
 Response: `{ ok: bool }`
 
+A key the device has no button for is refused by name:
+`{ ok: false, error: "no_such_button", saw: "<why, and what to do instead>" }`,
+with status 200. The iOS runner answers this for `lock`, `volumeUp` and
+`volumeDown`; the Android runner presses all three.
+
 `back` is a `KeyName` too, and never reaches this route: a client sends
 it to `POST /back`, which answers whether anything went back. A key
 press answers only that the event went in.

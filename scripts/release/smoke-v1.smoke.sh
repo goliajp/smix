@@ -32,11 +32,12 @@ fail() { printf '[smoke] FAIL: %s\n' "$*" >&2; exit 1; }
 
 # --- pre-flight -------------------------------------------------------
 
-command -v smix >/dev/null || fail "smix not on PATH"
-SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
-# The smoke flow is expected to fail on its assertion, and only on that:
-# "$SMIX_RUN" ends the smoke on any other failure, by the code smix gave.
-. "$ROOT/scripts/lib/judged-run.sh"
+# This tree's binary unless SMIX_BIN names another — `ship.sh` runs this
+# first and gave it none, so a ship smoked the installed release rather
+# than the one it was about to publish. The helper also brings
+# "$SMIX_RUN": the smoke flow is expected to fail on its assertion, and
+# only on that; any other failure ends the smoke, by the code smix gave.
+. "$ROOT/scripts/lib/e2e-binary.sh"
 command -v jq >/dev/null || fail "jq required for smoke output introspection"
 command -v xcrun >/dev/null || fail "xcrun required"
 
@@ -59,7 +60,7 @@ rm -rf "$OUT_DIR" && mkdir -p "$OUT_DIR"
 # --- 1. runner up (verifies §D8 bundle validation) --------------------
 
 log "runner up with --bundle $SMOKE_BUNDLE (§A hard-require)"
-smix runner up "$SMOKE_UDID" --bundle "$SMOKE_BUNDLE" >"$OUT_DIR/up.log" 2>&1 \
+"$SMIX" runner up "$SMOKE_UDID" --bundle "$SMOKE_BUNDLE" >"$OUT_DIR/up.log" 2>&1 \
   || fail "runner up failed; see $OUT_DIR/up.log"
 
 # Refuse-without-bundle check: should fail loud when we omit --bundle.
@@ -94,14 +95,14 @@ log "OK: debug-output has $STEPS_COUNT steps; fail tree.json at $FAIL_TREE"
 # --- 3. cycle + session persistence check ----------------------------
 
 log "runner cycle (§D5 + §D1 persistence)"
-smix runner cycle >"$OUT_DIR/cycle.log" 2>&1 \
+"$SMIX" runner cycle >"$OUT_DIR/cycle.log" 2>&1 \
   || fail "runner cycle failed; see $OUT_DIR/cycle.log"
 
 log "verify /session/list after cycle (§D1)"
 # A supervisor + the smoke yaml would have opened one session at least;
 # after cycle the session file rehydrates and the list should be
 # non-empty.
-smix runner list-sessions >"$OUT_DIR/list-after-cycle.log" 2>&1
+"$SMIX" runner list-sessions >"$OUT_DIR/list-after-cycle.log" 2>&1
 if grep -q "no open sessions" "$OUT_DIR/list-after-cycle.log"; then
   log "note: no persisted sessions after cycle. This can be the smoke's own"
   log '      client having closed on `smix run` exit (safe-exit). OK.'
@@ -112,7 +113,7 @@ fi
 # --- 4. supervisor sanity — 5 s alive check --------------------------
 
 log "start supervisor in background for 5 s"
-smix runner supervise >"$OUT_DIR/supervise.log" 2>&1 &
+"$SMIX" runner supervise >"$OUT_DIR/supervise.log" 2>&1 &
 SUPERVISE_PID=$!
 sleep 5
 kill "$SUPERVISE_PID" 2>/dev/null || true
@@ -124,7 +125,7 @@ log "OK: supervisor attached and shut down cleanly"
 # --- 5. tear down ----------------------------------------------------
 
 log "runner down"
-smix runner down >"$OUT_DIR/down.log" 2>&1 \
+"$SMIX" runner down >"$OUT_DIR/down.log" 2>&1 \
   || fail "runner down failed; see $OUT_DIR/down.log"
 
 log "SMOKE PASSED — publish allowed"

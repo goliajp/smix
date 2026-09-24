@@ -34,6 +34,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _probe_wire  # noqa: E402
+import _e2e_binary  # noqa: E402
 
 problems = []
 
@@ -464,7 +465,10 @@ def main():
     ap.add_argument("--device")
     ap.add_argument("--port", default="22095")
     ap.add_argument("--app", default="dev.smix.fixture")
-    ap.add_argument("--binary", default="./target/release/smix")
+    # Default: the one resolver's answer (this tree's debug build unless
+    # SMIX_BIN names another). It was `./target/release/smix`, relative to
+    # wherever the gate was started, while the e2e beside it drove debug.
+    ap.add_argument("--binary")
     ap.add_argument("--a11y")
     ap.add_argument("--semantics")
     ap.add_argument("--prove-differences-exhibited", action="store_true")
@@ -492,6 +496,8 @@ def main():
              "meaning something after the blindness is fixed.",
     )
     args = ap.parse_args()
+    if args.device and not args.binary:
+        args.binary = _e2e_binary.this_tree_smix()
 
     # Put the subject on screen before reading it.
     #

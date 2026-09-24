@@ -473,7 +473,7 @@ would need measuring again.
 ```yaml
 - pressKey: ENTER                        # ENTER / TAB / SPACE / DELETE / ESCAPE
 - pressKey: HOME                         # iOS home button
-- pressKey: VOLUME_UP                    # skipped on the iOS simulator
+- pressKey: VOLUME_UP                    # Android; iOS fails the step by name
 - pressKey: Back                         # the same as `- back`
 - back                                   # navigation back
 ```
@@ -1648,12 +1648,19 @@ looking is `keyboard_state_unknown` — see
   which gesture navigation — the default on current phones — does not
   have. Use `- back`: it closes a system sheet (share, permission) the
   same way in either mode.
-- **`VOLUME_UP` / `VOLUME_DOWN` are skipped on the iOS simulator**, not
-  executed: Apple documents `XCUIDevice.Button.volumeUp` / `.volumeDown`
-  as unavailable there, and maestro has the same limitation. The step
-  reports as skipped with the reason rather than failing.
-- There is no `POWER` key. `LOCK` is the closest equivalent
-  (`XCUIDevice.perform(.lockButton)` on iOS).
+- **`LOCK` / `VOLUME_UP` / `VOLUME_DOWN` are pressed on Android** —
+  `KEYCODE_POWER` and the two volume keys, through the runner like any
+  other key. `LOCK` turns the display off; the step does not unlock it
+  again, so a flow that goes on driving the app has to wake the device
+  first.
+- **On iOS the three fail the step, naming why** (`no_such_button`):
+  XCUIDevice has no lock button on any iOS target, the simulator has no
+  volume buttons, and on a physical iPhone this runner has never been
+  measured pressing them. A flow that runs on both platforms presses
+  them inside `runFlow` with `when: { platform: Android }`. Earlier
+  releases reported the three as skipped on every platform, Android
+  included, and a flow passed with a step that did nothing.
+- There is no `POWER` key; `Power` reads as `LOCK`.
 - iOS: maps to XCUIRemote / device interaction methods.
 - Android: maps to KeyEvent constants via runner `/press-key`.
 
@@ -5042,6 +5049,11 @@ Body: `{ key: KeyName }` — the wire names: `return`, `delete`, `tab`,
 `home`, `lock`, `volumeUp`, `volumeDown`.
 Response: `{ ok: bool }`
 
+A key the device has no button for is refused by name:
+`{ ok: false, error: "no_such_button", saw: "<why, and what to do instead>" }`,
+with status 200. The iOS runner answers this for `lock`, `volumeUp` and
+`volumeDown`; the Android runner presses all three.
+
 `back` is a `KeyName` too, and never reaches this route: a client sends
 it to `POST /back`, which answers whether anything went back. A key
 press answers only that the event went in.
@@ -5356,7 +5368,7 @@ that is why.
 | `runFlow: { when, commands }` | ✅ | ✅ | Inline conditional; `when` takes `platform` / `true` / `visible` / `notVisible` / `label`, combined with AND in maestro's order; OCR fires when a gate selector contains `ocrText`; `env` / `label` / `optional` on the block; unknown keys are parse errors; skips emit `SKIPPED: <reason>` to stderr |
 | `retry` | ✅ | ✅ | `maxRetries` field; default 3 |
 | `repeat` | ✅ | ✅ | `while:` takes the same conditions as `runFlow.when`; `label` / `optional` on the block |
-| `pressKey` | ✅ | ✅ | One key table for the flow, `smix press-key` and MCP, read when the flow is read: maestro's spellings, the wire names, shorthands. enter/return, delete, tab, space, escape, and the four arrows on both. `back` is the `back` verb below. lock / volumeUp / volumeDown report an explicit Skipped. maestro's TV remote keys are refused by name; `Power` points to `lock` |
+| `pressKey` | ✅ | ✅ | One key table for the flow, `smix press-key` and MCP, read when the flow is read: maestro's spellings, the wire names, shorthands. enter/return, delete, tab, space, escape, and the four arrows on both. `back` is the `back` verb below. lock / volumeUp / volumeDown are pressed on Android (`KEYCODE_POWER` and the volume keys); on iOS the step fails with `no_such_button` and the reason — no lock button in XCUIDevice, no volume buttons on the simulator. maestro's TV remote keys are refused by name; `Power` points to `lock` |
 | `back` | ✅ | ✅ | Navigation back — iOS nav-bar back / edge swipe, Android KEYCODE_BACK. `pressKey: back` and `smix press-key back` are this, not a keystroke. Closes a system share sheet under gesture navigation, where there is no back button to tap. Both platforms answer whether the screen changed, not whether the key was delivered, and both report which reading decided (`settledBy`); a back an app swallows is a failure |
 
 ## Lifecycle

@@ -43,24 +43,17 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # somebody named to a different one would answer a question they did not
 # ask, and the answer decides whose simulator a gate drives.
 #
-# Otherwise the workspace builds before the PATH — a gate running in this
-# tree should ask the smix it is testing, and an older one on the PATH
-# may not have `lease owner` at all, which would read as "no sim is
-# eligible" rather than "this binary cannot answer".
-SMIX=""
-if [ -n "${SMIX_BIN:-}" ]; then
-    if [ -x "$SMIX_BIN" ] && "$SMIX_BIN" lease owner --help >/dev/null 2>&1; then
-        SMIX="$SMIX_BIN"
-    fi
-else
-    for candidate in "$ROOT/target/release/smix" "$ROOT/target/debug/smix" \
-                     "$(command -v smix 2>/dev/null || true)"; do
-        [ -n "$candidate" ] && [ -x "$candidate" ] || continue
-        if "$candidate" lease owner --help >/dev/null 2>&1; then
-            SMIX="$candidate"
-            break
-        fi
-    done
+# Otherwise this tree's debug build, resolved where every other script
+# resolves it. The PATH is not asked: it holds the last release
+# installed, which may not have `lease owner` at all ("no sim is
+# eligible" rather than "this binary cannot answer"), and whose answer
+# is about a binary nobody here is testing. This file used to walk its
+# own list — release, then debug, then the PATH — a second resolution
+# that could disagree with the gate calling it.
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
+if ! "$SMIX" lease owner --help >/dev/null 2>&1; then
+    SMIX=""
 fi
 
 if [ -z "$SMIX" ]; then

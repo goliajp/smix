@@ -26,7 +26,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=/dev/null
 . "$ROOT/scripts/lib/gate-port.sh"
 PORT="${2:-$SMIX_RUNNER_PORT}"
-SMIX="$ROOT/target/release/smix"
+# This tree's binary unless SMIX_BIN names another; the ship names the
+# release build it is about to publish. It was release, unconditionally.
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
 APP="jp.golia.smix.fixture"
 # An identifier no simulator carries. Deliberately the Android fixture's
 # package, because that is the mistake this gate exists for.

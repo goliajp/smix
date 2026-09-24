@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """The scan above can go red, and for the reasons it claims.
 
-Six cases: the two defects it exists for, the two shapes that are fine,
-and the two ways the scan itself can stop working — a subject it cannot
-find, and prose it mistakes for code.
+Five cases: the two defects it exists for, the shape that is fine, a
+subject it cannot find, and two defects at once. Which binary a script
+drives is `a-script-drives-this-tree.test.py`'s now.
 """
 
 import os
@@ -29,16 +29,6 @@ SKIPS_WITH_ZERO = GOOD.replace("exit 2; }", "exit 0; }")
 # without the definition. It only fires on the path nothing exercises.
 CALLS_UNDEFINED = GOOD.replace(
     'cannot_judge() { printf \'no emulator: %s\\n\' "$*" >&2; exit 2; }\n', ""
-)
-PICKS_A_BINARY = GOOD.replace(
-    'source "$ROOT/scripts/lib/e2e-binary.sh"',
-    'SMIX="${SMIX_BIN:-$ROOT/target/release/smix}"',
-)
-# Another machine's binary, invoked over ssh: named, but not this
-# script's choice of what to drive.
-PROSE_ONLY = GOOD.replace(
-    '"$SMIX" tap',
-    'rssh "cd \'$REMOTE_REPO\' && target/release/smix sim list"\n"$SMIX" tap',
 )
 
 
@@ -77,18 +67,6 @@ def main():
         "the defect: a skip that reads like a pass",
     )
     fails += run(
-        {"a-e2e.sh": PICKS_A_BINARY},
-        1,
-        "picks its own binary",
-        "the defect: a script choosing its own binary",
-    )
-    fails += run(
-        {"a-e2e.sh": PROSE_ONLY},
-        0,
-        "clean",
-        "another host's binary is not this script's choice",
-    )
-    fails += run(
         {"a-e2e.sh": CALLS_UNDEFINED},
         1,
         "and does not define it",
@@ -104,7 +82,7 @@ def main():
         min_scripts_ok=False,
     )
     fails += run(
-        {"a-e2e.sh": SKIPS_WITH_ZERO, "b-e2e.sh": PICKS_A_BINARY},
+        {"a-e2e.sh": SKIPS_WITH_ZERO, "b-e2e.sh": CALLS_UNDEFINED},
         1,
         "b-e2e.sh",
         "both defects are named, not just the first",
@@ -116,9 +94,9 @@ def main():
             print(f"  - {f}")
         return 1
     print(
-        "an-e2e-says-whether-it-judged.test: a skip that exits 0, a script "
-        "picking its own binary, prose about one, a lost subject, and two "
-        "defects at once are each judged as they should be"
+        "an-e2e-says-whether-it-judged.test: a skip that exits 0, a call to "
+        "an undefined excuse, a lost subject, and two defects at once are "
+        "each judged as they should be"
     )
     return 0
 

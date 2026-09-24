@@ -111,3 +111,24 @@ fn the_two_keyboard_refusals_point_opposite_ways() {
     );
     assert_ne!(a, b, "two findings that read identically are one finding");
 }
+
+#[test]
+fn a_missing_button_reads_as_the_device_saying_so() {
+    // The iOS simulator refuses lock and both volume keys by name. What
+    // reaches the reader is the device's reason and that the step was
+    // refused rather than skipped — not a generic "the runner refused".
+    let f = transport_to_failure(RunnerTransportError::RefusedNaming {
+        endpoint: "/press-key".into(),
+        kind: "no_such_button".into(),
+        saw: "pressKey volumeUp: the iOS Simulator has no volume buttons".into(),
+    });
+    let p = f.to_prompt();
+    assert!(
+        p.contains("has no volume buttons"),
+        "the reason has to survive — {p}"
+    );
+    assert!(
+        p.contains("no such button"),
+        "the name has to be read — {p}"
+    );
+}

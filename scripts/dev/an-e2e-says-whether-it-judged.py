@@ -22,12 +22,10 @@ and while "skipped" and "passed" share an exit code it was reading the
 word SKIP out of their output, which a passing script's own log can
 contain.
 
-The second half is the same defect in another coordinate: a script that
-names `target/release/smix` while its neighbours build and drive
-`target/debug/smix`. C12 hit exactly that — a flag added to the debug
-binary, a gate invoking the release one, and the script exiting 1 with
-no output at all because `set -e` killed it inside a command
-substitution before a single verdict printed.
+Which binary a script drives was the second half of this scan until
+C9f; it moved to `a-script-drives-this-tree.py`, which asks it of every
+script under `scripts/` — a PATH lookup is the same defect as a build
+path the script picked, and this scan only looked at `*-e2e.sh`.
 
 Standing aside is exit 2, not exit 1. `yield-is-not-failure-scan` says
 why — a script that finds a port taken or another batch on the device
@@ -62,22 +60,6 @@ MIN_SCRIPTS = 50
 # repository has used, and any new one is one word away from being added
 # — which is cheaper than a scan that only knows one spelling.
 EXCUSE = re.compile(r"^\s*(skip|cannot_judge|yield_to\w*|bail)\s*\(\)\s*\{(.*)$", re.M)
-
-# The binary an e2e drives, chosen by the script rather than asked for.
-#
-# An ASSIGNMENT, not any mention: the federation lanes invoke
-# `target/release/smix` on another host over ssh, having built it there
-# and stamped it, and that is a different machine's binary rather than
-# this script picking one. What M2 was about is the line that decides
-# which binary THIS script will drive.
-HARDCODED_BIN = re.compile(
-    r"^\s*(?:SMIX|SMIX_BIN|MCP|SMIX_MCP_BIN)=.*target/(?:debug|release)/smix"
-)
-
-# Where a script may name a binary path: the one helper that resolves it,
-# and prose about it.
-BIN_HELPER = "scripts/lib/e2e-binary.sh"
-
 
 def function_body(lines, start):
     """The lines of a `name() {` function, brace-counted from `start`."""
@@ -123,15 +105,6 @@ def judge(path, text):
             f"path is the one nothing exercises."
         )
 
-    for i, ln in enumerate(lines):
-        if ln.lstrip().startswith("#"):
-            continue
-        if HARDCODED_BIN.search(ln) and BIN_HELPER not in ln:
-            problems.append(
-                f"{os.path.relpath(path, ROOT)}:{i + 1}: picks its own binary "
-                f"(`{ln.strip()}`). Two halves of one checkpoint then read two "
-                f"binaries — source {BIN_HELPER} and use `$SMIX`."
-            )
     return problems
 
 
@@ -161,7 +134,7 @@ def main():
 
     print(
         f"an-e2e-says-whether-it-judged: clean — {len(scripts)} scripts, each "
-        f"answering 0/1/2 and each taking its binary from one place"
+        f"answering 0/1/2"
     )
     return 0
 

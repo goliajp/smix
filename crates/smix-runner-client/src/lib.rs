@@ -2348,14 +2348,22 @@ impl HttpRunnerClient {
         struct Resp {
             #[serde(default)]
             ok: Option<bool>,
+            // A key the device has no button for is refused by name,
+            // with the reason in `saw` — an iOS simulator's lock and
+            // volume keys. Dropping them left the caller "refused" and
+            // nothing about why.
+            #[serde(default)]
+            error: Option<String>,
+            #[serde(default)]
+            saw: Option<String>,
             #[serde(flatten)]
             result: RunnerKeyboardResult,
         }
         let body: Resp = self.json_post("/press-key", &Req { key }, None).await?;
         OkEnvelope {
             ok: body.ok,
-            error: None,
-            saw: None,
+            error: body.error,
+            saw: body.saw,
         }
         .require_ok("/press-key")?;
         Ok(body.result)

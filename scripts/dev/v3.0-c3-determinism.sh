@@ -115,8 +115,8 @@ fi
 
 N="${1:-10}"
 : "${SMIX_CORPUS_SIM:?set SMIX_CORPUS_SIM to the simulator to drive}"
-SMIX_BIN="${SMIX_BIN:-$(command -v smix)}"
-[ -n "$SMIX_BIN" ] || { echo "error: no smix binary (set SMIX_BIN)" >&2; exit 2; }
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
 
 mkdir -p "$OUT_DIR"
 rm -f "$OUT_DIR"/run-*.txt

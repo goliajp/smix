@@ -145,6 +145,50 @@ public enum KeyboardRoute {
     return envelope(.badRequest, body)
   }
 
+  /// Why this device has no button for `key`, or nil when it has one.
+  ///
+  /// Decided here, on the device, because the device is what knows:
+  /// the host used to skip lock and both volume keys for every platform
+  /// with this simulator's reason, so an Android runner that presses
+  /// all three was never asked, and a flow on a simulator passed with a
+  /// step that did nothing. Every sentence names what to do instead —
+  /// a refusal without a way out gets worked around rather than read.
+  public static func missingButton(key: String, onSimulator: Bool) -> String? {
+    switch key {
+    case "lock":
+      return "pressKey lock: XCUIDevice has no lock button on any iOS target, and neither "
+        + "simctl nor devicectl has a verb that locks a device, so there is nothing to press. "
+        + "Press lock only on Android (runFlow with `when: { platform: Android }`)"
+    case "volumeUp", "volumeDown":
+      if onSimulator {
+        return "pressKey \(key): the iOS Simulator has no volume buttons — Apple documents "
+          + "XCUIDevice.Button.\(key) as physical-device only. Press it only on Android "
+          + "(runFlow with `when: { platform: Android }`)"
+      }
+      return "pressKey \(key): not driven on a physical iPhone — XCUIDevice has the button "
+        + "there, but this runner has never been measured pressing it. Press it by hand"
+    default:
+      return nil
+    }
+  }
+
+  /// Whether this runner is running in the iOS Simulator.
+  public static var runsOnSimulator: Bool {
+    #if targetEnvironment(simulator)
+      return true
+    #else
+      return false
+    #endif
+  }
+
+  /// The refusal for a key the device has no button for: 200, `ok:false`,
+  /// the name, and the reason in `saw` where the host reads it.
+  public static func noSuchButton(saw: String) -> HTTPResponse {
+    let s = jsonEscape(saw)
+    let body = Data(#"{"ok":false,"error":"no_such_button","saw":"\#(s)"}"#.utf8)
+    return envelope(.ok, body)
+  }
+
   public static func badRequest(reason: String) -> HTTPResponse {
     let r = jsonEscape(reason)
     let body = Data(#"{"ok":false,"error":"bad_request","reason":"\#(r)"}"#.utf8)

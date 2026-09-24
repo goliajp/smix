@@ -397,6 +397,36 @@ async fn press_key_back_goes_to_the_back_route_and_its_answer() {
     server.verify().await;
 }
 
+/// A key the device has no button for is refused by name, and the
+/// reason travels to the caller — an iOS simulator has no volume or
+/// lock button, and "refused" alone would leave the reader guessing
+/// which part of the press failed.
+#[tokio::test]
+async fn press_key_refusal_keeps_its_name_and_its_reason() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/press-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": false,
+            "error": "no_such_button",
+            "saw": "the iOS Simulator has no volumeUp button"
+        })))
+        .mount(&server)
+        .await;
+    let client = HttpRunnerClient::with_base(server.uri());
+    let err = client
+        .press_key(KeyName::VolumeUp)
+        .await
+        .expect_err("a refused press read as a press");
+    match err {
+        smix_runner_client::RunnerTransportError::RefusedNaming { kind, saw, .. } => {
+            assert_eq!(kind, "no_such_button");
+            assert_eq!(saw, "the iOS Simulator has no volumeUp button");
+        }
+        other => panic!("expected RefusedNaming, got {other:?}"),
+    }
+}
+
 // ---- swipe_once ---------------------------------------------------------
 
 #[tokio::test]

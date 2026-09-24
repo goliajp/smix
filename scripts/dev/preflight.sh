@@ -294,6 +294,9 @@ python3 scripts/dev/all-gates.test.py
 # A status read after a pipeline is the last stage's, not the command's.
 python3 scripts/dev/a-status-is-read-from-the-command.py
 python3 scripts/dev/a-status-is-read-from-the-command.test.py
+# A script drives the smix this tree builds, never the PATH's.
+python3 scripts/dev/a-script-drives-this-tree.py
+python3 scripts/dev/a-script-drives-this-tree.test.py
 # A flow run is judged by the code smix reported, not by the script's rule.
 python3 scripts/dev/a-run-is-judged-by-its-code.py
 python3 scripts/dev/a-run-is-judged-by-its-code.test.py

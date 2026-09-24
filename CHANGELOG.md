@@ -90,6 +90,15 @@ All notable changes to the `smix` workspace are documented here. The format foll
   error now, not a confirmation (see Fixed). `smix_sdk::PressCapture`
   gains `capture_stopped`, the reason a capture ended early.
 
+- **`pressKey: lock / volumeUp / volumeDown` on iOS fails the step, naming
+  why, instead of being skipped.** The iOS runner answers `/press-key` for
+  these three with `{ok: false, error: "no_such_button", saw: <why>}`:
+  XCUIDevice has no lock button on any iOS target, the simulator has no
+  volume buttons, and on a physical iPhone this runner has never been
+  measured pressing them. A flow that ran on both platforms and passed
+  with a step that did nothing now fails on iOS; press them inside
+  `runFlow` with `when: { platform: Android }`.
+
 ### Added
 
 - **`failure.judgesTheScreen` in `smix run --format json`, and
@@ -264,6 +273,26 @@ All notable changes to the `smix` workspace are documented here. The format foll
   sentence: its tree is the app you named, so `windows` holds that app.
 
 ### Fixed
+
+- **`pressKey: lock / volumeUp / volumeDown` are pressed on Android.** The
+  flow runtime skipped all three on every platform with a reason true of
+  the iOS simulator only; the Android runner maps them to `KEYCODE_POWER`
+  and the volume keys and was never asked. Measured on an API 33
+  emulator: two presses reach AudioService as two volume adjustments,
+  and `lock` turns the display off.
+- **Scripts and release gates drive the smix this tree builds.** Six
+  release gates took the PATH's `smix` — on a development machine the
+  last release installed — when run without `SMIX_BIN`; the ship's smoke
+  ran that way too, and the corpus gate's flake classifier read the PATH
+  binary's records. Every script now resolves its binary in
+  `scripts/lib/e2e-binary.sh` (this tree's debug build unless `SMIX_BIN`
+  names another), and a gate refuses a PATH lookup, a bare `smix` call, or
+  a build path a script picks for itself.
+- **The probe finds a View hosted in Compose without naming an internal
+  class.** It compared against `AndroidViewHolder`'s class name, which is
+  `internal` to Compose and could change in any release; it now walks
+  down through Compose's own classes and reports the first View that is
+  not one.
 
 - **An empty Android field holds nothing, even while it shows its hint.**
   Since API 26 an empty `EditText` reports its hint as the accessibility

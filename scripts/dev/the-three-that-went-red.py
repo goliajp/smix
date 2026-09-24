@@ -39,6 +39,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _probe_wire  # noqa: E402
+import _e2e_binary  # noqa: E402
 
 APP = "dev.smix.fixture"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -52,8 +53,10 @@ def adb(device, *args):
 
 
 def smix(device, port, *args):
+    # This tree's binary unless SMIX_BIN names another; it was the
+    # release build whatever the e2e beside it drove.
     return subprocess.run(
-        [os.path.join(ROOT, "target/release/smix"), *args,
+        [_e2e_binary.this_tree_smix(), *args,
          "--device", device, "--port", str(port)],
         capture_output=True, text=True, cwd=ROOT)
 

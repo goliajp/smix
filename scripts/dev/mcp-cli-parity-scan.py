@@ -39,6 +39,9 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _e2e_binary  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MCP = os.path.join(ROOT, "crates", "smix-mcp", "src", "main.rs")
 
@@ -46,20 +49,20 @@ problems: list[str] = []
 
 
 def smix_binary() -> str | None:
-    """The most recently built CLI, whichever profile that is.
+    """The CLI to ask, from the one resolver, or None when none is built.
 
-    An earlier draft preferred release unconditionally and reported two
-    commands as missing minutes after they were added — the release
-    build predated them. A stale binary answers about a version that is
-    not the one under test, and which profile it came from says nothing
-    about how stale it is.
+    This tree's debug build unless SMIX_BIN names another — the same
+    answer every script gets from `scripts/lib/e2e-binary.sh`. It used to
+    pick the newer of the two builds, after an earlier draft preferred
+    release and reported two commands missing minutes after they were
+    added: the release build predated them. The resolver answers that
+    too — the debug build is what a checkout builds, and the ship, which
+    builds release first, names it.
     """
-    built = [
-        p
-        for p in (os.path.join(ROOT, r) for r in ("target/release/smix", "target/debug/smix"))
-        if os.path.isfile(p) and os.access(p, os.X_OK)
-    ]
-    return max(built, key=os.path.getmtime) if built else None
+    try:
+        return _e2e_binary.this_tree_smix()
+    except SystemExit:
+        return None
 
 
 def declarations() -> dict[str, str]:
