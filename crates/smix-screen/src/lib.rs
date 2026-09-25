@@ -26,6 +26,8 @@
 
 mod bounds;
 pub use bounds::{Movement, bounds_moved, rect_in_points};
+mod whole_screen;
+pub use whole_screen::beside_other_windows;
 
 use serde::{Deserialize, Serialize};
 

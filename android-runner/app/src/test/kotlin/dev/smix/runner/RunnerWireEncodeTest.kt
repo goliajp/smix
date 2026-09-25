@@ -34,6 +34,22 @@ class RunnerWireEncodeTest {
         assertEquals("2.0.0", obj.getString("version"))
     }
 
+    // MARK: - /probe
+
+    // The host puts the probe's tree in place of the app's windows and keeps
+    // every other window from the accessibility reader. When the caller
+    // named no app, the runner picked the one holding the focus; unless it
+    // says which, the host cannot tell the app's windows from the rest.
+    @Test
+    fun aProbeThatIsThereSaysWhichAppItAnsweredFor() {
+        val obj = JSONObject(RunnerWire.probePresentBody("dev.smix.fixture", "1", 2, 40L))
+        assertTrue(obj.getBoolean("present"))
+        assertEquals("dev.smix.fixture", obj.getString("app"))
+        assertEquals("1", obj.getString("version"))
+        assertEquals(2, obj.getInt("roots"))
+        assertEquals(40L, obj.getLong("quietMs"))
+    }
+
     // MARK: - /display
 
     @Test

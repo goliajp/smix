@@ -2773,6 +2773,13 @@ the accessibility reader, along with what that reader cannot see.
 
 It widens what smix can **see**, never what it can **reach**.
 
+- It reads the app, and only the app. A `semantics` tree is the whole
+  screen all the same: the app's windows come from the probe, and every
+  window that is not the app's — the keyboard, the system bars, another
+  app's dialog on top — from the accessibility reader, each saying whose
+  it is. `role: keyboard` answers on an app with the probe as it does
+  without one.
+
 - With a modal open, controls behind it are not addressable through the
   probe. It can see them; a user cannot touch them.
 - Its action surface is only what brings a node within reach of a real

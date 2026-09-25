@@ -1559,11 +1559,23 @@ impl HttpRunnerClient {
         // says which, because a screen the accessibility reader has gone
         // blind on and a screen with nothing on it print identically
         // otherwise.
-        if let Some(mut tree) = self.semantics_tree(self.target_bundle_id.as_deref()).await {
-            self.mark_a_one_app_root(&mut tree);
+        //
+        // The probe sees the app and nothing else — not the keyboard, not
+        // the system bars, not another app's dialog on top. Its tree alone
+        // made those absent rather than unread: `role:keyboard` timed out
+        // on every app that carried the probe while the keyboard was on
+        // screen. So the app's windows come from the probe and every other
+        // window from the accessibility reader, and a reader that cannot
+        // answer is an error here rather than half a screen passed off as
+        // the whole of it.
+        if let Some((app_tree, app)) = self.semantics_tree(self.target_bundle_id.as_deref()).await {
+            let screen = self.accessibility_tree_only(include).await?.root;
+            let app = self.target_bundle_id.clone().or(app);
+            let mut root = smix_screen::beside_other_windows(screen, app_tree, app.as_deref());
+            self.mark_a_one_app_root(&mut root);
             return Ok(PerceivedTree {
                 source: TreeSource::Semantics,
-                root: tree,
+                root,
             });
         }
         self.accessibility_tree_only(include).await
@@ -1600,7 +1612,7 @@ impl HttpRunnerClient {
     /// refuses instead — a reader named is a reader asked.
     pub async fn semantics_tree_only(&self) -> Result<PerceivedTree, RunnerTransportError> {
         match self.semantics_tree(self.target_bundle_id.as_deref()).await {
-            Some(root) => Ok(PerceivedTree {
+            Some((root, _)) => Ok(PerceivedTree {
                 source: TreeSource::Semantics,
                 root,
             }),
@@ -1630,14 +1642,16 @@ impl HttpRunnerClient {
         })
     }
 
-    /// The app's own semantics tree, or `None` when there is no probe.
+    /// The app's own semantics tree and the package it is the tree of, or
+    /// `None` when there is no probe. The package is the runner's answer
+    /// when the caller named none — it picks the app holding the focus.
     ///
     /// Deliberately swallowing here, and only here: every reason this can
     /// fail — no probe, an older probe, a runner without the route — means
     /// the same thing to a caller, which is "carry on with the tree you
     /// have always had". What must NOT be swallowed is which tree was used,
     /// and that is the return value of the function above.
-    async fn semantics_tree(&self, app: Option<&str>) -> Option<A11yNode> {
+    async fn semantics_tree(&self, app: Option<&str>) -> Option<(A11yNode, Option<String>)> {
         // The parameter is carried only when there is one to carry. An
         // `app=` with nothing after it is not the same request: it names
         // the empty package, and the runner would have to decide what
@@ -1648,13 +1662,14 @@ impl HttpRunnerClient {
         if raw.get("present")?.as_bool() != Some(true) {
             return None;
         }
+        let answered_for = raw.get("app").and_then(|a| a.as_str()).map(str::to_owned);
         let payload = self
             .json_get::<serde_json::Value>(&format!("/probe/tree{named}"), None)
             .await
             .ok()?;
         let mut root = smix_screen::probe_tree_to_a11y(&payload.to_string())?;
         derive_roles_recursive(&mut root);
-        Some(root)
+        Some((root, answered_for))
     }
 
     /// `GET /probe?app=` — what the app under test says about itself.
@@ -2689,7 +2704,10 @@ pub enum TreeSource {
     /// the UI toolkit knows, and on Compose a lossy one.
     #[serde(rename = "a11y")]
     Accessibility,
-    /// The toolkit's own semantics tree, from the in-process probe.
+    /// The toolkit's own semantics tree, from the in-process probe, for the
+    /// app's windows — and the accessibility tree for every window that is
+    /// not the app's (the keyboard, the system bars, another app's dialog),
+    /// which the probe cannot see from inside the app.
     Semantics,
 }
 
