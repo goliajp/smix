@@ -766,7 +766,7 @@ smix bench --update-baseline    # overwrite the baseline with this run (do this 
 | `--baseline-file <PATH>` | `crates/smix-cli/bench/baseline.json` | Baseline JSON to compare against |
 | `--current-file <PATH>` | (unset) | Read the "current" measurement from a file instead of measuring — for tests / CI reproduction |
 
-The absolute `perf_gate` budgets catch a spike; this catches slow drift under them. The baseline holds absolute times from the machine that captured it, so run `--update-baseline` on the machine that will gate (see `crates/smix-cli/bench/README.md` on cross-machine use).
+The absolute `perf_gate` budgets catch a spike; this catches slow drift under them. The baseline holds absolute times from the machine that captured it, so run `--update-baseline` on the machine that will gate. Do not compare against a baseline captured on another machine: CPUs differ by more than the 5% tolerance, so every metric would read as a regression.
 
 ### Low-level probes (use a running runner)
 

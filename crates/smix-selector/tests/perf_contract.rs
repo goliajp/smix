@@ -5,7 +5,7 @@
 //! cache, as in `smix-selector-resolver::ResolverContext` and the
 //! `smix-driver` selector pipeline). Calling bare `match_text` from a
 //! hot loop forces `regex::Regex::new` on every node visit — a ~10000×
-//! per-call regression vs the compiled path (see `BUDGETS.md`).
+//! per-call regression vs the compiled path.
 //!
 //! The SDK convenience surface keeps `smix_selector::match_text` `pub`
 //! for one-shot ad-hoc calls and re-exports it through `smix-sdk` /
@@ -30,7 +30,7 @@ fn perf_contract_no_bare_match_text_in_src() {
         .expect("CARGO_MANIFEST_DIR should be <workspace>/crates/<crate>");
     let crates_dir = workspace_root.join("crates");
 
-    // Restrict to `.rs` files so README / CHANGELOG / BUDGETS / .md
+    // Restrict to `.rs` files so README / CHANGELOG / .md
     // prose that legitimately *names* the symbol (e.g. "switch from
     // bare `smix_selector::match_text` to ...") never trips the guard.
     let output = Command::new("grep")
