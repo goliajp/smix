@@ -149,7 +149,10 @@ jobs:
         run: python3 scripts/dev/ci-is-green-on-this-commit.test.py
 
   source-gates:
-    # Ceiling, not a target: measured max 3m or less.
+    # Ceiling, not a target: 3m45s–4m15s once the subject sweep moved
+    # to its own job (measured on 36070814916 / 36075734105, whose
+    # 562 s and 598 s included the sweep's 334 s and 348 s — the second
+    # run was cancelled at this ceiling with every step green).
     # Without one a hung job holds a runner for GitHub's default
     # six hours and blocks everything behind it.
     timeout-minutes: 10
@@ -308,13 +311,6 @@ jobs:
         run: python3 scripts/dev/a-verdict-answers-in-sentences.py
       - name: the verdict sweep can still go red
         run: python3 scripts/dev/a-verdict-answers-in-sentences.test.py
-      # Takes each gate's subject away — the files it was observed to
-      # open — and checks it stops being green. Slow by nature: it copies
-      # the checkout once and runs every gate twice.
-      - name: no gate says yes with its subject gone
-        run: python3 scripts/dev/a-gate-without-its-subject.py
-      - name: the subject sweep can still go red
-        run: python3 scripts/dev/a-gate-without-its-subject.test.py
       # Reads the corpus and its excuse list, both in the checkout.
       - name: known-unstable list scan
         run: python3 scripts/dev/known-unstable-scan.py
@@ -519,6 +515,27 @@ jobs:
         run: bash scripts/lib/smix-run --selftest
       - name: llms.txt freshness
         run: python3 scripts/dev/gen-llms.py --check
+
+  subject-sweep:
+    # Its own job because it is most of what source-gates used to spend:
+    # 334 s and 348 s of a 600 s ceiling, and it grows with every gate
+    # added (it runs each of them twice). Sharing that ceiling meant a
+    # new gate anywhere could cancel the whole job with nothing red.
+    # Ceiling, not a target: measured 334–348 s.
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+      # Takes each gate's subject away — the files it was observed to
+      # open — and checks it stops being green. Slow by nature: it copies
+      # the checkout once and runs every gate twice.
+      - name: no gate says yes with its subject gone
+        run: python3 scripts/dev/a-gate-without-its-subject.py
+      - name: the subject sweep can still go red
+        run: python3 scripts/dev/a-gate-without-its-subject.test.py
 
   portable-corpus:
     # The corpus flows that do not name system-app identifiers, on a
