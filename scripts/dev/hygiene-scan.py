@@ -110,7 +110,7 @@ QUOTED_SPAN = re.compile(r"\"[^\"]*\"|'[^']*'|`[^`]*`")
 # `[label](some/path.md)` — resolved relative to the citing file.
 MD_LINK = re.compile(r"\]\(([^)\s]+\.md)(?:#[^)]*)?\)")
 # `SOME_DOC.md` in prose — matched by basename, so the per-crate files
-# that legitimately repeat (BUDGETS.md, README.md) stay quiet.
+# that legitimately repeat (README.md) stay quiet.
 MD_BARE = re.compile(r"`([A-Za-z0-9_.\-/]+\.md)`")
 
 POINTER_EXTS = (".rs", ".swift", ".kt", ".md")

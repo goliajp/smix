@@ -120,7 +120,7 @@ pub fn resolve_selector_all_compiled<'tree>(
 /// [`resolve_selector_compiled`] / [`resolve_selector_all_compiled`] on
 /// every iteration to skip the per-call regex compile prepass. The
 /// regex hit case drops from ~9.5 µs/iter to ~260 ns/iter on a 15-node
-/// tree (see `BUDGETS.md`). The convenience
+/// tree. The convenience
 /// wrappers [`resolve_selector`] / [`resolve_selector_all`] keep the
 /// per-call construction for one-shot callers.
 ///
