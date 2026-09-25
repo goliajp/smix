@@ -37,7 +37,9 @@ crash_reports_since() {
   [ -d "$dir" ] && [ -r "$dir" ] || return 2
   for f in "$dir"/*.ips; do
     [ -e "$f" ] || continue
-    mtime="$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f")"
+    # GNU first: on Linux `stat -f` is a filesystem query that succeeds with
+    # a paragraph of output, so trying BSD first never reaches the fallback.
+    mtime="$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f")"
     [ "$mtime" -ge "$since" ] || continue
     # The header is the first line, and it names the bundle.
     head -1 "$f" | grep -q "\"bundleID\" *: *\"$app\"" || continue
