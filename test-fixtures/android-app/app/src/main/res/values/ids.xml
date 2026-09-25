@@ -6,5 +6,7 @@
     <item name="fixture_blocked_ticker" type="id" />
     <item name="fixture_interop_button" type="id" />
     <item name="fixture_interop_label" type="id" />
+    <item name="fixture_interop_input" type="id" />
+    <item name="fixture_interop_disabled" type="id" />
     <item name="fixture_ask_camera" type="id" />
 </resources>

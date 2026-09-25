@@ -123,14 +123,14 @@ printf '%s\n' "$VERDICTS" | sed 's/^/[c7-probe]   /' >&2
 log "--- the reconciliation gate, on this screen"
 python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$SERIAL" --port "$PORT" \
   --binary "$SMIX" \
-  --activity .InteropActivity --min-both 3 --min-bounds-compared 3 \
-  --prove-differences-exhibited >&2 \
+  --activity .InteropActivity --min-both 8 --min-bounds-compared 8 \
+  --prove-differences-exhibited --focus fixture_interop_input >&2 \
   || fail "two-paths-agree is red on the interop screen"
 
 log "--- and on the screen it has always driven"
 python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$SERIAL" --port "$PORT" \
   --binary "$SMIX" \
-  --min-both 16 --min-bounds-compared 16 >&2 \
+  --min-both 16 --min-bounds-compared 16 --focus compose_input >&2 \
   || fail "two-paths-agree is red on the Compose screen"
 
 log "C7-PROBE-E2E-PASS on $SERIAL"

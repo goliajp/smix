@@ -65,6 +65,8 @@ fun interopNode(
     layout: Bounds,
     clip: Bounds,
     placed: Boolean,
+    focused: Boolean,
+    enabled: Boolean,
     children: List<ProbeNode>,
 ): ProbeNode? {
     if (!placed) return null
@@ -82,8 +84,8 @@ fun interopNode(
         className = className,
         bounds = layout,
         visibleBounds = shown,
-        focused = false,
-        enabled = true,
+        focused = focused,
+        enabled = enabled,
         visible = shown.right > shown.left && shown.bottom > shown.top,
         actions = emptyList(),
         children = children,
@@ -226,6 +228,8 @@ private fun viewSubtree(v: View): ProbeNode? {
         // zero-sized one, which the clipping above already reports as
         // nothing showing.
         placed = true,
+        focused = v.isFocused,
+        enabled = v.isEnabled,
         children = children,
     )
 }

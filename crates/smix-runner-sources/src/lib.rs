@@ -70,39 +70,61 @@ pub fn android_version_stamp() -> String {
 /// Extract the Android runner project to `dst`, replacing it when the
 /// embedded sources differ from what is already there.
 ///
-/// Simpler than [`extract_to`]: there is no xcframework to carry across
-/// and no backup rotation, because nothing in the tree is expensive to
-/// reproduce — it is 96 KB of gradle project, and the build output lives
-/// under `build/` which this never touches.
+/// Returns `false` when the stamp already names these sources.
+///
+/// The tree is built beside `dst` and moved in whole (`install_tree`).
+/// It used to be unpacked over whatever was there, which never removed a
+/// file: two builds taking turns on one machine left the union of their
+/// sources, stamped as one of them, and gradle compiled a `ProbeTarget.kt`
+/// against a `WindowRules` that version never had (reported 2026-09-25).
+///
+/// The build output is carried across (`ANDROID_CARRIED`); whether it is
+/// still current for these sources is gradle's question, and the APK's own
+/// stamp (`.smix-apk-sources`) travels with it so the caller can ask it.
 ///
 /// # Errors
 ///
-/// I/O failures reading the destination or unpacking the archive.
+/// I/O failures building the new tree or moving it into place.
 pub fn extract_android_to(dst: &Path) -> Result<bool, ExtractError> {
-    let stamp_path = dst.join(ANDROID_VERSION_FILE);
-    let installed = std::fs::read_to_string(&stamp_path).ok();
+    let installed = std::fs::read_to_string(dst.join(ANDROID_VERSION_FILE)).ok();
     if installed.as_deref().map(str::trim) == Some(android_version_stamp().as_str()) {
         return Ok(false);
     }
-    std::fs::create_dir_all(dst)
-        .map_err(|e| ExtractError::io(format!("creating {}", dst.display()), e))?;
-    let gz = GzDecoder::new(ANDROID_SOURCES_TAR_GZ);
-    let mut ar = tar::Archive::new(gz);
-    ar.set_preserve_permissions(true);
-    ar.set_overwrite(true);
-    for entry in ar
-        .entries()
-        .map_err(|e| ExtractError::io("reading android tar entries", e))?
-    {
-        let mut entry = entry.map_err(|e| ExtractError::io("reading android tar entry", e))?;
-        entry
-            .unpack_in(dst)
-            .map_err(|e| ExtractError::io("unpacking android sources", e))?;
-    }
-    std::fs::write(&stamp_path, format!("{}\n", android_version_stamp()))
-        .map_err(|e| ExtractError::io(format!("writing {}", stamp_path.display()), e))?;
+    install_tree(
+        dst,
+        ANDROID_SOURCES_TAR_GZ,
+        ANDROID_VERSION_FILE,
+        &android_version_stamp(),
+        ANDROID_CARRIED,
+    )?;
+    // The tree it replaced is kept beside it, and rotated the way the
+    // Swift one is: unbounded, they are the 48 backups again.
+    prune_backups(dst, BACKUPS_KEPT).map_err(|e| {
+        ExtractError::io(
+            format!(
+                "Android runner sources extracted to {} successfully, but pruning \
+                 old backups beside it failed",
+                dst.display()
+            ),
+            e,
+        )
+    })?;
     Ok(true)
 }
+
+/// What an Android tree keeps across a sync: gradle's output and caches,
+/// and the note of which sources the APK in them was built from. None of
+/// it ships, and all of it is what makes the next `runner up` fast. Gradle
+/// judges each task's outputs against its inputs, which is what makes
+/// keeping them across a change of sources safe — it is the same thing
+/// as checking out another commit in a working tree.
+const ANDROID_CARRIED: &[&str] = &[
+    "build",
+    "app/build",
+    ".gradle",
+    ".kotlin",
+    ".smix-apk-sources",
+];
 
 /// A stamp of what is actually installed: the version, and a digest of
 /// the bytes it came from.
@@ -250,100 +272,33 @@ pub fn read_installed_version(dst: &Path) -> Result<Option<String>, ExtractError
 /// containing [`SOURCES_VERSION`] + newline. The CLI cascade uses this
 /// file to detect version drift on subsequent boots.
 pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError> {
-    let dst_exists = dst.exists();
-    let is_empty = if dst_exists {
+    let is_empty = if dst.exists() {
         is_directory_empty(dst)
             .map_err(|e| ExtractError::io(format!("scanning {}", dst.display()), e))?
     } else {
         true
     };
-
-    let mut backup: Option<PathBuf> = None;
-    if dst_exists && !is_empty {
-        if !force {
-            return Err(ExtractError::DestinationNotEmpty(dst.to_path_buf()));
-        }
-        let bak = timestamped_backup_path(dst);
-        std::fs::rename(dst, &bak).map_err(|e| {
-            ExtractError::io(
-                format!("backing up {} to {}", dst.display(), bak.display()),
-                e,
-            )
-        })?;
-        backup = Some(bak);
+    if !is_empty && !force {
+        return Err(ExtractError::DestinationNotEmpty(dst.to_path_buf()));
     }
 
-    std::fs::create_dir_all(dst)
-        .map_err(|e| ExtractError::io(format!("mkdir -p {}", dst.display()), e))?;
-
-    // v1.0.10 patch — before writing the fresh tarball contents, carry
-    // over the excluded-from-tarball binary artefacts (SmixCoreFFI
-    // xcframework and its sidecars) from the backup tree. Without this,
-    // an auto-sync leaves the runner project unbuildable because
-    // `Package.swift` declares a `.binaryTarget(path: "SmixCoreFFI.
-    // xcframework")` that xcodebuild dereferences at `Resolve Package
-    // Graph` time.
-    let mut carried_xcframework_from: Option<PathBuf> = None;
-    if let Some(bak) = backup.as_ref() {
-        for artefact in CARRIED_ARTEFACTS {
-            let src = bak.join(artefact);
-            if src.exists() {
-                let dst_path = dst.join(artefact);
-                // `rename` is atomic within the same filesystem; the
-                // backup is a sibling of the destination so this is
-                // fast. Fallback to recursive copy if rename fails
-                // (e.g., different volumes — unlikely under XDG basedir
-                // but defensive).
-                if std::fs::rename(&src, &dst_path).is_err() {
-                    copy_dir_recursive(&src, &dst_path).map_err(|e| {
-                        ExtractError::io(
-                            format!("copying {} to {}", src.display(), dst_path.display()),
-                            e,
-                        )
-                    })?;
-                }
-                if carried_xcframework_from.is_none() {
-                    carried_xcframework_from = Some(bak.clone());
-                }
-            }
-        }
-    }
-
-    let gz = GzDecoder::new(SOURCES_TAR_GZ);
-    let mut ar = tar::Archive::new(gz);
-    ar.set_preserve_permissions(true);
-    ar.set_overwrite(true);
-
-    let mut file_count = 0usize;
-    for entry in ar
-        .entries()
-        .map_err(|e| ExtractError::io("reading tar entries", e))?
-    {
-        let mut entry = entry.map_err(|e| ExtractError::io("reading tar entry", e))?;
-        let is_file = entry.header().entry_type().is_file();
-        entry.unpack_in(dst).map_err(|e| {
-            ExtractError::io(
-                format!(
-                    "unpacking {}",
-                    entry
-                        .path()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_else(|_| "<unknown>".to_string())
-                ),
-                e,
-            )
-        })?;
-        if is_file {
-            file_count += 1;
-        }
-    }
-
-    let version_path = dst.join(VERSION_FILE);
-    // Version *and* digest: between releases the version does not move,
-    // so it alone cannot tell a rebuilt tarball from the one already
-    // here. See `sources_digest`.
-    std::fs::write(&version_path, format!("{}\n", version_stamp()))
-        .map_err(|e| ExtractError::io(format!("writing {}", version_path.display()), e))?;
+    // The xcframework and its sidecars are excluded from the tarball
+    // (fetched or built separately), and `Package.swift` declares a
+    // `.binaryTarget(path: "SmixCoreFFI.xcframework")` that xcodebuild
+    // dereferences at `Resolve Package Graph` time — a sync that dropped
+    // them would leave the project unbuildable.
+    let installed = install_tree(
+        dst,
+        SOURCES_TAR_GZ,
+        VERSION_FILE,
+        &version_stamp(),
+        CARRIED_ARTEFACTS,
+    )?;
+    let carried_xcframework_from = if installed.carried {
+        installed.backup.clone()
+    } else {
+        None
+    };
 
     // Last, so a rotation failure cannot cost the tree that was just
     // extracted. The message has to say that outright: by this point
@@ -362,12 +317,235 @@ pub fn extract_to(dst: &Path, force: bool) -> Result<ExtractReport, ExtractError
 
     Ok(ExtractReport {
         destination: dst.to_path_buf(),
-        file_count,
-        backup,
+        file_count: installed.file_count,
+        backup: installed.backup,
         version_written: SOURCES_VERSION,
         carried_xcframework_from,
         pruned_backups: pruned,
     })
+}
+
+/// What [`install_tree`] did.
+struct Installed {
+    file_count: usize,
+    /// Where the tree it replaced went, if there was one.
+    backup: Option<PathBuf>,
+    /// Whether anything named in `carry` came across from that tree.
+    carried: bool,
+}
+
+/// How many times a swap is tried when another installer keeps putting its
+/// own tree into the gap. Each round leaves a whole tree in place, so a
+/// loss here is a clean one; the bound only stops two installers trading
+/// the directory forever.
+const SWAP_ATTEMPTS: usize = 16;
+
+/// Put `archive` at `dst` as one whole tree: unpacked beside it, stamped,
+/// then moved in.
+///
+/// Every state `dst` passes through is a complete tree — the old one, or
+/// the new one, never a mixture — so a reader, a crash, or a second
+/// installer working at the same moment meets one version or the other.
+/// With two installers of different sources the last to move in wins, and
+/// its stamp is the one in the directory. Within that there is a moment
+/// with no `dst` at all (between moving the old tree out and the new one
+/// in); a reader then finds nothing rather than something wrong.
+///
+/// `carry` names paths in the old tree that do not ship and are kept:
+/// moved into the new tree just before the swap. The old tree becomes a
+/// `<dst>.bak-<n>` beside it; rotation is the caller's.
+fn install_tree(
+    dst: &Path,
+    archive: &[u8],
+    stamp_file: &str,
+    stamp: &str,
+    carry: &[&str],
+) -> Result<Installed, ExtractError> {
+    let parent = dst.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)
+        .map_err(|e| ExtractError::io(format!("mkdir -p {}", parent.display()), e))?;
+    let staging = Staging::beside(dst)?;
+
+    let file_count = unpack(archive, staging.path())?;
+    let stamp_path = staging.path().join(stamp_file);
+    std::fs::write(&stamp_path, format!("{stamp}\n"))
+        .map_err(|e| ExtractError::io(format!("writing {}", stamp_path.display()), e))?;
+
+    let mut carried = false;
+    for _ in 0..SWAP_ATTEMPTS {
+        carried |= carry_into(dst, staging.path(), carry)?;
+        // An empty directory is nothing to keep: removed, not backed up.
+        if is_directory_empty(dst).unwrap_or(false) {
+            match std::fs::remove_dir(dst) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                // Filled in the meantime by another installer: back it up below.
+                Err(e) if is_occupied(&e) => {}
+                Err(e) => {
+                    return Err(ExtractError::io(
+                        format!("removing empty {}", dst.display()),
+                        e,
+                    ));
+                }
+            }
+        }
+        let aside = fresh_backup_path(dst);
+        let backup = match std::fs::rename(dst, &aside) {
+            Ok(()) => Some(aside),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+            // Another installer took that backup name in the same instant.
+            Err(e) if is_occupied(&e) => continue,
+            Err(e) => {
+                return Err(ExtractError::io(
+                    format!("moving {} aside", dst.display()),
+                    e,
+                ));
+            }
+        };
+        match std::fs::rename(staging.path(), dst) {
+            Ok(()) => {
+                staging.moved_in();
+                return Ok(Installed {
+                    file_count,
+                    backup,
+                    carried,
+                });
+            }
+            // Someone else's tree went in between our two moves. It is a
+            // whole tree too; go round and put ours over it.
+            Err(e) if is_occupied(&e) => {}
+            Err(e) => {
+                return Err(ExtractError::io(
+                    format!("moving {} into {}", staging.path().display(), dst.display()),
+                    e,
+                ));
+            }
+        }
+    }
+    Err(ExtractError::io(
+        format!(
+            "moving a new tree into {}: another installer replaced it {SWAP_ATTEMPTS} \
+             times in a row",
+            dst.display()
+        ),
+        io::Error::from(io::ErrorKind::ResourceBusy),
+    ))
+}
+
+/// Unpack a gzipped tarball into `into`; returns how many regular files.
+fn unpack(archive: &[u8], into: &Path) -> Result<usize, ExtractError> {
+    let mut ar = tar::Archive::new(GzDecoder::new(archive));
+    ar.set_preserve_permissions(true);
+    ar.set_overwrite(true);
+    let mut file_count = 0usize;
+    for entry in ar
+        .entries()
+        .map_err(|e| ExtractError::io("reading tar entries", e))?
+    {
+        let mut entry = entry.map_err(|e| ExtractError::io("reading tar entry", e))?;
+        let is_file = entry.header().entry_type().is_file();
+        entry.unpack_in(into).map_err(|e| {
+            ExtractError::io(
+                format!(
+                    "unpacking {}",
+                    entry
+                        .path()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|_| "<unknown>".to_string())
+                ),
+                e,
+            )
+        })?;
+        if is_file {
+            file_count += 1;
+        }
+    }
+    Ok(file_count)
+}
+
+/// Move each `carry` path that `from` has and `into` does not. Returns
+/// whether any moved.
+fn carry_into(from: &Path, into: &Path, carry: &[&str]) -> Result<bool, ExtractError> {
+    let mut any = false;
+    for rel in carry {
+        let src = from.join(rel);
+        let dst = into.join(rel);
+        if !src.exists() || dst.exists() {
+            continue;
+        }
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ExtractError::io(format!("mkdir -p {}", parent.display()), e))?;
+        }
+        // Same parent directory, so the same filesystem: a rename. The
+        // copy is for the case where it is not (a bind mount inside the
+        // share directory), where rename answers EXDEV.
+        if std::fs::rename(&src, &dst).is_err() {
+            copy_dir_recursive(&src, &dst).map_err(|e| {
+                ExtractError::io(format!("copying {} to {}", src.display(), dst.display()), e)
+            })?;
+        }
+        any = true;
+    }
+    Ok(any)
+}
+
+/// A rename refused because the target is taken.
+fn is_occupied(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::AlreadyExists | io::ErrorKind::DirectoryNotEmpty
+    )
+}
+
+/// The directory a new tree is built in, beside the destination so moving
+/// it in is a rename. Removed on drop unless it was moved in — an unpack
+/// that fails halfway leaves nothing behind.
+struct Staging {
+    path: PathBuf,
+    moved: std::cell::Cell<bool>,
+}
+
+impl Staging {
+    fn beside(dst: &Path) -> Result<Self, ExtractError> {
+        let parent = dst.parent().unwrap_or_else(|| Path::new("."));
+        let base = dst
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "runner".to_string());
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        // Leading dot and a pid: never mistaken for the tree or a backup,
+        // and two installers never share one.
+        let path = parent.join(format!(".{base}.staging-{}-{nanos}", std::process::id()));
+        std::fs::create_dir(&path)
+            .map_err(|e| ExtractError::io(format!("mkdir {}", path.display()), e))?;
+        Ok(Self {
+            path,
+            moved: std::cell::Cell::new(false),
+        })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn moved_in(&self) {
+        self.moved.set(true);
+    }
+}
+
+impl Drop for Staging {
+    fn drop(&mut self) {
+        if !self.moved.get() {
+            // A failed install's scratch. The error that got us here is
+            // already on its way to the caller; this removal failing would
+            // leave a dot-directory, which is not worth replacing it with.
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
@@ -448,7 +626,9 @@ fn prune_backups(dst: &Path, keep: usize) -> io::Result<Vec<PathBuf>> {
     Ok(removed)
 }
 
-fn timestamped_backup_path(dst: &Path) -> PathBuf {
+/// A `<dst>.bak-<n>` that does not exist yet: seconds since the epoch, or
+/// the next free number after it when two syncs land in one second.
+fn fresh_backup_path(dst: &Path) -> PathBuf {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -458,5 +638,103 @@ fn timestamped_backup_path(dst: &Path) -> PathBuf {
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "runner".to_string());
-    parent.join(format!("{base}.bak-{now}"))
+    let mut n = now;
+    loop {
+        let candidate = parent.join(format!("{base}.bak-{n}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    /// A gzipped tarball holding `files`.
+    fn archive(files: &[(&str, &str)]) -> Vec<u8> {
+        let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        let mut tar = tar::Builder::new(gz);
+        for (name, body) in files {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(body.len() as u64);
+            h.set_mode(0o644);
+            h.set_cksum();
+            tar.append_data(&mut h, name, body.as_bytes())
+                .expect("append to an in-memory tarball");
+        }
+        tar.into_inner()
+            .expect("finish the tarball")
+            .finish()
+            .expect("finish the gzip stream")
+    }
+
+    fn tree(dir: &Path) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        fn walk(root: &Path, at: &Path, out: &mut BTreeMap<String, String>) {
+            for e in std::fs::read_dir(at).expect("read a directory of the tree") {
+                let p = e.expect("entry").path();
+                if p.is_dir() {
+                    walk(root, &p, out);
+                } else {
+                    let rel = p
+                        .strip_prefix(root)
+                        .expect("under root")
+                        .display()
+                        .to_string();
+                    out.insert(rel, std::fs::read_to_string(&p).expect("read a file"));
+                }
+            }
+        }
+        walk(dir, dir, &mut out);
+        out
+    }
+
+    #[test]
+    fn two_installers_taking_turns_leave_one_version_whole() {
+        // The consumer's machine: two builds of smix, each with its own
+        // sources, syncing one directory. Whatever the interleaving, the
+        // directory must end as exactly one of them, stamp included.
+        let a = archive(&[("common.txt", "A"), ("only_a.txt", "a")]);
+        let b = archive(&[("common.txt", "B"), ("only_b.txt", "b")]);
+        let root = tempfile::tempdir().expect("tempdir");
+        let dst = root.path().join("android-runner");
+
+        std::thread::scope(|scope| {
+            for i in 0..8 {
+                let (bytes, stamp) = if i % 2 == 0 { (&a, "A") } else { (&b, "B") };
+                let dst = &dst;
+                scope.spawn(move || {
+                    for _ in 0..5 {
+                        install_tree(dst, bytes, ".stamp", stamp, &[])
+                            .expect("an install that loses a race still installs");
+                    }
+                });
+            }
+        });
+
+        let got = tree(&dst);
+        let want_a: BTreeMap<String, String> =
+            [("common.txt", "A"), ("only_a.txt", "a"), (".stamp", "A\n")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+        let want_b: BTreeMap<String, String> =
+            [("common.txt", "B"), ("only_b.txt", "b"), (".stamp", "B\n")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+        assert!(
+            got == want_a || got == want_b,
+            "the directory is not one version: {got:?}"
+        );
+        let staging: Vec<_> = std::fs::read_dir(root.path())
+            .expect("read the parent")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains(".staging-"))
+            .collect();
+        assert!(staging.is_empty(), "scratch left behind: {staging:?}");
+    }
 }

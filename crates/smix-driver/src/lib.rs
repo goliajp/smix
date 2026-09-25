@@ -1891,6 +1891,21 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
                  one will report the same thing until you do."
             )),
         ),
+        // The runner took the request and no answer came in time. It was
+        // not sent again — a second copy of a tap or of typing is a second
+        // action — so the step may be on the screen already, and "retry
+        // it" by hand is how the text gets typed twice.
+        RunnerTransportError::SentWithoutAnswer { .. } => (
+            FailureCode::DriverError,
+            Some(
+                "the runner took this step and did not answer in time, so it may \
+                 already have happened on the device. It was not sent again, because a \
+                 second tap or a second round of typing is not the same as one. Look at \
+                 the screen before running it again; a device this slow to answer is \
+                 usually a busy host."
+                    .to_string(),
+            ),
+        ),
         // The runner named its refusal, so the hint can name the next
         // step — and the two keyboard cases send a reader in opposite
         // directions, which is the whole reason the name exists.

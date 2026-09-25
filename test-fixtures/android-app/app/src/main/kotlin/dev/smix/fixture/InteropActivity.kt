@@ -1,6 +1,8 @@
 package dev.smix.fixture
 
 import android.os.Bundle
+import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -51,7 +53,7 @@ class InteropActivity : ComponentActivity() {
                 AndroidView(
                     modifier = Modifier.fillMaxWidth().testTag("interop_host"),
                     factory = { ctx ->
-                        LinearLayout(ctx).apply {
+                        val row = LinearLayout(ctx).apply {
                             orientation = LinearLayout.HORIZONTAL
                             addView(
                                 ImageButton(ctx).apply {
@@ -64,6 +66,28 @@ class InteropActivity : ComponentActivity() {
                                 TextView(ctx).apply {
                                     id = R.id.fixture_interop_label
                                     text = "hosted label"
+                                },
+                            )
+                        }
+                        LinearLayout(ctx).apply {
+                            orientation = LinearLayout.VERTICAL
+                            addView(row)
+                            // A hosted field and a hosted control that is
+                            // off: the probe wrote `focused = false` and
+                            // `enabled = true` for every View it walked,
+                            // and `inputText` after a `tapOn` on a View
+                            // field then found nothing focused, every run.
+                            addView(
+                                EditText(ctx).apply {
+                                    id = R.id.fixture_interop_input
+                                    hint = "hosted field"
+                                },
+                            )
+                            addView(
+                                Button(ctx).apply {
+                                    id = R.id.fixture_interop_disabled
+                                    text = "hosted off"
+                                    isEnabled = false
                                 },
                             )
                         }

@@ -20,6 +20,7 @@ FIX = HERE / "fixtures" / "two-paths"
 GATE = HERE / "two-paths-agree.py"
 
 failures = []
+checked = [0]
 
 
 def run(a11y, semantics, *extra, tmp=None):
@@ -39,6 +40,7 @@ def load(name):
 
 
 def check(label, cond, detail=""):
+    checked[0] += 1
     if not cond:
         failures.append(f"{label}{': ' + detail if detail else ''}")
 
@@ -51,6 +53,17 @@ def find_tag(roots, tag):
             if n.get("testTag") == tag:
                 return n
             stack.extend(n.get("children") or [])
+    return None
+
+
+def find_id(payload, ident):
+    # The recorded payload is the wire's envelope, `{source, root}`.
+    stack = [payload.get("root", payload)]
+    while stack:
+        n = stack.pop()
+        if n.get("identifier") == ident:
+            return n
+        stack.extend(n.get("children") or [])
     return None
 
 
@@ -208,6 +221,33 @@ def main():
         + out.strip()[:160],
     )
 
+    # 7f. Focus and enablement, not only presence and place. The probe's
+    #     View walk wrote `focused = false` as a constant and passed this
+    #     gate, while every `inputText` after a `tapOn` on a View field
+    #     found nothing focused.
+    fa, fs = copy.deepcopy(base_a), copy.deepcopy(base_s)
+    an, sn = find_id(fa, "compose_input"), find_tag(fs, "compose_input")
+    check("fixtures should carry compose_input on both sides", an is not None and sn is not None)
+    if an is not None and sn is not None:
+        an["hasFocus"], sn["focused"] = True, False
+    rc, out = run(fa, fs, "--min-both", "16", tmp=tmp)
+    check("the readers disagreeing about focus should red", rc != 0, out.strip()[:200])
+    check("and should name the node and what", "compose_input" in out and "focus" in out,
+          out.strip()[:200])
+
+    # 7g. The presence half: a field tapped to take focus that neither
+    #     reader calls focused is "agreement" over nothing.
+    rc, out = run(base_a, base_s, "--min-both", "16", "--focus", "compose_input", tmp=tmp)
+    check("a focused field nobody reports should red", rc != 0, out.strip()[:200])
+    check("and should say it was tapped for focus", "tapped to take focus" in out,
+          out.strip()[:200])
+
+    # 7h. And when both readers do report it, the same run is green.
+    if an is not None and sn is not None:
+        sn["focused"] = True
+    rc, out = run(fa, fs, "--min-both", "16", "--focus", "compose_input", tmp=tmp)
+    check("both readers reporting the focus should pass", rc == 0, out.strip()[:200])
+
     # 8. The fixtures are recorded, and recorded fixtures go stale in
     #    silence: this suite stayed green for a whole checkpoint while the
     #    gate was blind to the live wire, because the payloads it was
@@ -231,7 +271,7 @@ def main():
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("two-paths-agree.test: clean — 22 assertions over 4 recorded payloads")
+    print(f"two-paths-agree.test: clean — {checked[0]} assertions over 4 recorded payloads")
     return 0
 
 

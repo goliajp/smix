@@ -104,4 +104,42 @@ class TextLandedTest {
             ),
         )
     }
+
+    @Test
+    fun characters_beside_what_was_typed_are_not_landed() {
+        // Measured 2026-09-25 on emulator-5554 under host load: the field
+        // held `mocmock@…` for `mock@…` and this said the text had landed,
+        // because the typed text was somewhere inside what the field held.
+        assertFalse(
+            RunnerWire.textLanded(
+                before = "",
+                after = "mocmock@example.test",
+                dispatched = "mock@example.test",
+                isPassword = false,
+            ),
+        )
+        // And the consumer's: a `q` in front of the first text typed.
+        assertFalse(
+            RunnerWire.textLanded(
+                before = "",
+                after = "qmock@example.test",
+                dispatched = "mock@example.test",
+                isPassword = false,
+            ),
+        )
+    }
+
+    @Test
+    fun text_typed_where_the_caret_was_is_landed() {
+        // A tap on a field that already holds text puts the caret where
+        // the tap fell, so the characters go in there, not at the end.
+        assertTrue(
+            RunnerWire.textLanded(
+                before = "abcdef",
+                after = "abcXYZdef",
+                dispatched = "XYZ",
+                isPassword = false,
+            ),
+        )
+    }
 }

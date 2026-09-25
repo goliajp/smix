@@ -460,6 +460,58 @@ def bounds_agree(a11y_tree, sem_roots, min_compared):
     return compared
 
 
+# What each reader says about a node's state, keyed the way each spells it.
+# Two constants in the probe's View walk (`focused = false`, `enabled =
+# true`) passed this gate for as long as it compared only presence and
+# place — while `inputText` after `tapOn` on a View field found no focused
+# field on every run, because the flow read the probe's constant.
+STATE_KEYS = (("hasFocus", "focused", "focus"), ("enabled", "enabled", "enablement"))
+
+
+def state_agrees(a11y_tree, sem_roots, focus_tag):
+    """Both readers say the same about focus and enablement.
+
+    Compared over every name the two share. A key missing on one side is
+    reported rather than skipped: that is a wire that changed, and a
+    comparison that quietly stops comparing reads exactly like agreement.
+
+    `focus_tag` is the presence half. On a screen where nothing holds
+    focus, "both say false" agrees with a reader that cannot say true, so
+    when a field has been focused on purpose, both must say so about it.
+    """
+    a11y = a11y_tags(a11y_tree)
+    sem = semantics_tags(sem_roots)
+    compared = 0
+    for tag in sorted(set(a11y) & set(sem)):
+        theirs, ours = a11y[tag], sem[tag][0]
+        for their_key, our_key, what in STATE_KEYS:
+            if their_key not in theirs or our_key not in ours:
+                problems.append(
+                    f"`{tag}`: no `{their_key}` from the accessibility path or "
+                    f"no `{our_key}` from the probe, so its {what} was not "
+                    f"compared"
+                )
+                continue
+            compared += 1
+            if bool(theirs[their_key]) != bool(ours[our_key]):
+                problems.append(
+                    f"`{tag}`: the accessibility path says {what} is "
+                    f"{bool(theirs[their_key])} and the probe says "
+                    f"{bool(ours[our_key])}. A flow reads the probe."
+                )
+    if focus_tag is not None:
+        a = a11y.get(focus_tag)
+        m = sem.get(focus_tag)
+        if not (a and a.get("hasFocus")) or not (m and m[0].get("focused")):
+            problems.append(
+                f"`{focus_tag}` was tapped to take focus, and the accessibility "
+                f"path says {bool(a and a.get('hasFocus'))} while the probe says "
+                f"{bool(m and m[0].get('focused'))} — both must say it holds "
+                f"focus, or \"they agree\" is only agreement that nothing does"
+            )
+    return compared
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device")
@@ -487,6 +539,11 @@ def main():
         help="how many tags must appear on BOTH sides. A count rather than "
              "'more than none': a screen that quietly stopped rendering half "
              "of itself still has some.",
+    )
+    ap.add_argument(
+        "--focus",
+        help="a tag to tap before reading, so that one field holds focus and "
+             "the two readers are asked about a focus that exists.",
     )
     ap.add_argument(
         "--superset-only", action="store_true",
@@ -557,6 +614,19 @@ def main():
                     break
             time.sleep(0.5)
 
+    if args.focus and args.device and not (args.a11y or args.semantics):
+        subprocess.run([args.binary, "tap", "--device", args.device, "--port",
+                        str(args.port), f"id:{args.focus}"],
+                       capture_output=True, text=True)
+        # The keyboard coming up is what focus looks like on the device,
+        # and it takes a moment; read once both readers could have seen it.
+        for _ in range(20):
+            early_a11y = fetch_a11y(args.binary, args.device, args.port)
+            node = a11y_tags(early_a11y or {}).get(args.focus) or {}
+            if node.get("hasFocus"):
+                break
+            time.sleep(0.5)
+
     if args.a11y and args.semantics:
         a11y_tree = unwrap(json.load(open(args.a11y)))
         sem_roots = json.load(open(args.semantics))
@@ -587,6 +657,7 @@ def main():
         return superset(a11y_tree, sem_roots)
     both, matched = reconcile(a11y_tree, sem_roots, args.prove_differences_exhibited)
     compared = bounds_agree(a11y_tree, sem_roots, args.min_bounds_compared)
+    states = state_agrees(a11y_tree, sem_roots, args.focus)
     # The presence half, and the ONLY one: a first draft also carried an
     # `if not both` check, which never fired on its own because this
     # count's default of 1 already covered it. Two predicates saying one
@@ -606,7 +677,9 @@ def main():
     named = ", ".join(f"{n}×{c}" for n, c in matched.items())
     print(
         f"two-paths-agree: {both} tags on both sides, {compared} of them "
-        f"in the same place, differences all named ({named})"
+        f"in the same place, {states} focus/enablement readings the same"
+        f"{f' (with `{args.focus}` focused)' if args.focus else ''}, "
+        f"differences all named ({named})"
     )
     return 0
 

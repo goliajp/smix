@@ -905,6 +905,36 @@ moved and `Step` is now `#[non_exhaustive]`.
   (`WindowInspector`, public API), and one no Compose root lives in is
   walked as Views. Button text is reported as drawn (`DELETE`), as the
   accessibility reader reports it, rather than as held (`Delete`).
+- **The Android runner's sources on disk are always one version.** The
+  project under `~/.local/share/smix/android-runner` was unpacked over
+  whatever was there and no file was ever removed, so two builds of smix
+  taking turns on one machine left the union of their sources — stamped
+  as one of them — and `runner up` failed compiling a file from the other
+  (`Unresolved reference 'WindowRules'`). Both runner trees are now built
+  beside the destination, stamped, and moved in whole; the old tree
+  becomes a backup, rotated to two as the iOS one already was. Gradle's
+  output and caches are kept across a sync, so an upgrade does not cost a
+  cold build.
+- **A tap or a round of typing that went unanswered is not sent again.**
+  The transport retry resent a request after a timeout or after the
+  connection closed with the request already written — so a slow runner
+  was asked to act twice: an `inputText` of `mock@…` left `mocmock@…`
+  in the field (reproduced on an emulator under
+  host load). A POST that may have reached the runner now fails at once
+  with `SentWithoutAnswer`, saying the step may already have happened;
+  a GET, which only reads, is still asked again, and a request whose
+  connection was never made is still retried whatever it is.
+- **`inputText` on Android notices characters it did not type.** A plain
+  field was judged by whether it contained the typed text somewhere, so a
+  field holding extra characters passed. It is now judged by whether it
+  holds what it held before with the text put in once (at the caret, not
+  necessarily the end), and a failure quotes both. `/input-text` answers
+  with `before` and `held` (a masked field: `beforeLength` and
+  `heldLength` only).
+- **The probe reports whether a View has focus and is enabled.** Its walk
+  of hosted and whole-window Views wrote `focused: false` and `enabled:
+  true` for every View, so in an app carrying the probe `tapOn` on a View
+  field followed by `inputText` found nothing focused, every time.
 
 ## [10.1.0] — 2026-09-19
 
