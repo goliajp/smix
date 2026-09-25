@@ -988,7 +988,7 @@ trap 'v10_runner_down; ship_profile_close' EXIT
 
 log "v10: two perception paths agree"
 python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
-  --port "$V10_PORT" --min-both 16 --min-bounds-compared 16 \
+  --port "$V10_PORT" --min-both 16 --min-bounds-compared 16 --focus compose_input \
   || fail "two-paths-agree FAILED — the semantics and accessibility readers disagree"
 
 # The same reader, on the screen that has a View hosted inside Compose.
@@ -998,8 +998,8 @@ python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
 # and its subject never appeared. A consumer found that for us.
 log "v10.2: the two paths agree where Compose hosts a View"
 python3 "$ROOT/scripts/dev/two-paths-agree.py" --device "$V10_DEVICE" \
-  --port "$V10_PORT" --activity .InteropActivity --min-both 3 \
-  --min-bounds-compared 3 --prove-differences-exhibited \
+  --port "$V10_PORT" --activity .InteropActivity --min-both 8 \
+  --min-bounds-compared 8 --prove-differences-exhibited --focus fixture_interop_input \
   || fail "two-paths-agree FAILED on the interop screen"
 
 log "v10: the three that went red"

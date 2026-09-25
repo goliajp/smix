@@ -152,7 +152,7 @@ class RunnerWireEncodeTest {
         assertEquals(false, JSONObject(RunnerWire.pressKeyBody(false, "return", 66)).getBoolean("ok"))
         assertEquals(false, JSONObject(RunnerWire.doubleTapBody(false, 1, 2, emptyList())).getBoolean("ok"))
         assertEquals(false, JSONObject(RunnerWire.longPressBody(false, 1, 2, 800L, emptyList())).getBoolean("ok"))
-        assertEquals(false, JSONObject(RunnerWire.inputTextBody(false, "hi")).getBoolean("ok"))
+        assertEquals(false, JSONObject(RunnerWire.inputTextBody(false, "hi", "", "h", masked = false)).getBoolean("ok"))
         assertEquals(false, JSONObject(RunnerWire.clearTextBody(false, "key-events", 50, 3)).getBoolean("ok"))
         assertEquals(
             false,
@@ -224,8 +224,27 @@ class RunnerWireEncodeTest {
 
     @Test
     fun inputTextEchoesUnescapedText() {
-        val obj = JSONObject(RunnerWire.inputTextBody(true, "hello world"))
+        val obj = JSONObject(RunnerWire.inputTextBody(true, "hello world", "", "hello world", masked = false))
         assertEquals("hello world", obj.getString("text"))
+    }
+
+    @Test
+    fun inputTextSaysWhatTheFieldHeldBeforeAndAfter() {
+        // "It landed" alone let `mocmock@…` pass for
+        // `mock@…`; the answer carries what the field held, so
+        // the reader can see it rather than take the verdict's word.
+        val plain = JSONObject(RunnerWire.inputTextBody(true, "abc", "x", "xabc", masked = false))
+        assertEquals("x", plain.getString("before"))
+        assertEquals("xabc", plain.getString("held"))
+    }
+
+    @Test
+    fun aMaskedFieldIsReportedByLengthOnly() {
+        val body = RunnerWire.inputTextBody(true, "Sunroom!24", "", "••••••••••", masked = true)
+        val obj = JSONObject(body)
+        assertEquals(0, obj.getInt("beforeLength"))
+        assertEquals(10, obj.getInt("heldLength"))
+        assertFalse("a masked field's reading went on the wire", obj.has("held") || obj.has("before"))
     }
 
     @Test

@@ -132,3 +132,24 @@ fn a_missing_button_reads_as_the_device_saying_so() {
         "the name has to be read — {p}"
     );
 }
+
+#[tokio::test]
+async fn an_action_that_went_unanswered_says_it_may_have_happened() {
+    // The runner took a tap or a round of typing and did not answer in
+    // time. It was not sent again (a second copy is a second action), so
+    // the reader has to be told the step may already be on the screen —
+    // otherwise "retry the step" types the text twice by hand.
+    let failure = transport_to_failure(RunnerTransportError::SentWithoutAnswer {
+        endpoint: "/input-text".into(),
+        source: read_timeout().await,
+    });
+    let said = failure.to_prompt();
+    assert!(
+        said.contains("may already have happened"),
+        "the reader needs to know the action may be on the device — {said}"
+    );
+    assert!(
+        !said.contains("nothing is listening"),
+        "a runner that took the request is there — {said}"
+    );
+}

@@ -1333,15 +1333,15 @@ class SmixHttpServer(
                         "and never the characters, so the length difference is " +
                         "the only evidence there is, and it does not add up."
                 } else {
-                    "input-text: dispatched ${text.length} characters and the " +
-                        "focused field holds ${after.length} " +
-                        "(before: ${before.length}) after waiting ${TEXT_LAND_MS}ms. " +
-                        "The field was $whichField (masked: $masked). " +
-                        "The keys went somewhere other than the field."
+                    "input-text: typed \"$text\" into $whichField, which held " +
+                        "\"$before\" and holds \"$after\" after waiting ${TEXT_LAND_MS}ms. " +
+                        "That is not what it held with the text put in once: " +
+                        "characters are missing, or there are characters this step " +
+                        "did not type."
                 },
             )
         }
-        val body = RunnerWire.inputTextBody(landed, text)
+        val body = RunnerWire.inputTextBody(landed, text, before, after, masked)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 

@@ -73,6 +73,19 @@ pub enum RunnerTransportError {
         #[source]
         source: reqwest::Error,
     },
+    /// The request went out and no answer came back — a timeout, or the
+    /// connection closing after the request was written. The runner may
+    /// have carried it out, so it was not sent again: a second tap or a
+    /// second round of typing is not the same as one.
+    #[error(
+        "runner {endpoint}: the request was sent and no answer came back ({source}). \
+         It may have acted on the device, so it was not sent again"
+    )]
+    SentWithoutAnswer {
+        endpoint: String,
+        #[source]
+        source: reqwest::Error,
+    },
     #[error("runner {endpoint} returned status {status}: {body}")]
     NonSuccessStatus {
         endpoint: String,
@@ -341,6 +354,29 @@ pub use smix_runner_wire::{
 /// Total transport attempts (1 initial + 2 retries) for transient reqwest
 /// connection errors. See `send_with_retry` doc.
 const TRANSPORT_MAX_ATTEMPTS: u32 = 3;
+
+/// Whether a request is harmless to receive twice.
+///
+/// By method rather than by route: every GET reads, and a POST is taken to
+/// act. A few POSTs only ask (`/find`, `/session/list`) and lose their
+/// second chance after a lost answer — the price of not keeping a second
+/// list of which routes act, which would be the copy that goes stale.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Replay {
+    /// Reading: asking again changes nothing on the device.
+    Safe,
+    /// Tapping, typing, pressing: a second copy is a second action.
+    ActsOnDevice,
+}
+
+/// May a failed request be sent again?
+///
+/// A connection that was never made carried nothing, so anything may go
+/// again. Once one was made, the runner may have the request and be
+/// carrying it out, and only a request that is harmless twice may follow.
+fn send_again(replay: Replay, never_connected: bool) -> bool {
+    never_connected || replay == Replay::Safe
+}
 /// Backoff between transport retry attempts.
 const TRANSPORT_BACKOFF_MS: u64 = 100;
 
@@ -927,19 +963,25 @@ impl HttpRunnerClient {
         }
     }
 
-    /// Wire-level transport retry for transient reqwest connection
-    /// errors (`is_connect()` / `is_request()` — pre-server-receipt failures
-    /// raised before any bytes leave the local socket, idempotent-safe for
-    /// every route). Server-side `5xx` / `NonJsonBody` are NOT retried here:
-    /// those are semantic responses, retried (or not) by callers like
-    /// `driver.find`'s 500 retry loop or `driver.wait_for`'s selector poll.
+    /// Wire-level transport retry for a request that failed on the way.
+    /// Server-side `5xx` / `NonJsonBody` are NOT retried here: those are
+    /// semantic responses, retried (or not) by callers like `driver.find`'s
+    /// 500 retry loop or `driver.wait_for`'s selector poll.
+    ///
+    /// What may be sent again depends on whether it could have arrived —
+    /// see [`send_again`]. This used to resend on `is_request()` as well,
+    /// described as failures "before any bytes leave the local socket".
+    /// reqwest files its whole-request timeout there too, and a connection
+    /// closed after the request was written, so a slow runner was asked to
+    /// type the same text again: `mocmock@…` for `mock@…` on an emulator
+    /// under load (2026-09-25).
     ///
     /// Budget: 3 attempts total (1 initial + 2 retries) × `TRANSPORT_BACKOFF_MS`
-    /// between attempts. Catches sim/runner socket hiccups mid-flow
-    /// without inflating happy-path latency: retries only fire on actual failure.
+    /// between attempts. Retries only fire on actual failure.
     async fn send_with_retry<F>(
         &self,
         endpoint: &str,
+        replay: Replay,
         builder_fn: F,
     ) -> Result<reqwest::Response, RunnerTransportError>
     where
@@ -974,7 +1016,8 @@ impl HttpRunnerClient {
                     return Ok(res);
                 }
                 Err(e) => {
-                    let retryable = e.is_connect() || e.is_request();
+                    let retryable =
+                        (e.is_connect() || e.is_request()) && send_again(replay, e.is_connect());
                     if !retryable || attempts_left == 0 {
                         let is_connect = e.is_connect();
                         let err_str = format!("{e}");
@@ -982,6 +1025,12 @@ impl HttpRunnerClient {
                         if is_connect && let Some(died) = self.probe_death(endpoint, &err_str).await
                         {
                             return Err(died);
+                        }
+                        if !send_again(replay, is_connect) {
+                            return Err(RunnerTransportError::SentWithoutAnswer {
+                                endpoint: endpoint.to_string(),
+                                source: e,
+                            });
                         }
                         return Err(RunnerTransportError::FetchFailed {
                             endpoint: endpoint.to_string(),
@@ -1129,7 +1178,7 @@ impl HttpRunnerClient {
         let endpoint = "/coordinate-space";
         let url = self.url(endpoint, None);
         let res = self
-            .send_with_retry(endpoint, |c| {
+            .send_with_retry(endpoint, Replay::Safe, |c| {
                 self.apply_context(c.get(&url).query(&[("nx", nx), ("ny", ny)]))
             })
             .await?;
@@ -1172,7 +1221,7 @@ impl HttpRunnerClient {
         let endpoint = "/screenshot";
         let url = self.url(endpoint, None);
         let res = self
-            .send_with_retry(endpoint, |c| self.apply_context(c.get(&url)))
+            .send_with_retry(endpoint, Replay::Safe, |c| self.apply_context(c.get(&url)))
             .await?;
         let status = res.status();
         if !status.is_success() {
@@ -1224,7 +1273,7 @@ impl HttpRunnerClient {
     ) -> Result<T, RunnerTransportError> {
         let url = self.url(endpoint, include);
         let res = self
-            .send_with_retry(endpoint, |c| self.apply_context(c.get(&url)))
+            .send_with_retry(endpoint, Replay::Safe, |c| self.apply_context(c.get(&url)))
             .await?;
         let status = res.status();
         if !status.is_success() {
@@ -1257,7 +1306,9 @@ impl HttpRunnerClient {
     ) -> Result<T, RunnerTransportError> {
         let url = self.url(endpoint, include);
         let res = self
-            .send_with_retry(endpoint, |c| self.apply_context(c.post(&url).json(body)))
+            .send_with_retry(endpoint, Replay::ActsOnDevice, |c| {
+                self.apply_context(c.post(&url).json(body))
+            })
             .await?;
         let status = res.status();
         if !status.is_success() {
@@ -1653,7 +1704,9 @@ impl HttpRunnerClient {
             button_id: button_id.to_string(),
         };
         let res = self
-            .send_with_retry("/system-popup-action", |c| c.post(&url).json(&body))
+            .send_with_retry("/system-popup-action", Replay::ActsOnDevice, |c| {
+                c.post(&url).json(&body)
+            })
             .await?;
         let status = res.status();
         if status.as_u16() == 404 {

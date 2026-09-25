@@ -82,6 +82,8 @@ class InteropNodeTest {
             layout = Bounds(948, 934, 1039, 1025),
             clip = Bounds(0, 0, 1080, 2340),
             placed = true,
+            focused = false,
+            enabled = true,
             children = emptyList(),
         )
         assertNotNull("an ordinary interop view was not reported at all", n)
@@ -108,6 +110,8 @@ class InteropNodeTest {
                 layout = Bounds(0, 533, 1080, 743),
                 clip = Bounds(0, 0, 1080, 2340),
                 placed = false,
+                focused = false,
+                enabled = true,
                 children = emptyList(),
             ),
         )
@@ -128,6 +132,8 @@ class InteropNodeTest {
             layout = Bounds(0, 2400, 1080, 2500),
             clip = Bounds(0, 0, 1080, 2340),
             placed = true,
+            focused = false,
+            enabled = true,
             children = emptyList(),
         )
         assertNotNull("a placed but clipped node was dropped", n)
@@ -150,6 +156,8 @@ class InteropNodeTest {
             layout = Bounds(0, 100, 1080, 300),
             clip = Bounds(0, 200, 1080, 2340),
             placed = true,
+            focused = false,
+            enabled = true,
             children = emptyList(),
         )
         assertNotNull("a placed, half-visible node was dropped", n)
@@ -177,6 +185,8 @@ class InteropNodeTest {
             layout = Bounds(0, 189, 1080, 313),
             clip = Bounds(0, 0, 1080, 2340),
             placed = true,
+            focused = false,
+            enabled = true,
             children = emptyList(),
         )
         assertEquals("type here", n!!.hint)
@@ -185,6 +195,31 @@ class InteropNodeTest {
             "the wire does not carry the hint",
             listOf(n).toWireJson().contains("\"hint\":\"type here\""),
         )
+    }
+
+    @Test
+    fun `an interop view says what the View says about focus and whether it is enabled`() {
+        // Both were written as constants: `focused = false`, `enabled =
+        // true`. With the probe reading a View window, `tapOn` on an
+        // EditText followed by `inputText` found no focused field on every
+        // run — the keyboard was up and the field held the caret, and the
+        // tree said nothing had focus (measured 2026-09-25, emulator-5554,
+        // the fixture's `fixture_input`).
+        val n = interopNode(
+            resourceId = "fixture_input",
+            contentDescription = null,
+            text = null,
+            hint = "type here",
+            className = "android.widget.EditText",
+            layout = Bounds(0, 189, 1080, 313),
+            clip = Bounds(0, 0, 1080, 2340),
+            placed = true,
+            focused = true,
+            enabled = false,
+            children = emptyList(),
+        )
+        assertTrue("a focused View was reported without focus", n!!.focused)
+        assertTrue("a disabled View was reported as enabled", !n.enabled)
     }
 
     @Test

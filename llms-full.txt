@@ -4897,6 +4897,13 @@ via the registry's `runnerPort` or the `--runner-port` flag.
 
 All requests use a JSON body; all responses return JSON.
 
+A client may send a request again only when it cannot have arrived (the
+connection was never made), or when it only reads. A `POST` taps, types or
+presses, and a runner that took one and did not answer in time may already
+have carried it out; sending it again is a second tap, or the text typed
+twice. The Rust client fails such a request with `SentWithoutAnswer`
+instead of repeating it; a `GET` is asked again.
+
 ## Request-context headers
 
 Every route accepts these OPTIONAL headers; absent = default behavior
@@ -5041,6 +5048,20 @@ cannot know which answer it got.
 This replaced fifty `/press-key delete` posts from the host — fifty
 sequential round trips over the adb forward, on every fill once fill
 began clearing first, and still wrong past fifty characters.
+
+### `POST /input-text` (Android)
+
+Body: `{ text: string, focusRect?: [nx, ny, nw, nh] }`
+Response: `{ ok: bool, status: "ok" | "text_did_not_land", text, before, held }`
+— for a masked field `beforeLength` and `heldLength` in place of `before`
+and `held`.
+
+Types into the focused field (the one inside `focusRect` when given) and
+reads it back. `ok` means the field holds what it held before with `text`
+put in once, at the caret. A field holding characters this request did
+not type is not `ok`, and neither is one missing some. A masked field
+cannot be read, so its length is the whole of the judgement, and its
+content never goes on the wire.
 
 ### `POST /press-key`
 

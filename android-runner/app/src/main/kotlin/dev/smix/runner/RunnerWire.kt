@@ -451,11 +451,21 @@ object RunnerWire {
         .withChain(chain)
         .toString()
 
-    fun inputTextBody(ok: Boolean, text: String): String = JSONObject()
-        .put("ok", ok)
-        .put("status", if (ok) "ok" else "text_did_not_land")
-        .put("text", text)
-        .toString()
+    /// What the field held before and after, beside the verdict. A masked
+    /// field is reported by length only: its node shows bullets, and the
+    /// wire is no place to start carrying what a password field holds.
+    fun inputTextBody(ok: Boolean, text: String, before: String, held: String, masked: Boolean): String {
+        val obj = JSONObject()
+            .put("ok", ok)
+            .put("status", if (ok) "ok" else "text_did_not_land")
+            .put("text", text)
+        if (masked) {
+            obj.put("beforeLength", before.length).put("heldLength", held.length)
+        } else {
+            obj.put("before", before).put("held", held)
+        }
+        return obj.toString()
+    }
 
     // `input keyevent` takes any number of keycodes in one invocation,
     // so a fallback clear costs one shell exec rather than one per
@@ -701,8 +711,8 @@ object RunnerWire {
     /// Did the characters reach the field?
     ///
     /// A plain field can be asked directly: its accessibility node
-    /// carries what it holds, so the honest evidence is that the node
-    /// now contains what was typed.
+    /// carries what it holds, so the honest evidence is that the node now
+    /// holds what it held before with what was typed put in once.
     ///
     /// A masked field cannot answer that question at all. Its node
     /// reports one bullet per character and never the characters, so
@@ -726,7 +736,17 @@ object RunnerWire {
         if (isPassword) {
             after.length - before.length == dispatched.length
         } else {
-            after.contains(dispatched)
+            // What was there, with what was typed put in once, at one
+            // place — the caret need not be at the end. It was
+            // `after.contains(dispatched)`, which also holds for a field
+            // with characters beside the typed ones: `mocmock@…`
+            // passed as `mock@…` landing (2026-09-25, under load).
+            (0..before.length).any { at ->
+                after.length == before.length + dispatched.length &&
+                    after.regionMatches(0, before, 0, at) &&
+                    after.regionMatches(at, dispatched, 0, dispatched.length) &&
+                    after.regionMatches(at + dispatched.length, before, at, before.length - at)
+            }
         }
 }
 
