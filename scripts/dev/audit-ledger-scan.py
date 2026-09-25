@@ -150,7 +150,7 @@ def check_citation(row, tracked, failures):
         if path not in tracked:
             failures.append(
                 f"{num}: cites {path}, which git does not track. Derived copies "
-                f"(e.g. ~/.local/share/smix/runner/, written by `smix runner "
+                f"(e.g. ~/.local/share/smix/runner-sources/, written by `smix runner "
                 f"install`) do not exist in a clone and can disagree with the "
                 f"tree. Cite the source under swift-bridge/ or crates/."
             )

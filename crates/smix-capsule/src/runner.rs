@@ -1112,20 +1112,19 @@ fn tail_log(log: &Path, lines: usize) -> String {
 ///
 /// 1. `override` — explicit `--runner-project <path>` from CLI. Wins.
 /// 2. `$SMIX_RUNNER_PROJECT` env — semi-explicit.
-/// 3. Install-shipped default (with auto-sync — see below):
-///    - `$XDG_DATA_HOME/smix/runner/` when set
-///    - `~/.local/share/smix/runner/` (macOS + Linux XDG fallback)
+/// 3. Install-shipped default (with auto-sync — see below): this
+///    binary's tree under `$XDG_DATA_HOME/smix/runner-sources/ios/` when
+///    set, else `~/.local/share/smix/runner-sources/ios/`
 /// 4. `<root>/swift-bridge/SmixRunner.xcodeproj` — smix-dev-repo fallback
 ///    so `cd smix; cargo run --bin smix -- runner up ...` still works
 ///    from a fresh checkout.
 ///
-/// The install-shipped step is auto-syncing. Before returning the
-/// install-shipped path, we compare the on-disk version file
-/// (`~/.local/share/smix/runner/.smix-runner-version`) against the CLI
-/// version. On drift OR missing, we extract the embedded
-/// `smix-runner-sources` tarball, preserving the previous tree as a
-/// timestamped backup. Without this, `cargo install smix` would ship
-/// only the Rust binary and the Swift runner project would silently
+/// The install-shipped step is auto-syncing: the tree for this binary's
+/// embedded sources (`~/.local/share/smix/runner-sources/ios/<version>-<digest>/`)
+/// is extracted when it is not there yet. Each set of sources has a
+/// directory of its own, so another smix on the same machine never
+/// replaces this one's tree. Without this, `cargo install smix` would
+/// ship only the Rust binary and the Swift runner project would silently
 /// stay frozen at whatever revision first landed on disk.
 ///
 /// Returns the first existing path, or the last candidate's error
@@ -1158,18 +1157,14 @@ pub fn resolve_runner_project(
     // Auto-sync install-shipped sources on version drift. Runs before
     // the existence check so a first-run consumer with an
     // empty ~/.local/share/smix/ gets sources extracted transparently.
-    if let Some(installed_dir) = installed_runner_dir() {
-        match ensure_installed_runner_synced(&installed_dir) {
+    if let Some(machine) = smix_lease::store::machine_root() {
+        match ensure_installed_runner_synced(&machine) {
             Ok(SyncOutcome::AlreadyCurrent) => {}
-            Ok(SyncOutcome::Extracted {
-                previous_version, ..
-            }) => {
-                let from = previous_version.as_deref().unwrap_or("<none>");
+            Ok(SyncOutcome::Extracted { dir, .. }) => {
                 eprintln!(
-                    "smix-runner: synced runner sources → {} (was {}) at {}",
+                    "smix-runner: runner sources {} extracted to {}",
                     smix_runner_sources::SOURCES_VERSION,
-                    from,
-                    installed_dir.display()
+                    dir.display()
                 );
             }
             Err(err) => {
@@ -1179,8 +1174,8 @@ pub fn resolve_runner_project(
                 // "runner project missing" error they'd have hit before
                 // auto-sync existed.
                 eprintln!(
-                    "smix-runner: auto-sync failed at {}: {err}",
-                    installed_dir.display()
+                    "smix-runner: auto-sync failed under {}: {err}",
+                    machine.display()
                 );
             }
         }
@@ -1212,7 +1207,7 @@ pub fn resolve_runner_project(
     Err(format!(
         "runner project missing: {}\n\
          tried:\n{attempted}\n\
-         fix: (a) `smix runner install` to populate ~/.local/share/smix/runner/, \
+         fix: (a) `smix runner install` to populate ~/.local/share/smix/runner-sources/ios/, \
          or (b) pass `--runner-project <path>` on `smix runner up`, \
          or (c) set $SMIX_RUNNER_PROJECT",
         last.display()
@@ -1225,63 +1220,55 @@ fn installed_runner_project() -> Option<PathBuf> {
     installed_runner_dir().map(|d| d.join("SmixRunner.xcodeproj"))
 }
 
-/// Install-shipped runner *directory* (parent of SmixRunner.xcodeproj).
-/// Follows XDG basedir when `$XDG_DATA_HOME` is set; falls back to
-/// `~/.local/share/smix/runner/` on macOS + Linux. Returns `None` when
-/// `$HOME` is unset (rare).
+/// Install-shipped runner *directory* (parent of SmixRunner.xcodeproj)
+/// for this binary's embedded sources:
+/// `<machine>/runner-sources/ios/<version>-<digest>/`, where `<machine>`
+/// follows XDG basedir (`$XDG_DATA_HOME/smix`, else
+/// `~/.local/share/smix`). Returns `None` when `$HOME` is unset (rare).
+///
+/// Named after the sources, not shared: two binaries on one machine
+/// (an installed release, a checkout's build) each have their own and
+/// never replace each other's. `~/.local/share/smix/runner/`, the old
+/// shared directory, is left to the releases that still use it.
 pub fn installed_runner_dir() -> Option<PathBuf> {
-    smix_lease::store::machine_root().map(|r| r.join("runner"))
+    smix_lease::store::machine_root()
+        .map(|r| smix_runner_sources::tree_dir(&r, smix_runner_sources::RunnerPlatform::Ios))
 }
 
 /// Outcome of an [`ensure_installed_runner_synced`] call.
 #[derive(Debug)]
 pub enum SyncOutcome {
-    /// The on-disk `.smix-runner-version` already matched the CLI
-    /// version — no extract performed.
+    /// The tree for these sources was already there — no extract.
     AlreadyCurrent,
-    /// Sources were extracted. Callers should emit an info banner.
+    /// The tree was extracted. Callers should emit an info banner.
     Extracted {
-        /// Version string previously on disk (if any).
-        previous_version: Option<String>,
-        /// Backup path where the previous tree was moved, `None` when
-        /// the destination was empty.
-        #[allow(dead_code)]
-        backup: Option<PathBuf>,
+        /// Where it went.
+        dir: PathBuf,
+        /// Trees of other sources the rotation removed.
+        pruned: Vec<PathBuf>,
     },
 }
 
-/// Ensure `dir` contains runner sources whose `.smix-runner-version`
-/// matches the CLI's [`smix_runner_sources::SOURCES_VERSION`]. Extracts
-/// the embedded tarball on mismatch or missing, backing up any prior
-/// contents. Idempotent: a second call with the same version is a
-/// cheap file read.
+/// Ensure the tree for this binary's embedded Swift sources exists under
+/// the machine directory `machine`, extracting it when it does not.
+/// Idempotent: a second call finds the tree by its stamp.
 ///
 /// This is what keeps the Swift sources in step with the CLI: they are
-/// baked into the CLI binary and re-materialise on every `smix runner
-/// up` when the CLI version has moved forward (typically after
-/// `cargo install smix` / `brew upgrade smix`).
+/// baked into the CLI binary and materialise on the first `smix runner
+/// up` of each build — whether the build moved forward, back, or is a
+/// checkout's.
 pub fn ensure_installed_runner_synced(
-    dir: &Path,
+    machine: &Path,
 ) -> Result<SyncOutcome, smix_runner_sources::ExtractError> {
-    let previous = smix_runner_sources::read_installed_version(dir)?;
-    // Compared against version *and* digest. Version alone held only
-    // across releases: change a Swift source between two of them and the
-    // stamp still matched, so the tree was left alone and the device
-    // kept running the old runner while the repo showed the new. What
-    // that looks like from the outside is a route that 404s — a bug in
-    // the caller, apparently.
-    if smix_runner_sources::stamp_is_current(previous.as_deref()) {
-        return Ok(SyncOutcome::AlreadyCurrent);
-    }
-    // Version drift OR missing → extract with force. `force=true` is
-    // safe: extract_to backs up any existing tree to a timestamped
-    // sibling directory before writing, so a consumer's local
-    // modifications (rare — the install dir is meant to be
-    // CLI-managed) are preserved for post-mortem inspection.
-    let report = smix_runner_sources::extract_to(dir, true)?;
-    Ok(SyncOutcome::Extracted {
-        previous_version: previous,
-        backup: report.backup,
+    let ensured =
+        smix_runner_sources::ensure_tree(machine, smix_runner_sources::RunnerPlatform::Ios)?;
+    Ok(if ensured.extracted {
+        SyncOutcome::Extracted {
+            dir: ensured.dir,
+            pruned: ensured.pruned,
+        }
+    } else {
+        SyncOutcome::AlreadyCurrent
     })
 }
 
@@ -2938,62 +2925,24 @@ mod tests {
     // the embedded tarball; on matching version it MUST be a no-op.
 
     #[test]
-    fn ensure_installed_runner_synced_extracts_on_missing_version_file() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let outcome = ensure_installed_runner_synced(dir.path()).expect("sync");
-        matches!(
-            outcome,
-            SyncOutcome::Extracted {
-                previous_version: None,
-                ..
-            }
-        )
-        .then_some(())
-        .expect("expected first-run extract with no previous version");
-        assert!(
-            dir.path().join(".smix-runner-version").exists(),
-            "version file must be written"
+    fn ensure_installed_runner_synced_extracts_this_sources_tree() {
+        let machine = tempfile::tempdir().expect("tempdir");
+        let outcome = ensure_installed_runner_synced(machine.path()).expect("sync");
+        let SyncOutcome::Extracted { dir, .. } = outcome else {
+            panic!("the first sync must extract");
+        };
+        assert_eq!(
+            dir,
+            smix_runner_sources::tree_dir(machine.path(), smix_runner_sources::RunnerPlatform::Ios)
         );
         assert!(
-            dir.path()
-                .join("SmixRunner.xcodeproj/project.pbxproj")
-                .exists(),
+            dir.join("SmixRunner.xcodeproj/project.pbxproj").exists(),
             "xcodeproj must land on disk after sync"
         );
-    }
-
-    #[test]
-    fn ensure_installed_runner_synced_reextracts_on_stale_version() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        // Simulate a consumer whose runner tree was populated by an
-        // earlier CLI. The stale sentinel version 0.0.0-stale MUST NOT
-        // survive the sync call.
-        fs::write(dir.path().join(".smix-runner-version"), "0.0.0-stale\n")
-            .expect("seed stale version");
-        fs::write(dir.path().join("stale-marker.txt"), b"old contents").expect("seed stale marker");
-
-        let outcome = ensure_installed_runner_synced(dir.path()).expect("sync");
-        match outcome {
-            SyncOutcome::Extracted {
-                previous_version,
-                backup,
-            } => {
-                assert_eq!(previous_version.as_deref(), Some("0.0.0-stale"));
-                let backup = backup.expect("backup path present");
-                assert!(backup.exists(), "backup dir must exist");
-                assert!(
-                    backup.join("stale-marker.txt").exists(),
-                    "backup must preserve prior tree contents"
-                );
-            }
-            SyncOutcome::AlreadyCurrent => panic!("stale must not be treated as current"),
-        }
-        // Fresh sources landed; stale marker is NOT in the new tree.
-        assert!(!dir.path().join("stale-marker.txt").exists());
         // Version *and* digest. The version alone was what let a
         // rebuilt tarball compare equal to an old tree between releases.
         assert_eq!(
-            std::fs::read_to_string(dir.path().join(".smix-runner-version"))
+            std::fs::read_to_string(dir.join(".smix-runner-version"))
                 .unwrap()
                 .trim(),
             smix_runner_sources::version_stamp()
@@ -3022,14 +2971,13 @@ mod tests {
 
     #[test]
     fn ensure_installed_runner_synced_is_noop_when_current() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        // First call: extracts.
-        ensure_installed_runner_synced(dir.path()).expect("first sync");
-        // Second call: same version file → no-op.
-        let outcome = ensure_installed_runner_synced(dir.path()).expect("second sync");
-        matches!(outcome, SyncOutcome::AlreadyCurrent)
-            .then_some(())
-            .expect("second call must be AlreadyCurrent, not Extracted");
+        let machine = tempfile::tempdir().expect("tempdir");
+        ensure_installed_runner_synced(machine.path()).expect("first sync");
+        let outcome = ensure_installed_runner_synced(machine.path()).expect("second sync");
+        assert!(
+            matches!(outcome, SyncOutcome::AlreadyCurrent),
+            "second call must be AlreadyCurrent, not Extracted"
+        );
     }
 
     #[test]

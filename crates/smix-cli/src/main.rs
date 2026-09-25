@@ -1344,7 +1344,7 @@ enum RunnerAction {
         bundle: Option<String>,
         /// Explicit path to `SmixRunner.xcodeproj`. Wins over
         /// `$SMIX_RUNNER_PROJECT` env and the install-shipped default
-        /// at `~/.local/share/smix/runner/`. See resolve_runner_project
+        /// under `~/.local/share/smix/runner-sources/ios/`. See resolve_runner_project
         /// cascade in runner.rs.
         #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
         runner_project: Option<PathBuf>,
@@ -1557,17 +1557,17 @@ enum RunnerAction {
         #[arg(long, default_value_t = false)]
         prune: bool,
     },
-    /// Extract the CLI's embedded Swift runner sources
-    /// into `~/.local/share/smix/runner/`. Normally auto-invoked by
-    /// `smix runner up` when the on-disk `.smix-runner-version` file
-    /// is missing or does not match the CLI version; this verb makes
-    /// the operation explicit for troubleshooting or first-time setup
-    /// on an air-gapped machine. Backs up any pre-existing runner tree
-    /// to `~/.local/share/smix/runner.bak-<ts>/` before writing.
+    /// Extract the CLI's embedded Swift runner sources into the tree for
+    /// them, `~/.local/share/smix/runner-sources/ios/<version>-<digest>/`
+    /// — one per set of sources, so another smix on this machine keeps
+    /// its own. Normally done by `smix runner up`; this verb makes it
+    /// explicit for troubleshooting or first-time setup on an air-gapped
+    /// machine. With `--path`, extracts into that directory instead,
+    /// backing any tree already there up beside it.
     Install {
-        /// Destination directory. Defaults to
-        /// `$XDG_DATA_HOME/smix/runner/` (falling back to
-        /// `~/.local/share/smix/runner/`).
+        /// Destination directory. Defaults to this binary's tree under
+        /// `$XDG_DATA_HOME/smix/runner-sources/ios/` (falling back to
+        /// `~/.local/share/smix/runner-sources/ios/`).
         #[arg(long)]
         path: Option<PathBuf>,
         /// Extract even when the version file already matches the CLI
@@ -3919,78 +3919,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     }
                 }
                 RunnerAction::Install { path, force } => {
-                    let target = path.unwrap_or_else(|| {
-                        smix_capsule::runner::installed_runner_dir()
-                            .unwrap_or_else(|| PathBuf::from("~/.local/share/smix/runner"))
-                    });
-                    if !force {
-                        // Delegate to the same auto-sync used inside
-                        // `runner up`. Idempotent when already current.
-                        match smix_capsule::runner::ensure_installed_runner_synced(&target) {
-                            Ok(smix_capsule::runner::SyncOutcome::AlreadyCurrent) => {
-                                println!(
-                                    "runner install: already at v{} — nothing to do (pass --force to re-extract).",
-                                    smix_runner_sources::SOURCES_VERSION
-                                );
-                            }
-                            Ok(smix_capsule::runner::SyncOutcome::Extracted {
-                                previous_version,
-                                ..
-                            }) => {
-                                let from = previous_version.as_deref().unwrap_or("<none>");
-                                println!(
-                                    "runner install: extracted v{} into {} (was {}).",
-                                    smix_runner_sources::SOURCES_VERSION,
-                                    target.display(),
-                                    from
-                                );
-                            }
-                            Err(e) => {
-                                return Err(CliError::Other(format!(
-                                    "runner install: sync failed at {}: {e}",
-                                    target.display()
-                                )));
-                            }
-                        }
+                    if let Some(target) = path {
+                        runner_install_into(&target, force)?;
                     } else {
-                        // Force path: unconditional extract with backup.
-                        match smix_runner_sources::extract_to(&target, true) {
-                            Ok(report) => {
-                                let backup_note = report
-                                    .backup
-                                    .as_ref()
-                                    .map(|b| {
-                                        format!(" (previous tree backed up to {})", b.display())
-                                    })
-                                    .unwrap_or_default();
-                                // Said out loud rather than done quietly:
-                                // deleting a directory the user never
-                                // asked about should not be something
-                                // they discover from `du`.
-                                let pruned_note = if report.pruned_backups.is_empty() {
-                                    String::new()
-                                } else {
-                                    format!(
-                                        " Removed {} older backup tree(s), keeping the newest {}.",
-                                        report.pruned_backups.len(),
-                                        smix_runner_sources::BACKUPS_KEPT
-                                    )
-                                };
-                                println!(
-                                    "runner install: extracted {} files at v{} into {}{}.{}",
-                                    report.file_count,
-                                    report.version_written,
-                                    target.display(),
-                                    backup_note,
-                                    pruned_note
-                                );
-                            }
-                            Err(e) => {
-                                return Err(CliError::Other(format!(
-                                    "runner install --force: {e}"
-                                )));
-                            }
-                        }
+                        runner_install_default(force)?;
                     }
                 }
             }
@@ -5659,6 +5591,103 @@ enum DiagnosticAction {
         #[arg(long = "metro-log-tail-lines", default_value_t = 200)]
         metro_log_tail_lines: usize,
     },
+}
+
+/// `smix runner install --path <dir>`: that directory, replaced whole,
+/// the previous tree kept beside it.
+fn runner_install_into(target: &Path, force: bool) -> Result<(), CliError> {
+    // An explicit path is one directory the caller owns:
+    // replaced whole, the previous tree kept beside it.
+    if !force
+        && smix_runner_sources::stamp_is_current(
+            smix_runner_sources::read_installed_version(target)
+                .map_err(|e| CliError::Other(format!("runner install: {e}")))?
+                .as_deref(),
+        )
+    {
+        println!(
+            "runner install: {} already holds v{} — nothing to do (pass --force to re-extract).",
+            target.display(),
+            smix_runner_sources::SOURCES_VERSION
+        );
+        return Ok(());
+    }
+    let report = smix_runner_sources::extract_to(target, true)
+        .map_err(|e| CliError::Other(format!("runner install: {e}")))?;
+    let backup_note = report
+        .backup
+        .as_ref()
+        .map(|b| format!(" (previous tree backed up to {})", b.display()))
+        .unwrap_or_default();
+    // Said out loud rather than done quietly:
+    // deleting a directory the user never asked
+    // about should not be something they discover
+    // from `du`.
+    let pruned_note = if report.pruned_backups.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " Removed {} older backup tree(s), keeping the newest {}.",
+            report.pruned_backups.len(),
+            smix_runner_sources::BACKUPS_KEPT
+        )
+    };
+    println!(
+        "runner install: extracted {} files at v{} into {}{}.{}",
+        report.file_count,
+        report.version_written,
+        target.display(),
+        backup_note,
+        pruned_note
+    );
+    Ok(())
+}
+
+/// `smix runner install` with no path: the tree for this binary's sources
+/// under the machine directory, which `runner up` would have extracted
+/// anyway. `--force` removes that tree first — only this binary's; other
+/// sources' trees, and a build running in one of them, are not touched.
+fn runner_install_default(force: bool) -> Result<(), CliError> {
+    let machine = smix_lease::store::machine_root().ok_or_else(|| {
+        CliError::Other(
+            "runner install: no HOME or XDG_DATA_HOME, so there is no machine directory".into(),
+        )
+    })?;
+    let dir = smix_runner_sources::tree_dir(&machine, smix_runner_sources::RunnerPlatform::Ios);
+    if force && dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| {
+            CliError::Other(format!(
+                "runner install --force: removing {}: {e}",
+                dir.display()
+            ))
+        })?;
+    }
+    let ensured =
+        smix_runner_sources::ensure_tree(&machine, smix_runner_sources::RunnerPlatform::Ios)
+            .map_err(|e| CliError::Other(format!("runner install: {e}")))?;
+    let pruned_note = if ensured.pruned.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " Removed {} tree(s) of older sources, keeping the {} most recently used.",
+            ensured.pruned.len(),
+            smix_runner_sources::BACKUPS_KEPT
+        )
+    };
+    if ensured.extracted {
+        println!(
+            "runner install: extracted v{} into {}.{pruned_note}",
+            smix_runner_sources::SOURCES_VERSION,
+            ensured.dir.display()
+        );
+    } else {
+        println!(
+            "runner install: {} already holds v{} — nothing to do (pass --force to re-extract).{pruned_note}",
+            ensured.dir.display(),
+            smix_runner_sources::SOURCES_VERSION
+        );
+    }
+    Ok(())
 }
 
 /// Snapshot the current set of `.ips` filenames under

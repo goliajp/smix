@@ -584,6 +584,13 @@ python3 "$ROOT/scripts/dev/a-script-drives-this-tree.py" > /tmp/smix-ship-this-t
 log "the this-tree gate can still go red"
 python3 "$ROOT/scripts/dev/a-script-drives-this-tree.test.py" >> /tmp/smix-ship-this-tree.log 2>&1 \
   || fail "this-tree gate self-test FAILED — see /tmp/smix-ship-this-tree.log"
+log "every device gate keeps the crash evidence"
+python3 "$ROOT/scripts/dev/a-device-gate-keeps-crash-evidence.py" > /tmp/smix-ship-crash-evidence.log 2>&1 \
+  || fail "a device gate drops what the device recorded — see /tmp/smix-ship-crash-evidence.log"
+python3 "$ROOT/scripts/dev/a-device-gate-keeps-crash-evidence.test.py" >> /tmp/smix-ship-crash-evidence.log 2>&1 \
+  || fail "crash-evidence gate self-test FAILED — see /tmp/smix-ship-crash-evidence.log"
+bash "$ROOT/scripts/lib/crash-evidence.sh" --selftest >> /tmp/smix-ship-crash-evidence.log 2>&1 \
+  || fail "crash-evidence collector self-test FAILED — see /tmp/smix-ship-crash-evidence.log"
 log "every flow run is judged by smix's own code"
 python3 "$ROOT/scripts/dev/a-run-is-judged-by-its-code.py" > /tmp/smix-ship-run-judged.log 2>&1 \
   || fail "a flow run is judged by the script's rule, not smix's code — see /tmp/smix-ship-run-judged.log"

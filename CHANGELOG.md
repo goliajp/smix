@@ -150,6 +150,15 @@ moved and `Step` is now `#[non_exhaustive]`.
   with a step that did nothing now fails on iOS; press them inside
   `runFlow` with `when: { platform: Android }`.
 
+- **Rust API: `smix_runner_sources::extract_android_to` is gone, and
+  `smix_capsule::runner::ensure_installed_runner_synced` takes the machine
+  directory.** Runner sources now go into a directory of their own per set
+  of sources (see Changed): `ensure_tree(root, RunnerPlatform)` is the one
+  way in, and `tree_dir` says where. `SyncOutcome::Extracted` carries the
+  tree's `dir` and the trees the rotation `pruned`, in place of
+  `previous_version` / `backup`. `extract_to(dir, force)` stays, for an
+  explicit destination.
+
 ### Added
 
 - **`clearLocation` — the way back from `setLocation` and `travel`.**
@@ -391,6 +400,15 @@ moved and `Step` is now `#[non_exhaustive]`.
   selector keys that are read, from the same list every other selector
   uses. Measured on both platforms: see "One control, two phones" in the
   selectors guide.
+
+- **A keyboard wait on a simulator that keeps its keyboard minimized says
+  so.** With `com.apple.keyboard.preferences AutomaticMinimizationEnabled`
+  on, a focused field shows no software keyboard, and `extendedWaitUntil` /
+  `assertVisible` on `role: keyboard` could only time out — with nothing
+  pointing at the device. The failure now names the setting and the
+  command that turns it off; smix does not change it. How a simulator gets
+  into that state is not known: `pressKey` and `inputText` did not do it
+  on a clean one.
 
 ### Changed
 
@@ -645,6 +663,24 @@ moved and `Step` is now `#[non_exhaustive]`.
   last. In the JSON: `windows`, `visibleTotal` and `unreadableWindows`,
   each omitted when there is nothing to say. iOS answers the same
   sentence: its tree is the app you named, so `windows` holds that app.
+
+- **Runner sources live in a directory per set of sources.**
+  `~/.local/share/smix/runner-sources/ios/<version>-<digest>/` and
+  `…/android/<version>-<digest>/`, in place of one shared `runner/` and
+  `android-runner/`. Two smix builds on one machine — an installed release
+  beside one a checkout builds — each had to replace the other's tree to
+  bring a runner up, and one doing so while the other's gradle build ran
+  left that build finding another version's APK. Now neither touches the
+  other's. The two most recently used other trees are kept, and any used
+  in the last hour; the old `runner/` and `android-runner/` are not read,
+  moved or removed — releases before this one still use them.
+- **A runner that saw the app gone answers `APP_NOT_RUNNING`.** The iOS
+  runner reads `XCUIApplication.state` and says `not-running` or
+  `crashed-during-init`; that reached flows as `DRIVER_ERROR`, the code for
+  smix being broken. The other causes (a tree that came back empty or
+  stale, a lost driver) stay `DRIVER_ERROR`. Both codes say smix could not
+  look at the screen (`judgesTheScreen: false`), so `optional:` treats them
+  alike.
 
 ### Removed
 
@@ -935,6 +971,22 @@ moved and `Step` is now `#[non_exhaustive]`.
   of hosted and whole-window Views wrote `focused: false` and `enabled:
   true` for every View, so in an app carrying the probe `tapOn` on a View
   field followed by `inputText` found nothing focused, every time.
+
+- **Reading and writing a simulator's defaults works under Xcode 27.**
+  `simctl spawn … /usr/bin/defaults` does not start there — the runtime
+  root has no `/usr/bin` — while earlier runtimes refused the bare name.
+  Locale reads and writes, clearing an app's defaults key, and the
+  reduce-motion switch used the absolute path and failed; the locale read
+  also took the failure for "not set". smix now tries both spellings, moves
+  on only when one did not start, and reads "not set" only from `defaults`
+  saying so.
+- **Android: `inputText` after Enter in one field and a tap on the next
+  types into the next.** The runner took the field `findFocus` returned as
+  the focused one; on Compose, after Enter and a tap on the next field,
+  that stayed the first field for seconds — a node that itself answered
+  "not focused" — and the step was refused with `no_focused_field` four
+  runs in five on the fixture. A node is taken as focused only when it
+  says so.
 
 ## [10.1.0] — 2026-09-19
 

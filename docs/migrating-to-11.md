@@ -147,6 +147,15 @@ condition:
       - pressKey: volumeUp
 ```
 
+### An app the runner saw gone is `APP_NOT_RUNNING`
+
+When the iOS runner reports the app under test as not running (or as
+having crashed while starting), the step fails with `APP_NOT_RUNNING`
+where it used to say `DRIVER_ERROR`. A script that branched on
+`DRIVER_ERROR` to mean "the app went away" should look for
+`APP_NOT_RUNNING`. Both still read `judgesTheScreen: false`, so
+`optional:` treats them alike.
+
 ---
 
 ## Rust API
@@ -279,6 +288,17 @@ gain a required `pixels_per_point`.
   `reconcile::execute`, `Leased::acquire` and `App::hold_device_lease`
   drop the parameter.
 
+### Runner sources: one tree per set of sources
+
+`smix_runner_sources::extract_android_to` is gone. `ensure_tree(root,
+RunnerPlatform::Ios | ::Android)` puts the tree for the embedded sources
+under a machine directory and returns it; `tree_dir` says where without
+touching anything. `smix_capsule::runner::ensure_installed_runner_synced`
+takes the machine directory (not the tree), and
+`SyncOutcome::Extracted` carries `dir` and `pruned` in place of
+`previous_version` and `backup`. `extract_to(dir, force)` is unchanged,
+for a destination you name.
+
 ### Failure and tree fields
 
 `A11yNode` has `window` and `unreadable_windows`; `FailureInit` and
@@ -299,3 +319,9 @@ the iOS runner's record, which used to be a file in the checkout, is now
 the device's lease in the machine directory. A checkout's old file is
 still read, as evidence only. No migration command is needed for this
 release.
+
+The runner projects smix extracts moved too, from
+`~/.local/share/smix/runner/` and `…/android-runner/` to one directory per
+set of sources under `~/.local/share/smix/runner-sources/`. The old
+directories are left in place for earlier releases that still use them;
+remove them yourself once nothing older than 11.0 runs on the machine.

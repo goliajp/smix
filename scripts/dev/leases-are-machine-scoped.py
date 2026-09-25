@@ -87,7 +87,7 @@ def enclosing_fn(lines: list[tuple[int, str]], target: int) -> str:
 
 
 # Resolving, not mentioning. An error message that names
-# `~/.local/share/smix/runner/` is telling somebody where to look; a
+# `~/.local/share/smix/runner-sources/` is telling somebody where to look; a
 # `join(".local/share")` is deciding where that is. Only the second one
 # may have a second copy.
 ROOT_LITERAL = re.compile(

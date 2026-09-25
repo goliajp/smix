@@ -1431,7 +1431,14 @@ class SmixHttpServer(
         )
         if (direct != null) {
             direct.refresh()
-            if (direct.isEditable || direct.canTakeText()) return direct
+            // The framework's answer is taken only when the node agrees
+            // with it. On Compose, after Enter in one field and a tap on
+            // the next, `findFocus` kept returning the first field for
+            // seconds — a node that, refreshed, reports `isFocused=false`
+            // — while the tree showed the second one focused (measured
+            // 2026-09-25, four refusals in five runs of a consumer's
+            // sign-in sequence). The walk below asks every node itself.
+            if (direct.isFocused && (direct.isEditable || direct.canTakeText())) return direct
             direct.recycle()
         }
         for (window in instrumentation.uiAutomation.windows) {

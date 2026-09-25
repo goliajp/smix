@@ -143,6 +143,8 @@ fi
 
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$REPO_ROOT/scripts/lib/gate-port.sh"
+# What the device recorded when a flow's app went away (K2).
+. "$REPO_ROOT/scripts/lib/crash-evidence.sh"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 LOG_DIR="$REPO_ROOT/.tmp/release-gate/$STAMP"
@@ -294,10 +296,15 @@ for yaml in "${YAMLS[@]}"; do
   # different work, and until now the gate could not tell them apart.
   # If a FLAKE ever turns this gate green, the old objection is back and
   # the change was wrong.
+  flow_started="$(date +%s)"
   # raw run: the claim is that every corpus flow passes; any failure fails it, and flake-classify reads smix's own record
   python3 "$REPO_ROOT/scripts/dev/run-with-timeout.py" "$SMIX_CORPUS_TIMEOUT_S" \
     "$SMIX_BIN" run "$yaml" --device "$SMIX_CORPUS_SIM" --retry 2 \
     >"$yaml_log" 2>&1 && rc=0 || rc=$?
+  # Any attempt, including one a retry then passed: an app that left and
+  # came back is the same finding as one that stayed gone.
+  keep_crash_evidence_if_the_app_left ios "$SMIX_CORPUS_SIM" "$yaml" "$flow_started" \
+    "$yaml_log" "$LOG_DIR/crash-evidence/$name"
 
   # The flow name as `smix run` records it, which is the yaml's stem.
   verdict="$(python3 "$REPO_ROOT/scripts/dev/flake-classify.py" "$name")"

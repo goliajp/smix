@@ -320,10 +320,11 @@ fn forward_argv(host_port: u16) -> Vec<String> {
     ]
 }
 
-/// Where the installed Android runner project lives, mirroring the iOS
-/// `~/.local/share/smix/runner/`.
-fn installed_android_dir() -> Option<PathBuf> {
-    smix_lease::store::machine_root().map(|r| r.join("android-runner"))
+/// The machine directory the Android runner project goes under; the
+/// project itself is the tree for these sources, as on iOS
+/// (`<machine>/runner-sources/android/<version>-<digest>/`).
+fn machine_dir() -> Option<PathBuf> {
+    smix_lease::store::machine_root()
 }
 
 /// Extract the shipped Android runner project and build its
@@ -343,47 +344,55 @@ fn installed_android_dir() -> Option<PathBuf> {
 /// exactly what the iOS path does with `xcodebuild`. First run pays a
 /// gradle build; later runs find the APK where this left it.
 fn ensure_installed_apk() -> Result<(PathBuf, bool), String> {
-    let dir = installed_android_dir().ok_or_else(|| {
+    let machine = machine_dir().ok_or_else(|| {
         "no HOME or XDG_DATA_HOME, so there is nowhere to install the \
                         Android runner project"
             .to_string()
     })?;
-    let extracted = smix_runner_sources::extract_android_to(&dir).map_err(|e| {
-        format!(
-            "extracting the Android runner project to {}: {e}",
-            dir.display()
-        )
-    })?;
-    if extracted {
+    // A tree of its own for these sources: another smix on this machine
+    // syncing its sources cannot pull it out from under the gradle build
+    // below (AD2).
+    let ensured =
+        smix_runner_sources::ensure_tree(&machine, smix_runner_sources::RunnerPlatform::Android)
+            .map_err(|e| {
+                format!(
+                    "extracting the Android runner project under {}: {e}",
+                    machine.display()
+                )
+            })?;
+    let dir = ensured.dir;
+    if ensured.extracted {
         println!(
-            "[runner] android sources synced → {} ({})",
-            dir.display(),
-            smix_runner_sources::SOURCES_VERSION
+            "[runner] android sources {} extracted → {}",
+            smix_runner_sources::SOURCES_VERSION,
+            dir.display()
         );
     }
 
     let apk = dir.join("app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
-    // The invariant is not "did this run extract" — that is true once
-    // and false forever after, so the first run to sync new sources
-    // rebuilt and every later one served the stale APK anyway. It is
-    // "was this APK built from these sources", and the way to know is
-    // to have written down which sources, at the time.
-    //
-    // Without it: sources synced, the artifact did not follow, and the
-    // runner answered `not_implemented` for a route whose Kotlin sat
-    // one directory away. That is the v1.0.10 cycle again, on the
-    // other platform.
+    // The invariant is "was this APK built from these sources", and the
+    // way to know is to have written down which sources, at the time the
+    // build finished. The tree is these sources' own now, so what this
+    // guards against is an APK file from a build that never finished —
+    // gradle writes it before the build is done, and an interrupted
+    // build leaves it. Before trees were per-source it also caught an
+    // APK built from another version's sources, which is how the
+    // runner once answered `not_implemented` for a route whose Kotlin
+    // sat one directory away (the v1.0.10 cycle, on this platform).
     let stamp = dir.join(".smix-apk-sources");
     let want = format!("{:016x}", smix_runner_sources::android_sources_digest());
     let built_from = std::fs::read_to_string(&stamp).unwrap_or_default();
     if apk.is_file() && built_from.trim() == want {
         return Ok((apk, false));
     }
-    let _ = extracted;
     if apk.is_file() {
-        println!("[runner] the instrumentation APK is older than the sources — rebuilding");
+        println!(
+            "[runner] the instrumentation APK was not recorded as built from these sources — rebuilding"
+        );
     } else {
-        println!("[runner] building the instrumentation APK (first run on this machine)");
+        println!(
+            "[runner] building the instrumentation APK (first run of these sources on this machine)"
+        );
     }
     let built = build_apk_in(&dir)?;
     debug_assert_eq!(built, apk);

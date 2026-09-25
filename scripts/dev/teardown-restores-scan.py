@@ -67,6 +67,8 @@ SHUTS_DOWN_SCRIPTS = {
     "v11.1-c9c-two-runners-one-checkout-e2e.sh",
     "v11.1-c9e-an-empty-field-holds-nothing-e2e.sh",
     "v11.1-c9f-hardware-keys-e2e.sh",
+    "v11.1-c9h-focus-after-enter-e2e.sh",
+    "v11.1-c9h-keyboard-minimized-e2e.sh",
     "smoke-chain-e2e.sh",
     "v11.1-c5-runner-brings-the-app-back-e2e.sh",
     "v11.1-c2-a-failure-says-whose-screen-e2e.sh",

@@ -407,6 +407,14 @@ jobs:
         run: python3 scripts/dev/a-script-drives-this-tree.py
       - name: the this-tree gate can still go red
         run: python3 scripts/dev/a-script-drives-this-tree.test.py
+      # A device gate keeps what the device recorded when the app under
+      # test went away mid-flow. CI's corpus lost one that way with nothing kept.
+      - name: every device gate keeps the crash evidence
+        run: python3 scripts/dev/a-device-gate-keeps-crash-evidence.py
+      - name: the crash-evidence gate can still go red
+        run: python3 scripts/dev/a-device-gate-keeps-crash-evidence.test.py
+      - name: the crash-evidence collector's self-test
+        run: bash scripts/lib/crash-evidence.sh --selftest
       # A flow run is judged by the code smix reported. Fifty-three runs read
       # any non-zero exit as their own rule's failure, whatever smix said.
       - name: every flow run is judged by smix's own code

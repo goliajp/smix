@@ -2226,10 +2226,14 @@ smix runner down --platform android --device emulator-5554
 ```
 
 Nothing to fetch or build first: the runner project ships inside smix,
-the same way the Swift one does. The first `up` on a machine extracts it
-to `~/.local/share/smix/android-runner/` and runs a gradle build there,
-which takes a build's worth of time; later runs find the APK already
-built. An Android SDK is required, the way the iOS side requires Xcode.
+the same way the Swift one does. The first `up` of a smix build on a
+machine extracts it to
+`~/.local/share/smix/runner-sources/android/<version>-<digest>/` and runs a
+gradle build there, which takes a build's worth of time; later runs find
+the APK already built. Each set of runner sources has a directory of its
+own, so two smix builds on one machine (an installed release beside one a
+checkout builds) never replace each other's tree; the two most recently
+used other trees are kept, and any used in the last hour. An Android SDK is required, the way the iOS side requires Xcode.
 
 The device is an adb serial or a registered alias. An emulator's alias
 resolves to the AVD it was registered as, wherever that AVD is running now —
@@ -2301,7 +2305,7 @@ Bringing the Android runner up by hand, if you need to:
 
 ```bash
 adb -s emulator-5554 install -r -t \
-  ~/.local/share/smix/android-runner/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+  ~/.local/share/smix/runner-sources/android/<version>-<digest>/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb -s emulator-5554 forward tcp:28080 tcp:28080
 adb -s emulator-5554 shell am instrument -w \
   -e class dev.smix.runner.RunnerTest#runServerForever \
