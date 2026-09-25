@@ -34,8 +34,8 @@ export declare class SmixNodeDriver {
   /** Type `text` into the focused element. */
   inputText(text: string): Promise<void>
   /**
-   * Press a hardware/keyboard key by its camelCase wire name (e.g.
-   * `return`, `arrowUp`). The keyboard diagnostic payload is dropped —
+   * Press a key by name, read as a flow's `pressKey` reads it (e.g.
+   * `return`, `back`, `Volume Up`). The keyboard diagnostic payload is dropped —
    * fire-and-return, matching the UniFFI surface.
    */
   pressKey(key: string): Promise<void>
