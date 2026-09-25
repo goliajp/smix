@@ -24,6 +24,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/scripts/lib/e2e-binary.sh"
 source "$ROOT/scripts/lib/deadline.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 
 BLOCKER_AVD="sim-smix-android-01"
 ALIAS="sim-smix-android-02"
@@ -98,7 +100,7 @@ $out"
   || fail "$SERIAL is not $ALIAS"
 log "boot-elsewhere=yes ($ALIAS on $SERIAL, $BLOCKER_SERIAL left to $BLOCKER_AVD)"
 
-LEDGER="$HOME/.local/share/smix/leases/$SERIAL.json"
+LEDGER="$(e2e_ledger_path "$SERIAL")"
 [ -f "$LEDGER" ] || fail "no ledger at $LEDGER after smix booted $SERIAL"
 CONSOLE="$(LEDGER="$LEDGER" python3 - <<'PY'
 import json, os
@@ -147,11 +149,11 @@ print(f"[c4-left]   history: avd={e['avd']} booted_by_smix=yes last_heard={e['la
 PY
 
 step "lease prune --device $SERIAL clears that ledger and no other"
-before="$(ls "$HOME/.local/share/smix/leases/" | grep -c '\.json$')"
+before="$(ls "$(dirname "$LEDGER")/" | grep -c '\.json$')"
 out="$(with_deadline 60 "$SMIX" lease prune --device "$SERIAL" 2>&1)"
 [ -f "$LEDGER" ] && fail "prune --device $SERIAL kept a ledger whose device is gone:
 $out"
-after="$(ls "$HOME/.local/share/smix/leases/" | grep -c '\.json$')"
+after="$(ls "$(dirname "$LEDGER")/" | grep -c '\.json$')"
 [ "$after" = "$((before - 1))" ] || fail "prune --device removed $((before - after)) ledgers, not exactly one"
 log "pruned-one=yes"
 

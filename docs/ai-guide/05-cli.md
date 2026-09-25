@@ -671,6 +671,7 @@ instead of the runner dying by SIGABRT and macOS raising a crash-report dialog.
 ```bash
 smix lease list                # every device with a ledger, and whether it is in use
 smix lease status <DEVICE>     # the holder, what is open, and what is owed
+smix lease status <DEVICE> --json  # {device, path, lease}: the ledger as stored, and the file it lives in
 smix lease owner <DEVICE>      # who answers for it — exit 0 yes, 3 no record, 1 cannot ask
 smix lease claim <DEVICE>      # answer for one this machine did not boot
 smix lease release <DEVICE>    # give that up again

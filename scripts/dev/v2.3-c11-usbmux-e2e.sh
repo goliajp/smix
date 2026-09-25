@@ -18,6 +18,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 OUT="$(mktemp)"
 
 log()  { printf '[c11-usbmux] %s\n' "$*"; }
@@ -40,8 +42,12 @@ cargo test -p smix-usbmux --lib > "$OUT" 2>&1 \
 grep -qE "test result: ok\. [0-9]+ passed" "$OUT" || fail "unit tests did not report a pass"
 log "$(grep -oE 'test result: ok\. [0-9]+ passed' "$OUT" | head -1)"
 
-step "2. live tests against whatever is attached"
-cargo test -p smix-usbmux --test live -- --nocapture > "$OUT" 2>&1 \
+step "2. live tests against the device a person named"
+# "Whatever is attached" was the owner's iPhone. The live tests now read
+# SMIX_E2E_PHYSICAL_IOS themselves, and this script does not run them
+# unless it is set.
+e2e_physical_or_skip ios c11-usbmux
+SMIX_E2E_PHYSICAL_IOS="$E2E_PHYSICAL" cargo test -p smix-usbmux --test live -- --nocapture > "$OUT" 2>&1 \
   || { tail -20 "$OUT"; fail "live tests failed"; }
 
 if grep -q "^SKIP " "$OUT"; then

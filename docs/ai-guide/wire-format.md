@@ -60,9 +60,17 @@ Response on success (`TapResult` in `smix-runner-wire`; all fields beyond `ok` o
 inject the tap at the resolved coordinate; `resolveAndTap` performs the
 tap in-process and omits them. Miss → `404 { ok: false, error: "not_found", selector, visible: [] }`.
 
-### `GET /tree?include=<scope>`
+### `GET /tree?include=<scope>&hollow=<package>`
 
 Response: `A11yNode` tree.
+
+`hollow` (Android): every application window of that package is reported
+as the window itself — its bounds, its place in the stack, whether it has
+the focus — with no children. The host asks for it when the app carries
+the semantics probe, whose view of the app replaces that window anyway;
+the windows the probe cannot see (the keyboard, the system bars, another
+app's dialog) are walked as always. A runner that predates the parameter
+ignores it and walks everything.
 
 Node fields of note:
 
@@ -151,8 +159,16 @@ it is attached and smix cannot read it. The two want different fixes.
 
 ### `POST /clear-text` (Android)
 
-Body: `{}` — the focused field is the target; the host focuses it first.
-Response: `{ status: "ok", method: "set-text" | "key-events", deletes: int }`
+Body: `{ focusRect?: [nx, ny, nw, nh] }` — the focused field is the target
+(the one inside `focusRect` when given); the host focuses it first.
+Response: `{ ok: bool, status: "ok" | "field_not_empty" | "no_focused_field",
+method: "set-text" | "key-events", deletes: int, held: int }`
+
+`ok` is whether the field is empty when the route looks again. `held` is
+how many characters it still holds, and -1 when no focused field could be
+found to ask — `no_focused_field`, which is not the same answer as a field
+with something left in it. The whole wait for that second look is bounded
+by the route's own budget (about 8 s when nothing takes focus).
 
 `method` is not decoration. `set-text` empties the field through the
 focused node's `ACTION_SET_TEXT` and is exact at any length.

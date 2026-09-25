@@ -186,6 +186,13 @@ class RunnerWireEncodeTest {
         val unknown = JSONObject(RunnerWire.clearTextBody(false, "set-text", 0, -1))
         assertEquals(-1, unknown.getInt("held"))
         assertEquals(false, unknown.getBoolean("ok"))
+        // And the status says so. It said `field_not_empty`, which is a
+        // claim about a field this route did not find.
+        assertEquals("no_focused_field", unknown.getString("status"))
+        assertEquals(
+            "field_not_empty",
+            JSONObject(RunnerWire.clearTextBody(false, "key-events", 64, 3)).getString("status"),
+        )
     }
 
     @Test

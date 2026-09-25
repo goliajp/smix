@@ -496,7 +496,16 @@ object RunnerWire {
     // nothing checking what they did.
     fun clearTextBody(ok: Boolean, method: String, deletes: Int, held: Int): String = JSONObject()
         .put("ok", ok)
-        .put("status", if (ok) "ok" else "field_not_empty")
+        .put(
+            "status",
+            when {
+                ok -> "ok"
+                // No focused field was found to ask: that is not a field
+                // with something left in it.
+                held < 0 -> "no_focused_field"
+                else -> "field_not_empty"
+            },
+        )
         .put("method", method)
         .put("deletes", deletes)
         .put("held", held)
@@ -860,6 +869,20 @@ object TreeWire {
     /// 2 input method, 3 system; the rest (accessibility overlay,
     /// split-screen divider, magnification overlay) are `other`. A
     /// package the platform did not report is left out, not guessed.
+    /// Whether `/tree?hollow=<app>` reports this window without walking it.
+    ///
+    /// The host reads the app through its probe and this tree for every
+    /// window that is not the app's — the keyboard, the system bars,
+    /// another app's dialog. The app's own window is then replaced by the
+    /// probe's view of it, so walking it here was work thrown away — on
+    /// the fixture's watch screen, 30 ms of reading became 19. The
+    /// window itself is still reported — where it sits in
+    /// the stack and whether it has the focus are what the host places
+    /// the probe's tree by. Only an application window (type 1) of that
+    /// package is ever hollow.
+    fun leavesHollow(windowType: Int, pkg: String?, hollow: String?): Boolean =
+        hollow != null && windowType == 1 && pkg == hollow
+
     fun windowJson(windowType: Int, pkg: String?, focused: Boolean): JSONObject {
         val kind = when (windowType) {
             1 -> "application"

@@ -584,6 +584,12 @@ python3 "$ROOT/scripts/dev/a-script-drives-this-tree.py" > /tmp/smix-ship-this-t
 log "the this-tree gate can still go red"
 python3 "$ROOT/scripts/dev/a-script-drives-this-tree.test.py" >> /tmp/smix-ship-this-tree.log 2>&1 \
   || fail "this-tree gate self-test FAILED — see /tmp/smix-ship-this-tree.log"
+log "an e2e leaves the phones alone"
+python3 "$ROOT/scripts/dev/an-e2e-leaves-the-phones-alone.py" > /tmp/smix-ship-phones.log 2>&1 \
+  || fail "a script reaches a phone nobody named, or writes the real device registry — see /tmp/smix-ship-phones.log"
+log "the phones gate can still go red"
+python3 "$ROOT/scripts/dev/an-e2e-leaves-the-phones-alone.test.py" >> /tmp/smix-ship-phones.log 2>&1 \
+  || fail "phones gate self-test FAILED — see /tmp/smix-ship-phones.log"
 log "every device gate keeps the crash evidence"
 python3 "$ROOT/scripts/dev/a-device-gate-keeps-crash-evidence.py" > /tmp/smix-ship-crash-evidence.log 2>&1 \
   || fail "a device gate drops what the device recorded — see /tmp/smix-ship-crash-evidence.log"

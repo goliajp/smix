@@ -31,7 +31,7 @@ cannot_judge() { printf '[c6c] SKIP: %s\n' "$*" >&2; exit 2; }
 
 UDID="" WE_BOOTED=0 WE_UPPED=0
 cleanup() {
-  [ "$WE_UPPED" = 1 ]  && "$SMIX" down --device "$UDID" >/dev/null 2>&1 || true
+  [ "$WE_UPPED" = 1 ]  && "$SMIX" runner down --device "$UDID" --runner-port "$PORT" >/dev/null 2>&1 || true
   if [ -n "$UDID" ]; then
     P="$(pgrep -f "xcodebuild.*$UDID" 2>/dev/null || true)"
     [ -n "$P" ] && { kill -INT $P 2>/dev/null || true; sleep 1; kill -9 $P 2>/dev/null || true; }
@@ -91,7 +91,10 @@ def walk(n):
         seen[i] = n.get('visible')
     for c in n.get('children', []) or []:
         walk(c)
-walk(tree)
+# Since v10 the answer is {source, root}: the tree travels with the
+# reader that produced it. Walking the envelope found none of the ids and
+# read as "the stage did not come up" (2026-09-25).
+walk(tree['root'])
 missing = want - set(seen)
 if missing:
     print('MISSING:' + ','.join(sorted(missing))); sys.exit(2)

@@ -26,8 +26,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 WORK="$(mktemp -d)"
 OUT="$(mktemp)"
+
+# Our own emulator, looked up in the real ledger before this script
+# switches to a ledger of its own — the one place it reads the real one.
+# It used to take the first `emulator-*` adb listed, which on a shared
+# machine is whoever booted first, and then ran `runner down` on it.
+OUR_SERIAL="$("$SMIX" sim resolve "$E2E_ANDROID" 2>/dev/null | tail -1 || true)"
+
+# Every registration below goes into this script's own machine directory.
+# Until 2026-09-25 they went into the real one, with the owner's Samsung
+# serial and iPhone UDID as literals: `c`, `d`, `e` and `emu` in that
+# ledger were written here, and later scripts read them as permission.
+e2e_isolate_machine "$WORK"
 
 log()  { printf '[c16-emu-reg] %s\n' "$*"; }
 step() { printf '[c16-emu-reg] --- %s\n' "$*"; }
@@ -57,18 +71,18 @@ grep -q "8-4-4-4-12" "$OUT" || { cat "$OUT"; fail "wrong world named for a simul
 log "each refusal describes the kind actually being registered"
 
 step "2. a phone is taken as given, because there is no catalogue"
-smix sim register c --udid R5CT52DF07D --kind physical-android > "$OUT"
+smix sim register c --udid "$E2E_FAKE_ANDROID_SERIAL" --kind physical-android > "$OUT"
 grep -q "registered:" "$OUT" || { cat "$OUT"; fail "a physical serial was refused"; }
 # And its case survives: adb matches verbatim.
-smix sim register d --udid lower-case-serial --kind physical-android > "$OUT"
+smix sim register d --udid fake-lower-case-serial --kind physical-android > "$OUT"
 smix sim resolve d > "$OUT"
-grep -qx "lower-case-serial" "$OUT" || { cat "$OUT"; fail "an adb serial was mangled"; }
+grep -qx "fake-lower-case-serial" "$OUT" || { cat "$OUT"; fail "an adb serial was mangled"; }
 log "physical identifiers accepted and returned verbatim"
 
 step "3. an Apple identifier is normalised, because devicectl is case-sensitive"
-smix sim register e --udid 00008120-001410c11a42201e --kind physical-ios > "$OUT"
+smix sim register e --udid "$E2E_FAKE_IOS_UDID_LOWER" --kind physical-ios > "$OUT"
 smix sim resolve e > "$OUT"
-grep -qx "00008120-001410C11A42201E" "$OUT" \
+grep -qx "$E2E_FAKE_IOS_UDID" "$OUT" \
   || { cat "$OUT"; fail "a lower-case Apple UDID was not rescued"; }
 log "lower-case Apple UDID normalised to the form devicectl answers to"
 
@@ -78,12 +92,12 @@ grep -q "adb lists no running device" "$OUT" || { cat "$OUT"; fail "an absent em
 log "refused, and the message names the catalogue it consulted"
 
 step "5. a running emulator registers, and its alias is usable"
-SERIAL="$(adb devices 2>/dev/null | awk -F'\t' '$2=="device" && $1 ~ /^emulator-/ { print $1; exit }' || true)"
-if [ -z "$SERIAL" ]; then
-  log "no emulator running — the success path cannot be exercised"
-  log "start one (emulator -avd sim-smix-android-01) and re-run for a PASS"
+SERIAL="$OUR_SERIAL"
+if [ -z "$SERIAL" ] || [ "$(adb -s "$SERIAL" get-state 2>/dev/null || true)" != device ]; then
+  log "$E2E_ANDROID is not running — the success path cannot be exercised"
+  log "boot it (smix sim boot $E2E_ANDROID) and re-run"
   echo "C16-EMULATOR-REGISTER-SKIP"
-  exit 0
+  exit 2
 fi
 log "running emulator: $SERIAL"
 

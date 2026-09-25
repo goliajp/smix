@@ -1199,7 +1199,16 @@ enum LeaseAction {
     /// Every device with a ledger, and whether its holder is still there.
     List,
     /// One device: the holder, what is open, and the verdict.
-    Status { device: String },
+    Status {
+        /// The device: an alias, a UDID or a serial.
+        device: String,
+        /// Print the device's ledger as JSON — `{"device", "path", "lease"}`:
+        /// the file it lives in, and the lease as it is stored (null when
+        /// there is none) — for a script to read instead of building the
+        /// ledger's path itself.
+        #[arg(long)]
+        json: bool,
+    },
     /// Close what a dead holder left open, by the graceful path it never
     /// got to take. A live holder is reported, never preempted.
     Reconcile { device: String },

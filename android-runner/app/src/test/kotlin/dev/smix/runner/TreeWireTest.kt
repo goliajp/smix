@@ -15,6 +15,24 @@ import org.junit.Test
 
 class TreeWireTest {
 
+    // MARK: - leavesHollow
+
+    // The app's window is replaced by the probe's view of it on the
+    // host, so the reader walks it only when nobody asked for it hollow —
+    // and only the app's own application window is ever left hollow.
+    @Test
+    fun onlyTheNamedAppsApplicationWindowIsLeftHollow() {
+        assertTrue(TreeWire.leavesHollow(1, "dev.smix.fixture", "dev.smix.fixture"))
+        assertFalse(TreeWire.leavesHollow(1, "dev.smix.fixture", null))
+        assertFalse(TreeWire.leavesHollow(1, "com.other.app", "dev.smix.fixture"))
+        // The keyboard and the system bars are what the host reads this
+        // tree for; they are walked whatever the request says.
+        assertFalse(TreeWire.leavesHollow(2, "dev.smix.fixture", "dev.smix.fixture"))
+        assertFalse(TreeWire.leavesHollow(3, "dev.smix.fixture", "dev.smix.fixture"))
+        // A package the platform did not report is not the app's.
+        assertFalse(TreeWire.leavesHollow(1, null, "dev.smix.fixture"))
+    }
+
     // MARK: - deriveRole
 
     @Test

@@ -11,23 +11,37 @@
 //! single request — what is being proven is that the pipe forms, not
 //! anything about what is on the other end.
 
-use smix_usbmux::{UsbmuxError, connect, list_devices};
+use smix_usbmux::{UsbmuxError, connect};
 
-/// The device, or a printed reason for skipping.
+/// The device a person named, or a printed reason for skipping.
+///
+/// It used to be the first device usbmux listed. On the development
+/// machine that is the owner's own iPhone, and `cargo test --workspace`
+/// opened a tunnel to it on every run — as did the release's device tier,
+/// on 2026-09-25. Being attached is not permission: a device is used only
+/// when `SMIX_E2E_PHYSICAL_IOS` names its serial.
 fn device_or_skip(what: &str) -> Option<smix_usbmux::Device> {
-    match list_devices() {
-        Ok(devices) => {
-            if let Some(d) = devices.into_iter().next() {
-                return Some(d);
-            }
-            println!("SKIP {what}: usbmux is running but no iOS device is attached");
+    let Some(named) = std::env::var("SMIX_E2E_PHYSICAL_IOS")
+        .ok()
+        .filter(|s| !s.is_empty())
+    else {
+        println!(
+            "SKIP {what}: no iOS device named — set SMIX_E2E_PHYSICAL_IOS to a serial; \
+             an attached device is not one anybody agreed to"
+        );
+        return None;
+    };
+    match smix_usbmux::find_by_serial(&named) {
+        Ok(Some(d)) => Some(d),
+        Ok(None) => {
+            println!("SKIP {what}: {named} was named and usbmux does not list it");
             None
         }
         Err(UsbmuxError::NoDaemon) => {
             println!("SKIP {what}: no usbmux daemon on this machine (not macOS, or no Xcode)");
             None
         }
-        Err(e) => panic!("listing devices failed in a way that is not 'no device': {e}"),
+        Err(e) => panic!("looking up {named} failed in a way that is not 'not attached': {e}"),
     }
 }
 

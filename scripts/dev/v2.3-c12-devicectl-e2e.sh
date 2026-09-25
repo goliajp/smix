@@ -17,6 +17,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 OUT="$(mktemp)"
 
 log()  { printf '[c12-devicectl] %s\n' "$*"; }
@@ -48,8 +52,16 @@ step "1. is there a device to ask?"
 # hold: it left a fully answerable question sitting at SKIP.
 # By shape, not by column: a device name and a model both contain spaces,
 # so counting fields lands on whichever word happens to be there.
-UDID="$(xcrun devicectl list devices 2>/dev/null \
-  | grep -oE '[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}' | head -1 || true)"
+#
+# And which device is not "the first one listed". Xcode 27's devicectl
+# lists simulators too, and on 2026-09-25 the first one was a consumer's —
+# this listed its apps. It is our own simulator, or a phone a person named.
+if [ -n "${SMIX_E2E_PHYSICAL_IOS:-}" ]; then
+  e2e_physical_or_skip ios c12-devicectl
+  UDID="$("$SMIX" sim resolve "$E2E_PHYSICAL" 2>/dev/null | tail -1 || true)"
+else
+  UDID="$("$SMIX" sim resolve "$E2E_IOS" 2>/dev/null | tail -1 || true)"
+fi
 if [ -n "$UDID" ] && ! xcrun devicectl device info apps --device "$UDID" --timeout 30 >/dev/null 2>&1; then
   log "devicectl lists $UDID but cannot reach it — treating that as no device"
   UDID=""
@@ -58,7 +70,7 @@ if [ -z "$UDID" ]; then
   log "no iOS device devicectl can reach — nothing to exercise its argv against"
   log "attach a device (USB or a paired network tunnel) and re-run for a PASS"
   echo "C12-DEVICECTL-SKIP"
-  exit 0
+  exit 2
 fi
 log "device $UDID (reachable — asked, not merely listed)"
 

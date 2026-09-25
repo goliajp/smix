@@ -49,7 +49,7 @@ cleanup() {
   # and what it costs is not this script but the next one to start one
   # there. Measured elsewhere in this repo: 23 of 26 corpus flows red,
   # every one of them blaming the runner.
-    if ! down_said="$("$SMIX" down --device "$IOS_UDID" 2>&1)"; then
+    if ! down_said="$("$SMIX" runner down --device "$IOS_UDID" --runner-port "$IOS_PORT" 2>&1)"; then
       printf 'warning: the iOS runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
     fi
     # `smix down` SIGINTs the runner session; the xcodebuild it launched
@@ -63,7 +63,7 @@ cleanup() {
   fi
   [ "$IOS_WE_BOOTED" = 1 ] && "$SMIX" sim shutdown "$IOS_UDID" >/dev/null 2>&1 || true
   if [ "$AND_WE_UPPED" = 1 ]; then
-    if ! down_said="$("$SMIX" down --platform android --device "$AND_SERIAL" 2>&1)"; then
+    if ! down_said="$("$SMIX" runner down --platform android --device "$AND_SERIAL" --runner-port "$AND_PORT" 2>&1)"; then
       printf 'warning: the Android runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
     fi
   fi

@@ -154,7 +154,19 @@ pub async fn run(leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::Cl
             }
             say_divergences(None);
         }
-        LeaseAction::Status { device } => {
+        LeaseAction::Status { device, json: true } => {
+            let udid = crate::resolve_device(&device)?;
+            let lease = store::read(leases, &udid).map_err(to_cli_error)?;
+            let path = store::lease_path(leases, &udid).map_err(to_cli_error)?;
+            println!(
+                "{}",
+                serde_json::json!({ "device": udid, "path": path, "lease": lease })
+            );
+        }
+        LeaseAction::Status {
+            device,
+            json: false,
+        } => {
             let udid = crate::resolve_device(&device)?;
             let facts = store::collect_facts(leases, &udid).map_err(to_cli_error)?;
             let admission = smix_lease::assess(&facts);

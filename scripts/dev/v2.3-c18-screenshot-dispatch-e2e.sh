@@ -25,8 +25,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 WORK="$(mktemp -d)"
 OUT="$(mktemp)"
+
+# Looked up in the real ledger, read-only, before this script switches to
+# a ledger of its own. The phone is a device a person named, or a UDID
+# with no device behind it; until 2026-09-25 it was the owner's iPhone,
+# written here as a literal and registered as `phone` in the real ledger.
+OUR_SERIAL="$("$SMIX" sim resolve "$E2E_ANDROID" 2>/dev/null | tail -1 || true)"
+PHONE_UDID="$E2E_FAKE_IOS_UDID"
+if [ -n "${SMIX_E2E_PHYSICAL_IOS:-}" ]; then
+  e2e_physical_or_skip ios c18-shot
+  PHONE_UDID="$("$SMIX" sim resolve "$E2E_PHYSICAL" 2>/dev/null | tail -1)"
+fi
+e2e_isolate_machine "$WORK"
 
 log()  { printf '[c18-shot] %s\n' "$*"; }
 step() { printf '[c18-shot] --- %s\n' "$*"; }
@@ -56,7 +70,7 @@ step "1. a physical iPhone with no runner: photographed if it offers capture, to
 # What is asserted now is the distinction that survived: a phone can be
 # photographed, but only through a runner, so the failure has to say
 # *which* thing is absent rather than "no screenshot".
-smix sim register phone --udid 00008120-001410C11A42201E --kind physical-ios > "$OUT"
+smix sim register phone --udid "$PHONE_UDID" --kind physical-ios > "$OUT"
 grep -q "registered:" "$OUT" || { cat "$OUT"; fail "registration failed"; }
 # Since 10.2 there are two routes and the phone says which: Xcode 27's
 # devicectl has `capture screenshot`, and a connected iPhone lists the
@@ -65,11 +79,11 @@ grep -q "registered:" "$OUT" || { cat "$OUT"; fail "registration failed"; }
 PHONE_OFFERS_CAPTURE="$(xcrun devicectl list devices --json-output - 2>/dev/null | python3 -c '
 import json, sys
 for d in json.load(sys.stdin)["result"]["devices"]:
-    if d.get("properties", {}).get("hardware", {}).get("udid") == "00008120-001410C11A42201E":
+    if d.get("properties", {}).get("hardware", {}).get("udid") == sys.argv[1]:
         caps = [c.get("featureIdentifier") for c in d.get("capabilities", [])]
         print("yes" if "com.apple.coredevice.feature.capturescreenshot" in caps else "no"); break
 else:
-    print("no")' 2>/dev/null || echo no)"
+    print("no")' "$PHONE_UDID" 2>/dev/null || echo no)"
 SMIX_RUNNER_PORT=22599 smix sim screenshot phone "$WORK/p.png" > "$OUT"
 if [ "$PHONE_OFFERS_CAPTURE" = "yes" ]; then
   grep -q "screenshot:" "$OUT" || { cat "$OUT"; fail "a phone that offers capture was not photographed through devicectl"; }
@@ -88,12 +102,12 @@ else
 fi
 
 step "2. an Android device dispatches to adb, not simctl"
-SERIAL="$(adb devices 2>/dev/null | awk -F'\t' '$2=="device" && $1 ~ /^emulator-/ { print $1; exit }' || true)"
-if [ -z "$SERIAL" ]; then
-  log "no emulator running — the half that proves a real capture cannot run"
-  log "start one (emulator -avd sim-smix-android-01) and re-run for a PASS"
+SERIAL="$OUR_SERIAL"
+if [ -z "$SERIAL" ] || [ "$(adb -s "$SERIAL" get-state 2>/dev/null || true)" != device ]; then
+  log "$E2E_ANDROID is not running — the half that proves a real capture cannot run"
+  log "boot it (smix sim boot $E2E_ANDROID) and re-run"
   echo "C18-SCREENSHOT-DISPATCH-SKIP"
-  exit 0
+  exit 2
 fi
 log "emulator: $SERIAL"
 smix sim register emu --udid "$SERIAL" --kind emulator > "$OUT"

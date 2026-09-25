@@ -297,6 +297,9 @@ python3 scripts/dev/a-status-is-read-from-the-command.test.py
 # A script drives the smix this tree builds, never the PATH's.
 python3 scripts/dev/a-script-drives-this-tree.py
 python3 scripts/dev/a-script-drives-this-tree.test.py
+# A script touches a phone only when a person named it (2026-09-25).
+python3 scripts/dev/an-e2e-leaves-the-phones-alone.py
+python3 scripts/dev/an-e2e-leaves-the-phones-alone.test.py
 # A device gate keeps what the device recorded when the app left mid-flow.
 python3 scripts/dev/a-device-gate-keeps-crash-evidence.py
 python3 scripts/dev/a-device-gate-keeps-crash-evidence.test.py
