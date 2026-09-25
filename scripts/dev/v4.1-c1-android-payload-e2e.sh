@@ -129,18 +129,23 @@ else
     bad "unexpected: $OUT"
 fi
 
-step "5. a physical iPhone is refused, not attempted"
-# No devicectl install path is wired. §9 #1 ③: say so rather than
-# degrade into something that looks like it worked.
+step "5. a physical iPhone goes to devicectl, never to simctl or adb"
+# Until 10.2 no devicectl install path was wired and this asserted a
+# refusal. v10.2 wired it (`DevicectlClient::install`), so a registered
+# iPhone is now attempted — through devicectl. The UDID has no device
+# behind it, so the attempt fails, and it must fail in devicectl's words:
+# the question is where the call went, not whether a phone was there.
 SMIX_MACHINE_DIR="$M" "$SMIX" sim register iphone \
     --udid 00008120-000000000000000E --kind physical-ios >/dev/null 2>&1 || true
 run sim install iphone "$WORK/none.app"
 if [ "$RC" = 0 ]; then
-    bad "claimed to install on a physical iPhone"
-elif has "$OUT" "simctl" || has "$OUT" "physical iPhone"; then
-    ok "refused, naming what it is and what cannot reach it"
+    bad "claimed to install on an iPhone that does not exist"
+elif has "$OUT" "adb" || has "$OUT" "simctl"; then
+    bad "an iPhone was sent to the wrong tool: $OUT"
+elif has "$OUT" "devicectl" || has "$OUT" "CoreDevice"; then
+    ok "sent to devicectl, which said the device is not there"
 else
-    bad "refused for some other reason: $OUT"
+    bad "failed without saying which tool it asked: $OUT"
 fi
 
 step "6. the simulator path is untouched"

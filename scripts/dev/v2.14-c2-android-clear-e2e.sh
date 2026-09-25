@@ -94,9 +94,17 @@ log "runner answering on $PORT"
 step "2. no focused field — the fallback path, and it says so"
 adb -s "$SERIAL" shell input keyevent KEYCODE_HOME >/dev/null 2>&1
 sleep 1
-OUT="$(curl -s --max-time 10 -X POST -H 'content-type: application/json' -d '{}' "$R/clear-text")"
+# The runner's own bound here is FOCUS_SETTLE_MS (6 s, the wait for a
+# field that may be about to take focus) + the deletes + TEXT_LAND_MS
+# (2 s): about 8.2 s measured on 2026-09-25. This gave it 10, set before
+# the settle grew from 2 s to 6; with the settle nested inside the second
+# wait it took 12, and curl ended the script without a word (exit 28).
+# The answer is read either way: `|| true` so a timeout reaches `fail`.
+OUT="$(curl -s --max-time 20 -X POST -H 'content-type: application/json' -d '{}' "$R/clear-text" || true)"
 echo "$OUT" | grep -q '"method":"key-events"' \
   || fail "with nothing focused this must fall back and name the path: $OUT"
+echo "$OUT" | grep -q '"status":"no_focused_field"' \
+  || fail "with nothing focused the answer must say no field was found, not that one held text: $OUT"
 log "key-events, named"
 
 step "3. a focused field, longer than the old fifty-delete bound"
@@ -115,7 +123,7 @@ sleep 3
 tap_id() {
   local out
   out="$(curl -s --max-time 10 -X POST "$R/tap-by-id" \
-    -H 'Content-Type: application/json' --data "{\"id\":\"$1\"}")"
+    -H 'Content-Type: application/json' --data "{\"id\":\"$1\"}" || true)"
   # `ok`, not `saw_node`.
   #
   # `saw_node` answers "did the a11y path resolve it", and `/tap-by-id`
@@ -143,7 +151,7 @@ BEFORE="$(field_text)"
 log "field holds ${#BEFORE} characters"
 
 step "4. one request empties it"
-OUT="$(curl -s --max-time 15 -X POST -H 'content-type: application/json' -d '{}' "$R/clear-text")"
+OUT="$(curl -s --max-time 20 -X POST -H 'content-type: application/json' -d '{}' "$R/clear-text" || true)"
 echo "$OUT" | grep -q '"method":"set-text"' \
   || fail "a focused editable field must take the exact path: $OUT"
 sleep 1

@@ -12,7 +12,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_PHYSICAL_ALIAS:-phone}"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
+STARTED=0
 BUNDLE="${SMIX_PHYSICAL_BUNDLE:-com.apple.Preferences}"
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$ROOT/scripts/lib/gate-port.sh"
@@ -29,7 +31,12 @@ cleanup() {
   # there gets two instrumentations, or two xcodebuild sessions on one
   # sim, and every failure after that is about the wrong thing. What it
   # cost when it was silent, measured 2026-08-29: 23 of 26 corpus flows.
-  if ! down_said="$("$SMIX" runner down 2>&1)"; then
+  #
+  # And only what this script started, on the device and port it named.
+  # It used to be a bare `runner down`, which is port 22087 — the port a
+  # consumer on this machine drives through.
+  [ "$STARTED" = 1 ] || { rm -f "$OUT"; return; }
+  if ! down_said="$("$SMIX" runner down --device "$ALIAS" --runner-port "$PORT" 2>&1)"; then
     printf 'warning: the runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
   fi
   rm -f "$OUT"
@@ -44,19 +51,18 @@ log "$(grep -oE 'test result: ok\. [0-9]+ passed' "$OUT" | head -1) (team discov
 cargo test -p smix-capsule target_tests > "$OUT" 2>&1 || { tail -10 "$OUT"; fail "destination tests failed"; }
 log "$(grep -oE 'test result: ok\. [0-9]+ passed' "$OUT" | head -1) (destination fork)"
 
-step "1. is a physical device attached and registered?"
-UDID="$(cargo run -q -p smix-usbmux --example first_device 2>/dev/null || true)"
+step "1. which phone, and is it registered?"
+# Only one a person named. This used to take the first device usbmux
+# listed and whatever `phone` resolved to — both of which were the
+# owner's iPhone, the alias written into the ledger by a sibling script —
+# and on 2026-09-25 a release dry-run tried to install a runner on it.
+e2e_physical_or_skip ios c14-phys
+ALIAS="$E2E_PHYSICAL"
+UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1 || true)"
 if [ -z "$UDID" ]; then
-  log "no iOS device on usbmux — the transport smix drives through sees nothing"
-  log "attach one over USB, register it with --kind physical-ios, and re-run"
+  log "'$ALIAS' was named and is not registered — register it with --kind physical-ios"
   echo "C14-PHYSICAL-RUNNER-SKIP"
-  exit 0
-fi
-if ! "$SMIX" sim resolve "$ALIAS" >/dev/null 2>&1; then
-  log "device $UDID is attached but no alias '$ALIAS' is registered"
-  log "register it: smix sim register $ALIAS --udid $UDID --kind physical-ios"
-  echo "C14-PHYSICAL-RUNNER-SKIP"
-  exit 0
+  exit 2
 fi
 log "device $UDID registered as $ALIAS"
 
@@ -66,7 +72,8 @@ step "2. one command: runner up on a phone"
 # answer. Unset on a single-team machine, where nothing needs saying.
 TEAM_ARGS=()
 [ -n "${SMIX_PHYSICAL_TEAM:-}" ] && TEAM_ARGS=(--team "$SMIX_PHYSICAL_TEAM")
-if ! "$SMIX" runner up "$ALIAS" --bundle "$BUNDLE" "${TEAM_ARGS[@]+"${TEAM_ARGS[@]}"}" > "$OUT" 2>&1; then
+STARTED=1
+if ! "$SMIX" runner up "$ALIAS" --runner-port "$PORT" --bundle "$BUNDLE" "${TEAM_ARGS[@]+"${TEAM_ARGS[@]}"}" > "$OUT" 2>&1; then
   # A locked phone is an unmet precondition, not a defect. It reads
   # exactly like "no device attached" — smix is fine, the device is not
   # available — and calling it a FAIL would say smix is broken to
@@ -75,7 +82,7 @@ if ! "$SMIX" runner up "$ALIAS" --bundle "$BUNDLE" "${TEAM_ARGS[@]+"${TEAM_ARGS[
     log "the phone is locked, so xcodebuild cannot install the runner on it"
     log "unlock it (and keep it unlocked) and re-run to turn this into a PASS"
     echo "C14-PHYSICAL-RUNNER-SKIP"
-    exit 0
+    exit 2
   fi
   tail -25 "$OUT"
   fail "runner up failed on the physical device"
@@ -90,7 +97,7 @@ grep -q '"ok"' "$OUT" || { cat "$OUT"; fail "/health returned something unexpect
 log "health: $(head -c 120 "$OUT")"
 
 step "4. the ledger holds both rows"
-LEDGER=".smix/leases/$UDID.json"
+LEDGER="$(e2e_ledger_path "$UDID")"
 [ -f "$LEDGER" ] || fail "no ledger for $UDID"
 python3 -c "
 import json,sys

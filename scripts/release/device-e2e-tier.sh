@@ -138,6 +138,13 @@ fi
 
 : "${SMIX_E2E_UDID:?set SMIX_E2E_UDID to the simulator the scripts should drive}"
 
+# A tier never runs a physical leg, whatever is plugged in and whatever
+# the caller's environment says: a phone is used when a person runs that
+# one script and names it. On 2026-09-25 this loop reached the owner's
+# Samsung and iPhone because being attached and registered was all the
+# scripts asked. Guarded by `an-e2e-leaves-the-phones-alone`.
+unset SMIX_E2E_PHYSICAL_ANDROID SMIX_E2E_PHYSICAL_IOS SMIX_E2E_PHYSICAL_IOS_PORT
+
 results=""
 for e2e in "$ROOT"/scripts/dev/*-e2e.sh; do
   name="$(basename "$e2e" .sh)"

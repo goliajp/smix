@@ -117,6 +117,8 @@ LOCAL = {
     "the status gate can still go red": "a-status-is-read-from-the-command.test",
     "every script drives this tree's smix": "a-script-drives-this-tree.py",
     "the this-tree gate can still go red": "a-script-drives-this-tree.test",
+    "an e2e leaves the phones alone": "an-e2e-leaves-the-phones-alone.py",
+    "the phones gate can still go red": "an-e2e-leaves-the-phones-alone.test",
     "every device gate keeps the crash evidence": "a-device-gate-keeps-crash-evidence.py",
     "the crash-evidence gate can still go red": "a-device-gate-keeps-crash-evidence.test",
     "the crash-evidence collector's self-test": "crash-evidence.sh --selftest",

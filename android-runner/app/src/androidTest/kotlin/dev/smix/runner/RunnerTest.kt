@@ -280,7 +280,7 @@ class SmixHttpServer(
                 uri == "/record/stop" && session.method == Method.POST -> serveRecordStop()
                 uri == "/screenshot" && session.method == Method.GET -> serveScreenshot()
                 uri == "/display" && session.method == Method.GET -> serveDisplay()
-                uri == "/tree" && session.method == Method.GET -> serveTree()
+                uri == "/tree" && session.method == Method.GET -> serveTree(session)
                 uri == "/probe" && session.method == Method.GET -> serveProbe(session)
                 uri == "/probe/tree" && session.method == Method.GET -> serveProbeTree(session)
                 uri == "/tap-at-norm-coord" && session.method == Method.POST ->
@@ -473,7 +473,7 @@ class SmixHttpServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
-    private fun serveTree(): Response {
+    private fun serveTree(session: IHTTPSession): Response {
         // Walk UiAutomation.windows directly instead of
         // device.dumpWindowHierarchy. The XML dump only emits one window
         // hierarchy at a time and on some Android versions skips the
@@ -492,7 +492,8 @@ class SmixHttpServer(
         // slowdown across a batch without any wire-body change.
         val walkStart = System.currentTimeMillis()
         val automation = instrumentation.uiAutomation
-        val root = TreeBuilder.fromWindows(automation, displaySize())
+        val hollow = session.parameters["hollow"]?.firstOrNull()?.takeIf { it.isNotEmpty() }
+        val root = TreeBuilder.fromWindows(automation, displaySize(), hollow)
         val wallMs = System.currentTimeMillis() - walkStart
         val refreshCount = treeServeCounter.incrementAndGet()
         val resp = newFixedLengthResponse(
@@ -868,9 +869,15 @@ class SmixHttpServer(
     /// soon as the field reads empty; otherwise what it held when the
     /// budget ran out.
     private fun awaitEmptied(focusPx: IntArray?, budgetMs: Long): Int {
+        // The budget is the whole wait. Each look used to wait for focus on
+        // a budget of its own — FOCUS_SETTLE_MS, 6 s since 2026-09-23 —
+        // so with no field in focus this 2-second wait took 6, and a clear
+        // on a screen with nothing to clear took 12 s to say so (measured
+        // 2026-09-25; the e2e that asks gives it 10).
         val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
         while (true) {
-            val held = focusedTextLength(focusPx)
+            val left = deadline - android.os.SystemClock.elapsedRealtime()
+            val held = focusedTextLength(focusPx, maxOf(left, 0L))
             if (held == 0 || android.os.SystemClock.elapsedRealtime() >= deadline) return held
             Thread.sleep(50)
         }
@@ -882,8 +889,8 @@ class SmixHttpServer(
     /// -1 is not zero: "the field is empty" and "I could not find the
     /// field" are different answers, and only one of them means a clear
     /// worked.
-    private fun focusedTextLength(focusPx: IntArray?): Int {
-        val node = awaitEditableFocus(FOCUS_SETTLE_MS, focusPx) ?: return -1
+    private fun focusedTextLength(focusPx: IntArray?, budgetMs: Long): Int {
+        val node = awaitEditableFocus(budgetMs, focusPx) ?: return -1
         return try {
             FieldText.held(node.text, node.isShowingHintText).length
         } finally {
@@ -2248,7 +2255,11 @@ object PopupClassifier {
 /// virtual root so the host driver sees foreground app + system windows
 /// in a single dump.
 object TreeBuilder {
-    fun fromWindows(automation: UiAutomation, display: Pair<Int, Int>): JSONObject {
+    fun fromWindows(
+        automation: UiAutomation,
+        display: Pair<Int, Int>,
+        hollow: String? = null,
+    ): JSONObject {
         val rootChildren = JSONArray()
         var unreadable = 0
         for (window in automation.windows) {
@@ -2262,7 +2273,8 @@ object TreeBuilder {
                 continue
             }
             try {
-                val obj = nodeToJson(node)
+                val pkg = node.packageName?.toString()
+                val obj = nodeToJson(node, walk = !TreeWire.leavesHollow(window.type, pkg, hollow))
                 // A window's own type decides one role that no node class
                 // can: the input-method window is the software keyboard.
                 // Without this the tree had no keyboard in it at all,
@@ -2273,7 +2285,7 @@ object TreeBuilder {
                 TreeWire.roleForWindowType(window.type)?.let { obj.put("role", it) }
                 obj.put(
                     "window",
-                    TreeWire.windowJson(window.type, node.packageName?.toString(), window.isFocused),
+                    TreeWire.windowJson(window.type, pkg, window.isFocused),
                 )
                 rootChildren.put(obj)
             } finally {
@@ -2283,7 +2295,7 @@ object TreeBuilder {
         return TreeWire.windowRootJson(display.first, display.second, rootChildren, unreadable)
     }
 
-    private fun nodeToJson(node: AccessibilityNodeInfo): JSONObject {
+    private fun nodeToJson(node: AccessibilityNodeInfo, walk: Boolean = true): JSONObject {
         // Per-node refresh parity with the /tap-by-id walkFind path.
         // Chained NavHost transitions leave cached AccessibilityNodeInfo
         // descendants stale even after parent root.refresh(); a tree
@@ -2295,7 +2307,7 @@ object TreeBuilder {
         val rect = Rect()
         node.getBoundsInScreen(rect)
         val childArr = JSONArray()
-        for (i in 0 until node.childCount) {
+        for (i in 0 until if (walk) node.childCount else 0) {
             val child = node.getChild(i) ?: continue
             try {
                 childArr.put(nodeToJson(child))

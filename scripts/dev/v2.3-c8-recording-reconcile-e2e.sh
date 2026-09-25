@@ -64,7 +64,12 @@ cd "$ROOT"
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX"
 
 step "0. resolve the device, and refuse to run next to somebody's session"
-UDID="$("$SMIX" sim list 2>/dev/null | awk -v a="$ALIAS" '$2 == a || $0 ~ a {print $1; exit}')"
+# Asked by name, not filtered out of `sim list` by an awk that exits at
+# the first match: closing the pipe early made smix panic writing the
+# rest ("failed printing to stdout: Broken pipe", exit 101), and under
+# `pipefail` the script died at step 0 without a word — one run in
+# thirty, on 2026-09-25. That panic is smix's own defect (open-items).
+UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1 || true)"
 
 # Only shut down what this script booted.
 #
@@ -117,7 +122,7 @@ FIRST="$OUTDIR/first.mov"
   || fail "record start failed"
 # The command has already exited. If the handle were still only in its
 # memory, everything below would be impossible.
-LEDGER=".smix/leases/$UDID.json"
+LEDGER="$(e2e_ledger_path "$UDID")"
 [ -f "$LEDGER" ] || fail "no ledger after record start"
 python3 -c "
 import json,sys
@@ -136,7 +141,7 @@ set +e
 OUT="$("$SMIX" record start "$UDID" --output "$OUTDIR/second-attempt.mov" 2>&1)"
 RC=$?
 set -e
-[ "$RC" -ne 0 ] || fail "a second recording was allowed to start"
+[ "$RC" -ne 0 ] || fail "a second recording was allowed to start: $OUT"
 echo "$OUT" | grep -q "in use by pid" || fail "refusal does not name the holder: $OUT"
 log "second recording refused"
 
@@ -167,7 +172,12 @@ SECOND="$OUTDIR/second.mov"
 "$SMIX" record start "$UDID" --output "$SECOND" >/dev/null 2>&1 \
   || fail "second record start failed"
 sleep 2
+# Captured whatever it exits with: a reconcile that leaves a live holder
+# alone may say so with a non-zero status, and under `set -e` the capture
+# alone ended the script before `fail` could say anything.
+set +e
 OUT="$("$SMIX" lease reconcile "$UDID" 2>&1)"
+set -e
 echo "$OUT" | grep -q "not touching it" \
   || fail "reconcile ended a recording somebody asked for: $OUT"
 log "left alone, as a live session should be"
@@ -184,7 +194,9 @@ led = json.load(open('$LEDGER'))
 led['holder'] = {'pid': 0, 'startedAt': 'Thu Aug  6 10:00:00 2026', 'cmd': 'smix run killed.yaml'}
 json.dump(led, open('$LEDGER', 'w'))
 " || fail "could not stage the killed-session state"
+set +e
 OUT="$("$SMIX" lease reconcile "$UDID" 2>&1)"
+set -e
 echo "$OUT" | grep -q "recording stopped" \
   || fail "reconcile did not close an orphaned recording: $OUT"
 BOXES="$(playable "$SECOND")" || fail "orphaned recording is not playable — boxes: $BOXES"

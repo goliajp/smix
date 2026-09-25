@@ -5,10 +5,17 @@
 #   1. a physical device must be registered before it can be addressed
 #   2. destructive actions on one are refused until opted in, once
 #
-# Everything here runs against a throwaway workspace with hand-written
-# registry entries. That is the point: the rules are pure functions over
-# the registry, so proving them needs no device — and a guard that could
-# only be tested by risking a real phone would never be tested.
+# Everything here runs against a machine directory of its own, with
+# identifiers that have the shape of a device and no device behind them.
+# That is the point: the rules are pure functions over the registry, so
+# proving them needs no device — and a guard that could only be tested by
+# risking a real phone would never be tested.
+#
+# Until 2026-09-25 this said "a throwaway workspace" while writing the
+# machine's real ledger (device facts left the checkout in 4.0), with the
+# owner's iPhone UDID and Samsung serial as literals. It registered the
+# real iPhone, lifted its destructive guard, and ran `keychain-reset` on
+# it. Nothing here names a real device now.
 #
 # Ordering note: this lands BEFORE the physical-device capability (C11).
 # During the R1-R5 research the capability was exercised by hand with no
@@ -19,7 +26,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 WORK="$(mktemp -d)"
+e2e_isolate_machine "$WORK"
 
 log()  { printf '[c10-guard] %s\n' "$*"; }
 step() { printf '[c10-guard] --- %s\n' "$*"; }
@@ -43,13 +53,13 @@ mkdir -p .smix
 # Registering the phone through the real command is what turned up the
 # actual gap: there was no way to register a physical device at all.
 # `sim register` looked every device up in simctl, which lists no phones.
-"$SMIX" sim register phone --udid 00008120-001410C11A42201E \
+"$SMIX" sim register phone --udid "$E2E_FAKE_IOS_UDID" \
   --kind physical-ios --name panda-phone >/dev/null 2>&1 \
   || fail "could not register a physical device"
 
 step "1. an unregistered physical serial cannot be addressed"
 set +e
-OUT="$("$SMIX" sim resolve R5CT52DF07D 2>&1)"
+OUT="$("$SMIX" sim resolve "$E2E_FAKE_ANDROID_SERIAL" 2>&1)"
 RC=$?
 set -e
 [ "$RC" -ne 0 ] || fail "an unregistered device resolved: $OUT"
@@ -59,7 +69,7 @@ log "unregistered device refused, pointed at the registry"
 
 step "2. a registered phone is addressable — registration is the gate, not a ban"
 OUT="$("$SMIX" sim resolve phone 2>&1 | tail -1)"
-echo "$OUT" | grep -q "00008120-001410C11A42201E" || fail "registered phone did not resolve: $OUT"
+echo "$OUT" | grep -q "$E2E_FAKE_IOS_UDID" || fail "registered phone did not resolve: $OUT"
 log "registered phone resolves"
 
 step "3. destructive on that phone is refused, by name and with the way out"

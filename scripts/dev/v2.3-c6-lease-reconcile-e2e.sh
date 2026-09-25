@@ -50,7 +50,12 @@ cd "$ROOT"
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli --bin smix)"
 
 step "0. resolve the device, and refuse to run next to somebody's session"
-UDID="$("$SMIX" sim list 2>/dev/null | awk -v a="$ALIAS" '$2 == a || $0 ~ a {print $1; exit}')"
+# Asked by name, not filtered out of `sim list` by an awk that exits at
+# the first match: closing the pipe early made smix panic writing the
+# rest ("failed printing to stdout: Broken pipe", exit 101), and under
+# `pipefail` the script died at step 0 without a word — one run in
+# thirty, on 2026-09-25. That panic is smix's own defect (open-items).
+UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1 || true)"
 
 # Only shut down what this script booted.
 #
@@ -131,7 +136,7 @@ step "1. boot the device and bring the runner up, both through smix"
 "$SMIX" sim boot "$UDID" >/dev/null 2>&1 || fail "sim boot failed"
 "$SMIX" runner up "$UDID" --bundle "$BUNDLE" >/dev/null 2>&1 \
   || fail "runner up failed"
-LEDGER=".smix/leases/$UDID.json"
+LEDGER="$(e2e_ledger_path "$UDID")"
 [ -f "$LEDGER" ] || fail "no ledger at $LEDGER — runner up did not record the session"
 log "ledger written: $LEDGER"
 

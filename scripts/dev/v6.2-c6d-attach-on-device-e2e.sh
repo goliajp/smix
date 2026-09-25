@@ -30,7 +30,7 @@ cannot_judge() { printf '[c6d] SKIP: %s\n' "$*" >&2; exit 2; }
 
 UDID="" WE_BOOTED=0 WE_UPPED=0
 cleanup() {
-  [ "$WE_UPPED" = 1 ]  && "$SMIX" down --device "$UDID" >/dev/null 2>&1 || true
+  [ "$WE_UPPED" = 1 ]  && "$SMIX" runner down --device "$UDID" --runner-port "$PORT" >/dev/null 2>&1 || true
   if [ -n "$UDID" ]; then
     P="$(pgrep -f "xcodebuild.*$UDID" 2>/dev/null || true)"
     [ -n "$P" ] && { kill -INT $P 2>/dev/null || true; sleep 1; kill -9 $P 2>/dev/null || true; }

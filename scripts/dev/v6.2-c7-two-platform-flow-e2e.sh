@@ -19,8 +19,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-IOS_ALIAS="${SMIX_C7_IOS:-smix-ios}"
-AND_ALIAS="${SMIX_C7_ANDROID:-smix-android}"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
+IOS_ALIAS="${SMIX_C7_IOS:-$E2E_IOS}"
+# Our own AVDs by the names the rest of the suite uses. `smix-ios` /
+# `smix-android` are registry aliases somebody may re-point; on
+# 2026-09-25 `smix-android` still named sim-smix-android-01, but an
+# alias is a row in a shared ledger, not a promise.
+AND_ALIAS="${SMIX_C7_ANDROID:-$E2E_ANDROID}"
 # shellcheck source=../lib/gate-port.sh
 source "$ROOT/scripts/lib/gate-port.sh"
 # One runner per platform, so two ports, both asked of the OS.
@@ -49,7 +55,7 @@ cleanup() {
   # there. Measured elsewhere in this repo: 23 of 26 corpus flows red,
   # every one of them blaming the runner.
   if [ "$IOS_WE_UPPED" = 1 ]; then
-    if ! down_said="$("$SMIX" down --device "$IOS_UDID" 2>&1)"; then
+    if ! down_said="$("$SMIX" runner down --device "$IOS_UDID" --runner-port "$IOS_PORT" 2>&1)"; then
       printf 'warning: the iOS runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
     fi
   fi
@@ -59,7 +65,7 @@ cleanup() {
   fi
   [ "$IOS_WE_BOOTED" = 1 ] && "$SMIX" sim shutdown "$IOS_UDID" >/dev/null 2>&1 || true
   if [ "$AND_WE_UPPED" = 1 ]; then
-    if ! down_said="$("$SMIX" down --platform android --device "$AND_SERIAL" 2>&1)"; then
+    if ! down_said="$("$SMIX" runner down --platform android --device "$AND_SERIAL" --runner-port "$AND_PORT" 2>&1)"; then
       printf 'warning: the Android runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
     fi
   fi
@@ -215,8 +221,10 @@ if [ -n "$AND_SERIAL" ] && [ "$AND_WE_UPPED" = 1 ]; then
   log "Android OK: unresolved \${$MISSING} → non-zero + 'undefined variable', no literal typed"
 
   step "Android: tree human output prints text= (⑤ integration touch)"
-  SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" tree --device "$AND_SERIAL" 2>/dev/null | grep -q 'text=' \
-    || fail "Android human tree has no text= — ⑤ regressed"
+  HUMAN="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" tree --device "$AND_SERIAL" 2>&1 || true)"
+  printf '%s' "$HUMAN" | grep -q 'text=' \
+    || fail "Android human tree has no text= — ⑤ regressed. It printed:
+$(printf '%s' "$HUMAN" | head -15)"
   log "Android OK: human tree prints text="
 fi
 

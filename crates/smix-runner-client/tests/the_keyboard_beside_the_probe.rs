@@ -118,3 +118,62 @@ async fn a_cli_verb_sees_the_keyboard_on_an_app_with_the_probe() {
         "the app's window must appear once, as the probe's"
     );
 }
+
+async fn tree_queries(server: &MockServer) -> Vec<String> {
+    server
+        .received_requests()
+        .await
+        .expect("recording is on")
+        .into_iter()
+        .filter(|r| r.url.path() == "/tree")
+        .map(|r| r.url.query().unwrap_or_default().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn the_reader_is_asked_to_leave_the_apps_window_hollow() {
+    // The app's window from the accessibility reader is replaced by the
+    // probe's view of it, so walking it was work thrown away. It is what
+    // `neverVisible` pays on every look: on the fixture's watch screen
+    // the read went 30 → 19 ms without it (C9j, 2026-09-25).
+    for named in [true, false] {
+        let server = screen_with_a_keyboard(serde_json::json!({
+            "present": true, "version": "1", "roots": 1, "quietMs": 40,
+            "app": "dev.smix.fixture",
+        }))
+        .await;
+        let client = if named {
+            HttpRunnerClient::with_base(server.uri()).with_target_bundle_id("dev.smix.fixture")
+        } else {
+            HttpRunnerClient::with_base(server.uri())
+        };
+        let tree = client.get_tree(None).await.expect("tree");
+        assert_eq!(keyboards(&tree.root), 1, "the keyboard is not in the tree");
+        assert_eq!(
+            tree_queries(&server).await,
+            vec!["hollow=dev.smix.fixture".to_string()],
+            "named app: {named}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_scope_travels_beside_the_hollow_app_rather_than_inside_it() {
+    // `/tree?hollow=…` plus `?include=…` used to make one query value out
+    // of two: `hollow=dev.smix.fixture?include=all-windows`.
+    let server = screen_with_a_keyboard(serde_json::json!({
+        "present": true, "version": "1", "roots": 1, "quietMs": 40,
+        "app": "dev.smix.fixture",
+    }))
+    .await;
+    let client =
+        HttpRunnerClient::with_base(server.uri()).with_target_bundle_id("dev.smix.fixture");
+    client
+        .get_tree(Some(smix_runner_client::IncludeScope::AllWindows))
+        .await
+        .expect("tree");
+    assert_eq!(
+        tree_queries(&server).await,
+        vec!["hollow=dev.smix.fixture&include=all-windows".to_string()]
+    );
+}

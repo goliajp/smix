@@ -407,6 +407,13 @@ jobs:
         run: python3 scripts/dev/a-script-drives-this-tree.py
       - name: the this-tree gate can still go red
         run: python3 scripts/dev/a-script-drives-this-tree.test.py
+      # A script touches a phone only when a person named it, and writes
+      # the device registry only into a machine directory of its own.
+      # 2026-09-25: a release dry-run reached the owner's two phones.
+      - name: an e2e leaves the phones alone
+        run: python3 scripts/dev/an-e2e-leaves-the-phones-alone.py
+      - name: the phones gate can still go red
+        run: python3 scripts/dev/an-e2e-leaves-the-phones-alone.test.py
       # A device gate keeps what the device recorded when the app under
       # test went away mid-flow. CI's corpus lost one that way with nothing kept.
       - name: every device gate keeps the crash evidence

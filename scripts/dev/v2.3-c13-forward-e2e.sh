@@ -11,6 +11,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 OUT="$(mktemp)"
 
 log()  { printf '[c13-forward] %s\n' "$*"; }
@@ -32,13 +34,11 @@ cargo test -p smix-lease forward_ordering > "$OUT" 2>&1 \
 log "$(grep -oE 'test result: ok\. [0-9]+ passed' "$OUT" | head -1) (supervisor → runner → pipe)"
 
 step "2. is there a device to tunnel to?"
-UDID="$(cargo run -q -p smix-usbmux --example first_device 2>/dev/null || true)"
-if [ -z "$UDID" ]; then
-  log "no iOS device on usbmux — the tunnel half cannot be exercised"
-  log "attach a device over USB and re-run to turn this into a PASS"
-  echo "C13-FORWARD-SKIP"
-  exit 0
-fi
+# Only a device a person named. This used to take whatever usbmux listed
+# first — the owner's own iPhone — and on 2026-09-25 a release dry-run
+# opened a tunnel to it.
+e2e_physical_or_skip ios c13-forward
+UDID="$E2E_PHYSICAL"
 log "device $UDID"
 
 step "3. a real tunnel behaves like the echo stand-in did"

@@ -18,9 +18,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_PHYSICAL_ALIAS:-phone}"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 BUNDLE="${SMIX_PHYSICAL_BUNDLE:-com.apple.Preferences}"
-PORT="${SMIX_RUNNER_PORT:-22087}"
+# The phone's runner port is named too. It used to default to 22087, the
+# port a consumer on this machine drives its simulator through, and on
+# 2026-09-25 this "photographed a phone" by pairing that runner's tree
+# with a capture from the owner's iPhone.
+PORT="${SMIX_E2E_PHYSICAL_IOS_PORT:-}"
 SHOT="$(mktemp -d)/shot.png"
 OUT="$(mktemp)"
 
@@ -48,23 +53,24 @@ log "route envelope: 3 tests (bytes verbatim, no-pixels refuses, empty refuses)"
 log "each failure names a different fix"
 
 step "1. is there a registered, reachable phone with a runner up?"
-UDID="$(cargo run -q -p smix-usbmux --example first_device 2>/dev/null || true)"
+e2e_physical_or_skip ios c20-shot
+ALIAS="$E2E_PHYSICAL"
+UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1 || true)"
 if [ -z "$UDID" ]; then
-  log "no iOS device on usbmux — nothing to photograph"
+  log "'$ALIAS' was named and is not registered — register it with --kind physical-ios"
   echo "C20-PHYSICAL-SCREENSHOT-SKIP"
-  exit 0
+  exit 2
 fi
-if ! "$SMIX" sim resolve "$ALIAS" >/dev/null 2>&1; then
-  log "device $UDID is attached but no alias '$ALIAS' is registered"
-  log "register it: smix sim register $ALIAS --udid $UDID --kind physical-ios"
+if [ -z "$PORT" ]; then
+  log "no runner port named for $ALIAS (SMIX_E2E_PHYSICAL_IOS_PORT) — a default port is somebody else's"
   echo "C20-PHYSICAL-SCREENSHOT-SKIP"
-  exit 0
+  exit 2
 fi
 if ! curl -s -m 5 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
   log "no runner answering on $PORT — this checks the runner's route to a phone's screen, which needs one (devicectl's route, Xcode 27, is v10.2-c1's)"
   log "smix runner up $ALIAS --bundle $BUNDLE   (then re-run)"
   echo "C20-PHYSICAL-SCREENSHOT-SKIP"
-  exit 0
+  exit 2
 fi
 log "phone $UDID, runner on $PORT"
 

@@ -958,7 +958,12 @@ impl HttpRunnerClient {
 
     fn url(&self, endpoint: &str, include: Option<IncludeScope>) -> String {
         match include {
-            Some(s) => format!("{}{}?include={}", self.base, endpoint, s.query_value()),
+            Some(s) => {
+                // An endpoint may carry a query of its own (`/tree?hollow=`),
+                // and a second `?` would fold `include` into its value.
+                let join = if endpoint.contains('?') { '&' } else { '?' };
+                format!("{}{}{join}include={}", self.base, endpoint, s.query_value())
+            }
             None => format!("{}{}", self.base, endpoint),
         }
     }
@@ -1568,9 +1573,27 @@ impl HttpRunnerClient {
         // window from the accessibility reader, and a reader that cannot
         // answer is an error here rather than half a screen passed off as
         // the whole of it.
+        //
+        // The reader is told which app that is, and leaves its windows
+        // hollow — the window itself (where it sits in the stack, whether
+        // it has the focus), not what is in it. Its contents are replaced
+        // by the probe's a line below, so walking them was work thrown
+        // away. Measured on the fixture's watch screen (2026-09-25): the
+        // read 30 → 19 ms, and `neverVisible` over the same span 12 looks
+        // with a 131 ms longest gap → 18–19 looks, 82–89 ms (host load 13
+        // and 10, so not a strict A/B). A runner that predates the
+        // parameter ignores it and walks everything: slower, still right.
         if let Some((app_tree, app)) = self.semantics_tree(self.target_bundle_id.as_deref()).await {
-            let screen = self.accessibility_tree_only(include).await?.root;
             let app = self.target_bundle_id.clone().or(app);
+            let screen = match app.as_deref() {
+                Some(a) => {
+                    let mut root: A11yNode =
+                        self.json_get(&format!("/tree?hollow={a}"), include).await?;
+                    derive_roles_recursive(&mut root);
+                    root
+                }
+                None => self.accessibility_tree_only(include).await?.root,
+            };
             let mut root = smix_screen::beside_other_windows(screen, app_tree, app.as_deref());
             self.mark_a_one_app_root(&mut root);
             return Ok(PerceivedTree {

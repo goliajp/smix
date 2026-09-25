@@ -161,6 +161,11 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Added
 
+- **`smix lease status <DEVICE> --json`.** `{device, path, lease}`: the
+  device's ledger as it is stored (null when there is none) and the file
+  it lives in. A script reads that instead of building the path — four of
+  ours built it, three from the checkout, where ledgers have not been kept since 4.0.
+
 - **`clearLocation` — the way back from `setLocation` and `travel`.**
   A simulated location outlives the flow that set it; on a registered
   iPhone it outlives the cable. There was no verb that put it back, so a
@@ -692,6 +697,17 @@ moved and `Step` is now `#[non_exhaustive]`.
   path. `RunnerScrollSelector` and `ScrollResponse` go with it.
 
 ### Fixed
+
+- **Android `/clear-text` with no field in focus answers
+  `no_focused_field` in about 8 s, where it took 12 and said
+  `field_not_empty`.** The second look waited for focus on a budget of its
+  own inside the route's, so the bound was not the one written down; and
+  "no field was found to ask" was reported as a field with text left in it.
+- **Reading a screen through the semantics probe no longer walks the
+  app's window twice.** The accessibility reader is asked for every
+  window but the app's, whose place the probe's tree takes (`/tree?hollow=`).
+  On the fixture a read went from 30 to 19 ms, and `neverVisible` looked
+  18–19 times over a span it had looked at 12.
 
 - An emulator alias now resolves to the device it names, not to the port
   that device answered on when it was registered. `emulator-<port>` is a

@@ -125,8 +125,8 @@ def main():
     case(
         "an OK MEANS line on a route that serves no POST",
         routes.replace(
-            "    private fun serveTree(): Response {",
-            "    private fun serveTree(): Response {\n        // OK MEANS: outcome — nothing checks this line.",
+            "    private fun serveTree(session: IHTTPSession): Response {",
+            "    private fun serveTree(session: IHTTPSession): Response {\n        // OK MEANS: outcome — nothing checks this line.",
             1,
         ),
         wire,

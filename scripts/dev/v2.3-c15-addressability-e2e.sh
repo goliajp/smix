@@ -24,8 +24,11 @@
 # half that matters — it is the shape of the 2026-07-17 incident, when
 # smix's runner landed on somebody's personal handset.
 #
-# Every call this makes against real hardware is one it expects to be
-# REFUSED. Nothing is installed, removed, or changed on any phone.
+# Real hardware is reached only when a person names a phone
+# (SMIX_E2E_PHYSICAL_ANDROID), and every call made against it is one this
+# script has first proven must be REFUSED — the phone is unregistered in
+# this script's own ledger. "Expects to be refused" was not enough: on
+# 2026-09-25 the premise was false and the call ran on the owner's phone.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -34,7 +37,13 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$ROOT/scripts/lib/gate-port.sh"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 WORK="$(mktemp -d)"
+# The registrations below (`ghost`, and in step 6 the named phone) are
+# this script's own. Until 2026-09-25 `ghost` was written into the real
+# ledger.
+e2e_isolate_machine "$WORK"
 OUT="$(mktemp)"
 
 log()  { printf '[c15-address] %s\n' "$*"; }
@@ -105,22 +114,37 @@ grep -q "destructive actions are not allowed" "$OUT" \
 log "addressable, and destructive still refused — two gates, not one"
 
 step "4. an emulator serial needs no registration"
-smix runner uninstall --platform android --device emulator-5554 > "$OUT"
+# A serial with an emulator's shape and nothing behind it. It used to be
+# emulator-5554, and a serial is a port: whichever AVD booted into it
+# first — on 2026-09-24 a consumer's — would have had smix's runner
+# uninstalled.
+smix runner uninstall --platform android --device emulator-5998 > "$OUT"
 grep -q "is not a device smix may address" "$OUT" \
   && { cat "$OUT"; fail "an emulator serial was refused"; }
-log "emulator-5554 addressable without registration"
+log "an emulator serial is addressable without registration"
 
 step "5. an attached, unregistered physical device stays untouchable"
-# The half no fabricated serial can prove. adb-guard blocks this script
-# from asking adb directly about a physical serial — which is the point:
-# smix is the sanctioned way to reach one, so smix is where the check has
-# to live.
-SERIAL="$(adb devices 2>/dev/null | awk 'NR>1 && $2=="device" && $1 !~ /^emulator-/ { print $1; exit }' || true)"
-if [ -z "$SERIAL" ]; then
-  log "no physical Android device attached — the only assertion that needs"
-  log "hardware cannot run. Attach one and re-run to turn this into a PASS."
-  echo "C15-ADDRESSABILITY-SKIP"
+# The half no fabricated serial can prove, and the half that ran on the
+# owner's Samsung on 2026-09-25: the device had been registered (by a
+# sibling of this script, into the real ledger), so the "refused" call
+# was not refused and smix's runner was uninstalled from the phone.
+#
+# Two things changed. A phone is used only when a person names one —
+# being attached is not permission. And the premise ("it is not
+# registered") is proven before anything is sent, not read off the
+# result afterwards: this script's ledger is its own, so the named phone
+# is unregistered by construction, and the resolve below confirms it
+# without reaching the device.
+if [ -z "${SMIX_E2E_PHYSICAL_ANDROID:-}" ]; then
+  log "no physical Android device named (SMIX_E2E_PHYSICAL_ANDROID) — steps 1-4 drove;"
+  log "the half that needs a phone is not run, because attached is not permission"
+  echo "C15-ADDRESSABILITY-PASS-WITHOUT-PHONE"
   exit 0
+fi
+e2e_physical_or_skip android c15-address
+SERIAL="$E2E_PHYSICAL"
+if "$SMIX" sim resolve "$SERIAL" >/dev/null 2>&1; then
+  fail "premise does not hold: $SERIAL resolves in this script's own ledger ($SMIX_MACHINE_DIR), so a call expected to be refused would run — nothing was sent"
 fi
 log "attached physical device: $SERIAL (only refused calls are made against it)"
 

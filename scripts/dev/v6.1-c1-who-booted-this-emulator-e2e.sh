@@ -20,7 +20,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_C1_ALIAS:-smix-android}"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
+# Our second AVD, which nothing else here keeps running — this check needs
+# a device it can start from nothing. It used to be the alias
+# `smix-android`, which by 2026-09-25 named emulator-5560: a consumer's
+# emulator, whose port step 3 starts an emulator on by hand.
+ALIAS="${SMIX_C1_ALIAS:-$E2E_ANDROID_SECOND}"
 WORK="$(mktemp -d)"
 
 log()  { printf '[c1] %s\n' "$*" >&2; }
@@ -41,10 +47,11 @@ trap cleanup EXIT
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
 command -v adb >/dev/null 2>&1 || cannot_judge "no adb — this needs the Android SDK"
 
+# An emulator alias names an AVD, and an AVD that is not running has no
+# serial yet — resolving it says so. That is the arrival state this check
+# wants; anything else is somebody's running device.
 SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
-[ -n "$SERIAL" ] || cannot_judge "no emulator registered as '$ALIAS' — register one first:
-  smix sim register $ALIAS --udid emulator-<port> --kind emulator"
-log "device $SERIAL (alias $ALIAS)"
+log "device $ALIAS (on arrival: ${SERIAL:-not running})"
 
 ready() {
   for _ in $(seq 1 60); do
@@ -64,18 +71,20 @@ step "0. start from nothing on that port"
 # because a teardown that cannot say what it is restoring to is how one
 # script leaves the next one without a device.
 WE_BOOTED_IT=yes
-if running; then
+if [ -n "$SERIAL" ]; then
   WE_BOOTED_IT=no
   # Whatever is there now was not started by this run, and this script
   # does not stop devices it did not start — the rule it is here to
   # check applies to it too.
-  fail "$SERIAL is already running. This check starts from an empty port so that
+  fail "$ALIAS is already running as $SERIAL. This check starts from nothing so that
 'who booted it' has one answer. Stop it the way it was started, then re-run."
 fi
 
 step "1. smix boots it, and the ledger says so"
 "$SMIX" sim boot "$ALIAS" > "$WORK/boot.log" 2>&1 \
   || { cat "$WORK/boot.log" >&2; fail "smix could not boot $ALIAS"; }
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
+[ -n "$SERIAL" ] || fail "smix booted $ALIAS and cannot say which serial it is on"
 running || fail "smix reported a boot and adb does not list $SERIAL — a report of
 something that did not happen is the defect this version is about"
 "$SMIX" lease owner "$SERIAL" 2>/dev/null > "$WORK/owner.log" || true
@@ -95,9 +104,9 @@ stop whatever is on that port next: $(cat "$WORK/owner2.log")"
 log "row cleared"
 
 step "3. an emulator smix did not start is not smix's to stop"
-# Start it outside smix, the way a person or another tool would.
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
-"$ANDROID_HOME/emulator/emulator" -avd "${SMIX_C1_AVD:-$E2E_ANDROID}" \
+# Start it outside smix, the way a person or another tool would: the same
+# AVD, on the port smix just gave back.
+"$ANDROID_HOME/emulator/emulator" -avd "${SMIX_C1_AVD:-$ALIAS}" \
   -port "${SERIAL##*-}" -no-boot-anim > "$WORK/manual.log" 2>&1 &
 WE_STARTED_MANUAL=1
 ready || { tail -5 "$WORK/manual.log" >&2; fail "the hand-started emulator did not come up"; }
