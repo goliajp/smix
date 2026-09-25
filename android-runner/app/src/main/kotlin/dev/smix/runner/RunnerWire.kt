@@ -338,6 +338,18 @@ object RunnerWire {
         .put("to", JSONObject().put("x", q.x2).put("y", q.y2))
         .toString()
 
+    /// `app` is the package the probe answered for — the one the caller
+    /// named, or the one holding the focus when it named none. The host
+    /// needs it to tell the app's windows from everyone else's.
+    fun probePresentBody(app: String, version: String, roots: Int, quietMs: Long): String =
+        JSONObject()
+            .put("present", true)
+            .put("app", app)
+            .put("version", version)
+            .put("roots", roots)
+            .put("quietMs", quietMs)
+            .toString()
+
     fun pressKeyBody(ok: Boolean, key: String, keyCode: Int): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "key_not_injected")

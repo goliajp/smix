@@ -988,6 +988,15 @@ moved and `Step` is now `#[non_exhaustive]`.
   runs in five on the fixture. A node is taken as focused only when it
   says so.
 
+- **On Android, an app carrying the probe no longer hides the keyboard
+  from `role: keyboard`.** With the probe present the tree was the probe's
+  alone, and the probe reads only the app — so the keyboard, the system
+  bars and another app's dialog on top were absent rather than unread.
+  `extendedWaitUntil: { visible: { role: keyboard } }` timed out with the
+  keyboard on screen. The tree is now the whole screen: the
+  app's windows from the probe, every other window from the accessibility
+  reader, each saying whose it is. `source` still says `semantics`.
+
 ## [10.1.0] — 2026-09-19
 
 ### Changed
