@@ -34,7 +34,10 @@ pub use screenshot_hash::ScreenMask;
 pub mod quiescence;
 
 pub mod issued_ledger;
+
+mod keyboard_note;
 pub use issued_ledger::{IssuedAction, IssuedKind, IssuedLedger};
+pub use keyboard_note::keyboard_minimized_note;
 
 // DeviceControl trait + cross-platform Permission enum + iOS impl.
 // Two-trait architecture pair with smix-driver::Driver.
@@ -2898,7 +2901,39 @@ impl App {
         selector: &Selector,
         timeout: Duration,
     ) -> Result<A11yNode, ExpectationFailure> {
-        self.driving()?.wait_for(selector, timeout, None).await
+        match self.driving()?.wait_for(selector, timeout, None).await {
+            Err(e) if e.code == FailureCode::Timeout => {
+                Err(self.with_keyboard_setting(selector, e).await)
+            }
+            other => other,
+        }
+    }
+
+    /// Adds the simulator's keyboard-minimization setting to a keyboard
+    /// wait that ran out, when that setting is why. Asked only here, on
+    /// the failure path: one `simctl spawn` per failed keyboard wait.
+    ///
+    /// A setting that could not be read leaves the failure as it was —
+    /// the wait's own verdict stands, and the read is a note on it.
+    async fn with_keyboard_setting(
+        &self,
+        selector: &Selector,
+        mut failure: ExpectationFailure,
+    ) -> ExpectationFailure {
+        let (Some(simctl), Some(udid)) = (self.device.as_ios_simctl(), self.udid.as_deref()) else {
+            return failure;
+        };
+        if !keyboard_note::waits_for_keyboard(selector) {
+            return failure;
+        }
+        let setting = simctl.keyboard_minimization(udid).await.ok().flatten();
+        if let Some(note) = keyboard_minimized_note(selector, setting, udid) {
+            failure.hint = Some(match failure.hint.take() {
+                Some(h) => format!("{note} {h}"),
+                None => note,
+            });
+        }
+        failure
     }
 
     // ---- assertion matchers -------------------------------------------
@@ -2913,7 +2948,10 @@ impl App {
             .await
         {
             Ok(_) => Ok(()),
-            Err(e) if e.code == FailureCode::Timeout => Err(ExpectationFailure::new(FailureInit {
+            Err(e) if e.code == FailureCode::Timeout => Err(self
+                .with_keyboard_setting(
+                    selector,
+                    ExpectationFailure::new(FailureInit {
                 code: Some(FailureCode::NotVisible),
                 message: match unevaluable_form(selector) {
                     // A false red rather than a false green — but the
@@ -2932,7 +2970,9 @@ impl App {
                 suggestions: e.suggestions.clone(),
                 ..Default::default()
             }
-            .with_screen_from(&e))),
+            .with_screen_from(&e)),
+                )
+                .await),
             Err(e) => Err(e),
         }
     }

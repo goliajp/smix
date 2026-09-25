@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use smix_runner_sources::{extract_android_to, extract_to};
+use smix_runner_sources::{RunnerPlatform, ensure_tree, extract_to};
 
 /// Mirrors the excludes in `scripts/release/build-runner-tarball.sh`.
 ///
@@ -191,14 +191,17 @@ fn the_embedded_android_tarball_matches_the_kotlin_sources_in_this_repository() 
         .canonicalize()
         .expect("android-runner must exist next to the crate");
 
-    let dir = tempfile::tempdir().expect("tempdir");
-    extract_android_to(dir.path()).expect("extract");
+    let root = tempfile::tempdir().expect("tempdir");
+    let tree = ensure_tree(root.path(), RunnerPlatform::Android)
+        .expect("extract")
+        .dir;
 
     let mut on_disk = BTreeMap::new();
     collect_with(&repo, &repo, &is_excluded_android, &mut on_disk);
     let mut embedded = BTreeMap::new();
-    collect_with(dir.path(), dir.path(), &is_excluded_android, &mut embedded);
+    collect_with(&tree, &tree, &is_excluded_android, &mut embedded);
     embedded.remove(Path::new(smix_runner_sources::ANDROID_VERSION_FILE));
+    embedded.remove(Path::new(smix_runner_sources::LAST_USED_FILE));
 
     // The one file that is *meant* to differ: the shipped tree drops
     // `include(":sdk")`, since `:sdk` is not carried. Compare it modulo

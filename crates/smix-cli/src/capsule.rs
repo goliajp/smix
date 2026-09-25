@@ -327,8 +327,8 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
     }
 
     // 5. runner up with record=true. Uses runner-project cascade
-    // (repo-side swift-bridge/ or install-shipped ~/.local/share/smix/runner/,
-    // whichever exists first). capsule callers don't override.
+    // (install-shipped ~/.local/share/smix/runner-sources/ios/<sources>/ or
+    // repo-side swift-bridge/, whichever exists first). capsule callers don't override.
     smix_capsule::runner::up(
         opts.root,
         opts.udid,

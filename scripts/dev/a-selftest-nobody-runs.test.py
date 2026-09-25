@@ -5,6 +5,7 @@ This one has to pass its own rule: a gate about self-tests nobody runs,
 with no self-test, would be the joke it exists to prevent.
 """
 
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -14,6 +15,13 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 GATE = os.path.join(HERE, "a-selftest-nobody-runs.py")
 ROOT = os.path.dirname(os.path.dirname(HERE))
+
+
+def gate_selftest_dirs():
+    spec = importlib.util.spec_from_file_location("selftest_gate", GATE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.SELFTEST_DIRS
 
 
 def tree(drop_reference=None, extra_selftest=None):
@@ -112,8 +120,12 @@ def main() -> int:
     )
 
     # And that half must be able to lose its subject, too.
+    # Every directory the gate scans, read from the gate: this loop had its
+    # own copy without `scripts/lib`, and the first `--selftest` added
+    # there kept the count up, so this case could no longer make the gate
+    # lose its subject.
     d2 = tree()
-    for rel in ("scripts/dev", "scripts/release"):
+    for rel in gate_selftest_dirs():
         for name in os.listdir(os.path.join(d2, rel)):
             if not name.endswith(".sh"):
                 continue

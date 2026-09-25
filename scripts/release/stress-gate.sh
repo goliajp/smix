@@ -21,6 +21,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # A port of this gate's own, so a bystander runner cannot turn it red.
 . "$REPO_ROOT/scripts/lib/gate-port.sh"
+# What the device recorded when a flow's app went away (K2).
+. "$REPO_ROOT/scripts/lib/crash-evidence.sh"
 SELECT="$REPO_ROOT/scripts/release/stress-select.py"
 
 # aggregate "flow|ok|ms" ... -> JSON array on stdout; returns 1 if any
@@ -116,6 +118,15 @@ if [ -n "$PARALLEL" ] && [ -n "${SMIX_CORPUS_ALSO_SIMS:-}" ]; then
   "$SMIX_BIN" run "${FLOWS[@]}" --device "$SIM" "${also[@]}" --parallel "$PARALLEL" \
     >"$LOG_DIR/parallel.log" 2>&1 && ok=1 || ok=0
   end=$(python3 -c 'import time;print(int(time.time()*1000))')
+  # One log for a batch sharded across devices: which flow's app left, and
+  # on which device, is not in it. Every device and every flow's app is
+  # asked, and the summary says what was asked.
+  for dev in "$SIM" $SMIX_CORPUS_ALSO_SIMS; do
+    for flow in "${FLOWS[@]}"; do
+      keep_crash_evidence_if_the_app_left ios "$dev" "$flow" "$((start / 1000))" \
+        "$LOG_DIR/parallel.log" "$LOG_DIR/crash-evidence/$dev/$(basename "$flow" .yaml)"
+    done
+  done
   RESULTS+=("parallel-batch|$ok|$((end - start))")
 else
   for flow in "${FLOWS[@]}"; do
@@ -124,6 +135,8 @@ else
     # raw run: the claim is that every flow passes under load; any failure fails it, and the log carries smix's line
     if "$SMIX_BIN" run "$flow" --device "$SIM" >"$LOG_DIR/$name.log" 2>&1; then ok=1; else ok=0; fi
     end=$(python3 -c 'import time;print(int(time.time()*1000))')
+    keep_crash_evidence_if_the_app_left ios "$SIM" "$flow" "$((start / 1000))" \
+      "$LOG_DIR/$name.log" "$LOG_DIR/crash-evidence/$name"
     echo "stress-gate: [$name] $([ $ok = 1 ] && echo PASS || echo FAIL) $((end - start))ms"
     RESULTS+=("$name|$ok|$((end - start))")
   done

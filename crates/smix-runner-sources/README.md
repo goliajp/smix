@@ -29,13 +29,20 @@ separately at extract time from GitHub Release pinned by version).
 ## API
 
 ```rust
-use smix_runner_sources::{extract_to, SOURCES_VERSION};
+use smix_runner_sources::{ensure_tree, RunnerPlatform};
 use std::path::Path;
 
-// Extract on version mismatch (called from smix-cli::runner).
-let report = extract_to(Path::new("~/.local/share/smix/runner"), false)?;
-println!("extracted {} files (v{})", report.file_count, SOURCES_VERSION);
+// The tree for these sources under a machine directory — one per set of
+// sources, `<root>/runner-sources/ios/<version>-<digest>/`, so two smix
+// builds on one machine never replace each other's (called from
+// smix-capsule when a runner comes up).
+let ensured = ensure_tree(Path::new("/home/me/.local/share/smix"), RunnerPlatform::Ios)?;
+println!("{} (extracted now: {})", ensured.dir.display(), ensured.extracted);
 ```
+
+`extract_to(dir, force)` remains for an explicit destination
+(`smix runner install --path <dir>`): that one directory is replaced
+whole and its previous tree kept beside it.
 
 ## Regenerating the tarball
 

@@ -8,7 +8,7 @@
 # consumer must not receive verbatim (nothing today, but reserved).
 #
 # The tarball ships as the source of truth for `smix runner up` to
-# extract into ~/.local/share/smix/runner/ on version mismatch, so the
+# extract into ~/.local/share/smix/runner-sources/ios/<version>-<digest>/, so the
 # contents MUST reproduce a working xcodebuild target on a machine
 # with just the CLI + Xcode installed.
 #

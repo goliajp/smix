@@ -297,6 +297,10 @@ python3 scripts/dev/a-status-is-read-from-the-command.test.py
 # A script drives the smix this tree builds, never the PATH's.
 python3 scripts/dev/a-script-drives-this-tree.py
 python3 scripts/dev/a-script-drives-this-tree.test.py
+# A device gate keeps what the device recorded when the app left mid-flow.
+python3 scripts/dev/a-device-gate-keeps-crash-evidence.py
+python3 scripts/dev/a-device-gate-keeps-crash-evidence.test.py
+bash scripts/lib/crash-evidence.sh --selftest
 # A flow run is judged by the code smix reported, not by the script's rule.
 python3 scripts/dev/a-run-is-judged-by-its-code.py
 python3 scripts/dev/a-run-is-judged-by-its-code.test.py

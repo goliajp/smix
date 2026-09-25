@@ -1808,6 +1808,22 @@ pub fn require_runner_resolvable_selector(
     }))
 }
 
+/// The code for a runner that could not snapshot the app, by what it said
+/// the cause was.
+///
+/// `not-running` and `crashed-during-init` come from the runner reading
+/// `XCUIApplication.state`: the app is gone, which is a fact about the
+/// app and what a caller branches on to go looking for its crash report.
+/// The rest say the reading failed, and stay a driver error. A category
+/// this side does not know is not assumed to be either — it is read as
+/// the reading failing.
+fn code_for_unavailable(category: Option<&str>) -> FailureCode {
+    match category {
+        Some("not-running" | "crashed-during-init") => FailureCode::AppNotRunning,
+        _ => FailureCode::DriverError,
+    }
+}
+
 /// What a transport error means to a caller, in one place.
 ///
 /// Exported rather than copied: a second translation of the same errors
@@ -1836,7 +1852,7 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
             hint,
             ..
         } => (
-            FailureCode::DriverError,
+            code_for_unavailable(category.as_deref()),
             Some(match (category.as_deref(), hint.as_deref()) {
                 (Some(cat), Some(h)) if cat != "unknown" => {
                     format!("the runner says {cat}: {h}")
