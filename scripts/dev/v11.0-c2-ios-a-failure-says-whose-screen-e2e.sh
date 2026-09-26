@@ -5,10 +5,10 @@
 # failure's first ten). iOS never had that — the status bar belongs to
 # SpringBoard and is not in the app's tree — but it had the other two gaps:
 # no line saying whose screen it was, and a list of ten with no word that
-# it was a sample. Both platforms are judged by v11.1-c2-judge.py, so they
+# it was a sample. Both platforms are judged by v11.0-c2-judge.py, so they
 # answer the same sentence.
 #
-# Usage: v11.1-c2-ios-a-failure-says-whose-screen-e2e.sh <simulator udid>
+# Usage: v11.0-c2-ios-a-failure-says-whose-screen-e2e.sh <simulator udid>
 #        (or SMIX_E2E_UDID)
 # Exit 0 judged and passed, 1 judged and failed, 2 could not judge.
 set -euo pipefail
@@ -24,7 +24,7 @@ PORT="$SMIX_RUNNER_PORT"
 UDID="${1:-${SMIX_E2E_UDID:-}}"
 APP="jp.golia.smix.fixture"
 FIXTURE="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
-JUDGE="$ROOT/scripts/dev/v11.1-c2-judge.py"
+JUDGE="$ROOT/scripts/dev/v11.0-c2-judge.py"
 WORK="$(mktemp -d)"
 
 log()  { printf '[c2-ios-whose-screen] %s\n' "$*" >&2; }

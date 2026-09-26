@@ -100,7 +100,7 @@ pub struct Ensured {
 /// A tree whose stamp names these sources is used as it is — never
 /// replaced, so a build running in it is never pulled out from under.
 /// A directory at that path whose stamp does not (hand-edited, or left
-/// by a crash before 11.1 made installs whole) is moved aside and
+/// by a crash before 11.0 made installs whole) is moved aside and
 /// removed, then the tree is built beside the path and moved in whole.
 /// When two callers race, one tree wins and both use it.
 ///

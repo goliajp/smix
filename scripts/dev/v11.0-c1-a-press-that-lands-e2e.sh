@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v11.1-C1: a tap on a dialog's button presses it — or says it did not.
+# v11.0-C1: a tap on a dialog's button presses it — or says it did not.
 #
 # A consumer tapped an Android dialog's confirm button three ways
 # (`text:Delete`, `text:DELETE`, `id:button1`), smix printed `tapped`

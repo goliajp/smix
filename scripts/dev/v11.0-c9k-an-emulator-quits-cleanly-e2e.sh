@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v11.1-C9k: an emulator smix starts survives its caller's process group
+# v11.0-C9k: an emulator smix starts survives its caller's process group
 # being ended, and `smix sim shutdown` returns once it has quit — with no
 # crash report left behind either way.
 #
