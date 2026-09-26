@@ -44,21 +44,8 @@ directory](#what-is-not-in-this-directory).
 | [`ai-guide/activate-header-lifetime.md`](./ai-guide/activate-header-lifetime.md) | Per-request `--activate` / `--bundle-id` semantics. |
 | [`ai-guide/schemas/`](./ai-guide/schemas/) | JSON schemas for machine-readable output. |
 
-## What is not in this directory
+## What is in this directory
 
-smix keeps a substantial development record — a version boundary and decision
-log, per-checkpoint plans, obtainability studies for capabilities that were
-evaluated and rejected, perf decompositions, and internal defect and scope
-ledgers. None of it is published, and none of it is in this repository.
-
-That is deliberate rather than an omission. A reader who arrives to learn how
-to write a flow should not have to walk past hundreds of pages of
-work-in-progress to find the page that answers the question, and shelving both
-together makes the published material harder to trust, because nothing tells
-you which document is the current one.
-
-So the rule here has one direction: **these guides never cite the development
-record.** Where a guide needs a conclusion that was reached in it — why a
-particular signal cannot be obtained, why an approach stays rejected — the
-conclusion is written out here in full. You are not expected to go and read
-something else, and there is nothing missing behind the sentence.
+Everything here is written for someone using smix. Where a guide depends on
+a conclusion — why a signal cannot be obtained, why an approach is not
+taken — the conclusion is written out in full on the page.

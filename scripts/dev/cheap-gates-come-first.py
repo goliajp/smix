@@ -66,7 +66,7 @@ def machine_dir() -> str:
 
     Not the checkout: what a step costs is a fact about this machine's
     disks and cores, and a second checkout would carry a stale copy of
-    it into a run it knows nothing about (CLAUDE.md §9 #9).
+    it into a run it knows nothing about.
     """
     base = os.environ.get("XDG_DATA_HOME") or os.path.join(
         os.path.expanduser("~"), ".local", "share"

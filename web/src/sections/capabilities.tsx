@@ -9,8 +9,8 @@ type Layer = {
   primitives: string[]
 }
 
-// The three-layer reaction chain — CLAUDE.md §12.1. sense + act are flat
-// smix-core capabilities; decide sits at the driver boundary.
+// The three-layer reaction chain: sense + act are flat smix-core
+// capabilities; decide sits at the driver boundary.
 const LAYERS: Layer[] = [
   {
     key: 'sense',

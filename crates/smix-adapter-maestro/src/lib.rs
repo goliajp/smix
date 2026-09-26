@@ -936,8 +936,8 @@ pub enum Step {
     /// is, under a name, for `assertBoundsUnchanged` to compare against.
     ///
     /// A smix verb; maestro has none. The rectangle is kept as a value to
-    /// compare, never as something a flow can aim at — addressing is still
-    /// by selector (CLAUDE.md §9 #3).
+    /// compare, never as something a flow can aim at — the flow surface
+    /// addresses elements by selector, never by coordinates.
     RememberBounds {
         /// What to measure.
         selector: Selector,
