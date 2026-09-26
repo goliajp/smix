@@ -16,6 +16,7 @@
 
 mod android_bring_back;
 pub mod android_foreground;
+mod android_screen_state;
 pub mod reconcile;
 pub mod runner;
 pub mod runner_android;

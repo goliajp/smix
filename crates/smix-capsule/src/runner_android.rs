@@ -772,13 +772,9 @@ pub fn up_with_options(
                 Err(crate::android_bring_back::Unsettled::App(why)) => return Err(why),
             }
             if let Err(why) = automation_sees_an_app(port) {
-                return Err(format!(
-                    "the runner answers /health on {port} but its automation is \
-                     not usable: {why}\n\
-                     This is what a crashed-and-restarted instrumentation looks \
-                     like — the server is up, `getWindows()` is not. Stop it and \
-                     bring it up again:\n  \
-                     smix runner down --platform android --device {serial}"
+                let screen = crate::android_screen_state::read(serial);
+                return Err(crate::android_screen_state::no_app_refusal(
+                    port, serial, &why, screen,
                 ));
             }
             println!("runner up: http://localhost:{port}/health = 200");

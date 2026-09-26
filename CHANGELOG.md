@@ -732,6 +732,17 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **`runner up` on Android says why the screen shows no app, instead of
+  blaming the runner.** A runner that answers `/health` while its
+  automation sees no application window was always reported as a
+  crashed-and-restarted instrumentation, with `runner down` and up again
+  as the remedy. The device is now read first: a display that is off
+  (`smix sim wake`), a lock screen, a system "isn't responding" dialog
+  over everything, or a system UI that is not running at all — the last
+  survives an emulator's Quick Boot snapshot and needs a cold boot — are
+  each named, and the runner is blamed only when the screen is on,
+  unlocked and none of these.
+
 - **Long text typed on Android under load arrives whole.** `inputText`
   sent the whole string as one `input text`, and on a busy machine it
   lost characters: 120 characters landed whole 2 times in 10 at load
