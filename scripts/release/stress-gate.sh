@@ -91,7 +91,7 @@ fi
 
 [ -n "$SIM" ] || { echo "error: --sim <ref> or SMIX_CORPUS_SIM required for a device run" >&2; exit 2; }
 STAMP="$(date +%Y%m%d-%H%M%S)"
-LOG_DIR="$REPO_ROOT/.tmp/stress-gate/$STAMP"; mkdir -p "$LOG_DIR"
+LOG_DIR="$REPO_ROOT/target/stress-gate/$STAMP"; mkdir -p "$LOG_DIR"
 # Not silenced: a teardown that fails leaves a runner on $SIM, and what
 # it costs is not this gate but the next one to start one there.
 cleanup() {

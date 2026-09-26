@@ -70,7 +70,7 @@ log "rsync sources -> $HOST:$REPO/"
 rsync -a --stats --exclude-from="$HOME/.config/git/ignore" \
   --exclude='target/' --exclude='.git/' --exclude='node_modules/' \
   --exclude='.smix/' --exclude='swift-bridge/.build/' --exclude='*/build/' \
-  --exclude='.scratch/' "$ROOT/" "$HOST:$REPO/"
+  "$ROOT/" "$HOST:$REPO/"
 
 # --- 3. config authority sync: remote mirrors studio's .smix/config.yaml ---
 if [ -f "$ROOT/.smix/config.yaml" ]; then

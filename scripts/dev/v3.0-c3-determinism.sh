@@ -20,7 +20,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT_DIR="$ROOT/.tmp/c3-determinism"
+OUT_DIR="$ROOT/target/c3-determinism"
 
 log() { printf '[c3] %s\n' "$*" >&2; }
 
@@ -135,7 +135,7 @@ for i in $(seq 1 "$N"); do
 
   # The gate writes its count into a timestamped directory; take the
   # newest, which is the run that just finished.
-  count_file="$(ls -t "$ROOT"/.tmp/release-gate/*/flake-count.txt 2>/dev/null | head -1)"
+  count_file="$(ls -t "$ROOT"/target/release-gate/*/flake-count.txt 2>/dev/null | head -1)"
   if [ -n "$count_file" ] && [ -r "$count_file" ]; then
     flakes="$(cat "$count_file")"
   else
