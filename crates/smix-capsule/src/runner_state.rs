@@ -169,7 +169,8 @@ mod tests {
     use super::*;
 
     fn temp_root(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("smix-runner-state-{name}"));
+        let dir =
+            std::env::temp_dir().join(format!("smix-runner-state-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp root");
         dir
@@ -187,7 +188,8 @@ mod tests {
     }
 
     fn ledger(name: &str) -> smix_lease::store::LeaseDir {
-        let dir = std::env::temp_dir().join(format!("smix-runner-ledger-{name}"));
+        let dir =
+            std::env::temp_dir().join(format!("smix-runner-ledger-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp ledger");
         smix_lease::store::LeaseDir::at(dir)
