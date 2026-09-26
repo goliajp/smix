@@ -149,6 +149,12 @@ class RunnerWireDecodeTest {
     }
 
     @Test
+    fun inputTextDecodesTheHostsBudget() {
+        assertEquals(42_000L, RunnerWire.decodeInputText("""{"text":"x","budgetMs":42000}""").budgetMs)
+        assertEquals(null, RunnerWire.decodeInputText("""{"text":"x"}""").budgetMs)
+    }
+
+    @Test
     fun inputTextMissingTextThrows() {
         assertThrows(JSONException::class.java) {
             RunnerWire.decodeInputText("{}")

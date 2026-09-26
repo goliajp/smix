@@ -785,6 +785,18 @@ moved and `Step` is now `#[non_exhaustive]`.
   still fails, naming the chunk and what the field held. `/input-text`
   answers with `chunks` and `retyped`.
 
+- **Long text typed on Android is no longer cut off by the host's
+  15-second limit.** Typing costs time per character — 120 characters
+  took 11–15 s on an emulator at load 9 — and every request to the runner
+  was given the same 15 s, so a long `inputText` on a busy machine ended
+  with the host reporting that the action might have happened while the
+  runner was still typing. The wait for `/input-text` now grows with the
+  text (15 s plus 250 ms a character), and the runner is sent that budget
+  as `budgetMs`: once it is spent the runner types nothing more and fails
+  with `text_budget_spent`, naming the chunk it stopped before and how
+  much of the text the field holds. Each chunk is also about 0.7 s
+  quicker; 120 characters measured 9–11 s.
+
 - **`smix down` no longer fails because someone else has a runner up.**
   Its last step lists smix-shaped processes still running, and it looked
   across the whole machine: another project's runner on its own

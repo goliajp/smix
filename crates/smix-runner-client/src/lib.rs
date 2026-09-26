@@ -30,6 +30,7 @@
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-runner-client")]
 
+mod input_text;
 pub mod port_owner;
 
 /// Which host-side authority can say who holds a port.
@@ -52,6 +53,9 @@ use smix_selector::Selector;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+/// How long a request may take unless it says otherwise.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 use thiserror::Error;
 
 // -------------------- Error types ----------------------------------------
@@ -723,7 +727,7 @@ impl HttpRunnerClient {
     /// Construct with an explicit base URL (test / non-localhost cases).
     pub fn with_base<S: Into<String>>(base: S) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(15))
+            .timeout(REQUEST_TIMEOUT)
             .build()
             .expect("reqwest::Client::builder default never fails");
         HttpRunnerClient {
@@ -1309,10 +1313,23 @@ impl HttpRunnerClient {
         body: &B,
         include: Option<IncludeScope>,
     ) -> Result<T, RunnerTransportError> {
+        self.json_post_within(endpoint, body, include, REQUEST_TIMEOUT)
+            .await
+    }
+
+    /// [`Self::json_post`] for a request that may take longer than
+    /// [`REQUEST_TIMEOUT`].
+    async fn json_post_within<B: Serialize, T: for<'de> Deserialize<'de>>(
+        &self,
+        endpoint: &str,
+        body: &B,
+        include: Option<IncludeScope>,
+        timeout: Duration,
+    ) -> Result<T, RunnerTransportError> {
         let url = self.url(endpoint, include);
         let res = self
             .send_with_retry(endpoint, Replay::ActsOnDevice, |c| {
-                self.apply_context(c.post(&url).json(body))
+                self.apply_context(c.post(&url).json(body).timeout(timeout))
             })
             .await?;
         let status = res.status();
@@ -1920,52 +1937,6 @@ impl HttpRunnerClient {
         body.into_result("/long-press-at-norm-coord")
     }
 
-    /// `POST /input-text` — type text into currently-focused
-    /// input. Caller must tap to focus the field first (AndroidDriver
-    /// orchestrates). Android-specific.
-    pub async fn input_text(&self, text: &str) -> Result<(), RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            text: &'a str,
-        }
-        let body: OkEnvelope = self.json_post("/input-text", &Req { text }, None).await?;
-        body.require_ok("/input-text")?;
-        Ok(())
-    }
-
-    /// `POST /input-text`, naming the field by the box it lies in.
-    ///
-    /// The point form ([`Self::input_text_at`]) asks the runner for a
-    /// focused field containing that point, which is wrong whenever the
-    /// caller named the layout around a field rather than the field:
-    /// the wrapper's centre can sit on a label, and requiring the field
-    /// to contain it refused every fill in an app built that way. What
-    /// identifies the field is lying inside what was named.
-    pub async fn input_text_in(
-        &self,
-        text: &str,
-        rect: (f64, f64, f64, f64),
-    ) -> Result<(), RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            text: &'a str,
-            #[serde(rename = "focusRect")]
-            focus_rect: [f64; 4],
-        }
-        let body: OkEnvelope = self
-            .json_post(
-                "/input-text",
-                &Req {
-                    text,
-                    focus_rect: [rect.0, rect.1, rect.2, rect.3],
-                },
-                None,
-            )
-            .await?;
-        body.require_ok("/input-text")?;
-        Ok(())
-    }
-
     /// `POST /clear-text`, naming the field by the box it lies in.
     /// See [`Self::input_text_in`].
     /// What every `/clear-text` answer looks like, and what it means.
@@ -2012,47 +1983,6 @@ impl HttpRunnerClient {
             )
             .await?;
         Self::clear_text_verdict(body)
-    }
-
-    /// `POST /input-text`, naming the field by where it was tapped.
-    ///
-    /// [`Self::input_text`] types into whatever holds focus, which is
-    /// ambiguous straight after a focus tap: focus does not move
-    /// synchronously with the tap that moves it, so the runner could
-    /// still find the previously focused field and type there. Measured
-    /// on emulator-5554 — a fill naming one Compose field cleared and
-    /// filled another.
-    ///
-    /// Passing the tap point makes the request say which field it
-    /// means, and the runner waits for focus to reach the field
-    /// containing that point rather than for any field to have it.
-    pub async fn input_text_at(
-        &self,
-        text: &str,
-        nx: f64,
-        ny: f64,
-    ) -> Result<(), RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            text: &'a str,
-            #[serde(rename = "focusNx")]
-            focus_nx: f64,
-            #[serde(rename = "focusNy")]
-            focus_ny: f64,
-        }
-        let body: OkEnvelope = self
-            .json_post(
-                "/input-text",
-                &Req {
-                    text,
-                    focus_nx: nx,
-                    focus_ny: ny,
-                },
-                None,
-            )
-            .await?;
-        body.require_ok("/input-text")?;
-        Ok(())
     }
 
     /// `POST /clear-text` — empty the focused field, Android only.

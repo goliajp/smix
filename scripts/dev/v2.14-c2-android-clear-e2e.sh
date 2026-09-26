@@ -146,8 +146,14 @@ LONG="$(python3 -c 'print("x" * 120)')"
 # says which field it found, what it held before and after, and why. `-f`
 # threw that away, and a red read "could not type" and nothing else
 # (2026-09-26, once in a full tier, not reproduced alone).
-typed="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$R/input-text" \
-  -H 'Content-Type: application/json' --data "{\"text\":\"$LONG\"}" || true)"
+# This check's own budget, sent as `budgetMs`: the runner stops typing
+# once it is spent and says so. curl waits the budget and 15 s more, the
+# time one `input text` already under way can take to finish, so a red
+# here is the runner's answer rather than curl giving up on a runner
+# still typing — which is how this read "the runner said: 000".
+BUDGET_MS=45000
+typed="$(curl -s --max-time $((BUDGET_MS / 1000 + 15)) -w '\n%{http_code}' -X POST "$R/input-text" \
+  -H 'Content-Type: application/json' --data "{\"text\":\"$LONG\",\"budgetMs\":$BUDGET_MS}" || true)"
 case "$typed" in
   *$'\n'200) ;;
   *) fail "could not type into $FIELD_ID — the runner said: $typed" ;;

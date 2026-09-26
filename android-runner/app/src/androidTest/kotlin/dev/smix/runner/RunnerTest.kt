@@ -1260,6 +1260,7 @@ class SmixHttpServer(
         // report a miss, so the node saying so is the only evidence
         // there is.
         val req = RunnerWire.decodeInputText(readBodyString(session))
+        val started = android.os.SystemClock.elapsedRealtime()
         val text = req.text
         val focusPx = focusRectPx(req.focusIn)
         // `adb shell input text` types into whichever field is focused,
@@ -1328,15 +1329,26 @@ class SmixHttpServer(
             masked,
             RunnerWire.INPUT_CHUNK_POINTS,
             RunnerWire.INPUT_CHUNK_RETYPES,
+            { req.budgetMs?.let { android.os.SystemClock.elapsedRealtime() - started >= it } ?: false },
         ) { sent, base, chunk ->
+            // No `waitForIdle` here: `awaitChunk` polls until the chunk has
+            // landed, and the idle wait spent 0.5–0.9 s of every chunk
+            // (measured, 2026-09-27) before a read that did not need it.
             runShellCommand(RunnerWire.inputTextCommand(sent))
-            device.waitForIdle(500)
             awaitChunk(focused, base, chunk, masked, TEXT_LAND_MS)
         }
         focused.recycle()
         val done = when (result) {
             is RunnerWire.ChunkedResult.Failed -> return chunkDidNotLand(
                 text, whichField, masked, before, result.held, result.chunk, result.of, result.retries,
+            )
+            is RunnerWire.ChunkedResult.OutOfTime -> return errorJson(
+                Response.Status.INTERNAL_ERROR,
+                "text_budget_spent",
+                "input-text: the host's budget of ${req.budgetMs}ms for ${text.length} " +
+                    "character(s) ran out before chunk ${result.chunk + 1} of ${result.of}; " +
+                    "$whichField went from ${before.length} to ${result.held.length} " +
+                    "character(s). Nothing more was typed, so the field holds what landed.",
             )
             is RunnerWire.ChunkedResult.Done -> result
         }
