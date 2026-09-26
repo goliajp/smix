@@ -86,6 +86,7 @@ class RunnerTest {
             )
         }
         val server = SmixHttpServer(PORT, device, inst)
+        server.setServerSocketFactory { NoDelayServerSocket() }
         server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, /* daemon = */ false)
         CountDownLatch(1).await()
     }
