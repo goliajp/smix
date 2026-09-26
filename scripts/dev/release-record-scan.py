@@ -49,11 +49,16 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# The boundary file and the executability list are development record: they
-# live under `.claude/`, which is not version-controlled. A checkout without
-# them cannot run this gate, and saying so is the honest outcome — quietly
-# passing would report agreement between lists it never read.
-CLAIMS = ".claude/docs/guide-executability.md"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
+
+# The boundary file and the executability list are development record, which
+# is not version-controlled and is named by SMIX_DEV_RECORD. Without them this
+# gate cannot run, and saying so is the honest outcome — quietly passing would
+# report agreement between lists it never read. Paths below that start with
+# `docs/` are inside the record, read with read_record; the rest are the
+# repository's.
+CLAIMS = "docs/guide-executability.md"
 CHANGELOG = "CHANGELOG.md"
 SHIP = "scripts/release/ship.sh"
 WORKSPACE = "Cargo.toml"
@@ -81,7 +86,7 @@ def _major():
     return m.group(1) if m else "2"
 
 
-BOUNDARY = f".claude/docs/v{_major()}.md"
+BOUNDARY = f"docs/v{_major()}.md"
 
 # The breaking changes belong to the major's FIRST release: later patches
 # add their own headings, and the boundary table is about what the major
@@ -104,8 +109,17 @@ problems = []
 missing = []
 
 
+def read_record(rel):
+    """A file of the development record."""
+    return _read(rel, _dev_record.path(rel))
+
+
 def read(rel):
-    path = os.path.join(ROOT, rel)
+    """A file of the repository."""
+    return _read(rel, os.path.join(ROOT, rel))
+
+
+def _read(rel, path):
     try:
         with open(path, encoding="utf-8") as fh:
             return fh.read()
@@ -355,8 +369,8 @@ def check_release_being_made(changelog):
     if section is None:
         return 0
     phrases = bold_phrases(section)
-    rel = f".claude/docs/v{major}.md"
-    text = read(rel)
+    rel = f"docs/v{major}.md"
+    text = read_record(rel)
     if text is None:
         problems.append(
             f"{heading} has a Breaking section and {rel} is absent — a change "
@@ -590,8 +604,11 @@ def check_this_gate_runs(ship):
 
 
 def main():
-    boundary = read(BOUNDARY)
-    claims = read(CLAIMS)
+    if _dev_record.root() is None:
+        print(_dev_record.not_named("release-record"))
+        return 2
+    boundary = read_record(BOUNDARY)
+    claims = read_record(CLAIMS)
     changelog = read(CHANGELOG)
     ship = read(SHIP)
     workspace = read(WORKSPACE)
@@ -600,12 +617,10 @@ def main():
         print("release-record: CANNOT RUN — these inputs are absent:")
         for m in missing:
             print(f"  - {m}")
-        if any(m.startswith(".claude/") for m in missing):
+        if any(m in (BOUNDARY, CLAIMS) for m in missing):
             print(
-                "\n  `.claude/` is the development record and is deliberately "
-                "not version-controlled.\n  This gate reconciles the release "
-                "notes against it, so it runs where that record lives —\n  the "
-                "authoring machine — and not in a bare checkout."
+                f"\n  paths under docs/ are read from the development record at "
+                f"{_dev_record.root()} ({_dev_record.VAR})."
             )
         return 2
 

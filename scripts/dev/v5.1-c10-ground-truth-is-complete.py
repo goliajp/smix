@@ -21,7 +21,11 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-DOC = os.path.join(REPO, ".claude", "docs", "research", "v5.1-landscape-coordinate-spaces.md")
+sys.path.insert(0, HERE)
+import _dev_record  # noqa: E402
+
+# In the development record, named by SMIX_DEV_RECORD.
+DOC = _dev_record.path("docs", "research", "v5.1-landscape-coordinate-spaces.md")
 
 # The measurements the plan says this checkpoint produces, by column.
 #
@@ -49,8 +53,11 @@ REFUTED = ["H1", "H2"]
 def main() -> int:
     problems = []
 
+    if DOC is None:
+        print(_dev_record.not_named("v5.1-c10-ground-truth"))
+        return 2
     if not os.path.exists(DOC):
-        print(f"v5.1-c10-ground-truth: FAIL — {os.path.relpath(DOC, REPO)} does not exist")
+        print(f"v5.1-c10-ground-truth: FAIL — {DOC} does not exist")
         return 1
 
     with open(DOC, encoding="utf-8") as fh:

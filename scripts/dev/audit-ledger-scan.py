@@ -41,8 +41,12 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-LEDGER = ".claude/docs/audit-ledger.md"
-SOURCE = ".claude/docs/v2.md"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
+
+# Both live in the development record, named by SMIX_DEV_RECORD.
+LEDGER = "docs/audit-ledger.md"
+SOURCE = "docs/v2.md"
 
 # The one line in v2.md that defines which entries must exist. Located by
 # anchor rather than by line number, and required to be unique: the
@@ -78,6 +82,12 @@ NONE_CITATION = re.compile(r'^none\s+"(.+)"\s+in\s+(\S+)$', re.S)
 
 def read(rel):
     with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+        return f.read()
+
+
+def read_record(rel):
+    """A file of the development record."""
+    with open(_dev_record.path(rel), encoding="utf-8") as f:
         return f.read()
 
 
@@ -129,7 +139,7 @@ def parse_rows(body, failures):
 
 def required_numbers(failures):
     """The circled numerals from the one anchored line in v2.md."""
-    lines = [l for l in read(SOURCE).splitlines() if ANCHOR in l]
+    lines = [l for l in read_record(SOURCE).splitlines() if ANCHOR in l]
     if len(lines) != 1:
         failures.append(
             f"{SOURCE}: the anchor {ANCHOR!r} matches {len(lines)} lines, expected "
@@ -221,7 +231,10 @@ def check_citation(row, tracked, failures):
 def main():
     failures = []
 
-    ledger_path = os.path.join(ROOT, LEDGER)
+    if _dev_record.root() is None:
+        print(_dev_record.not_named("audit-ledger-scan"))
+        return 2
+    ledger_path = _dev_record.path(LEDGER)
     if not os.path.isfile(ledger_path):
         failures.append(
             f"{LEDGER} does not exist. This scan has nothing to re-evaluate, "
@@ -230,7 +243,7 @@ def main():
         )
         rows = []
     else:
-        rows = parse_rows(read(LEDGER), failures)
+        rows = parse_rows(read_record(LEDGER), failures)
         if len(rows) < MIN_ROWS:
             failures.append(
                 f"{LEDGER}: parsed {len(rows)} rows, expected at least {MIN_ROWS}. "

@@ -13,6 +13,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+# The development record — charter, decision log, plans, ledgers,
+# correspondence — is not version-controlled, so nothing here says where it
+# is. A dozen gates below read it; without it they can only say "cannot
+# run", and a release or preflight that let that through would be checking
+# nothing. Name it before starting.
+if [[ -z "${SMIX_DEV_RECORD:-}" || ! -d "${SMIX_DEV_RECORD:-}" ]]; then
+  echo "error: SMIX_DEV_RECORD must name the development record's root (a directory); got '${SMIX_DEV_RECORD:-}'" >&2
+  exit 2
+fi
+
 BASE="${1:-origin/develop}"
 
 # Crates with changed files, derived — not maintained by hand.

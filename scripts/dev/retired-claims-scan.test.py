@@ -42,13 +42,14 @@ scan = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scan)
 
 
-def run(root: str) -> tuple[int, str]:
-    out = subprocess.run(
-        [sys.executable, SCAN, "--root", root],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def run(root: str, record: str | None = None) -> tuple[int, str]:
+    """The scan over `root`, with the record named only when given — the
+    caller's own SMIX_DEV_RECORD is never inherited."""
+    env = {k: v for k, v in os.environ.items() if k != "SMIX_DEV_RECORD"}
+    cmd = [sys.executable, SCAN, "--root", root]
+    if record:
+        cmd += ["--record", record]
+    out = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
     return out.returncode, out.stdout + out.stderr
 
 
@@ -121,22 +122,21 @@ with tempfile.TemporaryDirectory() as tmp:
 #    invariant and a day; if §9 stops recording that day, this list is
 #    describing a rule that no longer says what it is quoted as saying.
 #
-#    The register is written but deliberately NOT staged: `.claude/` is
-#    untracked in the real tree, and a first draft that staged it passed
-#    this case on the wrong check — the unclaimed-root rule fired on
-#    `.claude` itself, so the case stayed red with the date reconcile
-#    removed. A fixture unlike the tree it stands for proves the wrong
-#    thing quietly.
-with tempfile.TemporaryDirectory() as tmp:
+#    The register lives in a record outside the swept tree, as it does
+#    for real: a first draft that put it inside and staged it passed this
+#    case on the wrong check — the unclaimed-root rule fired on the
+#    record's own directory, so the case stayed red with the date
+#    reconcile removed. A fixture unlike the tree it stands for proves
+#    the wrong thing quietly.
+with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as rec:
     fixture(tmp)
-    os.makedirs(os.path.join(tmp, ".claude"))
-    open(os.path.join(tmp, ".claude", "CLAUDE.md"), "w").write(
+    open(os.path.join(rec, "CLAUDE.md"), "w").write(
         "## 9. 不变量\n\n"
         "1. **设备后端按可得性显式分级**。物理设备是一等后端。\n"
         "2. **AI 层对外只暴露一个原语**。\n\n"
         "## 10. 决策记录\n"
     )
-    code, out = run(tmp)
+    code, out = run(tmp, rec)
     expect("a register that dropped the date fails", code != 0, f"exit 0:\n{out}")
     expect("and says which entry", "§9 #1" in out, f"no '§9 #1' in:\n{out}")
     expect(
@@ -145,8 +145,8 @@ with tempfile.TemporaryDirectory() as tmp:
         f"red for some other reason:\n{out}",
     )
 
-# 6. The register absent altogether — a checkout, where `.claude/` is not
-#    version-controlled. The scanner still has work to do on `docs/` and
+# 6. The register absent altogether — no record named, as in a checkout,
+#    where the development record is not version-controlled. The scanner still has work to do on `docs/` and
 #    `web/`, so it does it, and says out loud which half it could not run.
 with tempfile.TemporaryDirectory() as tmp:
     fixture(tmp)
@@ -154,7 +154,7 @@ with tempfile.TemporaryDirectory() as tmp:
     expect("a checkout without the register still scans", code == 0, f"exit {code}:\n{out}")
     expect(
         "and says so rather than reporting full coverage",
-        "the invariant register is not in this checkout" in out,
+        "no development record was named (SMIX_DEV_RECORD), so the invariant register was not read" in out,
         f"no stated downgrade in:\n{out}",
     )
 

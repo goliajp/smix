@@ -7,7 +7,7 @@
 # Three segments, and the third is the one that matters. Proving smix
 # can stop what it started proves nothing about whether it will stop
 # what somebody else started — that is a "must not happen" claim, and by
-# `.claude/rule/empty-predicate.md` it has to be paired with a case that
+# `gate/absence-needs-presence` it has to be paired with a case that
 # makes it happen. So the third segment starts an emulator deliberately
 # outside smix and requires the refusal.
 #

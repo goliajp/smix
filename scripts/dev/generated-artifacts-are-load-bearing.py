@@ -15,7 +15,7 @@ Discovery reads the first two lines of every tracked text file for an
 by bundle boundary (a build-output blob rebuilt whole, whose binding
 symbols `ffi-bindings-fresh` already pins with `nm`).
 
-By empty-predicate (.claude/rule/empty-predicate.md) the presence side is
+By `gate/absence-needs-presence` the presence side is
 explicit: the discovery set must be non-empty and must contain the known
 load-bearing artifacts — a scan that discovers nothing (marker renamed,
 files moved) certifies air, so it fails loudly instead.

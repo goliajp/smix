@@ -33,9 +33,8 @@ for a line somebody wrote once.
 And the other direction, which this gate was missing for a checkpoint: a
 `none` has to be true. Wiring `fallback` into MCP while leaving its line
 saying `none` passed clean — the gate only ever checked the claims that
-said yes. `gate/absence-needs-presence` in
-`.claude/rule/empty-predicate.md` is exactly this, and it was written
-here before it was applied here.
+said yes. `gate/absence-needs-presence` is exactly this, and it was
+written here before it was applied here.
 """
 
 from __future__ import annotations
@@ -85,7 +84,7 @@ MIN_SUPPORTED = 4
 # surface declares every form" is true of no surfaces at all, and this
 # gate would report clean while reading nothing — the shape it was
 # written to catch, in its own source. Found by applying
-# `.claude/rule/empty-predicate.md` to the gate rather than to the code.
+# `gate/no-empty-predicate` to the gate rather than to the code.
 MIN_SURFACES = 3
 # The optional companion fields, measured: `Role.name` and
 # `OcrText.locales` the day this was written. A form's whole payload is

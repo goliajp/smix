@@ -8,7 +8,7 @@
 # the old id+label output was enough there and blind on Android. The fix
 # prints text when non-empty; this pins it on a real device.
 #
-# By empty-predicate (.claude/rule/empty-predicate.md) the gate is
+# By `gate/absence-needs-presence` the gate is
 # two-sided: a node whose text has a value must show it in the text
 # position (SIDE A), and a node with no text must not grow a `text=`
 # ghost (SIDE B) — anchored on a node that is provably in the tree.

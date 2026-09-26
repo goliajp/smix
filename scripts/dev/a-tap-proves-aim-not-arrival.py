@@ -21,7 +21,7 @@ It is the expensive kind of wrong: confident, specific, and pointing
 away.
 
 So the rule has two halves, because a ban on words is not a claim about
-anything (`.claude/rule/empty-predicate.md`): the arrival-claiming
+anything (`gate/absence-needs-presence`): the arrival-claiming
 phrasings must be absent, and the aim wording must be present. A surface
 that says nothing at all would satisfy the first half alone.
 """

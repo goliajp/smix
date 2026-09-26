@@ -13,8 +13,7 @@
 //! instrumentation in `RecordSession`), not from a sim-side AX
 //! notification swizzle. The swizzle path cannot surface user-tap events
 //! originating outside the smix API channel. "User taps sim screen
-//! manually with smix watching" is a separate architecture — see
-//! .claude/docs/roadmap.md.
+//! manually with smix watching" is a separate architecture.
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-authoring-ir")]
 

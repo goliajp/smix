@@ -27,11 +27,10 @@ why. A top-level entry in neither fails — silence is how a surface gets
 in and stays, which is the same hole that let a Maven coordinate sit
 three minor versions stale in a README nobody had added to a list.
 
-`.claude/` is in neither column on purpose. The sweep enumerates tracked
-files and the development record is deliberately not version-controlled
-(workflow-scan enforces that in both directions), so it is not a surface
-this can reach. Exempting it would put a line here that reads as dead on
-every machine but the author's.
+The development record is in neither column on purpose. The sweep
+enumerates tracked files and the record is not version-controlled, so it
+is not a surface this can reach. The register it reconciles against is
+read from the record, named by SMIX_DEV_RECORD (or --record).
 """
 
 from __future__ import annotations
@@ -44,9 +43,12 @@ import subprocess
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
 
-# The register that decides what is retired, and the section in it.
-REGISTER = os.path.join(".claude", "CLAUDE.md")
+# The register that decides what is retired (in the development record),
+# and the section in it.
+REGISTER = "CLAUDE.md"
 SECTION = "9"
 
 PROSE = (".md", ".mdx", ".txt", ".html", ".ts", ".tsx")
@@ -147,9 +149,11 @@ def claimed_by(rel: str, column: dict) -> str | None:
     return None
 
 
-def register_body(root: str) -> str | None:
-    """Section 9 of the invariant register, if this tree has one."""
-    path = os.path.join(root, REGISTER)
+def register_body(record: str | None) -> str | None:
+    """Section 9 of the invariant register, if a record was named and has one."""
+    if record is None:
+        return None
+    path = os.path.join(record, REGISTER)
     if not os.path.isfile(path):
         return None
     text = open(path, encoding="utf-8").read()
@@ -168,8 +172,10 @@ def invariant_item(body: str, number: str) -> str | None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=REPO)
+    ap.add_argument("--record", default=None, help="the development record's root (default: $SMIX_DEV_RECORD)")
     args = ap.parse_args()
     root = os.path.abspath(args.root)
+    record = _dev_record.root(args.record)
 
     problems: list[str] = []
     files = tracked(root)
@@ -239,11 +245,11 @@ def main() -> int:
 
     # Each entry is tied to a register that has to still say it. Where the
     # register is not in the tree, that half does not run, and says so.
-    body = register_body(root)
+    body = register_body(record)
     note = ""
     if body is None:
         note = (
-            " — the invariant register is not in this checkout, so the entries "
+            " — no development record was named (SMIX_DEV_RECORD), so the invariant register was not read, so the entries "
             "below were not reconciled against it"
         )
     else:

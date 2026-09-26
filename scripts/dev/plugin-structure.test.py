@@ -162,10 +162,22 @@ for script in ("sim-guard.sh", "adb-guard.sh", "hook-command.py"):
             "two of these drift, and the tests only cover one"
         )
 
-settings_path = os.path.join(ROOT, ".claude", "settings.json")
-settings = read_json(settings_path)
+# This repository's own hooks live in the development record's settings.json
+# (SMIX_DEV_RECORD), which is not version-controlled.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
+
+settings_path = _dev_record.path("settings.json")
+if settings_path is None:
+    problems.append(
+        f"{_dev_record.VAR} is not set, so this repo's own hooks were not read — "
+        f"set it to the development record's root"
+    )
+    settings = {}
+else:
+    settings = read_json(settings_path)
 wired = json.dumps(settings)
-for script in ("sim-guard.sh", "adb-guard.sh"):
+for script in ("sim-guard.sh", "adb-guard.sh") if settings_path else ():
     if f"plugin/scripts/{script}" not in wired:
         problems.append(
             f"this repo's own hooks do not run plugin/scripts/{script}; "

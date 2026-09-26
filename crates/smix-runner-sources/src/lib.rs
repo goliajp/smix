@@ -1,5 +1,5 @@
 //! Embedded Swift runner project sources — solves the CLI-vs-runner
-//! version-drift problem described in `.claude/rfcs/1.0.10-*`.
+//! version-drift problem.
 //!
 //! `cargo install smix` used to ship only the Rust binary; the Swift
 //! `SmixRunner.xcodeproj` + `SmixRunnerCore/` sources had to be

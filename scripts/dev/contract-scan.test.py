@@ -53,7 +53,7 @@ spec.loader.exec_module(scan)
 AWAITING = "\n".join([
     "# plan-hot 空缺 — 等拍板",
     "",
-    "- 已归档：`.claude/docs/archive/plan-history/v4.2-c1-hot.md`",
+    "- 已归档：`docs/archive/plan-history/v4.2-c1-hot.md`",
     "- 下一段：v4.2 C2",
     "- 自：2026-08-12",
     "- 等的是：用户明确说「开始 C2」（CLAUDE.md §6 触发条件 2）",
@@ -76,9 +76,12 @@ ACCEPTANCE = "\n".join([
 HOT = "# plan-hot — v4.2 到 C2：契约门\n\n## 目标 checkpoint\n\n" + ACCEPTANCE
 
 
-def run(root: str) -> tuple[int, str]:
+def run(root: str, record: str | None = None) -> tuple[int, str]:
+    """The scan over a repository `root` whose development record is
+    `root/record` unless named otherwise."""
+    record = record or os.path.join(root, "record")
     out = subprocess.run(
-        [sys.executable, SCAN, "--root", root],
+        [sys.executable, SCAN, "--root", root, "--record", record],
         capture_output=True,
         text=True,
         check=False,
@@ -93,8 +96,8 @@ def write(path: str, body: str) -> None:
 
 
 def tree(tmp: str) -> str:
-    """A `.claude/docs/` shaped like this one, with layer three absent."""
-    docs = os.path.join(tmp, ".claude", "docs")
+    """A record's `docs/` shaped like this one, with layer three absent."""
+    docs = os.path.join(tmp, "record", "docs")
     write(os.path.join(tmp, "Cargo.toml"), 'version = "4.1.0"\n')
     write(os.path.join(docs, "roadmap.md"), "# roadmap\n\n- v4.2：说出去的话与契约\n")
     write(os.path.join(docs, "v4.md"), "# v4 边界\n\n## 决策日志\n")
@@ -277,8 +280,8 @@ with tempfile.TemporaryDirectory() as tmp:
     docs = tree(tmp)
     write(os.path.join(docs, "plan-hot.md"), HOT)
     write(
-        os.path.join(tmp, ".claude", "CLAUDE.md"),
-        "## 0. 文档分层\n\n| [3] 热计划 | `.claude/docs/plan-hot.md` | 唯一 |\n",
+        os.path.join(tmp, "record", "CLAUDE.md"),
+        "## 0. 文档分层\n\n| [3] 热计划 | `docs/plan-hot.md` | 唯一 |\n",
     )
     code, out = run(tmp)
     expect_verdict("a constitution that does not know the shape fails", code, out)
@@ -293,7 +296,7 @@ with tempfile.TemporaryDirectory() as tmp:
     docs = tree(tmp)
     write(os.path.join(docs, "plan-hot.md"), HOT)
     write(
-        os.path.join(tmp, ".claude", "CLAUDE.md"),
+        os.path.join(tmp, "record", "CLAUDE.md"),
         "## 0. 文档分层\n\n| [3] 热计划 / 交接单 | `plan-hot.md` 或 "
         "`plan-hot.awaiting.md` | 二者恰居其一 |\n",
     )
@@ -355,19 +358,33 @@ expect(
     f"got {_got}",
 )
 
-# 16. This repository. Last, and never the only one — see the header.
-#    On a bare checkout there is no `.claude/docs/` to read, and the case
+# 16. No record named — refused by name, never passed.
+with tempfile.TemporaryDirectory() as tmp:
+    env = {k: v for k, v in os.environ.items() if k != "SMIX_DEV_RECORD"}
+    out = subprocess.run(
+        [sys.executable, SCAN, "--root", tmp],
+        capture_output=True, text=True, check=False, env=env,
+    )
+    expect(
+        "with no record named, the scan refuses and names the variable",
+        out.returncode == 2 and "SMIX_DEV_RECORD" in out.stdout,
+        f"exit {out.returncode}:\n{out.stdout}{out.stderr}",
+    )
+
+# 17. This repository. Last, and never the only one — see the header.
+#    Without SMIX_DEV_RECORD there is no record to read, and the case
 #    says which one it dropped rather than counting itself as coverage.
-if os.path.isdir(os.path.join(ROOT, ".claude", "docs")):
-    code, out = run(ROOT)
+_record = os.environ.get("SMIX_DEV_RECORD")
+if _record:
+    code, out = run(ROOT, _record)
     expect("this repository is claimed", code == 0, f"exit {code}:\n{out}")
-    checked = 16
+    checked = 17
 else:
     print(
-        "note: no .claude/docs/ here — case 16 (this repository) was not run",
+        "note: SMIX_DEV_RECORD is not set — case 17 (this repository) was not run",
         file=sys.stderr,
     )
-    checked = 15
+    checked = 16
 
 
 # The acceptance section. Two checkpoints of this line were committed with

@@ -8,8 +8,8 @@ worked on actually travel with it?
 This check has been through both answers, and the reasons for each are
 worth keeping because they are the same reasons in opposite directions.
 
-It first ran because `.claude/` was ignored wholesale as "process
-residue" while things that are not residue sat in it, and the cost came
+It first ran because the development record was ignored wholesale as
+"process residue" while things that are not residue sat in it, and the cost came
 due twice: sim-guard.sh's own header records that its v5.x implementation
 "was never committed and was lost with the local checkout", and adb-guard
 landed with a commit message stating it was "wired into the PreToolUse
@@ -18,8 +18,8 @@ because the wiring lived in the ignored file and the commit could not
 carry it. A guard that is present but unwired is indistinguishable from
 one that is working, right up until a physical phone gets wiped.
 
-On 2026-07-29 the project decided the other way: `.claude/` is not
-version-controlled at all. It is single-author, and the AI-side working
+On 2026-07-29 the project decided the other way: the development record
+is not version-controlled at all. It is single-author, and the AI-side working
 capability is deliberately unpublished. That accepts the loss above as a
 standing risk — a hook wiring still lives only on this machine — in
 exchange for keeping the development surface out of what ships. The
@@ -32,8 +32,8 @@ Checks:
   1. The private surface is absent from the index everywhere, and
      present on disk wherever it lives. A tracked one means the
      development record leaked into what ships; a missing one, on the
-     machine that has a `.claude/` at all, means this repo is being
-     worked without the file that governs how.
+     machine where the record is named (SMIX_DEV_RECORD), means this repo
+     is being worked without the file that governs how.
   2. Every script a hook invokes exists. A missing hook script surfaces
      as a non-blocking error on every single Bash call — noisy enough to
      be tuned out, quiet enough to leave the guard off.
@@ -82,18 +82,21 @@ import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-# The private development surface: what this repo is worked with, and
-# what must never reach the index. Anything added here must stay covered
-# by the `.claude/` line in .gitignore, or check 1 fails by construction.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
+
+# The private development surface, relative to the development record's
+# root (SMIX_DEV_RECORD): what this repo is worked with, and what must
+# never reach the index. Ignoring it is the machine's global git ignore.
 PRIVATE_SURFACE = [
-    ".claude/CLAUDE.md",
-    ".claude/settings.json",
-    ".claude/rule/*.md",
-    ".claude/rfcs/*.md",
-    ".claude/docs/*.md",
+    "CLAUDE.md",
+    "settings.json",
+    "rule/*.md",
+    "rfcs/*.md",
+    "docs/*.md",
 ]
 
-SETTINGS = ".claude/settings.json"
+SETTINGS = "settings.json"
 
 
 def tracked_paths():
@@ -113,35 +116,35 @@ def tracked_paths():
 
 
 def check_private_surface(failures):
-    """No part of `.claude/` is in the index; on the authoring machine, all
-    of it is on disk.
+    """No part of the development record is in the index; where it is
+    named, all of it is on disk.
 
-    The two halves run in different places on purpose. The leak check is
-    universal — a bare checkout that has `.claude/` files tracked is exactly
-    the failure this exists to catch, and it can be answered from the index
-    alone. The completeness check needs the surface to be there to be
-    checked, so it runs only where it lives; asserting it on a checkout
-    would fail every CI build for the thing that is supposed to be true.
+    Both halves need the record named (SMIX_DEV_RECORD): nothing tracked
+    may say where it is, so a checkout without the variable — CI — has no
+    record to ask about, and says nothing rather than pretending to have
+    looked. Where the record sits inside this checkout, a stray `git add -f`
+    on a plan leaks as well as one on the charter, so the leak half reads
+    the record's whole subtree rather than the named patterns.
     """
-    # A stray `git add -f` on a plan leaks as well as one on the charter,
-    # so this reads the whole subtree rather than the named patterns.
-    for rel in sorted(p for p in tracked_paths() if p.startswith(".claude/")):
-        failures.append(
-            f"{rel}: tracked — the private development surface reached the "
-            f"index and would ship. `git rm --cached` it; `.gitignore` "
-            f"already covers `.claude/`."
-        )
-
-    if not os.path.isdir(os.path.join(ROOT, ".claude")):
-        # A checkout, not the authoring machine. Nothing further to say.
+    record = _dev_record.root()
+    if record is None:
         return
 
-    for pattern in PRIVATE_SURFACE:
-        if not glob.glob(os.path.join(ROOT, pattern)):
+    inside = os.path.relpath(record, ROOT).replace(os.sep, "/")
+    if not inside.startswith(".."):
+        for rel in sorted(p for p in tracked_paths() if p.startswith(inside + "/")):
             failures.append(
-                f"{pattern}: no file matches — this machine has a `.claude/` "
-                f"but is missing part of the surface that governs how this "
-                f"repo is worked"
+                f"{rel}: tracked — the development record reached the index and "
+                f"would ship. `git rm --cached` it; the machine's global git "
+                f"ignore is what keeps it out."
+            )
+
+    for pattern in PRIVATE_SURFACE:
+        if not glob.glob(os.path.join(record, pattern)):
+            failures.append(
+                f"{pattern}: no file matches under the development record at "
+                f"{record} — part of the surface that governs how this repo is "
+                f"worked is missing"
             )
 
 
@@ -291,7 +294,7 @@ DOWNSTREAM = (".github/workflows/ci.yml", "scripts/release/ship.sh")
 # later comparison pass on an empty set.
 MIN_SOURCE_GATES = 4
 
-# Gates whose inputs are the development record under `.claude/`, which is
+# Gates whose inputs are the development record (SMIX_DEV_RECORD), which is
 # not version-controlled. They run where that record lives — the authoring
 # machine, via preflight and ship — and cannot run on a bare checkout.
 #
@@ -304,29 +307,29 @@ LOCAL_ONLY = {
     "audit-ledger-scan",
     "scope-promise-scan",
     "release-record-scan",
-    # Reconciles the guides against the probe ledgers in `.claude/docs/`.
+    # Reconciles the guides against the probe ledgers in the record's docs/.
     # Its own refusal states the rule: it runs where that record lives.
     # Learned live — its first CI run refused on a clean checkout,
     # exactly as designed, one job ahead of an include_str! of the same
     # record that stopped the test target building at all.
     "guide-claims-scan",
-    # Reads `.claude/docs/` — the four layers themselves. On a checkout
+    # Reads the record's docs/ — the four layers themselves. On a checkout
     # there is nothing there to read, so it refuses rather than passing;
     # in CI that refusal would fire on every build. Its harness DOES run
     # in CI, on trees it builds itself.
     "contract-scan",
-    # Reads `.claude/dogfood/` — our side of the consumer correspondence,
+    # Reads the record's dogfood/ — our side of the consumer correspondence,
     # which is not in the checkout either. It answers "did this letter
     # reach the thread it names", and the threads live on the authoring
     # machine, so on a checkout it refuses rather than passing.
     "a-reply-nobody-sent",
     "a-reply-nobody-sent.test",
-    # Reads the C10 ground-truth doc under `.claude/docs/research/`, which
+    # Reads the C10 ground-truth doc in the record's docs/research/, which
     # is not in the checkout. Same as release-record-scan: absent from CI
     # on purpose, present at ship because ship runs on the authoring
     # machine where that doc lives.
     "v5.1-c10-ground-truth-is-complete",
-    # Unlike the rest, not about `.claude/`: its input is the devicectl
+    # Unlike the rest, not about the record: its input is the devicectl
     # installed with Xcode on the machine it runs on, and the CI job is
     # ubuntu, where it can only answer "cannot run". Its self-test carries
     # a fake devicectl and does run in CI.
@@ -387,8 +390,8 @@ def check_source_gates_wired(failures):
                 # on every build.
                 if present:
                     failures.append(
-                        f"{CI_GATE} invokes {name}, whose inputs live under "
-                        f"`.claude/` and do not travel with a checkout. It "
+                        f"{CI_GATE} invokes {name}, whose inputs live in the "
+                        f"development record and do not travel with a checkout. It "
                         f"would report cannot-run on every branch build. "
                         f"Keep it to preflight and ship."
                     )
@@ -458,10 +461,10 @@ def check_every_dev_script_runs(failures):
     ) + sorted(glob.glob(os.path.join(ROOT, "scripts/**/*.py"), recursive=True)):
         rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
         texts.setdefault(rel, read_without_comments(rel))
-    hooks = os.path.join(ROOT, ".claude/settings.json")
-    if os.path.isfile(hooks):
+    hooks = _dev_record.path(SETTINGS)
+    if hooks and os.path.isfile(hooks):
         with open(hooks, encoding="utf-8") as f:
-            texts[".claude/settings.json"] = f.read()
+            texts["the record's settings.json"] = f.read()
 
     for path in sorted(glob.glob(os.path.join(ROOT, "scripts/dev/*.sh"))) + sorted(
         glob.glob(os.path.join(ROOT, "scripts/dev/*.py"))
@@ -572,8 +575,8 @@ def main():
     check_source_gates_wired(failures)
     check_every_dev_script_runs(failures)
 
-    settings_path = os.path.join(ROOT, SETTINGS)
-    if os.path.isfile(settings_path):
+    settings_path = _dev_record.path(SETTINGS)
+    if settings_path and os.path.isfile(settings_path):
         with open(settings_path, encoding="utf-8") as f:
             settings = json.load(f)
         check_hook_scripts_exist(settings, failures)

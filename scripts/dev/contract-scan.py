@@ -6,7 +6,7 @@ plan and a cold plan to exist at every moment. Section 6 forbids opening
 the next segment before the user says so. Between a checkpoint being
 archived and the user speaking, those two cannot both hold — and this
 cycle logged two of those windows as carelessness before anyone noticed
-the contract made them inevitable (`.claude/docs/v4.md`, 2026-08-12).
+the contract made them inevitable (the v4 decision log, 2026-08-12).
 
 So this gate does not ask whether `plan-hot.md` is there. It asks whether
 the gap has been CLAIMED: archived, and then either hot again or holding
@@ -23,9 +23,9 @@ Layer three is therefore satisfied by one of two files, exactly one:
 Everything beside the four layers is claimed by name in BESIDE, with a
 reason. Not being listed is never how a file gets in.
 
-It reads `.claude/docs/`, which is development record and by the
-2026-07-29 decision is not version-controlled. On a bare checkout it
-therefore REFUSES rather than passing: green must never mean "read
+It reads the development record's `docs/`, which is not version-controlled;
+the record's root is named by SMIX_DEV_RECORD (or --record). Without it the
+gate REFUSES rather than passing: green must never mean "read
 nothing". That is `guide-claims-scan`'s precedent, and the reason this
 scanner is absent from CI while its harness is not.
 """
@@ -38,8 +38,11 @@ import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
 
-DOCS = os.path.join(".claude", "docs")
+# Inside the development record.
+DOCS = "docs"
 HOT = "plan-hot.md"
 AWAITING = "plan-hot.awaiting.md"
 ARCHIVE = os.path.join("archive", "plan-history")
@@ -141,15 +144,18 @@ def acceptance_gaps(plan: str) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=REPO)
+    ap.add_argument("--record", default=None, help="the development record's root (default: $SMIX_DEV_RECORD)")
     args = ap.parse_args()
     root = os.path.abspath(args.root)
-    docs = os.path.join(root, DOCS)
+    record = _dev_record.root(args.record)
+    if record is None:
+        print(_dev_record.not_named("contract-scan"))
+        return 2
+    docs = os.path.join(record, DOCS)
 
     if not os.path.isdir(docs):
         print("contract-scan: CANNOT RUN")
-        print(f"  - {DOCS} is not in this tree. It is development record and by")
-        print("    the 2026-07-29 decision is not version-controlled, so this gate")
-        print("    runs where that record lives — green must not mean read nothing.")
+        print(f"  - {docs} does not exist: {_dev_record.VAR} names a record without its docs/")
         return 2
 
     problems: list[str] = []
@@ -373,7 +379,7 @@ def main() -> int:
         open_note = ""
 
     # The rule and the gate have to agree on what layer three is.
-    rules = os.path.join(root, ".claude", "CLAUDE.md")
+    rules = os.path.join(record, "CLAUDE.md")
     rule_note = ""
     if not os.path.isfile(rules):
         rule_note = " — CLAUDE.md is not in this tree, so section 0 was not reconciled"

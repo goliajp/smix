@@ -2198,9 +2198,9 @@ published on its own.
 - `v6.1-c5-two-devices-one-is-not-yours-e2e` and
   `no-script-picks-a-device-by-accident` — a second person's device is
   not the one a smix script reaches for.
-- `contract-scan` runs on a bare checkout — a gate that reads `.claude/`
-  used to error where that tree is absent, which is any clone but the
-  development machine.
+- `contract-scan` runs on a bare checkout — a gate that reads the
+  development record used to error where that record is absent, which is
+  any clone but the development machine.
 - `v6.2-c1-platform-from-device-e2e` — a byte-identical flow (only the
   appId differs) runs on iOS and Android with no `--platform` and both
   foreground the app.
