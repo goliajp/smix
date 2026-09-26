@@ -99,7 +99,6 @@ GOVERNED = {
     "examples/": "the golden-path samples and their prose",
     "test-fixtures/": "fixture apps ship in the checkout and carry prose",
     "README.md": "the front door",
-    "CONTRIBUTING.md": "read before anyone changes anything",
     "llms.txt": "what an agent reads first",
     "llms-full.txt": "the same, unabridged",
 }
