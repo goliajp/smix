@@ -22,9 +22,7 @@ fail() { printf '[c5-plugin] FAIL: %s\n' "$*" >&2; exit 1; }
 # that smix is broken. The distinction matters because this file's real
 # assertions are about what a session observes, so a session that never
 # ran has produced no evidence either way.
-UNRUNNABLE='reached your .* limit|/usage-credits|not logged in|Invalid API key|command not found|credit balance'
 cannot_judge() { printf '[c5-plugin] %s\n' "$*" >&2; printf '%s\n' "C5-PLUGIN-LOAD-SKIP"; exit 2; }
-session_unrunnable() { grep -qiE "$UNRUNNABLE" "$1" 2>/dev/null; }
 
 
 command -v claude >/dev/null || fail "the claude CLI is not on PATH"

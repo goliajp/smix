@@ -415,6 +415,10 @@ jobs:
         run: python3 scripts/dev/a-device-gate-keeps-crash-evidence.test.py
       - name: the crash-evidence collector's self-test
         run: bash scripts/lib/crash-evidence.sh --selftest
+      # A plugin e2e whose claude session the service stopped partway saw
+      # nothing about the plugin, and says it cannot judge.
+      - name: the claude-session reader's self-test
+        run: bash scripts/lib/claude-session.sh --selftest
       # A flow run is judged by the code smix reported. Fifty-three runs read
       # any non-zero exit as their own rule's failure, whatever smix said.
       - name: every flow run is judged by smix's own code

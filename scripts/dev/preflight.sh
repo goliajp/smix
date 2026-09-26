@@ -293,6 +293,8 @@ python3 scripts/dev/an-e2e-leaves-the-phones-alone.test.py
 python3 scripts/dev/a-device-gate-keeps-crash-evidence.py
 python3 scripts/dev/a-device-gate-keeps-crash-evidence.test.py
 bash scripts/lib/crash-evidence.sh --selftest
+# A plugin e2e whose claude session was cut short cannot judge the plugin.
+bash scripts/lib/claude-session.sh --selftest
 # A flow run is judged by the code smix reported, not by the script's rule.
 python3 scripts/dev/a-run-is-judged-by-its-code.py
 python3 scripts/dev/a-run-is-judged-by-its-code.test.py

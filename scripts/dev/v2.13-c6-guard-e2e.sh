@@ -27,9 +27,8 @@ fail() { printf '[c6-guard] FAIL: %s\n' "$*" >&2; exit 1; }
 # that smix is broken. The distinction matters because this file's real
 # assertions are about what a session observes, so a session that never
 # ran has produced no evidence either way.
-UNRUNNABLE='reached your .* limit|/usage-credits|not logged in|Invalid API key|command not found|credit balance'
 cannot_judge() { printf '[c6-guard] %s\n' "$*" >&2; printf '%s\n' "C6-GUARD-SKIP"; exit 2; }
-session_unrunnable() { grep -qiE "$UNRUNNABLE" "$1" 2>/dev/null; }
+source "$ROOT/scripts/lib/claude-session.sh"
 
 
 command -v claude >/dev/null || fail "the claude CLI is not on PATH"
@@ -56,7 +55,7 @@ if ! grep -qiE 'sim-guard|explicit UDID|blocked|denied|not permitted' "$WORK/blo
   # Before calling the guard silent, check the session ever spoke. A
   # session that could not start produces the same empty transcript as a
   # guard that did not fire, and only one of those is a defect.
-  if session_unrunnable "$WORK/blocked.txt" || session_unrunnable "$WORK/blocked.err"; then
+  if claude_session_unrunnable "$WORK/blocked.txt" "$WORK/blocked.err"; then
     fail "the claude session could not start — the guard was never given a chance to fire"
   fi
   head -25 "$WORK/blocked.txt" >&2
