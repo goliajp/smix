@@ -23,6 +23,7 @@ macro_rules! println {
 mod act;
 mod authoring;
 mod bench;
+mod boot_cold;
 mod capsule;
 mod departures;
 mod down;
@@ -1683,6 +1684,10 @@ enum SimAction {
     Boot {
         /// Which device to boot, by UDID or registry alias.
         device: String,
+        /// Boot an Android emulator from scratch instead of its Quick Boot
+        /// snapshot, which keeps whatever state the device stopped in.
+        #[arg(long)]
+        cold: bool,
     },
     /// Shutdown a simulator.
     Shutdown {
@@ -2346,7 +2351,7 @@ fn sim_action_device(action: &SimAction) -> Option<&str> {
         SimAction::Unregister { .. } => None,
         SimAction::Register { udid, .. } => Some(udid),
         SimAction::Resolve { device, .. }
-        | SimAction::Boot { device }
+        | SimAction::Boot { device, .. }
         | SimAction::Shutdown { device }
         | SimAction::Erase { device }
         | SimAction::Screenshot { device, .. }
@@ -3056,7 +3061,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         smix_simctl::registry::store_dir(&path).display()
                     );
                 }
-                SimAction::Boot { device } => {
+                SimAction::Boot { device, cold } => {
                     // Booting asks a different question than driving does:
                     // "where should this start" rather than "where is it".
                     // `resolve_device` refuses an emulator alias whose AVD
@@ -3106,8 +3111,17 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     // serial is what answers once it is up. The AVD name was
                     // written down at registration, when the device was
                     // provably running and could be asked.
-                    if device_kind_of(&device) == smix_simctl::registry::DeviceKind::Emulator {
-                        let already = adb_knows(&udid);
+                    let kind = device_kind_of(&device);
+                    let running =
+                        kind == smix_simctl::registry::DeviceKind::Emulator && adb_knows(&udid);
+                    if let Some(why) = cold
+                        .then(|| boot_cold::cold_boot_refusal(&device, kind, running))
+                        .flatten()
+                    {
+                        return Err(CliError::Other(why));
+                    }
+                    if kind == smix_simctl::registry::DeviceKind::Emulator {
+                        let already = running;
                         let claim = boot_claim(if already {
                             EmulatorState::AlreadyRunning
                         } else {
@@ -3126,7 +3140,12 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 })?;
                             let adb = smix_adb::AdbClient::new();
                             let console = emulator_console_path(&avd)?;
-                            adb.start_emulator_on(&avd, &udid, &console)
+                            let from = if cold {
+                                smix_adb::BootFrom::Cold
+                            } else {
+                                smix_adb::BootFrom::Snapshot
+                            };
+                            adb.start_emulator_on_with(&avd, &udid, &console, from)
                                 .map_err(|e| CliError::Other(format!("{e}")))?;
                             // Recorded as soon as the process is started,
                             // before the wait. The emulator has a process
@@ -7298,6 +7317,7 @@ mod device_power {
     fn boot() -> SimAction {
         SimAction::Boot {
             device: String::new(),
+            cold: false,
         }
     }
 
@@ -7620,7 +7640,13 @@ mod tests {
                 "allow-destructive",
                 SimAction::AllowDestructive { device: d() },
             ),
-            ("boot", SimAction::Boot { device: d() }),
+            (
+                "boot",
+                SimAction::Boot {
+                    device: d(),
+                    cold: false,
+                },
+            ),
             ("shutdown", SimAction::Shutdown { device: d() }),
             ("erase", SimAction::Erase { device: d() }),
             (

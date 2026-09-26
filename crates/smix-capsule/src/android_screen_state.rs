@@ -84,7 +84,7 @@ pub fn no_app_refusal(port: u16, serial: &str, why: &str, screen: ScreenState) -
              emulator's Quick Boot snapshot saves this state and restores it on the \
              next boot. Shut it down and start it cold:\n  \
              smix sim shutdown {serial}\n  \
-             emulator -avd <its AVD> -no-snapshot-load"
+             smix sim boot <its alias> --cold"
         ),
         ScreenState {
             not_responding: Some(app),
