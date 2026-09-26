@@ -295,6 +295,8 @@ python3 scripts/dev/a-device-gate-keeps-crash-evidence.test.py
 bash scripts/lib/crash-evidence.sh --selftest
 # A plugin e2e whose claude session was cut short cannot judge the plugin.
 bash scripts/lib/claude-session.sh --selftest
+# A flash the watch could have looked away from is not judged either way.
+bash scripts/lib/flash-verdict.sh --selftest
 # A flow run is judged by the code smix reported, not by the script's rule.
 python3 scripts/dev/a-run-is-judged-by-its-code.py
 python3 scripts/dev/a-run-is-judged-by-its-code.test.py
