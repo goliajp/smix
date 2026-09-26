@@ -279,10 +279,36 @@ struct Installed {
 }
 
 /// How many times a swap is tried when another installer keeps putting its
-/// own tree into the gap. Each round leaves a whole tree in place, so a
-/// loss here is a clean one; the bound only stops two installers trading
-/// the directory forever.
+/// own tree into the gap. Installers of this build take the lock beside
+/// the directory first, so among them the gap never opens; the bound is for
+/// an installer that does not take it (an older smix), and only stops two
+/// of them trading the directory forever. Each round leaves a whole tree in
+/// place, so a loss here is a clean one.
 const SWAP_ATTEMPTS: usize = 16;
+
+/// Hold the install lock beside `dst` until the returned file is dropped.
+///
+/// Moving the old tree aside and the new one in are two renames. Without
+/// mutual exclusion a second installer's tree lands between them, and with
+/// several installers at once each keeps undoing the others' swap: eight
+/// threads installing five times each lost 28 runs in 200 to that trade.
+fn lock_beside(dst: &Path) -> Result<std::fs::File, ExtractError> {
+    let parent = dst.parent().unwrap_or_else(|| Path::new("."));
+    let base = dst
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "runner".to_string());
+    let path = parent.join(format!(".{base}.install-lock"));
+    let file = std::fs::File::options()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|e| ExtractError::io(format!("opening {}", path.display()), e))?;
+    file.lock()
+        .map_err(|e| ExtractError::io(format!("locking {}", path.display()), e))?;
+    Ok(file)
+}
 
 /// Put `archive` at `dst` as one whole tree: unpacked beside it, stamped,
 /// then moved in.
@@ -315,6 +341,7 @@ fn install_tree(
     std::fs::write(&stamp_path, format!("{stamp}\n"))
         .map_err(|e| ExtractError::io(format!("writing {}", stamp_path.display()), e))?;
 
+    let _lock = lock_beside(dst)?;
     let mut carried = false;
     for _ in 0..SWAP_ATTEMPTS {
         carried |= carry_into(dst, staging.path(), carry)?;
