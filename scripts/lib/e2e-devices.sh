@@ -218,3 +218,43 @@ if h:
   esac
   [ -z "$held" ] || cannot_judge "$device is held by $held — yielding, not seizing it"
 }
+
+# ---- whether an Android device can be driven at all --------------------
+#
+# e2e_android_screen_problem <wakefulness> <keyguard> <systemui-pid> <not-responding-pkg>
+#
+# Prints why the screen cannot show an app, or nothing when it can. Pure:
+# the four readings come from `e2e_android_screen_problem_of`.
+#
+# A device can answer adb and still show nothing: on 2026-09-26 the
+# emulator's system_server restarted under a host busy compiling, the
+# system UI hit "isn't responding" on the way back up, and closing that
+# dialog killed it for good. Eighteen scripts then each failed on
+# "the runner's automation sees no app" — true, and about the wrong thing.
+e2e_android_screen_problem() {
+  local wake="$1" keyguard="$2" systemui="$3" anr="$4"
+  if [ -z "$wake" ] && [ -z "$keyguard" ]; then
+    echo "could not read the device's screen state (dumpsys power / window gave no answer)"
+  elif [ -z "$systemui" ]; then
+    echo "the device's system UI is not running — nothing can be drawn; shut it down and start it cold"
+  elif [ -n "$anr" ]; then
+    echo "a \"$anr isn't responding\" dialog is covering the screen"
+  elif [ "$wake" != "Awake" ]; then
+    echo "the display is off ($wake)"
+  elif [ "$keyguard" = "true" ]; then
+    echo "the lock screen is showing"
+  fi
+}
+
+# e2e_android_screen_problem_of <serial> — the same, read from the device.
+e2e_android_screen_problem_of() {
+  local serial="$1" power window windows wake keyguard systemui anr
+  power="$(adb -s "$serial" shell dumpsys power 2>/dev/null | tr -d '\r')"
+  window="$(adb -s "$serial" shell dumpsys window 2>/dev/null | tr -d '\r')"
+  windows="$(adb -s "$serial" shell dumpsys window windows 2>/dev/null | tr -d '\r')"
+  wake="$(printf '%s\n' "$power" | sed -n 's/^ *mWakefulness=\(.*\)$/\1/p' | head -1)"
+  keyguard="$(printf '%s\n' "$window" | sed -n 's/^ *isKeyguardShowing=\(.*\)$/\1/p' | head -1)"
+  systemui="$(adb -s "$serial" shell pidof com.android.systemui 2>/dev/null | tr -d '\r')"
+  anr="$(printf '%s\n' "$windows" | sed -n 's/.*Application Not Responding: \([^} ]*\).*/\1/p' | head -1)"
+  e2e_android_screen_problem "$wake" "$keyguard" "$systemui" "$anr"
+}

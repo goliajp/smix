@@ -86,6 +86,9 @@ e2e_verdict() {
   return 0
 }
 
+# shellcheck source=../lib/e2e-devices.sh
+. "$ROOT/scripts/lib/e2e-devices.sh"
+
 if [ "${1:-}" = "--selftest" ]; then
   fails=0
   check() { # label expected-exit expected-substring input
@@ -128,11 +131,34 @@ if [ "${1:-}" = "--selftest" ]; then
   state_check "a script that failed" 1 fail
   state_check "a script killed by a signal" 143 fail
 
+  # Whether the Android device can show an app at all. Each input is what
+  # the device reported on 2026-09-26 or the healthy baseline.
+  screen_check() { # label expected-substring(empty = healthy) wake keyguard systemui anr
+    local got
+    got="$(e2e_android_screen_problem "$3" "$4" "$5" "$6")"
+    if [ -z "$2" ] && [ -n "$got" ]; then
+      echo "device-e2e-tier selftest: $1 — a healthy screen was called '$got'" >&2
+      fails=$((fails + 1))
+    elif [ -n "$2" ]; then
+      case "$got" in
+        *"$2"*) ;;
+        *) echo "device-e2e-tier selftest: $1 — said '$got', wanted '$2'" >&2
+           fails=$((fails + 1)) ;;
+      esac
+    fi
+  }
+  screen_check "a healthy device" "" Awake false 734 ""
+  screen_check "system UI gone" "system UI is not running" Awake true "" ""
+  screen_check "a not-responding dialog" "com.android.systemui isn't responding" Awake false 734 com.android.systemui
+  screen_check "display off" "display is off" Asleep false 734 ""
+  screen_check "lock screen" "lock screen is showing" Awake true 734 ""
+  screen_check "nothing could be read" "could not read" "" "" "" ""
+
   if [ "$fails" -ne 0 ]; then
     echo "device-e2e-tier selftest: FAIL ($fails)" >&2
     exit 1
   fi
-  echo "device-e2e-tier selftest: 10 cases pass — a count, a verdict, and what each exit code means"
+  echo "device-e2e-tier selftest: 16 cases pass — a count, a verdict, what each exit code means, and whether a screen can show an app"
   exit 0
 fi
 
@@ -145,6 +171,24 @@ fi
 # scripts asked. Guarded by `an-e2e-leaves-the-phones-alone`.
 unset SMIX_E2E_PHYSICAL_ANDROID SMIX_E2E_PHYSICAL_IOS SMIX_E2E_PHYSICAL_IOS_PORT
 
+# shellcheck source=../lib/e2e-binary.sh
+. "$ROOT/scripts/lib/e2e-binary.sh"
+
+# Whether the Android device the scripts share can show an app. A device
+# that is not running is not checked: the scripts boot it themselves.
+android_problem() {
+  local serial
+  serial="$("$SMIX" sim resolve "$E2E_ANDROID" 2>/dev/null | tail -1)" || return 0
+  adb devices 2>/dev/null | grep -qE "^${serial}[[:space:]]+device" || return 0
+  e2e_android_screen_problem_of "$serial" | sed "s|^|$E2E_ANDROID ($serial): |"
+}
+
+problem="$(android_problem)"
+if [ -n "$problem" ]; then
+  echo "device-e2e-tier: STOPPED before the first script — $problem"
+  exit 1
+fi
+
 results=""
 for e2e in "$ROOT"/scripts/dev/*-e2e.sh; do
   name="$(basename "$e2e" .sh)"
@@ -155,6 +199,16 @@ for e2e in "$ROOT"/scripts/dev/*-e2e.sh; do
   state="$(e2e_state "$rc")"
   echo "device-e2e-tier: [$name] $state" >&2
   results="$results$name $state"$'\n'
+  # A device that stopped being able to show anything fails every script
+  # after it, each about its own step. Stop at the first, with the cause.
+  if [ "$state" = fail ]; then
+    problem="$(android_problem)"
+    if [ -n "$problem" ]; then
+      printf '%s' "$results" | e2e_verdict || true
+      echo "device-e2e-tier: STOPPED after [$name] — $problem"
+      exit 1
+    fi
+  fi
 done
 
 printf '%s' "$results" | e2e_verdict
