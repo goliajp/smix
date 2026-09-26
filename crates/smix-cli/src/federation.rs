@@ -378,11 +378,11 @@ pub struct RemoteOutput {
 /// hide exactly the signal the merge loop needs. A signal-killed ssh
 /// has no exit code and maps to 1, the same shape `run_parallel` uses.
 pub fn run_ssh(argv: &[String]) -> std::io::Result<RemoteOutput> {
-    capture("ssh", argv)
+    capture(std::process::Command::new("ssh").args(argv))
 }
 
-fn capture(program: &str, argv: &[String]) -> std::io::Result<RemoteOutput> {
-    let out = std::process::Command::new(program).args(argv).output()?;
+fn capture(cmd: &mut std::process::Command) -> std::io::Result<RemoteOutput> {
+    let out = cmd.output()?;
     Ok(RemoteOutput {
         exit: out.status.code().map_or(1, |c| c.clamp(0, 255) as u8),
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -418,8 +418,18 @@ pub fn artifact_pull_argv(node: &NodeSpec, remote_dir: &str, local_dir: &str) ->
 /// Spawn `rsync` with the given argv and capture everything — the same
 /// shape as `run_ssh`: no retry, no timeout, a transfer failure
 /// surfaces as its own non-zero exit.
+///
+/// The remote path in the argv is already quoted for the remote shell.
+/// rsync 3.2.4 and later escape remote arguments themselves unless
+/// `RSYNC_OLD_ARGS` is set, which turns those quotes into literal
+/// characters of the path; openrsync ignores the variable and always
+/// hands the path to the remote shell.
 pub fn run_rsync(argv: &[String]) -> std::io::Result<RemoteOutput> {
-    capture("rsync", argv)
+    capture(
+        std::process::Command::new("rsync")
+            .args(argv)
+            .env("RSYNC_OLD_ARGS", "1"),
+    )
 }
 
 /// One slot's raw outcome from the fan-out: which node it ran on
