@@ -24,6 +24,17 @@ BYPASS="${2:-}"
 [[ -n "$VERSION" ]] || { echo "usage: ship.sh <version> [--i-know-what-im-doing]"; exit 2; }
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# The development record — charter, decision log, plans, ledgers,
+# correspondence — is not version-controlled, so nothing here says where it
+# is. A dozen gates below read it; without it they can only say "cannot
+# run", and a release or preflight that let that through would be checking
+# nothing. Name it before starting.
+if [[ -z "${SMIX_DEV_RECORD:-}" || ! -d "${SMIX_DEV_RECORD:-}" ]]; then
+  echo "error: SMIX_DEV_RECORD must name the development record's root (a directory); got '${SMIX_DEV_RECORD:-}'" >&2
+  exit 2
+fi
+
 SMOKE="$ROOT/scripts/release/smoke-v1.smoke.sh"
 STAMP="$ROOT/.smoke-passed-at"
 
@@ -344,7 +355,7 @@ python3 "$ROOT/scripts/dev/android-gate-scan.py" > /tmp/smix-ship-android-gate.l
   || fail "android gate scan FAILED — an Android test task is outside the gates (see /tmp/smix-ship-android-gate.log)"
 
 # --- audit ledger ------------------------------------------------------
-# Re-evaluates every citation in .claude/docs/audit-ledger.md. That table records
+# Re-evaluates every citation in the audit ledger. That table records
 # which known defects are still live, and its predecessor drifted badly
 # enough that three of five sampled entries had been fixed while still
 # reading as open. Shipping against a stale account of what is broken is
@@ -827,8 +838,8 @@ python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.l
 # three, rather than in front of each.
 #
 # This decides whether to WAIT, not whether it is safe. `smix run` and
-# `runner up` decide that from the lease and name the holder (see
-# .claude/rfcs/10.0-android-runner-ownership.md); a second copy of that
+# `runner up` decide that from the lease and name the holder; a second
+# copy of that
 # judgement here would be the copy that goes stale. So it asks the
 # cheaper question off the same ledger -- is anything holding this
 # device -- and when the wait ends, lets the product speak.

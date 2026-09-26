@@ -1,10 +1,9 @@
 // Perf baseline: Smix.launchApp + tap round-trip latency
-// against MockSimRuntime + MockSelectorResolver. Writes results to
-// .claude/docs/perf/v7.8-baseline-ts.txt.
+// against MockSimRuntime + MockSelectorResolver. Prints the results.
 //
 // Usage:
 //   cd npm/smix-rn/examples/demo-app
-//   bun perf-baseline.ts > ../../../../.claude/docs/perf/v7.8-baseline-ts.txt
+//   bun perf-baseline.ts > baseline-ts.txt
 
 import {
   bundleId,

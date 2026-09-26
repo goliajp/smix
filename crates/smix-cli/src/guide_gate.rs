@@ -957,7 +957,7 @@ fn the_gate_catches_a_documented_example_the_driver_would_refuse() {
 }
 
 // --------------------------------------------------------------------
-// Probes — one per claim in .claude/docs/guide-executability.md.
+// Probes — one per claim in the guide-executability list.
 //
 // The two arms above judge every example the same way. A probe asks a
 // question about one specific claim a guide makes, in the terms that
@@ -1216,15 +1216,16 @@ const SELF: &str = include_str!("guide_gate.rs");
 /// The development-machine record: the executability list and the audit
 /// ledger it cites into.
 ///
-/// Read at run time, not `include_str!` — those files live in
-/// `.claude/docs/`, which is deliberately not in the repository, and a
-/// compile-time include made a clean checkout unable to *build* the
-/// test target at all. `None` on a machine without the record; the
-/// tests that reconcile against it say so and stand down, the same
-/// answer `guide-claims-scan` gives in that situation: this
-/// reconciliation runs where the record lives.
+/// Read at run time, not `include_str!` — those files live in the
+/// development record, which is deliberately not in the repository, and
+/// a compile-time include made a clean checkout unable to *build* the
+/// test target at all. The record's root is named by `SMIX_DEV_RECORD`.
+/// `None` where it is not named or lacks the files; the tests that
+/// reconcile against it say so and stand down, the same answer
+/// `guide-claims-scan` gives in that situation: this reconciliation runs
+/// where the record lives.
 fn dev_record() -> Option<(String, String)> {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.claude/docs");
+    let root = std::path::PathBuf::from(std::env::var_os("SMIX_DEV_RECORD")?).join("docs");
     let list = std::fs::read_to_string(root.join("guide-executability.md")).ok()?;
     let ledger = std::fs::read_to_string(root.join("audit-ledger.md")).ok()?;
     Some((list, ledger))
@@ -1292,8 +1293,9 @@ fn rows(list: &str) -> Vec<Row<'_>> {
 fn the_list_and_the_probes_agree() {
     let Some((list, ledger)) = dev_record() else {
         eprintln!(
-            "guide-executability: development-machine record absent — this \
-             reconciliation runs where the record lives (preflight, ship)"
+            "guide-executability: no development record (SMIX_DEV_RECORD unset, \
+             or its docs/ lacks the list or the ledger) — this reconciliation \
+             runs where the record lives (preflight, ship)"
         );
         return;
     };
@@ -1343,7 +1345,7 @@ fn the_list_and_the_probes_agree() {
             assert!(
                 ledger.contains(r.ledger),
                 "{}: cites ledger row {}, which does not appear in \
-                 .claude/docs/audit-ledger.md",
+                 the audit ledger",
                 r.id,
                 r.ledger
             );

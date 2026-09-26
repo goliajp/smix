@@ -382,7 +382,7 @@ jobs:
       - name: the retired-wording scan can still go red
         run: python3 scripts/dev/retired-claims-scan.test.py
       # contract-scan itself is deliberately NOT here. It reads the four
-      # layers under `.claude/docs/`, which is not version-controlled, so
+      # layers of the development record, which is not version-controlled, so
       # on a checkout it refuses — and a gate that refuses on every build
       # is one nobody reads. workflow-scan's LOCAL_ONLY records that as a
       # decision. The harness below builds its own trees and needs nothing
@@ -487,7 +487,7 @@ jobs:
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
       # guide-claims-scan is deliberately NOT here. It reconciles the
-      # guides against `.claude/docs/`' probe ledgers, and that record
+      # guides against the development record's probe ledgers, and that record
       # lives on the development machine only — its own refusal says
       # "it runs where that record lives". It gates in preflight and
       # ship, both of which run there. The corpus check below reads
@@ -499,8 +499,8 @@ jobs:
       - name: android gate scan
         run: python3 scripts/dev/android-gate-scan.py
       # audit-ledger-scan, scope-promise-scan and release-record-scan are
-      # deliberately absent. Their inputs are the development record under
-      # `.claude/`, which is not version-controlled, so on a checkout they
+      # deliberately absent. Their inputs are the development record, which
+      # is not version-controlled, so on a checkout they
       # have nothing to read. They run on the authoring machine via
       # preflight and ship. workflow-scan enforces that arrangement in both
       # directions — it fails if one of them appears here.

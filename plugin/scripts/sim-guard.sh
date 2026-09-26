@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # sim-guard — PreToolUse Bash hook enforcing explicit-UDID simulator
-# addressing. Wired from `.claude/settings.json`; receives the hook JSON
+# addressing. Wired as a PreToolUse hook; receives the hook JSON
 # on stdin, reads the executable part of it through hook-command.py
 # (which drops heredoc bodies that are written rather than run), and
 # BLOCKS (exit 2) any `simctl` invocation that:

@@ -11,7 +11,7 @@
 # ("④ 修完要有门"). So this checkpoint adds it, and proves its teeth by
 # reverting the wiring to the broken form and requiring the red.
 #
-# By empty-predicate (.claude/rule/empty-predicate.md) the gate is
+# By `gate/absence-needs-presence` the gate is
 # two-sided: supplied → the real value lands (judged by field content,
 # never a log line — the progress log counts the raw template on purpose,
 # and printing the expanded length would leak a secret's length); missing

@@ -120,12 +120,18 @@ def gates_from_ship(root: str):
     return out
 
 
-# Development record, deliberately not version-controlled (the 2026-07-29
-# decision), and the subject of fourteen of the gates. Listing files by
-# what git knows leaves it out, and those gates then say "cannot run" —
-# a true sentence that this sweep would file as caution when it is
-# really the copy being wrong.
-ALSO_COPY = (".claude",)
+# The development record, deliberately not version-controlled (the
+# 2026-07-29 decision), and the subject of fourteen of the gates. Listing
+# files by what git knows leaves it out, and those gates then say "cannot
+# run" — a true sentence that this sweep would file as caution when it is
+# really the copy being wrong. So where a record is named (SMIX_DEV_RECORD)
+# it is copied into the tree under this name, kept out of the copy's index,
+# and the gates are pointed at the copy — taking a record file away then
+# takes it away from them, the same as any other subject.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
+
+RECORD_COPY = "dev-record"
 
 
 def pristine_copy(root: str, dest: str):
@@ -150,11 +156,12 @@ def pristine_copy(root: str, dest: str):
     # a wrong answer that looks like a cautious one. The self-test built
     # its fixture this way from the start; the real sweep did not, and
     # the two instruments disagreeing is how an instrument lies.
-    for extra in ALSO_COPY:
-        src = os.path.join(root, extra)
-        if os.path.isdir(src):
-            shutil.copytree(src, os.path.join(dest, extra), dirs_exist_ok=True)
+    record = _dev_record.root()
+    if record and os.path.isdir(record):
+        shutil.copytree(record, os.path.join(dest, RECORD_COPY), dirs_exist_ok=True)
     subprocess.run(["git", "init", "-q"], cwd=dest, check=True)
+    with open(os.path.join(dest, ".git", "info", "exclude"), "a", encoding="utf-8") as fh:
+        fh.write(f"/{RECORD_COPY}/\n")
     subprocess.run(["git", "add", "-A"], cwd=dest, check=True)
     # And a commit, because "staged" is not "has a history": the gates
     # that ask `git log` or `git describe` answer nothing in a tree whose
@@ -176,6 +183,8 @@ def run_gate(tree, lang, rel, audit_dir):
     one. A scan that only works in one of them passes every rehearsal.
     """
     env = dict(os.environ)
+    if os.path.isdir(os.path.join(tree, RECORD_COPY)):
+        env[_dev_record.VAR] = os.path.join(tree, RECORD_COPY)
     out_file = None
     if audit_dir:
         out_file = os.path.join(audit_dir, "opened.txt")

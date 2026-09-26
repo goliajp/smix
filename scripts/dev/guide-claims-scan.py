@@ -8,9 +8,8 @@ worth: a row naming a probe that no longer exists, or a probe running with
 no row, is drift in the one table that is supposed to be the account.
 
 This was the tail of `crates/smix-cli/src/guide_gate.rs`, which reached it
-by compiling `.claude/docs/guide-executability.md` and
-`.claude/docs/audit-ledger.md` into the crate. Both are development record
-and neither is version-controlled, so the crate's test build depended on
+by compiling the guide-executability list and the audit ledger into the
+crate. Both are development record and neither is version-controlled, so the crate's test build depended on
 files a checkout does not have. Reconciling three documents is a scanner's
 job. The behavioural half — actually running each documented example —
 stays in the crate, where the parser and the driver are.
@@ -32,9 +31,12 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
 
-LIST = ".claude/docs/guide-executability.md"
-LEDGER = ".claude/docs/audit-ledger.md"
+# In the development record, named by SMIX_DEV_RECORD.
+LIST = "docs/guide-executability.md"
+LEDGER = "docs/audit-ledger.md"
 GATE = "crates/smix-cli/src/guide_gate.rs"
 
 # Columns, by position in the 11-cell row.
@@ -60,9 +62,9 @@ problems = []
 missing = []
 
 
-def read(rel):
+def read(rel, base=ROOT):
     try:
-        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+        with open(os.path.join(base, rel), encoding="utf-8") as fh:
             return fh.read()
     except OSError:
         missing.append(rel)
@@ -99,19 +101,22 @@ def rows(text):
 
 
 def main():
-    listing = read(LIST)
-    ledger = read(LEDGER)
+    record = _dev_record.root()
+    if record is None:
+        print(_dev_record.not_named("guide-claims"))
+        return 2
+    listing = read(LIST, record)
+    ledger = read(LEDGER, record)
     gate = read(GATE)
 
     if missing:
         print("guide-claims: CANNOT RUN — these inputs are absent:")
         for m in missing:
             print(f"  - {m}")
-        if any(m.startswith(".claude/") for m in missing):
+        if any(m in (LIST, LEDGER) for m in missing):
             print(
-                "\n  `.claude/` is the development record and is deliberately "
-                "not version-controlled.\n  This gate reconciles it against "
-                "the probes, so it runs where that record lives."
+                f"\n  those are read from the development record at {record} "
+                f"({_dev_record.VAR})."
             )
         return 2
 

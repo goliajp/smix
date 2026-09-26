@@ -14,7 +14,7 @@ not a selector; it rides a different axis and that axis had no gate.
 Wiring the missing half fixes this once. This asks the question every
 time.
 
-Two halves, per `.claude/rule/empty-predicate.md`:
+Two halves, per `gate/absence-needs-presence`:
 
   - every authorised hatch is present on every surface, and
   - every coordinate API that was NOT authorised is absent from all of

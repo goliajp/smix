@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that what the scope file promises still matches what exists.
 
-`.claude/docs/v2.md` promises `--stable` under determinism. Nothing implements
+The decision log in the development record promised `--stable` under determinism. Nothing implements
 it and nothing ever withdrew it. Tracing the promise back found an
 exploration note — status "explored", priority 3, aimed at an older
 milestone, and requiring cooperation from the app under test that the
@@ -50,9 +50,13 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-EVIDENCE = ".claude/docs/scope-evidence.md"
-PENDING = ".claude/docs/scope-decisions-pending.md"
-SOURCE = ".claude/docs/v2.md"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
+
+# All three live in the development record, named by SMIX_DEV_RECORD.
+EVIDENCE = "docs/scope-evidence.md"
+PENDING = "docs/scope-decisions-pending.md"
+SOURCE = "docs/v2.md"
 
 IN_SCOPE_START = "## 做什么（in scope）"
 IN_SCOPE_END = "## 不做什么"
@@ -90,6 +94,12 @@ def read(rel):
         return f.read()
 
 
+def read_record(rel):
+    """A file of the development record."""
+    with open(_dev_record.path(rel), encoding="utf-8") as f:
+        return f.read()
+
+
 def tracked_paths():
     out = subprocess.run(
         ["git", "-C", ROOT, "ls-files", "--cached"],
@@ -99,7 +109,7 @@ def tracked_paths():
 
 
 def in_scope_block():
-    body = read(SOURCE)
+    body = read_record(SOURCE)
     start = body.index(IN_SCOPE_START)
     end = body.index(IN_SCOPE_END, start)
     return body[start:end]
@@ -231,7 +241,10 @@ def check_mcp_capabilities(block, rows, failures):
 def main():
     failures = []
 
-    if not os.path.isfile(os.path.join(ROOT, EVIDENCE)):
+    if _dev_record.root() is None:
+        print(_dev_record.not_named("scope-promise-scan"))
+        return 2
+    if not os.path.isfile(_dev_record.path(EVIDENCE)):
         failures.append(
             f"{EVIDENCE} does not exist. With nothing to re-evaluate this scan is "
             f"indistinguishable from a clean bill of health, so it fails."
@@ -242,8 +255,8 @@ def main():
     # (this one and contract-scan) were themselves the bug C6b closed.
 
     rows = []
-    if os.path.isfile(os.path.join(ROOT, EVIDENCE)):
-        rows = parse_rows(read(EVIDENCE), failures)
+    if os.path.isfile(_dev_record.path(EVIDENCE)):
+        rows = parse_rows(read_record(EVIDENCE), failures)
         if len(rows) < MIN_ROWS:
             failures.append(
                 f"{EVIDENCE}: parsed {len(rows)} rows, expected at least {MIN_ROWS}. "
@@ -289,15 +302,15 @@ def main():
 
         # Pending rows need their material file; zero pending, no file needed.
         pending_rows = [r for r in rows if r["status"] == "pending"]
-        if pending_rows and not os.path.isfile(os.path.join(ROOT, PENDING)):
+        if pending_rows and not os.path.isfile(_dev_record.path(PENDING)):
             failures.append(
                 f"{len(pending_rows)} promise(s) are pending but {PENDING} does not "
                 f"exist. Pending without material is a decision nobody can make."
             )
 
         # Pending means material exists, in the shape someone can decide from.
-        if os.path.isfile(os.path.join(ROOT, PENDING)):
-            material = read(PENDING)
+        if os.path.isfile(_dev_record.path(PENDING)):
+            material = read_record(PENDING)
             headings = re.findall(r"^### (.+)$", material, re.M)
             entries = re.findall(r"^## (.+)$", material, re.M)
             pending_rows = [r for r in rows if r["status"] == "pending"]

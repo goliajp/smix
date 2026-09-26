@@ -123,8 +123,8 @@ DISCOVERED_COORDINATE_PATTERNS = [
 # Paths whose version coordinates are HISTORY and must not be rewritten:
 # a shipped-version note to a consumer is true as of its date.
 #
-# Everything this check walks comes from `git ls-files`, so a prefix under
-# `.claude/` can never exclude anything — that whole directory is ignored.
+# Everything this check walks comes from `git ls-files`, so a prefix naming
+# an ignored directory can never exclude anything.
 # Four such entries sat here until 9.0.0 printing "coordinates not swept"
 # for directories the walk had never reached, which reads exactly like the
 # gate looked at them and decided. An exemption that excuses nothing is

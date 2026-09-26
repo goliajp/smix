@@ -22,8 +22,8 @@ GATE = os.path.join(HERE, "a-reply-nobody-sent.py")
 
 
 def build(root):
-    dog = os.path.join(root, ".claude", "dogfood")
-    thread = os.path.join(root, "consumer", ".claude", "state", "thread-1")
+    dog = os.path.join(root, "dogfood")
+    thread = os.path.join(root, "consumer", "state", "thread-1")
     os.makedirs(dog)
     os.makedirs(thread)
 
@@ -76,6 +76,16 @@ def main():
         problems.append("the delivered one was not counted")
     if "1 deliberately not sent" not in out:
         problems.append("the declined one was not counted")
+
+    env = {k: v for k, v in os.environ.items() if k != "SMIX_DEV_RECORD"}
+    unset = subprocess.run(
+        [sys.executable, GATE], capture_output=True, text=True, timeout=120, env=env
+    )
+    if unset.returncode != 2 or "SMIX_DEV_RECORD" not in unset.stdout:
+        problems.append(
+            f"with no record named it answered {unset.returncode} and did not name "
+            f"SMIX_DEV_RECORD — a gate that read nothing must not pass"
+        )
 
     if problems:
         print("reply-sent.test: RED")

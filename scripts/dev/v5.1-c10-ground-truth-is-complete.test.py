@@ -19,11 +19,17 @@ match the document byte for byte; everything this file says for itself
 is in the repository's.
 """
 
+import os
 import pathlib
 import subprocess
 import sys
 
-DOC = pathlib.Path(".claude/docs/research/v5.1-landscape-coordinate-spaces.md")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
+
+# The document the gate reads, in the development record (SMIX_DEV_RECORD).
+_DOC = _dev_record.path("docs", "research", "v5.1-landscape-coordinate-spaces.md")
+DOC = pathlib.Path(_DOC) if _DOC else None
 GATE = ["python3", "scripts/dev/v5.1-c10-ground-truth-is-complete.py"]
 
 MUTATIONS = [
@@ -51,6 +57,9 @@ MUTATIONS = [
 
 
 def main() -> int:
+    if DOC is None:
+        print(_dev_record.not_named("v5.1-c10-ground-truth.test"))
+        return 2
     original = DOC.read_text(encoding="utf-8")
     failures = []
 

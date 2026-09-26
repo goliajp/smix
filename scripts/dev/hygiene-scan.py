@@ -51,44 +51,11 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # Each entry's remaining hits are counted and printed, so an exclusion reads
 # as a debt with an owner rather than as ground that was never walked.
 EXCLUSIONS = [
-    (".claude/docs/roadmap.md", "the version path is its subject"),
-    (".claude/docs/plan-hot.md", "checkpoint tags are its subject"),
-    (".claude/docs/v2.md", "checkpoint tags are its subject"),
-    (".claude/docs/plan-cold/", "checkpoint tags are their subject"),
-    (".claude/docs/archive/", "frozen records — superseded hot plans and "
-                              "shipped-version consumer correspondence, kept "
-                              "exactly as written, paths inside deliberately "
-                              "not rewritten (see its README)"),
-    (".claude/docs/research/", "decomposition research records — obtainability verdicts "
-                       "written in the language they were reasoned in, "
-                       "checkpoint tags are their subject, same as plan-history"),
-    (".claude/docs/perf/", "perf decomposition ground-truth docs — Phase A/B records "
-                   "per the perf methodology, kept as reasoned, same as research"),
-    (".claude/rfcs/", "design records written per consumer; editorial pass"),
-    (".claude/CLAUDE.md", "the development charter — written in the language "
-                          "its readers work in, and its references to "
-                          "plan-hot.md are structural (that file exists only "
-                          "between checkpoints)"),
-    (".claude/rule/", "project rule cards, same charter and same language"),
-    (".claude/docs/audit-ledger.md", "internal defect accounting — the language it is "
-                             "worked in, and the circled numerals are its join "
-                             "key to the decision log, not stray version tags"),
-    (".claude/docs/scope-evidence.md", "internal scope accounting, same language and "
-                               "same reason as the defect ledger"),
-    (".claude/docs/guide-executability.md", "internal accounting of what the guides "
-                                    "claim versus what runs, same language and "
-                                    "same reason as the defect ledger"),
-    (".claude/docs/scope-decisions-pending.md", "decision material awaiting the "
-                                        "owner's call; it quotes the scope "
-                                        "text it is about, tags included"),
     (".gitignore", "names the consumer docs it ignores; the rule goes when "
                    "they do"),
 ]
 
-# git already drops anything gitignored, which is what defines "shipped" —
-# notably `.claude/` is ignored EXCEPT the tracked contract: `CLAUDE.md`,
-# `rule/`, `rfcs/`, and `docs/` (the development record). Citations of those
-# must still resolve.
+# git already drops anything gitignored, which is what defines "shipped".
 SKIP_PREFIXES = ("target/", "build/", ".build/", "node_modules/")
 
 NOISE_PATTERNS = {
@@ -114,27 +81,6 @@ MD_LINK = re.compile(r"\]\(([^)\s]+\.md)(?:#[^)]*)?\)")
 MD_BARE = re.compile(r"`([A-Za-z0-9_.\-/]+\.md)`")
 
 POINTER_EXTS = (".rs", ".swift", ".kt", ".md")
-
-# Planning docs name deliverables that do not exist yet — that is their
-# job. An unresolved name there is a plan, not a dead pointer. Archived
-# plans under "plan-history/" are read the same way: each was written
-# pointing at the hot plan it would become, or the next segment's, and is
-# kept as written — the noise scan already excludes it for the same reason.
-#
-# CLAUDE.md sits one level above those: it is the spec the planning docs
-# are written against, so it names `.claude/docs/plan-hot.md` (which exists only
-# between checkpoints, by design) and `plan-cold/v0.X.md` (a shape, not a
-# path). Reading either as a citation gets the direction backwards.
-POINTER_SKIP = (
-    ".claude/CLAUDE.md",
-    ".claude/docs/roadmap.md",
-    ".claude/docs/plan-hot.md",
-    ".claude/docs/v2.md",
-    ".claude/docs/plan-cold/",
-    ".claude/docs/archive/plan-history/",
-    ".claude/docs/archive/dogfood-archive/",
-)
-
 
 def shipped_files():
     """Every file a reader gets: tracked, plus new ones not gitignored."""
@@ -225,7 +171,7 @@ def scan_dead_pointers(files):
 
     dead = []
     for rel in files:
-        if not rel.endswith(POINTER_EXTS) or rel.startswith(POINTER_SKIP):
+        if not rel.endswith(POINTER_EXTS):
             continue
         base_dir = os.path.dirname(rel)
         for lineno, line in enumerate(read_lines(rel), 1):
@@ -257,71 +203,16 @@ def main():
     # sat here after the file it names was removed, printing "0 left"
     # about nothing at all.
     #
-    # A path, not a prefix: `research/` and the rest are directories that
-    # may legitimately be empty, and `.gitignore` and the docs are files
-    # that must exist to be excused.
-    #
-    # Layer three is the exception, and it is an exception about SHAPE
-    # rather than about this file. The charter (§9 #7) says exactly one
-    # of `plan-hot.md` and `plan-hot.awaiting.md` exists at any moment —
-    # the second is what "archived, waiting for someone to speak" looks
-    # like written down. An exemption naming one of them by path is
-    # therefore wrong half the time, and it went red here the moment a
-    # checkpoint was archived. What is excused is the layer, so what is
-    # asked is whether the layer is there at all.
-    def deliberately_absent(rel: str) -> bool:
-        """Is this path one git is told to ignore?
-
-        `.claude/` is development record and by the 2026-07-29 decision
-        is not version-controlled, so it is absent from every checkout —
-        CI's included. Reading that as "the exemption outlived its
-        subject" turned this check red on the first push that carried
-        it, for eleven paths that had not gone anywhere.
-
-        Asked of git rather than pattern-matched on the path, so the
-        answer moves when `.gitignore` does. A path that is simply gone
-        is not ignored, and still counts as a ghost.
-        """
-        r = subprocess.run(
-            ["git", "check-ignore", "--quiet", rel],
-            cwd=ROOT,
-            capture_output=True,
-        )
-        return r.returncode == 0
-
-    ALTERNATES = {
-        ".claude/docs/plan-hot.md": ".claude/docs/plan-hot.awaiting.md",
-        ".claude/docs/plan-hot.awaiting.md": ".claude/docs/plan-hot.md",
-    }
-
-    def present(rel: str) -> bool:
-        if os.path.exists(os.path.join(ROOT, rel)):
-            return True
-        other = ALTERNATES.get(rel)
-        return bool(other) and os.path.exists(os.path.join(ROOT, other))
-
+    # A path, not a prefix: a directory may legitimately be empty, and a
+    # file must exist to be excused.
     ghosts = [
         p
         for p, _ in EXCLUSIONS
-        if not p.endswith("/") and not present(p) and not deliberately_absent(p)
-    ]
-    # Reported, not silently skipped: an exemption whose subject this
-    # checkout never carries is still an exemption nobody here can check.
-    unshipped = [
-        p
-        for p, _ in EXCLUSIONS
-        if not p.endswith("/") and not present(p) and deliberately_absent(p)
+        if not p.endswith("/") and not os.path.exists(os.path.join(ROOT, p))
     ]
 
     for path, reason in EXCLUSIONS:
         print(f"hygiene-scan: {owed[path]:4d} left in {path} — not swept ({reason})")
-    if unshipped:
-        print(
-            f"hygiene-scan: {len(unshipped)} exemption(s) name paths this checkout "
-            f"deliberately does not carry (development record, not version-controlled) "
-            f"— unchecked here, checked where that record lives"
-        )
-
     if ghosts:
         print("\nhygiene-scan: FAIL — excused a file that is not here")
         for g in ghosts:

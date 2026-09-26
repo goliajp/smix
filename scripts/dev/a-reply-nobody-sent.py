@@ -6,26 +6,27 @@ answers sat in this repository. The letters existed, were correct, and
 named fixes that had shipped; nobody put them where the thread was. The
 consumer found one of them only because they went looking in our tree.
 
-The two places look almost identical. `.claude/dogfood/` is our record
-of what we said; `<consumer>/.claude/state/<thread>/` is where they are
-waiting. Only one of them gets read by the person who asked.
+The two places look almost identical. The `dogfood/` directory of our
+development record is what we said; the consumer's own thread directory
+is where they are waiting. Only one of them gets read by the person who
+asked.
 
 So every reply says where it went, in a line the file carries:
 
-    <!-- delivered: /Users/…/<consumer>/.claude/state/<thread>/smix-reply-<date>.md -->
+    <!-- delivered: /Users/…/<consumer>/<their thread directory>/smix-reply-<date>.md -->
     <!-- delivered: no — superseded by the 2026-08-25 letter, which covers it -->
 
 and this checks it. Where the thread's directory is on this machine, the
 delivered file must actually be there — "I wrote the line" is not the
 claim being made. Where the consumer's tree is absent, it says so rather
-than passing: this runs where that record lives, like the other gates
-over `.claude/`.
+than passing. Our side is read from the development record, named by
+SMIX_DEV_RECORD (or the argument).
 
 `no` needs a reason with something in it. An empty one would satisfy this
 check forever while describing nothing — which is the shape this repo has
 watched an exemption take twice.
 
-Usage:  a-reply-nobody-sent.py [repo-root]
+Usage:  a-reply-nobody-sent.py [record-root]
 """
 
 import glob
@@ -33,13 +34,11 @@ import os
 import re
 import sys
 
-ROOT = os.path.abspath(
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dev_record  # noqa: E402
 
-DOGFOOD = os.path.join(ROOT, ".claude", "dogfood")
+RECORD = _dev_record.root(sys.argv[1] if len(sys.argv) > 1 else None)
+DOGFOOD = os.path.join(RECORD, "dogfood") if RECORD else None
 LINE = re.compile(r"<!--\s*delivered:\s*(.+?)\s*-->")
 # Long enough that "no — n/a" does not pass as a reason.
 REASON_MIN = 20
@@ -71,24 +70,25 @@ def is_a_reply(path):
 
 
 def main():
+    if RECORD is None:
+        print(_dev_record.not_named("reply-sent"))
+        return 2
     if not os.path.isdir(DOGFOOD):
         print(
-            "reply-sent: CANNOT RUN — .claude/dogfood is not in this tree. It is "
-            "development record and by the 2026-07-29 decision is not "
-            "version-controlled, so this gate runs where that record lives — "
-            "green must not mean read nothing."
+            f"reply-sent: CANNOT RUN — {DOGFOOD} does not exist. "
+            "Green must not mean read nothing."
         )
         return 2
 
     replies = sorted(p for p in glob.glob(os.path.join(DOGFOOD, "*.md")) if is_a_reply(p))
     if not replies:
         # A sweep that finds nothing agrees with every tree there is.
-        print("reply-sent: CANNOT RUN — no reply letters under .claude/dogfood/")
+        print(f"reply-sent: CANNOT RUN — no reply letters under {DOGFOOD}")
         return 2
 
     unmarked, hollow, missing, verified, unverifiable, declined = [], [], [], 0, 0, 0
     for path in replies:
-        rel = os.path.relpath(path, ROOT)
+        rel = os.path.relpath(path, RECORD)
         text = open(path, encoding="utf-8").read()
         found = LINE.findall(text)
         if not found:

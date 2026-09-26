@@ -13,7 +13,7 @@
 #   - the ledger-booted one is reachable / stoppable, and IS stopped
 #   - the hand-started one is refused, by name, and is still running after
 #
-# Both halves per `.claude/rule/empty-predicate.md`. Proving refusal
+# Both halves per `gate/absence-needs-presence`. Proving refusal
 # alone proves nothing about whether smix still works; proving reach
 # alone proves nothing about whether it refuses.
 set -euo pipefail

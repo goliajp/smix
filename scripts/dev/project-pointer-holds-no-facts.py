@@ -10,7 +10,7 @@ the pointer's writer and refuses any device fact inside it, so the
 per-project pointer can never quietly become a second place device facts
 live.
 
-By absence-needs-presence (.claude/rule/empty-predicate.md): the writer
+By `gate/absence-needs-presence`: the writer
 must exist — a scan of a writer that has moved or been renamed certifies
 nothing and so fails loudly — and its body must carry no fact token.
 

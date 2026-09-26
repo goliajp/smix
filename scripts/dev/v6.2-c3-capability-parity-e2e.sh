@@ -8,8 +8,8 @@
 # device's platform, the way `smix run` already does (C1). This pins it
 # on a real device.
 #
-# The judge is field content, not a return code. By empty-predicate
-# (.claude/rule/empty-predicate.md) the parity claim needs both sides
+# The judge is field content, not a return code. By
+# `gate/absence-needs-presence` the parity claim needs both sides
 # reachable: presence first (a tree without `fixture_input` is reading
 # air, and red), then two entrances writing two DIFFERENT words into the
 # same field so which one landed is decidable, then find proved on a
