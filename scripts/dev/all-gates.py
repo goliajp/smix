@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run every Python gate CI runs, read each one's exit code, name the red ones.
 
-Every checkpoint of the v11.1 line used to retype the same loop: grep the
+Running every gate used to mean retyping the same loop: grep the
 workflows for `python3 scripts/dev/*.py`, run each, read `$?`. A loop that
 is retyped drifts, and a loop whose pattern stops matching runs nothing
 and reports nothing wrong — the same shape as a gate reading air. This is
@@ -16,8 +16,6 @@ Two readers:
   `scripts/dev/*.py` at all. A line the second sees and the first cannot
   parse is red, naming the line — so when the first reader's pattern
   drifts, the two disagree instead of both going quiet.
-
-`contract-scan.py` requires every hot plan's acceptance to run this.
 
 Usage:
     python3 scripts/dev/all-gates.py [--root DIR]

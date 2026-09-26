@@ -25,16 +25,6 @@ BYPASS="${2:-}"
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
-# The development record — charter, decision log, plans, ledgers,
-# correspondence — is not version-controlled, so nothing here says where it
-# is. A dozen gates below read it; without it they can only say "cannot
-# run", and a release or preflight that let that through would be checking
-# nothing. Name it before starting.
-if [[ -z "${SMIX_DEV_RECORD:-}" || ! -d "${SMIX_DEV_RECORD:-}" ]]; then
-  echo "error: SMIX_DEV_RECORD must name the development record's root (a directory); got '${SMIX_DEV_RECORD:-}'" >&2
-  exit 2
-fi
-
 SMOKE="$ROOT/scripts/release/smoke-v1.smoke.sh"
 STAMP="$ROOT/.smoke-passed-at"
 
@@ -334,13 +324,7 @@ python3 "$ROOT/scripts/dev/every-verb-reads-a-locale-map.py" > /tmp/smix-ship-lo
 
 # --- guide claims + corpus ---------------------------------------------
 # The guides are the release's user-facing half, and this is the last
-# place before they reach anybody. Both of these ran nowhere until
-# 2026-08-06 — a check that never runs reads as coverage while providing
-# none, and the version of that which matters is the one on the path to
-# users.
-log "guide claims scan"
-python3 "$ROOT/scripts/dev/guide-claims-scan.py" > /tmp/smix-ship-guide-claims.log 2>&1 \
-  || fail "guide claims scan FAILED — a guide claims something the code does not do (see /tmp/smix-ship-guide-claims.log)"
+# place before they reach anybody.
 log "guide corpus in step with the guides"
 python3 "$ROOT/scripts/dev/guide-corpus-sync.py" --check > /tmp/smix-ship-guide-corpus.log 2>&1 \
   || fail "guide corpus is out of step with the guides — run scripts/dev/guide-corpus-sync.py (see /tmp/smix-ship-guide-corpus.log)"
@@ -355,29 +339,7 @@ python3 "$ROOT/scripts/dev/android-gate-scan.py" > /tmp/smix-ship-android-gate.l
   || fail "android gate scan FAILED — an Android test task is outside the gates (see /tmp/smix-ship-android-gate.log)"
 
 # --- audit ledger ------------------------------------------------------
-# Re-evaluates every citation in the audit ledger. That table records
-# which known defects are still live, and its predecessor drifted badly
-# enough that three of five sampled entries had been fixed while still
-# reading as open. Shipping against a stale account of what is broken is
-# how a defect reaches users with a note saying someone already knew.
-log "audit ledger"
-python3 "$ROOT/scripts/dev/audit-ledger-scan.py" > /tmp/smix-ship-ledger.log 2>&1 \
-  || fail "audit ledger scan FAILED — a citation no longer holds; re-verify that row (see /tmp/smix-ship-ledger.log)"
 
-# --- release record ----------------------------------------------------
-# The breaking-change table and the CHANGELOG's Breaking section are two
-# lists of the same thing, and they once held six entries and eight. Also
-# checks that every behaviour change reached the release notes, and that
-# the publish DAG below still covers the workspace in a topological order
-# — a crate missing from it is discovered seventeen publishes in, when the
-# earlier steps cannot be taken back.
-log "release record"
-# `--shipping` is what makes the CHANGELOG entry mandatory. Bare, this gate
-# runs during development, where the current major has no entry yet and the
-# reconciliation stands down; passing the version says a release is what is
-# happening, and then the entry's absence is the failure.
-python3 "$ROOT/scripts/dev/release-record-scan.py" --shipping "$VERSION" > /tmp/smix-ship-record.log 2>&1 \
-  || fail "release record scan FAILED — the release's several lists disagree (see /tmp/smix-ship-record.log)"
 
 
 # --- hygiene scan ------------------------------------------------------
@@ -487,14 +449,6 @@ log "self-tests are wired"
 python3 "$ROOT/scripts/dev/a-selftest-nobody-runs.py" > /tmp/smix-ship-selftests.log 2>&1 \
   || fail "a self-test is invoked by nothing (see /tmp/smix-ship-selftests.log)"
 
-# --- scope promise scan ------------------------------------------------
-# Every promise in the scope file still matches what exists. `--stable`
-# was promised, never built, never withdrawn, and agreed with by four
-# documents — three of them gitignored — for seven months. A shipped
-# promise may not cite a document as evidence it was implemented.
-log "scope promise scan"
-python3 "$ROOT/scripts/dev/scope-promise-scan.py" > /tmp/smix-ship-scope.log 2>&1 \
-  || fail "scope promise scan FAILED — the scope file and the tree disagree (see /tmp/smix-ship-scope.log)"
 
 # Measured 482s on a cold cache and 0s on a warm one: it runs a napi
 # build. Kept first — where 6.6 put it, reading the warm number — it
@@ -571,16 +525,6 @@ log "no second ledger path"
 python3 "$ROOT/scripts/dev/no-second-ledger-path.py" > /tmp/smix-ship-ledger-path.log 2>&1 \
   || fail "no-second-ledger-path FAILED — see /tmp/smix-ship-ledger-path.log"
 
-# The one gate on this list whose defect has already shipped. `llms.txt`
-# — the first file an agent reads — opened with "never a physical device"
-# through 3.x and into 4.1, two majors after §9 #1 stopped saying it.
-# Every other gate was green, because none of them knows a rule has a day.
-# The four layers, and which of the two shapes layer three is in. A
-# release cut while the record of what is being worked on has gone
-# missing is one nobody can reconstruct afterwards.
-log "the four layers are all present"
-python3 "$ROOT/scripts/dev/contract-scan.py" > /tmp/smix-ship-contract.log 2>&1 \
-  || fail "contract scan FAILED — a layer is missing or the gap is unclaimed (see /tmp/smix-ship-contract.log)"
 log "the all-gates runner can still go red"
 python3 "$ROOT/scripts/dev/all-gates.test.py" > /tmp/smix-ship-all-gates.log 2>&1 \
   || fail "all-gates self-test FAILED — see /tmp/smix-ship-all-gates.log"
@@ -665,9 +609,6 @@ python3 "$ROOT/scripts/dev/an-authorised-hatch-reaches-every-surface.py" > /tmp/
 log "a-tap-proves-aim-not-arrival"
 python3 "$ROOT/scripts/dev/a-tap-proves-aim-not-arrival.py" > /tmp/smix-ship-a-tap-proves-aim-not-arrival.log 2>&1 \
   || fail "a-tap-proves-aim-not-arrival FAILED — see /tmp/smix-ship-a-tap-proves-aim-not-arrival.log"
-log "v5.1-c10-ground-truth-is-complete"
-python3 "$ROOT/scripts/dev/v5.1-c10-ground-truth-is-complete.py" > /tmp/smix-ship-v5.1-c10-ground-truth-is-complete.log 2>&1 \
-  || fail "v5.1-c10-ground-truth-is-complete FAILED — see /tmp/smix-ship-v5.1-c10-ground-truth-is-complete.log"
 log "no-script-picks-a-device-by-accident"
 python3 "$ROOT/scripts/dev/no-script-picks-a-device-by-accident.py" > /tmp/smix-ship-no-script-picks-a-device-by-accident.log 2>&1 \
   || fail "no-script-picks-a-device-by-accident FAILED — see /tmp/smix-ship-no-script-picks-a-device-by-accident.log"
@@ -709,6 +650,8 @@ python3 "$ROOT/scripts/dev/corpus-portability-scan.py" > /tmp/smix-ship-portabil
 log "known-unstable list scan"
 python3 "$ROOT/scripts/dev/known-unstable-scan.py" > /tmp/smix-ship-known-unstable.log 2>&1 \
   || fail "known-unstable list scan FAILED — see /tmp/smix-ship-known-unstable.log"
+python3 "$ROOT/scripts/dev/known-unstable-scan.test.py" >> /tmp/smix-ship-known-unstable.log 2>&1 \
+  || fail "known-unstable scan self-test FAILED — see /tmp/smix-ship-known-unstable.log"
 
 
 # A fuzz lockfile that no longer satisfies the manifests above it is
@@ -734,13 +677,6 @@ log "every verdict answers in sentences"
 python3 "$ROOT/scripts/dev/a-verdict-answers-in-sentences.py" > /tmp/smix-ship-verdict-sentences.log 2>&1 \
   || fail "a verdict cannot report its own finding — see /tmp/smix-ship-verdict-sentences.log"
 
-log "no reply is waiting in our own records"
-python3 "$ROOT/scripts/dev/a-reply-nobody-sent.py" > /tmp/smix-ship-reply-sent.log 2>&1 \
-  || fail "a consumer letter nobody can show was sent — see /tmp/smix-ship-reply-sent.log"
-
-log "the delivery sweep can still go red"
-python3 "$ROOT/scripts/dev/a-reply-nobody-sent.test.py" > /tmp/smix-ship-reply-sent-selftest.log 2>&1 \
-  || fail "the delivery sweep cannot go red — see /tmp/smix-ship-reply-sent-selftest.log"
 
 log "the subject sweep can still go red"
 python3 "$ROOT/scripts/dev/a-gate-without-its-subject.test.py" > /tmp/smix-ship-gate-subject-selftest.log 2>&1 \

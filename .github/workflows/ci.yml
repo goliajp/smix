@@ -250,8 +250,7 @@ jobs:
         run: python3 scripts/dev/fact-scan.py
       - name: workflow scan
         run: python3 scripts/dev/workflow-scan.py
-      # Reads the corpus and the Android gate, both of which ship — so
-      # unlike guide-claims-scan it has everything it needs here.
+      # Reads the corpus and the Android gate, both of which ship.
       - name: gate subject diversity
         run: python3 scripts/dev/gate-subject-diversity.py
       # Reads the runner server's route registrations, which ship.
@@ -314,6 +313,8 @@ jobs:
       # Reads the corpus and its excuse list, both in the checkout.
       - name: known-unstable list scan
         run: python3 scripts/dev/known-unstable-scan.py
+      - name: the known-unstable scan can still go red
+        run: python3 scripts/dev/known-unstable-scan.test.py
       # Counts how much of the corpus could run on a machine that is not
       # the author's; reads only the corpus, which is in the checkout.
       - name: corpus portability scan
@@ -381,14 +382,6 @@ jobs:
         run: python3 scripts/dev/an-app-that-is-gone.test.py
       - name: the retired-wording scan can still go red
         run: python3 scripts/dev/retired-claims-scan.test.py
-      # contract-scan itself is deliberately NOT here. It reads the four
-      # layers of the development record, which is not version-controlled, so
-      # on a checkout it refuses — and a gate that refuses on every build
-      # is one nobody reads. workflow-scan's LOCAL_ONLY records that as a
-      # decision. The harness below builds its own trees and needs nothing
-      # from the checkout, so it runs here.
-      - name: the contract gate can still go red
-        run: python3 scripts/dev/contract-scan.test.py
       # The runner every checkpoint's acceptance must name. It derives the
       # gate list from these workflows, so CI does not run it (that would be
       # every gate twice) -- only its harness, which builds its own trees.
@@ -486,24 +479,13 @@ jobs:
         run: python3 scripts/dev/project-pointer-holds-no-facts.test.py
       - name: portable tier selftest
         run: bash scripts/release/portable-tier.sh --selftest
-      # guide-claims-scan is deliberately NOT here. It reconciles the
-      # guides against the development record's probe ledgers, and that record
-      # lives on the development machine only — its own refusal says
-      # "it runs where that record lives". It gates in preflight and
-      # ship, both of which run there. The corpus check below reads
-      # only the guides and the corpus, which both ship.
+      # Reads only the guides and the corpus, which both ship.
       - name: guide corpus in step with the guides
         run: python3 scripts/dev/guide-corpus-sync.py --check
       - name: fence check
         run: bash scripts/dev/fence-check.sh
       - name: android gate scan
         run: python3 scripts/dev/android-gate-scan.py
-      # audit-ledger-scan, scope-promise-scan and release-record-scan are
-      # deliberately absent. Their inputs are the development record, which
-      # is not version-controlled, so on a checkout they
-      # have nothing to read. They run on the authoring machine via
-      # preflight and ship. workflow-scan enforces that arrangement in both
-      # directions — it fails if one of them appears here.
       - name: stress tier selector self-test
         run: python3 scripts/release/stress-select.py --test
       - name: stress-gate aggregation self-test

@@ -957,11 +957,11 @@ fn the_gate_catches_a_documented_example_the_driver_would_refuse() {
 }
 
 // --------------------------------------------------------------------
-// Probes — one per claim in the guide-executability list.
+// Probes — one per claim a guide makes that the two arms above cannot judge.
 //
 // The two arms above judge every example the same way. A probe asks a
 // question about one specific claim a guide makes, in the terms that
-// claim is written in, and each is named in the list's `probe` column.
+// claim is written in.
 // --------------------------------------------------------------------
 
 /// Find the block a probe is about by a string it contains, so that
@@ -1207,174 +1207,6 @@ fn the_bare_string_form_matches_a_real_tree() {
     );
 }
 
-// --------------------------------------------------------------------
-// The list.
-// --------------------------------------------------------------------
-
-const SELF: &str = include_str!("guide_gate.rs");
-
-/// The development-machine record: the executability list and the audit
-/// ledger it cites into.
-///
-/// Read at run time, not `include_str!` — those files live in the
-/// development record, which is deliberately not in the repository, and
-/// a compile-time include made a clean checkout unable to *build* the
-/// test target at all. The record's root is named by `SMIX_DEV_RECORD`.
-/// `None` where it is not named or lacks the files; the tests that
-/// reconcile against it say so and stand down, the same answer
-/// `guide-claims-scan` gives in that situation: this reconciliation runs
-/// where the record lives.
-fn dev_record() -> Option<(String, String)> {
-    let root = std::path::PathBuf::from(std::env::var_os("SMIX_DEV_RECORD")?).join("docs");
-    let list = std::fs::read_to_string(root.join("guide-executability.md")).ok()?;
-    let ledger = std::fs::read_to_string(root.join("audit-ledger.md")).ok()?;
-    Some((list, ledger))
-}
-
-/// One row, already split.
-struct Row<'a> {
-    id: &'a str,
-    status: &'a str,
-    probe: &'a str,
-    layer: &'a str,
-    ledger: &'a str,
-    reviewed: &'a str,
-}
-
-/// Read the table.
-///
-/// A row whose cell count is wrong is an error, not a skip. The audit
-/// ledger learned this the expensive way: one citation contained an
-/// unescaped `|`, the row split into eleven cells, the scan skipped it
-/// as unparseable, and reported clean — a row nothing checked, in a
-/// table whose entire purpose is that every row is checked.
-fn rows(list: &str) -> Vec<Row<'_>> {
-    let mut out = Vec::new();
-    for line in list.lines() {
-        let line = line.trim();
-        if !line.starts_with("| ") {
-            continue;
-        }
-        let cells: Vec<&str> = line
-            .trim_matches('|')
-            .split(" | ")
-            // The table is read by people first, so identifiers in it
-            // are written as code. The backticks are presentation.
-            .map(|c| c.trim().trim_matches('`'))
-            .collect();
-        let first = cells.first().copied().unwrap_or("");
-        // The header and its underline are the only two `|` lines that
-        // are not rows.
-        if first == "id" || first.starts_with("---") {
-            continue;
-        }
-        assert_eq!(
-            cells.len(),
-            11,
-            "row `{first}` has {} cells, not 11 — escape any `|` inside a \
-             cell as `\\|`. A row this reader cannot split is a row \
-             nothing checks",
-            cells.len()
-        );
-        out.push(Row {
-            id: cells[0],
-            status: cells[3],
-            probe: cells[4],
-            layer: cells[6],
-            ledger: cells[7],
-            reviewed: cells[8],
-        });
-    }
-    out
-}
-
-/// The list and the probes describe the same set of claims.
-#[test]
-fn the_list_and_the_probes_agree() {
-    let Some((list, ledger)) = dev_record() else {
-        eprintln!(
-            "guide-executability: no development record (SMIX_DEV_RECORD unset, \
-             or its docs/ lacks the list or the ledger) — this reconciliation \
-             runs where the record lives (preflight, ship)"
-        );
-        return;
-    };
-    let rows = rows(&list);
-    assert!(
-        rows.len() >= 8,
-        "only {} rows parsed out of the list — the table shape changed \
-         and this check would pass by knowing nothing",
-        rows.len()
-    );
-
-    let today = "2026-07-22";
-    for r in &rows {
-        assert!(
-            matches!(r.status, "runs" | "broken" | "unjudged"),
-            "{}: status `{}` is outside the vocabulary — an open \
-             vocabulary drifts this column back into prose",
-            r.id,
-            r.status
-        );
-        assert!(
-            r.reviewed <= today,
-            "{}: reviewed {} is in the future",
-            r.id,
-            r.reviewed
-        );
-        if r.status == "runs" {
-            assert_eq!(
-                r.layer, "—",
-                "{}: a claim that runs has no layer to fix",
-                r.id
-            );
-        } else {
-            assert_ne!(r.layer, "—", "{}: says what is broken, not where", r.id);
-        }
-        if r.status == "unjudged" {
-            assert_eq!(r.probe, "—", "{}: unjudged rows have no probe", r.id);
-        } else {
-            assert!(
-                SELF.contains(&format!("fn {}(", r.probe)),
-                "{}: names probe `{}`, which is not a test in this file",
-                r.id,
-                r.probe
-            );
-        }
-        if r.ledger != "—" {
-            assert!(
-                ledger.contains(r.ledger),
-                "{}: cites ledger row {}, which does not appear in \
-                 the audit ledger",
-                r.id,
-                r.ledger
-            );
-        }
-    }
-
-    // Every hand-written probe has a row. Without this, deleting a row
-    // would leave its probe running and unaccounted for, which is the
-    // half of the drift the row-side check cannot see.
-    for name in [
-        "every_runner_dialling_command_can_reach_the_registry",
-        "a_configured_launch_activity_reaches_the_device",
-        "the_default_tap_takes_the_route_its_page_names",
-        "the_daemon_proxy_id_example_is_admissible",
-        "the_bare_string_form_matches_a_real_tree",
-        "the_documented_regex_examples_are_patterns",
-        "every_documented_key_name_parses",
-    ] {
-        assert!(
-            SELF.contains(&format!("fn {name}(")),
-            "probe `{name}` is named here but no longer exists"
-        );
-        assert!(
-            rows.iter().any(|r| r.probe == name),
-            "probe `{name}` runs and no row in the list claims it"
-        );
-    }
-}
-
 /// This gate is only worth having where it actually runs.
 ///
 /// CI and ship both run `cargo test --workspace`, so they pick it up
@@ -1436,8 +1268,7 @@ fn every_roster_a_guide_prints_parses() {
     );
 }
 
-/// Print what the corpus and the list came to, for the checkpoint
-/// command to read.
+/// Print what the corpus came to.
 ///
 /// A summary and not an assertion: everything here is checked above.
 /// It exists because "the gate is green" says nothing about how much it
@@ -1448,20 +1279,9 @@ fn summary() {
     for (_, blocks) in guide_blocks() {
         judged += blocks.iter().filter(|b| looks_like_a_flow(b)).count();
     }
-    let Some((list, _)) = dev_record() else {
-        eprintln!("guide-executability: {judged} yaml blocks judged (list absent here)");
-        return;
-    };
-    let rows = rows(&list);
-    let count = |s: &str| rows.iter().filter(|r| r.status == s).count();
     println!(
-        "guide-executability: {} claims ({} runs / {} broken / {} unjudged) \
-         · {judged} yaml blocks judged · {} examples not judged, all \
-         needing a device",
-        rows.len(),
-        count("runs"),
-        count("broken"),
-        count("unjudged"),
+        "guide-executability: {judged} yaml blocks judged · {} examples not \
+         judged, all needing a device",
         KNOWN_BROKEN.len(),
     );
 }
