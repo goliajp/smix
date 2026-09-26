@@ -219,7 +219,7 @@ async fn resolve_aimed(
                     (coord.0, coord.1, aimed),
                     || async {
                         let tree = driver.tree(include).await?;
-                        Ok(crate::aim_in(&tree, selector))
+                        Ok(crate::settle_reading(&tree, selector))
                     },
                     ppp,
                     crate::settle::POLL,
@@ -230,15 +230,7 @@ async fn resolve_aimed(
             }
             Err(HostResolveError::NotFound) => {
                 if start.elapsed() > timeout {
-                    return Err(ExpectationFailure::new(FailureInit {
-                        code: Some(FailureCode::ElementNotFound),
-                        message: format!(
-                            "AndroidDriver: element not found: {}",
-                            describe_selector(selector)
-                        ),
-                        selector: Some(selector.clone()),
-                        ..Default::default()
-                    }));
+                    return Err(crate::element_not_found(&tree, selector));
                 }
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 continue;

@@ -530,7 +530,7 @@ impl IosDriver {
                         (coord.0, coord.1, aimed),
                         || async {
                             let tree = self.tree_with_retry(include).await?;
-                            Ok(aim_in(&tree, selector))
+                            Ok(settle_reading(&tree, selector))
                         },
                         1.0,
                         settle::POLL,
@@ -540,27 +540,7 @@ impl IosDriver {
                 }
                 Err(HostResolveError::NotFound) => {
                     if start.elapsed() > timeout {
-                        let screen = screen_facts(&tree, 10);
-                        let target = base_text_or_id(selector);
-                        let suggestions =
-                            smix_error::build_suggestions(target.as_deref(), &screen.elements);
-                        return Err(ExpectationFailure::new(
-                            FailureInit {
-                                code: Some(FailureCode::ElementNotFound),
-                                message: format!(
-                                    "element not found: {}",
-                                    describe_selector(selector)
-                                ),
-                                selector: Some(selector.clone()),
-                                suggestions,
-                                hint: Some(
-                                    "matched 0 nodes in the current a11y tree; check selector or wait for the screen to settle"
-                                        .into(),
-                                ),
-                                ..Default::default()
-                            }
-                            .with_screen(screen),
-                        ));
+                        return Err(element_not_found(&tree, selector));
                     }
                     sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
                     continue;
@@ -1277,6 +1257,37 @@ pub(crate) fn hit_element(n: &A11yNode) -> HitElement {
 pub(crate) fn aim_in(tree: &A11yNode, selector: &Selector) -> Option<settle::Aim> {
     let (nx, ny) = resolve_to_norm_coord(tree, selector).ok()?;
     Some((nx, ny, resolve_selector(tree, selector).map(hit_element)))
+}
+
+/// One settle reading of `tree`: where the target is, or the failure for
+/// an element this screen does not have.
+pub(crate) fn settle_reading(tree: &A11yNode, selector: &Selector) -> settle::Reading {
+    match aim_in(tree, selector) {
+        Some(aim) => settle::Reading::At(aim),
+        None => settle::Reading::Gone(Box::new(element_not_found(tree, selector))),
+    }
+}
+
+/// `ELEMENT_NOT_FOUND` for `selector` on `tree`, with what was on screen
+/// and the near misses — the shape every "not found" takes.
+pub(crate) fn element_not_found(tree: &A11yNode, selector: &Selector) -> ExpectationFailure {
+    let screen = screen_facts(tree, 10);
+    let target = base_text_or_id(selector);
+    let suggestions = smix_error::build_suggestions(target.as_deref(), &screen.elements);
+    ExpectationFailure::new(
+        FailureInit {
+            code: Some(FailureCode::ElementNotFound),
+            message: format!("element not found: {}", describe_selector(selector)),
+            selector: Some(selector.clone()),
+            suggestions,
+            hint: Some(
+                "matched 0 nodes in the current a11y tree; check selector or wait for the screen to settle"
+                    .into(),
+            ),
+            ..Default::default()
+        }
+        .with_screen(screen),
+    )
 }
 
 // The two spaces and the stamp are wire shapes — the runner reports
