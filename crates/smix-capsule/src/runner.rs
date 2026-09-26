@@ -272,13 +272,9 @@ pub fn xcodebuild_argv(project: &Path, udid: &str) -> Vec<String> {
 /// phone, the simulator destination otherwise.
 #[must_use]
 pub fn xcodebuild_argv_for(project: &Path, udid: &str, target: RunnerTarget<'_>) -> Vec<String> {
-    // Per-udid `-derivedDataPath` avoids DerivedData contention when
-    // multiple `capsule up` invocations share the default Xcode
-    // DerivedData root (~/Library/Developer/Xcode/DerivedData): the same
-    // project + scheme running under two concurrent xcodebuilds hits an
-    // "Xcode3CommandLineBuildTool ... operation queue" lock, and the
-    // second sim can hang for 5min+ before failing. Isolating each sim
-    // under .smix/runner/derived-data-<udid>/ sidesteps the lock.
+    // Per-udid `-derivedDataPath`: two xcodebuilds of one project under the
+    // shared DerivedData root contend on an operation-queue lock, and the
+    // second sim can hang for 5min+ before failing.
     let derived = format!(".smix/runner/derived-data-{udid}");
     let mut argv = vec![
         "test".into(),
@@ -298,6 +294,10 @@ pub fn xcodebuild_argv_for(project: &Path, udid: &str, target: RunnerTarget<'_>)
         },
         "-derivedDataPath".into(),
         derived,
+        // Stopping a runner is an interrupt, and an interrupted run would
+        // otherwise start `simctl diagnose` and wait for it before exiting.
+        "-collect-test-diagnostics".into(),
+        "never".into(),
     ];
     if let RunnerTarget::Physical { team } = target {
         // Both, together, are what makes an unconfigured checkout build
@@ -3114,6 +3114,22 @@ mod target_tests {
             "a simulator build needs no signing team: {argv:?}"
         );
         assert!(!argv.iter().any(|a| a == "-allowProvisioningUpdates"));
+    }
+
+    #[test]
+    fn neither_build_collects_diagnostics_when_interrupted() {
+        // An interrupted test run otherwise starts `simctl diagnose`, waits
+        // for it before exiting, and leaves it running if killed meanwhile.
+        for argv in [
+            argv_for(SIM, RunnerTarget::Simulator),
+            argv_for(PHONE, RunnerTarget::Physical { team: "ABCDE12345" }),
+        ] {
+            let at = argv
+                .iter()
+                .position(|a| a == "-collect-test-diagnostics")
+                .unwrap_or_else(|| panic!("no -collect-test-diagnostics in {argv:?}"));
+            assert_eq!(argv[at + 1], "never", "{argv:?}");
+        }
     }
 
     #[test]
