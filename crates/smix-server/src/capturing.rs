@@ -36,7 +36,8 @@ mod tests {
     use super::*;
 
     fn temp_store(name: &str) -> (Store, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("smix-capturing-{name}"));
+        let dir =
+            std::env::temp_dir().join(format!("smix-capturing-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp root");
         let store = Store::open(&dir).expect("opens");
