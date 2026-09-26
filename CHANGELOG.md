@@ -741,6 +741,18 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **Stopping an iOS runner takes seconds and leaves nothing running
+  behind it.** An interrupted `xcodebuild test` collected simulator
+  diagnostics before exiting, so `runner down` waited around 20 seconds
+  — past its 30-second limit on a busy machine, where it fell back to a
+  kill and left a `simctl diagnose` running for up to ten minutes. The
+  runner is now started with `-collect-test-diagnostics never`, and the
+  same stop measured 1.5 seconds. A bring-up that timed out and was
+  retried also left its first `xcodebuild` running, unrecorded, beside
+  the second; it is now stopped and confirmed gone before the retry
+  starts, and `runner down` reports an error if the runner it stopped is
+  still running.
+
 - **An iOS run no longer refuses its own runner because another program
   touched the same port number.** Before driving a runner port, smix asks
   which simulator or device the process on that port belongs to. It asked
