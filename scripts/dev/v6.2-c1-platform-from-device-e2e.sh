@@ -16,6 +16,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
 WORK="$(mktemp -d)"
@@ -98,7 +100,7 @@ run_ios() {
   [ -d "$IOS_FIXTURE" ] || { log "no iOS fixture at $IOS_FIXTURE — skipping iOS half"; return 0; }
 
   step "iOS: boot $IOS_ALIAS ($IOS_UDID), install fixture, runner up"
-  if ! xcrun simctl list devices 2>/dev/null | grep -q "$IOS_UDID.*Booted"; then
+  if [ "$(simulator_state "$IOS_UDID")" != Booted ]; then
     "$SMIX" sim boot "$IOS_UDID" >"$WORK/ios-boot.log" 2>&1 || fail "iOS sim boot failed: $(tail -3 "$WORK/ios-boot.log")"
     IOS_WE_BOOTED=1
   fi

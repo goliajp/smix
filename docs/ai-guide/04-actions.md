@@ -39,6 +39,17 @@ what `dispatch: xcui` reaches, mirroring the iOS route of that name.
 The two other routes exist because two specific runtimes need them, and
 both are opt-in — see the next section.
 
+**A `tapOn` waits for its target to stop moving.** The point to touch is
+worked out from a reading of the screen, and on a screen still coming in
+that reading is out of date by the time the touch lands. So after
+finding the element, smix reads it again every 100 ms until two readings
+in a row put it in the same place (every edge within one point, or one
+dp on Android), for up to 3 seconds — the same wait maestro's `tapOn`
+does. A target still moving after 3 seconds fails the step with
+`TIMEOUT`, naming its last two positions; it is not tapped where it
+used to be. `doubleTapOn` and `longPressOn` aim the same way. On a
+still screen this costs one extra reading.
+
 **What a successful `tapOn` means.** The runner reports every named
 element containing the point it aimed at, and the step fails with
 `TAP_MISSED` if the element you named is not among them. So success

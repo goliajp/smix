@@ -14,19 +14,60 @@
 use serde::Deserialize;
 
 /// One remote node in the roster: how to reach it, where its smix repo
-/// lives, and which of its registered devices the federation may use.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// lives, and which of its devices the federation may use.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeSpec {
     pub name: String,
     pub host: String,
     pub repo: String,
-    pub devices: Vec<String>,
+    pub devices: Vec<NodeDevice>,
     /// The node's runner port, forwarded to its slots as
     /// `--runner-port`. Per-node because ports are heterogeneous across
     /// machines — the local `--runner-port` flag cannot express them.
     /// Same spelling as the sim registry's per-sim field.
-    #[serde(rename = "runnerPort", default)]
     pub runner_port: Option<u16>,
+}
+
+/// One device on a node, with the platform it is.
+///
+/// The node's smix reads a device's platform from its own registry, and
+/// refuses one it has not registered rather than guess (a guess of iOS
+/// is what once sent an Android flow's launchApp to simctl). The roster
+/// is where the scheduler declares it: without it, every run on a device
+/// the node had not registered was refused, and nothing here said so
+/// (2026-09-25, v2.12-c3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeDevice {
+    /// The device ref, forwarded verbatim to the node.
+    pub device_ref: String,
+    /// Forwarded as `--platform`.
+    pub platform: NodePlatform,
+}
+
+/// The two platforms a roster device can be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodePlatform {
+    Ios,
+    Android,
+}
+
+impl NodePlatform {
+    /// The `--platform` value, and the roster spelling.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ios => "ios",
+            Self::Android => "android",
+        }
+    }
+
+    fn from_roster(s: &str) -> Option<Self> {
+        match s {
+            "ios" => Some(Self::Ios),
+            "android" => Some(Self::Android),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -39,16 +80,82 @@ pub enum NodesError {
     EmptyDevices { node: String },
     #[error("duplicate node name '{name}'")]
     DuplicateName { name: String },
+    #[error(
+        "node '{node}' lists device '{device}' without a platform — write it as \
+         `{{ device: {device}, platform: ios }}` (or `platform: android`). The node's \
+         smix reads a device's platform from its own registry and refuses one it has \
+         not registered; the roster is where it is declared"
+    )]
+    DeviceWithoutPlatform { node: String, device: String },
+    #[error("node '{node}' device '{device}' has platform '{got}' — it is ios or android")]
+    UnknownPlatform {
+        node: String,
+        device: String,
+        got: String,
+    },
 }
 
 #[derive(Deserialize)]
 struct NodesFile {
-    nodes: Vec<NodeSpec>,
+    nodes: Vec<RawNode>,
+}
+
+#[derive(Deserialize)]
+struct RawNode {
+    name: String,
+    host: String,
+    repo: String,
+    devices: Vec<RawDevice>,
+    #[serde(rename = "runnerPort", default)]
+    runner_port: Option<u16>,
+}
+
+/// A device as written. The bare-string form is the roster shape before
+/// 11.0; it is read so that it can be refused by name.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawDevice {
+    Bare(String),
+    Entry(RawEntry),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawEntry {
+    device: String,
+    platform: Option<String>,
+}
+
+impl RawDevice {
+    fn declared(self, node: &str) -> Result<NodeDevice, NodesError> {
+        let (device, platform) = match self {
+            Self::Bare(device) => (device, None),
+            Self::Entry(e) => (e.device, e.platform),
+        };
+        let Some(got) = platform else {
+            return Err(NodesError::DeviceWithoutPlatform {
+                node: node.to_string(),
+                device,
+            });
+        };
+        let Some(platform) = NodePlatform::from_roster(&got) else {
+            return Err(NodesError::UnknownPlatform {
+                node: node.to_string(),
+                device,
+                got,
+            });
+        };
+        Ok(NodeDevice {
+            device_ref: device,
+            platform,
+        })
+    }
 }
 
 /// Parse the `.smix/nodes.yaml` roster. Hand-written yaml is a trust
 /// boundary, so the shape is validated here: a non-empty roster, every
-/// node with at least one device, node names unique.
+/// node with at least one device and every device with its platform,
+/// node names unique.
 pub fn parse_nodes(yaml: &str) -> Result<Vec<NodeSpec>, NodesError> {
     let file: NodesFile = serde_norway::from_str(yaml).map_err(|e| NodesError::Malformed {
         message: e.to_string(),
@@ -57,26 +164,35 @@ pub fn parse_nodes(yaml: &str) -> Result<Vec<NodeSpec>, NodesError> {
         return Err(NodesError::Empty);
     }
     let mut seen = std::collections::HashSet::new();
-    for node in &file.nodes {
-        if node.devices.is_empty() {
-            return Err(NodesError::EmptyDevices {
-                node: node.name.clone(),
-            });
+    let mut nodes = Vec::with_capacity(file.nodes.len());
+    for raw in file.nodes {
+        if raw.devices.is_empty() {
+            return Err(NodesError::EmptyDevices { node: raw.name });
         }
-        if !seen.insert(node.name.as_str()) {
-            return Err(NodesError::DuplicateName {
-                name: node.name.clone(),
-            });
+        if !seen.insert(raw.name.clone()) {
+            return Err(NodesError::DuplicateName { name: raw.name });
         }
+        let devices = raw
+            .devices
+            .into_iter()
+            .map(|d| d.declared(&raw.name))
+            .collect::<Result<Vec<_>, _>>()?;
+        nodes.push(NodeSpec {
+            name: raw.name,
+            host: raw.host,
+            repo: raw.repo,
+            devices,
+            runner_port: raw.runner_port,
+        });
     }
-    Ok(file.nodes)
+    Ok(nodes)
 }
 
 /// Flatten the roster into device slots, in listing order: node 0's
 /// devices first, then node 1's, and so on. A slot is `(node index,
-/// device ref)` — the unit the round-robin assigns flows to.
+/// device)` — the unit the round-robin assigns flows to.
 #[must_use]
-pub fn expand_slots(nodes: &[NodeSpec]) -> Vec<(usize, String)> {
+pub fn expand_slots(nodes: &[NodeSpec]) -> Vec<(usize, NodeDevice)> {
     nodes
         .iter()
         .enumerate()
@@ -84,12 +200,12 @@ pub fn expand_slots(nodes: &[NodeSpec]) -> Vec<(usize, String)> {
         .collect()
 }
 
-/// One slot's share of the batch: which node, which device ref on that
-/// node, and the flow indices it runs.
+/// One slot's share of the batch: which node, which device on that node,
+/// and the flow indices it runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlotAssignment {
     pub node: usize,
-    pub device_ref: String,
+    pub device: NodeDevice,
     pub flows: Vec<usize>,
 }
 
@@ -97,13 +213,13 @@ pub struct SlotAssignment {
 /// buckets are `parallel::shard_flows` verbatim — one round-robin
 /// semantic, maintained in one place — zipped back onto the slots.
 #[must_use]
-pub fn assign_flows(flow_count: usize, slots: &[(usize, String)]) -> Vec<SlotAssignment> {
+pub fn assign_flows(flow_count: usize, slots: &[(usize, NodeDevice)]) -> Vec<SlotAssignment> {
     crate::parallel::shard_flows(flow_count, slots.len())
         .into_iter()
         .zip(slots.iter().cloned())
-        .map(|(flows, (node, device_ref))| SlotAssignment {
+        .map(|(flows, (node, device))| SlotAssignment {
             node,
-            device_ref,
+            device,
             flows,
         })
         .collect()
@@ -137,17 +253,26 @@ pub fn shell_quote(s: &str) -> String {
 /// `cd` into the node's repo, and `--format json` appended
 /// unconditionally: the merge loop reads the remote stdout as JSON
 /// lines, and the single-machine passthrough never carries `--format`.
-/// The device ref is the remote registry's alias, forwarded verbatim.
+/// The device ref is forwarded verbatim, and its platform as
+/// `--platform` right after it: the node's smix does not guess one.
 #[must_use]
 pub fn remote_argv(
     node: &NodeSpec,
     flows: &[String],
-    device_ref: &str,
+    device: &NodeDevice,
     passthrough: &[String],
 ) -> Vec<String> {
     let quoted_flows: Vec<String> = flows.iter().map(|f| shell_quote(f)).collect();
-    let smix_argv =
-        crate::parallel::child_argv(&quoted_flows, &shell_quote(device_ref), passthrough);
+    let mut with_platform = vec![
+        shell_quote("--platform"),
+        shell_quote(device.platform.as_str()),
+    ];
+    with_platform.extend(passthrough.iter().cloned());
+    let smix_argv = crate::parallel::child_argv(
+        &quoted_flows,
+        &shell_quote(&device.device_ref),
+        &with_platform,
+    );
     let remote = format!(
         "cd {} && target/release/smix {} --format json",
         shell_quote(&node.repo),
@@ -453,7 +578,7 @@ pub fn run_federation(
             slot_passthrough.push(shell_quote("--runner-port"));
             slot_passthrough.push(shell_quote(&port.to_string()));
         }
-        let argv = remote_argv(node, &slot_flows, &assignment.device_ref, &slot_passthrough);
+        let argv = remote_argv(node, &slot_flows, &assignment.device, &slot_passthrough);
         let child = std::process::Command::new("ssh")
             .args(&argv)
             .stdout(std::process::Stdio::piped())
@@ -482,7 +607,7 @@ pub fn run_federation(
         };
         eprintln!(
             "smix run --nodes: node {} device {} exited {exit}{note}",
-            node.name, assignment.device_ref
+            node.name, assignment.device.device_ref
         );
         slot_results.push(SlotResult {
             node: assignment.node,
@@ -525,11 +650,14 @@ nodes:
   - name: mini
     host: mini
     repo: /Users/doracawl/workspace/goliajp/smix
-    devices: [sim-smix-001]
+    devices:
+      - { device: sim-smix-001, platform: ios }
   - name: studio
     host: studio.local
     repo: /Users/doracawl/smix
-    devices: [sim-smix-002, sim-smix-003]
+    devices:
+      - { device: sim-smix-002, platform: ios }
+      - { device: sim-smix-android-01, platform: android }
 ";
 
     #[test]
@@ -539,11 +667,58 @@ nodes:
         assert_eq!(nodes[0].name, "mini");
         assert_eq!(nodes[0].host, "mini");
         assert_eq!(nodes[0].repo, "/Users/doracawl/workspace/goliajp/smix");
-        assert_eq!(nodes[0].devices, vec!["sim-smix-001"]);
+        assert_eq!(
+            nodes[0].devices,
+            vec![dev("sim-smix-001", NodePlatform::Ios)]
+        );
         assert_eq!(nodes[1].name, "studio");
         assert_eq!(nodes[1].host, "studio.local");
         assert_eq!(nodes[1].repo, "/Users/doracawl/smix");
-        assert_eq!(nodes[1].devices, vec!["sim-smix-002", "sim-smix-003"]);
+        assert_eq!(
+            nodes[1].devices,
+            vec![
+                dev("sim-smix-002", NodePlatform::Ios),
+                dev("sim-smix-android-01", NodePlatform::Android)
+            ]
+        );
+    }
+
+    fn dev(device_ref: &str, platform: NodePlatform) -> NodeDevice {
+        NodeDevice {
+            device_ref: device_ref.to_string(),
+            platform,
+        }
+    }
+
+    #[test]
+    fn a_device_listed_without_a_platform_is_a_parse_error_naming_it() {
+        // The node's smix reads a device's platform from its own
+        // registry, and a device it has not registered has none. The
+        // roster is the one place the scheduler can declare it.
+        for entry in ["[sim-smix-001]", "[{ device: sim-smix-001 }]"] {
+            let yaml = format!(
+                "nodes:\n  - name: mini\n    host: mini\n    repo: /repo/mini\n    devices: {entry}\n"
+            );
+            let err = parse_nodes(&yaml).unwrap_err();
+            assert!(
+                matches!(&err, NodesError::DeviceWithoutPlatform { node, device }
+                    if node == "mini" && device == "sim-smix-001"),
+                "{entry}: {err}"
+            );
+            let said = err.to_string();
+            assert!(said.contains("platform: ios"), "{said}");
+        }
+    }
+
+    #[test]
+    fn a_platform_that_is_neither_is_named() {
+        let yaml = "nodes:\n  - name: mini\n    host: mini\n    repo: /repo/mini\n    devices: [{ device: s1, platform: tvos }]\n";
+        let err = parse_nodes(yaml).unwrap_err();
+        assert!(
+            matches!(&err, NodesError::UnknownPlatform { node, device, got }
+                if node == "mini" && device == "s1" && got == "tvos"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -567,7 +742,7 @@ nodes:
                 name: (*name).to_string(),
                 host: (*name).to_string(),
                 repo: format!("/repo/{name}"),
-                devices: devices.iter().map(|d| (*d).to_string()).collect(),
+                devices: devices.iter().map(|d| dev(d, NodePlatform::Ios)).collect(),
                 runner_port: None,
             })
             .collect()
@@ -580,12 +755,12 @@ nodes:
   - name: studio
     host: localhost
     repo: /repo/studio
-    devices: [sim-1]
+    devices: [{ device: sim-1, platform: ios }]
     runnerPort: 22097
   - name: mini
     host: mini
     repo: /repo/mini
-    devices: [sim-2]
+    devices: [{ device: sim-2, platform: android }]
 ";
         let nodes = parse_nodes(yaml).unwrap();
         assert_eq!(nodes[0].runner_port, Some(22097));
@@ -598,9 +773,9 @@ nodes:
         assert_eq!(
             expand_slots(&nodes),
             vec![
-                (0, "a1".to_string()),
-                (0, "a2".to_string()),
-                (1, "b1".to_string())
+                (0, dev("a1", NodePlatform::Ios)),
+                (0, dev("a2", NodePlatform::Ios)),
+                (1, dev("b1", NodePlatform::Ios))
             ]
         );
     }
@@ -615,17 +790,17 @@ nodes:
             vec![
                 SlotAssignment {
                     node: 0,
-                    device_ref: "a1".to_string(),
+                    device: dev("a1", NodePlatform::Ios),
                     flows: vec![0, 3]
                 },
                 SlotAssignment {
                     node: 0,
-                    device_ref: "a2".to_string(),
+                    device: dev("a2", NodePlatform::Ios),
                     flows: vec![1, 4]
                 },
                 SlotAssignment {
                     node: 1,
-                    device_ref: "b1".to_string(),
+                    device: dev("b1", NodePlatform::Ios),
                     flows: vec![2]
                 },
             ]
@@ -644,7 +819,7 @@ nodes:
             assignments,
             vec![SlotAssignment {
                 node: 0,
-                device_ref: "a1".to_string(),
+                device: dev("a1", NodePlatform::Ios),
                 flows: vec![0, 1, 2]
             }]
         );
@@ -656,13 +831,13 @@ nodes:
             name: "mini".to_string(),
             host: "mini".to_string(),
             repo: "/Users/doracawl/workspace/goliajp/smix".to_string(),
-            devices: vec!["sim-smix-001".to_string()],
+            devices: vec![dev("sim-smix-001", NodePlatform::Ios)],
             runner_port: None,
         };
         let argv = remote_argv(
             &node,
             &["a.yaml".to_string()],
-            "sim-smix-001",
+            &node.devices[0],
             &["--no-launch".to_string()],
         );
         assert_eq!(
@@ -672,7 +847,7 @@ nodes:
                 "BatchMode=yes".to_string(),
                 "mini".to_string(),
                 "cd '/Users/doracawl/workspace/goliajp/smix' && target/release/smix \
-                 run 'a.yaml' --device 'sim-smix-001' --no-launch --format json"
+                 run 'a.yaml' --device 'sim-smix-001' '--platform' 'ios' --no-launch --format json"
                     .to_string(),
             ]
         );
@@ -680,6 +855,23 @@ nodes:
         assert!(remote.contains("--format json"));
         assert!(!remote.contains("--parallel"));
         assert!(!remote.contains("--also-device"));
+    }
+
+    #[test]
+    fn an_android_device_is_dispatched_with_its_platform() {
+        let node = NodeSpec {
+            name: "mini".to_string(),
+            host: "mini".to_string(),
+            repo: "/Users/me/smix".to_string(),
+            devices: vec![dev("emulator-5554", NodePlatform::Android)],
+            runner_port: None,
+        };
+        let argv = remote_argv(&node, &["a.yaml".to_string()], &node.devices[0], &[]);
+        assert!(
+            argv[3].contains("--device 'emulator-5554' '--platform' 'android'"),
+            "{}",
+            argv[3]
+        );
     }
 
     #[test]
@@ -747,7 +939,7 @@ nodes:
             name: "mini".to_string(),
             host: "mini".to_string(),
             repo: "/Users/doracawl/workspace/goliajp/smix".to_string(),
-            devices: vec!["sim-smix-001".to_string()],
+            devices: vec![dev("sim-smix-001", NodePlatform::Ios)],
             runner_port: None,
         };
         assert_eq!(
@@ -787,7 +979,7 @@ nodes:
         let assignments = assign_flows(flows.len(), &slots);
         assert_eq!(assignments[0].flows, (0..flows.len()).collect::<Vec<_>>());
         let node = &nodes[assignments[0].node];
-        let device_ref = &assignments[0].device_ref;
+        let device = &assignments[0].device;
 
         let gate = run_ssh(&readiness_argv(node)).unwrap();
         assert_eq!(
@@ -796,7 +988,7 @@ nodes:
             gate.stderr
         );
 
-        let out = run_ssh(&remote_argv(node, &flows, device_ref, &[])).unwrap();
+        let out = run_ssh(&remote_argv(node, &flows, device, &[])).unwrap();
         assert!(
             !is_transport_failure(out.exit),
             "ssh transport failure\nstderr: {}",
@@ -822,7 +1014,7 @@ nodes:
             name: "mini".to_string(),
             host: "mini".to_string(),
             repo: "/Users/doracawl/workspace/goliajp/smix".to_string(),
-            devices: vec!["sim-smix-001".to_string()],
+            devices: vec![dev("sim-smix-001", NodePlatform::Ios)],
             runner_port: None,
         };
         assert_eq!(
@@ -898,7 +1090,7 @@ nodes:
             let out = run_ssh(&remote_argv(
                 node,
                 &node_flows,
-                &assignment.device_ref,
+                &assignment.device,
                 &passthrough,
             ))
             .unwrap();
@@ -1125,11 +1317,11 @@ nodes:
   - name: mini
     host: mini-a
     repo: /a
-    devices: [sim-1]
+    devices: [{ device: sim-1, platform: ios }]
   - name: mini
     host: mini-b
     repo: /b
-    devices: [sim-2]
+    devices: [{ device: sim-2, platform: ios }]
 ";
         let err = parse_nodes(yaml).unwrap_err();
         assert!(matches!(&err, NodesError::DuplicateName { name } if name == "mini"));

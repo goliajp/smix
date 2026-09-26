@@ -234,6 +234,123 @@ object RunnerWire {
     fun escapeForInputText(text: String): String =
         text.replace("\\", "\\\\").replace(" ", "%s")
 
+    /// What one chunk of text did to the field it was typed into.
+    sealed class ChunkOutcome {
+        object Landed : ChunkOutcome()
+        data class MissingTail(val rest: String) : ChunkOutcome()
+        object Mismatch : ChunkOutcome()
+    }
+
+    /// `text` cut into pieces of at most `size` code points, never
+    /// splitting a surrogate pair (a split pair is two characters nobody
+    /// typed).
+    /// How a chunked `input text` ended.
+    ///
+    /// `send` types `sent` into the field and returns what it holds
+    /// afterwards; `base` and `chunk` are passed so a caller can wait for
+    /// the chunk to land before reading. Pure given `send`, so every
+    /// readback sequence a busy device produces can be tested without one.
+    sealed class ChunkedResult {
+        data class Done(val held: String, val chunks: Int, val retyped: Int) : ChunkedResult()
+        data class Failed(val held: String, val chunk: Int, val of: Int, val retries: Int) : ChunkedResult()
+    }
+
+    fun typeInChunks(
+        text: String,
+        before: String,
+        masked: Boolean,
+        chunkPoints: Int,
+        retypes: Int,
+        send: (sent: String, base: String, chunk: String) -> String,
+    ): ChunkedResult {
+        val chunks = inputChunks(text, chunkPoints)
+        var held = before
+        var retyped = 0
+        for ((index, chunk) in chunks.withIndex()) {
+            val base = held
+            var sent = chunk
+            var tries = 0
+            while (true) {
+                val now = send(sent, base, chunk)
+                when (val outcome = chunkOutcome(base, now, chunk, masked)) {
+                    ChunkOutcome.Landed -> {
+                        held = now
+                        break
+                    }
+                    is ChunkOutcome.MissingTail -> {
+                        if (tries == retypes) return ChunkedResult.Failed(now, index, chunks.size, tries)
+                        tries++
+                        retyped++
+                        sent = outcome.rest
+                    }
+                    ChunkOutcome.Mismatch -> return ChunkedResult.Failed(now, index, chunks.size, tries)
+                }
+            }
+        }
+        return ChunkedResult.Done(held, chunks.size, retyped)
+    }
+
+    fun inputChunks(text: String, size: Int): List<String> {
+        val out = mutableListOf<String>()
+        var start = 0
+        while (start < text.length) {
+            var end = start
+            var points = 0
+            while (end < text.length && points < size) {
+                end += Character.charCount(text.codePointAt(end))
+                points++
+            }
+            out.add(text.substring(start, end))
+            start = end
+        }
+        return out
+    }
+
+    /// Judge one chunk: `base` is what the field held before it, `after`
+    /// what it holds now.
+    ///
+    /// Landed when `after` is `base` with the whole chunk put in once, at
+    /// one place (the caret need not be at the end). MissingTail when the
+    /// chunk's first characters are there and only its end is not — the
+    /// shape a dropped run of key events leaves, and the only one typing
+    /// again can repair without typing a character twice. Anything else
+    /// is Mismatch. A masked field answers only with its length, so it is
+    /// judged by length alone and a shortfall is taken as the tail.
+    fun chunkOutcome(base: String, after: String, chunk: String, masked: Boolean): ChunkOutcome {
+        val grew = after.length - base.length
+        if (masked) {
+            return when {
+                grew == chunk.length -> ChunkOutcome.Landed
+                grew in 0 until chunk.length -> ChunkOutcome.MissingTail(chunk.substring(grew))
+                else -> ChunkOutcome.Mismatch
+            }
+        }
+        if (grew < 0 || grew > chunk.length) return ChunkOutcome.Mismatch
+        for (at in 0..base.length) {
+            if (!after.regionMatches(0, base, 0, at)) continue
+            if (!after.regionMatches(at + grew, base, at, base.length - at)) continue
+            if (!after.regionMatches(at, chunk, 0, grew)) continue
+            return if (grew == chunk.length) {
+                ChunkOutcome.Landed
+            } else {
+                ChunkOutcome.MissingTail(chunk.substring(grew))
+            }
+        }
+        return ChunkOutcome.Mismatch
+    }
+
+    /// Code points per `input text` call.
+    ///
+    /// Measured on the fixture's field, 2026-09-26, ten tries per length
+    /// with our own `yes` processes adding load: at load 11–15 and again
+    /// at 19–28, 8 / 16 / 32 / 64 characters landed whole 10 of 10, and
+    /// 120 landed whole 2 and 7 of 10 (the rest arrived as 101, 68 and 97
+    /// characters). Half the longest length that held both times.
+    const val INPUT_CHUNK_POINTS: Int = 32
+
+    /// Times one chunk's missing tail is typed again before giving up.
+    const val INPUT_CHUNK_RETYPES: Int = 3
+
     fun inputTextCommand(text: String): String =
         "input text ${escapeForInputText(text)}"
 
@@ -466,11 +583,21 @@ object RunnerWire {
     /// What the field held before and after, beside the verdict. A masked
     /// field is reported by length only: its node shows bullets, and the
     /// wire is no place to start carrying what a password field holds.
-    fun inputTextBody(ok: Boolean, text: String, before: String, held: String, masked: Boolean): String {
+    fun inputTextBody(
+        ok: Boolean,
+        text: String,
+        before: String,
+        held: String,
+        masked: Boolean,
+        chunks: Int = 1,
+        retyped: Int = 0,
+    ): String {
         val obj = JSONObject()
             .put("ok", ok)
             .put("status", if (ok) "ok" else "text_did_not_land")
             .put("text", text)
+            .put("chunks", chunks)
+            .put("retyped", retyped)
         if (masked) {
             obj.put("beforeLength", before.length).put("heldLength", held.length)
         } else {

@@ -8,6 +8,18 @@
 //! `smix sim exec`, which keeps simctl's original argument shape and
 //! injects the resolved UDID.
 
+// Every `print!` / `println!` in this crate is these, not std's: they are
+// defined before the modules below so textual scoping hands them to all of
+// them. std's versions panic when the reader has gone (SP1) — see
+// `write_stdout`.
+macro_rules! print {
+    ($($arg:tt)*) => { $crate::write_stdout(format_args!($($arg)*)) };
+}
+macro_rules! println {
+    () => { $crate::write_stdout(format_args!("\n")) };
+    ($($arg:tt)*) => { $crate::write_stdout(format_args!("{}\n", format_args!($($arg)*))) };
+}
+
 mod act;
 mod authoring;
 mod bench;
@@ -1202,10 +1214,12 @@ enum LeaseAction {
     Status {
         /// The device: an alias, a UDID or a serial.
         device: String,
-        /// Print the device's ledger as JSON — `{"device", "path", "lease"}`:
-        /// the file it lives in, and the lease as it is stored (null when
-        /// there is none) — for a script to read instead of building the
-        /// ledger's path itself.
+        /// Print the device's ledger as JSON — `{"device", "path", "lease",
+        /// "heldBy"}`: the file it lives in, the lease as it is stored (null
+        /// when there is none), and who holds the device now — `{"pid",
+        /// "cmd", "alive"}`, or null when a new claim would be granted —
+        /// for a script to read instead of building the ledger's path or
+        /// judging the holder itself.
         #[arg(long)]
         json: bool,
     },
@@ -2705,6 +2719,39 @@ fn lookup_registered(device_ref: &str) -> Option<smix_simctl::registry::Register
     load_registry().registry.lookup(device_ref).cloned()
 }
 
+/// Set once stdout's reader has gone; every later write is dropped.
+static STDOUT_READER_LEFT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// What `print!` and `println!` do in this crate.
+///
+/// A reader that stops reading (`smix sim list | head -1`) is not a
+/// failure of the work: smix stops writing to stdout and finishes what it
+/// was doing, and the exit code reports that work. The two usual answers
+/// are both wrong here. Restoring SIGPIPE's default kills smix silently
+/// the same way when a child it feeds on stdin exits early (simctl,
+/// codesign, devicectl all take stdin). Exiting at once — with 0 or 141 —
+/// would leave a `smix run … | head` device halfway through a flow, and 0
+/// would call that a pass. No smix command streams forever and relies on
+/// SIGPIPE to stop (`runner forward` prints once, then holds), so carrying
+/// on cannot hang anyone.
+///
+/// Any other write error is std's panic, unchanged.
+fn write_stdout(args: std::fmt::Arguments<'_>) {
+    use std::io::Write;
+    use std::sync::atomic::Ordering;
+    if STDOUT_READER_LEFT.load(Ordering::Relaxed) {
+        return;
+    }
+    if let Err(e) = std::io::stdout().lock().write_fmt(args) {
+        if e.kind() == std::io::ErrorKind::BrokenPipe {
+            STDOUT_READER_LEFT.store(true, Ordering::Relaxed);
+            return;
+        }
+        panic!("failed printing to stdout: {e}");
+    }
+}
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -2714,6 +2761,37 @@ async fn main() -> ExitCode {
             eprintln!("error: {e}");
             ExitCode::from(1)
         }
+    }
+}
+
+/// Record that smix booted (or found running) this emulator, with which
+/// AVD it is when that is known. A write that fails is said, not fatal:
+/// the device is up either way.
+fn record_emulator_boot(udid: &str, claim: BootClaim, identity: Option<smix_lease::Resource>) {
+    let Ok(leases) = smix_capsule::runner::machine_leases() else {
+        return;
+    };
+    if let Err(e) = smix_lease::store::record_boot(&leases, udid, claim == BootClaim::ClaimAsOurs) {
+        eprintln!("warning: boot not recorded in the device ledger: {e}");
+    }
+    if let Some(row) = identity
+        && let Err(e) = smix_lease::store::add_resource(&leases, udid, row)
+    {
+        eprintln!("warning: which AVD {udid} is was not recorded in the device ledger: {e}");
+    }
+}
+
+/// Take back a boot record written before a start that never came up.
+fn withdraw_emulator_boot(udid: &str) {
+    let Ok(leases) = smix_capsule::runner::machine_leases() else {
+        return;
+    };
+    if let Err(e) = smix_lease::store::drop_resource_kind(
+        &leases,
+        udid,
+        &smix_lease::Resource::Booted { by_us: true },
+    ) {
+        eprintln!("warning: the boot record for {udid} was not withdrawn: {e}");
     }
 }
 
@@ -3035,7 +3113,6 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         } else {
                             EmulatorState::WasOff
                         });
-                        let mut identity: Option<smix_lease::Resource> = None;
                         if !already {
                             let avd = lookup_registered(&device)
                                 .and_then(|s| s.avd_name().map(str::to_string))
@@ -3051,58 +3128,62 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                             let console = emulator_console_path(&avd)?;
                             adb.start_emulator_on(&avd, &udid, &console)
                                 .map_err(|e| CliError::Other(format!("{e}")))?;
-                            // Wait for the device to exist, not for the
-                            // command that asks for it to return. The first
-                            // version printed `booted:` and wrote the ledger
-                            // row the moment the process was spawned — so a
-                            // start that failed left the ledger claiming smix
-                            // had booted a device that was not there. That is
-                            // the same defect this whole version is about,
-                            // committed by the code meant to fix it.
+                            // Recorded as soon as the process is started,
+                            // before the wait. The emulator has a process
+                            // group of its own and outlives this command, so
+                            // a Ctrl-C during the wait left it running with
+                            // no record that smix started it — and smix then
+                            // refused to stop it (2026-09-25). The record is
+                            // withdrawn below, after stopping the emulator,
+                            // when it never comes up: the ledger still never
+                            // claims a device that is not there once this
+                            // command has answered.
+                            record_emulator_boot(
+                                &udid,
+                                claim,
+                                Some(smix_lease::Resource::Emulator {
+                                    avd: avd.clone(),
+                                    console_log: Some(console.display().to_string()),
+                                }),
+                            );
                             let ready = adb
                                 .wait_for_boot(&udid, std::time::Duration::from_secs(180))
                                 .await;
                             if let Err(e) = ready {
+                                let stopped = match adb.stop_emulator(&udid).await {
+                                    Ok(()) => {
+                                        withdraw_emulator_boot(&udid);
+                                        "it has been stopped and the ledger no longer says \
+                                         smix booted it"
+                                            .to_string()
+                                    }
+                                    Err(stop) => format!(
+                                        "stopping it failed ({stop}), so the ledger still \
+                                         says smix booted it — `smix sim shutdown {udid}` \
+                                         once it answers"
+                                    ),
+                                };
                                 return Err(CliError::Other(format!(
                                     "{avd} was started and {udid} did not come up \
                                      within 180s: {e}\n\
-                                     the ledger has not been told smix booted it, \
-                                     because it did not. What the emulator printed \
-                                     is in {}",
+                                     {stopped}. What the emulator printed is in {}",
                                     console.display()
                                 )));
                             }
-                            identity = Some(smix_lease::Resource::Emulator {
-                                avd,
-                                console_log: Some(console.display().to_string()),
-                            });
-                        } else if let Ok(avd) = smix_adb::AdbClient::new().avd_name(&udid).await
-                            && !avd.is_empty()
-                        {
+                        } else {
                             // Found running: its console is not ours to keep,
                             // but its name is what tells this ledger apart
                             // from the next AVD to take the same port.
-                            identity = Some(smix_lease::Resource::Emulator {
-                                avd,
-                                console_log: None,
-                            });
-                        }
-                        if let Ok(leases) = smix_capsule::runner::machine_leases() {
-                            if let Err(e) = smix_lease::store::record_boot(
-                                &leases,
-                                &udid,
-                                claim == BootClaim::ClaimAsOurs,
-                            ) {
-                                eprintln!("warning: boot not recorded in the device ledger: {e}");
-                            }
-                            if let Some(row) = identity
-                                && let Err(e) = smix_lease::store::add_resource(&leases, &udid, row)
-                            {
-                                eprintln!(
-                                    "warning: which AVD {udid} is was not recorded in the \
-                                     device ledger: {e}"
-                                );
-                            }
+                            let identity = match smix_adb::AdbClient::new().avd_name(&udid).await {
+                                Ok(avd) if !avd.is_empty() => {
+                                    Some(smix_lease::Resource::Emulator {
+                                        avd,
+                                        console_log: None,
+                                    })
+                                }
+                                _ => None,
+                            };
+                            record_emulator_boot(&udid, claim, identity);
                         }
                         println!("booted: {udid}");
                         return Ok(std::process::ExitCode::SUCCESS);
@@ -6342,6 +6423,7 @@ struct AndroidDevice {
     state: String,
     model: String,
     release: String,
+    registered: bool,
 }
 
 /// Parse `adb devices -l` output.
@@ -6366,12 +6448,23 @@ fn parse_adb_devices(list: &str) -> Vec<(String, String, String)> {
         .collect()
 }
 
+/// Whether `sim list` may open a shell on `serial` to read its release.
+///
+/// A phone that is attached and not registered is unreachable (§9#1):
+/// that holds for a read as much as for an install. `adb devices -l`
+/// already names it and its model, which is all a listing needs; its
+/// release is left unasked.
+fn may_ask_release(serial: &str, registered: bool) -> bool {
+    registered || smix_simctl::registry::is_emulator_serial(serial)
+}
+
 /// Every Android device adb can see, with its OS release.
 ///
 /// A machine with no adb has no Android devices, which is the truthful
 /// answer rather than an error — the same way `simctl_knows` answers no
 /// on a machine with no Xcode.
 fn android_devices() -> Vec<AndroidDevice> {
+    let registry = load_registry().registry;
     let Ok(out) = std::process::Command::new("adb")
         .args(["devices", "-l"])
         .output()
@@ -6384,6 +6477,16 @@ fn android_devices() -> Vec<AndroidDevice> {
     parse_adb_devices(&String::from_utf8_lossy(&out.stdout))
         .into_iter()
         .map(|(serial, state, model)| {
+            let registered = registry.lookup(&serial).is_some();
+            if !may_ask_release(&serial, registered) {
+                return AndroidDevice {
+                    serial,
+                    state,
+                    model,
+                    release: String::new(),
+                    registered,
+                };
+            }
             let release = std::process::Command::new("adb")
                 .args([
                     "-s",
@@ -6402,6 +6505,7 @@ fn android_devices() -> Vec<AndroidDevice> {
                 state,
                 model,
                 release,
+                registered,
             }
         })
         .collect()
@@ -6592,6 +6696,7 @@ async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<(), CliError>
                 "name": if a.model.is_empty() { a.serial.clone() } else { a.model.clone() },
                 "state": a.state,
                 "release": a.release,
+                "registered": a.registered,
             }));
         }
         let out = serde_json::to_string_pretty(&all)
@@ -6618,7 +6723,9 @@ async fn cmd_sim_list(simctl: &SimctlClient, json: bool) -> Result<(), CliError>
         } else {
             a.model.as_str()
         };
-        let release = if a.release.is_empty() {
+        let release = if !may_ask_release(&a.serial, a.registered) {
+            "Android (not registered; smix does not address it)".to_string()
+        } else if a.release.is_empty() {
             "Android".to_string()
         } else {
             format!("Android-{}", a.release)
@@ -7815,6 +7922,22 @@ mod tests {
         assert!(
             err.contains("grant") && err.contains("revoke") && err.contains("reset"),
             "{err}"
+        );
+    }
+
+    #[test]
+    fn sim_list_asks_an_emulator_and_a_registered_phone_and_no_other_device() {
+        assert!(
+            may_ask_release("emulator-5554", false),
+            "an emulator is ours to read"
+        );
+        assert!(
+            may_ask_release("R5CT10ABCDE", true),
+            "a registered phone was offered to smix"
+        );
+        assert!(
+            !may_ask_release("R5CT10ABCDE", false),
+            "an attached phone nobody registered is listed from adb's own line and not addressed (§9#1)"
         );
     }
 

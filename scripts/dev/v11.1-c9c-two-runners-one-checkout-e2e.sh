@@ -99,12 +99,10 @@ except (OSError, TypeError):
 print(lease["holder"].get("cmd", ""))
 ' "$MACHINE" "$1"
 }
-sim_state() { # sim_state <udid> — simctl's state and name, from its own list
-  xcrun simctl list devices -j | python3 -c 'import json,sys
-u=sys.argv[1]
-for ds in json.load(sys.stdin)["devices"].values():
-    for d in ds:
-        if d["udid"] == u: print(d["state"], d["name"])' "$1"
+sim_state() { # sim_state <udid> — state and name, both asked of the library
+  local st
+  st="$(simulator_state "$1")"
+  [ "$st" = absent ] || echo "$st $(simulator_name "$1")"
 }
 up() { # up <udid> <port> [flags...] — output to $WORK/up.out, status to $UP_RC
   local udid="$1" port="$2"

@@ -19,6 +19,8 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 
 A="986DA42B-E0B0-4CCE-8E94-3510C85E8044"  # sim-smix-04
 B="89980B43-EF26-446A-A897-848C1AD3A872"  # sim-smix-03
@@ -41,7 +43,7 @@ real_hash() {
 REAL_BEFORE="$(real_hash)"
 
 for u in "$A" "$B"; do
-  xcrun simctl list devices | grep -q "$u" \
+  [ "$(simulator_state "$u")" != absent ] \
     || cannot_judge "simctl does not list $u; registering it would be refused for a reason that is not this check's"
 done
 

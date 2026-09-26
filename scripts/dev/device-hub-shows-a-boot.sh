@@ -26,6 +26,8 @@ set -euo pipefail
 
 BUNDLE_ID="com.apple.dt.Devices"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/e2e-devices.sh
+source "$HERE/../lib/e2e-devices.sh"
 
 say() { printf 'device-hub-shows-a-boot: %s\n' "$*"; }
 
@@ -45,14 +47,7 @@ reader() {
 }
 
 device_state_of() {
-  xcrun simctl list devices -j | python3 -c '
-import json, sys
-u = sys.argv[1]
-for devs in json.load(sys.stdin)["devices"].values():
-    for d in devs:
-        if d["udid"] == u:
-            print(d["state"]); sys.exit(0)
-print("absent")' "$1"
+  simulator_state "$1"
 }
 
 wait_for_state() {

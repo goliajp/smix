@@ -14,6 +14,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
 ALIAS="${SMIX_C6D_IOS:-smix-ios}"
@@ -54,7 +56,7 @@ if curl -s "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q '"ok":true'; th
 fi
 
 step "boot $ALIAS ($UDID), install fixture"
-if ! xcrun simctl list devices 2>/dev/null | grep -q "$UDID.*Booted"; then
+if [ "$(simulator_state "$UDID")" != Booted ]; then
   "$SMIX" sim boot "$UDID" >"$WORK/boot.log" 2>&1 || fail "sim boot failed: $(tail -3 "$WORK/boot.log")"
   WE_BOOTED=1
 fi

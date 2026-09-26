@@ -20,6 +20,11 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
+# A port of this gate's own: 22087 is every smix's default on this machine.
+. "$ROOT/scripts/lib/gate-port.sh"
+gate_free_port PORT
+export SMIX_RUNNER_PORT="$PORT"
+WORK="$(mktemp -d)"
 ALIAS="${SMIX_E2E_DEVICE:-$E2E_IOS}"
 BUNDLE="com.apple.Preferences"
 ABSENT_BUNDLE="jp.golia.smix.not-installed"
@@ -52,7 +57,7 @@ UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1 || true)"
 # way to acquire the right to shut it down — what matters is whether it
 # was already up when we arrived.
 WAS_BOOTED=no
-xcrun simctl list devices 2>/dev/null | grep -q "$UDID.*Booted" && WAS_BOOTED=yes
+[ "$(simulator_state "$UDID")" = Booted ] && WAS_BOOTED=yes
 [ -n "$UDID" ] || fail "alias $ALIAS is not registered"
 log "device $ALIAS = $UDID"
 if pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1; then
@@ -67,19 +72,28 @@ if pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1; then
 fi
 # The default runner port is shared with every other smix session on this
 # machine, so a busy port is not this test's failure to report.
-if curl -s -m 2 "http://127.0.0.1:${SMIX_RUNNER_PORT:-22087}/health" >/dev/null 2>&1; then
-  log "port ${SMIX_RUNNER_PORT:-22087} already answers /health — another session is using it"
-  log "re-run with SMIX_RUNNER_PORT=<free port>"
-  echo "C7-ADMISSION-SKIP"
-  exit 0
-fi
+
+# From here the ledger and the working directory are this script's own.
+# It asserts that `runner up` recorded the session and then plays a live
+# holder by rewriting that record — and it read and rewrote
+# `.smix/leases/<udid>.json` in the checkout, a location smix stopped
+# writing at 4.0. On this machine an August file for the same device sat
+# there, so step 3 passed on a stale record and step 4b rewrote it; on a
+# checkout without one, step 3 could only fail (2026-09-25). The record
+# is found by asking smix where it keeps it.
+e2e_isolate_machine "$WORK"
+cd "$WORK"
+# A workspace of its own for `runner up` to build in; its registry is the
+# isolated one above.
+"$SMIX" init --device "$UDID" --alias c7-admission >/dev/null 2>&1 \
+  || fail "could not make a workspace for $UDID in $WORK"
 
 
 cleanup() {
   # Not silenced: a teardown that fails leaves a runner behind, and the
   # next thing to start one on this device fights it. The failure then
   # reads as whatever that next thing was asking about.
-  if ! down_said="$("$SMIX" runner down 2>&1)"; then
+  if ! down_said="$("$SMIX" runner down --device "$UDID" --runner-port "$PORT" 2>&1)"; then
     printf 'warning: the runner was not stopped:\n%s\n' "$(printf '%s' "$down_said" | tail -3)" >&2
   fi
   "$SMIX" lease reconcile "$UDID" >/dev/null 2>&1 || true
@@ -90,6 +104,7 @@ cleanup() {
   if [ "$WAS_BOOTED" != "yes" ]; then
     "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
   fi
+  rm -rf "$WORK"
 }
 trap cleanup EXIT
 
@@ -108,8 +123,8 @@ OUT="$("$SMIX" sim keychain-reset "$UDID" 2>&1)" \
 log "lease released after the command"
 
 step "3. bring a session up, so the device is genuinely in use"
-"$SMIX" runner up "$UDID" --bundle "$BUNDLE" >/dev/null 2>&1 || fail "runner up failed"
-LEDGER=".smix/leases/$UDID.json"
+"$SMIX" runner up "$UDID" --bundle "$BUNDLE" --runner-port "$PORT" >/dev/null 2>&1 || fail "runner up failed"
+LEDGER="$(e2e_ledger_path "$UDID")"
 [ -f "$LEDGER" ] || fail "no ledger — runner up did not record the session"
 
 step "4. the runner up's own lease is adopted, not a wall"
@@ -166,14 +181,14 @@ printf '%s' "$LEDGER_BAK" > "$LEDGER"
 log "live holder refused all three, by pid; ledger restored"
 
 step "5. the live session is untouched by any of it"
-curl -s -m 3 "http://127.0.0.1:${SMIX_RUNNER_PORT:-22087}/health" >/dev/null 2>&1 \
+curl -s -m 3 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 \
   || fail "the runner stopped answering — a refused command still hit the device"
 log "session still healthy"
 
 step "6. once the session ends, the device is free again"
 # `|| fail` catches the exit code and throws away the reason, so the
 # verdict is "runner down failed" and nothing else. Keep both.
-if ! down_said="$("$SMIX" runner down 2>&1)"; then
+if ! down_said="$("$SMIX" runner down --device "$UDID" --runner-port "$PORT" 2>&1)"; then
   printf '%s\n' "$down_said" | tail -3 >&2
   fail "runner down failed"
 fi

@@ -84,7 +84,7 @@ log "android: sim boot → runner up → run → runner down, each answered"
 # ---- iOS --------------------------------------------------------------
 UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tail -1)" \
   || cannot_judge "no iOS simulator registered as $IOS_ALIAS"
-if ! xcrun simctl list devices -j | python3 -c "import json,sys;d=json.load(sys.stdin);sys.exit(0 if any(x['udid']=='$UDID' and x['state']=='Booted' for r in d['devices'].values() for x in r) else 1)"; then
+if [ "$(simulator_state "$UDID")" != Booted ]; then
   out="$(with_deadline 300 "$SMIX" sim boot "$IOS_ALIAS" 2>&1)" || link_failed ios "sim boot $IOS_ALIAS" "$out"
   IOS_WE_BOOTED=1
 fi

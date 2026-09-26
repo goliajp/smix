@@ -64,9 +64,6 @@ log "guard: $HOST reachable"
 rssh true || cannot_judge "$HOST is not reachable over BatchMode ssh — this node is not available here"
 REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $HOST"
 
-log "guard: no active batch on studio or $HOST (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active on studio — yielding; re-run when it is idle"
-rssh "pgrep -f 'runner.ts|smix run|supervise' >/dev/null" && cannot_judge "batch owner active on $HOST — yielding; re-run when it is idle"
 
 log "guard: no user build in flight ($HOST: cargo/xcodebuild; studio: cargo only — resident runner capsule is legitimate)"
 rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && cannot_judge "user build in flight on $HOST — yielding; re-run when it is idle"
@@ -90,9 +87,7 @@ log "guard: SMIX_UDID / SMIX_RUNNER_PORT not exported (clap counts env values as
 WORK="$(mktemp -d)"
 mkdir -p "$WORK/pull"
 UDID_S=""
-xcrun simctl list devices 2>/dev/null | grep -q "$UDID_S.*Booted" && WAS_BOOTED_LOCAL=yes
 UDID_M=""
-rssh "xcrun simctl list devices 2>/dev/null | grep -q \"$UDID_M.*Booted\"" && WAS_BOOTED_REMOTE=yes
 
 # Studio teardown, no sweep (C4 incident discipline): read the recorded
 # runner handle from the device's lease, verify the pid is still xcodebuild
@@ -196,24 +191,31 @@ rssh "cd '$REMOTE_REPO' && test -f target/.smix-fed-stamp && test -x target/rele
 
 # --- 6. device resolution + prep, both nodes (§9#1 sims only, explicit UDID) ---
 log "resolve $STUDIO_SIM UDID on studio"
-SIM_LINES_S="$( (cd "$ROOT" && target/release/smix sim list 2>/dev/null) | grep -F "$STUDIO_SIM")" \
+SIM_LINES_S="$( (cd "$ROOT" && SMIX_MACHINE_DIR="$(mktemp -d)" target/release/smix sim list 2>/dev/null) | grep -F "$STUDIO_SIM")" \
   || fail "$STUDIO_SIM not in studio sim list"
 [ "$(printf '%s\n' "$SIM_LINES_S" | wc -l | tr -d ' ')" = 1 ] \
   || fail "$STUDIO_SIM matches more than one sim list line: $SIM_LINES_S"
 UDID_S="$(printf '%s\n' "$SIM_LINES_S" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')" \
   || fail "no UDID in studio sim list line: $SIM_LINES_S"
+# Asked now that the device is known; asked before, it was about an empty
+# UDID and decided whether teardown shut down somebody else's simulator.
+[ "$(simulator_state "$UDID_S")" = Booted ] && WAS_BOOTED_LOCAL=yes
+# The device, not the machine (2026-09-26).
+SMIX="$ROOT/target/release/smix" e2e_yield_if_held "$UDID_S"
 log "studio sim boot + runner up ($UDID_S, port $STUDIO_PORT)"
 ( cd "$ROOT" && target/release/smix sim boot "$UDID_S" ) || true
 ( cd "$ROOT" && target/release/smix runner up "$UDID_S" --bundle com.apple.Preferences --runner-port "$STUDIO_PORT" ) \
   || fail "runner up did not reach ready on studio port $STUDIO_PORT"
 
 log "resolve $MINI_SIM UDID on $HOST"
-SIM_LINES_M="$(rssh "cd '$REMOTE_REPO' && target/release/smix sim list 2>/dev/null" | grep -F "$MINI_SIM")" \
+SIM_LINES_M="$(rssh "cd '$REMOTE_REPO' && SMIX_MACHINE_DIR=\$(mktemp -d) target/release/smix sim list 2>/dev/null" | grep -F "$MINI_SIM")" \
   || fail "$MINI_SIM not in remote sim list"
 [ "$(printf '%s\n' "$SIM_LINES_M" | wc -l | tr -d ' ')" = 1 ] \
   || fail "$MINI_SIM matches more than one sim list line: $SIM_LINES_M"
 UDID_M="$(printf '%s\n' "$SIM_LINES_M" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')" \
   || fail "no UDID in remote sim list line: $SIM_LINES_M"
+[ "$(simulator_state "$UDID_M" rssh)" = Booted ] && WAS_BOOTED_REMOTE=yes
+e2e_yield_if_held "$UDID_M" rssh "cd '$REMOTE_REPO' && target/release/smix"
 log "$HOST sim boot + runner up ($UDID_M, default port)"
 rssh "cd '$REMOTE_REPO' && target/release/smix sim boot $UDID_M" || true
 rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID_M --bundle com.apple.Preferences" \
@@ -226,12 +228,12 @@ nodes:
   - name: c5-studio
     host: localhost
     repo: $ROOT
-    devices: [$UDID_S]
+    devices: [{ device: $UDID_S, platform: ios }]
     runnerPort: $STUDIO_PORT
   - name: c5-mini
     host: $HOST
     repo: $REMOTE_REPO
-    devices: [$UDID_M]
+    devices: [{ device: $UDID_M, platform: ios }]
 YAML
 ( cd "$ROOT" && target/release/smix run "$FLOW_A" "$FLOW_B" \
     --nodes "$WORK/nodes.yaml" --debug-output "$WORK/pull" >"$WORK/merged.json" ) \

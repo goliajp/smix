@@ -1,17 +1,14 @@
-# Sourced by the devicectl e2e scripts. Two questions about a device, both
-# answered by `devicectl list devices` and both needed before driving it.
+# Sourced by the devicectl e2e scripts. Two questions about a device,
+# both needed before driving it: a simulator's state (the library's
+# `simulator_state`, which this sources rather than copies) and a phone's
+# tunnel, answered by `devicectl list devices`.
 #
 # Booting and shutting down are NOT here. `teardown-restores-scan` reads
 # each script for its own shutdown and its own record of who booted the
 # device; a shutdown moved behind a helper is one that scan stops seeing.
 
-# simulator_state <UDID> → Booted | Shutdown | … | absent
-simulator_state() {
-  xcrun simctl list devices -j | python3 -c '
-import json, sys
-u = sys.argv[1]
-print(next((d["state"] for v in json.load(sys.stdin)["devices"].values() for d in v if d["udid"] == u), "absent"))' "$1"
-}
+# shellcheck source=../../lib/e2e-devices.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/e2e-devices.sh"
 
 # phone_tunnel_state <UDID> → connected | disconnected | … | absent
 phone_tunnel_state() {

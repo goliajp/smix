@@ -211,12 +211,22 @@ async fn resolve_aimed(
         let tree = driver.tree(include).await?;
         match resolve_to_norm_coord(&tree, selector) {
             Ok(coord) => {
-                let aimed = resolve_selector(&tree, selector).map(|n| crate::HitElement {
-                    identifier: n.identifier.clone().unwrap_or_default(),
-                    label: n.label.clone().unwrap_or_default(),
-                    frame: (n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h),
-                });
-                return Ok((coord, aimed));
+                let aimed = resolve_selector(&tree, selector).map(crate::hit_element);
+                // Aimed only at a target that has stopped moving (the same
+                // wait as iOS). The tree is in pixels.
+                let ppp = crate::Driver::pixels_per_point(driver).await?;
+                let (nx, ny, aimed) = crate::settle::until_aim_settles(
+                    (coord.0, coord.1, aimed),
+                    || async {
+                        let tree = driver.tree(include).await?;
+                        Ok(crate::aim_in(&tree, selector))
+                    },
+                    ppp,
+                    crate::settle::POLL,
+                    crate::settle::LIMIT,
+                )
+                .await?;
+                return Ok(((nx, ny), aimed));
             }
             Err(HostResolveError::NotFound) => {
                 if start.elapsed() > timeout {

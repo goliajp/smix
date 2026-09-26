@@ -861,7 +861,7 @@ class SmixHttpServer(
     /// to reach it, watched rather than sampled.
     ///
     /// A Compose field publishes to its accessibility node
-    /// asynchronously — the reason `awaitLanded` watches a fill. One read
+    /// asynchronously — the reason `awaitChunk` watches a fill. One read
     /// straight after `ACTION_SET_TEXT` caught `compose_input` still
     /// holding all fifteen characters it was being emptied of, and the
     /// fill that followed was refused as "the clear did not happen"
@@ -1317,38 +1317,32 @@ class SmixHttpServer(
         val whichField = focused.viewIdResourceName
             ?: focused.className?.toString()
             ?: "an unnamed node"
-        runShellCommand(RunnerWire.inputTextCommand(text))
-        device.waitForIdle(500)
-
-        // Read the field back. `input text` cannot report a miss, so the
-        // only honest evidence that the characters arrived is the node
-        // saying so.
-        val after = awaitLanded(focused, before, text, masked, TEXT_LAND_MS)
-        focused.recycle()
-        val landed = RunnerWire.textLanded(before, after, text, masked)
-        if (!landed) {
-            return errorJson(
-                Response.Status.INTERNAL_ERROR,
-                "text_did_not_land",
-                if (masked) {
-                    "input-text: dispatched ${text.length} characters into a " +
-                        "masked field and it grew by " +
-                        "${after.length - before.length} (from ${before.length} " +
-                        "to ${after.length}) after waiting ${TEXT_LAND_MS}ms. " +
-                        "The field was $whichField. A " +
-                        "masked node reports one character per character held " +
-                        "and never the characters, so the length difference is " +
-                        "the only evidence there is, and it does not add up."
-                } else {
-                    "input-text: typed \"$text\" into $whichField, which held " +
-                        "\"$before\" and holds \"$after\" after waiting ${TEXT_LAND_MS}ms. " +
-                        "That is not what it held with the text put in once: " +
-                        "characters are missing, or there are characters this step " +
-                        "did not type."
-                },
-            )
+        // In chunks, each read back before the next. One `input text` of
+        // 120 characters came back short under load (2 of 10 whole at load
+        // 11–15) while 64 held every time; a chunk read back on its own can
+        // also tell a dropped tail, which typing its missing part repairs,
+        // from anything else, which typing more cannot.
+        val result = RunnerWire.typeInChunks(
+            text,
+            before,
+            masked,
+            RunnerWire.INPUT_CHUNK_POINTS,
+            RunnerWire.INPUT_CHUNK_RETYPES,
+        ) { sent, base, chunk ->
+            runShellCommand(RunnerWire.inputTextCommand(sent))
+            device.waitForIdle(500)
+            awaitChunk(focused, base, chunk, masked, TEXT_LAND_MS)
         }
-        val body = RunnerWire.inputTextBody(landed, text, before, after, masked)
+        focused.recycle()
+        val done = when (result) {
+            is RunnerWire.ChunkedResult.Failed -> return chunkDidNotLand(
+                text, whichField, masked, before, result.held, result.chunk, result.of, result.retries,
+            )
+            is RunnerWire.ChunkedResult.Done -> result
+        }
+        val after = done.held
+        val landed = RunnerWire.textLanded(before, after, text, masked)
+        val body = RunnerWire.inputTextBody(landed, text, before, after, masked, done.chunks, done.retyped)
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
@@ -1536,45 +1530,54 @@ class SmixHttpServer(
     private fun AccessibilityNodeInfo.canTakeText(): Boolean =
         actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
 
-    /// Wait for the field to be holding `text`, up to a budget.
-    ///
-    /// One read after a fixed settle is not enough and cannot be made
-    /// enough by lengthening the settle: a Compose field publishes to
-    /// its accessibility node asynchronously, and a consumer measured
-    /// 17, 15 and 0 characters from the same action. Any single instant
-    /// can catch it mid-publish, so the question "did the characters
-    /// arrive" is answered by watching until they have, or until there
-    /// is no more time to wait.
-    ///
-    /// Returns the last reading either way, so a refusal can say what
-    /// it actually saw.
-    /// Poll until the field says the characters arrived, by whatever
-    /// question that field can answer.
-    ///
-    /// This used to poll on `contains`, which a masked field can never
-    /// satisfy: every masked fill burned the whole budget and then
-    /// reported the last thing it read. That is also why the same
-    /// defect showed two faces — a slow publication read back as
-    /// nothing at all, a settled one as the right number of bullets.
-    /// Polling on the verdict itself returns as soon as it is true and
-    /// gives the slow case the full budget it was already spending.
-    private fun awaitLanded(
+    /// Read the field until the chunk has landed whole, or the budget
+    /// runs out, and return what it held last.
+    private fun awaitChunk(
         node: AccessibilityNodeInfo,
-        before: String,
-        dispatched: String,
+        base: String,
+        chunk: String,
         masked: Boolean,
         budgetMs: Long,
     ): String {
         val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
-        var last = ""
+        var last: String
         while (true) {
             node.refresh()
             last = FieldText.held(node.text, node.isShowingHintText)
-            if (RunnerWire.textLanded(before, last, dispatched, masked)) return last
+            if (RunnerWire.chunkOutcome(base, last, chunk, masked) == RunnerWire.ChunkOutcome.Landed) return last
             if (android.os.SystemClock.elapsedRealtime() >= deadline) return last
             Thread.sleep(50)
         }
     }
+
+    /// The failure for a chunk that did not land: which chunk, how many
+    /// times its tail was typed again, and what the field held.
+    private fun chunkDidNotLand(
+        text: String,
+        whichField: String,
+        masked: Boolean,
+        before: String,
+        now: String,
+        index: Int,
+        of: Int,
+        retries: Int,
+    ): Response = errorJson(
+        Response.Status.INTERNAL_ERROR,
+        "text_did_not_land",
+        if (masked) {
+            "input-text: chunk ${index + 1} of $of did not land in the masked field " +
+                "$whichField after $retries retype(s) of its missing tail: it went " +
+                "from ${before.length} to ${now.length} characters for ${text.length} " +
+                "typed. A masked node reports its length and never its characters, " +
+                "so the length is the only evidence there is, and it does not add up."
+        } else {
+            "input-text: typed \"$text\" into $whichField in $of chunk(s); chunk " +
+                "${index + 1} did not land after $retries retype(s) of its missing " +
+                "tail. The field held \"$before\" and holds \"$now\". Characters are " +
+                "missing from the middle, or there are characters this step did not " +
+                "type — neither is repaired by typing more."
+        },
+    )
 
     /// Empty the focused field in one request.
     ///

@@ -131,7 +131,7 @@ run_ios() {
   port_free "$IOS_PORT" || cannot_judge "iOS port $IOS_PORT already serves a runner — set SMIX_C7_IOS_PORT"
 
   step "iOS: boot $IOS_ALIAS, install, runner up (no --platform anywhere after)"
-  if ! xcrun simctl list devices 2>/dev/null | grep -q "$IOS_UDID.*Booted"; then
+  if [ "$(simulator_state "$IOS_UDID")" != Booted ]; then
     "$SMIX" sim boot "$IOS_UDID" >"$WORK/ios-boot.log" 2>&1 || fail "iOS boot: $(tail -3 "$WORK/ios-boot.log")"
     IOS_WE_BOOTED=1
   fi
@@ -221,6 +221,15 @@ if [ -n "$AND_SERIAL" ] && [ "$AND_WE_UPPED" = 1 ]; then
   log "Android OK: unresolved \${$MISSING} → non-zero + 'undefined variable', no literal typed"
 
   step "Android: tree human output prints text= (⑤ integration touch)"
+  # The subject first. The step above force-stopped the app, so the tree
+  # here was whatever came to the front next — the launcher, mid-redraw
+  # or not — and a launcher with no labels drawn yet read as "⑤ regressed"
+  # once in a release tier (2026-09-25). The claim is about the fixture's
+  # tree, so the fixture is brought back and seen before it is read.
+  "$SMIX" sim launch "$AND_SERIAL" "$AND_APPID" >"$WORK/relaunch.log" 2>&1 \
+    || fail "could not bring $AND_APPID back to the front: $(tail -2 "$WORK/relaunch.log")"
+  wait_for_textfield "$AND_PORT" "$AND_SERIAL" \
+    || fail "$AND_APPID is not in front after relaunch — the tree below would be about something else"
   HUMAN="$(SMIX_RUNNER_PORT="$AND_PORT" "$SMIX" tree --device "$AND_SERIAL" 2>&1 || true)"
   printf '%s' "$HUMAN" | grep -q 'text=' \
     || fail "Android human tree has no text= — ⑤ regressed. It printed:

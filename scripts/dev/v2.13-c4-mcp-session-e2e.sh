@@ -15,6 +15,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 # The server from the same build as the CLI: this script drives both, and
 # it used to take a release server beside a debug command line.
 MCP="$SMIX_MCP"
@@ -36,8 +38,6 @@ cannot_judge() { printf '[c4-mcp] %s\n' "$*" >&2; printf '%s\n' "C4-MCP-SESSION-
 [ -x "$MCP" ] || fail "smix-mcp missing: $MCP (cargo build -p smix-mcp --release)"
 [ -x "$SMIX" ] || fail "smix missing: $SMIX"
 
-log "guard: no batch owner on this machine (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active — yielding"
 
 # Its own variable first, then the one the whole tier is driven by.
 #
@@ -50,6 +50,7 @@ if [ -z "$UDID" ]; then
   UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" || cannot_judge "set SMIX_C4_SIM to a UDID"
 fi
 log "device: $UDID"
+e2e_yield_if_held "$UDID"
 
 WORK="$(mktemp -d)"
 cleanup() {
@@ -143,8 +144,10 @@ case "$RELEASED" in
   *) fail "smix_release did not release; got: $RELEASED" ;;
 esac
 
-if pgrep -f "xcodebuild.*SmixRunner" >/dev/null; then
-  fail "a runner survived smix_release"
+# This device's runner only: another project's runner on its own simulator is
+# not something smix_release was asked to let go (2026-09-26).
+if pgrep -f "xcodebuild.*SmixRunner.*id=$UDID" >/dev/null; then
+  fail "a runner on $UDID survived smix_release"
 fi
 
 log "C4-MCP-SESSION-PASS"

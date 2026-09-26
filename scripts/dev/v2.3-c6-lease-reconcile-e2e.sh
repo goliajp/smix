@@ -70,7 +70,7 @@ UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1 || true)"
 # way to acquire the right to shut it down — what matters is whether it
 # was already up when we arrived.
 WAS_BOOTED=no
-xcrun simctl list devices 2>/dev/null | grep -q "$UDID.*Booted" && WAS_BOOTED=yes
+[ "$(simulator_state "$UDID")" = Booted ] && WAS_BOOTED=yes
 [ -n "$UDID" ] || fail "alias $ALIAS is not registered — see \`smix sim list\`"
 log "device $ALIAS = $UDID"
 if pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1; then
@@ -220,12 +220,7 @@ pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1 \
   && fail "xcodebuild still driving $UDID after settle"
 curl -s -m 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 \
   && cannot_judge "port $PORT still answers after settle"
-STATE="$(xcrun simctl list devices -j | python3 -c "
-import json,sys
-for rt, devs in json.load(sys.stdin)['devices'].items():
-    for d in devs:
-        if d['udid'] == '$UDID': print(d['state'])
-")"
+STATE="$(simulator_state "$UDID")"
 [ "$STATE" = "Shutdown" ] || fail "device is $STATE after settle, expected Shutdown"
 log "device shut down — the boot we performed was closed too"
 sleep 3

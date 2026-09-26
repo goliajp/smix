@@ -103,7 +103,7 @@ fn a_flow_missing_locally_fails_before_any_ssh() {
     let roster = write_file(
         dir.path(),
         "n.yaml",
-        "nodes:\n  - name: far\n    host: 192.0.2.1\n    repo: /repo\n    devices: [sim-1]\n",
+        "nodes:\n  - name: far\n    host: 192.0.2.1\n    repo: /repo\n    devices: [{ device: sim-1, platform: ios }]\n",
     );
     let missing = dir.path().join("no-such-flow.yaml");
 

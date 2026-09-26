@@ -84,9 +84,19 @@ UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1 || true)"
 # way to acquire the right to shut it down — what matters is whether it
 # was already up when we arrived.
 WAS_BOOTED=no
-xcrun simctl list devices 2>/dev/null | grep -q "$UDID.*Booted" && WAS_BOOTED=yes
+[ "$(simulator_state "$UDID")" = Booted ] && WAS_BOOTED=yes
 [ -n "$UDID" ] || fail "alias $ALIAS is not registered"
 log "device $ALIAS = $UDID"
+
+# From here on the ledger is this script's own, and so is the directory
+# it runs in. It stages a killed session by rewriting a ledger file (6b),
+# which must never be a file every smix on the machine reads; and it ran
+# in the checkout, so an old checkout ledger for the same device made
+# reconcile refuse at step 6 — correctly (§9#9), and on every run on this
+# machine (2026-09-25, SL1). Neither is what this checks. The device was
+# resolved above, read-only; a simulator is addressable by UDID unregistered.
+e2e_isolate_machine "$OUTDIR"
+cd "$OUTDIR"
 if pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1; then
   fail "a runner is already driving $UDID — this test would tear down someone's work"
 fi

@@ -18,6 +18,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # startup, every flow and teardown alike through clap's env.
 # shellcheck source=/dev/null
 . "$ROOT/scripts/lib/gate-port.sh"
+# shellcheck source=../lib/e2e-devices.sh
+. "$ROOT/scripts/lib/e2e-devices.sh"
 PORT="$SMIX_RUNNER_PORT"
 # This tree's binary unless SMIX_BIN names another; it was the PATH's.
 # shellcheck source=../lib/e2e-binary.sh
@@ -34,7 +36,7 @@ command -v node  >/dev/null || fail "node required"
 case "$SMIX_E2E_UDID" in
   booted|all|"") fail "SMIX_E2E_UDID must be an explicit UDID, got '$SMIX_E2E_UDID'" ;;
 esac
-xcrun simctl list devices 2>/dev/null | grep -q "$SMIX_E2E_UDID" \
+[ "$(simulator_state "$SMIX_E2E_UDID")" != absent ] \
   || fail "UDID $SMIX_E2E_UDID not found in simctl device list"
 
 # batch-owner: do not stomp a runner someone else brought up.

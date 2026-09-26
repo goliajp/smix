@@ -184,7 +184,7 @@ began clearing first, and still wrong past fifty characters.
 ### `POST /input-text` (Android)
 
 Body: `{ text: string, focusRect?: [nx, ny, nw, nh] }`
-Response: `{ ok: bool, status: "ok" | "text_did_not_land", text, before, held }`
+Response: `{ ok: bool, status: "ok" | "text_did_not_land", text, before, held, chunks, retyped }`
 — for a masked field `beforeLength` and `heldLength` in place of `before`
 and `held`.
 
@@ -194,6 +194,14 @@ put in once, at the caret. A field holding characters this request did
 not type is not `ok`, and neither is one missing some. A masked field
 cannot be read, so its length is the whole of the judgement, and its
 content never goes on the wire.
+
+The text goes in 32 characters at a time, each chunk read back before
+the next: one long `input text` drops characters under load. A chunk
+whose end did not arrive has only its missing part typed again, up to
+three times; `chunks` is how many there were and `retyped` how many of
+those repairs it took. A chunk missing characters from its middle, or
+holding one nobody typed, is not repaired — the failure names the
+chunk and what the field held.
 
 ### `POST /press-key`
 

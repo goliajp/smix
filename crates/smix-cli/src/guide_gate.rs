@@ -1403,6 +1403,37 @@ fn this_gate_runs_where_it_must() {
     }
 }
 
+/// Every node roster a guide prints parses with the roster parser.
+///
+/// A roster is not a flow, so the flow checks above skip it — and the
+/// shape it documents changed in 11.0 (each device carries its platform)
+/// with nothing to notice if the guide kept the old one. At least one
+/// roster must be found: a walk that finds none is looking at nothing.
+#[test]
+fn every_roster_a_guide_prints_parses() {
+    let mut found = 0usize;
+    for (page, blocks) in guide_blocks() {
+        for (i, block) in blocks.iter().enumerate() {
+            let is_roster = block.trim_start().starts_with("nodes:")
+                && block.lines().any(|l| l.trim_start().starts_with("host:"));
+            if !is_roster {
+                continue;
+            }
+            found += 1;
+            if let Err(e) = crate::federation::parse_nodes(block) {
+                panic!(
+                    "{page} block {} is a roster the parser refuses: {e}\n{block}",
+                    i + 1
+                );
+            }
+        }
+    }
+    assert!(
+        found >= 1,
+        "no node roster found in the guides — the walk is looking at nothing"
+    );
+}
+
 /// Print what the corpus and the list came to, for the checkpoint
 /// command to read.
 ///

@@ -254,6 +254,15 @@ async fn android_runner_server(shot: ResponseTemplate) -> MockServer {
         .respond_with(shot)
         .mount(&server)
         .await;
+    // A tap waits for its target to stop moving, and an Android tree is in
+    // pixels: the host asks how many make a point.
+    Mock::given(method("GET"))
+        .and(path("/display"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "width": 1080, "height": 2340, "pixelsPerPoint": 2.75
+        })))
+        .mount(&server)
+        .await;
     server
 }
 

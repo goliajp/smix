@@ -58,7 +58,7 @@ UDID="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1 || true)"
 # way to acquire the right to shut it down — what matters is whether it
 # was already up when we arrived.
 WAS_BOOTED=no
-xcrun simctl list devices 2>/dev/null | grep -q "$UDID.*Booted" && WAS_BOOTED=yes
+[ "$(simulator_state "$UDID")" = Booted ] && WAS_BOOTED=yes
 [ -n "$UDID" ] || fail "alias $ALIAS is not registered"
 log "device $ALIAS = $UDID"
 if pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1; then
@@ -71,15 +71,19 @@ if pgrep -f "xcodebuild.*id=$UDID" >/dev/null 2>&1; then
   echo "C9-LEDGER-TEARDOWN-SKIP"
   exit 0
 fi
-# The default runner port is shared with every other smix session on this
-# machine, so a busy port is not this test's failure to report.
-if curl -s -m 2 "http://127.0.0.1:${SMIX_RUNNER_PORT:-22087}/health" >/dev/null 2>&1; then
-  log "port ${SMIX_RUNNER_PORT:-22087} already answers /health — another session is using it"
-  log "re-run with SMIX_RUNNER_PORT=<free port>"
-  echo "C9-LEDGER-TEARDOWN-SKIP"
-  exit 0
-fi
-
+# A port, a ledger and a working directory of its own. This drives
+# `smix down`, which settles every device the ledger says smix booted —
+# run against the machine's ledger it shut down the simulator and the
+# emulator a release had booted and was using (2026-09-25), and the same
+# ledger holds every other smix session's rows. 22087, the default it used,
+# is every smix's port on this machine.
+# shellcheck source=/dev/null
+. "$ROOT/scripts/lib/gate-port.sh"
+WORK="$(mktemp -d)"
+e2e_isolate_machine "$WORK"
+cd "$WORK"
+"$SMIX" init --device "$UDID" --alias c9-teardown >/dev/null 2>&1 \
+  || fail "could not make a workspace for $UDID in $WORK"
 
 cleanup() {
   # Not silenced: a teardown that fails leaves a runner behind, and the
@@ -92,6 +96,7 @@ cleanup() {
   if [ "$WAS_BOOTED" != "yes" ]; then
     "$SMIX" sim shutdown "$UDID" >/dev/null 2>&1 || true
   fi
+  rm -rf "$WORK"
 }
 trap cleanup EXIT
 
