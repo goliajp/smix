@@ -1,10 +1,7 @@
 .DS_Store
-
-
 .env
 .env.local
 .idea/
-.scratch/
 .smix/
 .smix/runner/
 .smix/trace/
@@ -54,9 +51,6 @@ __pycache__/
 # cargo-fuzz run artifacts — regenerated on every fuzz-smoke run
 crates/*/fuzz/corpus/
 crates/*/fuzz/artifacts/
-
-# Release-gate and scratch output (corpus logs, diagnostic dumps).
-.tmp/
 
 # Built launcher output and binaries staged for packing.
 npm/smix-cli/dist/

@@ -17,7 +17,7 @@
 #   - Brings `smix runner up` (auto-syncs sources on version drift; §D2)
 #   - Runs each yaml; a non-zero exit fails the gate immediately
 #   - After completion, dumps `smix diagnostic dump --json` to a
-#     timestamped file in .tmp/release-gate/ for post-mortem
+#     timestamped file in target/release-gate/ for post-mortem
 #   - Never leaves the sim in a modified state on refusal — teardown
 #     runs regardless via trap
 #
@@ -147,7 +147,7 @@ fi
 . "$REPO_ROOT/scripts/lib/crash-evidence.sh"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
-LOG_DIR="$REPO_ROOT/.tmp/release-gate/$STAMP"
+LOG_DIR="$REPO_ROOT/target/release-gate/$STAMP"
 mkdir -p "$LOG_DIR"
 
 # Which runtime this ran against, because a verdict without it cannot be
