@@ -2,7 +2,7 @@
 
 All notable changes to the `smix` workspace are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) at the wire, ABI, and CLI surface.
 
-## [11.0.0] — 2026-09-25
+## [11.0.0] — 2026-09-26
 
 Most flows need no change. Five things can make one behave differently:
 an unread key in `runFlow:` / `repeat:` / `when:` / `while:` / a selector
