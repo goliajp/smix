@@ -72,7 +72,10 @@ rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && cannot_judge "user build 
 # a gate red for something the product did not do, and a gate that goes
 # red for reasons unrelated to the code is one people stop reading. The
 # line above this one already treats a busy batch owner as a skip.
-pgrep -f 'cargo build' >/dev/null && cannot_judge "cargo build in flight on studio — yielding"
+# The process itself must be cargo: `pgrep -f` also matched a shell or an
+# ssh whose command line merely mentions a cargo build running elsewhere.
+ps -axo args= | awk '$1 ~ /(^|\/)cargo$/ && $2 == "build" { found = 1 } END { exit !found }' \
+  && cannot_judge "cargo build in flight on studio — yielding"
 
 log "guard: studio runner port $STUDIO_PORT free"
 lsof -nP -i ":$STUDIO_PORT" >/dev/null 2>&1 && cannot_judge "port $STUDIO_PORT busy on studio — yielding"
@@ -80,9 +83,6 @@ lsof -nP -i ":$STUDIO_PORT" >/dev/null 2>&1 && cannot_judge "port $STUDIO_PORT b
 [ -f "$ROOT/$FLOW_A" ] || fail "corpus flow missing: $FLOW_A"
 [ -f "$ROOT/$FLOW_B" ] || fail "corpus flow missing: $FLOW_B"
 
-log "guard: SMIX_UDID / SMIX_RUNNER_PORT not exported (clap counts env values as present -> --nodes conflict)"
-[ -z "${SMIX_UDID:-}" ] || fail "SMIX_UDID is exported — unset it before a --nodes run"
-[ -z "${SMIX_RUNNER_PORT:-}" ] || fail "SMIX_RUNNER_PORT is exported — unset it before a --nodes run"
 
 WORK="$(mktemp -d)"
 mkdir -p "$WORK/pull"
@@ -237,7 +237,11 @@ nodes:
     repo: $REMOTE_REPO
     devices: [{ device: $UDID_M, platform: ios }]
 YAML
-( cd "$ROOT" && target/release/smix run "$FLOW_A" "$FLOW_B" \
+# clap reads SMIX_UDID / SMIX_RUNNER_PORT as if --device / --runner-port
+# were given, and either conflicts with --nodes. gate-port.sh exports the
+# port for this script's own calls, and a caller may export either, so
+# the one command that must not see them is run without them.
+( cd "$ROOT" && env -u SMIX_UDID -u SMIX_RUNNER_PORT target/release/smix run "$FLOW_A" "$FLOW_B" \
     --nodes "$WORK/nodes.yaml" --debug-output "$WORK/pull" >"$WORK/merged.json" ) \
   || fail "smix run --nodes exited non-zero — the federation lane did not close"
 
