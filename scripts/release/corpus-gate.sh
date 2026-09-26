@@ -252,15 +252,15 @@ echo "corpus gate: bringing runner up --bundle $SMIX_CORPUS_BUNDLE (auto-syncs s
 FAILURES=()
 FLAKY=()
 
-# Flows whose FLAKE is excused, from the list that has to carry a
-# measured rate and a history for each one (known-unstable-scan enforces
-# that). They still RUN and a FAIL still fails the gate — what is
-# excused is "needed a retry", not "did not work". Skipping them instead
-# would stop the data accruing, and then nobody could tell if a fix
-# landed.
+# Flows whose FLAKE is excused, from a local list named by
+# SMIX_KNOWN_UNSTABLE that must carry a measured rate and a history for
+# each one (known-unstable-scan enforces that). Without one, nothing is
+# excused. Excused flows still RUN and a FAIL still fails the gate — what
+# is excused is "needed a retry", not "did not work".
 EXCUSED=""
-if [[ -r "$CORPUS_DIR/known-unstable.md" ]]; then
-  EXCUSED="$(sed -n 's/^| `\([a-z0-9-]*\)` |.*/\1/p' "$CORPUS_DIR/known-unstable.md")"
+if [[ -n "${SMIX_KNOWN_UNSTABLE:-}" ]]; then
+  [[ -r "$SMIX_KNOWN_UNSTABLE" ]] || { echo "error: SMIX_KNOWN_UNSTABLE names $SMIX_KNOWN_UNSTABLE, which cannot be read" >&2; exit 3; }
+  EXCUSED="$(sed -n 's/^| `\([a-z0-9-]*\)` |.*/\1/p' "$SMIX_KNOWN_UNSTABLE")"
 fi
 EXCUSED_HIT=()
 for yaml in "${YAMLS[@]}"; do
@@ -362,7 +362,7 @@ done
 # reduction in what this gate promises should be visible in the output
 # that reports the result, not only in a file someone may read.
 for f in "${EXCUSED_HIT[@]+"${EXCUSED_HIT[@]}"}"; do
-  echo "  - EXCUSED $f (known-unstable; see $CORPUS_DIR/known-unstable.md)"
+  echo "  - EXCUSED $f (known-unstable; see $SMIX_KNOWN_UNSTABLE)"
 done
 
 passed=$(( ${#YAMLS[@]} - ${#FAILURES[@]} - ${#FLAKY[@]} ))

@@ -97,7 +97,7 @@ def main() -> int:
     problems: list[str] = []
 
     for name in selftests:
-        stem = name[: -len(".py")]  # e.g. contract-scan.test
+        stem = name[: -len(".py")]  # e.g. all-gates.test
         if stem in text or name in text:
             continue
         if name in DRIVEN_ELSEWHERE:

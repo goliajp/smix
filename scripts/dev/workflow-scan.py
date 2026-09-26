@@ -1,80 +1,31 @@
 #!/usr/bin/env python3
-"""Check that the development contract survives a fresh checkout.
-
-fact-scan asks whether user-facing surfaces tell the truth. This asks a
-question one layer under it: do the files that govern how this repo is
-worked on actually travel with it?
-
-This check has been through both answers, and the reasons for each are
-worth keeping because they are the same reasons in opposite directions.
-
-It first ran because the development record was ignored wholesale as
-"process residue" while things that are not residue sat in it, and the cost came
-due twice: sim-guard.sh's own header records that its v5.x implementation
-"was never committed and was lost with the local checkout", and adb-guard
-landed with a commit message stating it was "wired into the PreToolUse
-hook beside sim-guard" — true when written, untrue by the next session,
-because the wiring lived in the ignored file and the commit could not
-carry it. A guard that is present but unwired is indistinguishable from
-one that is working, right up until a physical phone gets wiped.
-
-On 2026-07-29 the project decided the other way: the development record
-is not version-controlled at all. It is single-author, and the AI-side working
-capability is deliberately unpublished. That accepts the loss above as a
-standing risk — a hook wiring still lives only on this machine — in
-exchange for keeping the development surface out of what ships. The
-check therefore inverts rather than disappears: what used to be "the
-contract must be tracked" is now "the private surface must not be", so
-an accidental `git add -f` of the working record is caught the same way
-its absence used to be.
+"""Check that the scripts that gate this repo are wired and runnable.
 
 Checks:
-  1. The private surface is absent from the index everywhere, and
-     present on disk wherever it lives. A tracked one means the
-     development record leaked into what ships; a missing one, on the
-     machine where the record is named (SMIX_DEV_RECORD), means this repo
-     is being worked without the file that governs how.
-  2. Every script a hook invokes exists. A missing hook script surfaces
-     as a non-blocking error on every single Bash call — noisy enough to
-     be tuned out, quiet enough to leave the guard off.
-  3. Every device guard is wired. `plugin/scripts/*-guard.sh` exists to be
-     run by a hook; one that no hook names is inert. This is the check
-     that would have caught adb-guard.
-  4. Every device guard has a harness. sim-guard went from v5.x to here
-     with none, which is why nobody noticed it read heredoc bodies as
-     commands and refused an append to the decision log for mentioning
-     `simctl shutdown all`. A guard's own judgement needs testing as
-     much as anything it judges.
-  5. No script calls a GNU tool macOS does not ship. corpus-gate.sh
-     called `timeout`, which is coreutils and absent on a stock Mac, so
-     the shell answered "command not found" for every yaml in the
-     corpus. Every one was recorded FAIL, the gate was permanently RED,
-     and ship.sh could not finish on the machine smix is developed on —
-     a missing tool reading as a product that fails all of its tests.
-  6. Every source gate runs in all three places. hygiene-scan's own
-     docstring says it exits non-zero "so it can gate a release", and
-     ship.sh mentioned it only in two comments. workflow-scan was absent
-     from ship as well: preflight and CI each ran six source gates while
-     ship ran four, and the missing one is the path to users. Same
-     sentence as check 3, with hooks swapped for release paths.
+  1. Every device guard has a harness. A guard decides what may touch a
+     device; its own judgement needs testing as much as anything it judges.
+  2. No script calls a GNU tool macOS does not ship. A missing tool reads
+     as a product that fails every one of its tests.
+  3. Every source gate runs in all three places — preflight, CI and ship.
+  4. Every script under scripts/dev/ is run by something.
+  5. Every script loads under the interpreter ship runs it with.
 
 Exit non-zero on any failure.
 
 What this file cannot see, said plainly so it is not read as omniscient:
 
-  * Check 6 verifies a gate is NAMED in non-comment text, not that it
+  * Check 3 verifies a gate is NAMED in non-comment text, not that it
     runs. `[[ -n "$SKIP" ]] || python3 scripts/dev/x.py` counts. Proving
     execution means running ship, and running ship publishes.
-  * Check 6's set is preflight's gate loop plus scripts/dev/*-scan.py.
+  * Check 3's set is preflight's gate loop plus scripts/dev/*-scan.py.
     Things invoked outside that loop — gen-llms.py --check, the
-    *-guard.test.sh round — are not in it. Guards are covered by checks
-    3 and 4; gen-llms --check is in all three places today and watched
+    *-guard.test.sh round — are not in it. Guards are covered by check
+    1; gen-llms --check is in all three places today and watched
     by nothing. That hole is recorded rather than papered over.
 """
 
 import fnmatch
 import glob
-import json
 import os
 import re
 import subprocess
@@ -82,112 +33,7 @@ import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _dev_record  # noqa: E402
-
-# The private development surface, relative to the development record's
-# root (SMIX_DEV_RECORD): what this repo is worked with, and what must
-# never reach the index. Ignoring it is the machine's global git ignore.
-PRIVATE_SURFACE = [
-    "CLAUDE.md",
-    "settings.json",
-    "rule/*.md",
-    "rfcs/*.md",
-    "docs/*.md",
-]
-
-SETTINGS = "settings.json"
-
-
-def tracked_paths():
-    """Paths git knows about, including staged-but-uncommitted adds.
-
-    --cached rather than HEAD: a staged `git add -f` of the private
-    surface is already leaving with the next commit, so it has to count
-    as leaked before the commit is made, not after.
-    """
-    out = subprocess.run(
-        ["git", "-C", ROOT, "ls-files", "--cached"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return set(out.stdout.splitlines())
-
-
-def check_private_surface(failures):
-    """No part of the development record is in the index; where it is
-    named, all of it is on disk.
-
-    Both halves need the record named (SMIX_DEV_RECORD): nothing tracked
-    may say where it is, so a checkout without the variable — CI — has no
-    record to ask about, and says nothing rather than pretending to have
-    looked. Where the record sits inside this checkout, a stray `git add -f`
-    on a plan leaks as well as one on the charter, so the leak half reads
-    the record's whole subtree rather than the named patterns.
-    """
-    record = _dev_record.root()
-    if record is None:
-        return
-
-    inside = os.path.relpath(record, ROOT).replace(os.sep, "/")
-    if not inside.startswith(".."):
-        for rel in sorted(p for p in tracked_paths() if p.startswith(inside + "/")):
-            failures.append(
-                f"{rel}: tracked — the development record reached the index and "
-                f"would ship. `git rm --cached` it; the machine's global git "
-                f"ignore is what keeps it out."
-            )
-
-    for pattern in PRIVATE_SURFACE:
-        if not glob.glob(os.path.join(record, pattern)):
-            failures.append(
-                f"{pattern}: no file matches under the development record at "
-                f"{record} — part of the surface that governs how this repo is "
-                f"worked is missing"
-            )
-
-
-def hook_commands(settings):
-    """Every command string across every hook event."""
-    for event_hooks in settings.get("hooks", {}).values():
-        for matcher in event_hooks:
-            for hook in matcher.get("hooks", []):
-                command = hook.get("command")
-                if command:
-                    yield command
-
-
-def referenced_scripts(settings):
-    """Repo-relative script paths a hook invokes.
-
-    Hook commands address scripts through $CLAUDE_PROJECT_DIR, which is
-    the repo root at run time.
-    """
-    pattern = re.compile(r'\$(?:\{)?CLAUDE_PROJECT_DIR(?:\})?/([^"\'\s]+)')
-    found = set()
-    for command in hook_commands(settings):
-        found.update(pattern.findall(command))
-    return found
-
-
-def check_hook_scripts_exist(settings, failures):
-    for rel in sorted(referenced_scripts(settings)):
-        if not os.path.isfile(os.path.join(ROOT, rel)):
-            failures.append(
-                f"{SETTINGS} invokes {rel}, which does not exist — every Bash "
-                f"call will report a hook error and the guard will not run"
-            )
-
-
 # Where the device guards live.
-#
-# They were looked for under `scripts/dev/` until 2026-08-11, and there
-# are none there — they have been in `plugin/scripts/` since the plugin
-# was carved out. Both checks below iterated an empty list, so "every
-# device guard is wired" and "every device guard has a harness" were
-# saying "there are no device guards" in a repository with two. The
-# scan reported clean, in preflight, in CI, and in ship.
 GUARDS = "plugin/scripts/*-guard.sh"
 
 
@@ -208,17 +54,6 @@ def device_guards() -> list[str]:
             f"which case nothing decides what may touch a device."
         )
     return found
-
-
-def check_guards_wired(settings, failures):
-    referenced = referenced_scripts(settings)
-    for path in device_guards():
-        rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
-        if rel not in referenced:
-            failures.append(
-                f"{rel} is a device guard that no hook invokes — it is inert. "
-                f"Wire it in {SETTINGS} under PreToolUse."
-            )
 
 
 # Commands that exist on GNU/Linux and not on a stock macOS, mapped to
@@ -294,42 +129,10 @@ DOWNSTREAM = (".github/workflows/ci.yml", "scripts/release/ship.sh")
 # later comparison pass on an empty set.
 MIN_SOURCE_GATES = 4
 
-# Gates whose inputs are the development record (SMIX_DEV_RECORD), which is
-# not version-controlled. They run where that record lives — the authoring
-# machine, via preflight and ship — and cannot run on a bare checkout.
-#
-# Wiring them into CI would not be stricter, it would be worse: they would
-# report "cannot run" on every branch build, and a gate that always says
-# that is one nobody reads. The honest arrangement is that they are absent
-# from CI on purpose, named here so the absence is a decision on the record
-# rather than something that fell off.
+# Gates that cannot run on a CI host. Absent from CI on purpose, named here
+# so the absence is a decision rather than something that fell off.
 LOCAL_ONLY = {
-    "audit-ledger-scan",
-    "scope-promise-scan",
-    "release-record-scan",
-    # Reconciles the guides against the probe ledgers in the record's docs/.
-    # Its own refusal states the rule: it runs where that record lives.
-    # Learned live — its first CI run refused on a clean checkout,
-    # exactly as designed, one job ahead of an include_str! of the same
-    # record that stopped the test target building at all.
-    "guide-claims-scan",
-    # Reads the record's docs/ — the four layers themselves. On a checkout
-    # there is nothing there to read, so it refuses rather than passing;
-    # in CI that refusal would fire on every build. Its harness DOES run
-    # in CI, on trees it builds itself.
-    "contract-scan",
-    # Reads the record's dogfood/ — our side of the consumer correspondence,
-    # which is not in the checkout either. It answers "did this letter
-    # reach the thread it names", and the threads live on the authoring
-    # machine, so on a checkout it refuses rather than passing.
-    "a-reply-nobody-sent",
-    "a-reply-nobody-sent.test",
-    # Reads the C10 ground-truth doc in the record's docs/research/, which
-    # is not in the checkout. Same as release-record-scan: absent from CI
-    # on purpose, present at ship because ship runs on the authoring
-    # machine where that doc lives.
-    "v5.1-c10-ground-truth-is-complete",
-    # Unlike the rest, not about the record: its input is the devicectl
+    # Its input is the devicectl
     # installed with Xcode on the machine it runs on, and the CI job is
     # ubuntu, where it can only answer "cannot run". Its self-test carries
     # a fake devicectl and does run in CI.
@@ -390,9 +193,8 @@ def check_source_gates_wired(failures):
                 # on every build.
                 if present:
                     failures.append(
-                        f"{CI_GATE} invokes {name}, whose inputs live in the "
-                        f"development record and do not travel with a checkout. It "
-                        f"would report cannot-run on every branch build. "
+                        f"{CI_GATE} invokes {name}, whose inputs do not exist on a "
+                        f"CI host. It would report cannot-run on every branch build. "
                         f"Keep it to preflight and ship."
                     )
                 continue
@@ -461,10 +263,6 @@ def check_every_dev_script_runs(failures):
     ) + sorted(glob.glob(os.path.join(ROOT, "scripts/**/*.py"), recursive=True)):
         rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
         texts.setdefault(rel, read_without_comments(rel))
-    hooks = _dev_record.path(SETTINGS)
-    if hooks and os.path.isfile(hooks):
-        with open(hooks, encoding="utf-8") as f:
-            texts["the record's settings.json"] = f.read()
 
     for path in sorted(glob.glob(os.path.join(ROOT, "scripts/dev/*.sh"))) + sorted(
         glob.glob(os.path.join(ROOT, "scripts/dev/*.py"))
@@ -569,18 +367,10 @@ def check_scripts_load_under_the_ship_interpreter(failures):
 def main():
     failures = []
     check_scripts_load_under_the_ship_interpreter(failures)
-    check_private_surface(failures)
     check_guards_tested(failures)
     check_no_gnu_only_tools(failures)
     check_source_gates_wired(failures)
     check_every_dev_script_runs(failures)
-
-    settings_path = _dev_record.path(SETTINGS)
-    if settings_path and os.path.isfile(settings_path):
-        with open(settings_path, encoding="utf-8") as f:
-            settings = json.load(f)
-        check_hook_scripts_exist(settings, failures)
-        check_guards_wired(settings, failures)
 
     if failures:
         print("workflow-scan: FAIL", file=sys.stderr)

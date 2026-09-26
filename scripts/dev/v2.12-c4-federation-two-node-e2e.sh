@@ -107,8 +107,7 @@ trap cleanup EXIT
 # --- 2. source sync, mini only (house rsync shape; exclusion set not shrunk).
 #     The studio node's repo IS this checkout — the authority copies to no one. ---
 log "rsync sources -> $HOST:$REPO/"
-# The machine's global git ignore keeps the development record, which
-# lives beside the sources and is not version-controlled, out of the copy.
+# The machine's global git ignore keeps local-only files out of the copy.
 rsync -a --stats --exclude-from="$HOME/.config/git/ignore" \
   --exclude='target/' --exclude='.git/' --exclude='node_modules/' \
   --exclude='.smix/' --exclude='swift-bridge/.build/' --exclude='*/build/' \

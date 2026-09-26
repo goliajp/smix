@@ -59,10 +59,9 @@ PORTABLE_APP = "jp.golia.smix.fixture"
 # fine; it may be that long-press does not reach SwiftUI gestures at all,
 # in which case smix has a capability gap on every SwiftUI app.
 #
-# Held out of the corpus, in the development record, until that is
-# answered. Not deleted, not excused into
-# known-unstable.md — it is not flaky, it fails every time, and a
-# consistent failure whose cause is unknown is a question, not a flake.
+# Held out of the corpus until that is answered, not excused as a flake:
+# it fails every time, and a consistent failure whose cause is unknown is
+# a question, not a flake.
 MINIMUM_PORTABLE = 4
 
 problems: list[str] = []

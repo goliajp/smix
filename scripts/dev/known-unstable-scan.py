@@ -11,6 +11,10 @@ So each row must name a flow that exists, carry a measured rate with a
 digit in it, and cite attempts. This also checks the reverse — a row for
 a flow that no longer exists is a rule about nothing, still quietly
 excusing a name.
+
+The list is a local input, not part of the repository: its path is given
+in SMIX_KNOWN_UNSTABLE. The corpus gate reads the same variable, so with
+none given nothing is excused there and nothing needs checking here.
 """
 
 import os
@@ -19,14 +23,14 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CORPUS = os.path.join(ROOT, "scripts", "release", "stress-corpus")
-LIST = os.path.join(CORPUS, "known-unstable.md")
+LIST = os.environ.get("SMIX_KNOWN_UNSTABLE") or None
 
 problems: list[str] = []
 
 
 def rows() -> list[list[str]]:
     """Table rows, as cell lists, skipping the header and separator."""
-    if not os.path.isfile(LIST):
+    if LIST is None or not os.path.isfile(LIST):
         return []
     out = []
     for line in open(LIST, encoding="utf-8"):
@@ -78,7 +82,12 @@ for cells in entries:
 # parser found none, the parser is broken. If there are none either way,
 # the table is empty — which happened on 2026-08-22, when the last
 # excused flow was fixed and this branch refused the good news.
-if os.path.isfile(LIST):
+if LIST is None:
+    # No list given. The corpus gate excuses nothing without one, so there
+    # is nothing here to hold to the bar — and that is the answer, said.
+    print("known-unstable-scan: clean — no list given (SMIX_KNOWN_UNSTABLE), so no flow is excused")
+    sys.exit(0)
+elif os.path.isfile(LIST):
     raw_rows = [
         line
         for line in open(LIST, encoding="utf-8").read().splitlines()
@@ -89,25 +98,16 @@ if os.path.isfile(LIST):
     ]
     if raw_rows and not entries:
         problems.append(
-            f"{os.path.relpath(LIST, ROOT)} has {len(raw_rows)} table row(s) and "
-            f"this scan parsed none — the table's shape changed and the scan is "
-            f"reading air"
+            f"{LIST} has {len(raw_rows)} table row(s) and this scan parsed "
+            f"none — the table's shape changed and the scan is reading air"
         )
 else:
-    # The witness above only ran when the file was there, so its absence
-    # fell straight through: `rows()` answered `[]`, the loop did
-    # nothing, and the gate said yes about a list it had never seen.
-    # Found by taking the file away and watching this stay green.
-    #
-    # An empty list and a missing list are not the same statement. An
-    # empty table says "nothing is excused right now"; a missing file
-    # says nothing at all, while the corpus gate goes on reading it for
-    # excuses.
+    # A path was given and nothing is there. The corpus gate would read
+    # the same missing path and excuse nothing, while whoever set the
+    # variable believes something is excused: say so.
     problems.append(
-        f"{os.path.relpath(LIST, ROOT)} is not here. The corpus gate excuses "
-        f"FLAKE for the flows this file names, so its absence is not the same "
-        f"as it being empty — an empty table states that nothing is excused, "
-        f"and a missing file states nothing while the excusing continues."
+        f"SMIX_KNOWN_UNSTABLE names {LIST}, which is not there — a list "
+        f"someone meant to give is not being read"
     )
 
 if problems:

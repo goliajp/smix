@@ -82,10 +82,6 @@ flows="$(portable_flows)"
 for f in $flows; do
     cp "$CORPUS/$f.yaml" "$WORK/"
 done
-# The excuse list travels with them: a flow excused in the full corpus is
-# excused here too, or the same flake would mean different things
-# depending on which tier ran it.
-[ -f "$CORPUS/known-unstable.md" ] && cp "$CORPUS/known-unstable.md" "$WORK/"
 
 echo "portable tier: $(echo "$flows" | tr '\n' ' ')"
 # The runner boots on the fixture rather than Preferences: every flow

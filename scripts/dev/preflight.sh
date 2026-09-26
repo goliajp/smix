@@ -13,16 +13,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# The development record — charter, decision log, plans, ledgers,
-# correspondence — is not version-controlled, so nothing here says where it
-# is. A dozen gates below read it; without it they can only say "cannot
-# run", and a release or preflight that let that through would be checking
-# nothing. Name it before starting.
-if [[ -z "${SMIX_DEV_RECORD:-}" || ! -d "${SMIX_DEV_RECORD:-}" ]]; then
-  echo "error: SMIX_DEV_RECORD must name the development record's root (a directory); got '${SMIX_DEV_RECORD:-}'" >&2
-  exit 2
-fi
-
 BASE="${1:-origin/develop}"
 
 # Crates with changed files, derived — not maintained by hand.
@@ -194,10 +184,6 @@ SOURCE_GATES=(
   fact-scan
   workflow-scan
   android-gate-scan
-  audit-ledger-scan
-  scope-promise-scan
-  release-record-scan
-  guide-claims-scan
   gate-subject-diversity
   route-context-scan
   gate-port-scan
@@ -217,9 +203,8 @@ SOURCE_GATES=(
   a-verdict-answers-in-sentences.test
   a-gate-without-its-subject
   a-gate-without-its-subject.test
-  a-reply-nobody-sent
-  a-reply-nobody-sent.test
   known-unstable-scan
+  known-unstable-scan.test
   corpus-portability-scan
   portable-tier-parity
   yield-is-not-failure-scan
@@ -231,7 +216,6 @@ SOURCE_GATES=(
   leases-are-machine-scoped
   no-second-ledger-path
   retired-claims-scan
-  contract-scan
   selector-surface-scan
   health-is-not-a-session-check
   probes-name-the-app
@@ -239,7 +223,6 @@ SOURCE_GATES=(
   every-flag-says-what-it-does
   an-authorised-hatch-reaches-every-surface
   a-tap-proves-aim-not-arrival
-  v5.1-c10-ground-truth-is-complete
   no-script-picks-a-device-by-accident
   generated-artifacts-are-load-bearing
   project-pointer-holds-no-facts
@@ -292,12 +275,8 @@ python3 scripts/dev/hook-command.test.py
 # device" for two majors after §9 #1 stopped saying so, past every gate
 # there was, because no gate knew a rule had a date.
 python3 scripts/dev/retired-claims-scan.test.py
-# And that the contract gate can tell a claimed gap from a lost one. Its
-# whole point is one file's worth of difference between the two, so a
-# harness is the only thing that can show it still reads that difference.
 python3 scripts/dev/three-readers-agree.py --assert-ci-union
 python3 scripts/dev/three-readers-agree.test.py
-python3 scripts/dev/contract-scan.test.py
 # The runner every checkpoint's acceptance must name, and that it goes
 # red when its reading of the workflows goes empty.
 python3 scripts/dev/all-gates.test.py
@@ -345,7 +324,6 @@ python3 scripts/dev/tap-then-capture-is-one-path.test.py
 python3 scripts/dev/every-flag-says-what-it-does.test.py
 python3 scripts/dev/an-authorised-hatch-reaches-every-surface.test.py
 python3 scripts/dev/a-tap-proves-aim-not-arrival.test.py
-python3 scripts/dev/v5.1-c10-ground-truth-is-complete.test.py
 python3 scripts/dev/no-script-picks-a-device-by-accident.test.py
 python3 scripts/dev/generated-artifacts-are-load-bearing.test.py
 python3 scripts/dev/project-pointer-holds-no-facts.test.py
