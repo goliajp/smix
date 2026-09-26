@@ -18,9 +18,8 @@ import Foundation
 // landing inside a button that never fired, the disagreement could be
 // argued about but not measured.
 //
-// This is the measurement. Sensing is a flat core capability (CLAUDE.md
-// §12.1), so it lives here beside `/tree` rather than inside whatever
-// happens to need it.
+// This is the measurement. Sensing is a flat core capability, so it lives
+// here beside `/tree` rather than inside whatever happens to need it.
 public enum CoordinateSpaceRoute {
   public static func body(
     appFrame: CGRect,

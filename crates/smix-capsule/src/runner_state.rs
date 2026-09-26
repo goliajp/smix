@@ -129,8 +129,9 @@ fn runner_of(lease: &smix_lease::Lease) -> Option<RunnerState> {
 
 /// What the checkout's old runner record says, for a refusal to cite.
 ///
-/// Evidence only (CLAUDE.md section 9 #9): it names where it was read and
-/// what it holds, and decides nothing. It is never written and never
+/// Evidence only: device facts belong to the machine, not to a checkout,
+/// so an old record left in a checkout names where it was read and what it
+/// holds, and decides nothing. It is never written and never
 /// created — opening a store that is not there would make one.
 pub fn legacy_evidence(root: &Path) -> Option<String> {
     let smix = store_root(root);
