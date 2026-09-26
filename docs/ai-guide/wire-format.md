@@ -183,7 +183,7 @@ began clearing first, and still wrong past fifty characters.
 
 ### `POST /input-text` (Android)
 
-Body: `{ text: string, focusRect?: [nx, ny, nw, nh] }`
+Body: `{ text: string, focusRect?: [nx, ny, nw, nh], budgetMs?: number }`
 Response: `{ ok: bool, status: "ok" | "text_did_not_land", text, before, held, chunks, retyped }`
 — for a masked field `beforeLength` and `heldLength` in place of `before`
 and `held`.
@@ -202,6 +202,13 @@ three times; `chunks` is how many there were and `retyped` how many of
 those repairs it took. A chunk missing characters from its middle, or
 holding one nobody typed, is not repaired — the failure names the
 chunk and what the field held.
+
+Typing costs time per character, so the host waits longer for a longer
+text and tells the runner how long in `budgetMs`. The runner checks it
+before each `input text` it sends; once it is spent it types nothing
+more and answers `{ error: "text_budget_spent", message }`, the message
+naming the chunk it stopped before and how many characters the field
+holds. Without `budgetMs` the typing is not bounded.
 
 ### `POST /press-key`
 

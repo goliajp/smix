@@ -73,14 +73,18 @@ object RunnerWire {
     /// `inputText` step means, and what a client older than this field
     /// sends, so it is a decision rather than an omission; see
     /// `focusAccepts`.
-    data class InputTextRequest(val text: String, val focusIn: NormRect?)
+    /// `budgetMs` is how long the host will wait for the answer, less the
+    /// time it keeps for the answer to arrive; null from a caller that
+    /// named none, which leaves the typing unbounded as before.
+    data class InputTextRequest(val text: String, val focusIn: NormRect?, val budgetMs: Long?)
 
     /// The named element's own box, viewport-normalized.
     data class NormRect(val nx: Double, val ny: Double, val nw: Double, val nh: Double)
 
     fun decodeInputText(payload: String): InputTextRequest {
         val req = JSONObject(payload)
-        return InputTextRequest(req.getString("text"), focusRect(req))
+        val budgetMs = if (req.has("budgetMs")) req.getLong("budgetMs") else null
+        return InputTextRequest(req.getString("text"), focusRect(req), budgetMs)
     }
 
     /// The clear that precedes a fill needs the same target, or it
@@ -253,6 +257,9 @@ object RunnerWire {
     sealed class ChunkedResult {
         data class Done(val held: String, val chunks: Int, val retyped: Int) : ChunkedResult()
         data class Failed(val held: String, val chunk: Int, val of: Int, val retries: Int) : ChunkedResult()
+
+        /// The caller's budget ran out before chunk `chunk` was typed.
+        data class OutOfTime(val held: String, val chunk: Int, val of: Int) : ChunkedResult()
     }
 
     fun typeInChunks(
@@ -261,17 +268,24 @@ object RunnerWire {
         masked: Boolean,
         chunkPoints: Int,
         retypes: Int,
+        outOfTime: () -> Boolean,
         send: (sent: String, base: String, chunk: String) -> String,
     ): ChunkedResult {
         val chunks = inputChunks(text, chunkPoints)
         var held = before
+        var seen = before
         var retyped = 0
         for ((index, chunk) in chunks.withIndex()) {
             val base = held
             var sent = chunk
             var tries = 0
             while (true) {
+                // Checked before every `input text`, a retype included: one
+                // already sent cannot be taken back, and an answer after the
+                // host stopped waiting reaches nobody.
+                if (outOfTime()) return ChunkedResult.OutOfTime(seen, index, chunks.size)
                 val now = send(sent, base, chunk)
+                seen = now
                 when (val outcome = chunkOutcome(base, now, chunk, masked)) {
                     ChunkOutcome.Landed -> {
                         held = now
