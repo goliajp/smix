@@ -176,27 +176,38 @@ pub fn parse_adb_forwards(text: &str, port: u16) -> Vec<String> {
 ///
 /// Two shapes, because a simulator runner is launched into the
 /// simulator's own container while a device runner is aimed with
-/// `-destination id=`:
+/// `-destination`:
 ///
 ///   * `…/CoreSimulator/Devices/<UDID>/data/…`
-///   * `… -destination id=<UDID> …`
+///   * `… -destination id=<UDID> …` or `-destination platform=…,id=<UDID>`
+///
+/// Only those two. A bare `id=` anywhere else in a command line is some
+/// other program's argument: a browser helper's `--trial-id=` was once
+/// read as a second device on a runner's port. And the value must have
+/// the shape of an Apple device identifier, or it is not one.
 pub fn udid_from_command(cmd: &str) -> Option<String> {
     if let Some(rest) = cmd.split("/CoreSimulator/Devices/").nth(1) {
         let udid = rest.split('/').next().unwrap_or_default();
-        if !udid.is_empty() {
+        if is_apple_device_id(udid) {
             return Some(udid.to_string());
         }
     }
-    if let Some(rest) = cmd.split("id=").nth(1) {
-        let udid: String = rest
-            .chars()
-            .take_while(|c| !c.is_whitespace() && *c != ',')
-            .collect();
-        if !udid.is_empty() {
-            return Some(udid);
-        }
-    }
-    None
+    let spec = cmd.split("-destination").nth(1)?.trim_start();
+    let spec = spec.split(" -").next().unwrap_or_default();
+    spec.split(',')
+        .map(|part| part.trim().trim_matches(|c| c == '\'' || c == '"'))
+        .filter_map(|part| part.strip_prefix("id="))
+        .map(|id| id.split_whitespace().next().unwrap_or_default())
+        .find(|id| is_apple_device_id(id))
+        .map(str::to_string)
+}
+
+/// A simulator UDID (`8-4-4-4-12` hex), a current iPhone's (`8-16` hex),
+/// or an older device's 40 hex digits.
+fn is_apple_device_id(s: &str) -> bool {
+    let groups: Vec<usize> = s.split('-').map(str::len).collect();
+    let hex = s.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    hex && matches!(groups.as_slice(), [8, 4, 4, 4, 12] | [8, 16] | [40])
 }
 
 /// Ask adb which device holds `port`.
@@ -267,9 +278,19 @@ pub fn socket_lsof_args(question: &[&str]) -> Vec<String> {
 /// empty `Consulted`: something IS serving the port, and this cannot
 /// say what — which is a different fact from nothing serving it, and
 /// only one of the two is safe to refuse on.
+/// The `lsof` question [`ask_ios`] asks: the pids *listening* on `port`.
+///
+/// `tcp:<port>` alone also matches every socket whose other end, or
+/// whose own ephemeral end, is that number — any program on the machine
+/// with an outgoing connection that happened to be given it.
+#[must_use]
+pub fn ios_listener_question(port: u16) -> Vec<String> {
+    socket_lsof_args(&["-t", &format!("-iTCP:{port}"), "-sTCP:LISTEN"])
+}
+
 pub fn ask_ios(port: u16) -> Authority {
     let pids = match std::process::Command::new("lsof")
-        .args(socket_lsof_args(&["-ti", &format!("tcp:{port}")]))
+        .args(ios_listener_question(port))
         .output()
     {
         Ok(out) => String::from_utf8_lossy(&out.stdout)
@@ -382,16 +403,56 @@ mod tests {
 
     #[test]
     fn device_runner_names_its_device_in_its_destination() {
-        let cmd = "xcodebuild test-without-building -destination id=00008120-000A1D2E3F -quiet";
+        let cmd =
+            "xcodebuild test-without-building -destination id=00008120-0000000000A1D2E3 -quiet";
         assert_eq!(
             udid_from_command(cmd).as_deref(),
-            Some("00008120-000A1D2E3F")
+            Some("00008120-0000000000A1D2E3")
+        );
+    }
+
+    #[test]
+    fn a_simulator_destination_names_its_device_after_the_platform() {
+        let cmd = "xcodebuild test -project SmixRunner.xcodeproj -scheme SmixRunner \
+                   -destination platform=iOS Simulator,id=5D087114-ECB3-443C-8DDB-40EEF9CFB90C \
+                   -derivedDataPath .smix/runner/dd";
+        assert_eq!(
+            udid_from_command(cmd).as_deref(),
+            Some("5D087114-ECB3-443C-8DDB-40EEF9CFB90C")
         );
     }
 
     #[test]
     fn a_command_naming_no_device_yields_none() {
         assert_eq!(udid_from_command("/usr/bin/nc -l 22087"), None);
+    }
+
+    // 2026-09-26: a browser helper held port 55726 as the local end of an
+    // outgoing connection, and its `--field-trial…id=…` argument was read
+    // as a second device on the runner's port.
+    #[test]
+    fn an_id_argument_that_is_not_a_destination_names_no_device() {
+        let cmd = "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome \
+                   Framework.framework/Helpers/Google Chrome Helper --type=utility \
+                   --utility-sub-type=network.mojom.NetworkService --lang=zh-CN \
+                   --enable-features=Foo --variations-seed-version --trial-id=3190708989122997041";
+        assert_eq!(udid_from_command(cmd), None);
+    }
+
+    #[test]
+    fn a_destination_id_without_a_device_shape_names_no_device() {
+        assert_eq!(
+            udid_from_command("xcodebuild -destination id=3190708989122997041"),
+            None
+        );
+    }
+
+    #[test]
+    fn only_processes_listening_on_the_port_are_asked_about() {
+        let args = ios_listener_question(55726);
+        assert!(args.iter().any(|a| a == "-iTCP:55726"), "{args:?}");
+        assert!(args.iter().any(|a| a == "-sTCP:LISTEN"), "{args:?}");
+        assert_eq!(&args[..3], ["-b", "-w", "-nP"]);
     }
 
     #[test]

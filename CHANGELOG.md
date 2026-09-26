@@ -741,6 +741,17 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **An iOS run no longer refuses its own runner because another program
+  touched the same port number.** Before driving a runner port, smix asks
+  which simulator or device the process on that port belongs to. It asked
+  about every socket using the number — including a browser or chat app
+  whose outgoing connection happened to be given it as a local port — and
+  read any `id=` in those programs' arguments as a device. The run then
+  stopped with "port … is claimed by 2 at once", naming a number that was
+  no device. Only processes listening on the port are asked now, and a
+  device is read only from a simulator container path or an `xcodebuild
+  -destination … id=` whose value has the shape of an Apple device id.
+
 - **`runner up` on Android says why the screen shows no app, instead of
   blaming the runner.** A runner that answers `/health` while its
   automation sees no application window was always reported as a
