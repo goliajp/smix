@@ -815,6 +815,15 @@ moved and `Step` is now `#[non_exhaustive]`.
   `field_not_empty`.** The second look waited for focus on a budget of its
   own inside the route's, so the bound was not the one written down; and
   "no field was found to ask" was reported as a field with text left in it.
+- **`smix down` after `smix capsule up` no longer shuts down a simulator
+  that was already running.** `capsule up` decided whether it had booted
+  the device from how the boot answered, and the boot answers the same
+  whether the device was off or already on — so every simulator it touched
+  was recorded as smix's to shut down, whoever had it running. It now reads
+  whether the device was running before booting, by the rule `smix sim
+  boot` uses. `smix init --app` boots a shut-down simulator to install the
+  app and now records that it did, so `smix down` turns it off again; it
+  recorded nothing, which the claim above had been hiding.
 - **An Android runner's short replies arrive with their header.** The
   runner's HTTP server writes a reply's header and body separately with
   Nagle's algorithm on, so a small body waited for the header to be

@@ -275,21 +275,24 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
     // a NonZeroExit with stderr "current state: Booted" means it was
     // already booted and is treated as success.
     let simctl = smix_simctl::SimctlClient::new();
-    // `by_us` is decided by which arm answers: the "already Booted" arm
-    // means somebody else's session is on this device, and a shutdown we
-    // performed later would take it from them.
-    let booted_by_us = match simctl
+    // Whether the device was already running is read before the boot, by
+    // the rule `sim boot` uses. It was read from how the boot answered,
+    // and `boot_and_wait` answers Ok either way — so every device was
+    // claimed as ours, and `smix down` shut down simulators it found
+    // running.
+    let was_up = crate::booted_udids(&simctl)
+        .await
+        .contains(&opts.udid.to_uppercase());
+    let claim = crate::boot_claim(if was_up {
+        crate::EmulatorState::AlreadyRunning
+    } else {
+        crate::EmulatorState::WasOff
+    });
+    simctl
         .boot_and_wait(opts.udid, std::time::Duration::from_secs(120))
         .await
-    {
-        Ok(_) => true,
-        Err(smix_simctl::DeviceControlError::NonZeroExit { stderr, .. })
-            if stderr.contains("current state: Booted") =>
-        {
-            false
-        }
-        Err(e) => return Err(format!("simctl boot {}: {e}", opts.udid)),
-    };
+        .map_err(|e| format!("simctl boot {}: {e}", opts.udid))?;
+    let booted_by_us = claim == crate::BootClaim::ClaimAsOurs;
     match smix_capsule::runner::machine_leases() {
         Ok(leases) => {
             if let Err(e) = smix_lease::store::record_boot(&leases, opts.udid, booted_by_us) {

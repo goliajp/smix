@@ -6287,10 +6287,32 @@ async fn cmd_init(
             // that was just registered is shut down. Booting is part of
             // installing here, not a step to leave someone to discover from
             // a raw CoreSimulator error code.
+            //
+            // A boot done here is recorded like any other. It was not, so
+            // nothing claimed the device and `smix down` left running a
+            // simulator smix had turned on — hidden while `capsule up`
+            // claimed every device it touched as its own.
+            let was_up = booted_udids(&simctl)
+                .await
+                .contains(&plan.udid.to_uppercase());
             if let Err(e) = simctl.boot(&plan.udid).await
                 && !e.to_string().contains("current state: Booted")
             {
                 return Err(CliError::Other(format!("boot {}: {e}", plan.udid)));
+            }
+            let claim = boot_claim(if was_up {
+                EmulatorState::AlreadyRunning
+            } else {
+                EmulatorState::WasOff
+            });
+            if let Ok(leases) = smix_capsule::runner::machine_leases()
+                && let Err(e) = smix_lease::store::record_boot(
+                    &leases,
+                    &plan.udid,
+                    claim == BootClaim::ClaimAsOurs,
+                )
+            {
+                eprintln!("warning: boot not recorded in the device ledger: {e}");
             }
             let id = bundle_id_of(app_path)?;
             simctl
