@@ -154,7 +154,7 @@ Compatibility matrix:
 
 ## Contributions
 
-**This project does not accept external contributions.** See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full policy.
+**This project does not accept external contributions.**
 
 The source is published under Apache 2.0 / MIT so you are free to fork, adapt, and redistribute per those license terms; upstream will not accept pull requests, feature requests, or issue reports.
 
