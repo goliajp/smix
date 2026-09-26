@@ -1775,8 +1775,8 @@ fn one_bring_up(
                         wire_reported = true;
                     }
                     None => {
+                        crate::runner_stop::stop(pid, std::time::Duration::from_secs(30))?;
                         forget_runner_row(ledger, udid);
-                        signal(pid, "-TERM");
                         let ours = smix_runner_wire::WIRE_SCHEMA_SUPPORTED;
                         return Err(format!(
                             "no wire schema in common: this CLI speaks {ours:?} and the \
@@ -1795,8 +1795,8 @@ fn one_bring_up(
                     }
                 }
                 Some(v) => {
+                    crate::runner_stop::stop(pid, std::time::Duration::from_secs(30))?;
                     forget_runner_row(ledger, udid);
-                    signal(pid, "-TERM");
                     return Err(format!(
                         "runner version mismatch: CLI is v{cli_version} but the \
                          running SmixRunner reports v{v}. This means the on-disk \
@@ -1850,7 +1850,10 @@ fn one_bring_up(
         }
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
-    signal(pid, "-INT");
+    // Gone before the row goes: the caller retries with a second xcodebuild
+    // on the same device, and this one would outlive it unrecorded.
+    crate::runner_stop::stop(pid, std::time::Duration::from_secs(30))?;
+    let _ = child.try_wait();
     forget_runner_row(ledger, udid);
     // Lead with the reason when the device itself said one. A timeout
     // whose log ends in "Unlock panda's iphone to Continue" is not a
@@ -1945,20 +1948,7 @@ fn down_with(port: u16, consent: bool) -> Result<(), String> {
         match pid_command(st.pid) {
             Some(cmd) if cmd.contains("xcodebuild") => {
                 println!("stopping runner: pid={} udid={}", st.pid, st.udid);
-                signal(st.pid, "-INT");
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-                while pid_command(st.pid).is_some() && std::time::Instant::now() < deadline {
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                }
-                if pid_command(st.pid).is_some() {
-                    eprintln!(
-                        "warning: pid {} ignored SIGINT for 30s — escalating to \
-                         SIGKILL (expect a macOS crash-report dialog from the \
-                         runner app)",
-                        st.pid
-                    );
-                    signal(st.pid, "-9");
-                }
+                crate::runner_stop::stop(st.pid, std::time::Duration::from_secs(30))?;
                 acted = true;
             }
             Some(other) => {

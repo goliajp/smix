@@ -17,12 +17,16 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/scripts/lib/e2e-binary.sh"
 # shellcheck source=../lib/e2e-devices.sh
 source "$ROOT/scripts/lib/e2e-devices.sh"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
 # The server from the same build as the CLI: this script drives both, and
 # it used to take a release server beside a debug command line.
 MCP="$SMIX_MCP"
 BUNDLE="jp.golia.smix.fixture"
 APP="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
-PORT=22091
+# A port asked of the OS: a literal one was the port another project's runner
+# already held, and the teardown below would have stopped that runner.
+PORT="$SMIX_RUNNER_PORT"
 
 log()  { printf '[c4-mcp] %s\n' "$*"; }
 step() { printf '[c4-mcp] --- %s\n' "$*"; }
