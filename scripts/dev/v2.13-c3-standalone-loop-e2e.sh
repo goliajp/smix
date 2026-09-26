@@ -51,6 +51,14 @@ if [ -z "$UDID" ]; then
 fi
 log "device: $UDID"
 e2e_yield_if_held "$UDID"
+# Whether the device was on before this script touched it. `smix down`
+# settles what smix booted, and a device that was already running was not
+# booted by anything here — shutting it down takes it from whoever had it
+# (2026-09-27: it was the release's own simulator, and the next check
+# started its runner on a device still coming up).
+sim_is_booted() { xcrun simctl list devices | grep -F "($UDID)" | grep -q '(Booted)'; }
+WAS_BOOTED=0
+sim_is_booted && WAS_BOOTED=1
 
 WORK="$(mktemp -d)"
 # Its own ledger: the teardown below is `smix down`, which settles every
@@ -176,5 +184,12 @@ step "smix down"
 # This device's runner only: another project's runner on its own simulator is
 # not residue of this script (2026-09-26).
 pgrep -f "xcodebuild.*SmixRunner.*id=$UDID" >/dev/null && fail "a runner on $UDID survived teardown"
+if [ "$WAS_BOOTED" = 1 ]; then
+  sim_is_booted || fail "smix down shut down $UDID, which was running before this script began"
+  log "a device that was already running is still running"
+else
+  ! sim_is_booted || fail "smix down left $UDID running, and it was off before this script began"
+  log "a device this script turned on is off again"
+fi
 
 log "C3-STANDALONE-PASS"
