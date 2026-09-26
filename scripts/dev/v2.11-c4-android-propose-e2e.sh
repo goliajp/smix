@@ -32,6 +32,8 @@ PORT="${SMIX_ANDROID_PORT:-$SMIX_RUNNER_PORT}"
 # shellcheck source=../lib/e2e-binary.sh
 
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 R="http://localhost:$PORT"
 
 log()  { printf '[c4-propose] %s\n' "$*"; }
@@ -47,7 +49,7 @@ cannot_judge() { printf '[c4-propose] %s\n' "$*" >&2; printf '%s\n' "C4-ANDROID-
 # --- guards: emulator-only, yield to a batch owner, tools present ---
 case "$SERIAL" in emulator-*) ;; *) fail "serial must be an emulator (got $SERIAL); never a physical phone" ;; esac
 export ANDROID_SERIAL="$SERIAL"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active — yielding, not seizing the runner"
+e2e_yield_if_held "$SERIAL"
 command -v claude >/dev/null 2>&1 || fail "claude CLI not found on PATH"
 [ -x "$SMIX" ] || fail "smix not built at $SMIX"
 

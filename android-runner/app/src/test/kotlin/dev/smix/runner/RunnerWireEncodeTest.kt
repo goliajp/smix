@@ -262,6 +262,17 @@ class RunnerWireEncodeTest {
     }
 
     @Test
+    fun inputTextSaysHowManyChunksItTookAndWhatWasTypedAgain() {
+        // A long text goes in as chunks, and a chunk whose tail did not
+        // land has the missing part typed again. Both are on the wire so
+        // a reader can tell a text that went in cleanly from one that was
+        // repaired on the way.
+        val obj = JSONObject(RunnerWire.inputTextBody(true, "abc", "", "abc", masked = false, chunks = 4, retyped = 2))
+        assertEquals(4, obj.getInt("chunks"))
+        assertEquals(2, obj.getInt("retyped"))
+    }
+
+    @Test
     fun aMaskedFieldIsReportedByLengthOnly() {
         val body = RunnerWire.inputTextBody(true, "Sunroom!24", "", "••••••••••", masked = true)
         val obj = JSONObject(body)

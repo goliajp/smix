@@ -48,15 +48,15 @@ if [[ -z "$UDID" ]]; then
 fi
 [[ -n "$UDID" ]] || fail "no dev sim — set SMIX_TAPHIT_SIM to a UDID"
 
-log "guard: no batch owner on this machine (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null \
-  && cannot_judge "batch owner active — yielding"
 
 [[ -f "$ROOT/$FLOW" ]] || fail "flow missing: $FLOW"
 
 # shellcheck source=../lib/e2e-binary.sh
 
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
+e2e_yield_if_held "$UDID"
 [[ -x "$SMIX_BIN" ]] || fail "smix binary missing: $SMIX_BIN (cargo build -p smix-cli --release)"
 
 OUT="$(mktemp)"

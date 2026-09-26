@@ -1257,6 +1257,42 @@ impl Default for SimctlClient {
     }
 }
 
+/// Whether a simulator in `state` can be recorded; `None` when simctl
+/// does not list the UDID at all.
+///
+/// Asked before `recordVideo` is spawned because its own output cannot
+/// answer this: on a shut-down simulator it prints "Recording started"
+/// and "Wrote video to: …" and leaves a zero-byte file (measured
+/// 2026-09-25). Only `Booted` has a screen; `Booting` and `Shutting Down`
+/// are refused too rather than waited on — the caller booted or shut the
+/// device and is the one who knows when it has finished.
+///
+/// # Errors
+///
+/// `NonZeroExit` naming the device and the state simctl reported.
+pub fn recording_may_start(udid: &str, state: Option<&str>) -> Result<(), DeviceControlError> {
+    match state {
+        Some("Booted") => Ok(()),
+        Some(other) => Err(DeviceControlError::non_zero_exit(
+            "io recordVideo",
+            -1,
+            format!(
+                "{udid} is {other}, not Booted: a simulator that is not on has no screen, and \
+                 simctl would report \"Recording started\" and write an empty file. \
+                 Boot it (`smix sim boot {udid}`) and start the recording again."
+            ),
+        )),
+        None => Err(DeviceControlError::non_zero_exit(
+            "io recordVideo",
+            -1,
+            format!(
+                "simctl does not list {udid}, so there is no simulator screen to record. \
+                 `smix sim list` shows the simulators this machine has."
+            ),
+        )),
+    }
+}
+
 impl SimctlClient {
     /// Construct a new client with default screenshot pacing (100 ms
     /// interval floor, adaptive slow-path lift to 1500 ms, circuit
@@ -1995,6 +2031,13 @@ impl SimctlClient {
         // A file also keeps `simctl`'s own diagnostics ("No display
         // specified…", "Recording started") somewhere a person can read
         // them, which a discarded pipe did not.
+        let state = self
+            .list_devices()
+            .await?
+            .into_iter()
+            .find(|d| d.udid.eq_ignore_ascii_case(udid))
+            .map(|d| d.state);
+        recording_may_start(udid, state.as_deref())?;
         let log_path = format!("{path}.log");
         let log = std::fs::File::create(&log_path)?;
         let log_err = log.try_clone()?;

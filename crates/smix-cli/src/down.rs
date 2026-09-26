@@ -57,6 +57,113 @@ pub fn teardown_verdict(
     Teardown::Proceed
 }
 
+/// One process the residue pass matched, and whose it is.
+#[derive(Debug, PartialEq)]
+pub enum Residue {
+    /// Nobody alive holds its device: this sweep's to answer for.
+    Ours(String),
+    /// Its device is held by a live process that is not this one — the
+    /// same run step 1 and step 5 left alone. Named, not counted.
+    Held {
+        line: String,
+        device: String,
+        pid: u32,
+    },
+    /// Its device is in none of this sweep's books (ledger or registry):
+    /// nothing here started it or answers for it. Named, not counted.
+    Elsewhere { line: String, device: String },
+}
+
+/// Sort the residue pass's matches into this sweep's and other people's.
+///
+/// The pass matches on process text across the whole machine, so it
+/// also finds a runner another project has up on its own simulator. That
+/// runner surviving is not this teardown failing: `smix down` settled
+/// nothing on that device, by the same holder rule as its first and
+/// fifth steps. Counting it made `down` fail whenever anyone else on the
+/// machine had a runner up (2026-09-26: a consumer's runner on their
+/// simulator failed ours).
+///
+/// `held` maps a device id to the pid of a live holder that is not this
+/// process; `known` is every device this sweep's ledger or registry
+/// names. A device in neither is not this sweep's either — run against
+/// an isolated machine directory, the ledger knows nothing of a runner
+/// another project has up on its own simulator. A line names its device as `id=<udid>` (an xcodebuild
+/// destination) or as the operand of `simctl io`.
+pub fn classify_residue(
+    lines: &[String],
+    held: &std::collections::HashMap<String, u32>,
+    known: &std::collections::HashSet<String>,
+) -> Vec<Residue> {
+    lines
+        .iter()
+        .map(|line| {
+            let named = device_named_by(line).and_then(|d| {
+                held.iter()
+                    .find(|(id, _)| id.eq_ignore_ascii_case(d))
+                    .map(|(id, pid)| (id.clone(), *pid))
+            });
+            if let Some((device, pid)) = named {
+                return Residue::Held {
+                    line: line.clone(),
+                    device,
+                    pid,
+                };
+            }
+            match device_named_by(line) {
+                Some(d) if !known.iter().any(|k| k.eq_ignore_ascii_case(d)) => Residue::Elsewhere {
+                    line: line.clone(),
+                    device: d.to_string(),
+                },
+                _ => Residue::Ours(line.clone()),
+            }
+        })
+        .collect()
+}
+
+/// The device a matched process line is about, if it says.
+fn device_named_by(line: &str) -> Option<&str> {
+    let rest = if let Some(at) = line.find("id=") {
+        &line[at + 3..]
+    } else {
+        let at = line.find("simctl io ")?;
+        &line[at + "simctl io ".len()..]
+    };
+    leading_device_id(rest)
+}
+
+/// The UDID / serial at the start of `rest`, up to the first character
+/// no device id contains.
+fn leading_device_id(rest: &str) -> Option<&str> {
+    let end = rest
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+        .unwrap_or(rest.len());
+    (end > 0).then(|| &rest[..end])
+}
+
+/// Devices with a live holder that is not this process.
+fn held_by_others(leases: &smix_lease::store::LeaseDir) -> std::collections::HashMap<String, u32> {
+    let mine = std::process::id();
+    let Ok(entries) = std::fs::read_dir(leases.path()) else {
+        return std::collections::HashMap::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|e| {
+            let id = e
+                .file_name()
+                .to_string_lossy()
+                .strip_suffix(".json")?
+                .to_string();
+            let held = smix_lease::store::collect_facts(leases, &id)
+                .ok()?
+                .existing?;
+            let alive = held.holder.pid_exists && held.holder.identity_matches;
+            (alive && held.lease.holder.pid != mine).then_some((id, held.lease.holder.pid))
+        })
+        .collect()
+}
+
 /// Close what the ledgers say is open, on every device that has one.
 ///
 /// This is the pass that knows what it is doing. Everything after it
@@ -153,7 +260,8 @@ fn settle_ledgers(leases: &smix_lease::store::LeaseDir) {
 }
 
 /// Run the full sweep. Returns Err with the residue list if smix-shaped
-/// processes survive.
+/// processes this sweep answers for survive; one on a device somebody
+/// else holds alive is named and not counted (`classify_residue`).
 pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
     let leases = smix_capsule::runner::machine_leases()?;
     println!("=== 1. device ledgers (close what we opened) ===");
@@ -301,16 +409,47 @@ pub async fn run(root: &Path, runner_port: u16) -> Result<(), String> {
             patterns.push(format!("simctl io.*{}.*recordVideo", sim.udid));
         }
     }
-    let mut residue = String::new();
+    let mut lines: Vec<String> = Vec::new();
     for p in &patterns {
         let out = std::process::Command::new("pgrep")
             .args(["-fl", p])
             .output()
             .map_err(|e| format!("pgrep: {e}"))?;
-        let hits = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !hits.is_empty() {
-            residue.push_str(&hits);
-            residue.push('\n');
+        lines.extend(
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(str::to_string),
+        );
+    }
+    let mut residue = String::new();
+    let mut known: std::collections::HashSet<String> = std::fs::read_dir(leases.path())
+        .map(|it| {
+            it.flatten()
+                .filter_map(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .strip_suffix(".json")
+                        .map(str::to_string)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(reg) = &reg {
+        known.extend(reg.sims().values().map(|s| s.udid.clone()));
+    }
+    for r in classify_residue(&lines, &held_by_others(&leases), &known) {
+        match r {
+            Residue::Ours(line) => {
+                residue.push_str(&line);
+                residue.push('\n');
+            }
+            Residue::Held { line, device, pid } => {
+                println!("  not this sweep's: {device} is held by live pid {pid} — {line}");
+            }
+            Residue::Elsewhere { line, device } => {
+                println!("  not this sweep's: {device} is in none of its books — {line}");
+            }
         }
     }
     if !residue.is_empty() {
@@ -373,6 +512,94 @@ mod teardown_verdict_tests {
         assert_eq!(
             teardown_verdict(Some(&l), Some(&Admission::Granted)),
             Teardown::Proceed
+        );
+    }
+}
+
+#[cfg(test)]
+mod residue_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    const THEIRS: &str = "FFC57DAE-4B26-4B0C-9FAD-4F5735C0C2B1";
+    const OURS: &str = "5D087114-ECB3-443C-8DDB-40EEF9CFB90C";
+
+    fn known() -> std::collections::HashSet<String> {
+        [THEIRS.to_string(), OURS.to_string()].into()
+    }
+
+    /// Run against an isolated machine directory, `down` knows nothing of
+    /// a runner another project has up: not held in its books, and not in
+    /// them at all.
+    #[test]
+    fn a_runner_on_a_device_outside_this_sweeps_books_is_elsewhere() {
+        let out = classify_residue(
+            &[runner(THEIRS)],
+            &HashMap::new(),
+            &[OURS.to_string()].into(),
+        );
+        assert_eq!(
+            out,
+            vec![Residue::Elsewhere {
+                line: runner(THEIRS),
+                device: THEIRS.into()
+            }]
+        );
+    }
+
+    fn runner(udid: &str) -> String {
+        format!(
+            "47915 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test \
+             -project /x/SmixRunner.xcodeproj -scheme SmixRunner \
+             -destination platform=iOS Simulator,id={udid} -derivedDataPath .smix"
+        )
+    }
+
+    /// The case that failed `down`: somebody else's runner, alive on a
+    /// device they hold.
+    #[test]
+    fn a_runner_on_a_device_someone_else_holds_is_theirs() {
+        let held = HashMap::from([(THEIRS.to_string(), 812)]);
+        let out = classify_residue(&[runner(THEIRS)], &held, &known());
+        assert_eq!(
+            out,
+            vec![Residue::Held {
+                line: runner(THEIRS),
+                device: THEIRS.into(),
+                pid: 812
+            }]
+        );
+    }
+
+    #[test]
+    fn a_runner_on_a_device_nobody_holds_is_ours() {
+        let held = HashMap::from([(THEIRS.to_string(), 812)]);
+        let out = classify_residue(&[runner(OURS)], &held, &known());
+        assert_eq!(out, vec![Residue::Ours(runner(OURS))]);
+    }
+
+    /// A line that names no device cannot be anyone else's by this rule.
+    #[test]
+    fn a_line_that_names_no_device_is_ours() {
+        let line = "999 /x/smix-demo-target/debug/smix-server".to_string();
+        let held = HashMap::from([(THEIRS.to_string(), 812)]);
+        assert_eq!(
+            classify_residue(std::slice::from_ref(&line), &held, &known()),
+            vec![Residue::Ours(line)]
+        );
+    }
+
+    #[test]
+    fn a_recorder_names_its_device_as_the_simctl_io_operand() {
+        let line = format!("321 xcrun simctl io {THEIRS} recordVideo /tmp/a.mov");
+        let held = HashMap::from([(THEIRS.to_string(), 812)]);
+        assert_eq!(
+            classify_residue(std::slice::from_ref(&line), &held, &known()),
+            vec![Residue::Held {
+                line,
+                device: THEIRS.into(),
+                pid: 812
+            }]
         );
     }
 }

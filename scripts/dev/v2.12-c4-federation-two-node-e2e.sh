@@ -61,9 +61,6 @@ log "guard: $HOST reachable"
 rssh true || cannot_judge "$HOST is not reachable over BatchMode ssh — this node is not available here"
 REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $HOST"
 
-log "guard: no active batch on studio or $HOST (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active on studio — yielding; re-run when it is idle"
-rssh "pgrep -f 'runner.ts|smix run|supervise' >/dev/null" && cannot_judge "batch owner active on $HOST — yielding; re-run when it is idle"
 
 log "guard: no user build in flight ($HOST: cargo/xcodebuild; studio: cargo only — resident runner capsule is legitimate)"
 rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && cannot_judge "user build in flight on $HOST — yielding; re-run when it is idle"
@@ -83,9 +80,7 @@ lsof -nP -i ":$STUDIO_PORT" >/dev/null 2>&1 && cannot_judge "port $STUDIO_PORT b
 WORK="$(mktemp -d)"
 mkdir -p "$WORK/pull"
 UDID_S=""
-xcrun simctl list devices 2>/dev/null | grep -q "$UDID_S.*Booted" && WAS_BOOTED_LOCAL=yes
 UDID_M=""
-rssh "xcrun simctl list devices 2>/dev/null | grep -q \"$UDID_M.*Booted\"" && WAS_BOOTED_REMOTE=yes
 cleanup() {
   log "teardown: runners down + sims shutdown + artifacts + workdir"
   if [ -n "$UDID_M" ]; then
@@ -145,24 +140,31 @@ rssh "cd '$REMOTE_REPO' && test -f target/.smix-fed-stamp && test -x target/rele
 
 # --- 6. device resolution + prep, both nodes (§9#1 sims only, explicit UDID) ---
 log "resolve $STUDIO_SIM UDID on studio"
-SIM_LINES_S="$( (cd "$ROOT" && target/release/smix sim list 2>/dev/null) | grep -F "$STUDIO_SIM")" \
+SIM_LINES_S="$( (cd "$ROOT" && SMIX_MACHINE_DIR="$(mktemp -d)" target/release/smix sim list 2>/dev/null) | grep -F "$STUDIO_SIM")" \
   || fail "$STUDIO_SIM not in studio sim list"
 [ "$(printf '%s\n' "$SIM_LINES_S" | wc -l | tr -d ' ')" = 1 ] \
   || fail "$STUDIO_SIM matches more than one sim list line: $SIM_LINES_S"
 UDID_S="$(printf '%s\n' "$SIM_LINES_S" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')" \
   || fail "no UDID in studio sim list line: $SIM_LINES_S"
+# Asked now that the device is known; asked before, it was about an empty
+# UDID and decided whether teardown shut down somebody else's simulator.
+[ "$(simulator_state "$UDID_S")" = Booted ] && WAS_BOOTED_LOCAL=yes
+# The device, not the machine (2026-09-26).
+SMIX="$ROOT/target/release/smix" e2e_yield_if_held "$UDID_S"
 log "studio sim boot + runner up ($UDID_S, port $STUDIO_PORT)"
 ( cd "$ROOT" && target/release/smix sim boot "$UDID_S" ) || true
 ( cd "$ROOT" && target/release/smix runner up "$UDID_S" --bundle com.apple.Preferences --runner-port "$STUDIO_PORT" ) \
   || fail "runner up did not reach ready on studio port $STUDIO_PORT"
 
 log "resolve $MINI_SIM UDID on $HOST"
-SIM_LINES_M="$(rssh "cd '$REMOTE_REPO' && target/release/smix sim list 2>/dev/null" | grep -F "$MINI_SIM")" \
+SIM_LINES_M="$(rssh "cd '$REMOTE_REPO' && SMIX_MACHINE_DIR=\$(mktemp -d) target/release/smix sim list 2>/dev/null" | grep -F "$MINI_SIM")" \
   || fail "$MINI_SIM not in remote sim list"
 [ "$(printf '%s\n' "$SIM_LINES_M" | wc -l | tr -d ' ')" = 1 ] \
   || fail "$MINI_SIM matches more than one sim list line: $SIM_LINES_M"
 UDID_M="$(printf '%s\n' "$SIM_LINES_M" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')" \
   || fail "no UDID in remote sim list line: $SIM_LINES_M"
+[ "$(simulator_state "$UDID_M" rssh)" = Booted ] && WAS_BOOTED_REMOTE=yes
+e2e_yield_if_held "$UDID_M" rssh "cd '$REMOTE_REPO' && target/release/smix"
 log "$HOST sim boot + runner up ($UDID_M, default port)"
 rssh "cd '$REMOTE_REPO' && target/release/smix sim boot $UDID_M" || true
 rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID_M --bundle com.apple.Preferences" \
@@ -175,11 +177,11 @@ nodes:
   - name: c4-studio
     host: localhost
     repo: $ROOT
-    devices: [$UDID_S]
+    devices: [{ device: $UDID_S, platform: ios }]
   - name: c4-mini
     host: $HOST
     repo: $REMOTE_REPO
-    devices: [$UDID_M]
+    devices: [{ device: $UDID_M, platform: ios }]
 YAML
 (
   cd "$ROOT"
@@ -187,8 +189,14 @@ YAML
   SMIX_FED_E2E_FLOWS="$FLOW_A,$FLOW_B" \
   SMIX_FED_E2E_RUNNER_PORTS="c4-studio=$STUDIO_PORT" \
   SMIX_FED_E2E_PULL_DIR="$WORK/pull" \
-    cargo test -p smix-cli --bin smix federation_e2e_two_nodes -- --ignored --nocapture
-) || fail "ignored e2e test red — the two-node loop did not close"
+    cargo test -p smix-cli --bin smix federation::tests::federation_e2e_two_nodes_merge_reports_and_recover_artifacts -- --ignored --exact --nocapture
+) > "$WORK/cargo-test.log" 2>&1 || { cat "$WORK/cargo-test.log"; fail "ignored e2e test red — the two-node loop did not close"; }
+cat "$WORK/cargo-test.log"
+# An exact name that matches nothing runs zero tests and exits 0. The filter
+# used to be a prefix, which also matched the other federation e2e and
+# panicked on its missing environment (2026-09-26).
+grep -q 'test result: ok. 1 passed' "$WORK/cargo-test.log" \
+  || fail "the two-node e2e test did not run exactly once — is its name still federation::tests::federation_e2e_two_nodes_merge_reports_and_recover_artifacts?"
 log "recheck recovered artifacts (per-node subdirs)"
 [ -f "$WORK/pull/c4-studio/run-summary.json" ] || fail "recovered artifact missing: pull/c4-studio/run-summary.json"
 [ -f "$WORK/pull/c4-mini/run-summary.json" ] || fail "recovered artifact missing: pull/c4-mini/run-summary.json"

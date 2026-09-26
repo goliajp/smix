@@ -64,13 +64,24 @@ nodes:
   - name: studio
     host: localhost
     repo: /Users/me/workspace/smix
-    devices: [sim-smix-02]
+    devices:
+      - { device: sim-smix-02, platform: ios }
     runnerPort: 22097        # optional; forwarded as --runner-port
   - name: mini
     host: mini
     repo: /Users/me/workspace/smix
-    devices: [sim-simx-001]
+    devices:
+      - { device: sim-smix-001, platform: ios }
+      - { device: sim-smix-android-01, platform: android }
 ```
+
+Each device carries its `platform` (`ios` or `android`), and the run on
+that node is given it as `--platform`. A node's smix reads a device's
+platform from its own registry and refuses a device it has not
+registered rather than guess; the roster is where that is declared, so a
+device need not be registered on the node. A device without a platform
+is a parse error that names it — including the bare-string form
+(`devices: [sim-smix-02]`) that rosters used before 11.0.
 
 Node preparation is the operator's job, not the CLI's. Before a run,
 each remote node needs two steps (the scheduler repo is the authority):
@@ -113,10 +124,10 @@ smix run smoke.yaml checkout.yaml --nodes .smix/nodes.yaml --debug-output ./arti
 ### Sim management (`smix sim …`)
 
 ```bash
-smix sim list                  # all sims (JSON: --json)
+smix sim list                  # simulators and Android devices (JSON: --json); an attached phone nobody registered is listed from adb's line and not asked anything ("registered": false)
 smix sim resolve <ALIAS>       # alias → UDID
-smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is taken starts on a free one
-smix sim shutdown <ALIAS|UDID> # shutdown
+smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is taken starts on a free one, in a process group of its own so it outlives the terminal that started it
+smix sim shutdown <ALIAS|UDID> # shutdown; for an emulator, returns once adb no longer lists it
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
 smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up)
 smix sim launch <ALIAS|UDID> <bundle-id>   # every kind; --child-env is a simulator facility and is refused elsewhere
@@ -671,7 +682,7 @@ instead of the runner dying by SIGABRT and macOS raising a crash-report dialog.
 ```bash
 smix lease list                # every device with a ledger, and whether it is in use
 smix lease status <DEVICE>     # the holder, what is open, and what is owed
-smix lease status <DEVICE> --json  # {device, path, lease}: the ledger as stored, and the file it lives in
+smix lease status <DEVICE> --json  # {device, path, lease, heldBy}: the ledger as stored, the file it lives in, and who holds the device now (null when free)
 smix lease owner <DEVICE>      # who answers for it — exit 0 yes, 3 no record, 1 cannot ask
 smix lease claim <DEVICE>      # answer for one this machine did not boot
 smix lease release <DEVICE>    # give that up again

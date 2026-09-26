@@ -97,10 +97,24 @@ for i in $(seq 1 "$ROUNDS"); do
   "$SMIX" run "$WORK/flow.yaml" --device "$SERIAL" --platform android --runner-port "$PORT" \
     >"$WORK/run-$i.log" 2>&1 || rc=$?
   got="$(fields)" || cannot_judge "round $i: could not read the tree"
+  if [ -z "$got" ] || [ "$rc" != 0 ]; then
+    # What the flow said, in full: two reds under load were left with one
+    # line each and no way to tell a tap that missed from a screen that
+    # never came (2026-09-26).
+    printf '[c9h-focus] round %s: smix run said:\n' "$i" >&2
+    grep -E '^STEP|error|hint|visible elements|on screen' "$WORK/run-$i.log" | head -40 >&2
+  fi
   [ -n "$got" ] || cannot_judge "round $i: the tree named neither field — the reading is broken, not the flow"
   pwd_len="$(printf '%s\n' "$got" | awk -F'\t' '$1=="compose_password"{print $2}')"
   a_text="$(printf '%s\n' "$got" | awk -F'\t' '$1=="compose_input"{print $3}')"
-  if [ "$rc" != 0 ]; then
+  code="$(sed -nE 's/.*FAIL \[([A-Z_]+)\].*/\1/p' "$WORK/run-$i.log" | tail -1)"
+  if [ "$rc" != 0 ] && ! python3 "$ROOT/scripts/lib/failure-codes.py" verdicts | grep -qxF "$code"; then
+    # smix could not look (the runner, the transport, the app gone), so
+    # this round says nothing about focus after enter. Twice under load 37
+    # and 45 a round ended this way or with the tree empty, and neither
+    # reproduced at load 11 in ten rounds; the cause is not known.
+    cannot_judge "round $i: smix run ended with ${code:-no failure code} (exit $rc), which is not a verdict on the screen: $(grep -m1 'FAIL' "$WORK/run-$i.log" | cut -c1-240)"
+  elif [ "$rc" != 0 ]; then
     fail "round $i: the flow failed (exit $rc): $(grep -m1 'FAIL' "$WORK/run-$i.log" | cut -c1-240)"
   elif [ "$pwd_len" != 12 ]; then
     fail "round $i: the masked field holds $pwd_len characters, not 12"

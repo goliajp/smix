@@ -142,8 +142,16 @@ tap_id "$FIELD_ID"
 sleep 2
 
 LONG="$(python3 -c 'print("x" * 120)')"
-curl -sf --max-time 15 -X POST "$R/input-text" -H 'Content-Type: application/json' \
-  --data "{\"text\":\"$LONG\"}" >/dev/null || fail "could not type into $FIELD_ID"
+# The runner's answer, not curl's exit: since 11.0 a refused `/input-text`
+# says which field it found, what it held before and after, and why. `-f`
+# threw that away, and a red read "could not type" and nothing else
+# (2026-09-26, once in a full tier, not reproduced alone).
+typed="$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "$R/input-text" \
+  -H 'Content-Type: application/json' --data "{\"text\":\"$LONG\"}" || true)"
+case "$typed" in
+  *$'\n'200) ;;
+  *) fail "could not type into $FIELD_ID — the runner said: $typed" ;;
+esac
 sleep 2
 BEFORE="$(field_text)"
 [ "${#BEFORE}" -ge 100 ] \

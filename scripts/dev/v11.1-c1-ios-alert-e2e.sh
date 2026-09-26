@@ -31,6 +31,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
 # shellcheck source=../lib/gate-port.sh
@@ -45,7 +47,7 @@ fail() { printf '[c1-ios-alert] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[c1-ios-alert] CANNOT JUDGE: %s\n' "$*" >&2; exit 2; }
 
 [ -n "$UDID" ] || cannot_judge "usage: $0 <simulator udid> (or SMIX_E2E_UDID)"
-xcrun simctl list devices booted 2>/dev/null | grep -q "$UDID" \
+[ "$(simulator_state "$UDID")" = Booted ] \
   || cannot_judge "$UDID is not a booted simulator"
 [ -d "$FIXTURE" ] || fail "no fixture app — run: bash scripts/dev/build-fixture-app.sh"
 

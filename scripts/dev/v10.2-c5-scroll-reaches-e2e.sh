@@ -249,7 +249,7 @@ run_ios() {
   port_free "$IOS_PORT" || cannot_judge "port $IOS_PORT already serves a runner — set SMIX_C5_IOS_PORT"
 
   step "iOS: $IOS_UDID"
-  if ! xcrun simctl list devices 2>/dev/null | grep -q "$IOS_UDID.*Booted"; then
+  if [ "$(simulator_state "$IOS_UDID")" != Booted ]; then
     "$SMIX" sim boot "$IOS_UDID" >"$WORK/ios-boot.log" 2>&1 || fail "boot: $(tail -3 "$WORK/ios-boot.log")"
     IOS_WE_BOOTED=1
   fi

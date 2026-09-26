@@ -44,6 +44,27 @@ pub fn describe(device_id: &str, admission: &Admission) -> String {
     }
 }
 
+/// Who holds a device, for a script: `null` when a new claim would be
+/// granted, otherwise the pid and command that hold it and whether that
+/// process is still alive.
+///
+/// The human line says the same thing in words. A script that parsed
+/// those words, or read the stored lease and judged the holder's
+/// liveness itself, would keep a second copy of `assess` (2026-09-26:
+/// e2e scripts deciding whether to yield a device).
+pub fn held_by_json(admission: &Admission) -> serde_json::Value {
+    match admission {
+        Admission::Denied(c) => serde_json::json!({
+            "pid": c.holder.pid,
+            "cmd": c.holder.cmd,
+            "alive": c.holder_alive,
+        }),
+        Admission::Granted | Admission::Adoptable | Admission::Reclaimable { .. } => {
+            serde_json::Value::Null
+        }
+    }
+}
+
 /// The note for one device the tree's old book records differently.
 ///
 /// Pure so the wording is testable. It says when the tree's copy was
@@ -158,9 +179,11 @@ pub async fn run(leases: &LeaseDir, action: LeaseAction) -> Result<u8, crate::Cl
             let udid = crate::resolve_device(&device)?;
             let lease = store::read(leases, &udid).map_err(to_cli_error)?;
             let path = store::lease_path(leases, &udid).map_err(to_cli_error)?;
+            let facts = store::collect_facts(leases, &udid).map_err(to_cli_error)?;
+            let held_by = held_by_json(&smix_lease::assess(&facts));
             println!(
                 "{}",
-                serde_json::json!({ "device": udid, "path": path, "lease": lease })
+                serde_json::json!({ "device": udid, "path": path, "lease": lease, "heldBy": held_by })
             );
         }
         LeaseAction::Status {
@@ -629,6 +652,41 @@ mod tests {
             msg.contains("When it was last written could not be read"),
             "{msg}"
         );
+    }
+
+    #[test]
+    fn a_live_holder_is_held_by_for_a_script() {
+        let v = held_by_json(&Admission::Denied(Contention {
+            holder: ident(4242),
+            acquired_at: "2026-08-06T10:00:00Z".into(),
+            holder_alive: true,
+        }));
+        assert_eq!(v["pid"], 4242);
+        assert_eq!(v["alive"], true);
+        assert!(
+            v["cmd"]
+                .as_str()
+                .is_some_and(|c| c.contains("smix run hello.yaml"))
+        );
+    }
+
+    /// Its launcher exited and what it started still runs: a new claim is
+    /// refused, so a script must see the device as held.
+    #[test]
+    fn a_device_whose_launcher_exited_is_still_held_for_a_script() {
+        let v = held_by_json(&Admission::Denied(Contention {
+            holder: ident(4242),
+            acquired_at: "2026-08-06T10:00:00Z".into(),
+            holder_alive: false,
+        }));
+        assert_eq!(v["pid"], 4242);
+        assert_eq!(v["alive"], false);
+    }
+
+    #[test]
+    fn a_free_device_is_held_by_nobody() {
+        assert!(held_by_json(&Admission::Granted).is_null());
+        assert!(held_by_json(&Admission::Adoptable).is_null());
     }
 
     #[test]

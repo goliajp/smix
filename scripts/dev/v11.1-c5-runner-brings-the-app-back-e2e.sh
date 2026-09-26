@@ -194,11 +194,7 @@ if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tail -1)" || [ -z "$
   cannot_judge "no iOS simulator registered as $IOS_ALIAS"
 fi
 ios_state() {
-  xcrun simctl list devices -j | python3 -c 'import json,sys
-u=sys.argv[1]
-for ds in json.load(sys.stdin)["devices"].values():
-    for d in ds:
-        if d["udid"] == u: print(d["state"])' "$UDID"
+  simulator_state "$UDID"
 }
 if [ "$(ios_state)" != "Booted" ]; then
   with_deadline 300 "$SMIX" sim boot "$UDID" >/dev/null 2>&1 || cannot_judge "could not boot $IOS_ALIAS"

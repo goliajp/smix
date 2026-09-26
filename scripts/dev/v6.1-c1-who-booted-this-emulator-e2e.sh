@@ -38,7 +38,7 @@ cleanup() {
   # Only what this script started, and only through the console. An
   # emulator somebody else has since started on that port is not ours.
   if [ "${WE_STARTED_MANUAL:-0}" = 1 ]; then
-    adb -s "$SERIAL" emu kill >/dev/null 2>&1 || true
+    e2e_stop_emulator "$SERIAL" || true
   fi
   rm -rf "$WORK"
 }
@@ -106,8 +106,8 @@ log "row cleared"
 step "3. an emulator smix did not start is not smix's to stop"
 # Start it outside smix, the way a person or another tool would: the same
 # AVD, on the port smix just gave back.
-"$ANDROID_HOME/emulator/emulator" -avd "${SMIX_C1_AVD:-$ALIAS}" \
-  -port "${SERIAL##*-}" -no-boot-anim > "$WORK/manual.log" 2>&1 &
+e2e_start_emulator "$WORK/manual.log" -avd "${SMIX_C1_AVD:-$ALIAS}" \
+  -port "${SERIAL##*-}" -no-boot-anim
 WE_STARTED_MANUAL=1
 ready || { tail -5 "$WORK/manual.log" >&2; fail "the hand-started emulator did not come up"; }
 

@@ -38,8 +38,12 @@ session_unrunnable() { grep -qiE "$UNRUNNABLE" "$1" 2>/dev/null; }
 
 command -v claude >/dev/null || fail "the claude CLI is not on PATH"
 
-log "guard: no batch owner on this machine (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active — yielding"
+# The tree's smix, only to ask the ledger who holds the device; the
+# session under test drives through the installed plugin.
+# shellcheck source=../lib/e2e-binary.sh
+source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 
 # Its own variable first, then the one the whole tier is driven by.
 #
@@ -53,6 +57,7 @@ if [ -z "$UDID" ]; then
 fi
 [ -n "$UDID" ] || cannot_judge "set SMIX_C8_SIM to a UDID (or boot a dev sim)"
 log "device: $UDID"
+e2e_yield_if_held "$UDID"
 
 step "build and install the app under test"
 bash "$ROOT/scripts/dev/build-fixture-app.sh" >/dev/null 2>&1 || fail "fixture build failed"
@@ -165,8 +170,10 @@ log "no shell fallback to start a runner"
 
 # --- the world afterwards ------------------------------------------------
 
-if pgrep -f "xcodebuild.*SmixRunner" >/dev/null; then
-  fail "a runner survived the session"
+# This device's runner only; another project's runner on its own
+# simulator is not something this session left behind (2026-09-26).
+if pgrep -f "xcodebuild.*SmixRunner.*id=$UDID" >/dev/null; then
+  fail "a runner on $UDID survived the session"
 fi
 log "no runner left behind"
 

@@ -58,7 +58,7 @@ trap cleanup EXIT
 [ -d "$FIXTURE" ] || cannot_judge "no fixture app — run: bash scripts/dev/build-fixture-app.sh"
 UDID="$("$SMIX" sim resolve "$TARGET" 2>/dev/null | tail -1)" || true
 [ -n "$UDID" ] || cannot_judge "no simulator registered as $TARGET"
-if ! xcrun simctl list devices booted 2>/dev/null | grep -q "$UDID"; then
+if [ "$(simulator_state "$UDID")" != Booted ]; then
   log "booting $TARGET"
   with_deadline 300 "$SMIX" sim boot "$UDID" >/dev/null 2>&1 || cannot_judge "could not boot $TARGET"
   WE_BOOTED=1

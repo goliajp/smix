@@ -60,9 +60,21 @@ volume_of() { # $1 stream
 }
 
 # How many times AudioService has been asked to move a volume in one
-# direction. `dumpsys audio` keeps the log of volume commands it received.
-adjust_count() { # $1 ADJUST_RAISE | ADJUST_LOWER
-  adb -s "$SERIAL" shell dumpsys audio 2>/dev/null | grep -c "adjustSuggestedStreamVolume(.*dir:$1" || true
+# direction since the device's own clock read $2. `dumpsys audio` keeps the
+# last forty volume commands it received — a ring, so a total counted
+# before and after stops moving once it is full: on 2026-09-25 two presses
+# that took the music level from 5 to 3 counted as "8 → 8". Counting only
+# entries stamped at or after the moment before the presses does not
+# depend on how full the ring is.
+# One quoted string: `adb shell` joins its arguments with spaces and the
+# device's shell splits them again, so an escaped space reached `date` as
+# two arguments and the clock read "09-25" — which every entry of the day
+# sorts after (2026-09-25). The shape is checked where it is used.
+device_clock() { adb -s "$SERIAL" shell "date '+%m-%d %H:%M:%S'" 2>/dev/null | tr -d '\r'; }
+adjust_since() { # $1 ADJUST_RAISE | ADJUST_LOWER  $2 MM-DD HH:MM:SS
+  adb -s "$SERIAL" shell dumpsys audio 2>/dev/null \
+    | awk -v dir="dir:$1" -v since="$2" \
+        'index($0, "adjustSuggestedStreamVolume(") && index($0, dir) && substr($0, 1, 14) >= since { n++ } END { print n + 0 }'
 }
 
 screen_state() {
@@ -151,15 +163,20 @@ adb -s "$SERIAL" install -r -g "$AND_APK" >/dev/null 2>&1 || cannot_judge "could
 AND_UPPED=1
 
 press_and_count() { # $1 key  $2 ADJUST_*
-  local before after
-  before="$(adjust_count "$2")"
+  local since seen
+  # A second's gap: presses from a previous step in the same second
+  # would otherwise count too.
+  sleep 1
+  since="$(device_clock)"
+  printf '%s' "$since" | grep -Eq '^[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$' \
+    || cannot_judge "read $SERIAL's clock as '$since', not MM-DD HH:MM:SS — nothing to count from"
   flow "$WORK/$1.yaml" "$AND_APPID" "$1" "$1"
   SMIX_RUNNER_PORT="$AND_PORT" "$SMIX_RUN" --device "$SERIAL" "$WORK/$1.yaml" >"$WORK/$1.log" 2>&1 \
     || { tail -8 "$WORK/$1.log" >&2; fail "android: the flow pressing $1 twice did not pass"; return 0; }
-  after="$(adjust_count "$2")"
-  log "android $1: $2 events $before → $after; music level $(volume_of 3)"
-  [ "$after" -eq $((before + 2)) ] \
-    || fail "android: two $1 presses reached AudioService as $((after - before)) $2 events, not 2"
+  seen="$(adjust_since "$2" "$since")"
+  log "android $1: $seen $2 event(s) since $since; music level $(volume_of 3)"
+  [ "$seen" -eq 2 ] \
+    || fail "android: two $1 presses reached AudioService as $seen $2 events, not 2"
 }
 press_and_count volumeUp ADJUST_RAISE
 press_and_count volumeDown ADJUST_LOWER
@@ -201,7 +218,7 @@ command -v xcrun >/dev/null 2>&1 || cannot_judge "no xcrun — the iOS leg needs
 IOS_UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tail -1 | tr -d '[:space:]')" || true
 [ -n "$IOS_UDID" ] || cannot_judge "no simulator resolves '$IOS_ALIAS'"
 [ -d "$IOS_FIXTURE" ] || cannot_judge "no iOS fixture — run: bash scripts/dev/build-fixture-app.sh"
-if ! xcrun simctl list devices 2>/dev/null | grep -q "$IOS_UDID.*Booted"; then
+if [ "$(simulator_state "$IOS_UDID")" != Booted ]; then
   "$SMIX" sim boot "$IOS_UDID" >"$WORK/ios-boot.log" 2>&1 || cannot_judge "could not boot $IOS_UDID"
   IOS_WE_BOOTED=1
 fi

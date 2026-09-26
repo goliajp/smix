@@ -17,8 +17,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
-ALIAS="${SMIX_C5_ANDROID:-smix-android}"
-PORT="${SMIX_C5_PORT:-22088}"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
+# Our own emulator, and a port of this script's own. It defaulted to the
+# alias `smix-android` — on this machine a consumer's emulator — and
+# waited for somebody to have a runner up on 22088, reporting a skip when
+# nobody had (2026-09-25). A check that cannot set itself up is red.
+ALIAS="${SMIX_C5_ANDROID:-$E2E_ANDROID}"
+# shellcheck source=../lib/gate-port.sh
+source "$ROOT/scripts/lib/gate-port.sh"
+PORT="$SMIX_RUNNER_PORT"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
 WORK="$(mktemp -d)"
@@ -26,24 +34,41 @@ WORK="$(mktemp -d)"
 log()  { printf '[c5] %s\n' "$*" >&2; }
 step() { printf '[c5] --- %s\n' "$*" >&2; }
 fail() { printf '[c5] FAIL: %s\n' "$*" >&2; exit 1; }
-cannot_judge() { printf '[c5] SKIP: %s\n' "$*" >&2; exit 2; }
 
-cleanup() { rm -rf "$WORK"; }
+SERIAL="" WE_BOOTED=0 WE_UPPED=0
+cleanup() {
+  if [ "$WE_UPPED" = 1 ]; then
+    "$SMIX" runner down --platform android --device "$SERIAL" --runner-port "$PORT" \
+      >/dev/null 2>&1 || printf '[c5] warning: the runner was not stopped\n' >&2
+  fi
+  if [ "$WE_BOOTED" = 1 ]; then "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true; fi
+  rm -rf "$WORK"
+}
 trap cleanup EXIT
 
 [ -x "$SMIX" ] || fail "no smix binary at $SMIX (cargo build -p smix-cli)"
-command -v adb >/dev/null 2>&1 || cannot_judge "no adb — this needs the Android SDK"
+command -v adb >/dev/null 2>&1 || fail "no adb — this needs the Android SDK"
 
-SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tr -d '[:space:]')" || true
-[ -n "$SERIAL" ] || cannot_judge "no emulator registered as '$ALIAS'"
-adb devices 2>/dev/null | grep -q "^$SERIAL[[:space:]]*device" || cannot_judge "device $SERIAL not attached"
-[ -f "$APK" ] || cannot_judge "no Android fixture apk (scripts/dev/build-android-fixture.sh)"
+SERIAL="$("$SMIX" sim resolve "$ALIAS" 2>/dev/null | tail -1)"
+[ -n "$SERIAL" ] || fail "no device registered as $ALIAS"
+case "$SERIAL" in
+  emulator-*) : ;;
+  *) fail "$ALIAS resolves to $SERIAL, which is not an emulator — refusing" ;;
+esac
+[ -f "$APK" ] || fail "no Android fixture apk (scripts/dev/build-android-fixture.sh)"
 # And the one THESE sources build: the path existing says a build
 # happened, not which sources it happened over (open-items O1).
 python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
   || fail "the fixture apk on disk is not the one this tree builds"
-curl -s "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q smix-android-runner \
-  || cannot_judge "no Android runner on $PORT"
+if ! adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | grep -q 1; then
+  log "booting $SERIAL"
+  "$SMIX" sim boot "$ALIAS" >/dev/null 2>&1 || fail "could not boot $ALIAS"
+  WE_BOOTED=1
+  adb -s "$SERIAL" wait-for-device
+fi
+"$SMIX" runner up "$ALIAS" --platform android --runner-port "$PORT" >"$WORK/up.log" 2>&1 \
+  || fail "the runner would not start on $SERIAL:$PORT: $(tail -3 "$WORK/up.log")"
+WE_UPPED=1
 log "device $SERIAL, runner $PORT"
 
 adb -s "$SERIAL" install -r "$APK" >"$WORK/install.log" 2>&1 || fail "fixture install failed: $(tail -2 "$WORK/install.log")"

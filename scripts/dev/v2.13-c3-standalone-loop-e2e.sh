@@ -22,6 +22,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
+# A port of its own: 22087 is every smix's default on this machine.
+# shellcheck source=/dev/null
+. "$ROOT/scripts/lib/gate-port.sh"
 APP="$ROOT/test-fixtures/demo-app/build/SmixFixture.app"
 BUNDLE="jp.golia.smix.fixture"
 ALIAS="dev"
@@ -39,16 +44,19 @@ cannot_judge() { printf '[c3-standalone] %s\n' "$*" >&2; printf '%s\n' "C3-STAND
 
 [ -x "$SMIX" ] || fail "smix binary missing: $SMIX (cargo build -p smix-cli --release)"
 
-log "guard: no batch owner on this machine (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active — yielding"
 
 UDID="${SMIX_C3_SIM:-}"
 if [ -z "$UDID" ]; then
   UDID="$(bash "$ROOT/scripts/dev/pick-dev-sim.sh")" || cannot_judge "set SMIX_C3_SIM to a UDID"
 fi
 log "device: $UDID"
+e2e_yield_if_held "$UDID"
 
 WORK="$(mktemp -d)"
+# Its own ledger: the teardown below is `smix down`, which settles every
+# device the ledger says smix booted, and the machine's ledger holds every
+# other smix session's rows.
+e2e_isolate_machine "$WORK"
 cleanup() {
   step "teardown"
   ( cd "$WORK" && "$SMIX" down >/dev/null 2>&1 ) || true
@@ -165,6 +173,8 @@ log "recorded flow ran green"
 
 step "smix down"
 "$SMIX" down >"$WORK/down.log" 2>&1 || { tail -10 "$WORK/down.log" >&2; fail "down failed"; }
-pgrep -f "xcodebuild.*SmixRunner" >/dev/null && fail "a runner survived teardown"
+# This device's runner only: another project's runner on its own simulator is
+# not residue of this script (2026-09-26).
+pgrep -f "xcodebuild.*SmixRunner.*id=$UDID" >/dev/null && fail "a runner on $UDID survived teardown"
 
 log "C3-STANDALONE-PASS"

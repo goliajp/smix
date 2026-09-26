@@ -8,9 +8,13 @@
 # a console sent to /dev/null.
 #
 # The subject is built, not waited for:
-#   1. our sim-smix-android-01 is started on the port sim-smix-android-02
-#      was registered on, so that slot answers for a different AVD;
-#   2. `smix sim boot sim-smix-android-02` has to start it somewhere else
+#   1. our third AVD (E2E_ANDROID_THIRD, sim-smix-android-03) is started on
+#      the port the second (E2E_ANDROID_SECOND) was registered on, so that
+#      slot answers for a different AVD. Not the first: a release has that
+#      one running, and an AVD runs once — it was hard-coded here, so the
+#      blocker never came up inside the device tier and the check reported
+#      it could not judge (2026-09-25);
+#   2. `smix sim boot <second>` has to start it somewhere else
 #      (it used to refuse), and the ledger has to say which AVD it is and
 #      where its console is;
 #   3. that emulator is then killed from outside smix, and the next smix
@@ -27,23 +31,22 @@ source "$ROOT/scripts/lib/deadline.sh"
 # shellcheck source=../lib/e2e-devices.sh
 source "$ROOT/scripts/lib/e2e-devices.sh"
 
-BLOCKER_AVD="sim-smix-android-01"
-ALIAS="sim-smix-android-02"
+BLOCKER_AVD="${SMIX_C4_BLOCKER_AVD:-$E2E_ANDROID_THIRD}"
+ALIAS="${SMIX_C4_ANDROID:-$E2E_ANDROID_SECOND}"
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
 
 log()  { printf '[c4-left] %s\n' "$*" >&2; }
 fail() { printf '[c4-left] FAIL: %s\n' "$*" >&2; exit 1; }
 cannot_judge() { printf '[c4-left] CANNOT JUDGE: %s\n' "$*" >&2; exit 2; }
 
-BLOCKER_SERIAL="" BLOCKER_PID="" SERIAL="" WORK="$(mktemp -d)"
+BLOCKER_SERIAL="" SERIAL="" WORK="$(mktemp -d)"
 cleanup() {
   if [ -n "$SERIAL" ] && adb devices | grep -q "^$SERIAL[[:space:]]"; then
-    with_deadline 20 adb -s "$SERIAL" emu kill >/dev/null 2>&1 || true
+    e2e_stop_emulator "$SERIAL" || true
   fi
   if [ -n "$BLOCKER_SERIAL" ]; then
-    with_deadline 20 adb -s "$BLOCKER_SERIAL" emu kill >/dev/null 2>&1 || true
+    e2e_stop_emulator "$BLOCKER_SERIAL" || true
   fi
-  [ -n "$BLOCKER_PID" ] && kill "$BLOCKER_PID" 2>/dev/null
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -53,6 +56,12 @@ command -v adb >/dev/null 2>&1 || cannot_judge "no adb on PATH"
 for avd in "$BLOCKER_AVD" "$ALIAS"; do
   [ -d "$HOME/.android/avd/$avd.avd" ] || cannot_judge "the AVD $avd does not exist on this machine"
 done
+# An AVD runs once. A blocker that is already up somewhere cannot be
+# started on the port this needs, and saying so here names the reason
+# rather than a boot that timed out.
+if pgrep -f "qemu-system.* -avd $BLOCKER_AVD( |$)" >/dev/null 2>&1; then
+  cannot_judge "$BLOCKER_AVD is already running — it cannot also occupy another port; point SMIX_C4_BLOCKER_AVD at an AVD of ours that is shut down"
+fi
 
 registered_port() {
   "$SMIX" sim list --registered 2>/dev/null \
@@ -79,10 +88,12 @@ wait_for_boot() {
 
 step() { log "--- $*"; }
 
+# The history is the machine's, kept across runs: a serial can have left
+# before. Only departures noticed from here on are this run's.
+START="$(date -u +%Y-%m-%dT%H:%M:%S)"
+
 step "occupy $ALIAS's registered port ($PORT2) with $BLOCKER_AVD"
-"$SDK/emulator/emulator" -avd "$BLOCKER_AVD" -port "$PORT2" -no-snapshot-save -no-boot-anim \
-  >"$WORK/blocker.log" 2>&1 &
-BLOCKER_PID=$!
+e2e_start_emulator "$WORK/blocker.log" -avd "$BLOCKER_AVD" -port "$PORT2" -no-snapshot-save -no-boot-anim
 wait_for_boot "$BLOCKER_SERIAL" || cannot_judge "$BLOCKER_AVD did not come up on $BLOCKER_SERIAL — see $WORK/blocker.log"
 log "$BLOCKER_SERIAL is $BLOCKER_AVD"
 
@@ -114,12 +125,7 @@ PY
 log "ledger-names-avd=yes console=$CONSOLE ($(wc -l <"$CONSOLE" | tr -d ' ') lines so far)"
 
 step "kill $SERIAL from outside smix"
-with_deadline 20 adb -s "$SERIAL" emu kill >/dev/null 2>&1 || true
-for _ in $(seq 1 30); do
-  adb devices | grep -q "^$SERIAL[[:space:]]" || break
-  sleep 1
-done
-adb devices | grep -q "^$SERIAL[[:space:]]" && cannot_judge "$SERIAL was still listed 30 s after emu kill"
+e2e_stop_emulator "$SERIAL" 30 || cannot_judge "$SERIAL was still listed 30 s after emu kill"
 
 step "the next smix command notices"
 said="$(with_deadline 60 "$SMIX" lease list 2>&1 >/dev/null)"
@@ -129,15 +135,19 @@ $said"
 log "noticed=yes"
 
 HIST="$(with_deadline 30 "$SMIX" lease history --json 2>/dev/null)"
-SERIAL="$SERIAL" ALIAS="$ALIAS" HIST="$HIST" python3 - <<'PY' || exit 1
+SERIAL="$SERIAL" ALIAS="$ALIAS" HIST="$HIST" START="$START" python3 - <<'PY' || exit 1
 import json, os, sys
 serial, alias = os.environ["SERIAL"], os.environ["ALIAS"]
-entries = [e for e in json.loads(os.environ["HIST"]) if e["deviceId"] == serial]
+start = os.environ["START"]
+entries = [
+    e for e in json.loads(os.environ["HIST"])
+    if e["deviceId"] == serial and e["noticedAt"][:19] >= start
+]
 def bad(msg):
     print(f"[c4-left] FAIL: {msg}", file=sys.stderr)
     sys.exit(1)
 if len(entries) != 1:
-    bad(f"history has {len(entries)} entries for {serial}, not exactly one")
+    bad(f"history has {len(entries)} entries for {serial} since {start}Z, not exactly one")
 e = entries[0]
 if e.get("avd") != alias:
     bad(f"the departure names AVD {e.get('avd')!r}, not {alias!r}")

@@ -522,12 +522,21 @@ impl IosDriver {
                             .with_screen(screen_facts(&tree, 10)),
                         ));
                     }
-                    let aimed = node.map(|n| HitElement {
-                        identifier: n.identifier.clone().unwrap_or_default(),
-                        label: n.label.clone().unwrap_or_default(),
-                        frame: (n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h),
-                    });
-                    return Ok((coord.0, coord.1, aimed));
+                    let aimed = node.map(hit_element);
+                    // Aimed only at a target that has stopped moving: this
+                    // tree may be a frame of an entrance still under way.
+                    // iOS frames are in points.
+                    return settle::until_aim_settles(
+                        (coord.0, coord.1, aimed),
+                        || async {
+                            let tree = self.tree_with_retry(include).await?;
+                            Ok(aim_in(&tree, selector))
+                        },
+                        1.0,
+                        settle::POLL,
+                        settle::LIMIT,
+                    )
+                    .await;
                 }
                 Err(HostResolveError::NotFound) => {
                     if start.elapsed() > timeout {
@@ -1252,6 +1261,22 @@ pub struct HitElement {
     pub label: String,
     /// `(x, y, w, h)` in the app's coordinate space.
     pub frame: (f64, f64, f64, f64),
+}
+
+/// The element a touch is aimed at, as the verdict compares it.
+pub(crate) fn hit_element(n: &A11yNode) -> HitElement {
+    HitElement {
+        identifier: n.identifier.clone().unwrap_or_default(),
+        label: n.label.clone().unwrap_or_default(),
+        frame: (n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h),
+    }
+}
+
+/// One reading of where `selector` is in `tree`: the point to touch and the
+/// element, or `None` when it is not there.
+pub(crate) fn aim_in(tree: &A11yNode, selector: &Selector) -> Option<settle::Aim> {
+    let (nx, ny) = resolve_to_norm_coord(tree, selector).ok()?;
+    Some((nx, ny, resolve_selector(tree, selector).map(hit_element)))
 }
 
 // The two spaces and the stamp are wire shapes — the runner reports
@@ -2061,6 +2086,7 @@ fn _silence_unused_imports() {
 mod android;
 mod ios;
 mod scroll_until;
+pub mod settle;
 mod traits;
 
 pub use android::AndroidDriver;

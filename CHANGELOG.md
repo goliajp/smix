@@ -159,7 +159,30 @@ moved and `Step` is now `#[non_exhaustive]`.
   `previous_version` / `backup`. `extract_to(dir, force)` stays, for an
   explicit destination.
 
+- **Rust API: `smix_adb::AdbError` has a new variant, `StillListed {
+  serial, waited }`, and `AdbClient::stop_emulator` waits for the emulator
+  to quit.** `stop_emulator` returned as soon as `emu kill` was accepted;
+  it now returns once adb no longer lists the serial (up to a minute), and
+  `stop_emulator_within` takes the wait. A `match` over `AdbError` needs
+  an arm for the new variant: an emulator still listed when the wait ran
+  out, to which nothing further was sent.
+
+- **A `--nodes` roster names each device's platform.** Write
+  `devices: [{ device: sim-smix-001, platform: ios }]` (or
+  `platform: android`); the bare-string form `devices: [sim-smix-001]` is
+  a parse error that names the device and the new shape. The run on each
+  node is given `--platform`. A node's smix reads a device's platform
+  from its own registry and refuses a device it has not registered, so a
+  roster naming such a device was refused on every run — since 6.2, when
+  the platform stopped defaulting to iOS — and nothing on the scheduler
+  said why. The roster is now where it is declared.
+
 ### Added
+
+- **`smix lease status <DEVICE> --json` says who holds the device.**
+  `heldBy` is `{pid, cmd, alive}` when a new claim would be refused and
+  `null` when the device is free — smix's own verdict, so a script need
+  not judge the holder's liveness from the stored lease itself.
 
 - **`smix lease status <DEVICE> --json`.** `{device, path, lease}`: the
   device's ledger as it is stored (null when there is none) and the file
@@ -416,6 +439,17 @@ moved and `Step` is now `#[non_exhaustive]`.
   on a clean one.
 
 ### Changed
+
+- **`tapOn` waits for its target to stop moving before it taps.** The
+  point was worked out from one reading of the screen; on a screen still
+  coming in, the touch landed where the element had been — once in five
+  runs on an Android Compose screen's entrance, reported as
+  `TAP_MISSED`. smix now re-reads the element every 100 ms until two
+  readings agree (every edge within one point / dp), for up to 3 s, as
+  maestro does. Where maestro then taps the last position anyway, smix
+  fails with `TIMEOUT` and names the target's last two positions. Both
+  platforms, and `doubleTapOn` / `longPressOn`. A tap on a still screen
+  takes one extra reading.
 
 - **`smix tree` takes `--reader auto|probe|a11y`.** `auto` is the
   default and is what a flow does. Naming one asks that one and fails if
@@ -697,6 +731,26 @@ moved and `Step` is now `#[non_exhaustive]`.
   path. `RunnerScrollSelector` and `ScrollResponse` go with it.
 
 ### Fixed
+
+- **Long text typed on Android under load arrives whole.** `inputText`
+  sent the whole string as one `input text`, and on a busy machine it
+  lost characters: 120 characters landed whole 2 times in 10 at load
+  11–15, arriving as 101, 97 or 68, while 64 held every time. The runner
+  now types 32 characters at a time and reads each chunk back; a chunk
+  whose end did not arrive has only the missing part typed again. A
+  chunk missing characters from its middle, or holding one nobody typed,
+  still fails, naming the chunk and what the field held. `/input-text`
+  answers with `chunks` and `retyped`.
+
+- **`smix down` no longer fails because someone else has a runner up.**
+  Its last step lists smix-shaped processes still running, and it looked
+  across the whole machine: another project's runner on its own
+  simulator counted as this teardown's leftover, and `down` exited with
+  `STILL RUNNING` whenever anyone else on the machine was driving a
+  device. A process on a device held by another live smix, or on a
+  device none of this sweep's ledger or registry names, is now listed as
+  "not this sweep's" and not counted — the same holder rule the earlier
+  steps already used to leave that device alone.
 
 - **Android `/clear-text` with no field in focus answers
   `no_focused_field` in about 8 s, where it took 12 and said
@@ -1012,6 +1066,36 @@ moved and `Step` is now `#[non_exhaustive]`.
   keyboard on screen. The tree is now the whole screen: the
   app's windows from the probe, every other window from the accessibility
   reader, each saying whose it is. `source` still says `semantics`.
+
+- **An emulator smix starts no longer dies with the terminal, script or
+  tool that started it — the "Android Emulator quit unexpectedly" dialog.**
+  It shared the caller's process group, so Ctrl-C, a deadline ending a
+  script, or a harness ending a command signalled the emulator's launcher,
+  which passed it on; the headless qemu aborted in its signal-time quit
+  path and macOS showed the crash dialog. It now has a process group of
+  its own, and `smix sim shutdown` / `smix down` return once it has quit
+  rather than once it was asked to. `smix sim boot` records the boot as
+  soon as it has started the emulator, so an emulator left running by a
+  Ctrl-C during the wait is still one smix will stop; one that never comes
+  up is stopped and the record withdrawn.
+
+- **`smix sim list` no longer opens a shell on a phone nobody registered.**
+  It read the Android release of every device adb listed, with `adb -s
+  <serial> shell getprop`; an attached, unregistered phone is unreachable,
+  a read included. It is listed from adb's own line, with `"registered":
+  false` in `--json`, and its release is left unasked.
+
+- **`smix record start` refuses a simulator that is not booted.** simctl
+  answers "Recording started" on a shut-down simulator and later writes an
+  empty file, so smix reported a recording that could never play — and the
+  next ledger check said, correctly, that the device was not there. The
+  simulator's state is now asked first and named in the refusal.
+
+- **A command whose output is cut short no longer panics.** `smix … |
+  head -1`, or any reader that stops early, made smix exit 101 with "failed
+  printing to stdout: Broken pipe", so a script under `pipefail` read the
+  command as failed. smix now stops writing to stdout and finishes; the
+  exit code reports the work.
 
 ## [10.1.0] — 2026-09-19
 

@@ -12,6 +12,8 @@ HOST="${SMIX_FED_NODE_HOST:-mini}"
 REPO="${SMIX_FED_NODE_REPO:-workspace/goliajp/smix}"   # remote, relative to $HOME
 SIM_NAME="sim-simx-001"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../lib/e2e-devices.sh
+source "$ROOT/scripts/lib/e2e-devices.sh"
 
 # Only shut down what this script booted, here and on the far node.
 #
@@ -42,9 +44,6 @@ rssh() { ssh -o ConnectTimeout=5 -o BatchMode=yes "$HOST" "$@"; }
 log "guard: $HOST reachable"
 rssh true || cannot_judge "$HOST is not reachable over BatchMode ssh — this node is not available here"
 REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $HOST"
-log "guard: no active batch on studio or $HOST (yield, never seize)"
-pgrep -f 'runner.ts|smix run|supervise' >/dev/null && cannot_judge "batch owner active on studio — yielding; re-run when it is idle"
-rssh "pgrep -f 'runner.ts|smix run|supervise' >/dev/null" && cannot_judge "batch owner active on $HOST — yielding; re-run when it is idle"
 log "guard: no user build in flight on $HOST"
 rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && cannot_judge "user build in flight on $HOST — yielding; re-run when it is idle"
 [ -f "$ROOT/$FLOW_A" ] || fail "corpus flow missing: $FLOW_A"
@@ -52,7 +51,6 @@ rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && cannot_judge "user build 
 
 WORK="$(mktemp -d)"
 UDID=""
-rssh "xcrun simctl list devices 2>/dev/null | grep -q \"$UDID.*Booted\"" && WAS_BOOTED_REMOTE=yes
 cleanup() {
   log "teardown: runner down + sim shutdown + remote artifacts + workdir"
   if [ -n "$UDID" ]; then
@@ -95,12 +93,19 @@ rssh "cd '$REMOTE_REPO' && test -f target/.smix-fed-stamp && test -x target/rele
 
 # --- 6. device resolution + prep (§9#1 sims only, explicit UDID) ---
 log "resolve $SIM_NAME UDID on $HOST"
-SIM_LINES="$(rssh "cd '$REMOTE_REPO' && target/release/smix sim list 2>/dev/null" | grep -F "$SIM_NAME")" \
+SIM_LINES="$(rssh "cd '$REMOTE_REPO' && SMIX_MACHINE_DIR=\$(mktemp -d) target/release/smix sim list 2>/dev/null" | grep -F "$SIM_NAME")" \
   || fail "$SIM_NAME not in remote sim list"
 [ "$(printf '%s\n' "$SIM_LINES" | wc -l | tr -d ' ')" = 1 ] \
   || fail "$SIM_NAME matches more than one sim list line: $SIM_LINES"
 UDID="$(printf '%s\n' "$SIM_LINES" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')" \
   || fail "no UDID in sim list line: $SIM_LINES"
+# Asked now that the device is known. Asked before (as this was since
+# v2.12), the question was about an empty UDID, and the answer decided
+# whether teardown shut down a simulator somebody else may have booted.
+[ "$(simulator_state "$UDID" rssh)" = Booted ] && WAS_BOOTED_REMOTE=yes
+# The device, not the machine: another project's batch on its own device
+# is not a reason to stand down (2026-09-26).
+e2e_yield_if_held "$UDID" rssh "cd '$REMOTE_REPO' && target/release/smix"
 log "sim boot + runner up ($UDID)"
 rssh "cd '$REMOTE_REPO' && target/release/smix sim boot $UDID" || true
 rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID --bundle com.apple.Preferences" \
@@ -113,14 +118,20 @@ nodes:
   - name: c3-node
     host: $HOST
     repo: $REMOTE_REPO
-    devices: [$UDID]
+    devices: [{ device: $UDID, platform: ios }]
 YAML
 (
   cd "$ROOT"
   SMIX_FED_E2E_NODES="$WORK/nodes.yaml" \
   SMIX_FED_E2E_FLOWS="$FLOW_A,$FLOW_B" \
-    cargo test -p smix-cli --bin smix federation_e2e -- --ignored --nocapture
-) || fail "ignored e2e test red — the single-node loop did not close"
+    cargo test -p smix-cli --bin smix federation::tests::federation_e2e_single_node_runs_flows_on_mini -- --ignored --exact --nocapture
+) > "$WORK/cargo-test.log" 2>&1 || { cat "$WORK/cargo-test.log"; fail "ignored e2e test red — the single-node loop did not close"; }
+cat "$WORK/cargo-test.log"
+# An exact name that matches nothing runs zero tests and exits 0. The filter
+# used to be a prefix, which also matched the other federation e2e and
+# panicked on its missing environment (2026-09-26).
+grep -q 'test result: ok. 1 passed' "$WORK/cargo-test.log" \
+  || fail "the single-node e2e test did not run exactly once — is its name still federation::tests::federation_e2e_single_node_runs_flows_on_mini?"
 
 # --- 8. marker (teardown runs via trap) ---
 log "C3-FED-E2E-PASS"

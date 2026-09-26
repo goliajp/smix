@@ -192,6 +192,9 @@ fn adb_to_simctl_err(e: AdbError, subcommand: &str) -> DeviceControlError {
             subcommand: sub,
             detail,
         },
+        still @ AdbError::StillListed { .. } => {
+            DeviceControlError::non_zero_exit(subcommand, -1, still.to_string())
+        }
     }
 }
 

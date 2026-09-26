@@ -55,6 +55,19 @@ pub enum AdbError {
         /// Parser-side detail.
         detail: String,
     },
+    /// `emu kill` was accepted and adb still listed the emulator when the
+    /// wait ran out. Nothing further was sent to it: an emulator killed
+    /// while it quits is the one that leaves a crash dialog behind.
+    #[error(
+        "{serial} was still listed by adb {}s after `emu kill`; it has not quit, and nothing further was sent to it",
+        waited.as_secs()
+    )]
+    StillListed {
+        /// The emulator's serial.
+        serial: String,
+        /// How long adb was asked before giving up.
+        waited: std::time::Duration,
+    },
 }
 
 /// One Android device known to `adb devices -l`.
@@ -837,6 +850,15 @@ impl AdbClient {
             }
             None => (std::process::Stdio::null(), std::process::Stdio::null()),
         };
+        // A process group of its own. As a plain child it shared the
+        // caller's group, so a signal meant for the caller — Ctrl-C, a
+        // test tier's deadline, a harness ending a command — reached the
+        // launcher, which passed it on, and the headless qemu aborted in
+        // its signal-time quit path: an "Android Emulator quit
+        // unexpectedly" dialog on the owner's desktop (2026-09-25). The
+        // emulator outlives `smix sim boot` by design and is stopped the
+        // one way that lets it quit cleanly, `emu kill`.
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
         cmd.stdin(std::process::Stdio::null())
             .stdout(out)
             .stderr(err)
@@ -882,9 +904,49 @@ impl AdbClient {
     /// the same command against a hard-coded `emulator-5554` and stop
     /// whichever emulator happens to be on that port, which is the
     /// failure mode that rule exists to end.
+    /// Waits up to a minute for it to quit — see
+    /// [`stop_emulator_within`](Self::stop_emulator_within). The launcher
+    /// itself gives qemu twenty seconds before killing it; a minute leaves
+    /// room for a snapshot save on a loaded machine.
     pub async fn stop_emulator(&self, serial: &str) -> Result<(), AdbError> {
+        self.stop_emulator_within(serial, std::time::Duration::from_secs(60))
+            .await
+    }
+
+    /// [`stop_emulator`](Self::stop_emulator) with the wait named.
+    ///
+    /// Stopped means adb no longer lists the serial, in any state: an
+    /// emulator on its way out shows as `offline` while it saves its
+    /// snapshot and quits, and returning then let callers drop the boot
+    /// row and move on under it.
+    ///
+    /// # Errors
+    ///
+    /// `emu kill` failing, or [`AdbError::StillListed`] when the serial is
+    /// still listed after `within`.
+    pub async fn stop_emulator_within(
+        &self,
+        serial: &str,
+        within: std::time::Duration,
+    ) -> Result<(), AdbError> {
         self.emu(serial, &["kill"]).await?;
-        Ok(())
+        let started = std::time::Instant::now();
+        loop {
+            let (listed, _) = self.run_capture(None, "devices", &[]).await?;
+            let still = parse_devices_stdout(&listed)?
+                .iter()
+                .any(|d| d.serial == serial);
+            if !still {
+                return Ok(());
+            }
+            if started.elapsed() >= within {
+                return Err(AdbError::StillListed {
+                    serial: serial.to_string(),
+                    waited: within,
+                });
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
     }
 
     /// `adb -s <serial> shell screencap -p` — capture device screen as PNG.

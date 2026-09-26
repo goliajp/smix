@@ -605,7 +605,23 @@ pub fn add_resource(dir: &LeaseDir, device_id: &str, resource: Resource) -> Resu
 /// A later call finding it already up learns nothing about that
 /// transition, so it must not answer for it. True is therefore sticky,
 /// and only a shutdown — which drops the row outright — ends it.
+///
+/// A boot this call performed over a ledger nobody holds starts a new
+/// lease. That ledger describes the device's previous life — it left, and
+/// the command noticed and kept its departure before booting — and
+/// writing into it handed the new life a dead holder and the old
+/// `acquired_at`. A departure is one (device, lease) pair, so when the new
+/// life ended too it matched the old record and was never kept
+/// (2026-09-25). A ledger a live process holds — this one included, when
+/// it claimed the device before booting it — is written into as before.
 pub fn record_boot(dir: &LeaseDir, device_id: &str, by_us: bool) -> Result<(), LeaseError> {
+    // A live holder — this process among them — keeps its ledger.
+    if by_us && let Some(previous) = read(dir, device_id)? {
+        let held = probe(&previous.holder);
+        if !(held.pid_exists && held.identity_matches) {
+            remove(dir, device_id)?;
+        }
+    }
     let already = read(dir, device_id)?.is_some_and(|l| {
         l.known_resources()
             .any(|r| matches!(r, Resource::Booted { by_us: true }))

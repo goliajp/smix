@@ -80,7 +80,7 @@ trap cleanup EXIT
 run_ios() {
   step "iOS: $IOS_UDID"
   [ -d "$IOS_FIXTURE" ] || fail "no iOS fixture at $IOS_FIXTURE (build it first)"
-  if ! xcrun simctl list devices | grep -q "$IOS_UDID (Booted)"; then
+  if [ "$(simulator_state "$IOS_UDID")" != Booted ]; then
     "$SMIX" sim boot "$IOS_UDID" >/dev/null 2>&1 || fail "could not boot $IOS_UDID"
     IOS_WE_BOOTED=1
   fi
