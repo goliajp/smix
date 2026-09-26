@@ -367,8 +367,11 @@ moved and `Step` is now `#[non_exhaustive]`.
   many times it looked and the longest stretch nobody was looking. A watch
   whose every look failed fails — nothing is known about a screen nobody
   read — and an inner step's failure is reported as itself. Measured on
-  the fixture: about 24 looks a second on an Android emulator and 38 on an
-  iOS simulator, longest gap under 75 ms. `optional: true` turns a sighting
+  the fixture: about 48 looks a second on an iOS simulator, longest gap
+  under 60 ms; on an Android emulator (API 33, an app carrying the probe)
+  5 to 10 a second, longest gap 170 to 545 ms at host load 8, the longest
+  while a tap is being made. A flash shorter than the reported gap can go
+  unseen, which is why a pass reports it. `optional: true` turns a sighting
   into a skip; `label:` is the element's label here, as on every verb with
   a selector.
 - **`smix_sdk::screen_facts`** is re-exported, so a failure built outside
@@ -812,6 +815,14 @@ moved and `Step` is now `#[non_exhaustive]`.
   `field_not_empty`.** The second look waited for focus on a budget of its
   own inside the route's, so the bound was not the one written down; and
   "no field was found to ask" was reported as a field with text left in it.
+- **An Android runner's short replies arrive with their header.** The
+  runner's HTTP server writes a reply's header and body separately with
+  Nagle's algorithm on, so a small body waited for the header to be
+  acknowledged: on a kept-alive connection a 78-byte `/probe` reply
+  arrived 100 to 230 ms after its header, and every read of a screen
+  carrying the probe paid it. The runner now sends at once (0 to 4 ms),
+  and the probe's tree and the rest of the screen are asked for together
+  rather than one after the other.
 - **Reading a screen through the semantics probe no longer walks the
   app's window twice.** The accessibility reader is asked for every
   window but the app's, whose place the probe's tree takes (`/tree?hollow=`).
