@@ -894,7 +894,7 @@ pub fn may_shut_down(lease: Option<&Lease>) -> bool {
 /// neither a process nor an activity and never blocks adoption.
 ///
 /// Exhaustive on purpose. This was a `matches!` with a default of "not a
-/// service", and the `Emulator` row added in v11.1-C4 fell to it without
+/// service", and the `Emulator` row, added later, fell to it without
 /// a word: every emulator smix booted then refused the `runner up` → `run`
 /// pairing on it. A new kind of row has to be classified here to compile.
 pub fn is_service(r: &Resource) -> bool {
@@ -1229,7 +1229,7 @@ mod tests {
     /// command must drive through the runner, not be refused.
     ///
     /// It was refused: `is_service` was a non-exhaustive `matches!`, the
-    /// `Emulator` row added in v11.1-C4 fell to its default, and a
+    /// `Emulator` row, added later, fell to its default, and a
     /// not-service row with a live neighbour reads as an abandoned
     /// activity. The refusal then said "a recording it started is still
     /// running" — about a device on which nothing was recording.

@@ -177,7 +177,7 @@ turned out to be inside. On Android it can also say the touch was
 **delivered outside every window the runner can read** — the point
 fell where no readable window reaches, which is what a tap aimed at a
 dialog's button looked like when the tap was computed against the wrong
-rectangle (fixed in 11.1; the dialog was dismissed and the step used to
+rectangle (fixed in 11.0; the dialog was dismissed and the step used to
 pass).
 
 A different failure, `DRIVER_ERROR` saying *the runner reported nothing

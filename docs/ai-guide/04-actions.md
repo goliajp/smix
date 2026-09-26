@@ -65,7 +65,7 @@ Android an element with no id and no description is judged by its
 frame, and a touch that reaches no window at all is a miss. The same
 applies to `doubleTapOn` and `longPressOn` on Android. A runner that
 reports nothing about where a touch went fails the step and says so
-(until 11.1, every Android tap reported nothing and was printed as
+(until 11.0, every Android tap reported nothing and was printed as
 `not verified` — and passed).
 
 The gap between those two is not hypothetical. The comparison happens

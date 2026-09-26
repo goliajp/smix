@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# v11.1-C1, the iOS half: a tap on an alert's confirm presses it.
+# v11.0-C1, the iOS half: a tap on an alert's confirm presses it.
 #
 # A consumer wrote, beside a flow that confirms their app's own alert:
 # "Matched by its words an ordinary tap finds the button and reports
 # success without pressing it", and routes that tap through
 # `dispatch: 'xcui'` instead. On Android the same shape was a real
 # defect and it is fixed in this checkpoint (see
-# v11.1-c1-a-press-that-lands-e2e.sh): the touch landed below the dialog.
+# v11.0-c1-a-press-that-lands-e2e.sh): the touch landed below the dialog.
 #
 # On iOS it DID NOT REPRODUCE. Measured 2026-09-24 on sim-smix-02
-# (iOS 26.5 runtime, Xcode 27.0, smix at feature/v11.1): the fixture's
+# (iOS 26.5 runtime, Xcode 27.0): the fixture's
 # SwiftUI `.alert` — a `UIAlertController` underneath, the same thing
 # React Native's `Alert.alert` presents — confirmed by `text:Delete` and
 # by `id:fixture-alert-confirm`, nine presses across two conditions (1.5 s

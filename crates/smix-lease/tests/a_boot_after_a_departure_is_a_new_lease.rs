@@ -6,8 +6,7 @@
 //! serial — and every row it wrote went into that old ledger: the holder
 //! of a process long dead, the old `acquiredAt`. A departure is one
 //! (device, lease) pair, so when this second life ended too it matched
-//! the first one's record and was never kept (2026-09-25, v11.1-c4 on its
-//! second run).
+//! the first one's record and was never kept.
 //!
 //! Only a boot this call performed starts a new life, and only a ledger
 //! nobody is holding is replaced: a ledger this process wrote a moment

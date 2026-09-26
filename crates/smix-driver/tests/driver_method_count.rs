@@ -30,7 +30,7 @@ const ROSTER: &[&str] = &[
     "hide_keyboard",
     "long_press",
     "long_press_at_norm_coord",
-    // v11.1-C7. How many of the tree's units make a device-independent
+    // How many of the tree's units make a device-independent
     // point: iOS reports points, Android physical pixels. A box compared
     // in raw pixels would give `within: 1` a different meaning on each
     // phone.

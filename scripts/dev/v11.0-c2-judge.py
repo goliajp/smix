@@ -4,7 +4,7 @@
 Shared by the Android and the iOS e2e so both platforms are held to the same
 sentence. Reads the failure text on stdin.
 
-    v11.1-c2-judge.py <leg> <package> [--no-system-first <raw /tree json file>]
+    v11.0-c2-judge.py <leg> <package> [--no-system-first <raw /tree json file>]
 
 Checks, each printed as a verdict line:
   on-screen=yes     the failure names <package> as the focused application
@@ -54,7 +54,7 @@ def ids_by_window(path):
 
 def main() -> int:
     if len(sys.argv) < 3:
-        print("usage: v11.1-c2-judge.py <leg> <package> [--no-system-first]", file=sys.stderr)
+        print("usage: v11.0-c2-judge.py <leg> <package> [--no-system-first]", file=sys.stderr)
         return 2
     leg, package = sys.argv[1], sys.argv[2]
     rest = sys.argv[3:]

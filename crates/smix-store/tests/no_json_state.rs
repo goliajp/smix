@@ -95,7 +95,7 @@ const SCRIPT_FIXTURES: &[&str] = &[
     // Its subject is the legacy book itself: it writes a checkout's
     // `.smix/sims.json` that disagrees with the machine's registry, to
     // prove the disagreement stops resolution and names that file.
-    "scripts/dev/v11.1-c6-one-alias-one-answer-e2e.sh",
+    "scripts/dev/v11.0-c6-one-alias-one-answer-e2e.sh",
 ];
 
 /// Shell scripts and CI carry user-visible text too.

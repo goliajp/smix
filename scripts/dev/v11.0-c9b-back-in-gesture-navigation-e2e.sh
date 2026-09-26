@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v11.1-C9b: under gesture navigation, `back` closes the system share
+# v11.0-C9b: under gesture navigation, `back` closes the system share
 # sheet — by the flow verb, by `pressKey: back`, and by `smix press-key
 # back`.
 #

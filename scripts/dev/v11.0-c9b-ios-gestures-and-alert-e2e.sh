@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v11.1-C9b, iOS: a double tap and a long press arrive, and a UIKit
+# v11.0-C9b, iOS: a double tap and a long press arrive, and a UIKit
 # alert's `Delete` is pressed the way a consumer's flow presses it.
 #
 # T1. iOS double tap and long press used to go to `/double-tap` and

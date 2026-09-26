@@ -15,7 +15,7 @@
 #   a11y  — Settings carries no probe, so this is the accessibility tree
 #           with the status bar's window first: the consumer's shape. The
 #           first ten listed must not be system UI.
-# The verdicts come from v11.1-c2-judge.py, shared with the iOS leg so both
+# The verdicts come from v11.0-c2-judge.py, shared with the iOS leg so both
 # platforms answer the same sentence.
 #
 # Exit 0 judged and passed, 1 judged and failed, 2 could not judge.
@@ -31,7 +31,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/e2e-devices.sh"
 ALIAS="${SMIX_C2_ANDROID:-$E2E_ANDROID}"
 APPID="dev.smix.fixture"
 APK="$ROOT/test-fixtures/android-app/app/build/outputs/apk/debug/app-debug.apk"
-JUDGE="$ROOT/scripts/dev/v11.1-c2-judge.py"
+JUDGE="$ROOT/scripts/dev/v11.0-c2-judge.py"
 WORK="$(mktemp -d)"
 
 log()  { printf '[c2-whose-screen] %s\n' "$*" >&2; }

@@ -5,7 +5,7 @@
 
 That line picks whatever is first on the PATH, and on the development
 machine that is the last release installed — 10.1.0 while this tree was
-11.1. So a release gate run by hand judged a binary the tree had long
+11.0. So a release gate run by hand judged a binary the tree had long
 since moved past, and passed or failed for reasons that had nothing to
 do with the change being checked. It is M2 again (two halves of one
 check reading two binaries) in the place M2's own gate did not look:
