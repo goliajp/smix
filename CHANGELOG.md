@@ -179,6 +179,15 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Added
 
+- **`smix sim boot <alias> --cold`: an Android emulator boots from scratch.**
+  An emulator resumes its Quick Boot snapshot by default, and the snapshot
+  keeps the state the device stopped in — a system UI killed after an error
+  comes back dead on every boot, with a black screen that no runner can draw
+  an app on. `--cold` passes the emulator's `-no-snapshot-load`. It is
+  refused, by name, on an iOS simulator or a phone (there is no snapshot to
+  skip) and on an emulator that is already running (stop it first).
+  `runner up` names this command when it finds the system UI gone.
+
 - **`smix lease status <DEVICE> --json` says who holds the device.**
   `heldBy` is `{pid, cmd, alive}` when a new claim would be refused and
   `null` when the device is free — smix's own verdict, so a script need

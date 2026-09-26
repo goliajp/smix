@@ -127,6 +127,7 @@ smix run smoke.yaml checkout.yaml --nodes .smix/nodes.yaml --debug-output ./arti
 smix sim list                  # simulators and Android devices (JSON: --json); an attached phone nobody registered is listed from adb's line and not asked anything ("registered": false)
 smix sim resolve <ALIAS>       # alias → UDID
 smix sim boot <ALIAS|UDID>     # boot; an emulator whose registered port is taken starts on a free one, in a process group of its own so it outlives the terminal that started it
+smix sim boot <ALIAS> --cold   # an Android emulator boots from scratch instead of its Quick Boot snapshot, which keeps whatever state the device stopped in (a system UI that died stays dead); refused on anything else, and on an emulator already running
 smix sim shutdown <ALIAS|UDID> # shutdown; for an emulator, returns once adb no longer lists it
 smix sim erase <ALIAS|UDID>    # wipe (reset content)
 smix sim screenshot <ALIAS|UDID> <out.png>   # simulator → simctl, Android → adb, physical iPhone → devicectl (Xcode 27) or the runner (Xcode <= 26, must be up)

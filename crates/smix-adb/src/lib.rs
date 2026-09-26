@@ -797,24 +797,29 @@ impl AdbClient {
         serial: &str,
         console: &std::path::Path,
     ) -> Result<(), AdbError> {
-        let port = serial
-            .rsplit('-')
-            .next()
-            .and_then(|p| p.parse::<u16>().ok());
-        let Some(port) = port else {
-            return Err(AdbError::Malformed {
-                subcommand: "start_emulator_on".to_string(),
-                detail: format!(
-                    "{serial} does not end in a console port, so there is \
-                                 no way to start the emulator that would answer to it"
-                ),
-            });
-        };
-        self.spawn_emulator(avd, Some(port), Some(console))
+        let port = console_port(serial)?;
+        self.spawn_emulator(avd, Some(port), Some(console), BootFrom::Snapshot)
+    }
+
+    /// [`Self::start_emulator_on`], choosing whether the emulator resumes
+    /// its Quick Boot snapshot or boots cold.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::start_emulator_on`].
+    pub fn start_emulator_on_with(
+        &self,
+        avd: &str,
+        serial: &str,
+        console: &std::path::Path,
+        boot: BootFrom,
+    ) -> Result<(), AdbError> {
+        let port = console_port(serial)?;
+        self.spawn_emulator(avd, Some(port), Some(console), boot)
     }
 
     pub fn start_emulator(&self, avd: &str) -> Result<(), AdbError> {
-        self.spawn_emulator(avd, None, None)
+        self.spawn_emulator(avd, None, None, BootFrom::Snapshot)
     }
 
     fn spawn_emulator(
@@ -822,6 +827,7 @@ impl AdbClient {
         avd: &str,
         port: Option<u16>,
         console: Option<&std::path::Path>,
+        boot: BootFrom,
     ) -> Result<(), AdbError> {
         let home = std::env::var("ANDROID_HOME")
             .or_else(|_| std::env::var("ANDROID_SDK_ROOT"))
@@ -832,10 +838,7 @@ impl AdbClient {
                 )
             });
         let mut cmd = std::process::Command::new(format!("{home}/emulator/emulator"));
-        cmd.args(["-avd", avd, "-no-boot-anim"]);
-        if let Some(port) = port {
-            cmd.args(["-port", &port.to_string()]);
-        }
+        cmd.args(emulator_args(avd, port, boot));
         let (out, err) = match console {
             Some(path) => {
                 if let Some(dir) = path.parent() {
@@ -1198,6 +1201,47 @@ impl AdbClient {
 }
 
 // -------------------- unit tests -------------------------------------------
+
+/// Where an emulator starts from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BootFrom {
+    /// Resume the AVD's Quick Boot snapshot, the emulator's default.
+    Snapshot,
+    /// Boot the system from scratch and ignore the snapshot. A snapshot
+    /// saves whatever state the device was in when it stopped, a dead
+    /// system UI included, and restores it on every later boot.
+    Cold,
+}
+
+/// The emulator's command line, after the binary.
+pub fn emulator_args(avd: &str, port: Option<u16>, boot: BootFrom) -> Vec<String> {
+    let mut args = vec![
+        "-avd".to_string(),
+        avd.to_string(),
+        "-no-boot-anim".to_string(),
+    ];
+    if let Some(port) = port {
+        args.extend(["-port".to_string(), port.to_string()]);
+    }
+    if boot == BootFrom::Cold {
+        args.push("-no-snapshot-load".to_string());
+    }
+    args
+}
+
+fn console_port(serial: &str) -> Result<u16, AdbError> {
+    serial
+        .rsplit('-')
+        .next()
+        .and_then(|p| p.parse::<u16>().ok())
+        .ok_or_else(|| AdbError::Malformed {
+            subcommand: "start_emulator_on".to_string(),
+            detail: format!(
+                "{serial} does not end in a console port, so there is \
+                 no way to start the emulator that would answer to it"
+            ),
+        })
+}
 
 #[cfg(test)]
 mod tests {
