@@ -459,9 +459,12 @@ moved and `Step` is now `#[non_exhaustive]`.
   `TAP_MISSED`. smix now re-reads the element every 100 ms until two
   readings agree (every edge within one point / dp), for up to 3 s, as
   maestro does. Where maestro then taps the last position anyway, smix
-  fails with `TIMEOUT` and names the target's last two positions. Both
-  platforms, and `doubleTapOn` / `longPressOn`. A tap on a still screen
-  takes one extra reading.
+  fails with `TIMEOUT` and names the target's last two positions, which
+  differ. A target that is gone from the screen at the end of the wait is
+  not moving: it fails with `ELEMENT_NOT_FOUND`, saying where it was last
+  seen, with the screen's elements and near misses as any other not-found
+  failure carries them. Both platforms, and `doubleTapOn` / `longPressOn`.
+  A tap on a still screen takes one extra reading.
 
 - **`smix tree` takes `--reader auto|probe|a11y`.** `auto` is the
   default and is what a flow does. Naming one asks that one and fails if

@@ -12,7 +12,8 @@
 //! this exists to prevent.
 
 use smix_driver::HitElement;
-use smix_driver::settle::{Aim, frames_agree, until_aim_settles};
+use smix_driver::settle::{Aim, Reading, frames_agree, until_aim_settles};
+use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use std::cell::RefCell;
 use std::time::Duration;
 
@@ -28,17 +29,34 @@ fn aim(y: f64) -> Aim {
     )
 }
 
-type Reading = std::future::Ready<Result<Option<Aim>, smix_error::ExpectationFailure>>;
+type Next = std::future::Ready<Result<Reading, ExpectationFailure>>;
 
-/// Readings the target gives, in order; the last repeats for ever.
-fn readings(ys: &[f64]) -> impl FnMut() -> Reading {
-    let ys = ys.to_vec();
+/// Readings the target gives, in order; the last repeats for ever. `None`
+/// is a reading in which the target is not on screen.
+fn readings_of(ys: Vec<Option<f64>>) -> impl FnMut() -> Next {
     let at = RefCell::new(0usize);
     move || {
         let i = (*at.borrow()).min(ys.len() - 1);
         *at.borrow_mut() += 1;
-        std::future::ready(Ok(Some(aim(ys[i]))))
+        std::future::ready(Ok(match ys[i] {
+            Some(y) => Reading::At(aim(y)),
+            None => Reading::Gone(Box::new(not_found())),
+        }))
     }
+}
+
+fn readings(ys: &[f64]) -> impl FnMut() -> Next + use<> {
+    readings_of(ys.iter().copied().map(Some).collect())
+}
+
+/// What the caller reports for an element the screen does not have.
+fn not_found() -> ExpectationFailure {
+    ExpectationFailure::new(FailureInit {
+        code: Some(FailureCode::ElementNotFound),
+        message: "element not found: id=compose_input".into(),
+        suggestions: vec!["compose_output".into()],
+        ..Default::default()
+    })
 }
 
 const FAST: Duration = Duration::from_millis(0);
@@ -74,6 +92,61 @@ async fn a_target_that_never_stops_is_named_not_tapped() {
         .expect_err("a target that keeps moving is not tapped");
     assert_eq!(err.code, smix_error::FailureCode::Timeout);
     assert!(err.message.contains("kept moving"), "{}", err.message);
+    // Two readings, and two different ones: "moving" is a claim about a
+    // difference, and it names both sides of it.
+    let frames: Vec<&str> = err
+        .message
+        .match_indices("(44,")
+        .map(|(i, _)| &err.message[i..i + 16])
+        .collect();
+    assert_eq!(frames.len(), 2, "{}", err.message);
+    assert_ne!(frames[0], frames[1], "{}", err.message);
+}
+
+// 2026-09-27: a control that lives three seconds was found, then gone for
+// the rest of the wait, and the tap failed as `TIMEOUT … kept moving` with
+// one frame named twice. It had not moved; it had left.
+#[tokio::test]
+async fn a_target_that_goes_away_is_reported_as_not_found() {
+    let err = until_aim_settles(aim(632.0), readings_of(vec![None]), 1.0, FAST, LIMIT)
+        .await
+        .expect_err("a target that left is not tapped");
+    assert_eq!(err.code, FailureCode::ElementNotFound, "{}", err.message);
+    assert!(!err.message.contains("kept moving"), "{}", err.message);
+    assert!(
+        err.message.contains("(44,632 992×140)"),
+        "names where it was last: {}",
+        err.message
+    );
+    assert_eq!(err.suggestions, vec!["compose_output".to_string()]);
+}
+
+#[tokio::test]
+async fn a_target_that_moves_and_then_goes_away_is_reported_as_not_found() {
+    let err = until_aim_settles(
+        aim(900.0),
+        readings_of(vec![Some(700.0), Some(400.0), None]),
+        1.0,
+        FAST,
+        LIMIT,
+    )
+    .await
+    .expect_err("a target that left is not tapped");
+    assert_eq!(err.code, FailureCode::ElementNotFound, "{}", err.message);
+}
+
+#[tokio::test]
+async fn a_target_missing_for_one_reading_and_back_in_place_is_tapped() {
+    let got = until_aim_settles(
+        aim(180.0),
+        readings_of(vec![None, Some(180.0)]),
+        1.0,
+        FAST,
+        LIMIT,
+    )
+    .await
+    .expect("a target back where it was settles");
+    assert_eq!(got.2.expect("aimed").frame.1, 180.0);
 }
 
 #[test]

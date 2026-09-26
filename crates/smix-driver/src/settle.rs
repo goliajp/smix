@@ -27,6 +27,15 @@ pub type Frame = (f64, f64, f64, f64);
 /// Where a touch goes: the normalised point, and the element it is aimed at.
 pub type Aim = (f64, f64, Option<HitElement>);
 
+/// One re-reading of the tree: where the target is, or that it is not
+/// there — with the failure the caller would report for an element that
+/// cannot be found on that screen, so a target that goes away is reported
+/// the way any other missing element is.
+pub enum Reading {
+    At(Aim),
+    Gone(Box<ExpectationFailure>),
+}
+
 /// Time between readings — maestro's `ELEMENT_STABILITY_POLL_INTERVAL_MS`.
 pub const POLL: Duration = Duration::from_millis(100);
 
@@ -56,6 +65,19 @@ fn aims_agree(a: &Aim, b: &Aim, pixels_per_point: f64) -> bool {
     }
 }
 
+fn describe_target(aim: &Aim) -> String {
+    aim.2.as_ref().map_or_else(
+        || "the target".to_string(),
+        |e| {
+            if e.identifier.is_empty() {
+                format!("the element labelled {:?}", e.label)
+            } else {
+                format!("id={}", e.identifier)
+            }
+        },
+    )
+}
+
 fn describe(aim: &Aim) -> String {
     match &aim.2 {
         Some(e) => format!(
@@ -71,14 +93,16 @@ fn describe(aim: &Aim) -> String {
 ///
 /// `first` is the reading the tap was about to use; it counts as the
 /// first of the two, so a target already still costs one extra reading.
-/// `reread` reads the tree once more: `Ok(None)` is a reading in which the
-/// target is absent (waited through, as maestro does), and an error ends
-/// the wait with that error.
+/// `reread` reads the tree once more: [`Reading::Gone`] is a reading in
+/// which the target is absent (waited through, as maestro does), and an
+/// error ends the wait with that error.
 ///
 /// # Errors
 ///
-/// `TIMEOUT` when the target is still moving after `limit`, naming its
-/// last two readings; whatever `reread` returned, when it failed.
+/// At `limit`: the caller's not-found failure when the latest reading
+/// found the target gone, saying where it was last seen; `TIMEOUT` when it
+/// is present and still moving, naming two different readings. Whatever
+/// `reread` returned, when it failed.
 pub async fn until_aim_settles<F, Fut>(
     first: Aim,
     mut reread: F,
@@ -88,50 +112,60 @@ pub async fn until_aim_settles<F, Fut>(
 ) -> Result<Aim, ExpectationFailure>
 where
     F: FnMut() -> Fut,
-    Fut: Future<Output = Result<Option<Aim>, ExpectationFailure>>,
+    Fut: Future<Output = Result<Reading, ExpectationFailure>>,
 {
     let start = Instant::now();
     let mut last = first;
     let mut before: Option<Aim> = None;
     loop {
         tokio::time::sleep(poll).await;
-        if let Some(now) = reread().await? {
-            if aims_agree(&last, &now, pixels_per_point) {
-                return Ok(now);
+        // The latest reading's failure, when it found the target gone.
+        let gone = match reread().await? {
+            Reading::At(now) => {
+                if aims_agree(&last, &now, pixels_per_point) {
+                    return Ok(now);
+                }
+                before = Some(std::mem::replace(&mut last, now));
+                None
             }
-            before = Some(std::mem::replace(&mut last, now));
+            Reading::Gone(failure) => Some(*failure),
+        };
+        if start.elapsed() < limit {
+            continue;
         }
-        if start.elapsed() >= limit {
-            let target = last.2.as_ref().map_or_else(
-                || "the target".to_string(),
-                |e| {
-                    if e.identifier.is_empty() {
-                        format!("the element labelled {:?}", e.label)
-                    } else {
-                        format!("id={}", e.identifier)
-                    }
-                },
+        let target = describe_target(&last);
+        // Gone at the end: it left, it did not move. `before` is only ever
+        // set by two present readings that differ, so without this a target
+        // seen once and then gone for the rest of the wait was reported as
+        // moving, with its one frame named as both "last two readings".
+        if let Some(mut failure) = gone {
+            failure.message = format!(
+                "{target} was on screen and then gone: last seen at {}, absent from the \
+                 latest reading after {} ms of waiting for it to hold still. {}",
+                describe(&last),
+                limit.as_millis(),
+                failure.message
             );
-            let readings = match &before {
-                Some(b) => format!("{} then {}", describe(b), describe(&last)),
-                None => format!("last seen at {}", describe(&last)),
-            };
-            return Err(ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::Timeout),
-                message: format!(
-                    "{target} kept moving: its last two readings were {readings}, and it \
-                     did not hold still between two readings in {} ms. A touch aimed at \
-                     where it was would land where it no longer is.",
-                    limit.as_millis()
-                ),
-                hint: Some(
-                    "wait for what moves it to finish (an entrance animation, a scroll's \
-                     momentum, content still loading) — e.g. `waitForAnimationToEnd` before \
-                     the tap"
-                        .into(),
-                ),
-                ..Default::default()
-            }));
+            return Err(failure);
         }
+        let before = before.expect("the latest reading is present and differs from the one before");
+        return Err(ExpectationFailure::new(FailureInit {
+            code: Some(FailureCode::Timeout),
+            message: format!(
+                "{target} kept moving: its last two readings were {} then {}, and it did \
+                 not hold still between two readings in {} ms. A touch aimed at where it \
+                 was would land where it no longer is.",
+                describe(&before),
+                describe(&last),
+                limit.as_millis()
+            ),
+            hint: Some(
+                "wait for what moves it to finish (an entrance animation, a scroll's \
+                 momentum, content still loading) — e.g. `waitForAnimationToEnd` before \
+                 the tap"
+                    .into(),
+            ),
+            ..Default::default()
+        }));
     }
 }
