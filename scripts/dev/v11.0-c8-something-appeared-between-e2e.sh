@@ -16,7 +16,9 @@
 # button (shows a button that takes itself away after 3 s and records,
 # on the app's own clock, how long after it appeared a press came).
 #
-#   flash    neverVisible overlay during [tap Flash, wait for done]   must FAIL, naming when and which step
+#   flash    neverVisible overlay during [tap Flash, wait for done]   must FAIL, naming when and which step —
+#            unless the pass itself reports a gap as long as the flash:
+#            then the leg cannot be judged (exit 2 if nothing else failed)
 #   quiet    neverVisible overlay during [tap Quiet, wait for done]   must pass, saying how often it looked
 #   tap      tap Reveal → tap the vanishing button                   the app counts the press
 #   wait-tap tap Reveal → wait for it → tap it (the consumer's shape) the app counts the press
@@ -75,7 +77,13 @@ python3 "$ROOT/scripts/dev/fixture-apk-stamp.py" --check >&2 \
   || fail "the fixture apk on disk is not the one this tree builds"
 
 FAILED=0
+UNJUDGED=""
 DENSITY=""
+source "$ROOT/scripts/lib/flash-verdict.sh"
+AND_FLASH_MS="$(fixture_flash_ms kotlin "$ROOT/test-fixtures/android-app/app/src/main/kotlin/dev/smix/fixture/WatchActivity.kt")" \
+  || fail "could not read how long the Android fixture's overlay stands"
+IOS_FLASH_MS="$(fixture_flash_ms swift "$ROOT/test-fixtures/demo-app/main.swift")" \
+  || fail "could not read how long the iOS fixture's overlay stands"
 
 # One flow. $1 platform, $2 device, $3 port, $4 label, $5 flow file.
 # Sets RC and OUT.
@@ -88,20 +96,19 @@ run_flow() {
   true
 }
 
-judge_flash() { # $1 platform
-  local when
-  # `|| true`: a flow that did not produce the line is judged below; under
-  # pipefail an empty grep would otherwise end the script here, red with
-  # no verdict printed.
-  when="$(printf '%s' "$OUT" | grep -o 'appeared after [0-9]* ms, [^—]*' | head -1 || true)"
-  if [ "$RC" != 0 ] && [ -n "$when" ] \
-     && printf '%s' "$when" | grep -qE 'while step [0-9]+ of 2 \((tapOn|extendedWaitUntil)\)'; then
-    log "  $1 flash: failed, as it should — $when"
-  else
-    printf '[c8-between] FAIL: %s flash: expected to fail naming the time and the inner step, exited %s — %s\n' \
-      "$1" "$RC" "$(printf '%s' "$OUT" | tail -4 | tr '\n' ' ')" >&2
-    FAILED=1
-  fi
+# The flash leg is judged by the watch's own longest gap: a pass that
+# left a gap as long as the flash says nothing either way, and is not
+# counted as a failure (see scripts/lib/flash-verdict.sh).
+judge_flash() { # $1 platform, $2 flash ms
+  local said st
+  said="$(flash_verdict "$RC" "$OUT" "$2")" && st=0 || st=$?
+  case "$st" in
+    0) log "  $1 flash: failed, as it should — ${said#caught: }" ;;
+    2) log "  $1 flash: CANNOT JUDGE — ${said#cannot: }"
+       UNJUDGED="$UNJUDGED $1-flash" ;;
+    *) printf '[c8-between] FAIL: %s flash: %s\n' "$1" "${said#missed: }" >&2
+       FAILED=1 ;;
+  esac
 }
 
 judge_quiet() { # $1 platform
@@ -237,7 +244,7 @@ log "--- Android ($SERIAL)"
 write_watch "$WORK/a-flash.yaml" "$AND_APPID" android watch_overlay watch_flash watch_done
 write_watch "$WORK/a-quiet.yaml" "$AND_APPID" android watch_overlay watch_quiet watch_done
 write_vanish "$WORK/a-vanish.yaml" "$AND_APPID" android watch_reveal watch_vanishing
-and_fresh; run_flow android "$SERIAL" "$AND_PORT" flash "$WORK/a-flash.yaml"; judge_flash android
+and_fresh; run_flow android "$SERIAL" "$AND_PORT" flash "$WORK/a-flash.yaml"; judge_flash android "$AND_FLASH_MS"
 and_fresh; run_flow android "$SERIAL" "$AND_PORT" quiet "$WORK/a-quiet.yaml"; judge_quiet android
 write_wait_then_tap "$WORK/a-wait-tap.yaml" "$AND_APPID" android watch_reveal watch_vanishing
 and_fresh; run_flow android "$SERIAL" "$AND_PORT" vanish "$WORK/a-vanish.yaml"
@@ -263,7 +270,7 @@ log "--- iOS ($UDID)"
 write_watch "$WORK/i-flash.yaml" "$IOS_APPID" ios watch-overlay watch-flash watch-done
 write_watch "$WORK/i-quiet.yaml" "$IOS_APPID" ios watch-overlay watch-quiet watch-done
 write_vanish "$WORK/i-vanish.yaml" "$IOS_APPID" ios watch-reveal watch-vanishing
-run_flow ios "$UDID" "$IOS_PORT" flash "$WORK/i-flash.yaml"; judge_flash ios
+run_flow ios "$UDID" "$IOS_PORT" flash "$WORK/i-flash.yaml"; judge_flash ios "$IOS_FLASH_MS"
 run_flow ios "$UDID" "$IOS_PORT" quiet "$WORK/i-quiet.yaml"; judge_quiet ios
 write_wait_then_tap "$WORK/i-wait-tap.yaml" "$IOS_APPID" ios watch-reveal watch-vanishing
 run_flow ios "$UDID" "$IOS_PORT" vanish "$WORK/i-vanish.yaml"
@@ -273,4 +280,5 @@ judge_vanish ios "$UDID" "$IOS_PORT" watch-presses watch-latency wait-then-tap
 
 log "measured:$DENSITY"
 [ "$FAILED" = 0 ] || exit 1
+[ -z "$UNJUDGED" ] || cannot_judge "every leg that could be judged passed; not judged:$UNJUDGED — the watch left a gap as long as the flash"
 log "C8-BETWEEN-E2E-PASS (an overlay that flashed between two steps failed, naming when and which step; a quiet span passed, saying how often it looked; a control that leaves on its own was pressed — on both platforms)"

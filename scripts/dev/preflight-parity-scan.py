@@ -123,6 +123,7 @@ LOCAL = {
     "the crash-evidence gate can still go red": "a-device-gate-keeps-crash-evidence.test",
     "the crash-evidence collector's self-test": "crash-evidence.sh --selftest",
     "the claude-session reader's self-test": "claude-session.sh --selftest",
+    "the flash verdict's self-test": "flash-verdict.sh --selftest",
     "every flow run is judged by smix's own code": "a-run-is-judged-by-its-code.py",
     "the run-judging gate can still go red": "a-run-is-judged-by-its-code.test",
     "the run wrapper can still go red": "smix-run --selftest",
