@@ -152,12 +152,6 @@ Compatibility matrix:
 | v1.x | v2.x | yes — negotiates down to wire schema 1 |
 | v1.x YAML flows | v2.x | run `smix migrate` for the renamed verbs; unknown spellings warn and pass through |
 
-## Contributions
-
-**This project does not accept external contributions.**
-
-The source is published under Apache 2.0 / MIT so you are free to fork, adapt, and redistribute per those license terms; upstream will not accept pull requests, feature requests, or issue reports.
-
 ## License
 
 Licensed under either of
