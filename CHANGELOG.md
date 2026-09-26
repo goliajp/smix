@@ -815,6 +815,16 @@ moved and `Step` is now `#[non_exhaustive]`.
   `field_not_empty`.** The second look waited for focus on a budget of its
   own inside the route's, so the bound was not the one written down; and
   "no field was found to ask" was reported as a field with text left in it.
+- **A simulator smix boots, or finds booting, has finished booting before
+  anything is started on it.** The wait ended when the device list said
+  `Booted`, which it says while SpringBoard is still coming up — measured
+  up to 8.9 s early. An iOS runner started in that gap could not launch its
+  app and exited with status 65 having run no test; `smix_use` (MCP),
+  `runner up`, `sim boot` and `capsule up` all waited this way. The wait is
+  now `simctl bootstatus`, which also covers a device someone else booted a
+  moment before; on a device already up it adds about 0.1 s. `smix_use`
+  also records the boot it does, so `smix down` turns off a simulator it
+  turned on.
 - **`smix down` after `smix capsule up` no longer shuts down a simulator
   that was already running.** `capsule up` decided whether it had booted
   the device from how the boot answered, and the boot answers the same

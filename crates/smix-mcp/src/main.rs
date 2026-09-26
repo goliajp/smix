@@ -289,14 +289,26 @@ impl SmixMcpService {
             ))]));
         }
 
+        // Waits for the device to finish booting: a runner started on one
+        // still coming up exits with status 65 and no test run. And the
+        // boot is recorded, by the rule `smix sim boot` uses — ours only if
+        // it was off — so `smix down` turns off what this turned on and
+        // nothing else.
         let simctl = smix_simctl::SimctlClient::new();
-        if let Err(e) = simctl.boot(&params.udid).await
-            && !e.to_string().contains("current state: Booted")
-        {
-            return Err(McpError::internal_error(
-                format!("boot {}: {e}", params.udid),
-                None,
-            ));
+        let was_up = simctl.list_devices().await.is_ok_and(|ds| {
+            ds.iter()
+                .any(|d| d.udid.eq_ignore_ascii_case(&params.udid) && d.state == "Booted")
+        });
+        simctl
+            .boot_and_wait(&params.udid, std::time::Duration::from_secs(120))
+            .await
+            .map_err(|e| McpError::internal_error(format!("boot {}: {e}", params.udid), None))?;
+        let recorded = smix_capsule::runner::machine_leases().and_then(|leases| {
+            smix_lease::store::record_boot(&leases, &params.udid, !was_up)
+                .map_err(|e| e.to_string())
+        });
+        if let Err(e) = recorded {
+            eprintln!("warning: boot not recorded in the device ledger: {e}");
         }
 
         let root = std::env::current_dir()

@@ -1570,34 +1570,59 @@ impl SimctlClient {
         Ok(())
     }
 
-    /// Boot + poll device state == "Booted" within timeout. Tries every
-    /// 500 ms until success or `timeout_ms` elapses. Idempotent on
-    /// already-booted devices (`xcrun simctl boot` returns non-zero when
-    /// the device is already booted; we swallow that).
+    /// Boot the device and return once it has finished booting, within
+    /// `timeout`. A device that is already booted and ready returns at
+    /// once (about 0.1 s).
+    ///
+    /// "Booted" in the device list is not "finished": it is listed so
+    /// while SpringBoard is still coming up — measured 8.9 s before
+    /// `simctl bootstatus` said it was done — and an XCUITest runner
+    /// started in that gap cannot launch its app and exits with status
+    /// 65 having run no test. So the wait is `bootstatus`, which also
+    /// covers a device someone else booted a moment ago.
     pub async fn boot_and_wait(
         &self,
         udid: &str,
         timeout: Duration,
     ) -> Result<(), DeviceControlError> {
-        // Issue boot; ignore already-booted error (the only friendly path).
-        let _ = simctl_run(&["boot", udid]).await;
-        let start = std::time::Instant::now();
-        loop {
-            let devices = self.list_devices().await?;
-            if devices
-                .iter()
-                .any(|d| d.udid == udid && d.state == "Booted")
-            {
-                return Ok(());
-            }
-            if start.elapsed() > timeout {
+        let started = std::time::Instant::now();
+        let mut cmd = Command::new("xcrun");
+        cmd.args(["simctl", "bootstatus", udid, "-b"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        let output = match tokio::time::timeout(timeout, cmd.output()).await {
+            Ok(output) => output?,
+            Err(_) => {
                 return Err(DeviceControlError::Timeout {
-                    subcommand: format!("boot {}", udid),
+                    subcommand: format!("bootstatus {udid} -b"),
                     ms: timeout.as_millis() as u64,
                 });
             }
-            sleep(Duration::from_millis(500)).await;
+        };
+        let argv: Vec<String> = ["xcrun", "simctl", "bootstatus", udid, "-b"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        let wall_ms = started.elapsed().as_millis() as u64;
+        subprocess_ring::record(SubprocessRecord {
+            argv: argv.clone(),
+            exit_code: output.status.code(),
+            wall_ms,
+            stderr_head: stderr.chars().take(256).collect(),
+            timestamp: std::time::SystemTime::now(),
+        });
+        if !output.status.success() {
+            return Err(DeviceControlError::NonZeroExit {
+                subcommand: "bootstatus".to_string(),
+                argv,
+                code: output.status.code().unwrap_or(-1),
+                stderr,
+                wall_ms,
+            });
         }
+        Ok(())
     }
 
     /// `xcrun simctl erase <udid>` — wipe device contents.

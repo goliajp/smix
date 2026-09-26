@@ -270,37 +270,16 @@ pub async fn up(opts: UpOptions<'_>) -> Result<(), String> {
         eprintln!("capsule up: {w}");
     }
 
-    // 2. Boot sim (skipped if already Booted). `boot_and_wait` fuses
-    // boot + bootstatus and returns when the sim is fully ready;
-    // a NonZeroExit with stderr "current state: Booted" means it was
-    // already booted and is treated as success.
+    // 2. Boot sim. `boot_and_wait` returns once the sim is fully ready,
+    // and answers the same whether it was already running — which is why
+    // who turned it on is read before it.
     let simctl = smix_simctl::SimctlClient::new();
-    // Whether the device was already running is read before the boot, by
-    // the rule `sim boot` uses. It was read from how the boot answered,
-    // and `boot_and_wait` answers Ok either way — so every device was
-    // claimed as ours, and `smix down` shut down simulators it found
-    // running.
-    let was_up = crate::booted_udids(&simctl)
-        .await
-        .contains(&opts.udid.to_uppercase());
-    let claim = crate::boot_claim(if was_up {
-        crate::EmulatorState::AlreadyRunning
-    } else {
-        crate::EmulatorState::WasOff
-    });
+    let claim = crate::boot_record::claim_before_boot(&simctl, opts.udid).await;
     simctl
         .boot_and_wait(opts.udid, std::time::Duration::from_secs(120))
         .await
         .map_err(|e| format!("simctl boot {}: {e}", opts.udid))?;
-    let booted_by_us = claim == crate::BootClaim::ClaimAsOurs;
-    match smix_capsule::runner::machine_leases() {
-        Ok(leases) => {
-            if let Err(e) = smix_lease::store::record_boot(&leases, opts.udid, booted_by_us) {
-                eprintln!("capsule up: boot not recorded in the device ledger: {e}");
-            }
-        }
-        Err(e) => eprintln!("capsule up: boot not recorded in the device ledger: {e}"),
-    }
+    crate::boot_record::record_simulator_boot(opts.udid, claim);
 
     // 3. Capture start. Skipped when --no-capture (releases the
     // simctl io recordVideo lock for in-scenario recording segments).
