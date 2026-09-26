@@ -25,15 +25,11 @@ log()  { printf '[c8-loop] %s\n' "$*"; }
 step() { printf '[c8-loop] --- %s\n' "$*"; }
 fail() { printf '[c8-loop] FAIL: %s\n' "$*" >&2; exit 1; }
 
-# A `claude` session that cannot start says nothing about the plugin. Usage
-# limits, an expired login, a missing binary — all of them mean "not
-# runnable here", and reporting FAIL tells whoever reads the suite next
-# that smix is broken. The distinction matters because this file's real
-# assertions are about what a session observes, so a session that never
-# ran has produced no evidence either way.
-UNRUNNABLE='reached your .* limit|/usage-credits|not logged in|Invalid API key|command not found|credit balance'
+# A session the service stopped partway (a usage limit, an expired login)
+# observed nothing about the plugin; judging its calls would read that as
+# the product failing.
 cannot_judge() { printf '[c8-loop] %s\n' "$*" >&2; printf '%s\n' "C8-PLUGIN-LOOP-SKIP"; exit 2; }
-session_unrunnable() { grep -qiE "$UNRUNNABLE" "$1" 2>/dev/null; }
+source "$ROOT/scripts/lib/claude-session.sh"
 
 
 command -v claude >/dev/null || fail "the claude CLI is not on PATH"
@@ -95,6 +91,9 @@ Do not run any shell commands to start or stop a runner — use the tools."
     -p "$PROMPT" > "$WORK/stream.jsonl" 2>"$WORK/err.log" ) || true
 
 [ -s "$WORK/stream.jsonl" ] || { tail -10 "$WORK/err.log" >&2; fail "the session produced no stream"; }
+if cut="$(claude_stream_cut_short "$WORK/stream.jsonl")"; then
+  cannot_judge "the session did not run to its end ($cut) — it observed nothing about the plugin"
+fi
 
 # --- judge the tool calls ------------------------------------------------
 

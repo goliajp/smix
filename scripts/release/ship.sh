@@ -552,6 +552,8 @@ python3 "$ROOT/scripts/dev/a-device-gate-keeps-crash-evidence.test.py" >> /tmp/s
   || fail "crash-evidence gate self-test FAILED — see /tmp/smix-ship-crash-evidence.log"
 bash "$ROOT/scripts/lib/crash-evidence.sh" --selftest >> /tmp/smix-ship-crash-evidence.log 2>&1 \
   || fail "crash-evidence collector self-test FAILED — see /tmp/smix-ship-crash-evidence.log"
+bash "$ROOT/scripts/lib/claude-session.sh" --selftest >> /tmp/smix-ship-crash-evidence.log 2>&1 \
+  || fail "claude-session reader self-test FAILED — see /tmp/smix-ship-crash-evidence.log"
 log "every flow run is judged by smix's own code"
 python3 "$ROOT/scripts/dev/a-run-is-judged-by-its-code.py" > /tmp/smix-ship-run-judged.log 2>&1 \
   || fail "a flow run is judged by the script's rule, not smix's code — see /tmp/smix-ship-run-judged.log"
