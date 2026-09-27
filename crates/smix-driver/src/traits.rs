@@ -201,9 +201,9 @@ pub trait Driver: Send + Sync {
     /// Tap a selector `times` times, spaced on the event timeline.
     ///
     /// Default is one resolve per touch through [`Self::tap`], which is
-    /// what every platform can already do. A runner that can pack the
-    /// touches into one synthesise overrides this and gets an interval
-    /// the caller states rather than one the round trip decides.
+    /// what every platform can already do. A runner that can take the
+    /// touches in one request overrides this and gets an interval the
+    /// caller states rather than one the round trip decides.
     async fn tap_burst(
         &self,
         selector: &Selector,

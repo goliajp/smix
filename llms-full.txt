@@ -358,7 +358,9 @@ one that stops.
 # `repeat` around `tapOn` sends a request per tap, and each one costs a
 # synthesised event round trip (~400 ms on iOS 26.5) — so the interval
 # is whatever that cost, and a gesture gated on a short inter-tap window
-# cannot be driven. This packs the touches into one event timeline.
+# cannot be driven. This sends them in one request, and the runner keeps
+# the interval. On iOS one touch takes about 280 ms to deliver, so an
+# interval shorter than that arrives as ~280 ms; Android keeps it.
 - repeatTap:
     id: "hidden-trigger"
     times: 10
@@ -5203,10 +5205,15 @@ press answers only that the event went in.
 
 ### `POST /tap-at-norm-coord`
 
-Body: `{ nx, ny, times?, intervalMs?, holdMs?, aimedBy? }` — a point as
-shares of the app frame, and optionally a burst (`times` touches
-`intervalMs` apart) or a held touch (`holdMs`). A tap, a double tap
-(`times: 2`) and a long press (`holdMs: duration`) are all this route.
+Body: `{ nx, ny, times?, intervalMs?, holdMs?, doubleTap?, aimedBy? }` —
+a point as shares of the app frame, and optionally a burst (`times`
+touches `intervalMs` apart) or a held touch (`holdMs`). A tap, a double
+tap (`times: 2, doubleTap: true`) and a long press (`holdMs: duration`)
+are all this route. On iOS the touches of a burst are delivered one at
+a time on their schedule, no closer than one delivery (about 280 ms);
+`doubleTap` sends both in one event instead, close enough together to be
+one gesture. The Android runner does not read `doubleTap` (its double
+tap is `/double-tap-at-norm-coord`).
 `aimedBy` is the tree the point was aimed from, `accessibility` or
 `semantics`; absent means `accessibility`.
 
@@ -5488,7 +5495,7 @@ that is why.
 |---|---|---|---|
 | `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
 | `doubleTapOn` / `doubleTap` | ✅ | ✅ | Resolved on the host and judged like `tapOn`: a double tap delivered to something else fails `TAP_MISSED`. iOS sends both touches in one synthesised event, 80 ms apart; Android two clicks 150 ms apart |
-| `repeatTap` / `tapOn: { repeat }` | ✅ | ✅ | Found once and held still, then every touch goes in one request, so the interval is the number you state. The first touch is judged like `tapOn` (a miss fails `TAP_MISSED`); the later ones are not, since the screen may change after the first |
+| `repeatTap` / `tapOn: { repeat }` | ✅ | ✅ | Found once and held still, then every touch goes in one request, so the interval is the number you state (on iOS no shorter than one touch takes to deliver, about 280 ms). The first touch is judged like `tapOn` (a miss fails `TAP_MISSED`); the later ones are not, since the screen may change after the first |
 | `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s); `{ duration: N }` sets it. Resolved on the host and judged like `tapOn` on both platforms |
 | `tapOn: { point: "X%,Y%" }` | ✅ | ✅ | Normalized [0, 1] coordinates; the escape hatch for screens with no a11y semantics. Not a verb of its own — there is no `tapByCoord` |
 

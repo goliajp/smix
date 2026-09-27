@@ -12,10 +12,15 @@
 // and the interval between them is whatever the network and the
 // runner happened to add.
 //
-// `XCSynthesizedEventRecord` takes several pointer paths, each with
-// its own offset on one timeline. So a burst is one synthesise
-// carrying N touches, and the spacing stops being a consequence of
-// round-trip latency and becomes a number the caller states.
+// So a burst is one request, and the runner schedules its touches on
+// the offsets below: the spacing stops being a consequence of
+// round-trip latency and becomes a number the caller states. Each
+// touch is its own synthesise. `XCSynthesizedEventRecord` does take
+// several pointer paths with offsets, but they are separate fingers
+// and their start offsets are not kept — measured on iOS 27, touches
+// asked for 1000 ms apart arrived 0.06-0.12 s apart and one went
+// missing. One synthesise takes about 280 ms, so a shorter interval
+// arrives as that.
 
 import Foundation
 

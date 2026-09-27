@@ -124,23 +124,32 @@ final class SmixEventRecord {
     return true
   }
 
-  /// Add `times` touches at one point, spaced by `intervalMs`.
+  /// Add one touch at `point`, held for `holdMs`.
   ///
-  /// One record, several paths, one synthesise. The alternative — a
-  /// request per tap — costs a ~400 ms round trip each (measured on
-  /// iOS 26.5) and leaves the interval as whatever that round trip
-  /// happened to be, which is why a flow could not drive a gesture
-  /// gated on a 500 ms window: it could not tell a slow harness from a
-  /// broken app.
-  ///
-  /// Here the spacing is a number the caller states, carried on the
-  /// event timeline itself.
-  func addPointerTapBurst(
-    at point: CGPoint, times: Int, intervalMs: Int, holdMs: Int
-  ) -> Bool {
-    let downs = TouchTimeline.downOffsets(times: times, intervalMs: intervalMs)
+  /// A burst is a record per touch, synthesised in turn: paths sharing a
+  /// record are separate fingers, and their start offsets are not kept.
+  func addPointerTap(at point: CGPoint, holdMs: Int) -> Bool {
+    guard let path = SmixPointerEventPath.forTouch(at: point, offset: 0) else {
+      return false
+    }
+    path.offset = TouchTimeline.upOffset(downOffset: 0, holdMs: holdMs)
+    path.liftUp()
     let selector = NSSelectorFromString("addPointerEventPath:")
-    for down in downs {
+    let imp = record.method(for: selector)
+    typealias Method = @convention(c) (NSObject, Selector, NSObject) -> Void
+    let method = unsafeBitCast(imp, to: Method.self)
+    method(record, selector, path.path)
+    return true
+  }
+
+  /// Add a double tap at `point`: two touches in this one record.
+  ///
+  /// Two paths in one record are delivered close together whatever
+  /// their offsets say, which a double-tap recogniser accepts and a
+  /// counter of separate presses does not.
+  func addPointerDoubleTap(at point: CGPoint, intervalMs: Int, holdMs: Int) -> Bool {
+    let selector = NSSelectorFromString("addPointerEventPath:")
+    for down in TouchTimeline.downOffsets(times: 2, intervalMs: intervalMs) {
       guard let path = SmixPointerEventPath.forTouch(at: point, offset: down) else {
         return false
       }

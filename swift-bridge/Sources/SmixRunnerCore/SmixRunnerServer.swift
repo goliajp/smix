@@ -640,7 +640,8 @@ public actor SmixRunnerServer {
   /// a burst or when it could not be timed.
   public typealias TapAtCoordHandler =
     @Sendable (
-      _ nx: Double, _ ny: Double, _ times: Int, _ intervalMs: Int, _ holdMs: Int
+      _ nx: Double, _ ny: Double, _ times: Int, _ intervalMs: Int, _ holdMs: Int,
+      _ doubleTap: Bool
     ) async -> (ok: Bool, chain: [HitChainEntry], press: TapAtCoordRoute.PressTimings?)
 
   /// POST /tap-by-id handler. Resolves an element by accessibility
@@ -2021,7 +2022,7 @@ public actor SmixRunnerServer {
           fallback: TapAtCoordRoute.success(ok: false)
         ) {
           let outcome = await tapAtCoordHandler(
-            req.nx, req.ny, req.times, req.intervalMs, req.holdMs)
+            req.nx, req.ny, req.times, req.intervalMs, req.holdMs, req.doubleTap)
           return TapAtCoordRoute.success(
             ok: outcome.ok, chain: outcome.chain, press: outcome.press)
         }

@@ -2393,7 +2393,7 @@ final class SmixRunnerUITests: XCTestCase {
       // event carries XCUIElement-owner metadata that stops RN list
       // rendering from triggering its data fetch — the list sits on a
       // skeleton loader for 30 s instead of populating.
-      tapAtCoordHandler: { nx, ny, times, intervalMs, holdMs in
+      tapAtCoordHandler: { nx, ny, times, intervalMs, holdMs, doubleTap in
         let entryMs = Date().timeIntervalSince1970 * 1000.0
         let app = await resolveApp()  // Per-request target-app rebind.
         // Compute the physical point (nx × app.frame.width + frame.origin)
@@ -2414,20 +2414,31 @@ final class SmixRunnerUITests: XCTestCase {
 
         let delivery = smixDelivery(
           of: CGPoint(x: px, y: py), appFrame: CGSize(width: appW, height: appH))
-        guard let record = SmixEventRecord(orientation: delivery.orientation) else {
-          FileHandle.standardError.write(
-            Data("smix-runner: tap-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
-          return (ok: false, chain: [], press: nil)
-        }
-        // One record, N paths. The interval rides the event timeline
-        // rather than being whatever a per-tap round trip cost.
-        let pathAdded = record.addPointerTapBurst(
-          at: delivery.point, times: times, intervalMs: intervalMs,
-          holdMs: holdMs)
-        guard pathAdded else {
-          FileHandle.standardError.write(
-            Data("smix-runner: tap-at-norm-coord: XCPointerEventPath unavailable\n".utf8))
-          return (ok: false, chain: [], press: nil)
+        // Separate taps are one record per touch, each one finger down
+        // and up. Several paths in one record are several fingers, and
+        // measured on iOS 27 their start offsets were not honoured: taps
+        // asked for 1000 ms apart arrived 0.06-0.12 s apart, and a Button
+        // counted one fewer than were sent. A double tap wants exactly
+        // that closeness, so it alone stays one record.
+        let downs = doubleTap
+          ? [0] : TouchTimeline.downOffsets(times: times, intervalMs: intervalMs)
+        var records: [SmixEventRecord] = []
+        for _ in downs {
+          guard let record = SmixEventRecord(orientation: delivery.orientation) else {
+            FileHandle.standardError.write(
+              Data("smix-runner: tap-at-norm-coord: XCSynthesizedEventRecord unavailable\n".utf8))
+            return (ok: false, chain: [], press: nil)
+          }
+          let added = doubleTap
+            ? record.addPointerDoubleTap(
+              at: delivery.point, intervalMs: intervalMs, holdMs: holdMs)
+            : record.addPointerTap(at: delivery.point, holdMs: holdMs)
+          guard added else {
+            FileHandle.standardError.write(
+              Data("smix-runner: tap-at-norm-coord: XCPointerEventPath unavailable\n".utf8))
+            return (ok: false, chain: [], press: nil)
+          }
+          records.append(record)
         }
         // What the point is inside, from a fresh snapshot taken here —
         // immediately before the touch, and from the runner rather than
@@ -2466,7 +2477,14 @@ final class SmixRunnerUITests: XCTestCase {
         // has several downs and no one window, so it reports none.
         let callStartMs = Date().timeIntervalSince1970 * 1000.0
         do {
-          try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
+          // Each touch starts at its scheduled offset, or as soon as the
+          // one before it has been delivered if that took longer.
+          for (record, down) in zip(records, downs) {
+            let due = callStartMs + down * 1000.0
+            let wait = due - Date().timeIntervalSince1970 * 1000.0
+            if wait > 0 { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000)) }
+            try await SmixRunnerDaemonProxy.shared.synthesize(record: record)
+          }
         } catch {
           FileHandle.standardError.write(
             Data("smix-runner: tap-at-norm-coord: synthesize error: \(error)\n".utf8))

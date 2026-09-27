@@ -18,7 +18,9 @@
 # `repeat` around `tapOn` sends a request per tap, and each one costs a
 # synthesised event round trip (~400 ms on iOS 26.5) — so the interval
 # is whatever that cost, and a gesture gated on a short inter-tap window
-# cannot be driven. This packs the touches into one event timeline.
+# cannot be driven. This sends them in one request, and the runner keeps
+# the interval. On iOS one touch takes about 280 ms to deliver, so an
+# interval shorter than that arrives as ~280 ms; Android keeps it.
 - repeatTap:
     id: "hidden-trigger"
     times: 10
