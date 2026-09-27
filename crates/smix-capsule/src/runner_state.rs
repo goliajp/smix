@@ -155,29 +155,41 @@ pub fn legacy_evidence(root: &Path) -> Option<String> {
     let smix = store_root(root);
     let mut said = Vec::new();
     // Only a store that is already there: `Store::open` creates one.
-    if smix.join("kv").is_dir()
-        && let Ok(store) = smix_store::Store::open(&smix)
-    {
-        for key in ["runner-ios", "runner-android"] {
-            if let Ok(Some(st)) = store.singleton(key).get_json::<RunnerState>() {
-                said.push(format!(
-                    "{}/kv `{key}` names udid={} port={} pid={}",
-                    smix.display(),
-                    st.udid,
-                    st.port,
-                    st.pid
-                ));
+    // an unreadable record is reported as unreadable: "nothing there" is a
+    // different answer, and a refusal citing it would be wrong
+    if smix.join("kv").is_dir() {
+        match smix_store::Store::open(&smix) {
+            Ok(store) => {
+                for key in ["runner-ios", "runner-android"] {
+                    match store.singleton(key).get_json::<RunnerState>() {
+                        Ok(Some(st)) => said.push(format!(
+                            "{}/kv `{key}` names udid={} port={} pid={}",
+                            smix.display(),
+                            st.udid,
+                            st.port,
+                            st.pid
+                        )),
+                        Ok(None) => {}
+                        Err(e) => said.push(format!(
+                            "{}/kv `{key}` could not be read: {e}",
+                            smix.display()
+                        )),
+                    }
+                }
             }
+            Err(e) => said.push(format!("{}/kv could not be opened: {e}", smix.display())),
         }
     }
-    if let Ok(Some(st)) = read_legacy(root) {
-        said.push(format!(
+    match read_legacy(root) {
+        Ok(Some(st)) => said.push(format!(
             "{} names udid={} port={} pid={}",
             root.join(".smix/runner/state.json").display(),
             st.udid,
             st.port,
             st.pid
-        ));
+        )),
+        Ok(None) => {}
+        Err(e) => said.push(e),
     }
     (!said.is_empty()).then(|| said.join("; "))
 }
@@ -404,6 +416,15 @@ mod tests {
             !bare.join(".smix").exists(),
             "looking for evidence created a store in the checkout"
         );
+    }
+
+    #[test]
+    fn an_unreadable_record_is_cited_as_unreadable() {
+        let root = temp_root("evidence-corrupt");
+        std::fs::create_dir_all(root.join(".smix/runner")).expect("mkdir");
+        std::fs::write(root.join(".smix/runner/state.json"), "{not json").expect("write");
+        let said = legacy_evidence(&root).expect("an unreadable record was reported as no record");
+        assert!(said.contains("is not a runner state"), "{said}");
     }
 
     #[test]
