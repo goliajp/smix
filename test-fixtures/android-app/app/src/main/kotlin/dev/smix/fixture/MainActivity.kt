@@ -111,6 +111,18 @@ class MainActivity : Activity() {
             }
         }
 
+        // The reset form with a code field that submits itself. Same
+        // reason as the buttons above: a flow has no verb that starts
+        // an activity.
+        val toCode = Button(this).apply {
+            text = "Code screen"
+            contentDescription = "open-code"
+            id = R.id.fixture_open_code
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, CodeActivity::class.java))
+            }
+        }
+
         // A window belonging to somebody else, over this app, on
         // demand.
         //
@@ -169,6 +181,7 @@ class MainActivity : Activity() {
                     orientation = LinearLayout.HORIZONTAL
                     addView(askCamera)
                     addView(share)
+                    addView(toCode)
                 },
             )
             layoutParams = ViewGroup.LayoutParams(

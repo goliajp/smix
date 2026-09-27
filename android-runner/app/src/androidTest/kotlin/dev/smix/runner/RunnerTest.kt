@@ -1294,12 +1294,12 @@ class SmixHttpServer(
         // 11–15) while 64 held every time; a chunk read back on its own can
         // also tell a dropped tail, which typing its missing part repairs,
         // from anything else, which typing more cannot.
-        val result = RunnerWire.typeInChunks(
+        val result = ChunkedInput.typeInChunks(
             text,
             before,
             masked,
-            RunnerWire.INPUT_CHUNK_POINTS,
-            RunnerWire.INPUT_CHUNK_RETYPES,
+            ChunkedInput.INPUT_CHUNK_POINTS,
+            ChunkedInput.INPUT_CHUNK_RETYPES,
             { req.budgetMs?.let { android.os.SystemClock.elapsedRealtime() - started >= it } ?: false },
         ) { sent, base, chunk ->
             // No `waitForIdle` here: `awaitChunk` polls until the chunk has
@@ -1310,10 +1310,10 @@ class SmixHttpServer(
         }
         focused.recycle()
         val done = when (result) {
-            is RunnerWire.ChunkedResult.Failed -> return chunkDidNotLand(
+            is ChunkedInput.ChunkedResult.Failed -> return chunkDidNotLand(
                 text, whichField, masked, before, result.held, result.chunk, result.of, result.retries,
             )
-            is RunnerWire.ChunkedResult.OutOfTime -> return errorJson(
+            is ChunkedInput.ChunkedResult.OutOfTime -> return errorJson(
                 Response.Status.INTERNAL_ERROR,
                 "text_budget_spent",
                 "input-text: the host's budget of ${req.budgetMs}ms for ${text.length} " +
@@ -1321,7 +1321,21 @@ class SmixHttpServer(
                     "$whichField went from ${before.length} to ${result.held.length} " +
                     "character(s). Nothing more was typed, so the field holds what landed.",
             )
-            is RunnerWire.ChunkedResult.Done -> result
+            is ChunkedInput.ChunkedResult.FieldLeft -> return if (result.allSent) {
+                newFixedLengthResponse(
+                    Response.Status.OK,
+                    "application/json",
+                    ChunkedInput.leftWithEverythingBody(text, before, result.held, masked, result.of),
+                )
+            } else {
+                errorJson(Response.Status.INTERNAL_ERROR, "field_left", ChunkedInput.stoppedMessage(result, text, whichField, masked))
+            }
+            is ChunkedInput.ChunkedResult.FocusLeft -> return errorJson(
+                Response.Status.INTERNAL_ERROR,
+                "focus_left",
+                ChunkedInput.stoppedMessage(result, text, whichField, masked),
+            )
+            is ChunkedInput.ChunkedResult.Done -> result
         }
         val after = done.held
         val landed = RunnerWire.textLanded(before, after, text, masked)
@@ -1521,14 +1535,19 @@ class SmixHttpServer(
         chunk: String,
         masked: Boolean,
         budgetMs: Long,
-    ): String {
+    ): ChunkedInput.Reading {
         val deadline = android.os.SystemClock.elapsedRealtime() + budgetMs
-        var last: String
         while (true) {
-            node.refresh()
-            last = FieldText.held(node.text, node.isShowingHintText)
-            if (RunnerWire.chunkOutcome(base, last, chunk, masked) == RunnerWire.ChunkOutcome.Landed) return last
-            if (android.os.SystemClock.elapsedRealtime() >= deadline) return last
+            // `refresh` answers whether the node is still in the hierarchy.
+            // Ignoring that read a field that had left as holding nothing.
+            if (!node.refresh()) return ChunkedInput.Reading(base, present = false, focused = false)
+            val now = ChunkedInput.Reading(
+                FieldText.held(node.text, node.isShowingHintText),
+                present = true,
+                focused = node.isFocused,
+            )
+            if (ChunkedInput.chunkOutcome(base, now.text, chunk, masked) == ChunkedInput.ChunkOutcome.Landed) return now
+            if (android.os.SystemClock.elapsedRealtime() >= deadline) return now
             Thread.sleep(50)
         }
     }

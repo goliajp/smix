@@ -9,4 +9,10 @@
     <item name="fixture_interop_input" type="id" />
     <item name="fixture_interop_disabled" type="id" />
     <item name="fixture_ask_camera" type="id" />
+    <item name="fixture_code_email" type="id" />
+    <item name="fixture_code" type="id" />
+    <item name="fixture_code_leaving" type="id" />
+    <item name="fixture_code_result" type="id" />
+    <item name="fixture_open_code" type="id" />
+    <item name="fixture_code_busy" type="id" />
 </resources>

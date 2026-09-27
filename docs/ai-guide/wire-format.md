@@ -210,6 +210,18 @@ more and answers `{ error: "text_budget_spent", message }`, the message
 naming the chunk it stopped before and how many characters the field
 holds. Without `budgetMs` the typing is not bounded.
 
+`input text` goes wherever focus is, not to a node, so the field is read
+back as the node that was typed into, and a repair is typed only while
+that node still has focus. A field can leave the screen as it fills — a
+code field that submits itself when full. When that happens after the
+last chunk was sent, the answer is `{ ok: true, status: "field_left",
+readBack: "unread", text, before, lastRead, chunks }`: the app took the
+text and moved on, and there is nothing left to read. When it happens
+with text still to send, or a short chunk's field has lost focus, the
+runner types nothing more and answers `{ error: "field_left" }` or
+`{ error: "focus_left" }`, the message naming the chunk and what the
+field held when last read.
+
 ### `POST /press-key`
 
 Body: `{ key: KeyName }` — the wire names: `return`, `delete`, `tab`,
