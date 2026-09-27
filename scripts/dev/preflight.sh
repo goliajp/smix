@@ -144,6 +144,11 @@ echo "--- runner tarballs match their sources"
 # deal than 64 seconds.
 cargo test -p smix-runner-sources
 
+echo "--- ffi bindings are what smix-ffi generates"
+# Unconditional too: what moves a uniffi checksum is a doc comment on an
+# exported method, and nothing about that edit looks like an SDK change.
+bash scripts/dev/ffi-bindings-fresh.sh || exit 1
+
 echo "--- selector matrix in the guide"
 python3 scripts/dev/gen-selector-matrix.py --check || exit 1
 
