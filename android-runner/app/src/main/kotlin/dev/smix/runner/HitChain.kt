@@ -22,7 +22,16 @@ object HitChain {
         fun contains(x: Int, y: Int): Boolean = x in left until right && y in top until bottom
     }
 
-    data class Node(val id: String, val label: String, val bounds: Box, val children: List<Node>)
+    /// `drawingOrder` is the node's place among its siblings as drawn — and
+    /// as a touch is dispatched: the highest is on top. It is not the index:
+    /// a group that overrides `getChildDrawingOrder` draws in its own order.
+    data class Node(
+        val id: String,
+        val label: String,
+        val bounds: Box,
+        val children: List<Node>,
+        val drawingOrder: Int = 0,
+    )
 
     /// `pkg` and `application` say whose window it is, so the probe's tree
     /// can take the place of the app's (see [withProbe]).
@@ -54,9 +63,15 @@ object HitChain {
     private fun collect(n: Node, px: Int, py: Int, into: MutableList<Entry>) {
         if (!n.bounds.contains(px, py)) return
         into.add(Entry(n.id, n.label, n.bounds))
-        // One path down: siblings do not overlap in a layout that routes
-        // touches, and where they do, the later one is drawn on top.
-        n.children.lastOrNull { it.bounds.contains(px, py) }?.let { collect(it, px, py, into) }
+        // One path down, into the child drawn on top of those holding the
+        // point — the one a touch there is dispatched to. Equal orders keep
+        // index order, the later on top: a group that sets no order of its
+        // own, and the probe's nodes, which it lists as drawn.
+        n.children
+            .withIndex()
+            .filter { it.value.bounds.contains(px, py) }
+            .maxWithOrNull(compareBy({ it.value.drawingOrder }, { it.index }))
+            ?.let { collect(it.value, px, py, into) }
     }
 
     /// A reader of the screen, named as the wire names it.

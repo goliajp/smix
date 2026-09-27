@@ -172,7 +172,7 @@ private fun collectHolders(v: View, into: MutableList<ProbeNode>) {
 
 private fun collectHosted(v: View, composePackage: String, into: MutableList<ProbeNode>) {
     if (v !is ViewGroup) return
-    for (i in 0 until v.childCount) {
+    for (i in v.touchOrder()) {
         val child = v.getChildAt(i) ?: continue
         // A Compose root inside an interop View answers for itself —
         // it registers with the probe like any other root, and walking
@@ -198,7 +198,7 @@ internal fun View.asWindowRoot(): ProbeNode? = viewSubtree(this)
 private fun viewSubtree(v: View): ProbeNode? {
     val children = mutableListOf<ProbeNode>()
     if (v is ViewGroup) {
-        for (i in 0 until v.childCount) {
+        for (i in v.touchOrder()) {
             val child = v.getChildAt(i) ?: continue
             if (child is ViewRootForTest) continue
             viewSubtree(child)?.let { children.add(it) }
@@ -259,3 +259,7 @@ private fun drawnText(v: TextView): String {
     val held = v.text ?: return ""
     return v.transformationMethod?.getTransformation(held, v)?.toString() ?: held.toString()
 }
+
+/** This group's children bottom first, as drawn; see [TouchOrder]. */
+private fun ViewGroup.touchOrder(): List<Int> =
+    TouchOrder.bottomFirst(childCount, ::getChildDrawingOrder) { getChildAt(it)?.z ?: 0f }
