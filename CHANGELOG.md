@@ -831,6 +831,29 @@ moved and `Step` is now `#[non_exhaustive]`.
   each named, and the runner is blamed only when the screen is on,
   unlocked and none of these.
 
+- **On Android, `inputText` with no field named types without touching
+  the screen.** It resolved "the focused element" and tapped its centre
+  first. A consumer's reset code arrived as `112345`: the tap, measured
+  with the pointer overlay at (138, 1731), was the `1` key of the number
+  pad, while the field sat at y≈546. That point was not reproduced here,
+  on the same system image and keyboard, so which node it was taken
+  from is not known — and a field nobody named has nothing to aim at
+  anyway. The runner types into the field that holds input focus and
+  reads it back; with none, the step fails as nothing to type into.
+  `focused` also never matches a node of the keyboard's own window, on
+  either platform: whatever the keyboard reports, it is not the field.
+
+- **A field that submits itself no longer gets its text typed into the
+  next one.** A code field that submits when full and leaves the screen
+  was read back as empty, the text was taken as a dropped tail, and it
+  was typed again three times — into whatever held focus next. On the
+  fixture the app received `4321`, the step failed, and the address field
+  above it held `432143214321`, three runs out of three. The readback now
+  asks whether the node is still there and still focused. A field that
+  left once everything was sent answers `ok` with `readBack: "unread"`;
+  one that left with text still to send, or lost focus with a chunk
+  short, stops typing and fails as `field_left` / `focus_left`.
+
 - **Long text typed on Android under load arrives whole.** `inputText`
   sent the whole string as one `input text`, and on a busy machine it
   lost characters: 120 characters landed whole 2 times in 10 at load

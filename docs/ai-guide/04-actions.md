@@ -263,6 +263,9 @@ already have: `tapOn` it, then the scalar form.
 
 - iOS: XCUI `typeText` after explicit field tap (focus + type).
 - Android: Kotlin `/input-text` → `am instrument` shell input (UiAutomation.executeShellCommand wraps `input text`).
+- Android, no field named: nothing is tapped. The text goes to the field
+  that holds input focus, read back afterwards; with no such field the
+  step fails as nothing to type into. `tapOn` the field first.
 - Android read-back: the runner checks that the characters arrived
   before answering. A field that masks its contents cannot be asked
   that question — its accessibility node reports one bullet per

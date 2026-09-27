@@ -1542,6 +1542,9 @@ already have: `tapOn` it, then the scalar form.
 
 - iOS: XCUI `typeText` after explicit field tap (focus + type).
 - Android: Kotlin `/input-text` → `am instrument` shell input (UiAutomation.executeShellCommand wraps `input text`).
+- Android, no field named: nothing is tapped. The text goes to the field
+  that holds input focus, read back afterwards; with no such field the
+  step fails as nothing to type into. `tapOn` the field first.
 - Android read-back: the runner checks that the characters arrived
   before answering. A field that masks its contents cannot be asked
   that question — its accessibility node reports one bullet per
@@ -5150,6 +5153,18 @@ before each `input text` it sends; once it is spent it types nothing
 more and answers `{ error: "text_budget_spent", message }`, the message
 naming the chunk it stopped before and how many characters the field
 holds. Without `budgetMs` the typing is not bounded.
+
+`input text` goes wherever focus is, not to a node, so the field is read
+back as the node that was typed into, and a repair is typed only while
+that node still has focus. A field can leave the screen as it fills — a
+code field that submits itself when full. When that happens after the
+last chunk was sent, the answer is `{ ok: true, status: "field_left",
+readBack: "unread", text, before, lastRead, chunks }`: the app took the
+text and moved on, and there is nothing left to read. When it happens
+with text still to send, or a short chunk's field has lost focus, the
+runner types nothing more and answers `{ error: "field_left" }` or
+`{ error: "focus_left" }`, the message naming the chunk and what the
+field held when last read.
 
 ### `POST /press-key`
 

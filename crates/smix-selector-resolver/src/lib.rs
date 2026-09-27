@@ -43,6 +43,8 @@ use smix_selector::{
 };
 use std::collections::HashMap;
 
+mod collect;
+
 const NEAR_THRESHOLD_PT: f64 = 100.0; // logical points @1x
 
 // -------------------- public API -----------------------------------------
@@ -327,7 +329,7 @@ fn resolve_inner<'tree>(
             .find(|found| !found.is_empty())
             .unwrap_or_default();
     }
-    let raw = dfs_collect(tree, |n| matches_base(n, selector, ctx));
+    let raw = collect::candidates(tree, selector, ctx);
     let visible: Vec<&A11yNode> = raw
         .into_iter()
         .filter(|n| is_visible_enough(n, tree))
@@ -362,7 +364,7 @@ fn resolve_inner_no_index<'tree>(
             .find(|found| !found.is_empty())
             .unwrap_or_default();
     }
-    let raw = dfs_collect(tree, |n| matches_base(n, selector, ctx));
+    let raw = collect::candidates(tree, selector, ctx);
     let visible: Vec<&A11yNode> = raw
         .into_iter()
         .filter(|n| is_visible_enough(n, tree))
@@ -506,27 +508,6 @@ fn topmost_modal_filter<'tree>(
     } else {
         in_modal
     }
-}
-
-fn dfs_collect<'tree, F>(tree: &'tree A11yNode, pred: F) -> Vec<&'tree A11yNode>
-where
-    F: Fn(&A11yNode) -> bool,
-{
-    let mut out: Vec<&'tree A11yNode> = Vec::new();
-    fn walk<'tree, F: Fn(&A11yNode) -> bool>(
-        n: &'tree A11yNode,
-        pred: &F,
-        out: &mut Vec<&'tree A11yNode>,
-    ) {
-        if pred(n) {
-            out.push(n);
-        }
-        for c in &n.children {
-            walk(c, pred, out);
-        }
-    }
-    walk(tree, &pred, &mut out);
-    out
 }
 
 fn matches_base(node: &A11yNode, selector: &Selector, ctx: &ResolverContext) -> bool {

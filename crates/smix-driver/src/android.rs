@@ -98,40 +98,6 @@ impl AndroidDriver {
     pub fn runner(&self) -> &HttpRunnerClient {
         &self.runner
     }
-
-    /// Empty the field that already holds focus, in one request.
-    ///
-    /// This sent fifty `/press-key DELETE` posts — fifty sequential
-    /// round trips over the adb forward, and once `fill` began
-    /// clearing first, on every fill. It was also wrong: fifty deletes
-    /// do not empty a field holding more than fifty characters, so the
-    /// new text landed after the remainder while the caller was told
-    /// its value had been replaced.
-    ///
-    /// The runner does it now, exactly, through the focused node's
-    /// `ACTION_SET_TEXT`.
-    ///
-    /// `at` names the field by where it was tapped. Without it the
-    /// runner empties whatever holds focus, and focus does not move
-    /// synchronously with the tap that moves it — a fill naming one
-    /// Compose field was measured emptying another.
-    async fn clear_focused_field(
-        &self,
-        stage: &str,
-        at: Option<(f64, f64, f64, f64)>,
-    ) -> Result<(), ExpectationFailure> {
-        let done = match at {
-            Some(rect) => self.runner.clear_text_in(rect).await,
-            None => self.runner.clear_text().await,
-        };
-        done.map(|_| ()).map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("{stage}: clear-first failed: {e}"),
-                ..Default::default()
-            })
-        })
-    }
 }
 
 /// `dispatch:` overrides are an iOS-runner mechanism.
@@ -576,6 +542,9 @@ impl Driver for AndroidDriver {
                     ..Default::default()
                 })
             });
+        }
+        if matches!(selector, Selector::Focused { .. }) {
+            return self.fill_focused(text, clear_first).await;
         }
         // Host-resolve → tap to focus → /input-text. Mirror
         // of swift FlyingFox /fill semantics (selector resolves; client

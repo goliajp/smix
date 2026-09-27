@@ -50,5 +50,8 @@
         <activity
             android:name=".WatchActivity"
             android:exported="true" />
+        <activity
+            android:name=".CodeActivity"
+            android:exported="true" />
     </application>
 </manifest>
