@@ -786,12 +786,14 @@ moved and `Step` is now `#[non_exhaustive]`.
   sending the request again. That was one of two causes; the next entry
   is the other.
 - **`hideKeyboard` on iOS is waited for as long as it may take, and a step
-  that went unanswered says why.** Dismissing tries up to four strategies,
-  each followed by up to a second of looking, and on a slow simulator
-  (a GitHub macOS runner, iOS 26.2) the chain ran past the 15 s the host
-  waited for any request: the step failed as "sent and no answer came
-  back" while the runner was still dismissing, and passed on a retry.
-  The host now tells the runner a budget (`budgetMs`, 20 s), the runner
+  that went unanswered says why.** On a slow simulator (a GitHub macOS
+  runner, iOS 26.2) the step failed as "sent and no answer came back"
+  and passed on a retry. That run kept no runner log, so which part of the
+  dismissal was slow is not known; a later run on the same machines showed
+  one XCUITest query taking 18 s (next entry). Dismissing tries up to four
+  strategies, each followed by up to a second of looking, so the chain can
+  also run long on its own. The host now tells the runner a budget
+  (`budgetMs`, 20 s), the runner
   starts no strategy once it is spent and answers
   `keyboard_did_not_close` naming what it tried and that the time ran out,
   and the host waits for that budget and a margin. A request that still
@@ -814,8 +816,17 @@ moved and `Step` is now `#[non_exhaustive]`.
   on a retry. Every runner route now states the longest it waits, the host
   waits that long plus a margin, and a tap burst or a long press is waited
   for as long as the request makes it — `tapOn: { repeat: 10, delay: 200 }`
-  included. Nothing changes for a route that answers quickly: it is waited
-  for exactly as before.
+  included. On iOS that longest includes one stall of the automation
+  itself: on a GitHub macOS runner a single XCUITest query inside
+  `inputText` took 18 s where the queries after it took 0.2 s, and the
+  step failed at 15 s. And the iOS runner's HTTP server no longer applies
+  its own 15 s limit to every handler — it answered 500 in the handler's
+  place when that ran out, however long the host was prepared to wait, so
+  a longer wait on the host alone changed nothing for the slow routes. It
+  now lets a handler run 10 minutes, longer than the host waits for any
+  route; the host is the clock. A route with no waits of its own on
+  Android, or one that only reads the runner's state on iOS, is still
+  waited for 15 s.
 - **Stale runner rows no longer block a runner on their port.** When
   several devices' ledger rows named one runner port, every lookup of that
   port was refused, though a port is held by one process and the other

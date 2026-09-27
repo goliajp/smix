@@ -961,8 +961,17 @@ public actor SmixRunnerServer {
     // `inet(ip4:port:)` throws only on malformed IP strings; "127.0.0.1" is a
     // compile-time constant so the failure case is unreachable.
     let addr = try! sockaddr_in.inet(ip4: "127.0.0.1", port: port)
-    return HTTPServer(address: addr)
+    return HTTPServer(address: addr, timeout: handlerTimeoutSeconds)
   }
+
+  /// How long a handler may run before FlyingFox answers 500 in its place.
+  /// FlyingFox's default is 15 s, and on a slow simulator one XCUITest query
+  /// alone took 18 s: the step failed on a clock neither the route nor the
+  /// host had chosen, and the handler's own answer was thrown away. The host
+  /// decides how long to wait for each route; this only has to outlast the
+  /// longest of those waits, and the host's route table says the same number
+  /// (`SERVER_HANDLER_TIMEOUT_MS`).
+  public static let handlerTimeoutSeconds: TimeInterval = 600
 
   enum ServerLoopError: Error, CustomStringConvertible {
     case serverEndedUnexpectedly

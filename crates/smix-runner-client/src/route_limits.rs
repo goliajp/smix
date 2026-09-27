@@ -24,6 +24,20 @@ use crate::input_text::ANSWER_MARGIN;
 /// the app up to about 30 s before XCUITest gives up on its own.
 pub const XCUI_APP_CALL_MS: u64 = 30_000;
 
+/// One stall of the iOS automation, once per route that queries it. On a
+/// GitHub macOS runner one XCUITest existence check inside `/fill` took
+/// 17.9 s (t = 17.27 s to 35.18 s in the runner's log) while the queries
+/// after it took 0.2 s; doubled for load, as the other rates here are.
+/// Counted once per route, not per query: the stall was one event, and the
+/// same step's other queries ran at their usual speed.
+pub const XCUI_STALL_MS: u64 = 36_000;
+
+/// How long the iOS runner's HTTP server lets any handler run before it
+/// answers 500 in the handler's place. It is not a second clock: the host
+/// decides how long to wait, and this only has to outlast every such wait.
+/// The Swift side states it as `handlerTimeoutSeconds`.
+pub const SERVER_HANDLER_TIMEOUT_MS: u64 = 600_000;
+
 /// One synthesized touch: 0.28 s measured on a simulator, doubled for load.
 pub const PER_TOUCH_MS: u64 = 600;
 
@@ -54,6 +68,9 @@ pub struct Route {
     /// The iOS handler resolves the target app first, which under
     /// `App-Activate: true` may call `activate()` (at most once per 5 s).
     pub ios_resolves_app: bool,
+    /// The iOS handler queries XCUITest, so one stall ([`XCUI_STALL_MS`])
+    /// is added to it.
+    pub ios_queries_xcui: bool,
 }
 
 use Longest::{FromRequest as Req, Ms};
@@ -69,8 +86,53 @@ const fn r(
         ios,
         android,
         ios_resolves_app,
+        ios_queries_xcui: ios.is_some() && !BOOKKEEPING.contains_path(path),
     }
 }
+
+/// iOS routes that answer from the runner's own state and touch no
+/// XCUITest query.
+struct Paths(&'static [&'static str]);
+
+impl Paths {
+    const fn contains_path(&self, path: &str) -> bool {
+        let mut i = 0;
+        while i < self.0.len() {
+            if const_eq(self.0[i], path) {
+                return true;
+            }
+            i += 1;
+        }
+        false
+    }
+}
+
+const fn const_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+const BOOKKEEPING: Paths = Paths(&[
+    "/health",
+    "/record/start",
+    "/record/stop",
+    "/record/poll",
+    "/diagnostic/dump",
+    "/shutdown",
+    "/session/close",
+    "/session/close-all",
+    "/session/list",
+]);
 
 const NONE: Option<Longest> = None;
 const fn ms(n: u64) -> Option<Longest> {
@@ -173,22 +235,30 @@ fn route(path: &str) -> Option<&'static Route> {
 /// the wait, or the path is not a runner route.
 fn fixed_longest(path: &str, activates: bool) -> Option<Duration> {
     let r = route(path)?;
-    let mut longest = 0;
-    for side in [r.ios, r.android].into_iter().flatten() {
-        match side {
-            Longest::Ms(n) => longest = longest.max(n),
-            Longest::FromRequest => return None,
-        }
-    }
-    Some(Duration::from_millis(longest) + activation(r, activates))
+    let ios = match r.ios {
+        Some(Longest::Ms(n)) => Some(Duration::from_millis(n) + ios_extra(r, activates)),
+        Some(Longest::FromRequest) => return None,
+        None => None,
+    };
+    let android = match r.android {
+        Some(Longest::Ms(n)) => Some(Duration::from_millis(n)),
+        Some(Longest::FromRequest) => return None,
+        None => None,
+    };
+    ios.into_iter().chain(android).max()
 }
 
-fn activation(r: &Route, activates: bool) -> Duration {
+/// What the iOS side adds to its own waits: an activation first when the
+/// host asks for one, and one automation stall.
+fn ios_extra(r: &Route, activates: bool) -> Duration {
+    let mut extra = Duration::ZERO;
     if activates && r.ios_resolves_app {
-        Duration::from_millis(XCUI_APP_CALL_MS)
-    } else {
-        Duration::ZERO
+        extra += Duration::from_millis(XCUI_APP_CALL_MS);
     }
+    if r.ios_queries_xcui {
+        extra += Duration::from_millis(XCUI_STALL_MS);
+    }
+    extra
 }
 
 /// How long the host waits for `path`, when the route's own waits are
@@ -201,7 +271,9 @@ pub fn route_wait(path: &str, activates: bool) -> Option<Duration> {
 /// The host's wait for a route whose longest wait the request sets:
 /// `from_request` is that, worked out from the request's own fields.
 pub fn wait_for_request(path: &str, from_request: Duration, activates: bool) -> Duration {
-    let extra = route(path).map_or(Duration::ZERO, |r| activation(r, activates));
+    let extra = route(path)
+        .filter(|r| r.ios.is_some())
+        .map_or(Duration::ZERO, |r| ios_extra(r, activates));
     from_request + extra + ANSWER_MARGIN
 }
 
@@ -266,6 +338,40 @@ mod tests {
             Duration::from_millis(9 * 200 + 10 * (50 + PER_TOUCH_MS) + 500)
         );
         assert!(burst_longest(1, 80, 50) < ten);
+    }
+
+    #[test]
+    fn a_fill_on_ios_is_waited_for_through_one_automation_stall() {
+        // the CI run: one existence check inside /fill took 17.9 s
+        let wait = route_wait("/fill", false).expect("fixed");
+        assert!(
+            wait > Duration::from_millis(17_900) + ANSWER_MARGIN,
+            "{wait:?}"
+        );
+    }
+
+    #[test]
+    fn bookkeeping_routes_add_no_stall() {
+        assert_eq!(route_wait("/session/list", false), Some(plain_wait()));
+        assert_eq!(route_wait("/health", true), Some(plain_wait()));
+    }
+
+    #[test]
+    fn the_ios_server_outlasts_every_wait_the_host_makes() {
+        let server = Duration::from_millis(SERVER_HANDLER_TIMEOUT_MS);
+        for r in ROUTES {
+            if let Some(wait) = route_wait(r.path, true) {
+                assert!(wait < server, "{}: the host waits {wait:?}", r.path);
+            }
+        }
+        let dismiss = wait_for_request(
+            "/hide-keyboard",
+            crate::hide_keyboard::HIDE_KEYBOARD_BUDGET,
+            true,
+        );
+        assert!(dismiss < server, "{dismiss:?}");
+        let burst = wait_for_request("/tap-at-norm-coord", burst_longest(20, 1_000, 500), true);
+        assert!(burst < server, "{burst:?}");
     }
 
     #[test]
