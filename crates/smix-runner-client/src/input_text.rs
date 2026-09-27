@@ -32,7 +32,7 @@ pub fn input_text_budget(text: &str) -> Duration {
 }
 
 /// How long the host waits for the answer to typing `text`.
-pub fn input_text_wait(text: &str) -> Duration {
+pub fn input_text_wait(text: &str) -> Result<Duration, RunnerTransportError> {
     crate::route_limits::wait_for_request("/input-text", input_text_budget(text), false)
 }
 
@@ -80,7 +80,7 @@ impl HttpRunnerClient {
                     field,
                 },
                 None,
-                input_text_wait(text),
+                input_text_wait(text)?,
             )
             .await?;
         body.require_ok("/input-text")?;
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn the_host_waits_past_the_budget_it_sends() {
         let text = "x".repeat(120);
-        assert!(input_text_wait(&text) > input_text_budget(&text));
+        assert!(input_text_wait(&text).expect("fits") > input_text_budget(&text));
     }
 
     #[test]

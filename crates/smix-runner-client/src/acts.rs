@@ -141,7 +141,7 @@ impl HttpRunnerClient {
                     "/tap-at-norm-coord",
                     longest,
                     self.auto_activate,
-                ),
+                )?,
             )
             .await?;
         OkEnvelope {
@@ -235,7 +235,7 @@ impl HttpRunnerClient {
                     "/long-press-at-norm-coord",
                     longest,
                     self.auto_activate,
-                ),
+                )?,
             )
             .await?;
         body.into_result("/long-press-at-norm-coord")

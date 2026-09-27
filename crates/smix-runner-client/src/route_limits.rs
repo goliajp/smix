@@ -270,19 +270,42 @@ pub fn route_wait(path: &str, activates: bool) -> Option<Duration> {
 
 /// The host's wait for a route whose longest wait the request sets:
 /// `from_request` is that, worked out from the request's own fields.
-pub fn wait_for_request(path: &str, from_request: Duration, activates: bool) -> Duration {
+///
+/// A request whose wait would reach the iOS server's handler limit is
+/// refused rather than sent: the server would answer 500 in the handler's
+/// place before the host stopped waiting, and that answer names neither
+/// the request's length nor the limit. The host cannot tell which runner
+/// it is talking to, so the limit holds for both.
+pub fn wait_for_request(
+    path: &str,
+    from_request: Duration,
+    activates: bool,
+) -> Result<Duration, crate::RunnerTransportError> {
     let extra = route(path)
         .filter(|r| r.ios.is_some())
         .map_or(Duration::ZERO, |r| ios_extra(r, activates));
-    from_request + extra + ANSWER_MARGIN
+    let wait = from_request
+        .saturating_add(extra)
+        .saturating_add(ANSWER_MARGIN);
+    let limit = Duration::from_millis(SERVER_HANDLER_TIMEOUT_MS);
+    if wait >= limit {
+        return Err(crate::RunnerTransportError::OutlastsTheRunner {
+            endpoint: path.to_string(),
+            wait,
+            limit,
+        });
+    }
+    Ok(wait)
 }
 
 /// A burst's longest wait: `times` touches `interval_ms` apart, each held
 /// `hold_ms`, on the slower runner (Android adds a 0.5 s idle wait).
 pub fn burst_longest(times: u32, interval_ms: u32, hold_ms: u32) -> Duration {
     let times = u64::from(times.max(1));
-    let span = (times - 1) * u64::from(interval_ms) + times * (u64::from(hold_ms) + PER_TOUCH_MS);
-    Duration::from_millis(span + 500)
+    let span = (times - 1)
+        .saturating_mul(u64::from(interval_ms))
+        .saturating_add(times.saturating_mul(u64::from(hold_ms) + PER_TOUCH_MS));
+    Duration::from_millis(span.saturating_add(500))
 }
 
 /// The plain wait, for a route with nothing of its own.
@@ -368,10 +391,48 @@ mod tests {
             "/hide-keyboard",
             crate::hide_keyboard::HIDE_KEYBOARD_BUDGET,
             true,
-        );
+        )
+        .expect("a dismissal fits");
         assert!(dismiss < server, "{dismiss:?}");
-        let burst = wait_for_request("/tap-at-norm-coord", burst_longest(20, 1_000, 500), true);
+        let burst = wait_for_request("/tap-at-norm-coord", burst_longest(20, 1_000, 500), true)
+            .expect("twenty taps a second apart fit");
         assert!(burst < server, "{burst:?}");
+    }
+
+    #[test]
+    fn no_request_of_any_length_is_sent_with_a_wait_past_the_server() {
+        // the SDKs' input_text puts the whole text in one request, so its
+        // wait grows with the text; every length either fits or is refused
+        let server = Duration::from_millis(SERVER_HANDLER_TIMEOUT_MS);
+        let mut last_sent = 0;
+        for n in [
+            0usize, 1, 100, 1_000, 2_000, 2_136, 2_137, 3_000, 100_000, 10_000_000,
+        ] {
+            let text = "x".repeat(n);
+            match crate::input_text::input_text_wait(&text) {
+                Ok(wait) => {
+                    assert!(wait < server, "{n} characters: {wait:?}");
+                    last_sent = n;
+                }
+                Err(e) => assert!(
+                    matches!(e, crate::RunnerTransportError::OutlastsTheRunner { .. }),
+                    "{n}: {e:?}"
+                ),
+            }
+        }
+        assert!(
+            last_sent >= 2_000,
+            "ordinary text must still be sent: {last_sent}"
+        );
+        for (times, interval) in [(1, 80), (10, 200), (100_000, 1_000), (u32::MAX, u32::MAX)] {
+            if let Ok(wait) = wait_for_request(
+                "/tap-at-norm-coord",
+                burst_longest(times, interval, 50),
+                true,
+            ) {
+                assert!(wait < server, "{times} taps: {wait:?}");
+            }
+        }
     }
 
     #[test]

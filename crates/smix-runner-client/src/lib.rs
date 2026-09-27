@@ -96,6 +96,20 @@ pub enum RunnerTransportError {
         #[source]
         source: reqwest::Error,
     },
+    /// Not sent: the host would wait `wait` for it, and the iOS runner's
+    /// server lets a handler run only `limit` before answering 500 in its
+    /// place. Refused here so the reason names the length, not a 500.
+    #[error(
+        "runner {endpoint}: not sent — the host would wait {} s for it and the runner lets \
+         one request run at most {} s. Split it into shorter steps",
+        .wait.as_secs(),
+        .limit.as_secs()
+    )]
+    OutlastsTheRunner {
+        endpoint: String,
+        wait: Duration,
+        limit: Duration,
+    },
     #[error("runner {endpoint} returned status {status}: {body}")]
     NonSuccessStatus {
         endpoint: String,
