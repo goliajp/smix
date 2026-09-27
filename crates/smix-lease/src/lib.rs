@@ -24,6 +24,7 @@
 //! everything after that is a pure function. It is what lets the ordering
 //! of a teardown be tested without a device.
 
+mod carry;
 pub mod store;
 pub mod vanish;
 
