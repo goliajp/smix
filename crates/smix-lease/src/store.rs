@@ -434,15 +434,35 @@ pub fn read(dir: &LeaseDir, device_id: &str) -> Result<Option<Lease>, LeaseError
 pub fn write(dir: &LeaseDir, lease: &Lease) -> Result<(), LeaseError> {
     let path = lease_path(dir, &lease.device_id)?;
     std::fs::create_dir_all(dir.path()).map_err(io_err(dir.path()))?;
-    let json = serde_json::to_vec_pretty(lease).map_err(|e| LeaseError::Malformed {
+    let malformed = |e: serde_json::Error| LeaseError::Malformed {
         path: path.display().to_string(),
         detail: e.to_string(),
-    })?;
+    };
+    let next = serde_json::to_value(lease).map_err(malformed)?;
+    let kept = unknown_fields_on_disk(&path)
+        .map(|(disk, seen)| crate::carry::carry_forward(&disk, &seen, next.clone()))
+        .filter(|kept| *kept != next);
+    let json = match kept {
+        Some(kept) => serde_json::to_vec_pretty(&kept),
+        None => serde_json::to_vec_pretty(lease),
+    }
+    .map_err(malformed)?;
     let tmp = dir
         .path()
         .join(format!(".{}.{}.tmp", lease.device_id, std::process::id()));
     std::fs::write(&tmp, &json).map_err(io_err(&tmp))?;
     std::fs::rename(&tmp, &path).map_err(io_err(&path))
+}
+
+/// The ledger on disk and the same ledger after a round trip through this
+/// binary's types — or `None` when there is none, it cannot be read, or the
+/// round trip loses nothing, which is every write but one made after a
+/// newer smix wrote the file.
+fn unknown_fields_on_disk(path: &Path) -> Option<(serde_json::Value, serde_json::Value)> {
+    let disk: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    let lease: Lease = serde_json::from_value(disk.clone()).ok()?;
+    let seen = serde_json::to_value(&lease).ok()?;
+    (seen != disk).then_some((disk, seen))
 }
 
 /// Drop a device's ledger. Absent is success — release is idempotent.

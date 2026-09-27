@@ -747,6 +747,16 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **A field this version does not know survives it writing the device
+  ledger back.** A row whose kind was unknown was already kept whole; a
+  field unknown to a row, holder or lease this version does know was
+  dropped on the next write, which is how a 10.1.0 command took the `log`
+  and `bundle` off an 11.0 runner's row. Such fields are now written back
+  as they were found, as long as the part they sit in is unchanged — a
+  row this version replaces is written as it knows it. 10.x still strips
+  them, and never clears a ledger holding a row it cannot name: see
+  "Upgrade every smix on the machine at once" in `docs/migrating-to-11.md`.
+
 - **The Swift package and the Android SDK carry this release's native
   library.** Both link a prebuilt copy of `smix-ffi` that ships in the
   repository, and that copy had not been rebuilt since 2026-07-18: every

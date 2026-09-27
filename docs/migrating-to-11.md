@@ -4,8 +4,38 @@ Most flows need no change. What follows is everything that can make a
 flow or a program behave differently than it did on 10.x, in the order
 you are likely to meet it.
 
-If you only write YAML, read **What answers differently** and stop.
-**Rust API** is for code that calls the crates.
+If you only write YAML, read **Upgrade every smix on the machine at once**
+and **What answers differently**, and stop. **Rust API** is for code that
+calls the crates.
+
+---
+
+## Upgrade every smix on the machine at once
+
+The device ledger (`~/.local/share/smix/leases/`, or `$SMIX_MACHINE_DIR`)
+is one file per device, shared by every smix on the machine: the CLI, the
+MCP server your editor starts, the one a CI job installed. Do not leave a
+10.x one driving devices beside 11.0. Two things go wrong, both measured:
+
+- **10.x strips what it does not know from rows it does know.** A 10.1.0
+  command on a device an 11.0 runner is using rewrites that runner's row
+  without its `log` and `bundle`. 11.0 copes with the missing log (it asks
+  the runner process instead) but not with the missing bundle: a hard
+  `runner cycle` stops the runner and then refuses to start it again,
+  having no app to bind it to.
+- **10.x never clears a ledger holding a row it cannot name.** 11.0
+  records the emulators it starts and the `smix sim reverse` routes it
+  opens as rows 10.x has no name for. 10.x keeps every such ledger as
+  "still in use" — `smix lease prune` and `reconcile` leave it, and
+  `smix down` will not shut that device off — long after everything in it
+  has ended.
+
+11.0 does not do the first of these to whatever comes after it: a field
+it does not know in a row it does know is written back as it found it.
+
+To upgrade: `smix --version` and `smix-mcp --version` in every place that
+drives devices on the machine, then install 11.0.0 in all of them before
+the next run. `smix lease prune` from 11.0 clears what a 10.x left behind.
 
 ---
 
