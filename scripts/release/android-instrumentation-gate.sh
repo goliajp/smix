@@ -97,6 +97,15 @@ done
 wait "$GRADLE_PID"
 GRADLE_RC=$?
 
+# gradle writes one synthetic failed test when the device does not answer
+# its property reads in time, and the judge below would report that as
+# the suite failing. An emulator up for a day did exactly this: adb took
+# 35 s to answer one getprop, and nothing ran on it.
+if grep -q 'No compatible devices connected' "$LOG"; then
+  die "$SERIAL did not answer gradle's device queries, so no test ran on it.
+  Restart it: smix sim shutdown <alias>, then smix sim boot <alias> --cold. Log: $LOG"
+fi
+
 # The judge runs either way: gradle's own exit code says whether the task
 # succeeded, and the judge says whether the suite was actually covered.
 # A task that "succeeded" having executed nothing is the case this gate
