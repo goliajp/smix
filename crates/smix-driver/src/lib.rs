@@ -1703,15 +1703,23 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
         // not sent again — a second copy of a tap or of typing is a second
         // action — so the step may be on the screen already, and "retry
         // it" by hand is how the text gets typed twice.
-        RunnerTransportError::SentWithoutAnswer { .. } => (
+        e @ RunnerTransportError::SentWithoutAnswer { .. } => (
             FailureCode::DriverError,
             Some(
-                "the runner took this step and did not answer in time, so it may \
-                 already have happened on the device. It was not sent again, because a \
-                 second tap or a second round of typing is not the same as one. Look at \
-                 the screen before running it again; a device this slow to answer is \
-                 usually a busy host."
-                    .to_string(),
+                if e.unanswered_because_the_host_stopped_waiting() == Some(true) {
+                    "the runner took this step and did not answer in time, so it may \
+                     already have happened on the device. It was not sent again, because a \
+                     second tap or a second round of typing is not the same as one. Look at \
+                     the screen before running it again; a device this slow to answer is \
+                     usually a busy host."
+                } else {
+                    "the runner took this step and closed the connection without \
+                     answering, so it may already have happened on the device and it was \
+                     not sent again. A runner that hangs up mid-request has usually \
+                     stopped or restarted: check that it is still up (`smix runner \
+                     list`) and look at the screen before running the step again."
+                }
+                .to_string(),
             ),
         ),
         // The runner named its refusal, so the hint can name the next

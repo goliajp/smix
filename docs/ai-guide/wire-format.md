@@ -289,8 +289,17 @@ that nobody walks reads, to anyone writing a client, like a path.
 
 ### `POST /hide-keyboard`
 
-Body: `{}` — empty.
-Response: `{ ok: bool }`
+Body: `{ budgetMs?: number }`
+Response: `{ ok: bool, error?: string, saw?: string }`
+
+`budgetMs` is how long the host will wait. The iOS runner starts no
+dismissal strategy once it is spent and answers with what it has; the
+host sends 20000 and waits that long plus a margin. Without it the
+dismissal is not bounded. `ok:false` carries `error`:
+`keyboard_did_not_close` (the keyboard was there and is still there —
+`saw` lists the strategies tried, and says so when the budget ran out
+first) or `keyboard_state_unknown` (looking failed; not evidence the
+keyboard is up). The Android runner ignores `budgetMs`.
 
 ### `POST /back`
 

@@ -20,7 +20,7 @@ const PER_CHARACTER: Duration = Duration::from_millis(250);
 /// Kept past the budget for the answer: the runner checks the budget
 /// before each `input text` it sends, so one already under way can
 /// still be finishing when the budget runs out.
-const ANSWER_MARGIN: Duration = Duration::from_secs(15);
+pub(crate) const ANSWER_MARGIN: Duration = Duration::from_secs(15);
 
 /// The budget sent to the runner as `budgetMs` for typing `text`.
 ///

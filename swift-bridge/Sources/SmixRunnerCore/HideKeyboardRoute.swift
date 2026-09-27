@@ -12,7 +12,11 @@ import Foundation
 // (mirrors /back which is also parameterless).
 public enum HideKeyboardRoute {
   public struct HideKeyboardRequest: Equatable, Sendable {
-    public init() {}
+    /// How long the host will wait, in milliseconds. The handler stops
+    /// starting strategies once it is spent, so its answer arrives while
+    /// the host is still listening. Absent from older hosts: no bound.
+    public var budgetMs: Int?
+    public init(budgetMs: Int? = nil) { self.budgetMs = budgetMs }
   }
 
   public enum DecodeError: Error, Equatable {
@@ -28,8 +32,9 @@ public enum HideKeyboardRoute {
     // Any valid JSON object body (including `{}`) is acceptable; ignore any
     // unexpected fields — hide-keyboard's contract is parameterless and
     // additive payload fields are forward-compatible.
-    guard json is [String: Any] else { throw DecodeError.invalidJSON }
-    return HideKeyboardRequest()
+    guard let object = json as? [String: Any] else { throw DecodeError.invalidJSON }
+    let budget = (object["budgetMs"] as? NSNumber).map { $0.intValue }
+    return HideKeyboardRequest(budgetMs: budget.flatMap { $0 > 0 ? $0 : nil })
   }
 
   /// What actually happened, so the answer can say which.

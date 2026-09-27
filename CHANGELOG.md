@@ -783,7 +783,24 @@ moved and `Step` is now `#[non_exhaustive]`.
   failed this way three runs in three, on a random step; the runner's log
   shows the failing request never arrived. Every request to a runner now
   goes on a connection of its own. 10.1 had the same race and hid it by
-  sending the request again.
+  sending the request again. That was one of two causes; the next entry
+  is the other.
+- **`hideKeyboard` on iOS is waited for as long as it may take, and a step
+  that went unanswered says why.** Dismissing tries up to four strategies,
+  each followed by up to a second of looking, and on a slow simulator
+  (a GitHub macOS runner, iOS 26.2) the chain ran past the 15 s the host
+  waited for any request: the step failed as "sent and no answer came
+  back" while the runner was still dismissing, and passed on a retry.
+  The host now tells the runner a budget (`budgetMs`, 20 s), the runner
+  starts no strategy once it is spent and answers
+  `keyboard_did_not_close` naming what it tried and that the time ran out,
+  and the host waits for that budget and a margin. A request that still
+  goes unanswered says which way: `the host stopped waiting before the
+  runner answered`, or `the connection closed before an answer came`,
+  followed by every cause underneath rather than only reqwest's first
+  line — and the hint differs, a busy device for the first, a runner that
+  stopped for the second. A connection that could not be made at all is
+  still sent again: nothing reached the runner.
 - **Stale runner rows no longer block a runner on their port.** When
   several devices' ledger rows named one runner port, every lookup of that
   port was refused, though a port is held by one process and the other

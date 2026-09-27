@@ -31,6 +31,18 @@ final class HideKeyboardRouteTests: XCTestCase {
     XCTAssertEqual(req, HideKeyboardRoute.HideKeyboardRequest())
   }
 
+  // the host's budget is read, so the handler can stop before the host does
+  func test_decode_reads_the_budget() throws {
+    let req = try HideKeyboardRoute.decode(Data(#"{"budgetMs":20000}"#.utf8))
+    XCTAssertEqual(req.budgetMs, 20000)
+  }
+
+  // a budget that is not a positive number is no budget, not a zero one
+  func test_decode_ignores_a_budget_that_is_not_one() throws {
+    XCTAssertNil(try HideKeyboardRoute.decode(Data(#"{"budgetMs":0}"#.utf8)).budgetMs)
+    XCTAssertNil(try HideKeyboardRoute.decode(Data(#"{"budgetMs":"soon"}"#.utf8)).budgetMs)
+  }
+
   // case K: not-JSON → DecodeError.invalidJSON
   func test_decode_non_json_throws() {
     let body = Data("not-json".utf8)

@@ -153,3 +153,54 @@ async fn an_action_that_went_unanswered_says_it_may_have_happened() {
         "a runner that took the request is there — {said}"
     );
 }
+
+/// A server that reads the request, then hangs up without a word.
+async fn hung_up() -> reqwest::Error {
+    use std::io::Read;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    std::thread::spawn(move || {
+        if let Ok((mut s, _)) = listener.accept() {
+            let mut chunk = [0u8; 4096];
+            let _ = s.read(&mut chunk);
+        }
+    });
+    reqwest::Client::builder()
+        .pool_max_idle_per_host(0)
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .expect("client")
+        .post(format!("http://127.0.0.1:{port}/hide-keyboard"))
+        .body("{}")
+        .send()
+        .await
+        .expect_err("the server hung up")
+}
+
+#[tokio::test]
+async fn a_runner_that_hung_up_is_not_called_slow() {
+    // "did not answer in time" sends the reader to a busy host; a runner
+    // that closed the connection has more likely stopped. Both keep the
+    // warning that the step may already be on the device.
+    let slow = transport_to_failure(RunnerTransportError::SentWithoutAnswer {
+        endpoint: "/hide-keyboard".into(),
+        source: read_timeout().await,
+    })
+    .to_prompt();
+    let closed = transport_to_failure(RunnerTransportError::SentWithoutAnswer {
+        endpoint: "/hide-keyboard".into(),
+        source: hung_up().await,
+    })
+    .to_prompt();
+    assert!(slow.contains("stopped waiting"), "{slow}");
+    assert!(slow.contains("did not answer in time"), "{slow}");
+    assert!(
+        closed.contains("connection closed before an answer"),
+        "{closed}"
+    );
+    assert!(closed.contains("closed the connection without"), "{closed}");
+    assert!(!closed.contains("busy host"), "{closed}");
+    for said in [&slow, &closed] {
+        assert!(said.contains("may already have happened"), "{said}");
+    }
+}
