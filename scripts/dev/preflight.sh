@@ -200,6 +200,8 @@ SOURCE_GATES=(
   fuzz-targets-compile
   preflight-parity-scan
   mcp-cli-parity-scan
+  runner-commands-match-the-cli
+  runner-commands-match-the-cli.test
   three-readers-agree
   fuzz-lockfiles-are-usable
   fuzz-lockfiles-are-usable.test

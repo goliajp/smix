@@ -26,7 +26,11 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-binary.sh
 source "$ROOT/scripts/lib/e2e-binary.sh"
 OUT="$(mktemp)"
-PORT="${C17_PORT:-22591}"
+# The decoy needs a port nobody holds, asked of the OS: a literal is one a
+# bystander can already be listening on.
+# shellcheck source=../lib/gate-port.sh
+. "$ROOT/scripts/lib/gate-port.sh"
+PORT="${C17_PORT:-$SMIX_RUNNER_PORT}"
 DECOY=""
 
 log()  { printf '[c17-consent] %s\n' "$*"; }

@@ -14,6 +14,8 @@ SIM_NAME="sim-simx-001"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/e2e-devices.sh
 source "$ROOT/scripts/lib/e2e-devices.sh"
+# shellcheck source=../lib/gate-port.sh
+. "$ROOT/scripts/lib/gate-port.sh"
 
 # Only shut down what this script booted, here and on the far node.
 #
@@ -44,6 +46,9 @@ rssh() { ssh -o ConnectTimeout=5 -o BatchMode=yes "$HOST" "$@"; }
 log "guard: $HOST reachable"
 rssh true || cannot_judge "$HOST is not reachable over BatchMode ssh — this node is not available here"
 REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $HOST"
+# The node's runner port, asked of the node. Its default is whoever else
+# runs smix there — the node is somebody's machine too.
+gate_free_port_on NODE_PORT rssh || fail "could not ask $HOST for a free port"
 log "guard: no user build in flight on $HOST"
 rssh "pgrep -f 'cargo build|xcodebuild' >/dev/null" && cannot_judge "user build in flight on $HOST — yielding; re-run when it is idle"
 [ -f "$ROOT/$FLOW_A" ] || fail "corpus flow missing: $FLOW_A"
@@ -54,7 +59,7 @@ UDID=""
 cleanup() {
   log "teardown: runner down + sim shutdown + remote artifacts + workdir"
   if [ -n "$UDID" ]; then
-    rssh "cd '$REMOTE_REPO' && target/release/smix runner down --device $UDID" || true
+    rssh "cd '$REMOTE_REPO' && target/release/smix runner down --device $UDID --runner-port $NODE_PORT" || true
     if [ "$WAS_BOOTED_REMOTE" != "yes" ]; then
       rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID" || true
     fi
@@ -108,9 +113,9 @@ UDID="$(printf '%s\n' "$SIM_LINES" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{
 # The device, not the machine: another project's batch on its own device
 # is not a reason to stand down (2026-09-26).
 e2e_yield_if_held "$UDID" rssh "cd '$REMOTE_REPO' && target/release/smix"
-log "sim boot + runner up ($UDID)"
+log "sim boot + runner up ($UDID, port $NODE_PORT)"
 rssh "cd '$REMOTE_REPO' && target/release/smix sim boot $UDID" || true
-rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID --bundle com.apple.Preferences" \
+rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID --bundle com.apple.Preferences --runner-port $NODE_PORT" \
   || fail "runner up did not reach ready on $HOST"
 
 # --- 7. drive the ignored Rust e2e test (the product-side leg) ---
@@ -121,6 +126,7 @@ nodes:
     host: $HOST
     repo: $REMOTE_REPO
     devices: [{ device: $UDID, platform: ios }]
+    runnerPort: $NODE_PORT
 YAML
 (
   cd "$ROOT"

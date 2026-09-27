@@ -101,6 +101,7 @@ NOT_A_SUBJECT = {
     "adb-guard.test.sh": "feeds adb command lines to the guard under test; it runs none of them",
     "an-e2e-leaves-the-phones-alone.test.py": "writes shell lines into scratch files for the phones gate to judge; it runs none of them",
     "hook-command.test.py": "same — the strings are the guard's inputs, not commands",
+    "gate-port-scan.py": "reads scripts; `adb forward` is in its message about what can hold a port, not a command it runs",
     "no-script-picks-a-device-by-accident.test.py": "this gate's own harness: its fixtures ARE the accidents, written down to be refused",
     "no-script-picks-a-device-by-accident.py": "this gate: its patterns spell the accidents in order to find them",
     "v4.1-c1-android-payload-e2e.sh": "its serial is emulator-9999, one nobody can hold: the check is what smix says about a device that is not there",

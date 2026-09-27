@@ -27,6 +27,10 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/scripts/lib/e2e-binary.sh"
 # shellcheck source=../lib/e2e-devices.sh
 source "$ROOT/scripts/lib/e2e-devices.sh"
+# Step 1 needs a port where no runner answers. Asked of the OS, it is one
+# nobody holds; a literal is one somebody may.
+# shellcheck source=../lib/gate-port.sh
+. "$ROOT/scripts/lib/gate-port.sh"
 WORK="$(mktemp -d)"
 OUT="$(mktemp)"
 
@@ -84,7 +88,7 @@ for d in json.load(sys.stdin)["result"]["devices"]:
         print("yes" if "com.apple.coredevice.feature.capturescreenshot" in caps else "no"); break
 else:
     print("no")' "$PHONE_UDID" 2>/dev/null || echo no)"
-SMIX_RUNNER_PORT=22599 smix sim screenshot phone "$WORK/p.png" > "$OUT"
+smix sim screenshot phone "$WORK/p.png" > "$OUT"
 if [ "$PHONE_OFFERS_CAPTURE" = "yes" ]; then
   grep -q "screenshot:" "$OUT" || { cat "$OUT"; fail "a phone that offers capture was not photographed through devicectl"; }
   file "$WORK/p.png" | grep -q "PNG image data" || fail "the phone's screenshot is not a PNG"

@@ -90,6 +90,8 @@ LOCAL = {
     "fuzz targets compile": "fuzz-targets-compile",
     "preflight parity scan": "preflight-parity-scan",
     "mcp cli parity scan": "mcp-cli-parity-scan",
+    "runner commands match the cli": "runner-commands-match-the-cli",
+    "the runner-commands gate can still go red": "runner-commands-match-the-cli.test",
     "fuzz lockfiles are usable": "fuzz-lockfiles-are-usable",
     "the fuzz-lockfile gate can still go red": "fuzz-lockfiles-are-usable.test",
     "the A4 window verdict can still speak": "android-a4-verdict.test",

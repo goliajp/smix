@@ -760,6 +760,13 @@ log "mcp cli parity scan"
 python3 "$ROOT/scripts/dev/mcp-cli-parity-scan.py" > /tmp/smix-ship-mcp-parity.log 2>&1 \
   || fail "mcp cli parity scan FAILED — see /tmp/smix-ship-mcp-parity.log"
 
+# Also after the build: the port scan's command list, against this CLI.
+log "runner commands match the cli"
+python3 "$ROOT/scripts/dev/runner-commands-match-the-cli.py" > /tmp/smix-ship-runner-commands.log 2>&1 \
+  || fail "runner commands match the cli FAILED — see /tmp/smix-ship-runner-commands.log"
+python3 "$ROOT/scripts/dev/runner-commands-match-the-cli.test.py" > /tmp/smix-ship-runner-commands-test.log 2>&1 \
+  || fail "the runner-commands gate can no longer go red — see /tmp/smix-ship-runner-commands-test.log"
+
 # --- android instrumentation (device) ----------------------------------
 # The :sdk assertion suite on a pinned emulator. Placed early — before
 # fuzz, clippy, semver and anything that publishes — so a missing

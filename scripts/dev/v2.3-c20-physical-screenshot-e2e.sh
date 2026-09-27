@@ -75,7 +75,8 @@ fi
 log "phone $UDID, runner on $PORT"
 
 step "2. the screen comes back as a PNG"
-"$SMIX" sim screenshot "$ALIAS" "$SHOT" > "$OUT" 2>&1 \
+# The runner the person named, not the machine's default one.
+SMIX_RUNNER_PORT="$PORT" "$SMIX" sim screenshot "$ALIAS" "$SHOT" > "$OUT" 2>&1 \
   || { cat "$OUT"; fail "screenshot failed"; }
 [ -s "$SHOT" ] || fail "the file is empty — a zero-byte PNG is the failure this exists to avoid"
 

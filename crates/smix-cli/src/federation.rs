@@ -243,6 +243,20 @@ pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// The tokens a node's slot passes to its remote smix: the caller's
+/// (already shell-quoted), then `--runner-port` when the roster names one.
+///
+/// One place, so the ignored e2e tests drive a node on the port its roster
+/// says, as `smix run --nodes` does — not on one handed to them separately.
+pub fn slot_passthrough(node: &NodeSpec, passthrough: &[String]) -> Vec<String> {
+    let mut out = passthrough.to_vec();
+    if let Some(port) = node.runner_port {
+        out.push(shell_quote("--runner-port"));
+        out.push(shell_quote(&port.to_string()));
+    }
+    out
+}
+
 /// Build the argv for `ssh` (the `"ssh"` word itself excluded, the same
 /// convention as `child_argv` excluding the exe — spawning is C3's leg):
 /// batch-mode options, the node's host, and one remote command string.
@@ -583,12 +597,12 @@ pub fn run_federation(
         }
         let node = &nodes[assignment.node];
         let slot_flows: Vec<String> = assignment.flows.iter().map(|&i| flows[i].clone()).collect();
-        let mut slot_passthrough = passthrough.to_vec();
-        if let Some(port) = node.runner_port {
-            slot_passthrough.push(shell_quote("--runner-port"));
-            slot_passthrough.push(shell_quote(&port.to_string()));
-        }
-        let argv = remote_argv(node, &slot_flows, &assignment.device, &slot_passthrough);
+        let argv = remote_argv(
+            node,
+            &slot_flows,
+            &assignment.device,
+            &slot_passthrough(node, passthrough),
+        );
         let child = std::process::Command::new("ssh")
             .args(&argv)
             .stdout(std::process::Stdio::piped())
@@ -756,6 +770,29 @@ nodes:
                 runner_port: None,
             })
             .collect()
+    }
+
+    #[test]
+    fn a_slot_runs_on_the_port_its_roster_names() {
+        let mut node = NodeSpec {
+            name: "mini".to_string(),
+            host: "mini".to_string(),
+            repo: "/Users/doracawl/workspace/goliajp/smix".to_string(),
+            devices: vec![dev("sim-smix-001", NodePlatform::Ios)],
+            runner_port: Some(40123),
+        };
+        let given = vec![shell_quote("--debug-output"), shell_quote("d")];
+        assert_eq!(
+            slot_passthrough(&node, &given),
+            vec![
+                "'--debug-output'".to_string(),
+                "'d'".to_string(),
+                "'--runner-port'".to_string(),
+                "'40123'".to_string(),
+            ]
+        );
+        node.runner_port = None;
+        assert_eq!(slot_passthrough(&node, &given), given);
     }
 
     #[test]
@@ -998,7 +1035,13 @@ nodes:
             gate.stderr
         );
 
-        let out = run_ssh(&remote_argv(node, &flows, device, &[])).unwrap();
+        let out = run_ssh(&remote_argv(
+            node,
+            &flows,
+            device,
+            &slot_passthrough(node, &[]),
+        ))
+        .unwrap();
         assert!(
             !is_transport_failure(out.exit),
             "ssh transport failure\nstderr: {}",
@@ -1053,17 +1096,6 @@ nodes:
             .expect("SMIX_FED_E2E_FLOWS unset — this test is driven by the C4 e2e script");
         let pull_dir = std::env::var("SMIX_FED_E2E_PULL_DIR")
             .expect("SMIX_FED_E2E_PULL_DIR unset — this test is driven by the C4 e2e script");
-        let ports_env = std::env::var("SMIX_FED_E2E_RUNNER_PORTS").unwrap_or_default();
-        let ports: std::collections::HashMap<String, String> = ports_env
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .map(|pair| {
-                let (name, port) = pair
-                    .split_once('=')
-                    .expect("SMIX_FED_E2E_RUNNER_PORTS entry is name=port");
-                (name.to_string(), port.to_string())
-            })
-            .collect();
         let flows: Vec<String> = flows_env.split(',').map(str::to_string).collect();
         assert_eq!(flows.len(), 2, "two-node e2e expects exactly two flows");
 
@@ -1092,11 +1124,10 @@ nodes:
                 node.name, gate.stderr
             );
 
-            let mut passthrough = vec!["--debug-output".to_string(), FED_ARTIFACT_DIR.to_string()];
-            if let Some(port) = ports.get(&node.name) {
-                passthrough.push("--runner-port".to_string());
-                passthrough.push(port.clone());
-            }
+            let passthrough = slot_passthrough(
+                node,
+                &[shell_quote("--debug-output"), shell_quote(FED_ARTIFACT_DIR)],
+            );
             let out = run_ssh(&remote_argv(
                 node,
                 &node_flows,

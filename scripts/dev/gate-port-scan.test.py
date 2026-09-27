@@ -35,6 +35,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 GATE = os.path.join(HERE, "gate-port-scan.py")
 LIB = os.path.join(os.path.dirname(HERE), "lib", "gate-port.sh")
+SHELL_LINES = os.path.join(HERE, "_shell_lines.py")
 
 # A caller, so the scan's second half has something to read. Without one
 # it appends "nothing invokes a runner-starting gate" to every verdict
@@ -86,7 +87,7 @@ ANDROID_SERIAL="$SERIAL" "$SMIX" runner up "$SERIAL" --platform android --runner
         "the default port, taken by saying nothing",
         '#!/usr/bin/env bash\n"$SMIX" runner up "$UDID"\n',
         True,
-        "brings a runner up on the default port",
+        "probe-e2e.sh:2: talks to a runner on the machine's default port",
     ),
     ("a port asked of the OS", ASKS_THE_OS, False, "clean"),
     (
@@ -115,12 +116,53 @@ gate_free_port AND_PORT
     ),
 ]
 
+# Scripts that talk to a runner without starting one, and the commands that
+# are not what they look like. Each sits in the caller's file, beside a
+# correct gate, so the floor rule has its subject and the verdict is about
+# this line alone.
+TALK_CASES = [
+    ("a single-shot verb on the default port",
+     CALLER + '"$SMIX" tap id:btn-submit\n', True,
+     "run-the-gates.sh:2: talks to a runner on the machine's default port"),
+    ("a flow run on the default port",
+     CALLER + '"$SMIX_RUN" --device "$UDID" flow.yaml\n', True,
+     "run-the-gates.sh:2: talks to a runner on the machine's default port"),
+    ("a plugin session, whose server dials the environment's port",
+     CALLER + '( cd "$W" && claude --plugin-dir "$PLUGIN" -p hi )\n', True,
+     "run-the-gates.sh:2: talks to a runner on the machine's default port"),
+    ("every command naming the port its caller gave, across a continuation",
+     CALLER + '"$SMIX_RUN" --device "$D" \\\n  --runner-port "$PORT" flow.yaml\n', False, "clean"),
+    ("an android runner stopped by device, which never reads the port",
+     CALLER + '"$SMIX" runner down --platform android --device "$SERIAL"\n', False, "clean"),
+    ("the same stop without --platform android is the iOS form",
+     CALLER + '"$SMIX" runner down --device "$SERIAL"\n', True,
+     "run-the-gates.sh:2: talks to a runner on the machine's default port"),
+    ("a case pattern naming the command",
+     CALLER + 'case "$c" in\n  *"smix runner up"*) ;;\nesac\n', False, "clean"),
+    ("the server's name in an install line",
+     CALLER + 'cargo install smix-cli smix-mcp --locked\n', False, "clean"),
+]
+
+# A port taken here does not cross ssh.
+REMOTE_CASES = [
+    ("a runner brought up over ssh on the far default",
+     ASKS_THE_OS + 'rssh "cd r && target/release/smix runner up $U --bundle b" \\\n  || fail up\n',
+     True, "sends a runner command over ssh without naming its port"),
+    ("a runner stopped over ssh on the far default",
+     ASKS_THE_OS + 'rssh "cd r && target/release/smix runner down" || true\n',
+     True, "sends a runner command over ssh without naming its port"),
+    ("a runner over ssh on a port asked of the far machine",
+     ASKS_THE_OS + 'gate_free_port_on NODE_PORT rssh\n'
+     'rssh "cd r && target/release/smix runner up $U --runner-port $NODE_PORT" || fail up\n',
+     False, "clean"),
+]
+
 # The caller-side half: a literal that reaches a correct gate through
 # whoever runs it is the same fixed socket, one step further away.
 CALLER_CASES = [
     ("a caller handing the gate a literal",
      'bash scripts/dev/probe-e2e.sh --port 22091\n', True,
-     "hands a runner-starting gate a literal port"),
+     "hands a runner-driving script a literal port"),
     ("a caller handing the gate a pinned variable",
      'PORT=22091\nbash scripts/dev/probe-e2e.sh "$PORT"\n', True,
      "which is pinned to a literal"),
@@ -139,6 +181,7 @@ def run(gate_body: str, caller_body: str = CALLER):
         # here as in the tree. A stub would let this pass after the
         # helper stopped exporting anything.
         shutil.copy(LIB, os.path.join(lib, "gate-port.sh"))
+        shutil.copy(SHELL_LINES, os.path.join(dev, "_shell_lines.py"))
         with open(os.path.join(dev, "probe-e2e.sh"), "w") as fh:
             fh.write(gate_body)
         with open(os.path.join(dev, "run-the-gates.sh"), "w") as fh:
@@ -174,6 +217,12 @@ def main() -> int:
     for name, caller, must_refuse, expected in CALLER_CASES:
         failures += judge(name, run(ASKS_THE_OS, caller), must_refuse, expected)
 
+    for name, caller, must_refuse, expected in TALK_CASES:
+        failures += judge(name, run(ASKS_THE_OS, caller), must_refuse, expected)
+
+    for name, body, must_refuse, expected in REMOTE_CASES:
+        failures += judge(name, run(body), must_refuse, expected)
+
     # The floor. A tree with no runner in it must be a failure and not a
     # clean verdict: this scan's own history is two ways of seeing
     # nothing and calling it agreement.
@@ -189,7 +238,7 @@ def main() -> int:
             print(f"  - {f}")
         return 1
     print(
-        f"gate-port-scan.test: {len(CASES) + len(CALLER_CASES) + 1} cases pass — "
+        f"gate-port-scan.test: {len(CASES) + len(CALLER_CASES) + len(TALK_CASES) + len(REMOTE_CASES) + 1} cases pass — "
         f"a pinned literal, a prefixed invocation and an empty tree are each judged"
     )
     return 0

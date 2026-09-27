@@ -63,6 +63,9 @@ ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=accept-new loc
 log "guard: $HOST reachable"
 rssh true || cannot_judge "$HOST is not reachable over BatchMode ssh — this node is not available here"
 REMOTE_REPO="$(rssh "cd $REPO && pwd")" || fail "remote repo $REPO missing on $HOST"
+# The far node's runner port, asked of the node: its default is whoever
+# else runs smix there.
+gate_free_port_on NODE_PORT rssh || fail "could not ask $HOST for a free port"
 
 
 log "guard: no user build in flight ($HOST: cargo/xcodebuild; studio: cargo only — resident runner capsule is legitimate)"
@@ -135,7 +138,7 @@ print(next(r["proc"]["pid"] for r in lease["resources"] if r["kind"] == "runner"
 cleanup() {
   log "teardown: runners down (mini) / precise handle kill (studio) + sims shutdown + artifacts + workdir"
   if [ -n "$UDID_M" ]; then
-    rssh "cd '$REMOTE_REPO' && target/release/smix runner down" || true
+    rssh "cd '$REMOTE_REPO' && target/release/smix runner down --device $UDID_M --runner-port $NODE_PORT" || true
     if [ "$WAS_BOOTED_REMOTE" != "yes" ]; then
       rssh "cd '$REMOTE_REPO' && target/release/smix sim shutdown $UDID_M" || true
     fi
@@ -218,9 +221,9 @@ UDID_M="$(printf '%s\n' "$SIM_LINES_M" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A
   || fail "no UDID in remote sim list line: $SIM_LINES_M"
 [ "$(simulator_state "$UDID_M" rssh)" = Booted ] && WAS_BOOTED_REMOTE=yes
 e2e_yield_if_held "$UDID_M" rssh "cd '$REMOTE_REPO' && target/release/smix"
-log "$HOST sim boot + runner up ($UDID_M, default port)"
+log "$HOST sim boot + runner up ($UDID_M, port $NODE_PORT)"
 rssh "cd '$REMOTE_REPO' && target/release/smix sim boot $UDID_M" || true
-rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID_M --bundle com.apple.Preferences" \
+rssh "cd '$REMOTE_REPO' && target/release/smix runner up $UDID_M --bundle com.apple.Preferences --runner-port $NODE_PORT" \
   || fail "runner up did not reach ready on $HOST"
 
 # --- 7. the real CLI, one command through the whole lane ---
@@ -236,6 +239,7 @@ nodes:
     host: $HOST
     repo: $REMOTE_REPO
     devices: [{ device: $UDID_M, platform: ios }]
+    runnerPort: $NODE_PORT
 YAML
 # clap reads SMIX_UDID / SMIX_RUNNER_PORT as if --device / --runner-port
 # were given, and either conflicts with --nodes. gate-port.sh exports the

@@ -52,12 +52,10 @@ scripts/ (the library that defines the switches excepted):
    is still quitting; killed by pid (`kill "$…PID"`) it aborts. Each of
    these left a "quit unexpectedly" dialog on the owner's desktop
    (2026-09-25, `skin_winsys_quit_request` from `_sigtramp`).
-9. `smix down` runs against an isolated machine directory, and a
-   `runner up` / `runner down` names its port or device or runs in a
-   script that took a port of its own (`gate-port.sh`). `smix down`
-   settles every device the ledger says smix booted: against the real one
-   it shut down the simulator and emulator a release was using
-   (2026-09-25). 22087 is every smix's default port on this machine.
+9. `smix down` runs against an isolated machine directory. It settles
+   every device the ledger says smix booted: against the real one it shut
+   down the simulator and emulator a release was using (2026-09-25).
+   Which port a script's runners are on is gate-port-scan's rule.
 
 10. Whether a simulator is up is asked through `simulator_state` (the
    library), never by reading `simctl list devices` in the script. Twenty
@@ -89,6 +87,9 @@ import argparse
 import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _shell_lines import code_lines  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -131,16 +132,6 @@ LAUNCHER_KILL = re.compile(r"""\bkill\s+(-\w+\s+)?"?\$\{?\w*(BLOCKER|EMU|AVD|EMU
 EMULATOR_HELPERS = re.compile(r"\be2e_(start|stop)_emulator\b")
 # `smix down` with nothing after it but redirections: the machine-wide one.
 MACHINE_DOWN = re.compile(r"""(\$SMIX"?|\bsmix)\s+down\b(?!\s+--)""")
-RUNNER_UPDOWN = re.compile(r"""(\$SMIX"?|(?<![`'"])\bsmix)\s+runner\s+(up|down)\b""")
-PORT_NAMED = re.compile(r"--runner-port\b|--device\b|SMIX_RUNNER_PORT=|--help\b")
-OWN_PORT = re.compile(r"\bgate-port\.sh\b")
-# Remote federation nodes: the roster addresses a node's runner at the
-# default port, so these runners are on it by design (open-items FED1).
-DEFAULT_PORT_BY_DESIGN = {
-    "scripts/dev/v2.12-c3-federation-single-node-e2e.sh": "remote node; the federation roster addresses its runner at the default port (FED1)",
-    "scripts/dev/v2.12-c4-federation-two-node-e2e.sh": "remote node; the federation roster addresses its runner at the default port (FED1)",
-    "scripts/dev/v2.12-c5-federation-cli-e2e.sh": "remote node; the federation roster addresses its runner at the default port (FED1)",
-}
 # `simctl list devices` run as a command (not words inside another
 # command's string): at the start of a line or a pipeline, after `$(`, an
 # `if`/`!`, or as the remote half of `rssh`.
@@ -180,44 +171,6 @@ ANDROID_LITERAL = re.compile(r"--udid\s+['\"]?([A-Za-z0-9._-]+)['\"]?")
 SPEECH = re.compile(r"^\s*(log|echo|printf|step|fail|bad|ok|cannot_judge|note|say)\b")
 
 
-def code_lines(text: str) -> list[tuple[int, str]]:
-    """Lines that start outside any string, heredoc or comment.
-
-    The quoting state is carried across lines. It was counted a line at a
-    time, which let a multi-line `python3 -c '…'` program — whose body has
-    double quotes of its own — flip the state and hide every command after
-    it: v2.12-c5's two `sim list` calls were invisible to this gate.
-    """
-    out: list[tuple[int, str]] = []
-    heredoc_end: str | None = None
-    quote: str | None = None
-    for n, line in enumerate(text.splitlines(), 1):
-        if heredoc_end is not None:
-            if line.strip() == heredoc_end:
-                heredoc_end = None
-            continue
-        starts_in_code = quote is None
-        stripped = line.strip()
-        if starts_in_code and (not stripped or stripped.startswith("#")):
-            continue
-        prev = ""
-        for ch in line:
-            if quote is None:
-                if ch == "#" and (prev == "" or prev.isspace()):
-                    break
-                if ch in ("'", '"') and prev != "\\":
-                    quote = ch
-            elif ch == quote and (quote == "'" or prev != "\\"):
-                quote = None
-            prev = ch
-        if starts_in_code:
-            m = re.search(r"<<-?\s*['\"]?(\w+)['\"]?", line)
-            if m and quote is None:
-                heredoc_end = m.group(1)
-            out.append((n, line))
-    return out
-
-
 def fabricated_apple(tail: str) -> bool:
     return tail.upper().startswith("0000000000")
 
@@ -231,7 +184,6 @@ def scan(text: str, rel: str, seen: dict[str, int]) -> list[str]:
     isolated_at: int | None = None
     consent_at: int | None = None
     cleared_at: int | None = None
-    own_port = bool(OWN_PORT.search(text))
     for n, line in code_lines(text):
         if CLEARED.search(line):
             cleared_at = cleared_at or n
@@ -279,18 +231,6 @@ def scan(text: str, rel: str, seen: dict[str, int]) -> list[str]:
                 problems.append(
                     f"{rel}:{n}: runs `smix down` against the machine's real ledger — it "
                     f"settles every device that ledger says smix booted, whoever is using it"
-                )
-        if RUNNER_UPDOWN.search(line) and not speech and not PORT_NAMED.search(line):
-            # An exported port does not cross ssh: a remote smix gets its own default.
-            if own_port and not re.search(r"\brssh\b|\bssh\s", line):
-                seen["own-port"] += 1
-            elif rel in DEFAULT_PORT_BY_DESIGN:
-                seen["default-port-by-design"] = seen.get("default-port-by-design", 0) + 1
-                seen.setdefault("exempt-hit", set()).add(rel)
-            else:
-                problems.append(
-                    f"{rel}:{n}: acts on a runner at the machine's default port (22087, "
-                    f"every smix's) — name --runner-port / --device, or take a port with gate-port.sh"
                 )
         if STATE_ASKED.search(line):
             seen["state-asked"] += 1
@@ -395,7 +335,6 @@ def main() -> int:
         "ledger-asked": 0,
         "emulator-helper": 0,
         "isolated-down": 0,
-        "own-port": 0,
         "state-asked": 0,
     }
     problems: list[str] = []
@@ -410,17 +349,6 @@ def main() -> int:
                 f"`{key[1]}` ({why}) and no line of it matches — the exemption "
                 f"excuses nothing; remove it"
             )
-    hit = seen.pop("exempt-hit", set())
-    by_design = seen.pop("default-port-by-design", 0)
-    for rel in DEFAULT_PORT_BY_DESIGN:
-        exists = os.path.isfile(os.path.join(root, rel))
-        if exists and rel not in hit:
-            problems.append(
-                f"{rel} is exempted from the default-port rule and runs no runner "
-                f"up/down at the default port — the exemption excuses nothing; remove it"
-            )
-        elif not exists and root == REPO:
-            problems.append(f"{rel} is exempted from the default-port rule and does not exist")
     for rule, count in seen.items():
         if count == 0:
             problems.append(
@@ -441,9 +369,7 @@ def main() -> int:
         f"{seen['ledger-asked']} ledger(s) asked of smix, "
         f"{seen['emulator-helper']} emulator start/stop(s) through the helpers, "
         f"{seen['isolated-down']} machine-wide down(s) isolated, "
-        f"{seen['own-port']} runner up/down(s) on a port of the script's own, "
-        f"{seen['state-asked']} simulator state(s) asked of the library, "
-        f"{by_design} on the default port by design"
+        f"{seen['state-asked']} simulator state(s) asked of the library"
     )
     return 0
 

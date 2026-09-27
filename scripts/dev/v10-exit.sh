@@ -25,7 +25,10 @@ else
     exit 1
   }
 fi
-APORT="${SMIX_EXIT_ANDROID_PORT:-22095}"
+# The Android runner these checks attach to is one somebody brought up;
+# its port is theirs to name. A default here would be a guess at a socket
+# that may be anyone's.
+APORT="${SMIX_EXIT_ANDROID_PORT:?name the port of the Android runner to attach to (SMIX_EXIT_ANDROID_PORT)}"
 IOS="${SMIX_EXIT_IOS:-}"
 # No literal: the iOS gate asks the OS for a port of its own, and an
 # empty argument leaves it that choice. A number here would be one
