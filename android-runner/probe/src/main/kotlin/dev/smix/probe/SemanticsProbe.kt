@@ -1,6 +1,7 @@
 package dev.smix.probe
 
 import android.os.Handler
+import android.view.View
 import android.view.WindowManager
 import android.view.inspector.WindowInspector
 import android.os.Looper
@@ -174,6 +175,8 @@ object SemanticsProbe {
     }
 
     /** Every attached root's unmerged tree, as smix's wire spells it. */
+    ///
+    /// Roots are listed bottom of the window stack first — see [StackOrder].
     fun dumpWireJson(): String {
         val compose = attached()
         val composed = compose.mapNotNull { root ->
@@ -183,31 +186,12 @@ object SemanticsProbe {
             // only from the View side — and a probe that leaves it out sees
             // LESS than the accessibility path it replaces.
             val hosted = root.view.hostedViews()
-            if (hosted.isEmpty()) node else node.copy(children = node.children + hosted)
+            root.view.rootView to (if (hosted.isEmpty()) node else node.copy(children = node.children + hosted))
         }
-        return (composed + windowsWithoutCompose(compose)).toWireJson()
-    }
-
-    /**
-     * This app's windows that no Compose root lives in, walked as Views.
-     *
-     * A Compose app that asks for confirmation through the platform's own
-     * `AlertDialog` puts that dialog in a window of its own, built from
-     * Views. Compose roots are the only thing this probe used to hear
-     * about, so the dialog was absent from the tree a flow reads while the
-     * accessibility reader listed its buttons — `smix find` said the
-     * confirm button was there and `tapOn` said it was not, on the same
-     * screen, measured on the fixture.
-     *
-     * `WindowInspector` is public API (29+, and this probe's floor is 33)
-     * and lists every window root in this process. A window whose root is
-     * already the root of a Compose view has been answered above.
-     */
-    private fun windowsWithoutCompose(compose: List<ViewRootForTest>): List<ProbeNode> {
-        val covered = compose.map { it.view.rootView }.toSet()
-        return WindowInspector.getGlobalWindowViews()
-            .filter { it.isAttachedToWindow && it.isShown && it !in covered }
-            .mapNotNull { it.asWindowRoot() }
+        val windows = WindowInspector.getGlobalWindowViews()
+        return StackOrder.bottomFirst(composed + windowsWithoutCompose(compose), { it.first }, windows)
+            .map { it.second }
+            .toWireJson()
     }
 
     /** The signal that was tried first, kept so its verdict can be re-checked. */

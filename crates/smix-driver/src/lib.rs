@@ -375,11 +375,24 @@ impl IosDriver {
         &self,
         include: Option<IncludeScope>,
     ) -> Result<A11yNode, ExpectationFailure> {
+        self.perceived_with_retry(include).await.map(|t| t.root)
+    }
+
+    /// [`Self::tree_with_retry`], keeping which reader the tree came from.
+    async fn perceived_with_retry(
+        &self,
+        include: Option<IncludeScope>,
+    ) -> Result<smix_runner_client::PerceivedTree, ExpectationFailure> {
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
         let mut last_transport_err: Option<ExpectationFailure> = None;
         loop {
-            match self.tree(include).await {
+            match self
+                .runner
+                .get_tree(include)
+                .await
+                .map_err(transport_to_failure)
+            {
                 Ok(tree) => return Ok(tree),
                 Err(e) => {
                     if start.elapsed() >= timeout {
@@ -460,13 +473,13 @@ impl IosDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<ActOutcome, ExpectationFailure> {
-        let (nx, ny, aimed) = self.resolve_aimed(selector, include).await?;
+        let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
         let landed = self
             .runner
-            .tap_at_norm_coord(nx, ny)
+            .tap_at_norm_coord_aimed(nx, ny, 1, None, None, Some(reader))
             .await
             .map_err(transport_to_failure)?;
-        landing_outcome(selector, aimed, &landed)
+        landing_outcome(selector, (nx, ny, aimed, reader), &landed)
     }
 
     /// Where a touch aimed at `selector` goes, and the node it is aimed
@@ -477,7 +490,7 @@ impl IosDriver {
         &self,
         selector: &Selector,
         include: Option<IncludeScope>,
-    ) -> Result<(f64, f64, Option<HitElement>), ExpectationFailure> {
+    ) -> Result<Aimed, ExpectationFailure> {
         let start = Instant::now();
         let timeout = Duration::from_millis(TOTAL_TIMEOUT_MS);
 
@@ -491,7 +504,9 @@ impl IosDriver {
             // Transport retry parity with wait_for / find. Tree fetch
             // transient transport drops (runner socket refusal /
             // concurrent-handling hiccup) are re-tried in-loop.
-            let tree = self.tree_with_retry(include).await?;
+            let perceived = self.perceived_with_retry(include).await?;
+            let read_by = std::sync::Mutex::new(perceived.source);
+            let tree = perceived.root;
             match resolve_to_norm_coord(&tree, selector) {
                 // The matched node is kept, not just its centre: the
                 // runner reports what the tapped point turned out to be
@@ -526,17 +541,24 @@ impl IosDriver {
                     // Aimed only at a target that has stopped moving: this
                     // tree may be a frame of an entrance still under way.
                     // iOS frames are in points.
-                    return settle::until_aim_settles(
+                    let (nx, ny, aimed) = settle::until_aim_settles(
                         (coord.0, coord.1, aimed),
                         || async {
-                            let tree = self.tree_with_retry(include).await?;
-                            Ok(settle_reading(&tree, selector))
+                            let t = self.perceived_with_retry(include).await?;
+                            *read_by.lock().expect("never poisoned") = t.source;
+                            Ok(settle_reading(&t.root, selector))
                         },
                         1.0,
                         settle::POLL,
                         settle::LIMIT,
                     )
-                    .await;
+                    .await?;
+                    return Ok((
+                        nx,
+                        ny,
+                        aimed,
+                        verdict_reader(*read_by.lock().expect("never poisoned")),
+                    ));
                 }
                 Err(HostResolveError::NotFound) => {
                     if start.elapsed() > timeout {
@@ -692,13 +714,13 @@ impl IosDriver {
         selector: &Selector,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        let (nx, ny, aimed) = self.resolve_aimed(selector, include).await?;
+        let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
         let landed = self
             .runner
-            .tap_at_norm_coord_burst(nx, ny, 2, None, None)
+            .tap_at_norm_coord_aimed(nx, ny, 2, None, None, Some(reader))
             .await
             .map_err(transport_to_failure)?;
-        landing_outcome(selector, aimed, &landed).map(|_| ())
+        landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
     }
 
     /// Long-press a selector for `duration`: one touch held that long on
@@ -714,16 +736,16 @@ impl IosDriver {
         duration: Duration,
         include: Option<IncludeScope>,
     ) -> Result<PressTiming, ExpectationFailure> {
-        let (nx, ny, aimed) = self.resolve_aimed(selector, include).await?;
+        let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
         let hold_ms = u32::try_from(duration.as_millis()).unwrap_or(u32::MAX);
         let sent_ms = host_now_ms();
         let landed = self
             .runner
-            .tap_at_norm_coord_burst(nx, ny, 1, None, Some(hold_ms))
+            .tap_at_norm_coord_aimed(nx, ny, 1, None, Some(hold_ms), Some(reader))
             .await
             .map_err(transport_to_failure)?;
         let received_ms = host_now_ms();
-        landing_outcome(selector, aimed, &landed)?;
+        landing_outcome(selector, (nx, ny, aimed, reader), &landed)?;
         Ok(match landed.press() {
             Some(p) => PressTiming {
                 sent_ms,
@@ -1221,7 +1243,7 @@ impl ActOutcome {
 /// promising to make it fail later hands the value of the change to the
 /// next release, and the release after that inherits a suite that has
 /// been green through every miss.
-fn tap_mismatch_is_fatal() -> bool {
+pub(crate) fn tap_mismatch_is_fatal() -> bool {
     !std::env::var("SMIX_TAP_HIT_MISMATCH")
         .map(|v| v.eq_ignore_ascii_case("warn"))
         .unwrap_or(false)
@@ -1386,13 +1408,6 @@ pub enum ActVerdict {
     Unconfirmable(String),
 }
 
-/// Tolerance, in points, for comparing frames.
-///
-/// A frame makes a round trip — the host normalises the centre against
-/// the app frame, the runner multiplies it back — so exact equality
-/// would fail on arithmetic rather than on aim.
-const FRAME_TOLERANCE_PT: f64 = 1.0;
-
 /// Wall clock in milliseconds, for anchoring a press window and the
 /// captures taken alongside it to the same timeline.
 #[must_use]
@@ -1546,248 +1561,6 @@ pub fn press_frame_placement(press: &PressTiming, frame: &CaptureSpan) -> FrameP
          the boundary",
         frame.start_ms, frame.end_ms
     ))
-}
-
-/// What a chain of hit elements leaves out.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ChainCoverage {
-    /// Named elements only (the iOS runner): an unnamed target's absence
-    /// proves nothing.
-    NamedOnly,
-    /// Every element under the point (the Android runner): absence is a miss.
-    Every,
-}
-
-/// The verdict on a selector act, from what the runner said it touched.
-///
-/// One judgement for every platform and every act aimed by a selector —
-/// tap, double tap, long press. The iOS tap used to hold this inline and
-/// the Android acts had none, so an Android tap was never judged and a
-/// consumer's dialog confirm, pressed below the dialog, was reported as
-/// `tapped` with exit 0.
-///
-/// `aimed` is `None` when the selector resolved to a point rather than
-/// a node (text found by OCR, for one): there is no element to compare,
-/// and the outcome says so rather than pretending.
-///
-/// A runner that reports NOTHING under the point fails the step. Until
-/// now that was "could not be judged" and counted as a pass, on the
-/// reasoning that failing it would break everyone driving an older
-/// runner — which is how the Android runner, which reported nothing at
-/// all, turned every one of its misses into a pass.
-///
-/// # Errors
-///
-/// `TapMissed` when the touch was delivered to something other than the
-/// element aimed at (unless `SMIX_TAP_HIT_MISMATCH=warn`), and
-/// `DriverError` when the runner reported nothing about where it landed.
-pub fn landing_outcome(
-    selector: &Selector,
-    aimed: Option<HitElement>,
-    landed: &smix_runner_wire::TapAtCoordResult,
-) -> Result<ActOutcome, ExpectationFailure> {
-    let chain: Vec<HitElement> = landed
-        .chain
-        .iter()
-        .map(|e| HitElement {
-            identifier: e.identifier.clone(),
-            label: e.label.clone(),
-            frame: (e.frame.x, e.frame.y, e.frame.w, e.frame.h),
-        })
-        .collect();
-    let Some(aimed) = aimed else {
-        return Ok(ActOutcome {
-            target: None,
-            observed: chain,
-            verdict: ActVerdict::Unconfirmable(
-                "the selector resolved to a coordinate but not to a node, so \
-                 there is nothing to compare the tapped point against"
-                    .into(),
-            ),
-        });
-    };
-    if chain.is_empty() && !landed.complete {
-        return Err(ExpectationFailure::new(FailureInit {
-            code: Some(FailureCode::DriverError),
-            message: format!(
-                "the touch aimed at {} went in, and the runner reported \
-                 nothing about what it was delivered to — so whether it \
-                 landed cannot be told",
-                describe_hit(&aimed)
-            ),
-            selector: Some(selector.clone()),
-            hint: Some(
-                "a runner older than the field that carries it answers this \
-                 way; `smix runner up --force` rebuilds the runner from this \
-                 smix"
-                    .into(),
-            ),
-            ..Default::default()
-        }));
-    }
-    let coverage = if landed.complete {
-        ChainCoverage::Every
-    } else {
-        ChainCoverage::NamedOnly
-    };
-    // A runner that lists everything under the point and lists nothing
-    // is saying where the touch went: outside every window it can read.
-    // Measured with gesture navigation and a system dialog in front —
-    // the point was below the dialog, where no readable window reaches.
-    let verdict = if chain.is_empty() {
-        ActVerdict::Missed(format!(
-            "aimed at {} and the touch was delivered outside every window \
-             the runner can read",
-            describe_hit(&aimed)
-        ))
-    } else {
-        tap_landed_within(&aimed, &chain, coverage)
-    };
-    if let ActVerdict::Missed(why) = &verdict {
-        if tap_mismatch_is_fatal() {
-            return Err(ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::TapMissed),
-                message: format!("tap did not land where it aimed: {why}"),
-                selector: Some(selector.clone()),
-                hint: Some(
-                    "the element moved between the tree fetch and the tap, or \
-                     the touch went to something over it; wait for the screen \
-                     to settle first. Set SMIX_TAP_HIT_MISMATCH=warn to \
-                     downgrade this to a warning while migrating a suite."
-                        .into(),
-                ),
-                ..Default::default()
-            }));
-        }
-        eprintln!("smix: warning: tap did not land where it aimed: {why}");
-    }
-    Ok(ActOutcome {
-        target: Some(aimed),
-        observed: chain,
-        verdict,
-    })
-}
-
-/// Did the touch land inside the element it aimed at?
-///
-/// `chain` is every named element containing the tapped point, as the
-/// runner found them after synthesising the touch.
-///
-/// # Why containment and not identity
-///
-/// The first version of this asked whether the element at the point
-/// *was* the element aimed at. A live tree says why that is wrong. At
-/// the centre of the first row of Settings, the named elements
-/// containing the point are:
-///
-/// ```text
-/// staticText  "登录以访问iCloud数据…"                      area 7283
-/// button      id=com.apple.settings.primaryAppleAccount   area 33423
-/// application id=com.apple.Preferences                    area 351348
-/// ```
-///
-/// A flow aiming at that button taps its centre, and the innermost
-/// element there is the button's own label. Identity would call a
-/// perfectly good tap a miss — and text nested inside a row is what
-/// every list screen looks like. Containment gets it right: the button
-/// is on the chain.
-///
-/// # What the chain leaves out
-///
-/// The iOS runner lists named elements only; the Android runner lists
-/// every element under the point. `coverage` says which, and it decides
-/// what an unnamed target's absence means: nothing on iOS (it may just
-/// be unnamed), a miss on Android (the list is whole).
-///
-/// # WHAT THIS CANNOT SEE
-///
-/// **Occlusion.** A scrim covering the aimed element contains the
-/// point too, so this passes. The snapshot the runner walks carries no
-/// z-order (`TreeRoute.swift`: snapshots are dead frames), and
-/// `isHittable` — Apple's own answer — has been rejected here twice
-/// on purpose: it reports false for an element that is reachable in
-/// the AX tree but visually covered, which is exactly the see-through
-/// tap `SmixRunnerUITests.swift` performs deliberately, and it broke a
-/// QA-overlay assertion in v1.0.27.
-///
-/// So this closes the stale-frame half of "the tap reported success and
-/// nothing happened" and not the covered-element half. The whole chain
-/// travels in the outcome regardless, so a caller can see the scrim
-/// even when the verdict passes.
-pub fn tap_landed_within(
-    aimed: &HitElement,
-    chain: &[HitElement],
-    coverage: ChainCoverage,
-) -> ActVerdict {
-    if chain.is_empty() {
-        return ActVerdict::Missed(format!(
-            "aimed at {} and the tapped point held nothing — the element \
-             moved between the tree fetch and the tap, or its frame was \
-             stale",
-            describe_hit(aimed)
-        ));
-    }
-    if chain.iter().any(|c| same_element(aimed, c)) {
-        return ActVerdict::Confirmed;
-    }
-    if aimed.identifier.is_empty() && aimed.label.is_empty() && coverage == ChainCoverage::NamedOnly
-    {
-        return ActVerdict::Unconfirmable(format!(
-            "the element aimed at carries neither an identifier nor a \
-             label, so it cannot be looked for among the {} element(s) \
-             at the tapped point",
-            chain.len()
-        ));
-    }
-    ActVerdict::Missed(format!(
-        "aimed at {} but the tapped point is inside {} instead",
-        describe_hit(aimed),
-        chain
-            .iter()
-            .map(describe_hit)
-            .collect::<Vec<_>>()
-            .join(", ")
-    ))
-}
-
-/// Are these two descriptions the same element?
-///
-/// By the strongest field both carry: identifier, then label, then
-/// geometry.
-fn same_element(a: &HitElement, b: &HitElement) -> bool {
-    if !a.identifier.is_empty() && !b.identifier.is_empty() {
-        return a.identifier == b.identifier;
-    }
-    if !a.label.is_empty() && !b.label.is_empty() {
-        return a.label == b.label;
-    }
-    if a.identifier.is_empty()
-        && a.label.is_empty()
-        && b.identifier.is_empty()
-        && b.label.is_empty()
-    {
-        let close = |x: f64, y: f64| (x - y).abs() <= FRAME_TOLERANCE_PT;
-        return close(a.frame.0, b.frame.0)
-            && close(a.frame.1, b.frame.1)
-            && close(a.frame.2, b.frame.2)
-            && close(a.frame.3, b.frame.3);
-    }
-    // One is named and the other is not: they are describable in
-    // different vocabularies, which is not evidence of sameness.
-    false
-}
-
-fn describe_hit(e: &HitElement) -> String {
-    if !e.identifier.is_empty() {
-        format!("id={}", e.identifier)
-    } else if !e.label.is_empty() {
-        format!("label={:?}", e.label)
-    } else {
-        format!(
-            "an unnamed element at ({:.0},{:.0} {:.0}x{:.0})",
-            e.frame.0, e.frame.1, e.frame.2, e.frame.3
-        )
-    }
 }
 
 /// The /tap, /double-tap and /long-press routes decode ONLY a plain
@@ -2095,6 +1868,9 @@ fn _silence_unused_imports() {
 // ===========================================================================
 
 mod android;
+mod android_aim;
+mod landing;
+pub use landing::{Aimed, ChainCoverage, landing_outcome, tap_landed_within, verdict_reader};
 mod ios;
 mod scroll_until;
 pub mod settle;

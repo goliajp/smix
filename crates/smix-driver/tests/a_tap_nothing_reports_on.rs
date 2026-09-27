@@ -8,7 +8,7 @@
 //! runner that reports nothing fails the step, naming itself.
 
 use smix_driver::{ActVerdict, HitElement, landing_outcome};
-use smix_runner_wire::{HitChainEntry, TapAtCoordResult};
+use smix_runner_wire::{HitChainEntry, TapAtCoordResult, TreeReader};
 use smix_screen::Rect;
 use smix_selector::Selector;
 
@@ -42,8 +42,12 @@ fn a_selector_tap_the_runner_reports_nothing_about_fails_and_names_the_runner() 
         complete: false,
         ..Default::default()
     };
-    let err = landing_outcome(&aim(), Some(button1()), &landed)
-        .expect_err("an empty chain was a pass until now, and must not be");
+    let err = landing_outcome(
+        &aim(),
+        (0.8, 0.54, Some(button1()), TreeReader::Accessibility),
+        &landed,
+    )
+    .expect_err("an empty chain was a pass until now, and must not be");
     let prompt = err.to_prompt();
     assert!(
         prompt.contains("runner"),
@@ -58,8 +62,12 @@ fn a_selector_tap_delivered_below_its_dialog_fails() {
         complete: true,
         ..Default::default()
     };
-    let err = landing_outcome(&aim(), Some(button1()), &landed)
-        .expect_err("the touch went to the activity behind the dialog");
+    let err = landing_outcome(
+        &aim(),
+        (0.8, 0.54, Some(button1()), TreeReader::Accessibility),
+        &landed,
+    )
+    .expect_err("the touch went to the activity behind the dialog");
     assert!(
         err.to_prompt().contains("button1"),
         "the failure says what was aimed at: {}",
@@ -77,8 +85,12 @@ fn a_selector_tap_delivered_to_its_button_is_confirmed() {
         complete: true,
         ..Default::default()
     };
-    let outcome =
-        landing_outcome(&aim(), Some(button1()), &landed).expect("the touch went to the button");
+    let outcome = landing_outcome(
+        &aim(),
+        (0.8, 0.54, Some(button1()), TreeReader::Accessibility),
+        &landed,
+    )
+    .expect("the touch went to the button");
     assert_eq!(outcome.verdict, ActVerdict::Confirmed);
 }
 
@@ -94,8 +106,12 @@ fn a_touch_delivered_outside_every_readable_window_is_a_miss_not_an_old_runner()
         complete: true,
         ..Default::default()
     };
-    let err = landing_outcome(&aim(), Some(button1()), &landed)
-        .expect_err("the touch went to no window at all");
+    let err = landing_outcome(
+        &aim(),
+        (0.8, 0.54, Some(button1()), TreeReader::Accessibility),
+        &landed,
+    )
+    .expect_err("the touch went to no window at all");
     let prompt = err.to_prompt();
     assert!(
         prompt.contains("TAP_MISSED"),

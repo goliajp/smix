@@ -538,45 +538,12 @@ class SmixHttpServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", body)
     }
 
-    /// What a touch at `(px, py)` is about to be delivered to — see
-    /// [HitChain]. Only the nodes containing the point are read: the
-    /// geometry is decided there, and refreshing a whole tree on every
-    /// tap would cost the walk `/tree` already pays for.
-    private fun hitChainAt(px: Int, py: Int): List<HitChain.Entry> {
-        val windows = instrumentation.uiAutomation.windows.mapNotNull { w ->
-            val root = w.root ?: return@mapNotNull null
-            try {
-                val wb = Rect()
-                w.getBoundsInScreen(wb)
-                HitChain.Window(w.layer, HitChain.Box(wb.left, wb.top, wb.right, wb.bottom), hitNode(root, px, py))
-            } finally {
-                root.recycle()
-            }
-        }
-        return HitChain.at(windows, px, py)
-    }
-
-    private fun hitNode(n: AccessibilityNodeInfo, px: Int, py: Int): HitChain.Node {
-        n.refresh()
-        val r = Rect()
-        n.getBoundsInScreen(r)
-        val kids = mutableListOf<HitChain.Node>()
-        for (i in 0 until n.childCount) {
-            val c = n.getChild(i) ?: continue
-            try {
-                val cr = Rect()
-                c.getBoundsInScreen(cr)
-                if (cr.contains(px, py)) kids.add(hitNode(c, px, py))
-            } finally {
-                c.recycle()
-            }
-        }
-        return HitChain.Node(
-            id = n.viewIdResourceName?.let(TreeWire::shortResourceId) ?: "",
-            label = n.contentDescription?.toString() ?: "",
-            bounds = HitChain.Box(r.left, r.top, r.right, r.bottom),
-            children = kids,
-        )
+    /// What a touch at `(px, py)` is about to be delivered to, read from
+    /// the tree the caller aimed from; see [HitReader].
+    private fun hitChainAt(session: IHTTPSession, reader: HitChain.Reader, px: Int, py: Int): HitChain.Reading {
+        val app = if (reader == HitChain.Reader.SEMANTICS) probeTarget(session) else null
+        val (w, h) = displaySize()
+        return HitReader(instrumentation).read(reader, app, HitChain.Box(0, 0, w, h), px, py)
     }
 
     /// The display's size, in the pixels a touch is injected in.
@@ -610,12 +577,13 @@ class SmixHttpServer(
         // point is off the display). Whether the app did anything with it
         // is the caller's next assertion, not a question this route can
         // answer.
-        val req = RunnerWire.decodeNormCoord(readBodyString(session))
+        val payload = readBodyString(session)
+        val req = RunnerWire.decodeNormCoord(payload)
         val (w, h) = displaySize()
         val px = RunnerWire.normToPixel(req.nx, w)
         val py = RunnerWire.normToPixel(req.ny, h)
         // Before the touch: a confirm that lands takes its dialog away.
-        val chain = hitChainAt(px, py)
+        val chain = hitChainAt(session, RunnerWire.decodeAimedBy(payload), px, py)
         val ok = device.click(px, py)
         // Give the dispatched IO event time to render before /tree probes
         // observe the post-tap UI state.
@@ -1225,11 +1193,12 @@ class SmixHttpServer(
     private fun serveDoubleTapAtNormCoord(session: IHTTPSession): Response {
         // OK MEANS: injected — both taps went in. One of two landing is
         // not a double tap, so the answer is the conjunction.
-        val req = RunnerWire.decodeNormCoord(readBodyString(session))
+        val payload = readBodyString(session)
+        val req = RunnerWire.decodeNormCoord(payload)
         val (w, h) = displaySize()
         val px = RunnerWire.normToPixel(req.nx, w)
         val py = RunnerWire.normToPixel(req.ny, h)
-        val chain = hitChainAt(px, py)
+        val chain = hitChainAt(session, RunnerWire.decodeAimedBy(payload), px, py)
         val first = device.click(px, py)
         // Standard double-tap inter-tap window — 150ms is below most
         // systems' DOUBLE_TAP_TIMEOUT (300ms) so events register as a
@@ -1244,11 +1213,12 @@ class SmixHttpServer(
     private fun serveLongPressAtNormCoord(session: IHTTPSession): Response {
         // OK MEANS: injected — a long press is a swipe that does not
         // travel, so this is `InteractionController.swipe`'s answer.
-        val req = RunnerWire.decodeLongPressAtNormCoord(readBodyString(session))
+        val payload = readBodyString(session)
+        val req = RunnerWire.decodeLongPressAtNormCoord(payload)
         val (w, h) = displaySize()
         val px = RunnerWire.normToPixel(req.nx, w)
         val py = RunnerWire.normToPixel(req.ny, h)
-        val chain = hitChainAt(px, py)
+        val chain = hitChainAt(session, RunnerWire.decodeAimedBy(payload), px, py)
         val injected = device.swipe(px, py, px, py, RunnerWire.longPressSteps(req.durationMs))
         device.waitForIdle(500)
         val body = RunnerWire.longPressBody(injected, px, py, req.durationMs, chain)

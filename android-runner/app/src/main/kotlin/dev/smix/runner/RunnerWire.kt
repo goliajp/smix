@@ -417,7 +417,7 @@ object RunnerWire {
         displayHeight: Int,
         x: Int,
         y: Int,
-        chain: List<HitChain.Entry>,
+        landing: HitChain.Reading,
     ): String =
         JSONObject()
             .put("ok", ok)
@@ -426,33 +426,12 @@ object RunnerWire {
             .put("displayHeight", displayHeight)
             .put("x", x)
             .put("y", y)
-            .withChain(chain)
+            .withChain(landing)
             .toString()
 
-    /// What the touch was delivered to, in the shape the iOS runner uses,
-    /// plus `complete`: this chain lists every element under the point,
-    /// named or not, so an element's absence from it is evidence of a
-    /// miss. The iOS chain lists named elements only, and there absence
-    /// proves nothing.
-    private fun JSONObject.withChain(chain: List<HitChain.Entry>): JSONObject {
-        val arr = JSONArray()
-        for (e in chain) {
-            arr.put(
-                JSONObject()
-                    .put("identifier", e.id)
-                    .put("label", e.label)
-                    .put(
-                        "frame",
-                        JSONObject()
-                            .put("x", e.bounds.left)
-                            .put("y", e.bounds.top)
-                            .put("w", e.bounds.right - e.bounds.left)
-                            .put("h", e.bounds.bottom - e.bounds.top),
-                    ),
-            )
-        }
-        return put("chain", arr).put("complete", true)
-    }
+    /// The reader a tap was aimed from: `aimedBy` in its body.
+    fun decodeAimedBy(payload: String): HitChain.Reader =
+        HitChain.Reader.named(JSONObject(payload).optString("aimedBy").ifEmpty { null })
 
     fun swipeAtNormCoordBody(ok: Boolean, q: SwipeQuad): String = JSONObject()
         .put("ok", ok)
@@ -577,21 +556,21 @@ object RunnerWire {
         .put("saw_action_click", sawActionClick)
         .toString()
 
-    fun doubleTapBody(ok: Boolean, x: Int, y: Int, chain: List<HitChain.Entry>): String = JSONObject()
+    fun doubleTapBody(ok: Boolean, x: Int, y: Int, landing: HitChain.Reading): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "tap_not_injected")
         .put("x", x)
         .put("y", y)
-        .withChain(chain)
+        .withChain(landing)
         .toString()
 
-    fun longPressBody(ok: Boolean, x: Int, y: Int, durationMs: Long, chain: List<HitChain.Entry>): String = JSONObject()
+    fun longPressBody(ok: Boolean, x: Int, y: Int, durationMs: Long, landing: HitChain.Reading): String = JSONObject()
         .put("ok", ok)
         .put("status", if (ok) "ok" else "press_not_injected")
         .put("x", x)
         .put("y", y)
         .put("durationMs", durationMs)
-        .withChain(chain)
+        .withChain(landing)
         .toString()
 
     /// What the field held before and after, beside the verdict. A masked
