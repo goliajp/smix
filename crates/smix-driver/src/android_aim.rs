@@ -107,16 +107,22 @@ pub(super) async fn resolve_aimed(
         let tree = perceived.root;
         match resolve_to_norm_coord(&tree, selector) {
             Ok(coord) => {
-                let aimed = resolve_selector(&tree, selector).map(crate::hit_element);
+                // Where a touch reaches it: under an app drawn edge to edge
+                // its centre can be under the status bar, which takes it.
+                let first = crate::aim_in(&tree, selector)?.unwrap_or((
+                    coord.0,
+                    coord.1,
+                    resolve_selector(&tree, selector).map(crate::hit_element),
+                ));
                 // Aimed only at a target that has stopped moving (the same
                 // wait as iOS). The tree is in pixels.
                 let ppp = crate::Driver::pixels_per_point(driver).await?;
                 let (nx, ny, aimed) = crate::settle::until_aim_settles(
-                    (coord.0, coord.1, aimed),
+                    first,
                     || async {
                         let t = driver.perceive(include).await?;
                         *read_by.lock().expect("never poisoned") = t.source;
-                        Ok(crate::settle_reading(&t.root, selector))
+                        crate::settle_reading(&t.root, selector)
                     },
                     ppp,
                     crate::settle::POLL,

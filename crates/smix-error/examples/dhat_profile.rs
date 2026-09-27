@@ -64,6 +64,8 @@ fn main() {
                 package: Some("dev.smix.fixture".into()),
                 kind: smix_screen::WindowKind::Application,
                 focused: true,
+                layer: None,
+                touchable: None,
             }],
             unreadable_windows: Some(1),
         });

@@ -113,6 +113,8 @@ impl HttpRunnerClient {
                 package: self.target_bundle_id.clone(),
                 kind: smix_screen::WindowKind::Application,
                 focused: true,
+                layer: None,
+                touchable: None,
             });
         }
     }

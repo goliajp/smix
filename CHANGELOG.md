@@ -928,6 +928,20 @@ moved and `Step` is now `#[non_exhaustive]`.
   of at least 1, a `delay` that is not a whole number of milliseconds, a
   `delay` without `repeat`, and `repeat` beside `point`, `optional` or
   `dispatch` are refused by name.
+- **A tap aims at the part of its target that nothing is over.** An app
+  drawn edge to edge — every app on Android 15 and later — lays its content
+  under the status bar, and a field whose top half sat there had its centre
+  there too: the touch went to the status bar and was reported `TAP_MISSED`,
+  three runs in three on the fixture on API 36. smix now aims at the
+  element's centre when that shows and nothing takes the touch there, and
+  otherwise at the middle of the largest part of it that shows and that no
+  window above its own takes touches over; on iOS the keyboard and the
+  status bar, where the tree has them, count the same way. An element with
+  no such part is refused as `NOT_VISIBLE`, naming what covers it, and
+  nothing is touched. The Android runner's tree now says, for each window,
+  its `layer` in the stack and where it takes touches (`touchable`), which
+  is not its bounds: with the keyboard up, the input method's window spans
+  the whole screen below the status bar and takes touches only on the keys.
 - **A tap on a control drawn over a sibling is judged by what is drawn on
   top.** Where a tap landed was read by walking into the last child that
   held the point, in list order. A view group that sets its own drawing

@@ -614,7 +614,7 @@ pub enum WindowKind {
 }
 
 /// Whose window a subtree is.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowInfo {
     /// The package (Android) or bundle id (iOS) that owns it. `None` when
@@ -626,6 +626,18 @@ pub struct WindowInfo {
     /// Whether it holds the input focus.
     #[serde(default)]
     pub focused: bool,
+    /// Its place in the stack: a window with a higher layer is drawn over,
+    /// and takes the touches for, the part of a lower one it covers.
+    /// `None` from a reader that does not say; the order windows are listed
+    /// in is not the order on screen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<i32>,
+    /// The part of the screen where it takes touches, which is not its
+    /// bounds: the keyboard's window spans the screen below the status bar
+    /// and takes touches only where the keys are. `None` from a reader
+    /// that does not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub touchable: Option<Rect>,
 }
 
 /// What a failure says about the screen it happened on.
@@ -1398,6 +1410,8 @@ mod screen_facts_tests {
             package: Some(package.into()),
             kind,
             focused,
+            layer: None,
+            touchable: None,
         });
         w
     }
