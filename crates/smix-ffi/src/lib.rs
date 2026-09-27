@@ -18,6 +18,16 @@ uniffi::include_scaffolding!("smix");
 
 pub mod driving;
 
+/// The digest of the sources this library was built from, as
+/// `smix-ffi-source:<sha256>` (or `smix-ffi-source:unstamped`), NUL-terminated.
+///
+/// Exported so the bytes survive linking into the shipped `.a` and `.so`;
+/// the release checks read them there rather than calling this.
+#[unsafe(no_mangle)]
+pub extern "C" fn smix_ffi_source_stamp() -> *const std::ffi::c_char {
+    concat!(env!("SMIX_FFI_SOURCE_STAMP"), "\0").as_ptr().cast()
+}
+
 /// FFI error variants (mirror UDL `[Error]` enum).
 #[derive(Debug, thiserror::Error)]
 pub enum FfiError {

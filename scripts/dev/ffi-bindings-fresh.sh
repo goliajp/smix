@@ -124,7 +124,37 @@ else
   status=1
 fi
 
+# The symbols can all be there in a library built from last month's
+# source. Each shipped library carries the digest of the sources it was
+# built from; the digest of the tree now is computed by the same script
+# the build used, from the dep-info of the build just above.
+WANT="$(python3 "$ROOT/scripts/sdk/ffi-source-digest.py" --no-build)" \
+  || fail "could not compute the source digest — run scripts/sdk/ffi-source-digest.py"
+stale=0
+for lib in \
+  "swift-bridge/SmixCoreFFI.xcframework/macos-arm64/libsmix_ffi.a" \
+  "swift-bridge/SmixCoreFFI.xcframework/ios-arm64-simulator/libsmix_ffi.a" \
+  "android-runner/sdk/src/main/jniLibs/arm64-v8a/libuniffi_smix.so" \
+  "android-runner/sdk/src/main/jniLibs/x86_64/libuniffi_smix.so"; do
+  if [[ ! -f "$ROOT/$lib" ]]; then
+    echo "    $lib: missing"; stale=$((stale+1)); continue
+  fi
+  stamps="$(grep -aoE 'smix-ffi-source:([0-9a-f]{64}|unstamped)' "$ROOT/$lib" | sort -u)"
+  case "$stamps" in
+    "smix-ffi-source:$WANT") ;;
+    "") echo "    $lib: carries no source stamp (built before libraries were stamped)"; stale=$((stale+1)) ;;
+    *$'\n'*) echo "    $lib: carries more than one stamp: $(tr '\n' ' ' <<<"$stamps")"; stale=$((stale+1)) ;;
+    "smix-ffi-source:unstamped") echo "    $lib: built without a digest (a plain cargo build, not the sdk scripts)"; stale=$((stale+1)) ;;
+    *) echo "    $lib: built from ${stamps#smix-ffi-source:}, the tree is $WANT"; stale=$((stale+1)) ;;
+  esac
+done
+if (( stale > 0 )); then
+  echo "ffi-bindings-fresh: $stale shipped librar(y/ies) not built from this tree — \
+run scripts/sdk/regenerate-bindings.sh, which rebuilds and stamps all four, and commit them"
+  status=1
+fi
+
 if (( status == 0 )); then
-  echo "ffi-bindings-fresh: clean — the bindings are what smix-ffi generates, and the xcframework carries them"
+  echo "ffi-bindings-fresh: clean — the bindings are what smix-ffi generates, and the four shipped libraries were built from this tree"
 fi
 exit "$status"
