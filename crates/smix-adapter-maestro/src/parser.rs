@@ -853,6 +853,32 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
 /// maestro's default gap between repeated taps, in milliseconds.
 const TAP_ON_REPEAT_DELAY_MS: u32 = 100;
 
+/// A count under `key`: absent is `None`; anything but a whole number
+/// from `least` up to `u32::MAX` is refused, naming `verb.key`. Checked
+/// rather than cast, so a count too big for the wire is not quietly
+/// wrapped to a small one.
+fn whole_count(
+    map: &serde_norway::Mapping,
+    verb: &str,
+    key: &str,
+    least: u64,
+) -> Result<Option<u32>, ParseError> {
+    let Some(raw) = map.get(Value::String(key.into())) else {
+        return Ok(None);
+    };
+    raw.as_u64()
+        .filter(|n| *n >= least)
+        .and_then(|n| u32::try_from(n).ok())
+        .map(Some)
+        .ok_or_else(|| ParseError::InvalidValue {
+            field: format!("{verb}.{key}"),
+            reason: format!(
+                "expected a whole number from {least} to {}, got {raw:?}",
+                u32::MAX
+            ),
+        })
+}
+
 /// `tapOn: { <selector>, repeat: N, delay: ms }` — maestro's repeated tap:
 /// the target found once and tapped `repeat` times, `delay` ms apart. It is
 /// the same act as `repeatTap`, so it becomes one.
@@ -861,21 +887,8 @@ const TAP_ON_REPEAT_DELAY_MS: u32 = 100;
 /// `optional` and `dispatch` are single-tap options here, and a `point`
 /// has nothing to find once.
 fn parse_tap_on_repeated(map: &serde_norway::Mapping) -> Result<Step, ParseError> {
-    let count = |key: &str, least: u64| -> Result<Option<u32>, ParseError> {
-        let Some(raw) = map.get(Value::String(key.into())) else {
-            return Ok(None);
-        };
-        raw.as_u64()
-            .filter(|n| *n >= least)
-            .and_then(|n| u32::try_from(n).ok())
-            .map(Some)
-            .ok_or_else(|| ParseError::InvalidValue {
-                field: format!("tapOn.{key}"),
-                reason: format!("expected a whole number of at least {least}, got {raw:?}"),
-            })
-    };
-    let repeat = count("repeat", 1)?;
-    let delay = count("delay", 0)?;
+    let repeat = whole_count(map, "tapOn", "repeat", 1)?;
+    let delay = whole_count(map, "tapOn", "delay", 0)?;
     let Some(times) = repeat else {
         return Err(ParseError::InvalidValue {
             field: "tapOn.delay".into(),
@@ -2904,23 +2917,16 @@ fn parse_repeat_tap(v: &Value) -> Result<Step, ParseError> {
         });
     };
     let selector = visible_to_selector(v)?;
-    let times = map
-        .get(Value::String("times".into()))
-        .and_then(Value::as_u64)
-        .ok_or_else(|| ParseError::InvalidValue {
+    let times =
+        whole_count(map, "repeatTap", "times", 1)?.ok_or_else(|| ParseError::InvalidValue {
             field: "repeatTap.times".into(),
             reason: "required: how many touches to send".into(),
-        })? as u32;
-    let num = |k: &str| {
-        map.get(Value::String(k.into()))
-            .and_then(Value::as_u64)
-            .map(|n| n as u32)
-    };
+        })?;
     Ok(Step::RepeatTap {
         selector,
         times,
-        interval_ms: num("intervalMs"),
-        hold_ms: num("holdMs"),
+        interval_ms: whole_count(map, "repeatTap", "intervalMs", 0)?,
+        hold_ms: whole_count(map, "repeatTap", "holdMs", 0)?,
     })
 }
 
