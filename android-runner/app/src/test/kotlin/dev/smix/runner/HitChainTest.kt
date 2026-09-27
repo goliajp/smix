@@ -83,4 +83,40 @@ class HitChainTest {
     fun aPointInNoWindowHasNothingUnderIt() {
         assertTrue(HitChain.at(listOf(dialog), 10, 10).isEmpty())
     }
+
+    // A consumer's player shell draws its controls (child 0) over a
+    // full-size layer added after them (child 1). Touches go to the
+    // controls; the chain went down the layer, and every tap on a control
+    // was reported as a miss.
+    @Test
+    fun the_child_drawn_on_top_takes_the_point_whatever_its_index() {
+        val shell = HitChain.Window(
+            layer = 0,
+            bounds = HitChain.Box(0, 0, 1080, 2340),
+            root = HitChain.Node(
+                "player_shell", "", HitChain.Box(0, 0, 1080, 800),
+                listOf(
+                    HitChain.Node("btn_player_fullscreen", "", HitChain.Box(900, 650, 1060, 790), emptyList(), drawingOrder = 2),
+                    HitChain.Node("", "gesture layer", HitChain.Box(0, 0, 1080, 800), emptyList(), drawingOrder = 1),
+                ),
+            ),
+        )
+        assertEquals("btn_player_fullscreen", HitChain.at(listOf(shell), 980, 720).first().id)
+    }
+
+    @Test
+    fun siblings_drawn_in_index_order_are_read_as_before() {
+        val group = HitChain.Window(
+            layer = 0,
+            bounds = HitChain.Box(0, 0, 1080, 2340),
+            root = HitChain.Node(
+                "group", "", HitChain.Box(0, 0, 1080, 800),
+                listOf(
+                    HitChain.Node("below", "", HitChain.Box(0, 0, 1080, 800), emptyList(), drawingOrder = 1),
+                    HitChain.Node("above", "", HitChain.Box(0, 0, 1080, 800), emptyList(), drawingOrder = 2),
+                ),
+            ),
+        )
+        assertEquals("above", HitChain.at(listOf(group), 10, 10).first().id)
+    }
 }

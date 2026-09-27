@@ -68,6 +68,7 @@ class HitReader(private val instrumentation: Instrumentation) {
             label = n.contentDescription?.toString() ?: "",
             bounds = HitChain.Box(r.left, r.top, r.right, r.bottom),
             children = kids,
+            drawingOrder = n.drawingOrder,
         )
     }
 }

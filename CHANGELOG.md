@@ -867,6 +867,16 @@ moved and `Step` is now `#[non_exhaustive]`.
   boot` uses. `smix init --app` boots a shut-down simulator to install the
   app and now records that it did, so `smix down` turns it off again; it
   recorded nothing, which the claim above had been hiding.
+- **A tap on a control drawn over a sibling is judged by what is drawn on
+  top.** Where a tap landed was read by walking into the last child that
+  held the point, in list order. A view group that sets its own drawing
+  order (`getChildDrawingOrder`, or a child raised in Z) draws, and hands
+  touches to, its children in another order: a consumer's player controls
+  and a card's buttons, drawn over a wide layer, were each pressed and
+  reported `TAP_MISSED` with the point inside the layer. The accessibility
+  reader now takes the child with the highest drawing order the platform
+  reports for it, and the semantics probe lists an app's Views in the
+  order they are drawn, elevation first.
 - **A tap on an Android screen still coming in is no longer reported as
   a miss while it landed.** The point was aimed from the app's semantics
   tree and where it landed was read from the accessibility tree, and the
