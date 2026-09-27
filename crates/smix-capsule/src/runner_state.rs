@@ -50,9 +50,14 @@ pub enum Lookup<'a> {
 /// simulators at once, and the one-key-per-platform record that used to
 /// live in the checkout had each new runner overwrite the last.
 ///
-/// Two devices whose rows name one port is an error that names both:
-/// only one process can hold a port, so one of the rows is stale, and
-/// picking one would be guessing which.
+/// Rows are left behind: a runner killed from outside, or one another
+/// smix started and never took down, still names its port. So when
+/// several devices' rows name one port, each row's runner is asked
+/// whether it is still the process that was recorded, and only the ones
+/// that are count. One such row is the runner on the port; several is an
+/// error that names them all, since only one process can hold a port and
+/// picking one would be guessing which. No row is removed here — a stale
+/// row belongs to its device's holder to settle.
 pub fn find(
     leases: &smix_lease::store::LeaseDir,
     by: Lookup<'_>,
@@ -61,14 +66,14 @@ pub fn find(
         Lookup::Device(id) => vec![id.to_string()],
         Lookup::Port(_) => leases.device_ids(),
     };
-    let mut found: Vec<RunnerState> = Vec::new();
+    let mut found: Vec<(RunnerState, smix_lease::ProcIdentity)> = Vec::new();
     for device in &devices {
         let Some(lease) = smix_lease::store::read(leases, device)
             .map_err(|e| format!("read the ledger for {device}: {e}"))?
         else {
             continue;
         };
-        let Some(state) = runner_of(&lease) else {
+        let Some((state, proc)) = runner_of(&lease) else {
             continue;
         };
         if let Lookup::Port(port) = by
@@ -76,8 +81,12 @@ pub fn find(
         {
             continue;
         }
-        found.push(state);
+        found.push((state, proc));
     }
+    if found.len() > 1 {
+        found.retain(|(_, proc)| smix_lease::store::probe(proc).identity_matches);
+    }
+    let mut found: Vec<RunnerState> = found.into_iter().map(|(state, _)| state).collect();
     match found.len() {
         0 | 1 => Ok(found.pop()),
         _ => {
@@ -86,9 +95,9 @@ pub fn find(
                 .map(|s| format!("{} (pid {})", s.udid, s.pid))
                 .collect();
             Err(format!(
-                "the ledger has {} runners on one port: {} — a port is held by one \
-                 process, so all but one of these rows are stale. \
-                 `smix lease prune --device <id>` the ones that are gone.",
+                "the ledger has {} running runners on one port: {} — a port is held by \
+                 one process, so all but one of them is not listening on it. \
+                 `smix runner down --device <id>` the one that should not be there.",
                 found.len(),
                 named.join(", ")
             ))
@@ -96,8 +105,9 @@ pub fn find(
     }
 }
 
-/// The runner a lease records, with its supervisor if it has one.
-fn runner_of(lease: &smix_lease::Lease) -> Option<RunnerState> {
+/// The runner a lease records, with its supervisor if it has one, and
+/// the process the row says it is.
+fn runner_of(lease: &smix_lease::Lease) -> Option<(RunnerState, smix_lease::ProcIdentity)> {
     let mut runner = None;
     let mut supervisor_pid = None;
     for r in lease.known_resources() {
@@ -108,22 +118,30 @@ fn runner_of(lease: &smix_lease::Lease) -> Option<RunnerState> {
                 bundle,
                 log,
             } => {
-                runner = Some(RunnerState {
-                    pid: proc.pid,
-                    udid: lease.device_id.clone(),
-                    port: *port,
-                    log: log.as_ref().map(std::path::PathBuf::from),
-                    bundle: bundle.clone(),
-                    supervisor_pid: None,
-                });
+                runner = Some((
+                    RunnerState {
+                        pid: proc.pid,
+                        udid: lease.device_id.clone(),
+                        port: *port,
+                        log: log.as_ref().map(std::path::PathBuf::from),
+                        bundle: bundle.clone(),
+                        supervisor_pid: None,
+                    },
+                    proc.clone(),
+                ));
             }
             smix_lease::Resource::Supervisor { proc } => supervisor_pid = Some(proc.pid),
             _ => {}
         }
     }
-    runner.map(|st| RunnerState {
-        supervisor_pid,
-        ..st
+    runner.map(|(st, proc)| {
+        (
+            RunnerState {
+                supervisor_pid,
+                ..st
+            },
+            proc,
+        )
     })
 }
 
@@ -254,15 +272,63 @@ mod tests {
         );
     }
 
+    fn live_row(port: u16, proc: smix_lease::ProcIdentity) -> smix_lease::Resource {
+        smix_lease::Resource::Runner {
+            port,
+            proc,
+            bundle: None,
+            log: None,
+        }
+    }
+
+    fn parent_identity() -> smix_lease::ProcIdentity {
+        smix_lease::store::identify(std::os::unix::process::parent_id())
+            .expect("the test's parent process is running")
+    }
+
     #[test]
-    fn two_rows_on_one_port_are_refused_by_name() {
-        let leases = ledger("same-port");
-        smix_lease::store::add_resource(&leases, "UDID-A", runner_row(22087, 11, None)).expect("a");
-        smix_lease::store::add_resource(&leases, "UDID-B", runner_row(22087, 22, None)).expect("b");
-        let err = find(&leases, Lookup::Port(22087)).expect_err("two rows claim one port");
+    fn two_live_runners_on_one_port_are_refused_by_name() {
+        let leases = ledger("same-port-live");
+        let me = smix_lease::store::identify_self();
+        smix_lease::store::add_resource(&leases, "UDID-A", live_row(22087, me)).expect("a");
+        smix_lease::store::add_resource(&leases, "UDID-B", live_row(22087, parent_identity()))
+            .expect("b");
+        let err = find(&leases, Lookup::Port(22087)).expect_err("two live rows claim one port");
         assert!(
             err.contains("UDID-A") && err.contains("UDID-B"),
             "the refusal must name both devices: {err}"
+        );
+    }
+
+    #[test]
+    fn a_stale_row_on_the_port_does_not_hide_the_live_one() {
+        let leases = ledger("same-port-stale");
+        smix_lease::store::add_resource(&leases, "UDID-GONE", runner_row(22087, 11, None))
+            .expect("stale");
+        let me = smix_lease::store::identify_self();
+        smix_lease::store::add_resource(&leases, "UDID-LIVE", live_row(22087, me)).expect("live");
+        let st = find(&leases, Lookup::Port(22087))
+            .expect("a stale row beside a live one is not a conflict")
+            .expect("the live runner on 22087 was not found");
+        assert_eq!(st.udid, "UDID-LIVE");
+        assert!(
+            smix_lease::store::read(&leases, "UDID-GONE")
+                .expect("read")
+                .is_some(),
+            "looking up a port removed another device's row"
+        );
+    }
+
+    #[test]
+    fn rows_on_one_port_whose_runners_are_all_gone_find_nothing() {
+        let leases = ledger("same-port-gone");
+        smix_lease::store::add_resource(&leases, "UDID-A", runner_row(22087, 11, None)).expect("a");
+        smix_lease::store::add_resource(&leases, "UDID-B", runner_row(22087, 22, None)).expect("b");
+        assert!(
+            find(&leases, Lookup::Port(22087))
+                .expect("stale rows are not a conflict")
+                .is_none(),
+            "a runner whose process is gone was reported as on the port"
         );
     }
 

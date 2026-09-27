@@ -1403,6 +1403,28 @@ The default tap path (host-resolve → IOHID native-event synthesize) fires Swif
 - Omit `dispatch:` for the default routing — it is right for almost every tap.
 - `dispatch: xcui` requires an `id:` selector (resolution is by accessibilityIdentifier). Cross-platform: on Android it routes through the runner's id-anchored tap (`/tap-by-id`), same semantics.
 - `dispatch: daemonProxy` is an iOS-runner mechanism; on Android it errors with an explicit unsupported message (native synthesize is already the Android default — the override is never needed there).
+- On Android, `dispatch: xcui` first asks the view for its accessibility click (`ACTION_CLICK`), and touches the view only when, for 1.5 seconds, it offers no such action or refuses it. The runner's answer says which: `"path": "a11y"` or `"path": "touch"`. **`path: a11y` means the view accepted the accessibility action, not that the screen changed.** A view that advertises a click but reacts only in `onTouchEvent` accepts the action and does nothing, and the step still passes. So follow a `dispatch: xcui` tap with the assertion that proves it worked (`assertVisible` on what the tap should bring up), and if a view does nothing on `xcui` but works on a plain `tapOn`, route its click through `performClick()` in the app.
+
+### How many times a tap reads the screen
+
+Each read of the screen is a round trip to the runner and a walk of the
+app's accessibility tree, so on a busy machine they are what a step's
+time goes on. Counted from the runner's log on an iOS simulator, one
+step each:
+
+| step | tree reads | then |
+|---|---|---|
+| `tapOn: { id: … }` (default) | 2 — one to find the target, one to see it has stopped moving | one `/tap-at-norm-coord`; where it landed is judged by the runner inside that request, with no further read |
+| `tapOn: { id: …, dispatch: xcui }` | 0 | one `/tap-by-id`; the runner finds the element itself |
+| `inputText: { id: …, text: … }` | 2 | one tap to focus, then one `/fill` |
+
+A target still coming in takes one more read for every 100 ms it keeps
+moving (see above). Android runs the same host-side steps, and each of
+its tree reads is the probe's semantics tree and the accessibility tree
+together, so a read costs more there, and more again on a loaded
+emulator. A control that disappears on its own a few seconds after it
+appears is best pressed with `dispatch: xcui`, which reads nothing
+before it acts.
 
 ### Tap by coord
 

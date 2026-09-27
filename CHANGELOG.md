@@ -747,6 +747,26 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **An iOS step no longer fails as "sent and no answer came back" when
+  the request never left.** The iOS runner's server closes a connection
+  once it has answered, unless the request asked for keep-alive, and does
+  not say so in the response; smix kept the connection for the next
+  request, which could be written onto it as it closed. That request never
+  reached the runner, and smix — which since this version does not send
+  an action twice when it may have arrived — reported the step as sent and
+  unanswered. On a simulator a flow of `pressKey: enter` and `swipe` steps
+  failed this way three runs in three, on a random step; the runner's log
+  shows the failing request never arrived. Every request to a runner now
+  goes on a connection of its own. 10.1 had the same race and hid it by
+  sending the request again.
+- **Stale runner rows no longer block a runner on their port.** When
+  several devices' ledger rows named one runner port, every lookup of that
+  port was refused, though a port is held by one process and the other
+  rows were left by runners that had since gone. Each row's runner is now
+  asked whether it is still the process that was recorded, and only the
+  live ones count: one live row is the runner on the port, and the
+  lookup is refused, naming them, only when several are alive. No other
+  device's row is removed by the lookup.
 - **A field this version does not know survives it writing the device
   ledger back.** A row whose kind was unknown was already kept whole; a
   field unknown to a row, holder or lease this version does know was

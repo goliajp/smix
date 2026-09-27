@@ -728,8 +728,14 @@ impl HttpRunnerClient {
 
     /// Construct with an explicit base URL (test / non-localhost cases).
     pub fn with_base<S: Into<String>>(base: S) -> Self {
+        // No pooled connections. The iOS runner's server closes a
+        // connection once it has answered unless the request asked for
+        // keep-alive, and does not say so; a pooled connection could have
+        // the next action written onto it as it closed, and that action
+        // never arrives. A loopback connect costs well under a millisecond.
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
+            .pool_max_idle_per_host(0)
             .build()
             .expect("reqwest::Client::builder default never fails");
         HttpRunnerClient {
