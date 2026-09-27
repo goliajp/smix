@@ -30,6 +30,7 @@
 
 #![doc(html_root_url = "https://docs.smix.dev/smix-runner-client")]
 
+mod acts;
 mod input_text;
 pub mod port_owner;
 mod screen_read;
@@ -1643,139 +1644,6 @@ impl HttpRunnerClient {
         }
         self.json_post("/tap", &Req { selector, mode }, include)
             .await
-    }
-
-    /// `POST /tap-at-norm-coord` — Apple native UI event coord tap.
-    /// `POST /tap-at-norm-coord` — the default tap path.
-    ///
-    /// Returns what the point turned out to be inside. It used to
-    /// return nothing at all, so a caller could report "tapped" having
-    /// checked only that a touch was synthesised somewhere.
-    ///
-    /// A runner older than the `chain` field answers without it and
-    /// deserializes to an empty chain — indistinguishable on the wire
-    /// from a point that landed outside everything, which is why the
-    /// host treats an empty chain as its own verdict rather than as a
-    /// pass.
-    pub async fn tap_at_norm_coord(
-        &self,
-        nx: f64,
-        ny: f64,
-    ) -> Result<TapAtCoordResult, RunnerTransportError> {
-        self.tap_at_norm_coord_burst(nx, ny, 1, None, None).await
-    }
-
-    /// `POST /tap-at-norm-coord` with several touches at one point.
-    ///
-    /// One request, one synthesise, `times` touches spaced by
-    /// `interval_ms` on the event timeline. Sending them one at a time
-    /// costs a round trip each — measured at ~400 ms on iOS 26.5 — and
-    /// leaves the spacing as whatever that round trip happened to be,
-    /// which is why a gesture gated on a 500 ms inter-tap window could
-    /// not be driven: a flow could not tell a slow harness from a
-    /// broken app.
-    ///
-    /// `None` for either timing takes the runner's default.
-    pub async fn tap_at_norm_coord_burst(
-        &self,
-        nx: f64,
-        ny: f64,
-        times: u32,
-        interval_ms: Option<u32>,
-        hold_ms: Option<u32>,
-    ) -> Result<TapAtCoordResult, RunnerTransportError> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Req {
-            nx: f64,
-            ny: f64,
-            // Omitted for an ordinary tap, so the common case puts
-            // exactly the bytes on the wire it always did — including
-            // for a runner that has never heard of a burst.
-            #[serde(skip_serializing_if = "is_one")]
-            times: u32,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            interval_ms: Option<u32>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            hold_ms: Option<u32>,
-        }
-        #[derive(Deserialize)]
-        struct Resp {
-            #[serde(default)]
-            ok: Option<bool>,
-            #[serde(flatten)]
-            result: TapAtCoordResult,
-        }
-        let body: Resp = self
-            .json_post(
-                "/tap-at-norm-coord",
-                &Req {
-                    nx,
-                    ny,
-                    times,
-                    interval_ms,
-                    hold_ms,
-                },
-                None,
-            )
-            .await?;
-        OkEnvelope {
-            ok: body.ok,
-            error: None,
-            saw: None,
-        }
-        .require_ok("/tap-at-norm-coord")?;
-        Ok(body.result)
-    }
-
-    /// `POST /double-tap-at-norm-coord` — double-tap at
-    /// viewport-normalized coord. Android runner only, backing
-    /// `AndroidDriver::double_tap` after host-resolve; the iOS runner
-    /// serves the same gesture as a two-touch burst on
-    /// `/tap-at-norm-coord`.
-    pub async fn double_tap_at_norm_coord(
-        &self,
-        nx: f64,
-        ny: f64,
-    ) -> Result<TapAtCoordResult, RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req {
-            nx: f64,
-            ny: f64,
-        }
-        let body: Landed = self
-            .json_post("/double-tap-at-norm-coord", &Req { nx, ny }, None)
-            .await?;
-        body.into_result("/double-tap-at-norm-coord")
-    }
-
-    /// `POST /long-press-at-norm-coord` — long-press at coord
-    /// with explicit duration. Android-specific.
-    pub async fn long_press_at_norm_coord(
-        &self,
-        nx: f64,
-        ny: f64,
-        duration_ms: u64,
-    ) -> Result<TapAtCoordResult, RunnerTransportError> {
-        #[derive(Serialize)]
-        struct Req {
-            nx: f64,
-            ny: f64,
-            #[serde(rename = "durationMs")]
-            duration_ms: u64,
-        }
-        let body: Landed = self
-            .json_post(
-                "/long-press-at-norm-coord",
-                &Req {
-                    nx,
-                    ny,
-                    duration_ms,
-                },
-                None,
-            )
-            .await?;
-        body.into_result("/long-press-at-norm-coord")
     }
 
     /// `POST /clear-text`, naming the field by the box it lies in.

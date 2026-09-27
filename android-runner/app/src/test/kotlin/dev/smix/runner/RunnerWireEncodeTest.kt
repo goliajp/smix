@@ -22,6 +22,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+private val NO_CHAIN = HitChain.Reading.Read(HitChain.Reader.ACCESSIBILITY, emptyList())
+
 class RunnerWireEncodeTest {
 
     // MARK: - /health
@@ -67,7 +69,7 @@ class RunnerWireEncodeTest {
 
     @Test
     fun tapAtNormCoordSuccessShape() {
-        val obj = JSONObject(RunnerWire.tapAtNormCoordBody(true, 1080, 2400, 540, 1200, emptyList()))
+        val obj = JSONObject(RunnerWire.tapAtNormCoordBody(true, 1080, 2400, 540, 1200, NO_CHAIN))
         assertEquals("ok", obj.getString("status"))
         assertEquals(1080, obj.getInt("displayWidth"))
         assertEquals(2400, obj.getInt("displayHeight"))
@@ -77,7 +79,7 @@ class RunnerWireEncodeTest {
 
     @Test
     fun tapAtNormCoordFailureStatus() {
-        val obj = JSONObject(RunnerWire.tapAtNormCoordBody(false, 1080, 2400, 0, 0, emptyList()))
+        val obj = JSONObject(RunnerWire.tapAtNormCoordBody(false, 1080, 2400, 0, 0, NO_CHAIN))
         assertEquals("click_returned_false", obj.getString("status"))
     }
 
@@ -166,8 +168,8 @@ class RunnerWireEncodeTest {
         // Each of these built a body with `status: "ok"` in it and no
         // `ok` field at all, so a failure reached the host as a pass.
         assertEquals(false, JSONObject(RunnerWire.pressKeyBody(false, "return", 66)).getBoolean("ok"))
-        assertEquals(false, JSONObject(RunnerWire.doubleTapBody(false, 1, 2, emptyList())).getBoolean("ok"))
-        assertEquals(false, JSONObject(RunnerWire.longPressBody(false, 1, 2, 800L, emptyList())).getBoolean("ok"))
+        assertEquals(false, JSONObject(RunnerWire.doubleTapBody(false, 1, 2, NO_CHAIN)).getBoolean("ok"))
+        assertEquals(false, JSONObject(RunnerWire.longPressBody(false, 1, 2, 800L, NO_CHAIN)).getBoolean("ok"))
         assertEquals(false, JSONObject(RunnerWire.inputTextBody(false, "hi", "", "h", masked = false)).getBoolean("ok"))
         assertEquals(false, JSONObject(RunnerWire.clearTextBody(false, "key-events", 50, 3)).getBoolean("ok"))
         assertEquals(
@@ -176,7 +178,7 @@ class RunnerWireEncodeTest {
                 .getBoolean("ok"),
         )
         assertEquals(false, JSONObject(RunnerWire.setOrientationBody(false, "portrait", 1)).getBoolean("ok"))
-        assertEquals(true, JSONObject(RunnerWire.tapAtNormCoordBody(true, 1080, 2400, 5, 6, emptyList())).getBoolean("ok"))
+        assertEquals(true, JSONObject(RunnerWire.tapAtNormCoordBody(true, 1080, 2400, 5, 6, NO_CHAIN)).getBoolean("ok"))
     }
 
     @Test
@@ -232,7 +234,7 @@ class RunnerWireEncodeTest {
 
     @Test
     fun doubleTapEchoesPixelCoord() {
-        val obj = JSONObject(RunnerWire.doubleTapBody(true, 540, 1200, emptyList()))
+        val obj = JSONObject(RunnerWire.doubleTapBody(true, 540, 1200, NO_CHAIN))
         assertEquals("ok", obj.getString("status"))
         assertEquals(540, obj.getInt("x"))
         assertEquals(1200, obj.getInt("y"))
@@ -240,7 +242,7 @@ class RunnerWireEncodeTest {
 
     @Test
     fun longPressEchoesDuration() {
-        val obj = JSONObject(RunnerWire.longPressBody(true, 540, 1200, 750L, emptyList()))
+        val obj = JSONObject(RunnerWire.longPressBody(true, 540, 1200, 750L, NO_CHAIN))
         assertEquals("ok", obj.getString("status"))
         assertEquals(750L, obj.getLong("durationMs"))
     }
@@ -425,9 +427,12 @@ class KeyboardRoleTest {
 
     @Test
     fun aTapCarriesWhatItWasDeliveredToAndSaysTheListIsWhole() {
-        val chain = listOf(
-            HitChain.Entry("button1", "", HitChain.Box(773, 1192, 976, 1341)),
-            HitChain.Entry("", "", HitChain.Box(0, 0, 1080, 2340)),
+        val chain = HitChain.Reading.Read(
+            HitChain.Reader.ACCESSIBILITY,
+            listOf(
+                HitChain.Entry("button1", "", HitChain.Box(773, 1192, 976, 1341)),
+                HitChain.Entry("", "", HitChain.Box(0, 0, 1080, 2340)),
+            ),
         )
         val obj = JSONObject(RunnerWire.tapAtNormCoordBody(true, 1080, 2340, 874, 1266, chain))
         val arr = obj.getJSONArray("chain")

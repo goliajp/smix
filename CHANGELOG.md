@@ -867,6 +867,24 @@ moved and `Step` is now `#[non_exhaustive]`.
   boot` uses. `smix init --app` boots a shut-down simulator to install the
   app and now records that it did, so `smix down` turns it off again; it
   recorded nothing, which the claim above had been hiding.
+- **A tap on an Android screen still coming in is no longer reported as
+  a miss while it landed.** The point was aimed from the app's semantics
+  tree and where it landed was read from the accessibility tree, and the
+  two disagree for a moment on a screen coming in: measured on the
+  fixture's Compose screen, the semantics tree had the field 150-300 ms
+  before the accessibility tree did, and a tap in that gap focused the
+  field every time (8 of 8) and failed as `TAP_MISSED`. Where a tap
+  landed is now read from the tree it was aimed from, one pairing decided
+  in one place: the host says which tree it aimed from and the runner
+  answers from that tree, or says it could not — it does not fall back
+  to the other. A touch that misses in the tree it was aimed from still
+  fails. `TAP_MISSED` now names the point touched, normalised and in
+  pixels, and the tree it was judged from. The semantics probe lists an
+  app's windows bottom of the stack first, so mid-way from one activity
+  to the next the incoming one is read as the one on top; it listed them
+  in no order, and the outgoing activity was read as on top. An app
+  built with an older probe still lists them unordered. iOS aims and
+  judges from its one tree, as before.
 - **An Android runner's short replies arrive with their header.** The
   runner's HTTP server writes a reply's header and body separately with
   Nagle's algorithm on, so a small body waited for the header to be

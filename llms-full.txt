@@ -5147,16 +5147,29 @@ press answers only that the event went in.
 
 ### `POST /tap-at-norm-coord`
 
-Body: `{ nx, ny, times?, intervalMs?, holdMs? }` — a point as shares of
-the app frame, and optionally a burst (`times` touches `intervalMs`
-apart) or a held touch (`holdMs`). A tap, a double tap (`times: 2`) and
-a long press (`holdMs: duration`) are all this route.
+Body: `{ nx, ny, times?, intervalMs?, holdMs?, aimedBy? }` — a point as
+shares of the app frame, and optionally a burst (`times` touches
+`intervalMs` apart) or a held touch (`holdMs`). A tap, a double tap
+(`times: 2`) and a long press (`holdMs: duration`) are all this route.
+`aimedBy` is the tree the point was aimed from, `accessibility` or
+`semantics`; absent means `accessibility`.
 
 Response: `{ ok, chain: [{ identifier, label, frame }], complete?,
-latestDownOffsetMs?, earliestUpOffsetMs?, handlerWallMs? }`. `chain` is
-what was under the point, innermost first; the host judges the tap
-against it. The three offsets come with a single touch and bound when
-it was down, measured from the handler's entry — bounds, not instants.
+reader?, readerError?, x?, y?, latestDownOffsetMs?, earliestUpOffsetMs?,
+handlerWallMs? }`. `chain` is what was under the point, innermost first,
+read from the tree `aimedBy` named — `reader` says which. A runner that
+cannot read that tree answers with no chain and `readerError`, and never
+with the other tree's chain in its place: the host judges the tap
+against the tree it aimed from, and a chain from another is a verdict on
+some other aim. A runner with one tree (iOS) sends no `reader`, and its
+chain is its accessibility tree's. `x`/`y` are the point in the
+display's pixels. The three offsets come with a single touch and bound
+when it was down, measured from the handler's entry — bounds, not
+instants.
+
+The Android runner's `/double-tap-at-norm-coord` and
+`/long-press-at-norm-coord` take `aimedBy` and answer `reader` /
+`readerError` the same way.
 
 ### `POST /swipe`
 

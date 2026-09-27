@@ -26,6 +26,7 @@ use smix_selector::{Selector, describe_selector};
 use smix_selector_resolver::{resolve_selector, resolve_selector_all};
 
 use crate::Orientation;
+use crate::android_aim::{resolve_aimed, resolve_rect_with_implicit_wait};
 use crate::traits::{Driver, Platform};
 
 /// Android `Driver` impl. Wraps `HttpRunnerClient` connecting to the
@@ -41,6 +42,22 @@ pub struct AndroidDriver {
 }
 
 impl AndroidDriver {
+    /// The screen, and which reader it came from — the tree a selector act
+    /// aims from, kept with its source so the landing is judged from the
+    /// same one.
+    pub(crate) async fn perceive(
+        &self,
+        include: Option<IncludeScope>,
+    ) -> Result<smix_runner_client::PerceivedTree, ExpectationFailure> {
+        self.runner.get_tree(include).await.map_err(|e| {
+            ExpectationFailure::new(FailureInit {
+                code: Some(FailureCode::DriverError),
+                message: format!("AndroidDriver::tree: {e}"),
+                ..Default::default()
+            })
+        })
+    }
+
     /// What the reader that just failed cannot see, or nothing when it has
     /// nothing to admit.
     ///
@@ -114,136 +131,6 @@ impl AndroidDriver {
                 ..Default::default()
             })
         })
-    }
-}
-
-/// Host-resolve loop with 5s implicit-wait + 250ms poll.
-/// Returns viewport-normalized centroid coord. Shared by tap / double_tap
-/// / long_press / fill / clear.
-/// The element's own box, viewport-normalized, alongside its centre.
-///
-/// A fill needs the box, not just the point. A field named by the
-/// layout around it — a consumer's views carry the contentDescription
-/// on the wrapper and nothing on the input — resolves to the wrapper,
-/// and the wrapper's centre can sit on a label rather than on the
-/// field. What identifies the field is that it lies *inside* what was
-/// named.
-async fn resolve_rect_with_implicit_wait(
-    driver: &AndroidDriver,
-    selector: &Selector,
-    include: Option<IncludeScope>,
-) -> Result<((f64, f64), (f64, f64, f64, f64)), ExpectationFailure> {
-    let coord = resolve_with_implicit_wait(driver, selector, include).await?;
-    let tree = driver.tree(include).await?;
-    let frame = tree.bounds;
-    let Some(named) = smix_selector_resolver::resolve_selector(&tree, selector)
-        .filter(|_| frame.w > 0.0 && frame.h > 0.0)
-    else {
-        return Ok((coord, (coord.0, coord.1, 0.0, 0.0)));
-    };
-    let rect = (
-        (named.bounds.x - frame.x) / frame.w,
-        (named.bounds.y - frame.y) / frame.h,
-        named.bounds.w / frame.w,
-        named.bounds.h / frame.h,
-    );
-    // Aim at the field, not at the middle of what names it. A layout
-    // whose contentDescription names the field it wraps has its centre
-    // wherever its tallest child is — often a label — and tapping a
-    // label focuses nothing, so the fill that followed had no field to
-    // type into. If what was named is not itself typeable and holds
-    // exactly one thing that is, that is what the caller meant.
-    let aim = if named.role == Some(smix_screen::Role::TextField) {
-        coord
-    } else {
-        match sole_text_field(named) {
-            Some(field) => (
-                (field.bounds.x + field.bounds.w / 2.0 - frame.x) / frame.w,
-                (field.bounds.y + field.bounds.h / 2.0 - frame.y) / frame.h,
-            ),
-            None => coord,
-        }
-    };
-    Ok((aim, rect))
-}
-
-/// The one typeable descendant, when there is exactly one.
-///
-/// Exactly one on purpose: with two, which the caller meant is a guess,
-/// and a guess that types into the wrong field is the defect this whole
-/// line of work is about. They can name the field itself.
-fn sole_text_field(node: &smix_screen::A11yNode) -> Option<&smix_screen::A11yNode> {
-    let mut found: Option<&smix_screen::A11yNode> = None;
-    let mut stack: Vec<&smix_screen::A11yNode> = node.children.iter().collect();
-    while let Some(n) = stack.pop() {
-        if n.role == Some(smix_screen::Role::TextField) {
-            if found.is_some() {
-                return None;
-            }
-            found = Some(n);
-        }
-        stack.extend(n.children.iter());
-    }
-    found
-}
-
-async fn resolve_with_implicit_wait(
-    driver: &AndroidDriver,
-    selector: &Selector,
-    include: Option<IncludeScope>,
-) -> Result<(f64, f64), ExpectationFailure> {
-    resolve_aimed(driver, selector, include)
-        .await
-        .map(|(coord, _)| coord)
-}
-
-/// The point to touch, and the element it is aimed at — read from the
-/// same tree, so the element the verdict compares against is the one
-/// the point was computed from.
-async fn resolve_aimed(
-    driver: &AndroidDriver,
-    selector: &Selector,
-    include: Option<IncludeScope>,
-) -> Result<((f64, f64), Option<crate::HitElement>), ExpectationFailure> {
-    let start = std::time::Instant::now();
-    let timeout = Duration::from_millis(5000);
-    loop {
-        let tree = driver.tree(include).await?;
-        match resolve_to_norm_coord(&tree, selector) {
-            Ok(coord) => {
-                let aimed = resolve_selector(&tree, selector).map(crate::hit_element);
-                // Aimed only at a target that has stopped moving (the same
-                // wait as iOS). The tree is in pixels.
-                let ppp = crate::Driver::pixels_per_point(driver).await?;
-                let (nx, ny, aimed) = crate::settle::until_aim_settles(
-                    (coord.0, coord.1, aimed),
-                    || async {
-                        let tree = driver.tree(include).await?;
-                        Ok(crate::settle_reading(&tree, selector))
-                    },
-                    ppp,
-                    crate::settle::POLL,
-                    crate::settle::LIMIT,
-                )
-                .await?;
-                return Ok(((nx, ny), aimed));
-            }
-            Err(HostResolveError::NotFound) => {
-                if start.elapsed() > timeout {
-                    return Err(crate::element_not_found(&tree, selector));
-                }
-                tokio::time::sleep(Duration::from_millis(250)).await;
-                continue;
-            }
-            Err(e) => {
-                return Err(ExpectationFailure::new(FailureInit {
-                    code: Some(FailureCode::DriverError),
-                    message: format!("AndroidDriver: resolve error: {e:?}"),
-                    selector: Some(selector.clone()),
-                    ..Default::default()
-                }));
-            }
-        }
     }
 }
 
@@ -507,15 +394,19 @@ impl Driver for AndroidDriver {
         // Host-resolve + tap_at_norm_coord (mirrors IosDriver Path B),
         // judged by what the runner says the touch was delivered to —
         // the same judgement the iOS tap gets.
-        let ((nx, ny), aimed) = resolve_aimed(self, selector, include).await?;
-        let landed = self.runner.tap_at_norm_coord(nx, ny).await.map_err(|e| {
-            ExpectationFailure::new(FailureInit {
-                code: Some(FailureCode::DriverError),
-                message: format!("AndroidDriver::tap: runner.tap_at_norm_coord: {e}"),
-                ..Default::default()
-            })
-        })?;
-        crate::landing_outcome(selector, aimed, &landed)
+        let (nx, ny, aimed, reader) = resolve_aimed(self, selector, include).await?;
+        let landed = self
+            .runner
+            .tap_at_norm_coord_aimed(nx, ny, 1, None, None, Some(reader))
+            .await
+            .map_err(|e| {
+                ExpectationFailure::new(FailureInit {
+                    code: Some(FailureCode::DriverError),
+                    message: format!("AndroidDriver::tap: runner.tap_at_norm_coord: {e}"),
+                    ..Default::default()
+                })
+            })?;
+        crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed)
     }
 
     async fn tap_with_mode(
@@ -603,10 +494,10 @@ impl Driver for AndroidDriver {
         // Host-resolve + /double-tap-at-norm-coord (Kotlin
         // side dispatches 2 clicks 150ms apart), judged like a tap. The
         // trait has no outcome to return here, so a miss is the error.
-        let ((nx, ny), aimed) = resolve_aimed(self, selector, include).await?;
+        let (nx, ny, aimed, reader) = resolve_aimed(self, selector, include).await?;
         let landed = self
             .runner
-            .double_tap_at_norm_coord(nx, ny)
+            .double_tap_at_norm_coord_aimed(nx, ny, Some(reader))
             .await
             .map_err(|e| {
                 ExpectationFailure::new(FailureInit {
@@ -615,7 +506,7 @@ impl Driver for AndroidDriver {
                     ..Default::default()
                 })
             })?;
-        crate::landing_outcome(selector, aimed, &landed).map(|_| ())
+        crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
     }
 
     async fn long_press(
@@ -627,7 +518,7 @@ impl Driver for AndroidDriver {
         // Host-resolve + /long-press-at-norm-coord with
         // duration. Kotlin uses UiDevice.swipe(x,y,x,y,steps) where
         // steps = duration / 5ms to approximate a sustained press.
-        let ((nx, ny), aimed) = resolve_aimed(self, selector, include).await?;
+        let (nx, ny, aimed, reader) = resolve_aimed(self, selector, include).await?;
         let duration_ms = duration.as_millis() as u64;
         // `UiDevice.swipe` reports nothing about when the touch was
         // down, so the bounds are unavailable rather than guessed —
@@ -636,7 +527,7 @@ impl Driver for AndroidDriver {
         // judged like a tap.
         let landed = self
             .runner
-            .long_press_at_norm_coord(nx, ny, duration_ms)
+            .long_press_at_norm_coord_aimed(nx, ny, duration_ms, Some(reader))
             .await
             .map_err(|e| {
                 ExpectationFailure::new(FailureInit {
@@ -645,7 +536,8 @@ impl Driver for AndroidDriver {
                     ..Default::default()
                 })
             })?;
-        crate::landing_outcome(selector, aimed, &landed).map(|_| crate::PressTiming::unplaceable())
+        crate::landing_outcome(selector, (nx, ny, aimed, reader), &landed)
+            .map(|_| crate::PressTiming::unplaceable())
     }
 
     /// Android honours `key-events` by skipping focus resolution.
