@@ -1703,6 +1703,17 @@ pub fn transport_to_failure(e: RunnerTransportError) -> ExpectationFailure {
         // not sent again — a second copy of a tap or of typing is a second
         // action — so the step may be on the screen already, and "retry
         // it" by hand is how the text gets typed twice.
+        // Refused before it was sent, so nothing happened on the device: the
+        // step is too long for one request and has to be split.
+        RunnerTransportError::OutlastsTheRunner { .. } => (
+            FailureCode::DriverError,
+            Some(
+                "nothing was sent to the device. This step would take longer than the \
+                 runner lets one request run — split it: type the text in two or more \
+                 `inputText` steps, or use fewer taps per `repeat`."
+                    .to_string(),
+            ),
+        ),
         e @ RunnerTransportError::SentWithoutAnswer { .. } => (
             FailureCode::DriverError,
             Some(

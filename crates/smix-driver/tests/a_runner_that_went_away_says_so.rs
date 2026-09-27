@@ -204,3 +204,16 @@ async fn a_runner_that_hung_up_is_not_called_slow() {
         assert!(said.contains("may already have happened"), "{said}");
     }
 }
+
+#[test]
+fn a_step_too_long_for_one_request_says_nothing_was_sent() {
+    let said = transport_to_failure(RunnerTransportError::OutlastsTheRunner {
+        endpoint: "/input-text".into(),
+        wait: std::time::Duration::from_secs(700),
+        limit: std::time::Duration::from_secs(600),
+    })
+    .to_prompt();
+    assert!(said.contains("nothing was sent"), "{said}");
+    assert!(said.contains("600 s"), "the limit has to be named — {said}");
+    assert!(!said.contains("may already have happened"), "{said}");
+}

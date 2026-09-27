@@ -827,6 +827,13 @@ moved and `Step` is now `#[non_exhaustive]`.
   route; the host is the clock. A route with no waits of its own on
   Android, or one that only reads the runner's state on iOS, is still
   waited for 15 s.
+  A request whose own length would make the host wait as long as the
+  runner lets any request run — the SDKs' `input_text` with more than
+  about 2,100 characters, a tap burst of thousands — is not sent: it fails
+  at once, says nothing reached the device, and names the wait and the
+  limit, where it would otherwise have been cut off by a 500 minutes
+  later. A flow's `inputText` into a named field on iOS is sent a
+  character at a time and has no such limit.
 - **Stale runner rows no longer block a runner on their port.** When
   several devices' ledger rows named one runner port, every lookup of that
   port was refused, though a port is held by one process and the other

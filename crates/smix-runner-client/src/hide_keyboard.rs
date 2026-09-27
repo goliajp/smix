@@ -36,7 +36,7 @@ impl HttpRunnerClient {
                     "/hide-keyboard",
                     HIDE_KEYBOARD_BUDGET,
                     self.auto_activate,
-                ),
+                )?,
             )
             .await?;
         body.require_ok("/hide-keyboard")?;
@@ -52,7 +52,8 @@ mod tests {
     #[test]
     fn the_host_waits_past_the_budget_it_hands_the_runner() {
         let wait =
-            crate::route_limits::wait_for_request("/hide-keyboard", HIDE_KEYBOARD_BUDGET, false);
+            crate::route_limits::wait_for_request("/hide-keyboard", HIDE_KEYBOARD_BUDGET, false)
+                .expect("a dismissal fits");
         assert!(wait > HIDE_KEYBOARD_BUDGET);
         // the reason this module exists: the old wait was the plain one
         assert!(wait > REQUEST_TIMEOUT);
