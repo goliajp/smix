@@ -18,6 +18,9 @@
 E2E_ANDROID="${SMIX_E2E_ANDROID:-sim-smix-android-01}"
 E2E_ANDROID_SECOND="${SMIX_E2E_ANDROID_SECOND:-sim-smix-android-02}"
 E2E_ANDROID_THIRD="${SMIX_E2E_ANDROID_THIRD:-sim-smix-android-03}"
+# E2E_ANDROID_36 is the API 36 AVD the release tier runs its API-sensitive
+# scripts on a second time (the others are API 33).
+E2E_ANDROID_36="${SMIX_E2E_ANDROID_36:-sim-smix-android-36}"
 E2E_IOS="${SMIX_E2E_IOS:-sim-smix-02}"
 E2E_IOS_SECOND="${SMIX_E2E_IOS_SECOND:-89980B43-EF26-446A-A897-848C1AD3A872}"
 

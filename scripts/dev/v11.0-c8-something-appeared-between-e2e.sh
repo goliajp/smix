@@ -252,6 +252,20 @@ judge_vanish android "$SERIAL" "$AND_PORT" watch_presses watch_latency tap
 and_fresh; run_flow android "$SERIAL" "$AND_PORT" wait-tap "$WORK/a-wait-tap.yaml"
 judge_vanish android "$SERIAL" "$AND_PORT" watch_presses watch_latency wait-then-tap
 
+# SMIX_C8_PLATFORMS=android stops here: the release tier runs this script a
+# second time on an API 36 emulator, and the iOS legs would only repeat
+# the first run on the same simulator.
+case "${SMIX_C8_PLATFORMS:-both}" in
+  both) : ;;
+  android)
+    log "measured:$DENSITY"
+    [ "$FAILED" = 0 ] || exit 1
+    [ -z "$UNJUDGED" ] || cannot_judge "every leg that could be judged passed; not judged:$UNJUDGED — the watch left a gap as long as the flash"
+    log "C8-BETWEEN-E2E-PASS (Android only, as SMIX_C8_PLATFORMS asked)"
+    exit 0 ;;
+  *) fail "SMIX_C8_PLATFORMS is '${SMIX_C8_PLATFORMS}' — it takes 'both' or 'android'"; exit 1 ;;
+esac
+
 # ---- iOS --------------------------------------------------------------
 if ! UDID="$("$SMIX" sim resolve "$IOS_ALIAS" 2>/dev/null | tail -1)" || [ -z "$UDID" ]; then
   cannot_judge "no iOS simulator registered as $IOS_ALIAS"
