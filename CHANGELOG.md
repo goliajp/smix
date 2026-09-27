@@ -754,6 +754,13 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **A runner record smix cannot read is named as unreadable, not taken
+  for no record.** When `runner up` finds its port already serving and
+  cites the checkout's old runner record as evidence, a store that would
+  not open, a key that would not decode or a `state.json` that is not a
+  runner state was passed over in silence, and the refusal read as if
+  there were nothing there. Each is now quoted with its error.
+
 - **On iOS, every touch of a repeated tap arrives, at the interval
   asked for.** `tapOn: { repeat, delay }` and `repeatTap` sent their
   touches as one synthesised event with a pointer path each, and paths
