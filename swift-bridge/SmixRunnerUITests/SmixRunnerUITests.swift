@@ -2292,7 +2292,7 @@ final class SmixRunnerUITests: XCTestCase {
       // explicit `hideKeyboard` step between a text-input fill and a
       // subsequent tap, when the on-screen keyboard would otherwise
       // mask the next target.
-      hideKeyboardHandler: {
+      hideKeyboardHandler: { deadline in
         let app = await resolveApp()  // Per-request target-app rebind.
         // Software-keyboard handling is core capability and has to be
         // robust: swipeDown alone sometimes fails to dismiss an RN
@@ -2303,14 +2303,27 @@ final class SmixRunnerUITests: XCTestCase {
         var tried: [String] = []
         let outcome: HideKeyboardRoute.Outcome? = smixGuarded("hide-keyboard") {
           guard app.keyboards.firstMatch.exists else { return .alreadyGone }
+          // The host stops listening at `deadline`. A strategy started after
+          // it answers nobody: on a slow simulator the whole chain passed
+          // 15 s and the host reported a step that "may have acted".
+          func spent() -> Bool { deadline.map { Date() >= $0 } ?? false }
+          func stopped() -> HideKeyboardRoute.Outcome {
+            app.keyboards.firstMatch.exists
+              ? .stillPresent(tried: (tried.isEmpty
+                  ? "stopped before trying anything"
+                  : "tried \(tried.joined(separator: ", ")); stopped there")
+                  + ", because the host's time for this step ran out")
+              : .dismissed
+          }
           // Each strategy already knew how to check its own work — it
           // just slept a flat 0.5s first and then looked exactly once.
           // Polling the same check returns as soon as the keyboard is
           // actually gone (and gives a slow dismissal more than 0.5s,
           // which the old shape would have called a failure).
           func keyboardGone() -> Bool {
-            let deadline = Date().addingTimeInterval(1.0)
-            while Date() < deadline {
+            var until = Date().addingTimeInterval(1.0)
+            if let deadline, deadline < until { until = deadline }
+            while Date() < until {
               Thread.sleep(forTimeInterval: 0.05)
               if !app.keyboards.firstMatch.exists { return true }
             }
@@ -2318,6 +2331,7 @@ final class SmixRunnerUITests: XCTestCase {
           }
           // Strategy 1: tap Return/Done/Continue/Search/Go key on keyboard
           for keyName in ["Return", "Done", "Continue", "Search", "Go", "Next", "Enter"] {
+            if spent() { return stopped() }
             let key = app.keyboards.buttons[keyName]
             if key.exists {
               tried.append("key:\(keyName)")
@@ -2331,6 +2345,7 @@ final class SmixRunnerUITests: XCTestCase {
           // login form is where the OTHER field is, so the touch moved
           // focus instead of releasing it and the keyboard stayed up. The
           // keyboard knows where it is; ask it.
+          if spent() { return stopped() }
           let kbFrame = app.keyboards.firstMatch.frame
           let appFrame = app.frame
           if kbFrame.height > 0, appFrame.height > 0, kbFrame.minY > appFrame.minY {
@@ -2343,11 +2358,13 @@ final class SmixRunnerUITests: XCTestCase {
           }
           // Strategy 3: the old fixed point, kept because a keyboard whose
           // frame reads as empty leaves nothing else to aim at.
+          if spent() { return stopped() }
           tried.append("tap-at-15-percent")
           let above = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
           above.tap()
           if keyboardGone() { return .dismissed }
           // Strategy 4: swipeDown (fallback)
+          if spent() { return stopped() }
           tried.append("swipe-down")
           app.keyboards.firstMatch.swipeDown()
           if keyboardGone() { return .dismissed }

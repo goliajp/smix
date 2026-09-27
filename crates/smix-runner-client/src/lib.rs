@@ -31,9 +31,11 @@
 #![doc(html_root_url = "https://docs.smix.dev/smix-runner-client")]
 
 mod acts;
+mod hide_keyboard;
 mod input_text;
 pub mod port_owner;
 mod screen_read;
+mod unanswered;
 
 /// Which host-side authority can say who holds a port.
 ///
@@ -73,7 +75,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum RunnerTransportError {
-    #[error("runner {endpoint} fetch failed: {source}")]
+    #[error("runner {endpoint} fetch failed: {}", crate::unanswered::causes(.source))]
     FetchFailed {
         endpoint: String,
         #[source]
@@ -84,8 +86,9 @@ pub enum RunnerTransportError {
     /// have carried it out, so it was not sent again: a second tap or a
     /// second round of typing is not the same as one.
     #[error(
-        "runner {endpoint}: the request was sent and no answer came back ({source}). \
-         It may have acted on the device, so it was not sent again"
+        "runner {endpoint}: the request was sent and no answer came back — {}. \
+         It may have acted on the device, so it was not sent again",
+        crate::unanswered::why(.source)
     )]
     SentWithoutAnswer {
         endpoint: String,
@@ -2129,15 +2132,6 @@ impl HttpRunnerClient {
             .json_post("/foreground", &Req { bundle_id }, None)
             .await?;
         body.require_ok("/foreground")?;
-        Ok(())
-    }
-
-    /// `POST /hide-keyboard`.
-    pub async fn hide_keyboard(&self) -> Result<(), RunnerTransportError> {
-        let body: OkEnvelope = self
-            .json_post("/hide-keyboard", &serde_json::json!({}), None)
-            .await?;
-        body.require_ok("/hide-keyboard")?;
         Ok(())
     }
 

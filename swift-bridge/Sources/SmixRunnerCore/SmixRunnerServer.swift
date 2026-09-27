@@ -705,8 +705,12 @@ public actor SmixRunnerServer {
   // sit here named only the second, while the handler had a path to the
   // first. A caller met `ok:false` with the keyboard unmistakably on screen
   // and could not tell it from the answer for no keyboard at all.
+  //
+  // `deadline` is when the host stops listening, less nothing: the handler
+  // starts no strategy after it and answers with what it has. `nil` when
+  // an older host sent no budget.
   public typealias HideKeyboardHandler =
-    @Sendable () async -> HideKeyboardRoute.Outcome
+    @Sendable (_ deadline: Date?) async -> HideKeyboardRoute.Outcome
 
   // POST /input-text handler. Types the given text into the
   // CURRENTLY FOCUSED element (no selector, no focus-tap — the caller
@@ -2190,8 +2194,9 @@ public actor SmixRunnerServer {
         } catch {
           return HideKeyboardRoute.badRequest(reason: "failed to read body: \(error)")
         }
+        let req: HideKeyboardRoute.HideKeyboardRequest
         do {
-          _ = try HideKeyboardRoute.decode(body)
+          req = try HideKeyboardRoute.decode(body)
         } catch let e as HideKeyboardRoute.DecodeError {
           return HideKeyboardRoute.badRequest(reason: "\(e)")
         } catch {
@@ -2201,7 +2206,8 @@ public actor SmixRunnerServer {
           fallback: HideKeyboardRoute.outcome(
             .couldNotTell(why: "the request context was lost before the keyboard was looked at"))
         ) {
-          return HideKeyboardRoute.outcome(await hideKeyboardHandler())
+          let deadline = req.budgetMs.map { Date().addingTimeInterval(Double($0) / 1000) }
+          return HideKeyboardRoute.outcome(await hideKeyboardHandler(deadline))
         }
       }
     }
