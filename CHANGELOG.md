@@ -923,11 +923,19 @@ moved and `Step` is now `#[non_exhaustive]`.
   and waited for its target to hold still before every touch, so the gaps
   ran past what a gesture gated on "ten taps, each within 1.5 s" allows; the
   Android runner now takes the burst in one request, as the iOS runner
-  does, and ten taps 200 ms apart arrive about half a second apart. The
-  first touch is judged as a tap is. A `repeat` that is not a whole number
-  of at least 1, a `delay` that is not a whole number of milliseconds, a
-  `delay` without `repeat`, and `repeat` beside `point`, `optional` or
-  `dispatch` are refused by name.
+  does, and ten taps 200 ms apart arrive about half a second apart. On
+  both platforms the target is waited for to hold still before the burst,
+  and the first touch is judged as a tap is — on iOS a repeated tap
+  (`repeatTap` too) was neither: it touched wherever the first reading put
+  the target and reported success whatever took the touch. A `repeat` that
+  is not a whole number from 1 to 4294967295, a `delay` that is not a whole
+  number of milliseconds, a `delay` without `repeat`, and `repeat` beside
+  `point`, `optional` or `dispatch` are refused by name. `repeatTap` reads
+  `times`, `intervalMs` and `holdMs` by the same rule. It used to accept
+  `times: 0`, cut a number too large for the wire down to a small one
+  (4294967296 became 0), and treat an `intervalMs` or `holdMs` that was a
+  fraction or a word as though it were absent; each is now refused,
+  naming the key.
 - **A tap aims at the part of its target that nothing is over.** An app
   drawn edge to edge — every app on Android 15 and later — lays its content
   under the status bar, and a field whose top half sat there had its centre

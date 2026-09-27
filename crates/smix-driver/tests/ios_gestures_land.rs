@@ -273,3 +273,48 @@ async fn a_coordinate_double_tap_and_long_press_use_the_route_the_runner_serves(
     server.verify().await;
     only_tap_routes_were_used(&server).await;
 }
+
+/// A burst is judged on its first touch, as on Android: the runner reads
+/// what is under the point just before it, and after that the screen is
+/// the app's to change.
+#[tokio::test]
+async fn a_burst_is_one_request_judged_on_its_first_touch() {
+    let server = server_with_tree().await;
+    Mock::given(method("POST"))
+        .and(path("/tap-at-norm-coord"))
+        .and(Body {
+            times: 10,
+            hold_ms: None,
+        })
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"ok": true, "chain": chain_of("Like")})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    driver(&server)
+        .tap_burst(&like(), 10, Some(200), None, None)
+        .await
+        .expect("a burst whose first touch landed on its element");
+    server.verify().await;
+    only_tap_routes_were_used(&server).await;
+}
+
+#[tokio::test]
+async fn a_burst_whose_first_touch_went_elsewhere_is_a_miss() {
+    let server = server_with_tree().await;
+    Mock::given(method("POST"))
+        .and(path("/tap-at-norm-coord"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"ok": true, "chain": chain_of("Dialog")})),
+        )
+        .mount(&server)
+        .await;
+    let err = driver(&server)
+        .tap_burst(&like(), 10, Some(200), None, None)
+        .await
+        .expect_err("the first touch went to the dialog");
+    assert_eq!(err.code, FailureCode::TapMissed, "{}", err.to_prompt());
+}

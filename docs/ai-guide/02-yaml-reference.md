@@ -196,6 +196,8 @@ one that stops.
 # maestro's own spelling of the same thing: the target is found once and
 # tapped `repeat` times, `delay` ms apart (100 when not given). `optional`,
 # `dispatch` and `point` do not go with `repeat` and are refused by name.
+# Either way the target is waited for to hold still, and the first touch
+# is judged like a `tapOn`: delivered to something else, it fails TAP_MISSED.
 - tapOn:
     id: "hidden-trigger"
     repeat: 10

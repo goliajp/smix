@@ -68,3 +68,56 @@ fn values_that_are_not_counts_are_refused_by_name() {
         assert!(err.contains(names), "{body}: {err}");
     }
 }
+
+#[test]
+fn a_count_past_what_a_tap_burst_can_carry_is_refused_not_wrapped() {
+    // 4294967296 is u32::MAX + 1: cast rather than checked, it becomes 0.
+    for (body, names) in [
+        ("{ id: logo, repeat: 4294967296 }", "repeat"),
+        ("{ id: logo, repeat: 3, delay: 4294967296 }", "delay"),
+    ] {
+        let err = step(body).expect_err(body);
+        assert!(err.contains(names), "{body}: {err}");
+    }
+}
+
+fn repeat_tap(body: &str) -> Result<Step, String> {
+    parse_flow_yaml(&format!("appId: com.example\n---\n- repeatTap: {body}\n"))
+        .map(|f| f.steps.into_iter().next().expect("one step"))
+        .map_err(|e| e.to_string())
+}
+
+#[test]
+fn repeat_tap_reads_its_counts() {
+    match repeat_tap("{ id: logo, times: 4, intervalMs: 50, holdMs: 20 }").expect("parses") {
+        Step::RepeatTap {
+            times,
+            interval_ms,
+            hold_ms,
+            ..
+        } => assert_eq!((times, interval_ms, hold_ms), (4, Some(50), Some(20))),
+        other => panic!("expected a repeated tap: {other:?}"),
+    }
+}
+
+#[test]
+fn repeat_tap_refuses_what_is_not_a_count_by_name() {
+    for (body, names) in [
+        ("{ id: logo, times: 0 }", "times"),
+        ("{ id: logo, times: 4294967296 }", "times"),
+        ("{ id: logo, times: -1 }", "times"),
+        ("{ id: logo, times: 2.5 }", "times"),
+        ("{ id: logo, times: three }", "times"),
+        (
+            "{ id: logo, times: 2, intervalMs: 4294967296 }",
+            "intervalMs",
+        ),
+        ("{ id: logo, times: 2, intervalMs: soon }", "intervalMs"),
+        ("{ id: logo, times: 2, intervalMs: -5 }", "intervalMs"),
+        ("{ id: logo, times: 2, holdMs: 4294967296 }", "holdMs"),
+        ("{ id: logo, times: 2, holdMs: 1.5 }", "holdMs"),
+    ] {
+        let err = repeat_tap(body).expect_err(body);
+        assert!(err.contains(names), "{body}: {err}");
+    }
+}

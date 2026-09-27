@@ -368,6 +368,8 @@ one that stops.
 # maestro's own spelling of the same thing: the target is found once and
 # tapped `repeat` times, `delay` ms apart (100 when not given). `optional`,
 # `dispatch` and `point` do not go with `repeat` and are refused by name.
+# Either way the target is waited for to hold still, and the first touch
+# is judged like a `tapOn`: delivered to something else, it fails TAP_MISSED.
 - tapOn:
     id: "hidden-trigger"
     repeat: 10
@@ -5037,6 +5039,7 @@ Node fields of note:
 - `rawType` — element type name. iOS: camelCase `XCUIElement.ElementType` name (`"button"`, `"staticText"`, …); Android: full a11y class name (`"android.widget.Button"`, …).
 - `elementTypeRaw` (v1.0.22+) — the numeric `XCUIElement.ElementType.rawValue`. **iOS-only signal**; Android payloads omit it and deserialize to the default `1` (`.other`). Triage rule on iOS: `elementTypeRaw != 1 && identifier == "" && label == ""` ⇒ the OS typed the element but the app's a11y bridge dropped its name (app-side issue, not smix).
 - `role` — curated semantic role. Android emits it directly (derived from class name); iOS consumers derive it client-side from `rawType`.
+- `window` (Android, on each child of the root) — whose window the subtree is: `{ kind, package?, focused, layer, touchable }`, `kind` one of `application` / `inputMethod` / `system` / `other`. `layer` is the window's place in the stack, higher drawn over lower; the children are not listed in screen order. `touchable` (`{x, y, w, h}`, screen pixels) is where the window takes touches, which is not its bounds: the keyboard's window spans the screen below the status bar and takes touches only on the keys. A host aims a touch at the part of an element that no higher window takes touches over — an app drawn edge to edge has content under the status bar, and a touch there goes to the bar.
 
 Response headers (metadata only — body shape unchanged; all additive):
 
@@ -5485,7 +5488,7 @@ that is why.
 |---|---|---|---|
 | `tapOn` / `tap` | ✅ | ✅ | Selectors resolved via a11y tree; native tap dispatch; `fallback:` chains containing `ocrText` poll for `SMIX_TAP_OCR_POLL_MS` (default 3000 ms) |
 | `doubleTapOn` / `doubleTap` | ✅ | ✅ | Resolved on the host and judged like `tapOn`: a double tap delivered to something else fails `TAP_MISSED`. iOS sends both touches in one synthesised event, 80 ms apart; Android two clicks 150 ms apart |
-| `repeatTap` | ✅ | ⚠️ | iOS packs every touch into one synthesised event, so the interval is the number you state; Android falls back to one request per touch, where the interval is a floor and not a guarantee |
+| `repeatTap` / `tapOn: { repeat }` | ✅ | ✅ | Found once and held still, then every touch goes in one request, so the interval is the number you state. The first touch is judged like `tapOn` (a miss fails `TAP_MISSED`); the later ones are not, since the screen may change after the first |
 | `longPressOn` / `longPress` | ✅ | ✅ | 500 ms by default (maestro's documented 0.5s); `{ duration: N }` sets it. Resolved on the host and judged like `tapOn` on both platforms |
 | `tapOn: { point: "X%,Y%" }` | ✅ | ✅ | Normalized [0, 1] coordinates; the escape hatch for screens with no a11y semantics. Not a verb of its own — there is no `tapByCoord` |
 

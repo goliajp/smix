@@ -623,15 +623,15 @@ impl IosDriver {
 
     /// Tap a selector several times in a row.
     ///
-    /// Resolves once, then hands the runner a burst: one synthesise
-    /// carrying `times` touches spaced by `interval_ms`. The spacing is
-    /// the number given, not the round-trip latency it used to be —
-    /// ten separate taps cost ten ~400 ms synthesises, and a gesture
-    /// gated on a 500 ms window sat right on that boundary.
+    /// Found once — read and held still, as a tap is — then handed to the
+    /// runner as one synthesise carrying `times` touches spaced by
+    /// `interval_ms`. The spacing is the number given, not the round trip:
+    /// ten separate taps cost ten ~400 ms synthesises, and a gesture gated
+    /// on a 500 ms window sat right on that boundary.
     ///
-    /// No hit verdict: after the first touch the screen is expected to
-    /// react, so what the later ones land on is the app's business
-    /// rather than evidence about aim.
+    /// The runner reads what is under the point just before the first
+    /// touch, so that touch is judged as a tap is; after it the screen may
+    /// change, so the later ones are not. Android does the same.
     pub async fn tap_burst(
         &self,
         selector: &Selector,
@@ -640,27 +640,13 @@ impl IosDriver {
         hold_ms: Option<u32>,
         include: Option<IncludeScope>,
     ) -> Result<(), ExpectationFailure> {
-        let tree = self.tree_with_retry(include).await?;
-        let (nx, ny) = resolve_to_norm_coord(&tree, selector).map_err(|_| {
-            let screen = screen_facts(&tree, 10);
-            let target = base_text_or_id(selector);
-            let suggestions = smix_error::build_suggestions(target.as_deref(), &screen.elements);
-            ExpectationFailure::new(
-                FailureInit {
-                    code: Some(FailureCode::ElementNotFound),
-                    message: format!("element not found: {}", describe_selector(selector)),
-                    selector: Some(selector.clone()),
-                    suggestions,
-                    ..Default::default()
-                }
-                .with_screen(screen),
-            )
-        })?;
-        self.runner
-            .tap_at_norm_coord_burst(nx, ny, times, interval_ms, hold_ms)
+        let (nx, ny, aimed, reader) = self.resolve_aimed(selector, include).await?;
+        let landed = self
+            .runner
+            .tap_at_norm_coord_aimed(nx, ny, times.max(1), interval_ms, hold_ms, Some(reader))
             .await
-            .map(|_| ())
-            .map_err(transport_to_failure)
+            .map_err(transport_to_failure)?;
+        landing_outcome(selector, (nx, ny, aimed, reader), &landed).map(|_| ())
     }
 
     /// Tap a selector via an explicit dispatch mode. Used to opt into
