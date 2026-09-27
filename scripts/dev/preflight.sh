@@ -402,6 +402,8 @@ bash scripts/release/device-e2e-tier.sh --selftest
 # Whether the apk a device gate installs is the one this tree builds.
 # C7 spent a day measuring a probe that was not this one (open-items O1).
 python3 scripts/dev/fixture-apk-stamp.test.py
+# The two-paths gate over recorded payloads, without a runner.
+python3 scripts/dev/two-paths-agree.test.py
 # How the release verifier reads a registry that has not caught up. The
 # same lateness answered NOT YET on one registry and FAIL on another.
 bash scripts/release/verify-published.sh --selftest
