@@ -850,6 +850,66 @@ pub fn visible_to_selector(v: &Value) -> Result<Selector, ParseError> {
 
 // -------------------- per-command parsers --------------------------------
 
+/// maestro's default gap between repeated taps, in milliseconds.
+const TAP_ON_REPEAT_DELAY_MS: u32 = 100;
+
+/// `tapOn: { <selector>, repeat: N, delay: ms }` — maestro's repeated tap:
+/// the target found once and tapped `repeat` times, `delay` ms apart. It is
+/// the same act as `repeatTap`, so it becomes one.
+///
+/// What a repeated tap cannot carry is refused by name rather than dropped:
+/// `optional` and `dispatch` are single-tap options here, and a `point`
+/// has nothing to find once.
+fn parse_tap_on_repeated(map: &serde_norway::Mapping) -> Result<Step, ParseError> {
+    let count = |key: &str, least: u64| -> Result<Option<u32>, ParseError> {
+        let Some(raw) = map.get(Value::String(key.into())) else {
+            return Ok(None);
+        };
+        raw.as_u64()
+            .filter(|n| *n >= least)
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| ParseError::InvalidValue {
+                field: format!("tapOn.{key}"),
+                reason: format!("expected a whole number of at least {least}, got {raw:?}"),
+            })
+    };
+    let repeat = count("repeat", 1)?;
+    let delay = count("delay", 0)?;
+    let Some(times) = repeat else {
+        return Err(ParseError::InvalidValue {
+            field: "tapOn.delay".into(),
+            reason: "`delay` is the gap between repeated taps; give `repeat` too".into(),
+        });
+    };
+    for key in ["point", "optional", "dispatch"] {
+        if map.contains_key(Value::String(key.into())) {
+            return Err(ParseError::InvalidValue {
+                field: format!("tapOn.{key}"),
+                reason: format!(
+                    "`{key}` does not go with `repeat` — a repeated tap finds its target once and taps it; drop one of them"
+                ),
+            });
+        }
+    }
+    let mut single = map.clone();
+    single.remove(Value::String("repeat".into()));
+    single.remove(Value::String("delay".into()));
+    let tap = parse_tap_on(&Value::Mapping(single))?;
+    if times == 1 {
+        return Ok(tap);
+    }
+    let Step::TapOn { selector, .. } = tap else {
+        unreachable!("a tapOn map without `point` is a selector tap");
+    };
+    Ok(Step::RepeatTap {
+        selector,
+        times,
+        interval_ms: Some(delay.unwrap_or(TAP_ON_REPEAT_DELAY_MS)),
+        hold_ms: None,
+    })
+}
+
 fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
     match v {
         // short form: `tapOn: "Counting"`
@@ -862,6 +922,12 @@ fn parse_tap_on(v: &Value) -> Result<Step, ParseError> {
             dispatch: None,
         }),
         // full form: `tapOn: { id|text|point, index?, optional?, dispatch? }`
+        Value::Mapping(map)
+            if map.contains_key(Value::String("repeat".into()))
+                || map.contains_key(Value::String("delay".into())) =>
+        {
+            parse_tap_on_repeated(map)
+        }
         Value::Mapping(map) => {
             let optional = map
                 .get(Value::String("optional".into()))

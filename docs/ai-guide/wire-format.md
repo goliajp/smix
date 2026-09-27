@@ -260,7 +260,9 @@ display's pixels. The three offsets come with a single touch and bound
 when it was down, measured from the handler's entry — bounds, not
 instants.
 
-The Android runner's `/double-tap-at-norm-coord` and
+The Android runner reads `times`, `intervalMs` and `holdMs` on this route
+as the iOS runner does: the point is resolved once and touched `times`
+times. The Android runner's `/double-tap-at-norm-coord` and
 `/long-press-at-norm-coord` take `aimedBy` and answer `reader` /
 `readerError` the same way.
 
