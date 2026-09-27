@@ -404,6 +404,9 @@ bash scripts/release/device-e2e-tier.sh --selftest
 python3 scripts/dev/fixture-apk-stamp.test.py
 # The two-paths gate over recorded payloads, without a runner.
 python3 scripts/dev/two-paths-agree.test.py
+# No runner route can take longer than the host waits for it.
+python3 scripts/dev/runner-waits-fit-the-host.py
+python3 scripts/dev/runner-waits-fit-the-host.test.py
 # How the release verifier reads a registry that has not caught up. The
 # same lateness answered NOT YET on one registry and FAIL on another.
 bash scripts/release/verify-published.sh --selftest

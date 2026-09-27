@@ -351,6 +351,13 @@ jobs:
       # files, not a runner. Local counterpart: preflight.sh.
       - name: the two-paths gate can still go red
         run: python3 scripts/dev/two-paths-agree.test.py
+      # Every runner route states its longest wait, the host's route table
+      # says the same, and the host derives its wait from it. Device-free:
+      # it reads the sources. Local counterpart: preflight.sh.
+      - name: the runner waits fit the host
+        run: python3 scripts/dev/runner-waits-fit-the-host.py
+      - name: the runner-waits gate can still go red
+        run: python3 scripts/dev/runner-waits-fit-the-host.test.py
       # What the tier makes of those exit codes. Device-free: the
       # reading, not a device. Local counterpart: preflight.sh.
       - name: the device e2e tier reads an exit code
