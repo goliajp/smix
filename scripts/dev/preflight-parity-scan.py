@@ -56,6 +56,7 @@ LOCAL = {
     # top of the file — a change under `swift-bridge/` or
     # `android-runner/` selects `smix-runner-sources` into $CRATES.
     "runner tarballs match their sources": "smix-runner-sources",
+    "ffi bindings are what smix-ffi generates": "ffi-bindings-fresh.sh",
     "swift test": "swift test",
     "unit tests + androidTest compile (no device — instrumentation runs at ship)": "assembleDebugAndroidTest",
     "hygiene scan": "hygiene-scan",
