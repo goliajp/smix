@@ -747,6 +747,22 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Fixed
 
+- **The Swift package and the Android SDK carry this release's native
+  library.** Both link a prebuilt copy of `smix-ffi` that ships in the
+  repository, and that copy had not been rebuilt since 2026-07-18: every
+  release since drove through the core of that day, whatever its notes
+  said. It is rebuilt for 11.0.0, with bindings that match it, and CI
+  now fails when the bindings are not what the crate generates.
+
+- **`smix runner supervise` attaches to a runner whose record lost its
+  log path.** The device ledger is shared by every smix on the machine,
+  and a 10.x one rewrites an iOS runner's row without the fields it does
+  not know — so one 10.1.0 command left an 11.0 runner that `supervise`
+  refused, telling the user to `runner cycle` it, which does not write
+  the path back. When the row has no path, `supervise` now asks the
+  runner process where its output goes, and refuses only when that is
+  not a file, with a remedy that records one.
+
 - **Stopping an iOS runner takes seconds and leaves nothing running
   behind it.** An interrupted `xcodebuild test` collected simulator
   diagnostics before exiting, so `runner down` waited around 20 seconds

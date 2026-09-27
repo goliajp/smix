@@ -65,7 +65,7 @@ log "runner up with --bundle $SMOKE_BUNDLE (§A hard-require)"
 
 # Refuse-without-bundle check: should fail loud when we omit --bundle.
 log "verify runner up refuses without --bundle"
-if smix runner up "$SMOKE_UDID" >"$OUT_DIR/up-no-bundle.log" 2>&1; then
+if "$SMIX" runner up "$SMOKE_UDID" >"$OUT_DIR/up-no-bundle.log" 2>&1; then
   fail "runner up accepted no --bundle (regression against §D8)"
 fi
 grep -q "SMIX_RUNNER_UP_ALLOW_DEFAULT_BUNDLE" "$OUT_DIR/up-no-bundle.log" \

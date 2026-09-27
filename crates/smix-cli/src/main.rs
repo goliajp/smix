@@ -1513,8 +1513,8 @@ enum RunnerAction {
     },
     /// Cycle the runner: down + up on the same device/port/bundle.
     /// Preserves the per-udid derived-data directory so the warm re-up
-    /// finishes in ~3 s. Errors if no runner state.json exists — use
-    /// `runner up` for a cold start.
+    /// finishes in ~3 s. Errors if the device ledger records no runner on
+    /// the port — use `runner up` for a cold start.
     ///
     /// iOS only, and it says so when handed anything else. It took no
     /// device at all until 6.6, which is how it came to read one
