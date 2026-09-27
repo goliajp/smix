@@ -761,8 +761,11 @@ moved and `Step` is now `#[non_exhaustive]`.
   library.** Both link a prebuilt copy of `smix-ffi` that ships in the
   repository, and that copy had not been rebuilt since 2026-07-18: every
   release since drove through the core of that day, whatever its notes
-  said. It is rebuilt for 11.0.0, with bindings that match it, and CI
-  now fails when the bindings are not what the crate generates.
+  said. It is rebuilt for 11.0.0, with bindings that match it. Each
+  library now carries a digest of the sources it was built from
+  (`smix_ffi_source_stamp()` returns it), and CI fails when the bindings
+  are not what the crate generates or a library was built from other
+  sources than the tree it ships in.
 
 - **`smix runner supervise` attaches to a runner whose record lost its
   log path.** The device ledger is shared by every smix on the machine,

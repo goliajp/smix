@@ -17,6 +17,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
+# The library carries the digest of the sources it is built from, so the
+# release can tell a committed library that lags the tree from one that
+# does not (scripts/dev/ffi-bindings-fresh.sh reads it back).
+SMIX_FFI_SOURCE_DIGEST="$(python3 "$ROOT/scripts/sdk/ffi-source-digest.py")"
+export SMIX_FFI_SOURCE_DIGEST
+
 XCF="$ROOT/swift-bridge/SmixCoreFFI.xcframework"
 STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
