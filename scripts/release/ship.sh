@@ -1240,8 +1240,11 @@ SMIX_BIN="$ROOT/target/release/smix" \
 # build.gradle.kts name did not exist. Clean at the time this was added; here
 # so the boundary cannot drift away from the crate again.
 log "ffi bindings"
-"$ROOT/scripts/dev/ffi-bindings-fresh.sh" > /tmp/smix-ship-ffi-bindings.log 2>&1 \
-  || fail "FFI bindings are not what smix-ffi generates — see /tmp/smix-ship-ffi-bindings.log"
+# --against-source here and nowhere else: a commit on develop may leave
+# the libraries behind the tree, a release may not. The ship does not
+# rebuild them itself — what is published has to be a commit CI has seen.
+"$ROOT/scripts/dev/ffi-bindings-fresh.sh" --against-source > /tmp/smix-ship-ffi-bindings.log 2>&1 \
+  || fail "FFI bindings or libraries are not what this tree builds — see /tmp/smix-ship-ffi-bindings.log; run scripts/sdk/regenerate-bindings.sh, commit, and release that commit"
 # --- fuzz smoke -------------------------------------------------------
 # 15 fuzz targets existed with nothing running them; two had bit-rotted
 # to the point of not compiling. A short budget per target keeps them

@@ -16,13 +16,28 @@
 # reporting "no diff" for that reason is how a gate comes to certify air.
 #
 # Usage:
-#   scripts/dev/ffi-bindings-fresh.sh [--verbose]
+#   scripts/dev/ffi-bindings-fresh.sh [--verbose] [--against-source]
+#
+# The four shipped libraries each carry the digest of the sources they were
+# built from. By default this checks that all four carry one and the same
+# digest — built together, by the sdk scripts. --against-source also checks
+# that the digest is this tree's; the release passes it. It is not the
+# default because most commits change some crate below smix-ffi, and
+# rebuilding ~60MB of committed binaries for each of them is a cost paid
+# once, before a release, instead.
 
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERBOSE=0
-[[ "${1:-}" == "--verbose" ]] && VERBOSE=1
+AGAINST_SOURCE=0
+for arg in "$@"; do
+  case "$arg" in
+    --verbose) VERBOSE=1 ;;
+    --against-source) AGAINST_SOURCE=1 ;;
+    *) echo "ffi-bindings-fresh: unknown argument $arg" >&2; exit 2 ;;
+  esac
+done
 
 SWIFT_CHECKED="$ROOT/swift-bridge/Sources/SmixCoreFFIBindings/Generated/smix.swift"
 KOTLIN_CHECKED="$ROOT/android-runner/sdk/src/main/kotlin/uniffi/smix/smix.kt"
@@ -125,36 +140,59 @@ else
 fi
 
 # The symbols can all be there in a library built from last month's
-# source. Each shipped library carries the digest of the sources it was
-# built from; the digest of the tree now is computed by the same script
-# the build used, from the dep-info of the build just above.
-WANT="$(python3 "$ROOT/scripts/sdk/ffi-source-digest.py" --no-build)" \
-  || fail "could not compute the source digest — run scripts/sdk/ffi-source-digest.py"
-stale=0
+# source, so each library's stamp is read. A library with none, or with
+# the stamp of a plain `cargo build`, did not come from the sdk scripts;
+# four libraries with different stamps were not built together.
+stamp_of() {
+  local stamps
+  stamps="$(grep -aoE 'smix-ffi-source:([0-9a-f]{64}|unstamped)' "$ROOT/$1" | sort -u)"
+  case "$stamps" in
+    "") echo "none" ;;
+    *$'\n'*) echo "several" ;;
+    "smix-ffi-source:unstamped") echo "unstamped" ;;
+    *) echo "${stamps#smix-ffi-source:}" ;;
+  esac
+}
+bad=0
+digests=()
 for lib in \
   "swift-bridge/SmixCoreFFI.xcframework/macos-arm64/libsmix_ffi.a" \
   "swift-bridge/SmixCoreFFI.xcframework/ios-arm64-simulator/libsmix_ffi.a" \
   "android-runner/sdk/src/main/jniLibs/arm64-v8a/libuniffi_smix.so" \
   "android-runner/sdk/src/main/jniLibs/x86_64/libuniffi_smix.so"; do
   if [[ ! -f "$ROOT/$lib" ]]; then
-    echo "    $lib: missing"; stale=$((stale+1)); continue
+    echo "    $lib: missing"; bad=$((bad+1)); continue
   fi
-  stamps="$(grep -aoE 'smix-ffi-source:([0-9a-f]{64}|unstamped)' "$ROOT/$lib" | sort -u)"
-  case "$stamps" in
-    "smix-ffi-source:$WANT") ;;
-    "") echo "    $lib: carries no source stamp (built before libraries were stamped)"; stale=$((stale+1)) ;;
-    *$'\n'*) echo "    $lib: carries more than one stamp: $(tr '\n' ' ' <<<"$stamps")"; stale=$((stale+1)) ;;
-    "smix-ffi-source:unstamped") echo "    $lib: built without a digest (a plain cargo build, not the sdk scripts)"; stale=$((stale+1)) ;;
-    *) echo "    $lib: built from ${stamps#smix-ffi-source:}, the tree is $WANT"; stale=$((stale+1)) ;;
+  stamp="$(stamp_of "$lib")"
+  case "$stamp" in
+    none) echo "    $lib: carries no source stamp (built before libraries were stamped)"; bad=$((bad+1)) ;;
+    several) echo "    $lib: carries more than one source stamp"; bad=$((bad+1)) ;;
+    unstamped) echo "    $lib: built without a digest (a plain cargo build, not the sdk scripts)"; bad=$((bad+1)) ;;
+    *) echo "    $lib: built from $stamp"; digests+=("$stamp") ;;
   esac
 done
-if (( stale > 0 )); then
-  echo "ffi-bindings-fresh: $stale shipped librar(y/ies) not built from this tree — \
+distinct="$(printf '%s\n' "${digests[@]+"${digests[@]}"}" | sort -u | grep -c .)"
+if (( bad > 0 || distinct > 1 )); then
+  (( distinct > 1 )) && echo "    the four libraries were built from $distinct different trees"
+  echo "ffi-bindings-fresh: the shipped libraries were not built together by the sdk scripts — \
 run scripts/sdk/regenerate-bindings.sh, which rebuilds and stamps all four, and commit them"
   status=1
+elif (( AGAINST_SOURCE )); then
+  WANT="$(python3 "$ROOT/scripts/sdk/ffi-source-digest.py" --no-build)" \
+    || fail "could not compute the source digest — run scripts/sdk/ffi-source-digest.py"
+  if [[ "${digests[0]}" != "$WANT" ]]; then
+    echo "    this tree is $WANT"
+    echo "ffi-bindings-fresh: the shipped libraries were built from other sources than this tree — \
+before releasing, run scripts/sdk/regenerate-bindings.sh and commit the result, then release"
+    status=1
+  fi
 fi
 
 if (( status == 0 )); then
-  echo "ffi-bindings-fresh: clean — the bindings are what smix-ffi generates, and the four shipped libraries were built from this tree"
+  if (( AGAINST_SOURCE )); then
+    echo "ffi-bindings-fresh: clean — the bindings are what smix-ffi generates, and the four shipped libraries were built from this tree"
+  else
+    echo "ffi-bindings-fresh: clean — the bindings are what smix-ffi generates, and the four shipped libraries were built together (--against-source also holds them to this tree)"
+  fi
 fi
 exit "$status"
