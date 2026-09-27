@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use smix_runner_wire::{TapAtCoordResult, TreeReader};
 
+use crate::route_limits::{BURST_HOLD_MS, BURST_INTERVAL_MS};
 use crate::{HttpRunnerClient, Landed, OkEnvelope, RunnerTransportError, is_one};
 
 impl HttpRunnerClient {
@@ -118,8 +119,13 @@ impl HttpRunnerClient {
             #[serde(flatten)]
             result: TapAtCoordResult,
         }
+        let longest = crate::route_limits::burst_longest(
+            times,
+            interval_ms.unwrap_or(BURST_INTERVAL_MS),
+            hold_ms.unwrap_or(BURST_HOLD_MS),
+        );
         let body: Resp = self
-            .json_post(
+            .json_post_within(
                 "/tap-at-norm-coord",
                 &Req {
                     nx,
@@ -131,6 +137,11 @@ impl HttpRunnerClient {
                     double_tap,
                 },
                 None,
+                crate::route_limits::wait_for_request(
+                    "/tap-at-norm-coord",
+                    longest,
+                    self.auto_activate,
+                ),
             )
             .await?;
         OkEnvelope {
@@ -207,8 +218,11 @@ impl HttpRunnerClient {
             #[serde(skip_serializing_if = "Option::is_none")]
             aimed_by: Option<TreeReader>,
         }
+        let longest = std::time::Duration::from_millis(
+            duration_ms.saturating_add(crate::route_limits::PER_TOUCH_MS + 500),
+        );
         let body: Landed = self
-            .json_post(
+            .json_post_within(
                 "/long-press-at-norm-coord",
                 &Req {
                     nx,
@@ -217,6 +231,11 @@ impl HttpRunnerClient {
                     aimed_by,
                 },
                 None,
+                crate::route_limits::wait_for_request(
+                    "/long-press-at-norm-coord",
+                    longest,
+                    self.auto_activate,
+                ),
             )
             .await?;
         body.into_result("/long-press-at-norm-coord")

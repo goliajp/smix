@@ -34,6 +34,7 @@ mod acts;
 mod hide_keyboard;
 mod input_text;
 pub mod port_owner;
+pub mod route_limits;
 mod screen_read;
 mod unanswered;
 
@@ -1019,7 +1020,14 @@ impl HttpRunnerClient {
         let mut attempts_left = TRANSPORT_MAX_ATTEMPTS;
         loop {
             attempts_left -= 1;
-            match builder_fn(&self.client).send().await {
+            let request = builder_fn(&self.client);
+            // A route whose own waits are fixed is waited for that long; one
+            // the request sets was given its wait by the method that built it.
+            let request = match route_limits::route_wait(endpoint, self.auto_activate) {
+                Some(wait) => request.timeout(wait),
+                None => request,
+            };
+            match request.send().await {
                 Ok(res) => {
                     // Parse the `X-Sim-Health` response header
                     // and propagate to the attached Session state atomic

@@ -275,57 +275,92 @@ class SmixHttpServer(
         }
         return try {
             when {
+                // LONGEST WAIT /health: 0 ms
                 uri == "/health" && session.method == Method.GET -> serveHealth()
+                // LONGEST WAIT /record/start: 0 ms
                 uri == "/record/start" && session.method == Method.POST -> serveRecordStart()
+                // LONGEST WAIT /record/poll: 0 ms
                 uri == "/record/poll" && session.method == Method.GET -> serveRecordPoll()
+                // LONGEST WAIT /record/stop: 0 ms
                 uri == "/record/stop" && session.method == Method.POST -> serveRecordStop()
+                // LONGEST WAIT /screenshot: 3000 ms — the screenshot pacer holds for up to its 3 s circuit
                 uri == "/screenshot" && session.method == Method.GET -> serveScreenshot()
+                // LONGEST WAIT /display: 0 ms
                 uri == "/display" && session.method == Method.GET -> serveDisplay()
+                // LONGEST WAIT /tree: 0 ms
                 uri == "/tree" && session.method == Method.GET -> serveTree(session)
+                // LONGEST WAIT /probe: 0 ms — the app's probe answers through a ContentResolver call with no bound; the host ends it
                 uri == "/probe" && session.method == Method.GET -> serveProbe(session)
+                // LONGEST WAIT /probe/tree: 0 ms — as /probe
                 uri == "/probe/tree" && session.method == Method.GET -> serveProbeTree(session)
+                // LONGEST WAIT /tap-at-norm-coord: from the request — times × interval and each touch, then a 0.5 s idle wait
                 uri == "/tap-at-norm-coord" && session.method == Method.POST ->
                     serveTapAtNormCoord(session)
+                // LONGEST WAIT /swipe-at-norm-coord: 500 ms — a 0.5 s idle wait
                 uri == "/swipe-at-norm-coord" && session.method == Method.POST ->
                     serveSwipeAtNormCoord(session)
+                // LONGEST WAIT /swipe-once: 500 ms — a 0.5 s idle wait
                 uri == "/swipe-once" && session.method == Method.POST ->
                     serveSwipeOnce(session)
+                // LONGEST WAIT /press-key: 500 ms — a 0.5 s idle wait
                 uri == "/press-key" && session.method == Method.POST ->
                     servePressKey(session)
+                // LONGEST WAIT /back: 2000 ms — the back settle (BACK_SETTLE_MS)
                 uri == "/back" && session.method == Method.POST -> serveBack()
+                // LONGEST WAIT /hide-keyboard: 2500 ms — a 0.5 s idle wait and KEYBOARD_GONE_MS
                 uri == "/hide-keyboard" && session.method == Method.POST -> serveHideKeyboard()
+                // LONGEST WAIT /set-orientation: 3800 ms — a 0.8 s idle wait and ROTATION_ARRIVES_MS
                 uri == "/set-orientation" && session.method == Method.POST ->
                     serveSetOrientation(session)
+                // LONGEST WAIT /tap-by-id: 4075 ms — the 1.5 s poll, one lookup's 2 s idle wait, 75 ms and a 0.5 s idle wait
                 uri == "/tap-by-id" && session.method == Method.POST -> serveTapById(session)
+                // LONGEST WAIT /double-tap-at-norm-coord: 650 ms — 150 ms between the taps and a 0.5 s idle wait
                 uri == "/double-tap-at-norm-coord" && session.method == Method.POST ->
                     serveDoubleTapAtNormCoord(session)
+                // LONGEST WAIT /long-press-at-norm-coord: from the request — durationMs, then a 0.5 s idle wait
                 uri == "/long-press-at-norm-coord" && session.method == Method.POST ->
                     serveLongPressAtNormCoord(session)
+                // LONGEST WAIT /input-text: from the request — budgetMs
                 uri == "/input-text" && session.method == Method.POST -> serveInputText(session)
+                // LONGEST WAIT /clear-text: 11000 ms — FOCUS_SETTLE_MS, TEXT_LAND_MS twice and two 0.5 s idle waits
                 uri == "/clear-text" && session.method == Method.POST -> serveClearText(session)
+                // LONGEST WAIT /windows: 0 ms
                 uri == "/windows" && session.method == Method.GET -> serveWindows()
+                // LONGEST WAIT /foreground: 3500 ms — a 0.5 s idle wait and FOREGROUND_ARRIVES_MS
                 uri == "/foreground" && session.method == Method.POST -> serveForeground(session)
+                // LONGEST WAIT /find-text-by-ocr: 8000 ms — the screenshot pacer (3 s) and the recogniser latch (5 s)
                 uri == "/find-text-by-ocr" && session.method == Method.POST ->
                     serveFindTextByOcr(session)
+                // LONGEST WAIT /system-popups: 0 ms
                 uri == "/system-popups" && session.method == Method.GET -> serveSystemPopups(session)
+                // LONGEST WAIT /system-popup-action: 500 ms — a 0.5 s idle wait
                 uri == "/system-popup-action" && session.method == Method.POST ->
                     serveSystemPopupAction(session)
+                // LONGEST WAIT /webview-eval: 11000 ms — the WebView bridge's 5 s connect and 6 s read
                 uri == "/webview-eval" && session.method == Method.POST ->
                     serveWebViewEvalProxy(session)
+                // LONGEST WAIT /session/open: 500 ms — a 0.5 s idle wait
                 uri == "/session/open" && session.method == Method.POST ->
                     serveSessionOpen(session)
+                // LONGEST WAIT /session/close: 0 ms
                 uri == "/session/close" && session.method == Method.POST ->
                     serveSessionClose(session)
+                // LONGEST WAIT /session/close-all: 0 ms
                 uri == "/session/close-all" && session.method == Method.POST ->
                     serveSessionCloseAll()
+                // LONGEST WAIT /session/list: 0 ms
                 uri == "/session/list" && session.method == Method.POST ->
                     serveSessionList()
+                // LONGEST WAIT /session/renew-activation: 500 ms — a 0.5 s idle wait
                 uri == "/session/renew-activation" && session.method == Method.POST ->
                     serveSessionRenewActivation(session)
+                // LONGEST WAIT /session/launch-app: 500 ms — a 0.5 s idle wait
                 uri == "/session/launch-app" && session.method == Method.POST ->
                     serveSessionAppLifecycle(session, terminate = false)
+                // LONGEST WAIT /session/terminate-app: 500 ms — a 0.5 s idle wait
                 uri == "/session/terminate-app" && session.method == Method.POST ->
                     serveSessionAppLifecycle(session, terminate = true)
+                // LONGEST WAIT /session/relaunch-app: 500 ms — a 0.5 s idle wait
                 uri == "/session/relaunch-app" && session.method == Method.POST ->
                     serveSessionRelaunchApp(session)
                 else -> serveNotImplemented(uri, session.method.name)

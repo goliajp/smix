@@ -1,5 +1,6 @@
-//! A keyboard dismissal that outlasts the plain request timeout is waited
-//! for, and the runner is told how long it has.
+//! A route whose own waits outlast the plain request timeout is waited
+//! for: a keyboard dismissal, told its budget, and a back, whose settles
+//! the host reads from the route table.
 //!
 //! On a GitHub macOS runner (iOS 26.2) `hideKeyboard` ran past 15 s, the
 //! host stopped listening at 15 s, and the step failed as "sent and no
@@ -70,4 +71,16 @@ async fn a_dismissal_that_takes_sixteen_seconds_is_answered_not_abandoned() {
         body.contains(r#""budgetMs":20000"#),
         "the runner has to be told its budget: {body}"
     );
+}
+
+#[tokio::test]
+async fn a_back_that_settles_for_seventeen_seconds_is_answered_not_abandoned() {
+    // The iOS back handler's own settles add up to 20.5 s; the host used to
+    // stop at 15.
+    let (port, _) = answers_after(Duration::from_secs(17));
+    let client = HttpRunnerClient::with_base(format!("http://127.0.0.1:{port}"));
+    client
+        .back()
+        .await
+        .expect("the runner answered inside its own longest wait");
 }
