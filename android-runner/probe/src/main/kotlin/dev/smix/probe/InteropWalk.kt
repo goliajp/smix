@@ -122,6 +122,27 @@ fun visibleScreenRect(
     ),
 )
 
+/**
+ * Where a View shows, on the screen: `visibleInWindow` is
+ * `getGlobalVisibleRect`'s answer, which is in its WINDOW's coordinates
+ * despite the name, or null when none of it shows. A dialog is its own
+ * window away from the screen's origin, so the answer is moved by where
+ * that window sits before it is compared with a screen rectangle.
+ */
+fun viewClipOnScreen(
+    layoutOnScreen: Bounds,
+    visibleInWindow: Bounds?,
+    windowLeftOnScreen: Int,
+    windowTopOnScreen: Int,
+): Bounds = visibleInWindow?.let {
+    Bounds(
+        it.left + windowLeftOnScreen,
+        it.top + windowTopOnScreen,
+        it.right + windowLeftOnScreen,
+        it.bottom + windowTopOnScreen,
+    )
+} ?: Bounds(layoutOnScreen.left, layoutOnScreen.top, layoutOnScreen.left, layoutOnScreen.top)
+
 /** The part of one rectangle that lies inside the other; empty when none does. */
 fun intersect(a: Bounds, b: Bounds): Bounds {
     val left = maxOf(a.left, b.left)
@@ -206,16 +227,22 @@ private fun viewSubtree(v: View): ProbeNode? {
     }
     val at = IntArray(2)
     v.getLocationOnScreen(at)
+    val inWindow = IntArray(2)
+    v.getLocationInWindow(inWindow)
     val layout = Bounds(at[0], at[1], at[0] + v.width, at[1] + v.height)
     val visible = android.graphics.Rect()
     // `getGlobalVisibleRect` answers false when none of it shows, and
-    // leaves the rectangle it was handed alone — so "no" has to become an
-    // empty rectangle here rather than whatever that rectangle held.
-    val clip = if (v.getGlobalVisibleRect(visible)) {
-        Bounds(visible.left, visible.top, visible.right, visible.bottom)
-    } else {
-        Bounds(layout.left, layout.top, layout.left, layout.top)
-    }
+    // leaves the rectangle it was handed alone.
+    val clip = viewClipOnScreen(
+        layout,
+        if (v.getGlobalVisibleRect(visible)) {
+            Bounds(visible.left, visible.top, visible.right, visible.bottom)
+        } else {
+            null
+        },
+        at[0] - inWindow[0],
+        at[1] - inWindow[1],
+    )
     return interopNode(
         resourceId = resourceName(v),
         contentDescription = v.contentDescription?.toString()?.ifEmpty { null },

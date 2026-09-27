@@ -70,7 +70,9 @@ cleanup() {
     fi
   fi
   if [ "$WE_BOOTED" = 1 ]; then "$SMIX" sim shutdown "$SERIAL" >/dev/null 2>&1 || true; fi
+  rm -rf "$WORK"
 }
+WORK="$(mktemp -d)"
 trap cleanup EXIT
 
 # navigation_mode: 0 three-button, 1 two-button, 2 gesture. Setting it
@@ -127,7 +129,7 @@ fi
 # the accessibility reader — a reading of the app, not of smix's tap.
 confirmed_count() {
   local tree
-  tree="$("$SMIX" tree --device "$SERIAL" --port "$PORT" --reader a11y --json 2>/dev/null)" \
+  tree="$("$SMIX" tree --device "$SERIAL" --port "$PORT" --reader a11y --json 2>"$WORK/count.err")" \
     || return 1
   TREE_JSON="$tree" python3 - <<'PY'
 import json, os, re, sys
@@ -214,7 +216,9 @@ PY
 
   tap "id:button1"
   sleep 2
-  after="$(confirmed_count)" || fail "$name: could not read the fixture's count after the tap"
+  after="$(confirmed_count)" || fail "$name: could not read the fixture's count after the tap.
+  the tap said (exit $TAP_RC): $TAP_SAID
+  the tree read said: $(tail -5 "$WORK/count.err" 2>/dev/null)"
   if [ "$after" != $((before + 1)) ]; then
     fail "$name: the fixture's listener counted $before then $after — the confirm was not pressed. smix said (exit $TAP_RC): $TAP_SAID"
   fi

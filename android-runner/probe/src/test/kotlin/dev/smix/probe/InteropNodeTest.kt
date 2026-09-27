@@ -288,4 +288,28 @@ class VisibleRectTest {
         assertEquals("a rectangle with nothing in it still has width", 0, r.right - r.left)
         assertEquals("a rectangle with nothing in it still has height", 0, r.bottom - r.top)
     }
+
+    @Test
+    fun `a View in a dialog's window shows where the dialog is on screen`() {
+        // Measured: the fixture's native dialog is a window at (27,980) on
+        // a 1080x2340 display, and its confirm button is laid out at
+        // (773,1159)-(976,1308) on screen, which is (746,179)-(949,328) in
+        // the dialog's window. Read as screen coordinates the two rectangles
+        // missed each other and the button was reported as showing nowhere.
+        val layout = Bounds(773, 1159, 976, 1308)
+        val clip = viewClipOnScreen(layout, Bounds(746, 179, 949, 328), 27, 980)
+        assertEquals(layout, intersect(layout, clip))
+    }
+
+    @Test
+    fun `a View in the activity's window is unmoved`() {
+        val layout = Bounds(44, 236, 243, 346)
+        assertEquals(layout, viewClipOnScreen(layout, Bounds(44, 236, 243, 346), 0, 0))
+    }
+
+    @Test
+    fun `a View that shows nowhere has an empty clip at its own corner`() {
+        val clip = viewClipOnScreen(Bounds(10, 20, 110, 120), null, 27, 980)
+        assertEquals(Bounds(10, 20, 10, 20), clip)
+    }
 }

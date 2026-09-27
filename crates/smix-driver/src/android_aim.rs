@@ -6,7 +6,6 @@ use smix_error::{ExpectationFailure, FailureCode, FailureInit};
 use smix_host_coord_resolver::{HostResolveError, resolve_to_norm_coord};
 use smix_runner_client::IncludeScope;
 use smix_selector::Selector;
-use smix_selector_resolver::resolve_selector;
 
 use super::AndroidDriver;
 use crate::Driver;
@@ -106,14 +105,18 @@ pub(super) async fn resolve_aimed(
         let read_by = std::sync::Mutex::new(perceived.source);
         let tree = perceived.root;
         match resolve_to_norm_coord(&tree, selector) {
-            Ok(coord) => {
+            Ok(_) => {
                 // Where a touch reaches it: under an app drawn edge to edge
                 // its centre can be under the status bar, which takes it.
-                let first = crate::aim_in(&tree, selector)?.unwrap_or((
-                    coord.0,
-                    coord.1,
-                    resolve_selector(&tree, selector).map(crate::hit_element),
-                ));
+                // Read by the same rule as every re-reading below: a target
+                // that shows nowhere is not on screen yet.
+                let Some(first) = crate::aim_in(&tree, selector)? else {
+                    if start.elapsed() > timeout {
+                        return Err(crate::element_not_found(&tree, selector));
+                    }
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    continue;
+                };
                 // Aimed only at a target that has stopped moving (the same
                 // wait as iOS). The tree is in pixels.
                 let ppp = crate::Driver::pixels_per_point(driver).await?;

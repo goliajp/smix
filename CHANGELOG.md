@@ -964,7 +964,10 @@ moved and `Step` is now `#[non_exhaustive]`.
   window above its own takes touches over; on iOS the keyboard and the
   status bar, where the tree has them, count the same way. An element with
   no such part is refused as `NOT_VISIBLE`, naming what covers it, and
-  nothing is touched. The Android runner's tree now says, for each window,
+  nothing is touched. An element that is in the tree and shows nowhere
+  at all — scrolled out, clipped to nothing — is waited for as one not on
+  screen yet, and reported as not found when it does not appear; its
+  centre is no longer touched. The Android runner's tree now says, for each window,
   its `layer` in the stack and where it takes touches (`touchable`), which
   is not its bounds: with the keyboard up, the input method's window spans
   the whole screen below the status bar and takes touches only on the keys.
