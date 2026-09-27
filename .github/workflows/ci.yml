@@ -59,6 +59,12 @@ jobs:
       # used to hide in.
       - name: runner tarballs match their sources
         run: cargo test -p smix-runner-sources
+      # Only the ship ran this, so a doc-comment edit on an exported method
+      # (which moves its uniffi checksum) sat unnoticed until the release,
+      # where a stale binding means an SDK that refuses to load. macOS
+      # because it reads the xcframework's Mach-O archive with nm.
+      - name: ffi bindings are what smix-ffi generates
+        run: bash scripts/dev/ffi-bindings-fresh.sh
       - name: cargo test
         run: cargo test --workspace
       # Here rather than in source-gates: it compiles. A fuzz crate is

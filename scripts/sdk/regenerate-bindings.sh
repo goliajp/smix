@@ -38,7 +38,7 @@ echo "regenerate-bindings: kotlin bindings (library mode)"
 mkdir -p "$STAGING/lib"
 cp "$LIB" "$STAGING/lib/libuniffi_smix.dylib"
 cargo run -q -p smix-ffi --features bindgen-cli --bin smix-bindgen -- \
-  generate --library "$STAGING/lib/libuniffi_smix.dylib" --language kotlin --out-dir "$STAGING/kotlin"
+  generate --library "$STAGING/lib/libuniffi_smix.dylib" --language kotlin --no-format --out-dir "$STAGING/kotlin"
 cp "$STAGING/kotlin/uniffi/smix/smix.kt" "$KOTLIN_OUT/smix.kt"
 
 echo "regenerate-bindings: rebuilding the xcframework"

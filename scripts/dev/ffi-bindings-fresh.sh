@@ -80,7 +80,7 @@ mkdir -p "$TMP/lib"
 cp "$LIB" "$UNIFFI_LIB" || fail "could not stage the library under its uniffi name"
 
 run cargo run -q -p smix-ffi --features bindgen-cli --bin smix-bindgen -- \
-  generate --library "$UNIFFI_LIB" --language kotlin --out-dir "$TMP/kotlin" \
+  generate --library "$UNIFFI_LIB" --language kotlin --no-format --out-dir "$TMP/kotlin" \
   || fail "kotlin bindgen failed — run with --verbose"
 
 SWIFT_FRESH="$TMP/swift/smix.swift"

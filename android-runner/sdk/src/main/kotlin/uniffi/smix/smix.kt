@@ -1098,7 +1098,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_smix_ffi_checksum_method_smixsession_launch_app() != 47408.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_smix_ffi_checksum_method_smixsession_press_key() != 16558.toShort()) {
+    if (lib.uniffi_smix_ffi_checksum_method_smixsession_press_key() != 9337.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_smix_ffi_checksum_method_smixsession_relaunch_app() != 5743.toShort()) {
@@ -2228,8 +2228,8 @@ public interface SmixSessionInterface {
     suspend fun `launchApp`(`cancel`: CancelToken?)
     
     /**
-     * Press a hardware-like key. `key` is a name the runner knows —
-     * "return", "delete", "arrowUp"; an unknown one is refused here, before
+     * Press a key by name, read as a flow's `pressKey` reads it —
+     * "return", "back", "Volume Up"; an unknown one is refused here, before
      * any request, so the string boundary is not a way to send nonsense on.
      */
     suspend fun `pressKey`(`key`: kotlin.String, `cancel`: CancelToken?)
@@ -2463,8 +2463,8 @@ open class SmixSession: Disposable, AutoCloseable, SmixSessionInterface
 
     
     /**
-     * Press a hardware-like key. `key` is a name the runner knows —
-     * "return", "delete", "arrowUp"; an unknown one is refused here, before
+     * Press a key by name, read as a flow's `pressKey` reads it —
+     * "return", "back", "Volume Up"; an unknown one is refused here, before
      * any request, so the string boundary is not a way to send nonsense on.
      */
     @Throws(DriveException::class)
