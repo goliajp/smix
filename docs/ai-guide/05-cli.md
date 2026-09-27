@@ -386,6 +386,14 @@ They take the same `--runner-port` too. They did not until 2.4.0 —
 written as the obvious mirror of the bring-up failed its argument parse
 and left the runner running.
 
+Every command that talks to a runner takes `--runner-port` (env
+`SMIX_RUNNER_PORT`) and lists it in its `--help`. Until 11.0 eight of them
+read the variable without offering the flag — `runner cycle`,
+`runner list-sessions`, `capsule up` / `down`, `diagnostic dump`,
+`sim screenshot` (a phone photographed through the runner), `down` and
+`doctor` — so a script could not see from the help that they would reach
+whichever runner the environment named.
+
 The runner is the on-device server smix drives. `runner up` blocks until
 its `/health` answers **and its session answers**, so when the command
 returns you can run a flow.

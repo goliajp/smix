@@ -27,6 +27,12 @@ Three rules:
 2. A runner command sent over ssh names its port in that line. An export
    does not cross ssh, and the far machine's default is somebody's too.
 3. No port is pinned to a literal, here or by whoever calls the script.
+4. A Python gate takes its port from its caller or from the OS: an
+   argparse port option, or an environment fallback, has no literal
+   default, and a `runner up` argv names its port. The four v10 gates
+   defaulted to 22095 and attach to a runner somebody else brought up, so
+   the port is the caller's to give — one asked of the OS is by
+   construction one nobody is listening on.
 
 Which commands dial a runner is the CLI's to say: `RUNNER_COMMANDS` is
 held against the built binary by runner-commands-match-the-cli.py.
@@ -41,6 +47,7 @@ Usage:
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import sys
@@ -52,24 +59,15 @@ from _shell_lines import code_lines  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(HERE))
 SCRIPTS = os.path.join(ROOT, "scripts")
 
-# Commands that dial a runner. The ones the help does not mention are in
-# READS_THE_PORT_UNSAID with where they read it.
+# Commands that dial a runner. Each says so in its help.
 RUNNER_COMMANDS = {
     "runner up", "runner down", "runner supervise", "runner cycle",
-    "runner list-sessions", "capsule up", "capsule down", "run",
+    "runner list-sessions", "capsule up", "capsule down", "down", "doctor", "run",
     "run-script", "tap", "find", "wait-for", "fill", "press-key", "swipe",
     "scroll", "hide-keyboard", "tree", "describe", "system-popups",
     "system-popup-action", "authoring suggest", "authoring capture-tree",
     "authoring diff-tree", "authoring record", "diagnostic dump",
     "sim screenshot",
-}
-READS_THE_PORT_UNSAID = {
-    "runner cycle": "main.rs `RunnerAction::Cycle` reads runner_port()",
-    "runner list-sessions": "main.rs `RunnerAction::ListSessions` reads runner_port()",
-    "capsule up": "main.rs `Cmd::Capsule` reads runner_port()",
-    "capsule down": "main.rs `Cmd::Capsule` reads runner_port()",
-    "diagnostic dump": "main.rs `DiagnosticAction::Dump` reads runner_port()",
-    "sim screenshot": "main.rs `PhoneScreenshotRoute::Runner` reads runner_port()",
 }
 # Offer a runner port only to write it into the registry; they dial nothing.
 RECORDS_A_PORT = {
@@ -112,6 +110,67 @@ def logical(lines: list[str], n: int) -> str:
     return " ".join(x.rstrip("\\") for x in out)
 
 
+PORT_OPTION = re.compile(r"port|listen|forward", re.I)
+LITERAL_PORT = re.compile(r"^\d{4,5}$")
+
+
+def _const(node: ast.AST | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, int)):
+        return str(node.value)
+    return None
+
+
+def python_problems(body: str, rel: str) -> tuple[list[str], bool]:
+    """Literal port defaults and runner starts without a port, in Python code.
+
+    Returns the problems and whether the script takes a port from its caller
+    (an argparse port option with no default), which makes it one whose
+    callers are checked for handing it a literal.
+    """
+    try:
+        tree = ast.parse(body)
+    except SyntaxError:
+        return [], False
+    problems: list[str] = []
+    takes_one = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+        if name == "add_argument":
+            opts = [_const(a) or "" for a in node.args]
+            if not any(o.startswith("-") and PORT_OPTION.search(o) for o in opts):
+                continue
+            kw = {k.arg: k.value for k in node.keywords}
+            default = _const(kw.get("default"))
+            if default is not None and LITERAL_PORT.match(default):
+                problems.append(
+                    f"{rel}:{node.lineno}: {'/'.join(opts)} defaults to {default} — a literal "
+                    f"port is a socket somebody else can hold; take it from the caller "
+                    f"(required=True) or ask the OS"
+                )
+            elif "default" not in kw:
+                takes_one = True
+        elif name in ("get", "getenv") and len(node.args) >= 2:
+            key, fallback = _const(node.args[0]) or "", _const(node.args[1])
+            if "PORT" in key and fallback is not None and LITERAL_PORT.match(fallback):
+                problems.append(
+                    f"{rel}:{node.lineno}: falls back to port {fallback} when {key} is unset — "
+                    f"the machine's default is whoever else runs smix; require it or ask the OS"
+                )
+        for arg in node.args:
+            if isinstance(arg, (ast.List, ast.Tuple)):
+                words = [_const(e) for e in arg.elts]
+                starts = any(words[i:i + 2] == ["runner", "up"] for i in range(len(words)))
+                if starts and "--runner-port" not in words:
+                    problems.append(
+                        f"{rel}:{node.lineno}: starts a runner without --runner-port — it lands "
+                        f"on the machine's default port"
+                    )
+    return problems, takes_one
+
+
 def dials(line: str) -> bool:
     if MCP_SESSION.search(line) or RUNS_A_FLOW.search(line):
         return True
@@ -123,16 +182,23 @@ def scan_scripts() -> int:
     problems: list[str] = []
     bodies: dict[str, str] = {}
     runner_scripts: set[str] = set()
+    python_takers: set[str] = set()
     covered = remote = 0
     for dirpath, _dirs, files in os.walk(SCRIPTS):
         for name in sorted(files):
-            if not name.endswith(".sh"):
+            if not name.endswith((".sh", ".py")):
                 continue
             path = os.path.join(dirpath, name)
             rel = os.path.relpath(path, ROOT)
             try:
                 body = open(path, encoding="utf-8").read()
             except (OSError, UnicodeDecodeError):
+                continue
+            if name.endswith(".py"):
+                found, takes_one = python_problems(body, rel)
+                problems += found
+                if takes_one:
+                    python_takers.add(name)
                 continue
             bodies[rel] = body
             physical = body.splitlines()
@@ -182,14 +248,14 @@ def scan_scripts() -> int:
     # the caller's variable is the same fixed socket, one step further away.
     callers = 0
     for rel, body in sorted(bodies.items()):
-        others = runner_scripts - {os.path.basename(rel)}
+        others = (runner_scripts | python_takers) - {os.path.basename(rel)}
         for ln in body.replace("\\\n", " ").splitlines():
             if SPEECH.match(ln) or ln.lstrip().startswith("#"):
                 continue
             if not any(script in ln for script in others):
                 continue
             callers += 1
-            args = ln.split(".sh", 1)[1] if ".sh" in ln else ln
+            args = next((ln.split(ext, 1)[1] for ext in (".sh", ".py") if ext in ln), ln)
             if LITERAL.search(args):
                 problems.append(
                     f"{rel} hands a runner-driving script a literal port, overriding the "
@@ -208,6 +274,9 @@ def scan_scripts() -> int:
     if not runner_scripts:
         problems.append("no script was found talking to a runner — the invocation shape "
                         "changed and this scan is reading air")
+    if not python_takers:
+        problems.append("no Python gate was found taking its port from its caller — the "
+                        "argparse shape changed and the Python half is reading air")
     if callers == 0:
         problems.append("nothing was found invoking a runner-driving script — the "
                         "caller-side half of this scan is reading air")
@@ -218,7 +287,8 @@ def scan_scripts() -> int:
         return 1
     print(
         f"gate-port-scan: clean — {covered} script(s) talking to a runner hold a port of "
-        f"their own; {remote} runner command(s) over ssh name theirs"
+        f"their own; {remote} runner command(s) over ssh name theirs; {len(python_takers)} "
+        f"Python gate(s) take theirs from the caller"
     )
     return 0
 

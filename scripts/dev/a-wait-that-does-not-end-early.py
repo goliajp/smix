@@ -24,7 +24,7 @@ this measurement swiped at coordinates that missed the list entirely and
 concluded a signal was useless from a scroll that never happened.
 
 Usage:
-  a-wait-that-does-not-end-early.py --device emulator-5554 --port 22095
+  a-wait-that-does-not-end-early.py --device <serial> --port <runner port>
 """
 
 import argparse
@@ -73,7 +73,7 @@ def visible_rows(port):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", required=True)
-    ap.add_argument("--port", default="22095")
+    ap.add_argument("--port", required=True, help="the port of the runner the caller brought up")
     a = ap.parse_args()
     d = a.device
 

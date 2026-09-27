@@ -4,10 +4,11 @@
 gate-port-scan decides which script lines talk to a runner from
 `RUNNER_COMMANDS`. A list like that goes stale the day a command is added,
 and a script using the new one is then invisible to the scan. So the list
-is held against the built binary: every command whose help offers a runner
-port is either in it or named as only recording one, and every command in
-it that the help does not mention reads the port in code, with the place
-written down — so the day its help says so, the excuse has to go.
+is held against the built binary, both ways: every command whose help
+offers a runner port is in it (or named as only recording one), and every
+command in it offers the port in its help. A command that read the port
+without saying so used to be excused with the place it read it; eight
+were, and each now declares the flag.
 
 Needs a built smix (`cargo build -p smix-cli`); a missing one is a
 failure, not a skip.
@@ -69,15 +70,8 @@ def main() -> int:
         problems.append(f"`smix {c}` offers a runner port and is not in gate-port-scan's RUNNER_COMMANDS — "
                         f"a script can dial a runner with it and this scan would not see it")
     for c in sorted(scan.RUNNER_COMMANDS - offers):
-        if c not in scan.READS_THE_PORT_UNSAID:
-            problems.append(f"`smix {c}` is in gate-port-scan's RUNNER_COMMANDS, its help offers no runner port, "
-                            f"and nothing says where it reads one")
-    for c, where in sorted(scan.READS_THE_PORT_UNSAID.items()):
-        if c in offers:
-            problems.append(f"`smix {c}` now says so in its help — drop it from "
-                            f"gate-port-scan's READS_THE_PORT_UNSAID ({where})")
-        if c not in commands:
-            problems.append(f"`smix {c}` is excused as reading the port unsaid and is not a command")
+        problems.append(f"`smix {c}` is in gate-port-scan's RUNNER_COMMANDS and its help offers "
+                        f"no runner port — declare it on the command, or it is not one")
     for c in sorted(set(scan.RECORDS_A_PORT) - offers):
         problems.append(f"`smix {c}` is listed as recording a port and its help offers none")
     if problems:
@@ -86,7 +80,7 @@ def main() -> int:
             print(f"  - {p}")
         return 1
     print(f"runner-commands-match-the-cli: clean — {len(offers)} commands offer a runner port, "
-          f"{len(scan.RUNNER_COMMANDS)} dial one, {len(scan.READS_THE_PORT_UNSAID)} without saying so")
+          f"{len(scan.RUNNER_COMMANDS)} dial one")
     return 0
 
 

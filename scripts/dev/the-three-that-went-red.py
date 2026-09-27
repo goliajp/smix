@@ -25,8 +25,8 @@ would mean it never depended on the probe at all, and its green proves
 nothing about what this version did.
 
 Usage:
-  the-three-that-went-red.py --device emulator-5554 --port 22095
-  the-three-that-went-red.py --device emulator-5554 --port 22095 --without-probe
+  the-three-that-went-red.py --device <serial> --port <runner port>
+  the-three-that-went-red.py --device <serial> --port <runner port> --without-probe
 """
 
 import argparse
@@ -164,7 +164,7 @@ def cause_three(device, port, want_probe):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", required=True)
-    ap.add_argument("--port", default="22095")
+    ap.add_argument("--port", required=True, help="the port of the runner the caller brought up")
     ap.add_argument("--without-probe", action="store_true")
     a = ap.parse_args()
     want = not a.without_probe

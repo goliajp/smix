@@ -156,6 +156,9 @@ enum Cmd {
         /// Emit the verdict as JSON instead of prose.
         #[arg(long)]
         json: bool,
+        /// The runner to ask, by its port.
+        #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
+        runner_port: Option<u16>,
     },
     /// Perf regression gate: measure the in-process corpus, compare
     /// against the committed baseline, and fail on a >5% slowdown or a
@@ -206,7 +209,11 @@ enum Cmd {
     },
     /// Tear down every smix-owned residual process and recycle registered
     /// sims (per-UDID; never touches a sim the registry does not hold).
-    Down,
+    Down {
+        /// The runner this sweep stops first, by its port.
+        #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
+        runner_port: Option<u16>,
+    },
     /// Inspect and settle the device resource ledger: who holds a device,
     /// what they left open, and closing it gracefully when they are gone.
     Lease {
@@ -1187,9 +1194,18 @@ enum CapsuleAction {
         /// "Host recording is already in progress" mutex.
         #[arg(long)]
         no_capture: bool,
+        /// The runner to start, by its port.
+        #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
+        runner_port: Option<u16>,
     },
     /// Reverse teardown: runner down + capture stop + sim shutdown.
-    Down { device: String },
+    Down {
+        /// Which device to tear the capsule down on, by UDID or registry alias.
+        device: String,
+        /// The runner to stop, by its port.
+        #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
+        runner_port: Option<u16>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -1528,6 +1544,9 @@ enum RunnerAction {
         /// `runner up` — see `resolve_runner_project`.
         #[arg(long = "runner-project", env = "SMIX_RUNNER_PROJECT")]
         runner_project: Option<PathBuf>,
+        /// The runner to cycle, by its port.
+        #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
+        runner_port: Option<u16>,
     },
     /// Attach a supervisor to a running runner: tail its log and
     /// auto-`cycle` on interrupt patterns (`** TEST INTERRUPTED **` /
@@ -1547,7 +1566,11 @@ enum RunnerAction {
     },
     /// List every session the runner currently tracks.
     /// Reads `POST /session/list`. Useful for post-cycle diagnostics.
-    ListSessions,
+    ListSessions {
+        /// The runner to ask, by its port.
+        #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
+        runner_port: Option<u16>,
+    },
     /// Every smix runner on this machine: its port, its device, and
     /// whether the ledgers know about it.
     ///
@@ -1706,6 +1729,9 @@ enum SimAction {
         device: String,
         /// Where to write the PNG.
         out: PathBuf,
+        /// The runner that photographs a phone `devicectl` cannot, by its port.
+        #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
+        runner_port: Option<u16>,
     },
     /// Launch an app by bundle id; prints the pid. Accepts repeatable
     /// `--child-env KEY=VAL` flags to inject `SIMCTL_CHILD_KEY=VAL` envp
@@ -2846,7 +2872,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Init { alias, device, app } => {
             cmd_init(&simctl, alias.as_deref(), device.as_deref(), app.as_deref()).await?
         }
-        Cmd::Doctor { json } => cmd_doctor(&simctl, json).await?,
+        Cmd::Doctor {
+            json,
+            runner_port: port,
+        } => cmd_doctor(&simctl, json, port.unwrap_or_else(runner_port)).await?,
         Cmd::Bench {
             update_baseline,
             current_file,
@@ -3323,7 +3352,11 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     simctl.erase(&udid).await?;
                     println!("erased: {udid}");
                 }
-                SimAction::Screenshot { device, out } => {
+                SimAction::Screenshot {
+                    device,
+                    out,
+                    runner_port: port_flag,
+                } => {
                     use smix_simctl::registry::DeviceKind;
                     let udid = resolve_device(&device)?;
                     // Sense is a flat capability: which tool takes the
@@ -3361,10 +3394,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                     .screenshot(&udid)
                                     .await
                                     .map_err(|e| CliError::Other(e.to_string()))?,
-                                PhoneScreenshotRoute::Runner => {
-                                    smix_capsule::runner::screenshot(runner_port())
-                                        .map_err(|e| CliError::Other(e.to_string()))?
-                                }
+                                PhoneScreenshotRoute::Runner => smix_capsule::runner::screenshot(
+                                    port_flag.unwrap_or_else(runner_port),
+                                )
+                                .map_err(|e| CliError::Other(e.to_string()))?,
                             }
                         }
                     };
@@ -3921,6 +3954,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 RunnerAction::Cycle {
                     platform,
                     runner_project,
+                    runner_port: port_flag,
                 } => {
                     // The platform is a flag here, the same shape as
                     // `down` and `up`, rather than a second notation
@@ -3950,7 +3984,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                                 .to_string(),
                         ));
                     }
-                    let port = runner_port();
+                    let port = port_flag.unwrap_or_else(runner_port);
                     smix_capsule::runner::cycle(&root, port, runner_project.as_deref())
                         .map_err(CliError::Other)?;
                 }
@@ -3968,8 +4002,8 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                         &leases, prune,
                     )?));
                 }
-                RunnerAction::ListSessions => {
-                    let port = runner_port();
+                RunnerAction::ListSessions { runner_port: port } => {
+                    let port = port.unwrap_or_else(runner_port);
                     let client = smix_runner_client::HttpRunnerClient::new(port);
                     // `run` is already inside `#[tokio::main]`; a second
                     // runtime here panics with "Cannot start a runtime
@@ -4002,9 +4036,9 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                 }
             }
         }
-        Cmd::Down => {
+        Cmd::Down { runner_port: port } => {
             let root = smix_workspace_root()?;
-            down::run(&root, runner_port())
+            down::run(&root, port.unwrap_or_else(runner_port))
                 .await
                 .map_err(CliError::Other)?;
         }
@@ -4019,7 +4053,10 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
         }
         Cmd::Capsule { action } => {
             let root = smix_workspace_root()?;
-            let port = runner_port();
+            let port = match &action {
+                CapsuleAction::Up { runner_port: p, .. }
+                | CapsuleAction::Down { runner_port: p, .. } => p.unwrap_or_else(runner_port),
+            };
             let capture_endpoint = std::env::var("SMIX_CAPTURE_ENDPOINT")
                 .unwrap_or_else(|_| "http://127.0.0.1:8787".to_string());
             match action {
@@ -4030,6 +4067,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     require_hard,
                     no_capture,
                     no_launch,
+                    ..
                 } => {
                     let udid = resolve_device(&device)?;
                     capsule::capsule_supports(device_kind_of(&device), &device)
@@ -4048,7 +4086,7 @@ async fn run(cli: Cli) -> Result<ExitCode, CliError> {
                     .await
                     .map_err(CliError::Other)?;
                 }
-                CapsuleAction::Down { device } => {
+                CapsuleAction::Down { device, .. } => {
                     let udid = resolve_device(&device)?;
                     capsule::capsule_supports(device_kind_of(&device), &device)
                         .map_err(CliError::Other)?;
@@ -5665,6 +5703,9 @@ enum DiagnosticAction {
         /// Ignored when `--metro-log` is unset.
         #[arg(long = "metro-log-tail-lines", default_value_t = 200)]
         metro_log_tail_lines: usize,
+        /// The runner to ask, by its port.
+        #[arg(long = "runner-port", env = "SMIX_RUNNER_PORT")]
+        runner_port: Option<u16>,
     },
 }
 
@@ -5893,8 +5934,9 @@ async fn cmd_diagnostic(action: DiagnosticAction) -> Result<(), CliError> {
             json,
             metro_log,
             metro_log_tail_lines,
+            runner_port: port,
         } => {
-            let port = runner_port();
+            let port = port.unwrap_or_else(runner_port);
             let client = smix_runner_client::HttpRunnerClient::new(port);
             let mut resp = match client.diagnostic_dump().await {
                 Ok(r) => r,
@@ -6324,7 +6366,7 @@ fn capture_server_reachable() -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
-async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
+async fn cmd_doctor(simctl: &SimctlClient, json: bool, port: u16) -> Result<(), CliError> {
     // Gather, then judge. The judging is `readiness::assess`, a pure
     // function with its ordering under test — which is the only way the
     // "what do I run next" answer stays correct as checks are added.
@@ -6350,11 +6392,6 @@ async fn cmd_doctor(simctl: &SimctlClient, json: bool) -> Result<(), CliError> {
         aliases: reg.sims().len(),
         first_alias: reg.sims().keys().next().cloned(),
     });
-
-    let port: u16 = std::env::var("SMIX_RUNNER_PORT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(22087);
 
     // Existence checked before opening, because `Store::open` creates
     // what it cannot find — and a health check that brings a store into
@@ -7624,6 +7661,7 @@ mod tests {
                 SimAction::Screenshot {
                     device: d(),
                     out: std::path::PathBuf::new(),
+                    runner_port: None,
                 },
             ),
             (

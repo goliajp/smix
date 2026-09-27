@@ -452,6 +452,13 @@ moved and `Step` is now `#[non_exhaustive]`.
 
 ### Changed
 
+- **Eight commands that talk to a runner say so in their help.**
+  `runner cycle`, `runner list-sessions`, `capsule up`, `capsule down`,
+  `diagnostic dump`, `sim screenshot`, `down` and `doctor` read
+  `SMIX_RUNNER_PORT` and did not offer `--runner-port`; each takes the flag
+  now, with the variable as its default, as every other runner command
+  does. What they reach is unchanged.
+
 - **`tapOn` waits for its target to stop moving before it taps.** The
   point was worked out from one reading of the screen; on a screen still
   coming in, the touch landed where the element had been — once in five

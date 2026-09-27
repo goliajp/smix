@@ -4,8 +4,8 @@
 A fake smix answers `--help` with texts built from the scan's own lists,
 so a CLI that agrees reads clean, and each way of disagreeing is shown to
 be named — a new command offering a port, an excuse the help has made
-stale, a listed command that lost its port, a recorder with none, and no
-binary at all. Each case names the sentence it expects, not only an exit
+a listed command whose help offers none, a recorder with none, a help
+that lists almost nothing, and no binary at all. Each case names the sentence it expects, not only an exit
 code.
 """
 
@@ -47,7 +47,7 @@ print(helps.get(path, ""))
 
 def fake_helps(gate) -> dict[str, str]:
     """A CLI that agrees with the gate: every command it lists, and forty more."""
-    offers = (gate.RUNNER_COMMANDS - set(gate.READS_THE_PORT_UNSAID)) | set(gate.RECORDS_A_PORT)
+    offers = gate.RUNNER_COMMANDS | set(gate.RECORDS_A_PORT)
     leaves = {c: ("--runner-port <P>" if c in offers else "no port here")
               for c in gate.RUNNER_COMMANDS | set(gate.RECORDS_A_PORT)}
     leaves.update({f"filler{i}": "no port here" for i in range(40)})
@@ -89,8 +89,7 @@ def run_cli(helps: dict[str, str] | None):
 
 def cli_cases(gate):
     base = fake_helps(gate)
-    unsaid = sorted(gate.READS_THE_PORT_UNSAID)[0]
-    dialled = sorted(gate.RUNNER_COMMANDS - set(gate.READS_THE_PORT_UNSAID))[0]
+    dialled = sorted(gate.RUNNER_COMMANDS)[0]
     recorder = sorted(gate.RECORDS_A_PORT)[0]
     listed = dict(base)
     listed[""] = base[""].replace("Options:", "  brand-new  x\nOptions:")
@@ -99,11 +98,9 @@ def cli_cases(gate):
         ("a CLI that agrees", base, False, "clean"),
         ("a command offering a port the gate does not list", listed, True,
          "`smix brand-new` offers a runner port and is not in gate-port-scan's RUNNER_COMMANDS"),
-        ("an excused command whose help now says so",
-         {**base, unsaid: "--runner-port <P>"}, True, f"`smix {unsaid}` now says so in its help"),
-        ("a listed command whose help lost its port, with no excuse",
+        ("a listed command whose help offers no port",
          {**base, dialled: "no port here"}, True,
-         f"`smix {dialled}` is in gate-port-scan's RUNNER_COMMANDS, its help offers no runner port"),
+         f"`smix {dialled}` is in gate-port-scan's RUNNER_COMMANDS and its help offers no runner port"),
         ("a recorder whose help offers no port",
          {**base, recorder: "no port here"}, True,
          f"`smix {recorder}` is listed as recording a port and its help offers none"),
