@@ -801,6 +801,21 @@ moved and `Step` is now `#[non_exhaustive]`.
   line — and the hint differs, a busy device for the first, a runner that
   stopped for the second. A connection that could not be made at all is
   still sent again: nothing reached the runner.
+- **On a slow machine an action is no longer given up on while the runner
+  is still doing it.** The host waited 15 s for every request, and several
+  routes' own waits add up to more: an iOS `back` tries five strategies
+  with up to 20.5 s of settling between them; the SDK's `relaunch_app`,
+  its app-data clear with a relaunch, and a soft cycle are an XCUITest
+  terminate and launch, which each wait up to 30 s; a foreground and a
+  session renewal each make one such call; an Android `clearText` waits up
+  to 11 s; and with `--activate` any iOS step may first bring the app to
+  the front. Each of these could
+  fail as "sent and no answer came back" with the runner mid-way, and pass
+  on a retry. Every runner route now states the longest it waits, the host
+  waits that long plus a margin, and a tap burst or a long press is waited
+  for as long as the request makes it — `tapOn: { repeat: 10, delay: 200 }`
+  included. Nothing changes for a route that answers quickly: it is waited
+  for exactly as before.
 - **Stale runner rows no longer block a runner on their port.** When
   several devices' ledger rows named one runner port, every lookup of that
   port was refused, though a port is held by one process and the other

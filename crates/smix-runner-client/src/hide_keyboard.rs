@@ -12,16 +12,10 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-use crate::input_text::ANSWER_MARGIN;
 use crate::{HttpRunnerClient, OkEnvelope, RunnerTransportError};
 
 /// The runner's budget for dismissing: the slowest chain above, rounded up.
 pub const HIDE_KEYBOARD_BUDGET: Duration = Duration::from_secs(20);
-
-/// How long the host waits for the answer.
-pub fn hide_keyboard_wait() -> Duration {
-    HIDE_KEYBOARD_BUDGET.saturating_add(ANSWER_MARGIN)
-}
 
 #[derive(Serialize)]
 struct Req {
@@ -38,7 +32,11 @@ impl HttpRunnerClient {
                 "/hide-keyboard",
                 &Req { budget_ms },
                 None,
-                hide_keyboard_wait(),
+                crate::route_limits::wait_for_request(
+                    "/hide-keyboard",
+                    HIDE_KEYBOARD_BUDGET,
+                    self.auto_activate,
+                ),
             )
             .await?;
         body.require_ok("/hide-keyboard")?;
@@ -53,10 +51,24 @@ mod tests {
 
     #[test]
     fn the_host_waits_past_the_budget_it_hands_the_runner() {
-        assert!(hide_keyboard_wait() > HIDE_KEYBOARD_BUDGET);
+        let wait =
+            crate::route_limits::wait_for_request("/hide-keyboard", HIDE_KEYBOARD_BUDGET, false);
+        assert!(wait > HIDE_KEYBOARD_BUDGET);
         // the reason this module exists: the old wait was the plain one
-        assert!(hide_keyboard_wait() > REQUEST_TIMEOUT);
+        assert!(wait > REQUEST_TIMEOUT);
         assert!(HIDE_KEYBOARD_BUDGET > REQUEST_TIMEOUT);
+    }
+
+    #[test]
+    fn the_budget_covers_the_android_runner_which_ignores_it() {
+        let android = crate::route_limits::ROUTES
+            .iter()
+            .find(|r| r.path == "/hide-keyboard")
+            .and_then(|r| r.android);
+        let Some(crate::route_limits::Longest::Ms(ms)) = android else {
+            panic!("the Android runner's hide-keyboard wait is fixed: {android:?}");
+        };
+        assert!(Duration::from_millis(ms) <= HIDE_KEYBOARD_BUDGET);
     }
 
     #[test]

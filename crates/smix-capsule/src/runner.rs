@@ -812,16 +812,17 @@ fn try_soft_cycle(port: u16) -> smix_runner_client::SoftCycleProbe {
 }
 
 /// `POST /soft-cycle` over raw loopback TCP. Returns `(status, body)`.
-/// The read timeout is generous because the handler performs the app
-/// relaunch before it writes the response.
+/// The handler relaunches the app before it answers, so the read waits as
+/// long as the route table says that takes.
 fn post_soft_cycle(port: u16) -> Result<(u16, Vec<u8>), ()> {
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::time::Duration;
+    let wait = smix_runner_client::route_limits::route_wait("/soft-cycle", false)
+        .expect("/soft-cycle is a fixed-wait route");
     let mut s = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_secs(2))
         .map_err(|_| ())?;
-    s.set_read_timeout(Some(Duration::from_secs(30)))
-        .map_err(|_| ())?;
+    s.set_read_timeout(Some(wait)).map_err(|_| ())?;
     s.write_all(b"POST /soft-cycle HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
         .map_err(|_| ())?;
     let mut buf = Vec::with_capacity(512);

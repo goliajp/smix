@@ -33,7 +33,7 @@ pub fn input_text_budget(text: &str) -> Duration {
 
 /// How long the host waits for the answer to typing `text`.
 pub fn input_text_wait(text: &str) -> Duration {
-    input_text_budget(text).saturating_add(ANSWER_MARGIN)
+    crate::route_limits::wait_for_request("/input-text", input_text_budget(text), false)
 }
 
 /// Every `/input-text` body: the text, the budget, and the optional

@@ -1205,6 +1205,7 @@ public actor SmixRunnerServer {
     handlers: SessionHandlers
   ) async {
     // OK MEANS: bookkeeping — a session record was opened; the app it names is activated by the steps that follow, not by this.
+    // LONGEST WAIT /session/open: 30000 ms — XCUIApplication.activate() when asked to
     await server.appendRoute("POST /session/open") { request in
       let body: Data
       do { body = try await request.bodyData }
@@ -1234,6 +1235,7 @@ public actor SmixRunnerServer {
       }
     }
     // OK MEANS: bookkeeping — the session this names is no longer held here.
+    // LONGEST WAIT /session/close: 0 ms
     await server.appendRoute("POST /session/close") { request in
       let body: Data
       do { body = try await request.bodyData }
@@ -1251,6 +1253,7 @@ public actor SmixRunnerServer {
       }
     }
     // OK MEANS: outcome — the app was asked to come forward again and answered that it is.
+    // LONGEST WAIT /session/renew-activation: 30000 ms — XCUIApplication.activate()
     await server.appendRoute("POST /session/renew-activation") { request in
       let body: Data
       do { body = try await request.bodyData }
@@ -1272,6 +1275,7 @@ public actor SmixRunnerServer {
     }
     // POST /session/close-all
     // OK MEANS: bookkeeping — every session this runner held is released.
+    // LONGEST WAIT /session/close-all: 0 ms
     await server.appendRoute("POST /session/close-all") { _ in
       return await Self.guardedResponse(
         fallback: SessionRoute.closeAllResponse(closed: 0)
@@ -1282,6 +1286,7 @@ public actor SmixRunnerServer {
     }
     // POST /session/list
     // OK MEANS: reading — what sessions this runner holds; it acts on nothing.
+    // LONGEST WAIT /session/list: 0 ms
     await server.appendRoute("POST /session/list") { _ in
       return await Self.guardedResponse(
         fallback: SessionRoute.listResponse([])
@@ -1292,6 +1297,7 @@ public actor SmixRunnerServer {
     }
     // POST /diagnostic/dump
     // OK MEANS: reading — what the runner can say about itself right now.
+    // LONGEST WAIT /diagnostic/dump: 0 ms
     await server.appendRoute("POST /diagnostic/dump") { _ in
       return await Self.guardedResponse(
         fallback: SessionRoute.diagnosticResponse(
@@ -1305,6 +1311,8 @@ public actor SmixRunnerServer {
       }
     }
     // POST /session/terminate-app + /session/launch-app
+    // LONGEST WAIT /session/terminate-app: 30000 ms — XCUIApplication.terminate()
+    // LONGEST WAIT /session/launch-app: 30000 ms — XCUIApplication.launch()
     for (path, isTerminate) in [("POST /session/terminate-app", true), ("POST /session/launch-app", false)] {
       let isTerm = isTerminate
       await server.appendRoute(HTTPRoute(path)) { request in
@@ -1339,6 +1347,7 @@ public actor SmixRunnerServer {
     }
     // POST /session/relaunch-app
     // OK MEANS: outcome — the app was terminated and launched again, and the launch answered.
+    // LONGEST WAIT /session/relaunch-app: 60000 ms — XCUIApplication.terminate() then launch()
     await server.appendRoute("POST /session/relaunch-app") { request in
       let body: Data
       do { body = try await request.bodyData }
@@ -1378,6 +1387,9 @@ public actor SmixRunnerServer {
     server: HTTPServer,
     handler: @escaping SelectResolveHandler
   ) async {
+    // LONGEST WAIT /select/resolve: 0 ms
+    // LONGEST WAIT /select/resolve-count: 0 ms
+    // LONGEST WAIT /select/resolve-labels: 0 ms
     let routes: [(String, SelectResolveRoute.Action)] = [
       ("POST /select/resolve", .resolve),
       ("POST /select/resolve-count", .count),
@@ -1476,6 +1488,7 @@ public actor SmixRunnerServer {
       "SMIX_RUNNER_VERSION"
     ] ?? "unknown"
     let bootDate = Date()
+    // LONGEST WAIT /health: 0 ms
     await server.appendRoute("GET /health") { _ in
       let uptime = UInt64(Date().timeIntervalSince(bootDate) * 1000)
       return HealthRoute.responseDetail(
@@ -1489,6 +1502,7 @@ public actor SmixRunnerServer {
 
     // GET /coordinate-space. Read-only: it synthesises nothing.
     if let coordinateSpaceHandler {
+      // LONGEST WAIT /coordinate-space: 0 ms
       await server.appendRoute("GET /coordinate-space") { request in
         // Reads the app under test — `app.frame` is half of what it
         // reports — so it goes through the same context guard every
@@ -1537,6 +1551,7 @@ public actor SmixRunnerServer {
     // closes. So it only fires the one-shot signal + returns immediately; the
     // stop-observer task below performs `server.stop()` out of band.
     // OK MEANS: bookkeeping — the runner was asked to stop serving; it keeps no device state.
+    // LONGEST WAIT /shutdown: 0 ms
     await server.appendRoute("POST /shutdown") { _ in
       await shutdownSignal.fire()
       return ShutdownRoute.response()
@@ -1549,6 +1564,7 @@ public actor SmixRunnerServer {
     // follow-up `GET /health`. Registered only when a handler is wired.
     if let softCycleHandler {
       // OK MEANS: outcome — the app under test was rebound and the rebind reported what it found.
+      // LONGEST WAIT /soft-cycle: 60000 ms — XCUIApplication.terminate() then launch()
       await server.appendRoute("POST /soft-cycle") { _ in
         let start = DispatchTime.now()
         let outcome = await softCycleHandler()
@@ -1562,6 +1578,7 @@ public actor SmixRunnerServer {
       }
     }
     // OK MEANS: injected — the touch was dispatched at the element that matched; whether the app reacted is the caller's next assertion.
+    // LONGEST WAIT /tap: 3000 ms — waitForExistence(3 s); the daemon touch has no bound, the host ends it
     await server.appendRoute("POST /tap") { request in
       let body: Data
       do {
@@ -1619,6 +1636,7 @@ public actor SmixRunnerServer {
       }
     }
     let treeServeCounter = TreeServeCounter()
+    // LONGEST WAIT /tree: 8000 ms — the all-windows walk stops at its 8 s budget
     await server.appendRoute("GET /tree") { request in
       // snapshotHandler calls XCUIApplication.snapshot(), which throws
       // under modal masking; the trampoline surfaces it. Categorize the
@@ -1721,6 +1739,7 @@ public actor SmixRunnerServer {
 
     if let fillHandler {
       // OK MEANS: outcome — the field was typed into and read back.
+      // LONGEST WAIT /fill: 0 ms
       await server.appendRoute("POST /fill") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -1747,6 +1766,7 @@ public actor SmixRunnerServer {
     }
     if let clearHandler {
       // OK MEANS: outcome — the field was emptied and read back.
+      // LONGEST WAIT /clear: 0 ms
       await server.appendRoute("POST /clear") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -1769,6 +1789,7 @@ public actor SmixRunnerServer {
     }
     if let pressKeyHandler {
       // OK MEANS: injected — the key event was dispatched.
+      // LONGEST WAIT /press-key: 0 ms
       await server.appendRoute("POST /press-key") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -1792,6 +1813,7 @@ public actor SmixRunnerServer {
     // the cost of /tree (full snapshot serialization + JS predicate walk).
     if let findHandler {
       // OK MEANS: reading — whether the selector matched; nothing is touched.
+      // LONGEST WAIT /find: 0 ms
       await server.appendRoute("POST /find") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -1829,6 +1851,7 @@ public actor SmixRunnerServer {
     // the empty-popups envelope (NOT 5xx) so the upper layer reads
     // "nothing observed right now" rather than a protocol error.
     if let systemPopupsHandler {
+      // LONGEST WAIT /system-popups: 11000 ms — the system-popup walk stops at its 11 s budget
       await server.appendRoute("GET /system-popups") { request in
         return await Self.contextGuardedResponse(request: request,
           fallback: SystemPopupsRoute.success(popups: [])
@@ -1868,6 +1891,7 @@ public actor SmixRunnerServer {
     // include scope was decided at enumerate time on the sense path.
     if let systemPopupActionHandler {
       // OK MEANS: injected — the popup's button was tapped, or the popup was no longer there to tap.
+      // LONGEST WAIT /system-popup-action: 0 ms — its touch waits for the daemon with no bound; the host ends it
       await server.appendRoute("POST /system-popup-action") { request in
         let body: Data
         do {
@@ -1909,6 +1933,7 @@ public actor SmixRunnerServer {
     // query — foreground is an app-level act, not element-level (no scope).
     if let foregroundHandler {
       // OK MEANS: outcome — the app was asked to come forward and XCUITest did not refuse the request.
+      // LONGEST WAIT /foreground: 30000 ms — XCUIApplication.activate()
       await server.appendRoute("POST /foreground") { request in
         let body: Data
         do {
@@ -1941,6 +1966,7 @@ public actor SmixRunnerServer {
     // No `?include=` query — back is app-level navigation, not element-level.
     if let backHandler {
       // OK MEANS: outcome — the screen was observed to change after the gesture, not merely that a gesture went out.
+      // LONGEST WAIT /back: 20500 ms — five 2 s navigation settles, two 5 s synthesis waits, one 0.5 s settle
       await server.appendRoute("POST /back") { request in
         let body: Data
         do {
@@ -1976,6 +2002,7 @@ public actor SmixRunnerServer {
     // is app-level gesture).
     if let swipeOnceHandler {
       // OK MEANS: injected — one swipe was dispatched.
+      // LONGEST WAIT /swipe-once: 0 ms
       await server.appendRoute("POST /swipe-once") { request in
         let body: Data
         do {
@@ -2007,6 +2034,7 @@ public actor SmixRunnerServer {
     // event chain.
     if let tapAtCoordHandler {
       // OK MEANS: injected — the touch was dispatched at that point of the frame.
+      // LONGEST WAIT /tap-at-norm-coord: from the request — times × interval and each touch
       await server.appendRoute("POST /tap-at-norm-coord") { request in
         let body: Data
         do {
@@ -2040,6 +2068,7 @@ public actor SmixRunnerServer {
     // /tap itself is left untouched.
     if let tapByIdHandler {
       // OK MEANS: injected — the touch was dispatched at the element with that identifier, or there was no such element.
+      // LONGEST WAIT /tap-by-id: 7000 ms — existence waits of 2 s and 3 s, and the 2 s scroll settle
       await server.appendRoute("POST /tap-by-id") { request in
         let body: Data
         do {
@@ -2068,6 +2097,7 @@ public actor SmixRunnerServer {
     // XCUIScreen screenshot. L5 sense layer per a11y-i18n master plan.
     if let findTextByOcrHandler {
       // OK MEANS: reading — whether the text was found in the pixels; nothing is touched.
+      // LONGEST WAIT /find-text-by-ocr: 0 ms
       await server.appendRoute("POST /find-text-by-ocr") { request in
         let body: Data
         do {
@@ -2104,6 +2134,7 @@ public actor SmixRunnerServer {
     // to rebind to — the same reason /press-key and /set-orientation
     // skip it.
     if let screenshotHandler {
+      // LONGEST WAIT /screenshot: 0 ms
       await server.appendRoute("GET /screenshot") { _ in
         await Self.guardedResponse(
           fallback: ScreenshotRoute.response(
@@ -2126,6 +2157,7 @@ public actor SmixRunnerServer {
     // escape-hatch companion to /tap-at-norm-coord.
     if let swipeAtCoordHandler {
       // OK MEANS: injected — the swipe was dispatched between those two points.
+      // LONGEST WAIT /swipe-at-norm-coord: 0 ms
       await server.appendRoute("POST /swipe-at-norm-coord") { request in
         let body: Data
         do {
@@ -2154,6 +2186,7 @@ public actor SmixRunnerServer {
     // XCUI API. Body {orientation: "portrait|portraitUpsideDown|landscapeLeft|landscapeRight"}.
     if let setOrientationHandler {
       // OK MEANS: outcome — the device reported the orientation asked for after being turned.
+      // LONGEST WAIT /set-orientation: 200 ms — a 0.2 s settle
       await server.appendRoute("POST /set-orientation") { request in
         let body: Data
         do {
@@ -2187,6 +2220,7 @@ public actor SmixRunnerServer {
     // app-level, not element-level.
     if let hideKeyboardHandler {
       // OK MEANS: outcome — the keyboard was observed to leave, not merely that a dismissal was sent.
+      // LONGEST WAIT /hide-keyboard: from the request — budgetMs
       await server.appendRoute("POST /hide-keyboard") { request in
         let body: Data
         do {
@@ -2220,6 +2254,7 @@ public actor SmixRunnerServer {
     // selector-resolved one.
     if let inputTextHandler {
       // OK MEANS: outcome — the text was typed and the field read back.
+      // LONGEST WAIT /input-text: from the request — the text's length
       await server.appendRoute("POST /input-text") { request in
         let body: Data
         do {
@@ -2250,6 +2285,7 @@ public actor SmixRunnerServer {
     // or older UITest target), the routes simply aren't registered.
     if let recordHandlers {
       // OK MEANS: bookkeeping — the runner began keeping a record of what it is asked to do.
+      // LONGEST WAIT /record/start: 0 ms
       await server.appendRoute("POST /record/start") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -2266,6 +2302,7 @@ public actor SmixRunnerServer {
         }
       }
       // OK MEANS: bookkeeping — the runner stopped keeping that record.
+      // LONGEST WAIT /record/stop: 0 ms
       await server.appendRoute("POST /record/stop") { request in
         let body: Data
         do { body = try await request.bodyData } catch {
@@ -2281,6 +2318,7 @@ public actor SmixRunnerServer {
           return RecordRoute.stopSuccess(events: events)
         }
       }
+      // LONGEST WAIT /record/poll: 0 ms
       await server.appendRoute("GET /record/poll") { _ in
         // /record/poll doesn't touch the target app — bare guardedResponse.
         return await Self.guardedResponse(
